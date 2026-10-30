@@ -4,9 +4,12 @@ import '@/providers';
 import { deserialize, serialize } from 'node:v8';
 
 import { axe } from '@test/helpers/accessibility';
+import { ControlledResizeObserver, triggerResize } from '@test/helpers/dom/ResizeObserver';
+import { createFeatureHostFixture } from '@test/helpers/FeatureHostFixture';
+import { createChatFeatureHost } from '@test/helpers/features/chat/ChatFeatureHostFixture';
 import { createClaudianView } from '@test/helpers/features/chat/ClaudianViewHarness';
-import { installSessionRuntimePool } from '@test/helpers/features/chat/SessionRuntimePoolHarness';
-import { createHarness, releaseSideChatHarnesses } from '@test/helpers/features/chat/SideChatDOMHarness';
+import { createProjectsFake } from '@test/helpers/features/chat/ProjectsFake';
+import { createSessionRuntimePool } from '@test/helpers/features/chat/SessionRuntimePoolHarness';
 import { FakeSideSession } from '@test/helpers/features/chat/SideChatSessionHarness';
 import { createObsidianWorkspace } from '@test/helpers/ObsidianWorkspace';
 import { modelCatalogCases } from '@test/helpers/providerModelCatalogs';
@@ -16,7 +19,6 @@ import { App, Component, Scope, setIcon } from 'obsidian';
 
 import { ChatModelSelectionCoordinator } from '@/app/settings/ChatModelSelectionCoordinator';
 import { DEFAULT_CLAUDIAN_SETTINGS } from '@/app/settings/defaultSettings';
-import { SettingsCoordinator } from '@/app/settings/SettingsCoordinator';
 import { ClaudianViews } from '@/composition/ClaudianViews';
 import { BUILT_IN_COMMANDS } from '@/core/commands/builtInCommands';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
@@ -24,7 +26,7 @@ import { ProviderWorkspaceRegistry } from '@/core/providers/ProviderWorkspaceReg
 import type { ProviderCapabilities } from '@/core/providers/types';
 import { getToolIcon } from '@/core/tools/toolIcons';
 import type { ClaudianSettings, Conversation, StreamChunk } from '@/core/types';
-import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
+import { SessionMessagingService } from '@/features/chat/session-messaging/SessionMessagingService';
 import { ChatState } from '@/features/chat/state/ChatState';
 import { destroyTab } from '@/features/chat/tabs/TabLifecycle';
 import { createTabRuntime } from '@/features/chat/tabs/TabRuntimeFactory';
@@ -38,22 +40,18 @@ import { adaptCodexStreamChunk } from '@/providers/codex/execution/CodexExecutio
 import { CodexNotificationRouter } from '@/providers/codex/runtime/CodexNotificationRouter';
 import { VaultMentionDataProvider } from '@/shared/mention/VaultMentionDataProvider';
 
-const originalResizeObserver = globalThis.ResizeObserver;
 const originalStructuredClone = globalThis.structuredClone;
 const cleanups: Array<() => Promise<void> | void> = [];
 
 beforeEach(() => {
-  globalThis.ResizeObserver = class { observe() {} unobserve() {} disconnect() {} };
   globalThis.structuredClone = value => deserialize(serialize(value));
 });
 
 afterEach(async () => {
   for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
-  globalThis.ResizeObserver = originalResizeObserver;
   globalThis.structuredClone = originalStructuredClone;
   ProviderWorkspaceRegistry.clear();
   vi.restoreAllMocks();
-  await releaseSideChatHarnesses();
   vi.useRealTimers();
 });
 
@@ -135,11 +133,9 @@ function createSettings(enabled: boolean): ClaudianSettings {
 
 async function createZenFixture(options: { enabled?: boolean; ready?: boolean } = {}) {
   const settings = createSettings(options.enabled ?? true);
-  const harness = createHarness({ settings: settings as unknown as Record<string, unknown> });
   ProviderWorkspaceRegistry.setServices('claude', {});
   const app = new App();
   Object.assign(app.vault.adapter, { basePath: '/vault' });
-  Object.assign(app.vault, { on: () => ({}), offref: () => undefined });
   const layout = createWorkspace();
   Object.assign(app, { workspace: layout.workspace, keymap: layout.keymap, scope: new Scope() });
   const sessions: FakeSideSession[] = [];
@@ -152,7 +148,9 @@ async function createZenFixture(options: { enabled?: boolean; ready?: boolean } 
     },
   }));
   const conversations: Conversation[] = [];
-  const zen = new ZenModeController({
+  const featureFixture = await createFeatureHostFixture({ app, settings: { ...settings, enableAutoTitleGeneration: false }, afterPublish: () => zen.reconcile() });
+  const settingsCoordinator = featureFixture.coordinator;
+  const zen: ZenModeController = new ZenModeController({
     app,
     isEnabled: (): boolean => settingsCoordinator.getCommittedSettings().enableZenMode,
     getPosition: () => settingsCoordinator.getCommittedSettings().zenModePosition,
@@ -160,14 +158,14 @@ async function createZenFixture(options: { enabled?: boolean; ready?: boolean } 
       void settingsCoordinator.mutate((draft) => { draft.zenModePosition = position; });
     },
   });
-  const settingsCoordinator: SettingsCoordinator<ClaudianSettings> = new SettingsCoordinator(
-    settings,
-    async () => undefined,
-    () => zen.reconcile(),
-  );
   const find = (id: string) => conversations.find(entry => entry.id === id) ?? null;
-  const plugin = {
-    ...(harness.plugin as ChatFeatureHost), app, settings,
+  const pool = createSessionRuntimePool(() => plugin);
+  const messaging = new SessionMessagingService({ getHost: () => plugin, getActiveConversationId: () => conversations[0]?.id ?? null, refreshModelControls: () => undefined });
+  cleanups.push(() => messaging.dispose());
+  const plugin = await createChatFeatureHost({
+    fixture: featureFixture, sessionRuntimes: pool,
+    bindSessionTools: id => messaging.bindSessionTools(id),
+    projects: createProjectsFake(),
     chatModelSelection: new ChatModelSelectionCoordinator(settingsCoordinator),
     executionPersistence: {
       registerExecutionBinding: () => undefined,
@@ -176,19 +174,14 @@ async function createZenFixture(options: { enabled?: boolean; ready?: boolean } 
       assertConversationExecutionAuthority: async () => undefined,
       recordConversationActivity: async () => undefined,
     },
-    getActiveEnvironmentVariables: () => '',
     getConversationSummary: find,
     getConversationSync: find,
     getConversationById: async (id: string) => find(id),
-    getConversationList: () => conversations,
+    getConversationList: () => conversations.map(conversation => ({ ...conversation, messageCount: conversation.messages.length, preview: '' })),
     updateConversation: async () => undefined,
     renameConversation: async () => undefined,
-    mutateSettings: settingsCoordinator.mutate.bind(settingsCoordinator),
-    getCommittedSettings: settingsCoordinator.getCommittedSettings.bind(settingsCoordinator),
     registerZenModeSource: (source: Parameters<ZenModeController['register']>[0]) => zen.register(source),
-  } as unknown as ChatFeatureHost;
-
-  installSessionRuntimePool(plugin);
+  });
 
   const tabGroups: Record<'left' | 'right' | 'main', Tabs> = {
     left: { selected: null }, right: { selected: null }, main: { selected: null },
@@ -201,13 +194,14 @@ async function createZenFixture(options: { enabled?: boolean; ready?: boolean } 
   };
 
   const addView = async (placement: 'left' | 'right' | 'main', ready = true) => {
-    const conversation = {
+    const conversation: Conversation = {
       id: `conversation-${conversations.length + 1}`,
+      title: 'Zen conversation', createdAt: testDate().getTime(), lastActivityAt: testDate().getTime(),
       providerId: 'claude',
       selectedModel: modelCatalogCases.find(candidate => candidate.id === 'claude')!.selected,
       messages: [],
       sessionId: `session-${conversations.length + 1}`,
-    } as unknown as Conversation;
+    };
     conversations.push(conversation);
     const split = placement === 'left' ? layout.leftSplit : placement === 'right' ? layout.rightSplit : null;
     const viewContainerEl = (split?.containerEl ?? layout.rootEl).createDiv({ cls: 'claudian-container' });
@@ -216,7 +210,7 @@ async function createZenFixture(options: { enabled?: boolean; ready?: boolean } 
     parent.selected ??= leaf;
     // Obsidian hides unselected tabs of a group.
     viewContainerEl.isShown = () => parent.selected === leaf;
-    const view = createClaudianView({
+    const view = await createClaudianView({
       host: plugin,
       app,
       leaf,
@@ -230,7 +224,7 @@ async function createZenFixture(options: { enabled?: boolean; ready?: boolean } 
     const sideChatChipHostEl = viewContainerEl.querySelector<HTMLElement>('.claudian-side-chat-chip-slot')!;
     const tab: AssembledTabRuntime = await createTabRuntime({
       plugin,
-      component: Object.assign(new Component(), { registerDomEvent: () => undefined, registerEvent: () => undefined }) as never,
+      component: new Component(),
       containerEl: view.tabContentEl,
       mentionDataProvider: new VaultMentionDataProvider(plugin.app),
       conversation, getProviderCatalogConfig: () => null, isRuntimeLive: () => true,
@@ -977,7 +971,6 @@ it('ignores removed focus targets and retains the return target across normal an
 
 it('closes the resume picker with Escape through the Obsidian keymap', async () => {
   const { app, view, tab, rightSplit, setCollapsed, scopes } = await createZenFixture();
-  Object.assign(app, { metadataCache: { on: () => ({}), offref: () => undefined } });
   view.wireEventHandlers();
   // Obsidian answers Escape at the app scope when no nearer scope consumes it.
   const appEscape = vi.fn(() => false);
@@ -1160,21 +1153,14 @@ it('collapses the expanded transcript on a click or focus move elsewhere in Obsi
 });
 
 it('moves the panel by its grip, docks it magnetically, and remembers where it was left', async () => {
-  const observers: Array<{ callback: ResizeObserverCallback; targets: Set<Element> }> = [];
-  globalThis.ResizeObserver = class {
-    readonly #entry: { callback: ResizeObserverCallback; targets: Set<Element> };
-    constructor(callback: ResizeObserverCallback) {
-      this.#entry = { callback, targets: new Set() };
-      observers.push(this.#entry);
-    }
-    observe(target: Element) { this.#entry.targets.add(target); }
-    unobserve(target: Element) { this.#entry.targets.delete(target); }
-    disconnect() { this.#entry.targets.clear(); }
-  } as unknown as typeof ResizeObserver;
+  const unobserve = vi.spyOn(ControlledResizeObserver.prototype, 'unobserve');
   const resize = (target: Element) => {
-    for (const { callback, targets } of observers) {
-      if (targets.has(target)) callback([], {} as ResizeObserver);
-    }
+    const rect = target.getBoundingClientRect();
+    const size = { inlineSize: rect.width, blockSize: rect.height };
+    triggerResize(target, {
+      contentRect: new DOMRectReadOnly(rect.x ?? rect.left, rect.y ?? rect.top, rect.width, rect.height),
+      contentBoxSize: [size], borderBoxSize: [size], devicePixelContentBoxSize: [size],
+    });
   };
   // jsdom lacks PointerEvent, so fireEvent would dispatch plain events without pointer coordinates.
   const originalPointerEvent = window.PointerEvent;
@@ -1401,7 +1387,7 @@ it('moves the panel by its grip, docks it magnetically, and remembers where it w
   workspace.trigger('layout-change');
   expect(offset(panel)).toEqual(['-200px', '0px']);
   expect(savedPosition()).toEqual({ x: -0.2, y: 0 });
-  expect(observers.every(observer => !observer.targets.has(statusBar))).toBe(true);
+  expect(unobserve).toHaveBeenCalledWith(statusBar);
 });
 
 it('keeps the preview line on the main chat while a side chat is selected', async () => {

@@ -1,0 +1,2327 @@
+import { EventEmitter, once } from 'node:events';
+import * as fs from 'node:fs/promises';
+import * as os from 'node:os';
+import * as path from 'node:path';
+
+import { capturedSelectionPrompt, capturedSelections } from '@test/helpers/capturedSelections';
+import { createProviderHostFixture } from '@test/helpers/providerRuntimeHost';
+import { readGrokCatalog, writeGrokCatalog } from '@test/helpers/providers/grokSettings';
+import { testDate } from '@test/helpers/testClock';
+
+import type {
+  ProviderExecutionEvent,
+  ProviderExecutionRequest,
+  ProviderInteractionPort,
+  ProviderSessionConfig,
+} from '@/core/execution';
+import {
+  isRewindableExecutionSession,
+  isSteerableExecutionSession,
+} from '@/core/execution';
+import type { ProviderHost } from '@/core/providers/ProviderHost';
+import type { SessionToolCallHandler, SessionToolListDestinationsArgs } from '@/core/session-tools/sessionToolSpecs';
+import type {
+  ACPLoadSessionRequest,
+  ACPNewSessionRequest,
+  ACPPromptRequest,
+  ACPSessionModelState,
+  ACPSessionNotification,
+  ACPSetSessionModelRequest,
+  ACPSetSessionModelResponse,
+  ACPSetSessionModeRequest,
+} from '@/providers/acp';
+import {
+  GrokExecutionBackend,
+  type GrokExecutionBackendOptions,
+  type GrokExecutionNativeConnection,
+  type GrokExecutionNativeCreateOptions,
+  type GrokExecutionNativeFactory,
+} from '@/providers/grok/execution/GrokExecutionBackend';
+import type { GrokDiscoveredModel } from '@/providers/grok/models';
+import { GrokModelCatalogCoordinator } from '@/providers/grok/runtime/GrokModelCatalogCoordinator';
+import { GrokModelDiscoveryService } from '@/providers/grok/runtime/GrokModelDiscoveryService';
+import {
+  updateGrokProviderSettings,
+} from '@/providers/grok/settings';
+
+let nativeHistoryRoot: string;
+function nativeSessionDirectory(id: string): string { return path.join(nativeHistoryRoot, 'sessions', 'fixture-vault', id); }
+
+function createBackend(host: ProviderHost, options?: GrokExecutionBackendOptions): GrokExecutionBackend {
+  return new GrokExecutionBackend(host.getRuntimeHost('grok'), options);
+}
+
+async function createGrokHost(model = 'grok-4', overrides: Partial<ProviderHost> = {}): Promise<ProviderHost> {
+  const { host } = await createProviderHostFixture({ overrides: { getResolvedProviderCliPath: async () => 'grok', ...overrides }, settings: { model: `grok/${model}`, providerConfigs: { grok: { enabled: true, environmentVariables: `GROK_HOME=${nativeHistoryRoot}`, visibleModels: [model, "grok-3"] } } } });
+  writeGrokCatalog(host.settings, { defaultModelId: model, fingerprint: 'fixture', refreshedAt: 1, models: [{ rawId: "grok-3", displayName: "Grok 3", supportsReasoning: false, reasoningEfforts: [] }, { rawId: model, displayName: model, supportsReasoning: true, reasoningEfforts: [] }] });
+  return host;
+}
+
+const interactionPort: ProviderInteractionPort = {
+  askUserQuestion: vi.fn(),
+  dismissInteraction: vi.fn(),
+  requestApproval: vi.fn(),
+};
+
+const sessionConfig: ProviderSessionConfig = {
+  interactionPort,
+  lifecycle: 'persistent',
+  nativePersistence: 'enabled',
+  resumeSeed: {
+    providerSessionId: 'session-existing',
+    providerState: { sessionDirectory: '/tmp/grok-session' },
+  },
+  workingDirectory: '/tmp/vault',
+};
+
+async function forkSessionConfig(): Promise<ProviderSessionConfig> {
+  const directory = nativeSessionDirectory('session-source');
+  await fs.mkdir(directory, { recursive: true });
+  const updates = [
+    { sessionUpdate: 'user_message_chunk', messageId: 'user-source', content: { type: 'text', text: 'Question' }, _meta: { promptIndex: 2 } },
+    { sessionUpdate: 'agent_message_chunk', messageId: 'assistant-source', content: { type: 'text', text: 'Answer' } },
+    { sessionUpdate: 'turn_completed' },
+  ].map(update => JSON.stringify({ method: 'session/update', params: { sessionId: 'session-source', update }, timestamp: testDate().getTime() / 1000 })).join('\n');
+  await fs.writeFile(path.join(directory, 'updates.jsonl'), updates);
+
+  return {
+    ...sessionConfig,
+    resumeSeed: {
+      providerState: {
+        forkSource: { resumeAt: 'assistant-source', sessionId: 'session-source' },
+        forkSourceSessionDirectory: nativeSessionDirectory('session-source'),
+        futureState: { retained: true },
+      },
+    },
+  };
+}
+
+function executionRequest(text = 'hello'): ProviderExecutionRequest {
+  return {
+    configuration: {
+      permissionMode: 'normal',
+      model: 'grok/grok-4',
+      reasoning: 'high',
+      systemInstructions: { kind: 'explicit', instructions: 'Be exact.' },
+    },
+    input: [{ text, type: 'text' }],
+    signal: new AbortController().signal,
+    toolPolicy: { kind: 'provider-default' },
+  };
+}
+
+function grok45Request(reasoning: string): ProviderExecutionRequest {
+  const request = executionRequest();
+  return {
+    ...request,
+    configuration: {
+      ...request.configuration,
+      model: 'grok/grok-4.5',
+      reasoning,
+    },
+  };
+}
+
+async function createGrok45Host(): Promise<ProviderHost> { return (await createGrokHost('grok-4.5')); }
+
+function persistGrok45Catalog(
+  host: ProviderHost,
+  models: GrokDiscoveredModel[] = [{
+    displayName: 'Grok 4.5',
+    rawId: 'grok-4.5',
+    reasoningMetadataResolved: true,
+    reasoningEfforts: [
+      { label: 'High', value: 'high' },
+      { label: 'Medium', value: 'medium' },
+      { label: 'Low', value: 'low' },
+    ],
+    supportsReasoning: true,
+  }],
+): void {
+  writeGrokCatalog(host.settings, {
+    defaultModelId: 'grok-4.5',
+    fingerprint: 'catalog-fixture',
+    models,
+    refreshedAt: 1,
+  });
+}
+
+function featurePermissionRequest(permissionMode: string): ProviderExecutionRequest {
+  const base = executionRequest(permissionMode);
+  return {
+    ...base,
+    configuration: {
+      model: base.configuration.model,
+      permissionMode,
+      reasoning: base.configuration.reasoning,
+      systemInstructions: base.configuration.systemInstructions,
+    },
+  };
+}
+
+async function collect(events: AsyncIterable<ProviderExecutionEvent>): Promise<ProviderExecutionEvent[]> {
+  const collected: ProviderExecutionEvent[] = [];
+  for await (const event of events) collected.push(event);
+  return collected;
+}
+
+interface Deferred<T> {
+  readonly promise: Promise<T>;
+  reject(reason: unknown): void;
+  resolve(value: T): void;
+}
+
+function createDeferred<T>(): Deferred<T> {
+  let reject!: (reason: unknown) => void;
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    reject = rejectPromise;
+    resolve = resolvePromise;
+  });
+  return { promise, reject, resolve };
+}
+
+/** Bounds absence checks while the native operation is deliberately held. */
+async function nextTask(): Promise<void> {
+  await new Promise<void>(resolve => setImmediate(resolve));
+}
+
+class FakeNativeConnection implements GrokExecutionNativeConnection {
+  private readonly calls = new EventEmitter();
+  async waitForCall(kind: 'prompt' | 'fork' | 'initialize' | 'shutdown' | 'interject', count = 1): Promise<void> {
+    const received = () => kind === 'prompt' ? this.promptRequests.length : kind === 'fork' ? this.forkCalls.length : kind === 'shutdown' ? this.shutdownCalls : kind === 'interject' ? this.interjectCalls.length : this.initializeCalls;
+    while (received() < count) await once(this.calls, kind);
+  }
+
+  readonly loadRequests: ACPLoadSessionRequest[] = [];
+  readonly modeRequests: ACPSetSessionModeRequest[] = [];
+  readonly modelRequests: ACPSetSessionModelRequest[] = [];
+  readonly newRequests: ACPNewSessionRequest[] = [];
+  readonly promptRequests: ACPPromptRequest[] = [];
+  cancelCalls = 0;
+  forkCalls: unknown[] = [];
+  initializeCalls = 0;
+  interjectCalls: unknown[] = [];
+  rewindCalls: unknown[] = [];
+  shutdownCalls = 0;
+  loadResponse: Awaited<ReturnType<GrokExecutionNativeConnection['loadSession']>> | null = null;
+  loadImplementation: (
+    request: ACPLoadSessionRequest,
+  ) => ReturnType<GrokExecutionNativeConnection['loadSession']> = async request => (
+    this.loadResponse ?? { sessionId: request.sessionId }
+  );
+  private notification: ((value: ACPSessionNotification, source: 'extension' | 'standard') => void)
+    | null = null;
+  private retainedNotification: ((
+    value: ACPSessionNotification,
+    source: 'extension' | 'standard',
+  ) => void) | null = null;
+  private permissionModeChanged: ((mode: 'normal' | 'yolo') => void) | null = null;
+  private modelsChanged: ((models: ACPSessionModelState) => void) | null = null;
+  private retainedModelsChanged: ((models: ACPSessionModelState) => void) | null = null;
+  initializeImplementation: () => Promise<void> = async () => {};
+  forkImplementation: (request: {
+    newCwd: string;
+    sourceSessionId: string;
+  }) => Promise<{
+    newCwd: string;
+    newSessionId: string;
+    parentSessionId: string;
+  }> = async (request) => ({
+    newCwd: request.newCwd,
+    newSessionId: 'session-forked',
+    parentSessionId: request.sourceSessionId,
+  });
+  private interjectionListener?: (value: { sessionId: string; interjectionId?: string }) => void;
+  onInterjection(listener: (value: { sessionId: string; interjectionId?: string }) => void): () => void {
+    this.interjectionListener = listener;
+    return () => { this.interjectionListener = undefined; };
+  }
+  emitInterjection(index = -1): void {
+    const request = this.interjectCalls.at(index) as { sessionId: string; interjectionId: string };
+    this.interjectionListener?.(request);
+  }
+  interjectImplementation: () => Promise<void> = async () => {};
+  modelImplementation: (
+    request: ACPSetSessionModelRequest,
+  ) => Promise<ACPSetSessionModelResponse> = async () => ({});
+  promptImplementation: () => Promise<{ stopReason: string }> = async () => ({
+    stopReason: 'end_turn',
+  });
+  shutdownImplementation: () => Promise<void> = async () => {};
+
+  cancel(): void {
+    this.cancelCalls += 1;
+  }
+
+  async initialize(): Promise<void> {
+    this.initializeCalls += 1;
+    this.calls.emit('initialize');
+    await this.initializeImplementation();
+  }
+
+  isAlive(): boolean {
+    return true;
+  }
+
+  async listCommands(): Promise<[]> {
+    return [];
+  }
+
+  async fork(request: unknown): Promise<{
+    newCwd: string;
+    newSessionId: string;
+    parentSessionId: string;
+  }> {
+    this.forkCalls.push(request);
+    this.calls.emit('fork');
+    const source = request as { newCwd: string; sourceSessionId: string };
+    const result = await this.forkImplementation(source);
+    await fs.mkdir(nativeSessionDirectory(result.newSessionId), { recursive: true });
+    return result;
+  }
+
+  async interject(request: unknown): Promise<void> {
+    this.interjectCalls.push(request);
+    this.calls.emit('interject');
+    await this.interjectImplementation();
+  }
+
+  async loadSession(
+    request: ACPLoadSessionRequest,
+  ): ReturnType<GrokExecutionNativeConnection['loadSession']> {
+    this.loadRequests.push(request);
+    return this.loadImplementation(request);
+  }
+
+  async newSession(request: ACPNewSessionRequest): Promise<{ sessionId: string }> {
+    this.newRequests.push(request);
+    return { sessionId: 'session-new' };
+  }
+
+  onNotification(
+    listener: (value: ACPSessionNotification, source: 'extension' | 'standard') => void,
+  ): () => void {
+    this.notification = listener;
+    this.retainedNotification = listener;
+    return () => { this.notification = null; };
+  }
+
+  onModelsChanged(listener: (models: ACPSessionModelState) => void): () => void {
+    this.modelsChanged = listener;
+    this.retainedModelsChanged = listener;
+    return () => { this.modelsChanged = null; };
+  }
+
+  async prompt(request: ACPPromptRequest): Promise<{ stopReason: string }> {
+    this.promptRequests.push(request);
+    this.calls.emit('prompt');
+    return this.promptImplementation();
+  }
+
+  async rewind(request: unknown): Promise<{
+    cleanFiles: string[];
+    conflicts: [];
+    error: null;
+    revertedFiles: string[];
+    success: boolean;
+  }> {
+    this.rewindCalls.push(request);
+    return {
+      cleanFiles: ['note.md'],
+      conflicts: [],
+      error: null,
+      revertedFiles: [],
+      success: true,
+    };
+  }
+
+  onModeChanged(listener: (mode: 'normal' | 'yolo') => void): () => void {
+    this.permissionModeChanged = listener;
+    return () => { this.permissionModeChanged = null; };
+  }
+
+  emitPermissionMode(mode: 'normal' | 'yolo'): void {
+    this.permissionModeChanged?.(mode);
+  }
+
+  async setMode(request: ACPSetSessionModeRequest): Promise<void> {
+    this.modeRequests.push(request);
+  }
+
+  async setModel(request: ACPSetSessionModelRequest): Promise<ACPSetSessionModelResponse> {
+    this.modelRequests.push(request);
+    return this.modelImplementation(request);
+  }
+
+  async shutdown(): Promise<void> {
+    this.shutdownCalls += 1;
+    this.calls.emit('shutdown');
+    await this.shutdownImplementation();
+  }
+
+  emit(
+    update: Record<string, unknown>,
+    source: 'extension' | 'standard' = 'standard',
+    metadata?: Record<string, unknown>,
+  ): void {
+    this.notification?.({
+      sessionId: 'session-existing',
+      update,
+      ...(metadata ? { _meta: metadata } : {}),
+    } as unknown as ACPSessionNotification, source);
+  }
+
+  emitRetained(
+    update: Record<string, unknown>,
+    source: 'extension' | 'standard' = 'standard',
+  ): void {
+    this.retainedNotification?.({
+      sessionId: 'session-existing',
+      update,
+    } as unknown as ACPSessionNotification, source);
+  }
+
+  emitModelsChanged(models: ACPSessionModelState): void {
+    this.modelsChanged?.(models);
+  }
+
+  emitRetainedModelsChanged(models: ACPSessionModelState): void {
+    this.retainedModelsChanged?.(models);
+  }
+}
+
+describe('GrokExecutionBackend', () => {
+  async function sessionToolFixture() {
+    const dispose = vi.fn();
+    const route = { url: 'http://127.0.0.1:1234/mcp', routeId: 'private-route', headers: { 'X-Claudian-Route': 'private-route' }, dispose };
+    const registerMCPRoute = vi.fn(async (_handler: SessionToolCallHandler) => route);
+    const host = await (await createGrokHost('grok-4', { sessionToolEndpoint: { registerMCPRoute, registerCallRoute: vi.fn() } }));
+    const port = { list: vi.fn(async (_args: SessionToolListDestinationsArgs, _signal: AbortSignal) => ({ sessions: [] })), send: vi.fn(async () => ({ sessionId: 'recipient', title: 'Review', provider: 'codex', status: 'queued' as const })), read: vi.fn() };
+    const servers = [{ type: 'http', name: 'claudian_sessions', url: route.url, headers: [{ name: 'X-Claudian-Route', value: route.routeId }] }];
+    return { host, port, route, registerMCPRoute, servers };
+  }
+
+  it.each(['new', 'load', 'fork'] as const)('binds session tools on %s and process replacement, then revokes the route', async mode => {
+    const fixture = (await sessionToolFixture());
+    const natives = [new FakeNativeConnection(), new FakeNativeConnection()];
+    const create = vi.fn().mockReturnValueOnce(natives[0]).mockReturnValueOnce(natives[1]);
+    const config = mode === 'fork' ? (await forkSessionConfig()) : mode === 'new' ? { ...sessionConfig, resumeSeed: undefined } : sessionConfig;
+    const session = createBackend(fixture.host, { nativeFactory: { create } })
+      .createSession({ ...config, sessionTools: fixture.port });
+    await collect(session.execute(executionRequest()).events);
+    const initial = mode === 'new' ? natives[0].newRequests[0] : natives[0].loadRequests[0];
+    expect(initial.mcpServers).toEqual(fixture.servers);
+    await collect(session.execute(featurePermissionRequest('yolo')).events);
+    expect(natives[1].loadRequests[0].mcpServers).toEqual(fixture.servers);
+    expect(fixture.registerMCPRoute).toHaveBeenCalledTimes(1);
+    await session.dispose();
+    expect(fixture.route.dispose).toHaveBeenCalledTimes(1);
+  });
+
+  it('revokes the route even when native shutdown rejects', async () => {
+    const fixture = (await sessionToolFixture());
+    const native = new FakeNativeConnection();
+    const session = createBackend(fixture.host, { nativeFactory: { create: () => native } })
+      .createSession({ ...sessionConfig, sessionTools: fixture.port });
+    await collect(session.execute(executionRequest()).events);
+    native.shutdownImplementation = async () => { throw new Error('shutdown failed'); };
+    await expect(session.dispose()).rejects.toThrow('shutdown failed');
+    expect(fixture.route.dispose).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(['cancel', 'dispose'] as const)('does not bind a native session when %s wins delayed route registration', async ending => {
+    const fixture = (await sessionToolFixture());
+    const registration = createDeferred<typeof fixture.route>();
+    const registrationStarted = createDeferred<void>();
+    fixture.registerMCPRoute.mockImplementation(() => { registrationStarted.resolve(); return registration.promise; });
+    const native = new FakeNativeConnection();
+    const session = createBackend(fixture.host, { nativeFactory: { create: () => native } })
+      .createSession({ ...sessionConfig, sessionTools: fixture.port });
+    const run = session.execute(executionRequest());
+    await registrationStarted.promise;
+    let disposal: Promise<void> | undefined;
+    if (ending === 'cancel') run.cancel();
+    else disposal = session.dispose();
+    await collect(run.events);
+    registration.resolve(fixture.route);
+    await (disposal ?? session.dispose());
+    expect(native.loadRequests).toEqual([]);
+    expect(fixture.route.dispose).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(['new', 'load', 'fork'] as const)('omits the session MCP server on %s without a port', async mode => {
+    const fixture = (await sessionToolFixture());
+    const native = new FakeNativeConnection();
+    const config = mode === 'fork' ? (await forkSessionConfig()) : mode === 'new' ? { ...sessionConfig, resumeSeed: undefined } : sessionConfig;
+    const session = createBackend(fixture.host, { nativeFactory: { create: () => native } }).createSession(config);
+    await collect(session.execute(executionRequest()).events);
+    expect((mode === 'new' ? native.newRequests[0] : native.loadRequests[0]).mcpServers).toEqual([]);
+    expect(fixture.registerMCPRoute).not.toHaveBeenCalled();
+    await session.dispose();
+  });
+
+  it.each(['provider-default', 'unrestricted', 'passive', 'read-only'] as const)(
+    'checks %s policy at MCP call time', async kind => {
+      const fixture = (await sessionToolFixture());
+      const native = new FakeNativeConnection();
+      const session = createBackend(fixture.host, { nativeFactory: { create: () => native } })
+        .createSession({ ...sessionConfig, sessionTools: fixture.port });
+      await collect(session.execute(executionRequest()).events);
+      native.promptImplementation = () => new Promise(() => {});
+      const run = session.execute({
+        ...executionRequest(),
+        toolPolicy: { kind },
+      });
+      await native.waitForCall('prompt', 2);
+      expect(fixture.registerMCPRoute).toHaveBeenCalledTimes(1);
+      const handler = fixture.registerMCPRoute.mock.calls[0][0];
+      const result = await handler({ name: 'claudian_send_message', args: { text: 'hello' }, signal: new AbortController().signal });
+      const allowed = kind === 'provider-default' || kind === 'unrestricted';
+      expect(result.isError).toBe(!allowed);
+      expect(fixture.port.send).toHaveBeenCalledTimes(allowed ? 1 : 0);
+      expect(result.text).toEqual(allowed
+        ? JSON.stringify({ sessionId: 'recipient', title: 'Review', provider: 'codex', status: 'queued' })
+        : 'Session tools are only available in Claudian main chat sessions with the default tool policy.');
+      await session.dispose();
+      await collect(run.events);
+    },
+  );
+
+  it.each(['complete', 'error', 'cancel', 'dispose', 'native-cancel'] as const)(
+    'revokes the owning call signal on %s and denies idle calls', async ending => {
+      const fixture = (await sessionToolFixture());
+      const native = new FakeNativeConnection();
+      const prompt = createDeferred<{ stopReason: string }>();
+      native.promptImplementation = () => prompt.promise;
+      const session = createBackend(fixture.host, { nativeFactory: { create: () => native } })
+        .createSession({ ...sessionConfig, sessionTools: fixture.port });
+      const run = session.execute(executionRequest());
+      await native.waitForCall('prompt');
+      expect(fixture.registerMCPRoute).toHaveBeenCalledTimes(1);
+      const handler = fixture.registerMCPRoute.mock.calls[0][0];
+      const nativeCancel = new AbortController();
+      fixture.port.list.mockImplementation((_args, signal) => new Promise((_resolve, reject) => {
+        signal.addEventListener('abort', () => reject(new Error('cancelled')), { once: true });
+      }));
+      const call = handler({ name: 'claudian_list_destinations', args: {}, signal: nativeCancel.signal });
+      const owningSignal = fixture.port.list.mock.calls[0][1];
+      expect(owningSignal.aborted).toBe(false);
+      if (ending === 'native-cancel') nativeCancel.abort();
+      else if (ending === 'complete') prompt.resolve({ stopReason: 'end_turn' });
+      else if (ending === 'error') prompt.reject(new Error('transport closed'));
+      else if (ending === 'cancel') run.cancel();
+      else await session.dispose();
+      if (ending !== 'native-cancel') await collect(run.events);
+      expect(owningSignal.aborted).toBe(true);
+      expect((await call).isError).toBe(true);
+      if (ending === 'native-cancel') {
+        await session.dispose();
+        await collect(run.events);
+      }
+      expect((await handler({ name: 'claudian_list_destinations', args: {}, signal: new AbortController().signal })).isError).toBe(true);
+      expect(fixture.port.list).toHaveBeenCalledTimes(1);
+      if (ending === 'complete') {
+        await collect(session.execute(executionRequest('next run')).events);
+      }
+      expect(owningSignal.aborted).toBe(true);
+      await session.dispose();
+    },
+  );
+
+  it('auto-allows session MCP permissions without prompting and rejects them after cancellation', async () => {
+    const fixture = (await sessionToolFixture());
+    const native = new FakeNativeConnection();
+    native.promptImplementation = () => new Promise(() => {});
+    let options!: GrokExecutionNativeCreateOptions;
+    const session = createBackend(fixture.host, {
+      nativeFactory: { create: value => { options = value; return native; } },
+    }).createSession({ ...sessionConfig, sessionTools: fixture.port });
+    const run = session.execute(executionRequest());
+    await native.waitForCall('prompt');
+    const request = {
+      sessionId: 'session-existing',
+      options: [{ kind: 'allow_once' as const, name: 'Allow', optionId: 'allow-once' }],
+      toolCall: { toolCallId: 'session-tool', title: 'use_tool', rawInput: { tool_name: 'claudian_sessions__claudian_send_message', tool_input: { text: 'hello' } } },
+    };
+    await expect(options.requestPermission(request)).resolves.toEqual({ outcome: { outcome: 'selected', optionId: 'allow-once' } });
+    expect(interactionPort.requestApproval).not.toHaveBeenCalled();
+    run.cancel();
+    await expect(options.requestPermission(request)).resolves.toEqual({ outcome: { outcome: 'cancelled' } });
+    await collect(run.events);
+    await session.dispose();
+  });
+
+  it('rejects an unavailable selected model before native startup with a configuration error', async () => {
+    const host = (await createGrokHost());
+    host.settings.providerConfigs!.grok!.visibleModels = [];
+    const nativeFactory = { create: vi.fn() };
+    const session = createBackend(host, { nativeFactory }).createSession(sessionConfig);
+    const events = await collect(session.execute(executionRequest()).events);
+    expect(events).toContainEqual(expect.objectContaining({ type: 'execution_error', category: 'configuration' }));
+    expect(events.some(event => event.type === 'turn_started' && event.accepted)).toBe(false);
+    expect(nativeFactory.create).not.toHaveBeenCalled();
+    await session.dispose();
+  });
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    nativeHistoryRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'grok-protocol-history-'));
+
+  });
+  afterEach(async () => { await fs.rm(nativeHistoryRoot, { recursive: true, force: true }); });
+
+  it('rejects compact without consuming history that still needs recovery', async () => {
+    const native = new FakeNativeConnection();
+    const session = createBackend((await createGrokHost()), {
+      nativeFactory: { create: () => native },
+    }).createSession({ ...sessionConfig, resumeSeed: undefined });
+    const conversationHistory = [{ id: 'prior', role: 'user' as const, content: 'Remember prior context', timestamp: testDate().getTime() }];
+    try {
+      const events = await collect(session.execute({ ...executionRequest('/compact'), conversationHistory }).events);
+      expect(events.at(-1)).toMatchObject({ type: 'execution_error', message: expect.stringContaining('normal message') });
+      expect(native.promptRequests).toEqual([]);
+      await collect(session.execute({ ...executionRequest('Continue'), conversationHistory }).events);
+      expect(native.promptRequests[0].prompt).toEqual([{ type: 'text', text: expect.stringContaining('Remember prior context') }]);
+    } finally { await session.dispose(); }
+  });
+
+  // Native SessionUpdate::AutoCompactCompleted is used by both manual and auto compaction.
+  // Wire fields follow xai-grok-shell/src/extensions/notification.rs and session/compaction.rs.
+
+  it('rejects an unsupported reasoning effort after cold-session model discovery', async () => {
+    const native = new FakeNativeConnection();
+    native.loadResponse = {
+      models: {
+        availableModels: [{ modelId: 'grok-4.5', name: 'Grok 4.5' }],
+        currentModelId: 'grok-4.5',
+      },
+      sessionId: 'session-existing',
+    };
+    const host = (await createGrok45Host());
+    const mergeLiveModels = vi.fn(async (models: GrokDiscoveredModel[]) => {
+      persistGrok45Catalog(host, models);
+      return { changed: true };
+    });
+    const session = createBackend(host, {
+      modelCatalogCoordinator: { mergeLiveModels },
+      nativeFactory: { create: () => native },
+    }).createSession(sessionConfig);
+
+    const events = await collect(session.execute(grok45Request('max')).events);
+
+    expect(mergeLiveModels).toHaveBeenCalledTimes(1);
+    expect(events).toContainEqual(expect.objectContaining({ type: 'execution_error' }));
+    expect(native.modelRequests).toEqual([]);
+    expect(native.promptRequests).toEqual([]);
+  });
+
+  it('rejects an unadvertised reasoning effort when model metadata is unknown', async () => {
+    const native = new FakeNativeConnection();
+    const session = createBackend(
+      (await createGrok45Host()),
+      { nativeFactory: { create: () => native } },
+    ).createSession(sessionConfig);
+
+    const events = await collect(session.execute(grok45Request('max')).events);
+
+    expect(events).toContainEqual(expect.objectContaining({ type: 'execution_error' }));
+    expect(native.modelRequests).toEqual([]);
+    expect(native.promptRequests).toEqual([]);
+  });
+
+  it('accepts a future effort value advertised by live session metadata', async () => {
+    const native = new FakeNativeConnection();
+    native.loadResponse = {
+      _meta: {
+        reasoningEffort: 'max',
+        'x.ai/sessionConfig': {
+          options: [
+            { category: 'mode', id: 'high', label: 'High', selected: false },
+            { category: 'mode', id: 'max', label: 'Maximum', selected: true },
+          ],
+        },
+      },
+      models: {
+        availableModels: [{
+          _meta: { supportsReasoningEffort: true },
+          modelId: 'grok-4.5',
+          name: 'Grok 4.5',
+        }],
+        currentModelId: 'grok-4.5',
+      },
+      sessionId: 'session-existing',
+    };
+    const host = (await createGrok45Host());
+    const mergeLiveModels = vi.fn(async (models: GrokDiscoveredModel[]) => {
+      persistGrok45Catalog(host, models);
+      return { changed: true };
+    });
+    const session = createBackend(host, {
+      modelCatalogCoordinator: { mergeLiveModels },
+      nativeFactory: { create: () => native },
+    }).createSession(sessionConfig);
+
+    await collect(session.execute(grok45Request('max')).events);
+
+    expect(native.modelRequests).toEqual([{
+      _meta: { reasoningEffort: 'max' },
+      modelId: 'grok-4.5',
+      sessionId: 'session-existing',
+    }]);
+    expect(mergeLiveModels).toHaveBeenCalledWith([
+      expect.objectContaining({
+        defaultReasoningEffort: 'max',
+        reasoningEfforts: expect.arrayContaining([
+          expect.objectContaining({ value: 'max' }),
+        ]),
+        reasoningMetadataResolved: true,
+      }),
+    ], 'grok-4.5', expect.any(String));
+  });
+
+  it('persists authoritative metadata returned by model selection', async () => {
+    const native = new FakeNativeConnection();
+    native.modelImplementation = async () => ({
+      _meta: {
+        model: {
+          reasoningEffort: 'max',
+          supportsReasoningEffort: true,
+          'x.ai/sessionConfig': {
+            options: [
+              { category: 'mode', id: 'high', label: 'High', selected: false },
+              { category: 'mode', id: 'max', label: 'Maximum', selected: true },
+            ],
+          },
+        },
+      },
+    });
+    const host = (await createGrok45Host());
+    persistGrok45Catalog(host);
+    const mergeLiveModels = vi.fn();
+    const session = createBackend(host, {
+      modelCatalogCoordinator: { mergeLiveModels },
+      nativeFactory: { create: () => native },
+    }).createSession(sessionConfig);
+
+    await collect(session.execute(grok45Request('low')).events);
+
+    expect(mergeLiveModels).toHaveBeenCalledWith([
+      expect.objectContaining({
+        defaultReasoningEffort: 'max',
+        rawId: 'grok-4.5',
+        reasoningMetadataResolved: true,
+      }),
+    ], undefined, expect.any(String));
+  });
+
+  it('continues the turn when selected-model metadata persistence fails', async () => {
+    const native = new FakeNativeConnection();
+    native.modelImplementation = async () => ({
+      _meta: {
+        model: {
+          reasoningEffort: 'high',
+          supportsReasoningEffort: true,
+          'x.ai/sessionConfig': {
+            options: [
+              { category: 'mode', id: 'high', label: 'High', selected: true },
+            ],
+          },
+        },
+      },
+    });
+    const host = (await createGrok45Host());
+    persistGrok45Catalog(host);
+    const mergeLiveModels = vi.fn(async () => {
+      throw new Error('settings persistence failed');
+    });
+    const session = createBackend(host, {
+      modelCatalogCoordinator: { mergeLiveModels },
+      nativeFactory: { create: () => native },
+    }).createSession(sessionConfig);
+
+    const events = await collect(session.execute(grok45Request('high')).events);
+
+    expect(mergeLiveModels).toHaveBeenCalledTimes(1);
+    expect(native.promptRequests).toHaveLength(1);
+    expect(events.at(-1)).toMatchObject({ type: 'turn_completed' });
+  });
+
+  it('continues the turn when session-model metadata persistence fails', async () => {
+    const native = new FakeNativeConnection();
+    native.loadResponse = {
+      models: {
+        availableModels: [{ modelId: 'grok-4.5', name: 'Grok 4.5' }],
+        currentModelId: 'grok-4.5',
+      },
+      sessionId: 'session-existing',
+    };
+    const host = (await createGrok45Host());
+    persistGrok45Catalog(host);
+    const mergeLiveModels = vi.fn(async () => {
+      throw new Error('settings persistence failed');
+    });
+    const session = createBackend(host, {
+      modelCatalogCoordinator: { mergeLiveModels },
+      nativeFactory: { create: () => native },
+    }).createSession(sessionConfig);
+
+    const events = await collect(session.execute(grok45Request('high')).events);
+
+    expect(mergeLiveModels).toHaveBeenCalledTimes(1);
+    expect(native.promptRequests).toHaveLength(1);
+    expect(events.at(-1)).toMatchObject({ type: 'turn_completed' });
+  });
+
+  it('persists live model updates and fences notifications from a quarantined native', async () => {
+    const native = new FakeNativeConnection();
+    native.promptImplementation = () => new Promise(() => {});
+    const host = await createGrok45Host();
+    const runtime = host.getRuntimeHost('grok');
+    const coordinator = new GrokModelCatalogCoordinator(runtime, new GrokModelDiscoveryService(runtime));
+    const merge = coordinator.mergeLiveModels.bind(coordinator);
+    const merged = createDeferred<void>();
+    const mergeLiveModels = vi.spyOn(coordinator, 'mergeLiveModels').mockImplementation(async (...args) => {
+      const result = await merge(...args);
+      merged.resolve();
+      return result;
+    });
+    onTestFinished(() => coordinator.dispose());
+    const session = createBackend(host, {
+      modelCatalogCoordinator: coordinator,
+      nativeFactory: { create: () => native },
+    }).createSession(sessionConfig);
+    const run = session.execute(grok45Request('high'));
+    await native.waitForCall('prompt');
+    const models: ACPSessionModelState = {
+      availableModels: [{
+        _meta: {
+          reasoningEffort: 'max',
+          supportsReasoningEffort: true,
+          'x.ai/sessionConfig': {
+            options: [
+              { category: 'mode', id: 'high', label: 'High', selected: false },
+              { category: 'mode', id: 'max', label: 'Maximum', selected: true },
+            ],
+          },
+        },
+        modelId: 'grok-4.5',
+        name: 'Grok 4.5',
+      }],
+      currentModelId: 'grok-4.5',
+    };
+
+    native.emitModelsChanged(models);
+    await merged.promise;
+    expect(readGrokCatalog(host.settings)?.models).toEqual(expect.arrayContaining([
+      expect.objectContaining({ rawId: 'grok-4.5', defaultReasoningEffort: 'max' }),
+    ]));
+    expect(mergeLiveModels).toHaveBeenCalledWith([
+      expect.objectContaining({
+        defaultReasoningEffort: 'max',
+        rawId: 'grok-4.5',
+        reasoningMetadataResolved: true,
+      }),
+    ], 'grok-4.5', expect.any(String));
+
+    run.cancel();
+    await collect(run.events);
+    native.emitRetainedModelsChanged(models);
+    await nextTask();
+    expect(mergeLiveModels).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects an unsupported toolbar effort without substituting a saved preference', async () => {
+    const native = new FakeNativeConnection();
+    const host = (await createGrok45Host());
+    persistGrok45Catalog(host);
+    updateGrokProviderSettings(host.settings, {
+      preferredReasoningByModel: { 'grok-4.5': 'low' },
+    });
+    const session = createBackend(
+      host,
+      { nativeFactory: { create: () => native } },
+    ).createSession(sessionConfig);
+
+    const events = await collect(session.execute(grok45Request('max')).events);
+
+    expect(events).toContainEqual(expect.objectContaining({ type: 'execution_error' }));
+    expect(native.modelRequests).toEqual([]);
+    expect(native.promptRequests).toEqual([]);
+  });
+
+  it('omits a saved per-model preference when the request has no projected effort', async () => {
+    const native = new FakeNativeConnection();
+    const host = (await createGrok45Host());
+    persistGrok45Catalog(host);
+    updateGrokProviderSettings(host.settings, {
+      preferredReasoningByModel: { 'grok-4.5': 'low' },
+    });
+    const request = grok45Request('high');
+    const { reasoning: _reasoning, ...configuration } = request.configuration;
+    const session = createBackend(
+      host,
+      { nativeFactory: { create: () => native } },
+    ).createSession(sessionConfig);
+
+    await collect(session.execute({ ...request, configuration }).events);
+
+    expect(native.modelRequests).toEqual([{
+      modelId: 'grok-4.5',
+      sessionId: 'session-existing',
+    }]);
+  });
+
+  it('keeps a requested reasoning effort the selected model advertises', async () => {
+    const native = new FakeNativeConnection();
+    const host = (await createGrok45Host());
+    persistGrok45Catalog(host);
+    const session = createBackend(
+      host,
+      { nativeFactory: { create: () => native } },
+    ).createSession(sessionConfig);
+
+    await collect(session.execute(grok45Request('low')).events);
+
+    expect(native.modelRequests).toEqual([{
+      _meta: { reasoningEffort: 'low' },
+      modelId: 'grok-4.5',
+      sessionId: 'session-existing',
+    }]);
+  });
+
+  it.each([
+    ['normal', { autoMode: false, yoloMode: false }, 1],
+    ['acceptEdits', { autoMode: false, yoloMode: false }, 1],
+    ['auto', { autoMode: true, yoloMode: false }, 2],
+    ['yolo', { autoMode: false, yoloMode: true }, 2],
+  ] as const)(
+    'reloads the native session with %s permission metadata',
+    async (permissionMode, meta, loadCount) => {
+      const native = new FakeNativeConnection();
+      const session = createBackend(
+        (await createGrokHost()),
+        { nativeFactory: { create: () => native } },
+      ).createSession(sessionConfig);
+
+      await collect(session.execute(featurePermissionRequest('normal')).events);
+      await collect(session.execute(featurePermissionRequest(permissionMode)).events);
+
+      expect(native.modeRequests).toEqual([
+        { modeId: 'default', sessionId: 'session-existing' },
+        { modeId: 'default', sessionId: 'session-existing' },
+      ]);
+      expect(native.loadRequests).toHaveLength(loadCount);
+      expect(native.loadRequests.at(-1)?._meta).toMatchObject(meta);
+    },
+  );
+
+  it.each(['auto', 'yolo'])(
+    'configures and prompts the replacement process after switching to %s',
+    async (permissionMode) => {
+      const natives: FakeNativeConnection[] = [];
+      const session = createBackend((await createGrokHost()), {
+        nativeFactory: {
+          create: () => {
+            const native = new FakeNativeConnection();
+            natives.push(native);
+            return native;
+          },
+        },
+      }).createSession(sessionConfig);
+
+      await collect(session.execute(featurePermissionRequest('normal')).events);
+      const events = await collect(session.execute(featurePermissionRequest(permissionMode)).events);
+
+      expect(events).not.toContainEqual(expect.objectContaining({ type: 'execution_error' }));
+      expect(natives).toHaveLength(2);
+      expect(natives[0]?.shutdownCalls).toBe(1);
+      expect(natives[0]?.promptRequests).toHaveLength(1);
+      expect(natives[0]?.modeRequests).toHaveLength(1);
+      expect(natives[1]?.loadRequests).toHaveLength(1);
+      expect(natives[1]?.modeRequests).toHaveLength(1);
+      expect(natives[1]?.promptRequests).toHaveLength(1);
+    },
+  );
+
+  it('cancels an accept-edits edit request that arrives after cancellation starts', async () => {
+    const native = new FakeNativeConnection();
+    native.promptImplementation = () => new Promise(() => {});
+    let nativeOptions!: GrokExecutionNativeCreateOptions;
+    const requestApproval = vi.fn();
+    const session = createBackend((await createGrokHost()), {
+      nativeFactory: { create: options => { nativeOptions = options; return native; } },
+    }).createSession({
+      ...sessionConfig,
+      interactionPort: { ...interactionPort, requestApproval },
+    });
+    const run = session.execute(featurePermissionRequest('acceptEdits'));
+    await native.waitForCall('prompt');
+
+    run.cancel();
+    const response = await nativeOptions.requestPermission({
+      options: [{ kind: 'allow_once', name: 'Allow', optionId: 'allow-once' }],
+      sessionId: 'session-existing',
+      toolCall: { kind: 'edit', title: 'probe.txt', toolCallId: 'tool-late' },
+    });
+
+    expect(response).toEqual({ outcome: { outcome: 'cancelled' } });
+    expect(requestApproval).not.toHaveBeenCalled();
+    await collect(run.events);
+  });
+
+  // The approval port denies, so prompted requests resolve to reject-once.
+  it.each([
+    ['normal', 'edit', 1, 'reject-once'],
+    ['normal', 'execute', 1, 'reject-once'],
+    ['acceptEdits', 'edit', 0, 'allow-once'],
+    ['acceptEdits', 'execute', 1, 'reject-once'],
+  ] as const)(
+    'answers a %s %s permission request after %i prompts with %s',
+    async (permissionMode, kind, prompts, optionId) => {
+      const native = new FakeNativeConnection();
+      native.promptImplementation = () => new Promise(() => {});
+      let nativeOptions!: GrokExecutionNativeCreateOptions;
+      const requestApproval = vi.fn(async (request: { interactionId: string }) => ({
+        decision: 'deny' as const,
+        interactionId: request.interactionId,
+      }));
+      const session = createBackend((await createGrokHost()), {
+        nativeFactory: { create: options => { nativeOptions = options; return native; } },
+      }).createSession({
+        ...sessionConfig,
+        interactionPort: { ...interactionPort, requestApproval },
+      });
+      const run = session.execute(featurePermissionRequest(permissionMode));
+      await native.waitForCall('prompt');
+
+      const response = await nativeOptions.requestPermission({
+        options: [
+          { kind: 'allow_always', name: 'Allow edits this session', optionId: 'allow-edits-session' },
+          { kind: 'allow_once', name: 'Allow', optionId: 'allow-once' },
+          { kind: 'reject_once', name: 'Reject', optionId: 'reject-once' },
+        ],
+        sessionId: 'session-existing',
+        toolCall: { kind, title: 'probe.txt', toolCallId: 'tool-1' },
+      });
+
+      expect(requestApproval).toHaveBeenCalledTimes(prompts);
+      expect(response).toEqual({ outcome: { outcome: 'selected', optionId } });
+      run.cancel();
+      await collect(run.events);
+    },
+  );
+
+  it.each(['acceptEdits', 'auto', 'normal'])(
+    'keeps the selected %s mode when native always-approve turns off',
+    async (permissionMode) => {
+      const native = new FakeNativeConnection();
+      native.promptImplementation = () => new Promise(() => {});
+      const session = createBackend(
+        (await createGrokHost()),
+        { nativeFactory: { create: () => native } },
+      ).createSession(sessionConfig);
+      const permissions: string[] = [];
+      session.onEvent(event => {
+        if (event.type === 'permission_mode_changed') permissions.push(event.permissionMode);
+      });
+      const run = session.execute(featurePermissionRequest(permissionMode));
+      await native.waitForCall('prompt');
+
+      native.emitPermissionMode('normal');
+      native.emitPermissionMode('yolo');
+      native.emitPermissionMode('normal');
+      run.cancel();
+      await collect(run.events);
+
+      expect(permissions).toEqual(['yolo', permissionMode]);
+    },
+  );
+
+  it('normalizes a legacy plan permission selection to default native mode', async () => {
+    const native = new FakeNativeConnection();
+    const session = createBackend(
+      (await createGrokHost()),
+      { nativeFactory: { create: () => native } },
+    ).createSession(sessionConfig);
+
+    await collect(session.execute(featurePermissionRequest('plan')).events);
+
+    expect(native.modeRequests).toEqual([
+      { modeId: 'default', sessionId: 'session-existing' },
+    ]);
+  });
+
+  it('emits newly established native session state before terminal completion', async () => {
+    const native = new FakeNativeConnection();
+    const session = createBackend(
+      (await createGrokHost()),
+      { nativeFactory: { create: () => native } },
+    ).createSession({
+      ...sessionConfig,
+      resumeSeed: undefined,
+    });
+
+    const events = await collect(session.execute(executionRequest()).events);
+    const stateEvents = events.filter(event => event.type === 'session_state_changed');
+
+    expect(native.newRequests).toHaveLength(1);
+    expect(stateEvents).toEqual([
+      expect.objectContaining({
+        snapshot: expect.objectContaining({
+          status: 'executing',
+        }),
+      }),
+      expect.objectContaining({
+        snapshot: expect.objectContaining({
+          providerSessionId: 'session-new',
+          status: 'executing',
+        }),
+      }),
+      expect.objectContaining({
+        snapshot: expect.objectContaining({
+          providerSessionId: 'session-new',
+          providerState: expect.objectContaining({
+            nativeConversationContextEstablished: true,
+          }),
+          status: 'executing',
+        }),
+      }),
+      expect.objectContaining({
+        snapshot: expect.objectContaining({
+          providerSessionId: 'session-new',
+          status: 'idle',
+        }),
+      }),
+    ]);
+    expect(stateEvents[0]).not.toHaveProperty('snapshot.providerSessionId');
+    expect(events.at(-2)).toMatchObject({
+      snapshot: expect.objectContaining({
+        providerSessionId: 'session-new',
+        status: 'idle',
+      }),
+      type: 'session_state_changed',
+    });
+    expect(events.at(-1)?.type).toBe('turn_completed');
+  });
+
+  it('cancels a pre-aborted request without starting native work', async () => {
+    const nativeFactory: GrokExecutionNativeFactory = {
+      create: vi.fn(() => new FakeNativeConnection()),
+    };
+    const session = createBackend(
+      (await createGrokHost()),
+      { nativeFactory },
+    ).createSession({
+      ...sessionConfig,
+      resumeSeed: undefined,
+    });
+    const abortController = new AbortController();
+    abortController.abort();
+
+    const run = session.execute({
+      ...executionRequest(),
+      signal: abortController.signal,
+    });
+    expect(nativeFactory.create).not.toHaveBeenCalled();
+    const events = await collect(run.events);
+
+    expect(nativeFactory.create).not.toHaveBeenCalled();
+    expect(events.filter(event => (
+      event.type === 'cancelled'
+      || event.type === 'execution_error'
+      || event.type === 'turn_completed'
+    ))).toEqual([
+      expect.objectContaining({ reason: 'aborted', type: 'cancelled' }),
+    ]);
+  });
+
+  it('quarantines cancellation and replaces the native process before the next turn', async () => {
+    const first = new FakeNativeConnection();
+    const second = new FakeNativeConnection();
+    first.promptImplementation = () => new Promise(() => {});
+    const nativeFactory: GrokExecutionNativeFactory = {
+      create: vi.fn()
+        .mockReturnValueOnce(first)
+        .mockReturnValueOnce(second),
+    };
+    const session = createBackend(
+      (await createGrokHost()),
+      { nativeFactory },
+    ).createSession(sessionConfig);
+
+    const firstRun = session.execute(executionRequest('first'));
+    await first.waitForCall('prompt');
+    firstRun.cancel();
+    const firstEvents = await collect(firstRun.events);
+    const secondEvents = await collect(session.execute(executionRequest('second')).events);
+
+    expect(first.cancelCalls).toBe(1);
+    expect(first.shutdownCalls).toBe(1);
+    expect(nativeFactory.create).toHaveBeenCalledTimes(2);
+    expect(firstEvents.at(-2)).toMatchObject({
+      snapshot: expect.objectContaining({
+        invalidation: expect.objectContaining({
+          reason: 'cancelled',
+          recoverable: true,
+        }),
+        providerSessionId: 'session-existing',
+        status: 'invalidated',
+      }),
+      type: 'session_state_changed',
+    });
+    expect(firstEvents.at(-1)?.type).toBe('cancelled');
+    expect(secondEvents.at(-1)?.type).toBe('turn_completed');
+  });
+
+  it('cancels the run when the consumer stops iterating while it is still open', async () => {
+    const native = new FakeNativeConnection();
+    native.promptImplementation = () => new Promise(() => {});
+    const session = createBackend(
+      (await createGrokHost()),
+      { nativeFactory: { create: () => native } },
+    ).createSession(sessionConfig);
+    const run = session.execute(executionRequest());
+    await native.waitForCall('prompt');
+
+    await run.events[Symbol.asyncIterator]().return?.();
+    for (let attempt = 0; attempt < 20 && native.cancelCalls === 0; attempt += 1) {
+      await Promise.resolve();
+    }
+
+    expect(native.cancelCalls).toBe(1);
+  });
+
+  it('quarantines native output as soon as cancellation begins', async () => {
+    const native = new FakeNativeConnection();
+    native.promptImplementation = () => new Promise(() => {});
+    const session = createBackend(
+      (await createGrokHost()),
+      { nativeFactory: { create: () => native } },
+    ).createSession(sessionConfig);
+    const run = session.execute(executionRequest());
+    await native.waitForCall('prompt');
+
+    run.cancel();
+    native.emit({
+      content: { text: 'late during cancel delivery', type: 'text' },
+      sessionUpdate: 'agent_message_chunk',
+    });
+    const events = await collect(run.events);
+
+    expect(events.some(event => event.type === 'text_delta')).toBe(false);
+    expect(events.at(-1)).toMatchObject({
+      reason: 'cancelled',
+      type: 'cancelled',
+    });
+  });
+
+  it('emits only cancelled when quarantine shutdown rejects the pending native prompt', async () => {
+    const native = new FakeNativeConnection();
+    let rejectPrompt: ((reason: Error) => void) | undefined;
+    native.promptImplementation = () => new Promise((_resolve, reject) => {
+      rejectPrompt = reject;
+    });
+    native.shutdownImplementation = async () => {
+      native.emit({
+        content: { text: 'late during quarantine', type: 'text' },
+        sessionUpdate: 'agent_message_chunk',
+      });
+      rejectPrompt?.(new Error('transport closed while prompting'));
+    };
+    const session = createBackend(
+      (await createGrokHost()),
+      { nativeFactory: { create: () => native } },
+    ).createSession(sessionConfig);
+    const run = session.execute(executionRequest());
+    await native.waitForCall('prompt');
+
+    run.cancel();
+    const events = await collect(run.events);
+
+    expect(events.filter(event => (
+      event.type === 'cancelled'
+      || event.type === 'execution_error'
+      || event.type === 'turn_completed'
+    ))).toEqual([
+      expect.objectContaining({ reason: 'cancelled', type: 'cancelled' }),
+    ]);
+    expect(native.cancelCalls).toBe(1);
+    expect(native.shutdownCalls).toBe(1);
+    expect(events.some(event => event.type === 'text_delta')).toBe(false);
+  });
+
+  it('fences startup rejection caused by cancellation shutdown', async () => {
+    const native = new FakeNativeConnection();
+    let rejectInitialize: ((reason: Error) => void) | undefined;
+    native.initializeImplementation = () => new Promise((_resolve, reject) => {
+      rejectInitialize = reject;
+    });
+    native.shutdownImplementation = async () => {
+      rejectInitialize?.(new Error('transport closed while initializing'));
+    };
+    const session = createBackend(
+      (await createGrokHost()),
+      { nativeFactory: { create: () => native } },
+    ).createSession(sessionConfig);
+    const run = session.execute(executionRequest());
+    await native.waitForCall('initialize');
+
+    run.cancel();
+    const events = await collect(run.events);
+
+    expect(events.filter(event => (
+      event.type === 'cancelled'
+      || event.type === 'execution_error'
+      || event.type === 'turn_completed'
+    ))).toEqual([
+      expect.objectContaining({ reason: 'cancelled', type: 'cancelled' }),
+    ]);
+    expect(native.shutdownCalls).toBe(1);
+  });
+
+  it('cleans failed initialization before retrying with a fresh native generation', async () => {
+    const failedNative = new FakeNativeConnection();
+    const retryNative = new FakeNativeConnection();
+    const failedCleanup = createDeferred<void>();
+    const retryPrompt = createDeferred<{ stopReason: string }>();
+    failedNative.initializeImplementation = async () => {
+      throw new Error('authentication handshake failed');
+    };
+    failedNative.shutdownImplementation = async () => {
+      await failedCleanup.promise;
+      throw new Error('failed native cleanup also failed');
+    };
+    retryNative.promptImplementation = () => retryPrompt.promise;
+    const nativeFactory: GrokExecutionNativeFactory = {
+      create: vi.fn()
+        .mockReturnValueOnce(failedNative)
+        .mockReturnValueOnce(retryNative),
+    };
+    const session = createBackend(
+      (await createGrokHost()),
+      { nativeFactory },
+    ).createSession(sessionConfig);
+
+    let firstRunSettled = false;
+    const firstEventsPromise = collect(session.execute(executionRequest('first')).events)
+      .then(events => {
+        firstRunSettled = true;
+        return events;
+      });
+    await failedNative.waitForCall('shutdown');
+
+    expect(failedNative.isAlive()).toBe(true);
+    expect(failedNative.shutdownCalls).toBe(1);
+    expect(firstRunSettled).toBe(false);
+
+    failedCleanup.resolve();
+    const firstEvents = await firstEventsPromise;
+    expect(firstEvents.at(-1)).toMatchObject({
+      message: 'authentication handshake failed',
+      type: 'execution_error',
+    });
+    expect(failedNative.shutdownCalls).toBe(1);
+
+    const retryEventsPromise = collect(session.execute(executionRequest('retry')).events);
+    await retryNative.waitForCall('prompt');
+    failedNative.emitRetained({
+      content: { text: 'stale failed native output', type: 'text' },
+      sessionUpdate: 'agent_message_chunk',
+    });
+    retryPrompt.resolve({ stopReason: 'end_turn' });
+    const retryEvents = await retryEventsPromise;
+
+    expect(nativeFactory.create).toHaveBeenCalledTimes(2);
+    expect(failedNative.initializeCalls).toBe(1);
+    expect(retryNative.initializeCalls).toBe(1);
+    expect(retryEvents.some(event => (
+      event.type === 'text_delta' && event.text.includes('stale failed native output')
+    ))).toBe(false);
+
+    await session.dispose();
+    expect(failedNative.shutdownCalls).toBe(1);
+    expect(retryNative.shutdownCalls).toBe(1);
+  });
+
+  it.each(['cancel', 'dispose'] as const)(
+    'joins failed initialization cleanup when %s races teardown',
+    async (teardown) => {
+      const native = new FakeNativeConnection();
+      const initialize = createDeferred<void>();
+      const cleanup = createDeferred<void>();
+      native.initializeImplementation = () => initialize.promise;
+      native.shutdownImplementation = () => cleanup.promise;
+      const session = createBackend(
+        (await createGrokHost()),
+        { nativeFactory: { create: () => native } },
+      ).createSession(sessionConfig);
+      const run = session.execute(executionRequest());
+      const eventsPromise = collect(run.events);
+      await native.waitForCall('initialize');
+
+      initialize.reject(new Error('initialize rejected before teardown'));
+      await native.waitForCall('shutdown');
+      expect(native.shutdownCalls).toBe(1);
+
+      let teardownSettled = false;
+      const teardownPromise = (teardown === 'cancel'
+        ? (run.cancel(), eventsPromise.then(() => undefined))
+        : session.dispose()).then(() => {
+        teardownSettled = true;
+      });
+      await nextTask();
+
+      expect(teardownSettled).toBe(false);
+      expect(native.shutdownCalls).toBe(1);
+
+      cleanup.resolve();
+      await teardownPromise;
+      const events = await eventsPromise;
+
+      expect(native.shutdownCalls).toBe(1);
+      expect(events.filter(event => (
+        event.type === 'cancelled'
+        || event.type === 'execution_error'
+        || event.type === 'turn_completed'
+      ))).toEqual([
+        expect.objectContaining({
+          ...(teardown === 'cancel'
+            ? { reason: 'cancelled', type: 'cancelled' }
+            : { reason: 'session-disposed', type: 'cancelled' }),
+        }),
+      ]);
+      await session.dispose();
+    },
+  );
+
+  it('drains disposal and fences notifications and prompt rejection after disposal begins', async () => {
+    const native = new FakeNativeConnection();
+    let rejectPrompt: ((reason: Error) => void) | undefined;
+    native.promptImplementation = () => new Promise((_resolve, reject) => {
+      rejectPrompt = reject;
+    });
+    native.shutdownImplementation = async () => {
+      rejectPrompt?.(new Error('transport closed while disposing'));
+      throw new Error('process shutdown failed after transport disposal');
+    };
+    const sessionEvents = vi.fn();
+    const session = createBackend(
+      (await createGrokHost()),
+      { nativeFactory: { create: () => native } },
+    ).createSession(sessionConfig);
+    session.onEvent(sessionEvents);
+    const run = session.execute(executionRequest());
+    await native.waitForCall('prompt');
+
+    const disposing = session.dispose();
+    native.emit({
+      content: { text: 'late', type: 'text' },
+      sessionUpdate: 'agent_message_chunk',
+    });
+    await expect(disposing).resolves.toBeUndefined();
+    const events = await collect(run.events);
+
+    expect(native.shutdownCalls).toBe(1);
+    expect(events.some(event => event.type === 'text_delta')).toBe(false);
+    expect(events.filter(event => (
+      event.type === 'cancelled'
+      || event.type === 'execution_error'
+      || event.type === 'turn_completed'
+    ))).toEqual([
+      expect.objectContaining({ reason: 'session-disposed', type: 'cancelled' }),
+    ]);
+    expect(sessionEvents).not.toHaveBeenCalled();
+    expect(session.getStatus()).toBe('disposed');
+  });
+
+  it.each(['before', 'after'] as const)(
+    'keeps steered output when native interjection arrives %s the original completion',
+    async order => {
+      const native = new FakeNativeConnection();
+      const prompt = createDeferred<{ stopReason: string }>();
+      const interjection = createDeferred<void>();
+      native.promptImplementation = () => prompt.promise;
+      native.interjectImplementation = () => interjection.promise;
+      const session = createBackend((await createGrokHost()), {
+        nativeFactory: { create: () => native },
+      }).createSession(sessionConfig);
+      try {
+        let finished = false;
+        const eventsPromise = collect(session.execute(executionRequest()).events).then(events => {
+          finished = true;
+          return events;
+        });
+        await native.waitForCall('prompt');
+        if (!isSteerableExecutionSession(session)) throw new Error('Missing steering');
+        const steering = session.steer(executionRequest('redirect'));
+        const emitSteeredResponse = () => native.emit({
+          sessionUpdate: 'agent_message_chunk', messageId: 'assistant-steered',
+          content: { type: 'text', text: 'Steered response' },
+        });
+        if (order === 'before') {
+          native.emitInterjection();
+          emitSteeredResponse();
+        }
+        native.emit({ sessionUpdate: 'turn_completed', prompt_id: 'original' }, 'extension');
+        prompt.resolve({ stopReason: 'end_turn' });
+        await new Promise(resolve => setImmediate(resolve));
+        expect(finished).toBe(false);
+        if (order === 'after') native.emitInterjection();
+        interjection.resolve();
+        await expect(steering).resolves.toBe(true);
+        if (order === 'after') {
+          emitSteeredResponse();
+          native.emit({ sessionUpdate: 'turn_completed', prompt_id: 'steered' }, 'extension');
+        }
+        const events = await eventsPromise;
+        expect(events).toContainEqual(expect.objectContaining({ type: 'text_delta', text: 'Steered response' }));
+        expect(events.at(-1)).toMatchObject({ type: 'turn_completed' });
+      } finally {
+        await session.dispose();
+      }
+    },
+  );
+
+  it('keeps successive queued interjections visible until both native turns finish', async () => {
+    const native = new FakeNativeConnection();
+    const prompt = createDeferred<{ stopReason: string }>();
+    native.promptImplementation = () => prompt.promise;
+    const session = createBackend((await createGrokHost()), {
+      nativeFactory: { create: () => native },
+    }).createSession(sessionConfig);
+    try {
+      let finished = false;
+      const eventsPromise = collect(session.execute(executionRequest()).events).then(events => {
+        finished = true;
+        return events;
+      });
+      await native.waitForCall('prompt');
+      if (!isSteerableExecutionSession(session)) throw new Error('Missing steering');
+      await session.steer(executionRequest('first redirect'));
+      await session.steer(executionRequest('second redirect'));
+      native.emit({ sessionUpdate: 'turn_completed', prompt_id: 'original' });
+      prompt.resolve({ stopReason: 'end_turn' });
+      await new Promise(resolve => setImmediate(resolve));
+      for (const [index, text] of ['First redirect reply', 'Second redirect reply'].entries()) {
+        expect(finished).toBe(false);
+        native.emitInterjection(index);
+        native.emit({
+          sessionUpdate: 'agent_message_chunk', messageId: `assistant-${index}`,
+          content: { type: 'text', text },
+        });
+        native.emit({ sessionUpdate: 'turn_completed', prompt_id: `steered-${index}` });
+        await new Promise(resolve => setImmediate(resolve));
+      }
+      const events = await eventsPromise;
+      expect(events.filter(event => event.type === 'text_delta')).toEqual([
+        expect.objectContaining({ text: 'First redirect reply' }),
+        expect.objectContaining({ text: 'Second redirect reply' }),
+      ]);
+      expect(events.at(-1)).toMatchObject({ type: 'turn_completed' });
+    } finally {
+      await session.dispose();
+    }
+  });
+
+  it('settles the original turn when a pending interjection is rejected before application', async () => {
+    const native = new FakeNativeConnection();
+    const prompt = createDeferred<{ stopReason: string }>();
+    const interjection = createDeferred<void>();
+    native.promptImplementation = () => prompt.promise;
+    native.interjectImplementation = () => interjection.promise;
+    const session = createBackend((await createGrokHost()), {
+      nativeFactory: { create: () => native },
+    }).createSession(sessionConfig);
+    try {
+      const eventsPromise = collect(session.execute(executionRequest()).events);
+      await native.waitForCall('prompt');
+      if (!isSteerableExecutionSession(session)) throw new Error('Missing steering');
+      const steering = session.steer(executionRequest('redirect'));
+      const outcome = steering.catch((error: unknown) => error);
+      prompt.resolve({ stopReason: 'end_turn' });
+      await new Promise(resolve => setImmediate(resolve));
+      interjection.reject(new Error('interjection rejected'));
+      expect(await outcome).toEqual(new Error('interjection rejected'));
+      expect((await eventsPromise).at(-1)).toMatchObject({ type: 'turn_completed' });
+    } finally {
+      await session.dispose();
+    }
+  });
+
+  it('honors abort while waiting for queued steering after the original prompt returns', async () => {
+    const native = new FakeNativeConnection();
+    const prompt = createDeferred<{ stopReason: string }>();
+    native.promptImplementation = () => prompt.promise;
+    const session = createBackend((await createGrokHost()), {
+      nativeFactory: { create: () => native },
+    }).createSession(sessionConfig);
+    try {
+      const controller = new AbortController();
+      const eventsPromise = collect(session.execute({ ...executionRequest(), signal: controller.signal }).events);
+      await native.waitForCall('prompt');
+      if (!isSteerableExecutionSession(session)) throw new Error('Missing steering');
+      await session.steer(executionRequest('redirect'));
+      native.emit({ sessionUpdate: 'turn_completed', prompt_id: 'original' });
+      prompt.resolve({ stopReason: 'end_turn' });
+      await new Promise(resolve => setImmediate(resolve));
+      controller.abort();
+      expect((await eventsPromise).at(-1)).toMatchObject({ type: 'cancelled' });
+    } finally {
+      await session.dispose();
+    }
+  });
+
+  it.each(['redirect', '/compact'])('steers literal text %j with its context and rewinds without creating an unrelated session', async text => {
+    const native = new FakeNativeConnection();
+    native.promptImplementation = () => new Promise(() => {});
+    const session = createBackend(
+      (await createGrokHost()),
+      {
+        nativeFactory: { create: () => native },
+        resolvePromptIndex: async () => 3,
+      },
+    ).createSession(sessionConfig);
+    const run = session.execute(executionRequest());
+    await native.waitForCall('prompt');
+    if (!isSteerableExecutionSession(session) || !isRewindableExecutionSession(session)) {
+      throw new Error('Expected Grok execution capabilities.');
+    }
+
+    await expect(session.steer({
+      ...executionRequest(text),
+      input: [{ type: 'text', text }, { type: 'image', image: {
+        id: 'capture', name: 'capture.png', data: 'aW1hZ2U=',
+        mediaType: 'image/png', size: 5, source: 'paste',
+      } }],
+      context: capturedSelections,
+    })).resolves.toBe(true);
+    run.cancel();
+    await collect(run.events);
+    await expect(session.previewRewind('user-1', 'assistant-1')).resolves.toMatchObject({
+      canRewind: true,
+    });
+
+    expect(native.interjectCalls).toHaveLength(1);
+    expect(native.interjectCalls[0]).toMatchObject({
+      content: [
+        { type: 'text', text: `${text}\n\n${capturedSelectionPrompt}` },
+        { type: 'image', data: 'aW1hZ2U=', mimeType: 'image/png' },
+      ],
+    });
+    expect(native.rewindCalls).toHaveLength(1);
+    expect(native.newRequests).toHaveLength(0);
+  });
+
+  it('keeps out-of-turn session sequences increasing across native permission changes', async () => {
+    const native = new FakeNativeConnection();
+    const session = createBackend(
+      (await createGrokHost()),
+      {
+        nativeFactory: { create: () => native },
+        resolvePromptIndex: async () => 3,
+      },
+    ).createSession(sessionConfig);
+    const sessionEvents: Array<{ type: string; sequence: number }> = [];
+    session.onEvent(event => {
+      sessionEvents.push({ type: event.type, sequence: event.scope.sequence });
+    });
+    if (!isRewindableExecutionSession(session)) {
+      throw new Error('Expected Grok rewind capability.');
+    }
+
+    try {
+      await session.previewRewind('user-1', 'assistant-1');
+      native.emitPermissionMode('yolo');
+      // A replaced process reloads the session and republishes idle state.
+      vi.spyOn(native, 'isAlive').mockReturnValue(false);
+      await session.previewRewind('user-1', 'assistant-1');
+
+      expect(sessionEvents.map(event => event.type)).toEqual([
+        'session_state_changed',
+        'permission_mode_changed',
+        'session_state_changed',
+      ]);
+      const sequences = sessionEvents.map(event => event.sequence);
+      expect(sequences).toEqual([...sequences].sort((left, right) => left - right));
+      expect(new Set(sequences).size).toBe(sequences.length);
+    } finally {
+      await session.dispose();
+    }
+  });
+
+  it('rejects an ambiguous native interjection failure after handoff', async () => {
+    const native = new FakeNativeConnection();
+    native.promptImplementation = () => new Promise(() => {});
+    native.interjectImplementation = async () => {
+      throw new Error('transport closed after interjection was written');
+    };
+    const session = createBackend(
+      (await createGrokHost()),
+      { nativeFactory: { create: () => native } },
+    ).createSession(sessionConfig);
+    const run = session.execute(executionRequest());
+    await native.waitForCall('prompt');
+    if (!isSteerableExecutionSession(session)) {
+      throw new Error('Expected Grok steer capability.');
+    }
+
+    await expect(session.steer(executionRequest('redirect')))
+      .rejects.toThrow('transport closed after interjection was written');
+
+    expect(native.interjectCalls).toHaveLength(1);
+    run.cancel();
+    await collect(run.events);
+  });
+
+  it('rejects when lifecycle disposal closes a handed-off interjection', async () => {
+    const native = new FakeNativeConnection();
+    let rejectInterject: ((reason: Error) => void) | undefined;
+    native.promptImplementation = () => new Promise(() => {});
+    native.interjectImplementation = () => new Promise((_resolve, reject) => {
+      rejectInterject = reject;
+    });
+    native.shutdownImplementation = async () => {
+      rejectInterject?.(new Error('transport closed during lifecycle disposal'));
+    };
+    const session = createBackend(
+      (await createGrokHost()),
+      { nativeFactory: { create: () => native } },
+    ).createSession(sessionConfig);
+    const run = session.execute(executionRequest());
+    await native.waitForCall('prompt');
+    if (!isSteerableExecutionSession(session)) {
+      throw new Error('Expected Grok steer capability.');
+    }
+
+    const steering = session.steer(executionRequest('redirect'));
+    await native.waitForCall('interject');
+    const disposing = session.dispose();
+
+    await expect(steering).rejects.toThrow('transport closed during lifecycle disposal');
+    await expect(disposing).resolves.toBeUndefined();
+    await collect(run.events);
+    expect(native.interjectCalls).toHaveLength(1);
+  });
+
+  it('keeps native acceptance when the session becomes stale after interjection handoff', async () => {
+    const native = new FakeNativeConnection();
+    let resolveInterject: (() => void) | undefined;
+    native.promptImplementation = () => new Promise(() => {});
+    native.interjectImplementation = () => new Promise(resolve => {
+      resolveInterject = resolve;
+    });
+    native.shutdownImplementation = async () => {
+      resolveInterject?.();
+    };
+    const session = createBackend(
+      (await createGrokHost()),
+      { nativeFactory: { create: () => native } },
+    ).createSession(sessionConfig);
+    const run = session.execute(executionRequest());
+    await native.waitForCall('prompt');
+    if (!isSteerableExecutionSession(session)) {
+      throw new Error('Expected Grok steer capability.');
+    }
+
+    const steering = session.steer(executionRequest('redirect'));
+    await native.waitForCall('interject');
+    const disposing = session.dispose();
+
+    await expect(steering).resolves.toBe(true);
+    await expect(disposing).resolves.toBeUndefined();
+    await collect(run.events);
+    expect(native.interjectCalls).toHaveLength(1);
+  });
+
+  it('returns false before handoff when steering is unavailable or already aborted', async () => {
+    const native = new FakeNativeConnection();
+    native.promptImplementation = () => new Promise(() => {});
+    const session = createBackend(
+      (await createGrokHost()),
+      { nativeFactory: { create: () => native } },
+    ).createSession(sessionConfig);
+    if (!isSteerableExecutionSession(session)) {
+      throw new Error('Expected Grok steer capability.');
+    }
+
+    await expect(session.steer(executionRequest('before turn'))).resolves.toBe(false);
+
+    const run = session.execute(executionRequest());
+    await native.waitForCall('prompt');
+    const abortController = new AbortController();
+    abortController.abort();
+    await expect(session.steer({
+      ...executionRequest('aborted redirect'),
+      signal: abortController.signal,
+    })).resolves.toBe(false);
+
+    expect(native.interjectCalls).toHaveLength(0);
+    run.cancel();
+    await expect(session.steer(executionRequest('redirect after cancellation')))
+      .resolves.toBe(false);
+    expect(native.interjectCalls).toHaveLength(0);
+    await collect(run.events);
+  });
+
+  it('adopts a deferred fork before cancellation quiesces and reloads that child on retry', async () => {
+    const first = new FakeNativeConnection();
+    const second = new FakeNativeConnection();
+    const fork = createDeferred<{
+      newCwd: string;
+      newSessionId: string;
+      parentSessionId: string;
+    }>();
+    first.forkImplementation = () => fork.promise;
+    const nativeFactory: GrokExecutionNativeFactory = {
+      create: vi.fn()
+        .mockReturnValueOnce(first)
+        .mockReturnValueOnce(second),
+    };
+    const session = createBackend(
+      (await createGrokHost()),
+      { nativeFactory },
+    ).createSession((await forkSessionConfig()));
+
+    const run = session.execute(executionRequest('fork then cancel'));
+    const eventsPromise = collect(run.events);
+    await first.waitForCall('fork');
+
+    run.cancel();
+    let cancellationSettled = false;
+    void eventsPromise.then(() => { cancellationSettled = true; });
+    await nextTask();
+
+    expect(cancellationSettled).toBe(false);
+    expect(first.shutdownCalls).toBe(0);
+
+    fork.resolve({
+      newCwd: '/tmp/vault',
+      newSessionId: 'session-forked-late',
+      parentSessionId: 'session-source',
+    });
+    const events = await eventsPromise;
+
+    expect(first.forkCalls).toHaveLength(1);
+    expect(first.cancelCalls).toBe(1);
+    expect(first.shutdownCalls).toBe(1);
+    expect(events).toContainEqual(expect.objectContaining({
+      snapshot: expect.objectContaining({
+        providerSessionId: 'session-forked-late',
+        providerStateDeletes: ['forkSource', 'forkSourceSessionDirectory'],
+      }),
+      type: 'session_state_changed',
+    }));
+
+    const retryEvents = await collect(session.execute(executionRequest('retry child')).events);
+    expect(nativeFactory.create).toHaveBeenCalledTimes(2);
+    expect(second.forkCalls).toHaveLength(0);
+    expect(second.loadRequests).toEqual([
+      expect.objectContaining({ sessionId: 'session-forked-late' }),
+    ]);
+    expect(retryEvents.at(-1)?.type).toBe('turn_completed');
+    expect(session.getSnapshot()).toMatchObject({
+      providerSessionId: 'session-forked-late',
+      providerState: {
+        sessionDirectory: nativeSessionDirectory('session-forked-late'),
+      },
+      providerStateDeletes: ['forkSource', 'forkSourceSessionDirectory'],
+    });
+    expect(session.getSnapshot().providerStateDeletes).not.toContain('futureState');
+  });
+
+  it('joins a deferred fork during disposal and retains the exact child ownership snapshot', async () => {
+    const native = new FakeNativeConnection();
+    const fork = createDeferred<{
+      newCwd: string;
+      newSessionId: string;
+      parentSessionId: string;
+    }>();
+    native.forkImplementation = () => fork.promise;
+    const session = createBackend(
+      (await createGrokHost()),
+      { nativeFactory: { create: () => native } },
+    ).createSession((await forkSessionConfig()));
+    const eventsPromise = collect(session.execute(executionRequest('fork then dispose')).events);
+    await native.waitForCall('fork');
+
+    let disposalSettled = false;
+    const disposal = session.dispose().then(() => { disposalSettled = true; });
+    await nextTask();
+
+    expect(disposalSettled).toBe(false);
+    expect(native.shutdownCalls).toBe(0);
+
+    fork.resolve({
+      newCwd: '/tmp/vault',
+      newSessionId: 'session-forked-before-dispose',
+      parentSessionId: 'session-source',
+    });
+    await disposal;
+    const events = await eventsPromise;
+
+    expect(native.forkCalls).toHaveLength(1);
+    expect(native.cancelCalls).toBe(1);
+    expect(native.shutdownCalls).toBe(1);
+    expect(events).toContainEqual(expect.objectContaining({
+      snapshot: expect.objectContaining({
+        providerSessionId: 'session-forked-before-dispose',
+        providerStateDeletes: ['forkSource', 'forkSourceSessionDirectory'],
+      }),
+      type: 'session_state_changed',
+    }));
+    expect(session.getSnapshot()).toMatchObject({
+      providerSessionId: 'session-forked-before-dispose',
+      providerState: {
+        sessionDirectory: nativeSessionDirectory('session-forked-before-dispose'),
+      },
+      providerStateDeletes: ['forkSource', 'forkSourceSessionDirectory'],
+      status: 'disposed',
+    });
+    expect(session.getSnapshot().providerStateDeletes).not.toContain('futureState');
+  });
+
+  it('retains a known fork child even when parent validation fails and never reforks', async () => {
+    const native = new FakeNativeConnection();
+    native.forkImplementation = async (request) => ({
+      newCwd: request.newCwd,
+      newSessionId: 'session-forked-unexpected-parent',
+      parentSessionId: 'unexpected-parent',
+    });
+    const session = createBackend(
+      (await createGrokHost()),
+      { nativeFactory: { create: () => native } },
+    ).createSession((await forkSessionConfig()));
+
+    const failedEvents = await collect(session.execute(executionRequest('fork')).events);
+
+    expect(failedEvents.at(-1)).toMatchObject({
+      message: 'Grok Build returned a fork for an unexpected parent session.',
+      type: 'execution_error',
+    });
+    expect(session.getSnapshot()).toMatchObject({
+      providerSessionId: 'session-forked-unexpected-parent',
+      providerStateDeletes: ['forkSource', 'forkSourceSessionDirectory'],
+      status: 'invalidated',
+    });
+
+    await collect(session.execute(executionRequest('retry')).events);
+
+    expect(native.forkCalls).toHaveLength(1);
+    expect(native.loadRequests).toEqual([
+      expect.objectContaining({ sessionId: 'session-forked-unexpected-parent' }),
+    ]);
+  });
+
+  it('cancels an approval already resolved by the UI when the native turn is cancelled', async () => {
+    const native = new FakeNativeConnection();
+    native.promptImplementation = () => new Promise(() => {});
+    let nativeOptions!: GrokExecutionNativeCreateOptions;
+    const session = createBackend((await createGrokHost()), {
+      nativeFactory: { create: options => { nativeOptions = options; return native; } },
+    }).createSession({
+      ...sessionConfig,
+      interactionPort: {
+        ...interactionPort,
+        requestApproval: async request => ({ interactionId: request.interactionId, decision: 'allow' }),
+      },
+    });
+    const run = session.execute(executionRequest());
+    await native.waitForCall('prompt');
+    const permission = nativeOptions.requestPermission({
+      options: [{ kind: 'allow_once', name: 'Allow', optionId: 'allow' }],
+      sessionId: 'session-existing', toolCall: { title: 'write', toolCallId: 'tool-1' },
+    });
+    run.cancel();
+    await expect(permission).resolves.toEqual({ outcome: { outcome: 'cancelled' } });
+    await collect(run.events);
+    await session.dispose();
+  });
+
+  it('publishes live model metadata and rejects passive auxiliary permissions', async () => {
+    const native = new FakeNativeConnection();
+    native.promptImplementation = () => new Promise(() => {});
+    native.loadResponse = {
+      models: {
+        availableModels: [{ modelId: 'grok-4', name: 'Grok 4' }],
+        currentModelId: 'grok-4',
+      },
+      sessionId: 'session-existing',
+    };
+    const mergeLiveModels = vi.fn();
+    let nativeOptions: GrokExecutionNativeCreateOptions | undefined;
+    const request = {
+      ...executionRequest(),
+      toolPolicy: { kind: 'passive' as const },
+    };
+    const session = createBackend(
+      (await createGrokHost()),
+      {
+        modelCatalogCoordinator: { mergeLiveModels },
+        nativeFactory: {
+          create: options => {
+            nativeOptions = options;
+            return native;
+          },
+        },
+      },
+    ).createSession(sessionConfig);
+    const run = session.execute(request);
+    await native.waitForCall('prompt');
+
+    await expect(nativeOptions?.requestPermission({
+      options: [{ kind: 'allow_once', name: 'Allow', optionId: 'allow' }],
+      sessionId: 'session-existing',
+      toolCall: { title: 'write', toolCallId: 'tool-1' },
+    })).resolves.toEqual({ outcome: { outcome: 'cancelled' } });
+    expect(interactionPort.requestApproval).not.toHaveBeenCalled();
+    expect(mergeLiveModels).toHaveBeenCalledWith(
+      [expect.objectContaining({ rawId: 'grok-4' })],
+      'grok-4',
+      expect.any(String),
+    );
+    const systemPromptOverride = String(
+      native.loadRequests[0]?._meta?.systemPromptOverride,
+    );
+    expect(systemPromptOverride).toContain('Be exact.');
+    expect(systemPromptOverride).toContain('Do not use any tools');
+    run.cancel();
+    await collect(run.events);
+  });
+
+  it('fails read-only permission requests closed without claiming a native read-only profile', async () => {
+    const native = new FakeNativeConnection();
+    native.promptImplementation = () => new Promise(() => {});
+    let nativeOptions: GrokExecutionNativeCreateOptions | undefined;
+    const session = createBackend(
+      (await createGrokHost()),
+      {
+        nativeFactory: {
+          create: options => {
+            nativeOptions = options;
+            return native;
+          },
+        },
+      },
+    ).createSession(sessionConfig);
+    const run = session.execute({
+      ...executionRequest(),
+      toolPolicy: { kind: 'read-only' },
+    });
+    await native.waitForCall('prompt');
+
+    await expect(nativeOptions?.requestPermission({
+      options: [{ kind: 'allow_once', name: 'Allow', optionId: 'allow' }],
+      sessionId: 'session-existing',
+      toolCall: { title: 'read_file', toolCallId: 'tool-read' },
+    })).resolves.toEqual({ outcome: { outcome: 'cancelled' } });
+    expect(native.loadRequests[0]?._meta).toEqual(expect.objectContaining({
+      systemPromptOverride: 'Be exact.',
+    }));
+    expect(native.loadRequests[0]?._meta).not.toHaveProperty('toolProfile');
+    expect(interactionPort.requestApproval).not.toHaveBeenCalled();
+    run.cancel();
+    await collect(run.events);
+  });
+
+  it('keeps native permission changes authoritative across ACP mode updates', async () => {
+    const native = new FakeNativeConnection();
+    native.promptImplementation = () => new Promise(() => {});
+    const session = createBackend(
+      (await createGrokHost()),
+      { nativeFactory: { create: () => native } },
+    ).createSession(sessionConfig);
+    const permissions: string[] = [];
+    session.onEvent(event => {
+      if (event.type === 'permission_mode_changed') permissions.push(event.permissionMode);
+    });
+    const run = session.execute(featurePermissionRequest('yolo'));
+    await native.waitForCall('prompt');
+
+    native.emitPermissionMode('yolo');
+    native.emit({ sessionUpdate: 'current_mode_update', currentModeId: 'default' });
+    native.emit({ sessionUpdate: 'current_mode_update', currentModeId: 'plan' });
+    native.emitPermissionMode('normal');
+    run.cancel();
+    await collect(run.events);
+
+    expect(permissions).toEqual(['yolo', 'normal']);
+  });
+
+  it('answers native plan approval requests with the abandoned outcome', async () => {
+    const native = new FakeNativeConnection();
+    native.promptImplementation = () => new Promise(() => {});
+    let nativeOptions: GrokExecutionNativeCreateOptions | undefined;
+    const session = createBackend(
+      (await createGrokHost()),
+      {
+        nativeFactory: {
+          create: options => {
+            nativeOptions = options;
+            return native;
+          },
+        },
+      },
+    ).createSession(sessionConfig);
+    const run = session.execute(executionRequest());
+    await native.waitForCall('prompt');
+
+    await expect(nativeOptions?.requestExtension('_x.ai/exit_plan_mode', {
+      sessionId: 'session-existing',
+      toolCallId: 'tool-plan',
+      planContent: 'Implement the proposed changes',
+    })).resolves.toEqual({ outcome: 'abandoned' });
+
+    run.cancel();
+    await collect(run.events);
+  });
+
+  it('routes Grok question extensions through stable interaction identities', async () => {
+    const native = new FakeNativeConnection();
+    native.promptImplementation = () => new Promise(() => {});
+    let nativeOptions: GrokExecutionNativeCreateOptions | undefined;
+    vi.mocked(interactionPort.askUserQuestion).mockImplementation(async request => ({
+      answers: { target: 'src' },
+      interactionId: request.interactionId,
+    }));
+    const session = createBackend(
+      (await createGrokHost()),
+      {
+        nativeFactory: {
+          create: options => {
+            nativeOptions = options;
+            return native;
+          },
+        },
+      },
+    ).createSession(sessionConfig);
+    const run = session.execute(executionRequest());
+    await native.waitForCall('prompt');
+
+    await expect(nativeOptions?.requestExtension('x.ai/ask_user_question', {
+      mode: 'default',
+      questions: [{
+        id: 'target',
+        multiSelect: false,
+        options: [{ id: 'src', label: 'Source' }],
+        question: 'Which area?',
+      }],
+      sessionId: 'session-existing',
+      toolCallId: 'tool-question',
+    })).resolves.toEqual({
+      answers: { 'Which area?': ['Source'] },
+      outcome: 'accepted',
+    });
+    expect(interactionPort.askUserQuestion).toHaveBeenCalledWith(
+      expect.objectContaining({
+        interactionId: expect.stringContaining(':question:'),
+        sessionInstanceId: session.sessionInstanceId,
+        turnId: run.turnId,
+      }),
+      expect.any(AbortSignal),
+    );
+    run.cancel();
+    await collect(run.events);
+  });
+
+  it('emits own __proto__ question answers and preview annotation keys with native id/label mapping', async () => {
+    const native = new FakeNativeConnection();
+    native.promptImplementation = () => new Promise(() => {});
+    let nativeOptions: GrokExecutionNativeCreateOptions | undefined;
+    vi.mocked(interactionPort.askUserQuestion).mockImplementation(async request => ({
+      answers: JSON.parse('{"__proto__":["blue-id"],"Extras":["blue-id","red-id"]}'),
+      interactionId: request.interactionId,
+    }));
+    const session = createBackend(
+      (await createGrokHost()),
+      {
+        nativeFactory: {
+          create: options => {
+            nativeOptions = options;
+            return native;
+          },
+        },
+      },
+    ).createSession(sessionConfig);
+    const run = session.execute(executionRequest());
+    await native.waitForCall('prompt');
+
+    const result = await nativeOptions?.requestExtension('x.ai/ask_user_question', {
+      mode: 'default',
+      questions: [{
+        multiSelect: false,
+        options: [
+          { id: 'blue-id', label: 'Blue', description: '', preview: 'preview-blue' },
+          { id: 'red-id', label: 'Red', description: '' },
+        ],
+        question: '__proto__',
+      }, {
+        multiSelect: true,
+        options: [
+          { id: 'blue-id', label: 'Blue', description: '', preview: 'preview-extra-blue' },
+          { id: 'red-id', label: 'Red', description: '', preview: 'preview-extra-red' },
+        ],
+        question: 'Extras',
+      }],
+      sessionId: 'session-existing',
+      toolCallId: 'tool-question',
+    });
+    const record = result as Record<string, unknown>;
+    expect(Object.hasOwn(record.answers as object, '__proto__')).toBe(true);
+    expect(Object.hasOwn(record.annotations as object, '__proto__')).toBe(true);
+    expect(JSON.stringify(result)).toBe('{"annotations":{"__proto__":{"preview":"preview-blue"}},"answers":{"__proto__":["Blue"],"Extras":["Blue","Red"]},"outcome":"accepted"}');
+    run.cancel();
+    await collect(run.events);
+  });
+
+  it('uses own text answers when a prototype-named question id has no own answer and never fabricates from inherited answers', async () => {
+    const native = new FakeNativeConnection();
+    native.promptImplementation = () => new Promise(() => {});
+    let nativeOptions: GrokExecutionNativeCreateOptions | undefined;
+    vi.mocked(interactionPort.askUserQuestion).mockImplementation(async request => ({
+      answers: JSON.parse('{"Color?":"blue-id"}'),
+      interactionId: request.interactionId,
+    }));
+    const session = createBackend(
+      (await createGrokHost()),
+      {
+        nativeFactory: {
+          create: options => {
+            nativeOptions = options;
+            return native;
+          },
+        },
+      },
+    ).createSession(sessionConfig);
+    const run = session.execute(executionRequest());
+    await native.waitForCall('prompt');
+
+    const question = {
+      id: 'toString',
+      multiSelect: false,
+      options: [{ id: 'blue-id', label: 'Blue', description: '', preview: 'preview-blue' }],
+      question: 'Color?',
+    };
+    const result = await nativeOptions?.requestExtension('x.ai/ask_user_question', {
+      mode: 'default',
+      questions: [question],
+      sessionId: 'session-existing',
+      toolCallId: 'tool-question',
+    });
+    expect(JSON.stringify(result)).toBe('{"annotations":{"Color?":{"preview":"preview-blue"}},"answers":{"Color?":["Blue"]},"outcome":"accepted"}');
+
+    vi.mocked(interactionPort.askUserQuestion).mockImplementation(async request => ({
+      answers: Object.create({ 'Color?': 'blue-id' }),
+      interactionId: request.interactionId,
+    }));
+    const inherited = await nativeOptions?.requestExtension('x.ai/ask_user_question', {
+      mode: 'default',
+      questions: [question],
+      sessionId: 'session-existing',
+      toolCallId: 'tool-question-inherited',
+    });
+    expect(JSON.stringify(inherited)).toBe('{"answers":{},"outcome":"accepted"}');
+    run.cancel();
+    await collect(run.events);
+  });
+
+  it.each(['read_file', 'claudian_send_message'])('fails closed before native startup for allow-list containing %s', async name => {
+    const fixture = (await sessionToolFixture());
+    const nativeFactory: GrokExecutionNativeFactory = {
+      create: vi.fn(() => new FakeNativeConnection()),
+    };
+    const session = createBackend(
+      fixture.host,
+      { nativeFactory },
+    ).createSession({ ...sessionConfig, sessionTools: fixture.port });
+    const request: ProviderExecutionRequest = {
+      ...executionRequest(),
+      toolPolicy: { kind: 'allow-list', names: [name] },
+    };
+
+    const events = await collect(session.execute(request).events);
+
+    expect(nativeFactory.create).not.toHaveBeenCalled();
+    expect(fixture.registerMCPRoute).not.toHaveBeenCalled();
+    expect(fixture.port.send).not.toHaveBeenCalled();
+    expect(events).toEqual([
+      expect.objectContaining({
+        snapshot: expect.objectContaining({
+          status: 'executing',
+        }),
+        type: 'session_state_changed',
+      }),
+      expect.objectContaining({
+        snapshot: expect.objectContaining({
+          invalidation: expect.objectContaining({
+            reason: 'configuration-changed',
+            recoverable: false,
+          }),
+          status: 'invalidated',
+        }),
+        type: 'session_state_changed',
+      }),
+      expect.objectContaining({
+        category: 'configuration',
+        message: expect.stringContaining('allow-list'),
+        recoverable: false,
+        type: 'execution_error',
+      }),
+    ]);
+    expect(session.getSnapshot()).toMatchObject({
+      invalidation: {
+        reason: 'configuration-changed',
+        recoverable: false,
+      },
+      status: 'invalidated',
+    });
+  });
+
+  it('emits invalidated provider state before a terminal execution failure', async () => {
+    const native = new FakeNativeConnection();
+    native.promptImplementation = async () => {
+      throw new Error('transport closed while prompting');
+    };
+    const session = createBackend(
+      (await createGrokHost()),
+      { nativeFactory: { create: () => native } },
+    ).createSession(sessionConfig);
+
+    const events = await collect(session.execute(executionRequest()).events);
+
+    expect(events.at(-2)).toMatchObject({
+      snapshot: expect.objectContaining({
+        invalidation: expect.objectContaining({
+          reason: 'transport-closed',
+          recoverable: true,
+        }),
+        providerSessionId: 'session-existing',
+        status: 'invalidated',
+      }),
+      type: 'session_state_changed',
+    });
+    expect(events.at(-1)).toMatchObject({
+      category: 'transport',
+      type: 'execution_error',
+    });
+  });
+
+  it('identifies the stale native session when load reports it missing', async () => {
+    const native = new FakeNativeConnection();
+    native.loadImplementation = async () => {
+      throw new Error('session not found');
+    };
+    const session = createBackend(
+      (await createGrokHost()),
+      { nativeFactory: { create: () => native } },
+    ).createSession(sessionConfig);
+
+    const events = await collect(session.execute(executionRequest()).events);
+
+    expect(events.at(-1)).toMatchObject({
+      category: 'provider-session-missing',
+      missingProviderSessionId: 'session-existing',
+      type: 'execution_error',
+    });
+  });
+});

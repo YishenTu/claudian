@@ -3,7 +3,7 @@ import { axe } from '@test/helpers/accessibility';
 import { claudeCatalogFixture } from '@test/helpers/claudeModels';
 import { TEST_CODEX_CATALOG } from '@test/helpers/codexModels';
 import { createFeatureHostFixture } from '@test/helpers/FeatureHostFixture';
-import { controlChangeSettled } from '@test/helpers/ObsidianSettingsDOM';
+import { controlChangeSettled } from '@test/helpers/ObsidianHost';
 import { createObsidianPlugin, mountSettingTab } from '@test/helpers/ObsidianSettingsHost';
 import { fireEvent, within } from '@testing-library/dom';
 import { Setting } from 'obsidian';
@@ -17,13 +17,6 @@ import { t } from '@/i18n/i18n';
 import { claudeProviderRegistration } from '@/providers/claude/registration';
 import { updateClaudeProviderSettings } from '@/providers/claude/settings';
 import { codexProviderRegistration } from '@/providers/codex/registration';
-
-// Only the external Obsidian controls and declarative settings host are adapted.
-vi.mock('obsidian', async () => {
-  const base = await vi.importActual<typeof import('@test/__mocks__/obsidian')>('@test/__mocks__/obsidian');
-  const dom = await vi.importActual<typeof import('@test/helpers/ObsidianSettingsDOM')>('@test/helpers/ObsidianSettingsDOM');
-  return { ...base, ...dom };
-});
 
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => {

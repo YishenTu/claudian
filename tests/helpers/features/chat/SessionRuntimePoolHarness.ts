@@ -25,16 +25,6 @@ export function createSessionRuntimePool(
   return pool;
 }
 
-/** Legacy fixtures install the pool after building their host. */
-export function installSessionRuntimePool(
-  plugin: ChatFeatureHost,
-  options: RuntimePoolFixtureOptions = {},
-): SessionRuntimePool {
-  const pool = createSessionRuntimePool(() => plugin, options);
-  Object.assign(plugin, { sessionRuntimes: pool });
-  return pool;
-}
-
 afterEach(async () => {
   await Promise.allSettled(pools.splice(0).map(pool => pool.dispose()));
 });

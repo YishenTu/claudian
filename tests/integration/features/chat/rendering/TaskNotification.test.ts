@@ -3,6 +3,7 @@ import '@/providers';
 
 import { axe } from '@test/helpers/accessibility';
 import { createTabSession } from '@test/helpers/ConversationPorts';
+import { createChatFeatureHost } from '@test/helpers/features/chat/ChatFeatureHostFixture';
 import { FakeSideBackend } from '@test/helpers/features/chat/SideChatSessionHarness';
 import { testTime } from '@test/helpers/testClock';
 import { fireEvent, within } from '@testing-library/dom';
@@ -16,10 +17,6 @@ import { ChatState } from '@/features/chat/state/ChatState';
 import { SubagentManager } from '@/features/chat/subagents/SubagentManager';
 import { StreamController } from '@/features/chat/turns/StreamController';
 import { ClaudeExecutionSession } from '@/providers/claude/execution/ClaudeExecutionSession';
-
-HTMLElement.prototype.empty = function () { this.replaceChildren(); };
-HTMLElement.prototype.addClass = function (...classes) { this.classList.add(...classes); };
-HTMLElement.prototype.removeClass = function (...classes) { this.classList.remove(...classes); };
 
 function backgroundScope(sequence: number): ProviderBackgroundEventScope {
   return { kind: 'background', sessionInstanceId: 'session', turnId: 'automatic', sequence };
@@ -35,7 +32,7 @@ beforeEach(() => {
 it.each([false, true])('renders a native notification and its follow-up through session and chat (consumption echo: %s)', async echoed => {
   const { renderSessionTaskNotification, renderAutoTriggeredTurn } = await import('@/features/chat/turns/BackgroundTurnRenderer');
   const messagesEl = document.body.createDiv();
-  const plugin = { app: {}, settings: { mediaFolder: '', showMessageTimestamps: false } } as any;
+  const plugin = await createChatFeatureHost({ settings: { mediaFolder: '', showMessageTimestamps: false } });
   const renderer = new MessageRenderer(plugin,
     new Component(), messagesEl);
   const state = new ChatState();
@@ -95,7 +92,7 @@ it.each([false, true])('shows a session notification immediately with streaming=
   const { ChatExecutionCoordinator } = await import('@/features/chat/execution/ChatExecutionCoordinator');
   const { enqueueTabSessionEvent } = await import('@test/helpers/features/chat/SessionEventsHarness');
   const messagesEl = document.body.createDiv();
-  const plugin = { app: {}, settings: { mediaFolder: '', showMessageTimestamps: false } } as any;
+  const plugin = await createChatFeatureHost({ settings: { mediaFolder: '', showMessageTimestamps: false } });
   const renderer = new MessageRenderer(plugin,
     new Component(), messagesEl);
   const state = new ChatState();
@@ -164,7 +161,7 @@ it.each([false, true])('shows a session notification immediately with streaming=
 it.each(['text', 'image', 'image-only'])('keeps preceding output before a %s prompt and isolates concurrent rendering', async kind => {
   const { renderAutoTriggeredTurn, reserveBackgroundTurn } = await import('@/features/chat/turns/BackgroundTurnRenderer');
   const messagesEl = document.body.createDiv();
-  const plugin = { app: {}, settings: { mediaFolder: '', showMessageTimestamps: false } } as any;
+  const plugin = await createChatFeatureHost({ settings: { mediaFolder: '', showMessageTimestamps: false } });
   const renderer = new MessageRenderer(plugin,
     new Component(), messagesEl);
   const state = new ChatState();
@@ -213,7 +210,7 @@ it.each(['text', 'image', 'image-only'])('keeps preceding output before a %s pro
 it.each([false, true])('flushes an automatic tool card before stream disposal with result=%s', async completed => {
   const { renderAutoTriggeredTurn } = await import('@/features/chat/turns/BackgroundTurnRenderer');
   const messagesEl = document.body.createDiv();
-  const plugin = { app: {}, settings: { mediaFolder: '', showMessageTimestamps: false } } as any;
+  const plugin = await createChatFeatureHost({ settings: { mediaFolder: '', showMessageTimestamps: false } });
   const renderer = new MessageRenderer(plugin,
     new Component(), messagesEl);
   const state = new ChatState();
@@ -239,7 +236,7 @@ it.each([false, true])('flushes an automatic tool card before stream disposal wi
 it.each([false, true])('keeps automatic Agent results across requested settlement with pending=%s', async pendingAgent => {
   const { renderAutoTriggeredTurn } = await import('@/features/chat/turns/BackgroundTurnRenderer');
   const messagesEl = document.body.createDiv();
-  const plugin = { app: {}, settings: { mediaFolder: '', showMessageTimestamps: false } } as any;
+  const plugin = await createChatFeatureHost({ settings: { mediaFolder: '', showMessageTimestamps: false } });
   const renderer = new MessageRenderer(plugin,
     new Component(), messagesEl);
   const state = new ChatState();
@@ -287,7 +284,7 @@ it.each([false, true])('keeps automatic Agent results across requested settlemen
 it.each([false, true])('matches task-notification grouping before and after replay with intervening input=%s', async interveningInput => {
   const { renderAutoTriggeredTurn, renderSessionTaskNotification } = await import('@/features/chat/turns/BackgroundTurnRenderer');
   const messagesEl = document.body.createDiv();
-  const plugin = { app: {}, settings: { mediaFolder: '', showMessageTimestamps: false } } as any;
+  const plugin = await createChatFeatureHost({ settings: { mediaFolder: '', showMessageTimestamps: false } });
   const renderer = new MessageRenderer(plugin,
     new Component(), messagesEl);
   const state = new ChatState();

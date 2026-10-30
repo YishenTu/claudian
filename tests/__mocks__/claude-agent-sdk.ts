@@ -1,4 +1,4 @@
-import type { Query, SDKUserMessage } from '@anthropic-ai/claude-agent-sdk';
+import type { Query, SDKControlInitializeResponse, SDKUserMessage } from '@anthropic-ai/claude-agent-sdk';
 import type { Mock } from 'vitest';
 
 // Mock for @anthropic-ai/claude-agent-sdk
@@ -125,6 +125,8 @@ const mockMessages = [
 let customMockMessages: any[] | null = null;
 let appendResultMessage = true;
 let lastOptions: Options | undefined;
+let lastPrompt: unknown;
+let mockInitialization: (() => Promise<SDKControlInitializeResponse>) | undefined;
 let mockSupportedCommands: Array<{ name: string; description: string; argumentHint?: string }> = [];
 let mockSupportedCommandsImplementation: (() => Promise<Array<{
   name: string;
@@ -142,7 +144,8 @@ let lastResponse: (AsyncGenerator<any> & {
   applyFlagSettings: Mock<Query['applyFlagSettings']>;
   setMcpServers: Mock<Query['setMcpServers']>;
   supportedCommands: Mock<Query['supportedCommands']>;
-  initializationResult: Mock;
+  initializationResult: Mock<Query['initializationResult']>;
+  close: Mock<Query['close']>;
   getContextUsage: Mock;
 }) | null = null;
 
@@ -159,6 +162,8 @@ export function resetMockMessages() {
   customMockMessages = null;
   appendResultMessage = true;
   lastOptions = undefined;
+  lastPrompt = undefined;
+  mockInitialization = undefined;
   mockSupportedCommands = [];
   mockSupportedCommandsImplementation = null;
   mockSupportedModels = [];
@@ -209,6 +214,12 @@ export function getReceivedMessages(): readonly unknown[] {
   return receivedMessages;
 }
 
+export function setMockInitializationResult(implementation: () => Promise<SDKControlInitializeResponse>): void {
+  mockInitialization = implementation;
+}
+
+export function getLastPrompt(): unknown { return lastPrompt; }
+
 export function getLastOptions(): Options | undefined {
   return lastOptions;
 }
@@ -235,12 +246,14 @@ function getMessagesForPrompt(): any[] {
 async function* emitMessages(messages: any[]) {
   for (const pendingMessage of messages) {
     const message = await pendingMessage;
+    if (message?.type === 'system' && message.subtype === 'commands_changed') mockSupportedCommands = message.commands;
     if (message != null) yield message;
   }
 }
 
 export function query({ prompt, options }: { prompt: any; options: Options }): AsyncGenerator<any> & Pick<Query, 'interrupt'> {
   lastOptions = options;
+  lastPrompt = prompt;
   queryCallCount++;
 
   const generator = async function* () {
@@ -265,7 +278,8 @@ export function query({ prompt, options }: { prompt: any; options: Options }): A
     applyFlagSettings: Mock<Query['applyFlagSettings']>;
     setMcpServers: Mock<Query['setMcpServers']>;
     supportedCommands: Mock<Query['supportedCommands']>;
-    initializationResult: Mock;
+    initializationResult: Mock<Query['initializationResult']>;
+    close: Mock<Query['close']>;
     getContextUsage: Mock;
   };
   gen.interrupt = vi.fn().mockResolvedValue(undefined);
@@ -280,7 +294,8 @@ export function query({ prompt, options }: { prompt: any; options: Options }): A
       ? mockSupportedCommandsImplementation()
       : Promise.resolve(mockSupportedCommands)
   ));
-  gen.initializationResult = vi.fn().mockImplementation(async () => ({
+  gen.close = vi.fn();
+  gen.initializationResult = vi.fn().mockImplementation(async () => mockInitialization ? mockInitialization() : ({
     commands: mockSupportedCommands,
     models: mockSupportedModels,
     agents: [],

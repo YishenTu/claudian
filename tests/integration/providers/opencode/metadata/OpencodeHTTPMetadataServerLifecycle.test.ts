@@ -1,10 +1,8 @@
 import { readFileSync, rmSync, writeFileSync } from 'node:fs';
 import * as path from 'node:path';
 
-import { runtimeHostFor } from '@test/helpers/providerRuntimeHost';
-
 import { OpencodeMetadataService } from '@/providers/opencode/metadata/OpencodeMetadataService';
-import { getOpencodeProviderSettings } from '@/providers/opencode/settings';
+import { getOpencodeProviderSettings, updateOpencodeProviderSettings } from '@/providers/opencode/settings';
 
 import { createOpencodeHTTPMetadataFixture, type OpencodeHTTPMetadataFixture, waitUntil } from './OpencodeHTTPMetadataFixture';
 
@@ -16,22 +14,21 @@ beforeEach(() => { fixture = createOpencodeHTTPMetadataFixture(); });
 afterEach(() => fixture.dispose());
 
 it('closes the retained server across environment transitions and reads the new environment', async () => {
-  const plugin = fixture.createPlugin();
-  const service = new OpencodeMetadataService(runtimeHostFor(plugin, 'opencode'), plugin.executionLifecycleRegistry);
+  const { host: plugin } = await fixture.createHostFixture();
+  const service = new OpencodeMetadataService(plugin.getRuntimeHost('opencode'), plugin.executionLifecycleRegistry);
   try {
     await expect(service.loadCatalog()).resolves.toBe(true);
     const endpoint = readFileSync(fixture.environment.ENDPOINT_FILE!, 'utf8');
-    const hooks = plugin.executionLifecycleRegistry.registerTransitionHook.mock.calls[0][1];
-    await hooks.beforeTransition();
-    await expect(fetch(endpoint)).rejects.toThrow();
-    const pending = service.loadCatalog();
-    const replacementCatalog = path.join(fixture.root, 'replacement.json');
-    writeFileSync(replacementCatalog, JSON.stringify([
-      { providerID: 'new', id: 'model', name: 'New Model', enabled: true, variants: [] },
-    ]));
-    plugin.settings.providerConfigs.opencode.environmentVariables =
-      plugin.settings.providerConfigs.opencode.environmentVariables.replace(fixture.environment.CATALOG_FILE!, replacementCatalog);
-    await hooks.afterTransition();
+    let pending: Promise<boolean> | undefined;
+    await plugin.runProviderExecutionTransition(['opencode'], async () => {
+      await expect(fetch(endpoint)).rejects.toThrow();
+      pending = service.loadCatalog();
+      const replacementCatalog = path.join(fixture.root, 'replacement.json');
+      writeFileSync(replacementCatalog, JSON.stringify([
+        { providerID: 'new', id: 'model', name: 'New Model', enabled: true, variants: [] },
+      ]));
+      updateOpencodeProviderSettings(plugin.settings, { environmentVariables: getOpencodeProviderSettings(plugin.settings).environmentVariables.replace(fixture.environment.CATALOG_FILE!, replacementCatalog) });
+    });
     await expect(pending).resolves.toBe(true);
     expect(getOpencodeProviderSettings(plugin.settings).discoveredModels).toEqual([
       { rawId: 'new/model', label: 'new/New Model' },
@@ -40,8 +37,8 @@ it('closes the retained server across environment transitions and reads the new 
 });
 
 it('replaces a crashed idle server on the next discovery', async () => {
-  const plugin = fixture.createPlugin();
-  const service = new OpencodeMetadataService(runtimeHostFor(plugin, 'opencode'), plugin.executionLifecycleRegistry);
+  const { host: plugin } = await fixture.createHostFixture();
+  const service = new OpencodeMetadataService(plugin.getRuntimeHost('opencode'), plugin.executionLifecycleRegistry);
   try {
     await expect(service.loadCatalog()).resolves.toBe(true);
     const endpoint = readFileSync(fixture.environment.ENDPOINT_FILE!, 'utf8');
@@ -56,8 +53,8 @@ it('replaces a crashed idle server on the next discovery', async () => {
 });
 
 it('keeps the shared server alive after an invalid catalog and permits retry after repair', async () => {
-  const plugin = fixture.createPlugin();
-  const service = new OpencodeMetadataService(runtimeHostFor(plugin, 'opencode'), plugin.executionLifecycleRegistry);
+  const { host: plugin } = await fixture.createHostFixture();
+  const service = new OpencodeMetadataService(plugin.getRuntimeHost('opencode'), plugin.executionLifecycleRegistry);
   try {
     await expect(service.loadCatalog()).resolves.toBe(true);
     const endpoint = readFileSync(fixture.environment.ENDPOINT_FILE!, 'utf8');
@@ -72,8 +69,8 @@ it('keeps the shared server alive after an invalid catalog and permits retry aft
 });
 
 it('retains initialization after a missing-model response so warmup can be retried', async () => {
-  const plugin = fixture.createPlugin();
-  const service = new OpencodeMetadataService(runtimeHostFor(plugin, 'opencode'), plugin.executionLifecycleRegistry);
+  const { host: plugin } = await fixture.createHostFixture();
+  const service = new OpencodeMetadataService(plugin.getRuntimeHost('opencode'), plugin.executionLifecycleRegistry);
   try {
     // Warm native startup first so this measures only the missing-model catalog read.
     await expect(service.loadCatalog()).resolves.toBe(true);
@@ -90,8 +87,8 @@ it('retains initialization after a missing-model response so warmup can be retri
 });
 
 it('clears removed models when the retained server reports an empty catalog', async () => {
-  const plugin = fixture.createPlugin();
-  const service = new OpencodeMetadataService(runtimeHostFor(plugin, 'opencode'), plugin.executionLifecycleRegistry);
+  const { host: plugin } = await fixture.createHostFixture();
+  const service = new OpencodeMetadataService(plugin.getRuntimeHost('opencode'), plugin.executionLifecycleRegistry);
   try {
     await expect(service.loadCatalog()).resolves.toBe(true);
     writeFileSync(fixture.environment.CATALOG_FILE!, '[]');

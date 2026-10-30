@@ -8,15 +8,17 @@ import { Prec, StateEffect } from '@codemirror/state';
 import { EditorView } from '@codemirror/view';
 import { axe } from '@test/helpers/accessibility';
 import { claudeCatalogFixture } from '@test/helpers/claudeModels';
+import { createFeatureHostFixture } from '@test/helpers/FeatureHostFixture';
+import { createChatFeatureHost } from '@test/helpers/features/chat/ChatFeatureHostFixture';
 import { createClaudianView } from '@test/helpers/features/chat/ClaudianViewHarness';
 import { createProjectsFake } from '@test/helpers/features/chat/ProjectsFake';
-import { installSessionRuntimePool } from '@test/helpers/features/chat/SessionRuntimePoolHarness';
+import { createSessionRuntimePool } from '@test/helpers/features/chat/SessionRuntimePoolHarness';
 import { FakeSideBackend } from '@test/helpers/features/chat/SideChatSessionHarness';
 import { testDate } from '@test/helpers/testClock';
 import { fireEvent, waitFor, within } from '@testing-library/dom';
 import { App, Component } from 'obsidian';
 
-import { ProviderExecutionLifecycleRegistry } from '@/core/execution';
+import { ChatModelSelectionCoordinator } from '@/app/settings/ChatModelSelectionCoordinator';
 import type { ProviderCommandDiscoveryResult } from '@/core/providers/commands/ProviderCommandDiscoveryResult';
 import { ProviderCommandDiscoveryStore } from '@/core/providers/commands/ProviderCommandDiscoveryStore';
 import type { ProviderCommandEntry } from '@/core/providers/commands/ProviderCommandEntry';
@@ -24,6 +26,7 @@ import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { type ChatMessage, type ClaudianSettings, type Conversation, isCanonicalUserMessage } from '@/core/types';
 import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
 import { PromptHistoryNavigation } from '@/features/chat/composer/PromptHistoryNavigation';
+import { SessionMessagingService } from '@/features/chat/session-messaging/SessionMessagingService';
 import { activateTab, destroyTab } from '@/features/chat/tabs/TabLifecycle';
 import { TabManager } from '@/features/chat/tabs/TabManager';
 import { createTabRuntime } from '@/features/chat/tabs/TabRuntimeFactory';
@@ -36,19 +39,7 @@ afterAll(() => hiddenStyle.remove());
 beforeEach(() => {
   globalThis.ResizeObserver = class { observe() {} unobserve() {} disconnect() {} };
   Object.defineProperty(document, 'elementFromPoint', { configurable: true, value: () => null });
-  Object.assign(HTMLElement.prototype, {
-    hasClass(this: HTMLElement, name: string) { return this.classList.contains(name); },
-    addClass(this: HTMLElement, ...names: string[]) { this.classList.add(...names); },
-    removeClass(this: HTMLElement, ...names: string[]) { this.classList.remove(...names); },
-    empty(this: HTMLElement) { this.replaceChildren(); },
-    setText(this: HTMLElement, text: string) { this.textContent = text; },
-    appendText(this: HTMLElement, text: string) { this.appendChild(this.ownerDocument.createTextNode(text)); },
-    setCssProps(this: HTMLElement, props: Record<string, string>) {
-      for (const [key, value] of Object.entries(props)) this.style.setProperty(key, value);
-    },
-    toggleClass(this: HTMLElement, name: string, enabled: boolean) { this.classList.toggle(name, enabled); },
-    scrollIntoView() {},
-  });
+
 });
 afterEach(() => {
   globalThis.ResizeObserver = originalResizeObserver;
@@ -61,10 +52,6 @@ async function createView(provisional = false, options: { managed?: boolean; dra
   vi.spyOn(ProviderRegistry, 'createExecutionBackend').mockReturnValue(backend);
   const app = new App();
   Object.assign(app.vault.adapter, { basePath: '/vault' });
-  Object.assign(app.vault, { on: () => ({}), offref() {} });
-  Object.assign(app.workspace, { getActiveViewOfType: () => null, getActiveFile: () => null, on: () => ({}), offref() {} });
-  Object.assign(app, { metadataCache: { on: () => ({}), offref() {} } });
-  const lifecycle = new ProviderExecutionLifecycleRegistry();
   const settings = {
     model: 'claude-sonnet-4-5', effortLevel: 'high', permissionMode: 'manual',
     enableAutoTitleGeneration: false, excludedTags: [], mediaFolder: '', systemPrompt: '', userName: '',
@@ -82,29 +69,28 @@ async function createView(provisional = false, options: { managed?: boolean; dra
     [conversation.id, conversation],
     ['other-conversation', { ...conversation, id: 'other-conversation', sessionId: 'other-session' }],
   ]);
-  const plugin = {
-    app, settings,
-    providerHost: {
-      app, settings, executionLifecycleRegistry: lifecycle,
-      getResolvedProviderCliPath: async () => '/bin/claude', getActiveEnvironmentVariables: () => '',
-    },
+  const fixture = await createFeatureHostFixture({ app, settings, providerOverrides: {
+    getResolvedProviderCliPath: async () => '/bin/claude',
+  } });
+  const pool = createSessionRuntimePool(() => plugin);
+  const messaging = new SessionMessagingService({ getHost: () => plugin, getActiveConversationId: () => conversation.id, refreshModelControls: () => {} });
+  const plugin: ChatFeatureHost = await createChatFeatureHost({ fixture, sessionRuntimes: pool,
+    bindSessionTools: id => messaging.bindSessionTools(id),
     executionPersistence: {
       registerExecutionBinding() {}, releaseExecutionBinding() {},
       assertConversationExecutionAuthority: async () => {},
       persistExecutionSnapshot: async (...args: unknown[]) => { saved.push(structuredClone(args)); return true; },
       recordConversationActivity: async () => {},
     },
-    getSessionSnapshotDirectory: () => '/tmp/claudian-sessions', getCommittedSettings: () => settings,
-    getActiveEnvironmentVariables: () => '', getConversationSummary: (id: string) => conversations.get(id),
+    getConversationSummary: (id: string) => conversations.get(id) ?? null,
     projects: createProjectsFake(),
-    getConversationSync: (id: string) => conversations.get(id), getCachedConversation: (id: string) => conversations.get(id),
-    getConversationById: async (id: string) => conversations.get(id), findConversationAcrossViews: () => null,
-    getConversationList: () => [conversation], renameConversation: async () => {},
-    updateConversation: async (_id: string, patch: unknown) => { saved.push(structuredClone(patch)); },
-    mutateSettings: async (mutate: (value: ClaudianSettings) => void) => mutate(settings),
-    chatModelSelection: { beginIntent: () => 1, commitIntent: async () => true },
-  } as unknown as ChatFeatureHost;
-  const pool = installSessionRuntimePool(plugin);
+    getConversationSync: (id: string) => conversations.get(id) ?? null,
+    getCachedConversation: (id: string) => conversations.get(id) ?? null,
+    getConversationById: async (id: string) => conversations.get(id) ?? null,
+    getConversationList: () => [{ ...conversation, messageCount: conversation.messages.length, preview: '' }], renameConversation: async () => {},
+    updateConversation: async (_id, patch) => { saved.push(structuredClone(patch)); },
+    chatModelSelection: new ChatModelSelectionCoordinator(fixture.coordinator),
+  });
   const component = new Component();
   const containerEl = document.body.createDiv();
   const manager = options.managed ? new TabManager(plugin, containerEl, component as never, {}, new VaultMentionDataProvider(app)) : null;
@@ -124,7 +110,7 @@ async function createView(provisional = false, options: { managed?: boolean; dra
   activateTab(tab);
   tab.dom.inputEl.focus();
   return { get tab() { return manager?.getActiveTab() ?? tab; }, backend, saved, conversation, manager, plugin,
-    dispose: async () => { if (manager) await manager.destroy(); else await destroyTab(tab); await pool.dispose(); await lifecycle.dispose(); },
+    dispose: async () => { if (manager) await manager.destroy(); else await destroyTab(tab); await pool.dispose(); await messaging.dispose(); await fixture.dispose(); },
   };
 }
 
@@ -213,7 +199,7 @@ it.each([false, true])('restores history before the actual View Scope consumes E
     expect(view.tab.dom.inputEl.value).toBe(busy ? 'Running prompt' : 'Previous prompt');
     const native = view.backend.latest;
     const cancellations = native.cancelCalls;
-    const root = createClaudianView({ host: view.plugin, containerEl: view.tab.dom.contentEl,
+    const root = await createClaudianView({ host: view.plugin, containerEl: view.tab.dom.contentEl,
       contentEl: view.tab.dom.contentEl, tabManager: { getActiveTab: () => view.tab } });
     root.wireEventHandlers();
     const handler = root.scope.handlers.find((entry: { key: string }) => entry.key === 'Escape');

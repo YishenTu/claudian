@@ -2,12 +2,17 @@ import { TextDecoder, TextEncoder } from 'node:util';
 import { deserialize, serialize } from 'node:v8';
 
 import type * as AxeAdapter from '@test/helpers/accessibility';
+import { ControlledResizeObserver, resetResizeObservers } from '@test/helpers/dom/ResizeObserver';
 
 
 // Node-only suites do not need to load the accessibility engine.
 if (typeof document !== 'undefined') {
   const { toHaveNoViolations } = await vi.importActual<typeof AxeAdapter>('@test/helpers/accessibility');
   expect.extend(toHaveNoViolations);
+  if (typeof globalThis.ResizeObserver === 'undefined') {
+    globalThis.ResizeObserver = ControlledResizeObserver;
+  }
+  afterEach(resetResizeObservers);
 }
 
 type TestWindow = typeof globalThis & {
@@ -48,6 +53,12 @@ if (globalThis.Range && !Reflect.has(globalThis.Range.prototype, 'getClientRects
   });
 }
 
+// jsdom has no layout/scrolling engine. Callers can spy on this native boundary;
+// a successful call does not establish any rendered geometry or scroll position.
+if (globalThis.HTMLElement && !Reflect.has(globalThis.HTMLElement.prototype, 'scrollIntoView')) {
+  globalThis.HTMLElement.prototype.scrollIntoView = function () {};
+}
+
 if (!('window' in globalThis)) {
   Object.defineProperty(globalThis, 'window', {
     configurable: true,
@@ -56,7 +67,8 @@ if (!('window' in globalThis)) {
   });
 }
 
-if (!testWindow.localStorage) {
+// Node's native localStorage is shared across VM workers; use per-file storage instead.
+if (typeof document === 'undefined' || !testWindow.localStorage) {
   const values = new Map<string, string>();
   Object.defineProperty(testWindow, 'localStorage', {
     configurable: true,
@@ -72,6 +84,9 @@ if (!testWindow.localStorage) {
     } satisfies Storage,
   });
 }
+
+// Keep the real identity hashing/cache; tests may replace storage before importing it.
+testWindow.localStorage!.setItem('claudian.deviceSettingsKey', 'claudian-test-installation');
 
 // Polyfill Obsidian DOM helpers for jsdom-based tests.
 const SVG_NS = 'http://www.w3.org/2000/svg';

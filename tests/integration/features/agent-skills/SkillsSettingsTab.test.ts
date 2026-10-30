@@ -1,20 +1,14 @@
 /** @vitest-environment jsdom */
 import { axe } from '@test/helpers/accessibility';
-import { DesktopVault } from '@test/helpers/core/DesktopVault';
-import { DEFAULT_CLAUDIAN_SETTINGS } from '@test/helpers/defaultSettings';
+import type { DesktopVault } from '@test/helpers/core/DesktopVault';
+import { createFeatureHostFixture } from '@test/helpers/FeatureHostFixture';
 import { fireEvent, screen, waitFor, within } from '@testing-library/dom';
-import type { App } from 'obsidian';
 
 import type { ClaudianSettings } from '@/core/types';
 import { AGENT_SKILLS_ROOT, CLAUDE_COMMANDS_ROOT, CLAUDE_SKILLS_ROOT } from '@/features/agent-skills/AgentSkillRepository';
 import { ClaudeSkillSync } from '@/features/agent-skills/ClaudeSkillSync';
 import { SkillsSettingsTab } from '@/features/agent-skills/SkillsSettingsTab';
 import { t } from '@/i18n/i18n';
-
-vi.mock('obsidian', async () => ({
-  ...(await vi.importActual<typeof import('@test/__mocks__/obsidian')>('@test/__mocks__/obsidian')),
-  ...(await vi.importActual<typeof import('@test/helpers/ObsidianSettingsDOM')>('@test/helpers/ObsidianSettingsDOM')),
-}));
 
 function skill(name: string, description = 'Description'): string {
   return `---\nname: ${name}\ndescription: ${description}\n---\nInstructions\n`;
@@ -24,27 +18,25 @@ describe('SkillsSettingsTab', () => {
   let vault: DesktopVault;
   let settings: ClaudianSettings;
   let tab: SkillsSettingsTab | null;
+  let fixture: Awaited<ReturnType<typeof createFeatureHostFixture>>;
 
   beforeEach(async () => {
     document.body.replaceChildren();
-    vault = await DesktopVault.create();
-    settings = { ...DEFAULT_CLAUDIAN_SETTINGS, hiddenCommands: ['compact'] };
+    fixture = await createFeatureHostFixture({ settings: { hiddenCommands: ['compact'] } });
+    vault = fixture.vault;
+    settings = fixture.settings;
     tab = null;
   });
 
   afterEach(async () => {
     tab?.dispose();
-    await vault.dispose();
+    await fixture.dispose();
     vi.useRealTimers();
   });
 
   function render(): HTMLElement {
     const container = document.body.appendChild(document.createElement('main'));
-    tab = new SkillsSettingsTab(container, {} as App, vault.files, {
-      settings,
-      mutateSettings: vi.fn(async mutation => { await mutation(settings); }),
-      notifyAgentSkillsChanged: vi.fn(async () => undefined),
-    });
+    tab = new SkillsSettingsTab(container, fixture.host.app, vault.files, fixture.host);
     return container;
   }
 
@@ -178,6 +170,7 @@ describe('SkillsSettingsTab', () => {
     fireEvent.input(textarea, { target: { value: '/review\nskill:review\n\nreview' } });
     expect(settings.hiddenCommands).toEqual(['compact']);
     await vi.advanceTimersByTimeAsync(500);
+    await fixture.coordinator.mutateConditionally(() => false);
     expect(settings.hiddenCommands).toEqual(['review', 'skill:review']);
   });
 });

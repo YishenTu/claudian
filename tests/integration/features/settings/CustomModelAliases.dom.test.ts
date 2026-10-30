@@ -1,47 +1,25 @@
 /** @vitest-environment jsdom */
 import '@/providers';
-import '@test/helpers/ObsidianSettingsDOM';
 
 import { deserialize, serialize } from 'node:v8';
 
 import { axe } from '@test/helpers/accessibility';
+import { createFeatureHostFixture } from '@test/helpers/FeatureHostFixture';
+import { createObsidianPlugin } from '@test/helpers/ObsidianSettingsHost';
 import { fireEvent, waitFor, within } from '@testing-library/dom';
 import { Notice } from 'obsidian';
 
-import { ClaudianSettingsStorage } from '@/app/settings/ClaudianSettingsStorage';
-import { DEFAULT_CLAUDIAN_SETTINGS } from '@/app/settings/defaultSettings';
-import { SettingsCoordinator } from '@/app/settings/SettingsCoordinator';
-import type { VaultFileAdapter } from '@/core/storage/VaultFileAdapter';
 import { ClaudianSettingTab } from '@/features/settings/ClaudianSettings';
-import { getClaudeProviderSettings, updateClaudeProviderSettings } from '@/providers/claude/settings';
-
-// Obsidian applies native input attributes supplied through createEl options.
-const originalCreateEl = HTMLElement.prototype.createEl;
-HTMLElement.prototype.createEl = function (tag, info, callback) {
-  const element = originalCreateEl.call(this, tag, info) as HTMLElement;
-  if (typeof info === 'object') {
-    for (const name of ['type', 'value', 'placeholder'] as const) {
-      if (typeof info[name] === 'string') element.setAttribute(name, info[name]);
-    }
-  }
-  callback?.(element as never);
-  return element as never;
-};
-afterAll(() => { HTMLElement.prototype.createEl = originalCreateEl; });
+import { getClaudeProviderSettings } from '@/providers/claude/settings';
 
 it.each(['Enter', 'Escape'])('leaves composing %s to the custom model alias editor', async key => {
   globalThis.structuredClone ??= value => deserialize(serialize(value));
-  const settings = { providerConfigs: { claude: { modelAliases: {} } } };
   let saved = '';
-  const coordinator = new SettingsCoordinator(settings, async draft => { saved = JSON.stringify(draft); });
-  const plugin = {
-    settings,
-    getActiveEnvironmentVariables: () => 'ANTHROPIC_MODEL=custom-model',
-    mutateSettings: coordinator.mutate.bind(coordinator),
-    notifyProviderChatOptionsChanged: vi.fn(),
-    storage: { getAdapter: () => ({}) },
-  };
-  const tab = new ClaudianSettingTab({} as any, {} as any, plugin as any);
+  const { settings, coordinator, host: plugin } = await createFeatureHostFixture({
+    settings: { providerConfigs: { claude: { modelAliases: {}, environmentVariables: 'ANTHROPIC_MODEL=custom-model' } } },
+    beforePersist: draft => { saved = JSON.stringify(draft); },
+  });
+  const tab = new ClaudianSettingTab(plugin.app, createObsidianPlugin(plugin.app), plugin);
   const container = document.body.appendChild(document.createElement('div'));
   try {
     tab['renderCustomContextLimits'](container, 'claude');
@@ -65,24 +43,18 @@ it.each(['Enter', 'Escape'])('leaves composing %s to the custom model alias edit
 
 it('keeps the latest alias edit when it restores the committed value during a pending save', async () => {
   globalThis.structuredClone ??= value => deserialize(serialize(value));
-  const settings = { providerConfigs: { claude: { modelAliases: {} } } };
   let release!: () => void;
   let started!: () => void;
   const saving = new Promise<void>(resolve => { started = resolve; });
   const gate = new Promise<void>(resolve => { release = resolve; });
   let writes = 0;
-  const coordinator = new SettingsCoordinator(settings, async () => {
-    if (++writes === 1) { started(); await gate; }
-  });
   const notify = vi.fn();
-  const plugin = {
-    settings,
-    getActiveEnvironmentVariables: () => 'ANTHROPIC_MODEL=custom-model',
-    mutateSettings: coordinator.mutate.bind(coordinator),
-    notifyProviderChatOptionsChanged: notify,
-    storage: { getAdapter: () => ({}) },
-  };
-  const tab = new ClaudianSettingTab({} as any, {} as any, plugin as any);
+  const { settings, coordinator, host: plugin } = await createFeatureHostFixture({
+    settings: { providerConfigs: { claude: { modelAliases: {}, environmentVariables: 'ANTHROPIC_MODEL=custom-model' } } },
+    beforePersist: async () => { if (++writes === 1) { started(); await gate; } },
+    overrides: { notifyProviderChatOptionsChanged: notify },
+  });
+  const tab = new ClaudianSettingTab(plugin.app, createObsidianPlugin(plugin.app), plugin);
   const container = document.body.appendChild(document.createElement('div'));
   tab['renderCustomContextLimits'](container, 'claude');
   const field = within(container).getByRole('textbox', { name: 'Alias for custom-model' }) as HTMLInputElement;
@@ -99,23 +71,14 @@ it('keeps the latest alias edit when it restores the committed value during a pe
   container.remove();
 });
 
-
 it('persists and clears prototype-named overrides through the general custom model editor', async () => {
-  const settings = structuredClone(DEFAULT_CLAUDIAN_SETTINGS);
-  updateClaudeProviderSettings(settings, { visibleModels: ['__proto__', 'constructor'] });
-  let serialized = '';
-  const adapter = {
-    exists: async () => serialized !== '', read: async () => serialized,
-    write: async (_path: string, value: string) => { serialized = value; },
-  } as unknown as VaultFileAdapter;
-  const storage = new ClaudianSettingsStorage(adapter, DEFAULT_CLAUDIAN_SETTINGS);
-  const coordinator = new SettingsCoordinator(settings, value => storage.save(value));
-  const plugin = {
-    settings, mutateSettings: coordinator.mutate.bind(coordinator),
-    getActiveEnvironmentVariables: () => 'ANTHROPIC_MODEL=__proto__\nANTHROPIC_DEFAULT_SONNET_MODEL=constructor',
-    notifyProviderChatOptionsChanged: vi.fn(), storage: { getAdapter: () => adapter },
-  };
-  const tab = new ClaudianSettingTab({} as any, {} as any, plugin as any);
+  const { settings, coordinator, host: plugin, settingsStorage: storage } = await createFeatureHostFixture({
+    settings: { providerConfigs: { claude: {
+      visibleModels: ['__proto__', 'constructor'],
+      environmentVariables: 'ANTHROPIC_MODEL=__proto__\nANTHROPIC_DEFAULT_SONNET_MODEL=constructor',
+    } } },
+  });
+  const tab = new ClaudianSettingTab(plugin.app, createObsidianPlugin(plugin.app), plugin);
   const container = document.body.appendChild(document.createElement('div'));
   tab['renderCustomContextLimits'](container, 'claude');
   const initial: string[][] = [];
@@ -163,15 +126,13 @@ it('persists and clears prototype-named overrides through the general custom mod
 });
 
 it('retains a failed custom alias across rerender and allows retry', async () => {
-  const settings = { providerConfigs: { claude: { modelAliases: {} } } };
   const persist = vi.fn().mockRejectedValueOnce(new Error('storage unavailable')).mockResolvedValue(undefined);
-  const coordinator = new SettingsCoordinator(settings, persist);
-  const plugin = {
-    settings, getActiveEnvironmentVariables: () => 'ANTHROPIC_MODEL=custom-model',
-    mutateSettings: coordinator.mutate.bind(coordinator),
-    notifyProviderChatOptionsChanged: vi.fn(), storage: { getAdapter: () => ({}) },
-  };
-  const tab = new ClaudianSettingTab({} as any, {} as any, plugin as any);
+  const notify = vi.fn();
+  const { settings, host: plugin } = await createFeatureHostFixture({
+    settings: { providerConfigs: { claude: { modelAliases: {}, environmentVariables: 'ANTHROPIC_MODEL=custom-model' } } },
+    beforePersist: persist, overrides: { notifyProviderChatOptionsChanged: notify },
+  });
+  const tab = new ClaudianSettingTab(plugin.app, createObsidianPlugin(plugin.app), plugin);
   const container = document.body.appendChild(document.createElement('div'));
   const field = () => within(container).getByRole<HTMLInputElement>('textbox', { name: 'Alias for custom-model' });
   try {
@@ -179,7 +140,7 @@ it('retains a failed custom alias across rerender and allows retry', async () =>
     field().focus();
     fireEvent.input(field(), { target: { value: 'My custom alias' } });
     fireEvent.keyDown(field(), { key: 'Enter' });
-    await new Promise(resolve => setTimeout(resolve, 0));
+    await waitFor(() => expect(Notice).toHaveBeenCalledWith('Could not save model alias. Try again.'));
     tab['renderCustomContextLimits'](container, 'claude');
     expect(field().value).toBe('My custom alias');
     expect(Notice).toHaveBeenCalledWith('Could not save model alias. Try again.');

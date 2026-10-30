@@ -10,17 +10,10 @@ import { CodexCLIResolver } from '@/providers/codex/runtime/CodexCLIResolver';
 vi.mock('fs');
 const mockedExists = fs.existsSync as Mock;
 const mockedStat = fs.statSync as Mock;
-const mockedDeviceKey = getHostnameKey as Mock;
-
-vi.mock('@/core/device/InstallationKey', async () => ({
-  ...(await vi.importActual<typeof import('@/core/device/InstallationKey')>('@/core/device/InstallationKey')),
-  getInstallationKey: vi.fn(() => 'current-host'),
-}));
 
 describe('CodexCLIResolver', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockedDeviceKey.mockReturnValue('current-host');
   });
 
   it('uses the current host path instead of another synced host path', async () => {
@@ -33,7 +26,7 @@ describe('CodexCLIResolver', () => {
         codex: {
           cliPathsByHost: {
             'other-host': '/other/codex',
-            'current-host': '/current/codex',
+            [getHostnameKey()]: '/current/codex',
           },
           cliPath: '/legacy/codex',
         },
@@ -50,7 +43,7 @@ describe('CodexCLIResolver', () => {
       mockedStat.mockImplementation((filePath: string) => ({ isFile: () => files.has(filePath) }));
       const resolver = new CodexCLIResolver();
       const settings = {
-        providerConfigs: { codex: { cliPathsByHost: { 'current-host': '/current/codex' }, cliPath: '/legacy/codex' } },
+        providerConfigs: { codex: { cliPathsByHost: { [getHostnameKey()]: '/current/codex' }, cliPath: '/legacy/codex' } },
       };
       const context = { executionTarget: { method, platformFamily: 'windows', platformOs: 'windows' } };
 
@@ -66,7 +59,7 @@ describe('CodexCLIResolver', () => {
   it('retries missing installations without a settings change', () => {
     mockedStat.mockReturnValue({ isFile: () => false });
     const resolver = new CodexCLIResolver();
-    const settings = { providerConfigs: { codex: { cliPathsByHost: { 'current-host': '/installed/codex' } } } };
+    const settings = { providerConfigs: { codex: { cliPathsByHost: { [getHostnameKey()]: '/installed/codex' } } } };
     const context = { executionTarget: { method: 'host-native', platformFamily: 'unix', platformOs: 'linux' } };
 
     expect(resolver.resolveFromSettings(settings, context)).toBeNull();
@@ -78,7 +71,7 @@ describe('CodexCLIResolver', () => {
     const cliPath = 'C:\\tools\\codex.exe';
     mockedStat.mockImplementation((filePath: string) => ({ isFile: () => filePath === cliPath }));
     const resolver = new CodexCLIResolver();
-    const settings = { providerConfigs: { codex: { cliPathsByHost: { 'current-host': cliPath } } } };
+    const settings = { providerConfigs: { codex: { cliPathsByHost: { [getHostnameKey()]: cliPath } } } };
 
     expect(resolver.resolveFromSettings(settings, {
       executionTarget: { method: 'host-native', platformFamily: 'windows', platformOs: 'windows' },
@@ -129,7 +122,7 @@ describe('CodexCLIResolver', () => {
     const resolver = new CodexCLIResolver();
     const resolved = resolver.resolveFromSettings(
       {
-        providerConfigs: { codex: { cliPathsByHost: { 'current-host': 'codex' } } },
+        providerConfigs: { codex: { cliPathsByHost: { [getHostnameKey()]: 'codex' } } },
       },
       { executionTarget: { method: 'wsl', platformFamily: 'unix', platformOs: 'linux' } },
     );
@@ -146,7 +139,7 @@ describe('CodexCLIResolver', () => {
         providerConfigs: {
           codex: {
             cliPathsByHost: {
-              'current-host': 'C:\\Users\\user\\AppData\\Roaming\\npm\\codex.exe',
+              [getHostnameKey()]: 'C:\\Users\\user\\AppData\\Roaming\\npm\\codex.exe',
             },
           },
         },
@@ -166,10 +159,10 @@ describe('CodexCLIResolver', () => {
         providerConfigs: {
           codex: {
             installationMethodsByHost: {
-              'current-host': 'native-windows',
+              [getHostnameKey()]: 'native-windows',
             },
             cliPathsByHost: {
-              'current-host': 'C:\\Users\\user\\AppData\\Roaming\\npm\\codex.exe',
+              [getHostnameKey()]: 'C:\\Users\\user\\AppData\\Roaming\\npm\\codex.exe',
             },
           },
         },

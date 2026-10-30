@@ -1,29 +1,16 @@
 import { EditorState } from '@codemirror/state';
 import { EditorView } from '@codemirror/view';
 import { FakeAuxiliaryBackend } from '@test/helpers/core/auxiliary/AuxiliaryExecutionTestHarness';
+import { createFeatureHostFixture } from '@test/helpers/FeatureHostFixture';
 import { fireEvent, screen, waitFor } from '@testing-library/dom';
-import { Component } from 'obsidian';
+import { App, Component } from 'obsidian';
 
-import { ProviderExecutionLifecycleRegistry } from '@/core/execution';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { ProviderWorkspaceRegistry } from '@/core/providers/ProviderWorkspaceRegistry';
-import type { ProviderChatUIConfig, ProviderId, ProviderModelPolicy, ProviderRegistration } from '@/core/providers/types';
+import type { ProviderChatUIConfig, ProviderId, ProviderModelPolicy, ProviderRegistration, ProviderSettingsStorageAdapter } from '@/core/providers/types';
 import { InlineEditSessionOwner } from '@/features/inline-edit/InlineEditSessionOwner';
 import { InlineEditModal, InlineEditSession } from '@/features/inline-edit/ui/InlineEditModal';
 import { CLAUDE_PROVIDER_ICON } from '@/shared/icons';
-
-// Obsidian augments HTMLElement; jsdom needs the subset Inline Edit uses.
-Object.assign(HTMLElement.prototype, {
-  empty(this: HTMLElement) { this.replaceChildren(); },
-  addClass(this: HTMLElement, ...names: string[]) { this.classList.add(...names); },
-  removeClass(this: HTMLElement, ...names: string[]) { this.classList.remove(...names); },
-  hasClass(this: HTMLElement, name: string) { return this.classList.contains(name); },
-  toggleClass(this: HTMLElement, name: string, enabled: boolean) { this.classList.toggle(name, enabled); },
-  setCssProps(this: HTMLElement, props: Record<string, string>) {
-    for (const [key, value] of Object.entries(props)) this.style.setProperty(key, value);
-  },
-  scrollIntoView() {},
-});
 
 const cleanups: Array<() => Promise<void>> = [];
 /** The registry cannot unregister, so fake providers stay enabled only in the test that registered them. */
@@ -71,45 +58,53 @@ export function registerFakeInlineEditProvider(
   const backend = new FakeAuxiliaryBackend();
   const fakeModelPolicy = createFakeModelPolicy(models);
   const generation = harnessGeneration;
+  const unsupported = (): never => { throw new Error('Inline edit provider fixture does not model history or task interpretation'); };
   ProviderWorkspaceRegistry.setServices(providerId, {});
-  ProviderRegistry.register(providerId, {
+  const registration = {
     blankTabOrder: 0,
     displayName: providerId,
-    capabilities: { supportsEphemeralSessions: true, supportsProviderCommands: true, reasoningControl: 'effort' },
+    capabilities: {
+      providerId, supportsEphemeralSessions: true, supportsProviderCommands: true, reasoningControl: 'effort',
+      supportsNativeHistory: false, supportsRewind: false, supportsFork: false, supportsImageAttachments: false,
+    },
     chatUIConfig: { ...fakeModelPolicy, getProviderIcon: () => CLAUDE_PROVIDER_ICON, ...ui },
     modelPolicy: fakeModelPolicy,
+    settingsStorage: { normalizeStored: () => false },
     createExecutionBackend: () => backend,
+    settingsReconciler: {
+      invalidateConversationSessions: unsupported,
+      reconcileModelWithEnvironment: unsupported,
+    },
+    historyService: {
+      hydrateConversationHistory: unsupported,
+      resolveSessionIdForConversation: unsupported,
+      isPendingForkConversation: unsupported,
+      buildForkProviderState: unsupported,
+    },
+    taskResultInterpreter: {
+      describeTask: unsupported, interpretLaunch: unsupported,
+      getOutputTaskId: unsupported, interpretResult: unsupported,
+    },
     isEnabled: (settings: Record<string, unknown>) => (
       generation === harnessGeneration && isProviderEnabled(providerId, settings)
     ),
-  } as unknown as ProviderRegistration);
+  } satisfies ProviderRegistration & { settingsStorage: ProviderSettingsStorageAdapter };
+  ProviderRegistry.register(providerId, registration);
   return backend;
 }
 
 /** A real CodeMirror editor on `hello world` whose Obsidian editor selects `hello` until `changeSelection`. */
-export function createInlineEditHarness() {
-  const lifecycle = new ProviderExecutionLifecycleRegistry();
+export async function createInlineEditHarness() {
   const owner = new InlineEditSessionOwner();
   ProviderWorkspaceRegistry.clear();
   const backend = registerFakeInlineEditProvider('claude');
-  const app: any = {
-    vault: { adapter: { basePath: '/vault' }, getFiles: () => [], getAllLoadedFiles: () => [] },
-  };
-  const plugin: any = Object.assign(new Component(), {
-    settings: { model: 'sonnet', effortLevel: 'high' },
-    getActiveEnvironmentVariables: () => '',
-    getActiveModelSelection: () => null,
-    async mutateSettings(mutation: (settings: Record<string, unknown>) => void | Promise<void>) {
-      await mutation(plugin.settings);
-    },
-    providerHost: {
-      app,
-      storage: { getAdapter: () => ({}) },
-      executionLifecycleRegistry: lifecycle,
-      runProviderExecutionTransition: lifecycle.runTransition.bind(lifecycle),
-    },
+  const app = new App();
+  const fixture = await createFeatureHostFixture({
+    app, settings: { model: 'sonnet', effortLevel: 'high', inlineEditModel: null, providerConfigs: {} },
   });
-  plugin.load();
+  const plugin = fixture.host;
+  const component = new Component();
+  component.load();
   const editorView = new EditorView({
     state: EditorState.create({ doc: 'hello world' }),
     parent: document.body,
@@ -126,24 +121,25 @@ export function createInlineEditHarness() {
   const settled = vi.fn();
   const notePath = 'note.md';
   const createSession = () => new InlineEditSession(
-    app, plugin, plugin, editorView, editor, context, notePath, settled, { providerId: 'claude' },
+    app, plugin, component, editorView, editor, context, notePath, settled, { providerId: 'claude' },
   );
   /** Mirrors Obsidian's editorCallback: a callback editor plus the view that owns the current editor. */
   const createModal = (callbackEditor: any = editor, viewEditor: any = editor) =>
-    new InlineEditModal(app, plugin, plugin, callbackEditor, { editor: viewEditor } as any, context, notePath, owner);
+    new InlineEditModal(app, plugin, component, callbackEditor, { editor: viewEditor } as any, context, notePath, owner);
   cleanups.push(async () => {
     owner.dispose();
     editorView.destroy();
-    plugin.unload();
-    await lifecycle.dispose();
+    component.unload();
+    await fixture.dispose();
   });
   return {
-    app, backend, createModal, createSession, editor, editorView, notePath, owner, plugin, settled,
+    app, backend, component, createModal, createSession, editor, editorView, notePath, owner, plugin, settled,
+    settingsStorage: fixture.settingsStorage,
     changeSelection() { end = 11; fireEvent.mouseUp(editorView.dom); },
   };
 }
 
-export type InlineEditHarness = ReturnType<typeof createInlineEditHarness>;
+export type InlineEditHarness = Awaited<ReturnType<typeof createInlineEditHarness>>;
 
 export function instructionInput(): HTMLInputElement {
   return screen.getByRole('textbox', { name: 'Edit instructions' }) as HTMLInputElement;

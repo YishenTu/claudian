@@ -7,7 +7,7 @@ import { pathToFileURL } from 'node:url';
 import { selectCiTests, selectRelatedCiTests } from './ciTestSelection.mjs';
 
 const prompt = 'tests/unit/core/prompt/mainAgent.systemPrompt.test.ts';
-const panel = 'tests/unit/features/chat/ClaudianView.test.ts';
+const panel = 'tests/integration/features/chat/ClaudianView.test.ts';
 const native = 'tests/integration/core/process/ManagedStdioProcess.test.ts';
 const docs = 'tests/unit/docs/Documentation.test.ts';
 const select = (paths, relatedTests = [], eventName = 'pull_request') => selectCiTests({
@@ -37,6 +37,10 @@ test('shared dependencies retain affected native consumers', () => {
 
 test('real subprocess consumers run on native platforms when affected', () => {
   for (const consumer of [
+    'tests/integration/providers/opencode/ToolRendererCompatibility.dom.test.ts',
+    'tests/integration/providers/opencode/app/OpencodeCommandLoader.test.ts',
+    'tests/integration/providers/grok/app/GrokWorkspaceServices.test.ts',
+    'tests/integration/features/chat/tabs/forking/ForkSource.opencode-v2.test.ts',
     'tests/integration/core/process/ProcessProbe.test.ts',
     'tests/integration/core/process/ManagedStdioProcess.test.ts',
     'tests/integration/core/process/cliBinaryLocator.test.ts',
@@ -84,6 +88,7 @@ test('real dependency discovery retains native launch checks for shared process 
     'tests/integration/core/process/ProcessProbe.test.ts',
     'tests/integration/core/process/cliBinaryLocator.test.ts',
     'tests/integration/core/process/loginShellPath.test.ts',
+    'tests/integration/features/chat/tabs/forking/ForkSource.opencode-v2.test.ts',
     'tests/integration/features/chat/tabs/forking/ForkSource.opencode.test.ts',
     'tests/integration/providers/claude/execution/ClaudeExecutionBackend.test.ts',
     'tests/integration/providers/codex/execution/CodexExecutionBackend.test.ts',
@@ -91,6 +96,9 @@ test('real dependency discovery retains native launch checks for shared process 
     'tests/integration/providers/deepseek/app/DeepSeekWorkspaceServices.test.ts',
     'tests/integration/providers/deepseek/runtime/DeepSeekHostProcess.test.ts',
     'tests/integration/providers/deepseek/ui/DeepSeekSettingsTab.dom.test.ts',
+    'tests/integration/providers/grok/app/GrokWorkspaceServices.test.ts',
+    'tests/integration/providers/opencode/ToolRendererCompatibility.dom.test.ts',
+    'tests/integration/providers/opencode/app/OpencodeCommandLoader.test.ts',
     'tests/integration/providers/opencode/execution/OpencodeHTTPExecution.background.test.ts',
     'tests/integration/providers/opencode/execution/OpencodeHTTPExecution.compaction.test.ts',
     'tests/integration/providers/opencode/execution/OpencodeHTTPExecution.interactions.test.ts',
@@ -143,7 +151,7 @@ test('filesystem-read documentation, styles, and captured fixtures retain their 
   for (const consumer of [
     'tests/unit/style/components/zen-mode.test.ts',
     'tests/unit/style/settings/base.test.ts',
-    'tests/unit/features/chat/navigation/NavigationSidebar.dom.test.ts',
+    'tests/integration/features/chat/navigation/NavigationSidebar.dom.test.ts',
   ]) {
     assert.ok(select(['src/style/components/zen-mode.css']).testFiles.includes(consumer), consumer);
   }
@@ -153,16 +161,47 @@ test('filesystem-read documentation, styles, and captured fixtures retain their 
   for (const status of ['A', 'M']) {
     for (const event of ['pull_request', 'push']) {
       for (const [file, consumers] of [
+        ['tests/helpers/providers/opencode/OpencodeNativePeer.cjs', [
+          'tests/integration/providers/opencode/ToolRendererCompatibility.dom.test.ts',
+          'tests/integration/providers/opencode/app/OpencodeCommandLoader.test.ts',
+          'tests/integration/features/chat/tabs/forking/ForkSource.opencode.test.ts',
+          'tests/integration/features/chat/tabs/forking/ForkSource.opencode-v2.test.ts',
+          'tests/integration/providers/opencode/execution/OpencodeHTTPExecution.background.test.ts',
+          'tests/integration/providers/opencode/execution/OpencodeHTTPExecution.compaction.test.ts',
+          'tests/integration/providers/opencode/execution/OpencodeHTTPExecution.interactions.test.ts',
+          'tests/integration/providers/opencode/execution/OpencodeHTTPExecution.profiles.test.ts',
+          'tests/integration/providers/opencode/execution/OpencodeHTTPExecution.prompts.test.ts',
+          'tests/integration/providers/opencode/execution/OpencodeHTTPExecution.steering.test.ts',
+          'tests/integration/providers/opencode/execution/OpencodeHTTPExecution.test.ts',
+          'tests/integration/providers/opencode/history/OpencodeConversationHistoryService.test.ts',
+          'tests/integration/providers/opencode/history/OpencodeInvalidatedHistory.test.ts',
+          'tests/integration/providers/opencode/http/OpencodeHTTPHistory.test.ts',
+          'tests/integration/providers/opencode/http/OpencodeProcessRetention.test.ts',
+          'tests/integration/providers/opencode/http/OpencodeSharedServer.ephemeral.test.ts',
+          'tests/integration/providers/opencode/http/OpencodeSharedServer.history.test.ts',
+          'tests/integration/providers/opencode/http/OpencodeSharedServer.test.ts',
+          'tests/integration/providers/opencode/http/OpencodeSharedServer.transitions.test.ts',
+          'tests/integration/providers/opencode/metadata/OpencodeHTTPMetadataCancellation.test.ts',
+          'tests/integration/providers/opencode/metadata/OpencodeHTTPMetadataCatalog.test.ts',
+          'tests/integration/providers/opencode/metadata/OpencodeHTTPMetadataReadiness.test.ts',
+          'tests/integration/providers/opencode/metadata/OpencodeHTTPMetadataServerLifecycle.test.ts',
+          'tests/integration/providers/opencode/ui/OpencodeCommands.dom.test.ts',
+          'tests/integration/providers/opencode/ui/OpencodeModels.dom.test.ts',
+          'tests/integration/providers/opencode/ui/OpencodeSettingsTab.dom.test.ts',
+        ]],
         ['tests/fixtures/providers/grok/runtime/models-list.json', [
+          'tests/integration/providers/grok/app/GrokWorkspaceServices.test.ts',
           'tests/integration/providers/grok/runtime/GrokModelCatalogCoordinator.test.ts',
           'tests/integration/providers/grok/runtime/GrokModels.test.ts',
           'tests/integration/providers/grok/runtime/GrokModelDiscoveryService.test.ts',
         ]],
         ['tests/fixtures/providers/grok/runtime/models-list-byok.json', [
+          'tests/integration/providers/grok/app/GrokWorkspaceServices.test.ts',
           'tests/integration/providers/grok/runtime/GrokModels.test.ts',
           'tests/integration/providers/grok/runtime/GrokModelDiscoveryService.test.ts',
         ]],
         ['tests/fixtures/providers/grok/runtime/GrokModelCatalogProcess.mjs', [
+          'tests/integration/providers/grok/app/GrokWorkspaceServices.test.ts',
           'tests/integration/providers/grok/runtime/GrokModelCatalogCoordinator.test.ts',
           'tests/integration/providers/grok/runtime/GrokModelDiscoveryService.test.ts',
         ]],

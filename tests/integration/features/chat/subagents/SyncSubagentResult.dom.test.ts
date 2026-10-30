@@ -4,6 +4,7 @@ import '@/providers';
 import { deserialize, serialize } from 'node:v8';
 
 import { axe } from '@test/helpers/accessibility';
+import { createChatFeatureHost } from '@test/helpers/features/chat/ChatFeatureHostFixture';
 import { useClaudeSessionFiles } from '@test/helpers/providers/claudeHistory';
 import { testDate, testTime } from '@test/helpers/testClock';
 import { fireEvent, within } from '@testing-library/dom';
@@ -25,9 +26,9 @@ const originalStructuredClone = globalThis.structuredClone;
 beforeAll(() => { globalThis.structuredClone = value => deserialize(serialize(value)); });
 afterAll(() => { globalThis.structuredClone = originalStructuredClone; });
 
-HTMLElement.prototype.empty = function () { this.replaceChildren(); };
-HTMLElement.prototype.addClass = function (...classes) { this.classList.add(...classes); };
-HTMLElement.prototype.removeClass = function (...classes) { this.classList.remove(...classes); };
+
+
+
 
 it.each([
   ...[...[false, true].flatMap(structured => ['live', 'history', 'cached-history', 'cached-message'].map(source => ({ structured, source }))),
@@ -42,7 +43,7 @@ it.each([
 ])('shows the sync agent answer from $source with structured output=$structured, plain answer=$plainAnswer', async ({ structured, source, plainAnswer }) => {
   document.body.replaceChildren();
   const messagesEl = document.body.createDiv();
-  const plugin = { app: {}, settings: { mediaFolder: '', showMessageTimestamps: false } } as any;
+  const plugin = await createChatFeatureHost({ settings: { mediaFolder: '', showMessageTimestamps: false } });
   const renderer = new MessageRenderer(plugin,
     new Component(), messagesEl);
   const state = new ChatState();

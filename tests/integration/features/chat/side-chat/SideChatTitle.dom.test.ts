@@ -14,7 +14,7 @@ afterEach(async () => {
 });
 
 it('generates a side title from its initial prompt without blocking chat or changing destination', async () => {
-  const harness = createHarness({ settings: {
+  const harness = await createHarness({ settings: {
     enableAutoTitleGeneration: true,
     titleGenerationModel: 'haiku',
     providerConfigs: { claude: claudeCatalogFixture(['haiku']) },
@@ -54,7 +54,7 @@ it('generates a side title from its initial prompt without blocking chat or chan
 });
 
 it('keeps the generic title without launching title generation when disabled', async () => {
-  const harness = createHarness({ settings: { enableAutoTitleGeneration: false } });
+  const harness = await createHarness({ settings: { enableAutoTitleGeneration: false } });
   const titles = {
     get sessions() {
       return harness.backend.sessions.filter(session => session.requests[0]?.toolPolicy.kind === 'passive');
@@ -68,7 +68,7 @@ it('keeps the generic title without launching title generation when disabled', a
 });
 
 it('retains the initial prompt fallback if the title request fails', async () => {
-  const harness = createHarness({ settings: {
+  const harness = await createHarness({ settings: {
     enableAutoTitleGeneration: true,
     titleGenerationModel: 'haiku',
     providerConfigs: { claude: claudeCatalogFixture(['haiku']) },
@@ -88,7 +88,7 @@ it('retains the initial prompt fallback if the title request fails', async () =>
 });
 
 it('cancels a discarded side title without disturbing its replacement', async () => {
-  const harness = createHarness({ settings: {
+  const harness = await createHarness({ settings: {
     enableAutoTitleGeneration: true,
     titleGenerationModel: 'haiku',
     providerConfigs: { claude: claudeCatalogFixture(['haiku']) },
@@ -115,7 +115,7 @@ it('cancels a discarded side title without disturbing its replacement', async ()
 });
 
 it('keeps the prompt title without a provider request until a title model is selected', async () => {
-  const harness = createHarness({ settings: {
+  const harness = await createHarness({ settings: {
     enableAutoTitleGeneration: true,
     titleGenerationModel: '',
     providerConfigs: { claude: claudeCatalogFixture(['haiku']) },

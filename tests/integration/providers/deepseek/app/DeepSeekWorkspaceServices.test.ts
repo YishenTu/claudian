@@ -1,10 +1,8 @@
 import { resolve } from 'node:path';
 
 import { NativePeer } from '@test/helpers/deepseek/NativePeer';
-import { withRuntimeHosts } from '@test/helpers/providerRuntimeHost';
+import { createProviderHostFixture } from '@test/helpers/providerRuntimeHost';
 
-import { ProviderExecutionLifecycleRegistry } from '@/core/execution';
-import type { ProviderHost } from '@/core/providers/ProviderHost';
 import { createDeepSeekWorkspaceServices, deepseekWorkspaceRegistration, type DeepSeekWorkspaceServices } from '@/providers/deepseek/app/DeepSeekWorkspaceServices';
 import { deepseekModelPolicy } from '@/providers/deepseek/DeepSeekModelPolicy';
 import { encodeDeepSeekModelId } from '@/providers/deepseek/models';
@@ -15,15 +13,14 @@ it('discovers native models lazily and preserves explicit selection order and un
   const peer = new NativePeer(); await peer.open();
   const first = encodeDeepSeekModelId('native/a', 'model/a');
   const second = encodeDeepSeekModelId('native/b', 'model/b');
-  const settings: any = { providerConfigs: { deepseek: { enabled: true, visibleModels: [second, first], preferredReasoningByModel: { [second]: 'max' } } } };
-  const registry = new ProviderExecutionLifecycleRegistry();
-  const host = { settings, workingDirectory: '/vault', executionLifecycleRegistry: registry,
-    getResolvedProviderCliPath: async () => '/bin/dsh', notifyProviderChatOptionsChanged: vi.fn(),
-  } as unknown as ProviderHost;
+  const { host, settings, lifecycle: registry } = await createProviderHostFixture({ settings: { providerConfigs: { deepseek: { enabled: true, visibleModels: [second, first], preferredReasoningByModel: { [second]: 'max' } } } }, overrides: {
+    getResolvedProviderCliPath: async () => '/bin/dsh',
+  } });
+
   const start = vi.fn(async () => ({ profile: 'web' as const, client: await peer.connect(), onExit: () => () => {}, dispose: async () => {}, writePrompt: async () => {}, removePrompt: async () => {}, writeCodeMode: async () => {}, readEphemeralReady: async () => false, offerEphemeralFork: async () => async () => {} }));
   let workspace: DeepSeekWorkspaceServices | undefined;
   try {
-    workspace = createDeepSeekWorkspaceServices(withRuntimeHosts(host), start);
+    workspace = createDeepSeekWorkspaceServices(host, start);
     expect(start).not.toHaveBeenCalled();
     peer.onCall = method => method === 'session/list' ? { items: [] } : Promise.reject(new Error(`Warm-up called ${method}.`));
     // Tab presence warms the shared Host without creating a native session.
@@ -54,33 +51,32 @@ it('discovers native models lazily and preserves explicit selection order and un
     expect(projectDeepSeekModelSettings(settings)).toMatchObject({ visibleModels: [second, first], selectedModels: expect.arrayContaining([expect.objectContaining({ encodedId: second, available: false })]) });
     expect(peer.calls.every(call => call.method === 'session/modelCatalog' || call.method === 'session/list')).toBe(true);
     // A malformed native catalog is reported and never replaces the discovered models.
-    const discovered = structuredClone(settings.providerConfigs.deepseek.discoveredModels);
+    const discovered = structuredClone(settings.providerConfigs.deepseek!.discoveredModels);
     for (const [catalog, diagnostics] of [
       [{ groups: 'native/a' }, 'Malformed DeepSeek model catalog.'],
       [{ groups: [{ id: 'native/a', models: [{ name: 'Nameless' }] }] }, 'Malformed DeepSeek model.'],
     ] as const) {
       peer.onCall = method => method === 'session/list' ? { items: [] } : catalog;
       expect(await workspace.modelCatalog.refresh({ force: true })).toEqual({ changed: false, diagnostics });
-      expect(settings.providerConfigs.deepseek.discoveredModels).toEqual(discovered);
+      expect(settings.providerConfigs.deepseek!.discoveredModels).toEqual(discovered);
     }
   } finally { await workspace?.dispose?.(); await registry.dispose(); await peer.close(); }
 });
 
 it('lists vault skills for the dropdown from saved native sessions without activating or creating one', async () => {
   const peer = new NativePeer(); await peer.open();
-  const settings: any = { providerConfigs: { deepseek: { enabled: true, codeMode: true } } };
-  const registry = new ProviderExecutionLifecycleRegistry();
-  const host = { settings, workingDirectory: '/vault', executionLifecycleRegistry: registry,
-    getResolvedProviderCliPath: async () => '/bin/dsh', notifyProviderChatOptionsChanged: vi.fn(),
-  } as unknown as ProviderHost;
+  const { host, lifecycle: registry } = await createProviderHostFixture({ settings: { providerConfigs: { deepseek: { enabled: true, codeMode: true } } }, overrides: {
+    getResolvedProviderCliPath: async () => '/bin/dsh',
+  } });
+
   const start = vi.fn(async () => ({ profile: 'web' as const, client: await peer.connect(), onExit: () => () => {}, dispose: async () => {}, writePrompt: async () => {}, removePrompt: async () => {}, writeCodeMode: async () => {}, readEphemeralReady: async () => false, offerEphemeralFork: async () => async () => {} }));
   // Native list order is not recency order; the newest chat root in the vault owns the catalog.
   const rows = [
-    { sessionId: 'older-chat', updatedAt: 1, agentAvailable: false, running: false, blank: false, cwd: '/vault' },
-    { sessionId: 'child', updatedAt: 3, agentAvailable: false, running: false, blank: false, cwd: '/vault', parentSessionId: 'chat', origin: 'subagent' },
-    { sessionId: 'chat', updatedAt: 2, agentAvailable: false, running: false, blank: false, cwd: '/vault' },
+    { sessionId: 'older-chat', updatedAt: 1, agentAvailable: false, running: false, blank: false, cwd: host.workingDirectory },
+    { sessionId: 'child', updatedAt: 3, agentAvailable: false, running: false, blank: false, cwd: host.workingDirectory, parentSessionId: 'chat', origin: 'subagent' },
+    { sessionId: 'chat', updatedAt: 2, agentAvailable: false, running: false, blank: false, cwd: host.workingDirectory },
     { sessionId: 'elsewhere', updatedAt: 5, agentAvailable: false, running: false, blank: false, cwd: '/other' },
-    { sessionId: 'title', updatedAt: 4, agentAvailable: false, running: false, blank: false, cwd: '/vault' },
+    { sessionId: 'title', updatedAt: 4, agentAvailable: false, running: false, blank: false, cwd: host.workingDirectory },
   ];
   const presets: Record<string, string> = { 'older-chat': 'claudian', elsewhere: 'claudian', title: 'claudian-passive', child: 'claudian', chat: 'claudian', saved: 'claudian-code', relocated: 'claudian' };
   let listFailure: Error | undefined;
@@ -92,7 +88,7 @@ it('lists vault skills for the dropdown from saved native sessions without activ
   };
   let workspace: DeepSeekWorkspaceServices | undefined;
   try {
-    workspace = createDeepSeekWorkspaceServices(withRuntimeHosts(host), start);
+    workspace = createDeepSeekWorkspaceServices(host, start);
     const load = (conversation: any, allowIsolatedMetadataCreation = true) => workspace!.commandLoader!.loadCommands({ allowIsolatedMetadataCreation, conversation, plugin: host });
     // Background tabs never start discovery work.
     expect(await load(null, false)).toMatchObject({ status: 'requires-session' });
@@ -118,12 +114,11 @@ it('stops the shared Host before a provider transition and restarts it lazily wi
   const beforeHome = resolve('/homes/before');
   const afterHome = resolve('/homes/after');
   const peer = new NativePeer(); await peer.open();
-  const settings: any = { providerConfigs: { deepseek: { enabled: true, environmentVariables: `DSH_HOME=${beforeHome}`, presetPlugins: '- id: tool-todo\n  name: "@deepseek-ai/dsh-tool-todo"\n' } } };
-  const registry = new ProviderExecutionLifecycleRegistry();
   let cliPath = '/bin/dsh-before';
-  const host = { settings, workingDirectory: '/vault', executionLifecycleRegistry: registry,
-    getResolvedProviderCliPath: async () => cliPath, notifyProviderChatOptionsChanged: vi.fn(),
-  } as unknown as ProviderHost;
+  const { host, settings, lifecycle: registry } = await createProviderHostFixture({
+    settings: { providerConfigs: { deepseek: { enabled: true, environmentVariables: `DSH_HOME=${beforeHome}`, presetPlugins: '- id: tool-todo\n  name: "@deepseek-ai/dsh-tool-todo"\n' } } },
+    overrides: { getResolvedProviderCliPath: async () => cliPath },
+  });
   peer.onCall = method => method === 'session/list' ? { items: [] } : `${method} answered`;
   const launches: Array<{ cliPath: string; home?: string; presetPlugins: unknown }> = [];
   let disposed = 0;
@@ -134,13 +129,13 @@ it('stops the shared Host before a provider transition and restarts it lazily wi
   });
   let workspace: DeepSeekWorkspaceServices | undefined;
   try {
-    workspace = createDeepSeekWorkspaceServices(withRuntimeHosts(host), start);
+    workspace = createDeepSeekWorkspaceServices(host, start);
     await workspace.startRuntime?.();
     let disposedBeforeMutation: number | undefined;
     await registry.runTransition(['deepseek'], async () => {
       disposedBeforeMutation = disposed;
-      settings.providerConfigs.deepseek.environmentVariables = `DSH_HOME=${afterHome}`;
-      settings.providerConfigs.deepseek.presetPlugins = '';
+      settings.providerConfigs.deepseek!.environmentVariables = `DSH_HOME=${afterHome}`;
+      settings.providerConfigs.deepseek!.presetPlugins = '';
       cliPath = '/bin/dsh-after';
     });
     // The old process must release its native writers before settings change.
@@ -158,10 +153,10 @@ it('stops the shared Host before a provider transition and restarts it lazily wi
 it('mirrors Claudian archive state onto native sessions in this Host store', async () => {
   expect(deepseekWorkspaceRegistration.providesSessionArchive).toBe(true);
   const peer = new NativePeer(); await peer.open();
-  const registry = new ProviderExecutionLifecycleRegistry();
-  const host = { settings: { providerConfigs: { deepseek: { enabled: true } } }, workingDirectory: '/vault', executionLifecycleRegistry: registry,
-    getResolvedProviderCliPath: async () => '/bin/dsh', notifyProviderChatOptionsChanged: vi.fn(),
-  } as unknown as ProviderHost;
+  const { host, lifecycle: registry } = await createProviderHostFixture({
+    settings: { providerConfigs: { deepseek: { enabled: true } } },
+    overrides: { getResolvedProviderCliPath: async () => '/bin/dsh' },
+  });
   const start = vi.fn(async () => ({ profile: 'web' as const, client: await peer.connect(), onExit: () => () => {}, dispose: async () => {}, writePrompt: async () => {}, removePrompt: async () => {}, writeCodeMode: async () => {}, readEphemeralReady: async () => false, offerEphemeralFork: async () => async () => {} }));
   peer.onCall = (method, args) => {
     if (method === 'session/list') return { items: [] };
@@ -174,7 +169,7 @@ it('mirrors Claudian archive state onto native sessions in this Host store', asy
   const change = (sessionId: string | null, isArchived: boolean, providerState: Record<string, unknown> = state()) => ({ conversation: { sessionId, providerState, messages: [] }, isArchived });
   let workspace: DeepSeekWorkspaceServices | undefined;
   try {
-    workspace = createDeepSeekWorkspaceServices(withRuntimeHosts(host), start);
+    workspace = createDeepSeekWorkspaceServices(host, start);
     await workspace.sessionArchive!.setSessionsArchived([
       change('chat', true),
       // A pending fork has no native session of its own; never archive its source.
@@ -203,10 +198,10 @@ it('mirrors Claudian archive state onto native sessions in this Host store', asy
 
 it('lets an admitted archive finish before a provider transition stops the Host', async () => {
   const peer = new NativePeer(); await peer.open();
-  const registry = new ProviderExecutionLifecycleRegistry();
-  const host = { settings: { providerConfigs: { deepseek: { enabled: true } } }, workingDirectory: '/vault', executionLifecycleRegistry: registry,
-    getResolvedProviderCliPath: async () => '/bin/dsh', notifyProviderChatOptionsChanged: vi.fn(),
-  } as unknown as ProviderHost;
+  const { host, lifecycle: registry } = await createProviderHostFixture({
+    settings: { providerConfigs: { deepseek: { enabled: true } } },
+    overrides: { getResolvedProviderCliPath: async () => '/bin/dsh' },
+  });
   let disposed = 0;
   const start = vi.fn(async () => {
     const client = await peer.connect();
@@ -223,7 +218,7 @@ it('lets an admitted archive finish before a provider transition stops the Host'
   };
   let workspace: DeepSeekWorkspaceServices | undefined;
   try {
-    workspace = createDeepSeekWorkspaceServices(withRuntimeHosts(host), start);
+    workspace = createDeepSeekWorkspaceServices(host, start);
     const home = getDeepSeekHome(process.env, process.cwd());
     const operation = workspace.sessionArchive!.setSessionsArchived([{ conversation: { sessionId: 'chat', providerState: { schemaVersion: 1, home, profile: 'web', preset: 'claudian' }, messages: [] }, isArchived: true }]);
     await inFlight;

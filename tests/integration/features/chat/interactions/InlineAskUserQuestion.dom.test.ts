@@ -8,15 +8,6 @@ import { SessionInteractions } from '@/features/chat/interactions/SessionInterac
 import { NavigationController } from '@/features/chat/navigation/NavigationController';
 import { setLocale } from '@/i18n/i18n';
 
-HTMLElement.prototype.empty = function () { this.replaceChildren(); };
-HTMLElement.prototype.addClass = function (...classes) { this.classList.add(...classes); };
-HTMLElement.prototype.removeClass = function (...classes) { this.classList.remove(...classes); };
-HTMLElement.prototype.toggleClass = function (names, enabled) {
-  for (const name of Array.isArray(names) ? names : [names]) this.classList.toggle(name, enabled);
-};
-HTMLElement.prototype.scrollIntoView = function () {};
-HTMLElement.prototype.setText = function (text) { this.textContent = String(text); };
-
 beforeEach(() => document.body.replaceChildren());
 
 it.each([

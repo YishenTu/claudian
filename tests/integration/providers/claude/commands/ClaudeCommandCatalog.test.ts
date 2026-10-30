@@ -1,4 +1,7 @@
+import { DesktopVault } from '@test/helpers/core/DesktopVault';
 import { createProviderHostFixture } from '@test/helpers/providerRuntimeHost';
+
+const { resetMockMessages, setMockMessages, setMockSupportedCommands } = await vi.importActual<typeof import('@test/__mocks__/claude-agent-sdk')>('@anthropic-ai/claude-agent-sdk');
 
 import { createCatalogCommandDiscoveryStore, toLoaderDiscovery } from '@/core/providers/commands/catalogCommandDiscovery';
 import { normalizeProviderCommandDiscoveryItems } from '@/core/providers/commands/ProviderCommandDiscoveryResult';
@@ -6,8 +9,11 @@ import { ClaudeCommandCatalog } from '@/providers/claude/commands/ClaudeCommandC
 import { probeRuntimeCommands } from '@/providers/claude/commands/probeRuntimeCommands';
 import { SlashCommandSource } from '@/shared/composer-dropdown/SlashCommandSource';
 
-const mockQuery = vi.fn();
-vi.mock('@/providers/claude/loadClaudeAgentSDK', () => ({ loadClaudeAgentQuery: async () => mockQuery }));
+let vault: DesktopVault;
+beforeAll(async () => { vault = await DesktopVault.create(); });
+afterAll(async () => { await vault.dispose(); });
+
+beforeEach(() => resetMockMessages());
 
 it.each(['marked', 'legacy'] as const)('preserves command ownership through the %s native picker snapshot', async provenance => {
   // Current SDK: builtin is true only for native rows; absent for user/project/plugin/MCP rows.
@@ -24,16 +30,9 @@ it.each(['marked', 'legacy'] as const)('preserves command ownership through the 
     { name: 'pdf', description: 'Work with PDFs', argumentHint: '' },
     { name: 'review', description: 'Review changes', argumentHint: '', ...nativeMarker },
   ];
-  const nativeQuery = {
-    initializationResult: async () => ({ commands: [] }),
-    supportedCommands: async () => commands,
-    next: vi.fn().mockResolvedValue({ done: false, value: {
-      type: 'system', subtype: 'init', skills: ['debug', 'init', 'simplify', 'new', 'commit', 'documents:pdf', 'review'],
-    } }),
-    close: vi.fn(),
-  };
-  mockQuery.mockReturnValue(nativeQuery);
-  const { host: providerHost } = await createProviderHostFixture({
+  setMockSupportedCommands(commands);
+  setMockMessages([{ type: 'system', subtype: 'init', skills: ['debug', 'init', 'simplify', 'new', 'commit', 'documents:pdf', 'review'] }], { appendResult: false });
+  const { host: providerHost } = await createProviderHostFixture({ vault,
     overrides: { workingDirectory: '/test/vault', getResolvedProviderCliPath: async () => '/mock/claude' },
   });
   const host = providerHost.getRuntimeHost('claude');

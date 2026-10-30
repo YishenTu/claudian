@@ -1,22 +1,18 @@
-import { createMockEl } from '@test/helpers/MockElement';
-import { createObsidianWorkspace } from '@test/helpers/ObsidianWorkspace';
-import { ItemView, Scope } from 'obsidian';
+import { createChatFeatureHost } from '@test/helpers/features/chat/ChatFeatureHostFixture';
+import { createProjectsFake } from '@test/helpers/features/chat/ProjectsFake';
+import { App, Scope } from 'obsidian';
 
-import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
+import type { ChatFeatureHost, ChatViewHost } from '@/features/chat/ChatFeatureHost';
 import { ClaudianView } from '@/features/chat/ClaudianView';
-
-// The Obsidian mock's ItemView omits Component's `load`, which the view's Hover Editor guard binds.
-const itemViewPrototype = ItemView.prototype as unknown as { load?: () => void };
-itemViewPrototype.load ??= () => undefined;
 
 export interface ClaudianViewHarnessOptions {
   /** Merged over a minimal feature host; read by every view collaborator at construction. */
-  plugin?: Record<string, unknown>;
+  plugin?: Parameters<typeof createChatFeatureHost>[0];
   /** A complete feature host used as is, for integration tests that share it with other owners. */
   host?: ChatFeatureHost;
   /** Merged over a minimal Obsidian app with a parent keymap scope. */
   app?: object;
-  /** Defaults to a mock element; DOM tests pass real elements. */
+  /** Defaults to a real element in the current document. */
   containerEl?: HTMLElement;
   contentEl?: HTMLElement;
   /** Installs a tab manager without running `onOpen`, for tests of a single view operation. */
@@ -28,41 +24,33 @@ export interface ClaudianViewHarnessOptions {
  * Constructs a real `ClaudianView` with its real collaborators. Returned untyped so tests
  * can drive the lifecycle seams (`tabManager`, `tabWorkspace`, `scope`) that Obsidian owns.
  */
-export function createClaudianView(options: ClaudianViewHarnessOptions = {}): any {
-  const plugin = options.host ?? {
-    app: {
-      vault: {
-        getAbstractFileByPath: () => null,
-        offref: vi.fn(),
-        on: vi.fn((name: string) => ({ name })),
-      },
-      workspace: {
-        ...createObsidianWorkspace(createMockEl()),
-        layoutReady: true,
-        onLayoutReady: vi.fn((callback: () => void) => callback()),
-        requestSaveLayout: Object.assign(vi.fn(), { run: vi.fn() }),
-      },
-      metadataCache: { on: vi.fn((name: string) => ({ name })) },
-    },
-    getAllViews: () => [],
-    getConversationList: () => [],
-    getConversationSummary: () => null,
-    findConversationAcrossViews: () => null,
-    registerZenModeSource: vi.fn(() => vi.fn()),
-    settings: {},
-    ...options.plugin,
-  };
+export async function createClaudianView(options: ClaudianViewHarnessOptions = {}): Promise<Record<string, any> & ChatViewHost & Pick<ClaudianView, 'containerEl' | 'contentEl'>> {
+  const app = new App();
+  Object.assign(app.workspace, {
+    layoutReady: true,
+    onLayoutReady: vi.fn((callback: () => void) => callback()),
+    requestSaveLayout: Object.assign(vi.fn(), { run: vi.fn() }),
+  });
+  vi.spyOn(app.vault, 'on');
+  vi.spyOn(app.vault, 'offref');
+  vi.spyOn(app.metadataCache, 'on');
+  vi.spyOn(app.metadataCache, 'offref');
+  const overrides = options.plugin ?? {};
+  const ports = { projects: createProjectsFake(), registerZenModeSource: vi.fn(() => vi.fn()) };
+  const plugin = options.host ?? await createChatFeatureHost(overrides.fixture
+    ? { ...ports, ...overrides }
+    : { app, ...ports, ...overrides });
   const view = new ClaudianView(
     (options.leaf ?? {}) as never,
-    plugin as unknown as ChatFeatureHost,
+    plugin,
   ) as any;
   Object.assign(view, {
-    app: { scope: new Scope(), workspace: { on: vi.fn(), offref: vi.fn() }, ...options.app },
-    registerDomEvent: vi.fn(),
-    registerEvent: vi.fn(),
-    containerEl: options.containerEl ?? createMockEl(),
-    contentEl: options.contentEl ?? createMockEl(),
+    app: Object.assign(plugin.app, { scope: new Scope() }, options.app),
+    containerEl: options.containerEl ?? document.createElement('div'),
+    contentEl: options.contentEl ?? document.createElement('div'),
     ...(options.tabManager ? { tabManager: options.tabManager } : {}),
   });
+  vi.spyOn(view, 'registerDomEvent');
+  vi.spyOn(view, 'registerEvent');
   return view;
 }

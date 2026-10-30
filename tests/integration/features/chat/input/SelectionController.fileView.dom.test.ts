@@ -1,5 +1,6 @@
 /** @vitest-environment jsdom */
 import { axe } from '@test/helpers/accessibility';
+import { installBrowserHighlights } from '@test/helpers/BrowserHighlights';
 import { fireEvent, within } from '@testing-library/dom';
 import { type App, FileView, ItemView, TextFileView, type TFile, type WorkspaceLeaf } from 'obsidian';
 
@@ -9,12 +10,7 @@ import { ComposerSelections } from '@/features/chat/input/ComposerSelections';
 import { SelectionController } from '@/features/chat/input/SelectionController';
 
 // Obsidian supplies these DOM helpers; keep the tray and browser selection real.
-Object.assign(HTMLElement.prototype, {
-  addClass(this: HTMLElement, ...names: string[]) { this.classList.add(...names); },
-  removeClass(this: HTMLElement, ...names: string[]) { this.classList.remove(...names); },
-  toggleClass(this: HTMLElement, name: string, enabled: boolean) { this.classList.toggle(name, enabled); },
-  empty(this: HTMLElement) { this.replaceChildren(); },
-});
+
 
 const NO_LEAF = null as unknown as WorkspaceLeaf;
 
@@ -211,10 +207,7 @@ it('ignores selections outside the active file view', () => {
 
 it('gates the highlight style on only while the chat shows a mock selection highlight', () => {
   // jsdom lacks the CSS Custom Highlight API; stand in for the browser registry it exposes.
-  const highlights = new Map<string, unknown>();
-  const original = { CSS: (globalThis as { CSS?: unknown }).CSS, Highlight: (window as { Highlight?: unknown }).Highlight };
-  Object.assign(globalThis, { CSS: { highlights } });
-  Object.assign(window, { Highlight: class { constructor(...ranges: Range[]) { Object.assign(this, { ranges }); } } });
+  const highlights = installBrowserHighlights();
   const highlightStyled = () => document.body.classList.contains('claudian-selection-highlight-active');
   try {
     vi.useFakeTimers();
@@ -236,7 +229,6 @@ it('gates the highlight style on only while the chat shows a mock selection high
     expect(highlights.has('claudian-selection')).toBe(false);
     expect(highlightStyled()).toBe(false);
   } finally {
-    Object.assign(globalThis, { CSS: original.CSS });
-    Object.assign(window, { Highlight: original.Highlight });
+    vi.unstubAllGlobals();
   }
 });

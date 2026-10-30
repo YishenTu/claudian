@@ -21,11 +21,6 @@ import { AgentSkillSettings } from '@/features/agent-skills/AgentSkillSettings';
 import { ClaudeCommandRepository } from '@/features/agent-skills/ClaudeCommandRepository';
 import { t } from '@/i18n/i18n';
 
-
-vi.mock('obsidian', async () => ({
-  ...(await vi.importActual<typeof import('@test/__mocks__/obsidian')>('@test/__mocks__/obsidian')),
-  ...(await vi.importActual<typeof import('@test/helpers/ObsidianSettingsDOM')>('@test/helpers/ObsidianSettingsDOM')),
-}));
 vi.mock('node:fs/promises', async () => {
   const actual = (await vi.importActual<typeof fs>('node:fs/promises'));
   return { ...actual, writeFile: vi.fn(actual.writeFile) };
@@ -207,7 +202,7 @@ describe('AgentSkillSettings repair of flagged packages', () => {
     const row = screen.getByText('.agents/skills/no-description').closest('.claudian-agent-skills-diagnostic') as HTMLElement;
     fireEvent.click(within(row).getByRole('button', { name: t('settings.agentSkills.fix') }));
     const dialog = await screen.findByRole('dialog');
-    expect(dialog.getAttribute('aria-label')).toBe(t('settings.agentSkills.modal.titleFix'));
+    expect(screen.getByRole('dialog', { name: t('settings.agentSkills.modal.titleFix') })).toBe(dialog);
     const controls = within(dialog);
     expect((controls.getByRole('textbox', { name: t('settings.agentSkills.modal.name') }) as HTMLInputElement).value).toBe('no-description');
     expect((controls.getByRole('textbox', { name: t('settings.agentSkills.modal.instructions') }) as HTMLTextAreaElement).value).toBe('Existing instructions');

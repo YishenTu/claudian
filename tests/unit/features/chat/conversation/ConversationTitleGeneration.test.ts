@@ -11,8 +11,6 @@ import {
   fallbackConversationTitle,
 } from '@/features/chat/conversation/ConversationTitleGeneration';
 
-
-
 describe('fallbackConversationTitle', () => {
   it('uses the first sentence', () => {
     expect(fallbackConversationTitle('How do I set up React? I need help.')).toBe('How do I set up React');

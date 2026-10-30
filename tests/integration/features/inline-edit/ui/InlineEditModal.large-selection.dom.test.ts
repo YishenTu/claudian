@@ -16,7 +16,7 @@ afterEach(async () => {
 });
 
 it('previews and applies a one-line change to a 10,000-line selected note', async () => {
-  const h = createInlineEditHarness();
+  const h = await createInlineEditHarness();
   const lines = Array.from({ length: 10_000 }, (_, index) => `Paragraph ${index}: retain this note text.\n`);
   const before = lines.join('');
   lines[5_000] = 'Paragraph 5000: clarified note text.\n';
@@ -39,7 +39,7 @@ it('previews and applies a one-line change to a 10,000-line selected note', asyn
   vi.mocked(MarkdownRenderer.render).mockImplementation(async (_app, markdown, target) => {
     target.textContent = markdown;
   });
-  const session = new InlineEditSession(h.app, h.plugin, h.plugin, h.editorView, h.editor,
+  const session = new InlineEditSession(h.app, h.plugin, h.component, h.editorView, h.editor,
     { mode: 'selection', selectedText: before }, h.notePath, h.settled, { providerId: 'claude' });
   session.show();
   const accept = await showReplacementPreview(h, after);

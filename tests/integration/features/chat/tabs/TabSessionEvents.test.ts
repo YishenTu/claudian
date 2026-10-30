@@ -2,6 +2,7 @@
 import '@/providers';
 
 import { createTabSession } from '@test/helpers/ConversationPorts';
+import { createChatFeatureHost } from '@test/helpers/features/chat/ChatFeatureHostFixture';
 import { enqueueTabSessionEvent } from '@test/helpers/features/chat/SessionEventsHarness';
 import { FakeSideBackend } from '@test/helpers/features/chat/SideChatSessionHarness';
 import { testDate } from '@test/helpers/testClock';
@@ -20,10 +21,10 @@ import { StreamController } from '@/features/chat/turns/StreamController';
 import { CodexSubagentTracker } from '@/providers/codex/execution/CodexSubagentTracker';
 import { CodexNotificationRouter } from '@/providers/codex/runtime/CodexNotificationRouter';
 
-HTMLElement.prototype.appendText = function (text) { this.append(document.createTextNode(text)); };
-HTMLElement.prototype.empty = function () { this.replaceChildren(); };
-HTMLElement.prototype.addClass = function (...classes) { this.classList.add(...classes); };
-HTMLElement.prototype.removeClass = function (...classes) { this.classList.remove(...classes); };
+
+
+
+
 
 /** Longer than any progress-coalescing window; persistence must not depend on its exact value. */
 const QUIET_PERIOD_MS = 60_000;
@@ -43,13 +44,13 @@ afterEach(() => {
 async function createCodexChildTab() {
   const messagesEl = document.body.createDiv();
   const saves: ChatMessage[][] = [];
-  const plugin = {
-    app: {}, settings: { mediaFolder: '', showMessageTimestamps: false },
+  const plugin = await createChatFeatureHost({
+    settings: { mediaFolder: '', showMessageTimestamps: false },
     updateConversation: vi.fn(async (_id: string, patch: ConversationMutablePatch) => {
       saves.push(structuredClone(patch.messages ?? []));
     }),
-    switchConversation: vi.fn(async (id: string) => ({ id, providerId: 'codex', messages: [], sessionId: null })),
-  } as any;
+    switchConversation: vi.fn(async (id: string) => ({ id, providerId: 'codex', title: id, createdAt: testDate().getTime(), lastActivityAt: testDate().getTime(), messages: [], sessionId: null })),
+  });
   const renderer = new MessageRenderer(plugin,
     new Component(), messagesEl,
     undefined, undefined, () => ProviderRegistry.getCapabilities('codex'));

@@ -144,6 +144,17 @@ const hardCodedTestTimeSelectors = [
   `AssignmentExpression[left.property.name=${TIME_KEY}] NewExpression[callee.name='Date'] > Literal[value=${ISO_TIMESTAMP}]`,
 ];
 
+// W2 removed duplicate host/identity implementations that hid real regressions.
+// Current exception allowlist: none. A necessary fault-only override needs a
+// narrow eslint-disable-next-line with the concrete fault explained beside it.
+const sharedBoundaryMockRestrictions = ['obsidian', '@/core/device/InstallationKey'].flatMap(source => [
+  'arguments.0.value',
+  'arguments.0.source.value',
+].map(argument => ({
+  selector: `CallExpression[callee.object.name=/^(vi|vitest)$/][callee.property.name=/^(mock|doMock)$/][${argument}='${source}']`,
+  message: 'Use the shared Obsidian fake or seeded InstallationKey; extend that owner for missing behavior. Keep test-specific faults at the public boundary.',
+})));
+
 // Keep the existing source policy stricter than the preset's advisory severities.
 const strictObsidianRules = {
   'obsidianmd/commands/no-command-in-command-id': obsidianRuleSeverity,
@@ -223,6 +234,29 @@ export default defineConfig([
     },
   },
   ...tseslint.configs['flat/recommended'],
+  {
+    // Checked-in native peers run as standalone Node CommonJS processes.
+    files: ['tests/helpers/providers/**/*.cjs'],
+    languageOptions: {
+      sourceType: 'commonjs',
+      globals: {
+        AbortController: 'readonly',
+        AbortSignal: 'readonly',
+        Buffer: 'readonly',
+        URL: 'readonly',
+        __dirname: 'readonly',
+        __filename: 'readonly',
+        clearTimeout: 'readonly',
+        console: 'readonly',
+        module: 'readonly',
+        process: 'readonly',
+        require: 'readonly',
+        setImmediate: 'readonly',
+        setTimeout: 'readonly',
+      },
+    },
+    rules: { '@typescript-eslint/no-require-imports': 'off' },
+  },
   {
     files: ['src/**/*.ts', 'package.json'],
     extends: obsidianmd.configs.recommended,
@@ -307,6 +341,7 @@ export default defineConfig([
       '@typescript-eslint/no-explicit-any': 'off',
       'no-restricted-syntax': [
         'error',
+        ...sharedBoundaryMockRestrictions,
         ...hardCodedTestTimeSelectors.map(selector => ({
           selector,
           message: 'Express expiries and clocks with testTime/testDate/testClock from @test/helpers/testClock.',
@@ -319,6 +354,7 @@ export default defineConfig([
     rules: {
       'no-restricted-syntax': [
         'error',
+        ...sharedBoundaryMockRestrictions,
         ...hardCodedTestTimeSelectors.map(selector => ({
           selector,
           message: 'Express expiries and clocks with testTime/testDate/testClock from @test/helpers/testClock.',
@@ -332,6 +368,7 @@ export default defineConfig([
     rules: {
       'no-restricted-syntax': [
         'error',
+        ...sharedBoundaryMockRestrictions,
         ...[
           'Literal[value=/\\d{4}-\\d{2}-\\d{2}T/]',
           'TemplateElement[value.raw=/\\d{4}-\\d{2}-\\d{2}T/]',

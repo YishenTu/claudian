@@ -6,7 +6,7 @@ import * as path from 'node:path';
 import { deserialize, serialize } from 'node:v8';
 
 import { axe } from '@test/helpers/accessibility';
-import { controlChangeSettled } from '@test/helpers/ObsidianSettingsDOM';
+import { controlChangeSettled } from '@test/helpers/ObsidianHost';
 import { createProviderHostFixture } from '@test/helpers/providerRuntimeHost';
 import { fireEvent, waitFor, within } from '@testing-library/dom';
 
@@ -16,11 +16,6 @@ import { t } from '@/i18n/i18n';
 import { type ClaudeWorkspaceServices,createClaudeWorkspaceServices } from '@/providers/claude/app/ClaudeWorkspaceServices';
 import type { ClaudeCatalogProbe } from '@/providers/claude/runtime/ClaudeModels';
 import { getClaudeProviderSettings, updateClaudeProviderSettings } from '@/providers/claude/settings';
-
-vi.mock('obsidian', async () => ({
-  ...(await vi.importActual<typeof import('@test/__mocks__/obsidian')>('@test/__mocks__/obsidian')),
-  ...(await vi.importActual<typeof import('@test/helpers/ObsidianSettingsDOM')>('@test/helpers/ObsidianSettingsDOM')),
-}));
 
 const models = [{ value: 'opus', label: 'Opus', description: '' }, { value: 'claude-opus-4-6', label: 'Opus 4.6', description: '' }];
 let fixture: Awaited<ReturnType<typeof createProviderHostFixture>>;

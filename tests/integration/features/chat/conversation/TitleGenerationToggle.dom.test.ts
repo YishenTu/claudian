@@ -19,13 +19,6 @@ import type { Conversation } from '@/core/types';
 import { SessionBrowser, type SessionBrowserDeps } from '@/features/chat/session-manager/SessionBrowser';
 import { ChatViewPublisher } from '@/features/chat/workspace/ChatViewPublisher';
 
-
-
-HTMLElement.prototype.empty = function () { this.replaceChildren(); };
-HTMLElement.prototype.addClass = function (...classes) { this.classList.add(...classes); };
-HTMLElement.prototype.removeClass = function (...classes) { this.classList.remove(...classes); };
-HTMLElement.prototype.hasClass = function (className) { return this.classList.contains(className); };
-
 afterEach(() => { document.body.replaceChildren(); });
 
 it('hides failed-title retry while title generation is disabled and restores working retry when enabled', async () => {

@@ -1,3 +1,4 @@
+import { getInstallationKey } from '@/core/device/InstallationKey';
 import { grokModelPolicy } from '@/providers/grok/GrokModelPolicy';
 import { getGrokProviderSettings } from '@/providers/grok/settings';
 import { grokChatUIConfig } from '@/providers/grok/ui/GrokChatUIConfig';
@@ -37,7 +38,7 @@ function makeSettings(overrides: Record<string, unknown> = {}): Record<string, u
     providerConfigs: {
       grok: {
         catalogsByHost: {
-          'device:current': catalog,
+          [getInstallationKey()]: catalog,
         },
         modelAliases: {
           'grok-4': 'Fast Grok',
@@ -51,11 +52,6 @@ function makeSettings(overrides: Record<string, unknown> = {}): Record<string, u
     ...overrides,
   };
 }
-
-vi.mock('@/core/device/InstallationKey', async () => ({
-  ...(await vi.importActual<typeof import('@/core/device/InstallationKey')>('@/core/device/InstallationKey')),
-  getInstallationKey: () => 'device:current',
-}));
 
 describe('GrokChatUIConfig', () => {
   it('owns unavailable provider-qualified Grok models and resolves the enabled default', () => {
@@ -81,7 +77,7 @@ describe('GrokChatUIConfig', () => {
     expect(grokChatUIConfig.getModelOptions(makeSettings({
       providerConfigs: {
         grok: {
-          catalogsByHost: { 'device:current': catalog },
+          catalogsByHost: { [getInstallationKey()]: catalog },
           visibleModels: null,
         },
       },
@@ -102,7 +98,7 @@ describe('GrokChatUIConfig', () => {
     expect(grokChatUIConfig.getModelOptions(makeSettings({
       providerConfigs: {
         grok: {
-          catalogsByHost: { 'device:current': { ...catalog, models } },
+          catalogsByHost: { [getInstallationKey()]: { ...catalog, models } },
           visibleModels: null,
         },
       },
@@ -133,7 +129,7 @@ describe('GrokChatUIConfig', () => {
     const settings = makeSettings({
       providerConfigs: {
         grok: {
-          catalogsByHost: { 'device:current': catalog },
+          catalogsByHost: { [getInstallationKey()]: catalog },
           visibleModels: ['kimi-coding'],
         },
       },
@@ -148,7 +144,7 @@ describe('GrokChatUIConfig', () => {
     const settings = makeSettings({
       providerConfigs: {
         grok: {
-          catalogsByHost: { 'device:current': catalog },
+          catalogsByHost: { [getInstallationKey()]: catalog },
           visibleModels: ['kimi-coding', 'grok-4'],
         },
       },
@@ -165,7 +161,7 @@ describe('GrokChatUIConfig', () => {
     const settings = makeSettings({
       providerConfigs: {
         grok: {
-          catalogsByHost: { 'device:current': catalog },
+          catalogsByHost: { [getInstallationKey()]: catalog },
           visibleModels: [],
         },
       },
@@ -217,7 +213,7 @@ describe('GrokChatUIConfig', () => {
     const settings = makeSettings({
       providerConfigs: {
         grok: {
-          catalogsByHost: { 'device:current': catalogWithAdvertisedDefault },
+          catalogsByHost: { [getInstallationKey()]: catalogWithAdvertisedDefault },
           preferredReasoningByModel: {},
           visibleModels: ['grok-4'],
         },
@@ -245,7 +241,7 @@ describe('GrokChatUIConfig', () => {
     const settings = makeSettings({
       providerConfigs: {
         grok: {
-          catalogsByHost: { 'device:current': futureCatalog },
+          catalogsByHost: { [getInstallationKey()]: futureCatalog },
           preferredReasoningByModel: {},
           visibleModels: ['grok-future'],
         },
@@ -266,7 +262,7 @@ describe('GrokChatUIConfig', () => {
     const settings = makeSettings({
       providerConfigs: {
         grok: {
-          catalogsByHost: { 'device:current': catalog },
+          catalogsByHost: { [getInstallationKey()]: catalog },
           preferredReasoningByModel: { 'grok-4': 'high' },
           visibleModels: ['grok-4', 'kimi-coding'],
         },
@@ -318,7 +314,7 @@ describe('GrokChatUIConfig', () => {
     const settings = makeSettings({
       providerConfigs: {
         grok: {
-          catalogsByHost: { 'device:current': resolvedCatalog },
+          catalogsByHost: { [getInstallationKey()]: resolvedCatalog },
           visibleModels: ['kimi-coding'],
         },
       },

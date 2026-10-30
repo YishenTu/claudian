@@ -6,7 +6,7 @@ import * as path from 'node:path';
 import { deserialize, serialize } from 'node:v8';
 
 import { axe } from '@test/helpers/accessibility';
-import { controlChangeSettled } from '@test/helpers/ObsidianSettingsDOM';
+import { controlChangeSettled } from '@test/helpers/ObsidianHost';
 import { createProviderHostFixture } from '@test/helpers/providerRuntimeHost';
 import { writeGrokCatalog } from '@test/helpers/providers/grokSettings';
 import { fireEvent, waitFor, within } from '@testing-library/dom';
@@ -20,7 +20,6 @@ import { createGrokWorkspaceServices, type GrokWorkspaceServices } from '@/provi
 import { getGrokProviderSettings, updateGrokProviderSettings } from '@/providers/grok/settings';
 import { grokSettingsTabRenderer } from '@/providers/grok/ui/GrokSettingsTab';
 
-vi.mock('obsidian', async () => vi.importActual('@test/helpers/ObsidianSettingsDOM'));
 vi.mock('cross-spawn', () => ({ default: vi.fn(() => { throw new Error('Native CLI unavailable in settings test'); }) }));
 
 let fixture: Awaited<ReturnType<typeof createProviderHostFixture>>;

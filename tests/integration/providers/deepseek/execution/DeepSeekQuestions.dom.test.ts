@@ -8,7 +8,7 @@ import { EventEmitter, once } from 'node:events';
 import { axe } from '@test/helpers/accessibility';
 import { nativeDefaults } from '@test/helpers/deepseek/NativeDefaults';
 import { NativePeer, rootFollow } from '@test/helpers/deepseek/NativePeer';
-import { runtimeHostFor } from '@test/helpers/providerRuntimeHost';
+import { createProviderHostFixture } from '@test/helpers/providerRuntimeHost';
 import { testDate } from '@test/helpers/testClock';
 import { fireEvent, waitFor,within } from '@testing-library/dom';
 
@@ -31,8 +31,8 @@ let seq: number;
 let nativeTurn: number;
 let port: ProviderInteractionPort;
 const time = testDate().getTime();
-const settings = { locale: 'en', providerConfigs: { deepseek: { enabled: true, visibleModels: ['deepseek:native/model'], discoveredModels: [{ encodedId: 'deepseek:native/model', provider: 'native', id: 'model', label: 'Model', reasoning: [{ id: 'low', name: 'Low' }, { id: 'high', name: 'High' }] }] } } };
-const host = { settings } as unknown as ProviderHost;
+let settings: import('@/core/types').ClaudianSettings;
+let host: ProviderHost;
 
 function request(text = 'requested'): ProviderExecutionRequest {
   return { input: [{ type: 'text', text }], configuration: { systemInstructions: { kind: 'explicit', instructions: 'literal {prompt}' }, permissionMode: 'normal' }, toolPolicy: { kind: 'provider-default' }, signal: new AbortController().signal };
@@ -55,6 +55,7 @@ async function collect(events: AsyncIterable<ProviderExecutionEvent>, into: Prov
 }
 
 beforeEach(async () => {
+  ({ host, settings } = await createProviderHostFixture({ settings: { locale: 'en', providerConfigs: { deepseek: { enabled: true, visibleModels: ['deepseek:native/model'], discoveredModels: [{ encodedId: 'deepseek:native/model', provider: 'native', id: 'model', label: 'Model', reasoning: [{ id: 'low', name: 'Low' }, { id: 'high', name: 'High' }] }] } } } }));
   seq = 3; nativeTurn = 0; settings.locale = 'en';
   port = { requestApproval: vi.fn(), askUserQuestion: vi.fn(), dismissInteraction: vi.fn() };
   peer = new NativePeer();
@@ -67,20 +68,10 @@ beforeEach(async () => {
 afterEach(async () => { setLocale('en'); await session?.dispose(); await deepseek.dispose(); await peer.close(); });
 
 function create(): void {
-  session = new DeepSeekExecutionBackend(runtimeHostFor(host, 'deepseek'), () => deepseek).createSession({
+  session = new DeepSeekExecutionBackend(host.getRuntimeHost('deepseek'), () => deepseek).createSession({
     lifecycle: 'persistent', nativePersistence: 'enabled', workingDirectory: '/vault', interactionPort: port,
   });
 }
-
-
-HTMLElement.prototype.empty = function () { this.replaceChildren(); };
-HTMLElement.prototype.addClass = function (...classes) { this.classList.add(...classes); };
-HTMLElement.prototype.removeClass = function (...classes) { this.classList.remove(...classes); };
-HTMLElement.prototype.toggleClass = function (names, enabled) {
-  for (const name of Array.isArray(names) ? names : [names]) this.classList.toggle(name, enabled);
-};
-HTMLElement.prototype.scrollIntoView = function () {};
-HTMLElement.prototype.setText = function (text) { this.textContent = String(text); };
 
 /** Resolves once the session published an event, which it does only after applying the native frame behind it. */
 async function published(events: ProviderExecutionEvent[], expected: Record<string, unknown>): Promise<void> {

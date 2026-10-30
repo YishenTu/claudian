@@ -1,7 +1,7 @@
 import { TEST_CODEX_CATALOG } from '@test/helpers/codexModels';
-import { runtimeHostFor } from '@test/helpers/providerRuntimeHost';
 import { writeGrokCatalog } from '@test/helpers/providers/grokSettings';
 
+import type { ProviderRuntimeHost } from '@/core/providers/ProviderRuntimeHost';
 import { assertClaudeModelAvailable } from '@/providers/claude/runtime/ClaudeModelAvailability';
 import { getClaudeProviderSettings, updateClaudeProviderSettings } from '@/providers/claude/settings';
 import { assertCodexModelAvailable } from '@/providers/codex/runtime/CodexModelAvailability';
@@ -27,10 +27,10 @@ const availabilityGuards = {
 /** Runs a provider's execution-time model guard against a settings document. */
 export function assertCatalogModelAvailable(
   providerId: keyof typeof availabilityGuards,
-  settings: object,
+  host: ProviderRuntimeHost,
   model: string | undefined,
 ): void {
-  availabilityGuards[providerId](runtimeHostFor({ settings }, providerId), model);
+  availabilityGuards[providerId](host, model);
 }
 
 export const modelCatalogCases = [

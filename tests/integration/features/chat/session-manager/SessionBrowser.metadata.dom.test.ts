@@ -1,0 +1,209 @@
+/** @vitest-environment jsdom */
+
+import { axe } from '@test/helpers/accessibility';
+import { createSessionBrowserHost } from '@test/helpers/features/chat/SessionBrowserTestHarness';
+import { testDate } from '@test/helpers/testClock';
+import { fireEvent, within } from '@testing-library/dom';
+import { setIcon } from 'obsidian';
+
+import type { ConversationMeta } from '@/core/types';
+import { SessionBrowser } from '@/features/chat/session-manager/SessionBrowser';
+import {
+  formatSessionCreatedDate,
+  formatSessionLastActive,
+} from '@/features/chat/session-manager/SessionMetadataPopover';
+import { ChatState } from '@/features/chat/state/ChatState';
+import { OPENAI_PROVIDER_ICON } from '@/shared/icons';
+
+
+async function createController(conversations?: ConversationMeta[]) {
+  const state = new ChatState();
+  const { plugin } = await createSessionBrowserHost({ conversations: conversations ?? [{
+    id: 'session-1', providerId: 'codex', title: 'Review architecture', messageCount: 1, preview: '',
+    createdAt: testDate({ minutes: -1 }).getTime(), lastActivityAt: testDate().getTime(),
+    linkedContentPath: 'Projects/A linked content title that overflows the popover.md',
+  }] });
+  const controller = new SessionBrowser({
+    plugin, getCurrentConversationId: () => state.currentConversationId,
+    onListChanged: () => undefined, getTitleGenerationService: () => null,
+  });
+  onTestFinished(() => controller.dispose());
+  return controller;
+}
+
+describe('SessionBrowser session metadata popover', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    document.body.replaceChildren();
+  });
+
+  it.each([
+    ['Projects/Architecture.md', 'Architecture'],
+    [undefined, null],
+    ['Projects/Untitled', 'Untitled'],
+  ])('shows current metadata and accessible controls for linked content %s', async (linkedContentPath, title) => {
+    const createdAt = testDate({ days: -1 }).getTime();
+    const lastActivityAt = testDate().getTime();
+    const controller = await createController([{
+      id: 'session-1', providerId: 'codex', selectedModel: 'gpt-5.1-codex', title: 'Review architecture',
+      createdAt, lastActivityAt, linkedContentPath, messageCount: 1, preview: '',
+    }]);
+    const container = document.createElement('div');
+    document.body.append(container);
+    controller.renderHistoryDropdown(container, {
+      onSelectConversation: vi.fn().mockResolvedValue(undefined), showMetadataPopover: true,
+      organization: 'linked-content', language: 'en', contentExists: () => true, contentIsNote: () => false,
+      getProviderIcon: () => OPENAI_PROVIDER_ICON, getModelLabel: () => 'GPT-5.1 Codex',
+    });
+    const content = within(container).getByRole('button', { name: /Review architecture/ });
+    const item = content.closest<HTMLElement>('.claudian-history-item')!;
+    vi.spyOn(item, 'getBoundingClientRect').mockReturnValue({
+      top: 120, left: 20, right: 220, bottom: 148, width: 200, height: 28, x: 20, y: 120, toJSON: () => ({}),
+    });
+    expect(item.getAttribute('tabindex')).toBeNull();
+    expect(item.getAttribute('role')).toBeNull();
+    expect(content.getAttribute('tabindex')).toBe('0');
+    expect(item.querySelector('.claudian-history-item-date')).toBeNull();
+    fireEvent.mouseEnter(item);
+    const tooltip = within(document.body).getByRole('tooltip');
+    expect([...tooltip.querySelectorAll('.claudian-session-metadata-label')].map(label => label.textContent))
+      .toEqual(['Created', 'Last active']);
+    const visibleRows = [...tooltip.children].filter(row => !row.classList.contains('claudian-hidden'));
+    expect(visibleRows.map(row => row.querySelector('.claudian-session-metadata-value')?.textContent))
+      .toEqual([
+        ...(title ? [title] : []),
+        'GPT-5.1 Codex',
+        formatSessionCreatedDate(createdAt),
+        formatSessionLastActive(lastActivityAt),
+      ]);
+    expect(tooltip.querySelector('.claudian-session-metadata-provider-icon')).not.toBeNull();
+    expect(tooltip.style.top).toBe('120px');
+    expect(tooltip.querySelector('.claudian-session-metadata-value--content')?.getAttribute('title'))
+      .toBe(linkedContentPath ?? '');
+    fireEvent.keyDown(content, { key: 'Escape' });
+    expect(tooltip.isConnected).toBe(false);
+    fireEvent.focusIn(content);
+    expect(within(document.body).getAllByRole('tooltip')).toEqual([tooltip]);
+    controller.dispose();
+  });
+
+  it('keeps focus off the row on a right-press, so closing its menu with Esc leaves no focus ring', async () => {
+    const controller = await createController();
+    const container = document.createElement('div');
+    document.body.append(container);
+    controller.renderHistoryDropdown(container, {
+      onSelectConversation: vi.fn().mockResolvedValue(undefined), showMetadataPopover: true,
+      getProviderIcon: () => OPENAI_PROVIDER_ICON, getModelLabel: () => 'GPT-5.1 Codex',
+    });
+    const content = container.querySelector<HTMLElement>('.claudian-history-item-content')!;
+    expect(content.getAttribute('tabindex')).toBe('0');
+
+    // A prevented press keeps the browser from focusing the row; Obsidian's menu then has no row to return focus to.
+    expect(fireEvent.mouseDown(content, { button: 2 })).toBe(false);
+    // A primary press still focuses and opens the row as before.
+    expect(fireEvent.mouseDown(content, { button: 0 })).toBe(true);
+    controller.dispose();
+  });
+
+  it('reuses popover rows and icons across keyboard activation while updating content and ARIA', async () => {
+    const first: ConversationMeta = { id: 'one', providerId: 'claude', title: 'First session', messageCount: 1, preview: '',
+      createdAt: testDate({ days: -2 }).getTime(), lastActivityAt: testDate().getTime(), linkedContentPath: 'First.md' };
+    const second: ConversationMeta = { ...first, id: 'two', title: 'Second session', linkedContentPath: undefined };
+    const controller = await createController([first, second]);
+    const container = document.createElement('div');
+    document.body.append(container);
+    const icon = { viewBox: '0 0 16 16', path: 'M0 0h8v8z' };
+    controller.renderHistoryDropdown(container, {
+      onSelectConversation: vi.fn().mockResolvedValue(undefined), showMetadataPopover: true,
+      getProviderIcon: () => ({ ...icon }),
+      getModelLabel: conversation => conversation.id === 'one' ? 'Model one' : 'Model two',
+    });
+    const firstButton = within(container).getByRole('button', { name: /First session/ });
+    const secondButton = within(container).getByRole('button', { name: /Second session/ });
+    fireEvent.focusIn(firstButton);
+    const tooltip = within(document.body).getByRole('tooltip');
+    const rows = [...tooltip.children];
+    const svg = tooltip.querySelector('svg');
+    expect(svg?.getAttribute('data-provider')).toBe('claude');
+    expect(tooltip.textContent).toContain('Model one');
+    expect(tooltip.textContent).toContain('First');
+    expect(firstButton.getAttribute('aria-describedby')).toBe(tooltip.id);
+    vi.mocked(setIcon).mockClear();
+    fireEvent.focusIn(secondButton);
+    expect(within(document.body).getByRole('tooltip')).toBe(tooltip);
+    expect(tooltip.children).toHaveLength(rows.length);
+    rows.forEach((row, index) => expect(tooltip.children[index]).toBe(row));
+    expect(tooltip.querySelector('svg')).toBe(svg);
+    expect(tooltip.querySelector('.claudian-session-metadata-value--content')?.parentElement?.classList.contains('claudian-hidden')).toBe(true);
+    expect(tooltip.textContent).toContain('Model two');
+    expect(firstButton.hasAttribute('aria-describedby')).toBe(false);
+    expect(secondButton.getAttribute('aria-describedby')).toBe(tooltip.id);
+    expect(vi.mocked(setIcon)).not.toHaveBeenCalled();
+    expect((await axe(tooltip)).violations).toEqual([]);
+    fireEvent.keyDown(secondButton, { key: 'Escape' });
+    expect(within(document.body).queryByRole('tooltip')).toBeNull();
+    expect(secondButton.hasAttribute('aria-describedby')).toBe(false);
+    first.linkedContentPath = 'Updated.md';
+    icon.path = 'M0 0h4v4z';
+    fireEvent.focusIn(firstButton);
+    expect(within(document.body).getByRole('tooltip')).toBe(tooltip);
+    expect(tooltip.textContent).toContain('Updated');
+    expect(tooltip.querySelector('svg')).not.toBe(svg);
+    expect(tooltip.querySelector('svg path')?.getAttribute('d')).toBe(icon.path);
+    expect(tooltip.querySelector('.claudian-session-metadata-value--content')?.parentElement?.classList.contains('claudian-hidden')).toBe(false);
+    controller.dispose();
+    expect(tooltip.isConnected).toBe(false);
+  });
+
+  it('detaches reused content and removes its ARIA association on abort and resize', async () => {
+    const controller = await createController();
+    const container = document.createElement('div');
+    document.body.append(container);
+    const abort = new AbortController();
+    controller.renderHistoryDropdown(container, {
+      onSelectConversation: vi.fn().mockResolvedValue(undefined), showMetadataPopover: true, signal: abort.signal,
+    });
+    const button = within(container).getByRole('button', { name: /Review architecture/ });
+    fireEvent.focusIn(button);
+    const tooltip = within(document.body).getByRole('tooltip');
+    abort.abort();
+    expect(tooltip.isConnected).toBe(false);
+    expect(button.hasAttribute('aria-describedby')).toBe(false);
+    controller.renderHistoryDropdown(container, {
+      onSelectConversation: vi.fn().mockResolvedValue(undefined), showMetadataPopover: true,
+    });
+    const nextButton = within(container).getByRole('button', { name: /Review architecture/ });
+    fireEvent.focusIn(nextButton);
+    expect(within(document.body).getByRole('tooltip')).toBe(tooltip);
+    fireEvent(window, new Event('resize'));
+    expect(tooltip.isConnected).toBe(false);
+    expect(nextButton.hasAttribute('aria-describedby')).toBe(false);
+    controller.dispose();
+  });
+
+  it('stays open for its own content scroll and closes for an external scroll', async () => {
+    const controller = await createController();
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    controller.renderHistoryDropdown(container, {
+      onSelectConversation: vi.fn().mockResolvedValue(undefined),
+      showMetadataPopover: true,
+    });
+
+    const item = container.querySelector<HTMLElement>('.claudian-history-item')!;
+    item.dispatchEvent(new MouseEvent('mouseenter'));
+
+    const popover = document.body.querySelector<HTMLElement>(
+      '.claudian-session-metadata-popover',
+    )!;
+    const linkedContent = popover.querySelector<HTMLElement>(
+      '.claudian-session-metadata-value--content',
+    )!;
+
+    linkedContent.dispatchEvent(new Event('scroll'));
+    expect(popover.isConnected).toBe(true);
+
+    container.dispatchEvent(new Event('scroll'));
+    expect(popover.isConnected).toBe(false);
+  });
+});

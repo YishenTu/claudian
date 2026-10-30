@@ -1,12 +1,10 @@
 /** @vitest-environment jsdom */
 import { axe } from '@test/helpers/accessibility';
-import { controlChangeSettled } from '@test/helpers/ObsidianSettingsDOM';
+import { controlChangeSettled } from '@test/helpers/ObsidianHost';
 import { fireEvent, within } from '@testing-library/dom';
 import type { ToggleComponent } from 'obsidian';
 
 import { AccessibleSetting } from '@/shared/settings/AccessibleSetting';
-
-vi.mock('obsidian', async () => vi.importActual('@test/helpers/ObsidianSettingsDOM'));
 
 afterEach(() => document.body.replaceChildren());
 

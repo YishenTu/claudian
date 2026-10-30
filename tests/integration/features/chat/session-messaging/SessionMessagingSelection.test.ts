@@ -3,8 +3,10 @@ import '@/providers';
 
 import { deferred } from '@test/helpers/ChatInputHarness';
 import { claudeCatalogFixture } from '@test/helpers/claudeModels';
+import { DEFAULT_CLAUDIAN_SETTINGS } from '@test/helpers/defaultSettings';
+import { createChatFeatureHost } from '@test/helpers/features/chat/ChatFeatureHostFixture';
 import { createProjectsFake } from '@test/helpers/features/chat/ProjectsFake';
-import { installSessionRuntimePool } from '@test/helpers/features/chat/SessionRuntimePoolHarness';
+import { createSessionRuntimePool } from '@test/helpers/features/chat/SessionRuntimePoolHarness';
 import { FakeSideBackend } from '@test/helpers/features/chat/SideChatSessionHarness';
 import { testDate } from '@test/helpers/testClock';
 import { waitFor } from '@testing-library/dom';
@@ -12,12 +14,10 @@ import { App } from 'obsidian';
 
 import { ConversationRepository } from '@/app/conversations/ConversationRepository';
 import type { ConversationPersistence } from '@/app/storage/ConversationPersistenceStore';
-import { ProviderExecutionLifecycleRegistry } from '@/core/execution';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { ProviderSettingsCoordinator } from '@/core/providers/ProviderSettingsCoordinator';
 import { ProviderWorkspaceRegistry } from '@/core/providers/ProviderWorkspaceRegistry';
 import type { ClaudianSettings, Conversation, ConversationMutablePatch, SessionMetadata } from '@/core/types';
-import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
 import { SessionMessagingService } from '@/features/chat/session-messaging/SessionMessagingService';
 import { getSessionSettingsSnapshot } from '@/features/chat/sessions/sessionSettings';
 
@@ -25,17 +25,17 @@ const sonnet = 'claude-code/claude-sonnet-4-5';
 const haiku = 'claude-code/claude-haiku-4-5';
 const opus = 'claude-code/claude-opus-4-6';
 
-function setup() {
+async function setup() {
   const app = new App();
   Object.assign(app.vault.adapter, { basePath: '/vault' });
   const backend = new FakeSideBackend();
   vi.spyOn(ProviderRegistry, 'createExecutionBackend').mockReturnValue(backend);
   ProviderWorkspaceRegistry.setServices('claude', {});
-  const settings = {
+  let settings: ClaudianSettings = Object.assign(structuredClone(DEFAULT_CLAUDIAN_SETTINGS), {
     model: sonnet, permissionMode: 'normal', effortLevel: 'high', excludedTags: [],
     lastSelectedChatModel: { providerId: 'claude', model: sonnet },
     providerConfigs: { claude: claudeCatalogFixture(['claude-sonnet-4-5', 'claude-haiku-4-5', 'claude-opus-4-6'], ['low', 'high']) },
-  } as unknown as ClaudianSettings;
+  });
   const records: Conversation[] = ['sender', 'recipient'].map(id => ({
     id, sessionId: null, providerId: 'claude', selectedModel: sonnet, title: id, messages: [],
     createdAt: testDate().getTime(), lastActivityAt: testDate().getTime(),
@@ -51,9 +51,13 @@ function setup() {
     getSettings: () => settings, getVaultPath: () => '/vault', onConversationDeleted: async () => undefined,
   });
   repository.replaceAll(records);
-  const host = {
-    app, settings, providerHost: { app, settings, executionLifecycleRegistry: new ProviderExecutionLifecycleRegistry() },
-    getCommittedSettings: () => settings, getActiveEnvironmentVariables: () => '',
+  const pool = createSessionRuntimePool(() => host);
+  const refreshModelControls = vi.fn();
+  const service = new SessionMessagingService({ getHost: () => host, getActiveConversationId: () => null, refreshModelControls });
+  onTestFinished(() => service.dispose());
+  const host = await createChatFeatureHost({
+    sessionRuntimes: pool, bindSessionTools: id => service.bindSessionTools(id),
+    app, settings,
     getConversationSummary: (id: string) => repository.getSummary(id),
     getConversationSync: (id: string) => repository.getSync(id),
     getCachedConversation: (id: string) => repository.getSync(id),
@@ -63,11 +67,8 @@ function setup() {
     updateConversation: vi.fn((id: string, patch: ConversationMutablePatch) => repository.update(id, patch)),
     executionPersistence: repository,
     projects: createProjectsFake(),
-  } as unknown as ChatFeatureHost;
-  const pool = installSessionRuntimePool(host);
-  const refreshModelControls = vi.fn();
-  const service = new SessionMessagingService({ getHost: () => host, getActiveConversationId: () => null, refreshModelControls });
-  Object.assign(host, { bindSessionTools: (id: string) => service.bindSessionTools(id) });
+  });
+  settings = host.settings;
   const runtime = pool.ensure({ conversationId: 'recipient', providerId: 'claude', draftModel: null });
   getSessionSettingsSnapshot(runtime, host);
   const reasoningBefore = [...runtime.reasoningSelections];
@@ -92,7 +93,7 @@ function setup() {
 afterEach(() => { ProviderWorkspaceRegistry.clear(); vi.restoreAllMocks(); });
 
 it('does not reject a committed switch when its presentation refresh throws', async () => {
-  const h = setup();
+  const h = (await setup());
   h.refreshModelControls.mockImplementation(() => { throw new Error('View closed'); });
   await expect(h.send()).resolves.toEqual({ sessionId: 'recipient', title: 'recipient', provider: 'claude', status: 'started' });
   await waitFor(() => expect(h.backend.sessions[0]?.requests).toHaveLength(1));
@@ -102,7 +103,7 @@ it('does not reject a committed switch when its presentation refresh throws', as
 });
 
 it('rejects a send whose model write fails without switching reasoning or delivering', async () => {
-  const h = setup();
+  const h = (await setup());
   h.saveMetadata.mockRejectedValueOnce(new Error('Disk unavailable'));
   await expect(h.send()).rejects.toThrow('Disk unavailable');
   expect(h.repository.getSummary('recipient')?.selectedModel).toBe(sonnet);
@@ -113,7 +114,7 @@ it('rejects a send whose model write fails without switching reasoning or delive
 });
 
 it('keeps a committed switch but delivers nothing when the send is cancelled during its model write', async () => {
-  const h = setup();
+  const h = (await setup());
   const write = h.pauseWrite();
   const cancellation = new AbortController();
   const sending = h.send({ model: haiku }, cancellation.signal);
@@ -127,7 +128,7 @@ it('keeps a committed switch but delivers nothing when the send is cancelled dur
 });
 
 it('applies its switch after a pending user model choice instead of rejecting the message', async () => {
-  const h = setup();
+  const h = (await setup());
   const write = h.pauseWrite();
   const selecting = h.repository.update('recipient', { selectedModel: haiku });
   await write.entered;

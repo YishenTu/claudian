@@ -5,8 +5,7 @@ import { existsSync, writeFileSync } from 'node:fs';
 import * as path from 'node:path';
 
 import { axe } from '@test/helpers/accessibility';
-import { controlChangeSettled } from '@test/helpers/ObsidianSettingsDOM';
-import { createProviderHostFixture } from '@test/helpers/providerRuntimeHost';
+import { controlChangeSettled } from '@test/helpers/ObsidianHost';
 import { fireEvent, waitFor, within } from '@testing-library/dom';
 
 import { getInstallationKey } from '@/core/device/InstallationKey';
@@ -21,17 +20,13 @@ import { createOpencodeSettingsTabRenderer } from '@/providers/opencode/ui/Openc
 
 import { createOpencodeHTTPMetadataFixture } from '../metadata/OpencodeHTTPMetadataFixture';
 
-vi.mock('obsidian', () => import('@test/helpers/ObsidianSettingsDOM'));
 const deviceKey = getInstallationKey();
 
 async function setup(config: Record<string, unknown> = {}) {
   const fixture = createOpencodeHTTPMetadataFixture();
   const persist = vi.fn(async (_settings: ClaudianSettings) => undefined);
-  const app = await createProviderHostFixture({
-    settings: { providerConfigs: { claude: { enabled: true }, opencode: { ...fixture.createPlugin().settings.providerConfigs.opencode, ...config } } },
-    beforePersist: persist,
-    overrides: { workingDirectory: fixture.root, getResolvedProviderCliPath: async () => fixture.cliPath },
-  });
+  const app = await fixture.createHostFixture({ config, beforePersist: persist });
+  app.settings.providerConfigs.claude = { enabled: true };
   const { host, lifecycle: registry } = app;
   const runtimeHost = host.getRuntimeHost('opencode');
   const servers = new OpencodeServerService();

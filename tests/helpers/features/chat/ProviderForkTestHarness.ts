@@ -1,76 +1,56 @@
 import '@/providers';
 
-import * as fs from 'node:fs/promises';
-import * as os from 'node:os';
 import * as path from 'node:path';
 
 import { claudeCatalogFixture } from '@test/helpers/claudeModels';
-import { runtimeHostFor } from '@test/helpers/providerRuntimeHost';
+import { createChatFeatureHost } from '@test/helpers/features/chat/ChatFeatureHostFixture';
 import { writeGrokCatalog } from '@test/helpers/providers/grokSettings';
-import { App } from 'obsidian';
 
 import { ConversationRepository } from '@/app/conversations/ConversationRepository';
 import { ConversationPersistenceStore } from '@/app/storage/ConversationPersistenceStore';
-import { type ProviderExecutionBackend, ProviderExecutionLifecycleRegistry } from '@/core/execution';
-import type { ProviderHost } from '@/core/providers/ProviderHost';
+import { type ProviderExecutionBackend } from '@/core/execution';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { ProviderSettingsCoordinator } from '@/core/providers/ProviderSettingsCoordinator';
 import type { ProviderHistoryPathContext } from '@/core/providers/types';
-import { VaultFileAdapter } from '@/core/storage/VaultFileAdapter';
 import type { ChatMessage, Conversation, ProviderId } from '@/core/types';
-import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
 import { ChatExecutionCoordinator } from '@/features/chat/execution/ChatExecutionCoordinator';
 import { handleForkRequest } from '@/features/chat/sessions/SessionForkSource';
 import type { AssembledTabRuntime } from '@/features/chat/tabs/types';
 
 /** Real persistence/orchestration with only the Obsidian filesystem boundary supplied by the test. */
 export async function createForkTestEnvironment() {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'claudian-fork-integration-'));
-  const app = new App();
-  app.vault.adapter = {
-    basePath: root,
-    exists: async (file: string) => fs.access(path.join(root, file)).then(() => true, () => false),
-    read: (file: string) => fs.readFile(path.join(root, file), 'utf8'),
-    write: (file: string, data: string) => fs.writeFile(path.join(root, file), data),
-    mkdir: (file: string) => fs.mkdir(path.join(root, file), { recursive: true }),
-    remove: (file: string) => fs.rm(path.join(root, file), { force: true }),
-    list: async () => ({ files: [], folders: [] }),
-  } as unknown as App['vault']['adapter'];
-  const adapter = new VaultFileAdapter(app);
-  const settings = {
-    model: 'claude-sonnet-4-5', permissionMode: 'ask', mediaFolder: 'media',
-    providerConfigs: {
-      claude: { ...claudeCatalogFixture(['claude-sonnet-4-5']), environmentVariables: `CLAUDE_CONFIG_DIR=${path.join(root, 'claude')}` },
-      pi: { enabled: true, visibleModels: ['pi:anthropic/claude-sonnet-4'], discoveredModels: [{
-        encodedId: 'pi:anthropic/claude-sonnet-4', id: 'claude-sonnet-4', provider: 'anthropic', label: 'Sonnet', input: ['text'],
-      }] },
-      codex: { enabled: true, visibleModels: ['gpt-5'], discoveredModels: [{ model: 'gpt-5', displayName: 'GPT-5', description: '', supportedReasoningEfforts: [{ value: 'medium', description: '' }], defaultReasoningEffort: 'medium', inputModalities: ['text'], isDefault: true }] }, grok: { enabled: true, visibleModels: ['grok-code-fast-1'], environmentVariables: `GROK_HOME=${path.join(root, 'grok')}` },
+  const plugin = await createChatFeatureHost({
+    settings: {
+      model: 'claude-sonnet-4-5', permissionMode: 'normal', mediaFolder: 'media',
+      providerConfigs: {
+        claude: claudeCatalogFixture(['claude-sonnet-4-5']),
+        pi: { enabled: true, visibleModels: ['pi:anthropic/claude-sonnet-4'], discoveredModels: [{
+          encodedId: 'pi:anthropic/claude-sonnet-4', id: 'claude-sonnet-4', provider: 'anthropic', label: 'Sonnet', input: ['text'],
+        }] },
+        codex: { enabled: true, visibleModels: ['gpt-5'], discoveredModels: [{ model: 'gpt-5', displayName: 'GPT-5', description: '', supportedReasoningEfforts: [{ value: 'medium', description: '' }], defaultReasoningEffort: 'medium', inputModalities: ['text'], isDefault: true }] },
+        grok: { enabled: true, visibleModels: ['grok-code-fast-1'] },
+      },
     },
-  };
+    getConversationSummary: id => repository.getSummary(id),
+    getConversationSync: id => repository.getSync(id),
+  });
+  const host = plugin.providerHost;
+  const { app, settings } = plugin;
+  const root = host.workingDirectory!;
+  const adapter = plugin.storage.getAdapter();
+  settings.providerConfigs.claude!.environmentVariables = `CLAUDE_CONFIG_DIR=${path.join(root, 'claude')}`;
+  settings.providerConfigs.grok!.environmentVariables = `GROK_HOME=${path.join(root, 'grok')}`;
+  host.getResolvedProviderCliPath = vi.fn(async providerId => `/bin/${providerId}`);
+  const lifecycleRegistry = host.executionLifecycleRegistry;
   writeGrokCatalog(settings, { fingerprint: 'test', refreshedAt: 1, defaultModelId: 'grok-code-fast-1', models: [{ rawId: 'grok-code-fast-1', displayName: 'Grok', supportsReasoning: false, reasoningEfforts: [] }] });
-  const lifecycleRegistry = new ProviderExecutionLifecycleRegistry();
-  const host = {
-    app, settings, executionLifecycleRegistry: lifecycleRegistry,
-    storage: {},
-    getResolvedProviderCliPath: async (providerId: string) => `/bin/${providerId}`,
-    getActiveEnvironmentVariables: () => `CLAUDE_CONFIG_DIR=${path.join(root, 'claude')}`,
-    getRuntimeHost: (providerId: string) => runtimeHostFor({
-      settings, workingDirectory: root, getResolvedProviderCliPath: async (id: string) => `/bin/${id}`,
-    }, providerId),
-  } as unknown as ProviderHost;
   const repository = new ConversationRepository({
     providers: ProviderRegistry,
     providerSettings: ProviderSettingsCoordinator,
     getSettings: () => settings,
     getVaultPath: () => root,
-    persistence: new ConversationPersistenceStore(adapter, `device-${'a'.repeat(64)}`),
+    persistence: new ConversationPersistenceStore(adapter, plugin.storage.installationKey),
     onConversationDeleted: async () => undefined,
   });
-  const plugin = {
-    app, settings,
-    getConversationSummary: (id: string) => repository.getSummary(id),
-    getConversationSync: (id: string) => repository.getSync(id),
-  } as unknown as ChatFeatureHost;
   const coordinators: ChatExecutionCoordinator[] = [];
   let sequence = 0;
 
@@ -135,10 +115,10 @@ export async function createForkTestEnvironment() {
   }
 
   return {
-    root, app, adapter, host, repository, open, send, fork,
+    root, app, adapter, host, plugin, repository, open, send, fork,
     async dispose() {
       await Promise.all(coordinators.map(coordinator => coordinator.dispose()));
-      await fs.rm(root, { recursive: true, force: true });
+      await lifecycleRegistry.dispose();
     },
   };
 }

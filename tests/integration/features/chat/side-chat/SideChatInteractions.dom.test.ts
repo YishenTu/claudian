@@ -23,7 +23,7 @@ afterEach(async () => {
 
 it('keeps a child turn and detached approval alive, then restores the completed transcript', async () => {
   vi.mocked(MarkdownRenderer.render).mockImplementation(async (_app, text, el) => { el.textContent = text; });
-  const harness = createHarness();
+  const harness = await createHarness();
   const { started } = await startSideChat(harness);
   const runtime = harness.controller.runtime!;
   const native = harness.backend.latest;
@@ -65,7 +65,7 @@ it('keeps a child turn and detached approval alive, then restores the completed 
 });
 
 it('keeps replacement approval attention after a dismissed prompt with the same id settles', async () => {
-  const harness = createHarness();
+  const harness = await createHarness();
   const { started } = await startSideChat(harness);
   harness.controller.expand();
   const native = harness.backend.latest;
@@ -89,7 +89,7 @@ it('keeps replacement approval attention after a dismissed prompt with the same 
 });
 
 it.each(['approval', 'question'] as const)('dismisses only the named overlapping %s', async kind => {
-  const harness = createHarness();
+  const harness = await createHarness();
   const { started } = await startSideChat(harness);
   harness.controller.expand();
   const native = harness.backend.latest;
@@ -114,7 +114,7 @@ it.each(['approval', 'question'] as const)('dismisses only the named overlapping
 });
 
 it('completing one approval leaves the other reachable for cancellation', async () => {
-  const harness = createHarness();
+  const harness = await createHarness();
   const { started } = await startSideChat(harness);
   harness.controller.expand();
   const native = harness.backend.latest;
@@ -139,7 +139,7 @@ it('completing one approval leaves the other reachable for cancellation', async 
 
 
 async function showAsyncQuestion() {
-  const harness = createHarness({ formatQuestionReply: formatCodexQuestionReply, taskResultInterpreter });
+  const harness = await createHarness({ formatQuestionReply: formatCodexQuestionReply, taskResultInterpreter });
   const { started } = await startSideChat(harness);
   harness.controller.expand();
   const native = harness.backend.latest;
@@ -411,7 +411,7 @@ it('closes the panel on queue admission, delivers later, and keeps it closed aft
 
 
 it('keeps a pending main question out of the side destination and restores its answers on return', async () => {
-  const harness = createHarness({ onDestinationChanged: () => prompts.setActive(harness.controller.destination === 'main') });
+  const harness = await createHarness({ onDestinationChanged: () => prompts.setActive(harness.controller.destination === 'main') });
   const session = createTestSession();
   const state = new ChatState({}, undefined, session.turns);
   const prompts = new SessionInteractions({

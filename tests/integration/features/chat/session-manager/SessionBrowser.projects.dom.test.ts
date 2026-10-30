@@ -1,29 +1,20 @@
 /** @vitest-environment jsdom */
-
 import { axe } from '@test/helpers/accessibility';
 import { createProjectsFake, projectRecord } from '@test/helpers/features/chat/ProjectsFake';
+import { createSessionBrowserHost } from '@test/helpers/features/chat/SessionBrowserTestHarness';
 import { testDate } from '@test/helpers/testClock';
-import { fireEvent, within } from '@testing-library/dom';
+import { fireEvent, waitFor, within } from '@testing-library/dom';
 import { Menu } from 'obsidian';
 import type { Mock } from 'vitest';
 
 import type { ConversationMeta, ProjectRecord } from '@/core/types';
-import { SessionBrowser, type SessionBrowserDeps } from '@/features/chat/session-manager/SessionBrowser';
+import { SessionBrowser } from '@/features/chat/session-manager/SessionBrowser';
 import type { HistoryConversationStatus } from '@/features/chat/session-manager/SessionStatusPresentation';
 import { t } from '@/i18n/i18n';
-import { confirm } from '@/shared/modals/ConfirmModal';
 
 
 
-vi.mock('@/shared/modals/ConfirmModal', () => ({ confirm: vi.fn(), confirmDelete: vi.fn() }));
 
-HTMLElement.prototype.empty = function () { this.replaceChildren(); };
-HTMLElement.prototype.addClass = function (...classes) { this.classList.add(...classes); };
-HTMLElement.prototype.removeClass = function (...classes) { this.classList.remove(...classes); };
-HTMLElement.prototype.hasClass = function (className) { return this.classList.contains(className); };
-HTMLElement.prototype.toggleClass = function (classes, value) {
-  for (const name of [classes].flat()) this.classList.toggle(name, value);
-};
 
 type MockMenuItem = {
   title: string; checked: boolean | null; disabled: boolean; isWarning?: boolean;
@@ -46,47 +37,48 @@ const launch = projectRecord({ id: 'launch', name: 'Launch', createdAt: testDate
 const research = projectRecord({ id: 'research', name: 'Research', isPinned: true });
 const idle = projectRecord({ id: 'idle', name: 'Idle', createdAt: testDate({ days: -20 }).getTime() });
 
-function setup(options: {
+async function setup(options: {
   conversations?: ConversationMeta[];
   records?: ProjectRecord[];
   render?: Record<string, unknown>;
   /** The document showing the list, such as a popped-out window's. */
   doc?: Document;
 } = {}) {
-  const conversations = options.conversations ?? [
+  const conversations = structuredClone(options.conversations ?? [
     session('alpha', { projectId: 'launch', lastActivityAt: testDate({ hours: -1 }).getTime() }),
     session('busy', { projectId: 'launch', lastActivityAt: testDate({ hours: -2 }).getTime() }),
     session('notes', { projectId: 'research' }),
     session('stale', { projectId: 'deleted-project' }),
     session('loose'),
-  ];
-  const reader = createProjectsFake(options.records ?? [launch, research, idle]);
+  ]);
+  const reader = createProjectsFake(structuredClone(options.records ?? [launch, research, idle]));
   const projects = {
     ...reader,
     create: vi.fn(),
     update: vi.fn().mockResolvedValue(undefined),
     setPinned: vi.fn().mockResolvedValue(undefined),
-    delete: vi.fn().mockResolvedValue(undefined),
+    delete: vi.fn(async (id: string) => reader.remove(id)),
+    setArchived: vi.fn(async (id: string, value: boolean) => { const record = reader.get(id); if (record) reader.put({ ...record, isArchived: value }); }),
     readMemory: vi.fn(), saveMemory: vi.fn(), recreateMemory: vi.fn(),
   };
+  const fixture = await createSessionBrowserHost({ conversations, host: {
+    settings: { enableAutoTitleGeneration: false }, projects,
+  }, store: { archiveProjectIfEmpty: async id => {
+    if (!conversations.some(record => record.projectId === id && !record.isArchived)) await projects.setArchived(id, true);
+  } } });
   const lifecycle = {
-    archive: vi.fn().mockResolvedValue(undefined),
-    archiveProject: vi.fn().mockResolvedValue(undefined),
-    restoreProject: vi.fn().mockResolvedValue(undefined),
-    setPinned: vi.fn(),
-    setPlacement: vi.fn().mockResolvedValue(undefined),
+    archive: vi.spyOn(fixture.lifecycle, 'archive'),
+    archiveProject: vi.spyOn(fixture.lifecycle, 'archiveProject'),
+    restoreProject: vi.spyOn(fixture.lifecycle, 'restoreProject'),
+    setPinned: vi.spyOn(fixture.lifecycle, 'setPinned'),
+    setPlacement: vi.spyOn(fixture.lifecycle, 'setPlacement'),
   };
   const browser = new SessionBrowser({
-    plugin: {
-      app: {},
-      settings: { enableAutoTitleGeneration: false },
-      getConversationList: () => conversations,
-      conversationLifecycle: lifecycle, projects,
-    },
+    plugin: fixture.plugin,
     getCurrentConversationId: () => null,
     getTitleGenerationService: () => null,
     onListChanged: () => undefined,
-  } as unknown as SessionBrowserDeps);
+  });
   onTestFinished(() => browser.dispose());
   const container = (options.doc ?? document).body.createDiv();
   const onStartProjectConversation = vi.fn().mockResolvedValue(undefined);
@@ -120,7 +112,6 @@ const sectionName = (name: string, _count: number) => name;
 afterEach(() => {
   document.body.replaceChildren();
   menus().length = 0;
-  vi.mocked(confirm).mockReset();
 });
 
 const projectsRegion = (container: HTMLElement) => within(container).getByRole('region', { name: t('chat.projects.header') });
@@ -130,8 +121,8 @@ const expandedProjectToggles = (region: HTMLElement) => {
   return within(region).getAllByRole('button', { expanded: true }).filter(toggle => toggle !== sectionToggle);
 };
 
-it('places the Pinned section above the projects', () => {
-  const { container, view } = setup({
+it('places the Pinned section above the projects', async () => {
+  const { container, view } = await setup({
     conversations: [session('favorite', { isPinned: true }), session('alpha', { projectId: 'launch' })],
   });
   const pinned = view.getByRole('region', { name: 'Pinned' });
@@ -140,7 +131,7 @@ it('places the Pinned section above the projects', () => {
 });
 
 it('lists projects above the sessions, with their members only under them', async () => {
-  const { container, view } = setup();
+  const { container, view } = await setup();
   const region = projectsRegion(container);
   const sessions = view.getByRole('region', { name: 'Sessions' });
   expect(region.compareDocumentPosition(sessions) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
@@ -163,7 +154,7 @@ it('lists projects above the sessions, with their members only under them', asyn
 });
 
 it('lists a pinned project with its header and members under Pinned', async () => {
-  const { container, view } = setup({
+  const { container, view } = await setup({
     conversations: [
       session('notes', { projectId: 'research' }),
       session('starred', { projectId: 'research', isPinned: true }),
@@ -180,16 +171,16 @@ it('lists a pinned project with its header and members under Pinned', async () =
   expect((await axe(container)).violations).toEqual([]);
 });
 
-it('keeps a pinned project first among the projects in a list without a Pinned section', () => {
-  const { container, view } = setup({ render: { showPinnedSection: false } });
+it('keeps a pinned project first among the projects in a list without a Pinned section', async () => {
+  const { container, view } = await setup({ render: { showPinnedSection: false } });
   expect(view.queryByRole('region', { name: 'Pinned' })).toBeNull();
   expect(expandedProjectToggles(projectsRegion(container)).map(toggle => toggle.textContent)).toEqual([
     sectionName('Research', 1), sectionName('Launch', 2), sectionName('Idle', 0),
   ]);
 });
 
-it('shows the projects header without rows when there are no projects, and no section in the archive', () => {
-  const empty = setup({ records: [] });
+it('shows the projects header without rows when there are no projects, and no section in the archive', async () => {
+  const empty = await setup({ records: [] });
   const region = projectsRegion(empty.container);
   expect(within(region).queryAllByRole('button')).toEqual([
     within(region).getByRole('button', { name: t('chat.projects.header') }),
@@ -198,7 +189,7 @@ it('shows the projects header without rows when there are no projects, and no se
   expect(within(projectsRegion(empty.container)).queryByText(t('chat.projects.noSessions'))).toBeNull();
   document.body.replaceChildren();
 
-  const archived = setup({
+  const archived = await setup({
     conversations: [session('old', { projectId: 'launch', isArchived: true })],
     render: { sessionScope: 'archived', sessionActionMode: 'archived', showPinnedSection: false, showArchivedSection: true },
   });
@@ -206,8 +197,8 @@ it('shows the projects header without rows when there are no projects, and no se
   expect(within(archived.view.getByRole('region', { name: 'Archived' })).getByText('old session')).toBeTruthy();
 });
 
-it('expands and collapses a project from its native toggle', () => {
-  const { collapsedGroupKeys, container, onGroupCollapseChange, render, view } = setup();
+it('expands and collapses a project from its native toggle', async () => {
+  const { collapsedGroupKeys, container, onGroupCollapseChange, render, view } = await setup();
   collapsedGroupKeys.add('project:launch');
   render();
   const toggle = () => view.getByRole('button', { name: sectionName('Launch', 2) });
@@ -225,7 +216,7 @@ it('expands and collapses a project from its native toggle', () => {
 });
 
 it('starts a session in a project and manages the project from its section menu', async () => {
-  const { lifecycle, onStartProjectConversation, projects, view } = setup();
+  const { lifecycle, onStartProjectConversation, projects, view } = await setup();
 
   fireEvent.click(view.getByRole('button', { name: t('chat.projects.newSessionIn', { name: 'Launch' }) }));
   expect(onStartProjectConversation).toHaveBeenCalledWith('launch');
@@ -246,17 +237,14 @@ it('starts a session in a project and manages the project from its section menu'
   // Launch has a running member, so it cannot be archived yet.
   expect(item(menu, t('chat.projects.menu.archive')).disabled).toBe(true);
   item(menu, t('chat.projects.menu.pin')).clickHandler!();
-  vi.mocked(confirm).mockResolvedValue(true);
   item(menu, t('chat.projects.menu.delete')).clickHandler!();
-  await new Promise(resolve => setTimeout(resolve, 0));
+  const dialog = within(document.body).getByRole('dialog', { name: 'Confirm' });
+  expect(dialog.textContent).toContain(t('chat.projects.deleteConfirm', { name: 'Launch' }));
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Delete' }));
+  await waitFor(() => expect(lifecycle.setPlacement).toHaveBeenCalled());
 
   expect(projects.setPinned).toHaveBeenCalledWith('launch', true);
   expect(lifecycle.archiveProject).not.toHaveBeenCalled();
-  expect(confirm).toHaveBeenCalledWith(
-    expect.anything(),
-    t('chat.projects.deleteConfirm', { name: 'Launch' }),
-    t('common.delete'),
-  );
   expect(projects.delete).toHaveBeenCalledWith('launch');
   // Members stay as sessions but leave the deleted project, after it can no longer be joined.
   expect(lifecycle.setPlacement).toHaveBeenCalledWith(['alpha', 'busy'], { projectId: null });
@@ -276,11 +264,11 @@ it('lists an archived project only in the archive, where it can be restored or d
     session('alpha', { projectId: 'launch' }),
     session('old', { projectId: 'shelved', isArchived: true }),
   ];
-  const active = setup({ conversations, records: [launch, shelved] });
+  const active = await setup({ conversations, records: [launch, shelved] });
   expect(within(projectsRegion(active.container)).queryByText('Shelved')).toBeNull();
   document.body.replaceChildren();
 
-  const { lifecycle, projects, view } = setup({
+  const { lifecycle, projects, view } = await setup({
     conversations,
     records: [launch, shelved],
     render: { sessionScope: 'archived', sessionActionMode: 'archived', showPinnedSection: false, showArchivedSection: true },
@@ -297,25 +285,24 @@ it('lists an archived project only in the archive, where it can be restored or d
   expect(titles(menu)).toEqual([t('chat.projects.menu.restore'), t('chat.projects.menu.delete')]);
   item(menu, t('chat.projects.menu.restore')).clickHandler!();
   expect(lifecycle.restoreProject).toHaveBeenCalledWith('shelved');
-  vi.mocked(confirm).mockResolvedValue(true);
   item(menu, t('chat.projects.menu.delete')).clickHandler!();
-  await new Promise(resolve => setTimeout(resolve, 0));
+  fireEvent.click(within(within(document.body).getByRole('dialog', { name: 'Confirm' })).getByRole('button', { name: 'Delete' }));
+  await waitFor(() => expect(projects.delete).toHaveBeenCalled());
   expect(projects.delete).toHaveBeenCalledWith('shelved');
 });
 
 it('keeps the project when deletion is not confirmed', async () => {
-  const { projects, view } = setup();
+  const { projects, view } = await setup();
   fireEvent.click(view.getByRole('button', { name: t('chat.projects.actionsFor', { name: 'Idle' }) }));
-  vi.mocked(confirm).mockResolvedValue(false);
   item(menus().at(-1)!, t('chat.projects.menu.delete')).clickHandler!();
-  await new Promise(resolve => setTimeout(resolve, 0));
-
-  expect(confirm).toHaveBeenCalled();
+  const dialog = within(document.body).getByRole('dialog', { name: 'Confirm' });
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+  await waitFor(() => expect(dialog.isConnected).toBe(false));
   expect(projects.delete).not.toHaveBeenCalled();
 });
 
 it('moves a session between projects and removes it from its project from the row menu', async () => {
-  const { lifecycle, view } = setup();
+  const { lifecycle, view } = await setup();
 
   fireEvent.contextMenu(view.getByText('alpha session'));
   const rowMenu = menus().at(-1)!;
@@ -343,7 +330,7 @@ it('moves a session between projects and removes it from its project from the ro
 });
 
 it('moves and removes a multi-selection', async () => {
-  const { lifecycle, view } = setup();
+  const { lifecycle, view } = await setup();
 
   fireEvent.click(view.getByRole('button', { name: /^alpha session/ }), { altKey: true });
   fireEvent.click(view.getByRole('button', { name: /^loose session/ }), { altKey: true });
@@ -366,9 +353,9 @@ it('moves and removes a multi-selection', async () => {
   ]);
 });
 
-it('opens keyboard-invoked menus under their anchor in the window that shows the list', () => {
+it('opens keyboard-invoked menus under their anchor in the window that shows the list', async () => {
   const popout = document.implementation.createHTMLDocument('popout');
-  const { container, view } = setup({ doc: popout });
+  const { container, view } = await setup({ doc: popout });
   const row = view.getByText('alpha session').closest('.claudian-history-item') as HTMLElement;
   vi.spyOn(row, 'getBoundingClientRect').mockReturnValue({ left: 40, bottom: 120 } as DOMRect);
 

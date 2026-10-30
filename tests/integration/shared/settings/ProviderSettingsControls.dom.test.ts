@@ -1,9 +1,7 @@
 /** @vitest-environment jsdom */
 
-import { controlChangeSettled } from '@test/helpers/ObsidianSettingsDOM';
+import { controlChangeSettled } from '@test/helpers/ObsidianHost';
 import { fireEvent, within } from '@testing-library/dom';
-
-vi.mock('obsidian', async () => vi.importActual('@test/helpers/ObsidianSettingsDOM'));
 
 import { renderHostnameCLIPathSetting } from '@/shared/settings/HostnameCLIPathSetting';
 import { renderProviderEnablementSetting } from '@/shared/settings/ProviderEnablementSetting';

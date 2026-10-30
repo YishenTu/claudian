@@ -14,9 +14,11 @@
  * those mock factories load it while the suite's imports are still being evaluated.
  */
 import { createProjectsFake, projectRecord } from '@test/helpers/features/chat/ProjectsFake';
-import { createMockEl } from '@test/helpers/MockElement';
+import { testDate } from '@test/helpers/testClock';
 import type { Mock } from 'vitest';
 
+import type { Conversation } from '@/core/types';
+import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
 import { ComposerDraftController } from '@/features/chat/composer/ComposerDraftController';
 import { LinkedContentController } from '@/features/chat/linked-content/LinkedContentController';
 import { ChatSessionRuntime } from '@/features/chat/sessions/ChatSessionRuntime';
@@ -66,7 +68,7 @@ export const commandCatalog = {
 };
 
 /** The real Linked content owner over the plugin's app; only the vault index is empty. */
-function createLinkedContent(plugin: any): LinkedContentController {
+function createLinkedContent(plugin: ChatFeatureHost): LinkedContentController {
   const controller = new LinkedContentController({
     app: plugin.app,
     getExcludedTags: () => plugin.settings?.excludedTags ?? [],
@@ -138,8 +140,8 @@ export function createMockTab(options: Record<string, any>): any {
       },
     },
     dom: {
-      contentEl: createMockEl(),
-      messagesEl: createMockEl(),
+      contentEl: document.createElement('div'),
+      messagesEl: document.createElement('div'),
     },
     ui: {
     },
@@ -234,52 +236,42 @@ export function providerRegistryModuleMock() {
   };
 }
 
-export function createPlugin(overrides: Record<string, unknown> = {}) {
-  return {
-    // Live projects New may inherit; any other seeded id resolves to no project.
+export async function createPlugin(overrides: Parameters<typeof import('./ChatFeatureHostFixture')['createChatFeatureHost']>[0] = {}) {
+  const { createChatFeatureHost } = await import('./ChatFeatureHostFixture');
+  const unmodeled = (): never => { throw new Error('Use the real session pool integration fixture for this operation.'); };
+  const sessionRuntimes: ChatFeatureHost['sessionRuntimes'] = {
+    getAttachment: () => null,
+    get: () => null,
+    holdDraft: runtime => ({ key: runtime.sessionKey, runtime, release: () => undefined }),
+    acquire: unmodeled, ensure: unmodeled, release: unmodeled, awaitConversationCreations: unmodeled,
+  };
+  const ports = {
     projects: createProjectsFake([projectRecord({ id: 'project-1' }), projectRecord({ id: 'project-2' })]),
-    sessionRuntimes: {
-      getAttachment: () => null,
-      get: () => null,
-      holdDraft: (runtime: ChatSessionRuntime) => ({ key: runtime.sessionKey, runtime, release: () => undefined }),
-    },
-    app: {
-      vault: { adapter: { basePath: '/vault' }, getAbstractFileByPath: () => null },
-      workspace: {
-        getActiveFile: () => null,
-        revealLeaf: vi.fn(),
-        setActiveLeaf: vi.fn(),
-      },
-    },
-    settings: {},
-    providerHost: {
-      executionLifecycleRegistry: {
-        getProviderGeneration: vi.fn().mockReturnValue(0),
-      },
-    },
-    createConversation: vi.fn().mockResolvedValue({
-      id: 'forked',
-      providerId: 'claude',
-    }),
+    sessionRuntimes,
+    createConversation: vi.fn().mockResolvedValue(conversationRecord('forked', { providerId: 'claude' })),
     deleteConversation: vi.fn().mockResolvedValue(undefined),
     findConversationAcrossViews: vi.fn().mockReturnValue(null),
     getAgentSkillResourceGeneration: vi.fn().mockReturnValue(0),
     getCachedConversation: vi.fn().mockReturnValue(null),
     getConversationById: vi.fn().mockResolvedValue(null),
     getConversationList: vi.fn().mockReturnValue([]),
-    getConversationSummary(id: string) { return this.getCachedConversation(id); },
     getConversationSync: vi.fn().mockReturnValue(null),
     updateConversation: vi.fn().mockResolvedValue(undefined),
-    ...overrides,
-  } as any;
+  } satisfies Partial<ChatFeatureHost>;
+  const plugin = Object.assign(await createChatFeatureHost({ ...ports, ...overrides }), ports);
+  const { settings: _settings, ...capabilities } = overrides;
+  plugin.getConversationSummary = id => plugin.getCachedConversation(id);
+  Object.assign(plugin, capabilities);
+  return plugin;
 }
 
 export async function createManager(
-  plugin = createPlugin(),
+  suppliedPlugin?: Awaited<Awaited<ReturnType<typeof createPlugin>>>,
   callbacks: Record<string, unknown> = {},
   viewOverrides: Record<string, unknown> = {},
   layoutPolicy?: Partial<TabLayoutPolicy>,
 ) {
+  const plugin = suppliedPlugin ?? await createPlugin();
   // Loaded lazily: TabManager pulls in the mocked modules, whose factories load this module.
   const { TabManager: TabManagerClass } = await import('@/features/chat/tabs/TabManager');
   const view = {
@@ -290,7 +282,7 @@ export async function createManager(
   return {
     manager: new TabManagerClass(
       plugin,
-      createMockEl() as any,
+      document.createElement('div') as any,
       view,
       callbacks,
       new VaultMentionDataProvider(plugin.app),
@@ -345,4 +337,8 @@ export function mockNextHydration(hydrate: (conversationId: string) => Promise<u
     return tab;
   });
   return hydration;
+}
+
+export function conversationRecord(id: string, overrides: Partial<Conversation> = {}): Conversation {
+  return { id, sessionId: null, providerId: 'claude', title: id, createdAt: testDate().getTime(), lastActivityAt: testDate().getTime(), messages: [], ...overrides };
 }

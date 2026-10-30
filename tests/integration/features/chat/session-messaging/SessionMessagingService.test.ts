@@ -3,8 +3,10 @@ import '@/providers';
 
 import { deferred } from '@test/helpers/ChatInputHarness';
 import { claudeCatalogFixture } from '@test/helpers/claudeModels';
+import { DEFAULT_CLAUDIAN_SETTINGS } from '@test/helpers/defaultSettings';
+import { createChatFeatureHost } from '@test/helpers/features/chat/ChatFeatureHostFixture';
 import { createProjectsFake, projectRecord } from '@test/helpers/features/chat/ProjectsFake';
-import { installSessionRuntimePool } from '@test/helpers/features/chat/SessionRuntimePoolHarness';
+import { createSessionRuntimePool } from '@test/helpers/features/chat/SessionRuntimePoolHarness';
 import { FakeSideBackend } from '@test/helpers/features/chat/SideChatSessionHarness';
 import { testDate } from '@test/helpers/testClock';
 import { waitFor } from '@testing-library/dom';
@@ -12,18 +14,18 @@ import { App } from 'obsidian';
 
 import { ConversationRepository } from '@/app/conversations/ConversationRepository';
 import type { ConversationPersistence } from '@/app/storage/ConversationPersistenceStore';
-import { ProviderExecutionLifecycleRegistry, type ProviderExecutionRequest } from '@/core/execution';
+import { type ProviderExecutionRequest } from '@/core/execution';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { ProviderSettingsCoordinator } from '@/core/providers/ProviderSettingsCoordinator';
 import { ProviderWorkspaceRegistry } from '@/core/providers/ProviderWorkspaceRegistry';
 import { decodeSessionMessage } from '@/core/session-tools/sessionMessageEnvelope';
-import type { ClaudianSettings, Conversation, ConversationMutablePatch, ProjectReader } from '@/core/types';
+import type { ClaudianSettings, Conversation, ConversationMutablePatch } from '@/core/types';
 import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
 import { createClaudianAPI } from '@/features/chat/session-messaging/ClaudianAPI';
 import { SessionMessagingService } from '@/features/chat/session-messaging/SessionMessagingService';
 import { getSessionSettingsSnapshot } from '@/features/chat/sessions/sessionSettings';
 
-function setup(options: { projects?: ProjectReader; members?: Record<string, string> } = {}) {
+async function setup(options: { projects?: ChatFeatureHost['projects']; members?: Record<string, string> } = {}) {
   const app = new App();
   Object.assign(app.vault.adapter, { basePath: '/vault' });
   const backend = new FakeSideBackend();
@@ -32,11 +34,11 @@ function setup(options: { projects?: ProjectReader; members?: Record<string, str
   // Sonnet has effort control; Haiku has none.
   const catalog = claudeCatalogFixture(['claude-sonnet-4-5', 'claude-haiku-4-5'], ['low', 'high']);
   delete (catalog.discoveredModels[1] as { supportedEffortLevels?: string[] }).supportedEffortLevels;
-  const settings = {
+  let settings: ClaudianSettings = Object.assign(structuredClone(DEFAULT_CLAUDIAN_SETTINGS), {
     model: 'claude-sonnet-4-5', permissionMode: 'normal', effortLevel: 'high', excludedTags: [],
     lastSelectedChatModel: { providerId: 'claude', model: 'claude-sonnet-4-5' },
     providerConfigs: { claude: catalog },
-  } as unknown as ClaudianSettings;
+  });
   const record = (id: string, activityOffset = 0): Conversation => ({
     id, sessionId: null, providerId: 'claude', selectedModel: settings.model, title: id === 'sender' ? 'Research' : id,
     messages: [], createdAt: testDate().getTime(), lastActivityAt: testDate({ minutes: activityOffset }).getTime(),
@@ -57,10 +59,14 @@ function setup(options: { projects?: ProjectReader; members?: Record<string, str
   });
   repository.replaceAll([...records.values()]);
   const saves: ConversationMutablePatch[] = [];
-  const registry = new ProviderExecutionLifecycleRegistry();
-  const host = {
-    app, settings, providerHost: { app, settings, executionLifecycleRegistry: registry },
-    getCommittedSettings: () => settings, getActiveEnvironmentVariables: () => '',
+  const settled: string[] = [];
+  const pool = createSessionRuntimePool(() => host, { onSessionSettled: id => settled.push(id) });
+  const refreshModelControls = vi.fn();
+  const service = new SessionMessagingService({ getHost: () => host, getActiveConversationId: () => 'sender', refreshModelControls });
+  onTestFinished(() => service.dispose());
+  const host = await createChatFeatureHost({
+    sessionRuntimes: pool, bindSessionTools: id => service.bindSessionTools(id),
+    app, settings,
     projects: options.projects ?? createProjectsFake(),
     getConversationSummary: (id: string) => repository.getSync(id),
     getConversationSync: (id: string) => repository.getSync(id),
@@ -74,18 +80,13 @@ function setup(options: { projects?: ProjectReader; members?: Record<string, str
       await repository.update(id, patch);
     },
     createConversation: vi.fn(async () => { const created = record('created'); records.set(created.id, created); return created; }),
-    mutateSettings: async (mutate: (settings: ClaudianSettings) => void) => mutate(settings),
     executionPersistence: {
       registerExecutionBinding() {}, releaseExecutionBinding() {},
       assertConversationExecutionAuthority: async () => undefined,
       persistExecutionSnapshot: async () => true, recordConversationActivity: async () => undefined,
     },
-  } as unknown as ChatFeatureHost;
-  const settled: string[] = [];
-  const pool = installSessionRuntimePool(host, { onSessionSettled: id => settled.push(id) });
-  const refreshModelControls = vi.fn();
-  const service = new SessionMessagingService({ getHost: () => host, getActiveConversationId: () => 'sender', refreshModelControls });
-  Object.assign(host, { bindSessionTools: (id: string) => service.bindSessionTools(id) });
+  });
+  settings = host.settings;
   const binding = service.bindSessionTools('sender');
   return { host, pool, service, binding, records, repository, backend, saves, record, refreshModelControls, settled };
 }
@@ -97,7 +98,7 @@ afterEach(() => { ProviderWorkspaceRegistry.clear(); vi.restoreAllMocks(); });
 const listArgs = (overrides: Partial<{ includeProviders: boolean; limit: number }> = {}) => ({ includeProviders: false, limit: 50, ...overrides });
 
 it('lists recent sessions first without creating runtimes, omitting archived records and providers', async () => {
-  const h = setup();
+  const h = (await setup());
   expect(await h.binding.port.list(listArgs(), signal())).toEqual({ sessions: [
     { sessionId: 'recipient', title: 'recipient', provider: 'claude', status: 'idle', active: false },
     { sessionId: 'sender', title: 'Research', provider: 'claude', status: 'idle', active: true, self: true },
@@ -119,7 +120,7 @@ describe('project scope', () => {
   const sessionIds = (result: { readonly sessions: readonly { sessionId: string }[] }) => result.sessions.map(session => session.sessionId);
 
   it('lists only the caller\'s non-archived fellow members of its live project, leaving unscoped listing unchanged', async () => {
-    const h = setup({ members, projects: createProjectsFake([projectRecord({ id: 'project-1' }), projectRecord({ id: 'project-2' })]) });
+    const h = (await setup({ members, projects: createProjectsFake([projectRecord({ id: 'project-1' }), projectRecord({ id: 'project-2' })]) }));
     const scoped = await h.binding.port.list({ ...listArgs(), project: true }, signal());
     expect(scoped.sessions).toEqual([
       { sessionId: 'recipient', title: 'recipient', provider: 'claude', status: 'idle', active: false },
@@ -133,13 +134,13 @@ describe('project scope', () => {
     ['not a member', {}],
     ['a member of a deleted project', members],
   ])('rejects a project listing from a caller that is %s', async (_case, callerMembers) => {
-    const h = setup({ members: callerMembers, projects: createProjectsFake([projectRecord({ id: 'project-2' })]) });
+    const h = (await setup({ members: callerMembers, projects: createProjectsFake([projectRecord({ id: 'project-2' })]) }));
     await expect(h.binding.port.list({ ...listArgs(), project: true }, signal())).rejects.toThrow('This session is not in a project.');
   });
 
   // Creation keeps the id only while the project is live (ConversationRepository project membership tests).
   it('starts a new session in the caller\'s project', async () => {
-    const h = setup({ members });
+    const h = (await setup({ members }));
     await h.binding.port.send({ text: 'Take this over' }, signal());
     expect(h.host.createConversation).toHaveBeenCalledTimes(1);
     expect(vi.mocked(h.host.createConversation).mock.calls[0][0]?.projectId).toBe('project-1');
@@ -147,7 +148,7 @@ describe('project scope', () => {
 });
 
 it('lists enabled providers with available models, new-session defaults and reasoning, read fresh', async () => {
-  const h = setup();
+  const h = (await setup());
   const sonnet = 'claude-code/claude-sonnet-4-5';
   const haiku = 'claude-code/claude-haiku-4-5';
   const { providers } = await h.binding.port.list(listArgs({ includeProviders: true }), signal());
@@ -167,7 +168,7 @@ it('lists enabled providers with available models, new-session defaults and reas
 });
 
 it('delivers to a cold headless recipient with caller provenance and no composer capture', async () => {
-  const h = setup();
+  const h = (await setup());
   expect(await h.binding.port.send({ sessionId: 'recipient', text: 'Review this' }, signal()))
     .toEqual({ sessionId: 'recipient', title: 'recipient', provider: 'claude', status: 'started' });
   await waitFor(() => expect(h.backend.sessions[0]?.requests).toHaveLength(1));
@@ -180,7 +181,7 @@ it('delivers to a cold headless recipient with caller provenance and no composer
 });
 
 it('keeps FIFO mailbox turns behind queued user input without consuming recovered input', async () => {
-  const h = setup();
+  const h = (await setup());
   const runtime = h.pool.ensure({ conversationId: 'recipient', providerId: 'claude', draftModel: null });
   // Keep the real model present while checking its unsent draft.
   await runtime.withModel(async model => {
@@ -208,7 +209,7 @@ it('keeps FIFO mailbox turns behind queued user input without consuming recovere
 });
 
 it('reads stored transcripts by id, archived included, loading metadata the deferred scan has not admitted', async () => {
-  const h = setup();
+  const h = (await setup());
   const time = testDate().getTime();
   h.records.get('archived')!.messages = [
     { id: 'u', role: 'user', content: 'q1', timestamp: time },
@@ -228,7 +229,7 @@ it('reads stored transcripts by id, archived included, loading metadata the defe
 });
 
 it('reads a live session from its runtime, omitting the turn still running', async () => {
-  const h = setup();
+  const h = (await setup());
   await h.binding.port.send({ sessionId: 'recipient', text: 'Review this' }, signal());
   await waitFor(() => expect(h.backend.sessions[0]?.requests).toHaveLength(1));
   h.backend.latest.emitText('Looks good');
@@ -244,7 +245,7 @@ it('reads a live session from its runtime, omitting the turn still running', asy
 });
 
 it('interrupts a running recipient, delivers the interrupting message next and keeps other queued messages', async () => {
-  const h = setup();
+  const h = (await setup());
   await h.binding.port.send({ sessionId: 'recipient', text: 'Long task' }, signal());
   await waitFor(() => expect(h.backend.sessions[0]?.requests).toHaveLength(1));
   const native = h.backend.latest;
@@ -262,7 +263,7 @@ it('interrupts a running recipient, delivers the interrupting message next and k
 });
 
 it('stops without a message, returning the user\'s queued input to the composer', async () => {
-  const h = setup();
+  const h = (await setup());
   const runtime = h.pool.ensure({ conversationId: 'recipient', providerId: 'claude', draftModel: null });
   await runtime.withModel(async model => {
     const sending = model.inputController.sendMessage({ content: 'User task' });
@@ -280,7 +281,7 @@ it('stops without a message, returning the user\'s queued input to the composer'
 });
 
 it('steers into a running turn with a sender line, and queues when the recipient cannot take a steer', async () => {
-  const h = setup();
+  const h = (await setup());
   // An idle recipient has no turn to steer: the message starts one instead.
   expect(await h.binding.port.send({ sessionId: 'recipient', text: 'Start', mode: 'steer' }, signal())).toMatchObject({ status: 'started' });
   await waitFor(() => expect(h.backend.sessions[0]?.requests).toHaveLength(1));
@@ -309,7 +310,7 @@ it('steers into a running turn with a sender line, and queues when the recipient
 });
 
 it('queues a steer while the recipient waits on a question, and never resends an uncertain steer', async () => {
-  const h = setup();
+  const h = (await setup());
   await h.binding.port.send({ sessionId: 'recipient', text: 'Start' }, signal());
   await waitFor(() => expect(h.backend.sessions[0]?.requests).toHaveLength(1));
   const native = h.backend.latest;
@@ -339,7 +340,7 @@ it('queues a steer while the recipient waits on a question, and never resends an
 });
 
 it.each(['sender', 'archived', 'missing'])('rejects unavailable recipient %s without creating a runtime', async sessionId => {
-  const h = setup();
+  const h = (await setup());
   await expect(h.binding.port.send({ sessionId, text: 'Hello' }, signal())).rejects.toThrow();
   expect(h.pool.getAll()).toHaveLength(0);
 });
@@ -353,13 +354,13 @@ it.each([
   ['reasoning for a model without effort control', { model: 'claude-haiku-4-5', reasoning: 'low' },
     /^Model claude-code\/claude-haiku-4-5 for claude has no reasoning control\.$/],
 ])('rejects %s before creating a shell, listing the valid options', async (_label, choice, error) => {
-  const h = setup();
+  const h = (await setup());
   await expect(h.binding.port.send({ text: 'Hello', ...choice }, signal())).rejects.toThrow(error);
   expect(h.host.createConversation).not.toHaveBeenCalled();
 });
 
 it('applies an explicit model and reasoning to the new session before its first turn', async () => {
-  const h = setup();
+  const h = (await setup());
   expect(await h.binding.port.send({ text: 'New task', provider: 'claude', model: 'claude-sonnet-4-5', reasoning: 'low' }, signal()))
     .toEqual({ sessionId: 'created', title: 'created', provider: 'claude', status: 'started' });
   expect(h.host.createConversation).toHaveBeenCalledWith({ providerId: 'claude', selectedModel: 'claude-code/claude-sonnet-4-5' });
@@ -372,7 +373,7 @@ it('applies an explicit model and reasoning to the new session before its first 
 });
 
 it('keeps a published shell on cancellation and joins creation during shutdown', async () => {
-  const h = setup();
+  const h = (await setup());
   const created = h.record('created');
   const completion = deferred<Conversation>();
   vi.mocked(h.host.createConversation).mockImplementation(async () => {
@@ -396,7 +397,7 @@ it('keeps a published shell on cancellation and joins creation during shutdown',
 });
 
 it('revokes released caller bindings without cancelling an already admitted recipient', async () => {
-  const h = setup();
+  const h = (await setup());
   await h.binding.port.send({ sessionId: 'recipient', text: 'Keep working' }, signal());
   await waitFor(() => expect(h.backend.sessions[0]?.requests).toHaveLength(1));
   h.binding.dispose();
@@ -407,7 +408,7 @@ it('revokes released caller bindings without cancelling an already admitted reci
 });
 
 it('defers a message when native background work starts during preparation, then resumes once', async () => {
-  const h = setup();
+  const h = (await setup());
   const preparing = deferred<void>();
   vi.spyOn(h.host.executionPersistence, 'assertConversationExecutionAuthority').mockImplementationOnce(() => preparing.promise);
   await h.binding.port.send({ sessionId: 'recipient', text: 'After background' }, signal());
@@ -429,7 +430,7 @@ it('defers a message when native background work starts during preparation, then
 });
 
 it('creates a headless session using the selected default without mutating the future-tab seed', async () => {
-  const h = setup();
+  const h = (await setup());
   const seed = structuredClone(h.host.settings.lastSelectedChatModel);
   expect(await h.binding.port.send({ text: 'New task' }, signal())).toEqual({ sessionId: 'created', title: 'created', provider: 'claude', status: 'started' });
   expect(h.host.createConversation).toHaveBeenCalledWith({ providerId: 'claude', selectedModel: 'claude-code/claude-sonnet-4-5' });
@@ -442,8 +443,7 @@ it('creates a headless session using the selected default without mutating the f
 });
 
 it('waits for a published first-turn shell to adopt its original draft runtime', async () => {
-  const h = setup();
-  Object.assign(h.host.app.workspace, { getActiveFile: () => null });
+  const h = (await setup());
   const created = h.record('created');
   const completion = deferred<Conversation>();
   vi.mocked(h.host.createConversation).mockImplementation(async () => {
@@ -480,7 +480,7 @@ const sonnetId = 'claude-code/claude-sonnet-4-5';
 const haikuId = 'claude-code/claude-haiku-4-5';
 
 it('switches an existing session\'s reasoning for the delivered turn and later user turns, not the running one', async () => {
-  const h = setup();
+  const h = (await setup());
   const runtime = h.pool.ensure({ conversationId: 'recipient', providerId: 'claude', draftModel: null });
   await runtime.withModel(async model => {
     const running = model.inputController.sendMessage({ content: 'User first' });
@@ -507,7 +507,7 @@ it('switches an existing session\'s reasoning for the delivered turn and later u
 });
 
 it('switches a history-only session\'s model without opening it in a tab', async () => {
-  const h = setup();
+  const h = (await setup());
   expect(h.pool.get('recipient')).toBeNull();
   expect(await h.binding.port.send({ sessionId: 'recipient', text: 'Use Haiku', model: 'claude-haiku-4-5' }, signal()))
     .toEqual({ sessionId: 'recipient', title: 'recipient', provider: 'claude', status: 'started' });
@@ -529,7 +529,7 @@ it.each([
   ['a self-send', { sessionId: 'sender', model: 'claude-haiku-4-5', reasoning: 'low' }, /cannot send a message to itself/],
   ['an archived destination', { sessionId: 'archived', model: 'claude-haiku-4-5' }, /does not exist or is archived/],
 ])('rejects an existing-session switch with %s and changes nothing', async (_label, choice, error) => {
-  const h = setup();
+  const h = (await setup());
   const runtime = h.pool.ensure({ conversationId: choice.sessionId, providerId: 'claude', draftModel: null });
   const before = getSessionSettingsSnapshot(runtime, h.host);
   await expect(h.binding.port.send({ text: 'Hello', ...choice }, signal())).rejects.toThrow(error);
@@ -542,7 +542,7 @@ it.each([
 });
 
 it('applies no switch when the call is cancelled before admission', async () => {
-  const h = setup();
+  const h = (await setup());
   const cancelled = new AbortController();
   cancelled.abort();
   await expect(h.binding.port.send({ sessionId: 'recipient', text: 'Hello', model: 'claude-haiku-4-5' }, cancelled.signal)).rejects.toThrow();
@@ -559,7 +559,7 @@ describe('outside-client API', () => {
     { label: 'final text after work', finalText: 'The note is up to date.', isError: false, interrupted: false, trailingNotification: false, expected: 'The note is up to date.' },
     { label: 'notification after final text', finalText: 'The note is up to date.', isError: false, interrupted: false, trailingNotification: true, expected: 'The note is up to date.' },
   ])('reads the final answer after notification-split work: $label', async ({ finalText, isError, interrupted, trailingNotification, expected }) => {
-    const h = setup();
+    const h = (await setup());
     const api = createClaudianAPI(h.service);
     await api.send('recipient', { text: 'Inspect the note' });
     await waitFor(() => expect(h.backend.sessions[0]?.requests).toHaveLength(1));
@@ -584,7 +584,7 @@ describe('outside-client API', () => {
   });
 
   it('delivers client text as the user\'s own prompt, reports the active session, and reads the finished reply', async () => {
-    const h = setup();
+    const h = (await setup());
     const api = createClaudianAPI(h.service);
     expect(api.version).toBe(1);
     expect(api.getActiveSessionId()).toBe('sender');
@@ -608,7 +608,7 @@ describe('outside-client API', () => {
   });
 
   it('reads no reply from a first turn that is still running after a steer', async () => {
-    const h = setup();
+    const h = (await setup());
     const api = createClaudianAPI(h.service);
     await api.send('recipient', { text: 'Inspect the note' });
     await waitFor(() => expect(h.backend.sessions[0]?.requests).toHaveLength(1));
@@ -629,7 +629,7 @@ describe('outside-client API', () => {
   });
 
   it('stops a running session through send without text, and requires text otherwise', async () => {
-    const h = setup();
+    const h = (await setup());
     const api = createClaudianAPI(h.service);
     await expect(api.send('recipient', {})).rejects.toThrow('"text" is required unless mode is "interrupt"');
     await expect(api.send('recipient', { mode: 'steer' })).rejects.toThrow('"text" is required unless mode is "interrupt"');

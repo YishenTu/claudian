@@ -2,6 +2,7 @@
 import '@/providers';
 
 import { axe } from '@test/helpers/accessibility';
+import { createChatFeatureHost } from '@test/helpers/features/chat/ChatFeatureHostFixture';
 import { parseCodexSessionContent } from '@test/helpers/providers/codex/parseCodexSessionContent';
 import { testDate, testTime } from '@test/helpers/testClock';
 import { fireEvent, screen, within } from '@testing-library/dom';
@@ -26,9 +27,9 @@ import { codexSubagentLifecycleAdapter } from '@/providers/codex/normalization/c
 import type { Thread } from '@/providers/codex/runtime/codexAppServerTypes';
 import { CodexNotificationRouter } from '@/providers/codex/runtime/CodexNotificationRouter';
 
-HTMLElement.prototype.empty = function () { this.replaceChildren(); };
-HTMLElement.prototype.addClass = function (...classes) { this.classList.add(...classes); };
-HTMLElement.prototype.removeClass = function (...classes) { this.classList.remove(...classes); };
+
+
+
 
 const cleanups: Array<() => void> = [];
 afterEach(() => {
@@ -41,11 +42,11 @@ function expandButton(parent: HTMLElement, name: RegExp): void {
   if (button.getAttribute('aria-expanded') !== 'true') fireEvent.click(button);
 }
 
-function createCodexLifecycleView() {
+async function createCodexLifecycleView() {
   const parent = document.body.createDiv();
   const manager = new SubagentManager(() => {}, NOOP_TASK_RESULT_INTERPRETER);
   const tools: ToolCallInfo[] = [];
-  const plugin = { app: {}, settings: { mediaFolder: '', showMessageTimestamps: false } } as any;
+  const plugin = await createChatFeatureHost({ settings: { mediaFolder: '', showMessageTimestamps: false } });
   const renderer = new MessageRenderer(plugin,
     new Component(), parent,
     undefined, undefined, () => ProviderRegistry.getCapabilities('codex'));
@@ -66,7 +67,7 @@ function createCodexLifecycleView() {
 }
 
 it.each(['native', 'raw-first', 'canonical-first'])('renders %s Codex identity, progress, and final output without losing the answer on close', async source => {
-  const { parent, tools, router, flush } = createCodexLifecycleView();
+  const { parent, tools, router, flush } = await createCodexLifecycleView();
   const notify = (id: string, tool: string, status: string, message: string | null) => {
     router.handleNotification('item/completed', {
       threadId: 'main', turnId: 'turn', item: {
@@ -133,7 +134,7 @@ it.each(['native', 'raw-first', 'canonical-first'])('renders %s Codex identity, 
 });
 
 it.each(['native', 'raw'])('matches %s lifecycle updates to an agent with a task name and thread ID', async source => {
-  const { parent, tools, router, renderer, message, flush } = createCodexLifecycleView();
+  const { parent, tools, router, renderer, message, flush } = await createCodexLifecycleView();
   for (const item of [
     { type: 'function_call', call_id: 'spawn', name: 'spawn_agent', arguments: '{"task_name":"reviewer","message":"Review"}' },
     { type: 'function_call_output', call_id: 'spawn', output: '{"task_name":"reviewer"}' },
@@ -171,7 +172,7 @@ it.each(['native', 'raw'])('matches %s lifecycle updates to an agent with a task
 });
 
 it.each(['live', 'history'] as const)('keeps raw Codex identity and completion details in %s cards', async mode => {
-  const { parent, manager, tools, router, flush } = createCodexLifecycleView();
+  const { parent, manager, tools, router, flush } = await createCodexLifecycleView();
   const calls = [
     { id: 'spawn', name: 'spawn_agent', input: { message: 'Review storage.', model: 'test-model-with-a-long-name', reasoning_effort: 'high', agent_type: 'explorer' },
       output: { agent_id: 'child', nickname: 'Ada' } },
@@ -222,7 +223,7 @@ it.each((['live', 'history'] as const).flatMap(mode => [
   { mode, label: 'completion without text', native: { completed: null }, status: 'completed', result: 'DONE' },
   { mode, label: 'missing agent', native: 'not_found', status: 'error', result: 'Agent not found' },
 ]))('settles $label in $mode Codex cards using raw native statuses', async ({ mode, native, status, result }) => {
-  const { parent, manager, tools, router, flush } = createCodexLifecycleView();
+  const { parent, manager, tools, router, flush } = await createCodexLifecycleView();
   const payloads = [
     { type: 'function_call', call_id: 'spawn-native', name: 'spawn_agent', arguments: '{"message":"Review.","agent_type":"explorer"}' },
     { type: 'function_call_output', call_id: 'spawn-native', output: '{"agent_id":"child"}' },
@@ -259,7 +260,7 @@ it.each((['live', 'history'] as const).flatMap(mode => [
 
 it.each(['raw-output', 'item-result', 'text-output'])(
   'combines %s acknowledgements with native follow-up state', async source => {
-    const { parent, tools, router, flush } = createCodexLifecycleView();
+    const { parent, tools, router, flush } = await createCodexLifecycleView();
     const complete = (id: string, tool: string, status: string, message: string | null, result?: unknown) => {
       router.handleNotification('item/completed', {
         threadId: 'main', turnId: 'turn', item: {
@@ -503,7 +504,7 @@ it('preserves async prompt expansion and focus on repeated tool snapshots', () =
 
 
 it.each(['before spawn', 'after spawn', 'native only'])('keeps the native Codex card updated with session events %s, parent settlement, and a follow-up', async timing => {
-  const view = createCodexLifecycleView();
+  const view = await createCodexLifecycleView();
   let tracker = new CodexSubagentTracker(info => view.stream.subagents.handleSubagentUpdate(info), async () => {
     throw new Error('Child read unavailable');
   });
@@ -668,7 +669,7 @@ it.each(['before spawn', 'after spawn', 'native only'])('keeps the native Codex 
 
 
 it('shows previous runs after completed-turn regrouping without navigation or other agents', async () => {
-  const view = createCodexLifecycleView();
+  const view = await createCodexLifecycleView();
   const tool = (id: string, agentId: string): ToolCallInfo => ({
     id, name: 'spawn_agent', input: {}, status: 'completed',
     subagent: { id, agentId, lifecycleSource: 'session', description: 'Helper', status: 'completed',
@@ -712,10 +713,10 @@ it.each([undefined, '', '   '])('hides an unavailable prompt (%s) and reveals a 
   expect(within(parent).queryByRole('button', { name: /^Prompt/ })).toBeNull();
 });
 
-function createOpencodeView() {
+async function createOpencodeView() {
   const parent = document.body.createDiv();
   const manager = new SubagentManager(() => {}, ProviderRegistry.getTaskResultInterpreter('opencode'));
-  const plugin = { app: {}, settings: { mediaFolder: '', showMessageTimestamps: false } } as any;
+  const plugin = await createChatFeatureHost({ settings: { mediaFolder: '', showMessageTimestamps: false } });
   const renderer = new MessageRenderer(plugin,
     new Component(), parent,
     undefined, undefined, () => ProviderRegistry.getCapabilities('opencode'));
@@ -733,7 +734,7 @@ function createOpencodeView() {
 }
 
 it('shows previous runs of reused OpenCode subagents live and after reload', async () => {
-  const view = createOpencodeView();
+  const view = await createOpencodeView();
   const runs = [
     { message: 'first', sync: 'Answer A', background: 'Survey A' },
     { message: 'second', sync: 'Answer B', background: 'Survey B' },
@@ -768,7 +769,7 @@ it('shows previous runs of reused OpenCode subagents live and after reload', asy
 
 it.each(['sync', 'async', 'partial-sync'] as const)('records a %s task and its result without transcript elements', async mode => {
   const parent = document.body.createDiv();
-  const plugin = { app: {}, settings: { mediaFolder: '', showMessageTimestamps: false } } as any;
+  const plugin = await createChatFeatureHost({ settings: { mediaFolder: '', showMessageTimestamps: false } });
   const state = new ChatState();
   const manager = new SubagentManager(info => stream.subagents.onAsyncSubagentStateChange(info), new ClaudeTaskResultInterpreter());
   const renderer = new MessageRenderer(plugin, new Component(), parent);

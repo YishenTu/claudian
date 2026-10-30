@@ -4,6 +4,7 @@ import '@/providers';
 import { axe } from '@test/helpers/accessibility';
 import { createFixture, deferred } from '@test/helpers/ChatInputHarness';
 import { createTabSession } from '@test/helpers/ConversationPorts';
+import { createChatFeatureHost } from '@test/helpers/features/chat/ChatFeatureHostFixture';
 import { enqueueTabSessionEvent } from '@test/helpers/features/chat/SessionEventsHarness';
 import { FakeSideBackend } from '@test/helpers/features/chat/SideChatSessionHarness';
 import { useClaudeSessionFiles } from '@test/helpers/providers/claudeHistory';
@@ -27,10 +28,7 @@ import { parsePiSessionContent } from '@/providers/pi/history/PiHistoryStore';
 
 vi.mock('node:fs/promises');
 const writeSession = useClaudeSessionFiles();
-HTMLElement.prototype.appendText = function (text) { this.append(document.createTextNode(text)); };
-HTMLElement.prototype.empty = function () { this.replaceChildren(); };
-HTMLElement.prototype.addClass = function (...classes) { this.classList.add(...classes); };
-HTMLElement.prototype.removeClass = function (...classes) { this.classList.remove(...classes); };
+
 beforeEach(() => {
   document.body.replaceChildren();
   vi.mocked(MarkdownRenderer.render).mockImplementation(async (_app, markdown, el) => {
@@ -43,7 +41,7 @@ it.each(['attached', 'detached', 'absent', 'late-text', 'late-thinking'] as cons
     const clock = testClock();
     const now = vi.spyOn(Date, 'now').mockImplementation(() => clock().getTime());
     const messagesEl = document.body.createDiv();
-    const plugin = { app: {}, settings: { mediaFolder: '', showMessageTimestamps: false } } as any;
+    const plugin = await createChatFeatureHost({ settings: { mediaFolder: '', showMessageTimestamps: false } });
     const renderer = new MessageRenderer(plugin, new Component(), messagesEl);
     const state = new ChatState();
     const subagents = new SubagentManager(() => undefined);
@@ -106,7 +104,7 @@ it.each([false, true])('replay places the second notification before automatic o
   const replay = await loadSDKSessionMessages('/vault', 'session', undefined, sessionPath);
   expect(replay.error).toBeUndefined();
   const messagesEl = document.body.createDiv();
-  const renderer = new MessageRenderer({ app: {}, settings: { mediaFolder: '', showMessageTimestamps: false } } as any, new Component(), messagesEl);
+  const renderer = new MessageRenderer(await createChatFeatureHost({ settings: { mediaFolder: '', showMessageTimestamps: false } }), new Component(), messagesEl);
   try {
     replay.messages.forEach((message, index) => renderer.renderStoredMessage(message, replay.messages, index));
     await Promise.resolve();
@@ -123,7 +121,7 @@ it.each([false, true])('replay places the second notification before automatic o
 it.each([
   [false, false], [true, false], [false, true], [true, true],
 ])('keeps background tools and notification order (compaction: %s, steering: %s)', async (compaction, steering) => {
-  const { messagesEl, renderer, state, stream, coordinator, session, backend, dispose } = createBackgroundChat();
+  const { messagesEl, renderer, state, stream, coordinator, session, backend, dispose } = (await createBackgroundChat());
   try {
     await coordinator.bindConversation({ conversationId: 'conversation', providerId: 'claude' });
     await coordinator.prepare();
@@ -171,7 +169,7 @@ it.each([
 it.each([
   ['', 'steered reply'], ['', ''], ['automatic prefix', 'steered reply'], ['automatic prefix', ''],
 ])('preserves background output around accepted input (prefix: %s, reply: %s)', async (prefix, reply) => {
-  const { messagesEl, renderer, state, coordinator, session, backend, dispose } = createBackgroundChat();
+  const { messagesEl, renderer, state, coordinator, session, backend, dispose } = (await createBackgroundChat());
   try {
     await coordinator.bindConversation({ conversationId: 'conversation', providerId: 'claude' });
     await coordinator.prepare();
@@ -204,7 +202,7 @@ it.each([
 });
 
 it('does not continue a steered reply from a later turn notification', async () => {
-  const { messagesEl, state, coordinator, session, backend, dispose } = createBackgroundChat();
+  const { messagesEl, state, coordinator, session, backend, dispose } = (await createBackgroundChat());
   try {
     await coordinator.bindConversation({ conversationId: 'conversation', providerId: 'claude' });
     await coordinator.prepare();
@@ -233,7 +231,7 @@ it.each([
   ['pending', 'requested'], ['uncertain', 'requested'],
   ['uncertain', 'rejected'],
 ])('reconciles late image input through real chat owners (%s acknowledgement, %s turn)', async (acknowledgement, destination) => {
-  const { messagesEl, state, coordinator, session, backend, input, setImages, dispose } = createBackgroundChat(true);
+  const { messagesEl, state, coordinator, session, backend, input, setImages, dispose } = (await createBackgroundChat(true));
   try {
     await coordinator.bindConversation({ conversationId: 'conversation-1', providerId: 'claude' });
     await coordinator.prepare();
@@ -344,14 +342,14 @@ it.each([
   } finally { await dispose(); }
 });
 
-function createBackgroundChat(withInput = false) {
+async function createBackgroundChat(withInput = false) {
   const messagesEl = document.body.createDiv();
-  const plugin = { app: {}, settings: { mediaFolder: '', showMessageTimestamps: false } } as any;
+  const plugin = await createChatFeatureHost({ settings: { mediaFolder: '', showMessageTimestamps: false } });
   const renderer = new MessageRenderer(plugin,
     new Component(), messagesEl);
   const lifecycleRegistry = new ProviderExecutionLifecycleRegistry();
   const backend = new FakeSideBackend();
-  let input: ReturnType<typeof createFixture> | undefined;
+  let input: Awaited<ReturnType<typeof createFixture>> | undefined;
   const coordinator = new ChatExecutionCoordinator({
     lifecycleRegistry, resolveBackend: () => backend,
     persistence: { persistExecutionSnapshot: async () => true, registerExecutionBinding: () => undefined,
@@ -371,14 +369,14 @@ function createBackgroundChat(withInput = false) {
     getMessagesEl: () => messagesEl, updateQueueIndicator: () => undefined });
   let images: ImageAttachment[] = [];
   const setImages = (next: ImageAttachment[]) => { images = next; };
-  if (withInput) input = createFixture({
+  if (withInput) input = (await createFixture({
     state, session, renderer, streamController: stream,
     getMessagesEl: () => messagesEl, getExecutionCoordinator: () => coordinator,
     getImageContextManager: () => ({
       clearImages: () => setImages([]), getAttachedImages: () => images,
       hasImages: () => images.length > 0, setImages,
     }),
-  });
+  }));
   const tab = { state, renderer, session: tabSession, executionCoordinator: coordinator, lifecycleState: 'ready',
     ui: { promptSuggestion: { discard() {} } },
     dom: { contentEl: messagesEl }, services: { subagentManager: subagents },
@@ -391,7 +389,7 @@ function createBackgroundChat(withInput = false) {
 
 it('records requested and background segments around notifications with no presenter', async () => {
   const state = new ChatState();
-  const plugin = { app: {}, settings: {} } as any;
+  const plugin = await createChatFeatureHost({ settings: {} });
   const manager = new SubagentManager(() => undefined);
   const renderer = null;
   const stream = new StreamController({ plugin, state, renderer, subagentManager: manager,
@@ -424,7 +422,7 @@ it('records requested and background segments around notifications with no prese
 
 it('retains a successful edit diff when no tool card was created', async () => {
   const state = new ChatState();
-  const plugin = { app: { vault: { adapter: {} } }, settings: {} } as any;
+  const plugin = await createChatFeatureHost({ settings: {} });
   const manager = new SubagentManager(() => undefined);
   const messagesEl = document.body.createDiv();
   const renderer = new MessageRenderer(plugin, new Component(), messagesEl);
@@ -458,7 +456,7 @@ function visibleTranscript(root: HTMLElement): string {
 
 it.each([true, false])('folds a stopped automatic reply under Interrupted after its notification, live and on reload (output: %s)', async output => {
   const messagesEl = document.body.createDiv();
-  const plugin = { app: {}, settings: { mediaFolder: '', showMessageTimestamps: false } } as any;
+  const plugin = await createChatFeatureHost({ settings: { mediaFolder: '', showMessageTimestamps: false } });
   const renderer = new MessageRenderer(plugin, new Component(), messagesEl, undefined, vi.fn());
   const state = new ChatState();
   const manager = new SubagentManager(() => undefined);
@@ -535,9 +533,9 @@ it.each([true, false])('folds a stopped automatic reply under Interrupted after 
   } finally { stream.dispose(); manager.clear(); renderer.dispose(); }
 });
 
-function createBackgroundSession() {
+async function createBackgroundSession() {
   const messagesEl = document.body.createDiv();
-  const plugin = { app: {}, settings: { mediaFolder: '', showMessageTimestamps: false } } as any;
+  const plugin = await createChatFeatureHost({ settings: { mediaFolder: '', showMessageTimestamps: false } });
   const renderer = new MessageRenderer(plugin, new Component(), messagesEl);
   const state = new ChatState();
   const manager = new SubagentManager(() => undefined);
@@ -555,7 +553,7 @@ function createBackgroundSession() {
 }
 
 it('keeps a reply before a steer intact and ends the steered input in an indicator when stopped before new output', async () => {
-  const session = createBackgroundSession();
+  const session = (await createBackgroundSession());
   const { messagesEl, renderer, state, background } = session;
   const inspect = () => ({
     transcript: Array.from(messagesEl.querySelectorAll<HTMLElement>('.claudian-message'), visibleText).filter(Boolean),
@@ -581,7 +579,7 @@ it('keeps a reply before a steer intact and ends the steered input in an indicat
 // A bare marker belongs to the turn that stopped: an automatic turn with no visible trigger
 // that stops before output ends in a plain indicator and leaves the completed answer before it alone.
 it('keeps a completed answer intact when the automatic turn after it stops before output', async () => {
-  const session = createBackgroundSession();
+  const session = (await createBackgroundSession());
   const { messagesEl, renderer, state, background } = session;
   const inspect = () => ({
     transcript: Array.from(messagesEl.querySelectorAll<HTMLElement>('.claudian-message'), visibleText).filter(Boolean),
@@ -607,7 +605,7 @@ it('keeps a completed answer intact when the automatic turn after it stops befor
 
 // The interrupted reply before a marker only shows the marker of its own turn.
 it('keeps the indicator of an automatic turn stopped before output after an interrupted requested reply', async () => {
-  const session = createBackgroundSession();
+  const session = (await createBackgroundSession());
   const { messagesEl, renderer, state, background } = session;
   const indicators = () => within(messagesEl).getAllByText('Interrupted').length;
   try {
@@ -631,7 +629,7 @@ it('keeps the indicator of an automatic turn stopped before output after an inte
 
 // Blank thinking is no output: the stop ends the reply before it, as the shared layout reads it.
 it.each([true, false])('folds a background turn stopped after blank thinking like rerender (earlier reply: %s)', async earlier => {
-  const session = createBackgroundSession();
+  const session = (await createBackgroundSession());
   const { messagesEl, renderer, state, background } = session;
   const inspect = () => ({ transcript: visibleTranscript(messagesEl),
     headers: within(messagesEl).queryAllByRole('button', { name: /^Interrupted/ }).length });
@@ -655,7 +653,7 @@ it.each([true, false])('folds a background turn stopped after blank thinking lik
 // Output-free segments on either side of a notification show nothing: a turn stopped without
 // output keeps its notification visible and ends in a plain indicator.
 it('keeps a notification visible when blank thinking surrounds it in a stopped background turn', async () => {
-  const session = createBackgroundSession();
+  const session = (await createBackgroundSession());
   const { messagesEl, renderer, state, background } = session;
   const blankThinking = () => background.handle('binding', { type: 'thinking_delta', text: '   ', scope: session.next() }, () => true);
   const inspect = () => ({ transcript: visibleTranscript(messagesEl),
@@ -676,7 +674,7 @@ it('keeps a notification visible when blank thinking surrounds it in a stopped b
 });
 
 it('folds a stopped automatic turn across a later notification once, live and on Claude reload', async () => {
-  const session = createBackgroundSession();
+  const session = (await createBackgroundSession());
   const { messagesEl, renderer, state, background } = session;
   const inspect = () => {
     const header = within(messagesEl).getByRole('button', { name: 'Interrupted · What should Claudian do instead?' });
@@ -755,7 +753,7 @@ it('keeps a completed Pi reply outside a later hidden-trigger interrupted disclo
     } },
   ].map(entry => JSON.stringify(entry)).join('\n'));
   const messagesEl = document.body.createDiv();
-  const renderer = new MessageRenderer({ app: {}, settings: { mediaFolder: '', showMessageTimestamps: false } } as any,
+  const renderer = new MessageRenderer(await createChatFeatureHost({ settings: { mediaFolder: '', showMessageTimestamps: false } }),
     new Component(), messagesEl);
   try {
     renderer.renderMessages(messages, () => 'Welcome');
@@ -784,7 +782,7 @@ const claudeNotification = (summary: string) =>
 const at = (seconds: number) => new Date(testDate().getTime() + seconds * 1_000).toISOString();
 
 it('keeps per-notification boundaries of a completed automatic turn, live and on Claude reload', async () => {
-  const session = createBackgroundSession();
+  const session = (await createBackgroundSession());
   const { messagesEl, renderer, background } = session;
   const transcript = () => ({
     visible: Array.from(messagesEl.querySelectorAll<HTMLElement>('.claudian-message'), visibleText).filter(Boolean).join(' '),
@@ -820,7 +818,7 @@ it('keeps per-notification boundaries of a completed automatic turn, live and on
 });
 
 it.each([true, false])('folds a notification that trails the stopped reply into its turn, live and on Claude reload (output: %s)', async output => {
-  const session = createBackgroundSession();
+  const session = (await createBackgroundSession());
   const { messagesEl, renderer, state, background } = session;
   const INTERRUPTED = 'Interrupted · What should Claudian do instead?';
   const inspect = () => {
@@ -867,7 +865,7 @@ it.each([true, false])('folds a notification that trails the stopped reply into 
 });
 
 it.each([true, false])('folds a stopped automatic turn across compaction once, live and on Claude reload (output after compaction: %s)', async after => {
-  const session = createBackgroundSession();
+  const session = (await createBackgroundSession());
   const { messagesEl, renderer, state, background } = session;
   const INTERRUPTED = 'Interrupted · What should Claudian do instead?';
   const inspect = () => {

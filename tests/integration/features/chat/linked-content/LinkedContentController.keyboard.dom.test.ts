@@ -12,13 +12,7 @@ import { createWelcomeElement } from '@/features/chat/rendering/WelcomeRenderer'
 import { setLocale } from '@/i18n/i18n';
 
 beforeAll(() => {
-  Object.assign(HTMLElement.prototype, {
-    empty(this: HTMLElement) { this.replaceChildren(); },
-    addClass(this: HTMLElement, ...names: string[]) { this.classList.add(...names); },
-    removeClass(this: HTMLElement, ...names: string[]) { this.classList.remove(...names); },
-    toggleClass(this: HTMLElement, name: string, force: boolean) { this.classList.toggle(name, force); },
-    scrollIntoView() {},
-  });
+
 });
 
 it('navigates linked-content choices with arrows, selects, and returns focus on Escape', async () => {

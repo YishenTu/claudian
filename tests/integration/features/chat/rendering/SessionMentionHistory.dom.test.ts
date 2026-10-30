@@ -1,6 +1,7 @@
 /** @vitest-environment jsdom */
 import '@/providers';
 
+import { createChatFeatureHost } from '@test/helpers/features/chat/ChatFeatureHostFixture';
 import { useClaudeSessionFiles } from '@test/helpers/providers/claudeHistory';
 import { parseCodexSessionContent } from '@test/helpers/providers/codex/parseCodexSessionContent';
 import { parseGrokHistoryContent } from '@test/helpers/providers/grokHistory';
@@ -19,9 +20,7 @@ const writeClaudeSession = useClaudeSessionFiles();
 const prompt = 'ref @"Review"\n\n<context_sessions>\n<context_session title="Review" id="conv-1-ref" provider="codex" updated="updated" />\n</context_sessions>';
 
 beforeEach(() => {
-  HTMLElement.prototype.empty = function () { this.replaceChildren(); };
-  HTMLElement.prototype.addClass = function (...names) { this.classList.add(...names); };
-  HTMLElement.prototype.removeClass = function (...names) { this.classList.remove(...names); };
+
   vi.mocked(MarkdownRenderer.render).mockImplementation(async (_app, markdown, el) => {
     el.createEl('p', { text: markdown });
   });
@@ -49,7 +48,7 @@ it.each(['claude', 'codex', 'opencode', 'pi', 'grok'] as const)('hides snapshot 
   }
   expect(messages).toHaveLength(1);
   const parent = document.body.createDiv();
-  const renderer = new MessageRenderer({ app: {}, settings: { mediaFolder: '', showMessageTimestamps: false } } as never, new Component(), parent);
+  const renderer = new MessageRenderer(await createChatFeatureHost({ settings: { mediaFolder: '', showMessageTimestamps: false } }), new Component(), parent);
   try {
     renderer.renderStoredMessage(messages[0], messages, 0);
     await Promise.resolve();

@@ -7,14 +7,17 @@ function unconfiguredCapability(): never {
   throw new Error('Supply the ChatFeatureHost capability exercised by this test.');
 }
 
-type HostOverrides = Partial<Omit<ChatFeatureHost, 'settings'>> & {
-  settings?: Partial<ClaudianSettings>;
-};
+type FeatureFixture = Awaited<ReturnType<typeof createFeatureHostFixture>>;
+export type ChatFeatureHostOverrides = Partial<Omit<ChatFeatureHost, 'settings' | 'app'>>;
+export type ChatFeatureHostOptions = ChatFeatureHostOverrides & (
+  | { fixture: FeatureFixture; settings?: never; app?: never }
+  | { fixture?: never; settings?: Partial<ClaudianSettings>; app?: ChatFeatureHost['app'] }
+);
 
 /** A typed chat host; tests supply the app capabilities their behavior actually exercises. */
-export async function createChatFeatureHost({ settings, app, ...overrides }: HostOverrides = {}):
+export async function createChatFeatureHost({ fixture: existingFixture, settings, app, ...overrides }: ChatFeatureHostOptions = {}):
 Promise<ChatFeatureHost & { settings: ClaudianSettings }> {
-  const fixture = await createFeatureHostFixture({ settings, app });
+  const fixture = existingFixture ?? await createFeatureHostFixture({ settings, app });
   const host: ChatFeatureHost & { settings: ClaudianSettings } = {
     ...fixture.host,
     settings: fixture.settings,

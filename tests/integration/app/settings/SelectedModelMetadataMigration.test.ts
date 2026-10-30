@@ -1,13 +1,11 @@
 import '@/providers';
 
-import { DEFAULT_CLAUDIAN_SETTINGS } from '@test/helpers/defaultSettings';
 import { modelCatalogCases as cases } from '@test/helpers/providerModelCatalogs';
+import { createProviderHostFixture } from '@test/helpers/providerRuntimeHost';
 import { writeGrokCatalog } from '@test/helpers/providers/grokSettings';
 
-import { ClaudianSettingsStorage } from '@/app/settings/ClaudianSettingsStorage';
 import { migrateSelectedModelMetadata } from '@/app/settings/SelectedModelMetadataMigration';
-import { SettingsCoordinator } from '@/app/settings/SettingsCoordinator';
-import { createProviderRuntimeHost } from '@/composition/ClaudianProviderHost';
+import { CLAUDIAN_SETTINGS_PATH } from '@/core/bootstrap/storagePaths';
 import { findProviderModelOption, resolveConversationModel, resolveNewConversationModel } from '@/core/providers/conversationModel';
 import {
   ProviderModelCatalogController,
@@ -18,7 +16,6 @@ import {
 import type { ProviderHost } from '@/core/providers/ProviderHost';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { ProviderWorkspaceRegistry } from '@/core/providers/ProviderWorkspaceRegistry';
-import type { VaultFileAdapter } from '@/core/storage/VaultFileAdapter';
 import { getClaudeModelOptions, getClaudeSupportedEffortLevels } from '@/providers/claude/modelOptions';
 import { createClaudeModels, discoverClaudeModels } from '@/providers/claude/runtime/ClaudeModels';
 import { getClaudeModelSource, updateClaudeProviderSettings } from '@/providers/claude/settings';
@@ -36,9 +33,9 @@ const update = {
 
 /** A catalog store persisting selections through the settings document, as the migration sees them. */
 function documentStore(
-  host: ReturnType<typeof makeHost>['host'],
-  read: (settings: ReturnType<typeof makeHost>['host']['settings']) => ProviderModelCatalogState,
-  update: (settings: ReturnType<typeof makeHost>['host']['settings'], patch: ProviderModelCatalogPatch) => void,
+  host: ProviderHost,
+  read: (settings: ProviderHost['settings']) => ProviderModelCatalogState,
+  update: (settings: import('@/core/types').ClaudianSettings, patch: ProviderModelCatalogPatch) => void,
 ): ProviderModelCatalogStore {
   return {
     read: () => read(host.settings),
@@ -47,22 +44,13 @@ function documentStore(
   };
 }
 
-function makeHost() {
-  const settings = structuredClone(DEFAULT_CLAUDIAN_SETTINGS);
-  for (const id of ProviderRegistry.getRegisteredProviderIds()) ProviderRegistry.setEnabled(id, settings, false);
-  let content = '';
-  const storage = new ClaudianSettingsStorage({
-    exists: async () => Boolean(content), read: async () => content,
-    write: async (_path: string, value: string) => { content = value; }, delete: async () => undefined,
-  } as unknown as VaultFileAdapter, DEFAULT_CLAUDIAN_SETTINGS);
-  const coordinator = new SettingsCoordinator(settings, value => storage.save(value));
-  const host = {
-    settings, mutateSettings: coordinator.mutate.bind(coordinator),
-    mutateSettingsConditionally: coordinator.mutateConditionally.bind(coordinator),
-    notifyProviderChatOptionsChanged: vi.fn(),
-    getRuntimeHost: (id: string) => createProviderRuntimeHost(host, coordinator, id),
-  } as unknown as ProviderHost;
-  return { host, storage, read: () => JSON.parse(content) };
+async function makeHost() {
+  const fixture = await createProviderHostFixture();
+  for (const id of ProviderRegistry.getRegisteredProviderIds()) ProviderRegistry.setEnabled(id, fixture.settings, false);
+  return {
+    host: fixture.host, storage: fixture.settingsStorage,
+    read: async () => JSON.parse(await fixture.vault.read(CLAUDIAN_SETTINGS_PATH)),
+  };
 }
 
 beforeEach(() => {
@@ -74,7 +62,7 @@ afterEach(() => {
 });
 
 it.each([false, true])('repairs saved Claude family aliases through startup discovery and reload (cached: %s)', async cached => {
-  const { host, storage, read } = makeHost();
+  const { host, storage, read } = await makeHost();
   const rows = [
     { value: 'default', label: 'Default', description: '', resolvedModel: 'claude-opus-4-1-20250805[1m]', reasoningMetadataResolved: true },
     { value: 'claude-opus-4-20250514', label: 'Older Opus', description: '', reasoningMetadataResolved: true },
@@ -91,7 +79,7 @@ it.each([false, true])('repairs saved Claude family aliases through startup disc
     modelAliases: { fable: 'My Fable' },
   });
   await storage.save(host.settings);
-  expect(read().providerConfigs.claude.selectedModels.map((model: { value: string }) => model.value))
+  expect((await read()).providerConfigs.claude.selectedModels.map((model: { value: string }) => model.value))
     .toEqual(cached ? ['opus[1m]', 'claude-fable-5-10', 'sonnet', 'haiku'] : []);
   Object.assign(host.settings, await storage.load());
   const probe = vi.fn(async () => ({ models: rows, outputStyles: [] }));
@@ -102,8 +90,8 @@ it.each([false, true])('repairs saved Claude family aliases through startup disc
   await migrateSelectedModelMetadata(host, new AbortController().signal);
 
   const expected = ['claude-fable-5-10', 'haiku', 'opus[1m]', 'sonnet'];
-  expect(read().providerConfigs.claude.visibleModels).toEqual(expected);
-  expect(read().providerConfigs.claude.selectedModels.map((model: { value: string }) => model.value))
+  expect((await read()).providerConfigs.claude.visibleModels).toEqual(expected);
+  expect((await read()).providerConfigs.claude.selectedModels.map((model: { value: string }) => model.value))
     .toEqual(['opus[1m]', 'claude-fable-5-10', 'sonnet', 'haiku']);
   const restored = await storage.load();
   expect(getClaudeModelOptions(getClaudeModelSource(restored)).map(model => [model.value, model.label])).toEqual([
@@ -119,7 +107,7 @@ it.each([false, true])('repairs saved Claude family aliases through startup disc
 });
 
 it('keeps saved family aliases enabled after discovering a newer unselected version', async () => {
-  const { host, storage } = makeHost();
+  const { host, storage } = await makeHost();
   await host.mutateSettings(settings => {
     settings.titleGenerationModel = 'fable';
     settings.lastSelectedChatModel = { providerId: 'claude', model: 'fable' };
@@ -167,7 +155,7 @@ it('keeps saved family aliases enabled after discovering a newer unselected vers
 
 it.each(cases.flatMap(entry => [false, true].map(deselectDuringQuery => ({ ...entry, deselectDuringQuery }))))(
   '$id fills missing metadata and respects deselection during query: $deselectDuringQuery', async ({ id, populate, deselectDuringQuery }) => {
-  const { host, storage, read } = makeHost();
+  const { host, storage, read } = await makeHost();
   populate(host.settings);
   const config = host.settings.providerConfigs[id]!;
   const selectedIds = [...config.visibleModels as string[]];
@@ -202,8 +190,8 @@ it.each(cases.flatMap(entry => [false, true].map(deselectDuringQuery => ({ ...en
   await migrateSelectedModelMetadata(host, new AbortController().signal);
 
   expect(discover).toHaveBeenCalledTimes(1);
-  expect(read().providerConfigs[id].visibleModels).toEqual(deselectDuringQuery ? [] : selectedIds);
-  expect(JSON.stringify(read())).not.toContain('unselected-catalog-entry');
+  expect((await read()).providerConfigs[id].visibleModels).toEqual(deselectDuringQuery ? [] : selectedIds);
+  expect(JSON.stringify(await read())).not.toContain('unselected-catalog-entry');
   const restored = await storage.load();
   expect(ProviderRegistry.getChatUIConfig(id).getModelOptions(restored)).toHaveLength(deselectDuringQuery ? 0 : 1);
   expect(ProviderRegistry.getSettingsStorageAdapter(id).needsReasoningMetadata!(restored)).toBe(false);
@@ -216,7 +204,7 @@ it.each([
   { label: 'enabled providers with no selected models', enabled: true, selected: false },
   { label: 'disabled providers with incomplete selected metadata', enabled: false, selected: true },
 ])('does not initialize $label', async ({ enabled, selected }) => {
-  const { host } = makeHost();
+  const { host } = await makeHost();
   updateClaudeProviderSettings(host.settings, {
     enabled, visibleModels: selected ? ['sonnet'] : [], discoveredModels: [],
   });
@@ -227,7 +215,7 @@ it.each([
 });
 
 it.each(['deselected', 'disabled', 'cancelled'] as const)('rechecks %s state after workspace initialization', async change => {
-  const { host } = makeHost();
+  const { host } = await makeHost();
   cases[0].populate(host.settings);
   const controller = new AbortController();
   const refresh = vi.fn();
@@ -242,7 +230,7 @@ it.each(['deselected', 'disabled', 'cancelled'] as const)('rechecks %s state aft
 });
 
 it('preserves incomplete selections after a failed query and retries on a later startup', async () => {
-  const { host } = makeHost();
+  const { host } = await makeHost();
   cases[0].populate(host.settings);
   const before = structuredClone(host.settings);
   const refresh = vi.fn().mockRejectedValue(new Error('CLI unavailable'));
@@ -253,8 +241,8 @@ it('preserves incomplete selections after a failed query and retries on a later 
   expect(host.settings).toEqual(before);
 });
 
-it.each(cases)('$id detects missing effort fields in an otherwise present selected record', ({ id, populate }) => {
-  const { host } = makeHost();
+it.each(cases)('$id detects missing effort fields in an otherwise present selected record', async ({ id, populate }) => {
+  const { host } = await makeHost();
   populate(host.settings);
   const config = host.settings.providerConfigs[id]!;
   if (id === 'deepseek') delete (config.discoveredModels as any[])[0].reasoning;
@@ -263,8 +251,8 @@ it.each(cases)('$id detects missing effort fields in an otherwise present select
   expect(ProviderRegistry.getSettingsStorageAdapter(id).needsReasoningMetadata!(host.settings)).toBe(true);
 });
 
-it.each(cases)('$id detects a selected model missing from the catalog despite resolved effort metadata', ({ id, populate }) => {
-  const { host } = makeHost();
+it.each(cases)('$id detects a selected model missing from the catalog despite resolved effort metadata', async ({ id, populate }) => {
+  const { host } = await makeHost();
   populate(host.settings);
   const config = host.settings.providerConfigs[id]!;
   const selected = (config.visibleModels as string[])[0];
@@ -275,7 +263,7 @@ it.each(cases)('$id detects a selected model missing from the catalog despite re
 });
 
 it.each(['claude', 'grok', 'opencode', 'pi'] as const)('%s retains confirmed non-reasoning metadata without querying on every reload', async id => {
-  const { host, storage } = makeHost();
+  const { host, storage } = await makeHost();
   cases.find(entry => entry.id === id)!.populate(host.settings);
   const config = host.settings.providerConfigs[id]!;
   const selected = (config.visibleModels as string[])[0];
@@ -296,7 +284,7 @@ it.each(['claude', 'grok', 'opencode', 'pi'] as const)('%s retains confirmed non
 });
 
 it('cancels an active native query on unload', async () => {
-  const { host } = makeHost();
+  const { host } = await makeHost();
   cases[0].populate(host.settings);
   const controller = new AbortController();
   let started!: () => void;

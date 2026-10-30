@@ -1,5 +1,7 @@
 import { assertCatalogModelAvailable, modelCatalogCases } from '@test/helpers/providerModelCatalogs';
-import { runtimeHostFor } from '@test/helpers/providerRuntimeHost';
+import { createProviderHostFixture } from '@test/helpers/providerRuntimeHost';
+import { PiNativeProcess } from '@test/helpers/providers/pi/PiNativeProcess';
+import spawn from 'cross-spawn';
 
 import type { ProviderModelCatalog } from '@/core/providers/models/ProviderModelCatalog';
 import { ProviderModelUnavailableError } from '@/core/providers/models/ProviderModelUnavailableError';
@@ -9,11 +11,9 @@ import { createDeepSeekModels } from '@/providers/deepseek/runtime/DeepSeekModel
 import { createGrokModels } from '@/providers/grok/runtime/GrokModels';
 import { createOpencodeModels } from '@/providers/opencode/runtime/OpencodeModels';
 import { createPiModels } from '@/providers/pi/runtime/PiModels';
+import { getPiProviderSettings } from '@/providers/pi/settings';
 
-const mockPiDiscover = vi.hoisted(() => (vi.fn()));
-vi.mock('@/providers/pi/runtime/PiModelDiscoveryService', () => ({
-  PiModelDiscoveryService: class { discoverModels = mockPiDiscover; },
-}));
+vi.mock('cross-spawn', () => ({ default: vi.fn() }));
 
 const browseOrders = {
   deepseek: ['deepseek:native/selected', 'deepseek:native/unselected-catalog-entry'],
@@ -25,13 +25,26 @@ const browseOrders = {
 };
 
 it.each(modelCatalogCases)('$id keeps native selection, aliases and metadata behind the common catalog', async ({id, selected, populate, read}) => {
-  const settings: Record<string, unknown> = {};
-  populate(settings);
   const persist = vi.fn(async () => undefined);
-  const host = runtimeHostFor({ settings, notifyProviderChatOptionsChanged: vi.fn() }, id, { persist });
+  const fixture = await createProviderHostFixture({ beforePersist: persist });
+  const { settings } = fixture;
+  populate(settings);
+  const host = fixture.host.getRuntimeHost(id);
   const discovery = vi.fn(async () => ({ changed: true, refreshed: true, kind: 'completed' as const, catalog: null, models: [], persistedSettingsChanged: false }));
   const warmModelsMetadata = vi.fn(async () => true);
-  mockPiDiscover.mockResolvedValue({ kind: 'completed', models: read(settings) });
+  const peers: PiNativeProcess[] = [];
+  vi.mocked(spawn).mockImplementation(() => {
+    const models = getPiProviderSettings(settings).discoveredModels.map(model => ({ ...model, name: model.label }));
+    const peer = new PiNativeProcess({}, new Map([['get_available_models', { models }]]));
+    peers.push(peer);
+    return peer.child;
+  });
+  onTestFinished(() => {
+    for (const peer of peers) {
+      peer.child.stdin.destroy(); peer.child.stdout.destroy(); peer.child.stderr.destroy();
+    }
+    vi.mocked(spawn).mockReset();
+  });
   const factories: Record<string, () => ProviderModelCatalog> = {
     deepseek: () => createDeepSeekModels(host, async () => { await discovery(); return { groups: [{ id: 'native', models: [{ id: 'selected', name: 'Selected label' }, { id: 'unselected-catalog-entry', name: 'Unselected' }] }] }; }),
     claude: () => createClaudeModels(host, discovery),
@@ -46,21 +59,21 @@ it.each(modelCatalogCases)('$id keeps native selection, aliases and metadata beh
   expect(read(settings)).toEqual(discoveredModels);
   const selectedId = catalog.getSnapshot().selectedIds[0];
   expect(catalog.getSnapshot().defaultModelId).toBe(selectedId);
-  expect(() => assertCatalogModelAvailable(id, settings, selected)).not.toThrow();
+  expect(() => assertCatalogModelAvailable(id, host, selected)).not.toThrow();
   await catalog.refresh();
-  const discover = id === 'pi' ? mockPiDiscover : discovery;
-  const calls = discover.mock.calls.length;
+  const discoveryCount = () => id === 'pi' ? peers.length : discovery.mock.calls.length;
+  const calls = discoveryCount();
   catalog.markStale();
   await catalog.refresh();
-  expect(discover).toHaveBeenCalledTimes(calls);
+  expect(discoveryCount()).toBe(calls);
   expect(catalog.getSnapshot()).toMatchObject({ stale: true, discoveredCount: 2, selectedIds: [selectedId] });
   await catalog.refresh({ force: true });
-  expect(discover).toHaveBeenCalledTimes(calls + 1);
+  expect(discoveryCount()).toBe(calls + 1);
   await catalog.setAlias(selectedId, 'My selected model');
   expect(catalog.getSnapshot().aliases[selectedId]).toBe('My selected model');
   await catalog.changeSelection({ type: 'clear' });
   expect(catalog.getSnapshot().selectedIds).toEqual([]);
-  expect(() => assertCatalogModelAvailable(id, settings, selected)).toThrow(ProviderModelUnavailableError);
+  expect(() => assertCatalogModelAvailable(id, host, selected)).toThrow(ProviderModelUnavailableError);
   await catalog.changeSelection({ type: 'set', modelId: selectedId, selected: true });
   expect(warmModelsMetadata.mock.calls).toEqual(id === 'opencode'
     ? [[[]], [[selected]]] : []);
@@ -72,13 +85,14 @@ it.each(modelCatalogCases)('$id keeps native selection, aliases and metadata beh
   await catalog.dispose();
 });
 
-it('preserves OpenCode provider labels for catalog filtering', () => {
-  const host = runtimeHostFor({ settings: { providerConfigs: { opencode: {
+it('preserves OpenCode provider labels for catalog filtering', async () => {
+  const fixture = await createProviderHostFixture({ settings: { providerConfigs: { opencode: {
     visibleModels: [], discoveredModels: [
       { rawId: 'anthropic/sonnet', label: 'Anthropic/Sonnet' },
       { rawId: 'openai/gpt', label: 'OpenAI/GPT' },
     ],
-  } } } }, 'opencode');
+  } } } });
+  const host = fixture.host.getRuntimeHost('opencode');
   const catalog = createOpencodeModels(host, { discoverModels: vi.fn(), warmModelsMetadata: vi.fn(), observeCatalog: () => () => undefined });
   expect(catalog.getSnapshot().models).toEqual([
     expect.objectContaining({ id: 'openai/gpt', name: 'GPT', providerKey: 'openai', providerLabel: 'OpenAI' }),

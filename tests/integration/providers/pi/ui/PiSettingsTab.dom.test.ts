@@ -1,6 +1,5 @@
 /** @vitest-environment jsdom */
 import '@/providers';
-import '@test/helpers/ObsidianSettingsDOM';
 
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
@@ -9,7 +8,7 @@ import { deserialize, serialize } from 'node:v8';
 
 import { axe } from '@test/helpers/accessibility';
 import { DEFAULT_CLAUDIAN_SETTINGS } from '@test/helpers/defaultSettings';
-import { controlChangeSettled } from '@test/helpers/ObsidianSettingsDOM';
+import { controlChangeSettled } from '@test/helpers/ObsidianHost';
 import { createProviderHostFixture } from '@test/helpers/providerRuntimeHost';
 import { fireEvent, waitFor, within } from '@testing-library/dom';
 import spawn from 'cross-spawn';
@@ -22,10 +21,6 @@ import { createPiWorkspaceServices, type PiWorkspaceServices } from '@/providers
 import { getPiProviderSettings, updatePiProviderSettings } from '@/providers/pi/settings';
 
 vi.mock('cross-spawn', () => ({ default: vi.fn() }));
-vi.mock('obsidian', async () => ({
-  ...(await vi.importActual<typeof import('@test/__mocks__/obsidian')>('@test/__mocks__/obsidian')),
-  ...(await vi.importActual<typeof import('@test/helpers/ObsidianSettingsDOM')>('@test/helpers/ObsidianSettingsDOM')),
-}));
 
 let container: HTMLElement;
 let settings: ClaudianSettings;

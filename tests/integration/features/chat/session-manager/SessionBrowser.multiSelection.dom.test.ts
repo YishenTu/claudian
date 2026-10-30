@@ -2,22 +2,18 @@
 
 import { axe } from '@test/helpers/accessibility';
 import { createPopoutDocument } from '@test/helpers/dom/popoutDocument';
-import { createProjectsFake } from '@test/helpers/features/chat/ProjectsFake';
+import { createSessionBrowserHost } from '@test/helpers/features/chat/SessionBrowserTestHarness';
 import { testDate } from '@test/helpers/testClock';
 import { fireEvent, within } from '@testing-library/dom';
 import { Menu } from 'obsidian';
 import type { Mock } from 'vitest';
 
 import type { ConversationMeta } from '@/core/types';
-import { SessionBrowser, type SessionBrowserDeps } from '@/features/chat/session-manager/SessionBrowser';
+import { SessionBrowser } from '@/features/chat/session-manager/SessionBrowser';
 import type { HistoryConversationStatus } from '@/features/chat/session-manager/SessionStatusPresentation';
 
 
 
-HTMLElement.prototype.empty = function () { this.replaceChildren(); };
-HTMLElement.prototype.addClass = function (...classes) { this.classList.add(...classes); };
-HTMLElement.prototype.removeClass = function (...classes) { this.classList.remove(...classes); };
-HTMLElement.prototype.hasClass = function (className) { return this.classList.contains(className); };
 
 type MockMenu = {
   items: Array<{ title: string; disabled: boolean; clickHandler: (() => void) | null }>;
@@ -51,21 +47,20 @@ const conversations = [
   session('pinned-too', 'Second pinned session', { isPinned: true }),
 ];
 
-function renderList(options: {
+async function renderList(options: {
   onSelectConversation?: Mock;
   onSetConversationsArchived?: Mock;
 } = {}) {
-  const onSetConversationsPinned = vi.fn().mockResolvedValue(undefined);
-  const onSetConversationsArchived = options.onSetConversationsArchived
-    ?? vi.fn().mockResolvedValue(undefined);
+  const { plugin, lifecycle } = await createSessionBrowserHost({ conversations: structuredClone(conversations) });
+  const onSetConversationsPinned = vi.spyOn(lifecycle, 'setPinned');
+  const onSetConversationsArchived = vi.spyOn(lifecycle, 'archive');
   const controller = new SessionBrowser({
-    plugin: { getConversationList: () => conversations, settings: {}, projects: createProjectsFake(), conversationLifecycle: {
-      archive: onSetConversationsArchived, setPinned: onSetConversationsPinned,
-    } },
+    plugin,
     getCurrentConversationId: () => null,
     getTitleGenerationService: () => null,
     onListChanged: () => undefined,
-  } as unknown as SessionBrowserDeps);
+  });
+  onTestFinished(() => controller.dispose());
   onTestFinished(() => controller.dispose());
   const container = document.createElement('div');
   document.body.append(container);
@@ -99,7 +94,7 @@ describe('SessionBrowser multi-select archive', () => {
   });
 
   it('archives every Option-clicked session from the context menu of a selected session', async () => {
-    const { container, button, onSelectConversation, onSetConversationsArchived } = renderList();
+    const { container, button, onSelectConversation, onSetConversationsArchived } = await renderList();
 
     fireEvent.click(button('Alpha session'), { altKey: true });
     fireEvent.click(button('Gamma session'), { altKey: true });
@@ -120,8 +115,8 @@ describe('SessionBrowser multi-select archive', () => {
     expect(selectedCount(container)).toBe(0);
   });
 
-  it('keeps the selection while interacting with sessions and clears it when pointer or focus leaves them', () => {
-    const { container, button } = renderList();
+  it('keeps the selection while interacting with sessions and clears it when pointer or focus leaves them', async () => {
+    const { container, button } = await renderList();
     const outside = document.createElement('button');
     outside.type = 'button';
     outside.textContent = 'Elsewhere';
@@ -136,19 +131,20 @@ describe('SessionBrowser multi-select archive', () => {
     expectButton(container, 'Alpha session');
 
     fireEvent.click(button('Alpha session'), { altKey: true });
+    expectButton(container, 'Alpha session Selected');
     fireEvent.focusIn(outside);
     expectButton(container, 'Alpha session');
     expect(selectedCount(container)).toBe(0);
   });
 
-  it('keeps the selection for pointer-downs inside a list rendered in another window', () => {
+  it('keeps the selection for pointer-downs inside a list rendered in another window', async () => {
     const popoutDocument = createPopoutDocument();
     const controller = new SessionBrowser({
-      plugin: { getConversationList: () => conversations, settings: {}, projects: createProjectsFake() },
+      plugin: (await createSessionBrowserHost({ conversations: structuredClone(conversations) })).plugin,
       getCurrentConversationId: () => null,
       getTitleGenerationService: () => null,
       onListChanged: () => undefined,
-    } as unknown as SessionBrowserDeps);
+    });
     onTestFinished(() => controller.dispose());
     const container = popoutDocument.createElement('div');
     popoutDocument.body.append(container);
@@ -171,8 +167,8 @@ describe('SessionBrowser multi-select archive', () => {
     expect(selectedCount(container)).toBe(0);
   });
 
-  it('toggles selection with Option+Enter and clears it with Escape', () => {
-    const { container, button, onSelectConversation } = renderList();
+  it('toggles selection with Option+Enter and clears it with Escape', async () => {
+    const { container, button, onSelectConversation } = await renderList();
 
     fireEvent.keyDown(button('Alpha session'), { key: 'Enter', altKey: true });
     fireEvent.keyDown(button('Beta session'), { key: 'Enter', altKey: true });
@@ -181,12 +177,13 @@ describe('SessionBrowser multi-select archive', () => {
     expectButton(container, 'Alpha session');
     expect(onSelectConversation).not.toHaveBeenCalled();
 
+    expectButton(container, 'Beta session Selected');
     fireEvent.keyDown(button('Beta session'), { key: 'Escape' });
     expectButton(container, 'Beta session');
   });
 
-  it('clears the selection and shows the single-session menu for an unselected session', () => {
-    const { container, button } = renderList();
+  it('clears the selection and shows the single-session menu for an unselected session', async () => {
+    const { container, button } = await renderList();
 
     fireEvent.click(button('Alpha session'), { altKey: true });
     fireEvent.click(button('Beta session'), { altKey: true });
@@ -197,8 +194,8 @@ describe('SessionBrowser multi-select archive', () => {
     expect(selectedCount(container)).toBe(0);
   });
 
-  it('clears the selection on a plain click before opening the session', () => {
-    const { container, button, onSelectConversation } = renderList();
+  it('clears the selection on a plain click before opening the session', async () => {
+    const { container, button, onSelectConversation } = await renderList();
 
     fireEvent.click(button('Alpha session'), { altKey: true });
     expect(selectedCount(container)).toBe(1);

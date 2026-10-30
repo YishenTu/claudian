@@ -2,15 +2,19 @@ import '@/providers';
 
 import * as sdkModule from '@anthropic-ai/claude-agent-sdk';
 import { claudeCatalogFixture } from '@test/helpers/claudeModels';
-import { withRuntimeHosts } from '@test/helpers/providerRuntimeHost';
+import { DesktopVault } from '@test/helpers/core/DesktopVault';
+import { createProviderHostFixture } from '@test/helpers/providerRuntimeHost';
 import type { Mock } from 'vitest';
 
-import { ProviderExecutionLifecycleRegistry } from '@/core/execution';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { ProviderWorkspaceRegistry } from '@/core/providers/ProviderWorkspaceRegistry';
 import { updateClaudeProviderSettings } from '@/providers/claude/settings';
 
 
+
+let vault: DesktopVault;
+beforeAll(async () => { vault = await DesktopVault.create(); });
+afterAll(async () => { await vault.dispose(); });
 
 const sdkMock = sdkModule as unknown as {
   getLastOptions(): sdkModule.Options | undefined;
@@ -27,11 +31,9 @@ function respond(text: string): void {
   ]);
 }
 
-function createContext() {
-  const lifecycleRegistry = new ProviderExecutionLifecycleRegistry();
-  const host = withRuntimeHosts({
-    workingDirectory: '/vault',
-    executionLifecycleRegistry: lifecycleRegistry,
+async function createContext() {
+  const fixture = await createProviderHostFixture({ vault,
+    beforePersist: () => { throw new Error('Unexpected write in a read-only host fixture'); },
     settings: {
       providerConfigs: { claude: claudeCatalogFixture(
         ['claude-sonnet-4-5', 'claude-opus-4-6', 'claude-haiku-4-5', 'custom-model', 'custom-model-a', 'custom-model-b'],
@@ -44,11 +46,10 @@ function createContext() {
       mediaFolder: '',
       systemPrompt: '',
       userName: '',
-      loadUserClaudeSettings: false,
     },
-    getResolvedProviderCliPath: vi.fn().mockResolvedValue('/bin/claude'),
+    overrides: { workingDirectory: '/vault', getResolvedProviderCliPath: async () => '/bin/claude' },
   });
-  return { host, lifecycleRegistry };
+  return { host: fixture.host, lifecycleRegistry: fixture.lifecycle };
 }
 
 describe('Claude auxiliary execution', () => {
@@ -60,7 +61,7 @@ describe('Claude auxiliary execution', () => {
   it(
     'keeps inline edit clarification in one non-persistent query and releases it on reset',
     async () => {
-      const context = createContext();
+      const context = await createContext();
       updateClaudeProviderSettings(context.host.settings, { promptSuggestions: true });
       const service = ProviderRegistry.createInlineEditService(context.host, 'claude');
       const send = (instruction: string) => service.send({
@@ -106,7 +107,7 @@ describe('Claude auxiliary execution', () => {
   );
 
   it('releases a non-persistent title query after its single response', async () => {
-    const context = createContext();
+    const context = await createContext();
     updateClaudeProviderSettings(context.host.settings, { promptSuggestions: true });
     ProviderWorkspaceRegistry.setServices('claude', {});
     const service = ProviderRegistry.createTitleGenerationService(context.host);

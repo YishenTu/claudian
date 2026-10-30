@@ -210,3 +210,31 @@ test('test imports require declared packages, including Vitest factory imports',
     assert.equal(result.messages.filter(message => message.ruleId === rule).length, 0, code);
   }
 });
+
+test('tests use the shared Obsidian fake and seeded installation key instead of per-file module mocks', async () => {
+  const eslint = new ESLint();
+  const filePaths = [
+    'tests/unit/utils/example.test.ts',
+    'tests/integration/app/example.test.ts',
+    'tests/helpers/example.ts',
+  ];
+  const restricted = ['obsidian', '@/core/device/InstallationKey'].flatMap(source =>
+    ['vi', 'vitest'].flatMap(api => ['mock', 'doMock'].flatMap(method => [
+      `${api}.${method}('${source}', () => ({}));`,
+      `${api}.${method}(import('${source}'), () => ({}));`,
+    ])));
+  for (const filePath of filePaths) {
+    for (const code of restricted) {
+      const [result] = await eslint.lintText(code, { filePath });
+      assert.ok(result.messages.some(message => message.ruleId === 'no-restricted-syntax'), `${filePath}: ${code}`);
+    }
+    for (const code of [
+      "vi.mock('node:fs', () => ({}));",
+      "vi.spyOn(app.vault, 'read').mockRejectedValueOnce(new Error('Disk unavailable'));",
+      "void vi.importActual('obsidian');",
+    ]) {
+      const [result] = await eslint.lintText(code, { filePath });
+      assert.equal(result.messages.filter(message => message.ruleId === 'no-restricted-syntax').length, 0, `${filePath}: ${code}`);
+    }
+  }
+});

@@ -1,138 +1,109 @@
 /** @vitest-environment jsdom */
 
-import '@test/helpers/ObsidianSettingsDOM';
+import '@/providers';
 
 import { deserialize, serialize } from 'node:v8';
 
 import { axe } from '@test/helpers/accessibility';
-import { runtimeHostFor } from '@test/helpers/providerRuntimeHost';
+import { createProviderHostFixture } from '@test/helpers/providerRuntimeHost';
 import { fireEvent, waitFor, within } from '@testing-library/dom';
 import { Notice } from 'obsidian';
 
-import { SettingsCoordinator } from '@/app/settings/SettingsCoordinator';
-import { createProviderRuntimeHost } from '@/composition/ClaudianProviderHost';
 import { ProviderModelCatalogController } from '@/core/providers/models/ProviderModelCatalog';
 import type { ProviderHost } from '@/core/providers/ProviderHost';
-import type { ProviderSettingsTabRendererContext } from '@/core/providers/types';
+import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import type { ClaudianSettings } from '@/core/types';
-import type { ToolbarCallbacks } from '@/features/chat/composer/toolbar/types';
+import { createClaudeWorkspaceServices } from '@/providers/claude/app/ClaudeWorkspaceServices';
 import type { ClaudeModelDiscovery } from '@/providers/claude/runtime/ClaudeModels';
 import { createClaudeModels } from '@/providers/claude/runtime/ClaudeModels';
-import { getClaudeProviderSettings } from '@/providers/claude/settings';
+import { getClaudeProviderSettings, updateClaudeProviderSettings } from '@/providers/claude/settings';
 import { claudeChatUIConfig } from '@/providers/claude/ui/ClaudeChatUIConfig';
 import { renderProviderModelsSection } from '@/shared/settings/ProviderModelsSection';
 import { ModelSelector } from '@/shared/toolbar/ModelSelector';
+import { ToolbarMenuGroup } from '@/shared/toolbar/ToolbarMenu';
 
-vi.mock('obsidian', () => ({
-  Setting: class {
-    settingEl: HTMLElement;
-    constructor(container: HTMLElement) { this.settingEl = container.createDiv(); }
-    setName(value: string) { this.settingEl.createDiv({ text: value }); return this; }
-    setDesc(value: string) { this.settingEl.createDiv({ text: value }); return this; }
-  },
-  setIcon: vi.fn(),
-  Notice: vi.fn(),
-}));
+const cleanups: Array<() => void | Promise<void>> = [];
+afterEach(async () => {
+  for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
+  document.body.replaceChildren();
+});
 
-HTMLElement.prototype.createEl = function <K extends keyof HTMLElementTagNameMap>(
-  this: HTMLElement, tag: K, info?: DomElementInfo | string, callback?: (element: HTMLElementTagNameMap[K]) => void,
-): HTMLElementTagNameMap[K] {
-  const element = document.createElement(tag);
-  if (typeof info === 'string') element.className = info;
-  else if (info) {
-    if (info.cls) element.className = Array.isArray(info.cls) ? info.cls.join(' ') : info.cls;
-    if (info.text) element.append(info.text);
-    if (typeof info.type === 'string') element.setAttribute('type', info.type);
-    for (const [name, value] of Object.entries(info.attr ?? {})) element.setAttribute(name, String(value));
-  }
-  this.appendChild(element);
-  callback?.(element);
-  return element;
-};
-HTMLElement.prototype.toggleClass = function (names, value) {
-  for (const name of typeof names === 'string' ? [names] : names) this.classList.toggle(name, value);
-};
-HTMLElement.prototype.appendText = function (text) { this.append(text); };
-
-function renderModels(container: HTMLElement, context: ProviderSettingsTabRendererContext, native: { refresh: ClaudeModelDiscovery }) {
-  context.plugin.notifyProviderChatOptionsChanged = vi.fn();
-  const host = runtimeHostFor(context.plugin, 'claude');
-  return renderProviderModelsSection(container, 'claude', 'Claude Code', createClaudeModels(host, signal => native.refresh(signal)));
+function renderModels(container: HTMLElement, plugin: ProviderHost, native: { refresh: ClaudeModelDiscovery }) {
+  const catalog = createClaudeModels(plugin.getRuntimeHost('claude'), signal => native.refresh(signal));
+  const picker = renderProviderModelsSection(container, 'claude', 'Claude Code', catalog);
+  cleanups.push(async () => { picker.dispose(); await catalog.dispose(); });
+  return picker;
 }
 
 describe('Claude model picker', () => {
-  afterEach(async () => {
-    await new Promise(resolve => setTimeout(resolve, 0));
-    document.body.replaceChildren();
-  });
 
   it.each(['default', 'claude-code/default'])('hides saved %s from management and chat choices', async (savedId) => {
     const container = document.body.createDiv();
-    const settings = { model: 'opus', providerConfigs: { claude: {
+    const initialSettings = { model: 'opus', providerConfigs: { claude: {
       visibleModels: [savedId, 'opus'],
       discoveredModels: [
         { value: 'default', label: 'Default (recommended)', resolvedModel: 'claude-opus-5-5' },
         { value: 'opus', label: 'Opus', resolvedModel: 'claude-opus-5-5' },
       ],
     } } };
-    const context = {
-      plugin: { settings, mutateSettings: async (fn: (value: unknown) => void) => fn(settings) },
-    } as unknown as ProviderSettingsTabRendererContext;
-    renderModels(container, context, { refresh: vi.fn().mockResolvedValue({ changed: false }) });
+    const { host, settings } = await createProviderHostFixture({ settings: initialSettings });
+    renderModels(container, host, { refresh: vi.fn().mockResolvedValue({ changed: false }) });
     await waitFor(() => expect((within(container).getByRole('button', { name: 'Refresh' }) as HTMLButtonElement).disabled).toBe(false));
     expect(within(container).queryByRole('checkbox', { name: /default/i })).toBeNull();
     expect(within(container).getAllByRole('checkbox')).toEqual([within(container).getByRole('checkbox', { name: /Opus/ })]);
     expect(within(container).queryByRole('button', { name: /Reorder .*default/i })).toBeNull();
     expect(claudeChatUIConfig.getModelOptions(settings).map(model => model.value)).toEqual(['opus']);
     expect(claudeChatUIConfig.getDefaultModel?.(settings)).toBe('opus');
-    expect(settings.providerConfigs.claude.visibleModels).toEqual([savedId, 'opus']);
+    expect(getClaudeProviderSettings(settings).visibleModels).toEqual([savedId, 'opus']);
     expect((await axe(container)).violations).toEqual([]);
   });
 
   it('loads on opening the panel, refreshes manually, and uses selected order as default', async () => {
     const container = document.body.createDiv();
     const config = { discoveredModels: [] as Array<{value: string; label: string; description: string}>, visibleModels: [] as string[] };
-    const settings = { providerConfigs: { claude: config } };
-    const context = {
-      plugin: { settings, mutateSettings: async (fn: (value: unknown) => void) => fn(settings) },
-    } as unknown as ProviderSettingsTabRendererContext;
-    const catalog = { refresh: vi.fn(async () => {
-      settings.providerConfigs.claude.discoveredModels = [
-        { value: 'gateway-model', label: 'Gateway model', description: 'From SDK' },
-        { value: 'sonnet', label: 'Sonnet', description: 'From SDK' },
-      ];
-      return { changed: true };
-    }) };
-    renderModels(container, context, catalog);
+    const initialSettings = { providerConfigs: { claude: config } };
+    const { host, settings } = await createProviderHostFixture({ settings: initialSettings });
+    const probe = vi.fn(async () => ({ models: [
+      { value: 'gateway-model', label: 'Gateway model', description: 'From SDK' },
+      { value: 'sonnet', label: 'Sonnet', description: 'From SDK' },
+    ], outputStyles: [] }));
+    const workspace = await createClaudeWorkspaceServices(host, { catalogProbe: probe });
+    const picker = renderProviderModelsSection(container, 'claude', 'Claude Code', workspace.modelCatalog!);
+    cleanups.push(async () => { picker.dispose(); await workspace.dispose(); });
     await waitFor(() => expect((within(container).getByRole('button', { name: 'Refresh' }) as HTMLButtonElement).disabled).toBe(false));
-    expect(catalog.refresh).toHaveBeenCalledTimes(1);
+    expect(probe).toHaveBeenCalledTimes(1);
     fireEvent.click(within(container).getByRole('checkbox', { name: /Gateway model/ }));
-    await waitFor(() => expect(settings.providerConfigs.claude.visibleModels).toEqual(['gateway-model']));
+    await waitFor(() => expect(getClaudeProviderSettings(settings).visibleModels).toEqual(['gateway-model']));
     fireEvent.click(within(container).getByRole('checkbox', { name: /Sonnet/ }));
-    await waitFor(() => expect(settings.providerConfigs.claude.visibleModels).toEqual(['gateway-model', 'sonnet']));
+    await waitFor(() => expect(getClaudeProviderSettings(settings).visibleModels).toEqual(['gateway-model', 'sonnet']));
     expect(claudeChatUIConfig.getDefaultModel?.(settings)).toBe('claude-code/gateway-model');
     fireEvent.keyDown(within(container).getByRole('button', { name: /Reorder Sonnet/ }), { key: 'ArrowUp' });
-    await waitFor(() => expect(settings.providerConfigs.claude.visibleModels).toEqual(['sonnet', 'gateway-model']));
+    await waitFor(() => expect(getClaudeProviderSettings(settings).visibleModels).toEqual(['sonnet', 'gateway-model']));
     expect(claudeChatUIConfig.getDefaultModel?.(settings)).toBe('sonnet');
-    expect(catalog.refresh).toHaveBeenCalledTimes(1);
+    expect(probe).toHaveBeenCalledTimes(1);
     fireEvent.click(within(container).getByRole('button', { name: 'Refresh' }));
-    await waitFor(() => expect(catalog.refresh).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(probe).toHaveBeenCalledTimes(2));
     await waitFor(() => expect((within(container).getByRole('button', { name: /Refresh|Discover/ }) as HTMLButtonElement).disabled).toBe(false));
     expect((await axe(container)).violations).toEqual([]);
   });
 
   it('keeps chat order and keyboard focus aligned through repeated reorders', async () => {
     const persisted: string[][] = [];
-    const h = continuityHarness(async draft => {
+    const h = await continuityHarness(async draft => {
       persisted.push([...getClaudeProviderSettings(draft).visibleModels!]);
     });
     await h.catalog.refresh();
     const container = document.body.createDiv();
     const picker = renderProviderModelsSection(container, 'claude', 'Claude Code', h.catalog);
     const toolbar = document.body.createDiv();
+    const group = new ToolbarMenuGroup();
+    cleanups.push(() => group.destroy());
     const selector = new ModelSelector(toolbar, {
-      getSettings: () => h.settings, getUIConfig: () => claudeChatUIConfig,
-    } as unknown as ToolbarCallbacks);
+      getSettings: () => ({ ...h.settings, reasoning: h.settings.effortLevel }), getUIConfig: () => claudeChatUIConfig,
+      getCapabilities: () => ProviderRegistry.getCapabilities('claude'),
+      onModelChange: async () => { throw new Error('Unexpected model selection'); },
+      onEffortLevelChange: async () => { throw new Error('Unexpected effort change'); },
+    }, group);
     const chatLabels = () => [...toolbar.querySelectorAll('.claudian-model-option')].map(el => el.textContent);
     const handle = (name: string) => within(container).getByRole('button', {
       name: `Reorder ${name}; drag or use the Up and Down Arrow keys`,
@@ -142,14 +113,14 @@ describe('Claude model picker', () => {
       fireEvent.keyDown(handle('Opus'), { key: 'ArrowUp' });
       await waitFor(() => expect(h.notify).toHaveBeenCalledTimes(1));
       await settleCallbacks();
-      expect(h.settings.providerConfigs.claude.visibleModels).toEqual(['opus', 'sonnet', 'gateway-model']);
+      expect(getClaudeProviderSettings(h.settings).visibleModels).toEqual(['opus', 'sonnet', 'gateway-model']);
       selector.renderOptions();
       expect(chatLabels()).toEqual(['Opus', 'Sonnet', 'Gateway model']);
       expect(claudeChatUIConfig.getDefaultModel?.(h.settings)).toBe('opus');
       fireEvent.keyDown(handle('Opus'), { key: 'ArrowDown' });
       await waitFor(() => expect(h.notify).toHaveBeenCalledTimes(2));
       await settleCallbacks();
-      expect(h.settings.providerConfigs.claude.visibleModels).toEqual(['sonnet', 'opus', 'gateway-model']);
+      expect(getClaudeProviderSettings(h.settings).visibleModels).toEqual(['sonnet', 'opus', 'gateway-model']);
       handle('Gateway model').focus();
       expect(document.activeElement).toBe(handle('Gateway model'));
       for (const [index, order] of [
@@ -158,7 +129,7 @@ describe('Claude model picker', () => {
         fireEvent.keyDown(document.activeElement!, { key: 'ArrowUp' });
         await waitFor(() => expect(h.notify).toHaveBeenCalledTimes(index + 3));
         await settleCallbacks();
-        expect(h.settings.providerConfigs.claude.visibleModels).toEqual(order);
+        expect(getClaudeProviderSettings(h.settings).visibleModels).toEqual(order);
         expect(document.activeElement).toBe(handle('Gateway model'));
         expect([...container.querySelectorAll('[data-model-id]')].map(row => row.getAttribute('data-model-id'))).toEqual(order);
         selector.renderOptions();
@@ -178,10 +149,14 @@ describe('Claude model picker', () => {
     const settings = { model: 'sonnet', providerConfigs: { claude: {
       visibleModels: ['sonnet'], discoveredModels: [] as Array<{ value: string; label: string }>,
     } } };
+    const group = new ToolbarMenuGroup();
+    cleanups.push(() => group.destroy());
     const selector = new ModelSelector(toolbar, {
-      getSettings: () => settings,
-      getUIConfig: () => claudeChatUIConfig,
-    } as unknown as ToolbarCallbacks);
+      getSettings: () => ({ ...settings, reasoning: null }), getUIConfig: () => claudeChatUIConfig,
+      getCapabilities: () => ProviderRegistry.getCapabilities('claude'),
+      onModelChange: async () => { throw new Error('Unexpected model selection'); },
+      onEffortLevelChange: async () => { throw new Error('Unexpected effort change'); },
+    }, group);
     expect(within(toolbar).getByText('Model unavailable').parentElement?.title).toMatch(/refresh/i);
     fireEvent.click(within(toolbar).getByRole('button', { name: 'Model unavailable' }));
     expect(within(toolbar).getByRole('status').textContent).toMatch(/refresh/i);
@@ -193,29 +168,27 @@ describe('Claude model picker', () => {
 
   it('projects a saved native ID onto its SDK row without rewriting the saved choice', async () => {
     const container = document.body.createDiv();
-    const settings = { providerConfigs: { claude: {
+    const initialSettings = { providerConfigs: { claude: {
       visibleModels: ['gateway-model'],
       discoveredModels: [{ value: 'sonnet', label: 'Sonnet', description: '', resolvedModel: 'gateway-model' }],
     } } };
-    const context = {
-      plugin: { settings, mutateSettings: async (fn: (value: unknown) => void) => fn(settings) },
-    } as unknown as ProviderSettingsTabRendererContext;
+    const { host, settings } = await createProviderHostFixture({ settings: initialSettings });
     const catalog = { refresh: vi.fn().mockResolvedValue({ changed: true }) };
-    renderModels(container, context, catalog);
+    renderModels(container, host, catalog);
     const checkbox = within(container).getByRole('checkbox', { name: /Sonnet/ }) as HTMLInputElement;
     expect(checkbox.checked).toBe(true);
-    expect(settings.providerConfigs.claude.visibleModels).toEqual(['gateway-model']);
+    expect(getClaudeProviderSettings(settings).visibleModels).toEqual(['gateway-model']);
     expect(catalog.refresh).toHaveBeenCalledTimes(1);
     fireEvent.click(checkbox);
-    await waitFor(() => expect(settings.providerConfigs.claude.visibleModels).toEqual([]));
+    await waitFor(() => expect(getClaudeProviderSettings(settings).visibleModels).toEqual([]));
     expect(claudeChatUIConfig.getModelOptions(settings)).toEqual([]);
   });
 
   it('offers manual recovery after failure without retrying automatically', async () => {
     const container = document.body.createDiv();
-    const context = { plugin: { settings: { providerConfigs: { claude: { visibleModels: [] } } } } } as unknown as ProviderSettingsTabRendererContext;
+    const { host } = await createProviderHostFixture({ settings: { providerConfigs: { claude: { visibleModels: [] } } } });
     const catalog = { refresh: vi.fn().mockResolvedValue({ changed: false, diagnostics: 'Unavailable' }) };
-    renderModels(container, context, catalog);
+    renderModels(container, host, catalog);
     await waitFor(() => expect(within(container).getByRole('status').textContent).toBe('Unavailable'));
     expect(within(container).queryByText(/Could not load Claude models/)).toBeNull();
     await new Promise(resolve => setTimeout(resolve, 0));
@@ -273,17 +246,11 @@ it.each(['selections', 'aliases'] as const)(
     const saving = new Promise<void>(resolve => { started = resolve; });
     const gate = new Promise<void>(resolve => { finish = resolve; });
     let writes = 0;
-    const coordinator = new SettingsCoordinator(settings, async () => {
+    const fixture = await createProviderHostFixture({ settings, beforePersist: async () => {
       if (++writes === 1) { started(); await gate; }
-    });
-    const notify = vi.fn();
-    const host = {
-      settings,
-      mutateSettings: (mutation: (draft: ClaudianSettings) => void | Promise<void>) =>
-        coordinator.mutate(draft => mutation(draft as unknown as ClaudianSettings)),
-      notifyProviderChatOptionsChanged: notify,
-    } as unknown as ProviderHost;
-    const catalog = createClaudeModels(createProviderRuntimeHost(host, coordinator, 'claude'), async () => ({ changed: false }));
+    } });
+    const notify = vi.spyOn(fixture.host, 'notifyProviderChatOptionsChanged');
+    const catalog = createClaudeModels(fixture.host.getRuntimeHost('claude'), async () => ({ changed: false }));
     await catalog.refresh();
     const container = document.body.createDiv();
     const picker = renderProviderModelsSection(container, 'claude', 'Claude Code', catalog);
@@ -303,7 +270,7 @@ it.each(['selections', 'aliases'] as const)(
     await waitFor(() => expect(notify).toHaveBeenCalledTimes(2));
     picker.dispose();
     await catalog.dispose();
-    const saved = getClaudeProviderSettings(settings);
+    const saved = getClaudeProviderSettings(fixture.settings);
     expect(saved.visibleModels).toEqual(['sonnet', 'opus']);
     expect(saved.modelAliases).toEqual(kind === 'aliases' ? { sonnet: 'First', opus: 'Second' } : {});
     container.remove();
@@ -313,7 +280,7 @@ it.each(['selections', 'aliases'] as const)(
 it('restores committed model checkboxes after a failed selection save and allows retry', async () => {
   let rejectSave = true;
   let saved = '';
-  const h = continuityHarness(async draft => {
+  const h = await continuityHarness(async draft => {
     if (rejectSave) throw new Error('Disk is read-only');
     saved = JSON.stringify(draft);
   });
@@ -341,23 +308,18 @@ it('restores committed model checkboxes after a failed selection save and allows
   }
 });
 
-function continuityHarness(persist: (draft: ClaudianSettings) => Promise<void>) {
-  const settings = { model: 'opus', providerConfigs: { claude: {
-    visibleModels: ['sonnet', 'opus', 'gateway-model'], modelAliases: {},
-    discoveredModels: [
-      { value: 'opus', label: 'Opus' }, { value: 'gateway-model', label: 'Gateway model' },
-      { value: 'sonnet', label: 'Sonnet' },
-    ],
-  } } };
-  const coordinator = new SettingsCoordinator(settings, draft => persist(draft as unknown as ClaudianSettings));
-  const notify = vi.fn();
-  const host = {
-    settings,
-    mutateSettings: (mutation: (draft: ClaudianSettings) => void | Promise<void>) =>
-      coordinator.mutate(draft => mutation(draft as unknown as ClaudianSettings)),
-    notifyProviderChatOptionsChanged: notify,
-  } as unknown as ProviderHost;
-  return { settings, coordinator, notify, catalog: createClaudeModels(createProviderRuntimeHost(host, coordinator, 'claude'), async () => ({ changed: false })) };
+async function continuityHarness(persist: (draft: ClaudianSettings) => Promise<void>) {
+  const fixture = await createProviderHostFixture({
+    settings: { model: 'opus', providerConfigs: { claude: {
+      visibleModels: ['sonnet', 'opus', 'gateway-model'], modelAliases: {},
+      discoveredModels: [
+        { value: 'opus', label: 'Opus' }, { value: 'gateway-model', label: 'Gateway model' },
+        { value: 'sonnet', label: 'Sonnet' },
+      ],
+    } } }, beforePersist: persist,
+  });
+  const notify = vi.spyOn(fixture.host, 'notifyProviderChatOptionsChanged');
+  return { ...fixture, notify, catalog: createClaudeModels(fixture.host.getRuntimeHost('claude'), async () => ({ changed: false })) };
 }
 
 async function settleCallbacks() {
@@ -370,7 +332,7 @@ it.each([false, true])('preserves an uncommitted focused alias across another sa
   const saving = new Promise<void>(resolve => { started = resolve; });
   const gate = new Promise<void>(resolve => { finish = resolve; });
   let writes = 0;
-  const h = continuityHarness(async () => { if (++writes === 1) { started(); await gate; } });
+  const h = await continuityHarness(async () => { if (++writes === 1) { started(); await gate; } });
   await h.catalog.refresh();
   const container = document.body.createDiv();
   const picker = renderProviderModelsSection(container, 'claude', 'Claude Code', h.catalog);
@@ -418,7 +380,7 @@ it.each(['outside focus', 'disposed'] as const)('does not restore an older alias
   let started!: () => void;
   const saving = new Promise<void>(resolve => { started = resolve; });
   const gate = new Promise<void>(resolve => { finish = resolve; });
-  const h = continuityHarness(async () => { started(); await gate; });
+  const h = await continuityHarness(async () => { started(); await gate; });
   await h.catalog.refresh();
   const container = document.body.createDiv();
   const outside = document.body.createEl('button', { text: 'Outside settings' });
@@ -453,7 +415,7 @@ it.each(['remove', 'clear'] as const)('discards a focused draft when its selecti
   const saving = new Promise<void>(resolve => { started = resolve; });
   const gate = new Promise<void>(resolve => { finish = resolve; });
   let writes = 0;
-  const h = continuityHarness(async () => { if (++writes === 1) { started(); await gate; } });
+  const h = await continuityHarness(async () => { if (++writes === 1) { started(); await gate; } });
   await h.catalog.refresh();
   const container = document.body.createDiv();
   const picker = renderProviderModelsSection(container, 'claude', 'Claude Code', h.catalog);
@@ -482,7 +444,7 @@ it.each(['remove', 'clear'] as const)('discards a focused draft when its selecti
 });
 
 it('refreshes clean authoritative fields and uses the latest committed alias on Escape', async () => {
-  const h = continuityHarness(async () => {});
+  const h = await continuityHarness(async () => {});
   await h.catalog.refresh();
   const container = document.body.createDiv();
   const picker = renderProviderModelsSection(container, 'claude', 'Claude Code', h.catalog);
@@ -490,9 +452,9 @@ it('refreshes clean authoritative fields and uses the latest committed alias on 
   try {
     opusField().focus();
     await h.coordinator.mutate(draft => {
-      draft.providerConfigs.claude.modelAliases = { opus: 'Official' };
-      draft.providerConfigs.claude.visibleModels = ['opus', 'sonnet', 'gateway-model'];
-      draft.providerConfigs.claude.discoveredModels[0].label = 'Updated Opus';
+      const config = getClaudeProviderSettings(draft);
+      updateClaudeProviderSettings(draft, { modelAliases: { opus: 'Official' }, visibleModels: ['opus', 'sonnet', 'gateway-model'],
+        discoveredModels: config.discoveredModels.map((model, index) => index === 0 ? { ...model, label: 'Updated Opus' } : model) });
     });
     h.catalog.markStale();
     expect(opusField().value).toBe('Official');
@@ -501,13 +463,13 @@ it('refreshes clean authoritative fields and uses the latest committed alias on 
     expect([...container.querySelectorAll('[data-model-id]')].map(row => row.getAttribute('data-model-id'))).toEqual(['opus', 'sonnet', 'gateway-model']);
     fireEvent.input(opusField(), { target: { value: 'Unsaved' } });
     await h.coordinator.mutate(draft => {
-      draft.providerConfigs.claude.modelAliases = { opus: 'Official', sonnet: 'Other' };
+      updateClaudeProviderSettings(draft, { modelAliases: { opus: 'Official', sonnet: 'Other' } });
     });
     h.catalog.markStale();
     expect(opusField().value).toBe('Unsaved');
     expect(document.activeElement).toBe(opusField());
     // Escape reads the current authority even before another panel refresh.
-    await h.coordinator.mutate(draft => { draft.providerConfigs.claude.modelAliases = { opus: 'Latest' }; });
+    await h.coordinator.mutate(draft => { updateClaudeProviderSettings(draft, { modelAliases: { opus: 'Latest' } }); });
     fireEvent.keyDown(opusField(), { key: 'Escape' });
     await waitFor(() => expect(h.notify).toHaveBeenCalledTimes(1));
     await settleCallbacks();
@@ -519,13 +481,13 @@ it('refreshes clean authoritative fields and uses the latest committed alias on 
     await settleCallbacks();
     expect(getClaudeProviderSettings(h.settings).modelAliases).toEqual({ opus: 'Entered' });
     expect(opusField().value).toBe('Entered');
-    await h.coordinator.mutate(draft => { draft.providerConfigs.claude.modelAliases = {}; });
+    await h.coordinator.mutate(draft => { updateClaudeProviderSettings(draft, { modelAliases: {} }); });
     h.catalog.markStale();
     expect(opusField().value).toBe('');
     expect(opusField().placeholder).toBe('Updated Opus');
     expect(within(container).getByRole('button', { name: 'Remove Updated Opus' })).toBeTruthy();
     await h.coordinator.mutate(draft => {
-      draft.providerConfigs.claude.discoveredModels = draft.providerConfigs.claude.discoveredModels.filter(model => model.value !== 'opus');
+      updateClaudeProviderSettings(draft, { discoveredModels: getClaudeProviderSettings(draft).discoveredModels.filter(model => model.value !== 'opus') });
     });
     h.catalog.markStale();
     expect(container.querySelector('[data-model-id="opus"]')).not.toBeNull();
@@ -538,7 +500,7 @@ it('refreshes clean authoritative fields and uses the latest committed alias on 
 });
 
 it('keeps the catalog checkbox focused after selecting and deselecting a model', async () => {
-  const h = continuityHarness(async () => {});
+  const h = await continuityHarness(async () => {});
   await h.catalog.refresh();
   const container = document.body.createDiv();
   const picker = renderProviderModelsSection(container, 'claude', 'Claude Code', h.catalog);
@@ -564,7 +526,7 @@ it('does not take focus back to a catalog checkbox when its pending selection fi
   let started!: () => void;
   const saving = new Promise<void>(resolve => { started = resolve; });
   const gate = new Promise<void>(resolve => { finish = resolve; });
-  const h = continuityHarness(async () => { started(); await gate; });
+  const h = await continuityHarness(async () => { started(); await gate; });
   await h.catalog.refresh();
   const container = document.body.createDiv();
   const outside = document.body.createEl('button', { text: 'Outside catalog' });

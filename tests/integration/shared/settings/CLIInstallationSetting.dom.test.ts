@@ -1,12 +1,11 @@
 /** @vitest-environment jsdom */
+import '@/providers';
 
 import { axe } from '@test/helpers/accessibility';
-import { controlChangeSettled } from '@test/helpers/ObsidianSettingsDOM';
+import { controlChangeSettled } from '@test/helpers/ObsidianHost';
+import { createProviderHostFixture } from '@test/helpers/providerRuntimeHost';
 import { fireEvent, isInaccessible, waitFor, within } from '@testing-library/dom';
 
-vi.mock('obsidian', async () => vi.importActual('@test/helpers/ObsidianSettingsDOM'));
-
-import type { ProviderHost } from '@/core/providers/ProviderHost';
 import { renderCLIInstallationSetting } from '@/shared/settings/CLIInstallationSetting';
 import { renderEnvironmentSettingsSection } from '@/shared/settings/EnvironmentSettingsSection';
 
@@ -161,26 +160,20 @@ describe('CLI installation feedback', () => {
   });
 });
 
-
 describe('CLI installation environment updates', () => {
 
   it.each(['typing', 'snippet'] as const)('refreshes sibling provider cards after a shared PATH update via %s', async (method) => {
     const root = document.body.createDiv({ cls: 'claudian-settings' });
     const providers = root.createDiv();
     const general = root.createDiv();
-    let envText = '';
-    const plugin = {
-      settings: { envSnippets: [{ id: 'test', name: 'New path', scope: 'shared', envVars: 'PATH=/new/bin' }] },
-      app: { workspace: { getLeavesOfType: () => [] } },
-      getEnvironmentVariablesForScope: () => envText,
-      applyEnvironmentVariables: async (_scope: string, value: string) => { envText = value; },
-      mutateSettings: async (fn: (settings: unknown) => void) => fn(plugin.settings),
-    } as unknown as ProviderHost;
+    const { host: plugin } = await createProviderHostFixture({
+      settings: { envSnippets: [{ id: 'test', name: 'New path', description: '', scope: 'shared', envVars: 'PATH=/new/bin' }] },
+    });
     renderCLIInstallationSetting({
       container: providers,
       cliName: 'Test CLI', name: 'Binary path', placeholder: '',
       getValue: () => '', onChange: () => {},
-      inspect: async () => ({ path: envText ? '/new/bin/test' : '/old/bin/test', version: '1.0.0', source: 'auto' }),
+      inspect: async () => ({ path: plugin.getEnvironmentVariablesForScope('shared') ? '/new/bin/test' : '/old/bin/test', version: '1.0.0', source: 'auto' }),
     });
     fireEvent.click(within(providers).getByRole('button', { name: 'Test CLI installation' }));
     renderEnvironmentSettingsSection({ container: general, plugin, scope: 'shared', name: 'Environment', desc: '', placeholder: 'PATH=...' });

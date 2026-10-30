@@ -1,7 +1,8 @@
 import { existsSync, rmSync, writeFileSync } from 'node:fs';
 import * as path from 'node:path';
 
-import { createFixture, fixture, isAlive, turn, waitFor } from '@test/helpers/providers/opencode/OpencodeSharedServerFixture';
+import { writeOpencodeNativePeer } from '@test/helpers/providers/opencode/OpencodeNativePeer';
+import { createFixture, isAlive, turn, waitFor } from '@test/helpers/providers/opencode/OpencodeSharedServerFixture';
 
 import { type ProviderExecutionEvent, type ProviderSessionConfig } from '@/core/execution';
 import { forkOpencodeSession } from '@/providers/opencode/history/OpencodeSessionFork';
@@ -102,9 +103,7 @@ it('fences a new turn on a retained idle session until the settings transition c
 it('rejects an installed OpenCode v1 CLI for chat, discovery and forks while the retired generation stays owned', async () => {
   const f = await createFixture();
   const cliV1 = path.join(f.root, 'opencode-v1.cjs');
-  writeFileSync(cliV1, `#!/usr/bin/env node
-if (process.argv.includes('--version')) console.log('1.2.27');
-`, { mode: 0o700 });
+  writeOpencodeNativePeer(cliV1, { scenario: 'workspace', version: '1.2.27' });
   let control, owned;
   try {
     control = await f.workspace.serverService.acquire(f.cli, f.root, f.environment);
@@ -251,7 +250,7 @@ it('drains a server launched for execution before a transition even when version
   const f = await createFixture();
   f.plugin.getResolvedProviderCliPath = async () => getOpencodeProviderSettings(f.plugin.settings).cliPath;
   const replacementCLI = path.join(f.root, 'replacement.cjs');
-  writeFileSync(replacementCLI, fixture, { mode: 0o700 });
+  writeOpencodeNativePeer(replacementCLI, { scenario: 'workspace' });
   const session = f.createSession();
   let run: Promise<ProviderExecutionEvent[]> | undefined;
   try {

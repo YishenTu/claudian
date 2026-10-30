@@ -1,29 +1,10 @@
-import { createMockEl } from '@test/helpers/MockElement';
 
-import { getToolIcon } from '@/core/tools/toolIcons';
-import type { ToolCallInfo } from '@/core/types';
-import { renderStoredToolCall } from '@/features/chat/rendering/tools/ToolCallRenderer';
 import {
   getToolLabel,
   getToolName,
   getToolSummary,
 } from '@/features/chat/rendering/tools/toolPresentation';
 
-vi.mock('obsidian', () => ({
-  Platform: { resourcePathPrefix: 'app://local/' },
-  setIcon: vi.fn(),
-}));
-
-// Helper to create a basic tool call
-function createToolCall(overrides: Partial<ToolCallInfo> = {}): ToolCallInfo {
-  return {
-    id: 'tool-123',
-    name: 'Read',
-    input: { file_path: '/test/file.md' },
-    status: 'running',
-    ...overrides,
-  };
-}
 
 describe('toolPresentation', () => {
   beforeEach(() => {
@@ -334,22 +315,6 @@ describe('toolPresentation', () => {
 
     it('returns raw name for lifecycle tools with no summary', () => {
       expect(getToolLabel('close_agent', {})).toBe('close_agent');
-    });
-  });
-
-
-  describe('script tool rendering', () => {
-    it.each([
-      ['exec', { code: 'return 1;' }, 'Script: return 1;', 'code', 'JavaScript'],
-      ['Workflow', { code: 'agent("ping")', language: 'Rhai', title: 'pong' }, 'Workflow: pong', 'workflow', 'Rhai'],
-    ])('presents %s with its source language', (name, input, label, icon, language) => {
-      expect(getToolLabel(name, input)).toBe(label);
-      expect(getToolIcon(name)).toBe(icon);
-
-      const toolEl = renderStoredToolCall(createMockEl(), createToolCall({ name, input, status: 'completed', result: 'ok' }));
-      (toolEl.querySelector('.claudian-tool-header') as HTMLElement).click();
-      expect(Array.from(toolEl.querySelectorAll('.claudian-tool-script-label')).map(el => el.textContent))
-        .toEqual([language, 'Output']);
     });
   });
 

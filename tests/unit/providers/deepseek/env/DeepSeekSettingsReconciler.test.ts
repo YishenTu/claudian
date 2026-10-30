@@ -3,11 +3,6 @@ import type { Conversation } from '@/core/types';
 import { deepseekSettingsReconciler } from '@/providers/deepseek/env/DeepSeekSettingsReconciler';
 import { getDeepSeekProviderSettings, updateDeepSeekProviderSettings } from '@/providers/deepseek/settings';
 
-vi.mock('@/core/device/InstallationKey', async () => ({
-  ...(await vi.importActual<typeof import('@/core/device/InstallationKey')>('@/core/device/InstallationKey')),
-  getInstallationKey: () => 'device:current',
-}));
-
 const reconcile = (settings: Record<string, unknown>) => deepseekSettingsReconciler.reconcileModelWithEnvironment(settings);
 const unchanged = { changed: false };
 const changed = { changed: true, sessionPolicy: 'reload' };

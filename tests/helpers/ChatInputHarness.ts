@@ -1,6 +1,6 @@
 import { createConversationPorts, createTestSession, holdResponse } from '@test/helpers/ConversationPorts';
+import { createChatFeatureHost } from '@test/helpers/features/chat/ChatFeatureHostFixture';
 import { createProjectsFake } from '@test/helpers/features/chat/ProjectsFake';
-import { createMockEl } from '@test/helpers/MockElement';
 import type { Mock } from 'vitest';
 
 import type { ProviderExecutionEvent } from '@/core/execution';
@@ -16,11 +16,10 @@ import type { ComposerInputElement } from '@/shared/composer-dropdown/types';
 
 
 function createInput(): ComposerInputElement {
-  return {
-    dispatchEvent: vi.fn().mockReturnValue(true),
-    focus: vi.fn(),
-    value: '',
-  } as unknown as ComposerInputElement;
+  const input = document.createElement('textarea');
+  vi.spyOn(input, 'focus');
+  vi.spyOn(input, 'dispatchEvent');
+  return input;
 }
 
 export function deferred<T>(): {
@@ -75,13 +74,13 @@ function createSelectionSources() {
   return { browser: source(), canvas: source(), editor: source() };
 }
 
-export function createFixture(overrides: Record<string, unknown> = {}) {
+export async function createFixture(overrides: Record<string, unknown> = {}) {
   const {
     onReviewableSettlement,
     getInputContainerEl: inputContainerOverride,
     ...dependencyOverrides
   } = overrides;
-  const defaultInputContainerEl = createMockEl() as unknown as HTMLElement;
+  const defaultInputContainerEl = document.createElement('div') as unknown as HTMLElement;
   const getInputContainerEl = (inputContainerOverride as (() => HTMLElement) | undefined)
     ?? (() => defaultInputContainerEl);
   const selectionSources = createSelectionSources();
@@ -94,7 +93,7 @@ export function createFixture(overrides: Record<string, unknown> = {}) {
   const state: ChatState = (dependencyOverrides.state as ChatState | undefined) ?? new ChatState({}, undefined, session.turns);
   state.currentConversationId = 'conversation-1';
   const input = createInput();
-  const queueIndicator = createMockEl();
+  const queueIndicator = document.createElement('div');
   state.queueIndicatorEl = queueIndicator as any;
   let id = 0;
   const coordinator = {
@@ -108,17 +107,16 @@ export function createFixture(overrides: Record<string, unknown> = {}) {
     state: 'idle',
     steer: vi.fn().mockResolvedValue({ delivery: 'accepted' }),
   };
-  const plugin = {
+  const plugin = vi.mocked(await createChatFeatureHost({
     createConversation: vi.fn(),
     getConversationById: vi.fn().mockResolvedValue(null),
     getConversationList: vi.fn().mockReturnValue([]),
-    getConversationSummary(id: string) { return this.getConversationSync(id); },
+    getConversationSummary(id: string) { return this.getConversationSync!(id); },
     getConversationSync: vi.fn().mockReturnValue({
       id: 'conversation-1',
-      providerId: 'claude',
+      providerId: 'claude', title: 'Conversation', messages: [], sessionId: null, createdAt: Date.now(), lastActivityAt: Date.now(),
     }),
     projects: createProjectsFake([]),
-    providerHost: { workingDirectory: '/vault' },
     renameConversation: vi.fn().mockResolvedValue(undefined),
     settings: {
       enableAutoTitleGeneration: false,
@@ -126,7 +124,7 @@ export function createFixture(overrides: Record<string, unknown> = {}) {
       permissionMode: 'normal',
     },
     updateConversation: vi.fn().mockResolvedValue(undefined),
-  };
+  }));
   const linkedContentToken = Object.freeze({}) as { readonly path?: string };
   const linkedContentController = {
     beginSubmission: vi.fn().mockReturnValue(linkedContentToken),
@@ -144,7 +142,7 @@ export function createFixture(overrides: Record<string, unknown> = {}) {
     state,
     renderer: {
       addMessage: vi.fn().mockImplementation(() => {
-        const el = createMockEl();
+        const el = document.createElement('div');
         el.createDiv({ cls: 'claudian-message-content' });
         return el;
       }),
@@ -166,7 +164,7 @@ export function createFixture(overrides: Record<string, unknown> = {}) {
     selections: new ComposerSelections(selectionSources),
     getInputEl: () => input,
     getWelcomeEl: () => null,
-    getMessagesEl: () => createMockEl() as any,
+    getMessagesEl: () => document.createElement('div') as any,
     getLinkedContentController: () => linkedContentController as any,
     getImageContextManager: () => ({
       clearImages: vi.fn(),
@@ -202,7 +200,7 @@ export function createFixture(overrides: Record<string, unknown> = {}) {
   const ports = createConversationPorts({ ...(deps as any), session });
   // Conversation creation stays real; persistence and reset are observed at their boundary.
   const conversationController = new ConversationController({
-    plugin: plugin as any, state, renderer: deps.renderer, drafts: ports.drafts, session,
+    plugin, state, renderer: deps.renderer, drafts: ports.drafts, session,
     subagentManager: { clear: vi.fn() } as any,
     getWelcomeEl: () => null, setWelcomeEl: () => undefined, getMessagesEl: deps.getMessagesEl,
     getLinkedContentController: () => deps.getLinkedContentController(),

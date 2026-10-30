@@ -2,7 +2,6 @@
 const actualModule0 = await vi.importActual<typeof CLIProbe>('@/core/providers/cli/CLIInstallationProbe');
 const actualModule1 = await vi.importActual<typeof CLIProbe>('@/core/providers/cli/CLIInstallationProbe');
 import '@/providers';
-import '@test/helpers/ObsidianSettingsDOM';
 
 import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -24,8 +23,6 @@ import { createDeepSeekModels } from '@/providers/deepseek/runtime/DeepSeekModel
 import { getDeepSeekProviderSettings, updateDeepSeekProviderSettings } from '@/providers/deepseek/settings';
 import { createDeepSeekSettingsTabRenderer } from '@/providers/deepseek/ui/DeepSeekSettingsTab';
 
-
-vi.mock('obsidian', () => import('@test/helpers/ObsidianSettingsDOM'));
 const deviceKey = getInstallationKey();
 vi.mock('@/core/providers/cli/CLIInstallationProbe', () => ({
   probeCLIInstallation: vi.fn(async ({ path }: { path: string | null }) => ({ path, version: path ? '0.2.0-rc.2' : null, source: 'auto' })),
@@ -267,8 +264,9 @@ describe('DeepSeekSettingsTab', () => {
 
   it('applies a CLI path for this computer as a provider runtime change and resets resolution afterwards', async () => {
     const { host, transitions, mutationsInsideTransition, cliResolver, ui } = await render();
+    const pathsAtReset: Array<Record<string, string>> = [];
     vi.mocked(cliResolver.reset).mockImplementation(() => {
-      expect(getDeepSeekProviderSettings(host.settings).cliPathsByHost).toEqual({ [deviceKey]: '/opt/dsh' });
+      pathsAtReset.push({ ...getDeepSeekProviderSettings(host.settings).cliPathsByHost });
     });
     fireEvent.click(ui.getByRole('button', { name: 'DeepSeek Harness installation' }));
     const input = ui.getByRole('textbox', { name: 'CLI path' });
@@ -276,6 +274,7 @@ describe('DeepSeekSettingsTab', () => {
     fireEvent.keyDown(input, { key: 'Enter' });
 
     await waitFor(() => expect(cliResolver.reset).toHaveBeenCalledTimes(1));
+    expect(pathsAtReset).toEqual([{ [deviceKey]: '/opt/dsh' }]);
     expect(host.applyProviderRuntimeSettings).toHaveBeenCalledTimes(1);
     expect(transitions).toEqual([['deepseek']]);
     expect(mutationsInsideTransition.length).toBeGreaterThan(0);

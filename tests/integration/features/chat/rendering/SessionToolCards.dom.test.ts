@@ -11,13 +11,6 @@ import { MessageRenderer } from '@/features/chat/rendering/MessageRenderer';
 import { ChatState } from '@/features/chat/state/ChatState';
 import { ToolCallStream } from '@/features/chat/turns/ToolCallStream';
 
-HTMLElement.prototype.empty = function () { this.replaceChildren(); };
-HTMLElement.prototype.addClass = function (...classes) { this.classList.add(...classes); };
-HTMLElement.prototype.removeClass = function (...classes) { this.classList.remove(...classes); };
-HTMLElement.prototype.toggleClass = function (classes, enabled) {
-  for (const cls of typeof classes === 'string' ? [classes] : classes) this.classList.toggle(cls, enabled);
-};
-
 // Shapes follow a captured DeepSeek round trip (.context/local/e2e-deepseek), trimmed to three rows.
 const CALLER = 'conv-1791947029595-tl6xjrbsd';
 const RECIPIENT = 'conv-1791946999103-cb11o0a4z';

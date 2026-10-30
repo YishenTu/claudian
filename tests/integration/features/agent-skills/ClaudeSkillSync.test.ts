@@ -13,10 +13,6 @@ import {
 } from '@/features/agent-skills/ClaudeSkillSync';
 
 // Obsidian's parseYaml rejects invalid YAML; the shared mock does not.
-vi.mock('obsidian', async () => ({
-  ...(await vi.importActual<typeof import('@test/__mocks__/obsidian')>('@test/__mocks__/obsidian')),
-  parseYaml: (await vi.importActual<typeof import('yaml')>('yaml')).parse,
-}));
 
 vi.mock('node:fs/promises', async () => (
   (await vi.importActual<typeof import('@test/helpers/core/fsWriteFaults')>('@test/helpers/core/fsWriteFaults')).createFsPromisesWithWriteFaults()

@@ -58,12 +58,7 @@ function createEditor(parent: HTMLElement): ComposerEditor {
 }
 
 beforeEach(() => {
-  HTMLElement.prototype.empty = function () { this.replaceChildren(); };
-  HTMLElement.prototype.addClass = function (...names) { this.classList.add(...names); };
-  HTMLElement.prototype.removeClass = function (...names) { this.classList.remove(...names); };
-  HTMLElement.prototype.hasClass = function (name) { return this.classList.contains(name); };
-  HTMLElement.prototype.toggleClass = function (name, enabled) { for (const cls of Array.isArray(name) ? name : [name]) this.classList.toggle(cls, enabled); };
-  HTMLElement.prototype.scrollIntoView = vi.fn();
+
   vi.mocked(MarkdownRenderer.render).mockReset().mockImplementation(async (_app, markdown, container) => {
     const fixture = nativeLinks[markdown];
     if (!fixture) throw new Error(`No native rendering fixture for ${markdown}`);

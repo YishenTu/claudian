@@ -2,7 +2,7 @@ import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
-import { runtimeHostFor } from '@test/helpers/providerRuntimeHost';
+import { createProviderHostFixture } from '@test/helpers/providerRuntimeHost';
 import { testTime } from '@test/helpers/testClock';
 
 import { isBranchableExecutionSession, isSteerableExecutionSession, type ProviderExecutionRequest, type ProviderExecutionSession } from '@/core/execution';
@@ -18,14 +18,11 @@ it.each([false, true])('edits, switches and resumes native branches without losi
   await fs.mkdir(sessionDir, { recursive: true });
   const sessionFile = path.join(sessionDir, 'source.jsonl');
   await fs.writeFile(sessionFile, JSON.stringify({ type: 'session', version: 3, id: 'pi-source', cwd: root, timestamp: testTime() }) + '\n');
-  const host = {
-    getResolvedProviderCliPath: async () => process.execPath,
-    settings: { model: configuration.model, effortLevel: 'off', systemPrompt: '', userName: '',
+  const host = (await createProviderHostFixture({ settings: { model: configuration.model, effortLevel: 'off', systemPrompt: '', userName: '',
       providerConfigs: { pi: { enabled: true, visibleModels: [configuration.model],
-        discoveredModels: [{ encodedId: configuration.model, id: 'claude-sonnet-4', provider: 'anthropic', label: 'Sonnet', input: ['text', 'image'], reasoning: true, thinkingLevels: ['off', 'high'] }] } } },
-  };
+        discoveredModels: [{ encodedId: configuration.model, id: 'claude-sonnet-4', provider: 'anthropic', label: 'Sonnet', input: ['text', 'image'], reasoning: true, thinkingLevels: ['off', 'high'] }] } } }, overrides: { getResolvedProviderCliPath: async () => process.execPath } })).host;
   let kernel!: PiRPCSessionKernel;
-  const backend = new PiExecutionBackend(runtimeHostFor(host, 'pi'), {
+  const backend = new PiExecutionBackend(host.getRuntimeHost('pi'), {
     createKernel: (spec, callbacks) => {
       kernel = new PiRPCSessionKernel({ ...spec, command: process.execPath,
         args: [path.resolve('tests/fixtures/providers/pi/PiSessionProcess.mjs'), ...spec.args],

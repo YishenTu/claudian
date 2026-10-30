@@ -2,6 +2,7 @@
 
 import { DesktopVault } from '@test/helpers/core/DesktopVault';
 import { createPopoutDocument } from '@test/helpers/dom/popoutDocument';
+import { setObsidianActiveDocument } from '@test/helpers/ObsidianHost';
 import { fireEvent, waitFor, within } from '@testing-library/dom';
 
 import { ProjectService } from '@/app/projects/ProjectService';
@@ -9,17 +10,7 @@ import { ProjectStore } from '@/app/projects/ProjectStore';
 import { editProject } from '@/features/chat/projects/projectActions';
 import { t } from '@/i18n/i18n';
 
-let mockModalDocument: Document | undefined;
-vi.mock('obsidian', async () => {
-  const dom = (await vi.importActual<typeof import('@test/helpers/ObsidianSettingsDOM')>('@test/helpers/ObsidianSettingsDOM'));
-  class Modal extends dom.Modal {
-    // Adapt only Obsidian's active-window selection. The editor, actions and persistence stay real.
-    open() { (mockModalDocument ?? document).body.appendChild(this.modalEl); this.onOpen(); }
-  }
-  return { ...(await vi.importActual<typeof import('@test/__mocks__/obsidian')>('@test/__mocks__/obsidian')), ...dom, Modal };
-});
-
-afterEach(() => { mockModalDocument = undefined; document.body.replaceChildren(); });
+afterEach(() => { setObsidianActiveDocument(); document.body.replaceChildren(); });
 
 it.each([
   { label: 'different instructions', instructions: 'From the second editor', expected: 'From the second editor' },
@@ -38,7 +29,7 @@ it.each([
     editProject(host, original);
     const first = within(document.body).getByRole('dialog', { name: t('chat.projects.editor.titleEdit') });
     const popout = createPopoutDocument();
-    mockModalDocument = popout;
+    setObsidianActiveDocument(popout);
     editProject(host, original);
     const second = within(popout.body).getByRole('dialog', { name: t('chat.projects.editor.titleEdit') });
     expect(first.ownerDocument).not.toBe(second.ownerDocument);

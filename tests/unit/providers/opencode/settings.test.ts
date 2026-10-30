@@ -1,6 +1,5 @@
 import { opencodeModelPolicy } from '@/providers/opencode/OpencodeModelPolicy';
 import { projectOpencodeModelSettings } from '@/providers/opencode/settings';
-const mockGetHostnameKey = vi.fn(() => 'host-a');
 
 import {
   normalizeOpencodeModelAliases,
@@ -11,11 +10,6 @@ import {
   updateOpencodeProviderSettings
 } from '../../../../src/providers/opencode/settings';
 
-vi.mock('@/core/device/InstallationKey', async () => ({
-  ...(await vi.importActual<typeof import('@/core/device/InstallationKey')>('@/core/device/InstallationKey')),
-  getInstallationKey: () => mockGetHostnameKey(),
-}));
-
 describe('OpenCode settings normalization', () => {
   const discoveredModels = [
     { label: 'Anthropic/Claude Sonnet 4', rawId: 'anthropic/claude-sonnet-4' },
@@ -25,7 +19,6 @@ describe('OpenCode settings normalization', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    mockGetHostnameKey.mockReturnValue('host-a');
   });
 
   it('does not migrate saved variant model IDs into another selection', () => {
@@ -86,7 +79,6 @@ describe('OpenCode settings normalization', () => {
   });
 
   it('preserves hostname-scoped CLI paths without assigning them to the current device', () => {
-    mockGetHostnameKey.mockReturnValue('device:current');
 
     const settings = getOpencodeProviderSettings({
       providerConfigs: {

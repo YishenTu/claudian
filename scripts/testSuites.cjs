@@ -1,4 +1,8 @@
 const crossPlatformTests = [
+  'tests/integration/providers/opencode/ToolRendererCompatibility.dom.test.ts',
+  'tests/integration/providers/opencode/app/OpencodeCommandLoader.test.ts',
+  'tests/integration/providers/grok/app/GrokWorkspaceServices.test.ts',
+  'tests/integration/features/chat/tabs/forking/ForkSource.opencode-v2.test.ts',
   'tests/integration/providers/pi/execution/PiRecoveryContext.test.ts',
   // Filesystem, path, URI, and platform-policy regressions need native hosts even without a subprocess.
   'tests/unit/core/process/env.test.ts',

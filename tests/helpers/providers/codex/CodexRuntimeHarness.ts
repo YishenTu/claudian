@@ -1,6 +1,7 @@
 import { PassThrough, Writable } from 'node:stream';
 
 import type { CodexAppServerProcess } from '@/providers/codex/runtime/CodexAppServerProcess';
+import type { CodexLaunchSpec } from '@/providers/codex/runtime/codexLaunchTypes';
 
 type NativeProcessPort = Pick<CodexAppServerProcess, keyof CodexAppServerProcess>;
 type ExitCallback = Parameters<CodexAppServerProcess['onExit']>[0];
@@ -14,8 +15,8 @@ export class CodexRuntimeHarness {
   holdSkills = false;
   requestOverride: ((process: CodexNativeTestProcess, request: any) => boolean) | null = null;
 
-  createProcess(): CodexNativeTestProcess {
-    const process = new CodexNativeTestProcess(this);
+  createProcess(target?: Pick<CodexLaunchSpec['target'], 'platformFamily' | 'platformOs'>): CodexNativeTestProcess {
+    const process = new CodexNativeTestProcess(this, target);
     this.processes.push(process);
     return process;
   }
@@ -52,7 +53,10 @@ export class CodexRuntimeHarness {
 }
 
 export class CodexNativeTestProcess implements NativeProcessPort {
-  constructor(private readonly harness: CodexRuntimeHarness) {}
+  constructor(
+    private readonly harness: CodexRuntimeHarness,
+    private readonly target: Pick<CodexLaunchSpec['target'], 'platformFamily' | 'platformOs'> = { platformFamily: 'unix', platformOs: 'linux' },
+  ) {}
   private readonly pendingResponses = new Map<string, (response: unknown) => void>();
   readonly stdout = new PassThrough();
   readonly stderr = new PassThrough();
@@ -67,6 +71,7 @@ export class CodexNativeTestProcess implements NativeProcessPort {
   readonly instructions = new Map<string, string>();
   readonly turnInstructions: string[] = [];
   readonly turnCounts = new Map<string, number>();
+  stderrText = '';
   alive = false;
   reconciled = false;
   readonly stdin = new Writable({
@@ -84,8 +89,9 @@ export class CodexNativeTestProcess implements NativeProcessPort {
         }
         if (this.harness.requestOverride?.(this, request)) { callback(); return; }
         if (request.method === 'initialize') this.respond(request.id, {
-          userAgent: 'codex/0.160.0', codexHome: '/home/test/.codex',
-          platformFamily: 'unix', platformOs: 'linux',
+          userAgent: 'codex/0.160.0',
+          codexHome: this.target.platformFamily === 'windows' ? 'C:\\Users\\test\\.codex' : '/home/test/.codex',
+          ...this.target,
         });
         if (request.method === 'model/list') this.respond(request.id, { data: [], nextCursor: null });
         if (request.method === 'plugin/reconcile' && this.harness.autoReconcile) this.completeReconcile();
@@ -135,10 +141,11 @@ export class CodexNativeTestProcess implements NativeProcessPort {
   });
   start(): void { this.alive = true; }
   isAlive(): boolean { return this.alive; }
-  getStderrSnapshot(): string { return ''; }
+  getStderrSnapshot(): string { return this.stderrText; }
   onExit(callback: ExitCallback): void { this.exits.add(callback); }
   offExit(callback: ExitCallback): void { this.exits.delete(callback); }
-  async shutdown(): Promise<void> {
+  async shutdown(): Promise<void> { if (this.alive) this.exit(); }
+  exit(): void {
     this.alive = false;
     for (const callback of [...this.exits]) callback(null, null);
   }
@@ -150,6 +157,9 @@ export class CodexNativeTestProcess implements NativeProcessPort {
   }
   respond(id: number, result: unknown): void {
     this.stdout.write(`${JSON.stringify({ id, result })}\n`);
+  }
+  respondError(id: number, message: string, code = -32603): void {
+    this.stdout.write(`${JSON.stringify({ id, error: { code, message } })}\n`);
   }
   notify(method: string, params: unknown = {}): void {
     if (method === 'turn/started' || method === 'turn/completed') {

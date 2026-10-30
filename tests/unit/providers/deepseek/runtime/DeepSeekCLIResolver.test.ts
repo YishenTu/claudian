@@ -1,3 +1,4 @@
+import { getInstallationKey } from '@/core/device/InstallationKey';
 const actualModule0 = await vi.importActual<typeof import('@/core/process/cliBinaryLocator')>('@/core/process/cliBinaryLocator');
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import * as os from 'node:os';
@@ -6,8 +7,6 @@ import { dirname, join } from 'node:path';
 import { findCLIBinaryPath, resolveConfiguredCLIPath } from '@/core/process/cliBinaryLocator';
 import { DeepSeekCLIResolver } from '@/providers/deepseek/runtime/DeepSeekCLIResolver';
 
-
-vi.mock('@/core/device/InstallationKey', () => ({ getInstallationKey: () => 'device:test' }));
 vi.mock('node:os', async () => ({ ...(await vi.importActual<typeof import('node:os')>('node:os')), homedir: vi.fn() }));
 vi.mock('@/core/process/cliBinaryLocator', async () => ({
   ...(await vi.importActual<typeof import('@/core/process/cliBinaryLocator')>('@/core/process/cliBinaryLocator')), findCLIBinaryPath: vi.fn(), resolveConfiguredCLIPath: vi.fn(),
@@ -21,7 +20,7 @@ describe('DeepSeek installation selection', () => {
   let app: string;
   let cli: string;
   let resolver: DeepSeekCLIResolver;
-  const settings = (path = '') => ({ providerConfigs: { deepseek: { cliPathsByHost: { 'device:test': path } } } });
+  const settings = (path = '') => ({ providerConfigs: { deepseek: { cliPathsByHost: { [getInstallationKey()]: path } } } });
 
   beforeEach(() => {
     root = realpathSync(mkdtempSync(join(os.tmpdir(), 'deepseek discovery ')));

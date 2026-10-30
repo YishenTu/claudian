@@ -1,9 +1,8 @@
-import { writeFileSync } from 'node:fs';
 import * as path from 'node:path';
 
 import { createForkTestEnvironment } from '@test/helpers/features/chat/ProviderForkTestHarness';
-import { runtimeHostFor } from '@test/helpers/providerRuntimeHost';
-import { createFixture, fixture, request } from '@test/helpers/providers/opencode/OpencodeHTTPExecutionFixture';
+import { createFixture, request } from '@test/helpers/providers/opencode/OpencodeHTTPExecutionFixture';
+import { writeOpencodeNativePeer } from '@test/helpers/providers/opencode/OpencodeNativePeer';
 
 import { type ProviderExecutionEvent, ProviderExecutionLifecycleRegistry, type ProviderSessionEvent } from '@/core/execution';
 import { ChatExecutionCoordinator } from '@/features/chat/execution/ChatExecutionCoordinator';
@@ -43,14 +42,12 @@ it('delivers child completion and automatic parent replies after the requested t
 it.each(['background-approval', 'background-nested', 'mcp-form-late'])('keeps %s interactions current and protects execution from cooling after the parent finishes', async text => {
   const env = await createForkTestEnvironment();
   const cliPath = path.join(env.root, 'opencode.cjs');
-  writeFileSync(cliPath, fixture, { mode: 0o700 });
+  writeOpencodeNativePeer(cliPath, { scenario: 'execution', version: '2.0.12' });
   env.host.getResolvedProviderCliPath = async () => cliPath;
-  env.host.mutateSettings = async mutate => { await mutate(env.host.settings); };
-  env.host.mutateSettingsConditionally = async mutate => { await mutate(env.host.settings); };
   env.host.notifyProviderChatOptionsChanged = () => undefined;
   env.host.settings.providerConfigs.opencode = { enabled: true, visibleModels: ['deepseek/chat'], discoveredModels: [{ rawId: 'deepseek/chat', label: 'DeepSeek' }] };
   const serverService = new OpencodeServerService();
-  const backend = new OpencodeExecutionBackend(runtimeHostFor(env.host, 'opencode'), { serverService });
+  const backend = new OpencodeExecutionBackend(env.host.getRuntimeHost('opencode'), { serverService });
   const conversation = await env.repository.create({ providerId: 'opencode' });
   let release!: () => void, childAsked!: () => void, replied!: () => void;
   const gate = new Promise<void>(resolve => { release = resolve; });

@@ -2,13 +2,15 @@ import '@/providers';
 
 import { readFileSync } from 'node:fs';
 import * as fs from 'node:fs/promises';
-import * as os from 'node:os';
 import * as path from 'node:path';
 
+import { DesktopVault } from '@test/helpers/core/DesktopVault';
 import { DEFAULT_CLAUDIAN_SETTINGS } from '@test/helpers/defaultSettings';
-import { runtimeHostFor } from '@test/helpers/providerRuntimeHost';
+import { createObsidianPlugin } from '@test/helpers/ObsidianSettingsHost';
+import { createProviderHostFixture } from '@test/helpers/providerRuntimeHost';
 import { testDate, testTime } from '@test/helpers/testClock';
-import { App, Notice, type Plugin } from 'obsidian';
+import type { App} from 'obsidian';
+import { Notice } from 'obsidian';
 
 import { ConversationRepository } from '@/app/conversations/ConversationRepository';
 import { SessionMetadataLoader } from '@/app/conversations/SessionMetadataLoader';
@@ -18,7 +20,7 @@ import { SharedStorageService } from '@/app/storage/SharedStorageService';
 import { CLAUDIAN_SETTINGS_PATH, getDeviceSessionsPath, SESSIONS_PATH } from '@/core/bootstrap/storagePaths';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { ProviderSettingsCoordinator } from '@/core/providers/ProviderSettingsCoordinator';
-import { VaultFileAdapter } from '@/core/storage/VaultFileAdapter';
+import type { VaultFileAdapter } from '@/core/storage/VaultFileAdapter';
 import type { Conversation, SessionMetadata, SubagentInfo } from '@/core/types';
 import { organizeSessionList } from '@/features/chat/session-manager/SessionListOrganizer';
 import { ClaudeExecutionBackend } from '@/providers/claude/execution/ClaudeExecutionBackend';
@@ -35,35 +37,27 @@ let app: App;
 let adapter: VaultFileAdapter;
 let store: ConversationPersistenceStore;
 
+let vault: DesktopVault;
 beforeEach(async () => {
-  root = await fs.mkdtemp(path.join(os.tmpdir(), 'claudian-metadata-'));
-  app = new App();
-  app.vault.adapter = {
-    exists: async (file: string) => fs.access(path.join(root, file)).then(() => true, () => false),
-    stat: async (file: string) => {
-      const stat = await fs.stat(path.join(root, file));
-      return { type: stat.isDirectory() ? 'folder' : 'file', mtime: stat.mtimeMs, ctime: stat.ctimeMs, size: stat.size };
-    },
-    read: (file: string) => fs.readFile(path.join(root, file), 'utf8'),
-    write: (file: string, data: string) => fs.writeFile(path.join(root, file), data),
-    mkdir: (file: string) => fs.mkdir(path.join(root, file), { recursive: true }),
-    remove: (file: string) => fs.unlink(path.join(root, file)),
-    rename: (source: string, target: string) => fs.rename(path.join(root, source), path.join(root, target)),
-    list: async (folder: string) => {
-      const entries = await fs.readdir(path.join(root, folder), { withFileTypes: true });
-      return {
-        files: entries.filter(entry => entry.isFile()).map(entry => `${folder}/${entry.name}`),
-        folders: entries.filter(entry => entry.isDirectory()).map(entry => `${folder}/${entry.name}`),
-      };
-    },
-  } as unknown as App['vault']['adapter'];
-  adapter = new VaultFileAdapter(app);
+  vault = await DesktopVault.create();
+  root = vault.root;
+  app = vault.app;
+  adapter = vault.files;
   store = new ConversationPersistenceStore(adapter, DEVICE_KEY);
 });
 
 afterEach(async () => {
   vi.restoreAllMocks();
-  await fs.rm(root, { recursive: true, force: true });
+  await vault.dispose();
+});
+
+test('does not create storage directories during read-only initialization', async () => {
+  const mkdir = vi.spyOn(app.vault.adapter, 'mkdir');
+  const write = vi.spyOn(app.vault.adapter, 'write');
+  await new SharedStorageService(createObsidianPlugin(app), DEFAULT_CLAUDIAN_SETTINGS).initialize();
+  expect(mkdir).not.toHaveBeenCalled();
+  expect(write).not.toHaveBeenCalled();
+  expect(await vault.snapshot()).toEqual(new Map());
 });
 
 test('writes compact metadata without changing its contents', async () => {
@@ -160,7 +154,8 @@ test('execution snapshots avoid history payload serialization while persistence 
     messages: [{ id: 'message-1', role: 'assistant', content: '', timestamp: testDate().getTime(),
       toolCalls: [{ id: subagent.id, name: 'Agent', input: {}, status: 'completed', isExpanded: false, subagent }] }],
   };
-  const session = new ClaudeExecutionBackend(runtimeHostFor({ settings: {} }, 'claude')).createSession({
+  const { host } = await createProviderHostFixture({ app });
+  const session = new ClaudeExecutionBackend(host.getRuntimeHost('claude')).createSession({
     lifecycle: 'persistent', nativePersistence: 'enabled', workingDirectory: root,
     resumeSeed: { providerSessionId: 'native-1', providerState },
     interactionPort: { dismissInteraction() {}, requestApproval: async ({ interactionId }) => ({ interactionId, decision: 'deny' }),
@@ -666,7 +661,7 @@ test('assignment recovery retains its valid source until the existing device tar
   await adapter.write(marker, JSON.stringify({ schemaVersion: 1, conversationId: metadata.id, deviceKey: DEVICE_KEY }));
   await adapter.write(CLAUDIAN_SETTINGS_PATH, JSON.stringify({ userName: 'Example' }));
 
-  await new SharedStorageService({ app } as Plugin, DEFAULT_CLAUDIAN_SETTINGS).initialize();
+  await new SharedStorageService(createObsidianPlugin(app), DEFAULT_CLAUDIAN_SETTINGS).initialize();
 
   expect(await adapter.read(source)).toBe(JSON.stringify(metadata));
   expect(await adapter.read(target)).toBe('{');
@@ -674,7 +669,7 @@ test('assignment recovery retains its valid source until the existing device tar
 
   const repaired = { ...metadata, title: 'Repaired device record' };
   await adapter.write(target, JSON.stringify(repaired));
-  await new SharedStorageService({ app } as Plugin, DEFAULT_CLAUDIAN_SETTINGS).initialize();
+  await new SharedStorageService(createObsidianPlugin(app), DEFAULT_CLAUDIAN_SETTINGS).initialize();
   expect(await adapter.exists(source)).toBe(false);
   expect(await adapter.exists(marker)).toBe(false);
   expect(await store.metadataReader.load(metadata.id)).toMatchObject({ source: 'device', metadata: repaired });
@@ -757,7 +752,7 @@ test('initialization loads settings while sidecar discovery is pending and waits
     return list(folder);
   });
   const exists = vi.spyOn(app.vault.adapter, 'exists');
-  const storage = new SharedStorageService({ app } as Plugin, DEFAULT_CLAUDIAN_SETTINGS);
+  const storage = new SharedStorageService(createObsidianPlugin(app), DEFAULT_CLAUDIAN_SETTINGS);
   let finished = false;
   const initializing = storage.initialize().then(result => { finished = true; return result; });
   try {
@@ -784,7 +779,7 @@ test('initialization joins recovery before reporting a settings failure', async 
     if (file === CLAUDIAN_SETTINGS_PATH) return Promise.reject(failure);
     return read(file);
   });
-  const storage = new SharedStorageService({ app } as Plugin, DEFAULT_CLAUDIAN_SETTINGS);
+  const storage = new SharedStorageService(createObsidianPlugin(app), DEFAULT_CLAUDIAN_SETTINGS);
   await expect(storage.initialize()).rejects.toBe(failure);
   expect(JSON.parse(await adapter.read(`${DEVICE_PATH}/${metadata.id}.meta.json`))).toEqual(metadata);
   expect(await adapter.exists(`${SESSIONS_PATH}/${metadata.id}.assigned.json`)).toBe(false);
@@ -798,7 +793,7 @@ test.each(['list', 'read', 'rename'] as const)(
       schemaVersion: 1, conversationId: metadata.id, deviceKey: DEVICE_KEY,
     }));
     await adapter.write(CLAUDIAN_SETTINGS_PATH, JSON.stringify({ userName: 'Example' }));
-    const storage = new SharedStorageService({ app } as Plugin, DEFAULT_CLAUDIAN_SETTINGS);
+    const storage = new SharedStorageService(createObsidianPlugin(app), DEFAULT_CLAUDIAN_SETTINGS);
     const original = app.vault.adapter[operation].bind(app.vault.adapter) as (...args: string[]) => ReturnType<App['vault']['adapter'][typeof operation]>;
     let failed = false;
     (vi.spyOn(app.vault.adapter, operation) as import('vitest').MockInstance<(...args: string[]) => ReturnType<App['vault']['adapter'][typeof operation]>>).mockImplementation((...args: string[]): ReturnType<App['vault']['adapter'][typeof operation]> => {

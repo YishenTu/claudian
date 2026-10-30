@@ -21,7 +21,7 @@ it('defers hidden side-chat Markdown, catches up when visible, and releases view
     for (const observer of observers) observer.callback([{ isIntersecting, target: observer.target } as IntersectionObserverEntry], {} as IntersectionObserver);
   };
   try {
-    const harness = createHarness();
+    const harness = await createHarness();
     const { started } = await startSideChat(harness);
     harness.backend.latest.establishChild('side-session');
     const runtime = harness.controller.runtime!;

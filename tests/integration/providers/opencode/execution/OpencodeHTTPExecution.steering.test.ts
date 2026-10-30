@@ -1,9 +1,8 @@
-import { writeFileSync } from 'node:fs';
 import * as path from 'node:path';
 
 import { createForkTestEnvironment } from '@test/helpers/features/chat/ProviderForkTestHarness';
-import { runtimeHostFor } from '@test/helpers/providerRuntimeHost';
-import { createFixture, fixture, releaseSteeringEventsOnAdmission, request } from '@test/helpers/providers/opencode/OpencodeHTTPExecutionFixture';
+import { createFixture, releaseSteeringEventsOnAdmission, request } from '@test/helpers/providers/opencode/OpencodeHTTPExecutionFixture';
+import { writeOpencodeNativePeer } from '@test/helpers/providers/opencode/OpencodeNativePeer';
 
 import { isSteerableExecutionSession, type ProviderExecutionEvent, ProviderExecutionLifecycleRegistry, type ProviderSessionEvent } from '@/core/execution';
 import type { ChatMessage } from '@/core/types';
@@ -134,14 +133,12 @@ describe('native steering', () => {
   it.each(['steer', 'steer-late'])('keeps the submitted pair bound to the prompt across a %s delivery', async text => {
     const env = await createForkTestEnvironment();
     const cliPath = path.join(env.root, 'opencode.cjs');
-    writeFileSync(cliPath, fixture, { mode: 0o700 });
+    writeOpencodeNativePeer(cliPath, { scenario: 'execution', version: '2.0.12' });
     env.host.getResolvedProviderCliPath = async () => cliPath;
-    env.host.mutateSettings = async mutate => { await mutate(env.host.settings); };
-    env.host.mutateSettingsConditionally = async mutate => { await mutate(env.host.settings); };
     env.host.notifyProviderChatOptionsChanged = () => undefined;
     env.host.settings.providerConfigs.opencode = { enabled: true, visibleModels: ['deepseek/chat'], discoveredModels: [{ rawId: 'deepseek/chat', label: 'DeepSeek' }] };
     const serverService = new OpencodeServerService();
-    const backend = new OpencodeExecutionBackend(runtimeHostFor(env.host, 'opencode'), { serverService });
+    const backend = new OpencodeExecutionBackend(env.host.getRuntimeHost('opencode'), { serverService });
     const conversation = await env.repository.create({ providerId: 'opencode' });
     const events: ProviderExecutionEvent[] = [];
     let steered: Promise<ChatSteerOutcome> | undefined;

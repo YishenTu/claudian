@@ -1,5 +1,6 @@
 import { CODEX_SPARK_MODEL, TEST_CODEX_CATALOG } from '@test/helpers/codexModels';
 
+import { getInstallationKey } from '@/core/device/InstallationKey';
 import { resolveCodexReasoningSummary } from '@/providers/codex/config';
 import {
   DEFAULT_CODEX_PROVIDER_SETTINGS,
@@ -14,19 +15,11 @@ import {
   projectCodexModelSettings,
   updateCodexProviderSettings,
 } from '@/providers/codex/settings';
-
-const mockGetHostnameKey = vi.fn(() => 'host-a');
 const originalPlatform = process.platform;
-
-vi.mock('@/core/device/InstallationKey', async () => ({
-  ...(await vi.importActual<typeof import('@/core/device/InstallationKey')>('@/core/device/InstallationKey')),
-  getInstallationKey: () => mockGetHostnameKey(),
-}));
 
 describe('codex settings', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockGetHostnameKey.mockReturnValue('host-a');
   });
 
   afterEach(() => {
@@ -78,14 +71,14 @@ describe('codex settings', () => {
         codex: {
           cliPathsByHost: ['/array/codex'],
           wslDistroOverridesByHost: {
-            ' host-a ': ' Ubuntu ',
+            [` ${getInstallationKey()} `]: ' Ubuntu ',
             invalid: 42,
           },
         },
       },
     })).toMatchObject({
       cliPathsByHost: {},
-      wslDistroOverridesByHost: { 'host-a': 'Ubuntu' },
+      wslDistroOverridesByHost: { [getInstallationKey()]: 'Ubuntu' },
     });
   });
 
@@ -337,7 +330,6 @@ describe('codex settings', () => {
   });
 
   it('preserves hostname-scoped settings without assigning them to the current device', () => {
-    mockGetHostnameKey.mockReturnValue('device:current');
 
     const settings = getCodexProviderSettings({
       providerConfigs: {
@@ -393,10 +385,10 @@ describe('codex settings', () => {
       installationMethod: 'wsl',
       wslDistroOverride: 'Ubuntu-24.04',
       installationMethodsByHost: {
-        'host-a': 'wsl',
+        [getInstallationKey()]: 'wsl',
       },
       wslDistroOverridesByHost: {
-        'host-a': 'Ubuntu-24.04',
+        [getInstallationKey()]: 'Ubuntu-24.04',
       },
     });
   });
@@ -423,7 +415,7 @@ describe('codex settings', () => {
 
     expect(next.installationMethodsByHost).toEqual({
       'host-b': 'wsl',
-      'host-a': 'native-windows',
+      [getInstallationKey()]: 'native-windows',
     });
     expect(next.wslDistroOverridesByHost).toEqual({
       'host-b': 'Debian',
@@ -436,11 +428,11 @@ describe('codex settings', () => {
       providerConfigs: {
         codex: {
           installationMethodsByHost: {
-            'host-a': 'wsl',
+            [getInstallationKey()]: 'wsl',
             'host-b': 'wsl',
           },
           wslDistroOverridesByHost: {
-            'host-a': 'Ubuntu-24.04',
+            [getInstallationKey()]: 'Ubuntu-24.04',
             'host-b': 'Debian',
           },
         },
@@ -477,11 +469,11 @@ describe('codex settings', () => {
             installationMethod: 'native-windows',
             wslDistroOverride: '',
             installationMethodsByHost: {
-              'host-a': 'wsl',
+              [getInstallationKey()]: 'wsl',
               'host-b': 'wsl',
             },
             wslDistroOverridesByHost: {
-              'host-a': 'Ubuntu-24.04',
+              [getInstallationKey()]: 'Ubuntu-24.04',
               'host-b': 'Debian',
             },
           },
@@ -489,7 +481,7 @@ describe('codex settings', () => {
       },
       {
         platform: 'darwin',
-        hostnameKey: 'host-a',
+        hostnameKey: getInstallationKey(),
       },
     );
 
@@ -519,7 +511,7 @@ describe('codex settings', () => {
       },
       {
         platform: 'win32',
-        hostnameKey: 'host-a',
+        hostnameKey: getInstallationKey(),
       },
     );
 

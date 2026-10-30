@@ -3,7 +3,6 @@ import { axe } from '@test/helpers/accessibility';
 import { DesktopVault } from '@test/helpers/core/DesktopVault';
 import { clearWriteFaults, failWritesUnder } from '@test/helpers/core/fsWriteFaults';
 import { fireEvent, screen, waitFor, within } from '@testing-library/dom';
-import type { App } from 'obsidian';
 import type { Mock } from 'vitest';
 
 import { AGENT_SKILLS_ROOT, CLAUDE_COMMANDS_ROOT, CLAUDE_SKILLS_ROOT } from '@/features/agent-skills/AgentSkillRepository';
@@ -11,18 +10,9 @@ import { ClaudeSkillSync } from '@/features/agent-skills/ClaudeSkillSync';
 import { SkillSyncModal } from '@/features/agent-skills/SkillSyncModal';
 import { t } from '@/i18n/i18n';
 
-
-
 vi.mock('node:fs/promises', async () => (
   (await vi.importActual<typeof import('@test/helpers/core/fsWriteFaults')>('@test/helpers/core/fsWriteFaults')).createFsPromisesWithWriteFaults()
 ));
-
-vi.mock('obsidian', async () => ({
-  ...(await vi.importActual<typeof import('@test/__mocks__/obsidian')>('@test/__mocks__/obsidian')),
-  ...(await vi.importActual<typeof import('@test/helpers/ObsidianSettingsDOM')>('@test/helpers/ObsidianSettingsDOM')),
-  // Obsidian's parseYaml rejects invalid YAML; the shared mock does not.
-  parseYaml: (await vi.importActual<typeof import('yaml')>('yaml')).parse,
-}));
 
 function skill(name: string, description = 'Description'): string {
   return `---\nname: ${name}\ndescription: ${description}\nallowed-tools: [Read]\n---\nInstructions\n`;
@@ -46,7 +36,9 @@ describe('SkillSyncModal', () => {
   });
 
   async function open(): Promise<HTMLElement> {
-    new SkillSyncModal({} as App, sync, onFinished).open();
+    const modal = new SkillSyncModal(vault.app, sync, onFinished);
+    onTestFinished(() => modal.close());
+    modal.open();
     const dialog = screen.getByRole('dialog');
     await waitFor(() => expect(within(dialog).queryByText(t('settings.skills.sync.loading'))).toBeNull());
     return dialog;

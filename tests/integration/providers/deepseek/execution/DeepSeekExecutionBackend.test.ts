@@ -1,10 +1,14 @@
+/**
+ * @vitest-environment jsdom
+ * @vitest-environment-options {"customExportConditions":["node","node-addons"]}
+ */
 import '@/providers';
 
 import { createHarness as createCoordinator } from '@test/helpers/ChatExecutionHarness';
 import { createFixture } from '@test/helpers/ChatInputHarness';
 import { nativeDefaults } from '@test/helpers/deepseek/NativeDefaults';
 import { jobsOf, NATIVE_RESET, NativePeer, type NativePeerHostOptions, type NativePeerLifecycle, rootFollow } from '@test/helpers/deepseek/NativePeer';
-import { runtimeHostFor } from '@test/helpers/providerRuntimeHost';
+import { createProviderHostFixture } from '@test/helpers/providerRuntimeHost';
 import { testDate } from '@test/helpers/testClock';
 import type { Mock } from 'vitest';
 
@@ -14,8 +18,6 @@ import type { ImageAttachment } from '@/core/types';
 import { DeepSeekExecutionBackend } from '@/providers/deepseek/execution/DeepSeekExecutionBackend';
 import { getDeepSeekHome } from '@/providers/deepseek/runtime/DeepSeekHome';
 import type { DeepSeekHost } from '@/providers/deepseek/runtime/DeepSeekHost';
-
-
 
 let peer: NativePeer;
 let deepseek: DeepSeekHost;
@@ -30,7 +32,7 @@ let nativeTurn: number;
 let followed: string;
 let port: ProviderInteractionPort;
 const time = testDate().getTime();
-const host = { settings: { locale: 'en', providerConfigs: { deepseek: { enabled: true, visibleModels: ['deepseek:native/model'], discoveredModels: [{ encodedId: 'deepseek:native/model', provider: 'native', id: 'model', label: 'Model', reasoning: [{ id: 'low', name: 'Low' }, { id: 'high', name: 'High' }] }] } } } } as unknown as ProviderHost;
+let host: ProviderHost;
 
 function request(text = 'requested'): ProviderExecutionRequest {
   return { input: [{ type: 'text', text }], configuration: { systemInstructions: { kind: 'explicit', instructions: 'literal {prompt}' }, permissionMode: 'normal' }, toolPolicy: { kind: 'provider-default' }, signal: new AbortController().signal };
@@ -52,6 +54,7 @@ function answer(text: string, step = 0): void {
 async function collect(events: AsyncIterable<ProviderExecutionEvent>, into: ProviderExecutionEvent[]): Promise<void> { for await (const event of events) into.push(event); }
 
 beforeEach(async () => {
+  ({ host } = await createProviderHostFixture({ settings: { locale: 'en', providerConfigs: { deepseek: { enabled: true, visibleModels: ['deepseek:native/model'], discoveredModels: [{ encodedId: 'deepseek:native/model', provider: 'native', id: 'model', label: 'Model', reasoning: [{ id: 'low', name: 'Low' }, { id: 'high', name: 'High' }] }] } } } }));
   permission = 'workspace-write'; inbox = []; seq = 3; nativeTurn = 0; followed = 'root'; sessionEvents = [];
   port = { requestApproval: vi.fn(), askUserQuestion: vi.fn(), dismissInteraction: vi.fn() };
   peer = new NativePeer();
@@ -83,7 +86,7 @@ function savedState(overrides: Record<string, unknown> = {}): Record<string, unk
 }
 function create(resume: boolean | NonNullable<ProviderSessionConfig['resumeSeed']> = false, lifecycle: ProviderSessionConfig['lifecycle'] = 'persistent'): void {
   const resumeSeed = resume === true ? { providerSessionId: 'root', providerState: savedState() } : resume || undefined;
-  session = new DeepSeekExecutionBackend(runtimeHostFor(host, 'deepseek'), () => deepseek).createSession({
+  session = new DeepSeekExecutionBackend(host.getRuntimeHost('deepseek'), () => deepseek).createSession({
     lifecycle, nativePersistence: lifecycle === 'ephemeral' ? 'disabled-if-supported' : 'enabled', workingDirectory: '/vault', interactionPort: port,
     ...(resumeSeed ? { resumeSeed } : {}),
   });
@@ -1156,7 +1159,7 @@ it('recovers the saved native preset before resuming an unbound conversation', a
     const value = await ordinary(method, args) as any;
     return method === 'session/projections' ? { ...value, values: { ...value.values, agentPreset: 'claudian-code' } } : value;
   };
-  session = new DeepSeekExecutionBackend(runtimeHostFor(host, 'deepseek'), () => deepseek).createSession({
+  session = new DeepSeekExecutionBackend(host.getRuntimeHost('deepseek'), () => deepseek).createSession({
     lifecycle: 'persistent', nativePersistence: 'enabled', workingDirectory: '/vault', interactionPort: port, resumeSeed: { providerSessionId: 'root' },
   });
   const run = session.execute(request()); const events: ProviderExecutionEvent[] = []; const done = collect(run.events, events);
@@ -1281,12 +1284,12 @@ async function createMainChat(options: Omit<NativePeerHostOptions, 'beforeStart'
   await deepseek.dispose();
   ({ deepseek, lifecycle } = peer.host({ ...options, beforeStart: start }));
   const coordinator = createCoordinator({
-    resolveBackend: () => new DeepSeekExecutionBackend(runtimeHostFor(host, 'deepseek'), () => deepseek),
+    resolveBackend: () => new DeepSeekExecutionBackend(host.getRuntimeHost('deepseek'), () => deepseek),
     onRequestedEvent: event => fixture.controller.handleExecutionEvent(event),
   });
   const image: ImageAttachment = { id: 'image', name: 'pixel.png', mediaType: 'image/png', data: 'aW1hZ2U=', size: 5, source: 'paste' };
   let images: ImageAttachment[] = [];
-  const fixture = createFixture({
+  const fixture = await createFixture({
     getTabProviderId: () => 'deepseek',
     getSettings: () => settings,
     getExecutionCoordinator: () => coordinator.coordinator,
@@ -1295,7 +1298,7 @@ async function createMainChat(options: Omit<NativePeerHostOptions, 'beforeStart'
       hasImages: () => images.length > 0, setImages: (next: ImageAttachment[]) => { images = next; },
     }),
   });
-  fixture.plugin.getConversationSync.mockReturnValue({ id: 'conversation-1', providerId: 'deepseek' });
+  fixture.plugin.getConversationSync.mockReturnValue({ ...fixture.plugin.getConversationSync('conversation-1')!, providerId: 'deepseek' });
   await coordinator.coordinator.bindConversation({ conversationId: 'conversation-1', providerId: 'deepseek' });
   return { fixture, start, image, coordinator: coordinator.coordinator, sessionEvents: coordinator.sessionEvents, interactionPort: coordinator.interactionPort, getImages: () => images, clearImages: () => { images = []; }, attachImage: () => { images = [image]; },
     dispose: async () => { await coordinator.coordinator.dispose(); await coordinator.registry.dispose(); },
@@ -1439,7 +1442,6 @@ it.each<Partial<ProviderExecutionRequest>>([
   expect(peer.calls.some(c => c.method === 'commands/execute' || c.method === 'session/prompt')).toBe(false);
 });
 
-
 it('restores the draft and retries a corrected startup on the same chat binding', async () => {
   const ordinary = peer.onCall;
   peer.onCall = (method, args) => {
@@ -1506,7 +1508,6 @@ it.each(['root', 'child'])('closes %s background scope on process exit and waits
     expect(chat.fixture.state.messages.filter(m => m.role === 'user')).toHaveLength(2);
   } finally { release(); await chat.dispose(); }
 });
-
 
 /** A bound root with a running job and a continuable child whose follow snapshot native still holds back. */
 async function holdChildSnapshot(): Promise<{ childSnapshot: () => void; rootJobs: unknown[] }> {

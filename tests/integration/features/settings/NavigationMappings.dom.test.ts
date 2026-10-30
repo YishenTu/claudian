@@ -1,38 +1,32 @@
 /** @vitest-environment jsdom */
 import '@/providers';
-import '@test/helpers/ObsidianSettingsDOM';
 
 import { deserialize, serialize } from 'node:v8';
 
 import { axe } from '@test/helpers/accessibility';
-import { DEFAULT_CLAUDIAN_SETTINGS } from '@test/helpers/defaultSettings';
+import { createFeatureHostFixture } from '@test/helpers/FeatureHostFixture';
+import { createObsidianPlugin } from '@test/helpers/ObsidianSettingsHost';
 import { fireEvent, within } from '@testing-library/dom';
 
-import { SettingsCoordinator } from '@/app/settings/SettingsCoordinator';
 import { ClaudianSettingTab } from '@/features/settings/ClaudianSettings';
 import { buildNavMappingText } from '@/features/settings/keyboardNavigation';
 import { t } from '@/i18n/i18n';
-
-vi.mock('@/shared/settings/EnvironmentSettingsSection', () => ({ renderEnvironmentSettingsSection() {} }));
-vi.mock('obsidian', async () => ({
-  ...(await vi.importActual<typeof import('@test/__mocks__/obsidian')>('@test/__mocks__/obsidian')),
-  ...(await vi.importActual<typeof import('@test/helpers/ObsidianSettingsDOM')>('@test/helpers/ObsidianSettingsDOM')),
-}));
 
 it('keeps and then persists the newer navigation draft when an older save completes', async () => {
   globalThis.structuredClone ??= value => deserialize(serialize(value));
   vi.useFakeTimers();
   let usingFakeTimers = true;
-  const settings = { ...structuredClone(DEFAULT_CLAUDIAN_SETTINGS), enableAutoTitleGeneration: false };
   let release!: () => void;
   const gate = new Promise<void>(resolve => { release = resolve; });
   const saved: string[] = [];
-  const coordinator = new SettingsCoordinator(settings, async draft => {
-    saved.push(buildNavMappingText(draft.keyboardNavigation));
-    if (saved.length === 1) await gate;
+  const { settings, coordinator, host } = await createFeatureHostFixture({
+    settings: { enableAutoTitleGeneration: false },
+    beforePersist: async draft => {
+      saved.push(buildNavMappingText(draft.keyboardNavigation));
+      if (saved.length === 1) await gate;
+    },
   });
-  const host = { settings, mutateSettings: coordinator.mutate.bind(coordinator) };
-  const tab = new ClaudianSettingTab({} as never, {} as never, host as never);
+  const tab = new ClaudianSettingTab(host.app, createObsidianPlugin(host.app), host);
   const container = document.body.createDiv();
   try {
     tab['renderGeneralTab'](container);

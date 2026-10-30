@@ -3,7 +3,8 @@ import '@/providers';
 
 import { axe } from '@test/helpers/accessibility';
 import { holdResponse } from '@test/helpers/ConversationPorts';
-import { installSessionRuntimePool } from '@test/helpers/features/chat/SessionRuntimePoolHarness';
+import { createChatFeatureHost } from '@test/helpers/features/chat/ChatFeatureHostFixture';
+import { createSessionRuntimePool } from '@test/helpers/features/chat/SessionRuntimePoolHarness';
 import { createHarness, releaseSideChatHarnesses } from '@test/helpers/features/chat/SideChatDOMHarness';
 import { fireEvent, getByRole, waitFor } from '@testing-library/dom';
 import { App, Component } from 'obsidian';
@@ -15,24 +16,22 @@ import { createTabRuntime } from '@/features/chat/tabs/TabRuntimeFactory';
 import type { AssembledTabRuntime } from '@/features/chat/tabs/types';
 import { VaultMentionDataProvider } from '@/shared/mention/VaultMentionDataProvider';
 
-const originalResizeObserver = globalThis.ResizeObserver;
 let tab: AssembledTabRuntime;
 let plugin: ChatFeatureHost;
-let harness: ReturnType<typeof createHarness>;
+let harness: Awaited<ReturnType<typeof createHarness>>;
 let releaseResponse: () => Promise<void>;
 
 beforeEach(async () => {
-  globalThis.ResizeObserver = class { observe() {} unobserve() {} disconnect() {} };
-  harness = createHarness();
+  harness = await createHarness();
   const app = new App();
   Object.assign(app.vault.adapter, { basePath: '/vault' });
-  Object.assign(app.vault, { on: () => ({}), offref: () => undefined });
   const conversation = {
     id: 'conversation-1', providerId: 'claude', selectedModel: 'claude-sonnet-4-5',
     sessionId: 'main-session', messages: [],
   } as unknown as Conversation;
-  plugin = {
-    ...(harness.plugin as ChatFeatureHost), app,
+  const pool = createSessionRuntimePool(() => plugin);
+  plugin = await createChatFeatureHost({
+    providerHost: harness.plugin.providerHost, bindSessionTools: harness.plugin.bindSessionTools, projects: harness.plugin.projects, sessionRuntimes: pool, app,
     getCommittedSettings: () => plugin.settings,
     settings: {
       model: 'claude-sonnet-4-5', permissionMode: 'normal',
@@ -43,7 +42,7 @@ beforeEach(async () => {
     getActiveEnvironmentVariables: () => '',
     getConversationSummary: () => conversation,
     getConversationSync: () => conversation,
-    getConversationList: () => [conversation],
+    getConversationList: () => [{ ...conversation, messageCount: conversation.messages.length, preview: '' }],
     renameConversation: async () => undefined,
     updateConversation: async () => undefined,
     executionPersistence: {
@@ -51,8 +50,7 @@ beforeEach(async () => {
       persistExecutionSnapshot: async () => true, assertConversationExecutionAuthority: async () => {},
       recordConversationActivity: async () => {},
     },
-  } as unknown as ChatFeatureHost;
-  installSessionRuntimePool(plugin);
+  });
   tab = await createTabRuntime({
     plugin, conversation, component: new Component(),
     containerEl: document.body.createDiv(),
@@ -72,7 +70,6 @@ beforeEach(async () => {
 afterEach(async () => {
   await destroyTab(tab);
   vi.useRealTimers();
-  globalThis.ResizeObserver = originalResizeObserver;
   await releaseSideChatHarnesses();
 });
 
@@ -102,13 +99,13 @@ it('routes Escape through the selected main session for published jobs-only work
   const input = getByRole(tab.dom.inputComposerEl, 'textbox');
   expect(tab.controllers.sideChatController.destination).toBe('main');
   expect(tab.ui.composerDropdown.isVisible()).toBe(false);
-  // An earlier capture listener (e.g. an open menu) that consumed Escape owns it.
+  // A previous consumer can mark Escape handled without stopping propagation.
   const consumeEscape = (event: KeyboardEvent) => { if (event.key === 'Escape') event.preventDefault(); };
-  document.addEventListener('keydown', consumeEscape, true);
+  window.addEventListener('keydown', consumeEscape, true);
   try {
     fireEvent.keyDown(input, { key: 'Escape' });
   } finally {
-    document.removeEventListener('keydown', consumeEscape, true);
+    window.removeEventListener('keydown', consumeEscape, true);
   }
   expect(native.cancelCalls).toBe(0);
   expect(tab.session.hasMainBackgroundWork).toBe(true);

@@ -4,20 +4,15 @@ import '@/providers';
 import { deserialize, serialize } from 'node:v8';
 
 import { axe } from '@test/helpers/accessibility';
+import { createProviderHostFixture } from '@test/helpers/providerRuntimeHost';
 import { fireEvent, waitFor, within } from '@testing-library/dom';
 import { Notice } from 'obsidian';
 import type { Mock } from 'vitest';
 
-import { SettingsCoordinator } from '@/app/settings/SettingsCoordinator';
 import type { CLIInstallation } from '@/core/providers/cli/CLIInstallationProbe';
-import { getEnvironmentVariablesForScope, setEnvironmentVariablesForScope } from '@/core/providers/providerEnvironment';
-import type { ProviderHost } from '@/core/providers/ProviderHost';
+import { getEnvironmentVariablesForScope } from '@/core/providers/providerEnvironment';
 import { renderCLIInstallationSetting } from '@/shared/settings/CLIInstallationSetting';
 import { renderEnvironmentSettingsSection } from '@/shared/settings/EnvironmentSettingsSection';
-
-
-
-vi.mock('obsidian', async () => (await vi.importActual<typeof import('@test/helpers/ObsidianSettingsDOM')>('@test/helpers/ObsidianSettingsDOM')));
 
 afterEach(() => {
   (Notice as unknown as Mock).mockClear();
@@ -30,24 +25,18 @@ it.each([
   { name: 'a legacy snippet changing two rendered scopes', initial: 'PATH=/before', providerInitial: 'PATH=/provider-wrong', legacy: true, inserted: 'PATH=/after\nMY_TOOL_SETTING=custom\nANTHROPIC_MODEL=after', shared: 'PATH=/after\nMY_TOOL_SETTING=custom', provider: 'ANTHROPIC_MODEL=after', warning: 'Review environment ownership for: MY_TOOL_SETTING' },
 ])('refreshes the review message after $name', async ({ initial, inserted, shared, provider, warning, providerInitial, legacy }) => {
   globalThis.structuredClone ??= value => deserialize(serialize(value));
-  const settings = {
+  const initialSettings = {
     sharedEnvironmentVariables: initial,
     providerConfigs: { claude: { environmentVariables: providerInitial ?? 'ANTHROPIC_MODEL=before' } },
-    envSnippets: [{ id: 'snippet', name: 'Saved configuration', scope: legacy ? undefined : 'shared', envVars: inserted }],
+    envSnippets: [{ id: 'snippet', name: 'Saved configuration', description: '', scope: legacy ? undefined : 'shared' as const, envVars: inserted }],
   };
   let saved = '';
-  const coordinator = new SettingsCoordinator(settings, async draft => { saved = JSON.stringify(draft); });
-  const applyEnvironmentVariables = vi.fn((scope: Parameters<typeof setEnvironmentVariablesForScope>[1], text: string) => coordinator.mutate(draft => { setEnvironmentVariablesForScope(draft, scope, text); }));
-  const applyEnvironmentVariablesBatch = vi.fn((updates: Array<{ scope: Parameters<typeof setEnvironmentVariablesForScope>[1]; envText: string }>) => coordinator.mutate(draft => { for (const update of updates) setEnvironmentVariablesForScope(draft, update.scope, update.envText); }));
-  const mutateSettings = vi.fn(coordinator.mutate.bind(coordinator));
-  const host = {
-    settings,
-    app: { workspace: { getLeavesOfType: () => [] } },
-    getEnvironmentVariablesForScope: (scope: Parameters<typeof getEnvironmentVariablesForScope>[1]) => getEnvironmentVariablesForScope(settings, scope),
-    applyEnvironmentVariables,
-    applyEnvironmentVariablesBatch,
-    mutateSettings,
-  } as unknown as ProviderHost;
+  const { host, settings } = await createProviderHostFixture({
+    settings: initialSettings, beforePersist: draft => { saved = JSON.stringify(draft); },
+  });
+  const applyEnvironmentVariables = vi.spyOn(host, 'applyEnvironmentVariables');
+  const applyEnvironmentVariablesBatch = vi.spyOn(host, 'applyEnvironmentVariablesBatch');
+  const mutateSettings = vi.spyOn(host, 'mutateSettings');
   const root = document.body.createDiv({ cls: 'claudian-settings' });
   const general = root.createDiv();
   const specific = root.createDiv();
@@ -84,12 +73,7 @@ it('shows the generic environment update notice when the detached update fails',
       rejectApply = reject;
     }),
   );
-  const host = {
-    settings: { envSnippets: [] },
-    app: { workspace: { getLeavesOfType: () => [] } },
-    getEnvironmentVariablesForScope: () => '',
-    applyEnvironmentVariables,
-  } as unknown as ProviderHost;
+  const { host } = await createProviderHostFixture({ overrides: { applyEnvironmentVariables } });
 
   const root = document.body.createDiv({ cls: 'claudian-settings' });
   const general = root.createDiv();
@@ -126,12 +110,7 @@ it('refreshes the rendered CLI installation after a successful environment updat
   );
   let installation: CLIInstallation = { path: '/synthetic/cli-old', version: '1.0.0', source: 'auto' };
   const inspect = vi.fn(async () => installation);
-  const host = {
-    settings: { envSnippets: [] },
-    app: { workspace: { getLeavesOfType: () => [] } },
-    getEnvironmentVariablesForScope: () => '',
-    applyEnvironmentVariables,
-  } as unknown as ProviderHost;
+  const { host } = await createProviderHostFixture({ overrides: { applyEnvironmentVariables } });
 
   const root = document.body.createDiv({ cls: 'claudian-settings' });
   const general = root.createDiv();
@@ -180,12 +159,7 @@ it('recovers with a refreshed installation when a later environment update succe
   let installation: CLIInstallation = { path: '/synthetic/cli-before', version: '1.0.0', source: 'auto' };
   const inspect = vi.fn(async () => installation);
   const renderCustomContextLimits = vi.fn();
-  const host = {
-    settings: { envSnippets: [] },
-    app: { workspace: { getLeavesOfType: () => [] } },
-    getEnvironmentVariablesForScope: () => '',
-    applyEnvironmentVariables,
-  } as unknown as ProviderHost;
+  const { host } = await createProviderHostFixture({ overrides: { applyEnvironmentVariables } });
 
   const root = document.body.createDiv({ cls: 'claudian-settings' });
   const general = root.createDiv();
@@ -260,12 +234,7 @@ it.each(applyFailureCases)('shows only generic feedback without leakage for a $l
       rejectApply = reject;
     }),
   );
-  const host = {
-    settings: { envSnippets: [] },
-    app: { workspace: { getLeavesOfType: () => [] } },
-    getEnvironmentVariablesForScope: () => '',
-    applyEnvironmentVariables,
-  } as unknown as ProviderHost;
+  const { host } = await createProviderHostFixture({ overrides: { applyEnvironmentVariables } });
 
   const root = document.body.createDiv({ cls: 'claudian-settings' });
   const general = root.createDiv();

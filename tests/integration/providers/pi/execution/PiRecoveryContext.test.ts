@@ -2,7 +2,7 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import * as path from 'node:path';
 
-import { runtimeHostFor } from '@test/helpers/providerRuntimeHost';
+import { createProviderHostFixture } from '@test/helpers/providerRuntimeHost';
 import { testDate } from '@test/helpers/testClock';
 
 import type { ProviderExecutionContext } from '@/core/execution';
@@ -43,11 +43,10 @@ require('node:readline').createInterface({ input: process.stdin }).on('line', li
   }, 0);
 });
 `);
-  const host = { getResolvedProviderCliPath: async () => process.execPath, workingDirectory: root,
-    settings: { model: MODEL, providerConfigs: { pi: { enabled: true, visibleModels: [MODEL], discoveredModels: [
+  const host = (await createProviderHostFixture({ settings: { model: MODEL, providerConfigs: { pi: { enabled: true, visibleModels: [MODEL], discoveredModels: [
       { encodedId: MODEL, id: 'claude-sonnet-4', provider: 'anthropic', label: 'Claude Sonnet 4', reasoning: false, thinkingLevels: ['off'] },
-    ] } } } };
-  const backend = new PiExecutionBackend(runtimeHostFor(host, 'pi'), { createKernel: (spec, callbacks, ui) => new PiRPCSessionKernel({
+    ] } } }, overrides: { getResolvedProviderCliPath: async () => process.execPath, workingDirectory: root } })).host;
+  const backend = new PiExecutionBackend(host.getRuntimeHost('pi'), { createKernel: (spec, callbacks, ui) => new PiRPCSessionKernel({
     ...spec, command: process.execPath, args: [script], cwd: root, enableTreeBridge: false, enableSessionTools: false,
   }, callbacks, ui) });
   const session = backend.createSession({ lifecycle: 'ephemeral', nativePersistence: 'disabled-if-supported', workingDirectory: root,

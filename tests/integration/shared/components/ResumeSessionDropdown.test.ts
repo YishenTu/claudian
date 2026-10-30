@@ -1,0 +1,421 @@
+/** @vitest-environment jsdom */
+
+import { axe } from '@test/helpers/accessibility';
+import { fireEvent, screen, within } from '@testing-library/dom';
+import type { Mock } from 'vitest';
+
+import type { ConversationMeta } from '@/core/types';
+import {
+  ResumeSessionDropdown,
+  type ResumeSessionDropdownCallbacks,
+} from '@/shared/components/ResumeSessionDropdown';
+
+function createInput(): HTMLTextAreaElement {
+  const input = document.createElement('textarea');
+  vi.spyOn(input, 'focus');
+  vi.spyOn(input, 'addEventListener');
+  vi.spyOn(input, 'removeEventListener');
+  return input;
+}
+
+function createMockCallbacks(
+  overrides: Partial<ResumeSessionDropdownCallbacks> = {}
+): ResumeSessionDropdownCallbacks {
+  return {
+    onSelect: vi.fn(),
+    onDismiss: vi.fn(),
+    ...overrides,
+  };
+}
+
+function createConversation(
+  id: string,
+  title: string,
+  opts: Partial<ConversationMeta> = {}
+): ConversationMeta {
+  return {
+    id,
+    providerId: 'claude',
+    title,
+    createdAt: Date.now() - 10000,
+    lastActivityAt: Date.now() - 5000,
+    messageCount: 3,
+    preview: 'Test preview',
+    ...opts,
+  };
+}
+
+function getRenderedItems(containerEl: HTMLElement): { title: string; isCurrent: boolean }[] {
+  return within(containerEl).getAllByRole('option').map(item => ({
+    title: item.querySelector('[title]')!.getAttribute('title')!,
+    isCurrent: within(item).queryByText('Current session') !== null,
+  }));
+}
+
+function createDropdown(...args: ConstructorParameters<typeof ResumeSessionDropdown>): ResumeSessionDropdown {
+  const dropdown = new ResumeSessionDropdown(...args);
+  onTestFinished(() => dropdown.destroy());
+  return dropdown;
+}
+
+function key(key: string): KeyboardEvent {
+  const event = new KeyboardEvent('keydown', { key, cancelable: true });
+  vi.spyOn(event, 'preventDefault');
+  return event;
+}
+
+describe('ResumeSessionDropdown', () => {
+  let containerEl: HTMLElement;
+  let inputEl: HTMLTextAreaElement;
+  let callbacks: ResumeSessionDropdownCallbacks;
+
+  const conversations: ConversationMeta[] = [
+    createConversation('conv-1', 'First Chat', { lastActivityAt: 1000 }),
+    createConversation('conv-2', 'Second Chat', { lastActivityAt: 3000 }),
+    createConversation('conv-3', 'Third Chat', { lastActivityAt: 2000 }),
+  ];
+
+  beforeEach(() => {
+    containerEl = document.body.createDiv();
+    inputEl = containerEl.appendChild(createInput());
+    inputEl.setAttribute('aria-label', 'Message');
+    callbacks = createMockCallbacks();
+  });
+
+  afterEach(() => { document.body.replaceChildren(); });
+
+  describe('constructor', () => {
+    it('sorts conversations by lastActivityAt descending', () => {
+      const dropdown = createDropdown(
+        containerEl, inputEl, conversations, null, callbacks
+      );
+
+      const items = getRenderedItems(containerEl);
+      expect(items[0].title).toBe('Second Chat');  // lastActivityAt: 3000
+      expect(items[1].title).toBe('Third Chat');   // lastActivityAt: 2000
+      expect(items[2].title).toBe('First Chat');   // lastActivityAt: 1000
+
+      dropdown.destroy();
+    });
+
+    it('marks current conversation', () => {
+      const dropdown = createDropdown(
+        containerEl, inputEl, conversations, 'conv-2', callbacks
+      );
+
+      const items = getRenderedItems(containerEl);
+      const currentItem = items.find(i => i.title === 'Second Chat');
+      expect(currentItem?.isCurrent).toBe(true);
+
+      const otherItem = items.find(i => i.title === 'First Chat');
+      expect(otherItem?.isCurrent).toBe(false);
+
+      dropdown.destroy();
+    });
+
+    it('renders empty state when no conversations', () => {
+      const dropdown = createDropdown(
+        containerEl, inputEl, [], null, callbacks
+      );
+
+      const dropdownEl = containerEl.querySelector<HTMLElement>('.claudian-resume-dropdown')!;
+      const emptyEl = dropdownEl?.querySelector('.claudian-resume-empty');
+      expect(emptyEl).toBeDefined();
+      expect(emptyEl?.textContent).toBe('No conversations');
+
+      dropdown.destroy();
+    });
+
+    it('exposes the popup while preserving native textarea semantics', async () => {
+      const dropdown = createDropdown(
+        containerEl, inputEl, conversations, null, callbacks
+      );
+
+      const dropdownEl = containerEl.querySelector<HTMLElement>('.claudian-resume-dropdown')!;
+      expect(dropdownEl).toBeDefined();
+      expect(dropdownEl.hasClass('visible')).toBe(true);
+      expect(dropdown.isVisible()).toBe(true);
+
+      const listbox = within(containerEl).getByRole('listbox', { name: 'Resume conversation' });
+      const items = within(listbox).getAllByRole('option');
+      const listboxId = listbox?.getAttribute('id');
+      const activeOptionId = items[0]?.getAttribute('id');
+
+      expect(listbox?.getAttribute('role')).toBe('listbox');
+      expect(listbox?.getAttribute('aria-label')).toBe('Resume conversation');
+      expect(listboxId).toBeTruthy();
+      expect(items.map(item => item.getAttribute('role'))).toEqual([
+        'option',
+        'option',
+        'option',
+      ]);
+      expect(items.map(item => item.getAttribute('aria-selected'))).toEqual([
+        'true',
+        'false',
+        'false',
+      ]);
+      expect(inputEl).toBeInstanceOf(HTMLTextAreaElement);
+      expect(inputEl.getAttribute('role')).toBeNull();
+      expect(inputEl.getAttribute('aria-haspopup')).toBe('listbox');
+      expect(inputEl.getAttribute('aria-expanded')).toBeNull();
+      expect(inputEl.getAttribute('aria-controls')).toBe(listboxId);
+      expect(inputEl.getAttribute('aria-activedescendant')).toBe(activeOptionId);
+      expect(await axe(containerEl)).toHaveNoViolations();
+
+      dropdown.destroy();
+    });
+  });
+
+  describe('handleKeydown', () => {
+    it('returns false when dropdown is not visible', () => {
+      const dropdown = createDropdown(
+        containerEl, inputEl, conversations, null, callbacks
+      );
+
+      // Hide it first
+      const dropdownEl = containerEl.querySelector<HTMLElement>('.claudian-resume-dropdown')!;
+      dropdownEl.removeClass('visible');
+
+      const event = key('ArrowDown');
+      expect(dropdown.handleKeydown(event)).toBe(false);
+      expect(event.preventDefault).not.toHaveBeenCalled();
+
+      dropdown.destroy();
+    });
+
+    it('keeps the active descendant and option selection in sync while navigating', () => {
+      const dropdown = createDropdown(
+        containerEl, inputEl, conversations, null, callbacks
+      );
+      const listbox = within(containerEl).getByRole('listbox', { name: 'Resume conversation' });
+      const items = within(listbox).getAllByRole('option');
+
+      const event = key('ArrowDown');
+      expect(dropdown.handleKeydown(event)).toBe(true);
+      expect(event.preventDefault).toHaveBeenCalled();
+
+      expect(items[0]?.getAttribute('aria-selected')).toBe('false');
+      expect(items[1]?.getAttribute('aria-selected')).toBe('true');
+      expect(inputEl.getAttribute('aria-activedescendant')).toBe(
+        items[1]?.getAttribute('id')
+      );
+
+      dropdown.destroy();
+    });
+
+    it('navigates up with ArrowUp', () => {
+      const dropdown = createDropdown(
+        containerEl, inputEl, conversations, null, callbacks
+      );
+
+      // Go down first, then up
+      dropdown.handleKeydown(key('ArrowDown'));
+      const event = key('ArrowUp');
+      const result = dropdown.handleKeydown(event);
+
+      expect(result).toBe(true);
+      expect(event.preventDefault).toHaveBeenCalled();
+
+      dropdown.destroy();
+    });
+
+    it('selects with Enter', () => {
+      const dropdown = createDropdown(
+        containerEl, inputEl, conversations, null, callbacks
+      );
+
+      const event = key('Enter');
+      const result = dropdown.handleKeydown(event);
+
+      expect(result).toBe(true);
+      expect(event.preventDefault).toHaveBeenCalled();
+      // First item after sorting is conv-2 (highest lastActivityAt)
+      expect(callbacks.onSelect).toHaveBeenCalledWith('conv-2');
+
+      dropdown.destroy();
+    });
+
+    it('selects with Tab', () => {
+      const dropdown = createDropdown(
+        containerEl, inputEl, conversations, null, callbacks
+      );
+
+      const event = key('Tab');
+      const result = dropdown.handleKeydown(event);
+
+      expect(result).toBe(true);
+      expect(callbacks.onSelect).toHaveBeenCalledWith('conv-2');
+
+      dropdown.destroy();
+    });
+
+    it('dismisses with Escape', () => {
+      const dropdown = createDropdown(
+        containerEl, inputEl, conversations, null, callbacks
+      );
+
+      const event = key('Escape');
+      const result = dropdown.handleKeydown(event);
+
+      expect(result).toBe(true);
+      expect(event.preventDefault).toHaveBeenCalled();
+      expect(callbacks.onDismiss).toHaveBeenCalled();
+      expect(dropdown.isVisible()).toBe(false);
+
+      dropdown.destroy();
+    });
+
+    it('returns false for unhandled keys', () => {
+      const dropdown = createDropdown(
+        containerEl, inputEl, conversations, null, callbacks
+      );
+
+      const event = key('a');
+      const result = dropdown.handleKeydown(event);
+
+      expect(result).toBe(false);
+      expect(event.preventDefault).not.toHaveBeenCalled();
+
+      dropdown.destroy();
+    });
+
+    it('dismisses when selecting current conversation', () => {
+      const dropdown = createDropdown(
+        containerEl, inputEl, conversations, 'conv-2', callbacks
+      );
+
+      // conv-2 is first after sorting (highest lastActivityAt), so Enter selects it
+      const event = key('Enter');
+      dropdown.handleKeydown(event);
+
+      // Should dismiss, not call onSelect
+      expect(callbacks.onSelect).not.toHaveBeenCalled();
+      expect(callbacks.onDismiss).toHaveBeenCalled();
+
+      dropdown.destroy();
+    });
+  });
+
+  describe('destroy', () => {
+    it('removes input event listener', () => {
+      const dropdown = createDropdown(
+        containerEl, inputEl, conversations, null, callbacks
+      );
+
+      expect(inputEl.addEventListener).toHaveBeenCalledWith('input', expect.any(Function));
+
+      dropdown.destroy();
+
+      expect(inputEl.removeEventListener).toHaveBeenCalledWith('input', expect.any(Function));
+    });
+
+    it('restores the input accessibility attributes it temporarily owns', () => {
+      inputEl.setAttribute('role', 'textbox');
+      inputEl.setAttribute('aria-controls', 'existing-popup');
+      inputEl.setAttribute('aria-expanded', 'false');
+      const dropdown = createDropdown(
+        containerEl, inputEl, conversations, null, callbacks
+      );
+
+      expect(inputEl.getAttribute('role')).toBe('textbox');
+      expect(inputEl.getAttribute('aria-expanded')).toBeNull();
+
+      dropdown.destroy();
+
+      expect(inputEl.getAttribute('role')).toBe('textbox');
+      expect(inputEl.getAttribute('aria-controls')).toBe('existing-popup');
+      expect(inputEl.getAttribute('aria-haspopup')).toBeNull();
+      expect(inputEl.getAttribute('aria-expanded')).toBe('false');
+      expect(inputEl.getAttribute('aria-activedescendant')).toBeNull();
+    });
+  });
+
+  describe('click selection', () => {
+    it('calls onSelect when clicking a non-current item', () => {
+      const dropdown = createDropdown(
+        containerEl, inputEl, conversations, 'conv-1', callbacks
+      );
+
+      const dropdownEl = containerEl.querySelector<HTMLElement>('.claudian-resume-dropdown')!;
+      const items = within(dropdownEl).getAllByRole('option');
+      // Find a non-current item (conv-2 is first, conv-1 is current)
+      const nonCurrentItem = items.find(item => within(item).queryByText('Current session') === null);
+      fireEvent.click(nonCurrentItem!);
+
+      expect(callbacks.onSelect).toHaveBeenCalled();
+
+      dropdown.destroy();
+    });
+
+    it('dismisses when clicking current item', () => {
+      const dropdown = createDropdown(
+        containerEl, inputEl, conversations, 'conv-2', callbacks
+      );
+
+      const dropdownEl = containerEl.querySelector<HTMLElement>('.claudian-resume-dropdown')!;
+      const items = within(dropdownEl).getAllByRole('option');
+      // conv-2 is first after sorting and is current
+      const currentItem = items.find(item => within(item).queryByText('Current session') !== null);
+      fireEvent.click(currentItem!);
+
+      expect(callbacks.onSelect).not.toHaveBeenCalled();
+      expect(callbacks.onDismiss).toHaveBeenCalled();
+
+      dropdown.destroy();
+    });
+  });
+
+  // In zen mode the picker floats over the scrollable workspace, which scrollIntoView would also scroll.
+  describe('scrolling', () => {
+    const rowHeight = 50;
+    let list: HTMLElement;
+    let scrollIntoView: Mock;
+    let dropdown: ResumeSessionDropdown;
+    const originalScrollIntoView = Element.prototype.scrollIntoView;
+
+    beforeEach(() => {
+      scrollIntoView = vi.fn();
+      Element.prototype.scrollIntoView = scrollIntoView;
+      const container = document.body.createDiv();
+      const input = container.appendChild(document.createElement('textarea'));
+      dropdown = createDropdown(container, input, conversations, null, callbacks);
+      list = screen.getByRole('listbox');
+
+      // A list two rows tall; option rects follow its scroll offset as rendered layout would.
+      let scrollTop = 0;
+      Object.defineProperty(list, 'scrollTop', { get: () => scrollTop, set: (value: number) => { scrollTop = value; } });
+      list.getBoundingClientRect = () => new DOMRect(0, 0, 300, 2 * rowHeight);
+      screen.getAllByRole('option').forEach((option, index) => {
+        option.getBoundingClientRect = () => new DOMRect(0, index * rowHeight - scrollTop, 300, rowHeight);
+      });
+    });
+
+    afterEach(() => {
+      dropdown.destroy();
+      document.body.replaceChildren();
+      Element.prototype.scrollIntoView = originalScrollIntoView;
+    });
+
+    it('selects a hovered edge item without scrolling the list or anything behind it', () => {
+      const options = screen.getAllByRole('option');
+      fireEvent.mouseEnter(options[2]);
+      fireEvent.mouseEnter(options[0]);
+
+      expect(options.map(option => option.getAttribute('aria-selected'))).toEqual(['true', 'false', 'false']);
+      expect(list.scrollTop).toBe(0);
+      expect(scrollIntoView).not.toHaveBeenCalled();
+    });
+
+    it('keeps the keyboard selection visible by scrolling only the list', () => {
+      const arrow = (key: string) => dropdown.handleKeydown(new KeyboardEvent('keydown', { key }));
+      arrow('ArrowDown');
+      expect(list.scrollTop).toBe(0);
+      arrow('ArrowDown');
+      expect(list.scrollTop).toBe(rowHeight);
+      arrow('ArrowUp');
+      arrow('ArrowUp');
+      expect(list.scrollTop).toBe(0);
+      expect(scrollIntoView).not.toHaveBeenCalled();
+    });
+  });
+});

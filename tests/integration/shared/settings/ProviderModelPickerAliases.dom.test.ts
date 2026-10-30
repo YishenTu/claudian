@@ -1,37 +1,22 @@
 /** @vitest-environment jsdom */
-
-import '@test/helpers/ObsidianSettingsDOM';
+import '@/providers';
 
 import { deserialize, serialize } from 'node:v8';
 
 import { axe } from '@test/helpers/accessibility';
+import { createProviderHostFixture } from '@test/helpers/providerRuntimeHost';
 import { fireEvent, waitFor, within } from '@testing-library/dom';
 import { Notice } from 'obsidian';
 
-import { SettingsCoordinator } from '@/app/settings/SettingsCoordinator';
-import { createProviderRuntimeHost } from '@/composition/ClaudianProviderHost';
-import type { ProviderHost } from '@/core/providers/ProviderHost';
 import { createCodexModels } from '@/providers/codex/runtime/CodexModels';
 import { getCodexProviderSettings } from '@/providers/codex/settings';
 import { renderProviderModelsSection } from '@/shared/settings/ProviderModelsSection';
 
-vi.mock('obsidian', async () => (await vi.importActual<typeof import('../../../helpers/ObsidianSettingsDOM')>('../../../helpers/ObsidianSettingsDOM')));
-
-// Obsidian's createEl applies the native type option as well as attr.
-const originalCreateEl = HTMLElement.prototype.createEl;
-HTMLElement.prototype.createEl = function (tag, info, callback) {
-  const element = originalCreateEl.call(this, tag, info) as HTMLElement;
-  if (typeof info === 'object' && typeof info.type === 'string') element.setAttribute('type', info.type);
-  callback?.(element as never);
-  return element as never;
-};
-
 afterEach(() => { document.body.replaceChildren(); });
-afterAll(() => { HTMLElement.prototype.createEl = originalCreateEl; });
 
 it.each(['Enter', 'Escape'])('leaves composing %s to the provider alias editor', async key => {
   globalThis.structuredClone ??= value => deserialize(serialize(value));
-  const settings = { providerConfigs: { codex: {
+  const initialSettings = { providerConfigs: { codex: {
     enabled: true, visibleModels: ['gateway-model'], modelAliases: {},
     discoveredModels: [{
       model: 'gateway-model', displayName: 'Gateway model', description: '',
@@ -39,9 +24,10 @@ it.each(['Enter', 'Escape'])('leaves composing %s to the provider alias editor',
     }],
   } } };
   let saved = '';
-  const coordinator = new SettingsCoordinator(settings, async draft => { saved = JSON.stringify(draft); });
-  const host = { settings, mutateSettings: coordinator.mutate.bind(coordinator), notifyProviderChatOptionsChanged: vi.fn() } as unknown as ProviderHost;
-  const catalog = createCodexModels(createProviderRuntimeHost(host, coordinator, 'codex'), { refresh: async () => ({ kind: 'skipped', models: [], refreshed: false }) });
+  const { settings, coordinator, host } = await createProviderHostFixture({
+    settings: initialSettings, beforePersist: draft => { saved = JSON.stringify(draft); },
+  });
+  const catalog = createCodexModels(host.getRuntimeHost('codex'), { refresh: async () => ({ kind: 'skipped', models: [], refreshed: false }) });
   await catalog.refresh();
   const container = document.body.createDiv();
   const picker = renderProviderModelsSection(container, 'codex', 'Codex', catalog);
@@ -68,7 +54,7 @@ it.each(['Enter', 'Escape'])('leaves composing %s to the provider alias editor',
 
 it.each(['constructor', 'toString', '__proto__'])('edits and clears an alias for a prototype-named model %s', async modelId => {
   globalThis.structuredClone ??= value => deserialize(serialize(value));
-  const settings = { providerConfigs: { codex: {
+  const initialSettings = { providerConfigs: { codex: {
     enabled: true, visibleModels: [modelId], modelAliases: {},
     discoveredModels: [{
       model: modelId, displayName: 'Gateway model', description: '',
@@ -76,12 +62,12 @@ it.each(['constructor', 'toString', '__proto__'])('edits and clears an alias for
     }],
   } } };
   let saved = '';
-  const coordinator = new SettingsCoordinator(settings, async draft => { saved = JSON.stringify(draft); });
   const notify = vi.fn();
-  const host = {
-    settings, mutateSettings: coordinator.mutate.bind(coordinator), notifyProviderChatOptionsChanged: notify,
-  } as unknown as ProviderHost;
-  const catalog = createCodexModels(createProviderRuntimeHost(host, coordinator, 'codex'), { refresh: async () => ({ kind: 'skipped', models: [], refreshed: false }) });
+  const { settings, host } = await createProviderHostFixture({
+    settings: initialSettings, beforePersist: draft => { saved = JSON.stringify(draft); },
+    overrides: { notifyProviderChatOptionsChanged: notify },
+  });
+  const catalog = createCodexModels(host.getRuntimeHost('codex'), { refresh: async () => ({ kind: 'skipped', models: [], refreshed: false }) });
   await catalog.refresh();
   const container = document.body.createDiv();
   const picker = renderProviderModelsSection(container, 'codex', 'Codex', catalog);
@@ -121,7 +107,7 @@ it.each(['constructor', 'toString', '__proto__'])('edits and clears an alias for
 
 it('retains a failed alias draft across refresh and allows a successful retry', async () => {
   globalThis.structuredClone ??= value => deserialize(serialize(value));
-  const settings = { providerConfigs: { codex: {
+  const initialSettings = { providerConfigs: { codex: {
     enabled: true, visibleModels: ['gateway-model'], modelAliases: {},
     discoveredModels: [{
       model: 'gateway-model', displayName: 'Gateway model', description: '',
@@ -131,9 +117,8 @@ it('retains a failed alias draft across refresh and allows a successful retry', 
   let rejectSave!: (reason: Error) => void;
   const save = new Promise<void>((_resolve, reject) => { rejectSave = reject; });
   const persist = vi.fn().mockImplementationOnce(async () => save).mockResolvedValue(undefined);
-  const coordinator = new SettingsCoordinator(settings, persist);
-  const host = { settings, mutateSettings: coordinator.mutate.bind(coordinator), notifyProviderChatOptionsChanged: vi.fn() } as unknown as ProviderHost;
-  const catalog = createCodexModels(createProviderRuntimeHost(host, coordinator, 'codex'), { refresh: async () => ({ kind: 'skipped', models: [], refreshed: false }) });
+  const { settings, host } = await createProviderHostFixture({ settings: initialSettings, beforePersist: persist });
+  const catalog = createCodexModels(host.getRuntimeHost('codex'), { refresh: async () => ({ kind: 'skipped', models: [], refreshed: false }) });
   await catalog.refresh();
   const container = document.body.createDiv();
   const picker = renderProviderModelsSection(container, 'codex', 'Codex', catalog);
@@ -143,7 +128,7 @@ it('retains a failed alias draft across refresh and allows a successful retry', 
     fireEvent.input(aliasField(), { target: { value: 'My alias draft' } });
     fireEvent.keyDown(aliasField(), { key: 'Enter' });
     rejectSave(new Error('settings storage unavailable'));
-    await new Promise(resolve => setTimeout(resolve, 0));
+    await waitFor(() => expect(Notice).toHaveBeenCalledWith('Could not save model alias. Try again.'));
     picker.refresh();
     expect(aliasField().value).toBe('My alias draft');
     expect(Notice).toHaveBeenCalledWith('Could not save model alias. Try again.');

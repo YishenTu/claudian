@@ -1,5 +1,4 @@
 /** @vitest-environment jsdom */
-import '@test/helpers/ObsidianSettingsDOM';
 
 import { axe } from '@test/helpers/accessibility';
 import { testDate } from '@test/helpers/testClock';

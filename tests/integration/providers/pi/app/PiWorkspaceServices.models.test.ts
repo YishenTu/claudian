@@ -1,38 +1,41 @@
-import { withRuntimeHosts } from '@test/helpers/providerRuntimeHost';
+import { createProviderHostFixture } from '@test/helpers/providerRuntimeHost';
+import { PiNativeProcess } from '@test/helpers/providers/pi/PiNativeProcess';
+import spawn from 'cross-spawn';
 
-import { ProviderExecutionLifecycleRegistry } from '@/core/execution';
-import type { ProviderHost } from '@/core/providers/ProviderHost';
 import { createPiWorkspaceServices } from '@/providers/pi/app/PiWorkspaceServices';
-import { PiModelDiscoveryService } from '@/providers/pi/runtime/PiModelDiscoveryService';
+
+vi.mock('cross-spawn', () => ({ default: vi.fn() }));
 
 it('drains canceled model discovery before the provider transition mutation', async () => {
-  const registry = new ProviderExecutionLifecycleRegistry();
-  const host = {
-    executionLifecycleRegistry: registry,
+  const { host, lifecycle } = await createProviderHostFixture({
     settings: { providerConfigs: { pi: { enabled: true, visibleModels: [] } } },
-  } as unknown as ProviderHost;
-  let release!: () => void;
+    overrides: { getResolvedProviderCliPath: async () => 'pi' },
+  });
+  const native = new PiNativeProcess({}, new Map(), () => new Promise(() => undefined));
+  vi.mocked(spawn).mockReturnValue(native.child);
   let canceled!: () => void;
   const cancellation = new Promise<void>(resolve => { canceled = resolve; });
-  const probe = vi.spyOn(PiModelDiscoveryService.prototype, 'discoverModels').mockImplementation(signal => {
-    signal!.addEventListener('abort', canceled, { once: true });
-    return new Promise(resolve => { release = () => resolve({ kind: 'completed', models: [] }); });
-  });
-  const services = await createPiWorkspaceServices(withRuntimeHosts(host));
+  vi.spyOn(native.child, 'kill').mockImplementation(() => { canceled(); return true; });
+  const services = await createPiWorkspaceServices(host);
+  // Hold the shutdown grace timer: only the native exit below can release discovery.
+  vi.useFakeTimers();
   const discovery = services.modelCatalog!.refresh();
+  await native.whenRequest('get_available_models');
   const mutation = vi.fn(async () => undefined);
-  const transition = registry.runTransition(['pi'], mutation);
-  await cancellation;
-  // Let a transition which fails to join discovery reach its mutation.
-  await new Promise<void>(resolve => setTimeout(resolve, 0));
+  const transition = lifecycle.runTransition(['pi'], mutation);
   try {
+    await cancellation;
+    await vi.advanceTimersByTimeAsync(0);
     expect(mutation).not.toHaveBeenCalled();
-  } finally {
-    release();
+    native.close();
     await Promise.all([transition, discovery]);
+    expect(mutation).toHaveBeenCalledTimes(1);
+    expect(native.child.stdout.listenerCount('data')).toBe(0);
+  } finally {
+    native.close();
     await services.dispose();
-    await registry.dispose();
-    probe.mockRestore();
+    native.child.stdin.destroy(); native.child.stdout.destroy(); native.child.stderr.destroy();
+    vi.mocked(spawn).mockReset();
+    vi.useRealTimers();
   }
-  expect(mutation).toHaveBeenCalledTimes(1);
 });

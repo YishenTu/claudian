@@ -2,17 +2,11 @@ import * as fs from 'fs';
 import * as path from 'path';
 import type { Mock } from 'vitest';
 
+import { getInstallationKey } from '@/core/device/InstallationKey';
 import { PiCLIResolver } from '@/providers/pi/runtime/PiCLIResolver';
-
-
 
 vi.mock('fs');
 const mockedStat = fs.statSync as Mock;
-
-vi.mock('@/core/device/InstallationKey', async () => ({
-  ...(await vi.importActual<typeof import('@/core/device/InstallationKey')>('@/core/device/InstallationKey')),
-  getInstallationKey: () => 'current-host',
-}));
 
 describe('PiCLIResolver', () => {
   beforeEach(() => {
@@ -34,7 +28,7 @@ describe('PiCLIResolver', () => {
       providerConfigs: {
         pi: {
           cliPathsByHost: {
-            'current-host': '/current/pi',
+            [getInstallationKey()]: '/current/pi',
             'other-host': '/other/pi',
           },
           cliPath: '/legacy/pi',
@@ -101,7 +95,7 @@ describe('PiCLIResolver', () => {
       providerConfigs: {
         pi: {
           cliPathsByHost: {
-            'current-host': '/current/pi',
+            [getInstallationKey()]: '/current/pi',
           },
           environmentVariables: 'PI_OFFLINE=0',
         },
@@ -111,7 +105,7 @@ describe('PiCLIResolver', () => {
       providerConfigs: {
         pi: {
           cliPathsByHost: {
-            'current-host': '/current/pi',
+            [getInstallationKey()]: '/current/pi',
           },
           environmentVariables: 'PI_OFFLINE=1',
         },

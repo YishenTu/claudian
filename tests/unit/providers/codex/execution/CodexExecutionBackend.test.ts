@@ -1,3 +1,4 @@
+import { DesktopVault } from '@test/helpers/core/DesktopVault';
 const actualModule0 = await import('node:fs');
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import * as fsPromises from 'node:fs/promises';
@@ -7,7 +8,8 @@ import { basename, dirname, join, normalize } from 'node:path';
 import pair from '@test/fixtures/providers/codex/turn-stats-pair.json';
 import { capturedSelectionPrompt, capturedSelections } from '@test/helpers/capturedSelections';
 import { TEST_CODEX_MODEL } from '@test/helpers/codexModels';
-import { runtimeHostFor } from '@test/helpers/providerRuntimeHost';
+import { createProviderHostFixture } from '@test/helpers/providerRuntimeHost';
+import { CodexRuntimeHarness } from '@test/helpers/providers/codex/CodexRuntimeHarness';
 import { parseCodexSessionContent } from '@test/helpers/providers/codex/parseCodexSessionContent';
 
 import type {
@@ -53,18 +55,16 @@ vi.mock('@/providers/codex/runtime/CodexRPCTransport', async () => {
 
 const mockProcessStart = vi.fn();
 const mockProcessShutdown = vi.fn().mockResolvedValue(undefined);
-const mockProcessIsAlive = vi.fn().mockReturnValue(true);
-const mockProcessOnExit = vi.fn();
-const mockProcessOffExit = vi.fn();
-
+const native = new CodexRuntimeHarness();
 vi.mock('@/providers/codex/runtime/CodexAppServerProcess', () => ({
-  CodexAppServerProcess: vi.fn().mockImplementation(function () { return ({
-    start: mockProcessStart,
-    shutdown: mockProcessShutdown,
-    isAlive: mockProcessIsAlive,
-    onExit: mockProcessOnExit,
-    offExit: mockProcessOffExit,
-  }); }),
+  CodexAppServerProcess: vi.fn().mockImplementation(function () {
+    const process = native.createProcess();
+    const start = process.start.bind(process);
+    const shutdown = process.shutdown.bind(process);
+    vi.spyOn(process, 'start').mockImplementation(() => { start(); mockProcessStart(); });
+    vi.spyOn(process, 'shutdown').mockImplementation(async () => { await mockProcessShutdown(); await shutdown(); });
+    return process;
+  }),
 }));
 
 vi.mock('@/providers/codex/runtime/codexAppServerSupport', async () => {
@@ -84,7 +84,7 @@ import { CodexRPCResponseError } from '@/providers/codex/runtime/CodexRPCTranspo
 
 const runtimes: CodexAppServerRuntime[] = [];
 function createBackend(plugin: ProviderHost): CodexExecutionBackend {
-  const host = runtimeHostFor(plugin, 'codex');
+  const host = plugin.getRuntimeHost('codex');
   const runtime = new CodexAppServerRuntime(host, () => undefined);
   runtimes.push(runtime);
   return new CodexExecutionBackend(
@@ -102,7 +102,6 @@ type ServerRequestHandler = (
 
 let notificationHandlers: Map<string, NotificationHandler>;
 let serverRequestHandlers: Map<string, ServerRequestHandler>;
-let exitHandler: (() => void) | null;
 
 interface Deferred<T> {
   readonly promise: Promise<T>;
@@ -130,7 +129,6 @@ async function waitForCondition(condition: () => boolean): Promise<void> {
 function captureHandlers(): void {
   notificationHandlers = new Map();
   serverRequestHandlers = new Map();
-  exitHandler = null;
   mockTransportOnNotification.mockImplementation(
     (method: string, handler: NotificationHandler) => {
       notificationHandlers.set(method, handler);
@@ -141,9 +139,6 @@ function captureHandlers(): void {
       serverRequestHandlers.set(method, handler);
     },
   );
-  mockProcessOnExit.mockImplementation((handler: () => void) => {
-    exitHandler = handler;
-  });
 }
 
 function emitNotification(method: string, params: unknown): void {
@@ -215,8 +210,8 @@ function createTurnResult(turnId: string) {
   };
 }
 
-function createPlugin(): MutableTestHost {
-  return {
+async function createPlugin(): Promise<MutableTestHost> {
+  const fixture = await createProviderHostFixture({ vault: sharedVault,
     settings: {
       model: TEST_CODEX_MODEL,
       effortLevel: 'medium',
@@ -246,7 +241,8 @@ function createPlugin(): MutableTestHost {
         },
       },
     },
-  } as unknown as MutableTestHost;
+  });
+  return fixture.host;
 }
 
 function createInteractionPort(): ProviderInteractionPort {
@@ -422,7 +418,7 @@ function configureSteerTransport(
 }
 
 async function createActiveSteerSession() {
-  const session = createBackend(createPlugin())
+  const session = createBackend(await createPlugin())
     .createSession(createSessionConfig());
   const run = session.execute(createRequest());
   await waitForCondition(() => mockTransportRequest.mock.calls.some(
@@ -462,7 +458,7 @@ describe('CodexExecutionBackend', () => {
       }
       throw new Error(`Unexpected method: ${method}`);
     });
-    const plugin = createPlugin();
+    const plugin = await createPlugin();
     plugin.settings.providerConfigs.codex!.safeMode = safeMode;
     const session = createBackend(plugin).createSession(createSessionConfig());
     for (const instructions of ['First instructions.', 'Updated instructions.']) {
@@ -502,7 +498,7 @@ describe('CodexExecutionBackend', () => {
       }
       throw new Error(`Unexpected method: ${method}`);
     });
-    const session = createBackend(createPlugin()).createSession(createSessionConfig());
+    const session = createBackend(await createPlugin()).createSession(createSessionConfig());
     const request = createRequest();
     const events = await collectEvents(session.execute({
       ...request, configuration: { ...request.configuration, permissionMode: 'auto-review' },
@@ -529,7 +525,7 @@ describe('CodexExecutionBackend', () => {
       }
       throw new Error(`Unexpected method: ${method}`);
     });
-    const session = createBackend(createPlugin()).createSession(createSessionConfig());
+    const session = createBackend(await createPlugin()).createSession(createSessionConfig());
     const request = createRequest();
     await collectEvents(session.execute(request).events);
     const events = await collectEvents(session.execute({
@@ -580,7 +576,7 @@ describe('CodexExecutionBackend', () => {
       }
       throw new Error(`Unexpected method: ${method}`);
     });
-    const plugin = createPlugin();
+    const plugin = await createPlugin();
     const session = createBackend(plugin).createSession(createSessionConfig());
     const runWith = async (permissionMode: string, safeMode: string) => {
       plugin.settings.providerConfigs.codex!.safeMode = safeMode;
@@ -626,7 +622,7 @@ describe('CodexExecutionBackend', () => {
       }
       throw new Error(`Unexpected method: ${method}`);
     });
-    const session = createBackend(createPlugin()).createSession(createSessionConfig());
+    const session = createBackend(await createPlugin()).createSession(createSessionConfig());
     const runWith = (permissionMode: string) => {
       const request = createRequest();
       return collectEvents(session.execute({
@@ -677,7 +673,7 @@ describe('CodexExecutionBackend', () => {
       }
       throw new Error(`Unexpected method: ${method}`);
     });
-    const session = createBackend(createPlugin()).createSession(createForkSessionConfig());
+    const session = createBackend(await createPlugin()).createSession(createForkSessionConfig());
     await collectEvents(session.execute(createRequest()).events);
 
     expect(mockTransportRequest).toHaveBeenCalledWith('thread/resume', expect.objectContaining({
@@ -701,7 +697,7 @@ describe('CodexExecutionBackend', () => {
       }
       throw new Error(`Unexpected method: ${method}`);
     });
-    const plugin = createPlugin();
+    const plugin = await createPlugin();
     Object.assign(plugin.settings, {
       savedProviderEffort: { codex: 'low', claude: 'high' },
       savedProviderPermissionMode: { codex: 'yolo' },
@@ -718,7 +714,7 @@ describe('CodexExecutionBackend', () => {
   });
 
   it('rejects an unavailable selected model before native startup with a configuration error', async () => {
-    const host = createPlugin();
+    const host = await createPlugin();
     host.settings.providerConfigs!.codex!.visibleModels = [];
     const session = createBackend(host).createSession(createSessionConfig());
     const events = await collectEvents(session.execute(createRequest()).events);
@@ -732,7 +728,7 @@ describe('CodexExecutionBackend', () => {
     vi.clearAllMocks();
     captureHandlers();
     mockUnsubscribe.mockReset().mockResolvedValue({});
-    mockProcessIsAlive.mockReturnValue(true);
+    native.reset();
     mockResolveLaunchSpec.mockResolvedValue({
       target: {
         method: 'host-native',
@@ -760,7 +756,7 @@ describe('CodexExecutionBackend', () => {
 
   it('keeps parent output flowing after a child messages its parent', async () => {
     configureSteerTransport('parent', 'parent-turn', () => ({}));
-    const session = createBackend(createPlugin()).createSession(createSessionConfig());
+    const session = createBackend(await createPlugin()).createSession(createSessionConfig());
     const updates: ProviderSessionEvent[] = [];
     session.onEvent(event => updates.push(event));
     let timeout: ReturnType<typeof setTimeout> | undefined;
@@ -793,7 +789,7 @@ describe('CodexExecutionBackend', () => {
 
   it('keeps a sibling message from replacing the receiving subagent invocation', async () => {
     configureSteerTransport('parent', 'parent-turn', () => ({}));
-    const session = createBackend(createPlugin()).createSession(createSessionConfig());
+    const session = createBackend(await createPlugin()).createSession(createSessionConfig());
     const updates: ProviderSessionEvent[] = [];
     session.onEvent(event => updates.push(event));
     try {
@@ -829,7 +825,7 @@ describe('CodexExecutionBackend', () => {
       } });
       return baseRequest(method, ...args);
     });
-    const session = createBackend(createPlugin()).createSession(createSessionConfig());
+    const session = createBackend(await createPlugin()).createSession(createSessionConfig());
     const updates: ProviderSessionEvent[] = [];
     session.onEvent(event => updates.push(event));
     try {
@@ -899,7 +895,7 @@ describe('CodexExecutionBackend', () => {
       mockTransportRequest.mockImplementation((method: string, ...args: unknown[]) => (
         method === 'turn/start' ? startResult.promise : transport(method, ...args)
       ));
-      const session = createBackend(createPlugin()).createSession(createSessionConfig());
+      const session = createBackend(await createPlugin()).createSession(createSessionConfig());
       try {
         const run = session.execute(createImageRequest());
         const events = collectEvents(run.events);
@@ -932,7 +928,7 @@ describe('CodexExecutionBackend', () => {
 
   it('submits an image with a filesystem-limit basename and cleans up its bytes', async () => {
     configureSteerTransport('thread-image', 'turn-image', () => ({}));
-    const session = createBackend(createPlugin()).createSession(createSessionConfig());
+    const session = createBackend(await createPlugin()).createSession(createSessionConfig());
     const request = createImageRequest();
     const image = request.input.find(block => block.type === 'image')!;
     if (image.type !== 'image') throw new Error('Expected image request');
@@ -1063,7 +1059,7 @@ describe('CodexExecutionBackend', () => {
       throw new Error(`Unexpected method: ${method}`);
     });
 
-    const session = createBackend(createPlugin())
+    const session = createBackend(await createPlugin())
       .createSession(createSessionConfig());
     const run = session.execute(createRequest());
     const eventsPromise = collectEvents(run.events);
@@ -1135,7 +1131,7 @@ describe('CodexExecutionBackend', () => {
       throw new Error(`Unexpected method: ${method}`);
     });
 
-    const session = createBackend(createPlugin())
+    const session = createBackend(await createPlugin())
       .createSession(createSessionConfig());
     const run = session.execute(createRequest());
     const eventsPromise = collectEvents(run.events);
@@ -1211,7 +1207,7 @@ describe('CodexExecutionBackend', () => {
       throw new Error(`Unexpected method: ${method}`);
     });
 
-    const session = createBackend(createPlugin())
+    const session = createBackend(await createPlugin())
       .createSession(createSessionConfig());
     const run = session.execute(createRequest());
     const eventsPromise = collectEvents(run.events);
@@ -1282,7 +1278,7 @@ describe('CodexExecutionBackend', () => {
       throw new Error(`Unexpected method: ${method}`);
     });
 
-    const session = createBackend(createPlugin())
+    const session = createBackend(await createPlugin())
       .createSession(createSessionConfig());
     const run = session.execute(createRequest());
     const eventsPromise = collectEvents(run.events);
@@ -1342,7 +1338,7 @@ describe('CodexExecutionBackend', () => {
       throw new Error(`Unexpected method: ${method}`);
     });
 
-    const session = createBackend(createPlugin())
+    const session = createBackend(await createPlugin())
       .createSession(createSessionConfig());
     const run = session.execute(createRequest());
     const eventsPromise = collectEvents(run.events);
@@ -1390,7 +1386,7 @@ describe('CodexExecutionBackend', () => {
       throw new Error(`Unexpected method: ${method}`);
     });
 
-    const session = createBackend(createPlugin())
+    const session = createBackend(await createPlugin())
       .createSession(createSessionConfig());
     const run = session.execute(createRequest());
     const eventsPromise = collectEvents(run.events);
@@ -1444,7 +1440,7 @@ describe('CodexExecutionBackend', () => {
       }
       throw new Error(`Unexpected method: ${method}`);
     });
-    const session = createBackend(createPlugin())
+    const session = createBackend(await createPlugin())
       .createSession(createSessionConfig());
 
     await collectEvents(session.execute(createRequest(
@@ -1519,7 +1515,7 @@ describe('CodexExecutionBackend', () => {
       }
       throw new Error(`Unexpected method: ${method}`);
     });
-    const session = createBackend(createPlugin())
+    const session = createBackend(await createPlugin())
       .createSession(createSessionConfig());
 
     await collectEvents(session.execute(createRequest(
@@ -1570,7 +1566,7 @@ describe('CodexExecutionBackend', () => {
         throw new Error(`Unexpected method: ${method}`);
       });
 
-      const session = createBackend(createPlugin()).createSession(
+      const session = createBackend(await createPlugin()).createSession(
         createSessionConfig({
           lifecycle,
           nativePersistence,
@@ -1636,7 +1632,7 @@ describe('CodexExecutionBackend', () => {
       const before = await history.hydrateConversationHistory({ sessionId: null, providerState: orphanState, messages: [] }, null);
       expect(contents(before)).toEqual(['Old question', 'Old answer']);
 
-      const session = createBackend(createPlugin()).createSession(createSessionConfig({
+      const session = createBackend(await createPlugin()).createSession(createSessionConfig({
         resumeSeed: { providerState: { ...orphanState } },
       }));
       await collectEvents(session.execute(createRequest(new AbortController().signal, {
@@ -1686,7 +1682,7 @@ describe('CodexExecutionBackend', () => {
       }
       throw new Error(`Unexpected method: ${method}`);
     });
-    const session = createBackend(createPlugin())
+    const session = createBackend(await createPlugin())
       .createSession(createSessionConfig());
     const conversationHistory = [
       { id: 'history-user', role: 'user' as const, content: 'retry prior question', timestamp: 1 },
@@ -1704,7 +1700,7 @@ describe('CodexExecutionBackend', () => {
     }));
     await session.dispose();
 
-    const replacement = createBackend(createPlugin()).createSession(
+    const replacement = createBackend(await createPlugin()).createSession(
       createSessionConfig({
         resumeSeed: {
           providerSessionId: preHandoffSnapshot.providerSessionId,
@@ -1756,7 +1752,7 @@ describe('CodexExecutionBackend', () => {
       }
       throw new Error(`Unexpected method: ${method}`);
     });
-    const session = createBackend(createPlugin())
+    const session = createBackend(await createPlugin())
       .createSession(createSessionConfig());
     const conversationHistory = [
       { id: 'history-user', role: 'user' as const, content: 'early prior question', timestamp: 1 },
@@ -1825,7 +1821,7 @@ describe('CodexExecutionBackend', () => {
       throw new Error(`Unexpected method: ${method}`);
     });
 
-    const session = createBackend(createPlugin())
+    const session = createBackend(await createPlugin())
       .createSession(createSessionConfig());
     try {
       await collectEvents(session.execute(createRequest()).events);
@@ -1881,7 +1877,7 @@ describe('CodexExecutionBackend', () => {
       }
       throw new Error(`Unexpected method: ${method}`);
     });
-    const session = createBackend(createPlugin())
+    const session = createBackend(await createPlugin())
       .createSession(createSessionConfig());
     const conversationHistory = [
       { id: 'history-user', role: 'user' as const, content: 'cancel prior question', timestamp: 1 },
@@ -1911,7 +1907,7 @@ describe('CodexExecutionBackend', () => {
     }));
     await session.dispose();
 
-    const replacement = createBackend(createPlugin()).createSession(
+    const replacement = createBackend(await createPlugin()).createSession(
       createSessionConfig({
         resumeSeed: {
           providerSessionId: cancelledSnapshot.providerSessionId,
@@ -1951,7 +1947,7 @@ describe('CodexExecutionBackend', () => {
       if (method === 'turn/start') return turnStart.promise;
       throw new Error(`Unexpected method: ${method}`);
     });
-    const session = createBackend(createPlugin())
+    const session = createBackend(await createPlugin())
       .createSession(createSessionConfig());
     const sessionEvents: ProviderSessionEvent[] = [];
     const unsubscribe = session.onEvent(event => sessionEvents.push(event));
@@ -2018,7 +2014,7 @@ describe('CodexExecutionBackend', () => {
       }
       throw new Error(`Unexpected method: ${method}`);
     });
-    const session = createBackend(createPlugin())
+    const session = createBackend(await createPlugin())
       .createSession(createSessionConfig());
 
     const sessionEvents: ProviderSessionEvent[] = [];
@@ -2043,7 +2039,7 @@ describe('CodexExecutionBackend', () => {
     expect(cancelledSnapshot.providerSessionId).toBe('thread-cancelled-start');
     await session.dispose();
 
-    const replacement = createBackend(createPlugin()).createSession(
+    const replacement = createBackend(await createPlugin()).createSession(
       createSessionConfig({
         resumeSeed: {
           providerSessionId: cancelledSnapshot.providerSessionId,
@@ -2077,7 +2073,7 @@ describe('CodexExecutionBackend', () => {
       if (method === 'thread/start') return threadStart.promise;
       throw new Error(`Unexpected method: ${method}`);
     });
-    const session = createBackend(createPlugin())
+    const session = createBackend(await createPlugin())
       .createSession(createSessionConfig());
     const sessionEvents: ProviderSessionEvent[] = [];
     const unsubscribe = session.onEvent(event => sessionEvents.push(event));
@@ -2144,7 +2140,7 @@ describe('CodexExecutionBackend', () => {
       }
       throw new Error(`Unexpected method: ${method}`);
     });
-    const session = createBackend(createPlugin()).createSession(
+    const session = createBackend(await createPlugin()).createSession(
       createSessionConfig({
         lifecycle: 'ephemeral',
         nativePersistence,
@@ -2251,7 +2247,7 @@ describe('CodexExecutionBackend', () => {
     it('never searches the transcript root for a non-persistent thread', async () => {
       mockPathlessThread('thread-ephemeral-pathless', true);
       writeRollout('thread-ephemeral-pathless');
-      const session = createBackend(createPlugin()).createSession(
+      const session = createBackend(await createPlugin()).createSession(
         createSessionConfig({ lifecycle: 'ephemeral', nativePersistence: 'disabled-if-supported' }),
       );
 
@@ -2268,7 +2264,7 @@ describe('CodexExecutionBackend', () => {
     it('adopts a persistent rollout found after release and publishes it as session state', async () => {
       mockPathlessThread('thread-persistent-pathless', false);
       const rolloutPath = writeRollout('thread-persistent-pathless');
-      const session = createBackend(createPlugin()).createSession(createSessionConfig());
+      const session = createBackend(await createPlugin()).createSession(createSessionConfig());
       const adopted = new Promise<ProviderSessionEvent>((resolve) => {
         session.onEvent((event) => {
           if (
@@ -2298,7 +2294,7 @@ describe('CodexExecutionBackend', () => {
 
     it('searches once per persistent thread instead of after every run', async () => {
       mockPathlessThread('thread-persistent-missing', false);
-      const session = createBackend(createPlugin()).createSession(createSessionConfig());
+      const session = createBackend(await createPlugin()).createSession(createSessionConfig());
 
       await collectEvents(session.execute(createRequest()).events);
       const probesAfterFirstRun = countTranscriptRootProbes();
@@ -2349,7 +2345,7 @@ describe('CodexExecutionBackend', () => {
       throw new Error(`Unexpected method: ${method}`);
     });
 
-    const session = createBackend(createPlugin()).createSession(
+    const session = createBackend(await createPlugin()).createSession(
       createSessionConfig({
         resumeSeed: {
           providerState: {
@@ -2503,7 +2499,7 @@ describe('CodexExecutionBackend', () => {
         throw new Error(`Unexpected method: ${method}`);
       });
 
-      let session = createBackend(createPlugin()).createSession(
+      let session = createBackend(await createPlugin()).createSession(
         createForkSessionConfig(),
       );
       const failedEvents = await collectEvents(session.execute(createRequest()).events);
@@ -2524,7 +2520,7 @@ describe('CodexExecutionBackend', () => {
       if (failureBoundary === 'checkpoint') {
         const pendingSnapshot = session.getSnapshot();
         await session.dispose();
-        session = createBackend(createPlugin()).createSession(
+        session = createBackend(await createPlugin()).createSession(
           createSessionConfig({
             resumeSeed: {
               providerSessionId: pendingSnapshot.providerSessionId,
@@ -2599,7 +2595,7 @@ describe('CodexExecutionBackend', () => {
       }
       throw new Error(`Unexpected method: ${method}`);
     });
-    const session = createBackend(createPlugin()).createSession(
+    const session = createBackend(await createPlugin()).createSession(
       createForkSessionConfig(),
     );
     const run = session.execute(createRequest());
@@ -2670,7 +2666,7 @@ describe('CodexExecutionBackend', () => {
       }
       throw new Error(`Unexpected method: ${method}`);
     });
-    const session = createBackend(createPlugin()).createSession(
+    const session = createBackend(await createPlugin()).createSession(
       createForkSessionConfig(),
     );
     const run = session.execute(createRequest());
@@ -2696,7 +2692,7 @@ describe('CodexExecutionBackend', () => {
     expectPendingForkOwnership(session, 'disposed');
 
     const disposedSnapshot = session.getSnapshot();
-    const recreated = createBackend(createPlugin()).createSession(
+    const recreated = createBackend(await createPlugin()).createSession(
       createSessionConfig({
         resumeSeed: {
           providerSessionId: disposedSnapshot.providerSessionId,
@@ -2750,14 +2746,14 @@ describe('CodexExecutionBackend', () => {
       }
       throw new Error(`Unexpected method: ${method}`);
     });
-    const session = createBackend(createPlugin()).createSession(
+    const session = createBackend(await createPlugin()).createSession(
       createForkSessionConfig(),
     );
     const run = session.execute(createRequest());
     const eventsPromise = collectEvents(run.events);
     await waitForCondition(() => resumeCount === 1);
 
-    exitHandler?.();
+    native.processes.at(-1)!.exit();
     let exitSettled = false;
     void eventsPromise.then(() => { exitSettled = true; });
     await flushMicrotasks();
@@ -2824,7 +2820,7 @@ describe('CodexExecutionBackend', () => {
         }
         throw new Error(`Unexpected method: ${method}`);
       });
-      const session = createBackend(createPlugin()).createSession(
+      const session = createBackend(await createPlugin()).createSession(
         createForkSessionConfig(),
       );
       mockUnsubscribe.mockImplementationOnce(async () => {
@@ -2873,7 +2869,7 @@ describe('CodexExecutionBackend', () => {
       expect(resumeCount).toBe(0);
 
       const retrySession = lifecycle === 'disposal'
-        ? createBackend(createPlugin()).createSession(
+        ? createBackend(await createPlugin()).createSession(
           createSessionConfig({
             resumeSeed: {
               providerSessionId: session.getSnapshot().providerSessionId,
@@ -2919,7 +2915,7 @@ describe('CodexExecutionBackend', () => {
         throw new Error(`Unexpected method: ${method}`);
       });
 
-      const session = createBackend(createPlugin()).createSession(
+      const session = createBackend(await createPlugin()).createSession(
         createSessionConfig({
           lifecycle: 'ephemeral',
           nativePersistence: 'disabled-if-supported',
@@ -2979,7 +2975,7 @@ describe('CodexExecutionBackend', () => {
       }
       throw new Error(`Unexpected method: ${method}`);
     });
-    const session = createBackend(createPlugin())
+    const session = createBackend(await createPlugin())
       .createSession(createSessionConfig());
 
     const events = await collectEvents(session.execute(createRequest(
@@ -3033,7 +3029,7 @@ describe('CodexExecutionBackend', () => {
       if (method === 'turn/interrupt') return {};
       throw new Error(`Unexpected method: ${method}`);
     });
-    const session = createBackend(createPlugin())
+    const session = createBackend(await createPlugin())
       .createSession(createSessionConfig());
     const firstRun = session.execute(createRequest());
     await waitForCondition(() => turnStartCount === 1);
@@ -3087,14 +3083,14 @@ describe('CodexExecutionBackend', () => {
   });
 
   it.each([
-    'process start',
+    'process start hook',
     'transport start',
     'initialize',
   ] as const)(
     'cleans up exactly once when %s fails during app-server startup',
     async (failureBoundary) => {
       const failure = new Error(`Failed at ${failureBoundary}`);
-      if (failureBoundary === 'process start') {
+      if (failureBoundary === 'process start hook') {
         mockProcessStart.mockImplementationOnce(() => {
           throw failure;
         });
@@ -3115,7 +3111,7 @@ describe('CodexExecutionBackend', () => {
         }
         throw new Error(`Unexpected method: ${method}`);
       });
-      const session = createBackend(createPlugin())
+      const session = createBackend(await createPlugin())
         .createSession(createSessionConfig());
 
       const events = await collectEvents(session.execute(createRequest()).events);
@@ -3136,7 +3132,7 @@ describe('CodexExecutionBackend', () => {
   it('honors an already-aborted request without launching the app-server', async () => {
     const controller = new AbortController();
     controller.abort();
-    const session = createBackend(createPlugin())
+    const session = createBackend(await createPlugin())
       .createSession(createSessionConfig());
 
     const events = await collectEvents(
@@ -3170,7 +3166,7 @@ describe('CodexExecutionBackend', () => {
       }
       throw new Error(`Unexpected method: ${method}`);
     });
-    const plugin = createPlugin();
+    const plugin = await createPlugin();
     const codexConfig = (
       plugin.settings.providerConfigs as Record<string, Record<string, unknown>>
     ).codex;
@@ -3216,7 +3212,7 @@ describe('CodexExecutionBackend', () => {
   });
 
   it('rejects explicit High when the selected model does not advertise it', async () => {
-    const plugin = createPlugin();
+    const plugin = await createPlugin();
     const model = (plugin.settings.providerConfigs.codex!.discoveredModels as any[])[0];
     model.supportedReasoningEfforts = [{ value: 'medium', description: '' }];
     const session = createBackend(plugin).createSession(createSessionConfig());
@@ -3239,7 +3235,7 @@ describe('CodexExecutionBackend', () => {
       }
       throw new Error(`Unexpected method: ${method}`);
     });
-    const plugin = createPlugin();
+    const plugin = await createPlugin();
     plugin.settings.savedProviderEffort = { codex: 'high' };
     const session = createBackend(plugin).createSession(createSessionConfig());
     const request = createRequest();
@@ -3270,7 +3266,7 @@ describe('CodexExecutionBackend', () => {
       }
       throw new Error(`Unexpected method: ${method}`);
     });
-    const plugin = createPlugin();
+    const plugin = await createPlugin();
     const settings = plugin.settings as Record<string, unknown>;
     const providerConfigs = settings.providerConfigs as Record<string, Record<string, unknown>>;
     const currentCodexConfig = providerConfigs.codex;
@@ -3347,7 +3343,7 @@ describe('CodexExecutionBackend', () => {
       if (method === 'thread/start') return createThreadResult('thread-compact-args');
       throw new Error(`Unexpected method: ${method}`);
     });
-    const session = createBackend(createPlugin()).createSession(createSessionConfig());
+    const session = createBackend(await createPlugin()).createSession(createSessionConfig());
     try {
       const events = await collectEvents(session.execute(createRequest(new AbortController().signal, {
         input: texts.map(text => ({ type: 'text', text })),
@@ -3358,7 +3354,7 @@ describe('CodexExecutionBackend', () => {
   });
 
   it('rejects compact before handoff while canonical history still needs recovery', async () => {
-    const session = createBackend(createPlugin()).createSession(
+    const session = createBackend(await createPlugin()).createSession(
       createSessionConfig({
         resumeSeed: {
           providerSessionId: 'thread-recovery',
@@ -3548,7 +3544,7 @@ describe('CodexExecutionBackend', () => {
   });
 
   it('returns false before native steer handoff when no active turn exists', async () => {
-    const session = createBackend(createPlugin())
+    const session = createBackend(await createPlugin())
       .createSession(createSessionConfig());
     if (!isSteerableExecutionSession(session)) {
       throw new Error('Codex session should be steerable');
@@ -3567,3 +3563,7 @@ describe('CodexExecutionBackend', () => {
 vi.mock('node:fs', async () => ({ ...await vi.importActual<typeof import('node:fs')>('node:fs') }));
 
 vi.mock('node:fs/promises', async () => ({ ...await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises') }));
+
+let sharedVault: DesktopVault;
+beforeAll(async () => { sharedVault = await DesktopVault.create(); });
+afterAll(async () => { await sharedVault.dispose(); });

@@ -22,25 +22,7 @@ import { SessionMessagingService } from '@/features/chat/session-messaging/Sessi
 import { TabManager } from '@/features/chat/tabs/TabManager';
 import { VaultMentionDataProvider } from '@/shared/mention/VaultMentionDataProvider';
 
-const originalResizeObserver = globalThis.ResizeObserver;
-beforeEach(() => {
-  globalThis.ResizeObserver = class { observe() {} unobserve() {} disconnect() {} };
-  Object.assign(HTMLElement.prototype, {
-    hasClass(this: HTMLElement, name: string) { return this.classList.contains(name); },
-    addClass(this: HTMLElement, ...names: string[]) { this.classList.add(...names); },
-    removeClass(this: HTMLElement, ...names: string[]) { this.classList.remove(...names); },
-    empty(this: HTMLElement) { this.replaceChildren(); },
-    setText(this: HTMLElement, text: string) { this.textContent = text; },
-    appendText(this: HTMLElement, text: string) { this.appendChild(this.ownerDocument.createTextNode(text)); },
-    setCssProps(this: HTMLElement, props: Record<string, string>) {
-      for (const [key, value] of Object.entries(props)) this.style.setProperty(key, value);
-    },
-    toggleClass(this: HTMLElement, name: string, enabled: boolean) { this.classList.toggle(name, enabled); },
-    scrollIntoView() {},
-  });
-});
 afterEach(() => {
-  globalThis.ResizeObserver = originalResizeObserver;
   ProviderWorkspaceRegistry.clear();
   vi.restoreAllMocks();
   document.body.replaceChildren();

@@ -1,12 +1,12 @@
 import { existsSync, readFileSync } from 'node:fs';
 
 import { TEST_CODEX_CATALOG, TEST_CODEX_MODEL } from '@test/helpers/codexModels';
-import { runtimeHostFor, withRuntimeHosts } from '@test/helpers/providerRuntimeHost';
+import { DesktopVault } from '@test/helpers/core/DesktopVault';
+import { createProviderHostFixture } from '@test/helpers/providerRuntimeHost';
 import { type CodexNativeTestProcess as FakeProcess,CodexRuntimeHarness } from '@test/helpers/providers/codex/CodexRuntimeHarness';
 import { testClock } from '@test/helpers/testClock';
 
 import type { ProviderExecutionEvent, ProviderExecutionRequest, ProviderSessionConfig, ProviderSessionToolPort, ProviderToolPolicy } from '@/core/execution';
-import { ProviderExecutionLifecycleRegistry } from '@/core/execution/ProviderExecutionLifecycleRegistry';
 import type { ProviderHost } from '@/core/providers/ProviderHost';
 import type { ProviderRuntimeHost } from '@/core/providers/ProviderRuntimeHost';
 import { createCodexWorkspaceServices } from '@/providers/codex/app/CodexWorkspaceServices';
@@ -22,7 +22,7 @@ import { CodexSkillListingService } from '@/providers/codex/skills/CodexSkillLis
 
 /** The backend resolves its runtime per session; tests pin one instance. */
 const fixedRuntime = (runtime: CodexAppServerRuntime) => (): CodexAppServerRuntime => runtime;
-const scoped = (host: ProviderHost): ProviderRuntimeHost => runtimeHostFor(host, 'codex');
+const scoped = (host: ProviderHost): ProviderRuntimeHost => host.getRuntimeHost('codex');
 const createBackend = (host: ProviderHost, runtime: CodexAppServerRuntime): CodexExecutionBackend => new CodexExecutionBackend(
   scoped(host),
   fixedRuntime(runtime),
@@ -47,13 +47,16 @@ vi.mock('@/providers/codex/runtime/codexAppServerSupport', async () => ({
 
 describe('Codex shared runtime', () => {
   const runtimes: CodexAppServerRuntime[] = [];
-  const plugin = { settings: { providerConfigs: { codex: { enabled: true, discoveredModels: TEST_CODEX_CATALOG } } } } as unknown as ProviderHost;
+  let plugin: ProviderHost;
   function createRuntime(warn = vi.fn()): CodexAppServerRuntime {
     const runtime = new CodexAppServerRuntime(scoped(plugin), warn);
     runtimes.push(runtime);
     return runtime;
   }
-  beforeEach(() => mockNative.reset());
+  beforeEach(async () => {
+    mockNative.reset();
+    plugin = (await createProviderHostFixture({ vault: sharedVault, settings: { providerConfigs: { codex: { enabled: true, discoveredModels: TEST_CODEX_CATALOG } } } })).host;
+  });
   afterEach(async () => {
     await Promise.all(runtimes.splice(0).map(runtime => runtime.dispose()));
   });
@@ -496,9 +499,7 @@ describe('Codex shared runtime', () => {
 
   it('applies verbosity changes and restores defaults while resuming the same conversation', async () => {
     mockNative.autoReconcile = true;
-    const host = {
-      settings: { providerConfigs: { codex: { enabled: true, discoveredModels: TEST_CODEX_CATALOG } } },
-    } as unknown as ProviderHost;
+    const host = plugin;
     const runtime = new CodexAppServerRuntime(scoped(host), vi.fn());
     runtimes.push(runtime);
     const session = createBackend(host, runtime).createSession(config);
@@ -888,13 +889,9 @@ describe('Codex shared runtime', () => {
 
   it('keeps active execution through a workspace transition, resumes on the replacement, and disposes on disable', async () => {
     mockNative.autoReconcile = true;
-    const registry = new ProviderExecutionLifecycleRegistry();
-    const host = {
-      ...plugin,
-      settings: { providerConfigs: { codex: { enabled: true, discoveredModels: TEST_CODEX_CATALOG } } },
-      executionLifecycleRegistry: registry,
-    } as unknown as ProviderHost;
-    const services = await createCodexWorkspaceServices(withRuntimeHosts(host));
+    const host = plugin;
+    const registry = host.executionLifecycleRegistry;
+    const services = await createCodexWorkspaceServices(host);
     const backend = createBackend(host, services.runtime);
     const first = registry.acquire(backend, config, 'chat');
     const firstEvents = collect(first.session.execute(request).events);
@@ -1288,3 +1285,7 @@ describe('Codex shared runtime', () => {
     }
   });
 });
+
+let sharedVault: DesktopVault;
+beforeAll(async () => { sharedVault = await DesktopVault.create(); });
+afterAll(async () => { await sharedVault.dispose(); });

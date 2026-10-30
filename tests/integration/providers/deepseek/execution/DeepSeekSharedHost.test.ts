@@ -6,7 +6,7 @@ import { createInterface } from 'node:readline';
 
 import { nativeDefaults } from '@test/helpers/deepseek/NativeDefaults';
 import { childFollow, jobsOf, NativePeer, type NativePeerLifecycle, rootFollow } from '@test/helpers/deepseek/NativePeer';
-import { runtimeHostFor } from '@test/helpers/providerRuntimeHost';
+import { createProviderHostFixture } from '@test/helpers/providerRuntimeHost';
 import { testDate } from '@test/helpers/testClock';
 import type { Mock } from 'vitest';
 
@@ -20,13 +20,11 @@ import { getDeepSeekHome } from '@/providers/deepseek/runtime/DeepSeekHome';
 import { DeepSeekHost } from '@/providers/deepseek/runtime/DeepSeekHost';
 import { type DeepSeekLaunchArtifacts, prepareDeepSeekLaunchArtifacts } from '@/providers/deepseek/runtime/DeepSeekLaunchArtifacts';
 
-
-
 const time = testDate().getTime();
 // Fixture polling keeps the real clock while tests drive native deadlines on the fake one.
 const realTimeout = setTimeout;
 const realNow = Date.now;
-const host = { settings: { locale: 'en', providerConfigs: { deepseek: { enabled: true } } } } as unknown as ProviderHost;
+let host: ProviderHost;
 let peer: NativePeer;
 let deepseek: DeepSeekHost;
 let lifecycle: NativePeerLifecycle;
@@ -44,6 +42,7 @@ let activationFailures: (sessionId: string | undefined, agentPreset: string | un
 let permissions: Record<string, string>;
 
 beforeEach(async () => {
+  ({ host } = await createProviderHostFixture({ settings: { locale: 'en', providerConfigs: { deepseek: { enabled: true } } } }));
   sessions = []; created = []; stored = []; seq = 3; jobs = {}; activationFailures = () => undefined; permissions = {};
   peer = new NativePeer();
   const native = nativeDefaults({
@@ -99,7 +98,7 @@ function open(interactionPort = port(), resume?: string, lifecycle: ProviderSess
     sessionTools, lifecycle, nativePersistence: lifecycle === 'ephemeral' ? 'disabled-if-supported' : 'enabled', workingDirectory: '/vault', interactionPort,
     ...(resume ? { resumeSeed: { providerSessionId: resume, providerState: { schemaVersion: 1, home: getDeepSeekHome(process.env, process.cwd()), profile: 'web', preset: 'claudian' } } } : {}),
   };
-  const session = new DeepSeekExecutionBackend(runtimeHostFor(host, 'deepseek'), () => deepseek).createSession(config);
+  const session = new DeepSeekExecutionBackend(host.getRuntimeHost('deepseek'), () => deepseek).createSession(config);
   sessions.push(session);
   return session;
 }

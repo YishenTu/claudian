@@ -3,18 +3,18 @@ import '@/providers';
 
 import { axe } from '@test/helpers/accessibility';
 import { claudeCatalogFixture } from '@test/helpers/claudeModels';
+import { createChatFeatureHost } from '@test/helpers/features/chat/ChatFeatureHostFixture';
 import { createClaudianView } from '@test/helpers/features/chat/ClaudianViewHarness';
 import { createProjectsFake } from '@test/helpers/features/chat/ProjectsFake';
-import { installSessionRuntimePool } from '@test/helpers/features/chat/SessionRuntimePoolHarness';
+import { createSessionRuntimePool } from '@test/helpers/features/chat/SessionRuntimePoolHarness';
 import { FakeSideBackend, type FakeSideSession } from '@test/helpers/features/chat/SideChatSessionHarness';
 import { testDate } from '@test/helpers/testClock';
 import { fireEvent, waitFor, within } from '@testing-library/dom';
 import { App, Component, type Scope } from 'obsidian';
 
-import { ProviderExecutionLifecycleRegistry } from '@/core/execution';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { type ChatMessage, type ClaudianSettings, type Conversation, type ImageAttachment } from '@/core/types';
-import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
+import { SessionMessagingService } from '@/features/chat/session-messaging/SessionMessagingService';
 import { activateTab, destroyTab } from '@/features/chat/tabs/TabLifecycle';
 import { createTabRuntime } from '@/features/chat/tabs/TabRuntimeFactory';
 import { VaultMentionDataProvider } from '@/shared/mention/VaultMentionDataProvider';
@@ -23,19 +23,6 @@ const originalResizeObserver = globalThis.ResizeObserver;
 beforeEach(() => {
   globalThis.ResizeObserver = class { observe() {} unobserve() {} disconnect() {} };
   Object.defineProperty(document, 'elementFromPoint', { configurable: true, value: () => null });
-  Object.assign(HTMLElement.prototype, {
-    hasClass(this: HTMLElement, name: string) { return this.classList.contains(name); },
-    addClass(this: HTMLElement, ...names: string[]) { this.classList.add(...names); },
-    removeClass(this: HTMLElement, ...names: string[]) { this.classList.remove(...names); },
-    empty(this: HTMLElement) { this.replaceChildren(); },
-    setText(this: HTMLElement, text: string) { this.textContent = text; },
-    appendText(this: HTMLElement, text: string) { this.appendChild(this.ownerDocument.createTextNode(text)); },
-    setCssProps(this: HTMLElement, props: Record<string, string>) {
-      for (const [key, value] of Object.entries(props)) this.style.setProperty(key, value);
-    },
-    toggleClass(this: HTMLElement, name: string, enabled: boolean) { this.classList.toggle(name, enabled); },
-    scrollIntoView() {},
-  });
 });
 afterEach(() => {
   globalThis.ResizeObserver = originalResizeObserver;
@@ -57,10 +44,6 @@ async function createView() {
     },
   } });
   Object.assign(app.vault.adapter, { basePath: '/vault' });
-  Object.assign(app.vault, { on: () => ({}), offref() {} });
-  Object.assign(app.workspace, { getActiveViewOfType: () => null, getActiveFile: () => null, on: () => ({}), offref() {} });
-  Object.assign(app, { metadataCache: { on: () => ({}), offref() {} } });
-  const lifecycle = new ProviderExecutionLifecycleRegistry();
   const settings = {
     model: 'claude-sonnet-4-5', effortLevel: 'high', permissionMode: 'manual',
     enableAutoTitleGeneration: false, excludedTags: [], mediaFolder: '', systemPrompt: '', userName: '',
@@ -68,37 +51,37 @@ async function createView() {
     providerConfigs: { claude: {
       ...claudeCatalogFixture(['claude-sonnet-4-5'], ['low', 'high']), promptSuggestions: true,
     } },
-  } as unknown as ClaudianSettings;
-  const conversation = {
+  } satisfies Partial<ClaudianSettings>;
+  const conversation: Conversation = {
     id: 'conversation-1', providerId: 'claude', selectedModel: 'claude-sonnet-4-5',
     sessionId: 'main-session', messages: [], title: 'Existing conversation',
     createdAt: testDate().getTime(), lastActivityAt: testDate().getTime(),
-  } as unknown as Conversation;
-  const saved: unknown[] = [];
+  };
   const conversations = new Map([[conversation.id, conversation]]);
-  const plugin = {
-    app, settings,
-    providerHost: {
-      app, settings, executionLifecycleRegistry: lifecycle,
-      getResolvedProviderCliPath: async () => '/bin/claude', getActiveEnvironmentVariables: () => '',
-    },
+  const pool = createSessionRuntimePool(() => plugin);
+  const messaging = new SessionMessagingService({
+    getHost: () => plugin, getActiveConversationId: () => conversation.id, refreshModelControls: () => {},
+  });
+  onTestFinished(() => messaging.dispose());
+  const plugin = await createChatFeatureHost({
+    app, settings, sessionRuntimes: pool,
+    bindSessionTools: id => messaging.bindSessionTools(id),
     executionPersistence: {
       registerExecutionBinding() {}, releaseExecutionBinding() {},
       assertConversationExecutionAuthority: async () => {},
-      persistExecutionSnapshot: async (...args: unknown[]) => { saved.push(structuredClone(args)); return true; },
+      persistExecutionSnapshot: async () => true,
       recordConversationActivity: async () => {},
     },
-    getSessionSnapshotDirectory: () => '/tmp/claudian-sessions', getCommittedSettings: () => settings,
-    getActiveEnvironmentVariables: () => '', getConversationSummary: (id: string) => conversations.get(id),
+    getConversationSummary: id => conversations.get(id) ?? null,
     projects: createProjectsFake(),
-    getConversationSync: (id: string) => conversations.get(id), getCachedConversation: (id: string) => conversations.get(id),
-    getConversationById: async (id: string) => conversations.get(id), findConversationAcrossViews: () => null,
-    getConversationList: () => [conversation], renameConversation: async () => {},
-    updateConversation: async (_id: string, patch: unknown) => { saved.push(structuredClone(patch)); },
-    mutateSettings: async (mutate: (value: ClaudianSettings) => void) => mutate(settings),
+    getConversationSync: id => conversations.get(id) ?? null,
+    getCachedConversation: id => conversations.get(id) ?? null,
+    getConversationById: async id => conversations.get(id) ?? null,
+    getConversationList: () => [{ ...conversation, messageCount: 0, preview: '' }],
+    renameConversation: async () => {}, updateConversation: async () => {},
     chatModelSelection: { beginIntent: () => 1, commitIntent: async () => true },
-  } as unknown as ChatFeatureHost;
-  const pool = installSessionRuntimePool(plugin);
+  });
+  plugin.providerHost.getResolvedProviderCliPath = async () => '/bin/claude';
   const component = new Component();
   const containerEl = document.body.createDiv();
   const tab = await createTabRuntime({
@@ -115,11 +98,11 @@ async function createView() {
   activateTab(tab);
   tab.dom.inputEl.focus();
   // The real view Scope is the host keymap's destination; only its delivery is external.
-  const root = createClaudianView({ host: plugin, containerEl: tab.dom.contentEl,
+  const root = await createClaudianView({ host: plugin, containerEl: tab.dom.contentEl,
     contentEl: tab.dom.contentEl, tabManager: { getActiveTab: () => tab } });
   root.wireEventHandlers();
-  return { get tab() { return tab; }, backend, saved, conversation, plugin, root, scopes,
-    dispose: async () => { await destroyTab(tab); await pool.dispose(); await lifecycle.dispose(); } };
+  return { get tab() { return tab; }, backend, conversation, plugin, root, scopes,
+    dispose: async () => { await destroyTab(tab); await pool.dispose(); await messaging.dispose(); await plugin.providerHost.executionLifecycleRegistry.dispose(); } };
 }
 
 type View = Awaited<ReturnType<typeof createView>>;

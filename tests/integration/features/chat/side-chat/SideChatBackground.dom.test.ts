@@ -20,7 +20,7 @@ beforeEach(() => {
 afterEach(async () => { await releaseSideChatHarnesses(); vi.restoreAllMocks(); });
 
 async function finishedSide() {
-  const harness = createHarness();
+  const harness = await createHarness();
   Object.assign(harness.tab.controllers, { sideChatController: harness.controller });
   const { started } = await startSideChat(harness);
   harness.backend.latest.establishChild('side-session');
@@ -91,7 +91,7 @@ it('does not render late events after side disposal', async () => {
 });
 
 it('settles an async subagent from a session notification after the requested turn', async () => {
-  const harness = createHarness({ subagentAdapter, taskResultInterpreter });
+  const harness = await createHarness({ subagentAdapter, taskResultInterpreter });
   const { started } = await startSideChat(harness);
   const native = harness.backend.latest;
   native.establishChild('side-session');
@@ -115,7 +115,7 @@ it('settles an async subagent from a session notification after the requested tu
 });
 
 it('shows live progress on a foreground subagent card until its result arrives', async () => {
-  const harness = createHarness({ subagentAdapter, taskResultInterpreter });
+  const harness = await createHarness({ subagentAdapter, taskResultInterpreter });
   const { started } = await startSideChat(harness);
   const native = harness.backend.latest;
   native.establishChild('side-session');
@@ -150,7 +150,7 @@ it('shows live progress on a foreground subagent card until its result arrives',
 });
 
 it('shows live progress on a background subagent card after the requested turn', async () => {
-  const harness = createHarness({ subagentAdapter, taskResultInterpreter });
+  const harness = await createHarness({ subagentAdapter, taskResultInterpreter });
   const { started } = await startSideChat(harness);
   const native = harness.backend.latest;
   native.establishChild('side-session');
@@ -189,7 +189,7 @@ it('leaves the working state and drops queued input when background execution fa
 });
 
 it('settles the requested response before background output arriving in the same native batch', async () => {
-  const harness = createHarness();
+  const harness = await createHarness();
   const { started } = await startSideChat(harness);
   const native = harness.backend.latest;
   native.establishChild('side-session');
@@ -212,7 +212,7 @@ it('settles the requested response before background output arriving in the same
 });
 
 it.each(['requested', 'idle', 'background'] as const)('shows task notifications without waiting for %s side work', async (phase) => {
-  const harness = phase === 'requested' ? createHarness() : await finishedSide();
+  const harness = phase === 'requested' ? await createHarness() : await finishedSide();
   const pending = phase === 'requested' ? (await startSideChat(harness)).started : Promise.resolve(true);
   const native = harness.backend.latest;
   if (phase !== 'idle') {
@@ -245,7 +245,7 @@ it('keeps background output before a later independent notification in the same 
 });
 
 it('keeps a session notification before requested continuation text and preserves the final checkpoint', async () => {
-  const harness = createHarness();
+  const harness = await createHarness();
   const { started } = await startSideChat(harness);
   const native = harness.backend.latest;
   native.establishChild('side-session');
@@ -264,7 +264,7 @@ it('keeps a session notification before requested continuation text and preserve
 });
 
 it.each([false, true])('keeps queued requested output before a notification with native turn completed=%s', async completed => {
-  const harness = createHarness();
+  const harness = await createHarness();
   const { started } = await startSideChat(harness);
   const native = harness.backend.latest;
   native.establishChild('side-session');
@@ -279,7 +279,7 @@ it.each([false, true])('keeps queued requested output before a notification with
 });
 
 it('preserves all requested text positions across two notifications in one batch', async () => {
-  const harness = createHarness();
+  const harness = await createHarness();
   const { started } = await startSideChat(harness);
   const native = harness.backend.latest;
   native.establishChild('side-session');
@@ -302,7 +302,7 @@ it('preserves all requested text positions across two notifications in one batch
 });
 
 it('preserves a notification between automatic work and its subsequent answer', async () => {
-  const harness = createHarness({ taskResultInterpreter });
+  const harness = await createHarness({ taskResultInterpreter });
   const { started } = await startSideChat(harness);
   const native = harness.backend.latest;
   native.establishChild('side-session');
@@ -359,7 +359,7 @@ it('keeps completed automatic turns before a later notification while their rend
 
 
 it('accepts usage in the next side response after a subagent response', async () => {
-  const harness = createHarness({ subagentAdapter, taskResultInterpreter });
+  const harness = await createHarness({ subagentAdapter, taskResultInterpreter });
   const { started } = await startSideChat(harness);
   const native = harness.backend.latest;
   native.establishChild('side-session');

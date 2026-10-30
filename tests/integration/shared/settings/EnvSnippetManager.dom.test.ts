@@ -3,28 +3,20 @@
 import '@/providers';
 
 import { axe } from '@test/helpers/accessibility';
+import { createProviderHostFixture } from '@test/helpers/providerRuntimeHost';
 import { fireEvent, waitFor, within } from '@testing-library/dom';
 import { Notice } from 'obsidian';
 import type { Mock } from 'vitest';
 
-import { ClaudianSettingsStorage } from '@/app/settings/ClaudianSettingsStorage';
-import { DEFAULT_CLAUDIAN_SETTINGS } from '@/app/settings/defaultSettings';
 import { ProviderChatOptionsReconciler } from '@/app/settings/ProviderChatOptionsReconciler';
-import { SettingsCoordinator } from '@/app/settings/SettingsCoordinator';
-import type { ProviderHost } from '@/core/providers/ProviderHost';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { ProviderSettingsCoordinator } from '@/core/providers/ProviderSettingsCoordinator';
-import type { VaultFileAdapter } from '@/core/storage/VaultFileAdapter';
 import { getChatSettingsSnapshot } from '@/features/chat/ChatSettings';
 import { ChatViewPublisher } from '@/features/chat/workspace/ChatViewPublisher';
 import { getClaudeProviderSettings, updateClaudeProviderSettings } from '@/providers/claude/settings';
 import { claudeChatUIConfig } from '@/providers/claude/ui/ClaudeChatUIConfig';
 import { EnvSnippetManager, EnvSnippetModal } from '@/shared/settings/EnvSnippetManager';
 import { ModelSelector } from '@/shared/toolbar/ModelSelector';
-
-
-
-vi.mock('obsidian', async () => (await vi.importActual<typeof import('../../../helpers/ObsidianSettingsDOM')>('../../../helpers/ObsidianSettingsDOM')));
 
 type ModalTimerJoin = () => Promise<void>;
 
@@ -78,21 +70,19 @@ function notifyCalls(notice: Mock): string[] {
 const aliasCases: Array<Record<string, string> | undefined> = [undefined, {}, { custom: ' Snippet name ' }];
 
 it('preserves own context-limit keys when inserting a snippet with production object-spread semantics', async () => {
-  const settings = JSON.parse(JSON.stringify(DEFAULT_CLAUDIAN_SETTINGS)) as typeof DEFAULT_CLAUDIAN_SETTINGS;
+  const { host, settings } = await createProviderHostFixture({
+    overrides: {
+      notifyProviderChatOptionsChanged: vi.fn(),
+      applyEnvironmentVariables: async () => undefined,
+    },
+  });
   settings.customContextLimits = { sibling: 256000 };
   settings.envSnippets = [{
     id: 'snippet', name: 'Custom limits', description: '', scope: 'provider:claude',
     envVars: 'ANTHROPIC_MODEL=custom',
     contextLimits: JSON.parse('{"__proto__":64000,"custom":128000}') as Record<string, number>,
   }];
-  const coordinator = new SettingsCoordinator(settings, async () => undefined);
-  const host = {
-    notifyProviderChatOptionsChanged: vi.fn(),
-    settings,
-    app: { workspace: { getLeavesOfType: () => [] } },
-    applyEnvironmentVariables: async () => undefined,
-    mutateSettings: coordinator.mutate.bind(coordinator),
-  } as unknown as ProviderHost;
+
   const container = document.body.createEl('main');
   const changed = vi.fn();
   new EnvSnippetManager(container, host, 'provider:claude', changed);
@@ -108,19 +98,19 @@ it('preserves own context-limit keys when inserting a snippet with production ob
 });
 
 it.each(aliasCases)('applies snippet aliases through provider settings while preserving unrelated aliases (%o)', async modelAliases => {
-  const settings = JSON.parse(JSON.stringify(DEFAULT_CLAUDIAN_SETTINGS)) as typeof DEFAULT_CLAUDIAN_SETTINGS;
+  const { host, settings } = await createProviderHostFixture({
+    overrides: {
+      notifyProviderChatOptionsChanged: vi.fn(),
+      applyEnvironmentVariables: (...args) => applyEnvironmentVariables(...args),
+    },
+  });
   updateClaudeProviderSettings(settings, { modelAliases: { custom: 'Old name', other: 'Keep name' }, loadUserSettings: false });
   settings.envSnippets = [{
     id: 'snippet', name: 'Custom endpoint', description: '', scope: 'provider:claude',
     envVars: 'ANTHROPIC_MODEL=custom', modelAliases,
   }];
   const applyEnvironmentVariables = vi.fn().mockResolvedValue(undefined);
-  const host = {
-    notifyProviderChatOptionsChanged: vi.fn(),
-    settings, applyEnvironmentVariables,
-    app: { workspace: { getLeavesOfType: () => [] } },
-    mutateSettings: async (mutate: Parameters<ProviderHost['mutateSettings']>[0]) => { await mutate(settings); },
-  } as unknown as ProviderHost;
+
   const container = document.body.createEl('main');
   const onChanged = vi.fn();
   new EnvSnippetManager(container, host, 'provider:claude', onChanged);
@@ -140,15 +130,14 @@ it.each(aliasCases)('applies snippet aliases through provider settings while pre
 });
 
 it('offers saving the current environment from the empty snippet state', async () => {
-  const settings = JSON.parse(JSON.stringify(DEFAULT_CLAUDIAN_SETTINGS)) as typeof DEFAULT_CLAUDIAN_SETTINGS;
+  const { host, settings } = await createProviderHostFixture({
+    overrides: {
+      notifyProviderChatOptionsChanged: vi.fn(),
+      getEnvironmentVariablesForScope: () => 'ANTHROPIC_MODEL=custom',
+    },
+  });
   settings.envSnippets = [];
-  const host = {
-    notifyProviderChatOptionsChanged: vi.fn(),
-    settings,
-    app: { workspace: { getLeavesOfType: () => [] } },
-    getEnvironmentVariablesForScope: () => 'ANTHROPIC_MODEL=custom',
-    mutateSettings: async (mutate: Parameters<ProviderHost['mutateSettings']>[0]) => { await mutate(settings); },
-  } as unknown as ProviderHost;
+
   const container = document.body.createEl('main');
   new EnvSnippetManager(container, host, 'provider:claude');
 
@@ -184,14 +173,14 @@ it.each([
   { alias: 'New alias', context: '64k', modelAliases: { custom: 'New alias' }, contextLimits: { custom: 64000 } },
   { alias: '', context: '', modelAliases: {}, contextLimits: undefined },
 ])('preserves override drafts across environment edits (%j)', async ({ alias, context, modelAliases, contextLimits }) => {
-  const settings = JSON.parse(JSON.stringify(DEFAULT_CLAUDIAN_SETTINGS)) as typeof DEFAULT_CLAUDIAN_SETTINGS;
+  const { host } = await createProviderHostFixture();
   const snippet = {
     id: 'snippet', name: 'Custom endpoint', description: '', scope: 'provider:claude' as const,
     envVars: 'ANTHROPIC_MODEL=custom', modelAliases: { custom: 'Old alias' }, contextLimits: { custom: 200000 },
   };
   const save = vi.fn();
-  const host = { settings } as ProviderHost;
-  const modal = new EnvSnippetModal({} as ProviderHost['app'], host, snippet, 'provider:claude', save);
+
+  const modal = new EnvSnippetModal(host.app, host, snippet, 'provider:claude', save);
   const joinFocusTimers = captureModalFocusTimers(() => { modal.open(); });
   const dialog = within(document.body).getByRole('dialog', { name: 'Edit snippet' });
   fireEvent.input(within(dialog).getByRole('textbox', { name: 'Alias for custom' }), { target: { value: alias } });
@@ -217,7 +206,7 @@ it.each(['de-DE', 'fr-FR', 'ar-EG', 'en-US'])(
       return originalToLocaleString.call(this, locales ?? numberLocale, options);
     };
     try {
-      const settings = JSON.parse(JSON.stringify(DEFAULT_CLAUDIAN_SETTINGS)) as typeof DEFAULT_CLAUDIAN_SETTINGS;
+      const { host } = await createProviderHostFixture();
       const snippet = {
         id: 'snippet', name: 'Custom endpoint', description: '', scope: 'provider:claude' as const,
         envVars: 'ANTHROPIC_MODEL=custom',
@@ -225,8 +214,8 @@ it.each(['de-DE', 'fr-FR', 'ar-EG', 'en-US'])(
         contextLimits: { custom: 256500 },
       };
       const save = vi.fn();
-      const host = { settings } as ProviderHost;
-      const modal = new EnvSnippetModal({} as ProviderHost['app'], host, snippet, 'provider:claude', save);
+
+      const modal = new EnvSnippetModal(host.app, host, snippet, 'provider:claude', save);
       const joinFocusTimers = captureModalFocusTimers(() => { modal.open(); });
       const dialog = within(document.body).getByRole('dialog', { name: 'Edit snippet' });
       const contextInput = within(dialog).getByRole('textbox', { name: 'Context window for custom' }) as HTMLInputElement;
@@ -249,7 +238,10 @@ it.each((['Update', 'name Enter', 'Save'] as const).flatMap(action =>
   async ({ action, invalidContext }) => {
     const notice = Notice as unknown as Mock;
     notice.mockClear();
-    const settings = JSON.parse(JSON.stringify(DEFAULT_CLAUDIAN_SETTINGS)) as typeof DEFAULT_CLAUDIAN_SETTINGS;
+    const { host, settings, coordinator } = await createProviderHostFixture({
+    beforePersist: draft => persist(draft),
+    overrides: { getEnvironmentVariablesForScope: () => envVars }
+  });
     const envVars = 'ANTHROPIC_MODEL=sibling\nANTHROPIC_DEFAULT_SONNET_MODEL=custom';
     const originalSnippet = {
       id: 'snippet', name: 'Existing snippet name', description: 'Original description',
@@ -266,13 +258,9 @@ it.each((['Update', 'name Enter', 'Save'] as const).flatMap(action =>
     const persist = vi.fn<(...args: [typeof settings]) => Promise<void>>(() => new Promise<void>(resolve => {
       completePersistence = resolve;
     }));
-    const coordinator = new SettingsCoordinator(settings, persist);
-    const mutateSettings = vi.fn(coordinator.mutate.bind(coordinator));
-    const host = {
-      settings, mutateSettings,
-      app: { workspace: { getLeavesOfType: () => [] } },
-      getEnvironmentVariablesForScope: () => envVars,
-    } as unknown as ProviderHost;
+
+    const mutateSettings = vi.spyOn(host, 'mutateSettings');
+
     const container = document.body.createEl('main');
     new EnvSnippetManager(container, host, 'provider:claude');
     const joinFocusTimers = captureModalFocusTimers(() => {
@@ -314,7 +302,7 @@ it.each((['Update', 'name Enter', 'Save'] as const).flatMap(action =>
     };
     expect(submit()).toBe(action !== 'name Enter');
     // Let the real coordinator queue reach its persistence boundary if admitted.
-    await new Promise<void>(resolve => window.setTimeout(resolve, 0));
+    await coordinator.mutateConditionally(() => false);
     expect(notifyCalls(notice)).toEqual(['Invalid format. Use: 256k, 1m, or exact count (1000-10000000).']);
     expect(within(document.body).getByRole('dialog', { name: dialogName })).toBe(dialog);
     expect(dialog.isConnected).toBe(true);
@@ -366,7 +354,13 @@ it.each((['Update', 'name Enter', 'Save'] as const).flatMap(action =>
 it.each(['Save', 'Update'] as const)('retains every %s draft after persistence fails and retries from that same modal', async action => {
   const notice = Notice as unknown as Mock;
   notice.mockClear();
-  const settings = structuredClone(DEFAULT_CLAUDIAN_SETTINGS);
+  const { host, settings, coordinator } = await createProviderHostFixture({
+    beforePersist: draft => persist(draft),
+    overrides: {
+      notifyProviderChatOptionsChanged: vi.fn(),
+      getEnvironmentVariablesForScope: () => 'ANTHROPIC_MODEL=custom',
+    },
+  });
   settings.envSnippets = action === 'Save' ? [] : [{
     id: 'snippet', name: 'Existing snippet name', description: '', scope: 'provider:claude',
     envVars: 'ANTHROPIC_MODEL=custom',
@@ -374,14 +368,7 @@ it.each(['Save', 'Update'] as const)('retains every %s draft after persistence f
   const originalSnippets = structuredClone(settings.envSnippets);
   const persist = vi.fn<(...args: [typeof settings]) => Promise<void>>()
     .mockRejectedValueOnce(new Error('storage unavailable')).mockResolvedValue(undefined);
-  const coordinator = new SettingsCoordinator(settings, persist);
-  const host = {
-    notifyProviderChatOptionsChanged: vi.fn(),
-    settings,
-    app: { workspace: { getLeavesOfType: () => [] } },
-    getEnvironmentVariablesForScope: () => 'ANTHROPIC_MODEL=custom',
-    mutateSettings: coordinator.mutate.bind(coordinator),
-  } as unknown as ProviderHost;
+
   const container = document.body.createEl('main');
   new EnvSnippetManager(container, host, 'provider:claude');
   const joinFocusTimers = captureModalFocusTimers(() => {
@@ -434,20 +421,18 @@ it.each(['Save', 'Update'] as const)('retains every %s draft after persistence f
 it.each(['Save', 'Update'] as const)('does not offer another %s after persistence committed but publication failed', async action => {
   const notice = Notice as unknown as Mock;
   notice.mockClear();
-  const settings = structuredClone(DEFAULT_CLAUDIAN_SETTINGS);
+  const { host, settings } = await createProviderHostFixture({
+    beforePersist: draft => persist(draft),
+    afterPublish: () => publish(),
+    overrides: { getEnvironmentVariablesForScope: () => 'ANTHROPIC_MODEL=custom' }
+  });
   settings.envSnippets = action === 'Save' ? [] : [{
     id: 'snippet', name: 'Existing snippet name', description: '', scope: 'provider:claude',
     envVars: 'ANTHROPIC_MODEL=custom',
   }];
   const persist = vi.fn<(...args: [typeof settings]) => Promise<void>>().mockResolvedValue(undefined);
   const publish = vi.fn(() => { throw new Error('view refresh failed'); });
-  const coordinator = new SettingsCoordinator(settings, persist, publish);
-  const host = {
-    settings,
-    app: { workspace: { getLeavesOfType: () => [] } },
-    getEnvironmentVariablesForScope: () => 'ANTHROPIC_MODEL=custom',
-    mutateSettings: coordinator.mutate.bind(coordinator),
-  } as unknown as ProviderHost;
+
   const container = document.body.createEl('main');
   new EnvSnippetManager(container, host, 'provider:claude');
   await captureModalFocusTimers(() => {
@@ -471,17 +456,16 @@ it.each(['Save', 'Update'] as const)('does not offer another %s after persistenc
 it('saves a snippet through the coordinator and renders it when persistence succeeds', async () => {
   const notice = Notice as unknown as Mock;
   notice.mockClear();
-  const settings = JSON.parse(JSON.stringify(DEFAULT_CLAUDIAN_SETTINGS)) as typeof DEFAULT_CLAUDIAN_SETTINGS;
+  const { host, settings, coordinator } = await createProviderHostFixture({
+    beforePersist: draft => persist(draft),
+    overrides: {
+      notifyProviderChatOptionsChanged: vi.fn(),
+      getEnvironmentVariablesForScope: () => 'ANTHROPIC_MODEL=custom',
+    },
+  });
   settings.envSnippets = [];
   const persist = vi.fn<(...args: [typeof settings]) => Promise<void>>().mockResolvedValue(undefined);
-  const coordinator = new SettingsCoordinator(settings, persist);
-  const host = {
-    notifyProviderChatOptionsChanged: vi.fn(),
-    settings,
-    app: { workspace: { getLeavesOfType: () => [] } },
-    getEnvironmentVariablesForScope: () => 'ANTHROPIC_MODEL=custom',
-    mutateSettings: coordinator.mutate.bind(coordinator),
-  } as unknown as ProviderHost;
+
   const container = document.body.createEl('main');
   new EnvSnippetManager(container, host, 'provider:claude');
 
@@ -514,7 +498,13 @@ it('saves a snippet through the coordinator and renders it when persistence succ
 it.each(['', '   '])('clears a context override (%o) through the coordinator while saving valid sibling drafts', async blank => {
   const notice = Notice as unknown as Mock;
   notice.mockClear();
-  const settings = JSON.parse(JSON.stringify(DEFAULT_CLAUDIAN_SETTINGS)) as typeof DEFAULT_CLAUDIAN_SETTINGS;
+  const { host, settings, coordinator } = await createProviderHostFixture({
+    beforePersist: draft => persist(draft),
+    overrides: {
+      notifyProviderChatOptionsChanged: vi.fn(),
+      getEnvironmentVariablesForScope: () => 'ANTHROPIC_MODEL=custom',
+    },
+  });
   settings.envSnippets = [{
     id: 'snippet', name: 'Existing snippet name', description: '', scope: 'provider:claude',
     envVars: 'ANTHROPIC_MODEL=custom\nANTHROPIC_DEFAULT_SONNET_MODEL=sibling',
@@ -522,14 +512,7 @@ it.each(['', '   '])('clears a context override (%o) through the coordinator whi
     modelAliases: { custom: 'Old alias' },
   }];
   const persist = vi.fn<(...args: [typeof settings]) => Promise<void>>().mockResolvedValue(undefined);
-  const coordinator = new SettingsCoordinator(settings, persist);
-  const host = {
-    notifyProviderChatOptionsChanged: vi.fn(),
-    settings,
-    app: { workspace: { getLeavesOfType: () => [] } },
-    getEnvironmentVariablesForScope: () => 'ANTHROPIC_MODEL=custom',
-    mutateSettings: coordinator.mutate.bind(coordinator),
-  } as unknown as ProviderHost;
+
   const container = document.body.createEl('main');
   new EnvSnippetManager(container, host, 'provider:claude');
 
@@ -570,27 +553,17 @@ it.each(['', '   '])('clears a context override (%o) through the coordinator whi
   expect(notifyCalls(notice)).not.toContain('Could not complete environment snippet update');
 });
 
-
 it('saves, reloads and inserts snippet overrides for prototype-named custom models', async () => {
-  const settings = structuredClone(DEFAULT_CLAUDIAN_SETTINGS);
+  const { host, settings, settingsStorage: storage } = await createProviderHostFixture({
+    overrides: { notifyProviderChatOptionsChanged: vi.fn(),
+      getEnvironmentVariablesForScope: () => envVars,
+      applyEnvironmentVariables: async () => undefined }
+  });
   settings.envSnippets = [];
   const envVars = 'ANTHROPIC_MODEL=__proto__\nANTHROPIC_DEFAULT_SONNET_MODEL=constructor';
-  let persisted = '';
-  const adapter = {
-    exists: async () => persisted !== '',
-    read: async () => persisted,
-    write: async (_path: string, content: string) => { persisted = content; },
-  } as unknown as VaultFileAdapter;
-  const storage = new ClaudianSettingsStorage(adapter, DEFAULT_CLAUDIAN_SETTINGS);
-  const coordinator = new SettingsCoordinator(settings, value => storage.save(value));
+
   const onChanged = vi.fn();
-  const host = {
-    notifyProviderChatOptionsChanged: vi.fn(),
-    settings, mutateSettings: coordinator.mutate.bind(coordinator),
-    app: { workspace: { getLeavesOfType: () => [] } },
-    getEnvironmentVariablesForScope: () => envVars,
-    applyEnvironmentVariables: async () => undefined,
-  } as unknown as ProviderHost;
+
   const container = document.body.createEl('main');
   new EnvSnippetManager(container, host, 'provider:claude', onChanged);
   const joinFocusTimers = captureModalFocusTimers(() => {
@@ -647,9 +620,15 @@ it('saves, reloads and inserts snippet overrides for prototype-named custom mode
   expect(getClaudeProviderSettings(settings).modelAliases).toEqual({});
 });
 
-
 it('publishes inserted aliases to every mounted model selector', async () => {
-  const settings = structuredClone(DEFAULT_CLAUDIAN_SETTINGS);
+  const { host, settings, coordinator } = await createProviderHostFixture({
+    beforePersist: async draft => { saved = JSON.stringify(draft); },
+    afterPublish: (current, previous) => publisher.publishSettings(current, previous),
+    overrides: {
+      applyEnvironmentVariables: async () => undefined,
+      notifyProviderChatOptionsChanged: (providerId: string) => { void reconciler.notifyChanged(providerId); },
+    },
+  });
   settings.model = 'claude-code/custom';
   updateClaudeProviderSettings(settings, {
     discoveredModels: [{ value: 'custom', label: 'Native custom', description: '' }],
@@ -672,21 +651,14 @@ it('publishes inserted aliases to every mounted model selector', async () => {
     hasLoadedAllSessionMetadata: () => true,
   });
   let saved = '';
-  const coordinator = new SettingsCoordinator(settings, async draft => { saved = JSON.stringify(draft); },
-    (current, previous) => publisher.publishSettings(current, previous));
+
   const reconciler = new ProviderChatOptionsReconciler({
     settings: coordinator,
     providers: { getProviderDisplayName: () => 'Claude' }, providerSettings: ProviderSettingsCoordinator,
     reconcileConversationModels: async () => [], onSettingsReconciled() {}, onConversationsChanged() {},
     onReconciled: providerId => publisher.refreshModelSelector(providerId),
   });
-  const host = {
-    settings, app: { workspace: { getLeavesOfType: () => views.map(view => ({ view })) } },
-    // The snippet uses the already-applied environment; this boundary has no runtime changes to publish.
-    applyEnvironmentVariables: async () => undefined,
-    mutateSettings: coordinator.mutate.bind(coordinator),
-    notifyProviderChatOptionsChanged: (providerId: string) => { void reconciler.notifyChanged(providerId); },
-  } as unknown as ProviderHost;
+
   for (const container of containers) expect(within(container).getByRole('button', { name: 'Model: Old alias' })).toBeTruthy();
   const manager = document.body.createDiv();
   new EnvSnippetManager(manager, host, 'provider:claude');

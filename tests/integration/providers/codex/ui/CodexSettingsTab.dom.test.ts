@@ -1,10 +1,9 @@
 /** @vitest-environment jsdom */
-import '@test/helpers/ObsidianSettingsDOM';
 import '@/providers';
 
 import { axe } from '@test/helpers/accessibility';
 import { TEST_CODEX_MODEL } from '@test/helpers/codexModels';
-import { controlChangeSettled } from '@test/helpers/ObsidianSettingsDOM';
+import { controlChangeSettled } from '@test/helpers/ObsidianHost';
 import { CodexRuntimeHarness } from '@test/helpers/providers/codex/CodexRuntimeHarness';
 import { createCodexWorkspaceHarness } from '@test/helpers/providers/codex/CodexWorkspaceHarness';
 import { fireEvent, waitFor, within } from '@testing-library/dom';
@@ -20,10 +19,6 @@ import { getCodexProviderSettings } from '@/providers/codex/settings';
 import { codexChatUIConfig } from '@/providers/codex/ui/CodexChatUIConfig';
 
 const mockNative = new CodexRuntimeHarness();
-vi.mock('obsidian', async () => ({
-  ...(await vi.importActual<typeof import('@test/__mocks__/obsidian')>('@test/__mocks__/obsidian')),
-  ...(await vi.importActual<typeof import('@test/helpers/ObsidianSettingsDOM')>('@test/helpers/ObsidianSettingsDOM')),
-}));
 vi.mock('fs', async () => ({ ...(await vi.importActual<typeof import('fs')>('fs')) }));
 vi.mock('@/providers/codex/runtime/CodexAppServerProcess', () => ({
   CodexAppServerProcess: vi.fn().mockImplementation(function () { return mockNative.createProcess(); }),

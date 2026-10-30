@@ -1,6 +1,6 @@
 import { createConversationPorts, createTestSession } from '@test/helpers/ConversationPorts';
+import { createChatFeatureHost } from '@test/helpers/features/chat/ChatFeatureHostFixture';
 import { createProjectsFake } from '@test/helpers/features/chat/ProjectsFake';
-import { createMockEl } from '@test/helpers/MockElement';
 
 import type { ConversationControllerDeps } from '@/features/chat/conversation/ConversationController';
 import type { ChatSessionRuntime } from '@/features/chat/sessions/ChatSessionRuntime';
@@ -9,10 +9,10 @@ import { ChatState } from '@/features/chat/state/ChatState';
 export type FixtureDeps = ConversationControllerDeps & { renderer: NonNullable<ConversationControllerDeps['renderer']>; session: ChatSessionRuntime; getInputEl: () => HTMLTextAreaElement; getImageContextManager: () => any };
 
 /** Conversation controller deps with real draft, session, and state owners. */
-export function createConversationControllerDeps(
+export async function createConversationControllerDeps(
   overrides: Record<string, unknown> = {},
   work: { hasBackgroundWork?: () => boolean; hasDetachedWork?: () => boolean } = {},
-): FixtureDeps {
+): Promise<FixtureDeps> {
   const session = createTestSession({
     getState: () => state,
     coordinator: {
@@ -22,9 +22,11 @@ export function createConversationControllerDeps(
     hasPendingWork: work.hasDetachedWork,
   });
   const state: ChatState = new ChatState({}, undefined, session.turns);
-  const inputEl = { value: '', focus: vi.fn(), dispatchEvent: vi.fn() } as unknown as HTMLTextAreaElement;
-  let welcomeEl: any = createMockEl();
-  const messagesEl = createMockEl();
+  const inputEl = document.createElement('textarea');
+  vi.spyOn(inputEl, 'focus');
+  vi.spyOn(inputEl, 'dispatchEvent');
+  let welcomeEl: any = document.createElement('div');
+  const messagesEl = document.createElement('div');
 
   const linkedContentController = {
     resetAutoDraft: vi.fn(),
@@ -32,7 +34,7 @@ export function createConversationControllerDeps(
   };
 
   const deps = {
-    plugin: {
+    plugin: await createChatFeatureHost({
       createConversation: vi.fn().mockResolvedValue({
         id: 'new-conv',
         title: 'New Conversation',
@@ -52,17 +54,16 @@ export function createConversationControllerDeps(
       getConversationById: vi.fn().mockResolvedValue(null),
       getConversationSummary: vi.fn().mockReturnValue(null),
       projects: createProjectsFake([]),
-      providerHost: { workingDirectory: '/vault' },
       updateConversation: vi.fn().mockResolvedValue(undefined),
       settings: {
         userName: '',
         enableAutoTitleGeneration: true,
         permissionMode: 'yolo',
       },
-    } as any,
+    }),
     state,
     renderer: {
-      renderMessages: vi.fn().mockReturnValue(createMockEl()),
+      renderMessages: vi.fn().mockReturnValue(document.createElement('div')),
       refreshBranchButtons: vi.fn(),
       refreshBranchButtonState: vi.fn(),
       captureReadingAnchor: vi.fn(() => null),

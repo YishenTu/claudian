@@ -1,25 +1,17 @@
 /** @vitest-environment jsdom */
-
 import { firePointer } from '@test/helpers/dom/pointer';
 import { createPopoutDocument } from '@test/helpers/dom/popoutDocument';
+import { createFeatureHostFixture } from '@test/helpers/FeatureHostFixture';
 import { createProjectsFake, projectRecord } from '@test/helpers/features/chat/ProjectsFake';
-import { createObsidianWorkspace } from '@test/helpers/ObsidianWorkspace';
+import { createSessionBrowserHost } from '@test/helpers/features/chat/SessionBrowserTestHarness';
 import { testDate } from '@test/helpers/testClock';
 import { fireEvent, within } from '@testing-library/dom';
-import { Notice } from 'obsidian';
+import { App, Notice } from 'obsidian';
 
 import type { ConversationMeta } from '@/core/types';
-import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
 import { SessionManagerSurface } from '@/features/chat/session-manager/SessionManagerSurface';
 import { t } from '@/i18n/i18n';
 
-HTMLElement.prototype.empty = function () { this.replaceChildren(); };
-HTMLElement.prototype.addClass = function (...classes) { this.classList.add(...classes); };
-HTMLElement.prototype.removeClass = function (...classes) { this.classList.remove(...classes); };
-HTMLElement.prototype.hasClass = function (className) { return this.classList.contains(className); };
-HTMLElement.prototype.toggleClass = function (classes, value) {
-  for (const name of [classes].flat()) this.classList.toggle(name, value);
-};
 
 const ROW_HEIGHT = 20;
 const MEMBERS_HEIGHT = 40;
@@ -72,7 +64,7 @@ function conversation(id: string, overrides: Partial<ConversationMeta> = {}): Co
   };
 }
 
-function setup(options: {
+async function setup(options: {
   launchPinned?: boolean;
   /** The document showing the sidebar, such as a popout window's. */
   doc?: Document;
@@ -87,26 +79,15 @@ function setup(options: {
     projectRecord({ id: 'empty', name: 'Empty', createdAt: testDate({ days: -2 }).getTime() }),
   ]);
   let saveResult: Promise<void> = Promise.resolve();
-  const plugin = {
-    app: {
-      vault: { getAbstractFileByPath: () => null },
-      workspace: createObsidianWorkspace(document.body),
-    },
-    settings: { enableAutoTitleGeneration: false, sessionManagerOrganization: 'list' } as Record<string, unknown>,
-    mutateSettings: vi.fn(async (mutation: (settings: Record<string, unknown>) => void) => {
-      const draft = structuredClone(plugin.settings);
-      mutation(draft);
-      await saveResult;
-      plugin.settings = draft;
-      // The settings publisher refreshes every view's session list once the change is saved.
-      surface.invalidate();
-    }),
-    getConversationList: () => conversations,
-    conversationLifecycle: { setPinned: vi.fn(), setPlacement: vi.fn() },
-    projects,
-  };
+  const fixture = await createFeatureHostFixture({
+    app: new App(), settings: { enableAutoTitleGeneration: false, sessionManagerOrganization: 'list' },
+    beforePersist: () => saveResult,
+    afterPublish: () => surface.invalidate(),
+  });
+  const { plugin } = await createSessionBrowserHost({ conversations, host: { fixture, projects } });
+  vi.spyOn(plugin, 'mutateSettings');
   const surface = new SessionManagerSurface({
-    plugin: plugin as unknown as ChatFeatureHost,
+    plugin,
     navigation: {
       contentExists: () => true,
       getConversationStatus: () => ({ openState: 'closed', isRunning: false }),
@@ -147,7 +128,10 @@ function setup(options: {
   };
   const moveTo = (clientY: number) => firePointer('pointerMove', document, clientY);
   const release = (clientY: number) => firePointer('pointerUp', document, clientY);
-  const settle = () => new Promise(resolve => setTimeout(resolve, 0));
+  const settle = async () => {
+    await Promise.allSettled(vi.mocked(plugin.mutateSettings).mock.results.map(result => result.value));
+    await vi.advanceTimersByTimeAsync(0);
+  };
   return {
     host, moveTo, offsetOf, order, plugin, press, projectRow, release, settle, surface, toggle, view,
     failNextSave: () => { saveResult = Promise.reject(new Error('write failed')); },
@@ -155,15 +139,16 @@ function setup(options: {
 }
 
 let restoreLayout: () => void;
-beforeEach(() => { restoreLayout = installListLayout(); });
+beforeEach(() => { vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] }); restoreLayout = installListLayout(); });
 afterEach(() => {
   restoreLayout();
+  vi.useRealTimers();
   document.body.replaceChildren();
   vi.mocked(Notice).mockClear();
 });
 
 it('lifts a project and slides the others aside while it moves, saving the order on release', async () => {
-  const { moveTo, offsetOf, order, plugin, press, projectRow, release, settle, toggle } = setup();
+  const { moveTo, offsetOf, order, plugin, press, projectRow, release, settle, toggle } = await setup();
   expect(order()).toEqual(['Empty', 'Website', 'Launch']);
 
   // Launch sits at 140–160; a small wobble is still a click, not a drag.
@@ -194,8 +179,8 @@ it('lifts a project and slides the others aside while it moves, saving the order
   expect(projectRow('Launch').style.transform).toBe('');
 });
 
-it('moves a neighbour away as soon as the dragged card starts covering it', () => {
-  const { moveTo, offsetOf, press, projectRow } = setup();
+it('moves a neighbour away as soon as the dragged card starts covering it', async () => {
+  const { moveTo, offsetOf, press, projectRow } = await setup();
   // Launch (140–160) raised 8px covers 40% of Website (120–140).
   press('Launch');
   moveTo(150 - 8);
@@ -206,7 +191,7 @@ it('moves a neighbour away as soon as the dragged card starts covering it', () =
 });
 
 it('moves a project to the end of the list', async () => {
-  const { moveTo, order, press, release, settle } = setup();
+  const { moveTo, order, press, release, settle } = await setup();
   // Dragged as far down as it goes, Empty stops level with Launch, the last project.
   press('Empty');
   moveTo(500);
@@ -217,7 +202,7 @@ it('moves a project to the end of the list', async () => {
 });
 
 it('keeps a press without movement a click on the project toggle', async () => {
-  const { plugin, press, release, settle, toggle } = setup();
+  const { plugin, press, release, settle, toggle } = await setup();
   const startY = press('Website');
   release(startY);
   fireEvent.click(toggle('Website'));
@@ -228,7 +213,7 @@ it('keeps a press without movement a click on the project toggle', async () => {
 });
 
 it('keeps a dragged expanded project under the pointer when folding it pulls a scrolled list back', async () => {
-  const { moveTo, press, projectRow, settle, toggle } = setup();
+  const { moveTo, press, projectRow, settle, toggle } = await setup();
   fireEvent.click(toggle('Website'));
   await settle();
   {
@@ -252,9 +237,9 @@ it('keeps a dragged expanded project under the pointer when folding it pulls a s
   }
 });
 
-it('leaves the row actions to their own clicks in a popout window', () => {
+it('leaves the row actions to their own clicks in a popout window', async () => {
   const popout = createPopoutDocument();
-  const { host } = setup({ doc: popout });
+  const { host } = await setup({ doc: popout });
   const rowOf = (name: string) => [...host.querySelectorAll<HTMLElement>('.claudian-session-group-header')]
     .find(row => row.textContent?.includes(name))!;
   const actions = rowOf('Website').querySelector<HTMLElement>('.claudian-session-group-menu-action')!;
@@ -272,7 +257,7 @@ it('leaves the row actions to their own clicks in a popout window', () => {
 });
 
 it('cancels with Escape, restoring every project in place', async () => {
-  const { moveTo, offsetOf, plugin, press, projectRow, release, settle, toggle } = setup();
+  const { moveTo, offsetOf, plugin, press, projectRow, release, settle, toggle } = await setup();
   press('Empty');
   moveTo(150);
   expect(offsetOf(projectRow('Website'))).toBe(`translateY(-${ROW_HEIGHT}px)`);
@@ -293,7 +278,7 @@ it('cancels with Escape, restoring every project in place', async () => {
 });
 
 it('folds a dragged expanded project and moves expanded neighbours as a whole', async () => {
-  const { moveTo, offsetOf, order, press, projectRow, release, settle, toggle } = setup();
+  const { moveTo, offsetOf, order, press, projectRow, release, settle, toggle } = await setup();
   fireEvent.click(toggle('Launch'));
   await settle();
   fireEvent.click(toggle('Empty'));
@@ -315,7 +300,7 @@ it('folds a dragged expanded project and moves expanded neighbours as a whole', 
 });
 
 it('keeps the dragged rows through list updates until the order is saved', async () => {
-  const { moveTo, order, press, projectRow, release, settle, surface, view } = setup();
+  const { moveTo, order, press, projectRow, release, settle, surface, view } = await setup();
   // Empty (100–120) lowered 25px passes Website (120–140) but barely reaches Launch (140–160).
   press('Empty');
   moveTo(135);
@@ -333,11 +318,12 @@ it('keeps the dragged rows through list updates until the order is saved', async
   expect(['New', 'Search', 'Archive'].map(name => view.getAllByRole('button', { name }).length)).toEqual([1, 1, 1]);
 });
 
-it('discards a held render when the surface is disposed mid-drag', () => {
-  const { moveTo, plugin, press, projectRow, surface } = setup();
+it('discards a held render when the surface is disposed mid-drag', async () => {
+  const { moveTo, plugin, press, projectRow, surface } = await setup();
   press('Empty');
   moveTo(135);
   const lifted = projectRow('Empty');
+  expect(lifted.classList.contains('claudian-live-sort-lifted')).toBe(true);
   surface.invalidate();
 
   surface.dispose();
@@ -348,7 +334,7 @@ it('discards a held render when the surface is disposed mid-drag', () => {
 });
 
 it('restores the list and reports a reorder that fails to save', async () => {
-  const { failNextSave, moveTo, offsetOf, order, plugin, press, projectRow, release, settle, toggle } = setup();
+  const { failNextSave, moveTo, offsetOf, order, plugin, press, projectRow, release, settle, toggle } = await setup();
   fireEvent.click(toggle('Empty'));
   await settle();
   const members = projectRow('Empty').nextElementSibling as HTMLElement;
@@ -369,8 +355,8 @@ it('restores the list and reports a reorder that fails to save', async () => {
   expect(projectRow('Empty').parentElement!.classList.contains('claudian-live-sorting')).toBe(false);
 });
 
-it('sorts a project only among projects of its pin state', () => {
-  const { moveTo, offsetOf, press, projectRow, view } = setup({ launchPinned: true });
+it('sorts a project only among projects of its pin state', async () => {
+  const { moveTo, offsetOf, press, projectRow, view } = await setup({ launchPinned: true });
   expect(within(view.getByRole('region', { name: 'Pinned' })).getByText('Launch')).toBeTruthy();
 
   // Pulled far up, Website stops at the top of the unpinned projects and Launch stays put.
