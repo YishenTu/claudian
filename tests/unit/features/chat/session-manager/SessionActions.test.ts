@@ -9,8 +9,6 @@ import { SessionBrowser, type SessionBrowserDeps } from '@/features/chat/session
 import { ChatSessionRuntime } from '@/features/chat/sessions/ChatSessionRuntime';
 import { SessionRuntimePool } from '@/features/chat/sessions/SessionRuntimePool';
 
-
-
 function createFixture() {
   const deps = {
     plugin: {
@@ -224,7 +222,6 @@ describe('SessionActions', () => {
       sessionScope: 'active',
       sessionActionMode: 'active',
 
-
     });
 
     expect(container.querySelectorAll('.claudian-history-item-title')
@@ -345,28 +342,6 @@ describe('SessionActions', () => {
     expect(container.querySelector('.claudian-delete-btn')).not.toBeNull();
     expect(container.querySelector('.claudian-pin-btn')).toBeNull();
     expect(container.querySelector('.claudian-archive-btn')).toBeNull();
-  });
-
-  it('disables archive actions for running sessions', () => {
-    const container = createMockEl();
-    (deps.plugin.getConversationList as Mock).mockReturnValue([
-      { id: 'running', title: 'Running', createdAt: 1 },
-    ]);
-
-    controller.renderHistoryDropdown(container, {
-      onSelectConversation: vi.fn(),
-      showPinnedSection: true,
-      sessionScope: 'active',
-      sessionActionMode: 'active',
-      getConversationStatus: () => ({ openState: 'current', isRunning: true }),
-
-
-    });
-
-    const archiveButton = container.querySelector('.claudian-archive-btn')!;
-    expect(archiveButton.getAttribute('disabled')).not.toBeNull();
-    expect(archiveButton.getAttribute('aria-label'))
-      .toBe('Cannot archive a running session');
   });
 
   it('delegates rerendering after deletion when the surface owner provides a callback', async () => {
@@ -596,7 +571,6 @@ describe('SessionActions', () => {
       onSelectConversation: vi.fn(),
       onAssignConversationToDevice,
 
-
       sessionActionMode: 'active',
       showOpenStateActions: false,
     });
@@ -698,7 +672,6 @@ describe('SessionActions', () => {
     controller.renderHistoryDropdown(container, {
       onSelectConversation: vi.fn(),
 
-
       sessionActionMode: 'active',
       showInlinePinAction: false,
       showOpenStateActions: false,
@@ -736,7 +709,6 @@ describe('SessionActions', () => {
       sessionScope: 'active',
       sessionActionMode: 'active',
       showOpenStateActions: false,
-
 
     });
     activeContainer.querySelector('.claudian-history-item')!.dispatchEvent({

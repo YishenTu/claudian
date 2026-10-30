@@ -4,20 +4,34 @@ import { SessionRuntimePool } from '@/features/chat/sessions/SessionRuntimePool'
 
 const pools: SessionRuntimePool[] = [];
 
+interface RuntimePoolFixtureOptions {
+  onChanged?: () => void;
+  onSessionSettled?: (conversationId: string) => void;
+}
+
 /** Real session ownership for view fixtures; persistence remains their supplied application port. */
-export function installSessionRuntimePool(
-  plugin: ChatFeatureHost,
-  options: { onChanged?: () => void; onSessionSettled?: (conversationId: string) => void } = {},
+export function createSessionRuntimePool(
+  getHost: () => ChatFeatureHost,
+  options: RuntimePoolFixtureOptions = {},
 ): SessionRuntimePool {
   const pool = new SessionRuntimePool({
-    createRuntime: identity => createChatSessionRuntime(plugin, identity),
+    createRuntime: identity => createChatSessionRuntime(getHost(), identity),
     releaseHistory: async (_id, canRelease) => canRelease(),
     onChanged: options.onChanged ?? (() => undefined),
     ...(options.onSessionSettled ? { onSessionSettled: options.onSessionSettled } : {}),
     onError: () => undefined,
   });
-  Object.assign(plugin, { sessionRuntimes: pool });
   pools.push(pool);
+  return pool;
+}
+
+/** Legacy fixtures install the pool after building their host. */
+export function installSessionRuntimePool(
+  plugin: ChatFeatureHost,
+  options: RuntimePoolFixtureOptions = {},
+): SessionRuntimePool {
+  const pool = createSessionRuntimePool(() => plugin, options);
+  Object.assign(plugin, { sessionRuntimes: pool });
   return pool;
 }
 

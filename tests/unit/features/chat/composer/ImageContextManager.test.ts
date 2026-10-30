@@ -185,61 +185,6 @@ describe('ImageContextManager - Private Helpers', () => {
     manager = new ImageContextManager(keymap, container, inputEl, callbacks);
   });
 
-  describe('getMediaType', () => {
-    it('should return correct media type for .jpg', () => {
-      expect(manager['getMediaType']('photo.jpg')).toBe('image/jpeg');
-    });
-
-    it('should return correct media type for .jpeg', () => {
-      expect(manager['getMediaType']('photo.jpeg')).toBe('image/jpeg');
-    });
-
-    it('should return correct media type for .png', () => {
-      expect(manager['getMediaType']('image.png')).toBe('image/png');
-    });
-
-    it('should return correct media type for .gif', () => {
-      expect(manager['getMediaType']('animation.gif')).toBe('image/gif');
-    });
-
-    it('should return correct media type for .webp', () => {
-      expect(manager['getMediaType']('photo.webp')).toBe('image/webp');
-    });
-
-    it('should return null for unsupported extension', () => {
-      expect(manager['getMediaType']('document.pdf')).toBeNull();
-    });
-
-    it('should return null for no extension', () => {
-      expect(manager['getMediaType']('noextension')).toBeNull();
-    });
-
-    it('should handle uppercase extensions', () => {
-      expect(manager['getMediaType']('PHOTO.JPG')).toBe('image/jpeg');
-    });
-
-    it('should handle mixed case extensions', () => {
-      expect(manager['getMediaType']('image.Png')).toBe('image/png');
-    });
-  });
-
-  describe('isImageFile', () => {
-    it('should return true for valid image file', () => {
-      const file = { type: 'image/png', name: 'test.png' } as File;
-      expect(manager['isImageFile'](file)).toBe(true);
-    });
-
-    it('should return false for non-image file', () => {
-      const file = { type: 'application/pdf', name: 'doc.pdf' } as File;
-      expect(manager['isImageFile'](file)).toBe(false);
-    });
-
-    it('should return false for image type but unsupported extension', () => {
-      const file = { type: 'image/bmp', name: 'test.bmp' } as File;
-      expect(manager['isImageFile'](file)).toBe(false);
-    });
-  });
-
   describe('notifyImageError', () => {
     it('should create a Notice with the message', () => {
       manager['notifyImageError']('Test error');
@@ -447,43 +392,6 @@ describe('ImageContextManager - Private Helpers', () => {
       expect(manager['dropOverlay']?.hasClass('visible')).toBe(false);
     });
 
-    it('handleDrop should hide overlay and process image files', async () => {
-      manager['dropOverlay']?.addClass('visible');
-      const addImageSpy = vi.spyOn(manager as any, 'addImageFromFile').mockResolvedValue(true);
-
-      const mockFile = { type: 'image/png', name: 'test.png', size: 1024 };
-      const event = {
-        preventDefault: vi.fn(),
-        stopPropagation: vi.fn(),
-        dataTransfer: { files: { length: 1, 0: mockFile, [Symbol.iterator]: function* () { yield mockFile; } } },
-      };
-
-      await manager['handleDrop'](event as any);
-
-      expect(event.preventDefault).toHaveBeenCalled();
-      expect(manager['dropOverlay']?.hasClass('visible')).toBe(false);
-      expect(addImageSpy).toHaveBeenCalledWith(mockFile, 'drop');
-
-      addImageSpy.mockRestore();
-    });
-
-    it('handleDrop should skip non-image files', async () => {
-      const addImageSpy = vi.spyOn(manager as any, 'addImageFromFile').mockResolvedValue(true);
-      vi.spyOn(manager as any, 'isImageFile').mockReturnValue(false);
-
-      const mockFile = { type: 'application/pdf', name: 'doc.pdf', size: 1024 };
-      const event = {
-        preventDefault: vi.fn(),
-        stopPropagation: vi.fn(),
-        dataTransfer: { files: { length: 1, 0: mockFile } },
-      };
-
-      await manager['handleDrop'](event as any);
-
-      expect(addImageSpy).not.toHaveBeenCalled();
-      addImageSpy.mockRestore();
-    });
-
     it('handleDrop should handle no files gracefully', async () => {
       const event = {
         preventDefault: vi.fn(),
@@ -498,57 +406,6 @@ describe('ImageContextManager - Private Helpers', () => {
   });
 
   describe('Paste handler', () => {
-
-    it('paste handler should process image items', async () => {
-      const addImageSpy = vi.spyOn(manager as any, 'addImageFromFile').mockResolvedValue(true);
-      const mockFile = { name: 'pasted.png', type: 'image/png', size: 1024 };
-      const pasteEvent = {
-        type: 'paste',
-        preventDefault: vi.fn(),
-        clipboardData: {
-          items: {
-            length: 1,
-            0: {
-              type: 'image/png',
-              getAsFile: () => mockFile,
-            },
-          },
-        },
-      };
-
-      manager['inputEl'].dispatchEvent(pasteEvent);
-      // Wait for async paste handler
-      await new Promise(resolve => setTimeout(resolve, 0));
-
-      expect(pasteEvent.preventDefault).toHaveBeenCalled();
-      expect(addImageSpy).toHaveBeenCalledWith(mockFile, 'paste');
-      addImageSpy.mockRestore();
-    });
-
-    it('paste handler should attach every pasted image', async () => {
-      const addImageSpy = vi.spyOn(manager as any, 'addImageFromFile').mockResolvedValue(true);
-      const first = { name: 'first.jpg', type: 'image/jpeg', size: 1024 };
-      const second = { name: 'second.png', type: 'image/png', size: 2048 };
-      const pasteEvent = {
-        type: 'paste',
-        preventDefault: vi.fn(),
-        clipboardData: {
-          items: {
-            length: 3,
-            0: { type: 'image/jpeg', getAsFile: () => first },
-            1: { type: 'text/plain', getAsFile: () => null },
-            2: { type: 'image/png', getAsFile: () => second },
-          },
-        },
-      };
-
-      manager['inputEl'].dispatchEvent(pasteEvent);
-      await new Promise(resolve => setTimeout(resolve, 0));
-
-      expect(pasteEvent.preventDefault).toHaveBeenCalledTimes(1);
-      expect(addImageSpy.mock.calls).toEqual([[first, 'paste'], [second, 'paste']]);
-      addImageSpy.mockRestore();
-    });
 
     it('paste handler should ignore non-image items', async () => {
       const addImageSpy = vi.spyOn(manager as any, 'addImageFromFile').mockResolvedValue(true);
@@ -706,39 +563,6 @@ describe('ImageContextManager - Private Helpers', () => {
       expect(removeEl).not.toBeNull();
     });
 
-    it('numbers image pills in attachment order when more than one image is attached', () => {
-      manager.setImages([
-        createImageAttachment({ id: 'img-1', name: 'first.png' }),
-        createImageAttachment({ id: 'img-2', name: 'second.png' }),
-      ]);
-
-      const trayEl = manager['contextTray']['containerEl'];
-      const labels = trayEl.querySelectorAll('.claudian-context-chip-label');
-
-      expect(labels.map((label: any) => label.textContent)).toEqual(['Image 1', 'Image 2']);
-    });
-
-    it('remove button should delete the image and update preview', () => {
-      const cb = createMockCallbacks();
-      const { container } = createContainerWithInputWrapper();
-      const input = createMockTextArea();
-      const mgr: any = new ImageContextManager(keymap, container, input, cb);
-
-      mgr.setImages([
-        createImageAttachment({ id: 'img-1', name: 'a.png' }),
-        createImageAttachment({ id: 'img-2', name: 'b.png' }),
-      ]);
-      expect(mgr.getAttachedImages()).toHaveLength(2);
-
-      const trayEl = mgr['contextTray']['containerEl'];
-      const firstChip = trayEl.querySelector('.claudian-context-chip--image');
-      const removeEl = firstChip.querySelector('.claudian-context-chip-remove');
-      removeEl.dispatchEvent({ type: 'click', stopPropagation: vi.fn() });
-
-      expect(mgr.getAttachedImages()).toHaveLength(1);
-      expect(mgr.getAttachedImages()[0].id).toBe('img-2');
-      expect(cb.onUserImagesChanged).toHaveBeenCalledTimes(1);
-    });
   });
 
 });

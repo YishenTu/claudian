@@ -74,6 +74,77 @@ test('writes compact metadata without changing its contents', async () => {
   expect(await store.metadataReader.loadMetadata(metadata.id)).toEqual(data);
 });
 
+test('isolates device metadata and preserves unscoped authority across read-only scans', async () => {
+  const betaKey = `device-${'b'.repeat(64)}`;
+  const beta = new ConversationPersistenceStore(adapter, betaKey);
+  const current = { ...metadata, id: 'duplicate', linkedContentPath: 'Notes/current.md' };
+  const legacy = { ...current, title: 'Unscoped duplicate' };
+  const shared = { ...metadata, id: 'shared' };
+  const betaOnly = { ...metadata, id: 'beta-only' };
+  await store.saveMetadata(current);
+  await store.saveMetadata(legacy, 'unscoped');
+  await store.saveMetadata(shared, 'unscoped');
+  await beta.saveMetadata(betaOnly);
+
+  const files = [
+    [`${DEVICE_PATH}/duplicate.meta.json`, current],
+    [`${SESSIONS_PATH}/duplicate.meta.json`, legacy],
+    [`${SESSIONS_PATH}/shared.meta.json`, shared],
+    [`${getDeviceSessionsPath(betaKey)}/beta-only.meta.json`, betaOnly],
+  ] as const;
+  for (const [file, expected] of files) expect(await adapter.read(file)).toBe(JSON.stringify(expected));
+  const writes = vi.spyOn(adapter, 'write');
+  const deletes = vi.spyOn(adapter, 'delete');
+  const renames = vi.spyOn(adapter, 'rename');
+
+  expect(await store.metadataReader.load('duplicate')).toEqual({ metadata: current, source: 'device', needsMigration: false });
+  expect(await store.metadataReader.load('shared')).toEqual({ metadata: shared, source: 'unscoped', needsMigration: false });
+  expect(await store.metadataReader.loadMetadata('shared')).toEqual(shared);
+  const scanned = await store.metadataReader.scan();
+  expect(scanned.complete).toBe(true);
+  expect(scanned.records).toEqual([
+    { metadata: current, source: 'device', needsMigration: false },
+    { metadata: shared, source: 'unscoped', needsMigration: false },
+  ]);
+  expect(await store.metadataReader.listMetadata()).toEqual([current, shared]);
+  expect(await beta.metadataReader.listMetadata()).toEqual([betaOnly, legacy, shared]);
+  expect(writes).not.toHaveBeenCalled();
+  expect(deletes).not.toHaveBeenCalled();
+  expect(renames).not.toHaveBeenCalled();
+});
+
+test.each([
+  { name: 'legacy currentNote', stored: { currentNote: 'Notes\\Legacy.md' }, linkedContentPath: 'Notes/Legacy.md' },
+  { name: 'canonical precedence', stored: { linkedContentPath: './Projects//Current', currentNote: 'Notes/Legacy.md' }, linkedContentPath: 'Projects/Current' },
+  { name: 'invalid canonical path', stored: { linkedContentPath: '../escape', currentNote: 'Notes/Legacy.md' }, linkedContentPath: undefined },
+])('decodes $name without rewriting the stored metadata', async ({ stored, linkedContentPath }) => {
+  const file = `${DEVICE_PATH}/${metadata.id}.meta.json`;
+  const original = JSON.stringify({ ...metadata, ...stored });
+  await adapter.write(file, original);
+  const writes = vi.spyOn(adapter, 'write');
+
+  expect(await store.metadataReader.load(metadata.id)).toEqual({
+    metadata: { ...metadata, ...(linkedContentPath ? { linkedContentPath } : {}) },
+    needsMigration: true,
+    source: 'device',
+  });
+  expect(writes).not.toHaveBeenCalled();
+  expect(await adapter.read(file)).toBe(original);
+});
+
+test('refuses assignment over existing device metadata and retains both authorities', async () => {
+  const device = { ...metadata, title: 'Device winner' };
+  await store.saveMetadata(metadata, 'unscoped');
+  await store.saveMetadata(device);
+  const rename = vi.spyOn(adapter, 'rename');
+
+  await expect(store.assignMetadataToDevice(metadata.id)).rejects.toThrow('device metadata already exists');
+
+  expect(rename).not.toHaveBeenCalled();
+  expect(JSON.parse(await adapter.read(`${DEVICE_PATH}/${metadata.id}.meta.json`))).toEqual(device);
+  expect(JSON.parse(await adapter.read(`${SESSIONS_PATH}/${metadata.id}.meta.json`))).toEqual(metadata);
+});
+
 test('execution snapshots avoid history payload serialization while persistence retains subagent history', async () => {
   const subagent = {
     id: 'task-1', description: 'Research', isExpanded: false, status: 'completed' as const,

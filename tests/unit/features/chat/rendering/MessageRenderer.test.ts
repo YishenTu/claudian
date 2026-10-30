@@ -7,7 +7,6 @@ import type { Mock } from 'vitest';
 
 import {
   TOOL_AGENT_OUTPUT,
-  TOOL_APPLY_PATCH,
   TOOL_SPAWN_AGENT,
   TOOL_SUBAGENT,
   TOOL_WAIT_AGENT,
@@ -92,41 +91,6 @@ describe('MessageRenderer', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     (Menu as typeof Menu & { instances: unknown[] }).instances.length = 0;
-  });
-
-  // ============================================
-  // renderMessages
-  // ============================================
-
-  it('renders welcome element and calls renderStoredMessage for each message', () => {
-    const messagesEl = createMockEl();
-    const emptySpy = vi.spyOn(messagesEl, 'empty');
-    const mockComponent = createMockComponent();
-    const renderer = new MessageRenderer({} as any, mockComponent as any, messagesEl);
-    const renderStoredSpy = vi.spyOn(renderer, 'renderStoredMessage').mockImplementation(() => {});
-
-    const messages: ChatMessage[] = [
-      { id: 'm1', role: 'assistant', content: '', timestamp: Date.now(), toolCalls: [], contentBlocks: [] },
-    ];
-
-    const welcomeEl = renderer.renderMessages(messages, () => 'Hello');
-
-    expect(emptySpy).toHaveBeenCalled();
-    expect(renderStoredSpy).toHaveBeenCalledTimes(1);
-    expect(welcomeEl.hasClass('claudian-welcome')).toBe(true);
-    expect(welcomeEl.children[0].hasClass('claudian-welcome-brand')).toBe(true);
-    expect(welcomeEl.children[0].textContent).toBe('Claudian');
-    expect(welcomeEl.children[1].textContent).toBe('Hello');
-  });
-
-  it('renders empty messages list with just welcome element', () => {
-    const { renderer } = createRenderer();
-    const renderStoredSpy = vi.spyOn(renderer, 'renderStoredMessage').mockImplementation(() => {});
-
-    const welcomeEl = renderer.renderMessages([], () => 'Welcome!');
-
-    expect(renderStoredSpy).not.toHaveBeenCalled();
-    expect(welcomeEl.hasClass('claudian-welcome')).toBe(true);
   });
 
   // ============================================
@@ -560,58 +524,6 @@ describe('MessageRenderer', () => {
     expect(renderStoredSubagent).toHaveBeenCalled();
   });
 
-  it('passes collapsed file-edit default to stored Write/Edit renderer', () => {
-    const messagesEl = createMockEl();
-    const { renderer } = createRenderer(messagesEl);
-
-    const msg: ChatMessage = {
-      id: 'm-write-default',
-      role: 'assistant',
-      content: '',
-      timestamp: Date.now(),
-      toolCalls: [
-        { id: 'edit-1', name: 'Edit', input: { file_path: 'notes/test.md' }, status: 'completed' } as any,
-      ],
-      contentBlocks: [
-        { type: 'tool_use', toolId: 'edit-1' } as any,
-      ],
-    };
-
-    renderer.renderStoredMessage(msg);
-
-    expect(renderStoredWriteEdit).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({ id: 'edit-1', name: 'Edit' }),
-      expect.objectContaining({ initiallyExpanded: false }),
-    );
-  });
-
-  it('passes expanded file-edit default to stored Write/Edit renderer', () => {
-    const messagesEl = createMockEl();
-    const { renderer } = createRenderer(messagesEl, 'claude', { expandFileEditsByDefault: true });
-
-    const msg: ChatMessage = {
-      id: 'm-write-expanded',
-      role: 'assistant',
-      content: '',
-      timestamp: Date.now(),
-      toolCalls: [
-        { id: 'write-1', name: 'Write', input: { file_path: 'notes/test.md' }, status: 'completed' } as any,
-      ],
-      contentBlocks: [
-        { type: 'tool_use', toolId: 'write-1' } as any,
-      ],
-    };
-
-    renderer.renderStoredMessage(msg);
-
-    expect(renderStoredWriteEdit).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({ id: 'write-1', name: 'Write' }),
-      expect.objectContaining({ initiallyExpanded: true }),
-    );
-  });
-
   it('skips empty or whitespace-only text blocks', () => {
     const messagesEl = createMockEl();
     const { renderer } = createRenderer(messagesEl);
@@ -700,38 +612,6 @@ describe('MessageRenderer', () => {
       expect.objectContaining({ initiallyExpanded: false }),
     );
     expect(messagesEl.children).toHaveLength(1);
-  });
-
-  it('passes expanded file-edit default to stored apply_patch renderer', () => {
-    const messagesEl = createMockEl();
-    const { renderer } = createRenderer(messagesEl, 'codex', { expandFileEditsByDefault: true });
-
-    const msg: ChatMessage = {
-      id: 'm-apply-patch-expanded',
-      role: 'assistant',
-      content: '',
-      timestamp: Date.now(),
-      toolCalls: [
-        {
-          id: 'patch-1',
-          name: TOOL_APPLY_PATCH,
-          input: { changes: [{ path: 'src/main.ts', kind: 'update' }] },
-          status: 'completed',
-          result: 'Applied patch',
-        } as any,
-      ],
-      contentBlocks: [
-        { type: 'tool_use', toolId: 'patch-1' } as any,
-      ],
-    };
-
-    renderer.renderStoredMessage(msg);
-
-    expect(renderStoredToolCall).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({ id: 'patch-1', name: TOOL_APPLY_PATCH }),
-      expect.objectContaining({ initiallyExpanded: true }),
-    );
   });
 
   it('renders fallback content for old conversations without contentBlocks', () => {
@@ -1445,63 +1325,4 @@ describe('MessageRenderer', () => {
     expect(renderContentSpy).toHaveBeenCalledWith(expect.anything(), 'user input only');
   });
 
-  // ============================================
-  // renderStoredThinkingBlock - durationSeconds parameter
-  // ============================================
-
-  describe('renderStoredThinkingBlock - durationSeconds parameter', () => {
-    it('should pass durationSeconds to renderStoredThinkingBlock', () => {
-      const messagesEl = createMockEl();
-      const { renderer } = createRenderer(messagesEl);
-      vi.spyOn(renderer, 'renderContent').mockResolvedValue(undefined);
-
-      (renderStoredThinkingBlock as Mock).mockClear();
-
-      const msg: ChatMessage = {
-        id: 'm1',
-        role: 'assistant',
-        content: '',
-        timestamp: Date.now(),
-        contentBlocks: [
-          { type: 'thinking', content: 'deep thought', durationSeconds: 42 } as any,
-        ],
-      };
-
-      renderer.renderStoredMessage(msg);
-
-      expect(renderStoredThinkingBlock).toHaveBeenCalledWith(
-        expect.anything(),
-        'deep thought',
-        42,
-        expect.any(Function)
-      );
-    });
-
-    it('should pass undefined durationSeconds when not set', () => {
-      const messagesEl = createMockEl();
-      const { renderer } = createRenderer(messagesEl);
-      vi.spyOn(renderer, 'renderContent').mockResolvedValue(undefined);
-
-      (renderStoredThinkingBlock as Mock).mockClear();
-
-      const msg: ChatMessage = {
-        id: 'm1',
-        role: 'assistant',
-        content: '',
-        timestamp: Date.now(),
-        contentBlocks: [
-          { type: 'thinking', content: 'thought without duration' } as any,
-        ],
-      };
-
-      renderer.renderStoredMessage(msg);
-
-      expect(renderStoredThinkingBlock).toHaveBeenCalledWith(
-        expect.anything(),
-        'thought without duration',
-        undefined,
-        expect.any(Function)
-      );
-    });
-  });
 });

@@ -21,8 +21,6 @@ import {
   updateGrokProviderSettings,
 } from '@/providers/grok/settings';
 
-
-
 function makeModel(rawId: string, displayName = rawId): GrokDiscoveredModel {
   return {
     displayName,
@@ -188,24 +186,6 @@ describe('GrokModelCatalogCoordinator', () => {
     mockGetHostnameKey.mockReturnValue('device:current');
   });
 
-  it('deduplicates concurrent refreshes', async () => {
-    let resolveDiscovery!: (result: GrokModelCatalogDiscoveryResult) => void;
-    const pending = new Promise<GrokModelCatalogDiscoveryResult>((resolve) => {
-      resolveDiscovery = resolve;
-    });
-    const service: GrokModelDiscoveryServiceLike = {
-      discoverCatalog: vi.fn(async () => pending),
-    };
-    const coordinator = new GrokModelCatalogCoordinator(runtimeHost(makeHost()), service);
-
-    const first = coordinator.refresh();
-    const second = coordinator.refresh();
-    resolveDiscovery(completedResult());
-
-    await expect(Promise.all([first, second])).resolves.toHaveLength(2);
-    expect(service.discoverCatalog).toHaveBeenCalledTimes(1);
-  });
-
   it('aborts and drains an in-flight refresh before clearing transition state', async () => {
     let resolveDiscovery!: (result: GrokModelCatalogDiscoveryResult) => void;
     let discoverySignal: AbortSignal | undefined;
@@ -344,81 +324,6 @@ describe('GrokModelCatalogCoordinator', () => {
       models: [expect.objectContaining({ rawId: 'owner-model' })],
     });
     expect(host.notifyProviderChatOptionsChanged).toHaveBeenCalledWith('grok');
-  });
-
-  it('merges richer live ACP metadata by raw id and preserves CLI-only models', async () => {
-    const host = makeHost({
-      catalog: makeCatalog({
-        models: [makeModel('kimi-coding', 'kimi-coding'), makeModel('glm-coding', 'GLM')],
-      }),
-    });
-    const coordinator = new GrokModelCatalogCoordinator(runtimeHost(host), makeService(completedResult()));
-
-    await expect(coordinator.mergeLiveModels([{
-      agentType: 'coding',
-      contextWindow: 262_144,
-      description: 'Rich live metadata',
-      displayName: 'Kimi Coding',
-      rawId: 'kimi-coding',
-      reasoningEfforts: [{ label: 'High', value: 'high' }],
-      supportsReasoning: true,
-    }])).resolves.toEqual({
-      changed: true,
-      persistedSettingsChanged: true,
-    });
-
-    expect(readGrokCatalog(host.settings)?.models).toEqual([
-      expect.objectContaining({
-        agentType: 'coding',
-        contextWindow: 262_144,
-        displayName: 'Kimi Coding',
-        rawId: 'kimi-coding',
-      }),
-      expect.objectContaining({ rawId: 'glm-coding' }),
-    ]);
-  });
-
-  it('retains live ACP reasoning metadata for models available for selection', async () => {
-    const host = makeHost({
-      catalog: makeCatalog({
-        models: [makeModel('kimi-coding', 'Kimi'), {
-          displayName: 'GLM',
-          rawId: 'glm-coding',
-          reasoningEfforts: [{ label: 'High', value: 'high' }],
-          reasoningMetadataResolved: true,
-          supportsReasoning: true,
-        }],
-      }),
-      visibleModels: ['kimi-coding'],
-    });
-    const coordinator = new GrokModelCatalogCoordinator(runtimeHost(host), makeService(completedResult()));
-
-    await coordinator.mergeLiveModels([{
-      displayName: 'Kimi',
-      rawId: 'kimi-coding',
-      reasoningEfforts: [{ label: 'High', value: 'high' }],
-      reasoningMetadataResolved: true,
-      supportsReasoning: true,
-    }, {
-      displayName: 'GLM',
-      rawId: 'glm-coding',
-      reasoningEfforts: [{ label: 'High', value: 'high' }],
-      reasoningMetadataResolved: true,
-      supportsReasoning: true,
-    }]);
-
-    expect(readGrokCatalog(host.settings)?.models).toEqual([
-      expect.objectContaining({
-        rawId: 'kimi-coding',
-        reasoningMetadataResolved: true,
-      }),
-      expect.objectContaining({
-        rawId: 'glm-coding',
-        reasoningEfforts: [{ label: 'High', value: 'high' }],
-        reasoningMetadataResolved: true,
-        supportsReasoning: true,
-      }),
-    ]);
   });
 
   it('composes concurrent disjoint live-model deltas in serialized persistence', async () => {
@@ -590,43 +495,6 @@ describe('GrokModelCatalogCoordinator', () => {
     ]);
   });
 
-  it('lets a later sequential CLI refresh drop live-only ids and replace the live default', async () => {
-    const host = makeHost({
-      catalog: makeCatalog({ defaultModelId: 'old-default', models: [makeModel('shared')] }),
-    });
-    const service = makeService(completedResult({
-      defaultModelId: 'cli-default',
-      fingerprint: 'fingerprint-next',
-      models: [makeModel('cli-only'), makeModel('shared')],
-    }));
-    const coordinator = new GrokModelCatalogCoordinator(runtimeHost(host), service);
-
-    await coordinator.mergeLiveModels([{
-      contextWindow: 262_144,
-      displayName: 'Shared Live',
-      rawId: 'shared',
-      reasoningEfforts: [{ label: 'High', value: 'high' }],
-      supportsReasoning: true,
-    }, makeModel('live-only', 'Live only')], 'live-default');
-    await coordinator.refresh();
-
-    expect(readGrokCatalog(host.settings)).toMatchObject({
-      defaultModelId: 'cli-default',
-      models: [
-        expect.objectContaining({ rawId: 'cli-only' }),
-        expect.objectContaining({
-          contextWindow: 262_144,
-          displayName: 'Shared Live',
-          rawId: 'shared',
-        }),
-      ],
-    });
-    expect(readGrokCatalog(host.settings)?.models.map(model => model.rawId)).toEqual([
-      'cli-only',
-      'shared',
-    ]);
-  });
-
   it('does not carry live models or defaults into a changed runtime context', async () => {
     const host = makeHost({ catalog: makeCatalog() });
     const service = makeService(completedResult({
@@ -698,62 +566,6 @@ describe('GrokModelCatalogCoordinator', () => {
       persistedSettingsChanged: false,
     });
     expect(readGrokCatalog(host.settings)?.models[0].rawId).toBe('kimi-coding');
-  });
-
-  it('retains live ACP metadata for surviving ids across a later CLI refresh', async () => {
-    const host = makeHost({
-      catalog: makeCatalog({
-        defaultModelId: 'model-a',
-        models: [makeModel('model-a'), makeModel('removed-model')],
-      }),
-    });
-    const service = makeService(completedResult({
-      defaultModelId: 'new-model',
-      fingerprint: 'fingerprint-next',
-      models: [makeModel('new-model'), makeModel('model-a')],
-    }));
-    const coordinator = new GrokModelCatalogCoordinator(runtimeHost(host), service);
-
-    await coordinator.mergeLiveModels([{
-      agentType: 'coding',
-      contextWindow: 262_144,
-      defaultReasoningEffort: 'high',
-      description: 'Enriched by live ACP',
-      displayName: 'Model A Coding',
-      rawId: 'model-a',
-      reasoningEfforts: [{ description: 'Deep reasoning', label: 'High', value: 'high' }],
-      supportsReasoning: true,
-    }]);
-    await coordinator.refresh();
-
-    expect(readGrokCatalog(host.settings)).toMatchObject({
-      defaultModelId: 'new-model',
-      fingerprint: 'fingerprint-next',
-      models: [
-        expect.objectContaining({
-          displayName: 'new-model',
-          rawId: 'new-model',
-          reasoningEfforts: [],
-          supportsReasoning: false,
-        }),
-        expect.objectContaining({
-          agentType: 'coding',
-          contextWindow: 262_144,
-          defaultReasoningEffort: 'high',
-          description: 'Enriched by live ACP',
-          displayName: 'Model A Coding',
-          rawId: 'model-a',
-          reasoningEfforts: [{
-            description: 'Deep reasoning',
-            label: 'High',
-            value: 'high',
-          }],
-          supportsReasoning: true,
-        }),
-      ],
-    });
-    expect(readGrokCatalog(host.settings)?.models.map(model => model.rawId)).not
-      .toContain('removed-model');
   });
 
   it('retains the prior snapshot and other-host catalog when refresh fails', async () => {

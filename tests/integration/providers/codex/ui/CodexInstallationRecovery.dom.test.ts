@@ -3,7 +3,7 @@
 import '@test/helpers/ObsidianSettingsDOM';
 
 import { axe } from '@test/helpers/accessibility';
-import type * as SettingsDOM from '@test/helpers/ObsidianSettingsDOM';
+import { controlChangeSettled } from '@test/helpers/ObsidianSettingsDOM';
 import { fireEvent, waitFor, within } from '@testing-library/dom';
 
 import { SettingsCoordinator } from '@/app/settings/SettingsCoordinator';
@@ -12,40 +12,12 @@ import type { ProviderSettingsTabRendererContext } from '@/core/providers/types'
 import { getCodexProviderSettings } from '@/providers/codex/settings';
 import { createCodexSettingsTabRenderer } from '@/providers/codex/ui/CodexSettingsTab';
 
-let mockPending: Promise<void>;
-let mockError: unknown;
 const originalPlatform = Object.getOwnPropertyDescriptor(process, 'platform')!;
 
-vi.mock('obsidian', async () => {
-  const actual = (await vi.importActual<typeof SettingsDOM>('../../../../helpers/ObsidianSettingsDOM'));
-  return {
-    ...actual,
-    Setting: class extends actual.Setting {
-      setHeading() { return this; }
-      addToggle(callback: (component: unknown) => void) {
-        const toggleEl = this.settingEl.createEl('input', { attr: { type: 'checkbox', role: 'switch' } });
-        const component = {
-          toggleEl,
-          setValue(value: boolean) { toggleEl.checked = value; return this; },
-          setDisabled(value: boolean) { toggleEl.disabled = value; return this; },
-          onChange(fn: (value: boolean) => void) {
-            toggleEl.addEventListener('change', () => fn(toggleEl.checked)); return this;
-          },
-        };
-        callback(component); return this;
-      }
-      addDropdown(callback: Parameters<typeof actual.Setting.prototype.addDropdown>[0]) {
-        return super.addDropdown(component => {
-          const onChange = component.onChange.bind(component);
-          component.onChange = fn => onChange(value => {
-            mockPending = Promise.resolve(fn(value)).catch(error => { mockError = error; });
-          });
-          callback(component);
-        });
-      }
-    },
-  };
-});
+vi.mock('obsidian', async () => ({
+  ...(await vi.importActual<typeof import('@test/__mocks__/obsidian')>('@test/__mocks__/obsidian')),
+  ...(await vi.importActual<typeof import('@test/helpers/ObsidianSettingsDOM')>('@test/helpers/ObsidianSettingsDOM')),
+}));
 vi.mock('@/providers/codex/runtime/CodexCLIInstallation', () => ({
   inspectCodexInstallation: async () => ({ path: null, version: null, source: 'auto' }),
 }));
@@ -72,8 +44,6 @@ it.each([
   const persist = vi.fn(async () => { if (outcome === 'rejected') throw new Error('Disk full'); });
   const coordinator = new SettingsCoordinator(settings, persist);
   const container = document.body.createDiv();
-  mockError = undefined;
-  mockPending = Promise.resolve();
   const context = {
     plugin: {
       settings, storage: { installationKey: key }, getRuntimeHost: () => ({}),
@@ -87,15 +57,14 @@ it.each([
   } as unknown as ProviderSettingsTabRendererContext;
   createCodexSettingsTabRenderer({ cliResolver: { reset() {} }, modelCatalog: {} } as Parameters<typeof createCodexSettingsTabRenderer>[0])
     .render(container, context);
-  const row = within(container).getByText('Installation method').parentElement!;
-  const select = within(row).getByRole('combobox') as HTMLSelectElement;
+  const select = within(container).getByRole<HTMLSelectElement>('combobox', { name: 'Installation method' });
   const distro = within(container).getByPlaceholderText('Ubuntu') as HTMLInputElement;
   const cliCard = container.querySelector<HTMLElement>('.claudian-cli-installation')!;
   fireEvent.click(within(cliCard).getByRole('button', { name: 'Codex CLI installation' }));
   const cli = within(cliCard).getByRole('textbox', { name: 'Codex CLI path' }) as HTMLInputElement;
   expect(select.value).toBe(initial);
   fireEvent.change(select, { target: { value: requested } });
-  await mockPending;
+  const error = await controlChangeSettled(select).then(() => undefined, (failure: unknown) => failure);
   const expected = outcome === 'rejected' ? initial : requested;
   expect(getCodexProviderSettings(settings).installationMethod).toBe(expected);
   expect(select.value).toBe(expected);
@@ -105,5 +74,5 @@ it.each([
   await waitFor(() => expect(cli.getAttribute('aria-invalid')).toBe(String(expected !== 'wsl')));
   expect((await axe(cliCard)).violations).toEqual([]);
   expect(persist).toHaveBeenCalledTimes(1);
-  expect(mockError instanceof Error).toBe(outcome !== 'accepted');
+  expect(error instanceof Error).toBe(outcome !== 'accepted');
 });

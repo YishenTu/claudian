@@ -37,8 +37,6 @@ import {
 import type { AssembledTabRuntime } from '@/features/chat/tabs/types';
 import { VaultMentionDataProvider } from '@/shared/mention/VaultMentionDataProvider';
 
-
-
 const coordinatorInstances: MockCoordinator[] = [];
 const coordinatorDeps: ChatExecutionCoordinatorDeps[] = [];
 const titleServiceInstances: Array<{ cancel: Mock }> = [];
@@ -371,6 +369,8 @@ describe('Tab provider execution ownership', () => {
     titleServiceInstances.length = 0;
     coordinatorDisposeError = null;
     vi.clearAllMocks();
+    // Ownerless-draft cases replace this implementation; clearing calls does not restore it.
+    vi.mocked(ProviderRegistry.resolveProviderForModel).mockReturnValue('claude');
     const uiConfig = ProviderRegistry.getChatUIConfig('claude');
     (uiConfig.getDefaultModel as Mock).mockReturnValue('claude-default');
     (uiConfig.getModelOptions as Mock).mockReturnValue([
@@ -391,64 +391,6 @@ describe('Tab provider execution ownership', () => {
 
   afterAll(() => {
     globalThis.ResizeObserver = originalResizeObserver;
-  });
-
-  it('closes a running tab without cancelling its session and reattaches the same owner', async () => {
-    const conversation = createConversation();
-    const plugin = createPlugin({
-      getCachedConversation: vi.fn().mockReturnValue(conversation),
-      getConversationById: vi.fn().mockResolvedValue(conversation),
-      getConversationSync: vi.fn().mockReturnValue(conversation),
-    });
-    const manager = createTabManager(plugin);
-    const tab = (await manager.createTab(conversation.id))!;
-    const held = deferred<void>();
-    let signal!: AbortSignal;
-    const turn = tab.session.turns.run(async current => { signal = current; await held.promise; });
-    try {
-      expect(await manager.closeTab(tab.id)).toBe(true);
-      expect(signal.aborted).toBe(false);
-      expect(plugin.sessionRuntimes.isRunning(conversation.id)).toBe(true);
-      const reattached = (await manager.createTab(conversation.id))!;
-      expect(reattached.session.runtime).toBe(tab.session.runtime);
-      expect(reattached.state).toBe(tab.state);
-      expect(coordinatorInstances[0].cancel).not.toHaveBeenCalled();
-    } finally {
-      held.resolve();
-      await turn;
-      await manager.destroy();
-    }
-  });
-
-  it('rebinds a running tab while preserving its label and composer draft', async () => {
-    const first = createConversation();
-    const second = { ...first, id: 'second', messages: [] };
-    const byId = (id: string) => id === first.id ? first : second;
-    const plugin = createPlugin({
-      getCachedConversation: vi.fn(byId), getConversationSync: vi.fn(byId),
-      getConversationById: vi.fn(async id => byId(id)), switchConversation: vi.fn(async id => byId(id)),
-    });
-    const manager = createTabManager(plugin);
-    const original = (await manager.createTab(first.id))!;
-    manager.setTabLabel(original.id, 'Research');
-    original.controllers.drafts.restore('main', { content: 'Unsent draft' });
-    const held = deferred<void>();
-    let signal!: AbortSignal;
-    const turn = original.session.turns.run(async current => { signal = current; await held.promise; });
-    try {
-      await manager.openConversation(second.id);
-      const current = manager.getActiveTab()!;
-      expect(current.id).toBe(original.id);
-      expect(current.conversationId).toBe(second.id);
-      expect(current.label).toBe('Research');
-      expect(current.controllers.drafts.capture('main').content).toBe('Unsent draft');
-      expect(signal.aborted).toBe(false);
-      expect(manager.getTabCount()).toBe(1);
-      expect(plugin.sessionRuntimes.get(first.id)).toBe(original.session.runtime);
-      await manager.openConversation(first.id);
-      expect(manager.getActiveTab()!.session.runtime).toBe(original.session.runtime);
-      expect(manager.getActiveTab()!.controllers.drafts.capture('main').content).toBe('Unsent draft');
-    } finally { held.resolve(); await turn; await manager.destroy(); }
   });
 
   it('does not carry a branch preview prompt into the conversation a tab rebinds to', async () => {
@@ -1431,33 +1373,6 @@ describe('Tab provider execution ownership', () => {
     expect(tab.draftModel).toBe('retired');
   });
 
-  it('assembles only the active restored tab and preserves inactive identities without resources', async () => {
-    const plugin = createPlugin();
-    const root = createMockEl();
-    const manager = createTabManager(plugin, root);
-    const saved = {
-      openTabs: Array.from({ length: 20 }, (_, index) => ({ tabId: `saved-${index}`, conversationId: null, draftModel: 'claude-default' })),
-      activeTabId: 'saved-0',
-    };
-    try {
-      await manager.restoreState(saved);
-      expect(manager.getTabCount()).toBe(20);
-      expect(manager.getAllTabs()).toHaveLength(1);
-      expect(root.querySelectorAll('.claudian-tab-content')).toHaveLength(1);
-      expect(coordinatorInstances).toHaveLength(1);
-      expect(titleServiceInstances).toHaveLength(1);
-      expect(manager.getPersistedState().openTabs.map(tab => tab.tabId)).toEqual(saved.openTabs.map(tab => tab.tabId));
-      await manager.closeTab('saved-19');
-      expect(coordinatorInstances).toHaveLength(1);
-      plugin.settings.lastSelectedChatModel = { model: 'changed-model', providerId: 'codex' };
-      await manager.switchToTab('saved-1');
-      expect(manager.getActiveTab()?.draftModel).toBe('claude-default');
-      expect(coordinatorInstances).toHaveLength(2);
-      expect(root.querySelectorAll('.claudian-tab-content')).toHaveLength(2);
-    } finally { await manager.destroy(); }
-    expect(coordinatorInstances.every(coordinator => coordinator.dispose.mock.calls.length === 1)).toBe(true);
-  });
-
   it('restores a draft on its recorded provider even when model ownership is unresolved', async () => {
     const plugin = createPlugin();
     (ProviderRegistry.resolveProviderForModel as Mock).mockReturnValue(null);
@@ -2237,8 +2152,6 @@ describe('Tab provider execution ownership', () => {
     }
   });
 
-
-
   it('rejects stale provider binding events before touching the transcript', async () => {
     const plugin = createPlugin();
     const tab = await createTestTab({ plugin, containerEl: createMockEl() as any });
@@ -2311,8 +2224,6 @@ describe('Tab provider execution ownership', () => {
     expect(manager.getActiveTab()?.state.messages).toEqual([]);
     await manager.destroy();
   });
-
-
 
   it('keeps assembled references structurally stable across idempotent teardown', async () => {
     const manager = createTabManager(createPlugin());

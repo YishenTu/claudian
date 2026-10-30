@@ -9,7 +9,9 @@ const write = message => process.stdout.write(`${JSON.stringify(message)}\n`);
 if (process.argv.includes('--version')) {
   process.stdout.write('grok 1.0.40\n');
 } else if (process.argv.includes('models')) {
-  process.stdout.write('Default model: legacy-model\nAvailable models:\n  legacy-model\n');
+  process.stdout.write(scenario === 'legacy-catalog'
+    ? 'Default model: new-model\nAvailable models:\n  new-model\n  model-a\n'
+    : 'Default model: legacy-model\nAvailable models:\n  legacy-model\n');
 } else {
   let initialized = false;
   createInterface({ input: process.stdin }).on('line', line => {
@@ -33,7 +35,7 @@ if (process.argv.includes('--version')) {
     }
     if (scenario === 'hang-list') {
       write({ jsonrpc: '2.0', method: 'fixture/waiting', params: {} });
-    } else if (scenario === 'unsupported') {
+    } else if (scenario === 'unsupported' || scenario === 'legacy-catalog') {
       fail();
     } else if (scenario === 'malformed') {
       respond({ result: { availableModels: 'invalid' } });

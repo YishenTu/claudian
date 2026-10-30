@@ -1,3 +1,4 @@
+import { EventEmitter, once } from 'node:events';
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 
@@ -56,6 +57,7 @@ const GLOBAL_ENDPOINTS: ReadonlySet<string> = new Set<NativeGlobalEndpoint>(['$e
 /** Native wire peer. All adapter decoding and lifecycle logic runs in production code. */
 export class NativePeer {
   readonly calls: Array<{ method: string; args: Record<string, any> }> = [];
+  private readonly receivedCalls = new EventEmitter();
   /** Methods whose HTTP request the client closed before a response, which native treats as cancellation. */
   readonly abandoned: string[] = [];
   readonly streams = new Map<string, { socket: WebSocket; endpoint: string; args: Record<string, any> }>();
@@ -72,6 +74,7 @@ export class NativePeer {
       const frame = JSON.parse(body);
       const args = frame.payload.args;
       this.calls.push({ method: frame.method, args });
+      this.receivedCalls.emit('call');
       response.on('close', () => { if (!response.writableEnded) this.abandoned.push(frame.method); });
       void Promise.resolve().then(() => this.onCall(frame.method, args)).then(
         value => value === NATIVE_RESET ? request.socket.destroy() : response.end(JSON.stringify({ rpcId: frame.rpcId, result: { ok: true, value } })),
@@ -94,6 +97,16 @@ export class NativePeer {
     }));
     await new Promise<void>(resolve => this.server.listen(0, '127.0.0.1', resolve));
     this.client = await this.connect();
+  }
+
+  /** Observes a wire request without polling or supplying the client's behavior. */
+  async waitForCall(method: string): Promise<(typeof this.calls)[number]> {
+    const signal = AbortSignal.timeout(1_000);
+    for (;;) {
+      const call = this.calls.find(call => call.method === method);
+      if (call) return call;
+      await once(this.receivedCalls, 'call', { signal });
+    }
   }
 
   connect(): Promise<DeepSeekRemoteClient> {

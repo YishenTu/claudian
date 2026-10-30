@@ -3,6 +3,8 @@
 import '@/providers';
 
 import { parser } from '@lezer/markdown';
+import { createChatFeatureHost } from '@test/helpers/features/chat/ChatFeatureHostFixture';
+import { renderObsidianHTML } from '@test/helpers/ObsidianMarkdownRenderer';
 import { testDate } from '@test/helpers/testClock';
 import { fireEvent, within } from '@testing-library/dom';
 import { type App, Component, MarkdownRenderer, type TFile } from 'obsidian';
@@ -13,16 +15,12 @@ import { SubagentManager } from '@/features/chat/subagents/SubagentManager';
 import { StreamController } from '@/features/chat/turns/StreamController';
 import * as fileLinks from '@/utils/fileLink';
 
-HTMLElement.prototype.empty = function () { this.replaceChildren(); };
-HTMLElement.prototype.addClass = function (...names: string[]) { this.classList.add(...names); };
-HTMLElement.prototype.removeClass = function (...names: string[]) { this.classList.remove(...names); };
-
 let renderer: MessageRenderer;
 let host: HTMLElement;
 let app: App;
 let settings: { mediaFolder: string };
 
-beforeEach(() => {
+beforeEach(async () => {
   host = document.body.createDiv();
   const image = { path: 'Media/photo.png', basename: 'photo' } as TFile;
   const note = { path: 'note.md', basename: 'note' } as TFile;
@@ -35,12 +33,9 @@ beforeEach(() => {
       getFirstLinkpathDest: (path: string) => path === note.path ? note : null,
     },
   } as unknown as App;
-  settings = { mediaFolder: '' };
-  renderer = new MessageRenderer({ app, settings } as never, new Component(), host);
-  // Obsidian is the external rendering boundary; all plugin transformations stay real.
-  vi.mocked(MarkdownRenderer.render).mockImplementation(async (_app, markdown, target) => {
-    target.innerHTML = markdown;
-  });
+  const plugin = await createChatFeatureHost({ app, settings: { mediaFolder: '' } });
+  settings = plugin.settings;
+  renderer = new MessageRenderer(plugin, new Component(), host);
 });
 
 afterEach(() => {
@@ -55,7 +50,7 @@ it.each([true, false])('prepares streamed math once without a separate detection
   state.currentContentEl = host;
   const subagents = new SubagentManager(() => undefined);
   const stream = new StreamController({
-    plugin: { app, settings: { ...settings, deferMathRenderingDuringStreaming: deferMath } } as never,
+    plugin: await createChatFeatureHost({ app, settings: { ...settings, deferMathRenderingDuringStreaming: deferMath } }),
     state, renderer, subagentManager: subagents, getMessagesEl: () => host, updateQueueIndicator: () => undefined,
   });
   const parse = vi.spyOn(parser, 'parse');
@@ -65,6 +60,10 @@ it.each([true, false])('prepares streamed math once without a separate detection
     await vi.advanceTimersByTimeAsync(20);
     expect(MarkdownRenderer.render).toHaveBeenLastCalledWith(app, deferMath ? 'Math \\$x\\$' : 'Math $x$', expect.anything(), '', expect.any(Component));
     expect(parse).toHaveBeenCalledTimes(deferMath ? 1 : 0);
+    await stream.handleStreamChunk({ type: 'text', content: ' and \\(y\\)' }, message);
+    await vi.advanceTimersByTimeAsync(200);
+    expect(MarkdownRenderer.render).toHaveBeenLastCalledWith(app,
+      deferMath ? 'Math \\$x\\$ and \\$y\\$' : 'Math $x$ and $y$', expect.anything(), '', expect.any(Component));
   } finally {
     stream.dispose();
     subagents.clear();
@@ -80,7 +79,7 @@ it('keeps finalized collapsed thinking lazy and renders its final math on expans
   state.currentContentEl = host;
   const subagents = new SubagentManager(() => undefined);
   const stream = new StreamController({
-    plugin: { app, settings: { ...settings, deferMathRenderingDuringStreaming: true, enableAutoScroll: true } } as never,
+    plugin: await createChatFeatureHost({ app, settings: { ...settings, deferMathRenderingDuringStreaming: true, enableAutoScroll: true } }),
     state, renderer, subagentManager: subagents, getMessagesEl: () => host, updateQueueIndicator: () => undefined,
   });
   state.autoScrollEnabled = true;
@@ -121,7 +120,7 @@ it('settles an in-flight thinking render before finalizing a newly collapsed blo
   state.currentContentEl = host;
   const subagents = new SubagentManager(() => undefined);
   const stream = new StreamController({
-    plugin: { app, settings: { ...settings, deferMathRenderingDuringStreaming: true } } as never,
+    plugin: await createChatFeatureHost({ app, settings: { ...settings, deferMathRenderingDuringStreaming: true } }),
     state, renderer, subagentManager: subagents, getMessagesEl: () => host, updateQueueIndicator: () => undefined,
   });
   let finish!: () => void;
@@ -135,7 +134,11 @@ it('settles an in-flight thinking render before finalizing a newly collapsed blo
     fireEvent.click(header);
     await vi.advanceTimersByTimeAsync(20);
     expect(MarkdownRenderer.render).toHaveBeenCalledTimes(1);
+    expect(header.getAttribute('aria-expanded')).toBe('true');
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(header.textContent).toBe('Thinking 5s...');
     fireEvent.click(header);
+    expect(header.getAttribute('aria-expanded')).toBe('false');
     let finalized = false;
     const finalization = stream.finalizeCurrentThinkingBlock().then(() => { finalized = true; });
     await vi.advanceTimersByTimeAsync(20);
@@ -143,7 +146,12 @@ it('settles an in-flight thinking render before finalizing a newly collapsed blo
     expect(MarkdownRenderer.render).toHaveBeenCalledTimes(1);
     finish();
     await finalization;
+    expect(header.textContent).toBe('Thought for 5s');
+    expect(header.getAttribute('aria-expanded')).toBe('false');
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect(header.textContent).toBe('Thought for 5s');
     fireEvent.click(header);
+    expect(header.getAttribute('aria-expanded')).toBe('true');
     expect(host.textContent).toContain('Reasoning $x$');
     expect(MarkdownRenderer.render).toHaveBeenCalledTimes(2);
   } finally {
@@ -182,6 +190,7 @@ it.each([false, true])('preserves reference-link definitions through the Markdow
 });
 
 it('escapes authored HTML before injecting trusted images and then activates remaining wikilinks', async () => {
+  vi.spyOn(MarkdownRenderer, 'render').mockImplementationOnce(renderObsidianHTML);
   settings.mediaFolder = 'Media';
   await renderer.renderContent(host, 'Use <meta-name> ![[photo.png]] [[note.md|Note]]');
 
@@ -239,7 +248,6 @@ it('renders again after a failed render', async () => {
   expect(host.textContent).toBe('recovered');
 });
 
-
 it.each([
   [false, '<https://en.wikipedia.org/wiki/Foo_(bar)>'],
   [true, '<https://en.wikipedia.org/wiki/Foo_(bar)>'],
@@ -253,7 +261,6 @@ it.each([
     `${link} and ${visible} &lt;meta-name&gt;`, host, '', expect.any(Component));
 });
 
-
 describe.each([false, true])('complete multiline link boundaries with deferMath=%s', deferMath => {
   it.each([
     '[Price](\nhttps://host/$price\n)',
@@ -266,4 +273,42 @@ describe.each([false, true])('complete multiline link boundaries with deferMath=
     expect(MarkdownRenderer.render).toHaveBeenLastCalledWith(app,
       `${link} and ${visible} &lt;placeholder&gt;`, host, '', expect.any(Component));
   });
+});
+
+it.each([false, true])('coalesces expanded thinking and finalizes math before the next text block (rendered: %s)', async rendered => {
+  vi.useFakeTimers();
+  const state = new ChatState();
+  state.currentContentEl = host;
+  const subagents = new SubagentManager(() => undefined);
+  const stream = new StreamController({
+    plugin: await createChatFeatureHost({ app, settings: { ...settings, deferMathRenderingDuringStreaming: true } }),
+    state, renderer, subagentManager: subagents, getMessagesEl: () => host, updateQueueIndicator: () => undefined,
+  });
+  vi.mocked(MarkdownRenderer.render).mockClear();
+  try {
+    const message = { id: 'thinking', role: 'assistant' as const, timestamp: testDate().getTime(), content: '' };
+    await stream.handleStreamChunk({ type: 'thinking', content: 'Reasoning ' }, message);
+    await vi.advanceTimersByTimeAsync(500);
+    expect(MarkdownRenderer.render).not.toHaveBeenCalled();
+    const header = within(host).getByRole('button', { name: /Thinking/ });
+    fireEvent.click(header);
+    await stream.handleStreamChunk({ type: 'thinking', content: '$x$' }, message);
+    expect(MarkdownRenderer.render).not.toHaveBeenCalled();
+    if (rendered) await vi.advanceTimersByTimeAsync(20);
+    expect(vi.mocked(MarkdownRenderer.render).mock.calls.map(call => call[1])).toEqual(rendered ? ['Reasoning \\$x\\$'] : []);
+    await stream.handleStreamChunk({ type: 'text', content: 'Answer' }, message);
+    expect(vi.mocked(MarkdownRenderer.render).mock.calls.map(call => call[1]))
+      .toEqual(rendered ? ['Reasoning \\$x\\$', 'Reasoning $x$'] : ['Reasoning $x$']);
+    expect(message).toMatchObject({ contentBlocks: [{ type: 'thinking', content: 'Reasoning $x$', durationSeconds: 0 }] });
+    expect(state.currentThinkingState).toBeNull();
+    expect(header.getAttribute('aria-expanded')).toBe('false');
+    fireEvent.click(header);
+    expect(header.getAttribute('aria-expanded')).toBe('true');
+    expect(within(host).getByText('Reasoning $x$')).toBeDefined();
+  } finally {
+    stream.dispose();
+    subagents.clear();
+    state.dispose();
+    vi.useRealTimers();
+  }
 });

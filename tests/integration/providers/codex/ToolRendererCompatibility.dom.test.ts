@@ -545,6 +545,7 @@ it.each([false, true].flatMap(lateNative => ['text', 'thinking'].map(boundary =>
   vi.mocked(MarkdownRenderer.render).mockImplementation(async (_app, markdown, el) => {
     (el as HTMLElement).createEl('p', { text: markdown });
   });
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
   const messagesEl = document.body.createDiv();
   const vault = {
     getAbstractFileByPath: vi.fn(() => null),
@@ -562,25 +563,6 @@ it.each([false, true].flatMap(lateNative => ['text', 'thinking'].map(boundary =>
     pending = pending.then(() => stream.handleStreamChunk(chunk, response));
   }, '/workspace');
   const notify = async (method: string, params: unknown) => { router.handleNotification(method, params); await pending; };
-  const timerWindow: Window = window;
-  const realSetTimeout = timerWindow.setTimeout.bind(timerWindow);
-  const vaultNotifications: Promise<void>[] = [];
-  // Keep real notification timing, but join this case's callbacks before releasing its fixture.
-  const timeoutSpy = vi.spyOn(timerWindow, 'setTimeout').mockImplementation((handler, delay, ...args) => {
-    if (delay !== 200 || typeof handler !== 'function') return realSetTimeout(handler, delay, ...args);
-    let complete!: () => void;
-    vaultNotifications.push(new Promise<void>(resolve => { complete = resolve; }));
-    return realSetTimeout(function (this: Window, ...callbackArgs: unknown[]) {
-      try {
-        return handler.apply(this, callbackArgs);
-      } finally {
-        complete();
-      }
-    }, delay, ...args);
-  });
-  const joinVaultNotifications = async () => {
-    for (const notification of vaultNotifications) await notification;
-  };
   const retainedHeaders: HTMLElement[] = [];
   const expectPatchCard = (header: HTMLElement, index: number, patch: string, result: string) => {
     const card = state.toolCallElements.get(`patch-${index}`)!;
@@ -654,14 +636,14 @@ it.each([false, true].flatMap(lateNative => ['text', 'thinking'].map(boundary =>
     expect(intro.compareDocumentPosition(cards[0]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(cards[0].compareDocumentPosition(cards[1]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(cards[1].compareDocumentPosition(answer) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    await joinVaultNotifications();
+    await vi.advanceTimersByTimeAsync(200);
     expect(vault.getAbstractFileByPath).toHaveBeenCalledWith('note-0.md');
     expect(vault.getAbstractFileByPath).toHaveBeenCalledWith('note-1.md');
     expect(vault.adapter.list).toHaveBeenCalledWith('');
+    vi.useRealTimers();
     expect((await axe(messagesEl)).violations).toEqual([]);
   } finally {
-    await joinVaultNotifications();
     stream.dispose(); subagents.clear(); renderer.dispose();
-    timeoutSpy.mockRestore();
+    vi.useRealTimers();
   }
 });

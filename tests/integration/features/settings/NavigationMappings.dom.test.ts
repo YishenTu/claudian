@@ -14,22 +14,10 @@ import { buildNavMappingText } from '@/features/settings/keyboardNavigation';
 import { t } from '@/i18n/i18n';
 
 vi.mock('@/shared/settings/EnvironmentSettingsSection', () => ({ renderEnvironmentSettingsSection() {} }));
-vi.mock('obsidian', async () => {
-  const dom = (await vi.importActual<typeof import('@test/helpers/ObsidianSettingsDOM')>('@test/helpers/ObsidianSettingsDOM'));
-  class Setting extends dom.Setting {
-    setHeading() { return this; }
-    addToggle(callback: (control: unknown) => void) {
-      const toggleEl = this.settingEl.createEl('input', { attr: { type: 'checkbox' } });
-      const toggle = {
-        toggleEl,
-        setValue(value: boolean) { toggleEl.checked = value; return this; },
-        onChange(change: (value: boolean) => void) { toggleEl.addEventListener('change', () => change(toggleEl.checked)); return this; },
-      };
-      callback(toggle); return this;
-    }
-  }
-  return { ...(await vi.importActual<typeof import('@test/__mocks__/obsidian')>('@test/__mocks__/obsidian')), ...dom, Setting };
-});
+vi.mock('obsidian', async () => ({
+  ...(await vi.importActual<typeof import('@test/__mocks__/obsidian')>('@test/__mocks__/obsidian')),
+  ...(await vi.importActual<typeof import('@test/helpers/ObsidianSettingsDOM')>('@test/helpers/ObsidianSettingsDOM')),
+}));
 
 it('keeps and then persists the newer navigation draft when an older save completes', async () => {
   globalThis.structuredClone ??= value => deserialize(serialize(value));
@@ -48,7 +36,7 @@ it('keeps and then persists the newer navigation draft when an older save comple
   const container = document.body.createDiv();
   try {
     tab['renderGeneralTab'](container);
-    const row = within(container).getByText(t('settings.navMappings.name')).parentElement!;
+    const row = within(container).getByRole('textbox', { name: t('settings.navMappings.name') }).closest<HTMLElement>('.setting-item')!;
     const input = within(row).getByRole('textbox') as HTMLTextAreaElement;
     const first = 'map k scrollUp\nmap j scrollDown\nmap f focusInput';
     const latest = 'map u scrollUp\nmap d scrollDown\nmap e focusInput';

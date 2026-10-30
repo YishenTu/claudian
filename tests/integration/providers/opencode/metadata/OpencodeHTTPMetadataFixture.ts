@@ -33,7 +33,10 @@ if (process.argv.includes('--version')) {
   if (!process.env.NO_CATALOG_EVENTS) fs.watchFile(process.env.CATALOG_FILE + '.providers', { interval: 20 }, () => emit('provider.updated'));
   if (!process.env.NO_CATALOG_EVENTS) fs.watchFile(process.env.CATALOG_FILE + '.commands', { interval: 20 }, () => emit('command.updated'));
   if (!process.env.NO_CATALOG_EVENTS) fs.watchFile(process.env.CATALOG_FILE + '.skills', { interval: 20 }, () => emit('skill.updated'));
-  let activated = !process.env.ACTIVATION_DELAY_MS, activation;
+  const waitForRelease = async suffix => {
+    while (fs.existsSync(process.env.CATALOG_FILE + suffix)) await new Promise(resolve => setTimeout(resolve, 10).unref());
+  };
+  let activated = !process.env.ACTIVATION_DELAY_MS && !fs.existsSync(process.env.CATALOG_FILE + '.activation-hold'), activation;
   const server = http.createServer(async (req, res) => {
     const auth = 'Basic ' + Buffer.from('opencode:' + process.env.OPENCODE_PASSWORD).toString('base64');
     const url = new URL(req.url, 'http://localhost');
@@ -62,7 +65,11 @@ if (process.argv.includes('--version')) {
       res.end(JSON.stringify({ location: { directory: process.cwd() }, data: JSON.parse(fs.readFileSync(process.env.CATALOG_FILE + '.providers', 'utf8')) }));
       return;
     }
-    activation ??= new Promise(resolve => setTimeout(() => { activated = true; resolve(); }, Number(process.env.ACTIVATION_DELAY_MS || 0)));
+    activation ??= (async () => {
+      await waitForRelease('.activation-hold');
+      if (process.env.ACTIVATION_DELAY_MS) await new Promise(resolve => setTimeout(resolve, Number(process.env.ACTIVATION_DELAY_MS)));
+      activated = true;
+    })();
     if (url.pathname === '/api/integration') {
       fs.writeFileSync(process.env.ENDPOINT_FILE + '.integration', '');
       if (process.env.INTEGRATION_STATUS === 'hang') {
@@ -108,10 +115,11 @@ if (process.argv.includes('--version')) {
     res.setHeader('Content-Type', 'application/json');
     res.end(JSON.stringify({ location: { directory: process.cwd() }, data }));
   });
-  server.listen(0, '127.0.0.1', () => {
+  server.listen(0, '127.0.0.1', async () => {
     const url = 'http://127.0.0.1:' + server.address().port;
     fs.writeFileSync(process.env.ENDPOINT_FILE, url);
     fs.writeFileSync(process.env.ENDPOINT_FILE + '.pid', String(process.pid));
+    await waitForRelease('.ready-hold');
     setTimeout(() => process.stdout.write(JSON.stringify({ url: process.env.INVALID_READY === '1' ? 'https://example.com' : url }) + '\\n'), Number(process.env.READY_DELAY_MS || 0));
   });
   process.stdin.resume();

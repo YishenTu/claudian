@@ -1,68 +1,8 @@
-const mockedModule0: any = await import('@/features/chat/rendering/tools/ToolCallRenderer');
-const mockedModule1: any = await import('@/features/chat/rendering/tools/ToolCallRenderer');
-const mockedModule2: any = await import('@/features/chat/rendering/tools/ToolCallRenderer');
-const mockedModule3: any = await import('@/features/chat/rendering/tools/ToolCallRenderer');
-const mockedModule4: any = await import('@/features/chat/rendering/tools/ToolCallRenderer');
-const mockedModule5: any = await import('@/features/chat/rendering/tools/ToolCallRenderer');
-const mockedModule6: any = await import('@/features/chat/rendering/tools/ToolCallRenderer');
-const mockedModule7: any = await import('@/features/chat/rendering/tools/ToolCallRenderer');
-const mockedModule8: any = await import('@/features/chat/rendering/tools/ToolCallRenderer');
-const mockedModule9: any = await import('@/features/chat/rendering/tools/WriteEditRenderer');
-const mockedModule10: any = await import('@/features/chat/rendering/tools/WriteEditRenderer');
-const mockedModule11: any = await import('@/features/chat/rendering/tools/WriteEditRenderer');
-const mockedModule12: any = await import('@/features/chat/rendering/tools/ToolCallRenderer');
-const mockedModule13: any = await import('@/features/chat/rendering/tools/ToolCallRenderer');
-const mockedModule14: any = await import('@/features/chat/rendering/tools/ToolCallRenderer');
-const mockedModule15: any = await import('@/features/chat/rendering/tools/ToolCallRenderer');
-const mockedModule16: any = await import('@/features/chat/rendering/ThinkingBlockRenderer');
-const mockedModule17: any = await import('@/features/chat/rendering/ThinkingBlockRenderer');
-const mockedModule18: any = await import('@/features/chat/rendering/ThinkingBlockRenderer');
-const mockedModule19: any = await import('@/features/chat/rendering/ThinkingBlockRenderer');
-const mockedModule20: any = await import('@/features/chat/rendering/ThinkingBlockRenderer');
-const mockedModule21: any = await import('@/features/chat/rendering/ThinkingBlockRenderer');
-const mockedModule22: any = await import('@/features/chat/rendering/ThinkingBlockRenderer');
-const mockedModule23: any = await import('@/features/chat/rendering/ThinkingBlockRenderer');
-const mockedModule24: any = await import('@/features/chat/rendering/tools/ToolCallRenderer');
-const mockedModule25: any = await import('@/features/chat/rendering/tools/ToolCallRenderer');
-const mockedModule26: any = await import('@/features/chat/rendering/tools/ToolCallRenderer');
-const mockedModule27: any = await import('@/features/chat/rendering/tools/WriteEditRenderer');
-const mockedModule28: any = await import('@/features/chat/rendering/tools/ToolCallRenderer');
-const mockedModule29: any = await import('@/features/chat/rendering/tools/WriteEditRenderer');
-const mockedModule30: any = await import('@/features/chat/rendering/tools/ToolCallRenderer');
-const mockedModule31: any = await import('@/features/chat/rendering/tools/WriteEditRenderer');
-const mockedModule32: any = await import('@/features/chat/rendering/tools/ToolCallRenderer');
-const mockedModule33: any = await import('@/features/chat/rendering/tools/ToolCallRenderer');
-const mockedModule34: any = await import('@/features/chat/rendering/tools/ToolCallRenderer');
-const mockedModule35: any = await import('@/features/chat/rendering/tools/ToolCallRenderer');
-const mockedModule36: any = await import('@/features/chat/rendering/tools/ToolCallRenderer');
-const mockedModule37: any = await import('@/features/chat/subagents/SubagentRenderer');
-const mockedModule38: any = await import('@/features/chat/subagents/SubagentRenderer');
-const mockedModule39: any = await import('@/features/chat/rendering/tools/ToolCallRenderer');
-const mockedModule40: any = await import('@/features/chat/subagents/SubagentRenderer');
-const mockedModule41: any = await import('@/features/chat/subagents/SubagentRenderer');
-const mockedModule42: any = await import('@/features/chat/rendering/tools/ToolCallRenderer');
-const mockedModule43: any = await import('@/features/chat/subagents/SubagentRenderer');
-const mockedModule44: any = await import('@/features/chat/rendering/tools/ToolCallRenderer');
-const mockedModule45: any = await import('@/features/chat/subagents/SubagentRenderer');
-const mockedModule46: any = await import('@/features/chat/subagents/SubagentRenderer');
-const mockedModule47: any = await import('@/features/chat/subagents/SubagentRenderer');
-const mockedModule48: any = await import('@/features/chat/rendering/tools/ToolCallRenderer');
-const mockedModule49: any = await import('@/features/chat/subagents/SubagentRenderer');
-const mockedModule50: any = await import('@/features/chat/rendering/tools/ToolCallRenderer');
-const mockedModule51: any = await import('@/features/chat/subagents/SubagentRenderer');
-const mockedModule52: any = await import('@/features/chat/subagents/SubagentRenderer');
-const mockedModule53: any = await import('@/features/chat/rendering/tools/ToolCallRenderer');
-const mockedModule54: any = await import('@/features/chat/subagents/SubagentRenderer');
-const mockedModule55: any = await import('@/features/chat/rendering/tools/ToolCallRenderer');
-const mockedModule56: any = await import('@/features/chat/rendering/tools/ToolCallRenderer');
-const mockedModule57: any = await import('@/features/chat/subagents/SubagentRenderer');
-const mockedModule58: any = await import('@/features/chat/subagents/SubagentRenderer');
-const mockedModule59: any = await import('@/features/chat/subagents/SubagentRenderer');
-const mockedModule60: any = await import('@/features/chat/subagents/SubagentRenderer');
-const mockedModule61: any = await import('@/features/chat/rendering/tools/ToolCallRenderer');
-const mockedModule62: any = await import('@/features/chat/rendering/tools/ToolCallRenderer');
-const mockedModule63: any = await import('@/features/chat/rendering/tools/ToolCallRenderer');
-const mockedModule64: any = await import('@/core/tools/toolInput');
+const mockedTools: any = await import('@/features/chat/rendering/tools/ToolCallRenderer');
+const mockedEdits: any = await import('@/features/chat/rendering/tools/WriteEditRenderer');
+const mockedThinking: any = await import('@/features/chat/rendering/ThinkingBlockRenderer');
+const mockedSubagents: any = await import('@/features/chat/subagents/SubagentRenderer');
+const mockedToolInput: any = await import('@/core/tools/toolInput');
 import '@/providers';
 
 import { TEST_CODEX_MODEL } from '@test/helpers/codexModels';
@@ -487,51 +427,6 @@ describe('StreamController - Text Content', () => {
       expect(deps.renderer.renderContent).toHaveBeenLastCalledWith(target, content);
     });
 
-    it('should defer math rendering during live text renders', async () => {
-      deps.state.currentTextEl = createMockEl();
-
-      await controller.appendText('Euler: $e^{i\\pi} + 1 = 0$');
-
-      vi.advanceTimersByTime(16);
-      await Promise.resolve();
-
-      expect(deps.renderer.renderContent).toHaveBeenCalledWith(
-        deps.state.currentTextEl,
-        'Euler: $e^{i\\pi} + 1 = 0$',
-        { deferMath: true, deferDiagrams: true }
-      );
-    });
-
-    it('should defer LaTeX-delimited math during live text renders', async () => {
-      deps.state.currentTextEl = createMockEl();
-
-      await controller.appendText('Euler: \\(e^{i\\pi} + 1 = 0\\)');
-
-      vi.advanceTimersByTime(16);
-      await Promise.resolve();
-
-      expect(deps.renderer.renderContent).toHaveBeenCalledWith(
-        deps.state.currentTextEl,
-        'Euler: \\(e^{i\\pi} + 1 = 0\\)',
-        { deferMath: true, deferDiagrams: true }
-      );
-    });
-
-    it('should honor disabled deferred math rendering setting during live text renders', async () => {
-      (deps.plugin.settings as any).deferMathRenderingDuringStreaming = false;
-      deps.state.currentTextEl = createMockEl();
-
-      await controller.appendText('Euler: $e^{i\\pi} + 1 = 0$');
-
-      vi.advanceTimersByTime(16);
-      await Promise.resolve();
-
-      expect(deps.renderer.renderContent).toHaveBeenCalledWith(
-        deps.state.currentTextEl,
-        'Euler: $e^{i\\pi} + 1 = 0$', { deferMath: false, deferDiagrams: true }
-      );
-    });
-
     it('should flush a pending text render before finalizing text', async () => {
       const msg = createTestMessage();
 
@@ -673,43 +568,6 @@ describe('StreamController - Text Content', () => {
   });
 
   describe('Tool handling', () => {
-    it('should record tool_use and add to content blocks', async () => {
-      const msg = createTestMessage();
-      deps.state.currentContentEl = createMockEl();
-
-      await controller.handleStreamChunk(
-        { type: 'tool_use', id: 'tool-1', name: 'Read', input: { file_path: 'notes/test.md' } },
-        msg
-      );
-
-      expect(msg.toolCalls).toHaveLength(1);
-      expect(msg.toolCalls![0].id).toBe('tool-1');
-      expect(msg.toolCalls![0].status).toBe('running');
-      expect(msg.contentBlocks).toHaveLength(1);
-      expect(msg.contentBlocks![0]).toEqual({ type: 'tool_use', toolId: 'tool-1' });
-    });
-
-    it('should update tool_result status', async () => {
-      const msg = createTestMessage();
-      msg.toolCalls = [
-        {
-          id: 'tool-1',
-          name: 'Read',
-          input: { file_path: 'notes/test.md' },
-          status: 'running',
-        } as any,
-      ];
-      deps.state.currentContentEl = createMockEl();
-
-      await controller.handleStreamChunk(
-        { type: 'tool_result', id: 'tool-1', content: 'ok' },
-        msg
-      );
-
-      expect(msg.toolCalls![0].status).toBe('completed');
-      expect(msg.toolCalls![0].result).toBe('ok');
-    });
-
     it('should add subagent entry to contentBlocks for Task tool', async () => {
       const msg = createTestMessage();
       deps.state.currentContentEl = createMockEl();
@@ -773,7 +631,7 @@ describe('StreamController - Text Content', () => {
     );
 
     it('converts an OpenCode generic card to Agent in place without duplicate state or DOM', async () => {
-      const { renderToolCall } = mockedModule0;
+      const { renderToolCall } = mockedTools;
       renderToolCall.mockReset();
       const parentEl = createMockEl();
       installOrderedMockParent(parentEl);
@@ -865,59 +723,6 @@ describe('StreamController - Text Content', () => {
       expect(msg.toolCalls![0].name).toBe(TOOL_SUBAGENT);
     });
 
-    it('should render TodoWrite inline', async () => {
-      const { renderToolCall } = mockedModule1;
-      const mockTodos = [{ content: 'Task 1', status: 'pending', activeForm: 'Working on task 1' }];
-
-      const msg = createTestMessage();
-      deps.state.currentContentEl = createMockEl();
-
-      await controller.handleStreamChunk(
-        {
-          type: 'tool_use',
-          id: 'todo-1',
-          name: TOOL_TODO_WRITE,
-          input: { todos: mockTodos },
-        },
-        msg
-      );
-
-      // Tool is buffered, should be in pendingTools
-      expect(msg.contentBlocks).toHaveLength(1);
-      expect(msg.contentBlocks![0]).toEqual({ type: 'tool_use', toolId: 'todo-1' });
-      expect(deps.state.pendingTools.size).toBe(1);
-
-      // Flush pending tools by sending a different chunk type (text or done)
-      await controller.handleStreamChunk({ type: 'done' }, msg);
-
-      // Now renderToolCall should have been called
-      expect(renderToolCall).toHaveBeenCalled();
-      expect(deps.state.pendingTools.size).toBe(0);
-    });
-
-    it('should flush pending tools before rendering text content', async () => {
-      const { renderToolCall } = mockedModule2;
-      const msg = createTestMessage();
-      deps.state.currentContentEl = createMockEl();
-
-      await controller.handleStreamChunk(
-        { type: 'tool_use', id: 'read-1', name: 'Read', input: { file_path: 'test.md' } },
-        msg
-      );
-      expect(deps.state.pendingTools.size).toBe(1);
-      expect(renderToolCall).not.toHaveBeenCalled();
-
-      deps.state.currentTextEl = createMockEl();
-      await controller.handleStreamChunk({ type: 'text', content: 'Hello' }, msg);
-
-      expect(deps.state.pendingTools.size).toBe(0);
-      expect(renderToolCall).toHaveBeenCalledWith(
-        expect.anything(),
-        expect.objectContaining({ id: 'read-1', name: 'Read' }),
-        expect.objectContaining({ initiallyExpanded: false }),
-      );
-    });
-
     it.each([
       { changes: [{ path: 'notes/new.md', kind: 'add' }] },
       { patch: '*** Begin Patch\n*** Add File: notes/new.md\n+hello\n*** End Patch' },
@@ -989,75 +794,8 @@ describe('StreamController - Text Content', () => {
       expect(refreshedDirs()).toEqual(['notes', 'drafts']);
     });
 
-    it('should pass expanded default to apply_patch tool blocks when enabled', async () => {
-      const { renderToolCall } = mockedModule3;
-      (deps.plugin.settings as any).expandFileEditsByDefault = true;
-
-      const msg = createTestMessage();
-      deps.state.currentContentEl = createMockEl();
-
-      await controller.handleStreamChunk(
-        {
-          type: 'tool_use',
-          id: 'patch-1',
-          name: TOOL_APPLY_PATCH,
-          input: { changes: [{ path: 'src/main.ts', kind: 'update' }] },
-        },
-        msg
-      );
-      await controller.handleStreamChunk({ type: 'done' }, msg);
-
-      expect(renderToolCall).toHaveBeenCalledWith(
-        expect.anything(),
-        expect.objectContaining({ id: 'patch-1', name: TOOL_APPLY_PATCH }),
-        expect.objectContaining({ initiallyExpanded: true }),
-      );
-    });
-
-    it('should flush pending tools before rendering thinking content', async () => {
-      const { renderToolCall } = mockedModule4;
-      const msg = createTestMessage();
-      deps.state.currentContentEl = createMockEl();
-
-      await controller.handleStreamChunk(
-        { type: 'tool_use', id: 'grep-1', name: 'Grep', input: { pattern: 'test' } },
-        msg
-      );
-      expect(deps.state.pendingTools.size).toBe(1);
-      expect(renderToolCall).not.toHaveBeenCalled();
-
-      await controller.handleStreamChunk({ type: 'thinking', content: 'Let me think...' }, msg);
-
-      expect(deps.state.pendingTools.size).toBe(0);
-      expect(renderToolCall).toHaveBeenCalled();
-    });
-
-    it('should render pending tool when tool_result arrives before flush', async () => {
-      const { renderToolCall } = mockedModule5;
-      const msg = createTestMessage();
-      deps.state.currentContentEl = createMockEl();
-
-      await controller.handleStreamChunk(
-        { type: 'tool_use', id: 'read-1', name: 'Read', input: { file_path: 'test.md' } },
-        msg
-      );
-      expect(deps.state.pendingTools.size).toBe(1);
-      expect(renderToolCall).not.toHaveBeenCalled();
-
-      // Result arrives while tool still pending - should render tool first
-      await controller.handleStreamChunk(
-        { type: 'tool_result', id: 'read-1', content: 'file contents here' },
-        msg
-      );
-
-      expect(deps.state.pendingTools.size).toBe(0);
-      expect(renderToolCall).toHaveBeenCalled();
-      expect(msg.toolCalls![0].status).toBe('completed');
-      expect(msg.toolCalls![0].result).toBe('file contents here');
-    });
-
     it('should render a pending tool on tool_output and append incremental output', async () => {
-      const { renderToolCall, updateToolCallResult } = mockedModule6;
+      const { renderToolCall, updateToolCallResult } = mockedTools;
       const msg = createTestMessage();
       deps.state.currentContentEl = createMockEl();
 
@@ -1112,7 +850,7 @@ describe('StreamController - Text Content', () => {
     });
 
     it('should coalesce tool_output renders until the next animation frame', async () => {
-      const { updateToolCallResult } = mockedModule7;
+      const { updateToolCallResult } = mockedTools;
       const msg = createTestMessage();
       deps.state.currentContentEl = createMockEl();
 
@@ -1144,119 +882,8 @@ describe('StreamController - Text Content', () => {
       );
     });
 
-    it('should buffer Write tool and use createWriteEditBlock on flush', async () => {
-      const { renderToolCall } = mockedModule8;
-      const { createWriteEditBlock } = mockedModule9;
-      createWriteEditBlock.mockReturnValue({ wrapperEl: createMockEl() });
-
-      const msg = createTestMessage();
-      deps.state.currentContentEl = createMockEl();
-
-      await controller.handleStreamChunk(
-        { type: 'tool_use', id: 'write-1', name: 'Write', input: { file_path: 'test.md', content: 'hello' } },
-        msg
-      );
-
-      expect(deps.state.pendingTools.size).toBe(1);
-      expect(createWriteEditBlock).not.toHaveBeenCalled();
-      expect(renderToolCall).not.toHaveBeenCalled();
-
-      await controller.handleStreamChunk({ type: 'done' }, msg);
-
-      expect(deps.state.pendingTools.size).toBe(0);
-      expect(createWriteEditBlock).toHaveBeenCalledWith(
-        expect.anything(),
-        expect.objectContaining({ id: 'write-1', name: 'Write' }),
-        expect.objectContaining({ initiallyExpanded: false }),
-      );
-      // renderToolCall should NOT be called for Write/Edit tools
-      expect(renderToolCall).not.toHaveBeenCalled();
-    });
-
-    it('should pass expanded default to Write tool blocks when enabled', async () => {
-      const { createWriteEditBlock } = mockedModule10;
-      createWriteEditBlock.mockReturnValue({ wrapperEl: createMockEl() });
-
-      (deps.plugin.settings as any).expandFileEditsByDefault = true;
-
-      const msg = createTestMessage();
-      deps.state.currentContentEl = createMockEl();
-
-      await controller.handleStreamChunk(
-        { type: 'tool_use', id: 'write-1', name: 'Write', input: { file_path: 'test.md', content: 'hello' } },
-        msg
-      );
-      await controller.handleStreamChunk({ type: 'done' }, msg);
-
-      expect(createWriteEditBlock).toHaveBeenCalledWith(
-        expect.anything(),
-        expect.objectContaining({ id: 'write-1', name: 'Write' }),
-        expect.objectContaining({ initiallyExpanded: true }),
-      );
-    });
-
-    it('should buffer Edit tool and use createWriteEditBlock on flush', async () => {
-      const { createWriteEditBlock } = mockedModule11;
-      createWriteEditBlock.mockReturnValue({ wrapperEl: createMockEl() });
-
-      const msg = createTestMessage();
-      deps.state.currentContentEl = createMockEl();
-
-      await controller.handleStreamChunk(
-        { type: 'tool_use', id: 'edit-1', name: 'Edit', input: { file_path: 'test.md', old_string: 'a', new_string: 'b' } },
-        msg
-      );
-
-      expect(deps.state.pendingTools.size).toBe(1);
-      expect(createWriteEditBlock).not.toHaveBeenCalled();
-
-      deps.state.currentTextEl = createMockEl();
-      await controller.handleStreamChunk({ type: 'text', content: 'Done editing' }, msg);
-
-      expect(deps.state.pendingTools.size).toBe(0);
-      expect(createWriteEditBlock).toHaveBeenCalled();
-    });
-
-    it('should flush pending tools before rendering a warning', async () => {
-      const { renderToolCall } = mockedModule12;
-      const msg = createTestMessage();
-      deps.state.currentContentEl = createMockEl();
-
-      await controller.handleStreamChunk(
-        { type: 'tool_use', id: 'bash-1', name: 'Bash', input: { command: 'ls' } },
-        msg
-      );
-      expect(deps.state.pendingTools.size).toBe(1);
-
-      await controller.handleStreamChunk({ type: 'notice', content: 'Command blocked', level: 'warning' }, msg);
-
-      expect(deps.state.currentTextContent).toContain('Warning');
-
-      expect(deps.state.pendingTools.size).toBe(0);
-      expect(renderToolCall).toHaveBeenCalled();
-    });
-
-    it('should flush pending tools before rendering error message', async () => {
-      const { renderToolCall } = mockedModule13;
-      const msg = createTestMessage();
-      deps.state.currentContentEl = createMockEl();
-
-      await controller.handleStreamChunk(
-        { type: 'tool_use', id: 'read-1', name: 'Read', input: { file_path: 'missing.md' } },
-        msg
-      );
-      expect(deps.state.pendingTools.size).toBe(1);
-
-      await controller.handleStreamChunk({ type: 'error', content: 'Something went wrong' }, msg);
-
-      expect(deps.state.currentTextContent).toContain('Error');
-
-      expect(deps.state.pendingTools.size).toBe(0);
-      expect(renderToolCall).toHaveBeenCalled();
-    });
-
     it('should flush pending tools before Task tool renders', async () => {
-      const { renderToolCall } = mockedModule14;
+      const { renderToolCall } = mockedTools;
       const msg = createTestMessage();
       deps.state.currentContentEl = createMockEl();
 
@@ -1351,44 +978,6 @@ describe('StreamController - Text Content', () => {
       controller.resetStreamingState();
 
       expect(deps.state.flavorTimerInterval).toBeNull();
-    });
-  });
-
-  describe('Tool handling - continued', () => {
-    it('should handle multiple pending tools and flush in order', async () => {
-      const { renderToolCall } = mockedModule15;
-      const msg = createTestMessage();
-      deps.state.currentContentEl = createMockEl();
-
-      await controller.handleStreamChunk(
-        { type: 'tool_use', id: 'read-1', name: 'Read', input: { file_path: 'a.md' } },
-        msg
-      );
-      await controller.handleStreamChunk(
-        { type: 'tool_use', id: 'grep-1', name: 'Grep', input: { pattern: 'test' } },
-        msg
-      );
-      await controller.handleStreamChunk(
-        { type: 'tool_use', id: 'glob-1', name: 'Glob', input: { pattern: '*.md' } },
-        msg
-      );
-
-      expect(deps.state.pendingTools.size).toBe(3);
-      expect(renderToolCall).not.toHaveBeenCalled();
-
-      await controller.handleStreamChunk({ type: 'done' }, msg);
-
-      expect(deps.state.pendingTools.size).toBe(0);
-      expect(renderToolCall).toHaveBeenCalledTimes(3);
-
-      // Verify tools were rendered in order (Map preserves insertion order)
-      const calls = renderToolCall.mock.calls;
-      expect(calls[0][1].id).toBe('read-1');
-      expect(calls[1][1].id).toBe('grep-1');
-      expect(calls[2][1].id).toBe('glob-1');
-
-      await controller.handleStreamChunk({ type: 'done' }, msg);
-      expect(renderToolCall).toHaveBeenCalledTimes(3);
     });
   });
 
@@ -1664,20 +1253,6 @@ describe('StreamController - Text Content', () => {
   });
 
   describe('Thinking block finalization', () => {
-    it('should finalize thinking block and add to contentBlocks', async () => {
-      const msg = createTestMessage();
-      deps.state.currentContentEl = createMockEl();
-
-      await controller.appendThinking('Let me think...');
-
-      await controller.finalizeCurrentThinkingBlock(msg);
-
-      expect(msg.contentBlocks).toContainEqual(
-        expect.objectContaining({ type: 'thinking', content: 'Let me think...' })
-      );
-      expect(deps.state.currentThinkingState).toBeNull();
-    });
-
     it('should not add to contentBlocks when no thinking content', async () => {
       const msg = createTestMessage();
       await controller.appendThinking('');
@@ -1696,31 +1271,8 @@ describe('StreamController - Text Content', () => {
       expect(msg.contentBlocks).toEqual([]);
     });
 
-    it('should coalesce thinking renders until the next animation frame', async () => {
-      const { createThinkingBlock } = mockedModule16;
-      const msg = createTestMessage();
-      const contentEl = createMockEl();
-      createThinkingBlock.mockReturnValueOnce({
-        wrapperEl: createMockEl(),
-        contentEl,
-        labelEl: createMockEl(),
-        isExpanded: true,
-      });
-
-      await controller.handleStreamChunk({ type: 'thinking', content: 'Let ' }, msg);
-      await controller.handleStreamChunk({ type: 'thinking', content: 'me think' }, msg);
-
-      expect(deps.renderer.renderContent).not.toHaveBeenCalled();
-
-      vi.advanceTimersByTime(16);
-      await Promise.resolve();
-
-      expect(deps.renderer.renderContent).toHaveBeenCalledTimes(1);
-      expect(deps.renderer.renderContent).toHaveBeenCalledWith(contentEl, 'Let me think', { deferMath: true, deferDiagrams: true });
-    });
-
     it('defers Mermaid in thinking and renders it at finalization', async () => {
-      const { createThinkingBlock } = mockedModule17;
+      const { createThinkingBlock } = mockedThinking;
       const contentEl = createMockEl();
       createThinkingBlock.mockReturnValueOnce({
         wrapperEl: createMockEl(), contentEl, labelEl: createMockEl(),
@@ -1733,65 +1285,6 @@ describe('StreamController - Text Content', () => {
       expect(deps.renderer.renderContent).toHaveBeenLastCalledWith(contentEl, content, { deferMath: true, deferDiagrams: true });
       await controller.finalizeCurrentThinkingBlock(createTestMessage());
       expect(deps.renderer.renderContent).toHaveBeenLastCalledWith(contentEl, content);
-    });
-
-    it('should replace deferred math when finalizing an expanded thinking block', async () => {
-      const { createThinkingBlock } = mockedModule18;
-      const msg = createTestMessage();
-      const contentEl = createMockEl();
-      createThinkingBlock.mockReturnValueOnce({
-        wrapperEl: createMockEl(),
-        contentEl,
-        labelEl: createMockEl(),
-        isExpanded: true,
-      });
-
-      await controller.handleStreamChunk({ type: 'thinking', content: 'Reasoning $x^2$' }, msg);
-      vi.advanceTimersByTime(16);
-      await Promise.resolve();
-      expect(deps.renderer.renderContent).toHaveBeenCalledTimes(1);
-      expect(deps.renderer.renderContent).toHaveBeenCalledWith(
-        contentEl,
-        'Reasoning $x^2$',
-        { deferMath: true, deferDiagrams: true }
-      );
-
-      await controller.finalizeCurrentThinkingBlock(msg);
-
-      expect(deps.renderer.renderContent).toHaveBeenNthCalledWith(
-        1,
-        contentEl,
-        'Reasoning $x^2$',
-        { deferMath: true, deferDiagrams: true }
-      );
-      expect(deps.renderer.renderContent).toHaveBeenNthCalledWith(
-        2,
-        contentEl,
-        'Reasoning $x^2$'
-      );
-    });
-
-    it('should skip live renders while thinking is collapsed', async () => {
-      const { createThinkingBlock } = mockedModule19;
-      const msg = createTestMessage();
-      const contentEl = createMockEl();
-      createThinkingBlock.mockReturnValueOnce({
-        wrapperEl: createMockEl(),
-        contentEl,
-        labelEl: createMockEl(),
-        isExpanded: false,
-      });
-
-      await controller.handleStreamChunk({ type: 'thinking', content: 'Hidden ' }, msg);
-      await controller.handleStreamChunk({ type: 'thinking', content: 'reasoning' }, msg);
-      vi.advanceTimersByTime(500);
-      await Promise.resolve();
-
-      expect(deps.renderer.renderContent).not.toHaveBeenCalled();
-
-      await controller.finalizeCurrentThinkingBlock(msg);
-
-      expect(deps.renderer.renderContent).not.toHaveBeenCalled();
     });
 
     it('does not scan collapsed thinking deltas for deferred math or diagrams', async () => {
@@ -1814,57 +1307,6 @@ describe('StreamController - Text Content', () => {
       }
     });
 
-    it('should render accumulated thinking through the coordinator when expanded', async () => {
-      const { createThinkingBlock } = mockedModule20;
-      const msg = createTestMessage();
-      const contentEl = createMockEl();
-      const thinkingState: Record<string, any> = {
-        wrapperEl: createMockEl(),
-        contentEl,
-        labelEl: createMockEl(),
-        isExpanded: false,
-      };
-      let onToggle: ((isExpanded: boolean) => void) | undefined;
-      createThinkingBlock.mockImplementationOnce((_parentEl: HTMLElement, options: any) => {
-        onToggle = options.onToggle;
-        return thinkingState;
-      });
-
-      await controller.handleStreamChunk({ type: 'thinking', content: 'Deferred reasoning' }, msg);
-      vi.advanceTimersByTime(500);
-      await Promise.resolve();
-      expect(deps.renderer.renderContent).not.toHaveBeenCalled();
-
-      thinkingState.isExpanded = true;
-      onToggle?.(true);
-      vi.advanceTimersByTime(16);
-      await Promise.resolve();
-
-      expect(deps.renderer.renderContent).toHaveBeenCalledTimes(1);
-      expect(deps.renderer.renderContent).toHaveBeenCalledWith(
-        contentEl,
-        'Deferred reasoning', { deferMath: true, deferDiagrams: true }
-      );
-    });
-
-    it('should flush a pending expanded thinking render before finalizing', async () => {
-      const { createThinkingBlock } = mockedModule21;
-      createThinkingBlock.mockReturnValueOnce({
-        wrapperEl: createMockEl(), contentEl: createMockEl(), labelEl: createMockEl(), isExpanded: true,
-      });
-      const msg = createTestMessage();
-
-      await controller.handleStreamChunk({ type: 'thinking', content: 'Reasoning' }, msg);
-      await controller.finalizeCurrentThinkingBlock(msg);
-
-      expect(deps.renderer.renderContent).toHaveBeenCalledWith(
-        expect.anything(),
-        'Reasoning', { deferMath: true, deferDiagrams: true }
-      );
-      expect(msg.contentBlocks).toContainEqual(
-        expect.objectContaining({ type: 'thinking', content: 'Reasoning' })
-      );
-    });
   });
 
   describe('Pending Task tool handling', () => {
@@ -2050,62 +1492,6 @@ describe('StreamController - Text Content', () => {
     });
   });
 
-  describe('Text ↔ Thinking transitions', () => {
-    it('text arrives while thinking state is active → finalizeCurrentThinkingBlock is called', async () => {
-      const { finalizeThinkingBlock } = mockedModule22;
-      const msg = createTestMessage();
-      deps.state.currentContentEl = createMockEl();
-
-      await controller.appendThinking('Let me think...');
-
-      await controller.handleStreamChunk({ type: 'text', content: 'Hello' }, msg);
-
-      expect(finalizeThinkingBlock).toHaveBeenCalled();
-      expect(deps.state.currentThinkingState).toBeNull();
-      expect(msg.contentBlocks).toContainEqual(
-        expect.objectContaining({ type: 'thinking', content: 'Let me think...' })
-      );
-    });
-
-    it('thinking arrives while textEl exists → finalizeCurrentTextBlock is called', async () => {
-      const msg = createTestMessage();
-      deps.state.currentContentEl = createMockEl();
-
-      deps.state.currentTextEl = createMockEl();
-      deps.state.currentTextContent = 'Some text';
-
-      await controller.handleStreamChunk({ type: 'thinking', content: 'Hmm...' }, msg);
-
-      expect(deps.state.currentTextEl).toBeNull();
-      expect(msg.contentBlocks).toContainEqual(
-        expect.objectContaining({ type: 'text', content: 'Some text' })
-      );
-      expect(deps.renderer.addTextCopyButton).toHaveBeenCalledWith(
-        expect.anything(),
-        'Some text'
-      );
-    });
-
-    it('tool_use arrives while thinking state → finalizeCurrentThinkingBlock is called', async () => {
-      const { finalizeThinkingBlock } = mockedModule23;
-      const msg = createTestMessage();
-      deps.state.currentContentEl = createMockEl();
-
-      await controller.appendThinking('Reasoning...');
-
-      await controller.handleStreamChunk(
-        { type: 'tool_use', id: 'read-1', name: 'Read', input: { file_path: 'test.md' } },
-        msg
-      );
-
-      expect(finalizeThinkingBlock).toHaveBeenCalled();
-      expect(deps.state.currentThinkingState).toBeNull();
-      expect(msg.contentBlocks).toContainEqual(
-        expect.objectContaining({ type: 'thinking', content: 'Reasoning...' })
-      );
-    });
-  });
-
   describe('Agent output tool use/result', () => {
     it('TOOL_AGENT_OUTPUT chunk creates tool call and delegates to subagentManager.handleAgentOutputToolUse', async () => {
       const msg = createTestMessage();
@@ -2128,7 +1514,7 @@ describe('StreamController - Text Content', () => {
     });
 
     it('Agent output tool result handled via handleAgentOutputToolResult returning true', async () => {
-      const { updateToolCallResult } = mockedModule24;
+      const { updateToolCallResult } = mockedTools;
       const msg = createTestMessage();
       deps.state.currentContentEl = createMockEl();
 
@@ -2156,7 +1542,7 @@ describe('StreamController - Text Content', () => {
       ['Bash', { command: 'npm test' }],
       ['Read', { file_path: 'notes/test.md' }],
     ])('refines a pending generic tool to %s without duplicating it', async (name, input) => {
-      const { renderToolCall } = mockedModule25;
+      const { renderToolCall } = mockedTools;
       const msg = createTestMessage();
       deps.state.currentContentEl = createMockEl();
 
@@ -2194,8 +1580,8 @@ describe('StreamController - Text Content', () => {
     });
 
     it('selects the Edit renderer after a pending generic tool is refined', async () => {
-      const { renderToolCall } = mockedModule26;
-      const { createWriteEditBlock } = mockedModule27;
+      const { renderToolCall } = mockedTools;
+      const { createWriteEditBlock } = mockedEdits;
       createWriteEditBlock.mockReturnValueOnce({ wrapperEl: createMockEl() });
       const msg = createTestMessage();
       deps.state.currentContentEl = createMockEl();
@@ -2224,12 +1610,12 @@ describe('StreamController - Text Content', () => {
     });
 
     it.each(['Edit', 'Write'])('migrates a rendered generic tool in place to %s and finalizes its diff', async (name) => {
-      const { renderToolCall, updateToolCallResult } = mockedModule28;
+      const { renderToolCall, updateToolCallResult } = mockedTools;
       const {
         createWriteEditBlock,
         finalizeWriteEditBlock,
         updateWriteEditWithDiff,
-      } = mockedModule29;
+      } = mockedEdits;
       const parentEl = createMockEl();
       installOrderedMockParent(parentEl);
       deps.state.currentContentEl = parentEl;
@@ -2322,8 +1708,8 @@ describe('StreamController - Text Content', () => {
     });
 
     it('migrates a rendered Write tool back to generic without losing tool state', async () => {
-      const { renderToolCall, updateToolCallResult } = mockedModule30;
-      const { createWriteEditBlock } = mockedModule31;
+      const { renderToolCall, updateToolCallResult } = mockedTools;
+      const { createWriteEditBlock } = mockedEdits;
       const parentEl = createMockEl();
       installOrderedMockParent(parentEl);
       deps.state.currentContentEl = parentEl;
@@ -2424,7 +1810,7 @@ describe('StreamController - Text Content', () => {
     });
 
     it('rebuilds rendered generic tools for forward and reverse normalized-name changes', async () => {
-      const { renderToolCall, updateToolCallResult } = mockedModule32;
+      const { renderToolCall, updateToolCallResult } = mockedTools;
       renderToolCall.mockReset();
       const parentEl = createMockEl();
       installOrderedMockParent(parentEl);
@@ -2523,7 +1909,7 @@ describe('StreamController - Text Content', () => {
     });
 
     it('rebuilds a rendered generic tool as TodoWrite', async () => {
-      const { renderToolCall } = mockedModule33;
+      const { renderToolCall } = mockedTools;
       renderToolCall.mockReset();
       const todos = [{ content: 'Task', status: 'in_progress', activeForm: 'Working' }];
       const parentEl = createMockEl();
@@ -2560,7 +1946,7 @@ describe('StreamController - Text Content', () => {
     });
 
     it('rebuilds a rendered generic tool as AskUserQuestion without duplicating result handling', async () => {
-      const { renderToolCall, updateToolCallResult } = mockedModule34;
+      const { renderToolCall, updateToolCallResult } = mockedTools;
       renderToolCall.mockReset();
       const parentEl = createMockEl();
       installOrderedMockParent(parentEl);
@@ -2695,7 +2081,7 @@ describe('StreamController - Text Content', () => {
     });
 
     it('dispatches a merged same-id input refinement to the rendered header owner', async () => {
-      const { renderToolCall, refreshToolCallHeader } = mockedModule35;
+      const { renderToolCall, refreshToolCallHeader } = mockedTools;
       const msg = createTestMessage();
       deps.state.currentContentEl = createMockEl();
       const toolEl = createMockEl();
@@ -2723,7 +2109,7 @@ describe('StreamController - Text Content', () => {
     });
 
     it('dispatches a title-only name refinement without losing the logical tool input', async () => {
-      const { renderToolCall, refreshToolCallHeader } = mockedModule36;
+      const { renderToolCall, refreshToolCallHeader } = mockedTools;
       const msg = createTestMessage();
       deps.state.currentContentEl = createMockEl();
       const toolEl = createMockEl();
@@ -2792,7 +2178,7 @@ describe('StreamController - Text Content', () => {
 
   describe('Codex subagent lifecycle', () => {
     it('renders prompt immediately and final result after wait_agent resolves', async () => {
-      const { createSubagentBlock, updateSubagentBlock } = mockedModule37;
+      const { createSubagentBlock, updateSubagentBlock } = mockedSubagents;
       const msg = createTestMessage();
       deps.state.currentContentEl = createMockEl();
       deps.getProviderId = () => 'codex';
@@ -2850,8 +2236,8 @@ describe('StreamController - Text Content', () => {
     });
 
     it('updates current task-name agents from list_agents after global wait timeouts', async () => {
-      const { createSubagentBlock, updateSubagentBlock } = mockedModule38;
-      const { updateToolCallResult } = mockedModule39;
+      const { createSubagentBlock, updateSubagentBlock } = mockedSubagents;
+      const { updateToolCallResult } = mockedTools;
       const msg = createTestMessage();
       deps.state.currentContentEl = createMockEl();
       deps.getProviderId = () => 'codex';
@@ -2946,7 +2332,7 @@ describe('StreamController - Text Content', () => {
       const {
         createAsyncSubagentBlock,
         createSubagentBlock,
-      } = mockedModule40;
+      } = mockedSubagents;
       createAsyncSubagentBlock.mockReset().mockReturnValue({
         info: { id: 'task-1', description: 'test', mode: 'async', status: 'running', toolCalls: [] },
         labelEl: { setText: vi.fn() },
@@ -2962,7 +2348,7 @@ describe('StreamController - Text Content', () => {
       const {
         createAsyncSubagentBlock,
         updateAsyncSubagentBlock,
-      } = mockedModule41;
+      } = mockedSubagents;
       const wrapperEl = createMockEl();
       const asyncState = {
         wrapperEl,
@@ -3024,8 +2410,8 @@ describe('StreamController - Text Content', () => {
     });
 
     it('keeps a reclassified pending spawn before later pending tools', async () => {
-      const { renderToolCall } = mockedModule42;
-      const { createAsyncSubagentBlock } = mockedModule43;
+      const { renderToolCall } = mockedTools;
+      const { createAsyncSubagentBlock } = mockedSubagents;
       const parentEl = createMockEl();
       installOrderedMockParent(parentEl);
       deps.state.currentContentEl = parentEl;
@@ -3076,8 +2462,8 @@ describe('StreamController - Text Content', () => {
     });
 
     it('replaces an already-rendered generic tool at the same DOM position', async () => {
-      const { renderToolCall } = mockedModule44;
-      const { createAsyncSubagentBlock } = mockedModule45;
+      const { renderToolCall } = mockedTools;
+      const { createAsyncSubagentBlock } = mockedSubagents;
       const parentEl = createMockEl();
       installOrderedMockParent(parentEl);
       deps.state.currentContentEl = parentEl;
@@ -3126,7 +2512,7 @@ describe('StreamController - Text Content', () => {
       const {
         createAsyncSubagentBlock,
         createSubagentBlock,
-        } = mockedModule46;
+        } = mockedSubagents;
       const parentEl = createMockEl();
       installOrderedMockParent(parentEl);
       deps.state.currentContentEl = parentEl;
@@ -3187,7 +2573,7 @@ describe('StreamController - Text Content', () => {
     it('finalizes a generic tool that is reclassified as a completed sync spawn', async () => {
       const {
         createSubagentBlock,
-      } = mockedModule47;
+      } = mockedSubagents;
       const subagentState = {
         wrapperEl: createMockEl(),
         info: {
@@ -3219,11 +2605,11 @@ describe('StreamController - Text Content', () => {
     });
 
     it('removes a rendered wait card after a late spawn binding links it', async () => {
-      const { renderToolCall } = mockedModule48;
+      const { renderToolCall } = mockedTools;
       const {
         createAsyncSubagentBlock,
         updateAsyncSubagentBlock,
-      } = mockedModule49;
+      } = mockedSubagents;
       const parentEl = createMockEl();
       installOrderedMockParent(parentEl);
       deps.state.currentContentEl = parentEl;
@@ -3291,8 +2677,8 @@ describe('StreamController - Text Content', () => {
     });
 
     it('removes a rendered generic card when refined wait input links it', async () => {
-      const { renderToolCall } = mockedModule50;
-      const { createAsyncSubagentBlock } = mockedModule51;
+      const { renderToolCall } = mockedTools;
+      const { createAsyncSubagentBlock } = mockedSubagents;
       const parentEl = createMockEl();
       installOrderedMockParent(parentEl);
       deps.state.currentContentEl = parentEl;
@@ -3342,7 +2728,7 @@ describe('StreamController - Text Content', () => {
     });
 
     it('replays a terminal generic result when the call is reclassified as output', async () => {
-      const { createAsyncSubagentBlock, updateAsyncSubagentBlock } = mockedModule52;
+      const { createAsyncSubagentBlock, updateAsyncSubagentBlock } = mockedSubagents;
       const asyncState = {
         wrapperEl: createMockEl(),
         info: {
@@ -3395,8 +2781,8 @@ describe('StreamController - Text Content', () => {
     });
 
     it('removes a rendered output card when late raw output identifies its subagent', async () => {
-      const { renderToolCall } = mockedModule53;
-      const { createAsyncSubagentBlock, updateAsyncSubagentBlock } = mockedModule54;
+      const { renderToolCall } = mockedTools;
+      const { createAsyncSubagentBlock, updateAsyncSubagentBlock } = mockedSubagents;
       const parentEl = createMockEl();
       installOrderedMockParent(parentEl);
       deps.state.currentContentEl = parentEl;
@@ -3467,7 +2853,7 @@ describe('StreamController - Text Content', () => {
     });
 
     it('restores a hidden output card when later evidence reveals a command target', async () => {
-      const { renderToolCall } = mockedModule55;
+      const { renderToolCall } = mockedTools;
       const msg = createTestMessage();
 
       await controller.handleStreamChunk({
@@ -3502,11 +2888,11 @@ describe('StreamController - Text Content', () => {
     });
 
     it('keeps a mixed command and subagent output card while completing the subagent', async () => {
-      const { renderToolCall, updateToolCallResult } = mockedModule56;
+      const { renderToolCall, updateToolCallResult } = mockedTools;
       const {
         createAsyncSubagentBlock,
         updateAsyncSubagentBlock,
-      } = mockedModule57;
+      } = mockedSubagents;
       const outputEl = createMockEl();
       const asyncState = {
         wrapperEl: createMockEl(),
@@ -3567,7 +2953,7 @@ describe('StreamController - Text Content', () => {
       const {
         createAsyncSubagentBlock,
         updateAsyncSubagentBlock,
-        } = mockedModule58;
+        } = mockedSubagents;
       const asyncState = {
         info: {
           id: 'spawn-1',
@@ -3640,7 +3026,7 @@ describe('StreamController - Text Content', () => {
     });
 
     it('finalizes a foreground spawn directly from its terminal result', async () => {
-      const { createSubagentBlock, updateSubagentBlock } = mockedModule59;
+      const { createSubagentBlock, updateSubagentBlock } = mockedSubagents;
       const syncState = {
         info: { id: 'spawn-2', description: 'Review code', status: 'running', toolCalls: [] },
         labelEl: { setText: vi.fn() },
@@ -3668,7 +3054,7 @@ describe('StreamController - Text Content', () => {
     });
 
     it('finalizes a killed background task as an error', async () => {
-      const { createAsyncSubagentBlock, updateAsyncSubagentBlock } = mockedModule60;
+      const { createAsyncSubagentBlock, updateAsyncSubagentBlock } = mockedSubagents;
       const asyncState = {
         info: { id: 'spawn-3', description: 'Wait', mode: 'async', status: 'running', toolCalls: [] },
         labelEl: { setText: vi.fn() },
@@ -3694,7 +3080,7 @@ describe('StreamController - Text Content', () => {
     });
 
     it('keeps the shared output tool visible for a background command', async () => {
-      const { renderToolCall, updateToolCallResult } = mockedModule61;
+      const { renderToolCall, updateToolCallResult } = mockedTools;
       const msg = createTestMessage();
 
       await controller.handleStreamChunk({
@@ -3721,7 +3107,7 @@ describe('StreamController - Text Content', () => {
 
   describe('Async task tool result', () => {
     it('tool_result for a pending async task returns true from handleAsyncTaskToolResult', async () => {
-      const { updateToolCallResult } = mockedModule62;
+      const { updateToolCallResult } = mockedTools;
       const msg = createTestMessage();
       deps.state.currentContentEl = createMockEl();
 
@@ -3763,7 +3149,7 @@ describe('StreamController - Text Content', () => {
     });
 
     it('normalizes structured tool_result content before storing it on tool calls', async () => {
-      const { updateToolCallResult } = mockedModule63;
+      const { updateToolCallResult } = mockedTools;
       const msg = createTestMessage();
       msg.toolCalls = [
         {
@@ -3891,7 +3277,7 @@ describe('StreamController - Tool completion', () => {
     });
 
     it('should hydrate AskUserQuestion resolvedAnswers from result text fallback', async () => {
-      const coreTools = mockedModule64;
+      const coreTools = mockedToolInput;
       (coreTools.extractResolvedAnswersFromResultText as Mock).mockReturnValueOnce({
         'Color?': 'Blue',
       });

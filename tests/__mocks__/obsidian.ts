@@ -1,3 +1,6 @@
+import { renderSettingDefinitions } from '@test/helpers/ObsidianSettingsDOM';
+import type { MarkdownRenderer as ObsidianMarkdownRenderer, SettingDefinitionItem } from 'obsidian';
+
 // Pane selection is an Obsidian boundary; callers can provide its native decision.
 export const Keymap = { isModEvent: vi.fn((_event?: unknown): boolean | 'tab' | 'split' | 'window' => false) };
 
@@ -68,7 +71,8 @@ export class Plugin {
 export class PluginSettingTab {
   app: any;
   plugin: any;
-  settingItems: any[] = [];
+  settingItems: SettingDefinitionItem[] = [];
+  private cleanup: (() => void) | undefined;
   containerEl: any = {
     empty: vi.fn(),
     createEl: vi.fn().mockReturnValue({ createEl: vi.fn(), createDiv: vi.fn() }),
@@ -80,12 +84,22 @@ export class PluginSettingTab {
     this.plugin = plugin;
   }
 
-  getSettingDefinitions(): any[] {
+  getSettingDefinitions(): SettingDefinitionItem[] {
     return [];
   }
 
-  update() {
+  update(): void {
     this.settingItems = this.getSettingDefinitions();
+    if (typeof HTMLElement !== 'undefined' && this.containerEl instanceof HTMLElement) {
+      this.hide();
+      this.cleanup = renderSettingDefinitions(this.containerEl, this.settingItems);
+    }
+  }
+
+  hide(): void {
+    this.cleanup?.();
+    this.cleanup = undefined;
+    if (typeof HTMLElement !== 'undefined' && this.containerEl instanceof HTMLElement) this.containerEl.replaceChildren();
   }
 }
 
@@ -335,10 +349,13 @@ export class Menu {
   });
 }
 
-const renderMarkdownMock = vi.fn<(...args: [string, unknown, string, unknown]) => Promise<void>>().mockResolvedValue(undefined);
+const renderMarkdownMock = vi.fn<typeof ObsidianMarkdownRenderer.renderMarkdown>(async (markdown, element) => {
+  element.textContent = markdown;
+});
+
 
 export const MarkdownRenderer = {
-  render: vi.fn<(...args: [unknown, string, unknown, string, unknown]) => Promise<void>>(
+  render: vi.fn<typeof ObsidianMarkdownRenderer.render>(
     (_app, markdown, el, sourcePath, component) => renderMarkdownMock(markdown, el, sourcePath, component),
   ),
   renderMarkdown: renderMarkdownMock,

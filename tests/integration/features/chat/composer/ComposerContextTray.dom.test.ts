@@ -109,3 +109,32 @@ it('does not blur a focused overflow control while recomputing its layout', () =
   expect(document.activeElement).toBe(more);
   expect(blur).not.toHaveBeenCalled();
 });
+
+it('keeps activation separate from removal and drops a withdrawn remove action', async () => {
+  const onActivate = vi.fn();
+  const onRemove = vi.fn();
+  const item = {
+    id: 'editor', kind: 'selection' as const, label: 'Architecture.md',
+    ariaLabel: 'notes/Architecture.md', onActivate,
+  };
+  tray.setItems('editor-selection', [{ ...item, onRemove }]);
+  const activate = within(host).getByRole('button', { name: 'notes/Architecture.md' });
+  const remove = within(host).getByRole('button', { name: 'Remove notes/Architecture.md' });
+  expect(activate.tagName).toBe('BUTTON');
+  expect(remove.tagName).toBe('BUTTON');
+  activate.focus();
+  expect(document.activeElement).toBe(activate);
+  fireEvent.click(activate);
+  expect(onActivate).toHaveBeenCalledTimes(1);
+  expect(onRemove).not.toHaveBeenCalled();
+  remove.focus();
+  expect(document.activeElement).toBe(remove);
+  fireEvent.click(remove);
+  expect(onRemove).toHaveBeenCalledTimes(1);
+  expect(onActivate).toHaveBeenCalledTimes(1);
+  expect(await axe(host)).toHaveNoViolations();
+
+  tray.setItems('editor-selection', [item]);
+  expect(within(host).getByRole('button', { name: 'notes/Architecture.md' })).toBeDefined();
+  expect(within(host).queryByRole('button', { name: 'Remove notes/Architecture.md' })).toBeNull();
+});

@@ -99,6 +99,9 @@ it('names each model\'s upstream provider by its native display name when the se
 });
 
 it('refreshes the native catalog and commands without persisting the catalog or enabling models', async () => {
+  const catalog = JSON.parse(readFileSync(fixture.environment.CATALOG_FILE!, 'utf8'));
+  catalog[0].variants = [{ id: 'low' }, { id: 'high' }];
+  writeFileSync(fixture.environment.CATALOG_FILE!, JSON.stringify(catalog));
   const plugin = fixture.createPlugin();
   const service = new OpencodeMetadataService(runtimeHostFor(plugin, 'opencode'), plugin.executionLifecycleRegistry);
   try {
@@ -106,7 +109,8 @@ it('refreshes the native catalog and commands without persisting the catalog or 
     expect(getOpencodeProviderSettings(plugin.settings).discoveredModels).toEqual([
       { rawId: 'deepseek/chat', label: 'deepseek/DeepSeek Chat' },
     ]);
-    fixture.writeCatalog('Updated Chat');
+    catalog[0].name = 'Updated Chat';
+    writeFileSync(fixture.environment.CATALOG_FILE!, JSON.stringify(catalog));
     await expect(service.loadCatalog()).resolves.toBe(true);
     expect(getOpencodeProviderSettings(plugin.settings).discoveredModels[0].label).toBe('deepseek/Updated Chat');
     await expect(service.discoverCommands()).resolves.toMatchObject({ loaded: true, commands: [
@@ -115,7 +119,7 @@ it('refreshes the native catalog and commands without persisting the catalog or 
     ] });
     await expect(service.warmModelMetadata('opencode:deepseek/chat')).resolves.toBe(true);
     expect(getOpencodeProviderSettings(plugin.settings).thinkingOptionsByModel['deepseek/chat'])
-      .toEqual(expect.arrayContaining([{ value: 'high', label: 'High' }, { value: 'default', label: 'Default' }]));
+      .toEqual([{ value: 'low', label: 'Low' }, { value: 'high', label: 'High' }, { value: 'default', label: 'Default' }]);
     const stored = projectOpencodeModelSettings(plugin.settings);
     expect(stored.discoveredModels).toBeUndefined();
     expect(stored.visibleModels).toEqual([]);

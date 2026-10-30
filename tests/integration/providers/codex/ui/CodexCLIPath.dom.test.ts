@@ -18,25 +18,10 @@ vi.mock('@/shared/settings/ProviderModelsSection', () => ({
   renderProviderModelsSection: () => ({ refresh() {}, dispose() {} }),
 }));
 vi.mock('@/shared/settings/EnvironmentSettingsSection', () => ({ renderEnvironmentSettingsSection() {} }));
-vi.mock('obsidian', async () => {
-  const dom = (await vi.importActual<typeof import('@test/helpers/ObsidianSettingsDOM')>('@test/helpers/ObsidianSettingsDOM'));
-  class Setting extends dom.Setting {
-    setHeading() { return this; }
-    addToggle(callback: (control: unknown) => void) {
-      const toggleEl = this.settingEl.createEl('input', { attr: { type: 'checkbox' } });
-      const toggle = {
-        toggleEl,
-        setValue(value: boolean) { toggleEl.checked = value; return this; },
-        setDisabled(value: boolean) { toggleEl.disabled = value; return this; },
-        onChange(change: (value: boolean) => void) {
-          toggleEl.addEventListener('change', () => change(toggleEl.checked)); return this;
-        },
-      };
-      callback(toggle); return this;
-    }
-  }
-  return { ...(await vi.importActual<typeof import('@test/__mocks__/obsidian')>('@test/__mocks__/obsidian')), ...dom, Setting };
-});
+vi.mock('obsidian', async () => ({
+  ...(await vi.importActual<typeof import('@test/__mocks__/obsidian')>('@test/__mocks__/obsidian')),
+  ...(await vi.importActual<typeof import('@test/helpers/ObsidianSettingsDOM')>('@test/helpers/ObsidianSettingsDOM')),
+}));
 
 it('preserves spaces typed into the real Codex WSL CLI path until the final commit', async () => {
   globalThis.structuredClone ??= value => deserialize(serialize(value));

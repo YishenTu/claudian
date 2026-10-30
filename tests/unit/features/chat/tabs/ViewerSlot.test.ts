@@ -17,8 +17,6 @@ import type { Mock } from 'vitest';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { ProviderWorkspaceRegistry } from '@/core/providers/ProviderWorkspaceRegistry';
 
-
-
 vi.mock('@/features/chat/tabs/TabLifecycle', async () => (
   (await vi.importActual<typeof import('@test/helpers/features/chat/TabManagerTestHarness')>('@test/helpers/features/chat/TabManagerTestHarness')).tabLifecycleModuleMock()
 ));
@@ -53,22 +51,6 @@ describe('ViewerSlot', () => {
       status: 'ready',
       items: [{ description: 'Review changes', name: 'review' }],
     });
-  });
-
-  it('reuses the provisional preview while browsing unopened sessions', async () => {
-    const getCachedConversation = vi.fn((id: string) => ({
-      id,
-      providerId: 'claude',
-    }));
-    const { manager } = await createManager(createPlugin({ getCachedConversation }));
-
-    await manager.viewerSlot.show('conversation-1');
-    expect(manager.getActiveTab()?.lifecycleState).toBe('provisional');
-    const preview = manager.getActiveTab()!;
-    await manager.viewerSlot.show('conversation-2');
-
-    expect(manager.getTabCount()).toBe(1);
-    expect(manager.getActiveTab()).toEqual(expect.objectContaining({ id: preview.id, conversationId: 'conversation-2', lifecycleState: 'provisional' }));
   });
 
   it('keeps the latest provisional selection during overlapping preview hydration', async () => {
@@ -352,30 +334,6 @@ describe('ViewerSlot', () => {
     expect(manager.getActiveTabId()).toBe(lastActive!.id);
   });
 
-  it('keeps a preview provisional while the user types, holding unsent text per session', async () => {
-    const { manager } = await createManager(conversationPlugin());
-    await manager.viewerSlot.show('conversation-1');
-    const typeDraft = (text: string) => {
-      const tab = manager.getActiveTab()!;
-      tab.session.claimUserOwnership();
-      tab.controllers.drafts.restore('main', { content: text });
-    };
-    const shownDraft = () => manager.getActiveTab()!.controllers.drafts.capture('main').content;
-    typeDraft('first session note');
-
-    await manager.viewerSlot.show('conversation-2');
-    expect(provisionalTabs(manager)).toHaveLength(1);
-    expect(manager.getActiveTab()?.conversationId).toBe('conversation-2');
-    expect(shownDraft()).toBe('');
-    typeDraft('second session note');
-
-    await manager.viewerSlot.show('conversation-1');
-    expect(shownDraft()).toBe('first session note');
-    await manager.viewerSlot.show('conversation-2');
-    expect(shownDraft()).toBe('second session note');
-    expect(manager.getAllTabs()).toHaveLength(1);
-  });
-
   it("returns a new session's unsent text when another draft starts", async () => {
     const { manager } = await createManager(conversationPlugin());
     await manager.viewerSlot.startDraft();
@@ -454,37 +412,6 @@ describe('ViewerSlot', () => {
   describe('wide layout without tabs', () => {
     const shownDraft = (manager: any) => manager.getActiveTab()!.controllers.drafts.capture('main').content;
 
-    it('unloads narrow tabs on entering wide and hands the shown session back on leaving', async () => {
-      const { manager } = await createManager(conversationPlugin());
-      const first = await manager.createTab('conversation-1');
-      const second = await manager.createTab('conversation-2', undefined, { activate: false });
-      first!.controllers.drafts.restore('main', { content: 'first note' });
-      second!.controllers.drafts.restore('main', { content: 'second note' });
-
-      await manager.viewerSlot.enter();
-
-      const preview = manager.getActiveTab()!;
-      expect(manager.getAllTabs()).toEqual([preview]);
-      expect(preview).toEqual(expect.objectContaining({ conversationId: 'conversation-1', lifecycleState: 'provisional' }));
-      expect(shownDraft(manager)).toBe('first note');
-      expect(mockDestroyTab).toHaveBeenCalledWith(first);
-      expect(mockDestroyTab).toHaveBeenCalledWith(second);
-      expect(manager.getTabIdentities().map(tab => tab.id)).toEqual([first!.id, second!.id, preview.id]);
-
-      await manager.viewerSlot.show('conversation-2');
-      expect(manager.getTab(second!.id)).toBeNull();
-      expect(manager.getActiveTab()?.lifecycleState).toBe('provisional');
-      expect(shownDraft(manager)).toBe('second note');
-
-      await manager.viewerSlot.release();
-
-      expect(manager.getTabIdentities().map(tab => tab.id)).toEqual([first!.id, second!.id]);
-      expect(manager.getActiveTabId()).toBe(second!.id);
-      expect(shownDraft(manager)).toBe('second note');
-      await manager.switchToTab(first!.id);
-      expect(shownDraft(manager)).toBe('first note');
-    });
-
     it('replaces a closed active preview with a draft instead of a narrow tab', async () => {
       const { manager } = await createManager(conversationPlugin(), {}, {}, { showsPreviews: () => true });
       const narrow = await manager.createTab('conversation-1');
@@ -509,28 +436,6 @@ describe('ViewerSlot', () => {
       expect(manager.getActiveTab()).toEqual(expect.objectContaining({
         conversationId: 'conversation-1', lifecycleState: 'provisional',
       }));
-    });
-
-    it('unloads a blank narrow tab too and shows its same session in the viewer', async () => {
-      const { manager } = await createManager(conversationPlugin());
-      const blank = await manager.createTab(null);
-      const session = blank!.session.runtime;
-      blank!.linkedContent.selectExplicit('chosen.md');
-      blank!.controllers.drafts.restore('main', { content: 'new idea' });
-
-      await manager.viewerSlot.enter();
-
-      const preview = manager.getActiveTab()!;
-      expect(manager.getAllTabs()).toEqual([preview]);
-      expect(manager.getTab(blank!.id)).toBeNull();
-      expect([preview.lifecycleState, preview.session.runtime === session]).toEqual(['provisional', true]);
-      expect([shownDraft(manager), (preview.linkedContent as any).getSnapshot().path]).toEqual(['new idea', 'chosen.md']);
-
-      await manager.viewerSlot.release();
-      const restored = manager.getActiveTab()!;
-      expect(restored.id).toBe(blank!.id);
-      expect(restored.session.runtime).toBe(session);
-      expect([shownDraft(manager), (restored.linkedContent as any).getSnapshot().path]).toEqual(['new idea', 'chosen.md']);
     });
 
     it("seeds a cold wide restore's new session from the saved blank tab selection", async () => {

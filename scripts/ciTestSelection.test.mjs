@@ -64,7 +64,7 @@ test('platform-sensitive unit tests retain native checks for both direct and sou
     ['src/core/process/env.ts', 'tests/unit/core/process/env.test.ts'],
     ['src/core/storage/VaultFileAdapter.ts', 'tests/unit/core/storage/VaultFileAdapter.test.ts'],
     ['src/providers/codex/history/CodexHistoryStore.ts', 'tests/unit/providers/codex/history/CodexHistoryStore.test.ts'],
-    ['src/providers/deepseek/ui/DeepSeekSettingsTab.ts', 'tests/unit/providers/deepseek/ui/DeepSeekSettingsTab.test.ts'],
+    ['src/providers/deepseek/ui/DeepSeekSettingsTab.ts', 'tests/integration/providers/deepseek/ui/DeepSeekSettingsTab.dom.test.ts'],
   ]) {
     for (const eventName of ['pull_request', 'push']) {
       const result = select([source], [consumer], eventName);
@@ -85,17 +85,28 @@ test('real dependency discovery retains native launch checks for shared process 
     'tests/integration/core/process/cliBinaryLocator.test.ts',
     'tests/integration/core/process/loginShellPath.test.ts',
     'tests/integration/features/chat/tabs/forking/ForkSource.opencode.test.ts',
+    'tests/integration/providers/claude/execution/ClaudeExecutionBackend.test.ts',
+    'tests/integration/providers/codex/execution/CodexExecutionBackend.test.ts',
+    'tests/integration/providers/codex/runtime/CodexSharedRuntime.test.ts',
     'tests/integration/providers/deepseek/app/DeepSeekWorkspaceServices.test.ts',
     'tests/integration/providers/deepseek/runtime/DeepSeekHostProcess.test.ts',
+    'tests/integration/providers/deepseek/ui/DeepSeekSettingsTab.dom.test.ts',
+    'tests/integration/providers/opencode/execution/OpencodeHTTPExecution.background.test.ts',
+    'tests/integration/providers/opencode/execution/OpencodeHTTPExecution.compaction.test.ts',
+    'tests/integration/providers/opencode/execution/OpencodeHTTPExecution.interactions.test.ts',
+    'tests/integration/providers/opencode/execution/OpencodeHTTPExecution.profiles.test.ts',
+    'tests/integration/providers/opencode/execution/OpencodeHTTPExecution.prompts.test.ts',
+    'tests/integration/providers/opencode/execution/OpencodeHTTPExecution.steering.test.ts',
     'tests/integration/providers/opencode/execution/OpencodeHTTPExecution.test.ts',
+    'tests/integration/providers/opencode/http/OpencodeSharedServer.ephemeral.test.ts',
+    'tests/integration/providers/opencode/http/OpencodeSharedServer.history.test.ts',
     'tests/integration/providers/opencode/http/OpencodeSharedServer.test.ts',
+    'tests/integration/providers/opencode/http/OpencodeSharedServer.transitions.test.ts',
     'tests/integration/providers/pi/execution/PiExecutionKernel.test.ts',
     'tests/integration/providers/pi/execution/PiRecoveryContext.test.ts',
-    'tests/unit/providers/claude/execution/ClaudeExecutionBackend.test.ts',
     'tests/unit/providers/codex/execution/CodexExecutionBackend.test.ts',
     'tests/unit/providers/deepseek/runtime/DeepSeekCLIResolver.test.ts',
     'tests/unit/providers/deepseek/runtime/DeepSeekInstallation.test.ts',
-    'tests/unit/providers/deepseek/ui/DeepSeekSettingsTab.test.ts',
   ]);
   assert.equal(result.piWindows, true);
   assert.ok(result.testFiles.includes('tests/unit/core/process/windowsCmdShim.test.ts'));
@@ -113,6 +124,11 @@ test('changed tests run directly, while removed tests are omitted', () => {
   const result = select([{ status: 'D', path: panel }, prompt], [panel]);
   assert.deepEqual(result.testFiles, [prompt]);
   assert.deepEqual(result.crossPlatformTests, []);
+});
+
+test('moved skill sync retains native verification', () => {
+  const successor = 'tests/integration/features/agent-skills/ClaudeSkillSync.test.ts';
+  assert.deepEqual(select([successor]).crossPlatformTests, [successor]);
 });
 
 test('shared test helpers use their graph consumers', () => {
@@ -133,10 +149,12 @@ test('filesystem-read documentation, styles, and captured fixtures retain their 
   }
   const fixture = select(['tests/fixtures/providers/grok/history/example.json']);
   assert.ok(fixture.testFiles.includes('tests/unit/providers/grok/history/GrokHistoryStore.test.ts'));
+  assert.ok(fixture.testFiles.includes('tests/integration/providers/grok/history/GrokConversationHistoryService.test.ts'));
   for (const status of ['A', 'M']) {
     for (const event of ['pull_request', 'push']) {
       for (const [file, consumers] of [
         ['tests/fixtures/providers/grok/runtime/models-list.json', [
+          'tests/integration/providers/grok/runtime/GrokModelCatalogCoordinator.test.ts',
           'tests/integration/providers/grok/runtime/GrokModels.test.ts',
           'tests/integration/providers/grok/runtime/GrokModelDiscoveryService.test.ts',
         ]],
@@ -144,8 +162,9 @@ test('filesystem-read documentation, styles, and captured fixtures retain their 
           'tests/integration/providers/grok/runtime/GrokModels.test.ts',
           'tests/integration/providers/grok/runtime/GrokModelDiscoveryService.test.ts',
         ]],
-        ['tests/fixtures/providers/grok/runtime/turn-completed.json', [
-          'tests/unit/providers/grok/execution/GrokExecutionBackend.test.ts',
+        ['tests/fixtures/providers/grok/runtime/GrokModelCatalogProcess.mjs', [
+          'tests/integration/providers/grok/runtime/GrokModelCatalogCoordinator.test.ts',
+          'tests/integration/providers/grok/runtime/GrokModelDiscoveryService.test.ts',
         ]],
       ]) {
         const selected = select([{ status, path: file }], [], event);

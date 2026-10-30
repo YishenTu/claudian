@@ -7,8 +7,11 @@ import { DEFAULT_ACRONYMS } from 'eslint-plugin-obsidianmd/dist/lib/rules/ui/acr
 import { DEFAULT_BRANDS } from 'eslint-plugin-obsidianmd/dist/lib/rules/ui/brands.js';
 import simpleImportSort from 'eslint-plugin-simple-import-sort';
 import { defineConfig } from 'eslint/config';
+import { isBuiltin } from 'node:module';
 import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+
+import packageJson from './package.json' with { type: 'json' };
 
 const vitestRecommended = vitestPlugin.configs.recommended;
 const tsconfigRootDir = dirname(fileURLToPath(import.meta.url));
@@ -83,7 +86,54 @@ export const fileNamingRule = {
   },
 };
 
-const localPlugin = { rules: { 'file-naming': fileNamingRule } };
+const declaredTestPackages = new Set([
+  ...Object.keys(packageJson.dependencies ?? {}),
+  ...Object.keys(packageJson.devDependencies ?? {}),
+]);
+
+// Vitest factory imports are invisible to ordinary static-import rules. Check
+// declarations rather than resolution: a hoisted transitive package is not ours.
+const declaredTestDependenciesRule = {
+  meta: {
+    type: 'problem',
+    schema: [],
+    messages: { undeclared: "Test dependency '{{name}}' must be declared in package.json." },
+  },
+  create(context) {
+    function check(source) {
+      const specifier = source?.value;
+      if (typeof specifier !== 'string' || isBuiltin(specifier)
+        || /^(\.{1,2}\/|\/|@\/|@test\/)/.test(specifier)) return;
+      const name = specifier.startsWith('@')
+        ? specifier.split('/').slice(0, 2).join('/')
+        : specifier.split('/')[0];
+      if (!declaredTestPackages.has(name)) {
+        context.report({ node: source, messageId: 'undeclared', data: { name } });
+      }
+    }
+    return {
+      ImportDeclaration: node => check(node.source),
+      ExportNamedDeclaration: node => check(node.source),
+      ExportAllDeclaration: node => check(node.source),
+      ImportExpression: node => check(node.source),
+      CallExpression(node) {
+        const callee = node.callee;
+        if (callee.type === 'Identifier' && callee.name === 'require') {
+          check(node.arguments[0]);
+        } else if (callee.type === 'MemberExpression' && !callee.computed
+          && ['vi', 'vitest'].includes(callee.object.name)
+          && ['importActual', 'importMock', 'mock', 'doMock'].includes(callee.property.name)) {
+          check(node.arguments[0]);
+        }
+      },
+    };
+  },
+};
+
+const localPlugin = { rules: {
+  'file-naming': fileNamingRule,
+  'declared-test-dependencies': declaredTestDependenciesRule,
+} };
 
 // Hard-coded ISO timestamps for expiries or injected clocks make tests depend on the date they run.
 const ISO_TIMESTAMP = "/^\\d{4}-\\d{2}-\\d{2}T/";
@@ -249,6 +299,7 @@ export default defineConfig([
     ...vitestRecommended,
     rules: {
       ...vitestRecommended.rules,
+      'local/declared-test-dependencies': 'error',
       'vitest/no-alias-methods': 'error',
       'vitest/no-done-callback': 'error',
       'vitest/no-test-prefixes': 'error',

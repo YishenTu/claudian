@@ -48,7 +48,13 @@ function findMatches(roots, pattern) {
   return matches;
 }
 
+// Architecture checks inspect the same immutable source repeatedly in one process.
+// Include text in the key so inline negative fixtures never reuse disk results.
+const sourceImports = new Map();
+
 function listSourceImports(file, sourceText = fs.readFileSync(file, 'utf8')) {
+  const cached = sourceImports.get(file);
+  if (cached?.sourceText === sourceText) return cached.imports;
   const sourceFile = ts.createSourceFile(
     file,
     sourceText,
@@ -90,6 +96,7 @@ function listSourceImports(file, sourceText = fs.readFileSync(file, 'utf8')) {
   }
 
   visit(sourceFile);
+  sourceImports.set(file, { sourceText, imports });
   return imports;
 }
 
@@ -338,16 +345,27 @@ function listProviderRuntimeFiles() {
   return listTypeScriptFiles(providersRoot).filter(file => !isProviderIntegrationModule(file));
 }
 
+const emittedSources = new Map();
+
+function readEmittedSource(file) {
+  const sourceText = fs.readFileSync(file, 'utf8');
+  const cached = emittedSources.get(file);
+  if (cached?.sourceText === sourceText) return cached.emitted;
+  const emitted = ts.transpileModule(sourceText, {
+    compilerOptions: { target: ts.ScriptTarget.ESNext, module: ts.ModuleKind.ESNext },
+    fileName: file,
+  }).outputText;
+  emittedSources.set(file, { sourceText, emitted });
+  return emitted;
+}
+
 /** Source files whose emitted (non-type) imports reach the Obsidian package. */
 function findObsidianValueReach() {
   const reaches = new Map();
   function reachesObsidian(file) {
     if (reaches.has(file)) return reaches.get(file);
     reaches.set(file, false);
-    const emitted = ts.transpileModule(fs.readFileSync(file, 'utf8'), {
-      compilerOptions: { target: ts.ScriptTarget.ESNext, module: ts.ModuleKind.ESNext },
-      fileName: file,
-    }).outputText;
+    const emitted = readEmittedSource(file);
     const result = listSourceImports(file, emitted).some(entry => {
       if (entry.specifier === 'obsidian') return true;
       const target = resolveTypeScriptImport(file, entry.specifier);
@@ -924,10 +942,7 @@ test('runtime source imports are acyclic', () => {
   const files = listTypeScriptFiles(sourceRoot).filter(file => !file.endsWith('.d.ts'));
   const graph = new Map(files.map(file => {
     // Check emitted imports: type dependencies do not form runtime cycles.
-    const emitted = ts.transpileModule(fs.readFileSync(file, 'utf8'), {
-      compilerOptions: { target: ts.ScriptTarget.ESNext, module: ts.ModuleKind.ESNext },
-      fileName: file,
-    }).outputText;
+    const emitted = readEmittedSource(file);
     return [file, listSourceImports(file, emitted)
       .filter(entry => !entry.dynamic)
       .map(entry => resolveTypeScriptImport(file, entry.specifier))

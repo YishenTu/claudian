@@ -7,20 +7,6 @@ vi.mock('obsidian', () => ({
 }));
 
 describe('ComposerContextTray', () => {
-  it('drops the remove control when an item loses its remove action', () => {
-    const containerEl = createMockEl();
-    const tray = new ComposerContextTray(containerEl as unknown as HTMLElement);
-    const item = { id: 'editor-selection', kind: 'selection' as const, label: '3 lines · Draft.md' };
-
-    tray.setItems('editor-selection', [{ ...item, onRemove: vi.fn() }]);
-    expect(containerEl.querySelector('.claudian-context-chip-remove')).not.toBeNull();
-
-    tray.setItems('editor-selection', [item]);
-    expect(containerEl.querySelector('.claudian-context-chip')).not.toBeNull();
-    expect(containerEl.querySelector('.claudian-context-chip-remove')).toBeNull();
-    tray.destroy();
-  });
-
   it('releases its observer when construction fails after observation starts', () => {
     const containerEl = createMockEl();
     const disconnect = vi.fn();
@@ -78,36 +64,6 @@ describe('ComposerContextTray', () => {
       'browser-selection',
       'images',
     ]);
-  });
-
-  it('uses separate keyboard-focusable controls for activation and removal', () => {
-    const containerEl = createMockEl();
-    const onActivate = vi.fn();
-    const onRemove = vi.fn();
-    const tray = new ComposerContextTray(containerEl as unknown as HTMLElement);
-
-    tray.setItems('editor-selection', [{
-      id: 'editor-selection',
-      kind: 'selection',
-      label: 'Architecture.md',
-      icon: 'file-text',
-      ariaLabel: 'notes/Architecture.md',
-      onActivate,
-      onRemove,
-    }]);
-
-    const mainButton = containerEl.querySelector('.claudian-context-chip-main');
-    const removeButton = containerEl.querySelector('.claudian-context-chip-remove');
-
-    expect(mainButton?.tagName).toBe('BUTTON');
-    expect(removeButton?.tagName).toBe('BUTTON');
-    expect(mainButton?.getAttribute('aria-label')).toBe('notes/Architecture.md');
-
-    mainButton?.click();
-    removeButton?.click();
-
-    expect(onActivate).toHaveBeenCalledTimes(1);
-    expect(onRemove).toHaveBeenCalledTimes(1);
   });
 
   it('collapses content after the first visual row and exposes the hidden count', () => {

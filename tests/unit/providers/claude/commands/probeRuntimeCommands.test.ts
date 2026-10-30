@@ -29,22 +29,6 @@ function initializeWith(initializationResult: () => Promise<{ commands?: unknown
 describe('probeRuntimeCommands', () => {
   afterEach(() => { vi.clearAllMocks(); });
 
-  it('maps initialization commands and keeps Claude Code built-ins and skills distinguishable', async () => {
-    initializeWith(async () => ({ commands: [
-      { name: 'commit', description: 'Create a commit', argumentHint: '' },
-      { name: 'compact', description: 'Compact context', argumentHint: '<focus>', builtin: true },
-      { name: 'pdf', description: 'Work with PDFs', argumentHint: '' },
-      { name: 'review', description: 'Review changes', argumentHint: '', builtin: true },
-    ] }), ['commit', 'documents:pdf', 'review']);
-
-    expect(await probeRuntimeCommands(createMockPlugin())).toEqual([
-      { id: 'sdk:commit', name: 'commit', description: 'Create a commit', argumentHint: '', content: '', source: 'sdk', kind: 'skill' },
-      { id: 'sdk:compact', name: 'compact', description: 'Compact context', argumentHint: '<focus>', content: '', source: 'builtin', kind: 'command' },
-      { id: 'sdk:pdf', name: 'pdf', description: 'Work with PDFs', argumentHint: '', content: '', source: 'sdk', kind: 'skill' },
-      { id: 'sdk:review', name: 'review', description: 'Review changes', argumentHint: '', content: '', source: 'builtin', kind: 'skill' },
-    ]);
-  });
-
   it.each([
     ['no local vault', true, '/mock/claude'],
     ['no Claude CLI', false, null],

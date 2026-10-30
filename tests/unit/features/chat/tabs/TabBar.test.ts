@@ -29,17 +29,6 @@ function createTabBarItem(overrides: Partial<TabBarItem> = {}): TabBarItem {
 describe('TabBar', () => {
   describe('badge rendering', () => {
 
-    it('should use aria-label as the single tab title tooltip source', () => {
-      const containerEl = createMockEl();
-      const callbacks = createMockCallbacks();
-      const tabBar = new TabBar(containerEl, callbacks);
-
-      tabBar.update([createTabBarItem({ title: 'My Conversation' })]);
-
-      expect(containerEl._children[0].getAttribute('aria-label')).toBe('My Conversation, idle');
-      expect(containerEl._children[0].getAttribute('title')).toBeNull();
-    });
-
     it('does not expose a provider-specific tab styling hook', () => {
       const containerEl = createMockEl();
       const callbacks = createMockCallbacks();
@@ -48,39 +37,6 @@ describe('TabBar', () => {
       tabBar.update([createTabBarItem()]);
 
       expect(containerEl._children[0].getAttribute('data-provider')).toBeNull();
-    });
-
-    it('should toggle between index and title labels on double click', () => {
-      const containerEl = createMockEl();
-      const callbacks = {
-        ...createMockCallbacks(),
-        onDisplayStateChanged: vi.fn(),
-      };
-      const tabBar = new TabBar(containerEl, callbacks);
-
-      tabBar.update([createTabBarItem({ id: 'tab-2', index: 5, title: 'My Conversation' })]);
-
-      const badge = containerEl._children[0];
-      const event = { preventDefault: vi.fn(), stopPropagation: vi.fn() };
-
-      expect(badge.textContent).toBe('5');
-      badge.dispatchEvent('dblclick', event);
-
-      expect(badge.textContent).toBe('My Conversation');
-      expect(badge.hasClass('claudian-tab-badge-expanded')).toBe(true);
-      expect(badge.getAttribute('data-title-expanded')).toBe('true');
-      expect(event.preventDefault).toHaveBeenCalled();
-      expect(event.stopPropagation).toHaveBeenCalled();
-      expect(callbacks.onDisplayStateChanged).toHaveBeenCalledTimes(1);
-      expect(tabBar.getExpandedTitleTabIds()).toEqual(['tab-2']);
-
-      badge.dispatchEvent('dblclick', { preventDefault: vi.fn(), stopPropagation: vi.fn() });
-
-      expect(badge.textContent).toBe('5');
-      expect(badge.hasClass('claudian-tab-badge-expanded')).toBe(false);
-      expect(badge.getAttribute('data-title-expanded')).toBe('false');
-      expect(callbacks.onDisplayStateChanged).toHaveBeenCalledTimes(2);
-      expect(tabBar.getExpandedTitleTabIds()).toEqual([]);
     });
 
     it('should render restored expanded title state', () => {
@@ -109,23 +65,6 @@ describe('TabBar', () => {
       });
 
       expect(containerEl._children[0].textContent).toBe('ABCDEFGHIJKLMNOPQRSTUVWXYZ012...');
-    });
-
-    it('should keep expanded title state across tab bar updates', () => {
-      const containerEl = createMockEl();
-      const callbacks = createMockCallbacks();
-      const tabBar = new TabBar(containerEl, callbacks);
-
-      tabBar.update([createTabBarItem({ id: 'tab-1', index: 1, title: 'First Title' })]);
-      containerEl._children[0].dispatchEvent('dblclick', {
-        preventDefault: vi.fn(),
-        stopPropagation: vi.fn(),
-      });
-
-      tabBar.update([createTabBarItem({ id: 'tab-1', index: 1, title: 'Renamed Title' })]);
-
-      expect(containerEl._children[0].textContent).toBe('Renamed Title');
-      expect(containerEl._children[0].hasClass('claudian-tab-badge-expanded')).toBe(true);
     });
 
     it('should preserve horizontal scroll position across tab bar updates', () => {
@@ -172,16 +111,6 @@ describe('TabBar', () => {
   });
 
   describe('badge state classes', () => {
-
-    it('should apply active class for active tab', () => {
-      const containerEl = createMockEl();
-      const callbacks = createMockCallbacks();
-      const tabBar = new TabBar(containerEl, callbacks);
-
-      tabBar.update([createTabBarItem({ isActive: true })]);
-
-      expect(containerEl._children[0]._classList.has('claudian-tab-badge-active')).toBe(true);
-    });
 
     it('should prioritize active over attention states', () => {
       const containerEl = createMockEl();
@@ -260,18 +189,4 @@ describe('TabBar', () => {
     });
   });
 
-  describe('badge interactions', () => {
-    it('should call onTabClick when badge is clicked', () => {
-      const containerEl = createMockEl();
-      const callbacks = createMockCallbacks();
-      const tabBar = new TabBar(containerEl, callbacks);
-
-      tabBar.update([createTabBarItem({ id: 'clicked-tab' })]);
-
-      // Simulate click
-      containerEl._children[0].dispatchEvent('click');
-
-      expect(callbacks.onTabClick).toHaveBeenCalledWith('clicked-tab');
-    });
-  });
 });

@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 import { axe } from '@test/helpers/accessibility';
-import { fireEvent, within } from '@testing-library/dom';
+import { createEvent, fireEvent, within } from '@testing-library/dom';
 import { Menu } from 'obsidian';
 import type { Mock } from 'vitest';
 
@@ -81,6 +81,7 @@ describe('TabBar tab labels', () => {
 
     const closeable = ui.getByRole('button', { name: 'Refactor ACP session restore, idle' });
     expect(closeable.getAttribute('type')).toBe('button');
+    expect(closeable.getAttribute('title')).toBeNull();
     expect(await axe(container)).toHaveNoViolations();
 
     const menu = openMenu(closeable);
@@ -312,6 +313,9 @@ describe('TabBar tab labels', () => {
     chooseMenuItem(openMenu(ui.getByRole('button', { name: /^Refactor/ })), 'Show title');
     expect(ui.getByRole('button', { name: /^Refactor/ }).textContent).toBe('Refactor ACP session restore');
     expect(callbacks.onDisplayStateChanged).toHaveBeenCalledTimes(1);
+    tabBar.update([item({ title: 'Refactor renamed session' }), item({ id: 'tab-2', index: 2, title: 'Second session' })]);
+    expect(ui.getByRole('button', { name: /^Refactor/ }).textContent).toBe('Refactor renamed session');
+    expect(ui.getByRole('button', { name: /^Refactor/ }).classList.contains('claudian-tab-badge-expanded')).toBe(true);
 
     const menu = openMenu(ui.getByRole('button', { name: /^Refactor/ }));
     expect(menuTitles(menu)).toContain('Show number');
@@ -321,11 +325,23 @@ describe('TabBar tab labels', () => {
     tabBar.update([item({ label: 'ACP' }), item({ id: 'tab-2', index: 2, title: 'Second session' })]);
     const labelled = ui.getByRole('button', { name: /^ACP/ });
     expect(labelled.textContent).toBe('1');
-    fireEvent.dblClick(labelled);
+    const bubbled = vi.fn();
+    labelled.parentElement!.addEventListener('dblclick', bubbled);
+    const expand = createEvent.dblClick(labelled);
+    fireEvent(labelled, expand);
+    expect(expand.defaultPrevented).toBe(true);
+    expect(bubbled).not.toHaveBeenCalled();
     expect(labelled.textContent).toBe('ACP');
+    expect(labelled.classList.contains('claudian-tab-badge-expanded')).toBe(true);
+    expect(labelled.getAttribute('data-title-expanded')).toBe('true');
+    expect(callbacks.onDisplayStateChanged).toHaveBeenCalledTimes(3);
     expect(tabBar.getExpandedTitleTabIds()).toEqual(['tab-1']);
     fireEvent.dblClick(labelled);
     expect(labelled.textContent).toBe('1');
+    expect(labelled.classList.contains('claudian-tab-badge-expanded')).toBe(false);
+    expect(labelled.getAttribute('data-title-expanded')).toBe('false');
+    expect(tabBar.getExpandedTitleTabIds()).toEqual([]);
+    expect(callbacks.onDisplayStateChanged).toHaveBeenCalledTimes(4);
   });
 
   it('starts renaming the requested tab from a command', () => {

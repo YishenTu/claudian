@@ -1,6 +1,5 @@
 import { createProjectsFake } from '@test/helpers/features/chat/ProjectsFake';
 import { FakeSideBackend } from '@test/helpers/features/chat/SideChatSessionHarness';
-import { waitFor } from '@testing-library/dom';
 import { Component } from 'obsidian';
 
 import { ProviderExecutionLifecycleRegistry } from '@/core/execution';
@@ -163,10 +162,9 @@ export async function startSideChat(
   harness: SideChatDOMHarness,
   prompt = 'Explore B',
 ): Promise<{ started: Promise<boolean> }> {
+  const request = harness.backend.nextRequest(request => request.toolPolicy.kind === 'provider-default');
   const started = harness.controller.handleCommandSubmission(prompt, []);
-  await waitFor(() => expect(harness.backend.sessions.some(
-    session => session.requests[0]?.toolPolicy.kind === 'provider-default',
-  )).toBe(true));
+  expect((await request).toolPolicy.kind).toBe('provider-default');
   return { started };
 }
 

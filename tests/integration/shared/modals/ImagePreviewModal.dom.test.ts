@@ -267,6 +267,11 @@ it.each(workScenarios)(
       const trigger = renderMessageImage(view);
       const dialog = openPreview(trigger);
       const closeButton = within(dialog).getByRole('button', { name: 'Close image preview' });
+      expect(dialog.getAttribute('aria-modal')).toBe('true');
+      expect(closeButton).toBeInstanceOf(HTMLButtonElement);
+      expect(closeButton.getAttribute('type')).toBe('button');
+      const image = within(dialog).getByRole('img', { name: 'pixel.png' });
+      expect(image.getAttribute('src')).toBe(`data:image/png;base64,${TINY_PNG}`);
       expect(document.activeElement).toBe(closeButton);
       expect(await axe(dialog)).toHaveNoViolations();
 
@@ -302,6 +307,8 @@ it.each(['close button', 'backdrop'] as const)('releases the preview scope after
   try {
     const trigger = renderMessageImage(view);
     const dialog = openPreview(trigger);
+    fireEvent.click(within(dialog).getByRole('img', { name: 'pixel.png' }));
+    expect(within(document.body).getByRole('dialog', { name: 'Image preview: pixel.png' })).toBe(dialog);
     fireEvent.click(method === 'close button'
       ? within(dialog).getByRole('button', { name: 'Close image preview' })
       : dialog.parentElement!);
@@ -417,11 +424,13 @@ it('skips restoring focus to a removed trigger and still releases its scope', as
     const dialog = openPreview(trigger);
     const closeButton = within(dialog).getByRole('button', { name: 'Close image preview' });
     trigger.remove();
+    const restoreFocus = vi.spyOn(trigger, 'focus');
 
     pressEscape(closeButton);
 
     expect(within(document.body).queryByRole('dialog', { name: 'Image preview: pixel.png' })).toBeNull();
     expect(trigger.isConnected).toBe(false);
+    expect(restoreFocus).not.toHaveBeenCalled();
     expect(document.activeElement).toBe(document.body);
     pressEscape(document.body);
     expect(host.deliveries).toHaveLength(1);

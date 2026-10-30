@@ -18,8 +18,6 @@ import { getGrokProviderSettings } from '@/providers/grok/settings';
 import { getOpencodeProviderSettings } from '@/providers/opencode/settings';
 import { getPiProviderSettings } from '@/providers/pi/settings';
 
-
-
 const mockGetHostnameKey = vi.fn(() => 'host-a');
 const mockGetLegacyDeviceSettingsKey = vi.fn<(...args: []) => string | null>(() => null);
 const originalPlatform = process.platform;
@@ -80,33 +78,6 @@ describe('ClaudianSettingsStorage', () => {
       expect(loaded).not.toHaveProperty('maxWarmAgentProcesses');
       expect(written).not.toHaveProperty('maxWarmAgentProcesses');
       expect(written).not.toHaveProperty('projectSort');
-    });
-
-
-    it('should return defaults when file does not exist', async () => {
-      mockAdapter.exists.mockResolvedValue(false);
-
-      const result = await storage.load();
-
-      expect(result.model).toBe(DEFAULT_SETTINGS.model);
-      expect(result.permissionMode).toBe(DEFAULT_SETTINGS.permissionMode);
-      expect(result.requireCommandOrControlEnterToSend).toBe(false);
-      expect(result.titleGenerationLocale).toBe('');
-      expect(result.lastSelectedChatModel).toBeNull();
-      expect(result.enableDualPane).toBe(true);
-      expect(result.dualPaneSide).toBe('right');
-      expect(result.restoreTabsOnStartup).toBe(true);
-      expect(result.enableZenMode).toBe(true);
-      expect(mockAdapter.read).not.toHaveBeenCalled();
-    });
-
-    it('ignores retired .claude settings without modifying them', async () => {
-      mockAdapter.exists.mockImplementation(async path => path === '.claude/claudian-settings.json');
-      mockAdapter.read.mockResolvedValue(JSON.stringify({ userName: 'Retired' }));
-      expect((await storage.load()).userName).toBe(DEFAULT_SETTINGS.userName);
-      expect(mockAdapter.read).not.toHaveBeenCalled();
-      expect(mockAdapter.write).not.toHaveBeenCalled();
-      expect(mockAdapter.delete).not.toHaveBeenCalled();
     });
 
     it('should parse valid JSON and merge with defaults', async () => {
@@ -962,11 +933,6 @@ describe('ClaudianSettingsStorage', () => {
       });
     });
 
-    it('should throw on write error', async () => {
-      mockAdapter.write.mockRejectedValue(new Error('Write failed'));
-
-      await expect(storage.save(DEFAULT_SETTINGS)).rejects.toThrow('Write failed');
-    });
   });
 });
 

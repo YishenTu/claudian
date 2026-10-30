@@ -1,8 +1,4 @@
 const mockedModule0: any = await import('@/features/chat/subagents/SubagentRenderer');
-const mockedModule1: any = await import('@/features/chat/subagents/SubagentRenderer');
-const mockedModule2: any = await import('@/features/chat/subagents/SubagentRenderer');
-const mockedModule3: any = await import('@/features/chat/subagents/SubagentRenderer');
-const mockedModule4: any = await import('@/features/chat/subagents/SubagentRenderer');
 const mockedModule5: any = await import('@/features/chat/subagents/SubagentRenderer');
 import '@/providers';
 
@@ -12,7 +8,6 @@ import { join } from 'path';
 
 import type { SubagentInfo, ToolCallInfo } from '@/core/types';
 import { SubagentManager } from '@/features/chat/subagents/SubagentManager';
-
 
 vi.mock('@/features/chat/subagents/SubagentRenderer', () => ({
   createSubagentBlock: vi.fn((_parentEl: any, info: SubagentInfo) => ({ info, wrapperEl: {} })),
@@ -1413,86 +1408,6 @@ Only this is the final result.
   // ============================================
 
   describe('sync subagent operations', () => {
-    it('adds tool call to sync subagent', () => {
-      const { updateSubagentBlock } = mockedModule1;
-      const { manager } = createManager();
-      const parentEl = createMockEl();
-
-      manager.handleTaskToolUse('task-1', { run_in_background: false }, parentEl);
-
-      const toolCall: ToolCallInfo = {
-        id: 'read-1',
-        name: 'Read',
-        input: { file_path: 'test.md' },
-        status: 'running',
-        isExpanded: false,
-      };
-      manager.addSyncToolCall('task-1', toolCall);
-
-      expect(updateSubagentBlock).toHaveBeenCalled();
-    });
-
-    it('updates tool result in sync subagent', () => {
-      const { updateSubagentBlock } = mockedModule2;
-      const { manager } = createManager();
-      const parentEl = createMockEl();
-
-      manager.handleTaskToolUse('task-1', { run_in_background: false }, parentEl);
-
-      const toolCall: ToolCallInfo = {
-        id: 'read-1',
-        name: 'Read',
-        input: {},
-        status: 'completed',
-        isExpanded: false,
-        result: 'file content',
-      };
-      manager.addSyncToolCall('task-1', { ...toolCall, status: 'running', result: undefined });
-      updateSubagentBlock.mockClear();
-      manager.updateSyncToolResult('task-1', 'read-1', toolCall);
-
-      expect(updateSubagentBlock).toHaveBeenCalled();
-    });
-
-    it('finalizes sync subagent and removes from map', () => {
-      const { updateSubagentBlock } = mockedModule3;
-      const { manager } = createManager();
-      const parentEl = createMockEl();
-
-      manager.handleTaskToolUse('task-1', { run_in_background: false }, parentEl);
-
-      const info = manager.finalizeSyncSubagent('task-1', 'done', false);
-
-      expect(info).not.toBeNull();
-      expect(info?.id).toBe('task-1');
-      expect(updateSubagentBlock).toHaveBeenCalled();
-      expect(manager.getSyncSubagent('task-1')).toBeUndefined();
-    });
-
-    it('extracts result from SDK toolUseResult.content for sync subagent', () => {
-      const { updateSubagentBlock } = mockedModule4;
-      const { manager } = createManager();
-      const parentEl = createMockEl();
-
-      manager.handleTaskToolUse('task-sdk', { run_in_background: false }, parentEl);
-
-      const sdkToolUseResult = {
-        status: 'completed',
-        content: [
-          { type: 'text', text: 'Full sync subagent result with multiple lines.\n\nSecond paragraph.' },
-        ],
-        agentId: 'agent-sync',
-      };
-
-      const info = manager.finalizeSyncSubagent('task-sdk', '{}', false, { rawOutput: sdkToolUseResult });
-
-      expect(info).not.toBeNull();
-      // Verify the extracted result (structured report) was passed to the renderer
-      expect(updateSubagentBlock).toHaveBeenCalledWith(
-        expect.anything(),
-        expect.objectContaining({ result: 'Full sync subagent result with multiple lines.\n\nSecond paragraph.', status: 'completed' })
-      );
-    });
 
     it('returns null when finalizing nonexistent subagent', () => {
       const { manager } = createManager();

@@ -1,7 +1,8 @@
 import type { App } from 'obsidian';
-import { Modal, Notice, setIcon, Setting } from 'obsidian';
+import { Modal, Notice, setIcon } from 'obsidian';
 
 import { parseEnvironmentVariables } from '@/core/process/env';
+import { AccessibleSetting } from '@/shared/settings/AccessibleSetting';
 
 import {
   getEnvironmentScopeUpdates,
@@ -179,7 +180,7 @@ export class EnvSnippetModal extends Modal {
       }
     };
 
-    new Setting(contentEl)
+    new AccessibleSetting(contentEl)
       .setName(t('settings.envSnippets.modal.name'))
       .setDesc(t('settings.envSnippets.modal.namePlaceholder'))
       .addText((text) => {
@@ -189,7 +190,7 @@ export class EnvSnippetModal extends Modal {
                 text.inputEl.addEventListener('keydown', handleKeyDown);
       });
 
-    new Setting(contentEl)
+    new AccessibleSetting(contentEl)
       .setName(t('settings.envSnippets.modal.description'))
       .setDesc(t('settings.envSnippets.modal.descPlaceholder'))
       .addText((text) => {
@@ -199,7 +200,7 @@ export class EnvSnippetModal extends Modal {
                 text.inputEl.addEventListener('keydown', handleKeyDown);
       });
 
-    const envVarsSetting = new Setting(contentEl)
+    const envVarsSetting = new AccessibleSetting(contentEl)
       .setName(t('settings.envSnippets.modal.envVars'))
       .setDesc(t('settings.envSnippets.modal.envVarsPlaceholder'))
       .addTextArea((text) => {

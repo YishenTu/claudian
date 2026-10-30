@@ -1,4 +1,6 @@
-import { Setting, type ToggleComponent } from 'obsidian';
+import { type Setting, type ToggleComponent } from 'obsidian';
+
+import { AccessibleSetting } from '@/shared/settings/AccessibleSetting';
 
 export interface ProviderEnablementSettingOptions {
   container: HTMLElement;
@@ -20,39 +22,43 @@ export function renderProviderEnablementSetting(
 ): ProviderEnablementSettingControl {
   let disabled = options.disabled ?? false;
   let toggle!: ToggleComponent;
-  const setting = new Setting(options.container)
+  const setting = new AccessibleSetting(options.container)
     .setName(options.name)
     .setDesc(options.description)
     .addToggle((component) => {
       toggle = component;
+      let synchronizing = false;
+      const synchronizeValue = (): void => {
+        synchronizing = true;
+        try {
+          component.setValue(options.getValue());
+        } finally {
+          synchronizing = false;
+        }
+      };
       component
         .setValue(options.getValue())
         .onChange(async (enabled) => {
+          // Obsidian invokes onChange for changed programmatic values too.
+          if (synchronizing) return;
           if (disabled) {
-            component.setValue(options.getValue());
+            synchronizeValue();
             return;
           }
 
           try {
             await options.onChange(enabled);
           } finally {
-            component.setValue(options.getValue());
+            synchronizeValue();
           }
         });
     });
 
   const setDisabled = (nextDisabled: boolean): void => {
     disabled = nextDisabled;
-    const component = toggle as ToggleComponent & {
-      setDisabled?: (value: boolean) => ToggleComponent;
-      toggleEl?: HTMLElement;
-    };
-    component.setDisabled?.(nextDisabled);
-    component.toggleEl?.setAttribute?.('aria-disabled', String(nextDisabled));
+    toggle.setDisabled(nextDisabled);
   };
 
-  const toggleElement = (toggle as ToggleComponent & { toggleEl?: HTMLElement }).toggleEl;
-  toggleElement?.setAttribute?.('aria-label', options.name);
   setDisabled(disabled);
 
   return { setDisabled, setting, toggle };

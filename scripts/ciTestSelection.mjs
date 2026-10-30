@@ -36,10 +36,11 @@ const fileConsumers = [
   ]],
   [/^tests\/fixtures\/providers\/deepseek\/runtime\//, ['tests/integration/providers/deepseek/runtime/DeepSeekHostProcess.test.ts']],
   [/^tests\/fixtures\/providers\/grok\/history\//, [
-    'tests/unit/providers/grok/history/GrokConversationHistoryService.test.ts',
+    'tests/integration/providers/grok/history/GrokConversationHistoryService.test.ts',
     'tests/unit/providers/grok/history/GrokHistoryStore.test.ts',
   ]],
   [/^tests\/fixtures\/providers\/grok\/runtime\/models-list\.json$/, [
+    'tests/integration/providers/grok/runtime/GrokModelCatalogCoordinator.test.ts',
     'tests/integration/providers/grok/runtime/GrokModels.test.ts',
     'tests/integration/providers/grok/runtime/GrokModelDiscoveryService.test.ts',
   ]],
@@ -47,8 +48,9 @@ const fileConsumers = [
     'tests/integration/providers/grok/runtime/GrokModels.test.ts',
     'tests/integration/providers/grok/runtime/GrokModelDiscoveryService.test.ts',
   ]],
-  [/^tests\/fixtures\/providers\/grok\/runtime\/turn-completed\.json$/, [
-    'tests/unit/providers/grok/execution/GrokExecutionBackend.test.ts',
+  [/^tests\/fixtures\/providers\/grok\/runtime\/GrokModelCatalogProcess\.mjs$/, [
+    'tests/integration/providers/grok/runtime/GrokModelCatalogCoordinator.test.ts',
+    'tests/integration/providers/grok/runtime/GrokModelDiscoveryService.test.ts',
   ]],
   [/^tests\/fixtures\/providers\/codex\/history\/codex-session-(?:persisted-tools|agent-lifecycle|websearch-persisted)\.jsonl$/, [
     'tests/unit/providers/codex/history/CodexHistoryStore.test.ts',

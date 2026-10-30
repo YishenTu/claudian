@@ -1,12 +1,11 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
-import { Setting } from 'obsidian';
-
 import { normalizeConfiguredCLIPath } from '@/core/process/cliPath';
 import { probeCLIInstallation } from '@/core/providers/cli/CLIInstallationProbe';
 import { getRuntimeEnvironmentVariables } from '@/core/providers/providerEnvironment';
 import { GROK_PROVIDER_ICON } from '@/shared/icons';
+import { AccessibleSetting } from '@/shared/settings/AccessibleSetting';
 import { renderCLIInstallationSetting } from '@/shared/settings/CLIInstallationSetting';
 
 import { ProviderSettingsCoordinator } from '../../../core/providers/ProviderSettingsCoordinator';
@@ -131,7 +130,7 @@ export const grokSettingsTabRenderer: ProviderSettingsTabRenderer = {
       validate: validateCLIPath,
     });
 
-    new Setting(container).setName('Models').setHeading();
+    new AccessibleSetting(container).setName('Models').setHeading();
     const modelPicker = renderProviderModelsSection(container, 'grok', 'Grok Build', workspace.modelCatalog!, () => modelWarning.refresh());
 
     renderEnvironmentSettingsSection({

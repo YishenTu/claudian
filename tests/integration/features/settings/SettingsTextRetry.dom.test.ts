@@ -18,22 +18,10 @@ import { ClaudianSettingTab } from '@/features/settings/ClaudianSettings';
 import { t } from '@/i18n/i18n';
 
 vi.mock('@/shared/settings/EnvironmentSettingsSection', () => ({ renderEnvironmentSettingsSection() {} }));
-vi.mock('obsidian', async () => {
-  const dom = (await vi.importActual<typeof import('@test/helpers/ObsidianSettingsDOM')>('@test/helpers/ObsidianSettingsDOM'));
-  class Setting extends dom.Setting {
-    setHeading() { return this; }
-    addToggle(callback: (control: unknown) => void) {
-      const toggleEl = this.settingEl.createEl('input', { attr: { type: 'checkbox' } });
-      const toggle = {
-        toggleEl,
-        setValue(value: boolean) { toggleEl.checked = value; return this; },
-        onChange(change: (value: boolean) => void) { toggleEl.addEventListener('change', () => change(toggleEl.checked)); return this; },
-      };
-      callback(toggle); return this;
-    }
-  }
-  return { ...(await vi.importActual<typeof import('@test/__mocks__/obsidian')>('@test/__mocks__/obsidian')), ...dom, Setting };
-});
+vi.mock('obsidian', async () => ({
+  ...(await vi.importActual<typeof import('@test/__mocks__/obsidian')>('@test/__mocks__/obsidian')),
+  ...(await vi.importActual<typeof import('@test/helpers/ObsidianSettingsDOM')>('@test/helpers/ObsidianSettingsDOM')),
+}));
 
 afterEach(() => { document.body.replaceChildren(); vi.clearAllMocks(); });
 
@@ -50,7 +38,7 @@ it('retries an unchanged user-name draft on the next blur after a rejected save'
   const tab = new ClaudianSettingTab({} as never, {} as never, host as never);
   const container = document.body.createDiv();
   tab['renderGeneralTab'](container);
-  const row = within(container).getByText(t('settings.userName.name')).parentElement!;
+  const row = within(container).getByRole('textbox', { name: t('settings.userName.name') }).closest<HTMLElement>('.setting-item')!;
   const input = within(row).getByRole('textbox') as HTMLInputElement;
   fireEvent.input(input, { target: { value: 'After' } });
   fireEvent.blur(input);
@@ -93,7 +81,7 @@ it.each([false, true])('shows the newest text draft when settings reopen before 
   const tab = new ClaudianSettingTab({} as never, {} as never, host as never);
   const first = document.body.createDiv();
   let cleanup = tab['renderSettings'](first);
-  const userName = (container: HTMLElement) => within(within(container).getByText(t('settings.userName.name')).parentElement!).getByRole<HTMLInputElement>('textbox');
+  const userName = (container: HTMLElement) => within(container).getByRole<HTMLInputElement>('textbox', { name: t('settings.userName.name') });
   try {
     fireEvent.input(userName(first), { target: { value: 'After' } });
     fireEvent.blur(userName(first));
@@ -144,7 +132,7 @@ it.each([
   const tab = new ClaudianSettingTab({} as never, {} as never, host as never);
   const container = document.body.createDiv();
   tab['renderGeneralTab'](container);
-  const row = within(container).getByText(t(label)).parentElement!;
+  const row = within(container).getByRole('textbox', { name: t(label) }).closest<HTMLElement>('.setting-item')!;
   const input = within(row).getByRole<HTMLInputElement | HTMLTextAreaElement>('textbox');
   const active = await beginExecution(execution, createSubmission({ timestamp: testDate().getTime() }));
   active.run.events.push({ type: 'turn_started', accepted: true, scope: requestedScope(active.session, active.run, 1) });
@@ -166,7 +154,7 @@ it.each([
     await Promise.all(transition.mock.results.map(result => result.value));
     expect(active.session.disposeCalls).toBe(0);
     expect(active.run.cancelCalls).toBe(0);
-    const tags = within(within(container).getByText(t('settings.excludedTags.name')).parentElement!).getByRole('textbox');
+    const tags = within(container).getByRole('textbox', { name: t('settings.excludedTags.name') });
     fireEvent.input(tags, { target: { value: 'excluded' } });
     fireEvent.blur(tags);
     await tab['textEdits'].flush();
@@ -183,6 +171,10 @@ it.each([
     expect(settings[key]).toBe(next);
     expect(JSON.parse(saved)[key]).toBe(next);
     expect(transition).toHaveBeenCalledTimes(1);
+    expect(transition).toHaveBeenCalledWith(
+      expect.arrayContaining(['claude', 'codex', 'grok', 'opencode', 'pi']),
+      expect.any(Function),
+    );
     expect(active.session.disposeCalls).toBe(1);
 
     input.focus();
@@ -221,7 +213,7 @@ it('does not restart or replay a prompt edit after publication of its durable co
   const tab = new ClaudianSettingTab({} as never, {} as never, host as never);
   const container = document.body.createDiv();
   tab['renderGeneralTab'](container);
-  const input = within(within(container).getByText(t('settings.userName.name')).parentElement!).getByRole('textbox');
+  const input = within(container).getByRole('textbox', { name: t('settings.userName.name') });
   try {
     fireEvent.input(input, { target: { value: 'After' } });
     fireEvent.blur(input);

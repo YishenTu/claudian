@@ -44,14 +44,6 @@ describe('CodexSkillListingService', () => {
     return { service, fetchSkills };
   }
 
-  it('fetches again after a previous listing completes', async () => {
-    const { service, fetchSkills } = createService();
-    fetchSkills.mockResolvedValueOnce([makeSkill('alpha')]).mockResolvedValueOnce([makeSkill('beta')]);
-    await expect(service.listSkills()).resolves.toEqual([makeSkill('alpha')]);
-    await expect(service.listSkills()).resolves.toEqual([makeSkill('beta')]);
-    expect(fetchSkills).toHaveBeenCalledTimes(2);
-  });
-
   it('does not join a listing from before invalidation', async () => {
     const { service, fetchSkills } = createService();
     let resolveStale!: (skills: SkillMetadata[]) => void;

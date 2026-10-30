@@ -8,13 +8,10 @@ import type { MockInstance } from 'vitest';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import type { ConversationMeta } from '@/core/types';
 import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
-import { ConversationLifecycle } from '@/features/chat/conversation/ConversationLifecycle';
 import { SessionBrowser } from '@/features/chat/session-manager/SessionBrowser';
 import { SessionManagerSurface } from '@/features/chat/session-manager/SessionManagerSurface';
 import type { SessionSurfaceNavigation } from '@/features/chat/session-manager/SessionSurfaceShared';
 import { ChatViewPublisher } from '@/features/chat/workspace/ChatViewPublisher';
-
-
 
 /** A document click whose dispatch path never entered the history control. */
 const outsideClick = () => ({ composedPath: () => [] }) as unknown as Event;
@@ -43,8 +40,6 @@ interface HarnessOptions {
   settings?: Record<string, unknown>;
   wide?: boolean;
   canCreateTab?: boolean | null;
-  conversationLifecycle?: unknown;
-  getActiveTab?: () => unknown;
 }
 
 function createHarness(options: HarnessOptions = {}) {
@@ -61,7 +56,7 @@ function createHarness(options: HarnessOptions = {}) {
     settings,
     getConversationList: () => conversations,
     projects: createProjectsFake(),
-    conversationLifecycle: options.conversationLifecycle ?? {
+    conversationLifecycle: {
       archive: vi.fn().mockResolvedValue(undefined),
       delete: vi.fn().mockResolvedValue(undefined),
       restore: vi.fn().mockResolvedValue(undefined),
@@ -94,7 +89,7 @@ function createHarness(options: HarnessOptions = {}) {
   const surface = new SessionManagerSurface({
     plugin: plugin as unknown as ChatFeatureHost,
     navigation,
-    getActiveTab: (options.getActiveTab ?? (() => null)) as never,
+    getActiveTab: () => null,
     isWide: () => state.wide,
     canCreateTab: () => state.canCreateTab,
     requestNew,
@@ -611,7 +606,6 @@ describe('SessionManagerSurface session column rendering', () => {
         sessionActionMode: 'active',
         allowConversationSelection: true,
 
-
         signal: expect.any(AbortSignal),
       }),
     );
@@ -889,44 +883,6 @@ describe('SessionManagerSurface history dropdown', () => {
     expect(signalOf(2).aborted).toBe(false);
   });
 
-  it.each([
-    ['refuses a session whose own background tab is working', 'running', false],
-    ['deletes an idle session while the active tab streams another session', 'idle', true],
-  ])('judges archived deletion by the target session: %s', async (_label, targetId, shouldDelete) => {
-    const activeTab = { id: 'active-tab', conversationId: 'active', state: { isStreaming: true } };
-    const backgroundTab = { id: 'background-tab', conversationId: 'running', state: { isStreaming: false } };
-    const manager = {
-      getActiveTab: () => activeTab,
-      getTabIdentities: () => [activeTab, backgroundTab],
-      getTab: (id: string) => [activeTab, backgroundTab].find(tab => tab.id === id) ?? null,
-      getAllTabs: () => [activeTab, backgroundTab],
-      isTabWorking: (id: string) => id === 'active-tab' || id === 'background-tab',
-      resetConversationTabs: vi.fn().mockResolvedValue(undefined),
-    };
-    const deleteConversation = vi.fn().mockResolvedValue(undefined);
-    const h = createHarness({
-      conversations: [
-        conversation('running', { title: 'Running', isArchived: true }),
-        conversation('idle', { title: 'Idle', isArchived: true }),
-      ],
-      conversationLifecycle: new ConversationLifecycle({
-        conversations: { deleteConversation } as never,
-        projects: { get: () => null, setArchived: async () => undefined },
-        sessions: { get: () => null, isRunning: id => id === 'running', retire: async () => undefined, whenSettled: async () => true },
-        views: { getAllViews: () => [{ getTabManager: () => manager }] as never },
-      }),
-      getActiveTab: () => activeTab,
-      wide: false,
-    });
-    h.historyButton.click();
-    h.historyMenu.querySelector('.claudian-history-archive-control').click();
-
-    const deleteButton = findItem(h.historyMenu, targetId).querySelector('.claudian-delete-btn');
-    deleteButton.dispatchEvent({ type: 'click', stopPropagation: vi.fn() });
-    await new Promise(resolve => setImmediate(resolve));
-
-    expect(deleteConversation.mock.calls).toEqual(shouldDelete ? [[targetId]] : []);
-  });
 });
 
 describe('SessionManagerSurface wide layout transitions', () => {

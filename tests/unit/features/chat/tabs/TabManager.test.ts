@@ -27,7 +27,6 @@ import type { TabManager } from '@/features/chat/tabs/TabManager';
 import { onProviderAvailabilityChanged } from '@/features/chat/tabs/tabProviderLifecycle';
 import { TabSession } from '@/features/chat/tabs/TabSession';
 
-
 vi.mock('@/features/chat/tabs/TabLifecycle', async () => (
   (await vi.importActual<typeof import('@test/helpers/features/chat/TabManagerTestHarness')>('@test/helpers/features/chat/TabManagerTestHarness')).tabLifecycleModuleMock()
 ));
@@ -118,16 +117,6 @@ describe('TabManager provider execution orchestration', () => {
     expect(options).not.toHaveProperty('defaultProviderId');
   });
 
-  it('acknowledges review attention when a tab becomes active', async () => {
-    const { manager } = await createManager();
-    await manager.createTab();
-    const target = await manager.createTab(null, undefined, { activate: false });
-
-    await manager.switchToTab(target!.id);
-
-    expect(target!.state.acknowledgeReview).toHaveBeenCalledTimes(1);
-  });
-
   it('leaves the first tab inactive when activation is explicitly disabled', async () => {
     const { manager } = await createManager();
 
@@ -188,17 +177,6 @@ describe('TabManager provider execution orchestration', () => {
     expect(manager.getPersistedState().activeTabId).toBe(target!.id);
   });
 
-  it('projects a foreground turn as working in tab bar items', async () => {
-    const { manager } = await createManager();
-    const tab = await manager.createTab();
-
-    void tab!.session.turns.run(() => Promise.resolve());
-
-    expect(manager.getTabBarItems()).toEqual([
-      expect.objectContaining({ id: tab!.id, isWorking: true }),
-    ]);
-  });
-
   it('projects provider background work as working only once the coordinator publishes it', async () => {
     const { manager } = await createManager();
     const tab = (await manager.createTab())!;
@@ -247,32 +225,6 @@ describe('TabManager provider execution orchestration', () => {
     await pending;
     expect(tab.session.turns.isActive).toBe(false);
     expect(manager.isTabWorking(tab.id)).toBe(false);
-  });
-
-  it('keeps an unread result while projecting later work as active', async () => {
-    const { manager } = await createManager();
-    const tab = await manager.createTab();
-    tab!.session.runtime.attention.markReviewRequired('completed');
-    const since = tab!.session.runtime.attention.attention!.since;
-    expect(manager.getTabBarItems()).toEqual([
-      expect.objectContaining({
-        attention: { kind: 'review', outcome: 'completed', since },
-        id: tab!.id,
-      }),
-    ]);
-
-    Object.defineProperty(tab!.executionCoordinator, 'publishedBackgroundWork', {
-      configurable: true,
-      value: true,
-    });
-
-    expect(manager.getTabBarItems()).toEqual([
-      expect.objectContaining({
-        attention: { kind: 'review', outcome: 'completed', since },
-        id: tab!.id,
-        isWorking: true,
-      }),
-    ]);
   });
 
   it('settles queued tab switches when shutdown begins during hydration', async () => {

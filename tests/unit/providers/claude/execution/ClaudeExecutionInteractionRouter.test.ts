@@ -5,7 +5,6 @@ import type { ProviderInteractionPort } from '@/core/execution';
 import { ClaudeExecutionInteractionRouter } from '@/providers/claude/execution/ClaudeExecutionInteractionRouter';
 
 
-
 function createPort(): Mocked<ProviderInteractionPort> {
   return {
     requestApproval: vi.fn().mockImplementation(async (request) => ({
@@ -52,32 +51,6 @@ describe('ClaudeExecutionInteractionRouter', () => {
     expect(port.requestApproval).not.toHaveBeenCalled();
   });
 
-  it('allows only the current invocation for an allow-once decision', async () => {
-    const port = createPort();
-    port.requestApproval.mockImplementation(async (request) => ({
-      interactionId: request.interactionId,
-      decision: 'allow',
-    }));
-    const handler = createHandler(port);
-    const input = { command: 'ls /external/path' };
-    const suggestions = [{
-      type: 'addRules' as const,
-      behavior: 'allow' as const,
-      rules: [{ toolName: 'Bash', ruleContent: 'ls *' }],
-      destination: 'session' as const,
-    }];
-
-    const result = await handler('Bash', input, {
-      ...nativeOptions,
-      suggestions,
-    });
-
-    expect(result).toEqual({
-      behavior: 'allow',
-      updatedInput: input,
-      decisionClassification: 'user_temporary',
-    });
-  });
 
   it.each([undefined, false])('returns provider suggestions unchanged when suppression is %s', async (suppressAlwaysAllowRule) => {
     const port = createPort();
@@ -165,103 +138,10 @@ describe('ClaudeExecutionInteractionRouter', () => {
     });
   });
 
-  it('routes approvals with stable native/local identity and dismisses the exact interaction', async () => {
-    const port = createPort();
-    const handler = createHandler(port);
 
-    const result = await handler(
-      'Edit',
-      { file_path: 'note.md' },
-      nativeOptions,
-    );
 
-    expect(port.requestApproval).toHaveBeenCalledWith(
-      expect.objectContaining({
-        interactionId: 'claude:session-local:native-tool-1',
-        sessionInstanceId: 'session-local',
-        turnId: 'turn-local',
-        toolName: 'Edit',
-        nativeContext: expect.objectContaining({
-          toolUseId: 'native-tool-1',
-        }),
-      }),
-      nativeOptions.signal,
-    );
-    expect(result?.behavior).toBe('allow');
-    expect(port.dismissInteraction).toHaveBeenCalledWith(
-      'claude:session-local:native-tool-1',
-      'resolved',
-    );
-  });
 
-  it('reports a denied approval against its native tool identity', async () => {
-    const port = createPort();
-    port.requestApproval.mockImplementation(async (request) => ({
-      interactionId: request.interactionId,
-      decision: 'deny',
-    }));
-    const onToolBlocked = vi.fn();
-    const handler = createHandler(port, onToolBlocked);
 
-    const result = await handler('Bash', { command: 'rm -rf /' }, nativeOptions);
-
-    expect(result).toEqual({
-      behavior: 'deny',
-      message: 'User denied this action.',
-      interrupt: false,
-    });
-    expect(onToolBlocked).toHaveBeenCalledWith('native-tool-1');
-  });
-
-  it('routes questions and injects Claude Code compatible custom-answer support', async () => {
-    const port = createPort();
-    const handler = createHandler(port);
-    const input = {
-      questions: [{
-        question: 'Continue?',
-        header: 'Choice',
-        options: [],
-        multiSelect: false,
-      }],
-    };
-
-    const result = await handler('AskUserQuestion', input, nativeOptions);
-
-    expect(port.askUserQuestion).toHaveBeenCalledWith(
-      expect.objectContaining({
-        kind: 'question',
-        input: expect.objectContaining({
-          questions: [expect.objectContaining({ isOther: true })],
-        }),
-      }),
-      nativeOptions.signal,
-    );
-    expect(result).toEqual({
-      behavior: 'allow',
-      updatedInput: expect.objectContaining({
-        answers: { answer: 'yes' },
-      }),
-    });
-  });
-
-  it('fails closed for disallowed tools before opening an interaction', async () => {
-    const port = createPort();
-    const handler = new ClaudeExecutionInteractionRouter({
-      interactionPort: port,
-      sessionInstanceId: 'session-local',
-      getTurnId: () => 'turn-local',
-      isToolAllowed: (toolName) => toolName === 'Read',
-      onToolBlocked: vi.fn(),
-    }).canUseTool;
-
-    const result = await handler('Edit', {}, nativeOptions);
-
-    expect(result).toEqual(expect.objectContaining({
-      behavior: 'deny',
-      message: expect.stringContaining('not allowed'),
-    }));
-    expect(port.requestApproval).not.toHaveBeenCalled();
-  });
 
   it('dismisses a cancelled interaction once and ignores its late response', async () => {
     const port = createPort();

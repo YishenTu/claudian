@@ -1345,12 +1345,6 @@ describe('ClaudianPlugin', () => {
   });
 
   describe('onunload', () => {
-    it('should complete without error', async () => {
-      await plugin.onload();
-
-      expect(() => plugin.onunload()).not.toThrow();
-    });
-
     it('disposes the application execution lifecycle registry', async () => {
       await plugin.onload();
       const disposeSpy = vi.spyOn(

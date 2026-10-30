@@ -42,32 +42,6 @@ describe('OpencodeCommandLoader', () => {
     expect(metadataService.discoverCommands).not.toHaveBeenCalled();
   });
 
-  it('loads commands through the metadata service when authorized', async () => {
-    const metadataService = {
-      dispose: vi.fn(),
-      discoverCommands: vi.fn().mockResolvedValue({
-        commands: [{
-          content: '',
-          id: 'opencode:skill',
-          kind: 'skill',
-          name: 'skill',
-          source: 'sdk',
-        }],
-        loaded: true,
-      }),
-    };
-    const loader = new OpencodeCommandLoader(metadataService as any);
-
-    await expect(loader.loadCommands(createContext({
-      allowIsolatedMetadataCreation: true,
-    }))).resolves.toMatchObject({
-      items: [expect.objectContaining({ name: 'skill' })],
-      status: 'ready',
-    });
-    expect(metadataService.discoverCommands).toHaveBeenCalledTimes(1);
-    expect(metadataService.dispose).not.toHaveBeenCalled();
-  });
-
   it('disposes a loader-owned ephemeral service after discovery', async () => {
     const metadataService = {
       discoverCommands: vi.fn().mockResolvedValue({

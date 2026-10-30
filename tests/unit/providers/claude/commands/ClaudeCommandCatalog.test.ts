@@ -3,42 +3,6 @@ import { ClaudeCommandCatalog } from '@/providers/claude/commands/ClaudeCommandC
 
 describe('ClaudeCommandCatalog', () => {
   describe('listDropdownEntries', () => {
-    it('returns SDK runtime commands as ProviderCommandEntry', async () => {
-      const catalog = new ClaudeCommandCatalog();
-
-      const sdkCommands: SlashCommand[] = [
-        { id: 'sdk:commit', name: 'commit', description: 'Create git commit', content: '', source: 'sdk' },
-        { id: 'sdk:review', name: 'review', description: 'Review code', content: '', source: 'sdk' },
-      ];
-      const entries = await catalog.listDropdownEntries({ commandSnapshot: sdkCommands, includeBuiltIns: false });
-
-      expect(entries).toHaveLength(2);
-
-      const commitEntry = entries.find(e => e.name === 'commit');
-      expect(commitEntry).toBeDefined();
-      expect(commitEntry!.providerId).toBe('claude');
-      expect(commitEntry!.scope).toBe('runtime');
-      expect(commitEntry!.source).toBe('sdk');
-      expect(commitEntry!.isEditable).toBe(false);
-      expect(commitEntry!.isDeletable).toBe(false);
-      expect(commitEntry!.displayPrefix).toBe('/');
-      expect(commitEntry!.insertPrefix).toBe('/');
-    });
-
-    it('scopes Claude Code built-in commands apart from runtime-defined ones', async () => {
-      const catalog = new ClaudeCommandCatalog();
-      const entries = await catalog.listDropdownEntries({ includeBuiltIns: false, commandSnapshot: [
-        { id: 'sdk:compact', name: 'compact', content: '', source: 'builtin' },
-        { id: 'sdk:review', name: 'review', content: '', source: 'sdk' },
-      ] });
-
-      expect(entries.map(({ name, scope, source, isEditable, isDeletable }) => ({ name, scope, source, isEditable, isDeletable })))
-        .toEqual([
-          { name: 'compact', scope: 'builtin', source: 'builtin', isEditable: false, isDeletable: false },
-          { name: 'review', scope: 'runtime', source: 'sdk', isEditable: false, isDeletable: false },
-        ]);
-    });
-
     it('returns empty when no runtime commands and no probe', async () => {
       const catalog = new ClaudeCommandCatalog();
 
@@ -236,20 +200,6 @@ describe('ClaudeCommandCatalog', () => {
       expect(probe.mock.calls[0][0]).toMatchObject({ aborted: true });
       expect(probe.mock.calls[1][0]).not.toBe(secondController.signal);
       expect(probe.mock.calls[1][0]).toMatchObject({ aborted: false });
-    });
-
-  });
-
-  describe('getDropdownConfig', () => {
-    it('returns Claude-specific config', () => {
-      const catalog = new ClaudeCommandCatalog();
-
-      const config = catalog.getDropdownConfig();
-
-      expect(config.triggerChars).toEqual(['/']);
-      expect(config.builtInPrefix).toBe('/');
-      expect(config.skillPrefix).toBe('/');
-      expect(config.commandPrefix).toBe('/');
     });
   });
 });

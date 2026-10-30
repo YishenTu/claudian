@@ -180,3 +180,33 @@ test('test lint retains alias, callback, focused-test and suite-export checks', 
     assert.ok(result.messages.some(message => message.ruleId === rule), JSON.stringify(result.messages));
   }
 });
+
+test('test imports require declared packages, including Vitest factory imports', async () => {
+  const eslint = new ESLint();
+  const filePath = 'tests/helpers/dependencyProbe.ts';
+  const rule = 'local/declared-test-dependencies';
+  for (const code of [
+    "import value from 'js-yaml'; void value;",
+    "export { value } from '@undeclared/package/subpath';",
+    "export * from 'js-yaml';",
+    "void import('js-yaml');",
+    "void require('js-yaml');",
+    "void vi.importActual('js-yaml');",
+    "void vi.importMock('js-yaml');",
+    "vi.mock('js-yaml', async () => await vi.importActual('js-yaml'));",
+  ]) {
+    const [result] = await eslint.lintText(code, { filePath });
+    assert.ok(result.messages.some(message => message.ruleId === rule), code);
+  }
+  for (const code of [
+    "import { parse } from 'yaml'; void parse;",
+    "void import('@modelcontextprotocol/sdk/types.js');",
+    "void vi.importActual('obsidian');",
+    "void import('node:fs/promises'); void require('fs');",
+    "void import('@/utils/error'); void import('@test/helpers/testClock');",
+    "void import('./fixture'); void import('../fixture');",
+  ]) {
+    const [result] = await eslint.lintText(code, { filePath });
+    assert.equal(result.messages.filter(message => message.ruleId === rule).length, 0, code);
+  }
+});

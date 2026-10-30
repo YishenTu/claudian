@@ -96,6 +96,8 @@ function applyDOMElementInfo(el: Element, info: unknown): void {
       el.setAttribute(key, String(value));
     }
   }
+  if (opts.type !== undefined) el.setAttribute('type', String(opts.type));
+  if (opts.value !== undefined && 'value' in el) (el as HTMLInputElement).value = String(opts.value);
   if (opts.title && 'setAttribute' in el) {
     el.setAttribute('title', String(opts.title));
   }
@@ -204,4 +206,17 @@ if (globalThis.SVGElement && !Reflect.has(globalThis.SVGElement.prototype, 'crea
     this.appendChild(el);
     return el;
   };
+}
+
+// Install host DOM methods without importing settings controls or a second DOM model.
+if (typeof document !== 'undefined' && globalThis.HTMLElement) {
+  const prototype = globalThis.HTMLElement.prototype;
+  prototype.empty = function () { this.replaceChildren(); };
+  prototype.addClass = function (...classes) { this.classList.add(...classes); };
+  prototype.removeClass = function (...classes) { this.classList.remove(...classes); };
+  prototype.hasClass = function (name) { return this.classList.contains(name); };
+  prototype.toggleClass = function (classes, value) {
+    for (const name of [classes].flat()) this.classList.toggle(name, value);
+  };
+  prototype.appendText = function (value) { this.append(value); };
 }

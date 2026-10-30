@@ -4,6 +4,7 @@ import { setTimeout as yieldToIO } from 'node:timers/promises';
 import { runtimeHostFor } from '@test/helpers/providerRuntimeHost';
 import { testDate } from '@test/helpers/testClock';
 
+import { OpencodeCommandLoader } from '@/providers/opencode/app/OpencodeCommandLoader';
 import { OpencodeServerService } from '@/providers/opencode/http/OpencodeServerService';
 import { OpencodeHTTPMetadataProbe } from '@/providers/opencode/metadata/OpencodeHTTPMetadataProbe';
 import { OpencodeMetadataService } from '@/providers/opencode/metadata/OpencodeMetadataService';
@@ -46,14 +47,25 @@ it('includes account-backed models in the first discovery and keeps the saved se
 
 it('discovers native commands after catalog loading and lists skills', async () => {
   const plugin = fixture.createPlugin();
-  const service = new OpencodeMetadataService(runtimeHostFor(plugin, 'opencode'), plugin.executionLifecycleRegistry);
+  plugin.settings.providerConfigs.opencode.discoveredModels = [{ rawId: 'old/model', label: 'Old model' }];
+  const host = runtimeHostFor(plugin, 'opencode');
+  const writes = vi.spyOn(host, 'updateConfig');
+  const service = new OpencodeMetadataService(host, plugin.executionLifecycleRegistry);
   try {
-    const result = await service.discoverCommands();
-    expect(result.loaded).toBe(true);
-    expect(result.commands.map(({ name, kind, description }) => ({ name, kind, description }))).toEqual([
+    const loader = new OpencodeCommandLoader(service);
+    const result = await loader.loadCommands({ plugin, conversation: null, allowIsolatedMetadataCreation: true });
+    expect(result.status).toBe('ready');
+    if (result.status !== 'ready') throw new Error('Native commands did not load');
+    expect(result.items.map(({ name, kind, description }) => ({ name, kind, description }))).toEqual([
       { name: 'review', kind: 'command', description: 'Review changes' },
       { name: 'writing', kind: 'skill', description: 'Writing guide' },
     ]);
+    expect(getOpencodeProviderSettings(plugin.settings).discoveredModels).toEqual([{ rawId: 'old/model', label: 'Old model' }]);
+    expect(writes).not.toHaveBeenCalled();
+    // A borrowed service remains usable, on the same native process, after the loader returns.
+    const endpoint = readFileSync(fixture.environment.ENDPOINT_FILE!, 'utf8');
+    await expect(service.loadCatalog()).resolves.toBe(true);
+    expect(readFileSync(fixture.environment.ENDPOINT_FILE!, 'utf8')).toBe(endpoint);
   } finally { await service.dispose(); }
 });
 

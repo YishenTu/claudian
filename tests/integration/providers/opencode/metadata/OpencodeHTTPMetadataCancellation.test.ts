@@ -17,7 +17,8 @@ beforeEach(() => { fixture = createOpencodeHTTPMetadataFixture(); });
 afterEach(() => fixture.dispose());
 
 it('cancels one activation wait without publishing or stopping another reader', async () => {
-  fixture.environment.ACTIVATION_DELAY_MS = '500';
+  const hold = fixture.environment.CATALOG_FILE! + '.activation-hold';
+  writeFileSync(hold, '');
   const plugin = fixture.createPlugin();
   const service = new OpencodeMetadataService(runtimeHostFor(plugin, 'opencode'), plugin.executionLifecycleRegistry);
   const controller = new AbortController();
@@ -29,6 +30,7 @@ it('cancels one activation wait without publishing or stopping another reader', 
     controller.abort();
     await expect(cancelled).resolves.toBe(false);
     expect(getOpencodeProviderSettings(plugin.settings).discoveredModels).toEqual([]);
+    rmSync(hold);
     await expect(other).resolves.toBe(true);
     expect(getOpencodeProviderSettings(plugin.settings).discoveredModels).toEqual([
       { rawId: 'deepseek/chat', label: 'deepseek/DeepSeek Chat' },
@@ -43,17 +45,18 @@ it('cancels an in-flight catalog read and closes its server', async () => {
   const probe = new OpencodeHTTPMetadataProbe(await servers.acquire(fixture.cliPath, fixture.root, fixture.environment));
   const controller = new AbortController();
   const pending = probe.loadCatalog(controller.signal);
-  const timer = setTimeout(() => controller.abort(), 150);
   try {
+    await waitUntil(() => existsSync(fixture.environment.ENDPOINT_FILE! + '.model-pending'));
+    controller.abort();
     await expect(pending).rejects.toThrow();
   } finally {
-    clearTimeout(timer);
     await probe.dispose(); await servers.dispose();
   }
 });
 
 it('cancels one reader during shared startup without stopping another reader', async () => {
-  fixture.environment.READY_DELAY_MS = '1000';
+  const hold = fixture.environment.CATALOG_FILE! + '.ready-hold';
+  writeFileSync(hold, '');
   const plugin = fixture.createPlugin();
   const service = new OpencodeMetadataService(runtimeHostFor(plugin, 'opencode'), plugin.executionLifecycleRegistry);
   const controller = new AbortController();
@@ -67,6 +70,7 @@ it('cancels one reader during shared startup without stopping another reader', a
     controller.abort();
     await expect(cancelled).resolves.toBe(false);
     expect(otherSettled).toBe(false);
+    rmSync(hold);
     // The surviving query keeps the same startup and can still publish its catalog.
     await expect(other).resolves.toBe(true);
     expect(readFileSync(fixture.environment.ENDPOINT_FILE!, 'utf8')).toBe(endpoint);
@@ -75,7 +79,8 @@ it('cancels one reader during shared startup without stopping another reader', a
 });
 
 it('invalidates a retained server during startup and permits a fresh discovery', async () => {
-  fixture.environment.READY_DELAY_MS = '1000';
+  const hold = fixture.environment.CATALOG_FILE! + '.ready-hold';
+  writeFileSync(hold, '');
   const plugin = fixture.createPlugin();
   const service = new OpencodeMetadataService(runtimeHostFor(plugin, 'opencode'), plugin.executionLifecycleRegistry);
   try {
@@ -85,6 +90,7 @@ it('invalidates a retained server during startup and permits a fresh discovery',
     await service.invalidate();
     await expect(pending).resolves.toBe(false);
     await expect(fetch(endpoint)).rejects.toThrow();
+    rmSync(hold);
     await expect(service.loadCatalog()).resolves.toBe(true);
     expect(readFileSync(fixture.environment.ENDPOINT_FILE!, 'utf8')).not.toBe(endpoint);
   } finally { await service.dispose(); }

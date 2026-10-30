@@ -1,7 +1,6 @@
 import '@/providers';
 
 import { claudeCatalogFixture } from '@test/helpers/claudeModels';
-import { createConversationPorts, createTestSession, holdResponse } from '@test/helpers/ConversationPorts';
 import { createProjectsFake } from '@test/helpers/features/chat/ProjectsFake';
 import { createMockEl } from '@test/helpers/MockElement';
 import { testDate } from '@test/helpers/testClock';
@@ -9,12 +8,8 @@ import { Menu, setIcon } from 'obsidian';
 import type { Mock } from 'vitest';
 
 import type { TitleGenerationService } from '@/core/providers/types';
-import type { ClaudianSettings } from '@/core/types';
-import { type ConversationControllerDeps } from '@/features/chat/conversation/ConversationController';
-import { SessionBrowser } from '@/features/chat/session-manager/SessionBrowser';
+import { SessionBrowser, type SessionBrowserDeps } from '@/features/chat/session-manager/SessionBrowser';
 import { formatSessionDate } from '@/features/chat/session-manager/SessionStatusPresentation';
-import type { ChatSessionRuntime } from '@/features/chat/sessions/ChatSessionRuntime';
-import { ChatState } from '@/features/chat/state/ChatState';
 
 
 
@@ -22,48 +17,17 @@ vi.mock('@/shared/modals/ConfirmModal', () => ({
   confirm: vi.fn().mockResolvedValue(true),
 }));
 
-function createMockDeps(overrides: Record<string, unknown> = {}): ConversationControllerDeps & { session: ChatSessionRuntime; plugin: ConversationControllerDeps['plugin'] & { settings: ClaudianSettings }; getHistoryDropdown: () => HTMLElement; getTitleGenerationService: () => TitleGenerationService | null } {
-  const session = createTestSession({ getState: () => state });
-  const state: ChatState = new ChatState({}, undefined, session.turns);
-  const inputEl = { value: '', focus: vi.fn() } as unknown as HTMLTextAreaElement;
+function createMockDeps(overrides: { getTitleGenerationService?: () => TitleGenerationService | null } = {}) {
   const historyDropdown = createMockEl();
-  let welcomeEl: any = createMockEl();
-  const messagesEl = createMockEl();
-
-  const linkedContentController = {
-    resetAutoDraft: vi.fn(),
-    lock: vi.fn(),
-  };
-
-  const deps = {
+  return {
     plugin: {
-      createConversation: vi.fn().mockResolvedValue({
-        id: 'new-conv',
-        title: 'New Conversation',
-        messages: [],
-        sessionId: null,
-        createdAt: Date.now(),
-        lastActivityAt: Date.now(),
-      }),
-      switchConversation: vi.fn().mockResolvedValue({
-        id: 'switched-conv',
-        title: 'Switched Conversation',
-        messages: [],
-        sessionId: null,
-        createdAt: Date.now(),
-        lastActivityAt: Date.now(),
-      }),
+      switchConversation: vi.fn().mockResolvedValue(undefined),
       getConversationById: vi.fn().mockResolvedValue(null),
-      getConversationSummary(id: string) { return this.getConversationSync(id); },
-      getConversationSync: vi.fn().mockReturnValue(null),
+      getConversationSummary: vi.fn().mockReturnValue(null),
       getConversationList: vi.fn().mockReturnValue([]),
       updateConversation: vi.fn().mockResolvedValue(undefined),
       renameConversation: vi.fn().mockResolvedValue(undefined),
       conversationLifecycle: { delete: vi.fn().mockResolvedValue(undefined) },
-      agentService: {
-        getSessionId: vi.fn().mockResolvedValue(null),
-        setSessionId: vi.fn(),
-      },
       settings: {
         userName: '',
         enableAutoTitleGeneration: true,
@@ -71,29 +35,12 @@ function createMockDeps(overrides: Record<string, unknown> = {}): ConversationCo
         providerConfigs: { claude: claudeCatalogFixture(['haiku']) },
         permissionMode: 'yolo',
       },
-    } as any,
-    state,
-    renderer: {
-      renderMessages: vi.fn().mockReturnValue(createMockEl()),
-    } as any,
-    subagentManager: {
-      clear: vi.fn(),
-    } as any,
-    getHistoryDropdown: () => historyDropdown as any,
-    getWelcomeEl: () => welcomeEl,
-    setWelcomeEl: (el: any) => { welcomeEl = el; },
-    getMessagesEl: () => messagesEl as any,
-    getInputEl: () => inputEl,
-    getLinkedContentController: () => linkedContentController as any,
-    getImageContextManager: () => ({
-      clearImages: vi.fn(),
-    }) as any,
-    clearQueuedMessage: vi.fn(),
-    getTitleGenerationService: () => null,
-    getExecutionCoordinator: () => null,
+    } as unknown as SessionBrowserDeps['plugin'],
+    state: { currentConversationId: null as string | null },
+    getHistoryDropdown: () => historyDropdown as unknown as HTMLElement,
+    getTitleGenerationService: (): TitleGenerationService | null => null,
     ...overrides,
-  } as unknown as ReturnType<typeof createMockDeps>;
-  return Object.assign(deps, createConversationPorts({ ...(deps as any), session }));
+  };
 }
 
 function createBrowser(deps: ReturnType<typeof createMockDeps>): SessionBrowser {
@@ -173,27 +120,7 @@ describe('SessionBrowser', () => {
         expect(loadingEl).toBeTruthy();
       });
 
-      it('leaves the running guard to the conversation lifecycle while the active tab streams', async () => {
-        holdResponse(deps.session.turns);
-        deps.state.currentConversationId = 'conv-active';
 
-        (deps.plugin.getConversationList as Mock).mockReturnValue([
-          { id: 'conv-1', title: 'Test', createdAt: 1000, lastActivityAt: 1000 },
-        ]);
-
-        renderDropdown(controller, deps);
-
-        const list = dropdown.children[1];
-        const item = list.children[0];
-        const deleteBtn = item.querySelector('.claudian-delete-btn');
-        expect(deleteBtn).toBeTruthy();
-
-        const clickHandlers = deleteBtn!._eventListeners?.get('click');
-        expect(clickHandlers).toBeDefined();
-        await clickHandlers![0]({ stopPropagation: vi.fn() });
-
-        expect(deps.plugin.conversationLifecycle.delete).toHaveBeenCalledWith(['conv-1']);
-      });
     });
 
     describe('renderHistoryDropdown', () => {

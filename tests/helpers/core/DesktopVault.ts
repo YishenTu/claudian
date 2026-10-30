@@ -20,6 +20,7 @@ export class DesktopVault {
   private constructor(readonly root: string) {
     const resolve = (relativePath: string) => this.resolve(relativePath);
     const adapter = {
+      basePath: root,
       getBasePath: () => root,
       exists: async (relativePath: string) => fs.lstat(resolve(relativePath)).then(() => true, () => false),
       stat: async (relativePath: string) => {

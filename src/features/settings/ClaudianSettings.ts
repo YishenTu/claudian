@@ -1,5 +1,5 @@
 import type { App, Plugin, SettingDefinitionItem } from 'obsidian';
-import { Notice, PluginSettingTab, Setting } from 'obsidian';
+import { Notice, PluginSettingTab } from 'obsidian';
 
 import { parseEnvironmentVariables } from '@/core/process/env';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
@@ -17,6 +17,7 @@ import type { FeatureHost } from '@/features/FeatureHost';
 import { buildNavMappingText, parseNavMappings } from '@/features/settings/keyboardNavigation';
 import { getAvailableLocales, getLocaleDisplayName, setLocale, t } from '@/i18n/i18n';
 import type { Locale } from '@/i18n/types';
+import { AccessibleSetting } from '@/shared/settings/AccessibleSetting';
 import { formatContextLimit, parseContextLimit } from '@/shared/settings/contextLimit';
 import { DebouncedSettingsWriter } from '@/shared/settings/DebouncedSettingsWriter';
 import { renderEnvironmentSettingsSection } from '@/shared/settings/EnvironmentSettingsSection';
@@ -247,7 +248,7 @@ export class ClaudianSettingTab extends PluginSettingTab {
 
   private renderGeneralTab(container: HTMLElement): void {
     const textDraft = this.textEdits.projectDraft(this.host.settings);
-    new Setting(container)
+    new AccessibleSetting(container)
       .setName(t('settings.language.name'))
       .setDesc(t('settings.language.desc'))
       .addDropdown((dropdown) => {
@@ -278,9 +279,9 @@ export class ClaudianSettingTab extends PluginSettingTab {
 
     // --- Display ---
 
-    new Setting(container).setName(t('settings.display')).setHeading();
+    new AccessibleSetting(container).setName(t('settings.display')).setHeading();
 
-    new Setting(container)
+    new AccessibleSetting(container)
       .setName(t('settings.chatViewPlacement.name'))
       .setDesc(t('settings.chatViewPlacement.desc'))
       .addDropdown((dropdown) => {
@@ -296,7 +297,7 @@ export class ClaudianSettingTab extends PluginSettingTab {
           });
       });
 
-    new Setting(container)
+    new AccessibleSetting(container)
       .setName(t('settings.enableZenMode.name'))
       .setDesc(t('settings.enableZenMode.desc'))
       .addToggle((toggle) =>
@@ -309,7 +310,7 @@ export class ClaudianSettingTab extends PluginSettingTab {
           })
       );
 
-    new Setting(container)
+    new AccessibleSetting(container)
       .setName(t('settings.enableDualPane.name'))
       .setDesc(t('settings.enableDualPane.desc'))
       .addToggle((toggle) =>
@@ -324,7 +325,7 @@ export class ClaudianSettingTab extends PluginSettingTab {
       );
 
     if (this.host.settings.enableDualPane ?? true) {
-      new Setting(container)
+      new AccessibleSetting(container)
         .setName(t('settings.dualPaneSide.name'))
         .setDesc(t('settings.dualPaneSide.desc'))
         .addDropdown((dropdown) => {
@@ -341,7 +342,7 @@ export class ClaudianSettingTab extends PluginSettingTab {
 
     }
 
-    new Setting(container)
+    new AccessibleSetting(container)
       .setName(t('settings.restoreTabsOnStartup.name'))
       .setDesc(t('settings.restoreTabsOnStartup.desc'))
       .addToggle((toggle) => {
@@ -354,7 +355,7 @@ export class ClaudianSettingTab extends PluginSettingTab {
           });
       });
 
-    new Setting(container)
+    new AccessibleSetting(container)
       .setName(t('settings.enableAutoScroll.name'))
       .setDesc(t('settings.enableAutoScroll.desc'))
       .addToggle((toggle) =>
@@ -367,7 +368,7 @@ export class ClaudianSettingTab extends PluginSettingTab {
           })
       );
 
-    new Setting(container)
+    new AccessibleSetting(container)
       .setName(t('settings.showMessageTimestamps.name'))
       .setDesc(t('settings.showMessageTimestamps.desc'))
       .addToggle((toggle) =>
@@ -380,7 +381,7 @@ export class ClaudianSettingTab extends PluginSettingTab {
           })
       );
 
-    new Setting(container)
+    new AccessibleSetting(container)
       .setName(t('settings.deferMathRenderingDuringStreaming.name'))
       .setDesc(t('settings.deferMathRenderingDuringStreaming.desc'))
       .addToggle((toggle) =>
@@ -393,7 +394,7 @@ export class ClaudianSettingTab extends PluginSettingTab {
           })
       );
 
-    new Setting(container)
+    new AccessibleSetting(container)
       .setName(t('settings.expandFileEditsByDefault.name'))
       .setDesc(t('settings.expandFileEditsByDefault.desc'))
       .addToggle((toggle) =>
@@ -406,7 +407,7 @@ export class ClaudianSettingTab extends PluginSettingTab {
           })
       );
 
-    new Setting(container)
+    new AccessibleSetting(container)
       .setName(t('settings.pluginRenderedFenceLanguages.name'))
       .setDesc(t('settings.pluginRenderedFenceLanguages.desc'))
       .setClass('claudian-settings-textarea')
@@ -428,9 +429,9 @@ export class ClaudianSettingTab extends PluginSettingTab {
 
     // --- Conversations ---
 
-    new Setting(container).setName(t('settings.conversations')).setHeading();
+    new AccessibleSetting(container).setName(t('settings.conversations')).setHeading();
 
-    new Setting(container)
+    new AccessibleSetting(container)
       .setName(t('settings.autoTitle.name'))
       .setDesc(t('settings.autoTitle.desc'))
       .addToggle((toggle) =>
@@ -445,7 +446,7 @@ export class ClaudianSettingTab extends PluginSettingTab {
       );
 
     if (this.host.settings.enableAutoTitleGeneration) {
-      new Setting(container)
+      new AccessibleSetting(container)
         .setName(t('settings.titleLanguage.name'))
         .setDesc(t('settings.titleLanguage.desc'))
         .addDropdown((dropdown) => {
@@ -462,7 +463,7 @@ export class ClaudianSettingTab extends PluginSettingTab {
             });
         });
 
-      new Setting(container)
+      new AccessibleSetting(container)
         .setName(t('settings.titleModel.name'))
         .setDesc(t('settings.titleModel.desc'))
         .addDropdown((dropdown) => {
@@ -503,7 +504,7 @@ export class ClaudianSettingTab extends PluginSettingTab {
         });
     }
 
-    new Setting(container)
+    new AccessibleSetting(container)
       .setName(t('settings.sessionAutoArchiveAfter.name'))
       .setDesc(createFragment((fragment) => {
         fragment.append(
@@ -528,9 +529,9 @@ export class ClaudianSettingTab extends PluginSettingTab {
 
     // --- Content ---
 
-    new Setting(container).setName(t('settings.content')).setHeading();
+    new AccessibleSetting(container).setName(t('settings.content')).setHeading();
 
-    new Setting(container)
+    new AccessibleSetting(container)
       .setName(t('settings.userName.name'))
       .setDesc(t('settings.userName.desc'))
       .addText((text) => {
@@ -547,7 +548,7 @@ export class ClaudianSettingTab extends PluginSettingTab {
         });
       });
 
-    new Setting(container)
+    new AccessibleSetting(container)
       .setName(t('settings.systemPrompt.name'))
       .setDesc(t('settings.systemPrompt.desc'))
       .setClass('claudian-settings-textarea')
@@ -567,7 +568,7 @@ export class ClaudianSettingTab extends PluginSettingTab {
         });
       });
 
-    new Setting(container)
+    new AccessibleSetting(container)
       .setName(t('settings.excludedTags.name'))
       .setDesc(t('settings.excludedTags.desc'))
       .setClass('claudian-settings-textarea')
@@ -588,7 +589,7 @@ export class ClaudianSettingTab extends PluginSettingTab {
         text.inputEl.cols = 30;
       });
 
-    new Setting(container)
+    new AccessibleSetting(container)
       .setName(t('settings.mediaFolder.name'))
       .setDesc(t('settings.mediaFolder.desc'))
       .addText((text) => {
@@ -608,9 +609,9 @@ export class ClaudianSettingTab extends PluginSettingTab {
 
     // --- Input ---
 
-    new Setting(container).setName(t('settings.input')).setHeading();
+    new AccessibleSetting(container).setName(t('settings.input')).setHeading();
 
-    new Setting(container)
+    new AccessibleSetting(container)
       .setName(t('settings.requireCommandOrControlEnterToSend.name'))
       .setDesc(t('settings.requireCommandOrControlEnterToSend.desc'))
       .addToggle((toggle) => {
@@ -623,7 +624,7 @@ export class ClaudianSettingTab extends PluginSettingTab {
           });
       });
 
-    new Setting(container)
+    new AccessibleSetting(container)
       .setName(t('settings.navMappings.name'))
       .setDesc(t('settings.navMappings.desc'))
       .setClass('claudian-settings-textarea')

@@ -287,15 +287,15 @@ it.each((['Update', 'name Enter', 'Save'] as const).flatMap(action =>
     expect(fields.getByRole<HTMLButtonElement>('button', {
       name: action === 'Save' ? 'Save' : 'Update',
     }).type).toBe('button');
-    const nameField = within(fields.getByText('Name').parentElement!).getByRole<HTMLInputElement>('textbox');
-    const descriptionField = within(fields.getByText('Description').parentElement!).getByRole<HTMLInputElement>('textbox');
+    const nameField = fields.getByRole<HTMLInputElement>('textbox', { name: 'Name' });
+    const descriptionField = fields.getByRole<HTMLInputElement>('textbox', { name: 'Description' });
     fireEvent.input(nameField, { target: { value: 'Renamed snippet name' } });
     fireEvent.input(descriptionField, { target: { value: 'Draft description' } });
     fireEvent.input(fields.getByRole('textbox', { name: 'Context window for custom' }), { target: { value: invalidContext } });
     fireEvent.input(fields.getByRole('textbox', { name: 'Context window for sibling' }), { target: { value: '128k' } });
     fireEvent.input(fields.getByRole('textbox', { name: 'Alias for custom' }), { target: { value: ' Custom draft ' } });
     fireEvent.input(fields.getByRole('textbox', { name: 'Alias for sibling' }), { target: { value: ' Sibling draft ' } });
-    const environment = within(fields.getByText('Environment variables').parentElement!).getByRole<HTMLTextAreaElement>('textbox');
+    const environment = fields.getByRole<HTMLTextAreaElement>('textbox', { name: 'Environment variables' });
     expect(environment.value).toBe(envVars);
     const draftEnvironment = `${envVars}\nANTHROPIC_BASE_URL=https://example.invalid`;
     fireEvent.input(environment, { target: { value: draftEnvironment } });
@@ -393,7 +393,7 @@ it.each(['Save', 'Update'] as const)('retains every %s draft after persistence f
   const title = action === 'Save' ? 'Save snippet' : 'Edit snippet';
   const dialog = within(document.body).getByRole('dialog', { name: title });
   const fields = within(dialog);
-  const field = (name: string) => within(fields.getByText(name).parentElement!).getByRole<HTMLInputElement>('textbox');
+  const field = (name: string) => fields.getByRole<HTMLInputElement>('textbox', { name });
   const name = 'Work endpoint';
   const description = 'Keep these settings';
   const envVars = 'ANTHROPIC_MODEL=custom\nANTHROPIC_BASE_URL=https://example.invalid';
@@ -457,7 +457,7 @@ it.each(['Save', 'Update'] as const)('does not offer another %s after persistenc
   })();
   const title = action === 'Save' ? 'Save snippet' : 'Edit snippet';
   const dialog = within(document.body).getByRole('dialog', { name: title });
-  const name = within(within(dialog).getByText('Name').parentElement!).getByRole('textbox');
+  const name = within(dialog).getByRole('textbox', { name: 'Name' });
   fireEvent.input(name, { target: { value: 'Committed snippet' } });
   fireEvent.click(within(dialog).getByRole('button', { name: action }));
   await waitFor(() => expect(notifyCalls(notice)).toEqual(['Environment snippet was saved, but settings refresh failed.']));
@@ -489,7 +489,7 @@ it('saves a snippet through the coordinator and renders it when persistence succ
     fireEvent.click(within(container).getByRole('button', { name: 'Save current environment as a snippet' }));
   });
   const dialog = within(document.body).getByRole('dialog', { name: 'Save snippet' });
-  const nameField = within(within(dialog).getByText('Name').parentElement!).getByRole('textbox');
+  const nameField = within(dialog).getByRole('textbox', { name: 'Name' });
   fireEvent.input(nameField, { target: { value: 'New snippet name' } });
   fireEvent.click(within(dialog).getByRole('button', { name: 'Save' }));
 
@@ -538,7 +538,7 @@ it.each(['', '   '])('clears a context override (%o) through the coordinator whi
   });
   await joinFocusTimers();
   const dialog = within(document.body).getByRole('dialog', { name: 'Edit snippet' });
-  const nameField = within(within(dialog).getByText('Name').parentElement!).getByRole('textbox');
+  const nameField = within(dialog).getByRole('textbox', { name: 'Name' });
   fireEvent.input(nameField, { target: { value: 'Renamed snippet name' } });
   fireEvent.input(within(dialog).getByRole('textbox', { name: 'Context window for custom' }), { target: { value: blank } });
   fireEvent.input(within(dialog).getByRole('textbox', { name: 'Context window for sibling' }), { target: { value: '128k' } });
@@ -599,7 +599,7 @@ it('saves, reloads and inserts snippet overrides for prototype-named custom mode
   await joinFocusTimers();
   const dialog = within(document.body).getByRole('dialog', { name: 'Save snippet' });
   const fields = within(dialog);
-  const name = within(fields.getByText('Name').parentElement!).getByRole('textbox');
+  const name = fields.getByRole('textbox', { name: 'Name' });
   fireEvent.input(name, { target: { value: 'Special model endpoint' } });
   for (const [modelId, alias, limit] of [
     ['__proto__', 'Prototype model', '200k'],

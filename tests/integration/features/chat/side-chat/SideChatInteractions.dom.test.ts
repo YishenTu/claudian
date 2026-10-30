@@ -17,7 +17,9 @@ import { formatCodexQuestionReply } from '@/providers/codex/normalization/codexQ
 
 const taskResultInterpreter = ProviderRegistry.getTaskResultInterpreter('claude');
 
-afterEach(releaseSideChatHarnesses);
+afterEach(async () => {
+  try { await releaseSideChatHarnesses(); } finally { vi.useRealTimers(); }
+});
 
 it('keeps a child turn and detached approval alive, then restores the completed transcript', async () => {
   vi.mocked(MarkdownRenderer.render).mockImplementation(async (_app, text, el) => { el.textContent = text; });
@@ -197,13 +199,14 @@ it.each(['asking', 'later'] as const)('keeps an unanswered side question usable 
 /** Starts a later side turn while the first turn's question is still open. */
 async function startLaterTurnUnderQuestion() {
   const result = await showAsyncQuestion();
+  vi.useFakeTimers();
   const { harness, native, started } = result;
   const steer = vi.fn(async (_request: ProviderExecutionRequest) => true);
   Object.assign(native, { steer });
   native.complete();
   await started;
   const later = harness.controller.runtime!.submit({ content: 'Later work' });
-  await waitFor(() => expect(native.requests).toHaveLength(2));
+  await vi.waitFor(() => expect(native.requests).toHaveLength(2));
   return { ...result, later };
 }
 
@@ -211,24 +214,24 @@ const waitingIndicator = () => document.querySelector('.claudian-side-chat-messa
 
 it('shows the later side turn waiting indicator once the earlier turn question settles', async () => {
   const { native, later } = await startLaterTurnUnderQuestion();
-  await new Promise(resolve => setTimeout(resolve, 500));
+  await vi.advanceTimersByTimeAsync(500);
   expect(screen.getByRole('region', { name: 'Question' })).toBeTruthy();
   expect(waitingIndicator()).toBeNull();
   submitAnswer();
-  await waitFor(() => expect(screen.queryByRole('region', { name: 'Question' })).toBeNull());
-  await waitFor(() => expect(waitingIndicator()).not.toBeNull());
+  await vi.waitFor(() => expect(screen.queryByRole('region', { name: 'Question' })).toBeNull());
+  await vi.waitFor(() => expect(waitingIndicator()).not.toBeNull());
   native.complete();
   await later;
 });
 
 it('does not resurrect the waiting indicator when the earlier question settles after the later turn started streaming', async () => {
   const { harness, native, later } = await startLaterTurnUnderQuestion();
-  await new Promise(resolve => setTimeout(resolve, 500));
+  await vi.advanceTimersByTimeAsync(500);
   native.emitText('Working on it');
-  await waitFor(() => expect(harness.controller.runtime!.state.currentTextContent).toContain('Working on it'));
+  await vi.waitFor(() => expect(harness.controller.runtime!.state.currentTextContent).toContain('Working on it'));
   submitAnswer();
-  await waitFor(() => expect(screen.queryByRole('region', { name: 'Question' })).toBeNull());
-  await new Promise(resolve => setTimeout(resolve, 600));
+  await vi.waitFor(() => expect(screen.queryByRole('region', { name: 'Question' })).toBeNull());
+  await vi.advanceTimersByTimeAsync(600);
   expect(waitingIndicator()).toBeNull();
   native.complete();
   await later;

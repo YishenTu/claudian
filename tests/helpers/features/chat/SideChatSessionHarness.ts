@@ -33,7 +33,10 @@ export class FakeSideSession implements ProviderExecutionSession {
   private sessionSequence = 0;
   private readonly backgrounds = new Map<string, number>();
 
-  constructor(readonly config: ProviderSessionConfig) {}
+  constructor(
+    readonly config: ProviderSessionConfig,
+    private readonly onExecute: (request: ProviderExecutionRequest) => void = () => undefined,
+  ) {}
 
   execute(request: ProviderExecutionRequest): ProviderExecutionRun {
     if (this.active) throw new Error('A side execution is already active');
@@ -43,6 +46,7 @@ export class FakeSideSession implements ProviderExecutionSession {
     this.active = run;
     this.latestRun = run;
     run.emit({ accepted: true, type: 'turn_started' });
+    this.onExecute(request);
     return run;
   }
 
@@ -145,9 +149,24 @@ export class FakeSideSession implements ProviderExecutionSession {
 export class FakeSideBackend implements ProviderExecutionBackend {
   readonly providerId = 'claude' as const;
   readonly sessions: FakeSideSession[] = [];
+  private readonly requestListeners = new Set<(request: ProviderExecutionRequest) => void>();
+
+  /** Arm before submitting so tests observe provider handoff without polling the DOM. */
+  nextRequest(matches: (request: ProviderExecutionRequest) => boolean): Promise<ProviderExecutionRequest> {
+    return new Promise(resolve => {
+      const listener = (request: ProviderExecutionRequest): void => {
+        if (!matches(request)) return;
+        this.requestListeners.delete(listener);
+        resolve(request);
+      };
+      this.requestListeners.add(listener);
+    });
+  }
 
   createSession(config: ProviderSessionConfig): ProviderExecutionSession {
-    const session = new FakeSideSession(config);
+    const session = new FakeSideSession(config, request => {
+      for (const listener of [...this.requestListeners]) listener(request);
+    });
     this.sessions.push(session);
     return session;
   }

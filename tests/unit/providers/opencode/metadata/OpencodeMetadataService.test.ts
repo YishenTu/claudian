@@ -71,43 +71,7 @@ describe('OpencodeMetadataService', () => {
     } finally { await service.dispose(); }
   });
 
-  it('uses an isolated probe, loads commands, and persists discovered models', async () => {
-    const plugin = createPlugin();
-    const probe = createProbe();
-    const service = new OpencodeMetadataService(plugin, plugin.executionLifecycleRegistry, {
-      createProbe: vi.fn(() => probe),
-    });
 
-    await expect(service.loadCatalog()).resolves.toBe(true);
-    await expect(service.discoverCommands()).resolves.toEqual({
-      commands: [{ id: 'opencode-command:review', name: 'review', content: '' }],
-      loaded: true,
-    });
-
-    expect(getOpencodeProviderSettings(plugin.settings).discoveredModels).toEqual([
-      { label: 'Claude', rawId: 'anthropic/claude' },
-    ]);
-    expect(probe.dispose).toHaveBeenCalledTimes(2);
-  });
-
-  it('warms detached thought-level metadata without constructing a chat runtime', async () => {
-    const plugin = createPlugin();
-    const probe = createProbe();
-    const service = new OpencodeMetadataService(plugin, plugin.executionLifecycleRegistry, {
-      createProbe: () => probe,
-    });
-
-    await expect(
-      service.warmModelMetadata('opencode:anthropic/claude'),
-    ).resolves.toBe(true);
-
-    expect(getOpencodeProviderSettings(plugin.settings).thinkingOptionsByModel).toEqual({
-      'anthropic/claude': [
-        { label: 'Low', value: 'low' },
-        { label: 'High', value: 'high' },
-      ],
-    });
-  });
 
   it('registers transition invalidation and unregisters it on disposal', async () => {
     let beforeTransition!: () => Promise<void>;
@@ -235,15 +199,6 @@ describe('OpencodeMetadataService', () => {
   });
 });
 
-it('does not replace catalog rows during command warmup', async () => {
-  const host = createPlugin();
-  host.settings.providerConfigs.opencode.discoveredModels = [{ rawId: 'old/model', label: 'Old model' }];
-  const service = new OpencodeMetadataService(host, host.executionLifecycleRegistry, { createProbe });
-  expect((await service.discoverCommands()).commands).toHaveLength(1);
-  expect(getOpencodeProviderSettings(host.settings).discoveredModels).toEqual([{ rawId: 'old/model', label: 'Old model' }]);
-  expect(host.updateConfig).not.toHaveBeenCalled();
-  await service.dispose();
-});
 
 it.each(['catalog', 'warm', 'discovery', 'batch'] as const)('does not publish canceled %s metadata queued behind a settings write', async kind => {
   const host = createPlugin();

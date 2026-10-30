@@ -1,8 +1,9 @@
-import { type App, Modal, Notice, Setting } from 'obsidian';
+import { type App, Modal, Notice } from 'obsidian';
 
 import { defaultProjectMemoryPath, normalizeProjectMemoryPath } from '@/core/path/ProjectMemoryPath';
 import { type ProjectCreateInput, ProjectMemoryPathTakenError, type ProjectRecord } from '@/core/types';
 import { t } from '@/i18n/i18n';
+import { AccessibleSetting } from '@/shared/settings/AccessibleSetting';
 
 const MEMORY_PATH_ERROR_ID = 'claudian-project-memory-path-error';
 
@@ -37,7 +38,7 @@ export class ProjectEditorModal extends Modal {
     this.setTitle(project ? t('chat.projects.editor.titleEdit') : t('chat.projects.editor.titleNew'));
     this.modalEl.addClass('claudian-project-modal');
 
-    new Setting(this.contentEl)
+    new AccessibleSetting(this.contentEl)
       .setName(t('chat.projects.editor.name'))
       .setDesc(t('chat.projects.editor.nameDesc'))
       .addText((text) => {
@@ -58,7 +59,7 @@ export class ProjectEditorModal extends Modal {
         });
       });
 
-    new Setting(this.contentEl)
+    new AccessibleSetting(this.contentEl)
       .setName(t('chat.projects.editor.instructions'))
       .setDesc(t('chat.projects.editor.instructionsDesc'));
     this.instructionsArea = this.contentEl.createEl('textarea', {
@@ -67,7 +68,7 @@ export class ProjectEditorModal extends Modal {
     });
     this.instructionsArea.value = project?.instructions ?? '';
 
-    const memoryPathSetting = new Setting(this.contentEl)
+    const memoryPathSetting = new AccessibleSetting(this.contentEl)
       .setName(t('chat.projects.editor.memoryPath'))
       .setDesc(t('chat.projects.editor.memoryPathDesc'))
       .addText((text) => {

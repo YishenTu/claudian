@@ -73,18 +73,6 @@ describe('transformSDKMessage', () => {
       }]);
     });
 
-    it('yields context_compacted event for compact_boundary subtype', () => {
-      const message = msg({
-        type: 'system',
-        subtype: 'compact_boundary',
-      });
-
-      const results = transform(message);
-
-      expect(results).toEqual([
-        { type: 'context_compacted' },
-      ]);
-    });
 
     it('captures permissionMode from init message', () => {
       const message = msg({
@@ -176,29 +164,6 @@ describe('transformSDKMessage', () => {
       ]);
     });
 
-    it('yields subagent_tool_use for assistant tool_use in subagent context', () => {
-      const message = msg({
-        type: 'assistant',
-        parent_tool_use_id: 'parent-tool-abc',
-        message: {
-          content: [
-            { type: 'tool_use', id: 'child-tool-1', name: 'Read', input: { file_path: 'subagent.md' } },
-          ],
-        },
-      });
-
-      const results = transform(message);
-
-      expect(results).toEqual([
-        {
-          type: 'subagent_tool_use',
-          subagentId: 'parent-tool-abc',
-          id: 'child-tool-1',
-          name: 'Read',
-          input: { file_path: 'subagent.md' },
-        },
-      ]);
-    });
 
     it('handles empty content array', () => {
       const message = msg({

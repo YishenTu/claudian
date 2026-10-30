@@ -1,12 +1,11 @@
 import * as fs from 'node:fs';
 
-import { Setting } from 'obsidian';
-
 import { normalizeConfiguredCLIPath } from '@/core/process/cliPath';
 import { probeCLIInstallation } from '@/core/providers/cli/CLIInstallationProbe';
 import { getRuntimeEnvironmentVariables } from '@/core/providers/providerEnvironment';
 import type { ProviderCLIResolver } from '@/core/providers/types';
 import { PI_PROVIDER_ICON } from '@/shared/icons';
+import { AccessibleSetting } from '@/shared/settings/AccessibleSetting';
 import { renderCLIInstallationSetting } from '@/shared/settings/CLIInstallationSetting';
 
 import type { ProviderModelCatalog } from '../../../core/providers/models/ProviderModelCatalog';
@@ -126,7 +125,7 @@ export function createPiSettingsTabRenderer(
         validate: validateCLIPath,
       });
 
-      new Setting(container).setName('Models').setDesc(t('settings.pi.models.desc')).setHeading();
+      new AccessibleSetting(container).setName('Models').setDesc(t('settings.pi.models.desc')).setHeading();
       const modelPicker = renderProviderModelsSection(container, 'pi', 'Pi', workspace.modelCatalog, () => modelWarning.refresh());
 
       renderEnvironmentSettingsSection({

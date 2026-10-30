@@ -14,8 +14,6 @@ import type { Mock } from 'vitest';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { ProviderWorkspaceRegistry } from '@/core/providers/ProviderWorkspaceRegistry';
 
-
-
 vi.mock('@/features/chat/tabs/TabLifecycle', async () => (
   (await vi.importActual<typeof import('@test/helpers/features/chat/TabManagerTestHarness')>('@test/helpers/features/chat/TabManagerTestHarness')).tabLifecycleModuleMock()
 ));
@@ -54,20 +52,6 @@ describe('TabConversationNavigation', () => {
 
   const conversationPlugin = () => createPlugin({
     getCachedConversation: (id: string) => ({ id, providerId: 'claude' }),
-  });
-  it('rebinds the tab while its previous session remains unchanged', async () => {
-    const { manager } = await createManager(conversationPlugin());
-    const current = await manager.createTab('conversation-1') as any;
-
-    await manager.openConversation('conversation-2');
-
-    expect(current.conversationId).toBe('conversation-1');
-    const opened = manager.getActiveTab()!;
-    expect(opened).not.toBe(current);
-    expect(opened.id).toBe(current.id);
-    expect(manager.getTabCount()).toBe(1);
-    expect(opened.conversationId).toBe('conversation-2');
-    expect(opened.lifecycleState).toBe('open');
   });
 
   it('lets the layout open a session a tab command picked before rebinding that tab', async () => {

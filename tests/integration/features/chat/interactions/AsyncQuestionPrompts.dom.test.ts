@@ -102,8 +102,8 @@ it.each(['authority', 'cancel-and-replace'] as const)('fences an expired answer 
   const run = native.runs[0];
   run.events.push({ type: 'turn_started', accepted: true, scope: requestedScope(native, run, 1) });
   const authority = deferred<void>();
-  const entered = vi.fn();
-  execution.repository.assertConversationExecutionAuthority.mockImplementationOnce(() => { entered(); return authority.promise; });
+  const entered = deferred<void>();
+  execution.repository.assertConversationExecutionAuthority.mockImplementationOnce(() => { entered.resolve(); return authority.promise; });
   const tool: ToolCallInfo = { id: 'ask', name: 'AskUserQuestion', status: 'completed', input: {
     replyMode: 'user-message', questions: [{ id: '0', question: 'Which check?', options: [{ label: 'History' }] }],
   } };
@@ -113,7 +113,7 @@ it.each(['authority', 'cancel-and-replace'] as const)('fences an expired answer 
   const question = within(host).getByRole('region', { name: 'Question' });
   fireEvent.click(within(question).getByRole('button', { name: 'History' }));
   fireEvent.click(within(question).getByRole('button', { name: 'Submit answers' }));
-  await waitFor(() => expect(entered).toHaveBeenCalledTimes(1));
+  await entered.promise;
   const answered = (answer.mock.results[0].value as Promise<void>).catch(() => undefined);
   let replacement: Promise<void> | undefined;
   if (phase === 'cancel-and-replace') {
@@ -163,11 +163,11 @@ it.each(['initialization', 'authority', 'cancelled-initialization', 'failed-init
   fixture.input.value = 'Keep this draft';
   const authority = deferred<void>();
   const initialization = deferred<boolean>();
-  const entered = vi.fn();
+  const entered = deferred<void>();
   if (phase !== 'authority') {
-    fixture.deps.ensureExecutionInitialized = () => { entered(); return initialization.promise; };
+    fixture.deps.ensureExecutionInitialized = () => { entered.resolve(); return initialization.promise; };
   } else {
-    execution.repository.assertConversationExecutionAuthority.mockImplementationOnce(() => { entered(); return authority.promise; });
+    execution.repository.assertConversationExecutionAuthority.mockImplementationOnce(() => { entered.resolve(); return authority.promise; });
   }
   const execute = native.execute.bind(native);
   vi.spyOn(native, 'execute').mockImplementation(request => {
@@ -180,7 +180,7 @@ it.each(['initialization', 'authority', 'cancelled-initialization', 'failed-init
   const send = vi.spyOn(fixture.controller, 'sendMessage');
   fireEvent.click(within(host).getByRole('button', { name: 'History' }));
   fireEvent.click(within(host).getByRole('button', { name: 'Submit answers' }));
-  await waitFor(() => expect(entered).toHaveBeenCalledTimes(1));
+  await entered.promise;
   if (phase === 'cancelled-initialization') fixture.controller.cancelStreaming();
   else if (phase !== 'failed-initialization') {
     tool.questionStatus = 'expired';

@@ -1,6 +1,6 @@
 import type { AxeResults, ImpactValue, RunOptions, Spec } from 'axe-core';
 import axeCore from 'axe-core';
-import { merge } from 'es-toolkit/compat';
+import merge from 'es-toolkit/compat/merge';
 
 export interface AxeRunOptions extends RunOptions {
   impactLevels?: ImpactValue[];

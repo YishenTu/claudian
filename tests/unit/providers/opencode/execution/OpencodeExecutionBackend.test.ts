@@ -1,8 +1,6 @@
-import { capturedSelectionPrompt, capturedSelections } from '@test/helpers/capturedSelections';
 import { runtimeHostFor } from '@test/helpers/providerRuntimeHost';
 
 import {
-  isSteerableExecutionSession,
   type ProviderExecutionEvent,
   type ProviderExecutionRequest,
   type ProviderInteractionPort,
@@ -368,27 +366,6 @@ describe('OpencodeExecutionBackend', () => {
     await collect(run.events);
   });
 
-  it('encodes path-only Linked content without changing the Vault-root kernel CWD', async () => {
-    const harness = createHarness();
-    const run = harness.session.execute(createRequest({
-      context: { ...capturedSelections, sessionReferences: [{ id: 'conv-1-ref', title: 'Review', providerId: 'codex', updatedAt: 'updated' }], linkedContent: { path: 'Projects/Research' } },
-      input: [{ text: 'Inspect linked content', type: 'text' }],
-    }));
-    await waitForPrompt(await kernelAt(harness.kernels));
-    harness.kernels[0].completePrompt();
-    await collect(run.events);
-
-    expect(harness.kernels[0].options.config.workingDirectory).toBe('/vault');
-    expect(harness.kernels[0].prompts[0]).toEqual({
-      text: 'Inspect linked content\n\n<linked_content path="Projects/Research" />\n\n' + capturedSelectionPrompt + '\n\n<context_sessions>\n<context_session title="Review" id="conv-1-ref" provider="codex" updated="updated" />\n</context_sessions>',
-      files: [],
-      userText: { start: 0, end: 'Inspect linked content'.length },
-      sessionId: 'native-session',
-    });
-    expect(JSON.stringify(harness.kernels[0].prompts[0])).not.toMatch(
-      /<(?:linked_note|current_note)\b/,
-    );
-  });
 
   it('bootstraps canonical history after invalidation while retaining retired sessions', async () => {
     const previousSessions = [{ sessionId: 'retired-session', databasePath: '/old/opencode.db' }];
@@ -414,28 +391,6 @@ describe('OpencodeExecutionBackend', () => {
       providerSessionId: 'native-session',
       providerState: { nativeConversationContextEstablished: true, previousSessions },
     });
-  });
-
-  it('does not replay canonical history into a resumed native session', async () => {
-    const harness = createHarness(createConfig({
-      resumeSeed: {
-        providerSessionId: 'resume-session',
-        providerState: { databasePath: '/persisted/opencode.db' },
-      },
-    }));
-    const run = harness.session.execute(createRequest({
-      conversationHistory: [
-        { content: 'do-not-replay', id: 'u1', role: 'user', timestamp: 1 },
-      ],
-    }));
-    await waitForPrompt(await kernelAt(harness.kernels));
-    harness.kernels[0].output('ok');
-    harness.kernels[0].completePrompt();
-    await collect(run.events);
-
-    expect(JSON.stringify(harness.kernels[0].prompts[0])).not.toContain(
-      'do-not-replay',
-    );
   });
 
   it('classifies only explicit matching load failures as missing sessions', async () => {
@@ -579,117 +534,8 @@ describe('OpencodeExecutionBackend', () => {
     ]));
   });
 
-  it('reconnects when connect-scoped profile or instructions change', async () => {
-    const harness = createHarness();
-    const execute = async (
-      instructions: string,
-      toolPolicy: ProviderExecutionRequest['toolPolicy'],
-      expectedKernelCount: number,
-    ): Promise<void> => {
-      const base = createRequest();
-      const run = harness.session.execute(createRequest({
-        configuration: {
-          ...base.configuration,
-          systemInstructions: { instructions, kind: 'explicit' },
-        },
-        toolPolicy,
-      }));
-      await waitForCondition(() => harness.kernels.length === expectedKernelCount);
-      const kernel = await kernelAt(harness.kernels, expectedKernelCount - 1);
-      await waitForPrompt(kernel);
-      kernel.completePrompt();
-      await collect(run.events);
-    };
 
-    await execute('instructions-a', { kind: 'provider-default' }, 1);
-    await execute('instructions-b', { kind: 'provider-default' }, 2);
-    await execute('instructions-b', { kind: 'read-only' }, 3);
 
-    expect(harness.kernels.map(kernel => kernel.connectCalls[0])).toEqual([
-      expect.objectContaining({
-        profile: 'managed',
-        systemPrompt: 'instructions-a',
-      }),
-      expect.objectContaining({
-        profile: 'managed',
-        systemPrompt: 'instructions-b',
-      }),
-      expect.objectContaining({
-        profile: 'readonly',
-        systemPrompt: 'instructions-b',
-      }),
-    ]);
-    expect(harness.kernels.slice(1).map(kernel => kernel.openedResumeIds)).toEqual([
-      ['native-session'],
-      ['native-session'],
-    ]);
-  });
-
-  it('sends caller-resolved Main Agent instructions for every profile and reconnects when they change', async () => {
-    const harness = createHarness();
-    const execute = async (
-      sessionInstructions: string,
-      toolPolicy: ProviderExecutionRequest['toolPolicy'],
-      expectedKernelCount: number,
-    ): Promise<void> => {
-      const base = createRequest();
-      const run = harness.session.execute(createRequest({
-        configuration: {
-          ...base.configuration,
-          systemInstructions: { kind: 'main-agent', instructions: sessionInstructions },
-        },
-        toolPolicy,
-      } as never));
-      await waitForCondition(() => harness.kernels.length === expectedKernelCount);
-      const kernel = harness.kernels[expectedKernelCount - 1];
-      await waitForPrompt(kernel);
-      kernel.completePrompt();
-      await collect(run.events);
-    };
-
-    await execute('Main Agent prompt Alpha', { kind: 'provider-default' }, 1);
-    await execute('Main Agent prompt Beta', { kind: 'provider-default' }, 2);
-    await execute('Main Agent prompt Beta', { kind: 'read-only' }, 3);
-
-    // Every profile sends the caller-resolved text; OpenCode never substitutes its own prompt.
-    const prompts = harness.kernels.map(kernel => String((kernel.connectCalls[0] as { systemPrompt?: string } | undefined)?.systemPrompt));
-    expect(prompts).toEqual(['Main Agent prompt Alpha', 'Main Agent prompt Beta', 'Main Agent prompt Beta']);
-  });
-
-  it('reconnects when explicit system instructions change', async () => {
-    const harness = createHarness();
-    const execute = async (
-      instructions: string,
-      expectedKernelCount: number,
-      expectedPromptCount: number,
-    ): Promise<void> => {
-      const base = createRequest();
-      const run = harness.session.execute(createRequest({
-        configuration: {
-          ...base.configuration,
-          systemInstructions: { kind: 'explicit', instructions },
-        },
-      }));
-      await waitForCondition(() => harness.kernels.length === expectedKernelCount);
-      const kernel = await kernelAt(harness.kernels, expectedKernelCount - 1);
-      await waitForPrompt(kernel, expectedPromptCount);
-      kernel.completePrompt();
-      await collect(run.events);
-    };
-
-    await execute('instructions-a', 1, 1);
-    await execute('instructions-a', 1, 2);
-    await execute('instructions-b', 2, 1);
-
-    expect(harness.kernels.map(kernel => kernel.connectCalls[0])).toEqual([
-      expect.objectContaining({
-        systemPrompt: 'instructions-a',
-      }),
-      expect.objectContaining({
-        systemPrompt: 'instructions-b',
-      }),
-    ]);
-  });
 
   it.each([
     ['ephemeral', 'provider-default', undefined],
@@ -722,67 +568,6 @@ describe('OpencodeExecutionBackend', () => {
     },
   );
 
-  it('reuses a healthy native process and session across requested turns', async () => {
-    const harness = createHarness();
-    const first = harness.session.execute(createRequest());
-    await waitForPrompt(await kernelAt(harness.kernels));
-    harness.kernels[0].output('one');
-    harness.kernels[0].completePrompt();
-    await collect(first.events);
-
-    const second = harness.session.execute(createRequest());
-    await waitForPrompt(await kernelAt(harness.kernels), 2);
-    harness.kernels[0].output('two');
-    harness.kernels[0].completePrompt();
-    await collect(second.events);
-
-    expect(harness.kernels).toHaveLength(1);
-    expect(harness.kernels[0].openedResumeIds).toEqual([undefined]);
-  });
-
-  it.each([
-    ['passive', 'passive'],
-    ['read-only', 'readonly'],
-    ['provider-default', 'managed'],
-    ['unrestricted', 'managed'],
-  ] as const)('maps %s tool policy to the %s managed profile', async (kind, profile) => {
-    const harness = createHarness(createConfig({
-      lifecycle: kind === 'provider-default' ? 'persistent' : 'ephemeral',
-      nativePersistence: kind === 'provider-default'
-        ? 'enabled'
-        : 'disabled-if-supported',
-    }));
-    const run = harness.session.execute(createRequest({
-      toolPolicy: { kind },
-    }));
-    await waitForPrompt(await kernelAt(harness.kernels));
-    harness.kernels[0].output('ok');
-    harness.kernels[0].completePrompt();
-    await collect(run.events);
-
-    expect(harness.kernels[0].connectCalls[0]).toMatchObject({ profile });
-  });
-
-  it('fails an arbitrary tool allow-list closed without enabling unnamed read tools', async () => {
-    const harness = createHarness(createConfig({
-      lifecycle: 'ephemeral',
-      nativePersistence: 'disabled-if-supported',
-    }));
-    const run = harness.session.execute(createRequest({
-      toolPolicy: { kind: 'allow-list', names: ['custom-approved-tool'] },
-    }));
-    await waitForPrompt(await kernelAt(harness.kernels));
-    harness.kernels[0].output('ok');
-    harness.kernels[0].completePrompt();
-    await collect(run.events);
-
-    expect(harness.kernels[0].connectCalls[0]).toMatchObject({
-      profile: 'passive',
-    });
-    expect(harness.kernels[0].connectCalls[0]).not.toMatchObject({
-      profile: 'readonly',
-    });
-  });
 
   it.each([['normal', false], ['yolo', true]] as const)('applies model, thought level, and the native build agent with %s approvals', async (permissionMode, autoApprove) => {
     const harness = createHarness();
@@ -800,20 +585,6 @@ describe('OpencodeExecutionBackend', () => {
     expect(harness.kernels[0].autoApproveCalls).toEqual([autoApprove]);
   });
 
-  it('declines a steer that the native kernel does not admit', async () => {
-    const harness = createHarness();
-    if (!isSteerableExecutionSession(harness.session)) throw new Error('Missing steering');
-    const run = harness.session.execute(createRequest());
-    await waitForPrompt(await kernelAt(harness.kernels));
-
-    await expect(harness.session.steer(createRequest({
-      input: [{ type: 'text', text: 'also this' }],
-    }))).resolves.toBe(false);
-    harness.kernels[0].completePrompt();
-
-    expect((await collect(run.events)).at(-1)?.type).toBe('turn_completed');
-    expect(harness.kernels[0].prompts).toHaveLength(1);
-  });
 
   it('cancels a request whose signal aborted before execution without starting native work', async () => {
     const harness = createHarness();

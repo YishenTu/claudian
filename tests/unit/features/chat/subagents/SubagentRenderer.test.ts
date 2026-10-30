@@ -12,8 +12,6 @@ import {
   updateSubagentBlock,
 } from '@/features/chat/subagents/SubagentRenderer';
 
-
-
 const getTextByClass = (el: MockElement, cls: string): string[] => {
   const results: string[] = [];
   const visit = (node: MockElement) => {
@@ -35,35 +33,6 @@ describe('Sync Subagent Renderer', () => {
   });
 
   describe('createSubagentBlock', () => {
-    it('should toggle expand/collapse on header click', () => {
-      const state = createSubagentBlock(parentEl as any, { id: 'task-1', status: 'running', toolCalls: [], isExpanded: false, ...{ description: 'Test task' } });
-
-      // Initially collapsed
-      expect(state.headerEl.getAttribute('aria-expanded')).toBe('false');
-      expect((state.wrapperEl as any).hasClass('expanded')).toBe(false);
-      expect((state.contentEl as any).style.display).toBe('none');
-
-      expect(state.headerEl.getAttribute('role')).toBe('button');
-      expect(state.headerEl.getAttribute('tabindex')).toBe('0');
-      expect(state.headerEl.getAttribute('aria-expanded')).toBe('false');
-      expect(state.headerEl.getAttribute('aria-label')).toContain('click to expand');
-
-      // Trigger click
-      (state.headerEl as any).click();
-
-      // Should be expanded
-      expect(state.headerEl.getAttribute('aria-expanded')).toBe('true');
-      expect((state.wrapperEl as any).hasClass('expanded')).toBe(true);
-      expect((state.contentEl as any).hasClass('claudian-hidden')).toBe(false);
-      expect(state.headerEl.getAttribute('aria-expanded')).toBe('true');
-
-      // Click again to collapse
-      (state.headerEl as any).click();
-      expect(state.headerEl.getAttribute('aria-expanded')).toBe('false');
-      expect((state.wrapperEl as any).hasClass('expanded')).toBe(false);
-      expect((state.contentEl as any).style.display).toBe('none');
-      expect(state.headerEl.getAttribute('aria-expanded')).toBe('false');
-    });
 
     it('should show description in label', () => {
       const state = createSubagentBlock(parentEl as any, { id: 'task-1', status: 'running', toolCalls: [], isExpanded: false, ...{ description: 'My task description' } });
@@ -121,25 +90,6 @@ describe('keyboard navigation', () => {
     parentEl = createMockEl('div');
   });
 
-  it('should support keyboard navigation (Enter/Space) on createSubagentBlock', () => {
-    const state = createSubagentBlock(parentEl as any, { id: 'task-1', status: 'running', toolCalls: [], isExpanded: false, ...{ description: 'Test task' } });
-
-    // Enter expands the registered header.
-    const enterEvent = { key: 'Enter', preventDefault: vi.fn() };
-    (state.headerEl as any).dispatchEvent({ type: 'keydown', ...enterEvent });
-
-    // The handler should have been called and expanded
-    expect(state.headerEl.getAttribute('aria-expanded')).toBe('true');
-    expect((state.wrapperEl as any).hasClass('expanded')).toBe(true);
-
-    // Space to collapse
-    const spaceEvent = { key: ' ', preventDefault: vi.fn() };
-    (state.headerEl as any).dispatchEvent({ type: 'keydown', ...spaceEvent });
-
-    expect(state.headerEl.getAttribute('aria-expanded')).toBe('false');
-    expect((state.wrapperEl as any).hasClass('expanded')).toBe(false);
-  });
-
   it('should support keyboard navigation (Enter/Space) on renderStoredSubagent', () => {
     const subagent: SubagentInfo = {
       id: 'task-1',
@@ -172,43 +122,6 @@ describe('Async Subagent Renderer', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     parentEl = createMockEl('div');
-  });
-
-  describe('inline display behavior', () => {
-    it('should toggle expansion on repeated clicks', () => {
-      const state = createAsyncSubagentBlock(parentEl as any, { id: 'task-1', status: 'running', toolCalls: [], isExpanded: false, mode: 'async', asyncStatus: 'pending', ...{ description: 'Test task' } });
-
-      expect(state.headerEl.getAttribute('aria-expanded')).toBe('false');
-      expect((state.wrapperEl as any).hasClass('expanded')).toBe(false);
-      expect(state.headerEl.getAttribute('aria-label')).toContain('click to expand');
-
-      // Click to expand
-      (state.headerEl as any).click();
-      expect(state.headerEl.getAttribute('aria-expanded')).toBe('true');
-      expect((state.wrapperEl as any).hasClass('expanded')).toBe(true);
-
-      // Click to collapse
-      (state.headerEl as any).click();
-      expect(state.headerEl.getAttribute('aria-expanded')).toBe('false');
-    });
-
-    it('should expand when Enter key is pressed', () => {
-      const state = createAsyncSubagentBlock(parentEl as any, { id: 'task-1', status: 'running', toolCalls: [], isExpanded: false, mode: 'async', asyncStatus: 'pending', ...{ description: 'Test' } });
-
-      const enterEvent = { key: 'Enter', preventDefault: vi.fn() };
-      (state.headerEl as any).dispatchEvent({ type: 'keydown', ...enterEvent });
-
-      expect(state.headerEl.getAttribute('aria-expanded')).toBe('true');
-    });
-
-    it('should expand when Space key is pressed', () => {
-      const state = createAsyncSubagentBlock(parentEl as any, { id: 'task-1', status: 'running', toolCalls: [], isExpanded: false, mode: 'async', asyncStatus: 'pending', ...{ description: 'Test' } });
-
-      const spaceEvent = { key: ' ', preventDefault: vi.fn() };
-      (state.headerEl as any).dispatchEvent({ type: 'keydown', ...spaceEvent });
-
-      expect(state.headerEl.getAttribute('aria-expanded')).toBe('true');
-    });
   });
 
   it('shows label immediately and initializing status text', () => {

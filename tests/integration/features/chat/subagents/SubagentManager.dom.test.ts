@@ -807,3 +807,59 @@ it.each(['sync', 'async', 'partial-sync'] as const)('records a %s task and its r
   expect(parent.textContent).toContain('Research complete.');
   expect(JSON.stringify(message)).toBe(model);
 });
+
+
+it('renders a managed sync task through child-tool completion and the full SDK result', async () => {
+  const parent = document.body.createDiv();
+  const manager = new SubagentManager(() => undefined, new ClaudeTaskResultInterpreter());
+  cleanups.push(() => manager.clear());
+  const ui = within(parent);
+  expect(manager.handleTaskToolUse('task-sdk', { run_in_background: false, description: 'Read report' }, parent).action)
+    .toBe('created_sync');
+  fireEvent.click(ui.getByRole('button', { name: /Subagent task: Read report/ }));
+  const tool: ToolCallInfo = { id: 'read-1', name: 'Read', input: { file_path: 'test.md' }, status: 'running', isExpanded: false };
+  manager.addSyncToolCall('task-sdk', tool);
+  const read = ui.getByRole('button', { name: /^Read.*test.md/ });
+  expect(read).toBeDefined();
+  manager.updateSyncToolResult('task-sdk', 'read-1', { ...tool, status: 'completed', result: 'file content' });
+  fireEvent.click(read);
+  expect(ui.getByText('file content')).toBeDefined();
+
+  const result = 'Full sync subagent result with multiple lines.\n\nSecond paragraph.';
+  const info = manager.finalizeSyncSubagent('task-sdk', 'truncated', false, {
+    rawOutput: { status: 'completed', content: [{ type: 'text', text: result }], agentId: 'sdk-agent' },
+  });
+  expect(info).toMatchObject({ id: 'task-sdk', status: 'completed', result });
+  expect(manager.getSyncSubagent('task-sdk')).toBeUndefined();
+  fireEvent.click(ui.getByRole('button', { name: /^Result/ }));
+  expect(ui.getByText(/Full sync subagent result with multiple lines/).textContent).toContain(result);
+  expect(await axe(parent)).toHaveNoViolations();
+});
+
+
+it.each(['sync', 'async'] as const)('opens and closes managed %s task details by mouse and keyboard', async mode => {
+  const parent = document.body.createDiv();
+  const manager = new SubagentManager(() => undefined, new ClaudeTaskResultInterpreter());
+  cleanups.push(() => manager.clear());
+  manager.handleTaskToolUse('task', { description: 'Test task', run_in_background: mode === 'async' }, parent);
+  const header = within(parent).getByRole('button', { name: /(?:Subagent|Background) task: Test task/ });
+  const wrapper = header.parentElement!;
+  const content = wrapper.querySelector<HTMLElement>('.claudian-subagent-content')!;
+  expect(header.getAttribute('tabindex')).toBe('0');
+  expect(header.getAttribute('aria-label')).toContain('click to expand');
+  const expectExpanded = (expanded: boolean) => {
+    expect(header.getAttribute('aria-expanded')).toBe(String(expanded));
+    expect(wrapper.classList.contains('expanded')).toBe(expanded);
+    expect(content.classList.contains('claudian-hidden')).toBe(!expanded);
+  };
+  expectExpanded(false);
+  for (const input of ['click', 'Enter', ' '] as const) {
+    if (input === 'click') fireEvent.click(header);
+    else fireEvent.keyDown(header, { key: input });
+    expectExpanded(true);
+    if (input === 'click') fireEvent.click(header);
+    else fireEvent.keyDown(header, { key: input === 'Enter' ? ' ' : 'Enter' });
+    expectExpanded(false);
+  }
+  expect(await axe(parent)).toHaveNoViolations();
+});

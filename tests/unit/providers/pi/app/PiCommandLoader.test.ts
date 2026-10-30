@@ -43,25 +43,4 @@ describe('PiCommandLoader', () => {
     });
     expect(metadataProbe.load).not.toHaveBeenCalled();
   });
-
-  it('loads commands through a no-session metadata probe', async () => {
-    const metadataProbe = {
-      load: vi.fn().mockResolvedValue([{
-        content: '',
-        id: 'pi:skill',
-        kind: 'skill',
-        name: 'skill',
-        source: 'sdk',
-      }]),
-    };
-    const loader = new PiCommandLoader(metadataProbe as any);
-
-    await expect(loader.loadCommands(createContext({
-      allowIsolatedMetadataCreation: true,
-    }))).resolves.toMatchObject({
-      items: [expect.objectContaining({ name: 'skill' })],
-      status: 'ready',
-    });
-    expect(metadataProbe.load).toHaveBeenCalledWith('/vault', undefined);
-  });
 });
