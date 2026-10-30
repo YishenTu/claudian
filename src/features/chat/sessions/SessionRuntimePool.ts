@@ -74,6 +74,17 @@ export class SessionRuntimePool {
   getAttachment(id: string): SessionAttachment | null { return this.conversations.get(id)?.attachment ?? null; }
   getAll(): readonly ChatSessionRuntime[] { return [...this.records.keys()]; }
 
+  /** Reads without a main model must not leave history outside the pool's retention budget. */
+  async releaseUnownedHistory(id: string): Promise<void> {
+    const canRelease = () => !this.closing && ![...this.records.keys()].some(
+      runtime => runtime.conversationId === id && runtime.peekModel,
+    );
+    // Model hydration must not wait on a persistence queue just to decline cleanup.
+    // Read runtime identities directly: a draft's promotion may not be published yet.
+    if (!canRelease()) return;
+    await this.deps.releaseHistory(id, canRelease);
+  }
+
   /** Let first-turn shells adopt their draft runtime before another caller claims a published ID. */
   async awaitConversationCreations(): Promise<void> {
     await Promise.allSettled([...this.records.keys()]

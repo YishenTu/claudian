@@ -178,8 +178,14 @@ export class ClaudianChatFeatureHost extends ClaudianFeatureHost implements Chat
     return this.domains.conversations.updateConversation(id, updates);
   }
 
-  getConversationById(id: string): Promise<Conversation | null> {
-    return this.domains.conversations.getConversationById(id);
+  async getConversationById(id: string): Promise<Conversation | null> {
+    const conversation = await this.domains.conversations.getConversationById(id);
+    if (conversation) {
+      // The detached snapshot remains readable after releasing the repository's history.
+      // Cleanup failure must not turn a successful read into an unavailable conversation.
+      await this.domains.sessionRuntimes.releaseUnownedHistory(id).catch(() => undefined);
+    }
+    return conversation;
   }
 
   getCachedConversation(id: string): Conversation | null {

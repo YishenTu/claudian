@@ -1,3 +1,4 @@
+import { deferred } from '@test/helpers/ChatInputHarness';
 import { DEFAULT_CLAUDIAN_SETTINGS as DEFAULT_SETTINGS } from '@test/helpers/defaultSettings';
 import { grokEnvironmentHash, writeGrokCatalog } from '@test/helpers/providers/grokSettings';
 import { testClock } from '@test/helpers/testClock';
@@ -20,6 +21,8 @@ import { isVersionedRuntimeInputFingerprint } from '@/core/providers/settings/Ru
 import { LoopbackSessionToolServer } from '@/core/session-tools/LoopbackSessionToolServer';
 import { TOOL_SUBAGENT } from '@/core/tools/toolNames';
 import { type ClaudianSettings, type Conversation, type SessionMetadata, VIEW_TYPE_CLAUDIAN } from '@/core/types';
+import { ConversationTitleGeneration } from '@/features/chat/conversation/ConversationTitleGeneration';
+import { resolveSessionMentions } from '@/features/chat/input/resolveSessionMentions';
 import { SessionMessagingService } from '@/features/chat/session-messaging/SessionMessagingService';
 import { ZenModeController } from '@/features/chat/zen/ZenModeController';
 import * as sdkSession from '@/providers/claude/history/ClaudeHistoryStore';
@@ -1209,6 +1212,136 @@ describe('ClaudianPlugin', () => {
         .toEqual(expect.any(Number));
     });
 
+  });
+
+  describe('history retention after reads', () => {
+    async function setupHistoryReads() {
+      await plugin.onload();
+      const host = chatHostOf();
+      const repository = repositoryOf();
+      const at = testClock()().getTime();
+      const messages: Conversation['messages'] = [
+        { id: 'prompt', role: 'user', content: 'Inspect the note', timestamp: at },
+        { id: 'reply', role: 'assistant', content: 'Finished', timestamp: at, toolCalls: [
+          { id: 'tool', name: 'shell', input: {}, status: 'completed', result: 'Full tool output' },
+        ] },
+      ];
+      const hydrate = vi.fn(async () => ({ messages: structuredClone(messages) }));
+      vi.spyOn(ProviderRegistry, 'getConversationHistoryService').mockReturnValue({
+        hydrateConversationHistory: hydrate,
+        resolveSessionIdForConversation: conversation => conversation?.sessionId ?? null,
+        isPendingForkConversation: () => false,
+        buildForkProviderState: () => ({}),
+      });
+      const ids = Array.from({ length: 5 }, (_, index) => `history-read-${index}`);
+      repository.replaceAll(ids.map(id => ({
+        id, providerId: 'codex', title: id, sessionId: id, messages: [], createdAt: at, lastActivityAt: at,
+      })));
+      return { host, repository, ids, hydrate, messages };
+    }
+
+    it.each(['read', 'last reply', 'mention', 'title'])('releases unowned history after %s access', async kind => {
+      const { host, repository, ids } = await setupHistoryReads();
+      const service = new SessionMessagingService({ getHost: () => host, getActiveConversationId: () => null, refreshModelControls: () => {} });
+      await host.mutateSettings(settings => { settings.enableAutoTitleGeneration = true; });
+      vi.spyOn(ProviderRegistry, 'resolveTitleGenerationSelection').mockReturnValue({ providerId: 'claude', model: 'haiku' });
+      const titles = new ConversationTitleGeneration({ host, getService: () => ({
+        generateTitle: async (id, _content, callback) => { await callback(id, { success: true, title: 'Generated' }); },
+        cancel() {},
+      }) });
+      try {
+        for (const id of ids) {
+          let result: string;
+          if (kind === 'read') {
+            const binding = service.bindSessionTools('caller');
+            result = (await binding.port.read({ sessionId: id }, new AbortController().signal)).content;
+            binding.dispose();
+          } else if (kind === 'last reply') {
+            result = await service.readLastReply(id);
+          } else if (kind === 'mention') {
+            result = (await resolveSessionMentions(host, `@[session](claudian-session:${id})`, new AbortController().signal)).references[0].id;
+          } else {
+            await titles.regenerate(id);
+            result = repository.getSummary(id)?.title ?? '';
+          }
+          expect(result).toContain(kind === 'mention' ? id : kind === 'title' ? 'Generated' : 'Finished');
+          expect(host.sessionRuntimes.get(id)).toBeNull();
+          expect(repository.getSync(id)?.messages).toEqual([]);
+        }
+      } finally { await service.dispose(); }
+    });
+
+    it('preserves a runtime model history, then releases subsequent reads after the model is evicted', async () => {
+      const { host, repository, ids, messages } = await setupHistoryReads();
+      const runtime = host.sessionRuntimes.ensure({ conversationId: ids[0], providerId: 'codex', draftModel: null });
+      const model = await runtime.ensureModel();
+      expect(model.state.messages).toEqual(messages);
+      expect((await host.getConversationById(ids[0]))?.messages).toEqual(messages);
+      expect(repository.getSync(ids[0])?.messages).toEqual(messages);
+      runtime.notifyChanged();
+      await waitForCondition(() => runtime.peekModel === null);
+      expect(host.sessionRuntimes.get(ids[0])).toBe(runtime);
+      expect((await host.getConversationById(ids[0]))?.messages).toEqual(messages);
+      expect(repository.getSync(ids[0])?.messages).toEqual([]);
+    });
+
+    it('returns both overlapping read snapshots and releases the cached history', async () => {
+      const { host, repository, ids, hydrate, messages } = await setupHistoryReads();
+      const started = deferred<void>();
+      const finish = deferred<void>();
+      hydrate.mockImplementationOnce(async () => { started.resolve(); await finish.promise; return { messages }; });
+      const first = host.getConversationById(ids[0]);
+      await started.promise;
+      const second = host.getConversationById(ids[0]);
+      finish.resolve();
+      const snapshots = await Promise.all([first, second]);
+      expect(snapshots.map(snapshot => snapshot?.messages)).toEqual([messages, messages]);
+      expect(repository.getSync(ids[0])?.messages).toEqual([]);
+    });
+
+    it('preserves a runtime that starts hydrating during an unowned history read', async () => {
+      const { host, repository, ids, hydrate, messages } = await setupHistoryReads();
+      const started = deferred<void>();
+      const finish = deferred<void>();
+      hydrate.mockImplementationOnce(async () => { started.resolve(); await finish.promise; return { messages }; });
+      const reading = host.getConversationById(ids[0]);
+      await started.promise;
+      const { attachment } = host.sessionRuntimes.acquire({ conversationId: ids[0], providerId: 'codex', draftModel: null }, { reveal() {} });
+      const loading = attachment.runtime.ensureModel();
+      finish.resolve();
+      const [snapshot, model] = await Promise.all([reading, loading]);
+      expect(snapshot?.messages).toEqual(messages);
+      expect(model.state.messages).toEqual(messages);
+      expect(repository.getSync(ids[0])?.messages).toEqual(messages);
+    });
+
+    it('rechecks model ownership when a release waits behind a metadata save', async () => {
+      const { host, repository, ids, messages } = await setupHistoryReads();
+      await repository.getById(ids[0]);
+      const writing = deferred<void>();
+      const finish = deferred<void>();
+      vi.spyOn(getConversationPersistence(plugin), 'saveMetadata').mockImplementationOnce(async () => { writing.resolve(); await finish.promise; });
+      const saving = host.renameConversation(ids[0], 'Renamed');
+      await writing.promise;
+      const reading = host.getConversationById(ids[0]);
+      await new Promise(resolve => setImmediate(resolve));
+      const { attachment } = host.sessionRuntimes.acquire({ conversationId: ids[0], providerId: 'codex', draftModel: null }, { reveal() {} });
+      const model = attachment.runtime.model;
+      try {
+        expect(await completesWhilePending(host.getConversationById(ids[0]))).toBe(true);
+      } finally { finish.resolve(); await saving; }
+      expect((await reading)?.messages).toEqual(messages);
+      expect(repository.getSync(ids[0])?.messages).toEqual(messages);
+      await model.hydrate();
+      expect(repository.getSync(ids[0])?.messages).toEqual(messages);
+    });
+
+    it('returns the successful snapshot even if history cleanup fails', async () => {
+      const { host, repository, ids, messages } = await setupHistoryReads();
+      const release = vi.spyOn(repository, 'releaseHistory').mockRejectedValueOnce(new Error('History projection unavailable'));
+      expect((await host.getConversationById(ids[0]))?.messages).toEqual(messages);
+      expect(release).toHaveBeenCalledOnce();
+    });
   });
 
   describe('onunload', () => {
