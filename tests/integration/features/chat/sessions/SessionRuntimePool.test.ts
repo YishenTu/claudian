@@ -128,6 +128,19 @@ describe('session ownership across presentations', () => {
   it('keeps a held detached draft reachable by its key, through promotion, until the hold ends', async () => {
     const { pool } = setup();
     const owner = { reveal: vi.fn() };
+    // A presentation can reacquire a cold draft before the queued eviction begins.
+    const transient = pool.acquire({ conversationId: null, providerId: 'claude', draftModel: null }, owner).attachment;
+    pool.release(transient);
+    const rebound = pool.acquire({ conversationId: null, providerId: 'claude', draftModel: null, draftSessionKey: transient.runtime.sessionKey }, owner).attachment;
+    await nextTask();
+    expect(rebound.runtime).toBe(transient.runtime);
+    expect(rebound.runtime.isDisposed).toBe(false);
+    pool.release(rebound);
+    // Work admitted before eviction can finish while that attempt still owns the retry.
+    await rebound.runtime.turns.run(async () => undefined);
+    await nextTask();
+    expect(rebound.runtime.isDisposed).toBe(true);
+
     const draft = pool.acquire({ conversationId: null, providerId: 'claude', draftModel: 'model' }, owner).attachment;
     const runtime = draft.runtime;
     runtime.providerSelections.set('claude', { permissionMode: 'normal', serviceTier: 'default' });

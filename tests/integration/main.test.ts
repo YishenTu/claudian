@@ -1360,6 +1360,8 @@ describe('ClaudianPlugin', () => {
         expect(h.repository.getSync(h.id)?.messages).toEqual(h.messages);
 
         h.finish.resolve();
+        await h.released.promise;
+        expect(h.repository.getSync(h.id)?.messages).toEqual(h.messages);
         await completion;
         expect(completed).toBe(true);
         expect(h.runtime.peekModel).toBeNull();

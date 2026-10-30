@@ -163,7 +163,98 @@ it('keeps a model when history release declines and releases unrelated unowned h
   await destroyTab(second);
 });
 
-it.each([false, true])('joins retired provider cleanup and drains other sessions (cleanup fails: %s)', async fails => {
+it.each(['unviewed', 'attached'] as const)('does not retry failed history cleanup on an unrelated %s session change', async kind => {
+  const failure = new Error('History storage unavailable');
+  const onError = vi.fn();
+  const h = await setup({ retainedDetachedSessions: 1, onError, releaseHistory: async () => { throw failure; } });
+  const identity = { conversationId: 'other', providerId: 'claude', draftModel: null } as const;
+  let other;
+  if (kind === 'attached') {
+    const first = h.pool.acquire(identity, { reveal() {} });
+    h.pool.release(first.attachment);
+    await new Promise<void>(resolve => setImmediate(resolve));
+    other = h.pool.acquire(identity, { reveal() {} }).attachment.runtime;
+  } else {
+    other = h.pool.ensure(identity);
+  }
+  const runtime = h.pool.ensure({ conversationId: 'conversation', providerId: 'claude', draftModel: null });
+  const model = await runtime.ensureModel();
+  runtime.notifyChanged();
+  await new Promise<void>(resolve => setImmediate(resolve));
+  expect(onError).toHaveBeenCalledTimes(1);
+  expect(onError).toHaveBeenCalledWith(failure);
+
+  other.attention.setActionRequired(true);
+  await new Promise<void>(resolve => setImmediate(resolve));
+  expect(onError).toHaveBeenCalledTimes(1);
+  expect(runtime.peekModel === model).toBe(true);
+});
+
+it.each(['detach', 'reattach'] as const)('keeps history cleanup ownership across another presentation: %s', async action => {
+  const entered = deferred<void>();
+  const finish = deferred<void>();
+  let attempts = 0;
+  const h = await setup({ retainedDetachedSessions: 1, releaseHistory: async (_id, canRelease) => {
+    const released = canRelease();
+    if (++attempts === 1) { entered.resolve(); await finish.promise; }
+    return released;
+  } });
+  const runtime = h.pool.ensure({ conversationId: 'conversation', providerId: 'claude', draftModel: null });
+  const model = await runtime.ensureModel();
+  let shutdown: Promise<void> | undefined;
+  let drained = false;
+  try {
+    runtime.notifyChanged();
+    await entered.promise;
+    const other = h.pool.acquire({ conversationId: action === 'reattach' ? 'conversation' : 'other', providerId: 'claude', draftModel: null }, { reveal() {} });
+    // A reserved attachment owns its model even if history released before it was acquired.
+    if (action === 'reattach') finish.resolve();
+    else h.pool.release(other.attachment);
+    await new Promise<void>(resolve => setImmediate(resolve));
+    expect(runtime.peekModel === model).toBe(true);
+    if (action === 'reattach') h.pool.release(other.attachment);
+    shutdown = h.pool.dispose().then(() => { drained = true; });
+    await new Promise<void>(resolve => setImmediate(resolve));
+    expect(drained).toBe(action === 'reattach');
+  } finally {
+    finish.resolve();
+    await shutdown;
+  }
+  expect(runtime.isDisposed).toBe(true);
+});
+
+it('reports a retirement failure to its caller once when retirement interrupts history cleanup', async () => {
+  const entered = deferred<void>();
+  const finish = deferred<void>();
+  const onError = vi.fn();
+  const h = await setup({ onError, releaseHistory: async (_id, canRelease) => {
+    entered.resolve();
+    await finish.promise;
+    return canRelease();
+  } });
+  const first = await h.attach();
+  await first.session.runtime.model.ensureExecutionInitialized();
+  const native = h.backend.latest;
+  const failure = new Error('Native disposal failed');
+  const dispose = native.dispose.bind(native);
+  vi.spyOn(native, 'dispose').mockImplementation(async () => { await dispose(); throw failure; });
+  await destroyTab(first);
+  await entered.promise;
+  const retirement = h.pool.retire('conversation').then(() => null, (error: unknown) => error);
+  finish.resolve();
+  expect(await retirement).toBeInstanceOf(AggregateError);
+  await new Promise<void>(resolve => setImmediate(resolve));
+  expect(onError).not.toHaveBeenCalled();
+  expect(native.disposeCalls).toBe(1);
+  expect(first.session.runtime.isDisposed).toBe(true);
+  await expect(h.pool.dispose()).resolves.toBeUndefined();
+});
+
+it.each([
+  { fails: false, finishBeforeShutdown: false },
+  { fails: true, finishBeforeShutdown: false },
+  { fails: true, finishBeforeShutdown: true },
+])('joins retired provider cleanup and drains other sessions ($fails, cleanup already finished: $finishBeforeShutdown)', async ({ fails, finishBeforeShutdown }) => {
   const onError = vi.fn<(error: unknown) => void>();
   const h = await setup({ onError });
   const first = await h.attach();
@@ -191,6 +282,11 @@ it.each([false, true])('joins retired provider cleanup and drains other sessions
     signal.addEventListener('abort', () => otherCancelled.resolve(), { once: true });
     await finishOther.promise;
   });
+  if (finishBeforeShutdown) {
+    releaseCleanup.resolve();
+    await new Promise<void>(resolve => setImmediate(resolve));
+  }
+  expect(onError).toHaveBeenCalledTimes(Number(finishBeforeShutdown));
   let shutdownFinished = false;
   const shutdown = h.pool.dispose();
   const result = shutdown.then(
@@ -202,7 +298,7 @@ it.each([false, true])('joins retired provider cleanup and drains other sessions
     finishOther.resolve();
     await work;
     await new Promise<void>(resolve => setImmediate(resolve));
-    expect(shutdownFinished).toBe(false);
+    expect(shutdownFinished).toBe(finishBeforeShutdown);
   } finally {
     finishOther.resolve();
     releaseCleanup.resolve();
@@ -214,8 +310,8 @@ it.each([false, true])('joins retired provider cleanup and drains other sessions
   expect(h.pool.getAll()).toEqual([]);
   const causes = (value: unknown): unknown[] => value instanceof AggregateError
     ? value.errors.flatMap(causes) : value === null ? [] : [value];
-  expect(error instanceof AggregateError).toBe(fails);
-  expect(causes(error)).toEqual(fails ? [failure] : []);
+  expect(error instanceof AggregateError).toBe(fails && !finishBeforeShutdown);
+  expect(causes(error)).toEqual(fails && !finishBeforeShutdown ? [failure] : []);
   expect(onError).toHaveBeenCalledTimes(Number(fails));
   expect(onError.mock.calls.flatMap(([value]) => causes(value))).toEqual(fails ? [failure] : []);
 });
@@ -469,6 +565,33 @@ it('does not save a deleted conversation still attached when the plugin shuts do
 
   expect(h.saves).toEqual([]);
   expect(h.pool.get('conversation')).toBeNull();
+  await destroyTab(tab);
+});
+
+it('does not republish a draft that finishes conversation creation during shutdown', async () => {
+  const h = await setup();
+  const creating = deferred<Conversation>();
+  const creationStarted = deferred<void>();
+  vi.spyOn(h.plugin, 'createConversation').mockImplementation(() => {
+    creationStarted.resolve();
+    return creating.promise;
+  });
+  const tab = await h.attach({ blank: true });
+  tab.controllers.drafts.restore('main', { content: 'Create before shutdown' });
+  const sending = tab.controllers.inputController.sendMessage();
+  await creationStarted.promise;
+  const shutdown = h.pool.dispose();
+  try {
+    await new Promise<void>(resolve => setImmediate(resolve));
+    expect(h.pool.getAll()).toEqual([]);
+  } finally {
+    creating.resolve({ id: 'created-during-shutdown', providerId: 'claude', sessionId: null, title: 'Created', messages: [], createdAt: testDate().getTime(), lastActivityAt: testDate().getTime() });
+    await Promise.all([sending, shutdown]);
+  }
+  expect(tab.session.runtime.conversationId).toBe('created-during-shutdown');
+  expect(tab.session.runtime.isDisposed).toBe(true);
+  expect(h.pool.get('created-during-shutdown')).toBeNull();
+  expect(h.pool.getAll()).toEqual([]);
   await destroyTab(tab);
 });
 

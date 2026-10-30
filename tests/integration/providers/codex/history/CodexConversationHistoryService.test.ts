@@ -12,6 +12,7 @@ import { encodeRecoveryPrompt } from '@/core/prompt/recoveryPrompt';
 import type { ChatMessage, Conversation } from '@/core/types';
 import { codexSettingsReconciler } from '@/providers/codex/env/CodexSettingsReconciler';
 import { CodexConversationHistoryService } from '@/providers/codex/history/CodexConversationHistoryService';
+import { findCodexSessionFileAsync, parseCodexSessionTurns, readCodexSessionRecords } from '@/providers/codex/history/CodexHistoryStore';
 import { getCodexState } from '@/providers/codex/types';
 
 
@@ -27,6 +28,51 @@ describe('CodexConversationHistoryService', () => {
   afterEach(() => {
     homeDirSpy.mockRestore();
     fs.rmSync(tempHome, { recursive: true, force: true });
+  });
+
+  it('hydrates a direct session file under the default root and skips only malformed JSONL lines', async () => {
+    const root = path.join(tempHome, '.codex', 'sessions');
+    fs.mkdirSync(root, { recursive: true });
+    const file = path.join(root, 'thread.jsonl');
+    fs.writeFileSync(file, '');
+    expect(await readCodexSessionRecords(file)).toEqual([]);
+    const records = [
+      { type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'Continue' }] } },
+      { type: 'response_item', payload: { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'Recovered answer' }] } },
+    ].map((record, seconds) => JSON.stringify({ timestamp: testDate({ seconds }).toISOString(), ...record }));
+    const content = [records[0], '{"type":"response_item","payload":', records[1]].join('\n');
+    fs.writeFileSync(file, content);
+    const fromString = parseCodexSessionTurns(content).flatMap(turn => turn.messages);
+    const result = await new CodexConversationHistoryService().hydrateConversationHistory({
+      sessionId: 'thread', providerState: { threadId: 'thread' }, messages: [],
+    }, null);
+    expect(result.messages).toEqual(fromString);
+    expect(result.messages?.map(message => [message.role, message.content])).toEqual([
+      ['user', 'Continue'], ['assistant', 'Recovered answer'],
+    ]);
+    expect(result.providerState).toMatchObject({ sessionFilePath: file });
+    expect(await findCodexSessionFileAsync('thread')).toBe(file);
+  });
+
+  it('continues transcript discovery in a readable sibling after a directory fails', async () => {
+    const root = path.join(tempHome, '.codex', 'sessions');
+    const readable = path.join(root, 'readable');
+    const denied = path.join(root, 'denied');
+    fs.mkdirSync(readable, { recursive: true });
+    fs.mkdirSync(denied);
+    const file = path.join(readable, 'rollout-thread.jsonl');
+    fs.writeFileSync(file, '');
+    const visited: string[] = [];
+    const result = await findCodexSessionFileAsync('thread', root, 10_000, {
+      readDirectory: async directory => {
+        visited.push(directory);
+        if (directory === denied) throw Object.assign(new Error('Denied'), { code: 'EACCES' });
+        const entries = await fsPromises.readdir(directory, { withFileTypes: true });
+        return directory === root ? entries.sort((a, b) => b.name.localeCompare(a.name)) : entries;
+      },
+    });
+    expect(visited).toEqual([root, denied, readable]);
+    expect(result).toBe(file);
   });
 
   it.each(['file://vault/path', 'file:///vault/100%notes'])(

@@ -8,10 +8,12 @@ import { pathToFileURL } from 'url';
 import { encodeRecoveryPrompt } from '@/core/prompt/recoveryPrompt';
 import { encodeSessionMessage } from '@/core/session-tools/sessionMessageEnvelope';
 import {
+  CodexHistoryDeadlineError,
   deriveCodexSessionsRootFromSessionPath,
   findCodexSessionFileAsync,
   parseCodexSessionFileAsync,
   parseCodexSessionTurns,
+  runBeforeDeadline,
 } from '@/providers/codex/history/CodexHistoryStore';
 
 const FIXTURES_DIR = path.join(__dirname, '../../../../fixtures/providers/codex/history');
@@ -104,6 +106,29 @@ describe('CodexHistoryStore', () => {
     }
   });
 
+  it('rejects an expired lookup before starting I/O and clears deadline timers after settlement', async () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(testDate());
+      const operation = vi.fn(async () => 'found');
+      await expect(runBeforeDeadline(operation, Date.now())).rejects.toBeInstanceOf(CodexHistoryDeadlineError);
+      expect(operation).not.toHaveBeenCalled();
+      await expect(runBeforeDeadline(operation, Date.now() + 10_000)).resolves.toBe('found');
+      expect(vi.getTimerCount()).toBe(0);
+      const failure = Object.assign(new Error('Directory denied'), { code: 'EACCES' });
+      await expect(runBeforeDeadline(async () => { throw failure; }, Date.now() + 10_000)).rejects.toBe(failure);
+      expect(vi.getTimerCount()).toBe(0);
+    } finally { vi.useRealTimers(); }
+  });
+
+  it.each(['../outside', 'thread/../../outside', 'thread.jsonl', 'thread\n'])('rejects unsafe session id %j before filesystem access', async threadId => {
+    const pathExists = vi.fn(async () => true);
+    const readDirectory = vi.fn(async () => []);
+    await expect(findCodexSessionFileAsync(threadId, '/vault/sessions', 10_000, { pathExists, readDirectory })).resolves.toBeNull();
+    expect(pathExists).not.toHaveBeenCalled();
+    expect(readDirectory).not.toHaveBeenCalled();
+  });
+
   it('ignores retired event-wrapper transcripts', () => {
     const content = [
       { type: 'event', event: { type: 'turn.started' } },
@@ -124,6 +149,7 @@ describe('CodexHistoryStore', () => {
       ['\\\\wsl$\\Ubuntu\\home\\user\\.codex\\sessions\\2026\\04\\14\\rollout-thread.jsonl', '\\\\wsl$\\Ubuntu\\home\\user\\.codex\\sessions'],
       ['//wsl$\\Ubuntu\\home\\user\\.codex\\sessions\\2026\\04\\14\\rollout-thread.jsonl', '\\\\wsl$\\Ubuntu\\home\\user\\.codex\\sessions'],
       ['C:\\Users\\user\\.codex\\sessions\\2026\\04\\14\\rollout-thread.jsonl', 'C:\\Users\\user\\.codex\\sessions'],
+      ['C:/Users/user/.codex/sessions/2026/04/14/rollout-thread.jsonl', 'C:\\Users\\user\\.codex\\sessions'],
     ])('derives transcript roots from Windows session paths: %s', (sessionFilePath, sessionsRoot) => {
       expect(deriveCodexSessionsRootFromSessionPath(sessionFilePath)).toBe(sessionsRoot);
     });
@@ -132,10 +158,11 @@ describe('CodexHistoryStore', () => {
   describe('parseCodexSessionFileAsync - simple session', () => {
 
     it.each([
-      { source: 'content', reasoning: { summary: [], content: ['First thought', ' second thought'] }, completed: true },
+      { source: 'content', reasoning: { summary: [], content: ['First thought', '  ', ' second thought'] }, completed: true },
       { source: 'summary only', reasoning: { summary: [{ type: 'summary_text', text: 'First thought' }, { type: 'summary_text', text: ' second thought' }] }, completed: false },
       { source: 'summary over raw content', reasoning: { summary: ['First thought', ' second thought'], content: ['Raw reasoning is not the displayed summary'], text: 'Fallback text' }, completed: false },
       { source: 'text after null content', reasoning: { content: null, text: 'First thought\n\nsecond thought' }, completed: false },
+      { source: 'text after empty content', reasoning: { content: [], text: 'First thought\n\nsecond thought' }, completed: false },
     ])('rebuilds $source reasoning from a persisted transcript (completed: $completed)', ({ reasoning, completed }) => {
       const records = [
         { type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'Explain this.' }] } },
@@ -339,7 +366,8 @@ describe('CodexHistoryStore', () => {
         { type: 'response_item', payload: { type: 'message', role: 'user', content: [
           ...(visibleText ? [{ type: 'input_text', text: '<image name=[Image #1] path="/tmp/1-image-1.png">' }] : []),
           { type: 'input_image', image_url: objectUrl ? { url } : url },
-          { type: 'input_image', image_url: 'data:image/png;base64,c2Vjb25k' },
+          { type: 'input_image', image_url: objectUrl ? { url: 'data:image/png;base64,c2Vjb25k' } : 'data:image/png;base64,c2Vjb25k' },
+          { type: 'input_text', text: '' },
           ...(visibleText ? [{ type: 'input_text', text: '</image>' }, { type: 'input_text', text: 'What is in this image?' }] : []),
         ] } },
         { type: 'response_item', payload: { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'A single pixel.' }] } },
@@ -360,7 +388,7 @@ describe('CodexHistoryStore', () => {
       expect(messages[0].images?.every(image => image.id.length > 0)).toBe(true);
       expect(new Set(messages[0].images?.map(image => image.id)).size).toBe(2);
       expect(parseCodexSessionContent(content)[0].images).toEqual(messages[0].images);
-      expect(messages[1]).toMatchObject({ role: 'assistant', content: 'A single pixel.' });
+      expect(messages[1]).toMatchObject({ role: 'assistant', content: 'A single pixel.', durationSeconds: 1 });
     });
   });
 
@@ -702,14 +730,27 @@ describe('CodexHistoryStore', () => {
       ]);
     });
 
-    it('joins structured terminal polling output to its running command and restores its failure', () => {
+    it.each([
+      { label: 'non-fulfilled status', value: { status: 'pending', value: { output: 'nested application data' } } },
+      { label: 'fulfilled status without command metadata', value: { status: 'fulfilled', value: { report: 'application data' } } },
+    ])('preserves ordinary command JSON output with $label', ({ value }) => {
+      const output = JSON.stringify(value);
+      const records = [
+        { type: 'response_item', payload: { type: 'function_call', name: 'exec_command', call_id: 'command', arguments: '{"cmd":"cat report.json"}' } },
+        { type: 'response_item', payload: { type: 'function_call_output', call_id: 'command', output } },
+      ];
+      expect(parseCodexSessionContent(records.map((record, seconds) => JSON.stringify({ timestamp: testTime({ seconds }), ...record })).join('\n')).flatMap(message => message.toolCalls ?? []))
+        .toEqual([expect.objectContaining({ id: 'command', result: output })]);
+    });
+
+    it.each([42, '42'])('joins terminal session %j polling output to its running command and restores its failure', sessionId => {
       const records = [
         { type: 'event_msg', payload: { type: 'task_started' } },
         { type: 'response_item', payload: { type: 'function_call', name: 'exec_command', call_id: 'command', arguments: '{"cmd":"long check"}' } },
         { type: 'response_item', payload: { type: 'function_call_output', call_id: 'command', output: JSON.stringify({ output: 'started', exit_code: null, session_id: 42 }) } },
-        { type: 'response_item', payload: { type: 'function_call', name: 'write_stdin', call_id: 'poll', arguments: '{"session_id":42,"chars":""}' } },
+        { type: 'response_item', payload: { type: 'function_call', name: 'write_stdin', call_id: 'poll', arguments: JSON.stringify({ session_id: sessionId, chars: '' }) } },
         { type: 'response_item', payload: { type: 'function_call_output', call_id: 'poll', output: 'progress' } },
-        { type: 'response_item', payload: { type: 'function_call', name: 'write_stdin', call_id: 'final-poll', arguments: '{"session_id":42,"chars":""}' } },
+        { type: 'response_item', payload: { type: 'function_call', name: 'write_stdin', call_id: 'final-poll', arguments: JSON.stringify({ session_id: sessionId, chars: '' }) } },
         { type: 'response_item', payload: { type: 'function_call_output', call_id: 'final-poll', output: JSON.stringify({ output: 'failed', exit_code: 2 }) } },
         { type: 'event_msg', payload: { type: 'task_complete' } },
       ];
@@ -868,15 +909,17 @@ describe('CodexHistoryStore', () => {
       'keeps reordered script output separate from command results: %s', nativePosition => {
         const source = [
           'const first = await tools.exec_command({cmd:"printf FIRST"});',
-          'const second = await tools.exec_command({cmd:"printf SECOND"});',
+          nativePosition === 'before'
+            ? 'const second = await tools.exec_command({cmd:"printf SECOND",workdir:"subdir"});'
+            : 'const second = await tools.exec_command({cmd:"printf SECOND"});',
           'text(second.output); text(first.output);',
         ].join('\n');
         const native = { type: 'event_msg', payload: { type: 'item_completed', item: {
           type: 'CommandExecution', id: 'native-second', command: ['/bin/zsh', '-lc', 'printf SECOND'],
-          parsed_cmd: [{ cmd: "printf 'SECOND'" }], cwd: pathToFileURL('/vault').href, aggregated_output: 'Native second result', exit_code: 7,
+          parsed_cmd: [{ cmd: "printf 'SECOND'" }], cwd: pathToFileURL(nativePosition === 'before' ? '/vault/subdir' : '/vault').href, aggregated_output: 'Native second result', exit_code: 7,
         } } };
         const records = [
-          { type: 'turn_context', payload: { cwd: '/vault' } },
+          { type: 'turn_context', payload: { cwd: '/vault/.' } },
           { type: 'response_item', payload: { type: 'function_call', name: 'view_image', call_id: 'unrelated', arguments: '{"path":"/tmp/preview.png"}' } },
           { type: 'response_item', payload: { type: 'custom_tool_call', name: 'exec', call_id: 'reordered', input: source } },
           ...(nativePosition === 'before' ? [native] : []),
@@ -2054,6 +2097,14 @@ describe('CodexHistoryStore', () => {
       expect(searchTool!.status).toBe('completed');
     });
 
+    it('restores an in-progress native search before its result arrives', () => {
+      const records = [
+        { type: 'response_item', payload: { type: 'web_search_call', call_id: 'search', status: 'in_progress', action: { type: 'search', query: 'Obsidian' } } },
+      ];
+      expect(parseCodexSessionContent(records.map((record, seconds) => JSON.stringify({ timestamp: testTime({ seconds }), ...record })).join('\n')).flatMap(message => message.toolCalls ?? []))
+        .toEqual([expect.objectContaining({ id: 'search', name: 'WebSearch', status: 'running', input: expect.objectContaining({ query: 'Obsidian' }) })]);
+    });
+
     it('keeps distinct persisted web_search_call entries when call_id is missing', () => {
       const content = [
         JSON.stringify({
@@ -2496,7 +2547,7 @@ describe('CodexHistoryStore', () => {
     it.each(['turn_aborted', 'task_complete', 'unfinished'])('preserves an empty turn ending in %s without phantom content', ending => {
       const records = [
         { type: 'event_msg', payload: { type: 'task_started', turn_id: 'empty-turn' } },
-        { type: 'response_item', payload: { type: 'reasoning', summary: [], content: [] } },
+        { type: 'response_item', payload: { type: 'reasoning', summary: [], content: [], text: '  ' } },
         { type: 'response_item', payload: { type: 'message', role: 'assistant', content: [] } },
         ...(ending === 'unfinished' ? [] : [{ type: 'event_msg', payload: { type: ending } }]),
       ];
@@ -2736,33 +2787,23 @@ describe('CodexHistoryStore', () => {
       expect(lastAssistant.assistantMessageId).toBe('019d-uuid-multi');
     });
 
-    it('works without task_started (no server turn ID)', () => {
-      const content = [
-        JSON.stringify({
-          timestamp: '2026-03-27T00:00:00.000Z',
-          type: 'response_item',
-          payload: {
-            type: 'message',
-            role: 'user',
-            content: [{ type: 'input_text', text: 'Hello' }],
-          },
-        }),
-        JSON.stringify({
-          timestamp: '2026-03-27T00:00:01.000Z',
-          type: 'response_item',
-          payload: {
-            type: 'message',
-            role: 'assistant',
-            content: [{ type: 'output_text', text: 'Hi!' }],
-          },
-        }),
-      ].join('\n');
-
-      const messages = parseCodexSessionContent(content);
-
-      expect(messages).toHaveLength(2);
+    it.each([false, true])('retains history without a server turn ID when later turns have IDs (legacy start: %s)', legacyStart => {
+      const records = [
+        ...(legacyStart ? [{ type: 'event_msg', payload: { type: 'task_started' } }] : []),
+        { type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'Hello' }] } },
+        { type: 'response_item', payload: { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'Hi!' }] } },
+        { type: 'event_msg', payload: { type: 'task_complete' } },
+        { type: 'event_msg', payload: { type: 'task_started', turn_id: 'later-turn' } },
+        { type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'Continue' }] } },
+        { type: 'response_item', payload: { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'Ready.' }] } },
+        { type: 'event_msg', payload: { type: 'task_complete', turn_id: 'later-turn' } },
+      ];
+      const messages = parseCodexSessionContent(records.map((record, seconds) => JSON.stringify({ timestamp: testTime({ seconds }), ...record })).join('\n'));
+      expect(messages.map(message => message.content)).toEqual(['Hello', 'Hi!', 'Continue', 'Ready.']);
       expect(messages[0].userMessageId).toBeUndefined();
       expect(messages[1].assistantMessageId).toBeUndefined();
+      expect(messages[2].userMessageId).toBe('later-turn');
+      expect(messages[3].assistantMessageId).toBe('later-turn');
     });
   });
 
@@ -2802,6 +2843,8 @@ describe('CodexHistoryStore', () => {
       expect(turns[0].messages.map(message => message.completedAt)).toEqual([undefined, undefined, undefined, testDate({ seconds: 5 }).getTime()]);
       expect(parseCodexSessionTurns(content, 'uuid-turn-1')).toEqual(turns.slice(0, 1));
       expect(parseCodexSessionTurns(content, 'uuid-turn-2')).toEqual(turns.slice(0, 2));
+      expect(parseCodexSessionTurns(content, 'uuid-turn-3')).toEqual(turns);
+      expect(parseCodexSessionTurns(content, 'unavailable-checkpoint')).toEqual(turns);
 
       const ids = turns.flatMap(turn => turn.messages.map(message => message.id));
       expect(ids.every(id => id.length > 0)).toBe(true);
