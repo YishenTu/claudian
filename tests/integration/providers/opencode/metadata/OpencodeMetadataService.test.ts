@@ -175,4 +175,3 @@ it.each(['catalog', 'warm', 'discovery', 'batch'] as const)('does not publish ca
   expect(host.notifyProviderChatOptionsChanged).not.toHaveBeenCalled();
   await service.dispose();
 });
-

@@ -38,6 +38,17 @@ throw new Error('Do not execute test code during selection');
   } finally { cleanup(); }
 });
 
+test('declarations parse from CRLF checkouts', () => {
+  const { root, write, cleanup } = fixture();
+  try {
+    write('tests/fixtures/data.json', '{}');
+    write('tests/unit/windows.test.ts', '// @test-ci {"native":true,"inputs":["tests/fixtures/data.json"]}\r\nexport {};\r\n');
+    const index = readTestDeclarations(root);
+    assert.deepEqual(index.crossPlatformTests, ['tests/unit/windows.test.ts']);
+    assert.deepEqual(index.fileConsumers, [['tests/fixtures/data.json', ['tests/unit/windows.test.ts']]]);
+  } finally { cleanup(); }
+});
+
 test('invalid, stale and misplaced declarations fail with file and line diagnostics', () => {
   const cases = [
     ['not JSON', 'invalid @test-ci JSON'],

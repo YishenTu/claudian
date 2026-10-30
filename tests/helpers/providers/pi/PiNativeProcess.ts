@@ -64,4 +64,3 @@ export class PiNativeProcess {
     this.child.emit('close', 1, null);
   }
 }
-

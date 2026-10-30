@@ -837,7 +837,7 @@ describe('PiConversationHistoryService', () => {
 
   describe('resolveMissingConversationSession', () => {
 
-    
+
 
     it('clears an exact stale logical binding while preserving unknown state and native files', async () => {
       const dir = await createTempDirectory('pi-missing-reset-');

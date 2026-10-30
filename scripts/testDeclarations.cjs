@@ -7,7 +7,7 @@ const isTestFile = file => /^tests\/(?:unit|integration)\/.*\.test\.ts$/.test(fi
 function declarationIn(file, source) {
   const header = source.match(/^(?:\s|\/\/[^\n]*(?:\n|$)|\/\*[\s\S]*?\*\/)*/)[0];
   let declaration;
-  for (const [index, line] of header.split('\n').entries()) {
+  for (const [index, line] of header.split(/\r?\n/).entries()) {
     if (!line.includes('@test-ci')) continue;
     const fail = message => { throw new Error(`${file}:${index + 1}: ${message}`); };
     if (!isTestFile(file)) fail('@test-ci is only allowed in unit/integration test files');
