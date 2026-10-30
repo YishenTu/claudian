@@ -6,6 +6,8 @@ import { PassThrough } from 'node:stream';
 
 import { readWSLExec } from '@test/helpers/WSLLaunch';
 
+const WINDOWS_POWERSHELL = '/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe';
+
 export interface WSLProcessRequest {
   command: string;
   args: readonly string[];
@@ -31,6 +33,8 @@ export class WSLProcessFixture {
   environment: Record<string, string | undefined> = {};
   readonly binaries = new Map<string, { path: string; version: string }>();
   reply: ((request: WSLProcessRequest) => WSLProcessReply | undefined) | undefined;
+  /** WSL interop runs Windows executables mounted under /mnt; false models `[interop] enabled=false`. */
+  interop = true;
 
   readonly spawn = (command: string, args: readonly string[] = [], options: SpawnOptions = {}): ChildProcess => {
     if (!/(?:^|[\\/])wsl\.exe$/u.test(command)) throw new Error(`Unexpected WSL process: ${command}`);
@@ -61,7 +65,8 @@ export class WSLProcessFixture {
     return child;
   };
 
-  private respond({ executable, argv }: WSLProcessRequest): WSLProcessReply {
+  private respond({ executable, argv, options }: WSLProcessRequest): WSLProcessReply {
+    if (executable === WINDOWS_POWERSHELL) return this.runPowerShell(argv, options.env ?? {});
     if (executable === '/usr/bin/awk') {
       // Model native environment records, not the owned parser's returned object.
       return { stdout: argv.slice(1).map(key => {
@@ -76,6 +81,23 @@ export class WSLProcessFixture {
     const binary = [...this.binaries.values()].find(value => value.path === executable);
     if (binary && argv.includes('--version')) return { stdout: `${binary.version}\n` };
     throw new Error(`Unsupported WSL command: ${executable} ${JSON.stringify(argv)}`);
+  }
+
+  /** Runs only the relay's credential-free readiness probe; route traffic needs the native CI job. */
+  private runPowerShell(argv: readonly string[], env: NodeJS.ProcessEnv): WSLProcessReply {
+    if (!this.interop) return { code: 126, stderr: `claudian: 1: exec: ${WINDOWS_POWERSHELL}: Exec format error\n` };
+    const encoded = argv.at(-1);
+    const script = argv.at(-2) === '-EncodedCommand' && encoded ? Buffer.from(encoded, 'base64').toString('utf16le') : '';
+    // Interop passes a Linux variable to the Windows process only when WSLENV declares it.
+    const forwarded = (env.WSLENV ?? '').split(':').some(entry => entry.split('/')[0] === 'CLAUDIAN_SESSION_TOOL_MODE');
+    if (!script.includes('if (mode == "probe") { Console.WriteLine("claudian-relay-ready"); return 0; }')) {
+      throw new Error(`Unsupported PowerShell invocation: ${JSON.stringify(argv)}`);
+    }
+    const mode = forwarded ? env.CLAUDIAN_SESSION_TOOL_MODE : undefined;
+    if (mode === 'probe') return { stdout: 'claudian-relay-ready\r\n' };
+    // Without a mode the relay cannot build its URL and its top-level catch exits 1.
+    if (mode === undefined) return { code: 1, stderr: 'Windows PowerShell could not start the session tool relay.\r\n' };
+    throw new Error('Unsupported relay mode: route traffic is covered by the native WSL job');
   }
 }
 

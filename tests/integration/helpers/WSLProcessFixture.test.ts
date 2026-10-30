@@ -6,6 +6,7 @@ import spawn from 'cross-spawn';
 
 import { buildTargetLaunchSpec } from '@/core/process/execution-target/TargetLaunchSpec';
 import { runProcessProbe } from '@/core/process/ProcessProbe';
+import { SESSION_TOOL_RELAY_COMMAND } from '@/core/session-tools/sessionToolRelayCommand';
 
 vi.mock('cross-spawn', () => ({ default: vi.fn() }));
 
@@ -104,4 +105,35 @@ it('bounds a held process through a real probe deadline and its termination', as
 
 it('rejects detached launches, which would signal a host process group for the fake pid', () => {
   expect(() => start({ detached: true })).toThrow('Detached WSL process groups are not modeled');
+});
+
+describe('Windows PowerShell interop', () => {
+  const powershell = '/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe';
+  const encoded = Buffer.from(SESSION_TOOL_RELAY_COMMAND, 'utf16le').toString('base64');
+  function launchSpec(env: Record<string, string>, script = encoded) {
+    return buildTargetLaunchSpec({
+      target: { method: 'wsl', distroName: 'Ubuntu', platformFamily: 'unix', platformOs: 'linux' },
+      command: powershell, args: ['-NoProfile', '-EncodedCommand', script], hostCwd: 'C:\\vault', env,
+    });
+  }
+  function probe(env: Record<string, string>) {
+    const spec = launchSpec(env);
+    return runProcessProbe({ ...spec, cwd: spec.spawnCwd }, 1_000);
+  }
+  beforeEach(() => { native.reply = undefined; vi.mocked(spawn).mockReset().mockImplementation(native.spawn); });
+
+  it('answers the relay readiness probe only when WSLENV forwards its mode to Windows', async () => {
+    expect(await probe({ CLAUDIAN_SESSION_TOOL_MODE: 'probe', WSLENV: 'CLAUDIAN_SESSION_TOOL_MODE' })).toBe('claudian-relay-ready\r\n');
+    expect(await probe({ CLAUDIAN_SESSION_TOOL_MODE: 'probe' })).toBeNull();
+  });
+
+  it('fails like a distro with interop disabled', async () => {
+    native.interop = false;
+    expect(await probe({ CLAUDIAN_SESSION_TOOL_MODE: 'probe', WSLENV: 'CLAUDIAN_SESSION_TOOL_MODE' })).toBeNull();
+  });
+
+  it('rejects PowerShell programs it does not model', () => {
+    const spec = launchSpec({}, Buffer.from('Write-Output ok', 'utf16le').toString('base64'));
+    expect(() => native.spawn(spec.command, spec.args, { windowsVerbatimArguments: true })).toThrow('Unsupported PowerShell invocation');
+  });
 });
