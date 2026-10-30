@@ -58,10 +58,11 @@ export async function resolveDeepSeekExecutionContext(
     if (!probed?.HOME) throw new Error('Could not resolve the Linux home in WSL. Check the selected distro and its shell environment.');
     childEnvironment = probed;
   }
-  const targetHome = getDeepSeekHome(childEnvironment, spec.targetCwd, target.platformOs === 'windows' ? 'win32' : 'linux');
+  const targetCwd = target.method === 'wsl' ? spec.targetCwd : hostCwd;
+  const targetHome = getDeepSeekHome(childEnvironment, targetCwd, target.platformOs === 'windows' ? 'win32' : 'linux');
   const home = spec.pathMapper.toHostPath(targetHome);
   if (!home) throw new Error('DeepSeek home cannot be accessed from the selected WSL distro.');
-  return { target, pathMapper: spec.pathMapper, targetCwd: spec.targetCwd, targetHome, home, forwardEnvironment };
+  return { target, pathMapper: spec.pathMapper, targetCwd, targetHome, home, forwardEnvironment };
 }
 
 

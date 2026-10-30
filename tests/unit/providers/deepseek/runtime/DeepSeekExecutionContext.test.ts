@@ -36,3 +36,11 @@ it('fails without Linux home evidence and rejects a different distro before prob
   await expect(resolveDeepSeekExecutionContext(target, 'C:\\Vault', {}, '')).rejects.toThrow(/home.*WSL|WSL.*home/i);
   await expect(resolveDeepSeekExecutionContext(target, 'C:\\Vault', { DSH_HOME: '\\\\wsl$\\Debian\\home\\alice' }, '')).rejects.toThrow(/DSH_HOME.*distro/);
 });
+
+it.each(['/vault', 'C:/Vault', 'C:\\Vault'])('preserves native Windows session cwd %s without rewriting its identity', async cwd => {
+  const context = await resolveDeepSeekExecutionContext(
+    { method: 'host-native', platformOs: 'windows', platformFamily: 'windows' },
+    cwd, { USERPROFILE: 'C:\\Users\\alice' }, '',
+  );
+  expect(context.targetCwd).toBe(cwd);
+});
