@@ -7,7 +7,7 @@ import { isPathWithinRoot } from '../../../core/storage/pathContainment';
 import type { CodexProviderSettings } from '../config';
 import { inferWslDistroFromWindowsPath } from '../runtime/CodexExecutionTargetResolver';
 import { createCodexPathMapper } from '../runtime/CodexPathMapper';
-import { findCodexSessionFileAsync, runBeforeDeadline } from './CodexHistoryStore';
+import { CodexHistoryDeadlineError, findCodexSessionFileAsync, runBeforeDeadline } from './CodexHistoryStore';
 
 export const CODEX_HISTORY_LOOKUP_TIMEOUT_MS = 10_000;
 
@@ -174,7 +174,7 @@ async function isPresentOrUnreadable(filePath: string, deadline: number): Promis
     await runBeforeDeadline(() => access(filePath), deadline);
     return true;
   } catch (error) {
-    if (Date.now() >= deadline) return null;
+    if (error instanceof CodexHistoryDeadlineError) return null;
     return (error as NodeJS.ErrnoException).code !== 'ENOENT';
   }
 }

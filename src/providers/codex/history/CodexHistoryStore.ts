@@ -1509,8 +1509,8 @@ export async function findCodexSessionFileAsync(
     let entries: fs.Dirent[];
     try {
       entries = await runBeforeDeadline(() => readDirectory(current), deadline);
-    } catch {
-      if (Date.now() >= deadline) {
+    } catch (error) {
+      if (error instanceof CodexHistoryDeadlineError) {
         return null;
       }
       continue;
@@ -1532,6 +1532,17 @@ export interface CodexSessionFileLookupDependencies {
   readDirectory?: (value: string) => Promise<fs.Dirent[]>;
 }
 
+/**
+ * The bounded lookup's deadline passed. Callers branch on this error rather than the clock, because
+ * the deadline timer can fire slightly before `Date.now()` reaches the deadline.
+ */
+export class CodexHistoryDeadlineError extends Error {
+  constructor() {
+    super('Codex history lookup deadline exceeded.');
+    this.name = 'CodexHistoryDeadlineError';
+  }
+}
+
 /** Rejects once the deadline passes, so a stalled filesystem cannot hold a bounded lookup open. */
 export async function runBeforeDeadline<T>(
   operation: () => Promise<T>,
@@ -1539,12 +1550,12 @@ export async function runBeforeDeadline<T>(
 ): Promise<T> {
   const remainingMs = deadline - Date.now();
   if (remainingMs <= 0) {
-    throw new Error('Codex history lookup deadline exceeded.');
+    throw new CodexHistoryDeadlineError();
   }
 
   return new Promise<T>((resolve, reject) => {
     const timer = window.setTimeout(() => {
-      reject(new Error('Codex history lookup deadline exceeded.'));
+      reject(new CodexHistoryDeadlineError());
     }, remainingMs);
     operation().then(
       (value) => {

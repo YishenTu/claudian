@@ -96,12 +96,18 @@ describe('CodexHistoryPathResolver', () => {
 
   it('ends the saved-path check at the lookup deadline when the filesystem stalls', async () => {
     const access = vi.spyOn(fsPromises, 'access').mockReturnValue(new Promise<never>(() => {}));
+    // Only timers are fake: the deadline timer fires while the real clock is still short of the
+    // deadline, as Node timers can by a millisecond.
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     try {
-      await expect(resolveCodexRolloutFile('/tmp/stalled/sessions/rollout-thread.jsonl', 'thread', null, {
+      const lookup = resolveCodexRolloutFile('/tmp/stalled/sessions/rollout-thread.jsonl', 'thread', null, {
         environment: { CODEX_HOME: '/tmp/stalled', HOME: '/tmp/home' },
-      }, Date.now() + 20)).resolves.toBeNull();
-      expect(access).toHaveBeenCalled();
+      }, Date.now() + 60_000);
+      await vi.waitFor(() => expect(access).toHaveBeenCalled());
+      await vi.advanceTimersByTimeAsync(60_000);
+      await expect(lookup).resolves.toBeNull();
     } finally {
+      vi.useRealTimers();
       access.mockRestore();
     }
   });

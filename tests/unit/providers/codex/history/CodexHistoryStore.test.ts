@@ -1,5 +1,6 @@
 import { parseCodexSessionContent } from '@test/helpers/providers/codex/parseCodexSessionContent';
 import { testDate, testTime } from '@test/helpers/testClock';
+import type { Dirent } from 'fs';
 import * as path from 'path';
 import { pathToFileURL } from 'url';
 
@@ -60,25 +61,25 @@ describe('CodexHistoryStore', () => {
       .toMatchObject({ status: 'completed', completedAt: testDate({ seconds: 5 }).getTime() });
   });
 
-  it('settles lookup at the deadline when a directory read never resolves', async () => {
-    vi.useFakeTimers();
+  it('ends the whole lookup at the deadline when a directory read never resolves', async () => {
+    // Only timers are fake: the deadline timer fires while the real clock is still short of the
+    // deadline, as Node timers can by a millisecond.
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     try {
       const root = '/virtual/codex/sessions';
+      const directory = (name: string) => ({ name, isDirectory: () => true, isFile: () => false }) as Dirent;
       const pathExists = vi.fn(async (value: string) => value === root);
-      const readDirectory = vi.fn(() => new Promise<never>(() => {}));
-      const lookup = findCodexSessionFileAsync('thread', root, 10, {
-        pathExists,
-        readDirectory,
-      });
+      const readDirectory = vi.fn((value: string) => (value === root
+        ? Promise.resolve([directory('older'), directory('newer')])
+        : new Promise<never>(() => {})));
+      const lookup = findCodexSessionFileAsync('thread', root, 60_000, { pathExists, readDirectory });
 
-      for (let index = 0; index < 10 && !readDirectory.mock.calls.length; index += 1) {
-        await Promise.resolve();
-      }
-      expect(pathExists).toHaveBeenCalled();
-      expect(readDirectory).toHaveBeenCalled();
-      vi.advanceTimersByTime(11);
+      await vi.waitFor(() => expect(readDirectory).toHaveBeenCalledWith(`${root}/newer`));
+      await vi.advanceTimersByTimeAsync(60_000);
 
       await expect(lookup).resolves.toBeNull();
+      // The expired lookup must not move on to the remaining directory.
+      expect(readDirectory).not.toHaveBeenCalledWith(`${root}/older`);
     } finally {
       vi.useRealTimers();
     }
