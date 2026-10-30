@@ -2,7 +2,11 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
+import type { ExecutionTarget } from '@/core/process/execution-target/types';
+import { createExecutionPathMapper } from '@/core/process/execution-target/WSLPathMapper';
+
 import { isPathWithinRoot, isSamePath } from '../../../core/storage/pathContainment';
+import { opencodeTargetPath } from './OpencodeExecutionTarget';
 import { resolveOpencodeDatabasePath, resolveOpencodeDataDir } from './OpencodePaths';
 
 /** A native session locator's database: recorded identity kept apart from current permission to open it. */
@@ -21,9 +25,23 @@ export interface OpencodeBindingDatabase {
 export function resolveOpencodeBindingDatabase(
   recordedPath: string | null | undefined,
   environment: NodeJS.ProcessEnv,
+  target?: ExecutionTarget,
 ): OpencodeBindingDatabase {
-  const configured = resolveOpencodeDatabasePath(environment);
   const recorded = recordedPath?.trim() || null;
+  if (target?.method === 'wsl') {
+    try {
+      const configured = resolveOpencodeDatabasePath(environment, target);
+      if (!recorded) return { recorded, accessible: configured };
+      if (recorded === ':memory:') return { recorded, accessible: configured === recorded ? recorded : null };
+      const native = createExecutionPathMapper(target).toTargetPath(recorded);
+      if (!native) return { recorded, accessible: null };
+      const root = opencodeTargetPath(resolveOpencodeDataDir(environment, target), target);
+      const relative = path.posix.relative(root, native);
+      const trusted = (!!configured && native === opencodeTargetPath(configured, target)) || (relative !== '..' && !relative.startsWith('../') && !path.posix.isAbsolute(relative));
+      return { recorded, accessible: trusted && fs.existsSync(recorded) ? recorded : null };
+    } catch { return { recorded, accessible: null }; }
+  }
+  const configured = resolveOpencodeDatabasePath(environment);
   if (!recorded) return { recorded: null, accessible: configured };
   const home = environment.HOME?.trim() || environment.USERPROFILE?.trim() || os.homedir();
   const trustedRoots = [

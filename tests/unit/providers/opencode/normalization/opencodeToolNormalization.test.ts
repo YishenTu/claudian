@@ -201,3 +201,14 @@ describe('OpenCode v2 tools', () => {
     });
   });
 });
+
+
+it('maps only normalized tool and diff paths from WSL before host consumers receive them', () => {
+  const target = { method: 'wsl', platformOs: 'linux', platformFamily: 'unix', distroName: 'Ubuntu' } as const;
+  const input = normalizeOpencodeToolInput('edit', { filePath: '/mnt/c/Vault/note.md', oldString: '/home/alice/literal', newString: 'changed' }, target);
+  expect(input).toEqual({ file_path: 'C:\\Vault\\note.md', old_string: '/home/alice/literal', new_string: 'changed' });
+  const details = normalizeOpencodeToolResultDetails('edit', input, { metadata: { files: [{ patch: '--- /mnt/c/Vault/note.md\n+++ /mnt/c/Vault/note.md\n@@ -1 +1 @@\n-before\n+after\n' }] } }, target);
+  expect(details?.diff?.filePath).toBe('C:\\Vault\\note.md');
+  expect(normalizeOpencodeToolInput('read', { path: '/home/alice/note.md' }, target)).toEqual({ file_path: '\\\\wsl$\\Ubuntu\\home\\alice\\note.md' });
+  expect(normalizeOpencodeToolInput('patch', { patch: '*** Begin Patch\n*** Update File: /mnt/c/Vault/note.md\n+content /home/alice/literal\n*** End Patch' }, target)).toEqual({ patch: '*** Begin Patch\n*** Update File: C:\\Vault\\note.md\n+content /home/alice/literal\n*** End Patch' });
+});

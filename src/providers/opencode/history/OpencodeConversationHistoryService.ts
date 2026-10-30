@@ -16,7 +16,7 @@ import { type OpencodeServerLease, type OpencodeServerService, withOpencodeServe
 import { encodeOpencodeModelId } from '../models';
 import { type OpencodeBindingDatabase, resolveOpencodeBindingDatabase } from '../runtime/OpencodeBindingDatabase';
 import { resolveOpencodeHistoryLaunch } from '../runtime/OpencodeCLILaunch';
-import { buildOpencodeRuntimeEnv } from '../runtime/OpencodeRuntimeEnvironment';
+import { OpencodeTargetEnvironment } from '../runtime/OpencodeExecutionTarget';
 import {
   clearOpencodeResumeState,
   getOpencodeState,
@@ -56,15 +56,17 @@ export class OpencodeConversationHistoryService implements ProviderConversationH
   ): Promise<string | null> {
     const source = this.#resolveModelRecoverySession(conversation);
     if (!source) return null;
-    const { sessionId, databasePath: recordedPath } = source;
-    const databasePath = resolveBindingDatabase(recordedPath, pathContext).accessible;
-    if (!databasePath) return null;
-    return this.withHttp(databasePath, vaultPath, pathContext, async client => {
-      const result = await client.request(`/api/session/${encodeURIComponent(sessionId)}`);
-      const model = isRecord(result) && isRecord(result.data) && isRecord(result.data.model) ? result.data.model : null;
-      return typeof model?.providerID === 'string' && typeof model.id === 'string'
-        ? encodeOpencodeModelId(`${model.providerID}/${model.id}`) : null;
-    }).catch(() => null);
+    try {
+      const { sessionId, databasePath: recordedPath } = source;
+      const databasePath = (await this.resolveBindingDatabase(recordedPath, vaultPath, pathContext)).accessible;
+      if (!databasePath) return null;
+      return await this.withHttp(databasePath, vaultPath, pathContext, async client => {
+        const result = await client.request(`/api/session/${encodeURIComponent(sessionId)}`);
+        const model = isRecord(result) && isRecord(result.data) && isRecord(result.data.model) ? result.data.model : null;
+        return typeof model?.providerID === 'string' && typeof model.id === 'string'
+          ? encodeOpencodeModelId(`${model.providerID}/${model.id}`) : null;
+      });
+    } catch { return null; }
   }
 
   async hydrateConversationHistory(
@@ -74,12 +76,13 @@ export class OpencodeConversationHistoryService implements ProviderConversationH
   ): Promise<ProviderHistoryUpdate> {
     const conversation = copyProviderHistoryState(input);
     const state = getOpencodeState(conversation.providerState);
-    const database = resolveBindingDatabase(state.databasePath, pathContext);
     const sessionId = this.resolveSessionIdForConversation(conversation);
+    if (!sessionId && !state.previousSessions?.length) return conversation;
+    const database = await this.resolveBindingDatabase(state.databasePath, vaultPath, pathContext);
     // Retired sessions are history only; an unreadable one must not hide the rest.
     const previousMessages: ChatMessage[] = [];
     for (const previous of state.previousSessions ?? []) {
-      const previousDatabase = resolveBindingDatabase(previous.databasePath, pathContext);
+      const previousDatabase = await this.resolveBindingDatabase(previous.databasePath, vaultPath, pathContext);
       if (!previousDatabase.accessible) continue;
       const messages = await this.#readSessionMessages(previous.sessionId, previousDatabase, vaultPath, pathContext);
       // Native checkpoints in retired sessions are unreachable, so they cannot fork or rewind.
@@ -118,7 +121,7 @@ export class OpencodeConversationHistoryService implements ProviderConversationH
       return [createOpencodeHydrationDiagnosticMessage({ sessionId, databasePath, reason: 'The recorded OpenCode database is not accessible with the current settings.' })];
     }
     return this.withHttp(database.accessible, vaultPath, pathContext, async client => {
-      const read = async (id: string) => mapOpencodeNativeMessages(await readOpencodeHTTPMessages(client, id));
+      const read = async (id: string) => mapOpencodeNativeMessages(await readOpencodeHTTPMessages(client, id), client.target);
       const messages = await read(sessionId);
       await hydrateOpencodeSubagents(messages, read);
       return messages;
@@ -173,7 +176,7 @@ export class OpencodeConversationHistoryService implements ProviderConversationH
     const cwd = vaultPath ?? pathContext?.vaultPath;
     if (!cwd) throw new Error('OpenCode fork requires a workspace directory.');
     const source = getOpencodeState(sourceProviderState);
-    const databasePath = resolveBindingDatabase(source.databasePath, pathContext).accessible;
+    const databasePath = (await this.resolveBindingDatabase(source.databasePath, vaultPath, pathContext)).accessible;
     if (!databasePath || databasePath === ':memory:') {
       throw new Error('OpenCode fork requires a persistent native database.');
     }
@@ -184,10 +187,11 @@ export class OpencodeConversationHistoryService implements ProviderConversationH
     if (options?.lifecycle === 'ephemeral') {
       return { databasePath, forkSource: { sessionId: sourceSessionId, resumeAt }, nativeConversationContextEstablished: true, ...previousSessions };
     }
-    const { cliPath, environmentText } = resolveOpencodeHistoryLaunch(pathContext);
-    const environment = buildOpencodeRuntimeEnv(environmentText, cliPath, databasePath, pathContext?.environment);
+    const { cliPath, target, environment: baseEnvironment } = await this.resolveLaunch(cwd, pathContext);
+    const environment = { ...baseEnvironment, OPENCODE_DB: databasePath };
     const sessionId = await forkOpencodeSession({
       cliPath,
+      target,
       cwd,
       environment,
       sourceSessionId,
@@ -223,9 +227,22 @@ export class OpencodeConversationHistoryService implements ProviderConversationH
   private async withHttp<T>(databasePath: string | null, vaultPath: string | null, pathContext: ProviderHistoryPathContext | undefined, read: (client: OpencodeServerLease) => Promise<T>): Promise<T> {
     const cwd = vaultPath ?? pathContext?.vaultPath;
     if (!cwd || !databasePath || databasePath === ':memory:') throw new Error('OpenCode history requires a workspace and persistent native database.');
-    const { cliPath, environmentText } = resolveOpencodeHistoryLaunch(pathContext);
-    const environment = buildOpencodeRuntimeEnv(environmentText, cliPath, databasePath, pathContext?.environment);
-    return withOpencodeServerLease(await this.options.getServerService?.(pathContext), cliPath, cwd, environment, read);
+    const { cliPath, target, environment: baseEnvironment } = await this.resolveLaunch(cwd, pathContext);
+    const environment = { ...baseEnvironment, OPENCODE_DB: databasePath };
+    return withOpencodeServerLease(await this.options.getServerService?.(pathContext), cliPath, cwd, environment, read, target);
+  }
+
+  private async resolveLaunch(cwd: string, context?: ProviderHistoryPathContext) {
+    const launch = await resolveOpencodeHistoryLaunch(context, cwd);
+    const service = await this.options.getServerService?.(context);
+    const environment = await (service?.targetEnvironment ?? new OpencodeTargetEnvironment())
+      .resolve(launch.target, cwd, launch.environmentText, launch.cliPath, context?.environment);
+    return { ...launch, environment };
+  }
+
+  private async resolveBindingDatabase(recordedPath: string | undefined, vaultPath: string | null | undefined, context?: ProviderHistoryPathContext): Promise<OpencodeBindingDatabase> {
+    const launch = await this.resolveLaunch(vaultPath ?? context?.vaultPath ?? process.cwd(), context);
+    return resolveOpencodeBindingDatabase(recordedPath, launch.environment, launch.target);
   }
 
   #markNativeConversationContextEstablished(
@@ -247,8 +264,4 @@ function isSessionHydrationFailure(messages: readonly ChatMessage[]): boolean {
 function withoutNativeCheckpoints(message: ChatMessage): ChatMessage {
   const { assistantMessageId: _assistant, userMessageId: _user, ...rest } = message;
   return rest;
-}
-
-function resolveBindingDatabase(recordedPath: string | undefined, context?: ProviderHistoryPathContext): OpencodeBindingDatabase {
-  return resolveOpencodeBindingDatabase(recordedPath, context?.environment ?? process.env);
 }

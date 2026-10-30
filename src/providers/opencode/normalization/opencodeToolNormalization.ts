@@ -1,3 +1,5 @@
+import type { ExecutionTarget } from '@/core/process/execution-target/types';
+import { createExecutionPathMapper } from '@/core/process/execution-target/WSLPathMapper';
 import { diffFromUnifiedText } from '@/core/tools/toolDiff';
 
 import {
@@ -306,7 +308,28 @@ export function normalizeOpencodeToolName(rawName: string | undefined): string {
   return TOOL_NAME_MAP[knownName];
 }
 
-export function normalizeOpencodeToolInput(
+/** Native paths become host paths only at the normalized UI/I/O boundary. */
+export function normalizeOpencodeToolInput(rawName: string | undefined, input: Record<string, unknown>, target?: ExecutionTarget): Record<string, unknown> {
+  const normalized = normalizeNativeToolInput(rawName, input);
+  if (target?.method !== 'wsl') return normalized;
+  const result = { ...normalized };
+  const name = toKnownToolName(rawName);
+  const pathKeys = name && ['read', 'write', 'edit', 'glob', 'grep', 'bash', 'shell'].includes(name)
+    ? ['file_path', 'path', 'workdir', 'cwd'] : [];
+  for (const key of pathKeys) if (typeof result[key] === 'string') result[key] = hostToolPath(result[key], target);
+  if ((name === 'apply_patch' || name === 'patch') && typeof result.patch === 'string') {
+    result.patch = result.patch.replace(/^(\*\*\* (?:Add File|Update File|Delete File|Move to): )(.+)$/gm,
+      (_line, prefix: string, file: string) => prefix + hostToolPath(file, target));
+  }
+  return result;
+}
+
+function hostToolPath(value: string, target?: ExecutionTarget): string {
+  return target?.method === 'wsl' && value.startsWith('/')
+    ? createExecutionPathMapper(target).toHostPath(value) ?? value : value;
+}
+
+function normalizeNativeToolInput(
   rawName: string | undefined,
   input: Record<string, unknown>,
 ): Record<string, unknown> {
@@ -393,6 +416,7 @@ export function normalizeOpencodeToolResultDetails(
   rawName: string | undefined,
   input: Record<string, unknown>,
   rawOutput: unknown,
+  target?: ExecutionTarget,
 ): ToolResultDetails | undefined {
   const knownName = toKnownToolName(rawName);
   const metadata = extractToolMetadata(rawOutput);
@@ -408,7 +432,7 @@ export function normalizeOpencodeToolResultDetails(
     const filePath = firstString(input.file_path, input.filePath, input.path, metadata?.filepath, metadata?.filePath);
     const diff = patch ? diffFromUnifiedText(patch, filePath) : undefined;
     if (diff) {
-      normalized.diff = diff;
+      normalized.diff = { ...diff, ...(diff.filePath ? { filePath: hostToolPath(diff.filePath, target) } : {}) };
     }
   }
 

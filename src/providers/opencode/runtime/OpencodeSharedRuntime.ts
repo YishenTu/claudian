@@ -2,7 +2,7 @@ import type { ProviderRuntimeHost } from '@/core/providers/ProviderRuntimeHost';
 
 import { decodeOpencodeConfig } from '../config';
 import type { OpencodeServerService } from '../http/OpencodeServerService';
-import { buildOpencodeRuntimeEnv } from './OpencodeRuntimeEnvironment';
+import { resolveOpencodeTarget } from './OpencodeExecutionTarget';
 import { OpencodeCLINotInstalledError } from './OpencodeVersion';
 
 /** Provider-owned prewarm and launch transitions for the shared server. */
@@ -39,7 +39,7 @@ export class OpencodeSharedRuntime {
       if (!decodeOpencodeConfig(this.host.config).enabled) await this.serverService.invalidate();
       else {
         const launch = await this.#resolveLaunch();
-        this.serverService.reconcileLaunch(launch.cliPath, launch.cwd, launch.environment);
+        this.serverService.reconcileLaunch(launch.cliPath, launch.cwd, launch.environment, launch.target);
       }
     } finally { this.serverService.endTransition(); }
     if (this.requested) await this.start().catch(() => undefined);
@@ -59,8 +59,8 @@ export class OpencodeSharedRuntime {
       try {
         const launch = await this.#resolveLaunch();
         signal.throwIfAborted();
-        this.serverService.reconcileLaunch(launch.cliPath, launch.cwd, launch.environment);
-        const lease = await this.serverService.acquire(launch.cliPath, launch.cwd, launch.environment, signal);
+        this.serverService.reconcileLaunch(launch.cliPath, launch.cwd, launch.environment, launch.target);
+        const lease = await this.serverService.acquire(launch.cliPath, launch.cwd, launch.environment, signal, launch.target);
         try { await lease.request('/api/info', { signal }); }
         finally { await lease.dispose(); }
         return;
@@ -75,6 +75,9 @@ export class OpencodeSharedRuntime {
 
   async #resolveLaunch() {
     const cliPath = await this.host.resolveCliPath() ?? 'opencode';
-    return { cliPath, cwd: this.host.workingDirectory || process.cwd(), environment: buildOpencodeRuntimeEnv(this.host.environmentText, cliPath) };
+    const cwd = this.host.workingDirectory || process.cwd();
+    const target = await resolveOpencodeTarget(this.host.config, cwd);
+    const environment = await this.serverService.targetEnvironment.resolve(target, cwd, this.host.environmentText, cliPath);
+    return { cliPath, cwd, target, environment };
   }
 }

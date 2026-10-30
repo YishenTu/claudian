@@ -495,6 +495,19 @@ test('WSL native job follows shared dependencies and provider users but skips un
     assert.equal(selection.wslWindows, true, file);
     assert.ok(selection.testFiles.includes(relay), `${file} must select the declared relay consumer`);
   }
+  const opencode = 'tests/integration/providers/opencode/runtime/OpencodeWSL.windows.test.ts';
+  assert.equal(select([opencode]).wslWindows, true);
+  for (const file of [
+    'src/providers/opencode/runtime/OpencodeExecutionTarget.ts',
+    // Type-only, UI and sibling-test edges reach the OpenCode WSL suite through its declaration.
+    'src/providers/opencode/settings.ts',
+    'src/providers/opencode/ui/OpencodeSettingsTab.ts',
+    'tests/integration/providers/opencode/ui/OpencodeSettingsTab.dom.test.ts',
+  ]) {
+    const selection = select([file]);
+    assert.equal(selection.wslWindows, true, file);
+    assert.ok(selection.testFiles.includes(opencode), `${file} must select the declared OpenCode WSL consumer`);
+  }
   assert.equal(select(['src/core/process/execution-target/TargetLaunchSpec.ts'], [wsl]).wslWindows, true);
   assert.equal(select(['src/providers/codex/runtime/CodexLaunchSpecBuilder.ts']).wslWindows, true);
   assert.equal(select(['src/providers/claude/runtime/customSpawn.ts']).wslWindows, true);

@@ -1,10 +1,13 @@
 import { randomUUID } from 'node:crypto';
 
+import type { ExecutionTarget } from '@/core/process/execution-target/types';
 import { ProviderTransitionFence } from '@/core/providers/metadata/ProviderTransitionFence';
 import { invokeSessionTool, type SessionToolInvocation } from '@/core/session-tools/invokeSessionTool';
 import type { SessionToolEndpoint, SessionToolRoute } from '@/core/session-tools/SessionToolEndpoint';
+import { createWSLSessionToolRelay } from '@/core/session-tools/WSLSessionToolRelay';
 import { toAbortError } from '@/utils/abort';
 
+import { opencodeEnvironment,OpencodeTargetEnvironment, opencodeTargetPath } from '../runtime/OpencodeExecutionTarget';
 import { prepareOpencodeLaunchArtifacts } from '../runtime/OpencodeLaunchArtifacts';
 import { resolveOpencodeDatabasePath } from '../runtime/OpencodePaths';
 import { verifyOpencodeNativeVersion } from '../runtime/OpencodeVersion';
@@ -38,6 +41,7 @@ interface ServerEntry {
 
 /** Provider-owned native processes. Persistent consumers share by environment and database. */
 export class OpencodeServerService {
+  readonly targetEnvironment = new OpencodeTargetEnvironment();
   private readonly servers = new Map<string, ServerEntry>();
   private readonly draining = new Set<ServerEntry>();
   private readonly closing = new Set<Promise<void>>();
@@ -57,20 +61,20 @@ export class OpencodeServerService {
     } while (this.fence.isUnavailable());
   }
 
-  acquire(cliPath: string, cwd: string, environment: NodeJS.ProcessEnv, signal?: AbortSignal): Promise<OpencodeServerLease> {
-    return this.borrow(cliPath, cwd, environment, signal, false);
+  acquire(cliPath: string, cwd: string, environment: NodeJS.ProcessEnv, signal?: AbortSignal, target?: ExecutionTarget): Promise<OpencodeServerLease> {
+    return this.borrow(cliPath, cwd, environment, signal, false, target);
   }
 
   /** Owned native deletion must finish before the transition can reopen normal admission. */
-  acquireCleanup(cliPath: string, cwd: string, environment: NodeJS.ProcessEnv): Promise<OpencodeServerLease> {
-    return this.borrow(cliPath, cwd, environment, undefined, true);
+  acquireCleanup(cliPath: string, cwd: string, environment: NodeJS.ProcessEnv, target?: ExecutionTarget): Promise<OpencodeServerLease> {
+    return this.borrow(cliPath, cwd, environment, undefined, true, target);
   }
 
-  private async borrow(cliPath: string, cwd: string, environment: NodeJS.ProcessEnv, signal: AbortSignal | undefined, cleanup: boolean): Promise<OpencodeServerLease> {
+  private async borrow(cliPath: string, cwd: string, environment: NodeJS.ProcessEnv, signal: AbortSignal | undefined, cleanup: boolean, target?: ExecutionTarget): Promise<OpencodeServerLease> {
     if (this.disposal) throw new Error('OpenCode server service is disposed.');
     if (!cleanup) await this.waitUntilAvailable(signal);
     const generation = this.generation.signal;
-    const launch = normalizeLaunch(cliPath, cwd, environment);
+    const launch = normalizeLaunch(cliPath, cwd, environment, target);
     const { compatibility, ephemeral, normalized } = launch;
     const obsolete = this.currentLaunch !== null && this.currentLaunch.compatibility !== compatibility;
     const key = ephemeral ? JSON.stringify([launch.key, randomUUID()]) : launch.key;
@@ -80,7 +84,7 @@ export class OpencodeServerService {
       let entry = this.servers.get(key) ?? ((cleanup || obsolete) ? [...this.draining].find(draining => draining.key === key) : undefined);
       if (!entry) {
         entry = {
-          promise: this.create(cliPath, cwd, normalized, generation),
+          promise: this.create(cliPath, cwd, normalized, generation, target),
           key,
           compatibility,
           launchKey: launch.key,
@@ -144,8 +148,8 @@ export class OpencodeServerService {
    * Commit the default launch. Incompatible generations stop admitting consumers without
    * interrupting native work; compatible database bindings keep their process.
    */
-  reconcileLaunch(cliPath: string, cwd: string, environment: NodeJS.ProcessEnv): void {
-    const launch = normalizeLaunch(cliPath, cwd, environment);
+  reconcileLaunch(cliPath: string, cwd: string, environment: NodeJS.ProcessEnv, target?: ExecutionTarget): void {
+    const launch = normalizeLaunch(cliPath, cwd, environment, target);
     this.currentLaunch = { compatibility: launch.compatibility, key: launch.key };
     for (const entry of [...this.servers.values(), ...this.draining]) {
       if (this.isSuperseded(entry)) for (const listener of [...entry.supersessionListeners]) listener();
@@ -193,11 +197,15 @@ export class OpencodeServerService {
     return closing;
   }
 
-  beginTransition(): void { this.fence.beginTransition(); }
+  beginTransition(): void {
+    this.targetEnvironment.reset();
+    this.fence.beginTransition();
+  }
 
   endTransition(): void { this.fence.endTransition(); }
 
   async invalidate(): Promise<void> {
+    this.targetEnvironment.reset();
     this.fence.beginTransition();
     const previous = [...this.servers.values(), ...this.draining];
     this.generation.abort();
@@ -216,12 +224,12 @@ export class OpencodeServerService {
     return this.disposal ??= this.invalidate();
   }
 
-  private async create(cliPath: string, cwd: string, environment: NodeJS.ProcessEnv, signal: AbortSignal): Promise<Server> {
+  private async create(cliPath: string, cwd: string, environment: NodeJS.ProcessEnv, signal: AbortSignal, target?: ExecutionTarget): Promise<Server> {
     // Every consumer of a launched process shares this one check of the binary it runs.
-    await verifyOpencodeNativeVersion(cliPath, environment);
+    await verifyOpencodeNativeVersion(cliPath, environment, target, cwd);
     signal.throwIfAborted();
     const subscribers = new Set<Subscriber>();
-    const config = await createOpencodeServerConfig(cwd, environment, !!this.sessionToolEndpoint);
+    const config = await createOpencodeServerConfig(cwd, environment, !!this.sessionToolEndpoint, target);
     let callRoute: SessionToolRoute | undefined;
     let client: OpencodeHTTPClient | undefined;
     try {
@@ -237,12 +245,15 @@ export class OpencodeServerService {
         });
       });
       // Session instructions and the per-process route never enter the sharing key.
-      const artifacts = await prepareOpencodeLaunchArtifacts({ workspaceRoot: cwd, runtimeEnv: environment, sessionToolsPluginPath: config.sessionToolsPluginPath });
+      const artifacts = await prepareOpencodeLaunchArtifacts({ workspaceRoot: cwd, runtimeEnv: environment, target, sessionToolsPluginPath: config.sessionToolsPluginPath });
+      const relay = callRoute && target?.method === 'wsl'
+        ? await createWSLSessionToolRelay({ target, hostCwd: cwd, env: opencodeEnvironment(environment), route: callRoute, mode: 'call' }) : undefined;
       signal.throwIfAborted();
       client = new OpencodeHTTPClient(cliPath, cwd, {
-        ...environment, OPENCODE_CONFIG: config.file, OPENCODE_CONFIG_CONTENT: artifacts.configContent,
-        ...(callRoute ? { CLAUDIAN_SESSION_TOOLS_URL: callRoute.url, CLAUDIAN_SESSION_TOOLS_ROUTE_ID: callRoute.routeId } : {}),
-      });
+        ...environment, OPENCODE_CONFIG: opencodeTargetPath(config.file, target), OPENCODE_CONFIG_CONTENT: artifacts.configContent,
+        ...(relay ? { CLAUDIAN_SESSION_TOOLS_RELAY: JSON.stringify(relay) } : {}),
+        ...(callRoute && !relay ? { CLAUDIAN_SESSION_TOOLS_URL: callRoute.url, CLAUDIAN_SESSION_TOOLS_ROUTE_ID: callRoute.routeId } : {}),
+      }, target);
       const server: Server = { client, config, callRoute, databasePath: artifacts.databasePath, subscribers, forms: new Map() };
       await config.initialize(error => { void this.close(server, error); });
       signal.throwIfAborted();
@@ -301,6 +312,8 @@ export class OpencodeServerLease {
     return this.retainLease();
   }
 
+  get target(): ExecutionTarget { return this.server.client.target; }
+  get workingDirectory(): string { return this.server.client.cwd; }
   get databasePath(): string | null { return this.server.databasePath; }
   signal(signal?: AbortSignal): AbortSignal { return this.server.client.signal(AbortSignal.any([this.controller.signal, ...(signal ? [signal] : [])])); }
   isReusable(): boolean { return !this.controller.signal.aborted && this.server.client.isReusable(); }
@@ -418,25 +431,26 @@ function dispatchServerEvent(server: Server, event: OpencodeHTTPEvent): void {
 export async function withOpencodeServerLease<T>(
   shared: OpencodeServerService | null | undefined, cliPath: string, cwd: string, environment: NodeJS.ProcessEnv,
   use: (lease: OpencodeServerLease) => Promise<T>,
+  target?: ExecutionTarget,
 ): Promise<T> {
   const service = shared ?? new OpencodeServerService();
   try {
-    const lease = await service.acquire(cliPath, cwd, environment);
+    const lease = await service.acquire(cliPath, cwd, environment, undefined, target);
     try { return await use(lease); } finally { await lease.dispose(); }
   } finally {
     if (!shared) await service.dispose();
   }
 }
 
-function normalizeLaunch(cliPath: string, cwd: string, environment: NodeJS.ProcessEnv) {
-  const databasePath = resolveOpencodeDatabasePath(environment);
-  const normalized = { ...environment, ...(databasePath ? { OPENCODE_DB: databasePath } : {}) };
+function normalizeLaunch(cliPath: string, cwd: string, environment: NodeJS.ProcessEnv, target?: ExecutionTarget) {
+  const databasePath = resolveOpencodeDatabasePath(environment, target);
+  const normalized = { ...environment, ...(databasePath ? { OPENCODE_DB: opencodeTargetPath(databasePath, target) } : {}) };
   const entries = Object.entries(normalized).filter(([, value]) => value !== undefined).sort(([a], [b]) => a.localeCompare(b));
   return {
     normalized,
     ephemeral: databasePath === ':memory:',
-    key: JSON.stringify([cliPath, cwd, entries]),
+    key: JSON.stringify([cliPath, cwd, target?.method === 'wsl' ? target : undefined, entries]),
     // Database overrides remain legitimate historical bindings within the current launch environment.
-    compatibility: JSON.stringify([cliPath, cwd, entries.filter(([name]) => name !== 'OPENCODE_DB')]),
+    compatibility: JSON.stringify([cliPath, cwd, target?.method === 'wsl' ? target : undefined, entries.filter(([name]) => name !== 'OPENCODE_DB')]),
   };
 }

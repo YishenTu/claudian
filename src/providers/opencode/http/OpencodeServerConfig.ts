@@ -2,9 +2,11 @@ import { unwatchFile,watchFile } from 'node:fs';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { pathToFileURL } from 'node:url';
 
-import { parseOpencodeConfig, resolveOpencodeConfigPath, writeIfChanged } from '../runtime/OpencodeLaunchArtifacts';
+import type { ExecutionTarget } from '@/core/process/execution-target/types';
+
+import { opencodeHostPath, opencodeTargetPath } from '../runtime/OpencodeExecutionTarget';
+import { parseOpencodeConfig, resolveOpencodeConfigPath, resolveOpencodePluginReferences, writeIfChanged } from '../runtime/OpencodeLaunchArtifacts';
 import { OPENCODE_SESSION_TOOLS_PLUGIN_SOURCE } from '../runtime/OpencodeSessionToolsPlugin';
 import { isRecord } from './OpencodeHTTPClient';
 
@@ -16,8 +18,10 @@ export class OpencodeServerConfig {
   private watcher?: () => void;
   private readonly source: string | undefined;
 
-  constructor(readonly file: string, cwd: string, private readonly environment: NodeJS.ProcessEnv, readonly sessionToolsPluginPath?: string) {
-    this.source = resolveOpencodeConfigPath(environment.OPENCODE_CONFIG, cwd);
+  constructor(readonly file: string, cwd: string, private readonly environment: NodeJS.ProcessEnv, readonly sessionToolsPluginPath?: string, private readonly target?: ExecutionTarget) {
+    this.source = target?.method === 'wsl' && environment.OPENCODE_CONFIG
+      ? opencodeHostPath(path.posix.resolve(opencodeTargetPath(cwd, target), environment.OPENCODE_CONFIG.startsWith('~/') ? path.posix.join(environment.HOME!, environment.OPENCODE_CONFIG.slice(2)) : opencodeTargetPath(environment.OPENCODE_CONFIG, target)), target)
+      : resolveOpencodeConfigPath(environment.OPENCODE_CONFIG, cwd);
   }
 
   async initialize(onError: (error: Error) => void): Promise<void> {
@@ -49,20 +53,11 @@ export class OpencodeServerConfig {
   private write(): Promise<void> {
     const write = this.writes.catch(() => undefined).then(async () => {
       if (this.disposed) return;
+      const directory = this.source ? (this.target?.method === 'wsl' ? path.win32 : path).dirname(this.source) : '';
       const base = this.source
-        ? await parseOpencodeConfig(await readExplicitConfig(this.source), this.source, this.environment, path.dirname(this.source))
+        ? await parseOpencodeConfig(await readExplicitConfig(this.source), this.source, this.environment, directory, this.target)
         : {};
-      // Native resolves local plugin packages relative to their config document.
-      // Keep that meaning when layering the explicit document in managed storage.
-      for (const key of ['plugin', 'plugins']) {
-        if (!Array.isArray(base[key]) || !this.source) continue;
-        base[key] = (base[key] as unknown[]).map(value => {
-          const resolve = (value: unknown): unknown => typeof value === 'string' && (value.startsWith('./') || value.startsWith('../'))
-            ? pathToFileURL(path.resolve(path.dirname(this.source!), value)).href : value;
-          if (isRecord(value)) return { ...value, package: resolve(value.package) };
-          return Array.isArray(value) ? [resolve(value[0]), ...(value as unknown[]).slice(1)] : resolve(value);
-        });
-      }
+      if (this.source) resolveOpencodePluginReferences(base, directory, this.target);
       const config = { ...base, agents: { ...(isRecord(base.agents) ? base.agents : {}), ...Object.fromEntries(this.agents) } };
       // File/environment substitutions have already been resolved, including user text.
       await writeIfChanged(this.file, `${JSON.stringify(config, null, 2).replace(/\{(env|file):/g, '\\u007b$1:')}\n`);
@@ -72,7 +67,7 @@ export class OpencodeServerConfig {
   }
 }
 
-export async function createOpencodeServerConfig(cwd: string, environment: NodeJS.ProcessEnv, sessionTools = false): Promise<OpencodeServerConfig> {
+export async function createOpencodeServerConfig(cwd: string, environment: NodeJS.ProcessEnv, sessionTools = false, target?: ExecutionTarget): Promise<OpencodeServerConfig> {
   // Explicit config can contain credentials; never copy it into a synced vault.
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'claudian-opencode-'));
   try {
@@ -82,7 +77,7 @@ export async function createOpencodeServerConfig(cwd: string, environment: NodeJ
       await fs.writeFile(path.join(pluginPath, 'package.json'), JSON.stringify({ type: 'module' }));
       await fs.writeFile(path.join(pluginPath, 'index.js'), OPENCODE_SESSION_TOOLS_PLUGIN_SOURCE);
     }
-    return new OpencodeServerConfig(path.join(root, 'config.json'), cwd, environment, pluginPath);
+    return new OpencodeServerConfig(path.join(root, 'config.json'), cwd, environment, pluginPath, target);
   } catch (error) { await fs.rm(root, { recursive: true, force: true }); throw error; }
 }
 

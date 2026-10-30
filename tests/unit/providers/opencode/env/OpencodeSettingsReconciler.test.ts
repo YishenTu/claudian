@@ -78,3 +78,19 @@ describe('opencodeSettingsReconciler.reconcileModelWithEnvironment', () => {
     expect(fingerprint).not.toContain('/new/opencode.db');
   });
 });
+
+it('reconciles vault-inferred distro changes and preserves recorded locators', async () => {
+  const { getInstallationKey } = await import('@/core/device/InstallationKey');
+  const { opencodeProviderRegistration } = await import('@/providers/opencode/registration');
+  vi.stubGlobal('process', { ...process, platform: 'win32' });
+  try {
+    const key = getInstallationKey();
+    const settings = { providerConfigs: { opencode: { enabled: true, installationMethodsByHost: { [key]: 'wsl' } } } };
+    expect(opencodeSettingsReconciler.reconcileModelWithEnvironment(settings, { vaultPath: '\\\\wsl$\\Ubuntu\\vault' }).changed).toBe(true);
+    expect(opencodeSettingsReconciler.reconcileModelWithEnvironment(settings, { vaultPath: '\\\\wsl$\\Ubuntu\\vault' }).changed).toBe(false);
+    expect(opencodeSettingsReconciler.reconcileModelWithEnvironment(settings, { vaultPath: '\\\\wsl$\\Debian\\vault' }).changed).toBe(true);
+    const conversation: any = { providerId: 'opencode', sessionId: 'native', providerState: { databasePath: '\\\\wsl$\\Ubuntu\\home\\alice\\.local\\share\\opencode\\opencode.db' } };
+    expect(opencodeSettingsReconciler.invalidateConversationSessions([conversation])).toEqual([]);
+    expect(opencodeProviderRegistration.historyService?.buildPersistedProviderState?.(conversation)).toMatchObject({ databasePath: conversation.providerState.databasePath });
+  } finally { vi.unstubAllGlobals(); }
+});

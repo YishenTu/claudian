@@ -1,12 +1,14 @@
 import * as fs from 'fs';
 
 import { normalizeConfiguredCLIPath } from '@/core/process/cliPath';
-import { probeCLIInstallation } from '@/core/providers/cli/CLIInstallationProbe';
-import { getRuntimeEnvironmentVariables } from '@/core/providers/providerEnvironment';
+import { resolveExecutionTargetAsync } from '@/core/process/execution-target/ExecutionTargetResolver';
+import { probeTargetCLIInstallation } from '@/core/providers/cli/TargetCLIInstallationProbe';
+import { getRuntimeEnvironmentText } from '@/core/providers/providerEnvironment';
 import type { ProviderCLIResolver } from '@/core/providers/types';
 import { OPENCODE_PROVIDER_ICON } from '@/shared/icons';
 import { AccessibleSetting } from '@/shared/settings/AccessibleSetting';
 import { renderCLIInstallationSetting } from '@/shared/settings/CLIInstallationSetting';
+import { renderExecutionTargetSettings, validateExecutionTargetCLIPath } from '@/shared/settings/ExecutionTargetSettings';
 
 import type { ProviderModelCatalog } from '../../../core/providers/models/ProviderModelCatalog';
 import { ProviderSettingsCoordinator } from '../../../core/providers/ProviderSettingsCoordinator';
@@ -22,6 +24,9 @@ import {
 } from '../../../shared/settings/ProviderModelEnablementWarning';
 import { renderProviderModelsSection } from '../../../shared/settings/ProviderModelsSection';
 import type { OpencodeMetadataService } from '../metadata/OpencodeMetadataService';
+import { resolveOpencodeWSLCLIPath } from '../runtime/opencodeCLIReference';
+import { getOpencodeWSLForwardedEnvironment, opencodeEnvironment } from '../runtime/OpencodeExecutionTarget';
+import { buildOpencodeRuntimeEnv } from '../runtime/OpencodeRuntimeEnvironment';
 import {
   getOpencodeProviderSettings,
   updateOpencodeProviderSettings
@@ -79,17 +84,23 @@ export function createOpencodeSettingsTabRenderer(
         providerName: 'OpenCode',
       });
 
-      renderCLIInstallationSetting({
+      const cliPathControl = renderCLIInstallationSetting({
         cliName: 'OpenCode',
         icon: OPENCODE_PROVIDER_ICON,
         inspect: async () => {
           const settings = context.plugin.settings as unknown as Record<string, unknown>;
           const config = getOpencodeProviderSettings(settings);
-          const installation = await probeCLIInstallation({
-            path: await context.plugin.getResolvedProviderCliPath('opencode'),
+          const hostCwd = context.plugin.workingDirectory ?? process.cwd();
+          const target = await resolveExecutionTargetAsync({ settings: config, hostVaultPath: hostCwd });
+          const command = target.method === 'wsl' ? resolveOpencodeWSLCLIPath(config) : await context.plugin.getResolvedProviderCliPath('opencode');
+          const environmentText = getRuntimeEnvironmentText(settings, 'opencode');
+          const env = opencodeEnvironment(buildOpencodeRuntimeEnv(environmentText, command ?? '', undefined, undefined, target));
+          const installation = await probeTargetCLIInstallation({
+            target, hostCwd, command,
+            forwardEnvironment: getOpencodeWSLForwardedEnvironment(env, environmentText),
             configuredPath: config.cliPathsByHost[hostnameKey] || config.cliPath,
             args: ['--version'],
-            env: { ...process.env, ...getRuntimeEnvironmentVariables(settings, 'opencode') },
+            env,
           });
           updateMigrationNotice(installation.version);
           return installation;
@@ -119,10 +130,26 @@ export function createOpencodeSettingsTabRenderer(
             () => opencodeWorkspace?.cliResolver?.reset(),
           );
         },
-        placeholder: process.platform === 'win32'
+        placeholder: process.platform === 'win32' && getOpencodeProviderSettings(settingsBag).installationMethod === 'wsl' ? 'opencode' : process.platform === 'win32'
           ? 'C:\\Users\\you\\AppData\\Roaming\\npm\\opencode.cmd'
           : '/usr/local/bin/opencode',
-        validate: validateCLIPath,
+        validate: value => process.platform === 'win32' && getOpencodeProviderSettings(settingsBag).installationMethod === 'wsl'
+          ? validateExecutionTargetCLIPath(value, getOpencodeProviderSettings(settingsBag)) : validateCLIPath(value),
+      });
+
+      renderExecutionTargetSettings({
+        container, providerName: 'OpenCode',
+        getValue: () => getOpencodeProviderSettings(settingsBag),
+        onChange: async updates => {
+          await context.plugin.applyProviderRuntimeSettings(['opencode'],
+            settings => { updateOpencodeProviderSettings(settings, updates); },
+            () => opencodeWorkspace.cliResolver.reset());
+        },
+        onRefresh: () => {
+          cliPathControl.setPlaceholder(getOpencodeProviderSettings(settingsBag).installationMethod === 'wsl' ? 'opencode' : 'C:\\Users\\you\\AppData\\Roaming\\npm\\opencode.cmd');
+          cliPathControl.revalidate();
+          void cliPathControl.refresh();
+        },
       });
 
       new AccessibleSetting(container).setName('Models').setHeading();

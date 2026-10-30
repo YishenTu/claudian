@@ -107,3 +107,16 @@ describe('OpencodeCLIResolver', () => {
     expect(mockedStat.mock.calls.length).toBeGreaterThan(firstCallCount);
   });
 });
+
+it('uses Linux command references without touching host files for a Windows WSL installation', () => {
+  vi.stubGlobal('process', { ...process, platform: 'win32' });
+  try {
+    mockedStat.mockClear();
+    const resolver = new OpencodeCLIResolver();
+    const config = { installationMethodsByHost: { 'current-host': 'wsl' }, cliPathsByHost: { 'current-host': '/home/alice/bin/open code' } };
+    expect(resolver.resolveFromSettings({ providerConfigs: { opencode: config } })).toBe('/home/alice/bin/open code');
+    config.cliPathsByHost['current-host'] = 'C:\\Tools\\opencode.cmd';
+    expect(resolver.resolveFromSettings({ providerConfigs: { opencode: config } })).toBe('opencode');
+    expect(mockedStat).not.toHaveBeenCalled();
+  } finally { vi.unstubAllGlobals(); }
+});
