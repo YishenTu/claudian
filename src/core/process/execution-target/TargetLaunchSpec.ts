@@ -16,6 +16,10 @@ export interface BuildTargetLaunchSpecOptions {
 // Capture startup exports in a separate process so rc files cannot consume or
 // write protocol streams. Only validated variable names enter eval; values stay data.
 const WSL_OUTER_SCRIPT = `# The outer shell retains protocol stdio and positional arguments.
+if [ "\${CLAUDIAN_WSL_HOME+x}" = x ]; then
+  export HOME=$CLAUDIAN_WSL_HOME
+  unset CLAUDIAN_WSL_HOME
+fi
 claudian_cwd=$PWD
 claudian_count=0
 claudian_umask=$(umask)

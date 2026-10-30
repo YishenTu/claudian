@@ -119,6 +119,10 @@ describe.skipIf(!available)('native Windows to WSL execution', { timeout: 60_000
         .toEqual({ path: command, version: '1.2.3', source: 'custom' });
       const referenceEnv = { ...env, HOME: root };
       const forwardEnvironment = [{ key: 'HOME' }];
+      // WSL init overwrites HOME before the launcher runs; verify restoration.
+      expect(await probe(buildTargetLaunchSpec({ target: resolvedTarget, hostCwd, env: referenceEnv,
+        command: '/bin/sh', args: ['-c', 'printf "%s" "$HOME"'], forwardEnvironment,
+      }))).toBe(root);
       const reference = "~/CLI with 'quotes'";
       expect(await probe(buildTargetLaunchSpec({ target: resolvedTarget, hostCwd, env: referenceEnv, command: reference, args: ['--version'], forwardEnvironment })))
         .toBe('test-cli 1.2.3\n');
@@ -175,7 +179,7 @@ describe.skipIf(!available)('native Windows to WSL execution', { timeout: 60_000
         child.stdin.end('{"method":"initialize"}\n');
         expect(await closed).toBe(0);
         expect(stdout).toBe('{"method":"initialize"}');
-        expect(stderr.match(/Unable to capture WSL shell environment/g) ?? [])
+        expect(stderr.match(/Unable to capture WSL shell environment/g) ?? [], `${shell} ${behavior}: ${stderr}`)
           .toHaveLength(behavior === 'replace' || behavior === 'fail' ? 1 : 0);
       }
       await writeFixture('temp-file');

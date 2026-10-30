@@ -13,3 +13,10 @@ it('replaces inherited direction and translation flags for caller-forwarded keys
     { key: 'OPENAI_API_KEY' }, { key: 'ROOT', hostPath: true, pathList: true },
   ]).WSLENV).toBe('KEEP/lu:OPENAI_API_KEY:ROOT/pl');
 });
+
+it('preserves forwarded HOME path flags on the copy protected from WSL account defaults', () => {
+  expect(forwardWSLEnvironment({ HOME: 'C:\\home', WSLENV: 'HOME/up' }, []))
+    .toEqual({ HOME: 'C:\\home', CLAUDIAN_WSL_HOME: 'C:\\home', WSLENV: 'HOME/up:CLAUDIAN_WSL_HOME/up' });
+  expect(forwardWSLEnvironment({ HOME: 'C:\\home', WSLENV: 'HOME/w' }, []))
+    .toEqual({ HOME: 'C:\\home', WSLENV: 'HOME/w' });
+});

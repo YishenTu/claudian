@@ -70,6 +70,17 @@ for (const { name, executable } of shells) {
         .toEqual(['caller-key', '/caller-home']);
     });
 
+    it('preserves configured HOME when the platform supplies the account home', async () => {
+      const configuredHome = `${root}/configured home`;
+      await fs.mkdir(configuredHome);
+      await fs.writeFile(`${configuredHome}/CLI with 'quotes'`, '#!/bin/sh\nprintf "test-cli 1.2.3\\n"\n', { mode: 0o755 });
+      const spec = buildTargetLaunchSpec({ ...options("~/CLI with 'quotes'", ['--version']),
+        env: { HOME: configuredHome }, forwardEnvironment: [{ key: 'HOME' }],
+      });
+      // The boundary fixture supplies the account HOME, as WSL init does.
+      expect(await runProcessProbe({ ...spec, cwd: root })).toBe('test-cli 1.2.3\n');
+    });
+
     it('lets startup PATH take effect when inherited WSLENV excludes Windows-to-Linux forwarding', async () => {
       const spec = buildTargetLaunchSpec({ ...options('test-cli', ['--version']),
         env: { PATH: '/usr/bin:/bin', WSLENV: 'PATH/w' },
@@ -217,9 +228,12 @@ for (const name of ['bash', 'dash', 'busybox']) {
         const result = await runProcessProbe({ ...spec, cwd: root }, reason === 'deadline' ? 12_000 : 300);
         expect(result).toBe(reason === 'deadline' ? `CLI_OK:base-key${process.umask().toString(8).padStart(4, '0')}\n` : null);
         const pid = Number(await fs.readFile(path.join(root, 'blocking-pid'), 'utf8'));
-        // Linux PID 1 may retain a dead orphan briefly; a zombie is no live job.
-        const status = await fs.readFile(`/proc/${pid}/stat`, 'utf8').catch(() => '');
-        expect(status === '' || /\) Z /.test(status)).toBe(true);
+        // kill delivers a signal; it does not wait for a grandchild's exit.
+        // Observe kernel exit, allowing PID 1 to retain a dead orphan as a zombie.
+        await vi.waitFor(async () => {
+          const status = await fs.readFile(`/proc/${pid}/stat`, 'utf8').catch(() => '');
+          expect(status === '' || /\) Z /.test(status), `Startup child has not exited: ${status}`).toBe(true);
+        });
         await expect(fs.stat(await captureFile())).rejects.toThrow(/ENOENT/);
       } finally {
         const pid = Number(await fs.readFile(path.join(root, 'blocking-pid'), 'utf8').catch(() => '0'));

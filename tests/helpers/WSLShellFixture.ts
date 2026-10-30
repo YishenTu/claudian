@@ -8,13 +8,14 @@ printf 'rc noise without a newline'
 printf '%s' "$CLAUDIAN_WSL_TEST_NOISE"
 `;
   const path = 'export PATH="$CLAUDIAN_WSL_TEST_HOME/bin:/usr/bin:/bin"\n';
+  // BSD csh rejects a single expanded word this large; emit the bytes via sh.
   const csh = `cd /tmp
 setenv OPENAI_API_KEY linux-shell-key
 setenv CODEX_HOME "$CLAUDIAN_WSL_TEST_HOME/codex-home"
 setenv STARSHIP_SESSION_KEY $$
 setenv PATH "$CLAUDIAN_WSL_TEST_HOME/bin:/usr/bin:/bin"
 /usr/bin/printf 'rc noise without a newline'
-/usr/bin/printf '%s' "$CLAUDIAN_WSL_TEST_NOISE"
+/bin/sh -c 'printf "%s" "$CLAUDIAN_WSL_TEST_NOISE"'
 `;
   const startup = wslShellStartupBehavior(behavior);
   return {

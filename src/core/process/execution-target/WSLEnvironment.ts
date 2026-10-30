@@ -16,5 +16,12 @@ export function forwardWSLEnvironment(
     const flags = `${hostPath ? 'p' : ''}${pathList ? 'l' : ''}`;
     entries.push(`${key}${flags ? `/${flags}` : ''}`);
   }
+  // WSL init replaces HOME with the account's passwd home after WSLENV import.
+  // The launcher restores this private copy after that platform boundary.
+  const homeEntry = entries.find(entry => /^HOME(?:\/[^w]*)?$/u.test(entry));
+  if (homeEntry && env.HOME !== undefined) {
+    entries.push(homeEntry.replace('HOME', 'CLAUDIAN_WSL_HOME'));
+    return { ...env, CLAUDIAN_WSL_HOME: env.HOME, WSLENV: entries.join(':') };
+  }
   return entries.length || env.WSLENV !== undefined ? { ...env, WSLENV: entries.join(':') } : { ...env };
 }
