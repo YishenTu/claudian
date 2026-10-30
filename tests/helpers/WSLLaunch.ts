@@ -24,4 +24,3 @@ export function readWSLExec(spec: Pick<TargetLaunchSpec, 'args'>): { command: st
   const [command, ...args] = spec.args.slice(index + 1).map(readWindowsToken);
   return { command, args };
 }
-

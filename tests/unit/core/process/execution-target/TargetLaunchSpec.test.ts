@@ -12,4 +12,3 @@ it('locates wsl.exe independently of an explicitly configured Linux PATH', () =>
     expect(spec.env).toEqual({ PATH: '/opt/cli:/usr/bin', WSLENV: 'PATH' });
   } finally { vi.unstubAllEnvs(); }
 });
-
