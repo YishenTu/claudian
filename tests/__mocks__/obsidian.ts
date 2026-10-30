@@ -1,10 +1,12 @@
 import { Events } from '@test/helpers/ObsidianEvents';
+import { createObsidianKeymap } from '@test/helpers/ObsidianKeymap';
 import { createObsidianWorkspace } from '@test/helpers/ObsidianWorkspace';
 import type {
   AbstractTextComponent as ObsidianTextComponent,
   BaseComponent,
   ButtonComponent as ObsidianButtonComponent,
   DropdownComponent as ObsidianDropdownComponent,
+  KeymapContext,
   Setting as ObsidianSetting,
   SettingGroup as ObsidianSettingGroup,
   ToggleComponent as ObsidianToggleComponent,
@@ -208,10 +210,11 @@ export class Scope {
   static instances: Scope[] = [];
 
   parent?: Scope;
+  win: Window | null = null;
   handlers: Array<{
     modifiers: string[] | null;
     key: string | null;
-    func: (evt: KeyboardEvent, ctx?: unknown) => false | unknown;
+    func: (evt: KeyboardEvent, ctx: KeymapContext) => unknown;
   }> = [];
 
   constructor(parent?: Scope) {
@@ -222,9 +225,9 @@ export class Scope {
   register = vi.fn((
     modifiers: string[] | null,
     key: string | null,
-    func: (evt: KeyboardEvent, ctx?: unknown) => false | unknown
+    func: (evt: KeyboardEvent, ctx: KeymapContext) => unknown
   ) => {
-    const handler = { modifiers, key, func };
+    const handler = { scope: this, modifiers, key, func };
     this.handlers.push(handler);
     return handler;
   });
@@ -233,12 +236,32 @@ export class Scope {
     this.handlers = this.handlers.filter((entry) => entry !== handler);
   });
 
-  /** Dispatch a host keymap event explicitly; this does not simulate browser focus or key defaults. */
+  private matches(handler: Scope['handlers'][number], context: KeymapContext): boolean {
+    const modifiers = handler.modifiers?.map(value => value === 'Mod' ? (Platform.isMacOS ? 'Meta' : 'Ctrl') : value)
+      .sort().join(',');
+    return (modifiers === undefined || modifiers === context.modifiers)
+      && (!handler.key || handler.key === context.vkey || handler.key.toLowerCase() === context.key?.toLowerCase());
+  }
+
+  // app.js ly: undefined from a specific binding stops scope fallback but does not consume the DOM event.
+  handleKey(event: KeyboardEvent, context: KeymapContext): unknown {
+    for (const handler of this.handlers) {
+      if (!this.matches(handler, context)) continue;
+      const result = handler.func(event, context);
+      if (result !== undefined || handler.key !== null || handler.modifiers !== null) return result;
+    }
+    return this.parent?.handleKey(event, context);
+  }
+
+  /** Direct boundary dispatch for existing callers; use a real keydown for capture/target behavior. */
   press(modifiers: string[], key: string): boolean {
-    const handler = this.handlers.find(entry => entry.key === key
-      && (entry.modifiers === null || JSON.stringify([...entry.modifiers].sort()) === JSON.stringify([...modifiers].sort())));
-    if (!handler) return this.parent?.press(modifiers, key) ?? false;
-    handler.func(new KeyboardEvent('keydown', { key, cancelable: true }));
+    const compiled = modifiers.map(value => value === 'Mod' ? (Platform.isMacOS ? 'Meta' : 'Ctrl') : value);
+    const context = { modifiers: compiled.sort().join(','), key, vkey: key };
+    if (!this.handlers.some(handler => this.matches(handler, context))) return this.parent?.press(modifiers, key) ?? false;
+    this.handleKey(new KeyboardEvent('keydown', {
+      key, cancelable: true, ctrlKey: compiled.includes('Ctrl'), metaKey: compiled.includes('Meta'),
+      altKey: compiled.includes('Alt'), shiftKey: compiled.includes('Shift'),
+    }), context);
     return true;
   }
 }
@@ -267,15 +290,13 @@ export class MetadataCache extends Events {
 
 export class App {
   metadataCache = new MetadataCache();
-  // Scope ownership is observable; native keyboard routing remains outside jsdom.
-  keymap = {
-    pushScope: vi.fn((_scope: Scope) => {}),
-    popScope: vi.fn((_scope: Scope) => {}),
-  };
+  keymap = createObsidianKeymap(new Scope(), () =>
+    activeDocument?.defaultView ?? (typeof document === 'undefined' ? null : document.defaultView));
   vault = new Vault();
-  workspace: any = {
-    // Obsidian always mounts the workspace container; DOM suites get one with real events.
-    ...createObsidianWorkspace(typeof document === 'undefined' ? undefined : hostDocument().createElement('div')),
+  // Keep the workspace instance that owns its readiness and callback queue.
+  workspace = Object.assign(createObsidianWorkspace(
+    typeof document === 'undefined' ? undefined : hostDocument().createElement('div'),
+  ), {
     getActiveFile: (): TFile | null => null,
     getLeavesOfType: vi.fn().mockReturnValue([]),
     getRightLeaf: vi.fn().mockReturnValue({
@@ -289,7 +310,7 @@ export class App {
     }),
     setActiveLeaf: vi.fn(),
     revealLeaf: vi.fn(),
-  };
+  });
 }
 
 export class MarkdownView {

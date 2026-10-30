@@ -1,3 +1,4 @@
+// @test-ci {"native":true,"inputs":["tests/helpers/providers/opencode/OpencodeNativePeer.cjs"]}
 /** @vitest-environment jsdom */
 import '@/providers';
 

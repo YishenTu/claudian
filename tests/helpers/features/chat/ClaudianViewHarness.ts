@@ -25,12 +25,9 @@ export interface ClaudianViewHarnessOptions {
  * can drive the lifecycle seams (`tabManager`, `tabWorkspace`, `scope`) that Obsidian owns.
  */
 export async function createClaudianView(options: ClaudianViewHarnessOptions = {}): Promise<Record<string, any> & ChatViewHost & Pick<ClaudianView, 'containerEl' | 'contentEl'>> {
-  const app = new App();
-  Object.assign(app.workspace, {
-    layoutReady: true,
-    onLayoutReady: vi.fn((callback: () => void) => callback()),
-    requestSaveLayout: Object.assign(vi.fn(), { run: vi.fn() }),
-  });
+  const app = options.host?.app ?? options.plugin?.fixture?.host.app ?? options.plugin?.app ?? new App();
+  vi.spyOn(app.workspace, 'onLayoutReady');
+  vi.spyOn(app.workspace, 'requestSaveLayout');
   vi.spyOn(app.vault, 'on');
   vi.spyOn(app.vault, 'offref');
   vi.spyOn(app.metadataCache, 'on');

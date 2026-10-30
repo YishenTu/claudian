@@ -1,3 +1,4 @@
+// @test-ci {"native":true}
 import { readdir } from 'node:fs/promises';
 
 import { DesktopVault } from '@test/helpers/core/DesktopVault';

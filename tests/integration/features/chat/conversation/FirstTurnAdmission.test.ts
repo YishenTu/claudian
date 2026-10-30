@@ -2,8 +2,8 @@ import '@/providers';
 
 // @vitest-environment jsdom
 import { createFixture, deferred, waitForCall } from '@test/helpers/ChatInputHarness';
+import { conversationRecord } from '@test/helpers/features/chat/ConversationFixture';
 import { createProjectsFake } from '@test/helpers/features/chat/ProjectsFake';
-import { conversationRecord } from '@test/helpers/features/chat/TabManagerTestHarness';
 
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import type { Conversation } from '@/core/types';

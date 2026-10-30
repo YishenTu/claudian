@@ -1,3 +1,4 @@
+// @test-ci {"inputs":["tests/fixtures/providers/models/**","src/providers/{grok,opencode}/{settings,config,models,discoveryState,internal/compareCollections}.ts","src/core/device/InstallationKey.ts","src/core/providers/providerConfig.ts","src/core/providers/{settings,models}/**"]}
 import { execFileSync } from 'node:child_process';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';

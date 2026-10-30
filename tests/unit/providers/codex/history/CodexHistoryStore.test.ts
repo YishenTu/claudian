@@ -1,3 +1,4 @@
+// @test-ci {"native":true,"inputs":["tests/fixtures/providers/codex/history/codex-session-{persisted-tools,agent-lifecycle,websearch-persisted}.jsonl"]}
 import { parseCodexSessionContent } from '@test/helpers/providers/codex/parseCodexSessionContent';
 import { testDate, testTime } from '@test/helpers/testClock';
 import type { Dirent } from 'fs';

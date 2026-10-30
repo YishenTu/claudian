@@ -1,3 +1,4 @@
+// @test-ci {"native":true}
 import { resolve } from 'node:path';
 
 import { NativePeer } from '@test/helpers/deepseek/NativePeer';

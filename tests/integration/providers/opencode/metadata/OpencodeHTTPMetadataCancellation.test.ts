@@ -1,3 +1,4 @@
+// @test-ci {"inputs":["tests/helpers/providers/opencode/OpencodeNativePeer.cjs"]}
 import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 
 import { OpencodeServerLease, OpencodeServerService } from '@/providers/opencode/http/OpencodeServerService';

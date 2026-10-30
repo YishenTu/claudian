@@ -1,3 +1,4 @@
+// @test-ci {"native":true,"inputs":["tests/helpers/providers/opencode/OpencodeNativePeer.cjs"]}
 import '@/providers';
 
 import { capturedSelectionPrompt, capturedSelections } from '@test/helpers/capturedSelections';

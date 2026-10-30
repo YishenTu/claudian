@@ -1,7 +1,7 @@
 import { createChatFeatureHost } from '@test/helpers/features/chat/ChatFeatureHostFixture';
+import { conversationRecord } from '@test/helpers/features/chat/ConversationFixture';
 import { createProjectsFake } from '@test/helpers/features/chat/ProjectsFake';
 import { createSessionRuntimePool } from '@test/helpers/features/chat/SessionRuntimePoolHarness';
-import { conversationRecord } from '@test/helpers/features/chat/TabManagerTestHarness';
 import { App } from 'obsidian';
 
 import type { ConversationMeta } from '@/core/types';

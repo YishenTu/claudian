@@ -3,6 +3,8 @@ import { deserialize, serialize } from 'node:v8';
 
 import type * as AxeAdapter from '@test/helpers/accessibility';
 import { ControlledResizeObserver, resetResizeObservers } from '@test/helpers/dom/ResizeObserver';
+import { resetObsidianKeymaps } from '@test/helpers/ObsidianKeymap';
+import { resetWorkspaceTimers } from '@test/helpers/ObsidianWorkspace';
 
 
 // Node-only suites do not need to load the accessibility engine.
@@ -22,6 +24,8 @@ type TestWindow = typeof globalThis & {
 };
 
 const testWindow = globalThis as TestWindow;
+afterEach(resetWorkspaceTimers);
+afterEach(resetObsidianKeymaps);
 
 if (!globalThis.TextEncoder) {
   Object.assign(globalThis, { TextDecoder, TextEncoder });

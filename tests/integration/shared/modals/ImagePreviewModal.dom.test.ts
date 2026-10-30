@@ -10,7 +10,7 @@ import { createSessionRuntimePool } from '@test/helpers/features/chat/SessionRun
 import { FakeSideBackend, type FakeSideSession } from '@test/helpers/features/chat/SideChatSessionHarness';
 import { testDate } from '@test/helpers/testClock';
 import { fireEvent, waitFor, within } from '@testing-library/dom';
-import { App, Component, type Scope } from 'obsidian';
+import { App, Component } from 'obsidian';
 
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { type ChatMessage, type ClaudianSettings, type Conversation, type ImageAttachment } from '@/core/types';
@@ -35,14 +35,6 @@ async function createView() {
   const backend = new FakeSideBackend();
   vi.spyOn(ProviderRegistry, 'createExecutionBackend').mockReturnValue(backend);
   const app = new App();
-  const scopes: Scope[] = [];
-  Object.assign(app, { keymap: {
-    pushScope: (scope: Scope) => { scopes.push(scope); },
-    popScope: (scope: Scope) => {
-      const index = scopes.indexOf(scope);
-      if (index >= 0) scopes.splice(index, 1);
-    },
-  } });
   Object.assign(app.vault.adapter, { basePath: '/vault' });
   const settings = {
     model: 'claude-sonnet-4-5', effortLevel: 'high', permissionMode: 'manual',
@@ -97,45 +89,26 @@ async function createView() {
     (tab.dom.contentEl.classList.contains('claudian-hidden') ? [] : [{}]) as unknown as DOMRectList);
   activateTab(tab);
   tab.dom.inputEl.focus();
-  // The real view Scope is the host keymap's destination; only its delivery is external.
+  // The active view scope sits below modal scopes in the shared host keymap.
   const root = await createClaudianView({ host: plugin, containerEl: tab.dom.contentEl,
     contentEl: tab.dom.contentEl, tabManager: { getActiveTab: () => tab } });
   root.wireEventHandlers();
-  return { get tab() { return tab; }, backend, conversation, plugin, root, scopes,
-    dispose: async () => { await destroyTab(tab); await pool.dispose(); await messaging.dispose(); await plugin.providerHost.executionLifecycleRegistry.dispose(); } };
+  app.keymap.pushScope(root.scope);
+  const scopeKeys = vi.spyOn(root.scope, 'handleKey');
+  return { get tab() { return tab; }, backend, conversation, plugin, scopeKeys,
+    dispose: async () => {
+      try {
+        await destroyTab(tab);
+        await pool.dispose();
+        await messaging.dispose();
+        await plugin.providerHost.executionLifecycleRegistry.dispose();
+      } finally {
+        app.keymap.popScope(root.scope);
+      }
+    } };
 }
 
 type View = Awaited<ReturnType<typeof createView>>;
-
-/** External Obsidian keymap stand-in: delivers real DOM events to the actual registered Scope. */
-function installHostKeymap(view: View): { deliveries: number[]; remove: () => void } {
-  const deliveries: number[] = [];
-  const deliver = (event: KeyboardEvent) => {
-    // Obsidian installs this listener on window capture before any preview is opened.
-    const scope = view.scopes.at(-1) ?? view.root.scope;
-    const handlers = (scope as unknown as { handlers: Array<{
-      key: string | null;
-      modifiers: string[] | null;
-      func: (event: KeyboardEvent) => unknown;
-    }> }).handlers;
-    const modifiers = [
-      ...(event.ctrlKey ? ['Ctrl'] : []), ...(event.metaKey ? ['Meta'] : []),
-      ...(event.altKey ? ['Alt'] : []), ...(event.shiftKey ? ['Shift'] : []),
-    ];
-    const handler = handlers.find(entry => entry.key === event.key && (
-      entry.modifiers === null || (entry.modifiers.length === modifiers.length &&
-        entry.modifiers.every(modifier => modifiers.includes(modifier)))
-    ));
-    if (!handler) return;
-    if (scope === view.root.scope) deliveries.push(1);
-    if (handler.func(event) === false) {
-      event.preventDefault();
-      event.stopPropagation();
-    }
-  };
-  window.addEventListener('keydown', deliver, true);
-  return { deliveries, remove: () => window.removeEventListener('keydown', deliver, true) };
-}
 
 function textbox(view: View): HTMLElement { return within(view.tab.dom.inputEl).getByRole('textbox'); }
 
@@ -242,7 +215,6 @@ it.each(workScenarios)(
   'dismisses the message-image preview with Escape without stopping $title',
   async ({ start }) => {
     const view = await createView();
-    const host = installHostKeymap(view);
     let pending: Promise<void> | undefined;
     try {
       const work = await start(view);
@@ -264,15 +236,14 @@ it.each(workScenarios)(
       expect(within(document.body).queryByRole('dialog', { name: 'Image preview: pixel.png' })).toBeNull();
       expect(document.activeElement).toBe(trigger);
       work.assertWorking();
-      expect(host.deliveries).toHaveLength(0);
+      expect(view.scopeKeys).not.toHaveBeenCalled();
       expect(escape.defaultPrevented).toBe(true);
 
       // The next Escape resumes ordinary selected-destination cancellation.
       pressEscape(trigger);
       await waitFor(() => expect(work.session.cancelCalls).toBe(1));
-      expect(host.deliveries).toHaveLength(1);
+      expect(view.scopeKeys).toHaveBeenCalledTimes(1);
     } finally {
-      host.remove();
       // Release runtime and pool first so a fault swallowing the cancellation cannot hang cleanup;
       // the pending send is still awaited after disposal, and assertions never observe cleanup.
       try {
@@ -286,7 +257,6 @@ it.each(workScenarios)(
 
 it.each(['close button', 'backdrop'] as const)('releases the preview scope after dismissal by %s', async method => {
   const view = await createView();
-  const host = installHostKeymap(view);
   try {
     const trigger = renderMessageImage(view);
     const dialog = openPreview(trigger);
@@ -298,16 +268,14 @@ it.each(['close button', 'backdrop'] as const)('releases the preview scope after
     expect(within(document.body).queryByRole('dialog', { name: 'Image preview: pixel.png' })).toBeNull();
     expect(document.activeElement).toBe(trigger);
     pressEscape(trigger);
-    expect(host.deliveries).toHaveLength(1);
+    expect(view.scopeKeys).toHaveBeenCalledTimes(1);
   } finally {
-    host.remove();
     await view.dispose();
   }
 });
 
 it('opens from the composer attachment action and closes with its owner on destroy', async () => {
   const view = await createView();
-  const host = installHostKeymap(view);
   try {
     type(view, 'Running prompt');
     const pending = view.tab.controllers.inputController.sendMessage();
@@ -328,7 +296,7 @@ it('opens from the composer attachment action and closes with its owner on destr
     expect(within(document.body).queryByRole('dialog', { name: 'Image preview: pixel.png' })).toBeNull();
     expect(document.activeElement).toBe(attachment);
     expect(session.cancelCalls).toBe(0);
-    expect(host.deliveries).toHaveLength(0);
+    expect(view.scopeKeys).not.toHaveBeenCalled();
     expect(escape.defaultPrevented).toBe(true);
 
     pressEscape(attachment);
@@ -339,17 +307,15 @@ it('opens from the composer attachment action and closes with its owner on destr
     view.tab.ui.imageContextManager.destroy();
     expect(within(document.body).queryByRole('dialog', { name: 'Image preview: pixel.png' })).toBeNull();
     pressEscape(document.body);
-    expect(host.deliveries).toHaveLength(2);
+    expect(view.scopeKeys).toHaveBeenCalledTimes(2);
     await pending;
   } finally {
-    host.remove();
     await view.dispose();
   }
 });
 
 it('contains Tab and Shift+Tab on its single named close control', async () => {
   const view = await createView();
-  const host = installHostKeymap(view);
   try {
     const trigger = renderMessageImage(view);
     const dialog = openPreview(trigger);
@@ -362,14 +328,12 @@ it('contains Tab and Shift+Tab on its single named close control', async () => {
       expect(document.activeElement).toBe(closeButton);
     }
   } finally {
-    host.remove();
     await view.dispose();
   }
 });
 
 it('replaces an open preview and releases the replaced dialog scope', async () => {
   const view = await createView();
-  const host = installHostKeymap(view);
   try {
     const first = renderMessageImage(view, [IMAGE, { ...IMAGE, id: 'second', name: 'second.png' }]);
     first.focus();
@@ -392,16 +356,14 @@ it('replaces an open preview and releases the replaced dialog scope', async () =
     // The replacement released the old preview's scope together with its dialog; the next Escape
     // leaves no preview scope and reaches the host keymap from the restored first trigger.
     pressEscape(first);
-    expect(host.deliveries).toHaveLength(1);
+    expect(view.scopeKeys).toHaveBeenCalledTimes(1);
   } finally {
-    host.remove();
     await view.dispose();
   }
 });
 
 it('skips restoring focus to a removed trigger and still releases its scope', async () => {
   const view = await createView();
-  const host = installHostKeymap(view);
   try {
     const trigger = renderMessageImage(view);
     const dialog = openPreview(trigger);
@@ -416,16 +378,14 @@ it('skips restoring focus to a removed trigger and still releases its scope', as
     expect(restoreFocus).not.toHaveBeenCalled();
     expect(document.activeElement).toBe(document.body);
     pressEscape(document.body);
-    expect(host.deliveries).toHaveLength(1);
+    expect(view.scopeKeys).toHaveBeenCalledTimes(1);
   } finally {
-    host.remove();
     await view.dispose();
   }
 });
 
 it('closes the preview and releases its scope when the renderer is disposed', async () => {
   const view = await createView();
-  const host = installHostKeymap(view);
   try {
     const trigger = renderMessageImage(view);
     openPreview(trigger);
@@ -435,9 +395,8 @@ it('closes the preview and releases its scope when the renderer is disposed', as
 
     expect(within(document.body).queryByRole('dialog', { name: 'Image preview: pixel.png' })).toBeNull();
     pressEscape(document.body);
-    expect(host.deliveries).toHaveLength(1);
+    expect(view.scopeKeys).toHaveBeenCalledTimes(1);
   } finally {
-    host.remove();
     await view.dispose();
   }
 });

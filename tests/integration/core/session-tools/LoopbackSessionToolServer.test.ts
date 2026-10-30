@@ -1,3 +1,4 @@
+// @test-ci {"native":true}
 import * as http from 'node:http';
 
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';

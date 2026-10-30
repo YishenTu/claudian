@@ -3,8 +3,8 @@ import '@/providers';
 
 import { createHarness as createExecutionHarness } from '@test/helpers/ChatExecutionHarness';
 import { holdResponse } from '@test/helpers/ConversationPorts';
+import { conversationRecord } from '@test/helpers/features/chat/ConversationFixture';
 import { createSessionBrowserHost } from '@test/helpers/features/chat/SessionBrowserTestHarness';
-import { conversationRecord } from '@test/helpers/features/chat/TabManagerTestHarness';
 import { WorkspaceLeaf } from 'obsidian';
 
 import type { ChatViewHost } from '@/features/chat/ChatFeatureHost';

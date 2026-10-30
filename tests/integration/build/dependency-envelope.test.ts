@@ -1,3 +1,4 @@
+// @test-ci {"inputs":["src/i18n/locales/**/*.json"]}
 const actualModule0 = await import('node:zlib');
 import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);

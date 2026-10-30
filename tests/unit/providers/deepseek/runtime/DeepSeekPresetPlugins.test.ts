@@ -1,3 +1,4 @@
+// @test-ci {"native":true}
 import { parse } from 'yaml';
 
 import { buildDeepSeekPresetPlugins, parseDeepSeekPresetPlugins, renderDeepSeekPresetPreview } from '@/providers/deepseek/runtime/DeepSeekPresetPlugins';

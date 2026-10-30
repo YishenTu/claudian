@@ -1,345 +1,179 @@
-import { conversationRecord } from '@test/helpers/features/chat/TabManagerTestHarness';
 /** @vitest-environment jsdom */
-const actualModule0 = await vi.importActual<any>('@/core/providers/ProviderInitializationBoundary');
-import {
-  commandCatalog,
-  commandLoader,
-  createManager,
-  createPlugin,
-  deferred,
-  expectTabMetadataReleased,
-  mockTabs,
-  runtimeOptions,
-} from '@test/helpers/features/chat/TabManagerTestHarness';
-import type { Mock } from 'vitest';
+import { DesktopVault } from '@test/helpers/core/DesktopVault';
+import { useNextTaskAnimationFrames } from '@test/helpers/dom/animationFrames';
+import { createFeatureHostFixture } from '@test/helpers/FeatureHostFixture';
+import { registerChatTestProvider } from '@test/helpers/features/chat/ChatProviderFixture';
+import { conversationRecord, createManager, createPlugin, deferred } from '@test/helpers/features/chat/TabManagerIntegrationHarness';
 
 import { RuntimeCommandCatalog } from '@/core/providers/commands/RuntimeCommandCatalog';
-import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { ProviderWorkspaceRegistry } from '@/core/providers/ProviderWorkspaceRegistry';
+import type { ProviderCommandLoader } from '@/core/providers/types';
+import type { Conversation, SlashCommand } from '@/core/types';
+import type { AssembledTabRuntime } from '@/features/chat/tabs/types';
 
+let provider: ReturnType<typeof registerChatTestProvider>;
+beforeEach(() => {
+  useNextTaskAnimationFrames();
+  provider = registerChatTestProvider('claude', { models: [{ value: 'claude-default', label: 'Claude' }] });
+});
 
-vi.mock('@/features/chat/tabs/TabLifecycle', async () => (
-  (await vi.importActual<typeof import('@test/helpers/features/chat/TabManagerTestHarness')>('@test/helpers/features/chat/TabManagerTestHarness')).tabLifecycleModuleMock()
-));
-vi.mock('@/features/chat/tabs/tabProviderUI', () => ({ refreshTabWorkspaceServices: vi.fn() }));
-vi.mock('@/features/chat/tabs/tabProviderLifecycle', () => ({ onProviderAvailabilityChanged: vi.fn().mockReturnValue(false) }));
-vi.mock('@/features/chat/tabs/TabRuntimeFactory', async () => (
-  (await vi.importActual<typeof import('@test/helpers/features/chat/TabManagerTestHarness')>('@test/helpers/features/chat/TabManagerTestHarness')).tabRuntimeFactoryModuleMock()
-));
-vi.mock('@/features/chat/tabs/forking/ForkTargetModal', async () => (
-  (await vi.importActual<typeof import('@test/helpers/features/chat/TabManagerTestHarness')>('@test/helpers/features/chat/TabManagerTestHarness')).forkTargetModalModuleMock()
-));
-vi.mock('@/core/providers/ProviderWorkspaceRegistry', async () => (
-  (await vi.importActual<typeof import('@test/helpers/features/chat/TabManagerTestHarness')>('@test/helpers/features/chat/TabManagerTestHarness')).providerWorkspaceRegistryModuleMock()
-));
-vi.mock('@/core/providers/ProviderRegistry', async () => (
-  (await vi.importActual<typeof import('@test/helpers/features/chat/TabManagerTestHarness')>('@test/helpers/features/chat/TabManagerTestHarness')).providerRegistryModuleMock()
-));
-
-function createRuntimeCatalog(): RuntimeCommandCatalog {
-  const catalog = new RuntimeCommandCatalog({
-    dropdownConfig: { providerId: 'claude', triggerChars: ['/'], builtInPrefix: '/', skillPrefix: '/', commandPrefix: '/' },
-    projectEntry: command => ({
-      ...command, providerId: 'claude', kind: 'command', scope: 'runtime', source: 'sdk',
-      isEditable: false, isDeletable: false, displayPrefix: '/', insertPrefix: '/',
-    }),
-  });
-  return catalog;
-}
-
-/** The command-picker discovery source the manager handed the `index`-th runtime. */
-function discoveryFor(index: number, tab: unknown) {
-  return runtimeOptions(index).getProviderCatalogConfig(tab).discovery;
-}
-
-/** Opens the picker again: forgets the picker's snapshot and loads through the manager. */
-function reloadDiscovery(index: number, tab: unknown) {
-  const discovery = discoveryFor(index, tab);
+function discoveryFor(tab: AssembledTabRuntime) { return tab.providerCatalogResolver()!.discovery; }
+function reloadDiscovery(tab: AssembledTabRuntime) {
+  const discovery = discoveryFor(tab);
   discovery.invalidate();
   return discovery.load();
 }
+const command = (name: string): SlashCommand => ({ id: name, name, description: name, content: '', source: 'sdk' });
 
-describe('TabCommandDiscovery', () => {
-  let catalog: RuntimeCommandCatalog;
+it('validates cached workspace ownership during command lookup', async () => {
+  const { manager } = await createManager();
+  const tab = (await manager.createTab())!;
+  await ProviderWorkspaceRegistry.disposeInitialized();
+  const vaultA = await DesktopVault.create();
+  onTestFinished(() => vaultA.dispose());
+  const hostA = await createFeatureHostFixture({ vault: vaultA });
+  await ProviderWorkspaceRegistry.ensureInitialized(hostA.providerHost, 'claude', 'host-a');
+  await expect(reloadDiscovery(tab)).resolves.toMatchObject({ status: 'error' });
+  expect(provider.loadCommands).not.toHaveBeenCalled();
+});
 
-  beforeEach(() => {
-    catalog = createRuntimeCatalog();
-    vi.mocked(ProviderWorkspaceRegistry.getCommandCatalog).mockReturnValue(catalog);
-    vi.mocked(ProviderWorkspaceRegistry.getCommandLoader).mockReturnValue(commandLoader);
-    vi.mocked(ProviderWorkspaceRegistry.ensureInitialized).mockResolvedValue(undefined);
-    vi.mocked(ProviderWorkspaceRegistry.getIfInitialized).mockReturnValue({});
-    mockTabs.length = 0;
-    vi.clearAllMocks();
-    (ProviderRegistry.getCapabilities as Mock).mockReturnValue({
-      providerId: 'claude',
-      supportsProviderCommands: true,
-    });
-    commandLoader.loadCommands.mockResolvedValue({
-      status: 'ready',
-      items: [{ description: 'Review changes', name: 'review' }],
-    });
+it('uses each live provider session command snapshot instead of unrelated discovery state', async () => {
+  const { manager } = await createManager();
+  const first = (await manager.createTab('first'))!;
+  const second = (await manager.createTab('second', 'second', { activate: false }))!;
+  expect(await first.session.runtime.model.ensureExecutionInitialized()).toBe(true);
+  expect(await second.session.runtime.model.ensureExecutionInitialized()).toBe(true);
+  provider.sessions[0].commands = [command('first-live')];
+  provider.sessions[1].commands = [command('second-live')];
+  expect(await reloadDiscovery(first)).toMatchObject({ status: 'ready', items: [{ name: 'first-live' }] });
+  expect(await reloadDiscovery(second)).toMatchObject({ status: 'ready', items: [{ name: 'second-live' }] });
+  provider.sessions[0].commands = [];
+  expect(await reloadDiscovery(first)).toEqual({ status: 'empty' });
+  expect(provider.loadCommands).not.toHaveBeenCalled();
+});
+
+it('runs on-demand command discovery without creating a provider session', async () => {
+  const { manager } = await createManager();
+  const tab = (await manager.createTab())!;
+  expect(provider.loadCommands).not.toHaveBeenCalled();
+  await expect(reloadDiscovery(tab)).resolves.toMatchObject({ status: 'ready', items: [{ name: 'review' }] });
+  expect(provider.loadCommands).toHaveBeenCalledWith(expect.objectContaining({ allowIsolatedMetadataCreation: true, conversation: null }));
+  expect(provider.sessions).toEqual([]);
+});
+
+it('does not permit isolated command metadata for a background tab', async () => {
+  const { manager } = await createManager();
+  await manager.createTab();
+  const background = (await manager.createTab('background-conversation', 'background', { activate: false }))!;
+  await reloadDiscovery(background);
+  expect(provider.loadCommands).toHaveBeenCalledTimes(1);
+  expect(provider.loadCommands).toHaveBeenCalledWith(expect.objectContaining({ allowIsolatedMetadataCreation: false }));
+  expect(provider.sessions).toEqual([]);
+});
+
+it('does not admit command observation after its tab becomes inactive during initialization', async () => {
+  const { manager, plugin } = await createManager();
+  const first = (await manager.createTab())!;
+  const second = (await manager.createTab(null, 'second', { activate: false }))!;
+  const discovery = discoveryFor(first);
+  const initializing = deferred<void>();
+  const initialized = deferred<void>();
+  const watchCommands = vi.fn<NonNullable<ProviderCommandLoader['watchCommands']>>(async () => undefined);
+  await ProviderWorkspaceRegistry.disposeInitialized();
+  provider.workspace.commandLoader = { ...provider.commandLoader, watchCommands };
+  provider.initialize.mockImplementationOnce(async () => { initializing.resolve(); await initialized.promise; return provider.workspace; });
+  const controller = new AbortController();
+  discovery.watch!(controller.signal);
+  await initializing.promise;
+  const switching = manager.switchToTab(second.id);
+  initialized.resolve();
+  await switching;
+  // Joining the same initializer and a discovery request also joins observer admission.
+  await ProviderWorkspaceRegistry.ensureInitialized(plugin.providerHost, 'claude', 'verify');
+  await reloadDiscovery(second);
+  expect(watchCommands).not.toHaveBeenCalled();
+  controller.abort();
+});
+
+it('lets provider-owned command discovery outlive the shared deadline', async () => {
+  const catalog = new RuntimeCommandCatalog({
+    dropdownConfig: { providerId: 'claude', triggerChars: ['/'], builtInPrefix: '/', skillPrefix: '/', commandPrefix: '/', discoveryTimeoutMs: 'provider-owned' },
+    projectEntry: entry => ({ ...entry, providerId: 'claude', kind: 'command', scope: 'runtime', source: 'sdk', isEditable: false, isDeletable: false, displayPrefix: '/', insertPrefix: '/' }),
   });
+  provider.workspace.commandCatalog = catalog;
+  const { manager } = await createManager();
+  const tab = (await manager.createTab())!;
+  const started = deferred<void>();
+  const reply = deferred<Awaited<ReturnType<ProviderCommandLoader['loadCommands']>>>();
+  provider.loadCommands.mockImplementationOnce(() => { started.resolve(); return reply.promise; });
+  vi.useFakeTimers();
+  try {
+    const discovery = discoveryFor(tab);
+    const load = discovery.load();
+    await started.promise;
+    await vi.advanceTimersByTimeAsync(8_000);
+    expect(discovery.getSnapshot()).toEqual({ status: 'loading' });
+    reply.resolve({ status: 'ready', items: [command('review')] });
+    await expect(load).resolves.toMatchObject({ status: 'ready', items: [{ name: 'review' }] });
+  } finally { vi.useRealTimers(); }
+});
 
-  it('validates cached workspace ownership during command lookup', async () => {
-    const { ProviderInitializationBoundary } = actualModule0;
-    const boundary = new ProviderInitializationBoundary();
-    const hostA = {
-      storage: { getAdapter: () => ({}) },
-      runProviderExecutionTransition: async (_ids: unknown, run: any) => run({}),
-    };
-    const commandsA = {
-      ...commandLoader,
-      loadCommands: vi.fn().mockResolvedValue({
-        status: 'ready', items: [{ name: 'from-vault-a', description: 'Vault A only' }],
-      }),
-    };
-    const { manager } = await createManager(await createPlugin());
-    const tab = await manager.createTab();
-    boundary.register('claude', {
-      initialize: async () => ({ commandCatalog: catalog, commandLoader: commandsA }),
-    });
-    await boundary.ensureInitialized(hostA, 'claude', 'host-a');
-    vi.mocked(ProviderWorkspaceRegistry.getIfInitialized).mockImplementation(id => boundary.getIfInitialized(id));
-    vi.mocked(ProviderWorkspaceRegistry.ensureInitialized).mockImplementation((host, id, reason) => boundary.ensureInitialized(host, id, reason));
-    vi.mocked(ProviderWorkspaceRegistry.getCommandLoader).mockImplementation(id => boundary.getIfInitialized(id)?.commandLoader ?? null);
+it('rejects command context loaded for a conversation rebound during lookup', async () => {
+  const plugin = await createPlugin();
+  const { manager } = await createManager(plugin);
+  const tab = (await manager.createTab('conversation-a'))!;
+  const lookup = deferred<void>();
+  const firstLookup = deferred<Conversation | null>();
+  const conversationB = conversationRecord('conversation-b');
+  vi.spyOn(plugin, 'getConversationById').mockImplementationOnce(() => { lookup.resolve(); return firstLookup.promise; }).mockResolvedValue(conversationB);
+  const staleDiscovery = reloadDiscovery(tab);
+  await lookup.promise;
+  await manager.openConversation('conversation-b');
+  firstLookup.resolve(conversationRecord('conversation-a'));
+  await expect(staleDiscovery).resolves.toMatchObject({ status: 'error', retryable: true });
+  expect(provider.loadCommands).not.toHaveBeenCalled();
+  await expect(reloadDiscovery(manager.getActiveTab()!)).resolves.toMatchObject({ status: 'ready', items: [{ name: 'review' }] });
+  expect(provider.loadCommands).toHaveBeenCalledWith(expect.objectContaining({ conversation: conversationB }));
+});
 
-    await expect(reloadDiscovery(0, tab)).resolves.toMatchObject({ status: 'error' });
-    expect(commandsA.loadCommands).not.toHaveBeenCalled();
-    await manager.destroy();
-  });
+it('reloads cached commands after the provider lifecycle generation advances', async () => {
+  const { manager, plugin } = await createManager();
+  const tab = (await manager.createTab())!;
+  await expect(reloadDiscovery(tab)).resolves.toMatchObject({ status: 'ready' });
+  await expect(reloadDiscovery(tab)).resolves.toMatchObject({ status: 'ready' });
+  expect(provider.loadCommands).toHaveBeenCalledTimes(1);
+  await plugin.providerHost.executionLifecycleRegistry.runTransition(['claude'], async () => undefined);
+  await expect(reloadDiscovery(tab)).resolves.toMatchObject({ status: 'ready' });
+  expect(provider.loadCommands).toHaveBeenCalledTimes(2);
+});
 
-  it('uses each tab live command snapshot instead of unrelated discovery state', async () => {
-    vi.mocked(ProviderWorkspaceRegistry.getCommandLoader).mockReturnValue(null);
-    const { manager } = await createManager();
-    const first = await manager.createTab();
-    const second = await manager.createTab(null, 'second', { activate: false });
-    const command = (name: string) => ({ id: name, name, description: name, content: '', source: 'sdk' as const });
-    (first!.executionCoordinator as any).getCommandSnapshot = () => [command('first-live')];
-    (second!.executionCoordinator as any).getCommandSnapshot = () => [command('second-live')];
-    expect(await reloadDiscovery(0, first)).toMatchObject({
-      status: 'ready', items: [{ name: 'first-live' }],
-    });
-    expect(await reloadDiscovery(1, second)).toMatchObject({
-      status: 'ready', items: [{ name: 'second-live' }],
-    });
-    (first!.executionCoordinator as any).getCommandSnapshot = () => [];
-    expect(await reloadDiscovery(0, first)).toEqual({ status: 'empty' });
-  });
+it('rejects an old command result from the cache across a provider lifecycle transition', async () => {
+  const started = deferred<void>();
+  const reply = deferred<Awaited<ReturnType<ProviderCommandLoader['loadCommands']>>>();
+  provider.loadCommands.mockImplementationOnce(() => { started.resolve(); return reply.promise; });
+  const { manager, plugin } = await createManager();
+  const tab = (await manager.createTab())!;
+  const oldLoad = reloadDiscovery(tab);
+  await started.promise;
+  await plugin.providerHost.executionLifecycleRegistry.runTransition(['claude'], async () => undefined);
+  reply.resolve({ status: 'ready', items: [command('old')] });
+  await expect(oldLoad).resolves.toMatchObject({ status: 'ready', items: [{ name: 'old' }] });
+  provider.loadCommands.mockResolvedValueOnce({ status: 'ready', items: [command('fresh')] });
+  await expect(reloadDiscovery(tab)).resolves.toMatchObject({ status: 'ready', items: [{ name: 'fresh' }] });
+  expect(provider.loadCommands).toHaveBeenCalledTimes(2);
+});
 
-  it('runs on-demand command discovery without a runtime or provider session', async () => {
-    const { manager } = await createManager();
-    const tab = await manager.createTab();
-
-    await expect(reloadDiscovery(0, tab)).resolves.toMatchObject({
-      status: 'ready',
-      items: [{ description: 'Review changes', name: 'review' }],
-    });
-
-    expect(commandLoader.loadCommands).toHaveBeenCalledWith(expect.objectContaining({
-      allowIsolatedMetadataCreation: true,
-      conversation: null,
-    }));
-    expect(commandLoader.loadCommands.mock.calls[0][0]).not.toHaveProperty('runtime');
-  });
-
-  it('does not start isolated command metadata for a background tab', async () => {
-    const conversation = conversationRecord('background-conversation', { providerId: 'claude' });
-    const { manager } = await createManager(await createPlugin({
-      getCachedConversation: vi.fn().mockReturnValue(conversation),
-      getConversationSync: vi.fn().mockReturnValue(conversation),
-    }));
-    await manager.createTab();
-    const background = await manager.createTab('background-conversation', 'background', { activate: false });
-    expect(background!.conversationId).toBe('background-conversation');
-
-    await reloadDiscovery(1, background);
-
-    expect(commandLoader.loadCommands).toHaveBeenCalledTimes(1);
-    expect(commandLoader.loadCommands).toHaveBeenCalledWith(expect.objectContaining({
-      allowIsolatedMetadataCreation: false,
-    }));
-  });
-
-  it('does not admit command observation after the requesting tab becomes inactive during initialization', async () => {
-    const { manager } = await createManager();
-    const first = await manager.createTab();
-    const second = await manager.createTab(null, 'second', { activate: false });
-    const initialized = deferred<void>();
-    const watchCommands = vi.fn().mockResolvedValue(undefined);
-    vi.mocked(ProviderWorkspaceRegistry.getCommandLoader).mockReturnValue({ ...commandLoader, watchCommands });
-    vi.mocked(ProviderWorkspaceRegistry.ensureInitialized).mockReturnValueOnce(initialized.promise);
-    const controller = new AbortController();
-    discoveryFor(0, first).watch(controller.signal);
-    await manager.switchToTab(second!.id);
-    initialized.resolve();
-    // Drain the initialization continuation, lookup and observer admission.
-    await new Promise(resolve => setTimeout(resolve, 0));
-    expect(watchCommands).not.toHaveBeenCalled();
-    controller.abort();
-    await manager.destroy();
-  });
-
-  it('lets provider-owned command discovery outlive the shared deadline', async () => {
-    vi.useFakeTimers();
-    const commandResult = deferred<any>();
-    commandLoader.loadCommands.mockReturnValueOnce(commandResult.promise);
-    vi.mocked(ProviderWorkspaceRegistry.getCommandCatalog).mockReturnValue(commandCatalog as never);
-    commandCatalog.listDropdownEntries.mockResolvedValueOnce([{
-      id: 'opencode:review',
-      name: 'review',
-    }]);
-    (ProviderRegistry.getCapabilities as Mock).mockReturnValue({
-      providerId: 'opencode',
-      supportsProviderCommands: true,
-    });
-    commandCatalog.getDropdownConfig.mockReturnValue({
-      discoveryTimeoutMs: 'provider-owned',
-    });
-    const { manager } = await createManager();
-
-    try {
-      const tab = await manager.createTab();
-      tab!.session.selectDraft('opencode', tab!.draftModel);
-      const discovery = discoveryFor(0, tab);
-
-      const load = discovery.load();
-      for (let attempt = 0;
-        attempt < 10 && commandLoader.loadCommands.mock.calls.length === 0;
-        attempt += 1) {
-        await Promise.resolve();
-      }
-      await vi.advanceTimersByTimeAsync(8_000);
-
-      expect(discovery.getSnapshot()).toEqual({ status: 'loading' });
-      commandResult.resolve({
-        status: 'ready',
-        items: [{ description: 'Review changes', name: 'review' }],
-      });
-      await expect(load).resolves.toMatchObject({ status: 'ready' });
-    } finally {
-      vi.useRealTimers();
-      commandCatalog.getDropdownConfig.mockReturnValue({});
-      await manager.destroy();
-    }
-  });
-
-  it('rejects command context loaded for a conversation rebound during lookup', async () => {
-    const firstLookup = deferred<any>();
-    const conversationB = {
-      id: 'conversation-b',
-      messages: [],
-      providerId: 'claude',
-    };
-    const getConversationById = vi.fn()
-      .mockImplementationOnce(() => firstLookup.promise)
-      .mockResolvedValue(conversationB);
-    const { manager } = await createManager(await createPlugin({
-      getCachedConversation: vi.fn((id: string) => (conversationRecord(id, { providerId: 'claude' }))),
-      getConversationById,
-    }));
-    const tab = await manager.createTab('conversation-a');
-
-    const staleDiscovery = reloadDiscovery(0, tab);
-    for (let attempt = 0;
-      attempt < 10 && getConversationById.mock.calls.length === 0;
-      attempt += 1) {
-      await Promise.resolve();
-    }
-    await manager.openConversation('conversation-b');
-    firstLookup.resolve({
-      id: 'conversation-a',
-      messages: [{ role: 'user', content: 'A' }],
-      providerId: 'claude',
-    });
-
-    // The rebind invalidates the picker's source, aborting its in-flight stale load.
-    await expect(staleDiscovery).resolves.toMatchObject({ status: 'error', retryable: true });
-    expect(commandLoader.loadCommands).not.toHaveBeenCalled();
-
-    await expect(reloadDiscovery(1, manager.getActiveTab())).resolves.toMatchObject({
-      status: 'ready', items: [{ name: 'review' }],
-    });
-    expect(commandLoader.loadCommands).toHaveBeenCalledWith(expect.objectContaining({
-      conversation: conversationB,
-    }));
-  });
-
-  it('reloads cached commands after the provider lifecycle generation advances', async () => {
-    const plugin = await createPlugin();
-    const executionLifecycleRegistry = plugin.providerHost.executionLifecycleRegistry;
-    const { manager } = await createManager(plugin);
-    const tab = await manager.createTab();
-
-    await expect(reloadDiscovery(0, tab)).resolves.toMatchObject({
-      status: 'ready', items: [{ description: 'Review changes', name: 'review' }],
-    });
-    await expect(reloadDiscovery(0, tab)).resolves.toMatchObject({ status: 'ready' });
-    expect(commandLoader.loadCommands).toHaveBeenCalledTimes(1);
-
-    await executionLifecycleRegistry.runTransition(['claude'], async () => undefined);
-
-    await expect(reloadDiscovery(0, tab)).resolves.toMatchObject({ status: 'ready' });
-    expect(commandLoader.loadCommands).toHaveBeenCalledTimes(2);
-    await executionLifecycleRegistry.dispose();
-  });
-
-  it('rejects an old command result across a provider lifecycle transition', async () => {
-    const plugin = await createPlugin();
-    const executionLifecycleRegistry = plugin.providerHost.executionLifecycleRegistry;
-    const oldDiscovery = deferred<{
-      status: 'ready';
-      items: [{ description: string; name: string }];
-    }>();
-    commandLoader.loadCommands.mockReturnValueOnce(oldDiscovery.promise);
-    const { manager } = await createManager(plugin);
-    const tab = await manager.createTab();
-
-    const oldLoad = reloadDiscovery(0, tab);
-    for (let attempt = 0; attempt < 10 && commandLoader.loadCommands.mock.calls.length === 0; attempt++) {
-      await Promise.resolve();
-    }
-    expect(commandLoader.loadCommands).toHaveBeenCalledTimes(1);
-
-    await executionLifecycleRegistry.runTransition(['claude'], async () => undefined);
-    oldDiscovery.resolve({
-      status: 'ready',
-      items: [{ description: 'Old command', name: 'old' }],
-    });
-    await expect(oldLoad).resolves.toMatchObject({
-      status: 'ready', items: [{ description: 'Old command', name: 'old' }],
-    });
-
-    commandLoader.loadCommands.mockResolvedValueOnce({
-      status: 'ready',
-      items: [{ description: 'Fresh command', name: 'fresh' }],
-    });
-    await expect(reloadDiscovery(0, tab)).resolves.toMatchObject({
-      status: 'ready', items: [{ description: 'Fresh command', name: 'fresh' }],
-    });
-    expect(commandLoader.loadCommands).toHaveBeenCalledTimes(2);
-    await executionLifecycleRegistry.dispose();
-  });
-
-  it('does not start command discovery after its tab begins closing', async () => {
-    const { manager } = await createManager();
-    await manager.createTab();
-    const closing = await manager.createTab();
-    const save = deferred<void>();
-    closing!.controllers.conversationController.save = vi.fn(() => save.promise);
-
-    const discovery = reloadDiscovery(1, closing);
-    const close = manager.closeTab(closing!.id);
-    for (let attempt = 0; attempt < 10; attempt += 1) {
-      await Promise.resolve();
-    }
-
-    expect(commandLoader.loadCommands).not.toHaveBeenCalled();
-    expectTabMetadataReleased(manager, closing!.id);
-
-    save.resolve(undefined);
-    await expect(discovery).resolves.toEqual({ status: 'empty' });
-    await expect(close).resolves.toBe(true);
-    expect(commandLoader.loadCommands).not.toHaveBeenCalled();
-    expectTabMetadataReleased(manager, closing!.id);
-  });
+it('does not start command discovery after its tab begins closing', async () => {
+  const { manager } = await createManager();
+  await manager.createTab();
+  const closing = (await manager.createTab())!;
+  const discovery = discoveryFor(closing);
+  const load = reloadDiscovery(closing);
+  const close = manager.closeTab(closing.id);
+  await close;
+  await expect(load).resolves.toEqual({ status: 'empty' });
+  expect(provider.loadCommands).not.toHaveBeenCalled();
+  expect(discovery.getSnapshot()).toEqual({ status: 'idle' });
+  expect(manager.getTab(closing.id)).toBeNull();
+  expect(closing.providerCatalogResolver()).toBeNull();
 });

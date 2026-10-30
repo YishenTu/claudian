@@ -1,3 +1,4 @@
+// @test-ci {"inputs":["tests/fixtures/providers/grok/runtime/models-list.json","tests/fixtures/providers/grok/runtime/models-list-byok.json"]}
 import '@/providers';
 
 import { readFileSync } from 'node:fs';

@@ -1,3 +1,4 @@
+// @test-ci {"native":true,"inputs":["tests/helpers/providers/opencode/OpencodeNativePeer.cjs"]}
 import { createFixture, turn } from '@test/helpers/providers/opencode/OpencodeSharedServerFixture';
 
 import type { ProviderExecutionEvent, ProviderToolPolicy } from '@/core/execution';

@@ -91,6 +91,7 @@ test('real dependency discovery retains native launch checks for shared process 
     'tests/integration/features/chat/tabs/forking/ForkSource.opencode-v2.test.ts',
     'tests/integration/features/chat/tabs/forking/ForkSource.opencode.test.ts',
     'tests/integration/providers/claude/execution/ClaudeExecutionBackend.test.ts',
+    'tests/integration/providers/codex/execution/CodexExecutionBackend.protocol.test.ts',
     'tests/integration/providers/codex/execution/CodexExecutionBackend.test.ts',
     'tests/integration/providers/codex/runtime/CodexSharedRuntime.test.ts',
     'tests/integration/providers/deepseek/app/DeepSeekWorkspaceServices.test.ts',
@@ -99,6 +100,7 @@ test('real dependency discovery retains native launch checks for shared process 
     'tests/integration/providers/grok/app/GrokWorkspaceServices.test.ts',
     'tests/integration/providers/opencode/ToolRendererCompatibility.dom.test.ts',
     'tests/integration/providers/opencode/app/OpencodeCommandLoader.test.ts',
+    'tests/integration/providers/opencode/execution/OpencodeExecutionBackend.native.test.ts',
     'tests/integration/providers/opencode/execution/OpencodeHTTPExecution.background.test.ts',
     'tests/integration/providers/opencode/execution/OpencodeHTTPExecution.compaction.test.ts',
     'tests/integration/providers/opencode/execution/OpencodeHTTPExecution.interactions.test.ts',
@@ -112,7 +114,6 @@ test('real dependency discovery retains native launch checks for shared process 
     'tests/integration/providers/opencode/http/OpencodeSharedServer.transitions.test.ts',
     'tests/integration/providers/pi/execution/PiExecutionKernel.test.ts',
     'tests/integration/providers/pi/execution/PiRecoveryContext.test.ts',
-    'tests/unit/providers/codex/execution/CodexExecutionBackend.test.ts',
     'tests/unit/providers/deepseek/runtime/DeepSeekCLIResolver.test.ts',
     'tests/unit/providers/deepseek/runtime/DeepSeekInstallation.test.ts',
   ]);
@@ -139,8 +140,11 @@ test('moved skill sync retains native verification', () => {
   assert.deepEqual(select([successor]).crossPlatformTests, [successor]);
 });
 
-test('shared test helpers use their graph consumers', () => {
-  assert.deepEqual(select(['tests/helpers/testClock.ts'], [native]).testFiles, [native]);
+test('shared test helpers use their graph consumers and validate declaration placement', () => {
+  const result = select(['tests/helpers/testClock.ts'], [native]);
+  assert.deepEqual(result.testFiles, [native]);
+  assert.ok(result.scriptTests.includes('scripts/testDeclarations.test.mjs'));
+  assert.equal(select(['tests/helpers/testClock.ts'], [prompt]).crossPlatform, false);
 });
 
 test('filesystem-read documentation, styles, and captured fixtures retain their consumers', () => {
@@ -166,6 +170,7 @@ test('filesystem-read documentation, styles, and captured fixtures retain their 
           'tests/integration/providers/opencode/app/OpencodeCommandLoader.test.ts',
           'tests/integration/features/chat/tabs/forking/ForkSource.opencode.test.ts',
           'tests/integration/features/chat/tabs/forking/ForkSource.opencode-v2.test.ts',
+          'tests/integration/providers/opencode/execution/OpencodeExecutionBackend.native.test.ts',
           'tests/integration/providers/opencode/execution/OpencodeHTTPExecution.background.test.ts',
           'tests/integration/providers/opencode/execution/OpencodeHTTPExecution.compaction.test.ts',
           'tests/integration/providers/opencode/execution/OpencodeHTTPExecution.interactions.test.ts',
@@ -279,7 +284,7 @@ test('script edits select their script tests without unrelated Vitest work', () 
 });
 
 test('native script regressions retain a Windows job without selecting unrelated Vitest suites', () => {
-  for (const script of ['scripts/ciTestSelection.test.mjs', 'scripts/run-tests.test.mjs']) {
+  for (const script of ['scripts/ciTestSelection.test.mjs', 'scripts/run-tests.test.mjs', 'scripts/testDeclarations.test.mjs']) {
     const result = select([script]);
     assert.deepEqual(result.scriptTests, [script]);
     assert.deepEqual(result.testFiles, []);
@@ -325,13 +330,14 @@ test('the CI entry point handles real Git ranges, renames, missing bases and rel
   const root = mkdtempSync(path.join(tmpdir(), 'claudian-ci-scope-'));
   try {
     for (const directory of ['scripts', 'src', 'tests/unit']) mkdirSync(path.join(root, directory), { recursive: true });
-    for (const file of ['ciTestSelection.mjs', 'testSuites.cjs']) copyFileSync(`scripts/${file}`, path.join(root, 'scripts', file));
+    for (const file of ['ciTestSelection.mjs', 'testSuites.cjs', 'testDeclarations.cjs']) copyFileSync(`scripts/${file}`, path.join(root, 'scripts', file));
     writeFileSync(path.join(root, 'scripts/run-vitest.js'), `require(${JSON.stringify(path.resolve('scripts/run-vitest.js'))});`);
     writeFileSync(path.join(root, 'scripts/list-related-tests.mjs'), `import ${JSON.stringify(pathToFileURL(path.resolve('scripts/list-related-tests.mjs')).href)};`);
     writeFileSync(path.join(root, 'vitest.config.mjs'), `export default { test: { globals: true, maxWorkers: 1, include: ['tests/unit/**/*.test.ts'] } };`);
     writeFileSync(path.join(root, 'src/value.ts'), 'export const value = 1;');
+    writeFileSync(path.join(root, 'src/value.css'), 'body {}');
     writeFileSync(path.join(root, 'tests/unit/types.test.ts'), "import type { value } from '../../src/value'; const example: typeof value = 1; test('type-only', () => expect(example).toBe(1));");
-    writeFileSync(path.join(root, 'tests/unit/value.test.ts'), "import { value } from '../../src/value'; test('value', () => expect(value).toBe(1));");
+    writeFileSync(path.join(root, 'tests/unit/value.test.ts'), "// @test-ci {\"native\":true,\"inputs\":[\"src/value.css\"]}\nimport { value } from '../../src/value'; test('value', () => expect(value).toBe(1));");
     writeFileSync(path.join(root, '.gitignore'), 'node_modules/\n');
     const git = (...args) => execFileSync('git', args, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
     git('init');
@@ -362,11 +368,17 @@ test('the CI entry point handles real Git ranges, renames, missing bases and rel
     git('add', '.'); git('commit', '-m', 'Rename test');
     const renamed = git('rev-parse', 'HEAD');
     assert.deepEqual(scope(renamed, { BASE_SHA: edited })['test-files'], ['tests/unit/renamed.test.ts']);
+    assert.deepEqual(scope(renamed, { BASE_SHA: edited })['cross-platform-tests'], ['tests/unit/renamed.test.ts']);
+    writeFileSync(path.join(root, 'src/value.css'), 'body { color: red }');
+    git('add', '.'); git('commit', '-m', 'Edit a non-import input');
+    const styled = git('rev-parse', 'HEAD');
+    assert.deepEqual(scope(styled, { BASE_SHA: renamed })['test-files'], ['tests/unit/renamed.test.ts']);
+    assert.deepEqual(scope(styled, { BASE_SHA: renamed })['cross-platform-tests'], ['tests/unit/renamed.test.ts']);
     rmSync(path.join(root, 'tests/unit/renamed.test.ts'));
     git('add', '.'); git('commit', '-m', 'Delete test');
     const deleted = git('rev-parse', 'HEAD');
-    assert.deepEqual(scope(deleted, { BASE_SHA: renamed })['test-files'], []);
-    assert.deepEqual(scope(deleted, { BASE_SHA: renamed })['test-shards'], ['1/1']);
+    assert.deepEqual(scope(deleted, { BASE_SHA: styled })['test-files'], []);
+    assert.deepEqual(scope(deleted, { BASE_SHA: styled })['test-shards'], ['1/1']);
     for (const overrides of [
       { BASE_SHA: 'f'.repeat(40) }, { BASE_SHA: '0'.repeat(40) }, { BASE_SHA: '' },
       { GITHUB_REF: 'refs/tags/2.3.0' },
@@ -400,7 +412,7 @@ test('local selection includes committed, staged, unstaged and untracked edits w
   const root = mkdtempSync(path.join(tmpdir(), 'claudian-local-scope-'));
   try {
     for (const directory of ['scripts', 'src', 'tests/unit']) mkdirSync(path.join(root, directory), { recursive: true });
-    for (const file of ['ciTestSelection.mjs', 'testSuites.cjs', 'run-affected-tests.mjs']) copyFileSync(`scripts/${file}`, path.join(root, 'scripts', file));
+    for (const file of ['ciTestSelection.mjs', 'testSuites.cjs', 'testDeclarations.cjs', 'run-affected-tests.mjs']) copyFileSync(`scripts/${file}`, path.join(root, 'scripts', file));
     writeFileSync(path.join(root, 'scripts/run-vitest.js'), `require(${JSON.stringify(path.resolve('scripts/run-vitest.js'))});`);
     writeFileSync(path.join(root, 'scripts/list-related-tests.mjs'), `import ${JSON.stringify(pathToFileURL(path.resolve('scripts/list-related-tests.mjs')).href)};`);
     writeFileSync(path.join(root, 'vitest.config.mjs'), `export default { test: { globals: true, maxWorkers: 1, include: ['tests/unit/**/*.test.ts'] } };`);

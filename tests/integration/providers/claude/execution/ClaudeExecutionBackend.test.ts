@@ -1,3 +1,4 @@
+// @test-ci {"native":true}
 const actualModule0 = await import('node:fs/promises');
 const actualModule1 = await import('node:fs/promises');
 import '@/providers';

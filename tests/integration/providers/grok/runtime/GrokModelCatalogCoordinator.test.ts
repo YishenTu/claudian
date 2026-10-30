@@ -1,3 +1,4 @@
+// @test-ci {"inputs":["tests/fixtures/providers/grok/runtime/models-list.json","tests/fixtures/providers/grok/runtime/GrokModelCatalogProcess.mjs"]}
 import { type ChildProcess, spawn as nodeSpawn } from 'node:child_process';
 import * as path from 'node:path';
 

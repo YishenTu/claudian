@@ -1,3 +1,4 @@
+// @test-ci {"native":true}
 import { existsSync, readFileSync } from 'node:fs';
 
 import { TEST_CODEX_CATALOG, TEST_CODEX_MODEL } from '@test/helpers/codexModels';

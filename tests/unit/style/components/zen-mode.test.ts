@@ -1,3 +1,4 @@
+// @test-ci {"inputs":["src/style/**"]}
 /** @vitest-environment jsdom */
 
 import { readFileSync } from 'node:fs';

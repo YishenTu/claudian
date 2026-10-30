@@ -1,10 +1,18 @@
 import { PassThrough, Writable } from 'node:stream';
 
 import type { CodexAppServerProcess } from '@/providers/codex/runtime/CodexAppServerProcess';
+import type { JSONRPCError } from '@/providers/codex/runtime/codexAppServerTypes';
 import type { CodexLaunchSpec } from '@/providers/codex/runtime/codexLaunchTypes';
 
 type NativeProcessPort = Pick<CodexAppServerProcess, keyof CodexAppServerProcess>;
 type ExitCallback = Parameters<CodexAppServerProcess['onExit']>[0];
+
+/** A native JSON-RPC error payload, serialized before the client sees it. */
+export class CodexNativeResponseError extends Error {
+  constructor(readonly payload: JSONRPCError) {
+    super(payload.message);
+  }
+}
 
 /** Native app-server boundary shared by Codex execution and settings integration. */
 export class CodexRuntimeHarness {
@@ -157,6 +165,18 @@ export class CodexNativeTestProcess implements NativeProcessPort {
   }
   respond(id: number, result: unknown): void {
     this.stdout.write(`${JSON.stringify({ id, result })}\n`);
+  }
+  respondWhen(id: number, response: Promise<unknown>): void {
+    void response.then(
+      result => { if (this.isAlive()) this.respond(id, result); },
+      error => {
+        if (!this.isAlive()) return;
+        const payload = error instanceof CodexNativeResponseError
+          ? error.payload
+          : { code: -32603, message: error instanceof Error ? error.message : String(error) };
+        this.stdout.write(`${JSON.stringify({ id, error: payload })}\n`);
+      },
+    );
   }
   respondError(id: number, message: string, code = -32603): void {
     this.stdout.write(`${JSON.stringify({ id, error: { code, message } })}\n`);

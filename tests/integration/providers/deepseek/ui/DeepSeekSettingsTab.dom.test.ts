@@ -1,3 +1,4 @@
+// @test-ci {"native":true}
 /** @vitest-environment jsdom */
 const actualModule0 = await vi.importActual<typeof CLIProbe>('@/core/providers/cli/CLIInstallationProbe');
 const actualModule1 = await vi.importActual<typeof CLIProbe>('@/core/providers/cli/CLIInstallationProbe');

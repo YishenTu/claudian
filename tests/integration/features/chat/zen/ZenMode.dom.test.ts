@@ -75,7 +75,7 @@ type Leaf = {
   loadIfDeferred?: () => Promise<void>;
 };
 
-/** Narrow stand-in for Obsidian's desktop workspace layout, events and keymap. */
+/** Narrow stand-in for Obsidian's desktop workspace layout and events. */
 function createWorkspace() {
   const containerEl = document.body.createDiv({ cls: 'workspace' });
   const createSplit = (cls: string): Split => {
@@ -110,17 +110,12 @@ function createWorkspace() {
       workspace.trigger('resize');
     }),
   };
-  const scopes: unknown[] = [];
-  const keymap = {
-    pushScope: (scope: unknown) => { scopes.push(scope); },
-    popScope: (scope: unknown) => { scopes.splice(scopes.indexOf(scope), 1); },
-  };
   const setCollapsed = (split: Split, collapsed: boolean) => {
     split.collapsed = collapsed;
     split.containerEl.hidden = collapsed;
     workspace.trigger('resize');
   };
-  return { workspace, keymap, scopes, rootEl, rootSplit, leftSplit, rightSplit, noteEditor, leaves, otherLeaves, setCollapsed };
+  return { workspace, rootEl, rootSplit, leftSplit, rightSplit, noteEditor, leaves, otherLeaves, setCollapsed };
 }
 
 function createSettings(enabled: boolean): ClaudianSettings {
@@ -134,10 +129,22 @@ function createSettings(enabled: boolean): ClaudianSettings {
 async function createZenFixture(options: { enabled?: boolean; ready?: boolean } = {}) {
   const settings = createSettings(options.enabled ?? true);
   ProviderWorkspaceRegistry.setServices('claude', {});
+  const { App: HostApp } = await vi.importActual<typeof import('../../../../__mocks__/obsidian')>('obsidian');
   const app = new App();
+  if (!(app instanceof HostApp)) throw new Error('Expected the shared Obsidian App');
+  // Observe scope lifetime; the shared keymap still owns its stack and event routing.
+  const scopes: unknown[] = [];
+  const pushScope = app.keymap.pushScope.getMockImplementation()!;
+  const popScope = app.keymap.popScope.getMockImplementation()!;
+  app.keymap.pushScope.mockImplementation(scope => { scopes.push(scope); pushScope(scope); });
+  app.keymap.popScope.mockImplementation(scope => {
+    const index = scopes.indexOf(scope);
+    if (index !== -1) scopes.splice(index, 1);
+    popScope(scope);
+  });
   Object.assign(app.vault.adapter, { basePath: '/vault' });
   const layout = createWorkspace();
-  Object.assign(app, { workspace: layout.workspace, keymap: layout.keymap, scope: new Scope() });
+  Object.assign(app, { workspace: layout.workspace, scope: app.keymap.getRootScope() });
   const sessions: FakeSideSession[] = [];
   vi.spyOn(ProviderRegistry, 'createExecutionBackend').mockImplementation((_host, providerId = 'claude') => ({
     providerId,
@@ -217,6 +224,7 @@ async function createZenFixture(options: { enabled?: boolean; ready?: boolean } 
       containerEl: viewContainerEl,
       contentEl: viewContainerEl,
     });
+    Object.assign(app, { scope: app.keymap.getRootScope() });
     // The view-owned footer and tab container that onOpen builds.
     view.viewContainerEl = viewContainerEl;
     view.buildViewLayout(viewContainerEl);
@@ -269,7 +277,7 @@ async function createZenFixture(options: { enabled?: boolean; ready?: boolean } 
     () => views.getInputFocusView(zen.getActiveLeaf())?.getActiveTab()?.composer ?? null,
   );
   return {
-    ...layout, ...primary, app, zen, views, focusCommand, sessions, settingsCoordinator, addView, addSiblingLeaf,
+    ...layout, ...primary, app, scopes, zen, views, focusCommand, sessions, settingsCoordinator, addView, addSiblingLeaf,
     toggleChat: () => views.toggleView(zen),
   };
 }
@@ -970,29 +978,12 @@ it('ignores removed focus targets and retains the return target across normal an
 });
 
 it('closes the resume picker with Escape through the Obsidian keymap', async () => {
-  const { app, view, tab, rightSplit, setCollapsed, scopes } = await createZenFixture();
+  const { app, view, tab, rightSplit, setCollapsed } = await createZenFixture();
   view.wireEventHandlers();
   // Obsidian answers Escape at the app scope when no nearer scope consumes it.
   const appEscape = vi.fn(() => false);
-  app.scope.register([], 'Escape', appEscape);
-  // The keymap resolves unmodified keys through the active scope chain during window capture and
-  // stops a key a handler consumes before it reaches the focused element.
-  type MockKeyScope = {
-    parent?: MockKeyScope;
-    handlers: Array<{ key: string | null; modifiers: string[] | null; func: (event: KeyboardEvent) => unknown }>;
-  };
-  const dispatch = (event: KeyboardEvent) => {
-    for (let scope = (scopes.at(-1) ?? app.scope) as MockKeyScope | undefined; scope; scope = scope.parent) {
-      const handler = scope.handlers.find(entry => entry.key === event.key && !entry.modifiers?.length);
-      if (handler?.func(event) === false) {
-        event.preventDefault();
-        event.stopPropagation();
-        return;
-      }
-    }
-  };
-  window.addEventListener('keydown', dispatch, true);
-  cleanups.push(() => window.removeEventListener('keydown', dispatch, true));
+  app.keymap.getRootScope().register([], 'Escape', appEscape);
+  app.keymap.setWindowBaseScope(window, view.scope!);
   setCollapsed(rightSplit, true);
   const input = tab.dom.inputEl as unknown as HTMLElement;
   input.focus();
@@ -1003,11 +994,14 @@ it('closes the resume picker with Escape through the Obsidian keymap', async () 
   );
   const picker = screen.getByRole('listbox', { name: 'Resume conversation' });
   expect(zenPanel()!.contains(picker)).toBe(true);
+  const targetEscape = vi.fn();
+  input.addEventListener('keydown', targetEscape);
 
-  fireEvent.keyDown(input, { key: 'Escape' });
+  expect(fireEvent.keyDown(input, { key: 'Escape' })).toBe(false);
 
   expect(screen.queryByRole('listbox', { name: 'Resume conversation' })).toBeNull();
   expect(appEscape).not.toHaveBeenCalled();
+  expect(targetEscape).not.toHaveBeenCalled();
 });
 
 it('sends with the existing keyboard rules and leaves note input alone', async () => {

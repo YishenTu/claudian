@@ -464,6 +464,11 @@ const deleted = saved.deleted;
 sequence = saved.sequence;
 /** @type {Array<() => void> | null} */
 let held = null;
+// Native HTTP responses may fail or remain pending independently of SSE delivery.
+/** @type {Map<string, {status: number, body: unknown}>} */
+const routeErrors = new Map();
+/** @type {Map<string, {pending: Array<() => void>, arrivals: Array<() => void>}>} */
+const heldRoutes = new Map();
 const save = () => { if (env.OPENCODE_DB !== ':memory:') fs.writeFileSync(store, JSON.stringify({sessions:[...sessions],deleted,sequence})); };
 const config = readConfig, agents = readAgents;
 
@@ -472,6 +477,34 @@ const handle = async (req, res, url, body, route) => {
  const parts = route.split('/'), id = parts[3];
  /** @param {unknown} data */
  const reply = data => res.end(JSON.stringify({data}));
+ if (route === '/fixture/route-error') {
+   if (body.status) routeErrors.set(body.route, { status: body.status, body: body.error });
+   else routeErrors.delete(body.route);
+   res.writeHead(204).end(); return;
+ }
+ if (route === '/fixture/hold-route') {
+   heldRoutes.set(body.route, { pending: [], arrivals: [] }); res.writeHead(204).end(); return;
+ }
+ if (route === '/fixture/wait-route') {
+   const held = heldRoutes.get(url.searchParams.get('route') || '');
+   if (!held) { res.writeHead(409).end('Route is not held'); return; }
+   const arrived = () => reply({ count: held.pending.length });
+   if (held.pending.length) arrived(); else held.arrivals.push(arrived);
+   return;
+ }
+ if (route === '/fixture/release-route') {
+   const held = heldRoutes.get(body.route);
+   heldRoutes.delete(body.route);
+   for (const release of held?.pending || []) release();
+   res.writeHead(204).end(); return;
+ }
+ const heldRoute = heldRoutes.get(route);
+ if (heldRoute) await new Promise(resolve => {
+   heldRoute.pending.push(() => resolve(undefined));
+   for (const arrived of heldRoute.arrivals.splice(0)) arrived();
+ });
+ const fault = routeErrors.get(route);
+ if (fault) { res.writeHead(fault.status, { 'Content-Type': 'application/json' }).end(JSON.stringify(fault.body)); return; }
  if (route === '/fixture/config') return reply({ config:config(), path:env.OPENCODE_CONFIG, url:env.CLAUDIAN_SESSION_TOOLS_URL, routeId:env.CLAUDIAN_SESSION_TOOLS_ROUTE_ID });
  if (route === '/fixture/session-tool') {
    const entry = config().plugins?.find(/** @param {WireObject} p */ p => p.package?.includes('/session-tools'));

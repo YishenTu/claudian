@@ -1,22 +1,23 @@
 /** @vitest-environment jsdom */
+import { FakeSession, requestedScope } from '@test/helpers/ChatExecutionHarness';
 import { holdResponse } from '@test/helpers/ConversationPorts';
 import { createChatFeatureHost } from '@test/helpers/features/chat/ChatFeatureHostFixture';
+import { registerChatTestProvider } from '@test/helpers/features/chat/ChatProviderFixture';
 import { createProjectsFake, projectRecord } from '@test/helpers/features/chat/ProjectsFake';
 import { fireEvent } from '@testing-library/dom';
-import { App, Component } from 'obsidian';
-import type { Mock } from 'vitest';
+import { App, Component, MarkdownRenderer } from 'obsidian';
+import type { Mock, MockInstance } from 'vitest';
 
-import { RuntimeCommandCatalog } from '@/core/providers/commands/RuntimeCommandCatalog';
+import { RoutedTitleGenerationService } from '@/core/auxiliary/RoutedTitleGenerationService';
+import type { ProviderSessionEvent } from '@/core/execution';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { ProviderWorkspaceRegistry } from '@/core/providers/ProviderWorkspaceRegistry';
 import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
 import { ConversationLifecycle } from '@/features/chat/conversation/ConversationLifecycle';
-import type {
-  ChatExecutionCoordinatorDeps,
-  ChatExecutionEventContext,
-} from '@/features/chat/execution/ChatExecutionCoordinator';
+import type { ChatExecutionCoordinator } from '@/features/chat/execution/ChatExecutionCoordinator';
 import { NavigationController } from '@/features/chat/navigation/NavigationController';
 import { SessionMessagingService } from '@/features/chat/session-messaging/SessionMessagingService';
+import type { ChatSessionRuntime } from '@/features/chat/sessions/ChatSessionRuntime';
 import { createChatSessionRuntime } from '@/features/chat/sessions/createChatSessionRuntime';
 import { handleForkRequest } from '@/features/chat/sessions/SessionForkSource';
 import { getSessionProviderId } from '@/features/chat/sessions/sessionProvider';
@@ -38,139 +39,42 @@ import {
 import type { AssembledTabRuntime } from '@/features/chat/tabs/types';
 import { VaultMentionDataProvider } from '@/shared/mention/VaultMentionDataProvider';
 
-const coordinatorInstances: MockCoordinator[] = [];
-const coordinatorDeps: ChatExecutionCoordinatorDeps[] = [];
-const titleServiceInstances: Array<{ cancel: Mock }> = [];
+const coordinatorInstances: ChatExecutionCoordinator[] = [];
+const runtimes: ChatSessionRuntime[] = [];
 const pools: SessionRuntimePool[] = [];
-let coordinatorDisposeError: Error | null = null;
+let claude: ReturnType<typeof registerChatTestProvider>;
+let ensureInitialized: MockInstance<typeof ProviderWorkspaceRegistry.ensureInitialized>;
+let cancelTitle: MockInstance<RoutedTitleGenerationService['cancel']>;
+const executeSession = FakeSession.prototype.execute;
+const nativeSessions = new Map<ChatExecutionCoordinator, FakeSession>();
 
-interface MockCoordinator {
-  execute: Mock;
-  getCommandSnapshot: Mock;
-  bindConversation: Mock;
-  cancel: Mock;
-  dispose: Mock;
-  isEventContextCurrent: Mock;
-  prepare: Mock;
-  resolveForkSource: Mock;
-  snapshot: { providerSessionId?: string } | null;
-  state: 'absent' | 'idle' | 'active' | 'stale' | 'disposed';
+async function nativeSession(index = 0): Promise<FakeSession> {
+  const coordinator = coordinatorInstances[index];
+  if (!coordinator.snapshot) {
+    await coordinator.bindConversation({ conversationId: runtimes[index].conversationId ?? 'conversation-1', providerId: 'claude' });
+  }
+  await coordinator.prepare();
+  if (!nativeSessions.has(coordinator)) nativeSessions.set(coordinator, claude.sessions.at(-1)!);
+  return nativeSessions.get(coordinator)!;
 }
 
-vi.mock('@/features/chat/execution/ChatExecutionCoordinator', async () => ({
-  ...(await vi.importActual<typeof import('@/features/chat/execution/ChatExecutionCoordinator')>('@/features/chat/execution/ChatExecutionCoordinator')),
-  ChatExecutionCoordinator: vi.fn().mockImplementation(function (deps) {
-    const coordinator: MockCoordinator = {
-      execute: vi.fn().mockResolvedValue({ status: 'completed', accepted: true }),
-      getCommandSnapshot: vi.fn().mockReturnValue(undefined),
-      bindConversation: vi.fn().mockResolvedValue(undefined),
-      cancel: vi.fn(),
-      dispose: vi.fn().mockImplementation(() => coordinatorDisposeError
-        ? Promise.reject(coordinatorDisposeError)
-        : Promise.resolve()),
-      isEventContextCurrent: vi.fn().mockReturnValue(true),
-      prepare: vi.fn().mockResolvedValue(undefined),
-      resolveForkSource: vi.fn().mockResolvedValue({ sessionId: 'native-session' }),
-      snapshot: null,
-      state: 'absent',
-    };
-    coordinatorDeps.push(deps);
-    coordinatorInstances.push(coordinator);
-    return coordinator;
-  }),
-}));
-
-const ensureInitialized = vi.hoisted(() => (vi.fn().mockResolvedValue(undefined)));
-vi.mock('@/core/providers/ProviderWorkspaceRegistry', () => ({
-  ProviderWorkspaceRegistry: {
-    ensureInitialized: (...args: unknown[]) => ensureInitialized(...args),
-    getCommandCatalog: vi.fn().mockReturnValue(null),
-    getIfInitialized: vi.fn().mockReturnValue(null),
-    getCommandLoader: vi.fn().mockReturnValue(null),
-  },
-}));
-
-vi.mock('@/core/providers/ProviderRegistry', () => ({
-  ProviderRegistry: {
-    createExecutionBackend: vi.fn(),
-    createSubagentHistoryService: vi.fn().mockReturnValue(null),
-    getSettingsStorageAdapter: vi.fn().mockReturnValue({}),
-    createTitleGenerationService: vi.fn().mockImplementation(() => {
-      const service = {
-        cancel: vi.fn(),
-        generateTitle: vi.fn().mockResolvedValue(undefined),
-      };
-      titleServiceInstances.push(service);
-      return service;
-    }),
-    getCapabilities: vi.fn().mockReturnValue({
-      providerId: 'claude',
-      supportsFork: true,
-      supportsImageAttachments: true,
-    }),
-    getModelPolicy: (providerId: string) => ProviderRegistry.getChatUIConfig(providerId),
-    prepareAssistantMarkdown: (_providerId: string, markdown: string) => markdown,
-    getChatUIConfig: vi.fn().mockReturnValue({
-      applyPermissionMode: (_mode: string, settings: Record<string, unknown>) => {
-        settings.permissionMode = _mode;
-      },
-      getContextWindowSize: vi.fn().mockReturnValue(200000),
-      getDefaultModel: vi.fn().mockReturnValue('claude-default'),
-      getDefaultReasoningValue: vi.fn().mockReturnValue('off'),
-      getModelOptions: vi.fn().mockReturnValue([
-        { label: 'Claude Default', value: 'claude-default' },
-        { label: 'Claude Alternate', value: 'claude-alternate' },
-      ]),
-      getReasoningOptions: vi.fn().mockReturnValue([]),
-      supportsReasoningEffort: vi.fn().mockReturnValue(false),
-      isDefaultModel: vi.fn().mockReturnValue(true),
-      normalizeModelVariant: vi.fn((model: string) => model),
-      ownsModel: vi.fn().mockReturnValue(true),
-    }),
-    getConversationHistoryService: vi.fn().mockReturnValue({
-      resolveSessionIdForConversation: vi.fn().mockReturnValue(null),
-    }),
-    getBlankTabProviderIds: vi.fn((settings: Record<string, unknown>) =>
-      ProviderRegistry.getEnabledProviderIds(settings)),
-    getEnabledProviderIds: vi.fn().mockReturnValue(['claude']),
-    getRegisteredProviderIds: vi.fn().mockReturnValue(['claude', 'codex']),
-    getProviderDisplayName: vi.fn().mockReturnValue('Claude'),
-    getTaskResultInterpreter: vi.fn(),
-    isEnabled: vi.fn().mockReturnValue(true),
-    resolveProviderForModel: vi.fn().mockReturnValue('claude'),
-    resolveSettingsProviderId: vi.fn().mockReturnValue('claude'),
-  },
-}));
-
-vi.mock('@/core/providers/ProviderSettingsCoordinator', () => ({
-  ProviderSettingsCoordinator: {
-    commitProviderSettingsChange: (
-      settings: Record<string, unknown>,
-      _providerId: string,
-      _before: Record<string, unknown>,
-      snapshot: Record<string, unknown>,
-    ) => Object.assign(settings, snapshot),
-    getProviderSettingsSnapshot: (settings: Record<string, unknown>) => ({
-      effortLevel: '',
-      model: 'claude-default',
-      permissionMode: 'normal',
-      serviceTier: 'standard',
-      ...settings,
-    }),
-    projectModelSelection: (
-      settings: Record<string, unknown>,
-      _providerId: string,
-      model: string,
-    ) => {
-      settings.model = model;
-    },
-  },
-}));
+async function emitSessionEvent(event: ProviderSessionEvent, index = 0): Promise<void> {
+  const session = await nativeSession(index);
+  session.emit(Object.assign({}, event, { scope: { ...event.scope, sessionInstanceId: session.sessionInstanceId } }));
+  await runtimes[index].awaitBackgroundWork();
+}
 
 async function createPlugin(overrides: Omit<NonNullable<Parameters<typeof createChatFeatureHost>[0]>, 'fixture'> = {}) {
   let nextModelSelectionIntent = 0;
   const pool = new SessionRuntimePool({
-    createRuntime: identity => createChatSessionRuntime(plugin, identity),
+    createRuntime: identity => {
+      const runtime = createChatSessionRuntime(plugin, identity);
+      const coordinator = runtime.executionCoordinator;
+      for (const method of ['execute', 'prepare', 'bindConversation', 'dispose', 'cancel', 'resolveForkSource'] as const) vi.spyOn(coordinator, method);
+      coordinatorInstances.push(coordinator);
+      runtimes.push(runtime);
+      return runtime;
+    },
     releaseHistory: async () => true,
     onChanged: () => undefined,
     onError: () => undefined,
@@ -222,11 +126,12 @@ function createTabManager(
   callbacks: Record<string, unknown> = {},
   viewOverrides: Record<string, unknown> = {},
 ) {
-  const view = Object.assign(new Component(), {
+  const component = new Component();
+  component.load();
+  onTestFinished(() => component.unload());
+  const view = Object.assign(component, {
     getTabManager: vi.fn(),
     leaf: {},
-    registerDomEvent: vi.fn(),
-    registerEvent: vi.fn(),
     ...viewOverrides,
   }) as any;
   return new TabManager(
@@ -287,7 +192,6 @@ async function createTestTab(
       'component' | 'containerEl' | 'getProviderCatalogConfig' | 'plugin'
     >>,
   assembly: {
-    component?: Record<string, unknown>;
     forkRequestCallback?: (forkContext: any) => Promise<void>;
     getProviderCatalogConfig?: TabRuntimeFactoryOptions['getProviderCatalogConfig'];
     onProviderChanged?: (providerId: string) => void | Promise<void>;
@@ -295,11 +199,9 @@ async function createTestTab(
     startNewConversation?: () => Promise<void>;
   } = {},
 ) {
-  const component = Object.assign(new Component(), {
-    registerDomEvent: vi.fn(),
-    registerEvent: vi.fn(),
-    ...assembly.component,
-  }) as any;
+  const component = new Component();
+  component.load();
+  onTestFinished(() => component.unload());
   const tab = await createTabRuntime({
     ...options,
     mentionDataProvider: options.mentionDataProvider ?? new VaultMentionDataProvider(options.plugin.app),
@@ -333,18 +235,6 @@ function createConversation() {
   } as any;
 }
 
-function createEventContext(
-  overrides: Partial<ChatExecutionEventContext> = {},
-): ChatExecutionEventContext {
-  return {
-    bindingId: 'binding-1',
-    conversationId: 'conversation-1',
-    providerGeneration: 0,
-    session: { sessionInstanceId: 'session-instance-1' } as any,
-    ...overrides,
-  };
-}
-
 function browseProvider(tab: { dom: { inputWrapper: HTMLElement } }, providerId: string): void {
   const tabs = Array.from([...tab.dom.inputWrapper.querySelectorAll<HTMLElement>('.claudian-model-provider-tab')]) as HTMLElement[];
   tabs.find(item => item.dataset.provider === providerId)?.click();
@@ -356,18 +246,29 @@ describe('Tab provider execution ownership', () => {
   beforeEach(() => {
     globalThis.ResizeObserver = originalResizeObserver;
     coordinatorInstances.length = 0;
-    coordinatorDeps.length = 0;
-    titleServiceInstances.length = 0;
-    coordinatorDisposeError = null;
-    vi.clearAllMocks();
-    // Ownerless-draft cases replace this implementation; clearing calls does not restore it.
-    vi.mocked(ProviderRegistry.resolveProviderForModel).mockReturnValue('claude');
-    const uiConfig = ProviderRegistry.getChatUIConfig('claude');
-    (uiConfig.getDefaultModel as Mock).mockReturnValue('claude-default');
-    (uiConfig.getModelOptions as Mock).mockReturnValue([
+    runtimes.length = 0;
+    nativeSessions.clear();
+    vi.restoreAllMocks();
+    ensureInitialized = vi.spyOn(ProviderWorkspaceRegistry, 'ensureInitialized');
+    cancelTitle = vi.spyOn(RoutedTitleGenerationService.prototype, 'cancel');
+    vi.spyOn(FakeSession.prototype, 'execute').mockImplementation(function (this: FakeSession, request) {
+      executeSession.call(this, request);
+      const run = this.runs.at(-1)!;
+      run.events.push({ type: 'turn_completed', reason: 'completed', scope: requestedScope(this, run, 1) });
+      run.events.end();
+      return run;
+    });
+    claude = registerChatTestProvider('claude', { models: [
       { label: 'Claude Default', value: 'claude-default' },
       { label: 'Claude Alternate', value: 'claude-alternate' },
-    ]);
+    ], modelPolicy: {
+      getDefaultModel: vi.fn(() => 'claude-default'),
+      getModelOptions: vi.fn(() => [
+        { label: 'Claude Default', value: 'claude-default' },
+        { label: 'Claude Alternate', value: 'claude-alternate' },
+      ]),
+    }, historyService: { resolveSessionIdForConversation: conversation => conversation?.sessionId ?? null } });
+    registerChatTestProvider('codex', { models: [{ label: 'Codex', value: 'codex-default' }] });
   });
 
   afterEach(async () => {
@@ -462,21 +363,23 @@ describe('Tab provider execution ownership', () => {
     });
     const tab = (await manager.createTab(conversation.id))!;
     const runtime = tab.session.runtime;
-    const coordinator = coordinatorInstances.at(-1)!;
-    const deps = coordinatorDeps.at(-1)!;
     const handoff = deferred<void>();
-    coordinator.execute.mockImplementationOnce(async () => {
-      await handoff.promise;
-      return {
-        status: 'missing-session',
-        accepted: false,
-        missingSessionResolution: await deps.resolveMissingProviderSession(conversation.id, 'native-session'),
-      };
+    const executed = deferred<void>();
+    vi.spyOn(FakeSession.prototype, 'execute').mockImplementationOnce(function (this: FakeSession, request) {
+      executeSession.call(this, request);
+      const run = this.runs.at(-1)!;
+      executed.resolve();
+      void handoff.promise.then(() => {
+        run.events.push({ type: 'execution_error', category: 'provider-session-missing', recoverable: false,
+          message: 'Native session deleted', missingProviderSessionId: 'native-session', scope: requestedScope(this, run, 1) });
+        run.events.end();
+      });
+      return run;
     });
     tab.dom.inputEl.value = 'Unsent prompt';
     const sending = tab.controllers.inputController.sendMessage();
     try {
-      await waitForCondition(() => vi.mocked(coordinator.execute).mock.calls.length === 1);
+      await executed.promise;
       tab.dom.inputEl.value = 'Queued follow-up';
       await tab.controllers.inputController.sendMessage();
       tab.dom.inputEl.value = 'Composer draft';
@@ -535,42 +438,24 @@ describe('Tab provider execution ownership', () => {
   });
 
   it('refreshes cached picker entries when the owning session publishes command changes', async () => {
-    const getCatalog = vi.mocked(ProviderWorkspaceRegistry.getCommandCatalog);
-    const getCapabilities = vi.mocked(ProviderRegistry.getCapabilities);
-    const previousCapabilities = getCapabilities('claude');
-    const catalog = new RuntimeCommandCatalog({
-      dropdownConfig: { providerId: 'claude', triggerChars: ['/'], builtInPrefix: '/', skillPrefix: '/', commandPrefix: '/' },
-      projectEntry: command => ({
-        ...command, providerId: 'claude', kind: 'command', scope: 'runtime', source: 'sdk',
-        isEditable: false, isDeletable: false, displayPrefix: '/', insertPrefix: '/',
-      }),
-    });
-    getCatalog.mockReturnValue(catalog);
-    getCapabilities.mockReturnValue({ ...previousCapabilities, supportsProviderCommands: true });
-    const manager = createTabManager(await createPlugin());
-    try {
-      const tab = await manager.createTab();
-      coordinatorInstances[0].getCommandSnapshot.mockReturnValue([
-        { id: 'before', name: 'before', description: '', content: '' },
-      ]);
-      const discovery = tab!.providerCatalogResolver!()!.discovery;
-      expect(await discovery.load()).toMatchObject({ status: 'ready', items: [{ name: 'before' }] });
-      coordinatorInstances[0].getCommandSnapshot.mockReturnValue([
-        { id: 'after', name: 'after', description: '', content: '' },
-      ]);
-      await coordinatorDeps[0].onSessionEvent?.({
-        type: 'commands_changed',
-        scope: { kind: 'session', sessionInstanceId: 'session-instance-1', sequence: 1 },
-      }, createEventContext());
-      expect(await discovery.load()).toMatchObject({ status: 'ready', items: [{ name: 'after' }] });
-      coordinatorInstances[0].getCommandSnapshot.mockReturnValue(undefined);
-      coordinatorDeps[0].onIdleRelease?.();
-      expect(await discovery.load()).toEqual({ status: 'empty' });
-    } finally {
-      await manager.destroy();
-      getCatalog.mockReturnValue(null);
-      getCapabilities.mockReturnValue(previousCapabilities);
-    }
+    const conversation = createConversation();
+    const manager = createTabManager(await createPlugin({ getConversationById: vi.fn(async () => conversation), getCachedConversation: vi.fn(() => conversation) }));
+    const tab = (await manager.createTab(conversation.id))!;
+    vi.useFakeTimers();
+    onTestFinished(() => { vi.useRealTimers(); });
+    claude.loadCommands.mockResolvedValue({ status: 'empty' });
+    await tab.session.runtime.model.ensureExecutionInitialized();
+    const session = await nativeSession();
+    session.commands = [{ id: 'before', name: 'before', description: '', content: '' }];
+    const discovery = tab.providerCatalogResolver()!.discovery;
+    expect(await discovery.load()).toMatchObject({ status: 'ready', items: [{ name: 'before' }] });
+    session.commands = [{ id: 'after', name: 'after', description: '', content: '' }];
+    await emitSessionEvent({ type: 'commands_changed', scope: { kind: 'session', sessionInstanceId: session.sessionInstanceId, sequence: 1 } });
+    expect(await discovery.load()).toMatchObject({ status: 'ready', items: [{ name: 'after' }] });
+    await vi.advanceTimersByTimeAsync(30 * 60_000);
+    expect(session.disposeCalls).toBe(1);
+    expect(await discovery.load()).toEqual({ status: 'empty' });
+    await manager.destroy();
   });
 
   it('publishes work changes from turn, provider-background, and async-subagent owners', async () => {
@@ -582,7 +467,11 @@ describe('Tab provider execution ownership', () => {
     });
 
     await tab.session.turns.run(async () => undefined);
-    coordinatorDeps[0].onBackgroundWorkChanged?.(true);
+    expect(onWorkChanged).toHaveBeenCalledWith(tab);
+    onWorkChanged.mockClear();
+    await emitSessionEvent({ type: 'background_turn_started', scope: { kind: 'background', sessionInstanceId: 'native', turnId: 'background', sequence: 1 } });
+    expect(onWorkChanged).toHaveBeenCalledWith(tab);
+    onWorkChanged.mockClear();
     tab.services.subagentManager.refreshAsyncSubagent({
       asyncStatus: 'running',
       description: 'Background',
@@ -594,7 +483,6 @@ describe('Tab provider execution ownership', () => {
       toolCalls: [],
     });
 
-    expect(onWorkChanged).toHaveBeenCalledTimes(4);
     expect(onWorkChanged).toHaveBeenCalledWith(tab);
   });
 
@@ -949,14 +837,6 @@ describe('Tab provider execution ownership', () => {
     const tab = await createTestTab({
       plugin: await createPlugin(),
       containerEl: document.createElement('div') as any,
-    }, {
-      component: {
-        registerDomEvent: (
-          element: HTMLElement,
-          event: string,
-          handler: EventListener,
-        ) => element.addEventListener(event, handler),
-      },
     });
     const messagesEl = tab.dom.messagesEl as any;
 
@@ -1153,7 +1033,7 @@ describe('Tab provider execution ownership', () => {
       expect(removeTabRoot).toHaveBeenCalledTimes(1);
       expect(coordinatorInstances).toHaveLength(1);
       expect(coordinatorInstances[0].dispose).toHaveBeenCalledTimes(1);
-      expect(titleServiceInstances[0].cancel).toHaveBeenCalledTimes(1);
+      expect(cancelTitle).toHaveBeenCalledTimes(1);
       expectTabManagerMetadataReleased(manager, tabId);
     } finally {
       await manager.destroy();
@@ -1185,7 +1065,7 @@ describe('Tab provider execution ownership', () => {
     expect(disconnects.length).toBeGreaterThan(0);
     for (const disconnect of disconnects) expect(disconnect).toHaveBeenCalledTimes(1);
     expect(coordinatorInstances[0].dispose).toHaveBeenCalledTimes(1);
-    expect(titleServiceInstances[0].cancel).toHaveBeenCalledTimes(1);
+    expect(cancelTitle).toHaveBeenCalledTimes(1);
     expect(removeTabRoot).toHaveBeenCalledTimes(1);
     expectTabManagerMetadataReleased(manager, tabId);
     await manager.destroy();
@@ -1225,7 +1105,7 @@ describe('Tab provider execution ownership', () => {
       expect(disconnects.length).toBeGreaterThan(0);
     for (const disconnect of disconnects) expect(disconnect).toHaveBeenCalledTimes(1);
       expect(coordinatorInstances[0].dispose).toHaveBeenCalledTimes(1);
-      expect(titleServiceInstances[0].cancel).toHaveBeenCalledTimes(1);
+      expect(cancelTitle).toHaveBeenCalledTimes(1);
       expect(removeTabRoot).toHaveBeenCalledTimes(1);
       expectTabManagerMetadataReleased(manager, tabId);
     } finally {
@@ -1254,7 +1134,7 @@ describe('Tab provider execution ownership', () => {
       { error: rollbackError, resource: 'tab DOM root' },
     ]);
     expect(coordinatorInstances[0].dispose).toHaveBeenCalledTimes(1);
-    expect(titleServiceInstances[0].cancel).toHaveBeenCalledTimes(1);
+    expect(cancelTitle).toHaveBeenCalledTimes(1);
     expect(removeTabRoot).toHaveBeenCalledTimes(1);
     expect(manager.getAllTabs()).toEqual([]);
     expectTabManagerMetadataReleased(manager, tabId);
@@ -1306,7 +1186,6 @@ describe('Tab provider execution ownership', () => {
 
   it('restores a draft on its recorded provider even when model ownership is unresolved', async () => {
     const plugin = await createPlugin();
-    (ProviderRegistry.resolveProviderForModel as Mock).mockReturnValue(null);
     const tab = await createTestTab({ plugin, containerEl: document.createElement('div') as any,
       draftModel: 'retired-endpoint', providerId: 'codex',
     });
@@ -1316,7 +1195,6 @@ describe('Tab provider execution ownership', () => {
 
   it('restores an ownerless legacy draft as a blocked tab', async () => {
     const plugin = await createPlugin();
-    (ProviderRegistry.resolveProviderForModel as Mock).mockReturnValue(null);
     const tab = await createTestTab({ plugin, containerEl: document.createElement('div') as any, draftModel: 'retired-endpoint' });
     expect(tab.providerId).toBeNull();
     expect(tab.draftModel).toBe('retired-endpoint');
@@ -1327,7 +1205,6 @@ describe('Tab provider execution ownership', () => {
 
   it('persists and reopens an unresolved draft without starting provider services', async () => {
     const plugin = await createPlugin();
-    (ProviderRegistry.resolveProviderForModel as Mock).mockReturnValue(null);
     plugin.app.workspace.getActiveViewOfType = vi.fn().mockReturnValue(null);
     const manager = createTabManager(plugin, document.createElement('div') as any);
     await manager.restoreState({
@@ -1344,7 +1221,6 @@ describe('Tab provider execution ownership', () => {
       tabId: 'blocked', conversationId: null, draftModel: 'retired-endpoint', providerId: null,
     }]);
     await manager.destroy();
-    (ProviderRegistry.resolveProviderForModel as Mock).mockReturnValue('claude');
     const reopened = createTabManager(plugin, document.createElement('div') as any);
     await reopened.restoreState(saved);
     expect(reopened.getActiveTab()?.providerId).toBeNull();
@@ -1366,8 +1242,7 @@ describe('Tab provider execution ownership', () => {
     const tab = await createTestTab({ plugin, containerEl: document.createElement('div') as any });
     tab.session.selectDraft('codex', tab.draftModel);
     tab.session.selectDraft(tab.providerId, 'gpt-5.4');
-    (ProviderRegistry.getEnabledProviderIds as Mock).mockReturnValue(['claude']);
-    (ProviderRegistry.resolveProviderForModel as Mock).mockReturnValue('claude');
+    plugin.settings.providerConfigs = { ...plugin.settings.providerConfigs, codex: { enabled: false } };
     onProviderAvailabilityChanged(tab, plugin);
     expect(getSessionProviderId(tab, plugin)).toBe('codex');
     expect(tab.providerId).toBe('codex');
@@ -1422,28 +1297,12 @@ describe('Tab provider execution ownership', () => {
   });
 
   it('does not seed a model choice whose tab closes during provider initialization', async () => {
-    const getChatUIConfig = ProviderRegistry.getChatUIConfig as Mock;
-    const getEnabledProviderIds = ProviderRegistry.getEnabledProviderIds as Mock;
-    const resolveProviderForModel = ProviderRegistry.resolveProviderForModel as Mock;
-    const claudeConfig = getChatUIConfig('claude');
-    const codexConfig = {
-      ...claudeConfig,
-      getModelOptions: vi.fn().mockReturnValue([
-        { label: 'Codex', value: 'codex-default' },
-      ]),
-    };
-    getChatUIConfig.mockImplementation((providerId: string) => (
-      providerId === 'codex' ? codexConfig : claudeConfig
-    ));
-    getEnabledProviderIds.mockReturnValue(['claude', 'codex']);
-    resolveProviderForModel.mockImplementation((model: string) => (
-      model.startsWith('codex-') ? 'codex' : 'claude'
-    ));
+    registerChatTestProvider('codex', { models: [{ label: 'Codex', value: 'codex-default' }] });
     const initialization = deferred<void>();
     const onProviderChanged = vi.fn(() => initialization.promise);
 
-    try {
-      const plugin = await createPlugin();
+    {
+      const plugin = await createPlugin({ settings: { providerConfigs: { codex: { enabled: true } } } });
       const tab = await createTestTab({ plugin, containerEl: document.createElement('div') as any }, {
         onProviderChanged,
       });
@@ -1467,38 +1326,16 @@ describe('Tab provider execution ownership', () => {
       await new Promise<void>(resolve => setImmediate(resolve));
 
       expect(plugin.settings.lastSelectedChatModel).toBeNull();
-    } finally {
-      getChatUIConfig.mockReturnValue(claudeConfig);
-      getEnabledProviderIds.mockReturnValue(['claude']);
-      resolveProviderForModel.mockReturnValue('claude');
     }
   });
 
   it('does not restore provider selection when failed selection settles after teardown', async () => {
-    const getChatUIConfig = ProviderRegistry.getChatUIConfig as Mock;
-    const getEnabledProviderIds = ProviderRegistry.getEnabledProviderIds as Mock;
-    const resolveProviderForModel = ProviderRegistry.resolveProviderForModel as Mock;
-    const getIfInitialized = ProviderWorkspaceRegistry.getIfInitialized as Mock;
-    const claudeConfig = getChatUIConfig('claude');
-    const codexConfig = {
-      ...claudeConfig,
-      getModelOptions: vi.fn().mockReturnValue([
-        { label: 'Codex', value: 'codex-default' },
-      ]),
-    };
-    getChatUIConfig.mockImplementation((providerId: string) => (
-      providerId === 'codex' ? codexConfig : claudeConfig
-    ));
-    getEnabledProviderIds.mockReturnValue(['claude', 'codex']);
-    resolveProviderForModel.mockImplementation((model: string) => (
-      model.startsWith('codex-') ? 'codex' : 'claude'
-    ));
-    getIfInitialized.mockReturnValue({});
+    registerChatTestProvider('codex', { models: [{ label: 'Codex', value: 'codex-default' }] });
     const initialization = deferred<void>();
     const onProviderChanged = vi.fn(() => initialization.promise);
 
-    try {
-      const plugin = await createPlugin();
+    {
+      const plugin = await createPlugin({ settings: { providerConfigs: { codex: { enabled: true } } } });
       const tab = await createTestTab({ plugin, containerEl: document.createElement('div') as any }, {
         onProviderChanged,
       });
@@ -1526,11 +1363,6 @@ describe('Tab provider execution ownership', () => {
 
       expect(tab.providerId).toBe('codex');
       expect(plugin.settings.lastSelectedChatModel).toBeNull();
-    } finally {
-      getIfInitialized.mockReturnValue(null);
-      getChatUIConfig.mockReturnValue(claudeConfig);
-      getEnabledProviderIds.mockReturnValue(['claude']);
-      resolveProviderForModel.mockReturnValue('claude');
     }
   });
 
@@ -1571,31 +1403,14 @@ describe('Tab provider execution ownership', () => {
   });
 
   it('does not seed an uninitialized provider after overlapping same-provider choices fail', async () => {
-    const getChatUIConfig = ProviderRegistry.getChatUIConfig as Mock;
-    const getEnabledProviderIds = ProviderRegistry.getEnabledProviderIds as Mock;
-    const resolveProviderForModel = ProviderRegistry.resolveProviderForModel as Mock;
-    const claudeConfig = getChatUIConfig('claude');
-    const codexConfig = {
-      ...claudeConfig,
-      getModelOptions: vi.fn().mockReturnValue([
-        { label: 'Codex First', value: 'codex-first' },
-        { label: 'Codex Latest', value: 'codex-latest' },
-      ]),
-    };
-    getChatUIConfig.mockImplementation((providerId: string) => (
-      providerId === 'codex' ? codexConfig : claudeConfig
-    ));
-    getEnabledProviderIds.mockReturnValue(['claude', 'codex']);
-    resolveProviderForModel.mockImplementation((model: string) => (
-      model.startsWith('codex-') ? 'codex' : 'claude'
-    ));
+    registerChatTestProvider('codex', { models: [{ label: 'Codex First', value: 'codex-first' }, { label: 'Codex Latest', value: 'codex-latest' }] });
     let rejectCodexSwitch!: (error: Error) => void;
     const codexSwitch = new Promise<void>((_resolve, reject) => {
       rejectCodexSwitch = reject;
     });
 
-    try {
-      const plugin = await createPlugin();
+    {
+      const plugin = await createPlugin({ settings: { providerConfigs: { codex: { enabled: true } } } });
       const tab = await createTestTab({ plugin, containerEl: document.createElement('div') as any }, {
         onProviderChanged: () => codexSwitch,
       });
@@ -1626,10 +1441,6 @@ describe('Tab provider execution ownership', () => {
       expect(tab.providerId).toBe('claude');
       expect(tab.draftModel).toBe('claude-default');
       expect(plugin.settings.lastSelectedChatModel).toBeNull();
-    } finally {
-      getChatUIConfig.mockReturnValue(claudeConfig);
-      getEnabledProviderIds.mockReturnValue(['claude']);
-      resolveProviderForModel.mockReturnValue('claude');
     }
   });
 
@@ -1955,27 +1766,36 @@ describe('Tab provider execution ownership', () => {
     const activated = vi.spyOn(tab.controllers.inputController, 'onConversationActivated');
     onCommandContextChanged.mockClear();
     const binding = deferred<void>();
-    coordinatorInstances[0].bindConversation.mockImplementationOnce(() => binding.promise);
+    const reading = deferred<void>();
+    plugin.getConversationById.mockImplementationOnce(async () => { reading.resolve(); await binding.promise; return conversation; });
     const loading = tab.session.runtime.model.hydrate();
-    for (let attempt = 0; attempt < 40 && coordinatorInstances[0].bindConversation.mock.calls.length === 0; attempt++) await Promise.resolve();
-    expect(onCommandContextChanged.mock.invocationCallOrder[0]).toBeLessThan(coordinatorInstances[0].bindConversation.mock.invocationCallOrder[0]);
+    await reading.promise;
     expect(activated).not.toHaveBeenCalled();
     binding.resolve(undefined);
     await loading;
     expect(activated).toHaveBeenCalledTimes(1);
+    expect(onCommandContextChanged.mock.invocationCallOrder[0]).toBeLessThan(vi.mocked(coordinatorInstances[0].bindConversation).mock.invocationCallOrder[0]);
     expect(tab.state.currentConversationId).toBe(conversation.id);
   });
 
   it('routes requested events through the current input controller', async () => {
-    const plugin = await createPlugin();
-    const tab = await createTestTab({ plugin, containerEl: document.createElement('div') as any });
-    const handleExecutionEvent = vi.fn();
-    vi.spyOn(tab.controllers.inputController, 'handleExecutionEvent').mockImplementation(handleExecutionEvent);
-    const event = { type: 'text_delta' } as any;
-
-    await coordinatorDeps[0].onRequestedEvent?.(event, {} as any);
-
-    expect(handleExecutionEvent).toHaveBeenCalledWith(event);
+    const conversation = createConversation();
+    const plugin = await createPlugin({ getConversationById: vi.fn(async () => conversation), renameConversation: vi.fn(async () => undefined), completeConversationTitleGeneration: vi.fn(async () => undefined) });
+    const tab = await createTestTab({ plugin, containerEl: document.createElement('div'), conversation });
+    await tab.session.runtime.model.hydrate();
+    const received = vi.spyOn(tab.controllers.inputController, 'handleExecutionEvent');
+    vi.spyOn(FakeSession.prototype, 'execute').mockImplementationOnce(function (this: FakeSession, request) {
+      executeSession.call(this, request);
+      const run = this.runs.at(-1)!;
+      run.events.push({ type: 'text_delta', text: 'Provider reply', scope: requestedScope(this, run, 1) });
+      run.events.push({ type: 'turn_completed', reason: 'completed', scope: requestedScope(this, run, 2) });
+      run.events.end();
+      return run;
+    });
+    tab.dom.inputEl.value = 'Read this';
+    await tab.controllers.inputController.sendMessage();
+    expect(received).toHaveBeenCalledWith(expect.objectContaining({ type: 'text_delta', text: 'Provider reply' }));
+    expect(tab.state.messages.some(message => message.content.includes('Provider reply'))).toBe(true);
   });
 
   it('keeps provider interactions action-required until they settle', async () => {
@@ -1983,12 +1803,14 @@ describe('Tab provider execution ownership', () => {
     const tab = await createTestTab({ plugin, containerEl: document.createElement('div') as any });
     const handleApprovalRequest = vi.spyOn(tab.controllers.inlinePrompts, 'requestApproval');
 
-    const request = coordinatorDeps[0].interactionPort.requestApproval({
+    const session = await nativeSession();
+    session.emit({ type: 'background_turn_started', scope: { kind: 'background', sessionInstanceId: session.sessionInstanceId, sequence: 1, turnId: 'turn-1' } });
+    const request = claude.createSession.mock.calls.at(-1)![0].interactionPort.requestApproval({
       description: 'Read note',
       input: { path: 'note.md' },
       interactionId: 'interaction-1',
       kind: 'approval',
-      sessionInstanceId: 'session-instance-1',
+      sessionInstanceId: session.sessionInstanceId,
       toolName: 'Read',
       turnId: 'turn-1',
     }, new AbortController().signal);
@@ -2003,7 +1825,7 @@ describe('Tab provider execution ownership', () => {
       expect.any(AbortSignal),
     );
     expect(tab.state.requiresAction).toBe(true);
-    expect(coordinatorDeps[0].isOwnerIdle?.()).toBe(false);
+    expect(runtimes[0].isIdle).toBe(false);
 
     tab.controllers.inlinePrompts.dismiss('interaction-1');
     await expect(request).resolves.toEqual({
@@ -2020,8 +1842,15 @@ describe('Tab provider execution ownership', () => {
 
     tab.state.markReviewRequired();
 
-    expect(coordinatorDeps[0].idleReleaseMs).toBe(30 * 60_000);
-    expect(coordinatorDeps[0].isOwnerIdle?.()).toBe(true);
+    vi.useFakeTimers();
+    try {
+      const session = await nativeSession();
+      expect(runtimes[0].isIdle).toBe(true);
+      await vi.advanceTimersByTimeAsync(30 * 60_000 - 1);
+      expect(session.disposeCalls).toBe(0);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(session.disposeCalls).toBe(1);
+    } finally { vi.useRealTimers(); }
   });
 
   it.each([
@@ -2038,11 +1867,11 @@ describe('Tab provider execution ownership', () => {
     ['a rewind', (tab: AssembledTabRuntime) => { vi.spyOn(tab.state, 'isRewinding', 'get').mockReturnValue(true); }],
   ])('keeps the tab session through %s', async (_label, hold) => {
     const tab = await createTestTab({ plugin: await createPlugin(), containerEl: document.createElement('div') as any });
-    expect(coordinatorDeps[0].isOwnerIdle?.()).toBe(true);
+    expect(runtimes[0].isIdle).toBe(true);
 
     hold(tab);
 
-    expect(coordinatorDeps[0].isOwnerIdle?.()).toBe(false);
+    expect(runtimes[0].isIdle).toBe(false);
   });
 
   it('publishes background review only after persistence and respects acknowledgement during that save', async () => {
@@ -2051,10 +1880,9 @@ describe('Tab provider execution ownership', () => {
     const tab = await createTestTab({ plugin, containerEl: document.createElement('div') as any });
     tab.state.currentConversationId = 'conversation';
     const scope = { kind: 'background' as const, sequence: 1, sessionInstanceId: 'native', turnId: 'background' };
-    const context = createEventContext();
-    await coordinatorDeps[0].onSessionEvent?.({ type: 'background_turn_started', scope }, context);
-    await coordinatorDeps[0].onSessionEvent?.({ type: 'text_delta', text: 'Background result', scope: { ...scope, sequence: 2 } }, context);
-    const completion = coordinatorDeps[0].onSessionEvent?.({ type: 'background_turn_completed', reason: 'completed', scope: { ...scope, sequence: 3 } }, context);
+    await emitSessionEvent({ type: 'background_turn_started', scope });
+    await emitSessionEvent({ type: 'text_delta', text: 'Background result', scope: { ...scope, sequence: 2 } });
+    const completion = emitSessionEvent({ type: 'background_turn_completed', reason: 'completed', scope: { ...scope, sequence: 3 } });
     for (let i = 0; i < 40 && !plugin.updateConversation.mock.calls.length; i++) await Promise.resolve();
     expect(plugin.updateConversation).toHaveBeenCalledWith('conversation', expect.objectContaining({ lastActivityAt: expect.any(Number) }));
     expect(tab.state.attention).toBeNull();
@@ -2068,14 +1896,13 @@ describe('Tab provider execution ownership', () => {
       const plugin = await createPlugin();
       const tab = await createTestTab({ plugin, containerEl: document.createElement('div') as any });
       tab.state.currentConversationId = 'conversation';
-      const index = coordinatorDeps.length - 1;
+      const index = coordinatorInstances.length - 1;
       const scope = { kind: 'background' as const, sequence: 1, sessionInstanceId: 'native', turnId: 'background' };
-      const context = createEventContext();
-      await coordinatorDeps[index].onSessionEvent?.({ type: 'background_turn_started', scope }, context);
-      if (usage) await coordinatorDeps[index].onSessionEvent?.({ type: 'usage_updated', usage: {
+        await emitSessionEvent({ type: 'background_turn_started', scope }, index);
+      if (usage) await emitSessionEvent({ type: 'usage_updated', usage: {
         contextTokens: 10, contextWindow: 100, inputTokens: 10, percentage: 10,
-      }, scope: { ...scope, sequence: 2 } }, context);
-      await coordinatorDeps[index].onSessionEvent?.({ type: 'background_turn_completed', reason: 'completed', scope: { ...scope, sequence: 3 } }, context);
+      }, scope: { ...scope, sequence: 2 } }, index);
+      await emitSessionEvent({ type: 'background_turn_completed', reason: 'completed', scope: { ...scope, sequence: 3 } }, index);
       expect(plugin.updateConversation).toHaveBeenCalledWith('conversation', expect.objectContaining({ lastActivityAt: expect.any(Number) }));
       expect(tab.state.attention).toBeNull();
       expect(tab.state.usage?.contextTokens ?? null).toBe(usage ? 10 : null);
@@ -2086,9 +1913,10 @@ describe('Tab provider execution ownership', () => {
   it('rejects stale provider binding events before touching the transcript', async () => {
     const plugin = await createPlugin();
     const tab = await createTestTab({ plugin, containerEl: document.createElement('div') as any });
-    coordinatorInstances[0].isEventContextCurrent.mockReturnValue(false);
-    await coordinatorDeps[0].onSessionEvent?.({ type: 'task_notification', content: 'Stale result',
-      scope: { kind: 'session', sequence: 1, sessionInstanceId: 'old-native' } }, createEventContext());
+    const session = await nativeSession();
+    await coordinatorInstances[0].bindConversation(null);
+    session.emit({ type: 'task_notification', content: 'Stale result', scope: { kind: 'session', sequence: 1, sessionInstanceId: session.sessionInstanceId } });
+    await runtimes[0].awaitBackgroundWork();
     expect(tab.state.messages).toEqual([]);
     expect(plugin.updateConversation).not.toHaveBeenCalled();
   });
@@ -2097,31 +1925,36 @@ describe('Tab provider execution ownership', () => {
     const plugin = await createPlugin();
     const tab = await createTestTab({ plugin, containerEl: document.createElement('div') as any });
     tab.state.currentConversationId = 'conversation';
-    const apply = vi.spyOn(tab.controllers.streamController.subagents, 'handleAsyncSubagentCompletion').mockResolvedValue(true);
-    coordinatorInstances[0].snapshot = { providerSessionId: 'native-session' };
-    await coordinatorDeps[0].onSessionEvent?.({ originatingTurnId: 'turn-1', result: 'done',
+    tab.services.subagentManager.handleTaskToolUse('task-1', { description: 'Background', prompt: 'Read', run_in_background: true }, tab.dom.messagesEl);
+    tab.services.subagentManager.handleTaskToolResult('task-1', 'agent_id: subagent-1');
+    const apply = vi.spyOn(tab.controllers.streamController.subagents, 'handleAsyncSubagentCompletion');
+    const session = await nativeSession();
+    session.snapshot = { ...session.snapshot, providerSessionId: 'native-session' };
+    await emitSessionEvent({ type: 'session_state_changed', snapshot: session.snapshot, scope: { kind: 'session', sessionInstanceId: session.sessionInstanceId, sequence: 0 } });
+    await emitSessionEvent({ originatingTurnId: 'turn-1', result: 'done',
       scope: { kind: 'session', sequence: 1, sessionInstanceId: 'session-instance-1' },
-      status: 'completed', subagentId: 'subagent-1', type: 'async_subagent_completed' }, createEventContext());
+      status: 'completed', subagentId: 'subagent-1', type: 'async_subagent_completed' });
     expect(apply).toHaveBeenCalledWith({ providerSessionId: 'native-session', result: 'done', status: 'completed', taskId: 'subagent-1', type: 'async_subagent_completion' });
+    expect(tab.services.subagentManager.getByTaskId('task-1')).toMatchObject({ status: 'completed', result: 'done' });
     expect(plugin.updateConversation).toHaveBeenCalledWith('conversation', expect.objectContaining({ lastActivityAt: expect.any(Number) }));
     expect(tab.state.attention).toMatchObject({ kind: 'review', outcome: 'completed' });
   });
 
   it('applies subagent progress without waiting behind queued background work', async () => {
     const tab = await createTestTab({ plugin: await createPlugin(), containerEl: document.createElement('div') as any });
-    const handleSubagentProgress = vi.fn();
-    vi.spyOn(tab.controllers.streamController.subagents, 'handleSubagentProgress').mockImplementation(handleSubagentProgress);
+    const session = await nativeSession();
+    const handleSubagentProgress = vi.spyOn(tab.controllers.streamController.subagents, 'handleSubagentProgress');
     let releaseBackground!: () => void;
     const release = new Promise<void>((resolve) => { releaseBackground = resolve; });
     const blocked = tab.session.enqueueBackgroundWork(() => release);
     const progress = { toolCallId: 'task-1', summary: 'Reading the auth module' };
 
     try {
-      coordinatorDeps[0].onSessionEvent?.({
+      session.emit({
         progress,
-        scope: { kind: 'session', sequence: 1, sessionInstanceId: 'session-instance-1' },
+        scope: { kind: 'session', sequence: 1, sessionInstanceId: session.sessionInstanceId },
         type: 'subagent_progress',
-      }, createEventContext());
+      });
 
       expect(handleSubagentProgress).toHaveBeenCalledWith(progress);
     } finally {
@@ -2136,15 +1969,20 @@ describe('Tab provider execution ownership', () => {
     const lookup = (id: string) => id === old.id ? old : next;
     const plugin = await createPlugin({ getCachedConversation: vi.fn(lookup), getConversationSync: vi.fn(lookup), getConversationById: vi.fn(async id => lookup(id)) });
     const manager = createTabManager(plugin);
-    const tab = (await manager.createTab(old.id))!;
+    await manager.createTab(old.id);
     const rendering = deferred<void>();
-    const render = vi.spyOn(tab.renderer, 'renderContent').mockReturnValue(rendering.promise);
+    const enteredRender = deferred<void>();
+    const renderMarkdown = MarkdownRenderer.render;
+    const render = vi.spyOn(MarkdownRenderer, 'render').mockImplementationOnce(async (...args) => {
+      enteredRender.resolve();
+      await rendering.promise;
+      await renderMarkdown(...args);
+    });
     const scope = { kind: 'background' as const, sequence: 1, sessionInstanceId: 'native', turnId: 'background' };
-    const context = createEventContext();
-    await coordinatorDeps[0].onSessionEvent?.({ type: 'background_turn_started', scope }, context);
-    await coordinatorDeps[0].onSessionEvent?.({ type: 'text_delta', text: 'Old background result', scope: { ...scope, sequence: 2 } }, context);
-    const completion = coordinatorDeps[0].onSessionEvent?.({ type: 'background_turn_completed', reason: 'completed', scope: { ...scope, sequence: 3 } }, context);
-    for (let i = 0; i < 40 && !render.mock.calls.length; i++) await Promise.resolve();
+    await emitSessionEvent({ type: 'background_turn_started', scope });
+    await emitSessionEvent({ type: 'text_delta', text: 'Old background result', scope: { ...scope, sequence: 2 } });
+    const completion = emitSessionEvent({ type: 'background_turn_completed', reason: 'completed', scope: { ...scope, sequence: 3 } });
+    await enteredRender.promise;
     expect(render).toHaveBeenCalled();
     await manager.openConversation(next.id);
     expect(manager.getActiveTab()?.conversationId).toBe(next.id);
@@ -2263,7 +2101,7 @@ describe('Tab provider execution ownership', () => {
     pending.resolve(conversation);
     await Promise.all([sending, closing]);
     expect(tab.conversationId).toBe('created-during-close');
-    expect(coordinatorInstances[0].prepare).toHaveBeenCalledTimes(1);
+    expect(claude.createSession).toHaveBeenCalledTimes(1);
     expect(coordinatorInstances[0].execute).toHaveBeenCalledTimes(1);
     expect(updateConversation).toHaveBeenCalledWith('created-during-close', expect.objectContaining({
       messages: expect.arrayContaining([expect.objectContaining({ role: 'user', content: 'Preserve admitted first prompt' })]),
@@ -2294,10 +2132,6 @@ describe('Tab provider execution ownership', () => {
       containerEl: document.createElement('div') as any,
       conversation,
     }, {
-      component: {
-        registerDomEvent: vi.fn(),
-        registerEvent: vi.fn(),
-      },
       forkRequestCallback: forkRequest,
     });
     tab.state.messages = [
@@ -2370,7 +2204,6 @@ describe('Tab provider execution ownership', () => {
   });
 
   it('drops a fork resolved after its source runtime begins closing', async () => {
-    const forkSource = deferred<any>();
     const forkRequest = vi.fn().mockResolvedValue(undefined);
     const plugin = await createPlugin();
     const tab = await createTestTab({
@@ -2378,7 +2211,7 @@ describe('Tab provider execution ownership', () => {
       containerEl: document.createElement('div') as any,
       conversation: createConversation(),
     }, { forkRequestCallback: forkRequest });
-    coordinatorInstances[0].resolveForkSource.mockReturnValueOnce(forkSource.promise);
+    plugin.getConversationSync.mockReturnValue(createConversation());
     tab.state.messages = [
       {
         content: 'A',
@@ -2411,16 +2244,9 @@ describe('Tab provider execution ownership', () => {
     ];
 
     const fork = handleForkRequest(tab, plugin, 'assistant-a', forkRequest, runtime => runtime.lifecycleState !== 'closing');
-    for (let attempt = 0;
-      attempt < 10 && coordinatorInstances[0].resolveForkSource.mock.calls.length === 0;
-      attempt += 1) {
-      await Promise.resolve();
-    }
+    // The real coordinator yields at native identity resolution; close before its continuation.
     expect(coordinatorInstances[0].resolveForkSource).toHaveBeenCalled();
     tab.session.beginClose();
-    forkSource.resolve({
-      sessionId: 'native-session',
-    });
     await fork;
 
     expect(forkRequest).not.toHaveBeenCalled();
@@ -2428,7 +2254,6 @@ describe('Tab provider execution ownership', () => {
 
   it('drops a fork when its source session shuts down during source resolution', async () => {
     const conversation = createConversation();
-    const forkSource = deferred<any>();
     const forkRequest = vi.fn().mockResolvedValue(undefined);
     const plugin = await createPlugin();
     const tab = await createTestTab({
@@ -2436,7 +2261,7 @@ describe('Tab provider execution ownership', () => {
       containerEl: document.createElement('div') as any,
       conversation,
     }, { forkRequestCallback: forkRequest });
-    coordinatorInstances[0].resolveForkSource.mockReturnValueOnce(forkSource.promise);
+    plugin.getConversationSync.mockReturnValue(createConversation());
     tab.state.messages = [
       {
         content: 'A',
@@ -2462,13 +2287,8 @@ describe('Tab provider execution ownership', () => {
     ];
 
     const fork = handleForkRequest(tab, plugin, 'assistant-a', forkRequest, runtime => !runtime.session.runtime.isDisposed);
-    for (let attempt = 0;
-      attempt < 10 && coordinatorInstances[0].resolveForkSource.mock.calls.length === 0;
-      attempt += 1) {
-      await Promise.resolve();
-    }
+    // The real coordinator yields at native identity resolution; close before its continuation.
     tab.session.runtime.beginShutdown();
-    forkSource.resolve({ sessionId: 'native-session' });
     await fork;
 
     expect(forkRequest).not.toHaveBeenCalled();
@@ -2479,14 +2299,14 @@ describe('Tab provider execution ownership', () => {
     await createTestTab({ plugin, containerEl: document.createElement('div') as any });
     plugin.settings.permissionMode = permissionMode === 'normal' ? 'yolo' : 'normal';
 
-    await coordinatorDeps[0].onSessionEvent?.({
+    await emitSessionEvent({
       type: 'permission_mode_changed',
       permissionMode,
       scope: { kind: 'session', sessionInstanceId: 'session-instance-1', sequence: 1 },
       snapshot: { providerId: 'claude', revision: 1, status: 'idle' },
-    }, createEventContext());
+    });
 
-    expect(plugin.settings.permissionMode).toBe(permissionMode);
+    expect(plugin.settings.permissionMode).toBe(permissionMode === 'normal' ? 'acceptEdits' : 'yolo');
   });
 
   it('updates permission settings for an unbound tab', async () => {
@@ -2498,6 +2318,6 @@ describe('Tab provider execution ownership', () => {
 
     await updateTabPermissionMode(tab, plugin, 'normal');
 
-    expect(plugin.settings.permissionMode).toBe('normal');
+    expect(plugin.settings.permissionMode).toBe('acceptEdits');
   });
 });

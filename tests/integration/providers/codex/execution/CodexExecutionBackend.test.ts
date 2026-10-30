@@ -1,3 +1,4 @@
+// @test-ci {"native":true}
 import { capturedSelections } from '@test/helpers/capturedSelections';
 import { TEST_CODEX_CATALOG, TEST_CODEX_MODEL } from '@test/helpers/codexModels';
 import { DesktopVault } from '@test/helpers/core/DesktopVault';

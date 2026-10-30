@@ -1,3 +1,4 @@
+// @test-ci {"inputs":["src/i18n/locales/**/*.json"]}
 import { createRequire } from 'node:module';
 
 import {

@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs';
 import { availableParallelism, cpus, tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { defineConfig } from 'vitest/config';
@@ -13,8 +14,12 @@ const processFiles = [
   // The structuredClone polyfill returns arrays in the native V8 realm.
   'tests/integration/features/chat/composer/PromptHistoryNavigation.dom.test.ts',
   // Pending native history I/O outlives a VM context's teardown.
-  'tests/unit/providers/codex/execution/CodexExecutionBackend.test.ts',
+  'tests/integration/providers/codex/execution/CodexExecutionBackend.protocol.test.ts',
 ];
+
+for (const file of processFiles) {
+  if (!existsSync(resolve(file))) throw new Error(`Missing process-pool test: ${file}`);
+}
 
 export default defineConfig({
   // Preserve assignment fields, including declarations inherited from a base class.

@@ -1,3 +1,4 @@
+// @test-ci {"native":true,"inputs":["tests/helpers/providers/opencode/OpencodeNativePeer.cjs"]}
 import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import * as path from 'node:path';
@@ -75,6 +76,8 @@ it('interrupts HTTP execution and continues the same native session on the next 
       if (event.type === 'text_delta') run.cancel();
     }
     expect(cancelled.at(-1)?.type).toBe('cancelled');
+    expect(f.session.getSnapshot()).toMatchObject({ status: 'invalidated', invalidation: { reason: 'cancelled', recoverable: true } });
+    expect(cancelled).toContainEqual(expect.objectContaining({ type: 'session_state_changed', snapshot: expect.objectContaining({ status: 'invalidated' }) }));
     const continued: ProviderExecutionEvent[] = [];
     for await (const event of f.session.execute(request('continue')).events) continued.push(event);
     expect(continued.at(-1)?.type).toBe('turn_completed');
@@ -120,7 +123,8 @@ it('reports a disconnected event stream as a failed turn instead of successful c
   try {
     const events: ProviderExecutionEvent[] = [];
     for await (const event of f.session.execute(request('disconnect')).events) events.push(event);
-    expect(events.at(-1)).toMatchObject({ type: 'execution_error', recoverable: true });
+    expect(events.at(-2)).toMatchObject({ type: 'session_state_changed', snapshot: expect.objectContaining({ status: 'invalidated', invalidation: expect.objectContaining({ reason: 'provider-error', recoverable: true }) }) });
+    expect(events.at(-1)).toMatchObject({ type: 'execution_error', category: 'provider', recoverable: true });
     expect(f.session.getStatus()).toBe('invalidated');
   } finally { await f.dispose(); }
 });

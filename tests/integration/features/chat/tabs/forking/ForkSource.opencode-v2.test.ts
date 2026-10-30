@@ -1,3 +1,4 @@
+// @test-ci {"native":true,"inputs":["tests/helpers/providers/opencode/OpencodeNativePeer.cjs"]}
 import { readFileSync, writeFileSync } from 'node:fs';
 import * as path from 'node:path';
 

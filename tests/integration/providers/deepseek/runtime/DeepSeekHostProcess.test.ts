@@ -1,3 +1,4 @@
+// @test-ci {"native":true,"inputs":["tests/fixtures/providers/deepseek/runtime/**"]}
 import { realpathSync } from 'node:fs';
 import { access, chmod, copyFile, link, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';

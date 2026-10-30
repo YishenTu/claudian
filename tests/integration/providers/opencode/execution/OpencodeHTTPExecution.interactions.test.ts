@@ -1,3 +1,4 @@
+// @test-ci {"native":true,"inputs":["tests/helpers/providers/opencode/OpencodeNativePeer.cjs"]}
 
 
 import { createFixture, request } from '@test/helpers/providers/opencode/OpencodeHTTPExecutionFixture';

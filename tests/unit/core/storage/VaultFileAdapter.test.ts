@@ -1,3 +1,4 @@
+// @test-ci {"native":true}
 const actualModule0 = await vi.importActual<typeof fs>('node:fs/promises');
 const actualModule1 = await vi.importActual<typeof fs>('node:fs/promises');
 const actualModule2 = await vi.importActual<typeof fs>('node:fs/promises');

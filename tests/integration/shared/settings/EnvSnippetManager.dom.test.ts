@@ -69,6 +69,47 @@ function notifyCalls(notice: Mock): string[] {
 
 const aliasCases: Array<Record<string, string> | undefined> = [undefined, {}, { custom: ' Snippet name ' }];
 
+it.each(['Name', 'Description'])('closes once when host Escape reaches the %s field', async fieldName => {
+  const { host } = await createProviderHostFixture();
+  const save = vi.fn();
+  const modal = new EnvSnippetModal(host.app, host, null, 'provider:claude', save);
+  onTestFinished(() => {
+    if (modal.containerEl.isConnected) modal.close();
+  });
+  const close = vi.spyOn(modal, 'onClose');
+  const release = vi.spyOn(host.app.keymap, 'popScope');
+  const joinFocusTimers = captureModalFocusTimers(() => { modal.open(); });
+  await joinFocusTimers();
+  const dialog = within(document.body).getByRole('dialog', { name: 'Save snippet' });
+  const field = within(dialog).getByRole<HTMLInputElement>('textbox', { name: fieldName });
+  field.focus();
+  const received: KeyboardEvent[] = [];
+  field.addEventListener('keydown', event => { received.push(event); });
+  const beforeTarget: Array<{ released: number; connected: boolean; prevented: boolean }> = [];
+  const observeCapture = (event: KeyboardEvent) => {
+    beforeTarget.push({
+      released: release.mock.calls.length,
+      connected: field.isConnected,
+      prevented: event.defaultPrevented,
+    });
+  };
+  document.addEventListener('keydown', observeCapture, true);
+  onTestFinished(() => document.removeEventListener('keydown', observeCapture, true));
+  const escape = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
+
+  field.dispatchEvent(escape);
+
+  // The host closes in window capture; the original event still reaches its detached input.
+  expect(beforeTarget).toEqual([{ released: 1, connected: false, prevented: true }]);
+  expect(received).toEqual([escape]);
+  expect(escape.defaultPrevented).toBe(true);
+  expect(escape.target).toBe(field);
+  expect(within(document.body).queryByRole('dialog', { name: 'Save snippet' })).toBeNull();
+  expect(close).toHaveBeenCalledTimes(1);
+  expect(release).toHaveBeenCalledExactlyOnceWith(modal.scope);
+  expect(save).not.toHaveBeenCalled();
+});
+
 it('preserves own context-limit keys when inserting a snippet with production object-spread semantics', async () => {
   const { host, settings } = await createProviderHostFixture({
     overrides: {

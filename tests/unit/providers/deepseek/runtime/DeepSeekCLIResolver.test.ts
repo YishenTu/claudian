@@ -1,3 +1,4 @@
+// @test-ci {"native":true}
 import { getInstallationKey } from '@/core/device/InstallationKey';
 const actualModule0 = await vi.importActual<typeof import('@/core/process/cliBinaryLocator')>('@/core/process/cliBinaryLocator');
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';

@@ -1,3 +1,4 @@
+// @test-ci {"inputs":["src/style/base/visibility.css"]}
 /** @vitest-environment jsdom */
 import '@/providers';
 

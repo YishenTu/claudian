@@ -1,3 +1,4 @@
+// @test-ci {"inputs":["tests/helpers/providers/opencode/OpencodeNativePeer.cjs"]}
 import { existsSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { setTimeout as yieldToIO } from 'node:timers/promises';
 

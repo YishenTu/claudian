@@ -1,123 +1,21 @@
-import { conversationRecord } from '@test/helpers/features/chat/TabManagerTestHarness';
 /** @vitest-environment jsdom */
-const actualModule0 = await vi.importActual<any>('@/core/providers/ProviderInitializationBoundary');
-const mockedModule1: any = await import('@/features/chat/tabs/TabLifecycle');
-import { createHarness as createExecutionHarness } from '@test/helpers/ChatExecutionHarness';
-import { createSessionModelStub } from '@test/helpers/ConversationPorts';
-import {
-  commandCatalog,
-  commandLoader,
-  createManager,
-  createMockTab,
-  createPlugin,
-  deferred,
-  expectTabMetadataReleased,
-  mockCreateTab,
-  mockCreateTabRuntime,
-  mockDestroyTab,
-  mockDrainTabForShutdownSnapshot,
-  mockNextHydration,
-  mockTabs,
-} from '@test/helpers/features/chat/TabManagerTestHarness';
-import type { Mock } from 'vitest';
+import { DesktopVault } from '@test/helpers/core/DesktopVault';
+import { useNextTaskAnimationFrames } from '@test/helpers/dom/animationFrames';
+import { createFeatureHostFixture } from '@test/helpers/FeatureHostFixture';
+import { registerChatTestProvider } from '@test/helpers/features/chat/ChatProviderFixture';
+import { conversationRecord, createManager, createPlugin, deferred, forkRequestFrom, holdHistory, navigationOwner } from '@test/helpers/features/chat/TabManagerIntegrationHarness';
 
-import { ClaudianViews } from '@/composition/ClaudianViews';
-import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { ProviderWorkspaceRegistry } from '@/core/providers/ProviderWorkspaceRegistry';
-import { ChatSessionRuntime } from '@/features/chat/sessions/ChatSessionRuntime';
+import type { Conversation } from '@/core/types';
+import { createQueuedMessage } from '@/features/chat/state/chatTurnRequest';
 import type { TabManager } from '@/features/chat/tabs/TabManager';
-import { onProviderAvailabilityChanged } from '@/features/chat/tabs/tabProviderLifecycle';
-import { TabSession } from '@/features/chat/tabs/TabSession';
 
-vi.mock('@/features/chat/tabs/TabLifecycle', async () => (
-  (await vi.importActual<typeof import('@test/helpers/features/chat/TabManagerTestHarness')>('@test/helpers/features/chat/TabManagerTestHarness')).tabLifecycleModuleMock()
-));
-vi.mock('@/features/chat/tabs/tabProviderUI', () => ({ refreshTabWorkspaceServices: vi.fn() }));
-vi.mock('@/features/chat/tabs/tabProviderLifecycle', () => ({ onProviderAvailabilityChanged: vi.fn().mockReturnValue(false) }));
-vi.mock('@/features/chat/tabs/TabRuntimeFactory', async () => (
-  (await vi.importActual<typeof import('@test/helpers/features/chat/TabManagerTestHarness')>('@test/helpers/features/chat/TabManagerTestHarness')).tabRuntimeFactoryModuleMock()
-));
-vi.mock('@/features/chat/tabs/forking/ForkTargetModal', async () => (
-  (await vi.importActual<typeof import('@test/helpers/features/chat/TabManagerTestHarness')>('@test/helpers/features/chat/TabManagerTestHarness')).forkTargetModalModuleMock()
-));
-vi.mock('@/core/providers/ProviderWorkspaceRegistry', async () => (
-  (await vi.importActual<typeof import('@test/helpers/features/chat/TabManagerTestHarness')>('@test/helpers/features/chat/TabManagerTestHarness')).providerWorkspaceRegistryModuleMock()
-));
-vi.mock('@/core/providers/ProviderRegistry', async () => (
-  (await vi.importActual<typeof import('@test/helpers/features/chat/TabManagerTestHarness')>('@test/helpers/features/chat/TabManagerTestHarness')).providerRegistryModuleMock()
-));
+let provider: ReturnType<typeof registerChatTestProvider>;
+beforeEach(() => {
+  useNextTaskAnimationFrames();
+  provider = registerChatTestProvider('claude', { models: [{ value: 'claude-default', label: 'Claude' }, { value: 'claude-alternate', label: 'Alternate' }] });
+});
 
-describe('TabManager provider execution orchestration', () => {
-  beforeEach(() => {
-    vi.mocked(ProviderWorkspaceRegistry.getCommandCatalog).mockReturnValue(commandCatalog as never);
-    vi.mocked(ProviderWorkspaceRegistry.getCommandLoader).mockReturnValue(commandLoader);
-    vi.mocked(ProviderWorkspaceRegistry.ensureInitialized).mockResolvedValue(undefined);
-    vi.mocked(ProviderWorkspaceRegistry.getIfInitialized).mockReturnValue({});
-    mockTabs.length = 0;
-    vi.clearAllMocks();
-    (ProviderRegistry.getCapabilities as Mock).mockReturnValue({
-      providerId: 'claude',
-      supportsProviderCommands: true,
-    });
-    commandLoader.loadCommands.mockResolvedValue({
-      status: 'ready',
-      items: [{ description: 'Review changes', name: 'review' }],
-    });
-  });
-
-  it('validates cached workspace ownership during admission', async () => {
-    const { ProviderInitializationBoundary } = actualModule0;
-    const boundary = new ProviderInitializationBoundary();
-    const hostA = {
-      storage: { getAdapter: () => ({}) },
-      runProviderExecutionTransition: async (_ids: unknown, run: any) => run({}),
-    };
-    const commandsA = {
-      ...commandLoader,
-      loadCommands: vi.fn().mockResolvedValue({
-        status: 'ready', items: [{ name: 'from-vault-a', description: 'Vault A only' }],
-      }),
-    };
-    const { manager } = await createManager(await createPlugin());
-    boundary.register('claude', {
-      initialize: async () => ({ commandCatalog, commandLoader: commandsA }),
-    });
-    await boundary.ensureInitialized(hostA, 'claude', 'host-a');
-    vi.mocked(ProviderWorkspaceRegistry.getIfInitialized).mockImplementation(id => boundary.getIfInitialized(id));
-    vi.mocked(ProviderWorkspaceRegistry.ensureInitialized).mockImplementation((host, id, reason) => boundary.ensureInitialized(host, id, reason));
-    vi.mocked(ProviderWorkspaceRegistry.getCommandLoader).mockImplementation(id => boundary.getIfInitialized(id)?.commandLoader ?? null);
-
-    const tab = await manager.createTab();
-    expect(tab?.hydrationState).toBe('failed');
-    expect(commandsA.loadCommands).not.toHaveBeenCalled();
-    await manager.destroy();
-  });
-
-  it('creates tabs without installing runtime callbacks', async () => {
-    const { manager } = await createManager();
-
-    const tab = await manager.createTab();
-
-    expect(tab).not.toBeNull();
-    expect(tab?.lifecycleState).toBe('open');
-    const options = mockCreateTab.mock.calls[0]?.[0];
-    expect(options).not.toHaveProperty('onRuntimeInstalled');
-    expect(options).not.toHaveProperty('defaultProviderId');
-  });
-
-  it('does not inherit the active tab provider when creating another blank tab', async () => {
-    const { manager } = await createManager();
-    const active = await manager.createTab();
-    active!.session.selectDraft('codex', active!.draftModel);
-    active!.session.selectDraft(active!.providerId, 'codex:gpt-5');
-
-    await manager.createTab();
-
-    const options = mockCreateTabRuntime.mock.calls[1]?.[0];
-    expect(options).not.toHaveProperty('providerId');
-    expect(options).not.toHaveProperty('draftModel');
-    expect(options).not.toHaveProperty('defaultProviderId');
-  });
 
   it('leaves the first tab inactive when activation is explicitly disabled', async () => {
     const { manager } = await createManager();
@@ -137,81 +35,6 @@ describe('TabManager provider execution orchestration', () => {
     });
   });
 
-  it('keeps the committed active tab visible while another tab is hydrating', async () => {
-    const { manager } = await createManager(await createPlugin({
-      getCachedConversation: vi.fn((id: string) => (conversationRecord(id, { providerId: 'claude' }))),
-    }));
-    const initial = await manager.createTab(null, 'initial-tab');
-    const target = await manager.createTab('conversation-1', 'target-tab', {
-      activate: false,
-    });
-    const hydration = deferred<void>();
-    const hydrationStarted = deferred<void>();
-    target!.session.runtime.model.hydrate = vi.fn(() => {
-      hydrationStarted.resolve(undefined);
-      return hydration.promise;
-    });
-
-    const switching = manager.switchToTab(target!.id);
-    await hydrationStarted.promise;
-
-    expect(target!.session.runtime.model.hydrate).toHaveBeenCalledTimes(1);
-    const switchingIdle = manager.waitForTabSwitchIdle();
-    let idleSettled = false;
-    void switchingIdle.then(() => { idleSettled = true; });
-    await Promise.resolve();
-
-    expect(idleSettled).toBe(false);
-    expect(manager.getActiveTab()).toBe(target);
-    expect(manager.getPersistedState()).toEqual({
-      activeTabId: initial!.id,
-      openTabs: [
-        { conversationId: null, draftModel: 'claude-default', providerId: 'claude', tabId: initial!.id },
-        { conversationId: 'conversation-1', tabId: target!.id },
-      ],
-    });
-
-    hydration.resolve(undefined);
-    await switching;
-    await expect(switchingIdle).resolves.toBeUndefined();
-
-    expect(manager.getActiveTab()).toBe(target);
-    expect(manager.getPersistedState().activeTabId).toBe(target!.id);
-  });
-
-  it('projects provider background work as working only once the coordinator publishes it', async () => {
-    const { manager } = await createManager();
-    const tab = (await manager.createTab())!;
-    const execution = createExecutionHarness();
-    let detachedWork = false;
-    const runtime = new ChatSessionRuntime({ conversationId: null, providerId: tab.providerId, draftModel: null }, execution.coordinator,
-      owner => createSessionModelStub(owner, { hasPendingWork: () => detachedWork }));
-    void runtime.model;
-    // Swap the fixture's coordinator for the real projection owner.
-    Object.assign(tab, {
-      executionCoordinator: execution.coordinator,
-      session: new TabSession({ id: tab.id, lifecycleState: tab.lifecycleState }, runtime),
-    });
-    await execution.coordinator.bindConversation({ conversationId: 'conversation-1', providerId: 'claude' });
-    await execution.coordinator.prepare();
-    const native = execution.backends.get('claude')!.sessions[0];
-    let nativeWork = true;
-    Object.assign(native, { hasBackgroundWork: () => nativeWork });
-    const isWorking = () => manager.getTabBarItems().find(item => item.id === tab.id)?.isWorking;
-
-    expect(execution.coordinator.hasBackgroundWork).toBe(true);
-    expect(isWorking()).toBe(false);
-
-    native.emit({ type: 'session_state_changed', scope: { kind: 'session', sessionInstanceId: native.sessionInstanceId, sequence: 1 }, snapshot: native.getSnapshot() });
-    expect(isWorking()).toBe(true);
-
-    nativeWork = false;
-    native.emit({ type: 'session_state_changed', scope: { kind: 'session', sessionInstanceId: native.sessionInstanceId, sequence: 2 }, snapshot: native.getSnapshot() });
-    expect(isWorking()).toBe(false);
-    detachedWork = true;
-    expect(isWorking()).toBe(true);
-  });
-
   it('keeps branch navigation admitted without showing a session work spinner', async () => {
     const { manager } = await createManager();
     const tab = (await manager.createTab())!;
@@ -229,98 +52,6 @@ describe('TabManager provider execution orchestration', () => {
     expect(manager.isTabWorking(tab.id)).toBe(false);
   });
 
-  it('settles queued tab switches when shutdown begins during hydration', async () => {
-    const { manager } = await createManager(await createPlugin({
-      getCachedConversation: vi.fn((id: string) => (conversationRecord(id, { providerId: 'claude' }))),
-    }));
-    const initial = await manager.createTab();
-    const hydrating = await manager.createTab('hydrating-conversation', 'hydrating-tab', {
-      activate: false,
-    });
-    const hydration = deferred<void>();
-    hydrating!.session.runtime.model.hydrate = vi.fn(() => hydration.promise);
-
-    const activeSwitch = manager.switchToTab(hydrating!.id);
-    for (let attempt = 0;
-      attempt < 10
-        && (hydrating!.session.runtime.model.hydrate as Mock).mock.calls.length === 0;
-      attempt += 1) {
-      await Promise.resolve();
-    }
-    const queuedSwitch = manager.switchToTab(initial!.id);
-    manager.beginShutdown();
-    const drain = manager.drainForShutdownSnapshot();
-
-    hydration.resolve(undefined);
-    await expect(Promise.all([activeSwitch, queuedSwitch, drain])).resolves.toBeDefined();
-
-    manager.sealShutdownSnapshot();
-    await manager.destroy();
-  });
-
-  it('joins active and queued tab switches during direct destruction', async () => {
-    const { manager } = await createManager(await createPlugin({
-      getCachedConversation: vi.fn((id: string) => (conversationRecord(id, { providerId: 'claude' }))),
-    }));
-    const initial = await manager.createTab();
-    const hydrating = await manager.createTab('hydrating-conversation', 'hydrating-tab', {
-      activate: false,
-    });
-    const hydration = deferred<void>();
-    hydrating!.session.runtime.model.hydrate = vi.fn(() => hydration.promise);
-
-    const activeSwitch = manager.switchToTab(hydrating!.id);
-    for (let attempt = 0;
-      attempt < 10
-        && (hydrating!.session.runtime.model.hydrate as Mock).mock.calls.length === 0;
-      attempt += 1) {
-      await Promise.resolve();
-    }
-    const queuedSwitch = manager.switchToTab(initial!.id);
-    const destruction = manager.destroy();
-    for (let attempt = 0; attempt < 5; attempt += 1) {
-      await Promise.resolve();
-    }
-
-    expect(mockDestroyTab).not.toHaveBeenCalled();
-
-    hydration.resolve(undefined);
-    await expect(Promise.all([activeSwitch, queuedSwitch, destruction])).resolves.toBeDefined();
-    expect(mockDestroyTab).toHaveBeenCalledTimes(2);
-  });
-
-  it('marks only inactive tabs when a reviewable turn settles', async () => {
-    const { manager } = await createManager();
-    const active = await manager.createTab();
-    const background = await manager.createTab(null, undefined, { activate: false });
-    const activeSettlement = mockCreateTab.mock.calls[0]?.[0].captureReviewableSettlement;
-    const backgroundSettlement = mockCreateTab.mock.calls[1]?.[0].captureReviewableSettlement;
-
-    activeSettlement('completed')();
-    backgroundSettlement('error')();
-
-    expect(active!.state.markReviewRequired).not.toHaveBeenCalled();
-    expect(background!.state.markReviewRequired).toHaveBeenCalledWith('error');
-  });
-
-  it('uses activity at completion and invalidates review after activation', async () => {
-    const { manager } = await createManager();
-    const active = await manager.createTab();
-    const background = await manager.createTab(null, undefined, { activate: false });
-    const activeSettlement = mockCreateTab.mock.calls[0]?.[0].captureReviewableSettlement;
-    const backgroundSettlement = mockCreateTab.mock.calls[1]?.[0].captureReviewableSettlement;
-    const reportActiveCompletion = activeSettlement('completed');
-    const reportBackgroundCompletion = backgroundSettlement('completed');
-
-    await manager.switchToTab(background!.id);
-    await manager.switchToTab(active!.id);
-    reportActiveCompletion();
-    reportBackgroundCompletion();
-
-    expect(active!.state.markReviewRequired).not.toHaveBeenCalled();
-    expect(background!.state.markReviewRequired).not.toHaveBeenCalled();
-  });
-
   it('allows unlimited runtime tabs', async () => {
     const { manager } = await createManager();
 
@@ -331,50 +62,6 @@ describe('TabManager provider execution orchestration', () => {
     expect(tabs.every(Boolean)).toBe(true);
     expect(manager.getTabCount()).toBe(12);
     expect(manager.canCreateTab()).toBe(true);
-  });
-
-  it('rolls back a tab assembly that finishes after manager destruction', async () => {
-    const assembly = deferred<any>();
-    const onTabCreated = vi.fn();
-    mockCreateTabRuntime.mockImplementationOnce(async () => assembly.promise);
-    const { manager } = await createManager(await createPlugin(), { onTabCreated });
-
-    const creation = manager.createTab(null, 'late-tab');
-    await manager.destroy();
-    const factoryOptions = mockCreateTabRuntime.mock.calls[0]?.[0];
-    const lateTab = createMockTab(factoryOptions);
-    assembly.resolve(lateTab);
-
-    await expect(creation).resolves.toBeNull();
-    expect(mockDestroyTab).toHaveBeenCalledWith(lateTab);
-    expect(onTabCreated).not.toHaveBeenCalled();
-    expect(manager.getAllTabs()).toEqual([]);
-    expect(manager.canCreateTab()).toBe(false);
-    expectTabMetadataReleased(manager, lateTab.id);
-
-    mockCreateTabRuntime.mockClear();
-    await expect(manager.createTab()).resolves.toBeNull();
-    expect(mockCreateTabRuntime).not.toHaveBeenCalled();
-  });
-
-  it('rejects a duplicate explicit tab ID without disturbing its reserved runtime', async () => {
-    const assembly = deferred<any>();
-    mockCreateTabRuntime.mockImplementationOnce(async () => assembly.promise);
-    const { manager } = await createManager();
-
-    const firstCreation = manager.createTab(null, 'restored-tab');
-    await Promise.resolve();
-    await expect(manager.createTab(null, 'restored-tab'))
-      .rejects.toThrow('restored-tab');
-    const firstOptions = mockCreateTabRuntime.mock.calls[0]?.[0];
-    const firstRuntime = createMockTab(firstOptions);
-    assembly.resolve(firstRuntime);
-    await expect(firstCreation).resolves.toBe(firstRuntime);
-
-    expect(manager.getAllTabs()).toEqual([firstRuntime]);
-    expect(manager.getActiveTab()).toBe(firstRuntime);
-    expect(mockCreateTabRuntime).toHaveBeenCalledTimes(1);
-    expect(mockDestroyTab).not.toHaveBeenCalled();
   });
 
   it('does not roll back committed admission when its observer throws', async () => {
@@ -396,7 +83,7 @@ describe('TabManager provider execution orchestration', () => {
     expect(manager.getAllTabs()).toEqual([
       expect.objectContaining({ id: 'committed-tab' }),
     ]);
-    expect(mockDestroyTab).not.toHaveBeenCalled();
+    expect(manager.getAllTabs().every(tab => tab.dom.contentEl.isConnected)).toBe(true);
     expect(onTabClosed).not.toHaveBeenCalled();
   });
 
@@ -433,97 +120,7 @@ describe('TabManager provider execution orchestration', () => {
       }],
     });
     expect(onTabCreated).not.toHaveBeenCalled();
-    expect(mockDestroyTab).toHaveBeenCalledWith(expect.objectContaining({ id: 'failed-tab' }));
-    expectTabMetadataReleased(manager, 'failed-tab');
-  });
-
-  it('reactivates the previous tab when deactivation fails during admission', async () => {
-    const deactivationError = new Error('Failed to deactivate previous tab');
-    const { activateTab, deactivateTab } = mockedModule1 as {
-      activateTab: Mock;
-      deactivateTab: Mock;
-    };
-    const { manager } = await createManager();
-    const initial = await manager.createTab(null, 'initial-tab');
-    activateTab.mockClear();
-    deactivateTab.mockImplementationOnce(() => {
-      throw deactivationError;
-    });
-
-    await expect(manager.createTab(null, 'failed-tab')).rejects.toBe(deactivationError);
-
-    expect(manager.getAllTabs()).toEqual([initial]);
-    expect(manager.getActiveTab()).toBe(initial);
-    expect(activateTab).toHaveBeenCalledWith(initial);
-    expect(mockDestroyTab).toHaveBeenCalledWith(expect.objectContaining({ id: 'failed-tab' }));
-  });
-
-  it('attributes queued activation failure to the tab admission that requested it', async () => {
-    const activationError = new Error('Failed queued tab activation');
-    const onActiveTabChanged = vi.fn((_previousId: string | null, nextId: string) => {
-      if (nextId === 'failed-tab') throw activationError;
-    });
-    const { manager } = await createManager(await createPlugin({
-      getCachedConversation: vi.fn((id: string) => (conversationRecord(id, { providerId: 'claude' }))),
-    }), { onActiveTabChanged });
-    await manager.createTab(null, 'initial-tab');
-    const blocking = await manager.createTab('blocking-conversation', 'blocking-tab', {
-      activate: false,
-    });
-    const hydration = deferred<void>();
-    blocking!.session.runtime.model.hydrate = vi.fn(() => hydration.promise);
-
-    const blockingSwitch = manager.switchToTab(blocking!.id);
-    for (let attempt = 0;
-      attempt < 10
-        && (blocking!.session.runtime.model.hydrate as Mock).mock.calls.length === 0;
-      attempt += 1) {
-      await Promise.resolve();
-    }
-    const failedCreation = manager.createTab(null, 'failed-tab');
-    const laterSwitch = manager.switchToTab('initial-tab');
-    hydration.resolve(undefined);
-
-    await expect(blockingSwitch).resolves.toBeUndefined();
-    await expect(failedCreation).rejects.toBe(activationError);
-    await expect(laterSwitch).resolves.toBeUndefined();
     expect(manager.getTab('failed-tab')).toBeNull();
-    expect(mockDestroyTab).toHaveBeenCalledWith(expect.objectContaining({ id: 'failed-tab' }));
-    expect(manager.getActiveTab()?.id).toBe('initial-tab');
-  });
-
-  it('restores the actual switch predecessor when a later admission activation fails', async () => {
-    const activationError = new Error('Failed queued tab activation');
-    const onActiveTabChanged = vi.fn((_previousId: string | null, nextId: string) => {
-      if (nextId === 'failed-tab') throw activationError;
-    });
-    const { manager } = await createManager(await createPlugin({
-      getCachedConversation: vi.fn((id: string) => (conversationRecord(id, { providerId: 'claude' }))),
-    }), { onActiveTabChanged });
-    const initial = await manager.createTab(null, 'initial-tab');
-    const blocking = await manager.createTab('blocking-conversation', 'blocking-tab', {
-      activate: false,
-    });
-    const hydration = deferred<void>();
-    blocking!.session.runtime.model.hydrate = vi.fn(() => hydration.promise);
-
-    const blockingSwitch = manager.switchToTab(blocking!.id);
-    for (let attempt = 0;
-      attempt < 10
-        && (blocking!.session.runtime.model.hydrate as Mock).mock.calls.length === 0;
-      attempt += 1) {
-      await Promise.resolve();
-    }
-    const userSwitch = manager.switchToTab(initial!.id);
-    const failedCreation = manager.createTab(null, 'failed-tab');
-    hydration.resolve(undefined);
-
-    await expect(blockingSwitch).resolves.toBeUndefined();
-    await expect(userSwitch).resolves.toBeUndefined();
-    await expect(failedCreation).rejects.toBe(activationError);
-
-    expect(manager.getTab('failed-tab')).toBeNull();
-    expect(manager.getActiveTab()).toBe(initial);
   });
 
   it('does not roll back a committed switch when its completion observer throws', async () => {
@@ -549,32 +146,6 @@ describe('TabManager provider execution orchestration', () => {
     ]);
   });
 
-  it('fences overlapping closes before repeating manager side effects', async () => {
-    const onTabClosed = vi.fn();
-    const { manager } = await createManager(await createPlugin(), { onTabClosed });
-    const retained = await manager.createTab();
-    const closing = await manager.createTab();
-    const save = deferred<void>();
-    mockDestroyTab.mockImplementationOnce(() => save.promise);
-
-    const firstClose = manager.closeTab(closing!.id);
-    const overlappingClose = manager.closeTab(closing!.id);
-
-    for (let attempt = 0;
-      attempt < 10
-        && mockDestroyTab.mock.calls.length === 0;
-      attempt += 1) {
-      await Promise.resolve();
-    }
-    expect(mockDestroyTab).toHaveBeenCalledTimes(1);
-    save.resolve(undefined);
-    await expect(Promise.all([firstClose, overlappingClose])).resolves.toEqual([true, false]);
-    expect(mockDestroyTab).toHaveBeenCalledTimes(1);
-    expect(onTabClosed).toHaveBeenCalledTimes(1);
-    expect(onTabClosed).toHaveBeenCalledWith(closing!.id);
-    expect(manager.getAllTabs()).toEqual([retained]);
-  });
-
   it('keeps the active source live when successor activation fails during close', async () => {
     const activationError = new Error('Failed to activate close successor');
     let rejectSuccessorActivation = false;
@@ -597,78 +168,12 @@ describe('TabManager provider execution orchestration', () => {
     expect(manager.getActiveTab()).toBe(closing);
     expect(closing!.lifecycleState).toBe('open');
     expect(closing!.session.acceptsIntents).toBe(true);
-    expect(mockDestroyTab).not.toHaveBeenCalledWith(closing);
+    expect(closing!.dom.contentEl.isConnected).toBe(true);
     expect(onTabClosed).not.toHaveBeenCalled();
     expect(onActiveTabChanged.mock.calls).toEqual([
       ['closing-tab', 'successor-tab'],
       ['successor-tab', 'closing-tab'],
     ]);
-  });
-
-  it('claims the final tab before awaiting replacement assembly', async () => {
-    const { manager } = await createManager();
-    const closing = await manager.createTab();
-    const replacementAssembly = deferred<any>();
-    mockCreateTabRuntime.mockImplementationOnce(async () => replacementAssembly.promise);
-
-    const firstClose = manager.discardTab(closing!.id);
-    const overlappingClose = manager.discardTab(closing!.id);
-    const replacementOptions = mockCreateTabRuntime.mock.calls[1]?.[0];
-    const replacement = createMockTab(replacementOptions);
-    replacementAssembly.resolve(replacement);
-
-    await expect(Promise.all([firstClose, overlappingClose]))
-      .resolves.toEqual([true, false]);
-    expect(manager.getAllTabs()).toEqual([replacement]);
-    expect(mockDestroyTab).toHaveBeenCalledTimes(1);
-    expect(mockDestroyTab).toHaveBeenCalledWith(closing);
-    expect(mockCreateTabRuntime).toHaveBeenCalledTimes(2);
-  });
-
-  it('installs one live replacement when different tabs close concurrently', async () => {
-    const { manager } = await createManager();
-    const first = await manager.createTab();
-    const second = await manager.createTab();
-    const firstSave = deferred<void>();
-    const secondSave = deferred<void>();
-    first!.controllers.conversationController.save = vi.fn(() => firstSave.promise);
-    second!.controllers.conversationController.save = vi.fn(() => secondSave.promise);
-
-    const firstClose = manager.closeTab(first!.id);
-    const secondClose = manager.closeTab(second!.id);
-
-    secondSave.resolve(undefined);
-    await expect(secondClose).resolves.toBe(true);
-    firstSave.resolve(undefined);
-    await expect(firstClose).resolves.toBe(true);
-
-    const liveTabs = manager.getAllTabs().filter(tab => tab.lifecycleState !== 'closing');
-    expect(liveTabs).toHaveLength(1);
-    expect(manager.getActiveTab()).toBe(liveTabs[0]);
-    expect(liveTabs[0].conversationId).toBeNull();
-    expect(mockCreateTabRuntime).toHaveBeenCalledTimes(3);
-  });
-
-  it('retains one original when concurrent-close replacement assembly fails', async () => {
-    const replacementError = new Error('Replacement assembly failed');
-    const { manager } = await createManager();
-    const first = await manager.createTab();
-    const second = await manager.createTab();
-    const firstSave = deferred<void>();
-    first!.controllers.conversationController.save = vi.fn(() => firstSave.promise);
-    mockCreateTabRuntime.mockRejectedValueOnce(replacementError);
-
-    const firstClose = manager.closeTab(first!.id);
-    const secondClose = manager.closeTab(second!.id);
-
-    await expect(secondClose).rejects.toBe(replacementError);
-    firstSave.resolve(undefined);
-    await expect(firstClose).resolves.toBe(true);
-
-    expect(manager.getAllTabs()).toEqual([second]);
-    expect(manager.getActiveTab()).toBe(second);
-    expect(second!.lifecycleState).toBe('open');
-    expect(mockDestroyTab).not.toHaveBeenCalledWith(second);
   });
 
   it('discards a compensating last blank tab and installs a fresh draft', async () => {
@@ -683,198 +188,9 @@ describe('TabManager provider execution orchestration', () => {
     expect(replacement).not.toBeNull();
     expect(replacement).not.toBe(staleDraft);
     expect(replacement?.conversationId).toBeNull();
-    expect(mockDestroyTab).toHaveBeenCalledWith(staleDraft);
+    expect(staleDraft!.dom.contentEl.isConnected).toBe(false);
     expect(onTabClosed).toHaveBeenCalledWith(staleDraft!.id);
-    expect(mockCreateTabRuntime).toHaveBeenCalledTimes(2);
-  });
-
-  it('keeps the final tab live when replacement assembly fails', async () => {
-    const replacementError = new Error('Replacement assembly failed');
-    const onTabClosed = vi.fn();
-    const { manager } = await createManager(await createPlugin(), { onTabClosed });
-    const retainedDraft = await manager.createTab();
-    mockCreateTabRuntime.mockRejectedValueOnce(replacementError);
-
-    await expect(manager.discardTab(retainedDraft!.id)).rejects.toBe(replacementError);
-
-    expect(manager.getAllTabs()).toEqual([retainedDraft]);
-    expect(manager.getActiveTab()).toBe(retainedDraft);
-    expect(retainedDraft!.lifecycleState).toBe('open');
-    expect(mockDestroyTab).not.toHaveBeenCalled();
-    expect(onTabClosed).not.toHaveBeenCalled();
-  });
-
-  it('keeps runtime state callbacks live until final-tab replacement is admitted', async () => {
-    const replacementError = new Error('Replacement assembly failed');
-    const replacementAssembly = deferred<any>();
-    const onTabConversationChanged = vi.fn();
-    const { manager } = await createManager(await createPlugin(), { onTabConversationChanged });
-    const retainedDraft = await manager.createTab();
-    const conversationChanged = mockCreateTabRuntime.mock.calls[0]?.[0]
-      .onConversationIdChanged as (runtime: any, conversationId: string) => void;
-    const discovery = (manager as any).commandDiscovery;
-    const initialCommandRevision = discovery.tabCommandContextRevisions.get(retainedDraft!.id);
-    discovery.providerRuntimeCommandCache.set(retainedDraft!.id, { stale: true });
-    mockCreateTabRuntime.mockImplementationOnce(() => replacementAssembly.promise);
-
-    const close = manager.discardTab(retainedDraft!.id);
-    expect(retainedDraft!.session.acceptsIntents).toBe(true);
-    retainedDraft!.state.currentConversationId = 'conversation-created-during-close';
-    conversationChanged(retainedDraft, 'conversation-created-during-close');
-    replacementAssembly.reject(replacementError);
-
-    await expect(close).rejects.toBe(replacementError);
-    expect(retainedDraft!.conversationId).toBe('conversation-created-during-close');
-    expect(onTabConversationChanged).toHaveBeenCalledWith(
-      retainedDraft!.id,
-      'conversation-created-during-close',
-    );
-    expect(discovery.tabCommandContextRevisions.get(retainedDraft!.id))
-      .toBe(initialCommandRevision + 1);
-    expect(discovery.providerRuntimeCommandCache.has(retainedDraft!.id)).toBe(false);
-    expect(manager.getAllTabs()).toEqual([retainedDraft]);
-    expect(retainedDraft!.session.acceptsIntents).toBe(true);
-  });
-
-  it('does not emit close callbacks after manager destruction begins', async () => {
-    const onTabClosed = vi.fn();
-    const { manager } = await createManager(await createPlugin(), { onTabClosed });
-    await manager.createTab();
-    const closing = await manager.createTab();
-    const save = deferred<void>();
-    closing!.controllers.conversationController.save = vi.fn(() => save.promise);
-
-    const close = manager.closeTab(closing!.id);
-    const destruction = manager.destroy();
-    await Promise.resolve();
-    save.resolve(undefined);
-    await expect(Promise.all([close, destruction])).resolves.toEqual([true, undefined]);
-
-    expect(onTabClosed).not.toHaveBeenCalled();
-    expect(manager.getAllTabs()).toEqual([]);
-  });
-
-  it('releases membership and metadata when tab teardown fails during close', async () => {
-    const teardownError = new Error('Failed to tear down tab');
-    const onTabClosed = vi.fn();
-    const { manager } = await createManager(await createPlugin(), { onTabClosed });
-    const retained = await manager.createTab();
-    const closing = await manager.createTab();
-    mockDestroyTab.mockRejectedValueOnce(teardownError);
-
-    await expect(manager.closeTab(closing!.id)).rejects.toBe(teardownError);
-
-    expect(manager.getAllTabs()).toEqual([retained]);
-    expect(manager.getActiveTab()).toBe(retained);
-    expect(onTabClosed).toHaveBeenCalledWith(closing!.id);
-    expectTabMetadataReleased(manager, closing!.id);
-  });
-
-  it('does not recreate discovery metadata after tab closure begins', async () => {
-    const { manager } = await createManager();
-    const retained = await manager.createTab();
-    const closing = await manager.createTab();
-    const save = deferred<void>();
-    closing!.controllers.conversationController.save = vi.fn(() => save.promise);
-    const catalogResolver = mockCreateTabRuntime.mock.calls[1]?.[0]
-      .getProviderCatalogConfig as (tab: any) => unknown;
-    const commandContextChanged = mockCreateTabRuntime.mock.calls[1]?.[0]
-      .onCommandContextChanged as (tab: any) => void;
-
-    const close = manager.closeTab(closing!.id);
-
-    for (let attempt = 0;
-      attempt < 10 && closing!.lifecycleState !== 'closing';
-      attempt += 1) {
-      await Promise.resolve();
-    }
-    expect(closing!.lifecycleState).toBe('closing');
-    commandContextChanged(closing);
-    expect(catalogResolver(closing)).toBeNull();
-    expectTabMetadataReleased(manager, closing!.id);
-
-    save.resolve(undefined);
-    await expect(close).resolves.toBe(true);
-    expect(manager.getAllTabs()).toEqual([retained]);
-    expectTabMetadataReleased(manager, closing!.id);
-  });
-
-  it('fences external observers while allowing a terminal identity during close', async () => {
-    const callbacks = {
-      onTabAttentionChanged: vi.fn(),
-      onTabConversationChanged: vi.fn(),
-      onTabRewindingChanged: vi.fn(),
-      onTabStreamingChanged: vi.fn(),
-    };
-    const { manager } = await createManager(await createPlugin(), callbacks);
-    await manager.createTab();
-    const closing = await manager.createTab();
-    const save = deferred<void>();
-    closing!.controllers.conversationController.save = vi.fn(() => save.promise);
-    const factoryOptions = mockCreateTabRuntime.mock.calls[1]?.[0];
-
-    const close = manager.closeTab(closing!.id);
-    for (let attempt = 0;
-      attempt < 10 && closing!.lifecycleState !== 'closing';
-      attempt += 1) {
-      await Promise.resolve();
-    }
-    factoryOptions.onStreamingChanged(closing, false);
-    factoryOptions.onRewindingChanged(closing, false);
-    factoryOptions.onAttentionChanged(closing, { kind: 'action-required' });
-    factoryOptions.onConversationIdChanged(closing, 'late-conversation');
-
-    expect(callbacks.onTabStreamingChanged).not.toHaveBeenCalled();
-    expect(callbacks.onTabRewindingChanged).not.toHaveBeenCalled();
-    expect(callbacks.onTabAttentionChanged).not.toHaveBeenCalled();
-    expect(callbacks.onTabConversationChanged).not.toHaveBeenCalled();
-    expect(closing!.conversationId).toBe('late-conversation');
-    expectTabMetadataReleased(manager, closing!.id);
-
-    save.resolve(undefined);
-    await expect(close).resolves.toBe(true);
-  });
-
-  it('accepts a terminal conversation binding until the shutdown snapshot is sealed', async () => {
-    const onTabConversationChanged = vi.fn();
-    const { manager } = await createManager(await createPlugin(), { onTabConversationChanged });
-    const tab = await manager.createTab();
-    const conversationChanged = mockCreateTabRuntime.mock.calls[0]?.[0]
-      .onConversationIdChanged as (runtime: any, conversationId: string) => void;
-
-    manager.beginShutdown();
-    conversationChanged(tab, 'conversation-created-during-close');
-
-    expect(tab!.conversationId).toBe('conversation-created-during-close');
-    expect(onTabConversationChanged).toHaveBeenCalledWith(
-      tab!.id,
-      'conversation-created-during-close',
-    );
-
-    manager.sealShutdownSnapshot();
-    conversationChanged(tab, 'conversation-created-during-close');
-
-    expect(tab!.conversationId).toBe('conversation-created-during-close');
-    expect(onTabConversationChanged).toHaveBeenCalledTimes(1);
-    await manager.destroy();
-  });
-
-  it('drains every admitted runtime before the shutdown snapshot is sealed', async () => {
-    const { manager } = await createManager();
-    const first = await manager.createTab();
-    const second = await manager.createTab();
-
-    manager.beginShutdown();
-    expect(first!.session.acceptsIntents).toBe(true);
-    expect(second!.session.acceptsIntents).toBe(true);
-    await manager.drainForShutdownSnapshot();
-
-    expect(mockDrainTabForShutdownSnapshot).toHaveBeenCalledTimes(2);
-    expect(mockDrainTabForShutdownSnapshot).toHaveBeenCalledWith(first);
-    expect(mockDrainTabForShutdownSnapshot).toHaveBeenCalledWith(second);
-    expect(first!.lifecycleState).toBe('open');
-    expect(second!.lifecycleState).toBe('open');
-    await manager.destroy();
+    expect(manager.getAllTabs()).toEqual([replacement]);
   });
 
   it('keeps session turns and stream generations alive when view shutdown begins', async () => {
@@ -898,34 +214,6 @@ describe('TabManager provider execution orchestration', () => {
     await manager.destroy();
   });
 
-  it('leaves sealed tab identities untouched when provider availability changes after shutdown', async () => {
-    const onTabDraftChanged = vi.fn();
-    const onTabProviderChanged = vi.fn();
-    const { manager } = await createManager(await createPlugin(), { onTabDraftChanged, onTabProviderChanged });
-    const modelPolicy = ProviderRegistry.getModelPolicy as Mock;
-    const availablePolicy = modelPolicy.getMockImplementation();
-    // No model is available while restoring, so the inactive blank tab keeps no draft model.
-    modelPolicy.mockReturnValue({ getModelOptions: () => [], getDefaultModel: () => null });
-    await manager.restoreState({
-      openTabs: [{ tabId: 'active', conversationId: null }, { tabId: 'inactive', conversationId: null }],
-      activeTabId: 'active',
-    });
-    modelPolicy.mockImplementation(availablePolicy!);
-    expect(manager.getTab('inactive')).toBeNull();
-    vi.mocked(onProviderAvailabilityChanged).mockReturnValue(true);
-    const sealed = manager.getPersistedState();
-
-    manager.beginShutdown();
-    manager.sealShutdownSnapshot();
-    manager.reconcileProviderAvailability();
-
-    expect(manager.getPersistedState()).toEqual(sealed);
-    expect(onProviderAvailabilityChanged).not.toHaveBeenCalled();
-    expect(onTabDraftChanged).not.toHaveBeenCalled();
-    expect(onTabProviderChanged).not.toHaveBeenCalled();
-    await manager.destroy();
-  });
-
   it('does not invent a snapshot owner for intentionally inactive restored tabs', async () => {
     const { manager } = await createManager();
     const first = await manager.createTab(null, 'restored-1', { activate: false });
@@ -944,149 +232,6 @@ describe('TabManager provider execution orchestration', () => {
     });
     manager.sealShutdownSnapshot();
     await manager.destroy();
-  });
-
-  it('drains in-flight conversation navigation before sealing shutdown state', async () => {
-    const { manager } = await createManager(await createPlugin({ getCachedConversation: (id: string) => (conversationRecord(id, { providerId: 'claude' })) }));
-    const tab = await manager.createTab();
-    const switchConversation = deferred<void>();
-    const hydration = mockNextHydration(async () => switchConversation.promise);
-
-    const navigation = manager.openConversation('conversation-during-shutdown');
-    for (let attempt = 0;
-      attempt < 10
-        && hydration.mock.calls.length === 0;
-      attempt += 1) {
-      await Promise.resolve();
-    }
-    manager.beginShutdown();
-    let drainSettled = false;
-    const drain = manager.drainForShutdownSnapshot().then(() => {
-      drainSettled = true;
-    });
-    await Promise.resolve();
-
-    expect(drainSettled).toBe(false);
-    switchConversation.resolve(undefined);
-    await Promise.all([navigation, drain]);
-
-    expect(hydration).toHaveBeenCalledWith('conversation-during-shutdown');
-    expect(tab!.conversationId).toBeNull();
-    expect(manager.getAllTabs()).toEqual([tab]);
-    expect(mockDestroyTab).toHaveBeenCalledWith(expect.objectContaining({ conversationId: 'conversation-during-shutdown' }));
-    manager.sealShutdownSnapshot();
-    await manager.destroy();
-  });
-
-  it('joins an admitted close before choosing the shutdown snapshot owner', async () => {
-    const { manager } = await createManager();
-    const retained = await manager.createTab();
-    const closing = await manager.createTab();
-    const save = deferred<void>();
-    closing!.controllers.conversationController.save = vi.fn(() => save.promise);
-
-    const close = manager.closeTab(closing!.id);
-    manager.beginShutdown();
-    let drainSettled = false;
-    const drain = manager.drainForShutdownSnapshot().then(() => {
-      drainSettled = true;
-    });
-    for (let attempt = 0; attempt < 5; attempt += 1) {
-      await Promise.resolve();
-    }
-
-    expect(drainSettled).toBe(false);
-    expect(manager.getActiveTab()).toBe(retained);
-
-    save.resolve(undefined);
-    await Promise.all([close, drain]);
-
-    expect(manager.getActiveTab()).toBe(retained);
-    expect(manager.getAllTabs()).toEqual([retained]);
-    manager.sealShutdownSnapshot();
-    await manager.destroy();
-  });
-
-  it('does not recreate discovery metadata through callbacks retained after destroy', async () => {
-    const { manager } = await createManager();
-    const tab = await manager.createTab();
-    const catalogResolver = mockCreateTabRuntime.mock.calls[0]?.[0]
-      .getProviderCatalogConfig as (tab: any) => unknown;
-    const commandContextChanged = mockCreateTabRuntime.mock.calls[0]?.[0]
-      .onCommandContextChanged as (tab: any) => void;
-
-    await manager.destroy();
-
-    commandContextChanged(tab);
-    expect(catalogResolver(tab)).toBeNull();
-    expectTabMetadataReleased(manager, tab!.id);
-  });
-
-  it('disposes every tab and releases manager state when one teardown fails', async () => {
-    const teardownError = new Error('Failed to tear down first tab');
-    const { manager } = await createManager();
-    const first = await manager.createTab();
-    const second = await manager.createTab();
-    mockDestroyTab.mockImplementation(async (tab) => {
-      if (tab === first) throw teardownError;
-    });
-
-    const firstDestruction = manager.destroy();
-    const overlappingDestruction = manager.destroy();
-    const [firstError, overlappingError] = await Promise.all([
-      firstDestruction.catch(error => error),
-      overlappingDestruction.catch(error => error),
-    ]);
-
-    expect(firstError).toBe(teardownError);
-    expect(overlappingError).toBe(teardownError);
-    await expect(manager.destroy()).rejects.toBe(teardownError);
-
-    expect(mockDestroyTab).toHaveBeenCalledWith(first);
-    expect(mockDestroyTab).toHaveBeenCalledWith(second);
-    expect(mockDestroyTab).toHaveBeenCalledTimes(2);
-    expect(manager.getAllTabs()).toEqual([]);
-    expect(manager.getActiveTab()).toBeNull();
-    expectTabMetadataReleased(manager, first!.id);
-    expectTabMetadataReleased(manager, second!.id);
-  });
-
-  it('finishes mandatory teardown when concurrent provisional cleanup fails', async () => {
-    const getCachedConversation = vi.fn((id: string) => (conversationRecord(id, { providerId: 'claude' })));
-    const { manager } = await createManager(await createPlugin({ getCachedConversation }));
-    const retained = await manager.createTab('retained-conversation');
-    await manager.viewerSlot.show('preview-conversation');
-    const preview = manager.getActiveTab()!;
-    await manager.switchToTab(retained!.id);
-    const saveFailure = deferred<void>();
-    mockDestroyTab.mockImplementationOnce(() => saveFailure.promise);
-
-    const cleanupResult = manager.viewerSlot.release().then(
-      () => null,
-      error => error,
-    );
-    for (let attempt = 0;
-      attempt < 20
-        && mockDestroyTab.mock.calls.length === 0;
-      attempt += 1) {
-      await Promise.resolve();
-    }
-    const destructionResult = manager.destroy().then(
-      () => null,
-      error => error,
-    );
-
-    saveFailure.reject(new Error('Failed to release preview'));
-    const [cleanupError, destructionError] = await Promise.all([
-      cleanupResult,
-      destructionResult,
-    ]);
-
-    expect(cleanupError).toEqual(new Error('Failed to release preview'));
-    expect(destructionError).toEqual(new Error('Failed to release preview'));
-    expect(mockDestroyTab).toHaveBeenCalledWith(preview);
-    expect(mockDestroyTab).toHaveBeenCalledWith(retained);
-    expect(manager.getAllTabs()).toHaveLength(0);
   });
 
   it('persists retained tabs and the shown session preview as the active entry', async () => {
@@ -1134,49 +279,6 @@ describe('TabManager provider execution orchestration', () => {
     manager.reconcileUnloadedSessions();
 
     expect(manager.getPersistedState().openTabs[0]).toEqual({ tabId: blank!.id, conversationId: 'created' });
-  });
-
-  it('joins an unloaded draft session creating its conversation before the shutdown snapshot', async () => {
-    const { manager } = await createManager();
-    const blank = await manager.createTab(null);
-    const session = blank!.session.runtime;
-    await manager.viewerSlot.enter();
-    await manager.viewerSlot.show('conversation-1');
-    vi.spyOn(session, 'awaitIdentitySettlement').mockImplementation(async () => {
-      await Promise.resolve();
-      session.setConversationId('created');
-    });
-
-    await manager.drainForShutdownSnapshot();
-
-    expect(manager.getPersistedState().openTabs[0]).toEqual({ tabId: blank!.id, conversationId: 'created' });
-  });
-
-  it('reports an unloaded narrow tab from its running session', async () => {
-    const plugin = await createPlugin({ getCachedConversation: id => conversationRecord(id) });
-    const running = createMockTab({ plugin }).session.runtime as ChatSessionRuntime;
-    vi.spyOn(running, 'isWorking', 'get').mockReturnValue(true);
-    vi.spyOn(running, 'statusAttention', 'get').mockReturnValue({ kind: 'review', outcome: 'completed', since: Date.now() });
-    vi.spyOn(plugin.sessionRuntimes, 'get').mockImplementation(id => id === 'conversation-1' ? running : null);
-    const { manager } = await createManager(plugin);
-    const narrow = await manager.createTab('conversation-1');
-    await manager.viewerSlot.enter();
-    expect(manager.getTab(narrow!.id)).toBeNull();
-
-    expect(manager.isTabWorking(narrow!.id)).toBe(true);
-    expect(manager.getTabBarItems().find(item => item.id === narrow!.id))
-      .toEqual(expect.objectContaining({ isWorking: true, attention: expect.objectContaining({ kind: 'review' }) }));
-  });
-
-  it('reports an unloaded blank tab from its held draft session before it creates a conversation', async () => {
-    const { manager } = await createManager();
-    const blank = await manager.createTab(null);
-    vi.spyOn(blank!.session.runtime, 'isWorking', 'get').mockReturnValue(true);
-    await manager.viewerSlot.enter();
-    await manager.viewerSlot.show('conversation-1');
-    expect(manager.getTab(blank!.id)).toBeNull();
-
-    expect(manager.isTabWorking(blank!.id)).toBe(true);
   });
 
   it('persists the active blank draft as a preview that survives reload', async () => {
@@ -1308,7 +410,7 @@ describe('TabManager provider execution orchestration', () => {
     const onActiveTabCommitted = vi.fn();
     const { manager } = await createManager(
       await createPlugin(),
-      { onActiveTabCommitted } as any,
+      { onActiveTabCommitted },
     );
     const initial = await manager.createTab(null, 'initial-tab');
     const background = await manager.createTab(null, 'background-tab', {
@@ -1322,207 +424,647 @@ describe('TabManager provider execution orchestration', () => {
     expect(onActiveTabCommitted).toHaveBeenCalledWith(initial!.id, background!.id);
   });
 
-  it('publishes persisted blank-tab model changes', async () => {
-    const onTabDraftChanged = vi.fn();
-    const { manager } = await createManager(await createPlugin(), { onTabDraftChanged });
-    const tab = await manager.createTab();
-    const onDraftModelChanged = mockCreateTabRuntime.mock.calls[0]?.[0]
-      .onDraftModelChanged as (runtime: any, model: string | null) => void;
 
-    tab!.session.selectDraft(tab!.providerId, 'claude-alternate');
-    onDraftModelChanged(tab, tab!.draftModel);
+it('validates cached workspace ownership during admission', async () => {
+  const { manager } = await createManager();
+  const vault = await DesktopVault.create();
+  onTestFinished(() => vault.dispose());
+  const foreign = await createFeatureHostFixture({ vault });
+  await ProviderWorkspaceRegistry.ensureInitialized(foreign.providerHost, 'claude', 'other-vault');
+  const tab = await manager.createTab();
+  expect(tab?.hydrationState).toBe('failed');
+  expect(provider.sessions).toEqual([]);
+  expect(provider.loadCommands).not.toHaveBeenCalled();
+});
 
-    expect(onTabDraftChanged).toHaveBeenCalledWith(tab!.id, 'claude-alternate');
-  });
+it('does not inherit the active tab provider when creating another blank tab', async () => {
+  const { manager } = await createManager();
+  const active = (await manager.createTab())!;
+  active.session.selectDraft('codex', 'codex:gpt-5');
+  const next = (await manager.createTab())!;
+  expect([next.providerId, next.draftModel]).toEqual(['claude', 'claude-default']);
+  expect([active.providerId, active.draftModel]).toEqual(['codex', 'codex:gpt-5']);
+});
 
-  it('restores open tab identities cold in order and activates once at the end', async () => {
-    const getCachedConversation = vi.fn((id: string) => (conversationRecord(id, { providerId: 'claude' })));
-    const getConversationSummary = vi.fn((id: string) => (conversationRecord(id, { providerId: 'claude' })));
-    const onActiveTabChanged = vi.fn();
-    const { manager } = await createManager(
-      await createPlugin({ getCachedConversation, getConversationSummary }),
-      { onActiveTabChanged },
-    );
-
-    await manager.restoreState({
+it('keeps the committed persistence owner while another tab is hydrating', async () => {
+  const { manager, plugin } = await createManager();
+  const initial = (await manager.createTab(null, 'initial-tab'))!;
+  const target = (await manager.createTab('conversation-1', 'target-tab', { activate: false }))!;
+  const hydration = holdHistory(plugin, 'conversation-1');
+  const switching = manager.switchToTab(target.id);
+  await hydration.started;
+  let idleSettled = false;
+  const switchingIdle = manager.waitForTabSwitchIdle().then(() => { idleSettled = true; });
+  try {
+    // History has started and is held; let an incorrectly resolved idle promise report early completion.
+    await new Promise<void>(resolve => setImmediate(resolve));
+    expect(idleSettled).toBe(false);
+    expect(manager.getActiveTab()).toBe(target);
+    expect(manager.getPersistedState()).toEqual({
+      activeTabId: initial.id,
       openTabs: [
-        { tabId: 'restored-1', conversationId: 'conversation-1' },
-        { tabId: 'restored-2', conversationId: null, draftModel: 'codex:gpt-5' },
+        { conversationId: null, draftModel: 'claude-default', providerId: 'claude', tabId: initial.id },
+        { conversationId: 'conversation-1', tabId: target.id },
       ],
-      activeTabId: 'restored-2',
     });
+  } finally {
+    hydration.release();
+    await Promise.all([switching, switchingIdle]);
+  }
+  expect(idleSettled).toBe(true);
+  expect(manager.getPersistedState().activeTabId).toBe(target.id);
+});
 
-    expect(manager.getTabIdentities().map(tab => ({
-      id: tab.id,
-      lifecycleState: tab.lifecycleState,
-    }))).toEqual([
-      { id: 'restored-1', lifecycleState: 'open' },
-      { id: 'restored-2', lifecycleState: 'open' },
-    ]);
-    expect(getCachedConversation).not.toHaveBeenCalled();
-    expect(getConversationSummary).toHaveBeenCalledWith('conversation-1');
-    expect(mockCreateTabRuntime).toHaveBeenCalledTimes(1);
-    expect(manager.getTab('restored-1')).toBeNull();
-    expect(manager.getTabCount()).toBe(2);
-    expect(manager.getActiveTabId()).toBe('restored-2');
-    expect(onActiveTabChanged).toHaveBeenCalledTimes(1);
-    expect(mockCreateTabRuntime.mock.calls[0]?.[0]).toEqual(expect.objectContaining({
-      draftModel: 'codex:gpt-5',
-      lifecycleState: 'open',
-      tabId: 'restored-2',
-    }));
-    await Promise.all([manager.switchToTab('restored-1'), manager.switchToTab('restored-1')]);
-    expect(mockCreateTabRuntime).toHaveBeenCalledTimes(2);
-    expect(manager.getActiveTabId()).toBe('restored-1');
-    expect(manager.getPersistedState().openTabs.map(tab => tab.tabId)).toEqual(['restored-1', 'restored-2']);
+it.each(['shutdown', 'destroy'] as const)('joins active and queued tab switches during %s', async action => {
+  const { manager, plugin } = await createManager();
+  const initial = (await manager.createTab())!;
+  const target = (await manager.createTab('hydrating', 'hydrating', { activate: false }))!;
+  const hydration = holdHistory(plugin, 'hydrating');
+  const switching = manager.switchToTab(target.id);
+  await hydration.started;
+  const queuedSwitch = manager.switchToTab(initial.id);
+  if (action === 'shutdown') manager.beginShutdown();
+  let settled = false;
+  const finishing = (action === 'shutdown' ? manager.drainForShutdownSnapshot() : manager.destroy()).then(() => { settled = true; });
+  expect(settled).toBe(false);
+  expect(initial.dom.contentEl.isConnected).toBe(true);
+  expect(target.dom.contentEl.isConnected).toBe(true);
+  hydration.release();
+  await Promise.all([switching, queuedSwitch, finishing]);
+  if (action === 'shutdown') manager.sealShutdownSnapshot();
+  expect(manager.getAllTabs()).toEqual(action === 'shutdown' ? [initial, target] : []);
+  expect(initial.dom.contentEl.isConnected).toBe(action === 'shutdown');
+  expect(target.dom.contentEl.isConnected).toBe(action === 'shutdown');
+});
+
+it('projects provider background work only after the coordinator publishes its transition', async () => {
+  const { manager } = await createManager();
+  const tab = (await manager.createTab('conversation-1'))!;
+  expect(await tab.session.runtime.model.ensureExecutionInitialized()).toBe(true);
+  const native = provider.sessions[0];
+  let nativeWork = true;
+  Object.assign(native, { hasBackgroundWork: () => nativeWork });
+  const isWorking = () => manager.getTabBarItems().find(item => item.id === tab.id)?.isWorking;
+  expect(tab.executionCoordinator.hasBackgroundWork).toBe(true);
+  expect(isWorking()).toBe(false);
+  native.emit({ type: 'session_state_changed', scope: { kind: 'session', sessionInstanceId: native.sessionInstanceId, sequence: 1 }, snapshot: native.getSnapshot() });
+  expect(isWorking()).toBe(true);
+  nativeWork = false;
+  native.emit({ type: 'session_state_changed', scope: { kind: 'session', sessionInstanceId: native.sessionInstanceId, sequence: 2 }, snapshot: native.getSnapshot() });
+  expect(isWorking()).toBe(false);
+  tab.controllers.inputController.queue.enqueue(createQueuedMessage('queued', { text: 'queued' }));
+  expect(isWorking()).toBe(true);
+  tab.controllers.inputController.queue.clear();
+  expect(isWorking()).toBe(false);
+});
+
+it('marks only inactive tabs when a reviewable turn settles', async () => {
+  const { manager } = await createManager();
+  const active = (await manager.createTab())!;
+  const background = (await manager.createTab(null, undefined, { activate: false }))!;
+  vi.spyOn(active.dom.messagesEl, 'getClientRects').mockReturnValue(Object.assign([new DOMRect(0, 0, 100, 100)], { item: () => null }));
+  active.captureReviewableSettlement!('completed')();
+  background.captureReviewableSettlement!('error')();
+  expect(active.state.attention).toBeNull();
+  expect(background.state.attention).toMatchObject({ kind: 'review', outcome: 'error' });
+});
+
+it('uses activity at completion and invalidates review after activation', async () => {
+  const { manager } = await createManager();
+  const active = (await manager.createTab())!;
+  const background = (await manager.createTab(null, undefined, { activate: false }))!;
+  for (const tab of [active, background]) {
+    vi.spyOn(tab.dom.messagesEl, 'getClientRects').mockImplementation(() => Object.assign(
+      tab.dom.contentEl.classList.contains('claudian-hidden') ? [] : [new DOMRect(0, 0, 100, 100)], { item: () => null },
+    ));
+  }
+  const reportActive = active.captureReviewableSettlement!('completed');
+  const reportBackground = background.captureReviewableSettlement!('completed');
+  await manager.switchToTab(background.id);
+  await manager.switchToTab(active.id);
+  reportActive(); reportBackground();
+  expect(active.state.attention).toBeNull();
+  expect(background.state.attention).toBeNull();
+});
+
+it('rolls back a tab assembly whose admission continuation runs after manager destruction', async () => {
+  const onTabCreated = vi.fn();
+  const { manager, root, pool } = await createManager(await createPlugin(), { onTabCreated });
+  const creation = manager.createTab(null, 'late-tab');
+  const destruction = manager.destroy();
+  await expect(creation).resolves.toBeNull();
+  await destruction;
+  expect(onTabCreated).not.toHaveBeenCalled();
+  expect(manager.getAllTabs()).toEqual([]);
+  expect(root.childElementCount).toBe(0);
+  expect(pool.getAll()).toEqual([]);
+  expect(manager.canCreateTab()).toBe(false);
+  await expect(manager.createTab()).resolves.toBeNull();
+});
+
+it('rejects a duplicate explicit tab ID without disturbing its reserved runtime', async () => {
+  const { manager, root } = await createManager();
+  const firstCreation = manager.createTab(null, 'restored-tab');
+  await expect(manager.createTab(null, 'restored-tab')).rejects.toThrow('restored-tab');
+  const first = await firstCreation;
+  expect(manager.getAllTabs()).toEqual([first]);
+  expect(manager.getActiveTab()).toBe(first);
+  expect(root.querySelectorAll('.claudian-tab-content')).toHaveLength(1);
+});
+
+it('reactivates the previous tab when deactivation fails during admission', async () => {
+  const error = new Error('Failed to deactivate previous tab');
+  const { manager, root } = await createManager();
+  const initial = (await manager.createTab(null, 'initial-tab'))!;
+  vi.spyOn(initial.dom.contentEl, 'addClass').mockImplementationOnce(() => { throw error; });
+  await expect(manager.createTab(null, 'failed-tab')).rejects.toBe(error);
+  expect(manager.getAllTabs()).toEqual([initial]);
+  expect(manager.getActiveTab()).toBe(initial);
+  expect(initial.dom.contentEl.classList.contains('claudian-hidden')).toBe(false);
+  expect(root.querySelectorAll('.claudian-tab-content')).toHaveLength(1);
+});
+
+it.each(['before', 'after'] as const)('attributes admission failure to its request with another switch queued %s it', async placement => {
+  const error = new Error('Failed queued tab activation');
+  const { manager, plugin, root } = await createManager(await createPlugin(), {
+    onActiveTabChanged: (_previous, id) => { if (id === 'failed-tab') throw error; },
   });
+  await manager.createTab(null, 'initial-tab');
+  const blocking = (await manager.createTab('blocking', 'blocking', { activate: false }))!;
+  const hydration = holdHistory(plugin, 'blocking');
+  const blockingSwitch = manager.switchToTab(blocking.id);
+  await hydration.started;
+  const first = placement === 'before' ? manager.switchToTab('initial-tab') : manager.createTab(null, 'failed-tab');
+  const second = placement === 'before' ? manager.createTab(null, 'failed-tab') : manager.switchToTab('initial-tab');
+  const failing = placement === 'before' ? second : first;
+  const succeeding = placement === 'before' ? first : second;
+  const rejected = failing.then(() => null, error => error);
+  hydration.release();
+  await Promise.all([blockingSwitch, succeeding]);
+  expect(await rejected).toBe(error);
+  expect(manager.getTab('failed-tab')).toBeNull();
+  expect(manager.getActiveTab()?.id).toBe('initial-tab');
+  expect(root.querySelectorAll('.claudian-tab-content')).toHaveLength(2);
+});
 
-  it('restores a usable tab when the selected saved runtime cannot be assembled', async () => {
-    const { manager } = await createManager(await createPlugin({ getCachedConversation: (id: string) => (conversationRecord(id, { providerId: 'claude' })) }));
-    mockCreateTabRuntime.mockRejectedValueOnce(new Error('Unavailable selected tab'));
-    await expect(manager.restoreState({ openTabs: ['one', 'two'].map(id => ({ tabId: id, conversationId: id })), activeTabId: 'one' })).resolves.toBeUndefined();
-    expect(manager.getActiveTabId()).toBe('two');
-    expect(manager.getTab('one')).toBeNull();
-    expect(manager.getPersistedState().openTabs.map(tab => tab.tabId)).toEqual(['one', 'two']);
-    await manager.switchToTab('one');
-    expect(manager.getActiveTabId()).toBe('one');
+it('fences overlapping closes before repeating teardown or callbacks', async () => {
+  const onTabClosed = vi.fn();
+  const { manager } = await createManager(await createPlugin(), { onTabClosed });
+  const retained = (await manager.createTab())!;
+  const closing = (await manager.createTab())!;
+  const remove = vi.spyOn(closing.dom.contentEl, 'remove');
+  const first = manager.closeTab(closing.id);
+  const overlapping = manager.closeTab(closing.id);
+  await expect(Promise.all([first, overlapping])).resolves.toEqual([true, false]);
+  expect(remove).toHaveBeenCalledTimes(1);
+  expect(onTabClosed.mock.calls).toEqual([[closing.id]]);
+  expect(manager.getAllTabs()).toEqual([retained]);
+});
+
+it('claims the final tab before its replacement admission continuation', async () => {
+  const { manager } = await createManager();
+  const closing = (await manager.createTab())!;
+  const first = manager.discardTab(closing.id);
+  const overlapping = manager.discardTab(closing.id);
+  await expect(Promise.all([first, overlapping])).resolves.toEqual([true, false]);
+  expect(manager.getAllTabs()).toEqual([manager.getActiveTab()]);
+  expect(manager.getActiveTab()).not.toBe(closing);
+  expect(closing.dom.contentEl.isConnected).toBe(false);
+});
+
+it('installs one live replacement when different tabs close concurrently', async () => {
+  const { manager, root } = await createManager();
+  const first = (await manager.createTab())!;
+  const second = (await manager.createTab())!;
+  await expect(Promise.all([manager.closeTab(first.id), manager.closeTab(second.id)])).resolves.toEqual([true, true]);
+  expect(manager.getAllTabs()).toEqual([manager.getActiveTab()]);
+  expect(manager.getActiveTab()?.conversationId).toBeNull();
+  expect(first.dom.contentEl.isConnected).toBe(false);
+  expect(second.dom.contentEl.isConnected).toBe(false);
+  expect(root.querySelectorAll('.claudian-tab-content')).toHaveLength(1);
+});
+
+it('retains one original when concurrent-close replacement assembly fails', async () => {
+  const error = new Error('Replacement assembly failed');
+  const { manager, root } = await createManager();
+  const first = (await manager.createTab())!;
+  const second = (await manager.createTab())!;
+  vi.spyOn(root, 'createDiv').mockImplementationOnce(() => { throw error; });
+  const firstClose = manager.closeTab(first.id);
+  const secondClose = manager.closeTab(second.id);
+  await expect(secondClose).rejects.toBe(error);
+  await expect(firstClose).resolves.toBe(true);
+  expect(manager.getAllTabs()).toEqual([second]);
+  expect(manager.getActiveTab()).toBe(second);
+  expect(second.session.acceptsIntents).toBe(true);
+  expect(second.dom.contentEl.isConnected).toBe(true);
+});
+
+it('keeps the final tab live when replacement assembly fails', async () => {
+  const error = new Error('Replacement assembly failed');
+  const onTabClosed = vi.fn();
+  const { manager, root } = await createManager(await createPlugin(), { onTabClosed });
+  const retained = (await manager.createTab())!;
+  vi.spyOn(root, 'createDiv').mockImplementationOnce(() => { throw error; });
+  await expect(manager.discardTab(retained.id)).rejects.toBe(error);
+  expect(manager.getAllTabs()).toEqual([retained]);
+  expect(manager.getActiveTab()).toBe(retained);
+  expect(retained.session.acceptsIntents).toBe(true);
+  expect(retained.dom.contentEl.isConnected).toBe(true);
+  expect(onTabClosed).not.toHaveBeenCalled();
+});
+
+it('keeps identity publication live during reversible final-tab replacement', async () => {
+  const error = new Error('Replacement assembly failed');
+  const onTabConversationChanged = vi.fn();
+  const { manager, root } = await createManager(await createPlugin(), { onTabConversationChanged });
+  const retained = (await manager.createTab())!;
+  vi.spyOn(root, 'createDiv').mockImplementationOnce(() => {
+    retained.state.currentConversationId = 'created-during-close';
+    throw error;
   });
+  await expect(manager.discardTab(retained.id)).rejects.toBe(error);
+  expect(retained.conversationId).toBe('created-during-close');
+  expect(onTabConversationChanged.mock.calls).toEqual([[retained.id, 'created-during-close']]);
+  expect(manager.getAllTabs()).toEqual([retained]);
+  expect(retained.session.acceptsIntents).toBe(true);
+});
 
-  it.each([false, true])('drops a duplicate cross-view restore before assembly (owner inactive: %s)', async inactive => {
-    const plugin = await createPlugin({ getCachedConversation: (id: string) => (conversationRecord(id, { providerId: 'claude' })) });
-    const first = await createManager(plugin);
-    const second = await createManager(plugin);
-    const leaves = [first, second].map(({ manager }) => ({ view: { getTabManager: () => manager } }));
-    const views = new ClaudianViews({ getLeavesOfType: () => leaves } as any, () => 'right-sidebar');
-    plugin.findConversationAcrossViews.mockImplementation((id: string) => views.findConversationAcrossViews(id));
+it('does not emit close callbacks after manager destruction begins', async () => {
+  const onTabClosed = vi.fn();
+  const { manager } = await createManager(await createPlugin(), { onTabClosed });
+  await manager.createTab();
+  const closing = (await manager.createTab())!;
+  const close = manager.closeTab(closing.id);
+  const destruction = manager.destroy();
+  await Promise.all([close, destruction]);
+  expect(onTabClosed).not.toHaveBeenCalled();
+  expect(manager.getAllTabs()).toEqual([]);
+});
 
-    await Promise.all([
-      first.manager.restoreState({ openTabs: [
-        { tabId: 'owner', conversationId: 'shared', label: 'Keep label' },
-        ...(inactive ? [{ tabId: 'draft', conversationId: null }] : []),
-      ], activeTabId: inactive ? 'draft' : 'owner' }),
-      second.manager.restoreState({ openTabs: [{ tabId: 'duplicate', conversationId: 'shared' }], activeTabId: 'duplicate' }),
-    ]);
+it('releases membership and discovery when external DOM cleanup fails during close', async () => {
+  const onTabClosed = vi.fn();
+  const { manager, pool } = await createManager(await createPlugin(), { onTabClosed });
+  const retained = (await manager.createTab())!;
+  const closing = (await manager.createTab())!;
+  const discovery = closing.providerCatalogResolver()!.discovery;
+  await discovery.load();
+  vi.spyOn(closing.dom.contentEl, 'remove').mockImplementationOnce(() => { throw new Error('Detach failed'); });
+  await expect(manager.closeTab(closing.id)).rejects.toThrow('tab DOM root');
+  expect(manager.getAllTabs()).toEqual([retained]);
+  expect(manager.getActiveTab()).toBe(retained);
+  expect(onTabClosed).toHaveBeenCalledWith(closing.id);
+  expect(pool.getAll().includes(closing.session.runtime)).toBe(false);
+  expect(closing.providerCatalogResolver()).toBeNull();
+  expect(discovery.getSnapshot()).toEqual({ status: 'idle' });
+  closing.dom.contentEl.remove();
+});
 
-    expect(first.manager.getPersistedState().openTabs).toContainEqual({ tabId: 'owner', conversationId: 'shared', label: 'Keep label' });
-    expect(second.manager.getPersistedState().openTabs).toEqual([expect.objectContaining({ conversationId: null })]);
-    expect(second.manager.getActiveTab()?.conversationId).toBeNull();
-    expect(mockCreateTabRuntime.mock.calls.some(([options]) => options.tabId === 'duplicate')).toBe(false);
-    expect(plugin.app.workspace.revealLeaf).not.toHaveBeenCalled();
-    expect(first.manager.getTab('owner') === null).toBe(inactive);
-    await Promise.all([first.manager.destroy(), second.manager.destroy()]);
-  });
+it('fences discovery and external observers while accepting a terminal identity during close', async () => {
+  const callbacks = { onTabAttentionChanged: vi.fn(), onTabConversationChanged: vi.fn(), onTabRewindingChanged: vi.fn(), onTabStreamingChanged: vi.fn() };
+  const { manager, plugin } = await createManager(await createPlugin(), callbacks);
+  const retained = (await manager.createTab())!;
+  const closing = (await manager.createTab(null, undefined, { activate: false }))!;
+  const discovery = closing.providerCatalogResolver()!.discovery;
+  const close = manager.closeTab(closing.id);
+  expect(closing.lifecycleState).toBe('closing');
+  closing.session.runtime.publish('streaming');
+  closing.session.runtime.publish('rewinding');
+  closing.state.markReviewRequired('completed');
+  closing.state.currentConversationId = 'late-conversation';
+  expect(closing.conversationId).toBe('late-conversation');
+  expect(closing.providerCatalogResolver()).toBeNull();
+  expect(discovery.getSnapshot()).toEqual({ status: 'idle' });
+  for (const observer of Object.values(callbacks)) expect(observer).not.toHaveBeenCalled();
+  await forkRequestFrom(manager, closing)({ messages: [], providerId: 'claude', resumeAt: 'checkpoint', sourceConversationId: 'late-conversation', sourceSessionId: 'native' });
+  await navigationOwner(manager).open('stale-conversation', {}, closing);
+  expect(plugin.createConversation).not.toHaveBeenCalled();
+  expect(plugin.getConversationById).not.toHaveBeenCalled();
+  await close;
+  expect(manager.getAllTabs()).toEqual([retained]);
+  expect(closing.providerCatalogResolver()).toBeNull();
+});
 
-  it('keeps the active source reversible when an inactive successor fails assembly', async () => {
-    const { manager } = await createManager(await createPlugin({ getCachedConversation: (id: string) => (conversationRecord(id, { providerId: 'claude' })) }));
-    await manager.restoreState({ openTabs: [
-      { tabId: 'active', conversationId: 'one' }, { tabId: 'open', conversationId: 'two' },
-    ], activeTabId: 'active' });
-    const source = manager.getActiveTab()!;
-    const before = manager.getPersistedState();
-    mockCreateTabRuntime.mockRejectedValueOnce(new Error('Assembly failed'));
-    await expect(manager.closeTab('active')).rejects.toThrow('Assembly failed');
-    expect(manager.getActiveTab()).toBe(source);
-    expect(source.session.acceptsIntents).toBe(true);
-    expect(source.controllers.conversationController.save).not.toHaveBeenCalled();
-    expect(manager.getPersistedState()).toEqual(before);
-    await expect(manager.closeTab('active')).resolves.toBe(true);
-    expect(manager.getActiveTabId()).toBe('open');
-  });
+it('accepts a terminal conversation binding until the shutdown snapshot is sealed', async () => {
+  const onTabConversationChanged = vi.fn();
+  const { manager } = await createManager(await createPlugin(), { onTabConversationChanged });
+  const tab = (await manager.createTab())!;
+  const unbound = (await manager.createTab())!;
+  manager.beginShutdown();
+  tab.state.currentConversationId = 'created-during-shutdown';
+  expect(tab.conversationId).toBe('created-during-shutdown');
+  expect(onTabConversationChanged.mock.calls).toEqual([[tab.id, 'created-during-shutdown']]);
+  const snapshot = manager.getPersistedState();
+  manager.sealShutdownSnapshot();
+  tab.session.runtime.publish('conversation');
+  unbound.state.currentConversationId = 'created-after-seal';
+  expect(unbound.session.runtime.conversationId).toBe('created-after-seal');
+  expect(unbound.conversationId).toBeNull();
+  expect(onTabConversationChanged).toHaveBeenCalledTimes(1);
+  expect(manager.getPersistedState()).toEqual(snapshot);
+});
 
-  it('resets a deleted conversation during reversible close preflight even if successor assembly fails', async () => {
-    const { manager } = await createManager(await createPlugin({ getCachedConversation: (id: string) => (conversationRecord(id, { providerId: 'claude' })) }));
-    await manager.restoreState({ openTabs: ['one', 'two'].map(id => ({ tabId: id, conversationId: id })), activeTabId: 'one' });
-    const source = manager.getActiveTab()!;
-    source.controllers.inputController.cancelStreaming = vi.fn();
-    const pending = deferred<any>();
-    mockCreateTabRuntime.mockImplementationOnce(() => pending.promise);
-    const closing = manager.closeTab('one');
-    await manager.resetConversationTabs('one');
-    pending.reject(new Error('Successor unavailable'));
-    await expect(closing).rejects.toThrow('Successor unavailable');
-    expect(manager.getActiveTab()).toEqual(expect.objectContaining({ id: source.id, conversationId: null }));
-    expect(source.conversationId).toBe('one');
-    expect(mockDestroyTab).toHaveBeenCalledWith(source);
-    expect(source.controllers.inputController.cancelStreaming).not.toHaveBeenCalled();
-  });
+it('drains every admitted conversation creation before sealing the shutdown snapshot', async () => {
+  const { manager, plugin } = await createManager();
+  const tabs = [(await manager.createTab())!, (await manager.createTab())!];
+  const shells = tabs.map(() => deferred<Conversation>());
+  vi.spyOn(plugin, 'createConversation').mockImplementationOnce(() => shells[0].promise).mockImplementationOnce(() => shells[1].promise);
+  const creations = tabs.map(tab => tab.controllers.conversationController.createConversation(
+    tab.session.runtime.model.linkedContentController.beginSubmission(), { providerId: 'claude' },
+  ));
+  manager.beginShutdown();
+  let drained = false;
+  const drain = manager.drainForShutdownSnapshot().then(() => { drained = true; });
+  shells[0].resolve(conversationRecord('first-created'));
+  await creations[0];
+  expect(drained).toBe(false);
+  shells[1].resolve(conversationRecord('second-created'));
+  await Promise.all([...creations, drain]);
+  expect(tabs.every(tab => tab.session.acceptsIntents)).toBe(true);
+  manager.sealShutdownSnapshot();
+  expect(manager.getPersistedState().openTabs.map(tab => tab.conversationId)).toEqual(['first-created', 'second-created']);
+});
 
-  it('joins a late restored assembly during shutdown without losing its identity snapshot', async () => {
-    const { manager } = await createManager(await createPlugin({ getCachedConversation: (id: string) => (conversationRecord(id, { providerId: 'claude' })) }));
-    await manager.restoreState({ openTabs: ['one', 'two'].map(id => ({ tabId: id, conversationId: id })), activeTabId: 'one' });
-    const pending = deferred<any>();
-    let options: any;
-    mockCreateTabRuntime.mockImplementationOnce(input => { options = input; return pending.promise; });
-    const switching = manager.switchToTab('two');
-    const shutdown = manager.drainForShutdownSnapshot();
-    const late = createMockTab(options);
-    pending.resolve(late);
-    await Promise.all([switching, shutdown]);
-    expect(mockDestroyTab).toHaveBeenCalledWith(late);
-    expect(manager.getTab('two')).toBeNull();
-    expect(manager.getPersistedState().openTabs.map(tab => tab.tabId)).toEqual(['one', 'two']);
-    expect(manager.getPersistedState().activeTabId).toBe('one');
-  });
+it('leaves sealed tab identities untouched when provider availability changes after shutdown', async () => {
+  const onTabDraftChanged = vi.fn();
+  const onTabProviderChanged = vi.fn();
+  registerChatTestProvider('claude', { models: [] });
+  const { manager } = await createManager(await createPlugin(), { onTabDraftChanged, onTabProviderChanged });
+  await manager.restoreState({ openTabs: [{ tabId: 'active', conversationId: null }, { tabId: 'inactive', conversationId: null }], activeTabId: 'active' });
+  registerChatTestProvider('claude', { models: [{ value: 'claude-default', label: 'Claude' }] });
+  const sealed = manager.getPersistedState();
+  expect(manager.getTab('inactive')).toBeNull();
+  manager.beginShutdown();
+  manager.sealShutdownSnapshot();
+  manager.reconcileProviderAvailability();
+  expect(manager.getPersistedState()).toEqual(sealed);
+  expect(onTabDraftChanged).not.toHaveBeenCalled();
+  expect(onTabProviderChanged).not.toHaveBeenCalled();
+});
 
-  it.each([false, true])('resets deleted restored tabs and retries failed runtime resets (multiple failures: %s)', async multipleFailures => {
-    const { manager, plugin } = await createManager(await createPlugin({ getCachedConversation: (id: string) => (conversationRecord(id, { providerId: 'claude' })) }));
-    await manager.restoreState({ openTabs: ['one', 'two', 'three'].map(tabId => ({ tabId, conversationId: 'deleted' })), activeTabId: 'one' });
-    await manager.switchToTab('three');
+it('drains in-flight conversation navigation before sealing shutdown state', async () => {
+  const { manager, plugin, root } = await createManager();
+  const tab = (await manager.createTab())!;
+  const hydration = holdHistory(plugin, 'during-shutdown');
+  const navigation = manager.openConversation('during-shutdown');
+  await hydration.started;
+  manager.beginShutdown();
+  let settled = false;
+  const drain = manager.drainForShutdownSnapshot().then(() => { settled = true; });
+  expect(settled).toBe(false);
+  hydration.release();
+  await Promise.all([navigation, drain]);
+  expect(tab.conversationId).toBeNull();
+  expect(manager.getAllTabs()).toEqual([tab]);
+  expect(root.querySelectorAll('.claudian-tab-content')).toHaveLength(1);
+  manager.sealShutdownSnapshot();
+});
 
-    plugin.settings.lastSelectedChatModel = { providerId: 'claude', model: 'claude-default' };
-    mockCreateTabRuntime.mockRejectedValueOnce(new Error('Reset failed'));
-    if (multipleFailures) mockCreateTabRuntime.mockRejectedValueOnce(new Error('Other reset failed'));
-    await expect(manager.resetConversationTabs('deleted')).rejects.toThrow('Reset failed');
-    expect(manager.getTabIdentities().find(tab => tab.id === 'two')?.conversationId).toBeNull();
-    expect(mockCreateTabRuntime).toHaveBeenCalledTimes(4);
-    await manager.resetConversationTabs('deleted');
-    expect(mockCreateTabRuntime).toHaveBeenCalledTimes(multipleFailures ? 6 : 5);
-    expect(manager.getTabIdentities().every(tab => tab.conversationId === null)).toBe(true);
-  });
+it('joins an admitted close before choosing the shutdown snapshot owner', async () => {
+  const { manager } = await createManager();
+  const retained = (await manager.createTab())!;
+  const closing = (await manager.createTab())!;
+  const close = manager.closeTab(closing.id);
+  manager.beginShutdown();
+  const drain = manager.drainForShutdownSnapshot();
+  await Promise.all([close, drain]);
+  expect(manager.getActiveTab()).toBe(retained);
+  expect(manager.getAllTabs()).toEqual([retained]);
+  manager.sealShutdownSnapshot();
+  expect(manager.getPersistedState().activeTabId).toBe(retained.id);
+});
 
-  it.each(['close', 'delete'] as const)('discards late assembly when %s invalidates its restored identity', async operation => {
-    const { manager } = await createManager(await createPlugin({ getCachedConversation: (id: string) => (conversationRecord(id, { providerId: 'claude' })) }));
-    await manager.restoreState({ openTabs: ['one', 'two'].map(id => ({ tabId: id, conversationId: id })), activeTabId: 'one' });
-    const pending = deferred<any>();
-    let options: any;
-    mockCreateTabRuntime.mockImplementationOnce(input => { options = input; return pending.promise; });
-    const switching = manager.switchToTab('two');
-    if (operation === 'close') await manager.closeTab('two');
-    else await manager.resetConversationTabs('two');
-    const late = createMockTab(options);
-    pending.resolve(late);
-    await switching;
-    expect(mockDestroyTab).toHaveBeenCalledWith(late);
-    expect(manager.getTab('two')).toBeNull();
-    expect(manager.getActiveTabId()).toBe('one');
-    expect(manager.getTabIdentities().find(tab => tab.id === 'two')?.conversationId).toBe(operation === 'close' ? undefined : null);
-  });
+it('does not recreate discovery from a released tab after destroy', async () => {
+  const { manager } = await createManager();
+  const tab = (await manager.createTab())!;
+  const discovery = tab.providerCatalogResolver()!.discovery;
+  await discovery.load();
+  await manager.destroy();
+  tab.session.runtime.publish('commands');
+  expect(tab.providerCatalogResolver()).toBeNull();
+  expect(discovery.getSnapshot()).toEqual({ status: 'idle' });
+});
 
-  it('ignores owner intents retained by a tab after it begins closing', async () => {
-    const { manager, plugin } = await createManager(await createPlugin(), {}, {}, {
-      forkTarget: () => 'viewer',
-    });
-    await manager.createTab();
-    const source = await manager.createTab();
-    const save = deferred<void>();
-    source!.controllers.conversationController.save = vi.fn(() => save.promise);
-    (source!.session.runtime.model.hydrate as Mock).mockClear();
-    const factoryOptions = mockCreateTabRuntime.mock.calls[1]?.[0];
+it('disposes every tab and releases manager state when one DOM teardown fails', async () => {
+  const { manager, pool } = await createManager();
+  const first = (await manager.createTab())!;
+  const second = (await manager.createTab())!;
+  const firstRemove = vi.spyOn(first.dom.contentEl, 'remove').mockImplementationOnce(() => { throw new Error('Detach failed'); });
+  const secondRemove = vi.spyOn(second.dom.contentEl, 'remove');
+  const destruction = manager.destroy();
+  const overlap = manager.destroy();
+  const [error, overlappingError] = await Promise.all([destruction.catch(reason => reason), overlap.catch(reason => reason)]);
+  expect(error).toMatchObject({ message: expect.stringContaining('tab DOM root') });
+  expect(overlappingError).toBe(error);
+  await expect(manager.destroy()).rejects.toBe(error);
+  expect(firstRemove).toHaveBeenCalledTimes(1);
+  expect(secondRemove).toHaveBeenCalledTimes(1);
+  expect(manager.getAllTabs()).toEqual([]);
+  expect(manager.getActiveTab()).toBeNull();
+  expect(pool.getAll()).toEqual([]);
+  expect(first.providerCatalogResolver()).toBeNull();
+  expect(second.providerCatalogResolver()).toBeNull();
+  first.dom.contentEl.remove();
+});
 
-    const close = manager.closeTab(source!.id);
-    await factoryOptions.forkRequestCallback({
-      messages: [],
-      providerId: 'claude',
-      resumeAt: 'assistant-checkpoint',
-      sourceConversationId: null,
-      sourceSessionId: 'native-session',
-    });
-    await factoryOptions.openConversation('stale-conversation');
+it('finishes mandatory teardown when concurrent preview cleanup fails', async () => {
+  const { manager, pool } = await createManager();
+  const retained = (await manager.createTab('retained'))!;
+  await manager.viewerSlot.show('preview');
+  const preview = manager.getActiveTab()!;
+  await manager.switchToTab(retained.id);
+  const detaching = deferred<void>();
+  vi.spyOn(preview.dom.contentEl, 'remove').mockImplementationOnce(() => { detaching.resolve(); throw new Error('Preview detach failed'); });
+  const cleanup = manager.viewerSlot.release().catch(error => error);
+  await detaching.promise;
+  const destruction = manager.destroy().catch(error => error);
+  const [cleanupError, destructionError] = await Promise.all([cleanup, destruction]);
+  expect(cleanupError).toMatchObject({ message: expect.stringContaining('tab DOM root') });
+  expect(destructionError).toBe(cleanupError);
+  expect(manager.getAllTabs()).toEqual([]);
+  expect(retained.dom.contentEl.isConnected).toBe(false);
+  expect(pool.getAttachment('retained')).toBeNull();
+  expect(pool.getAttachment('preview')).toBeNull();
+  preview.dom.contentEl.remove();
+});
 
-    expect(plugin.createConversation).not.toHaveBeenCalled();
-    expect(source!.session.runtime.model.hydrate).not.toHaveBeenCalled();
-    save.resolve(undefined);
-    await expect(close).resolves.toBe(true);
-  });
+it('joins an unloaded draft session creating its conversation before the shutdown snapshot', async () => {
+  const { manager, plugin } = await createManager();
+  const blank = (await manager.createTab())!;
+  const model = blank.session.runtime.model;
+  const reply = deferred<Conversation>();
+  vi.spyOn(plugin, 'createConversation').mockReturnValueOnce(reply.promise);
+  const creating = model.conversationController.createConversation(model.linkedContentController.beginSubmission(), { providerId: 'claude' });
+  await manager.viewerSlot.enter();
+  await manager.viewerSlot.show('conversation-1');
+  expect(manager.getTab(blank.id)).toBeNull();
+  let drained = false;
+  const drain = manager.drainForShutdownSnapshot().then(() => { drained = true; });
+  expect(drained).toBe(false);
+  reply.resolve(conversationRecord('created'));
+  await Promise.all([creating, drain]);
+  expect(manager.getPersistedState().openTabs[0]).toEqual({ tabId: blank.id, conversationId: 'created' });
+});
 
+it('reports an unloaded narrow tab from its running session and review attention', async () => {
+  const { manager } = await createManager();
+  const narrow = (await manager.createTab('conversation-1'))!;
+  narrow.controllers.inputController.queue.enqueue(createQueuedMessage('queued', { text: 'queued' }));
+  await manager.viewerSlot.enter();
+  await manager.viewerSlot.show('conversation-2');
+  narrow.state.markReviewRequired('completed');
+  expect(manager.getTab(narrow.id)).toBeNull();
+  expect(manager.isTabWorking(narrow.id)).toBe(true);
+  expect(manager.getTabBarItems().find(item => item.id === narrow.id)).toMatchObject({ isWorking: true, attention: { kind: 'review', outcome: 'completed' } });
+  narrow.controllers.inputController.queue.clear();
+  expect(manager.isTabWorking(narrow.id)).toBe(false);
+});
+
+it('reports an unloaded blank tab from its held draft before it creates a conversation', async () => {
+  const { manager } = await createManager();
+  const blank = (await manager.createTab())!;
+  blank.controllers.inputController.queue.enqueue(createQueuedMessage('queued', { text: 'queued' }));
+  await manager.viewerSlot.enter();
+  await manager.viewerSlot.show('conversation-1');
+  expect(manager.getTab(blank.id)).toBeNull();
+  expect(manager.isTabWorking(blank.id)).toBe(true);
+  blank.controllers.inputController.queue.clear();
+  expect(manager.isTabWorking(blank.id)).toBe(false);
+});
+
+it('publishes persisted blank-tab model changes', async () => {
+  const onTabDraftChanged = vi.fn();
+  const { manager } = await createManager(await createPlugin(), { onTabDraftChanged });
+  const tab = (await manager.createTab())!;
+  tab.session.selectDraft('claude', 'claude-alternate');
+  expect(onTabDraftChanged).toHaveBeenCalledWith(tab.id, 'claude-alternate');
+  expect(manager.getPersistedState().openTabs[0]).toMatchObject({ draftModel: 'claude-alternate' });
+});
+
+it('restores identities cold in order and activates once, preserving inactive model and label', async () => {
+  registerChatTestProvider('codex', { models: [{ value: 'codex:gpt-5', label: 'GPT 5' }] });
+  const onActiveTabChanged = vi.fn();
+  const getConversationSummary = vi.fn((id: string) => conversationRecord(id));
+  const { manager, plugin, root } = await createManager(await createPlugin({ getConversationSummary }), { onActiveTabChanged });
+  // The supplied summary port owns cold metadata; loading history remains deferred.
+  plugin.getConversationSummary = getConversationSummary;
+  await manager.restoreState({ openTabs: [
+    { tabId: 'restored-1', conversationId: 'conversation-1', label: 'Keep label' },
+    { tabId: 'restored-2', conversationId: null, providerId: 'codex', draftModel: 'codex:gpt-5' },
+  ], activeTabId: 'restored-2' });
+  expect(manager.getTabIdentities().map(tab => [tab.id, tab.lifecycleState])).toEqual([['restored-1', 'open'], ['restored-2', 'open']]);
+  expect(getConversationSummary).toHaveBeenCalledWith('conversation-1');
+  expect(manager.getTab('restored-1')).toBeNull();
+  expect(manager.getAllTabs()).toHaveLength(1);
+  expect(root.querySelectorAll('.claudian-tab-content')).toHaveLength(1);
+  expect(manager.getActiveTab()).toMatchObject({ id: 'restored-2', draftModel: 'codex:gpt-5' });
+  expect(onActiveTabChanged).toHaveBeenCalledTimes(1);
+  await Promise.all([manager.switchToTab('restored-1'), manager.switchToTab('restored-1')]);
+  expect(manager.getAllTabs()).toHaveLength(2);
+  expect(manager.getActiveTab()).toMatchObject({ id: 'restored-1', label: 'Keep label' });
+  expect(manager.getPersistedState().openTabs.map(tab => tab.tabId)).toEqual(['restored-1', 'restored-2']);
+  expect(provider.sessions).toEqual([]);
+});
+
+it('restores a usable tab when the selected saved runtime cannot be assembled', async () => {
+  const { manager, root } = await createManager();
+  vi.spyOn(root, 'createDiv').mockImplementationOnce(() => { throw new Error('Unavailable selected tab'); });
+  await expect(manager.restoreState({ openTabs: ['one', 'two'].map(id => ({ tabId: id, conversationId: id })), activeTabId: 'one' })).resolves.toBeUndefined();
+  expect(manager.getActiveTabId()).toBe('two');
+  expect(manager.getTab('one')).toBeNull();
+  expect(manager.getPersistedState().openTabs.map(tab => tab.tabId)).toEqual(['one', 'two']);
+  await manager.switchToTab('one');
+  expect(manager.getActiveTabId()).toBe('one');
+});
+
+it.each([false, true])('drops a duplicate cross-view restore before assembly (owner inactive: %s)', async inactive => {
+  const { ClaudianViews } = await import('@/composition/ClaudianViews');
+  const plugin = await createPlugin();
+  const first = await createManager(plugin);
+  const second = await createManager(plugin);
+  vi.spyOn(plugin.app.workspace, 'getLeavesOfType').mockReturnValue([first, second].map(({ view }) => Object.assign(view.leaf, { view })));
+  const views = new ClaudianViews(plugin.app.workspace, () => 'right-sidebar');
+  vi.spyOn(plugin, 'findConversationAcrossViews').mockImplementation(id => views.findConversationAcrossViews(id));
+  await Promise.all([
+    first.manager.restoreState({ openTabs: [
+      { tabId: 'owner', conversationId: 'shared', label: 'Keep label' },
+      ...(inactive ? [{ tabId: 'draft', conversationId: null }] : []),
+    ], activeTabId: inactive ? 'draft' : 'owner' }),
+    second.manager.restoreState({ openTabs: [{ tabId: 'duplicate', conversationId: 'shared' }], activeTabId: 'duplicate' }),
+  ]);
+  expect(first.manager.getPersistedState().openTabs).toContainEqual({ tabId: 'owner', conversationId: 'shared', label: 'Keep label' });
+  expect(second.manager.getPersistedState().openTabs).toEqual([expect.objectContaining({ conversationId: null })]);
+  expect(second.manager.getActiveTab()?.conversationId).toBeNull();
+  expect(second.manager.getTab('duplicate')).toBeNull();
+  expect(plugin.app.workspace.revealLeaf).not.toHaveBeenCalled();
+  expect(first.manager.getTab('owner') === null).toBe(inactive);
+});
+
+it('keeps the active source reversible when an inactive successor fails assembly', async () => {
+  const { manager, root } = await createManager();
+  await manager.restoreState({ openTabs: [{ tabId: 'active', conversationId: 'one' }, { tabId: 'open', conversationId: 'two' }], activeTabId: 'active' });
+  const source = manager.getActiveTab()!;
+  const before = manager.getPersistedState();
+  vi.spyOn(root, 'createDiv').mockImplementationOnce(() => { throw new Error('Assembly failed'); });
+  await expect(manager.closeTab('active')).rejects.toThrow('Assembly failed');
+  expect(manager.getActiveTab()).toBe(source);
+  expect(source.session.acceptsIntents).toBe(true);
+  expect(source.dom.contentEl.isConnected).toBe(true);
+  expect(manager.getPersistedState()).toEqual(before);
+  await expect(manager.closeTab('active')).resolves.toBe(true);
+  expect(manager.getActiveTabId()).toBe('open');
+});
+
+it('resets a deleted conversation during reversible close even if successor assembly fails', async () => {
+  const { manager, root } = await createManager();
+  await manager.restoreState({ openTabs: ['one', 'two'].map(id => ({ tabId: id, conversationId: id })), activeTabId: 'one' });
+  const source = manager.getActiveTab()!;
+  vi.spyOn(root, 'createDiv').mockImplementationOnce(() => { throw new Error('Successor unavailable'); });
+  const closing = manager.closeTab('one');
+  const rejected = closing.then(() => null, error => error);
+  await manager.resetConversationTabs('one');
+  expect(await rejected).toMatchObject({ message: 'Successor unavailable' });
+  expect(manager.getActiveTab()).toMatchObject({ id: source.id, conversationId: null });
+  expect(source.conversationId).toBe('one');
+  expect(source.dom.contentEl.isConnected).toBe(false);
+  expect(provider.sessions).toEqual([]);
+});
+
+it('joins a restored assembly continuation during shutdown without losing its identity snapshot', async () => {
+  const { manager, root } = await createManager();
+  await manager.restoreState({ openTabs: ['one', 'two'].map(id => ({ tabId: id, conversationId: id })), activeTabId: 'one' });
+  const switching = manager.switchToTab('two');
+  const shutdown = manager.drainForShutdownSnapshot();
+  await Promise.all([switching, shutdown]);
+  expect(manager.getTab('two')).toBeNull();
+  expect(root.querySelectorAll('.claudian-tab-content')).toHaveLength(1);
+  expect(manager.getPersistedState().openTabs.map(tab => tab.tabId)).toEqual(['one', 'two']);
+  expect(manager.getPersistedState().activeTabId).toBe('one');
+});
+
+it('resets deleted restored identities and retries a failed assembled reset', async () => {
+  const { manager, root } = await createManager();
+  await manager.restoreState({ openTabs: ['one', 'two'].map(id => ({ tabId: id, conversationId: 'deleted' })), activeTabId: 'one' });
+  expect(manager.getTab('two')).toBeNull();
+  vi.spyOn(root, 'createDiv').mockImplementationOnce(() => { throw new Error('Reset failed'); });
+  await expect(manager.resetConversationTabs('deleted')).rejects.toThrow('Reset failed');
+  expect(manager.getActiveTab()?.conversationId).toBe('deleted');
+  expect(manager.getTab('two')).toBeNull();
+  expect(manager.getTabIdentities().find(tab => tab.id === 'two')?.conversationId).toBeNull();
+  await manager.resetConversationTabs('deleted');
+  expect(manager.getTabIdentities().every(tab => tab.conversationId === null)).toBe(true);
+  expect(manager.getActiveTabId()).toBe('one');
+});
+
+it.each(['close', 'delete'] as const)('discards a restored assembly continuation when %s invalidates its identity', async operation => {
+  const { manager, root } = await createManager();
+  await manager.restoreState({ openTabs: ['one', 'two'].map(id => ({ tabId: id, conversationId: id })), activeTabId: 'one' });
+  const switching = manager.switchToTab('two');
+  if (operation === 'close') await manager.closeTab('two');
+  else await manager.resetConversationTabs('two');
+  await switching;
+  expect(manager.getTab('two')).toBeNull();
+  expect(root.querySelectorAll('.claudian-tab-content')).toHaveLength(1);
+  expect(manager.getActiveTabId()).toBe('one');
+  expect(manager.getTabIdentities().find(tab => tab.id === 'two')?.conversationId).toBe(operation === 'close' ? undefined : null);
 });

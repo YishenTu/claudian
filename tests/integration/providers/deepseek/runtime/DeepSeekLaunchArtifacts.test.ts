@@ -1,3 +1,4 @@
+// @test-ci {"native":true}
 import { execFile, spawn } from 'node:child_process';
 import { access, mkdir, mkdtemp, readdir, readFile, rename, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';

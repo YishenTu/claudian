@@ -1,3 +1,4 @@
+// @test-ci {"native":true,"inputs":["tests/fixtures/providers/grok/runtime/models-list.json","tests/fixtures/providers/grok/runtime/models-list-byok.json","tests/fixtures/providers/grok/runtime/GrokModelCatalogProcess.mjs"]}
 import { type ChildProcess, spawn as nodeSpawn } from 'node:child_process';
 import { once } from 'node:events';
 import * as path from 'node:path';

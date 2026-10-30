@@ -1,3 +1,4 @@
+// @test-ci {"native":true}
 import { DesktopVault } from '@test/helpers/core/DesktopVault';
 const actualModule0 = await import('node:fs');
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -9,7 +10,7 @@ import pair from '@test/fixtures/providers/codex/turn-stats-pair.json';
 import { capturedSelectionPrompt, capturedSelections } from '@test/helpers/capturedSelections';
 import { TEST_CODEX_MODEL } from '@test/helpers/codexModels';
 import { createProviderHostFixture } from '@test/helpers/providerRuntimeHost';
-import { CodexRuntimeHarness } from '@test/helpers/providers/codex/CodexRuntimeHarness';
+import { CodexNativeResponseError, CodexRuntimeHarness } from '@test/helpers/providers/codex/CodexRuntimeHarness';
 import { parseCodexSessionContent } from '@test/helpers/providers/codex/parseCodexSessionContent';
 
 import type {
@@ -29,29 +30,11 @@ import { createCodexPathMapper } from '@/providers/codex/runtime/CodexPathMapper
 const fixedRuntime = (runtime: CodexAppServerRuntime) => (): CodexAppServerRuntime => runtime;
 type MutableTestHost = ProviderHost & { settings: ClaudianSettings };
 
-const mockTransportRequest = vi.fn();
-const mockTransportNotify = vi.fn();
-const mockTransportOnNotification = vi.fn();
-const mockTransportOnServerRequest = vi.fn();
-const mockTransportDispose = vi.fn();
-const mockUnsubscribe = vi.fn().mockResolvedValue({});
-const mockTransportStart = vi.fn();
+const nativeRequest = vi.fn();
+const nativeUnsubscribe = vi.fn().mockResolvedValue({ status: 'unsubscribed' });
 const mockResolveLaunchSpec = vi.fn();
-
-vi.mock('@/providers/codex/runtime/CodexRPCTransport', async () => {
-  const actual = (await vi.importActual<typeof import('@/providers/codex/runtime/CodexRPCTransport')>('@/providers/codex/runtime/CodexRPCTransport'));
-  return {
-    ...actual,
-    CodexRPCTransport: vi.fn().mockImplementation(function () { return ({
-      request: (method: string, ...args: unknown[]) => method === 'plugin/reconcile' ? Promise.resolve({}) : method === 'thread/unsubscribe' ? mockUnsubscribe(...args) : mockTransportRequest(method, ...(args[1] === 0 ? args.slice(0, 1) : args)),
-      notify: mockTransportNotify,
-      onNotification: mockTransportOnNotification,
-      onServerRequest: mockTransportOnServerRequest,
-      dispose: mockTransportDispose,
-      start: mockTransportStart,
-    }); }),
-  };
-});
+let transportDispose: MockInstance;
+let transportStart: MockInstance;
 
 const mockProcessStart = vi.fn();
 const mockProcessShutdown = vi.fn().mockResolvedValue(undefined);
@@ -79,7 +62,7 @@ import type { MockInstance } from 'vitest';
 
 import { CodexExecutionBackend } from '@/providers/codex/execution/CodexExecutionBackend';
 import { CodexAppServerRuntime } from '@/providers/codex/runtime/CodexAppServerRuntime';
-import { CodexRPCResponseError } from '@/providers/codex/runtime/CodexRPCTransport';
+import { CodexRPCTransport } from '@/providers/codex/runtime/CodexRPCTransport';
 
 
 const runtimes: CodexAppServerRuntime[] = [];
@@ -92,16 +75,11 @@ function createBackend(plugin: ProviderHost): CodexExecutionBackend {
     fixedRuntime(runtime),
   );
 }
-afterEach(async () => { await Promise.all(runtimes.splice(0).map(runtime => runtime.dispose())); });
-
-type NotificationHandler = (params: unknown) => void;
-type ServerRequestHandler = (
-  requestId: string | number,
-  params: unknown,
-) => Promise<unknown>;
-
-let notificationHandlers: Map<string, NotificationHandler>;
-let serverRequestHandlers: Map<string, ServerRequestHandler>;
+afterEach(async () => {
+  await Promise.all(runtimes.splice(0).map(runtime => runtime.dispose()));
+  vi.restoreAllMocks();
+  vi.useRealTimers();
+});
 
 interface Deferred<T> {
   readonly promise: Promise<T>;
@@ -119,30 +97,8 @@ function createDeferred<T>(): Deferred<T> {
   return { promise, reject, resolve };
 }
 
-async function waitForCondition(condition: () => boolean): Promise<void> {
-  for (let attempt = 0; attempt < 100 && !condition(); attempt += 1) {
-    await Promise.resolve();
-  }
-  expect(condition()).toBe(true);
-}
-
-function captureHandlers(): void {
-  notificationHandlers = new Map();
-  serverRequestHandlers = new Map();
-  mockTransportOnNotification.mockImplementation(
-    (method: string, handler: NotificationHandler) => {
-      notificationHandlers.set(method, handler);
-    },
-  );
-  mockTransportOnServerRequest.mockImplementation(
-    (method: string, handler: ServerRequestHandler) => {
-      serverRequestHandlers.set(method, handler);
-    },
-  );
-}
-
 function emitNotification(method: string, params: unknown): void {
-  notificationHandlers.get(method)?.(params);
+  native.processes.at(-1)!.notify(method, params);
 }
 
 // Policies the app server derives from a config.toml with sandbox_workspace_write overrides.
@@ -329,12 +285,6 @@ function expectPendingForkOwnershipEvent(
   ]));
 }
 
-async function flushMicrotasks(iterations = 10): Promise<void> {
-  for (let index = 0; index < iterations; index += 1) {
-    await Promise.resolve();
-  }
-}
-
 function createRequest(
   signal: AbortSignal = new AbortController().signal,
   overrides: Partial<ProviderExecutionRequest> = {},
@@ -356,10 +306,12 @@ function createRequest(
 
 async function collectEvents(
   events: AsyncIterable<ProviderExecutionEvent>,
+  observe?: (event: ProviderExecutionEvent) => void,
 ): Promise<ProviderExecutionEvent[]> {
   const result: ProviderExecutionEvent[] = [];
   for await (const event of events) {
     result.push(event);
+    observe?.(event);
   }
   return result;
 }
@@ -395,12 +347,12 @@ function completeTurn(threadId: string, turnId: string): void {
   });
 }
 
-function configureSteerTransport(
+function configureNativeTurn(
   threadId: string,
   turnId: string,
   steer: () => unknown | Promise<unknown>,
 ): void {
-  mockTransportRequest.mockImplementation(async (method: string) => {
+  nativeRequest.mockImplementation(async (method: string) => {
     if (method === 'initialize') {
       return {
         userAgent: 'test',
@@ -418,16 +370,33 @@ function configureSteerTransport(
 }
 
 async function createActiveSteerSession() {
-  const session = createBackend(await createPlugin())
-    .createSession(createSessionConfig());
+  const session = createBackend(await createPlugin()).createSession(createSessionConfig());
   const run = session.execute(createRequest());
-  await waitForCondition(() => mockTransportRequest.mock.calls.some(
-    ([method]) => method === 'turn/start',
-  ));
-  if (!isSteerableExecutionSession(session)) {
-    throw new Error('Codex session should be steerable');
-  }
-  return { run, session };
+  const started = createDeferred<ProviderExecutionEvent>();
+  const runEvents = collectEvents(run.events, event => {
+    if (event.type === 'turn_started' || event.type === 'execution_error') started.resolve(event);
+  });
+  expect(await started.promise).toMatchObject({ type: 'turn_started', accepted: true });
+  if (!isSteerableExecutionSession(session)) throw new Error('Codex session should be steerable');
+  return { run, session, runEvents };
+}
+
+/** A real response confirms that prior native notifications crossed the client transport. */
+async function nativeRoundTrip(): Promise<void> {
+  const lease = await runtimes.at(-1)!.acquire({ readiness: 'initialized' });
+  try { await lease.connection.transport.request('model/list', {}); }
+  finally { await lease.release(); }
+}
+
+function waitForSessionEvent(
+  session: ReturnType<CodexExecutionBackend['createSession']>,
+  predicate: (event: ProviderSessionEvent) => boolean,
+): Promise<ProviderSessionEvent> {
+  return new Promise(resolve => {
+    const off = session.onEvent(event => {
+      if (predicate(event)) { off(); resolve(event); }
+    });
+  });
 }
 
 describe('CodexExecutionBackend', () => {
@@ -442,7 +411,7 @@ describe('CodexExecutionBackend', () => {
   ) => {
     let turn = 0;
     let nativeSandbox: unknown;
-    mockTransportRequest.mockImplementation(async (method: string, params: Record<string, unknown>) => {
+    nativeRequest.mockImplementation(async (method: string, params: Record<string, unknown>) => {
       if (method === 'initialize') return {
         userAgent: 'test', codexHome: '/tmp/.codex', platformFamily: 'unix', platformOs: 'macos',
       };
@@ -472,22 +441,22 @@ describe('CodexExecutionBackend', () => {
       }).events);
     }
     for (const method of ['thread/start', 'thread/resume']) {
-      expect(mockTransportRequest).toHaveBeenCalledWith(method, expect.objectContaining({
+      expect(nativeRequest).toHaveBeenCalledWith(method, expect.objectContaining({
         sandbox, approvalPolicy, approvalsReviewer,
       }));
     }
-    const turns = mockTransportRequest.mock.calls.filter(([method]) => method === 'turn/start');
+    const turns = nativeRequest.mock.calls.filter(([method]) => method === 'turn/start');
     expect(turns).toHaveLength(2);
     for (const [, params] of turns) {
       expect(params).toEqual(expect.objectContaining({ approvalPolicy, approvalsReviewer }));
       expect(params.sandboxPolicy).toEqual(sandboxPolicy);
     }
-    expect(mockTransportRequest).not.toHaveBeenCalledWith('config/read', expect.anything());
+    expect(nativeRequest).not.toHaveBeenCalledWith('config/read', expect.anything());
     await session.dispose();
   });
 
   it.each([undefined, 'user'])('does not run auto-review when the server returns reviewer %s', async reviewer => {
-    mockTransportRequest.mockImplementation(async (method: string) => {
+    nativeRequest.mockImplementation(async (method: string) => {
       if (method === 'initialize') return {
         userAgent: 'test', codexHome: '/tmp/.codex', platformFamily: 'unix', platformOs: 'macos',
       };
@@ -504,20 +473,20 @@ describe('CodexExecutionBackend', () => {
       ...request, configuration: { ...request.configuration, permissionMode: 'auto-review' },
     }).events);
     expect(events).toContainEqual(expect.objectContaining({ type: 'execution_error' }));
-    expect(mockTransportRequest.mock.calls.some(([method]) => method === 'turn/start')).toBe(false);
+    expect(nativeRequest.mock.calls.some(([method]) => method === 'turn/start')).toBe(false);
     await session.dispose();
   });
 
   it.each([false, true])('switches a warm thread to auto-review and surfaces native rejection (reject: %s)', async reject => {
     let turn = 0;
-    mockTransportRequest.mockImplementation(async (method: string, params: Record<string, unknown>) => {
+    nativeRequest.mockImplementation(async (method: string, params: Record<string, unknown>) => {
       if (method === 'initialize') return {
         userAgent: 'test', codexHome: '/tmp/.codex', platformFamily: 'unix', platformOs: 'macos',
       };
       if (method === 'thread/start') return createThreadResult('thread-review-switch');
       if (method === 'turn/start') {
         if (reject && params.approvalsReviewer === 'auto_review') {
-          throw new CodexRPCResponseError({ code: -32602, message: 'Unsupported approvalsReviewer: auto_review' });
+          throw new CodexNativeResponseError({ code: -32602, message: 'Unsupported approvalsReviewer: auto_review' });
         }
         const turnId = `turn-review-switch-${++turn}`;
         queueMicrotask(() => completeTurn('thread-review-switch', turnId));
@@ -531,8 +500,8 @@ describe('CodexExecutionBackend', () => {
     const events = await collectEvents(session.execute({
       ...request, configuration: { ...request.configuration, permissionMode: 'auto-review' },
     }).events);
-    expect(mockTransportRequest.mock.calls.filter(([method]) => method === 'thread/start')).toHaveLength(1);
-    const turns = mockTransportRequest.mock.calls.filter(([method]) => method === 'turn/start');
+    expect(nativeRequest.mock.calls.filter(([method]) => method === 'thread/start')).toHaveLength(1);
+    const turns = nativeRequest.mock.calls.filter(([method]) => method === 'turn/start');
     expect(turns.map(([, params]) => params.approvalsReviewer)).toEqual(['user', 'auto_review']);
     expect(turns[1][1]).toMatchObject({ approvalPolicy: 'on-request' });
     expect(turns[1][1]).not.toHaveProperty('sandboxPolicy');
@@ -551,7 +520,7 @@ describe('CodexExecutionBackend', () => {
     firstMode, firstSafeMode, nextMode, nextSafeMode, restoredPolicy, configReads,
   ) => {
     let turn = 0;
-    mockTransportRequest.mockImplementation(async (method: string, params: Record<string, unknown>) => {
+    nativeRequest.mockImplementation(async (method: string, params: Record<string, unknown>) => {
       if (method === 'initialize') return {
         userAgent: 'test', codexHome: '/tmp/.codex', platformFamily: 'unix', platformOs: 'macos',
       };
@@ -589,19 +558,20 @@ describe('CodexExecutionBackend', () => {
     await runWith(nextMode, nextSafeMode);
     await runWith(nextMode, nextSafeMode);
 
-    const turns = mockTransportRequest.mock.calls.filter(([method]) => method === 'turn/start');
+    const turns = nativeRequest.mock.calls.filter(([method]) => method === 'turn/start');
     expect(turns).toHaveLength(3);
     expect(turns[1][1].sandboxPolicy).toEqual(restoredPolicy);
     expect(turns[2][1]).not.toHaveProperty('sandboxPolicy');
-    expect(mockTransportRequest.mock.calls.filter(([method]) => method === 'config/read')
+    expect(nativeRequest.mock.calls.filter(([method]) => method === 'config/read')
       .map(([, params]) => params)).toEqual(configReads);
     await session.dispose();
   });
 
   it.each(['late', 'lost'])('does not trust the prior sandbox after an override response is %s', async outcome => {
+    if (outcome === 'lost') vi.useFakeTimers();
     const yoloResponse = createDeferred<unknown>();
     let turn = 0;
-    mockTransportRequest.mockImplementation(async (method: string) => {
+    nativeRequest.mockImplementation(async (method: string) => {
       if (method === 'initialize') return {
         userAgent: 'test', codexHome: '/tmp/.codex', platformFamily: 'unix', platformOs: 'macos',
       };
@@ -634,15 +604,16 @@ describe('CodexExecutionBackend', () => {
       await runWith('yolo');
     } else {
       const yoloRun = runWith('yolo');
-      yoloResponse.reject(new Error('turn/start acknowledgement lost'));
+      await native.waitForRequest('turn/start', 0, 2);
+      await vi.advanceTimersByTimeAsync(30_000);
       await yoloRun;
     }
     await runWith('normal');
     yoloResponse.resolve(createTurnResult('turn-late-override-2'));
-    await flushMicrotasks();
+    await nativeRoundTrip();
     await runWith('normal');
 
-    const turns = mockTransportRequest.mock.calls.filter(([method]) => method === 'turn/start');
+    const turns = nativeRequest.mock.calls.filter(([method]) => method === 'turn/start');
     expect(turns.map(([, params]) => params.sandboxPolicy)).toEqual([
       undefined,
       { type: 'dangerFullAccess' },
@@ -653,7 +624,7 @@ describe('CodexExecutionBackend', () => {
   });
 
   it('sends the configured workspace-write sandbox when a fork child ignores the resume mode', async () => {
-    mockTransportRequest.mockImplementation(async (method: string) => {
+    nativeRequest.mockImplementation(async (method: string) => {
       if (method === 'initialize') return {
         userAgent: 'test', codexHome: '/tmp/.codex', platformFamily: 'unix', platformOs: 'macos',
       };
@@ -676,17 +647,17 @@ describe('CodexExecutionBackend', () => {
     const session = createBackend(await createPlugin()).createSession(createForkSessionConfig());
     await collectEvents(session.execute(createRequest()).events);
 
-    expect(mockTransportRequest).toHaveBeenCalledWith('thread/resume', expect.objectContaining({
+    expect(nativeRequest).toHaveBeenCalledWith('thread/resume', expect.objectContaining({
       threadId: 'thread-fork-sandbox', sandbox: 'workspace-write',
     }));
-    expect(mockTransportRequest).toHaveBeenCalledWith('turn/start', expect.objectContaining({
+    expect(nativeRequest).toHaveBeenCalledWith('turn/start', expect.objectContaining({
       sandboxPolicy: CONFIGURED_WORKSPACE_WRITE_SANDBOX,
     }));
     await session.dispose();
   });
 
   it('falls back to saved Codex preferences, then current selections, for unset request fields', async () => {
-    mockTransportRequest.mockImplementation(async (method: string) => {
+    nativeRequest.mockImplementation(async (method: string) => {
       if (method === 'initialize') return {
         userAgent: 'test', codexHome: '/tmp/.codex', platformFamily: 'unix', platformOs: 'macos',
       };
@@ -707,7 +678,7 @@ describe('CodexExecutionBackend', () => {
       configuration: { systemInstructions: { kind: 'explicit', instructions: 'Be concise.' } },
     })).events);
 
-    expect(mockTransportRequest).toHaveBeenCalledWith('turn/start', expect.objectContaining({
+    expect(nativeRequest).toHaveBeenCalledWith('turn/start', expect.objectContaining({
       model: TEST_CODEX_MODEL, effort: 'low', serviceTier: 'default', approvalPolicy: 'never',
     }));
     await session.dispose();
@@ -726,9 +697,19 @@ describe('CodexExecutionBackend', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    captureHandlers();
-    mockUnsubscribe.mockReset().mockResolvedValue({});
+    nativeUnsubscribe.mockReset().mockResolvedValue({ status: 'unsubscribed' });
+    nativeRequest.mockReset();
+    transportDispose = vi.spyOn(CodexRPCTransport.prototype, 'dispose');
+    transportStart = vi.spyOn(CodexRPCTransport.prototype, 'start');
     native.reset();
+    native.autoReconcile = true;
+    native.requestOverride = (process, request) => {
+      if (request.method === 'plugin/reconcile' || request.method === 'model/list') return false;
+      process.respondWhen(request.id, (async () => request.method === 'thread/unsubscribe'
+        ? nativeUnsubscribe(request.params)
+        : nativeRequest(request.method, request.params))());
+      return true;
+    };
     mockResolveLaunchSpec.mockResolvedValue({
       target: {
         method: 'host-native',
@@ -755,7 +736,7 @@ describe('CodexExecutionBackend', () => {
   });
 
   it('keeps parent output flowing after a child messages its parent', async () => {
-    configureSteerTransport('parent', 'parent-turn', () => ({}));
+    configureNativeTurn('parent', 'parent-turn', () => ({}));
     const session = createBackend(await createPlugin()).createSession(createSessionConfig());
     const updates: ProviderSessionEvent[] = [];
     session.onEvent(event => updates.push(event));
@@ -763,7 +744,7 @@ describe('CodexExecutionBackend', () => {
     try {
       const run = session.execute(createRequest());
       const output = collectEvents(run.events);
-      await waitForCondition(() => mockTransportRequest.mock.calls.some(([method]) => method === 'turn/start'));
+      await native.waitForRequest('turn/start');
       emitNotification('item/completed', { threadId: 'parent', turnId: 'parent-turn',
         item: { type: 'subAgentActivity', id: 'spawn', kind: 'started', agentThreadId: 'child', agentPath: '/root/review' } });
       emitNotification('turn/started', { threadId: 'child', turn: { id: 'child-turn', status: 'inProgress', items: [], error: null } });
@@ -788,13 +769,13 @@ describe('CodexExecutionBackend', () => {
   });
 
   it('keeps a sibling message from replacing the receiving subagent invocation', async () => {
-    configureSteerTransport('parent', 'parent-turn', () => ({}));
+    configureNativeTurn('parent', 'parent-turn', () => ({}));
     const session = createBackend(await createPlugin()).createSession(createSessionConfig());
     const updates: ProviderSessionEvent[] = [];
     session.onEvent(event => updates.push(event));
     try {
       session.execute(createRequest());
-      await waitForCondition(() => mockTransportRequest.mock.calls.some(([method]) => method === 'turn/start'));
+      await native.waitForRequest('turn/start');
       for (const name of ['a', 'b']) {
         emitNotification('item/completed', { threadId: 'parent', turnId: 'parent-turn',
           item: { type: 'subAgentActivity', id: `spawn-${name}`, kind: 'started', agentThreadId: name, agentPath: `/root/${name}` } });
@@ -805,6 +786,7 @@ describe('CodexExecutionBackend', () => {
       emitNotification('item/completed', { threadId: 'a', turnId: 'a-turn',
         item: { type: 'subAgentActivity', id: 'a-message-b', kind: 'interacted', agentThreadId: 'b', agentPath: '/root/b' } });
       emitNotification('turn/started', { threadId: 'b', turn: { id: 'b-turn-2', status: 'inProgress', items: [], error: null } });
+      await nativeRoundTrip();
       const latestB = updates.filter(event => (event as any).subagent?.agentId === 'b').at(-1) as any;
       expect(latestB.subagent).toEqual(expect.objectContaining({ id: 'spawn-b', status: 'running' }));
     } finally {
@@ -813,10 +795,10 @@ describe('CodexExecutionBackend', () => {
   });
 
   it('publishes native subagent completion after the parent settles and through later follow-ups', async () => {
-    configureSteerTransport('parent', 'parent-turn', () => ({}));
-    const baseRequest = mockTransportRequest.getMockImplementation()!;
+    configureNativeTurn('parent', 'parent-turn', () => ({}));
+    const baseRequest = nativeRequest.getMockImplementation()!;
     let answer = 'Ready.';
-    mockTransportRequest.mockImplementation((method: string, ...args: unknown[]) => {
+    nativeRequest.mockImplementation((method: string, ...args: unknown[]) => {
       if (method === 'thread/read') return Promise.resolve({ thread: {
         ...createThreadResult('child', [{ id: 'child-turn', items: [
           { type: 'agentMessage', id: 'answer', phase: 'final_answer', text: answer },
@@ -831,7 +813,7 @@ describe('CodexExecutionBackend', () => {
     try {
       const run = session.execute(createRequest());
       const output = collectEvents(run.events);
-      await waitForCondition(() => mockTransportRequest.mock.calls.some(([method]) => method === 'turn/start'));
+      await native.waitForRequest('turn/start');
       const activity = (id: string, kind: string) => emitNotification('item/completed', {
         threadId: 'parent', turnId: 'parent-turn',
         item: { type: 'subAgentActivity', id, kind, agentThreadId: 'child', agentPath: '/root/ui_test_helper' },
@@ -843,16 +825,19 @@ describe('CodexExecutionBackend', () => {
       emitNotification('rawResponseItem/completed', { threadId: 'child', turnId: 'child-turn', item: {
         type: 'custom_tool_call', call_id: 'clock-call', name: 'exec', input: 'const t = await tools.clock__curr_time({}); text(t.current_time);',
       } });
+      await nativeRoundTrip();
       expect((updates.at(-1) as any).subagent.toolCalls).toEqual([expect.objectContaining({ id: 'clock-call', status: 'running' })]);
       emitNotification('rawResponseItem/completed', { threadId: 'child', turnId: 'child-turn', item: {
         type: 'custom_tool_call_output', call_id: 'clock-call', output: [{ type: 'input_text', text: 'Clock result' }],
       } });
+      await nativeRoundTrip();
       expect((updates.at(-1) as any).subagent.toolCalls).toEqual([expect.objectContaining({ id: 'clock-call', status: 'completed', result: 'Clock result' })]);
       // A later canonical projection must update the already visible raw row.
       emitNotification('item/completed', { threadId: 'child', turnId: 'child-turn', item: {
         type: 'dynamicToolCall', id: 'canonical-clock', tool: 'clock__curr_time', arguments: {},
         status: 'completed', success: true, contentItems: [{ type: 'inputText', text: 'Clock result' }],
       } });
+      await nativeRoundTrip();
       expect((updates.at(-1) as any).subagent.toolCalls).toEqual([expect.objectContaining({ id: 'clock-call', status: 'completed', result: 'Clock result' })]);
       emitNotification('rawResponseItem/completed', { threadId: 'child', turnId: 'child-turn', item: {
         type: 'function_call', call_id: 'command-call', name: 'exec_command', arguments: JSON.stringify({ cmd: 'echo child' }),
@@ -865,23 +850,27 @@ describe('CodexExecutionBackend', () => {
         type: 'function_call_output', call_id: 'command-call', output: 'child',
       } });
       emitNotification('turn/completed', { threadId: 'child', turn: { id: 'child-turn', status: 'completed', items: [], error: null } });
+      await nativeRoundTrip();
       expect(updates.at(-1)).toEqual(expect.objectContaining({ subagent: expect.objectContaining({
         toolCalls: expect.arrayContaining([
           expect.objectContaining({ id: 'clock-call', status: 'completed', result: expect.stringContaining('Clock result') }),
           expect.objectContaining({ id: 'command-call', status: 'completed', result: 'child' }),
         ]),
       }) }));
+      await nativeRoundTrip();
       expect((updates.at(-1) as any).subagent.toolCalls).toHaveLength(2);
+      const firstResult = waitForSessionEvent(session, event => event.type === 'subagent_updated' && event.subagent.result === 'Ready.');
       activity('child-completed-1', 'completed');
-      await waitForCondition(() => updates.some(event => (event as any).subagent?.result === 'Ready.'));
+      await firstResult;
       expect(updates).toContainEqual(expect.objectContaining({
         type: 'subagent_updated', scope: expect.objectContaining({ kind: 'session' }),
         subagent: expect.objectContaining({ id: 'spawn', agentId: 'child', status: 'completed', result: 'Ready.' }),
       }));
       answer = 'Two.';
       activity('followup', 'interacted');
+      const secondResult = waitForSessionEvent(session, event => event.type === 'subagent_updated' && event.subagent.result === 'Two.');
       activity('child-completed-2', 'completed');
-      await waitForCondition(() => updates.some(event => (event as any).subagent?.result === 'Two.'));
+      await secondResult;
       expect(updates.at(-1)).toEqual(expect.objectContaining({ subagent: expect.objectContaining({ id: 'spawn', status: 'completed', result: 'Two.' }) }));
     } finally { await session.dispose(); }
   });
@@ -890,27 +879,27 @@ describe('CodexExecutionBackend', () => {
     'sends image bytes through a temporary file and removes it on %s',
     async outcome => {
       const startResult = createDeferred<ReturnType<typeof createTurnResult>>();
-      configureSteerTransport('thread-image', 'turn-image', () => ({}));
-      const transport = mockTransportRequest.getMockImplementation()!;
-      mockTransportRequest.mockImplementation((method: string, ...args: unknown[]) => (
+      configureNativeTurn('thread-image', 'turn-image', () => ({}));
+      const transport = nativeRequest.getMockImplementation()!;
+      nativeRequest.mockImplementation((method: string, ...args: unknown[]) => (
         method === 'turn/start' ? startResult.promise : transport(method, ...args)
       ));
       const session = createBackend(await createPlugin()).createSession(createSessionConfig());
       try {
         const run = session.execute(createImageRequest());
         const events = collectEvents(run.events);
-        await waitForCondition(() => mockTransportRequest.mock.calls.some(([method]) => method === 'turn/start'));
-        const input = mockTransportRequest.mock.calls.find(([method]) => method === 'turn/start')![1].input;
+        await native.waitForRequest('turn/start');
+        const input = nativeRequest.mock.calls.find(([method]) => method === 'turn/start')![1].input;
         expect(input).toEqual([{ type: 'localImage', path: expect.any(String) }]);
         const filePath = input[0].path;
         expect(readFileSync(filePath)).toEqual(Buffer.from('hello'));
 
         if (outcome === 'failure') {
-          startResult.reject(new CodexRPCResponseError({ code: -32602, message: 'Native turn rejected' }));
+          startResult.reject(new CodexNativeResponseError({ code: -32602, message: 'Native turn rejected' }));
         } else {
           startResult.resolve(createTurnResult('turn-image'));
         }
-        await flushMicrotasks();
+        await nativeRoundTrip();
         expect(existsSync(filePath)).toBe(outcome !== 'failure');
         if (outcome === 'completion') completeTurn('thread-image', 'turn-image');
         else if (outcome === 'cancellation') run.cancel();
@@ -918,7 +907,7 @@ describe('CodexExecutionBackend', () => {
         expect((await events).at(-1)?.type).toBe(
           outcome === 'completion' ? 'turn_completed' : outcome === 'failure' ? 'execution_error' : 'cancelled',
         );
-        await waitForCondition(() => !existsSync(dirname(filePath)));
+        await nativeRoundTrip();
         expect(existsSync(dirname(filePath))).toBe(false);
       } finally {
         await session.dispose();
@@ -927,7 +916,7 @@ describe('CodexExecutionBackend', () => {
   );
 
   it('submits an image with a filesystem-limit basename and cleans up its bytes', async () => {
-    configureSteerTransport('thread-image', 'turn-image', () => ({}));
+    configureNativeTurn('thread-image', 'turn-image', () => ({}));
     const session = createBackend(await createPlugin()).createSession(createSessionConfig());
     const request = createImageRequest();
     const image = request.input.find(block => block.type === 'image')!;
@@ -937,10 +926,9 @@ describe('CodexExecutionBackend', () => {
     let filePath: string | undefined;
     try {
       const run = session.execute(request);
-      let settled = false;
-      const events = collectEvents(run.events).then(result => { settled = true; return result; });
-      await waitForCondition(() => mockTransportRequest.mock.calls.some(([method]) => method === 'turn/start') || settled);
-      const nativeInput = mockTransportRequest.mock.calls.find(([method]) => method === 'turn/start')?.[1].input;
+      const events = collectEvents(run.events);
+      await native.waitForRequest('turn/start');
+      const nativeInput = nativeRequest.mock.calls.find(([method]) => method === 'turn/start')?.[1].input;
       expect(nativeInput).toEqual([{ type: 'localImage', path: expect.any(String) }]);
       filePath = nativeInput[0].path;
       expect(Buffer.byteLength(basename(filePath!))).toBeLessThanOrEqual(255);
@@ -948,7 +936,8 @@ describe('CodexExecutionBackend', () => {
       expect(readFileSync(filePath!)).toEqual(Buffer.from('hello'));
       completeTurn('thread-image', 'turn-image');
       expect((await events).at(-1)?.type).toBe('turn_completed');
-      await waitForCondition(() => !existsSync(dirname(filePath!)));
+      await nativeRoundTrip();
+      expect(existsSync(dirname(filePath!))).toBe(false);
     } finally {
       await session.dispose();
     }
@@ -959,46 +948,46 @@ describe('CodexExecutionBackend', () => {
       const launch = await mockResolveLaunchSpec();
       mockResolveLaunchSpec.mockResolvedValue({ ...launch, pathMapper: createCodexPathMapper({ method: 'wsl', platformFamily: 'unix', platformOs: 'linux', distroName: 'Ubuntu' }) });
     }
-    configureSteerTransport('thread-reference', 'turn-reference', () => ({ turnId: 'turn-reference' }));
-    const { run, session } = await createActiveSteerSession();
+    configureNativeTurn('thread-reference', 'turn-reference', () => ({ turnId: 'turn-reference' }));
+    const { run, session, runEvents } = await createActiveSteerSession();
     try {
       await expect(session.steer(createRequest(new AbortController().signal, {
         input: [{ type: 'text', text: 'Use @"Review"' }],
         context: { ...capturedSelections, sessionReferences: [{ id: 'conv-1-ref', title: 'Review & fix', providerId: 'codex', updatedAt: 'updated' }] },
       }))).resolves.toBe(true);
-      const input = mockTransportRequest.mock.calls.find(([method]) => method === 'turn/steer')![1].input;
+      const input = nativeRequest.mock.calls.find(([method]) => method === 'turn/steer')![1].input;
       expect(input).toEqual([{ type: 'text', text_elements: [], text: 'Use @"Review"\n\n' + capturedSelectionPrompt + '\n\n<context_sessions>\n<context_session title="Review &amp; fix" id="conv-1-ref" provider="codex" updated="updated" />\n</context_sessions>' }]);
-    } finally { run.cancel(); await collectEvents(run.events); await session.dispose(); }
+    } finally { run.cancel(); await runEvents; await session.dispose(); }
   });
 
   it.each([true, false])('retains steering image bytes until native acknowledgement (accepted: %s)', async accepted => {
     const steerResult = createDeferred<{ turnId: string }>();
-    configureSteerTransport('thread-image', 'turn-image', () => steerResult.promise);
-    const { run, session } = await createActiveSteerSession();
+    configureNativeTurn('thread-image', 'turn-image', () => steerResult.promise);
+    const { run, session, runEvents } = await createActiveSteerSession();
     try {
       const steering = session.steer(createImageRequest());
-      await waitForCondition(() => mockTransportRequest.mock.calls.some(([method]) => method === 'turn/steer'));
-      const input = mockTransportRequest.mock.calls.find(([method]) => method === 'turn/steer')![1].input;
+      await native.waitForRequest('turn/steer');
+      const input = nativeRequest.mock.calls.find(([method]) => method === 'turn/steer')![1].input;
       expect(input).toEqual([{ type: 'localImage', path: expect.any(String) }]);
       const filePath = input[0].path;
       expect(readFileSync(filePath)).toEqual(Buffer.from('hello'));
       if (accepted) steerResult.resolve({ turnId: 'turn-image' });
-      else steerResult.reject(new CodexRPCResponseError({ code: -32602, message: 'Rejected image' }));
+      else steerResult.reject(new CodexNativeResponseError({ code: -32602, message: 'Rejected image' }));
       await expect(steering).resolves.toBe(accepted);
       expect(existsSync(dirname(filePath))).toBe(false);
     } finally {
       run.cancel();
-      await collectEvents(run.events);
+      await runEvents;
       await session.dispose();
     }
   });
 
   it('matches live TurnStats to the rollout from a captured native Codex turn', async () => {
-    configureSteerTransport('thread', 'turn', () => ({}));
-    const { session, run } = await createActiveSteerSession();
+    configureNativeTurn('thread', 'turn', () => ({}));
+    const { session, runEvents } = await createActiveSteerSession();
     try {
       for (const notification of pair.notifications) emitNotification(notification.method, notification.params);
-      const completion = (await collectEvents(run.events)).at(-1);
+      const completion = (await runEvents).at(-1);
       const replay = parseCodexSessionContent(pair.rollout.map(record => JSON.stringify(record)).join('\n'));
       expect(completion).toMatchObject({ type: 'turn_completed', turnStats: { outputTokens: 5, durationMs: 4862 } });
       expect(replay.at(-1)?.turnStats).toEqual({ outputTokens: 5, durationMs: 4862 });
@@ -1009,8 +998,8 @@ describe('CodexExecutionBackend', () => {
   });
 
   it('counts raw native responses once and excludes child-thread output', async () => {
-    configureSteerTransport('thread', 'turn', () => ({}));
-    const { session, run } = await createActiveSteerSession();
+    configureNativeTurn('thread', 'turn', () => ({}));
+    const { session, runEvents } = await createActiveSteerSession();
     try {
       for (const [threadId, responseId, outputTokens] of [
         ['thread', 'response1', 100], ['thread', 'response1', 100],
@@ -1021,7 +1010,7 @@ describe('CodexExecutionBackend', () => {
       emitNotification('turn/completed', { threadId: 'thread', turn: {
         id: 'turn', items: [], status: 'completed', error: null, durationMs: 2500,
       } });
-      expect((await collectEvents(run.events)).at(-1)).toMatchObject({ type: 'turn_completed',
+      expect((await runEvents).at(-1)).toMatchObject({ type: 'turn_completed',
         turnStats: { outputTokens: 125, durationMs: 2500 } });
     } finally { await session.dispose(); }
   });
@@ -1030,7 +1019,7 @@ describe('CodexExecutionBackend', () => {
     vi.useFakeTimers();
     const threadId = 'thread-missed-completion';
     const turnId = 'turn-missed-completion';
-    mockTransportRequest.mockImplementation(async (method: string) => {
+    nativeRequest.mockImplementation(async (method: string) => {
       if (method === 'initialize') {
         return {
           userAgent: 'test',
@@ -1065,19 +1054,16 @@ describe('CodexExecutionBackend', () => {
     const eventsPromise = collectEvents(run.events);
 
     try {
-      await waitForCondition(() => mockTransportRequest.mock.calls.some(
-        ([method]) => method === 'turn/start',
-      ));
+      await native.waitForRequest('turn/start');
       emitNotification('thread/status/changed', {
         threadId,
         status: { type: 'idle' },
       });
       await vi.advanceTimersByTimeAsync(5_000);
 
-      expect(mockTransportRequest).toHaveBeenCalledWith(
+      expect(nativeRequest).toHaveBeenCalledWith(
         'thread/read',
         { threadId, includeTurns: true },
-        expect.any(Number),
       );
       const events = await eventsPromise;
       expect(events).toEqual(expect.arrayContaining([
@@ -1104,7 +1090,7 @@ describe('CodexExecutionBackend', () => {
     const threadId = 'thread-idle-before-ack';
     const turnId = 'turn-idle-before-ack';
     const turnStart = createDeferred<ReturnType<typeof createTurnResult>>();
-    mockTransportRequest.mockImplementation(async (method: string) => {
+    nativeRequest.mockImplementation(async (method: string) => {
       if (method === 'initialize') {
         return {
           userAgent: 'test',
@@ -1137,21 +1123,18 @@ describe('CodexExecutionBackend', () => {
     const eventsPromise = collectEvents(run.events);
 
     try {
-      await waitForCondition(() => mockTransportRequest.mock.calls.some(
-        ([method]) => method === 'turn/start',
-      ));
+      await native.waitForRequest('turn/start');
       emitNotification('thread/status/changed', {
         threadId,
         status: { type: 'idle' },
       });
       turnStart.resolve(createTurnResult(turnId));
-      await flushMicrotasks();
+      await nativeRoundTrip();
       await vi.advanceTimersByTimeAsync(5_000);
 
-      expect(mockTransportRequest).toHaveBeenCalledWith(
+      expect(nativeRequest).toHaveBeenCalledWith(
         'thread/read',
         { threadId, includeTurns: true },
-        expect.any(Number),
       );
       expect((await eventsPromise).at(-1)).toMatchObject({
         nativeCheckpointId: turnId,
@@ -1177,7 +1160,7 @@ describe('CodexExecutionBackend', () => {
       phase: 'final',
       memoryCitation: null,
     };
-    mockTransportRequest.mockImplementation(async (method: string) => {
+    nativeRequest.mockImplementation(async (method: string) => {
       if (method === 'initialize') {
         return {
           userAgent: 'test',
@@ -1213,9 +1196,7 @@ describe('CodexExecutionBackend', () => {
     const eventsPromise = collectEvents(run.events);
 
     try {
-      await waitForCondition(() => mockTransportRequest.mock.calls.some(
-        ([method]) => method === 'turn/start',
-      ));
+      await native.waitForRequest('turn/start');
       emitNotification('item/started', {
         threadId,
         turnId,
@@ -1259,7 +1240,7 @@ describe('CodexExecutionBackend', () => {
     const turnId = 'turn-repeated-idle';
     const threadRead = createDeferred<ReturnType<typeof createThreadResult>>();
     let readAttempt = 0;
-    mockTransportRequest.mockImplementation(async (method: string) => {
+    nativeRequest.mockImplementation(async (method: string) => {
       if (method === 'initialize') {
         return {
           userAgent: 'test',
@@ -1284,9 +1265,7 @@ describe('CodexExecutionBackend', () => {
     const eventsPromise = collectEvents(run.events);
 
     try {
-      await waitForCondition(() => mockTransportRequest.mock.calls.some(
-        ([method]) => method === 'turn/start',
-      ));
+      await native.waitForRequest('turn/start');
       emitNotification('thread/status/changed', {
         threadId,
         status: { type: 'idle' },
@@ -1300,7 +1279,7 @@ describe('CodexExecutionBackend', () => {
 
       expect(readAttempt).toBe(1);
       threadRead.resolve(createThreadResult(threadId, [{ id: turnId }]));
-      await flushMicrotasks();
+      await nativeRoundTrip();
       expect((await eventsPromise).at(-1)).toMatchObject({
         nativeCheckpointId: turnId,
         type: 'turn_completed',
@@ -1319,7 +1298,7 @@ describe('CodexExecutionBackend', () => {
     const threadId = 'thread-recovery-failure';
     const turnId = 'turn-recovery-failure';
     let readAttempt = 0;
-    mockTransportRequest.mockImplementation(async (method: string) => {
+    nativeRequest.mockImplementation(async (method: string) => {
       if (method === 'initialize') {
         return {
           userAgent: 'test',
@@ -1344,9 +1323,7 @@ describe('CodexExecutionBackend', () => {
     const eventsPromise = collectEvents(run.events);
 
     try {
-      await waitForCondition(() => mockTransportRequest.mock.calls.some(
-        ([method]) => method === 'turn/start',
-      ));
+      await native.waitForRequest('turn/start');
       emitNotification('thread/status/changed', {
         threadId,
         status: { type: 'idle' },
@@ -1372,7 +1349,7 @@ describe('CodexExecutionBackend', () => {
     vi.useFakeTimers();
     const threadId = 'thread-normal-completion';
     const turnId = 'turn-normal-completion';
-    mockTransportRequest.mockImplementation(async (method: string) => {
+    nativeRequest.mockImplementation(async (method: string) => {
       if (method === 'initialize') {
         return {
           userAgent: 'test',
@@ -1392,9 +1369,7 @@ describe('CodexExecutionBackend', () => {
     const eventsPromise = collectEvents(run.events);
 
     try {
-      await waitForCondition(() => mockTransportRequest.mock.calls.some(
-        ([method]) => method === 'turn/start',
-      ));
+      await native.waitForRequest('turn/start');
       emitNotification('thread/status/changed', {
         threadId,
         status: { type: 'idle' },
@@ -1402,9 +1377,8 @@ describe('CodexExecutionBackend', () => {
       completeTurn(threadId, turnId);
       await vi.advanceTimersByTimeAsync(5_000);
 
-      expect(mockTransportRequest).not.toHaveBeenCalledWith(
+      expect(nativeRequest).not.toHaveBeenCalledWith(
         'thread/read',
-        expect.anything(),
         expect.anything(),
       );
       expect((await eventsPromise).at(-1)).toMatchObject({
@@ -1424,7 +1398,7 @@ describe('CodexExecutionBackend', () => {
       const launch = await mockResolveLaunchSpec();
       mockResolveLaunchSpec.mockResolvedValue({ ...launch, pathMapper: createCodexPathMapper({ method: 'wsl', platformFamily: 'unix', platformOs: 'linux', distroName: 'Ubuntu' }) });
     }
-    mockTransportRequest.mockImplementation(async (method: string) => {
+    nativeRequest.mockImplementation(async (method: string) => {
       if (method === 'initialize') {
         return {
           userAgent: 'test',
@@ -1469,7 +1443,7 @@ describe('CodexExecutionBackend', () => {
       },
     )).events);
 
-    const turnParams = mockTransportRequest.mock.calls
+    const turnParams = nativeRequest.mock.calls
       .find(([method]) => method === 'turn/start')?.[1] as {
         input: Array<{ text?: string; type: string }>;
       };
@@ -1499,7 +1473,7 @@ describe('CodexExecutionBackend', () => {
   });
 
   it('encodes path-only Linked content without changing the Vault-root thread CWD', async () => {
-    mockTransportRequest.mockImplementation(async (method: string) => {
+    nativeRequest.mockImplementation(async (method: string) => {
       if (method === 'initialize') {
         return {
           userAgent: 'test',
@@ -1526,9 +1500,9 @@ describe('CodexExecutionBackend', () => {
       },
     )).events);
 
-    const threadStartParams = mockTransportRequest.mock.calls
+    const threadStartParams = nativeRequest.mock.calls
       .find(([method]) => method === 'thread/start')?.[1] as { cwd: string };
-    const turnStartParams = mockTransportRequest.mock.calls
+    const turnStartParams = nativeRequest.mock.calls
       .find(([method]) => method === 'turn/start')?.[1] as {
         input: Array<{ text?: string; type: string }>;
       };
@@ -1549,7 +1523,7 @@ describe('CodexExecutionBackend', () => {
     async (lifecycle, nativePersistence, expectedPersistence, expectedEphemeral) => {
       const threadId = `thread-provider-default-${lifecycle}`;
       const turnId = `turn-provider-default-${lifecycle}`;
-      mockTransportRequest.mockImplementation(async (method: string) => {
+      nativeRequest.mockImplementation(async (method: string) => {
         if (method === 'initialize') {
           return {
             userAgent: 'test',
@@ -1575,13 +1549,13 @@ describe('CodexExecutionBackend', () => {
 
       await collectEvents(session.execute(createRequest()).events);
 
-      expect(mockTransportRequest).toHaveBeenCalledWith(
+      expect(nativeRequest).toHaveBeenCalledWith(
         'thread/start',
         expect.objectContaining({
           persistExtendedHistory: expectedPersistence,
         }),
       );
-      const startParams = mockTransportRequest.mock.calls.find(
+      const startParams = nativeRequest.mock.calls.find(
         ([method]) => method === 'thread/start',
       )?.[1];
       expect(startParams.ephemeral).toBe(expectedEphemeral);
@@ -1606,7 +1580,7 @@ describe('CodexExecutionBackend', () => {
     writeFileSync(oldPath, rollout(oldThreadId, 'Old question', 'Old answer'));
     const newThreadId = '019a0000-0000-7000-8000-00000000000b';
     const newPath = join(sessions, `rollout-2026-03-27T01-00-00-${newThreadId}.jsonl`);
-    mockTransportRequest.mockImplementation(async (method: string) => {
+    nativeRequest.mockImplementation(async (method: string) => {
       if (method === 'initialize') {
         return { userAgent: 'test', codexHome: root, platformFamily: 'unix', platformOs: 'macos' };
       }
@@ -1639,7 +1613,7 @@ describe('CodexExecutionBackend', () => {
         conversationHistory: before.messages,
         input: [{ type: 'text', text: 'New question' }],
       })).events);
-      const prompt = mockTransportRequest.mock.calls
+      const prompt = nativeRequest.mock.calls
         .find(([method]) => method === 'turn/start')![1].input
         .find((item: { type: string }) => item.type === 'text').text as string;
       writeFileSync(newPath, rollout(newThreadId, prompt, 'New answer'));
@@ -1662,7 +1636,7 @@ describe('CodexExecutionBackend', () => {
 
   it('retains cold-start history replay until the first turn is handed off', async () => {
     let turnAttempt = 0;
-    mockTransportRequest.mockImplementation(async (method: string) => {
+    nativeRequest.mockImplementation(async (method: string) => {
       if (method === 'initialize') {
         return {
           userAgent: 'test',
@@ -1676,7 +1650,7 @@ describe('CodexExecutionBackend', () => {
       }
       if (method === 'turn/start') {
         turnAttempt += 1;
-        if (turnAttempt === 1) throw new Error('turn rejected before handoff');
+        if (turnAttempt === 1) throw new CodexNativeResponseError({ code: -32602, message: 'turn rejected before handoff' });
         queueMicrotask(() => completeTurn('thread-retry', 'turn-retry'));
         return createTurnResult('turn-retry');
       }
@@ -1713,7 +1687,7 @@ describe('CodexExecutionBackend', () => {
       { conversationHistory },
     )).events);
 
-    const turnRequests = mockTransportRequest.mock.calls
+    const turnRequests = nativeRequest.mock.calls
       .filter(([method]) => method === 'turn/start')
       .map(([, params]) => JSON.stringify(params.input));
     expect(turnRequests).toHaveLength(2);
@@ -1724,8 +1698,9 @@ describe('CodexExecutionBackend', () => {
   });
 
   it('establishes native context when notification ordering proves early handoff', async () => {
+    vi.useFakeTimers();
     let turnAttempt = 0;
-    mockTransportRequest.mockImplementation(async (method: string) => {
+    nativeRequest.mockImplementation(async (method: string) => {
       if (method === 'initialize') {
         return {
           userAgent: 'test',
@@ -1734,7 +1709,7 @@ describe('CodexExecutionBackend', () => {
           platformOs: 'macos',
         };
       }
-      if (method === 'thread/start') return createThreadResult('thread-early-handoff');
+      if (method === 'thread/start' || method === 'thread/resume') return createThreadResult('thread-early-handoff');
       if (method === 'turn/start') {
         turnAttempt += 1;
         if (turnAttempt === 1) {
@@ -1742,7 +1717,7 @@ describe('CodexExecutionBackend', () => {
             threadId: 'thread-early-handoff',
             turn: createTurnResult('turn-early-handoff-1').turn,
           });
-          throw new Error('turn/start acknowledgement lost');
+          return new Promise(() => {});
         }
         queueMicrotask(() => completeTurn(
           'thread-early-handoff',
@@ -1759,10 +1734,13 @@ describe('CodexExecutionBackend', () => {
       { id: 'history-assistant', role: 'assistant' as const, content: 'early prior answer', timestamp: 2 },
     ];
 
-    const firstEvents = await collectEvents(session.execute(createRequest(
+    const firstEventsPromise = collectEvents(session.execute(createRequest(
       new AbortController().signal,
       { conversationHistory },
     )).events);
+    await native.waitForRequest('turn/start');
+    await vi.advanceTimersByTimeAsync(30_000);
+    const firstEvents = await firstEventsPromise;
     expect(firstEvents).toContainEqual(expect.objectContaining({
       accepted: true,
       type: 'turn_started',
@@ -1770,12 +1748,16 @@ describe('CodexExecutionBackend', () => {
     expect(session.getSnapshot().providerState).toEqual(expect.objectContaining({
       nativeConversationContextEstablished: true,
     }));
-    await collectEvents(session.execute(createRequest(
+    expect(firstEvents.at(-1)).toMatchObject({ type: 'execution_error', message: expect.stringContaining('Request timeout: turn/start') });
+    completeTurn('thread-early-handoff', 'turn-early-handoff-1');
+    await nativeRoundTrip();
+    const retryEvents = await collectEvents(session.execute(createRequest(
       new AbortController().signal,
       { conversationHistory },
     )).events);
+    expect(retryEvents.at(-1)).toMatchObject({ type: 'turn_completed' });
 
-    const turnRequests = mockTransportRequest.mock.calls
+    const turnRequests = nativeRequest.mock.calls
       .filter(([method]) => method === 'turn/start')
       .map(([, params]) => JSON.stringify(params.input));
     expect(turnRequests[0]).toContain('early prior question');
@@ -1790,7 +1772,7 @@ describe('CodexExecutionBackend', () => {
     const secondTurnId = 'turn-current';
     let turnAttempt = 0;
     const secondTurnStart = createDeferred<ReturnType<typeof createTurnResult>>();
-    mockTransportRequest.mockImplementation(async (method: string) => {
+    nativeRequest.mockImplementation(async (method: string) => {
       if (method === 'initialize') {
         return {
           userAgent: 'test',
@@ -1831,7 +1813,7 @@ describe('CodexExecutionBackend', () => {
         secondRun.events,
         event => event.type === 'turn_started',
       );
-      await waitForCondition(() => turnAttempt === 2);
+      await native.waitForRequest('turn/start', 0, 2);
       secondTurnStart.resolve(createTurnResult(secondTurnId));
 
       await expect(secondTurnStartedPromise).resolves.toEqual(expect.arrayContaining([
@@ -1848,7 +1830,7 @@ describe('CodexExecutionBackend', () => {
   it('persists native context when cancellation races a turn-start acknowledgement', async () => {
     const controller = new AbortController();
     let turnAttempt = 0;
-    mockTransportRequest.mockImplementation(async (method: string) => {
+    nativeRequest.mockImplementation(async (method: string) => {
       if (method === 'initialize') {
         return {
           userAgent: 'test',
@@ -1920,7 +1902,7 @@ describe('CodexExecutionBackend', () => {
       { conversationHistory },
     )).events);
 
-    const turnRequests = mockTransportRequest.mock.calls
+    const turnRequests = nativeRequest.mock.calls
       .filter(([method]) => method === 'turn/start')
       .map(([, params]) => JSON.stringify(params.input));
     expect(turnRequests).toHaveLength(2);
@@ -1932,7 +1914,7 @@ describe('CodexExecutionBackend', () => {
 
   it('publishes a late turn-start acknowledgement without resurrecting cancelled status', async () => {
     const turnStart = createDeferred<ReturnType<typeof createTurnResult>>();
-    mockTransportRequest.mockImplementation(async (method: string) => {
+    nativeRequest.mockImplementation(async (method: string) => {
       if (method === 'initialize') {
         return {
           userAgent: 'test',
@@ -1953,16 +1935,14 @@ describe('CodexExecutionBackend', () => {
     const unsubscribe = session.onEvent(event => sessionEvents.push(event));
     const run = session.execute(createRequest());
     const runEvents = collectEvents(run.events);
-    await waitForCondition(() => mockTransportRequest.mock.calls.some(
-      ([method]) => method === 'turn/start',
-    ));
+    await native.waitForRequest('turn/start');
 
     run.cancel();
     expect((await runEvents).at(-1)).toMatchObject({ type: 'cancelled' });
     expect(session.getSnapshot().status).toBe('idle');
 
     turnStart.resolve(createTurnResult('turn-late-ack'));
-    await flushMicrotasks();
+    await nativeRoundTrip();
 
     expect(session.getSnapshot()).toMatchObject({
       providerState: {
@@ -1989,7 +1969,7 @@ describe('CodexExecutionBackend', () => {
 
   it('persists a new thread identity when cancellation races its acknowledgement', async () => {
     const controller = new AbortController();
-    mockTransportRequest.mockImplementation(async (method: string) => {
+    nativeRequest.mockImplementation(async (method: string) => {
       if (method === 'initialize') {
         return {
           userAgent: 'test',
@@ -2049,10 +2029,10 @@ describe('CodexExecutionBackend', () => {
     );
     await collectEvents(replacement.execute(createRequest()).events);
 
-    expect(mockTransportRequest.mock.calls.filter(
+    expect(nativeRequest.mock.calls.filter(
       ([method]) => method === 'thread/start',
     )).toHaveLength(1);
-    expect(mockTransportRequest.mock.calls.filter(
+    expect(nativeRequest.mock.calls.filter(
       ([method]) => method === 'thread/resume',
     )).toHaveLength(1);
 
@@ -2061,7 +2041,7 @@ describe('CodexExecutionBackend', () => {
 
   it('publishes a late thread-start acknowledgement without resurrecting cancelled status', async () => {
     const threadStart = createDeferred<ReturnType<typeof createThreadResult>>();
-    mockTransportRequest.mockImplementation(async (method: string) => {
+    nativeRequest.mockImplementation(async (method: string) => {
       if (method === 'initialize') {
         return {
           userAgent: 'test',
@@ -2079,16 +2059,14 @@ describe('CodexExecutionBackend', () => {
     const unsubscribe = session.onEvent(event => sessionEvents.push(event));
     const run = session.execute(createRequest());
     const runEvents = collectEvents(run.events);
-    await waitForCondition(() => mockTransportRequest.mock.calls.some(
-      ([method]) => method === 'thread/start',
-    ));
+    await native.waitForRequest('thread/start');
 
     run.cancel();
     expect((await runEvents).at(-1)).toMatchObject({ type: 'cancelled' });
     expect(session.getSnapshot().status).toBe('idle');
 
     threadStart.resolve(createThreadResult('thread-late-start-ack'));
-    await flushMicrotasks();
+    await nativeRoundTrip();
 
     expect(session.getSnapshot()).toMatchObject({
       providerSessionId: 'thread-late-start-ack',
@@ -2119,7 +2097,7 @@ describe('CodexExecutionBackend', () => {
     ['inline edit', 'provider-default', { kind: 'read-only' }],
   ] as const)('retains a non-persistent %s thread for clarification', async (_name, nativePersistence, toolPolicy) => {
     let turnIndex = 0;
-    mockTransportRequest.mockImplementation(async (method: string) => {
+    nativeRequest.mockImplementation(async (method: string) => {
       if (method === 'initialize') {
         return {
           userAgent: 'test',
@@ -2159,7 +2137,7 @@ describe('CodexExecutionBackend', () => {
       },
     )).events);
 
-    expect(mockTransportRequest).toHaveBeenCalledWith(
+    expect(nativeRequest).toHaveBeenCalledWith(
       'thread/start',
       expect.objectContaining({
         ephemeral: true,
@@ -2171,7 +2149,7 @@ describe('CodexExecutionBackend', () => {
     expect(firstEvents.at(-1)).toMatchObject({ type: 'turn_completed' });
     expect(secondEvents.at(-1)).toMatchObject({ type: 'turn_completed' });
     expect(session.getSnapshot().providerState?.sessionFilePath).toBeUndefined();
-    expect(mockTransportRequest).toHaveBeenCalledWith(
+    expect(nativeRequest).toHaveBeenCalledWith(
       'turn/start',
       expect.objectContaining({
         threadId: 'thread-continuation',
@@ -2179,10 +2157,10 @@ describe('CodexExecutionBackend', () => {
       }),
     );
     expect(
-      mockTransportRequest.mock.calls.filter(call => call[0] === 'thread/start'),
+      nativeRequest.mock.calls.filter(call => call[0] === 'thread/start'),
     ).toHaveLength(1);
     expect(
-      mockTransportRequest.mock.calls.filter(call => call[0] === 'turn/start'),
+      nativeRequest.mock.calls.filter(call => call[0] === 'turn/start'),
     ).toHaveLength(2);
 
     await session.dispose();
@@ -2224,9 +2202,9 @@ describe('CodexExecutionBackend', () => {
       );
     }
 
-    function mockPathlessThread(threadId: string, ephemeral: boolean): void {
+    function configurePathlessThread(threadId: string, ephemeral: boolean): void {
       let turnIndex = 0;
-      mockTransportRequest.mockImplementation(async (method: string) => {
+      nativeRequest.mockImplementation(async (method: string) => {
         if (method === 'initialize') {
           return { userAgent: 'test', codexHome, platformFamily: 'unix', platformOs: 'macos' };
         }
@@ -2245,7 +2223,7 @@ describe('CodexExecutionBackend', () => {
     }
 
     it('never searches the transcript root for a non-persistent thread', async () => {
-      mockPathlessThread('thread-ephemeral-pathless', true);
+      configurePathlessThread('thread-ephemeral-pathless', true);
       writeRollout('thread-ephemeral-pathless');
       const session = createBackend(await createPlugin()).createSession(
         createSessionConfig({ lifecycle: 'ephemeral', nativePersistence: 'disabled-if-supported' }),
@@ -2253,7 +2231,7 @@ describe('CodexExecutionBackend', () => {
 
       await collectEvents(session.execute(createRequest()).events);
       await collectEvents(session.execute(createRequest()).events);
-      await flushMicrotasks();
+      await nativeRoundTrip();
 
       expect(countTranscriptRootProbes()).toBe(0);
       expect(session.getSnapshot().providerState?.sessionFilePath).toBeUndefined();
@@ -2262,7 +2240,7 @@ describe('CodexExecutionBackend', () => {
     });
 
     it('adopts a persistent rollout found after release and publishes it as session state', async () => {
-      mockPathlessThread('thread-persistent-pathless', false);
+      configurePathlessThread('thread-persistent-pathless', false);
       const rolloutPath = writeRollout('thread-persistent-pathless');
       const session = createBackend(await createPlugin()).createSession(createSessionConfig());
       const adopted = new Promise<ProviderSessionEvent>((resolve) => {
@@ -2293,13 +2271,13 @@ describe('CodexExecutionBackend', () => {
     });
 
     it('searches once per persistent thread instead of after every run', async () => {
-      mockPathlessThread('thread-persistent-missing', false);
+      configurePathlessThread('thread-persistent-missing', false);
       const session = createBackend(await createPlugin()).createSession(createSessionConfig());
 
       await collectEvents(session.execute(createRequest()).events);
       const probesAfterFirstRun = countTranscriptRootProbes();
       await collectEvents(session.execute(createRequest()).events);
-      await flushMicrotasks();
+      await nativeRoundTrip();
 
       expect(probesAfterFirstRun).toBeGreaterThan(0);
       expect(countTranscriptRootProbes()).toBe(probesAfterFirstRun);
@@ -2311,7 +2289,7 @@ describe('CodexExecutionBackend', () => {
 
   it('forks, resumes, and reverts an adopted child to the requested checkpoint before executing', async () => {
     let turnAttempt = 0;
-    mockTransportRequest.mockImplementation(async (method: string) => {
+    nativeRequest.mockImplementation(async (method: string) => {
       if (method === 'initialize') {
         return {
           userAgent: 'test',
@@ -2336,7 +2314,8 @@ describe('CodexExecutionBackend', () => {
       if (method === 'turn/start') {
         turnAttempt += 1;
         if (turnAttempt === 2) {
-          throw new Error('transport closed after fork');
+          native.processes.at(-1)!.exit();
+          return new Promise(() => {});
         }
         const turnId = `turn-fork-${turnAttempt}`;
         queueMicrotask(() => completeTurn('thread-fork', turnId));
@@ -2362,19 +2341,19 @@ describe('CodexExecutionBackend', () => {
 
     const forkEvents = await collectEvents(session.execute(createRequest()).events);
 
-    expect(mockTransportRequest.mock.calls.map(call => call[0])).toEqual([
+    expect(nativeRequest.mock.calls.map(call => call[0])).toEqual([
       'initialize',
       'thread/fork',
       'thread/resume',
       'thread/revert',
       'turn/start',
     ]);
-    expect(mockTransportRequest).toHaveBeenCalledWith(
+    expect(nativeRequest).toHaveBeenCalledWith(
       'thread/revert',
       { threadId: 'thread-fork', beforeTurnId: 'later-turn' },
     );
     // The child inherits a source thread whose dependency-tool generation is unknown.
-    expect(mockTransportRequest).toHaveBeenCalledWith('thread/resume', expect.objectContaining({
+    expect(nativeRequest).toHaveBeenCalledWith('thread/resume', expect.objectContaining({
       threadId: 'thread-fork',
       experimentalRawEvents: true,
       baseInstructions: expect.stringContaining('predates Claudian client-hosted workspace dependency tools'),
@@ -2423,7 +2402,7 @@ describe('CodexExecutionBackend', () => {
     });
 
     await collectEvents(session.execute(createRequest()).events);
-    expect(mockTransportRequest.mock.calls.filter(call => call[0] === 'thread/fork'))
+    expect(nativeRequest.mock.calls.filter(call => call[0] === 'thread/fork'))
       .toHaveLength(1);
     expect(session.getSnapshot()).toMatchObject({
       providerState: {
@@ -2449,10 +2428,11 @@ describe('CodexExecutionBackend', () => {
   ])(
     'retains one fork target across %s failure and retries its materialization',
     async (_description, failureBoundary) => {
+      if (failureBoundary === 'revert') vi.useFakeTimers();
       let forkCount = 0;
       let resumeCount = 0;
       let revertCount = 0;
-      mockTransportRequest.mockImplementation(async (method: string) => {
+      nativeRequest.mockImplementation(async (method: string) => {
         if (method === 'initialize') {
           return {
             userAgent: 'test',
@@ -2474,7 +2454,7 @@ describe('CodexExecutionBackend', () => {
         if (method === 'thread/resume') {
           resumeCount += 1;
           if (failureBoundary === 'resume' && resumeCount === 1) {
-            throw new Error('resume rejected');
+            throw new CodexNativeResponseError({ code: -32602, message: 'resume rejected' });
           }
           return createThreadResult(
             'thread-fork-target',
@@ -2488,7 +2468,7 @@ describe('CodexExecutionBackend', () => {
         if (method === 'thread/revert') {
           revertCount += 1;
           if (failureBoundary === 'revert' && revertCount === 1) {
-            throw new Error('revert response lost after apply');
+            return new Promise(() => {});
           }
           return createThreadResult('thread-fork-target', [{ id: 'checkpoint' }]);
         }
@@ -2502,7 +2482,12 @@ describe('CodexExecutionBackend', () => {
       let session = createBackend(await createPlugin()).createSession(
         createForkSessionConfig(),
       );
-      const failedEvents = await collectEvents(session.execute(createRequest()).events);
+      const failedOutput = collectEvents(session.execute(createRequest()).events);
+      if (failureBoundary === 'revert') {
+        await native.waitForRequest('thread/revert');
+        await vi.advanceTimersByTimeAsync(30_000);
+      }
+      const failedEvents = await failedOutput;
 
       expect(failedEvents.at(-1)).toMatchObject({
         type: 'execution_error',
@@ -2511,11 +2496,11 @@ describe('CodexExecutionBackend', () => {
             ? /checkpoint not found/i
             : failureBoundary === 'resume'
               ? /resume rejected/i
-          : /revert response lost/i,
+          : /Request timeout: thread\/revert/i,
         ),
       });
       expectPendingForkOwnershipEvent(failedEvents);
-      expectPendingForkOwnership(session);
+      expectPendingForkOwnership(session, failureBoundary === 'revert' ? 'invalidated' : 'idle');
 
       if (failureBoundary === 'checkpoint') {
         const pendingSnapshot = session.getSnapshot();
@@ -2561,7 +2546,7 @@ describe('CodexExecutionBackend', () => {
     const firstResume = createDeferred<ReturnType<typeof createThreadResult>>();
     let resumeCount = 0;
     let forkCount = 0;
-    mockTransportRequest.mockImplementation(async (method: string) => {
+    nativeRequest.mockImplementation(async (method: string) => {
       if (method === 'initialize') {
         return {
           userAgent: 'test',
@@ -2600,15 +2585,15 @@ describe('CodexExecutionBackend', () => {
     );
     const run = session.execute(createRequest());
     const eventsPromise = collectEvents(run.events);
-    await waitForCondition(() => resumeCount === 1);
+    await native.waitForRequest('thread/resume');
 
     run.cancel();
     let cancellationSettled = false;
     void eventsPromise.then(() => { cancellationSettled = true; });
-    await flushMicrotasks();
+    await nativeRoundTrip();
 
     expect(cancellationSettled).toBe(false);
-    expect(mockTransportDispose).not.toHaveBeenCalled();
+    expect(transportDispose).not.toHaveBeenCalled();
     expect(mockProcessShutdown).not.toHaveBeenCalled();
     expect(() => session.execute(createRequest())).toThrow(/active/i);
     firstResume.resolve(createThreadResult('thread-fork-target', [
@@ -2632,7 +2617,7 @@ describe('CodexExecutionBackend', () => {
     const firstResume = createDeferred<ReturnType<typeof createThreadResult>>();
     let resumeCount = 0;
     let forkCount = 0;
-    mockTransportRequest.mockImplementation(async (method: string) => {
+    nativeRequest.mockImplementation(async (method: string) => {
       if (method === 'initialize') {
         return {
           userAgent: 'test',
@@ -2671,15 +2656,15 @@ describe('CodexExecutionBackend', () => {
     );
     const run = session.execute(createRequest());
     const eventsPromise = collectEvents(run.events);
-    await waitForCondition(() => resumeCount === 1);
+    await native.waitForRequest('thread/resume');
 
     const disposing = session.dispose();
     let disposalSettled = false;
     void disposing.then(() => { disposalSettled = true; });
-    await flushMicrotasks();
+    await nativeRoundTrip();
 
     expect(disposalSettled).toBe(false);
-    expect(mockTransportDispose).not.toHaveBeenCalled();
+    expect(transportDispose).not.toHaveBeenCalled();
     expect(mockProcessShutdown).not.toHaveBeenCalled();
     firstResume.resolve(createThreadResult('thread-fork-target', [
       { id: 'checkpoint' },
@@ -2708,11 +2693,26 @@ describe('CodexExecutionBackend', () => {
     await recreated.dispose();
   });
 
-  it('joins fork setup through process exit and retries the adopted child immediately', async () => {
-    const firstResume = createDeferred<ReturnType<typeof createThreadResult>>();
+  it('joins a decoded resume continuation across process exit before retrying the adopted child', async () => {
+    const resumeDecoded = createDeferred<void>();
+    const releaseContinuation = createDeferred<void>();
+    const request = CodexRPCTransport.prototype.request;
+    let holdResume = true;
+    // Internal seam: hold a decoded request continuation, not an impossible wire reply after exit.
+    vi.spyOn(CodexRPCTransport.prototype, 'request').mockImplementation(async function<T>(
+      this: CodexRPCTransport, method: string, ...args: [unknown, number?, AbortSignal?]
+    ): Promise<T> {
+      const result = await request.call(this, method, ...args);
+      if (method === 'thread/resume' && holdResume) {
+        holdResume = false;
+        resumeDecoded.resolve();
+        await releaseContinuation.promise;
+      }
+      return result as T;
+    });
     let resumeCount = 0;
     let forkCount = 0;
-    mockTransportRequest.mockImplementation(async (method: string) => {
+    nativeRequest.mockImplementation(async (method: string) => {
       if (method === 'initialize') {
         return {
           userAgent: 'test',
@@ -2730,9 +2730,7 @@ describe('CodexExecutionBackend', () => {
       }
       if (method === 'thread/resume') {
         resumeCount += 1;
-        return resumeCount === 1
-          ? firstResume.promise
-          : createThreadResult('thread-fork-target', [
+        return createThreadResult('thread-fork-target', [
             { id: 'checkpoint' },
             { id: 'later-turn' },
           ]);
@@ -2751,21 +2749,18 @@ describe('CodexExecutionBackend', () => {
     );
     const run = session.execute(createRequest());
     const eventsPromise = collectEvents(run.events);
-    await waitForCondition(() => resumeCount === 1);
+    await resumeDecoded.promise;
 
     native.processes.at(-1)!.exit();
     let exitSettled = false;
     void eventsPromise.then(() => { exitSettled = true; });
-    await flushMicrotasks();
+    await nativeRoundTrip();
 
     expect(exitSettled).toBe(false);
-    expect(mockTransportDispose).toHaveBeenCalledTimes(1);
+    expect(transportDispose).toHaveBeenCalledTimes(1);
     expect(mockProcessShutdown).not.toHaveBeenCalled();
     expect(() => session.execute(createRequest())).toThrow(/active/i);
-    firstResume.resolve(createThreadResult('thread-fork-target', [
-      { id: 'checkpoint' },
-      { id: 'later-turn' },
-    ]));
+    releaseContinuation.resolve();
     const exitedEvents = await eventsPromise;
     expect(exitedEvents.at(-1)).toMatchObject({
       type: 'execution_error',
@@ -2790,7 +2785,7 @@ describe('CodexExecutionBackend', () => {
       let forkCount = 0;
       let resumeCount = 0;
       const teardownSnapshots: unknown[] = [];
-      mockTransportRequest.mockImplementation(async (method: string) => {
+      nativeRequest.mockImplementation(async (method: string) => {
         if (method === 'initialize') {
           return {
             userAgent: 'test',
@@ -2823,25 +2818,26 @@ describe('CodexExecutionBackend', () => {
       const session = createBackend(await createPlugin()).createSession(
         createForkSessionConfig(),
       );
-      mockUnsubscribe.mockImplementationOnce(async () => {
+      nativeUnsubscribe.mockImplementationOnce(async () => {
         teardownSnapshots.push(session.getSnapshot());
         if (!forkResponseDelivered) {
-          forkResult.reject(new Error('Transport disposed before fork identity was delivered'));
+          forkResult.reject(new CodexNativeResponseError({ code: -32603, message: 'Thread unsubscribed before fork identity was delivered' }));
         }
+        return { status: 'unsubscribed' };
       });
       const run = session.execute(createRequest());
       const eventsPromise = collectEvents(run.events);
-      await waitForCondition(() => forkCount === 1);
+      await native.waitForRequest('thread/fork');
 
       const lifecyclePromise = lifecycle === 'cancellation'
         ? (run.cancel(), eventsPromise.then(() => undefined))
         : session.dispose();
       let lifecycleSettled = false;
       void lifecyclePromise.then(() => { lifecycleSettled = true; });
-      await flushMicrotasks();
+      await nativeRoundTrip();
 
       expect(lifecycleSettled).toBe(false);
-      expect(mockTransportDispose).not.toHaveBeenCalled();
+      expect(transportDispose).not.toHaveBeenCalled();
       expect(mockProcessShutdown).not.toHaveBeenCalled();
 
       forkResponseDelivered = true;
@@ -2864,7 +2860,7 @@ describe('CodexExecutionBackend', () => {
         session,
         lifecycle === 'disposal' ? 'disposed' : 'idle',
       );
-      expect(mockTransportDispose).not.toHaveBeenCalled();
+      expect(transportDispose).not.toHaveBeenCalled();
       expect(mockProcessShutdown).not.toHaveBeenCalled();
       expect(resumeCount).toBe(0);
 
@@ -2895,7 +2891,7 @@ describe('CodexExecutionBackend', () => {
   ] as const)(
     'creates an ephemeral %s session with non-persistent strict policy',
     async (_name, toolPolicy) => {
-      mockTransportRequest.mockImplementation(async (method: string) => {
+      nativeRequest.mockImplementation(async (method: string) => {
         if (method === 'initialize') {
           return {
             userAgent: 'test',
@@ -2927,7 +2923,7 @@ describe('CodexExecutionBackend', () => {
         { toolPolicy },
       )).events);
 
-      expect(mockTransportRequest).toHaveBeenCalledWith(
+      expect(nativeRequest).toHaveBeenCalledWith(
         'thread/start',
         expect.objectContaining({
           ephemeral: true,
@@ -2936,7 +2932,7 @@ describe('CodexExecutionBackend', () => {
           sandbox: 'read-only',
         }),
       );
-      expect(mockTransportRequest).toHaveBeenCalledWith(
+      expect(nativeRequest).toHaveBeenCalledWith(
         'turn/start',
         expect.objectContaining({
           approvalPolicy: 'never',
@@ -2947,7 +2943,7 @@ describe('CodexExecutionBackend', () => {
           },
         }),
       );
-      const startParams = mockTransportRequest.mock.calls.find(
+      const startParams = nativeRequest.mock.calls.find(
         call => call[0] === 'thread/start',
       )?.[1];
       expect(startParams.dynamicTools).toBeUndefined();
@@ -2959,7 +2955,7 @@ describe('CodexExecutionBackend', () => {
   );
 
   it('fails closed before native startup when exact allow-list enforcement is unavailable', async () => {
-    mockTransportRequest.mockImplementation(async (method: string) => {
+    nativeRequest.mockImplementation(async (method: string) => {
       if (method === 'initialize') {
         return {
           userAgent: 'test',
@@ -2990,7 +2986,7 @@ describe('CodexExecutionBackend', () => {
 
     expect(mockResolveLaunchSpec).not.toHaveBeenCalled();
     expect(mockProcessStart).not.toHaveBeenCalled();
-    expect(mockTransportRequest).not.toHaveBeenCalled();
+    expect(nativeRequest).not.toHaveBeenCalled();
     expect(events).toEqual(expect.arrayContaining([
       expect.objectContaining({
         category: 'configuration',
@@ -3008,7 +3004,7 @@ describe('CodexExecutionBackend', () => {
     const secondTurnStart = createDeferred<ReturnType<typeof createTurnResult>>();
     let initializeCount = 0;
     let turnStartCount = 0;
-    mockTransportRequest.mockImplementation(async (method: string) => {
+    nativeRequest.mockImplementation(async (method: string) => {
       if (method === 'initialize') {
         initializeCount += 1;
         return {
@@ -3032,19 +3028,20 @@ describe('CodexExecutionBackend', () => {
     const session = createBackend(await createPlugin())
       .createSession(createSessionConfig());
     const firstRun = session.execute(createRequest());
-    await waitForCondition(() => turnStartCount === 1);
-    const oldTurnStarted = notificationHandlers.get('turn/started')!;
-    const oldTextDelta = notificationHandlers.get('item/agentMessage/delta')!;
+    await native.waitForRequest('turn/start');
+    const oldProcess = native.processes.at(-1)!;
+    const oldTurnStarted = (params: unknown) => oldProcess.notify('turn/started', params);
+    const oldTextDelta = (params: unknown) => oldProcess.notify('item/agentMessage/delta', params);
 
     firstRun.cancel();
 
     const firstEvents = await collectEvents(firstRun.events);
     expect(firstEvents.at(-1)?.type).toBe('cancelled');
-    expect(mockTransportDispose).not.toHaveBeenCalled();
+    expect(transportDispose).not.toHaveBeenCalled();
     expect(mockProcessShutdown).not.toHaveBeenCalled();
 
     const secondRun = session.execute(createRequest());
-    await flushMicrotasks();
+    await nativeRoundTrip();
     expect(turnStartCount).toBe(1);
     oldTurnStarted({
       threadId: 'thread-cancel-race',
@@ -3057,13 +3054,12 @@ describe('CodexExecutionBackend', () => {
       delta: 'late old output',
     });
     firstTurnStart.resolve(createTurnResult('turn-old'));
-    await waitForCondition(() => turnStartCount === 2);
+    await native.waitForRequest('turn/start', 0, 2);
     oldTurnStarted({ threadId: 'thread-cancel-race', turn: createTurnResult('turn-old').turn });
     oldTextDelta({ threadId: 'thread-cancel-race', turnId: 'turn-old', itemId: 'assistant-old', delta: 'late old output' });
     secondTurnStart.resolve(createTurnResult('turn-new'));
-    await flushMicrotasks();
+    await nativeRoundTrip();
     expect(initializeCount).toBe(1);
-    await Promise.resolve();
     completeTurn('thread-cancel-race', 'turn-new');
 
     const secondEvents = await collectEvents(secondRun.events);
@@ -3090,16 +3086,17 @@ describe('CodexExecutionBackend', () => {
     'cleans up exactly once when %s fails during app-server startup',
     async (failureBoundary) => {
       const failure = new Error(`Failed at ${failureBoundary}`);
+      // Internal seams: native start throws after spawning, or transport.start throws before reading.
       if (failureBoundary === 'process start hook') {
         mockProcessStart.mockImplementationOnce(() => {
           throw failure;
         });
       } else if (failureBoundary === 'transport start') {
-        mockTransportStart.mockImplementationOnce(() => {
+        transportStart.mockImplementationOnce(() => {
           throw failure;
         });
       }
-      mockTransportRequest.mockImplementation(async (method: string) => {
+      nativeRequest.mockImplementation(async (method: string) => {
         if (method === 'initialize') {
           if (failureBoundary === 'initialize') throw failure;
           return {
@@ -3121,11 +3118,11 @@ describe('CodexExecutionBackend', () => {
         type: 'execution_error',
       }));
       expect(mockProcessShutdown).toHaveBeenCalledTimes(1);
-      expect(mockTransportDispose).toHaveBeenCalledTimes(1);
+      expect(transportDispose).toHaveBeenCalledTimes(1);
 
       await session.dispose();
       expect(mockProcessShutdown).toHaveBeenCalledTimes(1);
-      expect(mockTransportDispose).toHaveBeenCalledTimes(1);
+      expect(transportDispose).toHaveBeenCalledTimes(1);
     },
   );
 
@@ -3146,7 +3143,7 @@ describe('CodexExecutionBackend', () => {
 
   it('forwards request-scoped ultra effort and mode configuration on a later turn', async () => {
     let turnIndex = 0;
-    mockTransportRequest.mockImplementation(async (method: string) => {
+    nativeRequest.mockImplementation(async (method: string) => {
       if (method === 'initialize') {
         return {
           userAgent: 'test',
@@ -3196,7 +3193,7 @@ describe('CodexExecutionBackend', () => {
       },
     )).events);
 
-    const secondTurnParams = mockTransportRequest.mock.calls
+    const secondTurnParams = nativeRequest.mock.calls
       .filter(call => call[0] === 'turn/start')[1][1];
     expect(secondTurnParams).toEqual(expect.objectContaining({
       effort: 'ultra',
@@ -3221,12 +3218,12 @@ describe('CodexExecutionBackend', () => {
       ...request, configuration: { ...request.configuration, reasoning: 'high' },
     }).events);
     expect(events).toContainEqual(expect.objectContaining({ type: 'execution_error' }));
-    expect(mockTransportRequest.mock.calls.some(call => call[0] === 'turn/start')).toBe(false);
+    expect(nativeRequest.mock.calls.some(call => call[0] === 'turn/start')).toBe(false);
     await session.dispose();
   });
 
   it.each([null, 'low'])('preserves the explicit toolbar reasoning %s over saved defaults', async reasoning => {
-    mockTransportRequest.mockImplementation(async (method: string) => {
+    nativeRequest.mockImplementation(async (method: string) => {
       if (method === 'initialize') return { userAgent: 'test', codexHome: '/tmp/.codex', platformFamily: 'unix', platformOs: 'macos' };
       if (method === 'thread/start') return createThreadResult('thread-toolbar');
       if (method === 'turn/start') {
@@ -3240,7 +3237,7 @@ describe('CodexExecutionBackend', () => {
     const session = createBackend(plugin).createSession(createSessionConfig());
     const request = createRequest();
     await collectEvents(session.execute({ ...request, configuration: { ...request.configuration, reasoning } }).events);
-    const turn = mockTransportRequest.mock.calls.find(call => call[0] === 'turn/start')?.[1];
+    const turn = nativeRequest.mock.calls.find(call => call[0] === 'turn/start')?.[1];
     expect(turn).toMatchObject({ model: TEST_CODEX_MODEL, effort: reasoning,
       collaborationMode: { settings: { reasoning_effort: reasoning } } });
     await session.dispose();
@@ -3248,7 +3245,7 @@ describe('CodexExecutionBackend', () => {
 
   it.each([false, true])('validates saved ultra effort against the setting and auxiliary request model (qualified: %s)', async qualified => {
     let turnIndex = 0;
-    mockTransportRequest.mockImplementation(async (method: string) => {
+    nativeRequest.mockImplementation(async (method: string) => {
       if (method === 'initialize') {
         return {
           userAgent: 'test',
@@ -3313,7 +3310,7 @@ describe('CodexExecutionBackend', () => {
     providerConfigs.codex.enableUltraEffort = true;
     await collectEvents(session.execute(createAuxiliaryRequest('gpt-5.6-luna')).events);
 
-    const turnParams = mockTransportRequest.mock.calls
+    const turnParams = nativeRequest.mock.calls
       .filter(call => call[0] === 'turn/start')
       .map(call => call[1]);
     expect(turnParams[0]).toEqual(expect.objectContaining({
@@ -3338,7 +3335,7 @@ describe('CodexExecutionBackend', () => {
     { texts: ['/compact keep recent edits'] },
     { texts: ['/compact', 'keep recent edits'] },
   ])('rejects explicit compact instructions across text blocks: $texts', async ({ texts }) => {
-    mockTransportRequest.mockImplementation(async (method: string) => {
+    nativeRequest.mockImplementation(async (method: string) => {
       if (method === 'initialize') return { userAgent: 'test', codexHome: '/tmp/.codex', platformFamily: 'unix', platformOs: 'macos' };
       if (method === 'thread/start') return createThreadResult('thread-compact-args');
       throw new Error(`Unexpected method: ${method}`);
@@ -3349,7 +3346,7 @@ describe('CodexExecutionBackend', () => {
         input: texts.map(text => ({ type: 'text', text })),
       })).events);
       expect(events.at(-1)).toMatchObject({ type: 'execution_error', message: '/compact does not accept arguments' });
-      expect(mockTransportRequest.mock.calls.filter(([method]) => method === 'turn/start' || method === 'thread/compact/start')).toEqual([]);
+      expect(nativeRequest.mock.calls.filter(([method]) => method === 'turn/start' || method === 'thread/compact/start')).toEqual([]);
     } finally { await session.dispose(); }
   });
 
@@ -3388,7 +3385,7 @@ describe('CodexExecutionBackend', () => {
 
     expect(mockResolveLaunchSpec).not.toHaveBeenCalled();
     expect(mockProcessStart).not.toHaveBeenCalled();
-    expect(mockTransportRequest).not.toHaveBeenCalled();
+    expect(nativeRequest).not.toHaveBeenCalled();
     expect(events).toContainEqual(expect.objectContaining({
       type: 'execution_error',
       category: 'configuration',
@@ -3412,53 +3409,49 @@ describe('CodexExecutionBackend', () => {
 
   it('rejects an ambiguous steer failure after native handoff during lifecycle disposal', async () => {
     const steerResult = createDeferred<{ turnId: string }>();
-    configureSteerTransport(
+    configureNativeTurn(
       'thread-steer-dispose',
       'turn-steer-dispose',
       () => steerResult.promise,
     );
-    const { run, session } = await createActiveSteerSession();
+    const { session, runEvents } = await createActiveSteerSession();
 
     const steering = session.steer(createImageRequest());
-    await waitForCondition(() => mockTransportRequest.mock.calls.some(
-      ([method]) => method === 'turn/steer',
-    ));
-    const filePath = mockTransportRequest.mock.calls.find(([method]) => method === 'turn/steer')![1].input[0].path;
+    await native.waitForRequest('turn/steer');
+    const filePath = nativeRequest.mock.calls.find(([method]) => method === 'turn/steer')![1].input[0].path;
     expect(readFileSync(filePath)).toEqual(Buffer.from('hello'));
     const disposing = session.dispose();
     expect(existsSync(dirname(filePath))).toBe(true);
-    steerResult.reject(new Error('Transport disposed after steer handoff'));
+    steerResult.reject(new CodexNativeResponseError({ code: -32603, message: 'Native failure after steer handoff' }));
 
     await expect(steering).rejects.toThrow(
-      'Transport disposed after steer handoff',
+      'Native failure after steer handoff',
     );
     await expect(disposing).resolves.toBeUndefined();
-    await collectEvents(run.events);
+    await runEvents;
     expect(existsSync(dirname(filePath))).toBe(false);
   });
 
   it('keeps a matching native steer acknowledgement after the session becomes stale', async () => {
     const steerResult = createDeferred<{ turnId: string }>();
-    configureSteerTransport(
+    configureNativeTurn(
       'thread-steer-stale',
       'turn-steer-stale',
       () => steerResult.promise,
     );
-    const { run, session } = await createActiveSteerSession();
+    const { session, runEvents } = await createActiveSteerSession();
 
     const steering = session.steer(createRequest(
       new AbortController().signal,
       { input: [{ type: 'text', text: 'redirect' }] },
     ));
-    await waitForCondition(() => mockTransportRequest.mock.calls.some(
-      ([method]) => method === 'turn/steer',
-    ));
+    await native.waitForRequest('turn/steer');
     steerResult.resolve({ turnId: 'turn-steer-stale' });
     const disposing = session.dispose();
 
     await expect(steering).resolves.toBe(true);
     await expect(disposing).resolves.toBeUndefined();
-    await collectEvents(run.events);
+    await runEvents;
   });
 
   it.each([
@@ -3468,12 +3461,12 @@ describe('CodexExecutionBackend', () => {
     _description,
     steerAcknowledgement,
   ) => {
-    configureSteerTransport(
+    configureNativeTurn(
       'thread-steer-ack',
       'turn-steer-ack',
       () => steerAcknowledgement,
     );
-    const { run, session } = await createActiveSteerSession();
+    const { run, session, runEvents } = await createActiveSteerSession();
 
     await expect(session.steer(createRequest(
       new AbortController().signal,
@@ -3481,18 +3474,18 @@ describe('CodexExecutionBackend', () => {
     ))).rejects.toThrow('Codex returned an ambiguous steer acknowledgement.');
 
     run.cancel();
-    await collectEvents(run.events);
+    await runEvents;
     await session.dispose();
   });
 
   it('returns false for an explicit native steer rejection', async () => {
-    configureSteerTransport('thread-steer-reject', 'turn-steer-reject', () => {
-      throw new CodexRPCResponseError({
+    configureNativeTurn('thread-steer-reject', 'turn-steer-reject', () => {
+      throw new CodexNativeResponseError({
         code: -32602,
         message: 'Invalid steer parameters',
       });
     });
-    const { run, session } = await createActiveSteerSession();
+    const { run, session, runEvents } = await createActiveSteerSession();
 
     await expect(session.steer(createRequest(
       new AbortController().signal,
@@ -3500,22 +3493,22 @@ describe('CodexExecutionBackend', () => {
     ))).resolves.toBe(false);
 
     run.cancel();
-    await collectEvents(run.events);
+    await runEvents;
     await session.dispose();
   });
 
   it('rejects a native internal steer error as an ambiguous disposition', async () => {
-    configureSteerTransport(
+    configureNativeTurn(
       'thread-steer-internal-error',
       'turn-steer-internal-error',
       () => {
-        throw new CodexRPCResponseError({
+        throw new CodexNativeResponseError({
           code: -32603,
           message: 'Internal error after steer dispatch',
         });
       },
     );
-    const { run, session } = await createActiveSteerSession();
+    const { run, session, runEvents } = await createActiveSteerSession();
 
     await expect(session.steer(createRequest(
       new AbortController().signal,
@@ -3523,24 +3516,27 @@ describe('CodexExecutionBackend', () => {
     ))).rejects.toThrow('Internal error after steer dispatch');
 
     run.cancel();
-    await collectEvents(run.events);
+    await runEvents;
     await session.dispose();
   });
 
   it('rejects a native steer timeout as an ambiguous disposition', async () => {
-    configureSteerTransport('thread-steer-timeout', 'turn-steer-timeout', () => {
-      throw new Error('Request timeout: turn/steer (30000ms)');
-    });
-    const { run, session } = await createActiveSteerSession();
-
-    await expect(session.steer(createRequest(
-      new AbortController().signal,
-      { input: [{ type: 'text', text: 'redirect' }] },
-    ))).rejects.toThrow('Request timeout: turn/steer (30000ms)');
-
-    run.cancel();
-    await collectEvents(run.events);
-    await session.dispose();
+    vi.useFakeTimers();
+    configureNativeTurn('thread-steer-timeout', 'turn-steer-timeout', () => new Promise(() => {}));
+    const { run, session, runEvents } = await createActiveSteerSession();
+    try {
+      const steering = session.steer(createRequest(
+        new AbortController().signal,
+        { input: [{ type: 'text', text: 'redirect' }] },
+      ));
+      const outcome = steering.then(() => null, error => error);
+      await native.waitForRequest('turn/steer');
+      await vi.advanceTimersByTimeAsync(30_000);
+      expect(await outcome).toEqual(expect.objectContaining({ message: expect.stringMatching(/Request timeout: turn\/steer/) }));
+      run.cancel();
+      await runEvents;
+      await session.dispose();
+    } finally { vi.useRealTimers(); }
   });
 
   it('returns false before native steer handoff when no active turn exists', async () => {
@@ -3551,7 +3547,7 @@ describe('CodexExecutionBackend', () => {
     }
 
     await expect(session.steer(createRequest())).resolves.toBe(false);
-    expect(mockTransportRequest).not.toHaveBeenCalledWith(
+    expect(nativeRequest).not.toHaveBeenCalledWith(
       'turn/steer',
       expect.anything(),
     );

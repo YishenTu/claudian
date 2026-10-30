@@ -1,3 +1,4 @@
+// @test-ci {"inputs":["tests/helpers/providers/opencode/OpencodeNativePeer.cjs"]}
 /** @vitest-environment jsdom */
 import { existsSync, rmSync, writeFileSync } from 'node:fs';
 
