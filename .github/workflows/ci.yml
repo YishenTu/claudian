@@ -293,9 +293,30 @@ jobs:
       - uses: Vampire/setup-wsl@v7
         with:
           distribution: Ubuntu-24.04
-          additional-packages: bash zsh csh tcsh fish
+          additional-packages: bash zsh csh tcsh fish curl ca-certificates
           wsl-version: '1'
           set-as-default: 'true'
+
+      - name: Provision Linux Node for native WSL fixtures
+        shell: pwsh
+        run: |
+          $installer = @'
+          set -eu
+          archive=$(mktemp)
+          trap 'rm -f "$archive"' EXIT
+          # Ubuntu's Node ELF has 8 KiB LOAD alignment, rejected by WSL1.
+          # This official build uses 4 KiB alignment for every LOAD segment.
+          curl --fail --location --retry 3 https://nodejs.org/dist/v22.14.0/node-v22.14.0-linux-x64.tar.gz -o "$archive"
+          echo "9d942932535988091034dc94cc5f42b6dc8784d6366df3a36c4c9ccb3996f0c2  $archive" | sha256sum -c -
+          mkdir -p /opt/claudian-wsl-node /usr/local/bin
+          tar -xzf "$archive" --strip-components=1 -C /opt/claudian-wsl-node
+          ln -sf /opt/claudian-wsl-node/bin/node /usr/local/bin/node
+          /usr/local/bin/node --version
+          /usr/local/bin/node -e 'if (process.platform !== "linux" || process.arch !== "x64") process.exit(1)'
+          '@
+          # PowerShell pipes CRLF line endings; strip them before sh parses the script.
+          $installer | wsl --exec /bin/sh -c "tr -d '\r' | /bin/sh"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Install dependencies on Windows
         run: npm ci
