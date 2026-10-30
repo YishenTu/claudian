@@ -55,9 +55,6 @@ export class EnvSnippetModal extends AccessibleModal {
       if (e.key === 'Enter' && !e.isComposing) {
         e.preventDefault();
         void saveSnippet();
-      } else if (e.key === 'Escape' && !e.isComposing) {
-        e.preventDefault();
-        this.close();
       }
     };
 
