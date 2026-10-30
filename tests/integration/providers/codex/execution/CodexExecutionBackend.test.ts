@@ -1,6 +1,7 @@
 import { capturedSelections } from '@test/helpers/capturedSelections';
 import { TEST_CODEX_CATALOG, TEST_CODEX_MODEL } from '@test/helpers/codexModels';
-import { runtimeHostFor } from '@test/helpers/providerRuntimeHost';
+import { DesktopVault } from '@test/helpers/core/DesktopVault';
+import { createProviderHostFixture } from '@test/helpers/providerRuntimeHost';
 import { CodexRuntimeHarness } from '@test/helpers/providers/codex/CodexRuntimeHarness';
 import { parseCodexSessionContent } from '@test/helpers/providers/codex/parseCodexSessionContent';
 import { testDate } from '@test/helpers/testClock';
@@ -12,6 +13,7 @@ import { decodeCodexConfig } from '@/providers/codex/config';
 import { CodexExecutionBackend } from '@/providers/codex/execution/CodexExecutionBackend';
 import { CodexAppServerRuntime } from '@/providers/codex/runtime/CodexAppServerRuntime';
 import { buildCodexLaunchSpec } from '@/providers/codex/runtime/CodexLaunchSpecBuilder';
+import { CodexRPCTransport } from '@/providers/codex/runtime/CodexRPCTransport';
 
 const mockNative = new CodexRuntimeHarness();
 vi.mock('@/providers/codex/runtime/CodexAppServerProcess', () => ({
@@ -33,7 +35,7 @@ const request: ProviderExecutionRequest = {
   },
   toolPolicy: { kind: 'provider-default' }, signal: new AbortController().signal,
 };
-let settings: { providerConfigs: { codex: Record<string, unknown> } };
+let settings: Awaited<ReturnType<typeof createProviderHostFixture>>['settings'];
 let runtime: CodexAppServerRuntime;
 let backend: CodexExecutionBackend;
 const sessions: ReturnType<CodexExecutionBackend['createSession']>[] = [];
@@ -58,21 +60,48 @@ function serverRequest(id: string, method: string, params: Record<string, unknow
   return mockNative.processes[0].requestFromServer(id, method, params);
 }
 
-beforeEach(() => {
+beforeEach(async () => {
   mockNative.reset();
   mockNative.autoReconcile = true;
-  settings = { providerConfigs: { codex: { enabled: true, discoveredModels: TEST_CODEX_CATALOG, responseStyle: 'pragmatic' } } };
-  const host = runtimeHostFor({ settings }, 'codex');
+  const fixture = await createProviderHostFixture({ vault: sharedVault, settings: { providerConfigs: { codex: { enabled: true, discoveredModels: TEST_CODEX_CATALOG, responseStyle: 'pragmatic' } } } });
+  settings = fixture.settings;
+  const host = fixture.host.getRuntimeHost('codex');
   runtime = new CodexAppServerRuntime(host, () => undefined);
   backend = new CodexExecutionBackend(host, () => runtime);
 });
 afterEach(async () => {
   await Promise.all(sessions.splice(0).map(session => session.dispose()));
   await runtime.dispose();
+  vi.restoreAllMocks();
+});
+
+it('preserves a pre-spawn failure in the execution error and cleans up exactly once', async () => {
+  const process = mockNative.createProcess();
+  vi.spyOn(mockNative, 'createProcess').mockReturnValueOnce(process);
+  vi.spyOn(process, 'start').mockImplementationOnce(() => {
+    throw new Error('Failed before Codex process spawned');
+  });
+  const shutdown = vi.spyOn(process, 'shutdown');
+  const disposeTransport = vi.spyOn(CodexRPCTransport.prototype, 'dispose');
+  const session = createSession();
+
+  const events = await collect(session.execute(request).events);
+
+  expect(events.at(-1)).toMatchObject({
+    type: 'execution_error', message: expect.stringContaining('Failed before Codex process spawned'),
+  });
+  expect(process.isAlive()).toBe(false);
+  expect(process.requests).toEqual([]);
+  expect(shutdown).toHaveBeenCalledTimes(1);
+  expect(disposeTransport).toHaveBeenCalledTimes(1);
+  await session.dispose();
+  await runtime.dispose();
+  expect(shutdown).toHaveBeenCalledTimes(1);
+  expect(disposeTransport).toHaveBeenCalledTimes(1);
 });
 
 it.each(['priority', 'default'])('correlates a persistent turn from native startup through output with explicit %s tier', async serviceTier => {
-  settings.providerConfigs.codex.discoveredModels = TEST_CODEX_CATALOG.map(model => ({ ...model, defaultServiceTier: 'priority' }));
+  settings.providerConfigs.codex!.discoveredModels = TEST_CODEX_CATALOG.map(model => ({ ...model, defaultServiceTier: 'priority' }));
   const session = createSession();
   const run = session.execute({ ...request, configuration: { ...request.configuration, serviceTier } });
   const output = collect(run.events);
@@ -107,7 +136,7 @@ it.each(['priority', 'default'])('correlates a persistent turn from native start
 it('resumes a fixed seed once and applies response-style changes on subsequent turns', async () => {
   const session = createSession({ resumeSeed: { providerSessionId: 'existing', providerState: { threadId: 'existing', sessionFilePath: '/tmp/existing.jsonl' } } });
   for (const [index, responseStyle] of ['pragmatic', 'none', 'friendly'].entries()) {
-    settings.providerConfigs.codex.responseStyle = responseStyle;
+    settings.providerConfigs.codex!.responseStyle = responseStyle;
     const output = collect(session.execute(request).events);
     await mockNative.waitForRequest('turn/start', 0, index + 1);
     complete('existing');
@@ -258,3 +287,7 @@ it('preserves native tool IDs while steering and answering an unavailable worksp
   expect(await output).toContainEqual(expect.objectContaining({ type: 'tool_started', toolCallId: 'tool-native', toolScope: { kind: 'main' } }));
   expect(process.requests.find(rpc => rpc.method === 'turn/steer')!.params).toMatchObject({ threadId: 'thread-1', expectedTurnId: 'turn-thread-1' });
 });
+
+let sharedVault: DesktopVault;
+beforeAll(async () => { sharedVault = await DesktopVault.create(); });
+afterAll(async () => { await sharedVault.dispose(); });

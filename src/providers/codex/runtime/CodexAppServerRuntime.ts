@@ -220,6 +220,8 @@ export class CodexAppServerRuntime {
       this.connections.add(connection);
       this.current = connection;
     }
+    // A synchronous start failure lives on initialized; retain would mask it as a closed connection.
+    if (!connection.isAlive()) await waitForCodexOperation(connection.initialized, signal);
     const lease = connection.retain();
     try {
       await waitForCodexOperation<unknown>(options.readiness === 'initialized' ? connection.initialized : connection.ready, signal);
