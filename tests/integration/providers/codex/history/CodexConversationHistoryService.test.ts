@@ -54,6 +54,60 @@ describe('CodexConversationHistoryService', () => {
     expect(await findCodexSessionFileAsync('thread')).toBe(file);
   });
 
+  it('preserves visible history around native file-backed image references', async () => {
+    const root = path.join(tempHome, '.codex', 'sessions');
+    fs.mkdirSync(root, { recursive: true });
+    const file = path.join(root, 'image-thread.jsonl');
+    // Codex 0.166 uploads prepared images and persists file_id instead of image_url.
+    const records = [
+      { type: 'event_msg', payload: { type: 'task_started', turn_id: 'image-turn' } },
+      { type: 'response_item', payload: { type: 'message', role: 'user', content: [
+        { type: 'input_text', text: 'Describe this image.' }, { type: 'input_image', file_id: 'file-placeholder' },
+      ] } },
+      { type: 'response_item', payload: { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'Visible answer.' }] } },
+      { type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_image', file_id: 'file-steering-placeholder' }] } },
+      { type: 'response_item', payload: { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'Continuation.' }] } },
+      { type: 'event_msg', payload: { type: 'task_complete', turn_id: 'image-turn' } },
+    ];
+    fs.writeFileSync(file, records.map((record, seconds) => JSON.stringify({ timestamp: testDate({ seconds }).toISOString(), ...record })).join('\n'));
+    const result = await new CodexConversationHistoryService().hydrateConversationHistory({
+      sessionId: 'image-thread', providerState: { threadId: 'image-thread', sessionFilePath: file }, messages: [],
+    }, null);
+    expect(result.messages?.map(message => [message.role, message.content])).toEqual([
+      ['user', 'Describe this image.'], ['assistant', 'Visible answer.\n\nContinuation.'],
+    ]);
+    expect(result.messages?.flatMap(message => message.images ?? [])).toEqual([]);
+  });
+
+  it('hydrates every attempt of a recovered fork checkpoint and excludes later turns', async () => {
+    const root = path.join(tempHome, '.codex', 'sessions');
+    fs.mkdirSync(root, { recursive: true });
+    const file = path.join(root, 'recovered-thread.jsonl');
+    // recover_turn_if_idle restarts sampling with the already persisted turn ID.
+    const records = [
+      { type: 'event_msg', payload: { type: 'task_started', turn_id: 'recovered-turn' } },
+      { type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'Finish this task.' }] } },
+      { type: 'response_item', payload: { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'Before suspension.' }] } },
+      { type: 'event_msg', payload: { type: 'task_started', turn_id: 'recovered-turn' } },
+      { type: 'response_item', payload: { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'Recovered answer.' }] } },
+      { type: 'event_msg', payload: { type: 'task_complete', turn_id: 'recovered-turn' } },
+      { type: 'event_msg', payload: { type: 'task_started', turn_id: 'later-turn' } },
+      { type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'Later question.' }] } },
+      { type: 'response_item', payload: { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'Later answer.' }] } },
+      { type: 'event_msg', payload: { type: 'task_complete', turn_id: 'later-turn' } },
+    ];
+    fs.writeFileSync(file, records.map((record, seconds) => JSON.stringify({ timestamp: testDate({ seconds }).toISOString(), ...record })).join('\n'));
+    const result = await new CodexConversationHistoryService().hydrateConversationHistory({
+      sessionId: null, messages: [], providerState: {
+        forkSource: { sessionId: 'recovered-thread', resumeAt: 'recovered-turn' },
+        forkSourceSessionFilePath: file, forkSourceTranscriptRootPath: root,
+      },
+    }, null);
+    expect(result.messages?.map(message => message.content)).toEqual([
+      'Finish this task.', 'Before suspension.', 'Recovered answer.',
+    ]);
+  });
+
   it('continues transcript discovery in a readable sibling after a directory fails', async () => {
     const root = path.join(tempHome, '.codex', 'sessions');
     const readable = path.join(root, 'readable');
