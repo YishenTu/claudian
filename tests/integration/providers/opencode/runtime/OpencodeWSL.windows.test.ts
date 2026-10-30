@@ -8,6 +8,7 @@ import * as path from 'node:path';
 import { runtimeHostFor } from '@test/helpers/providerRuntimeHost';
 import { testDate } from '@test/helpers/testClock';
 import { hasNativeWSL } from '@test/helpers/WSLNativeTarget';
+import { onTestFinished } from 'vitest';
 
 import { ConversationRepository } from '@/app/conversations/ConversationRepository';
 import type { ConversationPersistence } from '@/app/storage/ConversationPersistenceStore';
@@ -58,6 +59,8 @@ describe.skipIf(!available || !cli)('native OpenCode WSL adoption', () => {
     const root = await mkdtemp(location === 'drive'
       ? path.join(tmpdir(), 'claudian-opencode-wsl-')
       : path.win32.join(opencodeHostPath('/tmp', target), 'claudian-opencode-wsl-'));
+    // Keep cleanup errors separate so they cannot hide a failed native assertion.
+    onTestFinished(() => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }));
     const targetRoot = opencodeTargetPath(root, target);
     const log = path.join(root, 'requests.jsonl');
     const fakeFile = path.join(root, 'fake-model.cjs');
@@ -66,6 +69,7 @@ describe.skipIf(!available || !cli)('native OpenCode WSL adoption', () => {
     const modelSpec = buildTargetLaunchSpec({ target, hostCwd: root, command: 'node', args: [opencodeTargetPath(fakeFile, target), opencodeTargetPath(log, target)], env: opencodeEnvironment(process.env) });
     const model = new ManagedStdioProcess({ ...modelSpec, cwd: modelSpec.spawnCwd });
     model.start();
+    const modelClosed = new Promise<void>(resolve => model.onClose(() => resolve()));
     const modelURL = await new Promise<string>((resolve, reject) => {
       let text = '';
       model.onError(reject);
@@ -146,8 +150,9 @@ describe.skipIf(!available || !cli)('native OpenCode WSL adoption', () => {
       await kernel.dispose();
       await service.dispose();
       await endpoint.close();
-      await model.shutdown();
-      await rm(root, { recursive: true, force: true });
+      // EOF closes the Linux fixture itself; killing wsl.exe does not prove that.
+      model.stdin.end();
+      await modelClosed;
     }
   });
 });
