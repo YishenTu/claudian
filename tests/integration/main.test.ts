@@ -1423,6 +1423,63 @@ describe('ClaudianPlugin', () => {
       expect(repository.getSync(ids[0])?.messages).toEqual(messages);
     });
 
+    it("releases a detached model after another reader's hydration fails without reporting its error again", async () => {
+      const { host, repository, ids } = await setupHistoryReads();
+      const pool = host.sessionRuntimes;
+      if (!(pool instanceof SessionRuntimePool)) throw new Error('Expected the composed session runtime pool');
+      await repository.update(ids[0], { usage: {
+        model: 'gpt-5.4', inputTokens: 1, contextTokens: 1, contextWindow: 200_000, percentage: 1,
+      } });
+      const attachments = ids.slice(0, 4).map(conversationId => pool.acquire(
+        { conversationId, providerId: 'codex', draftModel: null }, { reveal() {} },
+      ).attachment);
+      const runtime = attachments[0].runtime;
+      const model = runtime.model;
+      // The first presentation has reserved a model while another reader starts its history load.
+      // Three more recently viewed models fill the configured retention budget when detached.
+      for (const attachment of attachments.slice(1)) await attachment.runtime.ensureModel();
+      const writeStarted = deferred<void>();
+      const failWrite = deferred<void>();
+      const failure = new Error('Model metadata write failed');
+      const write = mockApp.vault.adapter.write as Mock;
+      const originalWrite = write.getMockImplementation()!;
+      write.mockImplementationOnce(async () => {
+        writeStarted.resolve();
+        await failWrite.promise;
+        throw failure;
+      });
+      const reading = repository.getById(ids[0]).then(() => null, (error: unknown) => error);
+      const releaseStarted = deferred<void>();
+      const releaseFinished = deferred<{ released: boolean } | { error: unknown }>();
+      const releaseHistory = repository.releaseHistory.bind(repository);
+      vi.spyOn(repository, 'releaseHistory').mockImplementation((id, canRelease) => {
+        const result = releaseHistory(id, canRelease);
+        if (id === ids[0]) {
+          releaseStarted.resolve();
+          void result.then(released => releaseFinished.resolve({ released }), error => releaseFinished.resolve({ error }));
+        }
+        return result;
+      });
+      try {
+        expect(await Promise.race([writeStarted.promise.then(() => 'writing'), reading.then(() => 'read finished')])).toBe('writing');
+        for (const attachment of attachments) pool.release(attachment);
+        await releaseStarted.promise;
+        expect(runtime.peekModel === model).toBe(true);
+        failWrite.resolve();
+        expect(await reading).toBe(failure);
+        const outcome = await releaseFinished.promise;
+        await new Promise<void>(resolve => setImmediate(resolve));
+        expect(Notice).not.toHaveBeenCalledWith('Session state could not be saved. It remains in memory.');
+        expect(outcome).toEqual({ released: true });
+        expect(runtime.peekModel).toBeNull();
+        expect(repository.getSync(ids[0])?.messages).toEqual([]);
+      } finally {
+        failWrite.resolve();
+        await reading;
+        write.mockImplementation(originalWrite);
+      }
+    });
+
     it('returns the successful snapshot even if history cleanup fails', async () => {
       const { host, repository, ids, messages } = await setupHistoryReads();
       const release = vi.spyOn(repository, 'releaseHistory').mockRejectedValueOnce(new Error('History projection unavailable'));
