@@ -108,14 +108,9 @@ interface NativeToolCall {
   error?: string;
 }
 
-/** Restores a native MCP call from its live app-server item or its persisted rollout record. */
-function restoreNativeMcpTool(mode: 'live' | 'history', call: NativeToolCall): ToolCallInfo[] {
+/** Restores a native MCP call from its live app-server item. */
+function restoreNativeMcpTool(call: NativeToolCall): ToolCallInfo[] {
   const native = { server: 'docs', tool: 'search', ...call };
-  if (mode === 'history') {
-    return parseCodexSessionContent(JSON.stringify({
-      type: 'response_item', timestamp: testTime(), payload: { ...native, type: 'mcp_tool_call', call_id: call.id },
-    })).flatMap(message => message.toolCalls ?? []);
-  }
   const chunks: StreamChunk[] = [];
   const router = new CodexNotificationRouter(chunk => chunks.push(chunk), '/workspace');
   router.beginTurn();
@@ -129,7 +124,7 @@ function restoreNativeMcpTool(mode: 'live' | 'history', call: NativeToolCall): T
 function restoreNativeWebSearch(mode: 'live' | 'history', call: NativeToolCall & { action: Record<string, unknown> }): ToolCallInfo[] {
   if (mode === 'history') {
     return parseCodexSessionContent(JSON.stringify({
-      type: 'response_item', timestamp: testTime(), payload: { type: 'web_search_call', call_id: call.id, status: call.status, action: call.action },
+      type: 'response_item', timestamp: testTime(), payload: { type: 'web_search_call', id: call.id, status: call.status, action: call.action },
     })).flatMap(message => message.toolCalls ?? []);
   }
   const chunks: StreamChunk[] = [];
@@ -296,17 +291,19 @@ describe.each(['live', 'history'] as const)('%s Codex tool presentation', mode =
     expect(block.textContent).toContain('turn1view0');
   });
 
-  it.each([
-    ['string arguments', { id: 'mcp-args', status: 'completed', arguments: '{"query":"vault notes"}', result: { content: [{ type: 'text', text: 'hit' }] } },
-      { input: { query: 'vault notes' }, status: 'completed', result: 'hit' }],
-    ['cancellation', { id: 'mcp-cancelled', status: 'cancelled', arguments: { query: 'vault notes' } },
-      { input: { query: 'vault notes' }, status: 'error', result: 'Failed' }],
-    ['error text', { id: 'mcp-error', status: 'completed', arguments: {}, error: 'Server disconnected' },
-      { input: {}, status: 'error', result: 'Server disconnected' }],
-  ] as const)('restores native MCP calls with %s', (_label, call, expected) => {
-    const tools = restoreNativeMcpTool(mode, call);
-    expect(tools).toEqual([expect.objectContaining({ id: call.id, name: 'mcp__docs__search', ...expected })]);
-  });
+  if (mode === 'live') {
+    it.each([
+      ['string arguments', { id: 'mcp-args', status: 'completed', arguments: '{"query":"vault notes"}', result: { content: [{ type: 'text', text: 'hit' }] } },
+        { input: { query: 'vault notes' }, status: 'completed', result: 'hit' }],
+      ['cancellation', { id: 'mcp-cancelled', status: 'cancelled', arguments: { query: 'vault notes' } },
+        { input: { query: 'vault notes' }, status: 'error', result: 'Failed' }],
+      ['error text', { id: 'mcp-error', status: 'completed', arguments: {}, error: 'Server disconnected' },
+        { input: {}, status: 'error', result: 'Server disconnected' }],
+    ] as const)('restores native MCP calls with %s', (_label, call, expected) => {
+      const tools = restoreNativeMcpTool(call);
+      expect(tools).toEqual([expect.objectContaining({ id: call.id, name: 'mcp__docs__search', ...expected })]);
+    });
+  }
 
   it.each([
     ['completed', 'completed'],
@@ -315,7 +312,7 @@ describe.each(['live', 'history'] as const)('%s Codex tool presentation', mode =
   ])('restores a %s native web search', (status, expectedStatus) => {
     const tools = restoreNativeWebSearch(mode, { id: `search-${status}`, status, action: { type: 'search', query: 'vault sync' } });
     expect(tools).toEqual([expect.objectContaining({
-      id: `search-${status}`, name: 'WebSearch', input: { actionType: 'search', query: 'vault sync' }, status: expectedStatus, result: 'Search complete',
+      id: mode === 'history' ? 'tail-ws-0' : `search-${status}`, name: 'WebSearch', input: { actionType: 'search', query: 'vault sync' }, status: expectedStatus, result: 'Search complete',
     })]);
   });
 

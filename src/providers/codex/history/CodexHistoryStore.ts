@@ -47,9 +47,6 @@ import {
   isCodexInternalToolCall,
   isCodexSilentWriteStdinCall,
   isCodexToolOutputError,
-  normalizeCodexMCPToolInput,
-  normalizeCodexMCPToolName,
-  normalizeCodexMCPToolState,
   normalizeCodexToolCall,
   normalizeCodexToolResult,
   normalizeCodexWebSearchInput,
@@ -59,7 +56,7 @@ import {
 } from '../normalization/codexToolNormalization';
 
 interface PersistedMessagePart {
-  image_url?: string | { url?: string };
+  image_url?: string;
   type?: string;
   text?: string;
 }
@@ -102,19 +99,6 @@ interface PersistedWebSearchCallPayload {
     pattern?: string;
   };
   status?: string;
-  call_id?: string;
-}
-
-interface PersistedMCPToolCallPayload {
-  type: 'mcp_tool_call';
-  server?: string;
-  tool?: string;
-  call_id?: string;
-  status?: string;
-  arguments?: string | Record<string, unknown>;
-  result?: { content?: Array<{ type?: string; text?: string }> } | null;
-  error?: string | null;
-  duration_ms?: number | null;
 }
 
 interface PersistedEventPayload {
@@ -188,7 +172,6 @@ type PersistedPayload =
   | PersistedToolCallPayload
   | PersistedToolCallOutputPayload
   | PersistedWebSearchCallPayload
-  | PersistedMCPToolCallPayload
   | PersistedCompactionPayload
   | PersistedEventPayload
   | undefined;
@@ -465,12 +448,7 @@ function extractMessageImages(
       continue;
     }
 
-    const imageUrl = typeof part.image_url === 'string'
-      ? part.image_url
-      : typeof part.image_url?.url === 'string'
-        ? part.image_url.url
-        : null;
-    const parsed = parseImageDataUri(imageUrl);
+    const parsed = parseImageDataUri(part.image_url);
     if (!parsed) {
       continue;
     }
@@ -498,12 +476,7 @@ function hasMessageImages(content: PersistedMessagePart[] | undefined): boolean 
     if (part?.type !== 'input_image') {
       return false;
     }
-    const imageUrl = typeof part.image_url === 'string'
-      ? part.image_url
-      : typeof part.image_url?.url === 'string'
-        ? part.image_url.url
-        : null;
-    return parseImageDataUri(imageUrl) !== null;
+    return parseImageDataUri(part.image_url) !== null;
   });
 }
 
@@ -938,7 +911,7 @@ function readPersistedCommandToolResult(rawOutputText: string): {
     metadata = metadata.value as Record<string, unknown>;
     commandResultText = JSON.stringify(metadata);
   }
-  const exitCodeMatch = commandResultText.match(/(?:Exit code:|Process exited with code)\s*(-?\d+)/i);
+  const exitCodeMatch = commandResultText.match(/(?:Exit code:|Process exited with code) (-?\d+)/i);
   const exitCode = typeof metadata.exit_code === 'number' && Number.isInteger(metadata.exit_code)
     ? metadata.exit_code
     : exitCodeMatch ? Number(exitCodeMatch[1]) : undefined;
@@ -1029,11 +1002,9 @@ function processPersistedWebSearchCall(
   const turn = ensureTurn(ctx.turns, ctx.turnOrder, nextTurnId(ctx), ctx.currentTurnId, timestamp);
   const bubble = ensureAssistantBubble(turn, timestamp);
 
-  // Persisted web_search_call entries commonly omit call_id. Use transcript line index
-  // so live tailing and history reload reconstruct the same visible tool sequence.
-  const callId = payload.call_id || `tail-ws-${lineIndex}`;
-
-  if (bubble.toolIndexesById.has(callId)) return;
+  // Native web_search_call entries have no call_id. Use transcript line index
+  // for stable, distinct IDs across repeated history loads.
+  const callId = `tail-ws-${lineIndex}`;
 
   const input = normalizeCodexWebSearchInput({ action: payload.action });
   const isError = isCodexFailedToolStatus(payload.status);
@@ -1048,43 +1019,6 @@ function processPersistedWebSearchCall(
   };
 
   pushToolInvocation(bubble, toolCall);
-
-  ctx.toolCallToTurn.set(callId, {
-    turnId: turn.id,
-    bubbleIndex: turn.assistantBubbles.indexOf(bubble),
-  });
-}
-
-function processPersistedMCPToolCall(
-  payload: PersistedMCPToolCallPayload,
-  timestamp: number,
-  ctx: PersistedParseContext,
-): void {
-  const callId = payload.call_id;
-  if (!callId) return;
-
-  const turn = ensureTurn(ctx.turns, ctx.turnOrder, nextTurnId(ctx), ctx.currentTurnId, timestamp);
-  const bubble = ensureAssistantBubble(turn, timestamp);
-
-  if (bubble.toolIndexesById.has(callId)) return;
-
-  const normalizedInput = normalizeCodexMCPToolInput(payload.arguments);
-  const normalizedState = normalizeCodexMCPToolState(payload.status, payload.result, payload.error);
-
-  const toolCall: ToolCallInfo = {
-    id: callId,
-    name: normalizeCodexMCPToolName(payload.server, payload.tool),
-    input: normalizedInput,
-    status: normalizedState.status,
-    ...(normalizedState.result ? { result: normalizedState.result } : {}),
-  };
-
-  pushToolInvocation(bubble, toolCall);
-
-  ctx.toolCallToTurn.set(callId, {
-    turnId: turn.id,
-    bubbleIndex: turn.activeBubbleIndex!,
-  });
 }
 
 function applyQuestionReplies(text: string, ctx: PersistedParseContext): boolean {
@@ -1170,10 +1104,6 @@ function processPersistedPayload(
 
     case 'web_search_call':
       processPersistedWebSearchCall(payload as PersistedWebSearchCallPayload, timestamp, lineIndex, ctx);
-      break;
-
-    case 'mcp_tool_call':
-      processPersistedMCPToolCall(payload as PersistedMCPToolCallPayload, timestamp, ctx);
       break;
 
     case 'compaction':

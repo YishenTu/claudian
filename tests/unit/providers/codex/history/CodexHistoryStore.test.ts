@@ -356,17 +356,16 @@ describe('CodexHistoryStore', () => {
     });
 
     it.each([
-      { kind: 'text and string URL', visibleText: true, objectUrl: false },
-      { kind: 'image-only string URL', visibleText: false, objectUrl: false },
-      { kind: 'image-only object URL', visibleText: false, objectUrl: true },
-    ])('rehydrates user images from persisted input_image parts: $kind', ({ visibleText, objectUrl }) => {
+      { kind: 'text and string URL', visibleText: true },
+      { kind: 'image-only string URL', visibleText: false },
+    ])('rehydrates user images from persisted input_image parts: $kind', ({ visibleText }) => {
       const data = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jP9sAAAAASUVORK5CYII=';
       const url = `data:image/png;base64,${data}`;
       const records = [
         { type: 'response_item', payload: { type: 'message', role: 'user', content: [
           ...(visibleText ? [{ type: 'input_text', text: '<image name=[Image #1] path="/tmp/1-image-1.png">' }] : []),
-          { type: 'input_image', image_url: objectUrl ? { url } : url },
-          { type: 'input_image', image_url: objectUrl ? { url: 'data:image/png;base64,c2Vjb25k' } : 'data:image/png;base64,c2Vjb25k' },
+          { type: 'input_image', image_url: url },
+          { type: 'input_image', image_url: 'data:image/png;base64,c2Vjb25k' },
           { type: 'input_text', text: '' },
           ...(visibleText ? [{ type: 'input_text', text: '</image>' }, { type: 'input_text', text: 'What is in this image?' }] : []),
         ] } },
@@ -2091,7 +2090,7 @@ describe('CodexHistoryStore', () => {
 
       const searchTool = assistantMsg!.toolCalls!.find(tc => tc.name === 'WebSearch');
       expect(searchTool).toBeDefined();
-      expect(searchTool!.id).toBe('call_ws_1');
+      expect(searchTool!.id).toBe('tail-ws-1');
       expect(searchTool!.input.actionType).toBe('search');
       expect(searchTool!.input.query).toBe('obsidian plugin API');
       expect(searchTool!.status).toBe('completed');
@@ -2099,13 +2098,13 @@ describe('CodexHistoryStore', () => {
 
     it('restores an in-progress native search before its result arrives', () => {
       const records = [
-        { type: 'response_item', payload: { type: 'web_search_call', call_id: 'search', status: 'in_progress', action: { type: 'search', query: 'Obsidian' } } },
+        { type: 'response_item', payload: { type: 'web_search_call', id: 'search', status: 'in_progress', action: { type: 'search', query: 'Obsidian' } } },
       ];
       expect(parseCodexSessionContent(records.map((record, seconds) => JSON.stringify({ timestamp: testTime({ seconds }), ...record })).join('\n')).flatMap(message => message.toolCalls ?? []))
-        .toEqual([expect.objectContaining({ id: 'search', name: 'WebSearch', status: 'running', input: expect.objectContaining({ query: 'Obsidian' }) })]);
+        .toEqual([expect.objectContaining({ id: 'tail-ws-0', name: 'WebSearch', status: 'running', input: expect.objectContaining({ query: 'Obsidian' }) })]);
     });
 
-    it('keeps distinct persisted web_search_call entries when call_id is missing', () => {
+    it('keeps distinct persisted web_search_call entries', () => {
       const content = [
         JSON.stringify({
           timestamp: '2026-03-27T00:00:00.000Z',
@@ -2871,115 +2870,6 @@ describe('CodexHistoryStore', () => {
       expect(turns).toHaveLength(1);
       expect(turns[0].turnId).toBe('turn-modern');
       expect(turns[0].messages.map(message => message.content)).toEqual(['Current']);
-    });
-  });
-
-  describe('parseCodexSessionContent - persisted mcp_tool_call', () => {
-    it('restores mcp_tool_call from response_item as mcp__server__tool', () => {
-      const content = [
-        JSON.stringify({
-          timestamp: '2026-03-27T00:00:00.000Z',
-          type: 'response_item',
-          payload: {
-            type: 'message',
-            role: 'user',
-            content: [{ type: 'input_text', text: 'Use MCP tool.' }],
-          },
-        }),
-        JSON.stringify({
-          timestamp: '2026-03-27T00:00:01.000Z',
-          type: 'response_item',
-          payload: {
-            type: 'mcp_tool_call',
-            server: 'myserver',
-            tool: 'mytool',
-            call_id: 'call_mcp_1',
-            status: 'completed',
-          },
-        }),
-        JSON.stringify({
-          timestamp: '2026-03-27T00:00:02.000Z',
-          type: 'response_item',
-          payload: {
-            type: 'message',
-            role: 'assistant',
-            content: [{ type: 'output_text', text: 'MCP tool executed.' }],
-          },
-        }),
-      ].join('\n');
-
-      const messages = parseCodexSessionContent(content);
-
-      const assistant = messages.find(m => m.role === 'assistant' && m.toolCalls);
-      expect(assistant).toBeDefined();
-
-      const mcpTool = assistant!.toolCalls!.find(tc => tc.name === 'mcp__myserver__mytool');
-      expect(mcpTool).toBeDefined();
-      expect(mcpTool!.id).toBe('call_mcp_1');
-      expect(mcpTool!.status).toBe('completed');
-    });
-
-    it('preserves MCP arguments and structured result text', () => {
-      const content = [
-        JSON.stringify({
-          timestamp: '2026-03-27T00:00:00.000Z',
-          type: 'response_item',
-          payload: {
-            type: 'mcp_tool_call',
-            server: 'filesystem',
-            tool: 'read_file',
-            call_id: 'call_mcp_2',
-            status: 'completed',
-            arguments: { path: 'README.md' },
-            result: {
-              content: [
-                { type: 'text', text: 'line 1' },
-                { type: 'text', text: 'line 2' },
-              ],
-            },
-          },
-        }),
-      ].join('\n');
-
-      const messages = parseCodexSessionContent(content);
-      const assistant = messages.find(m => m.role === 'assistant' && m.toolCalls);
-      const mcpTool = assistant!.toolCalls!.find(tc => tc.id === 'call_mcp_2');
-
-      expect(mcpTool).toMatchObject({
-        name: 'mcp__filesystem__read_file',
-        input: { path: 'README.md' },
-        status: 'completed',
-        result: 'line 1\nline 2',
-      });
-    });
-
-    it.each(['Permission denied', { message: 'Permission denied' }])('preserves MCP error output %j', error => {
-      const content = [
-        JSON.stringify({
-          timestamp: '2026-03-27T00:00:00.000Z',
-          type: 'response_item',
-          payload: {
-            type: 'mcp_tool_call',
-            server: 'filesystem',
-            tool: 'write_file',
-            call_id: 'call_mcp_3',
-            status: 'failed',
-            arguments: '{"path":"README.md"}',
-            error,
-          },
-        }),
-      ].join('\n');
-
-      const messages = parseCodexSessionContent(content);
-      const assistant = messages.find(m => m.role === 'assistant' && m.toolCalls);
-      const mcpTool = assistant!.toolCalls!.find(tc => tc.id === 'call_mcp_3');
-
-      expect(mcpTool).toMatchObject({
-        name: 'mcp__filesystem__write_file',
-        input: { path: 'README.md' },
-        status: 'error',
-        result: 'Permission denied',
-      });
     });
   });
 
