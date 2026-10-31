@@ -10,7 +10,8 @@ const fullSelection = {
   crossPlatform: true, piWindows: true, wslWindows: true,
 };
 const docsTest = 'tests/unit/docs/Documentation.test.ts';
-const wslTests = [
+export const wslTests = [
+  'tests/integration/core/process/execution-target/ClaudeWSL.windows.test.ts',
   'tests/integration/core/process/execution-target/WSLExecution.windows.test.ts',
   'tests/integration/core/process/execution-target/WSLSessionToolRelay.windows.test.ts',
   'tests/integration/providers/deepseek/runtime/DeepSeekWSLHost.windows.test.ts',

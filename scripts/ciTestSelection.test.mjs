@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import path from 'node:path';
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { pathToFileURL } from 'node:url';
 
-import { selectCiTests, selectRelatedCiTests } from './ciTestSelection.mjs';
+import { selectCiTests, selectRelatedCiTests, wslTests } from './ciTestSelection.mjs';
 
 const prompt = 'tests/unit/core/prompt/mainAgent.systemPrompt.test.ts';
 const panel = 'tests/integration/features/chat/ClaudianView.test.ts';
@@ -93,6 +94,7 @@ test('real dependency discovery retains native launch checks for shared process 
     'tests/integration/core/process/loginShellPath.test.ts',
     'tests/integration/features/chat/tabs/forking/ForkSource.opencode-v2.test.ts',
     'tests/integration/features/chat/tabs/forking/ForkSource.opencode.test.ts',
+    'tests/integration/helpers/WSLProcessFixture.test.ts',
     'tests/integration/providers/claude/execution/ClaudeExecutionBackend.test.ts',
     'tests/integration/providers/claude/runtime/ClaudeCLIInstallation.test.ts',
     'tests/integration/providers/claude/runtime/ClaudeSDKSpawn.test.ts',
@@ -574,4 +576,15 @@ test('WSL native job follows shared dependencies and provider users but skips un
     assert.ok(selection.testFiles.includes(wsl), `${file} must select the declared WSL consumer`);
   }
   assert.equal(selectRelatedCiTests({ changes: [{ status: 'M', path: 'src/core/process/execution-target/WSLEnvironment.ts' }] }).wslWindows, true);
+});
+
+
+test('registered WSL suites exactly match the wsl-native CI invocation', () => {
+  const workflow = readFileSync(new URL('../.github/workflows/ci.yml', import.meta.url), 'utf8');
+  const job = workflow.split('  wsl-native:')[1]?.split('  build-artifacts:')[0];
+  assert.ok(job, 'wsl-native job must exist');
+  const invocation = job.split('\n').find(line => line.trim().startsWith('run: npm run test:unit --'));
+  assert.ok(invocation, 'native WSL test invocation must exist');
+  const invoked = invocation.match(/tests\/[^\s]+\.test\.ts/g);
+  assert.deepEqual(new Set(wslTests), new Set(invoked));
 });
