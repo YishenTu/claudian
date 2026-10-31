@@ -1336,7 +1336,7 @@ it.each([true, false])('executes compact from main chat independently of the nat
     expect(peer.calls.filter(c => c.method === 'commands/execute')).toMatchObject([{ args: { line: '/compact' } }]);
     expect(peer.calls.some(c => c.method === 'session/prompt')).toBe(false);
     expect(chat.fixture.input.value).toBe('');
-    expect(chat.fixture.deps.streamController.appendError).not.toHaveBeenCalled();
+    expect(chat.fixture.state.activity?.kind).not.toBe('error');
   } finally { await chat.dispose(); }
 });
 
@@ -1357,14 +1357,14 @@ it('restores text and images after definite native rejection and retries on the 
     expect(chat.fixture.input.value).toBe('inspect this');
     expect(chat.getImages()).toEqual([chat.image]);
     expect(chat.fixture.state.messages).toEqual([]);
-    expect(chat.fixture.deps.streamController.appendError).not.toHaveBeenCalled();
+    expect(chat.fixture.state.activity?.kind).not.toBe('error');
     chat.clearImages();
     await chat.fixture.controller.sendMessage();
     expect(chat.fixture.input.value).toBe('');
     expect(chat.fixture.state.messages.map(m => m.role)).toEqual(['user', 'assistant']);
     expect(peer.calls.filter(c => c.method === 'session/create')).toHaveLength(1);
     expect(chat.start).toHaveBeenCalledTimes(1);
-    expect(chat.fixture.deps.streamController.appendError).not.toHaveBeenCalled();
+    expect(chat.fixture.state.activity?.kind).not.toBe('error');
   } finally { await chat.dispose(); }
 });
 

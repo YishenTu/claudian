@@ -210,7 +210,7 @@ it('does not restart main chat when an answer outlives cancellation during hando
   handoff.resolve(false);
   await waitFor(() => expect(within(host).queryByRole('region', { name: 'Question' })).toBeNull());
   await new Promise(resolve => setTimeout(resolve, 0));
-  expect(fixture.coordinator.execute).toHaveBeenCalledTimes(1);
+  expect(fixture.native.requests).toHaveLength(1);
   expect(fixture.state.queuedMessage).toBeNull();
   expect(tool.questionStatus).toBe('expired');
   cleanups.push(() => fixture.controller.dismissPendingApproval());
@@ -237,20 +237,23 @@ it.each([true, false])('settles an active-turn answer without consuming the draf
   expect(await axe(question)).toHaveNoViolations();
   fireEvent.click(within(question).getByRole('button', { name: 'Submit answers' }));
   await waitFor(() => expect(within(host).queryByRole('region', { name: 'Question' })).toBeNull());
-  expect(fixture.coordinator.steer).toHaveBeenCalledTimes(1);
-  const submission = fixture.coordinator.steer.mock.calls[0][0];
-  expect(JSON.parse(submission.canonicalText.split('\n')[1])).toEqual([{
+  expect(fixture.native.steerRequests).toHaveLength(1);
+  const request = fixture.native.steerRequests[0];
+  const canonicalText = request.input.filter(part => part.type === 'text').map(part => part.text).join('');
+  expect(JSON.parse(canonicalText.split('\n')[1])).toEqual([{
     questionItemId: '["request_user_input_async","ask",0]', question: 'Which check?', answer: 'History',
   }]);
-  expect(submission.rawDisplayText).toBe('');
+  const replyState = accepted ? fixture.coordinator.getSteerSubmission(request.inputId!)?.rawDisplayText
+    : fixture.state.queuedMessage?.content.slice('Unrelated follow-up'.length);
+  expect(replyState).toBe('');
   expect(tool.resolvedAnswers).toEqual({ '0': 'History' });
   expect(fixture.state.queuedMessage?.content).toBe('Unrelated follow-up');
   expect(fixture.state.queuedMessage === queued).toBe(accepted);
   expect(fixture.state.queuedMessage?.turnRequest?.text).toBe(accepted
-    ? 'Unrelated follow-up' : `Unrelated follow-up\n\n${submission.canonicalText}`);
+    ? 'Unrelated follow-up' : `Unrelated follow-up\n\n${canonicalText}`);
   expect(within(composer).getByText('Queued')).toBeDefined();
   expect(fixture.state.isStreaming).toBe(true);
-  expect(fixture.coordinator.cancel).not.toHaveBeenCalled();
+  expect(fixture.native.runs[0].cancelCalls).toBe(0);
   expect(fixture.input.value).toBe('Keep this draft');
   expect(composer.classList.contains('claudian-hidden')).toBe(false);
 });

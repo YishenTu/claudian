@@ -13,7 +13,7 @@ beforeEach(() => {
   vi.spyOn(ProviderRegistry, 'getCapabilities').mockReturnValue({ ...nativeCapabilities, supportsTurnSteer: true });
   vi.spyOn(ProviderRegistry, 'formatQuestionReply');
 });
-afterEach(() => vi.restoreAllMocks());
+afterEach(() => { vi.restoreAllMocks(); vi.useRealTimers(); });
 
 
 describe('mailbox input', () => {
@@ -22,16 +22,17 @@ describe('mailbox input', () => {
   it('keeps the composer and unread state, and submits a sender envelope without captured context', async () => {
     const fixture = (await createFixture());
     fixture.input.value = 'My unsent draft';
-    const acknowledge = vi.spyOn(fixture.state, 'acknowledgeReview');
+    fixture.state.markReviewRequired();
+    const attention = fixture.state.attention;
     const onUnsent = vi.fn();
     await fixture.controller.sendSessionMessage(message, { onUnsent, assertBeforeHandoff: () => undefined });
-    const submission = fixture.coordinator.execute.mock.calls[0][0];
-    expect(decodeSessionMessage(submission.canonicalText)).toEqual(message);
+    const submission = fixture.native.requests[0];
+    expect(decodeSessionMessage(submission.input.filter(part => part.type === 'text').map(part => part.text).join(''))).toEqual(message);
     expect(submission.context).toEqual({});
-    expect(submission.images).toEqual([]);
+    expect(submission.input.filter(part => part.type === 'image')).toEqual([]);
     expect(fixture.state.messages[0]).toMatchObject({ displayContent: message.text, sessionMessage: { from: 'Sender', sessionId: 'sender' } });
     expect(fixture.input.value).toBe('My unsent draft');
-    expect(acknowledge).not.toHaveBeenCalled();
+    expect(fixture.state.attention).toEqual(attention);
     expect(onUnsent).not.toHaveBeenCalled();
   });
 
@@ -41,7 +42,7 @@ describe('mailbox input', () => {
     const onUnsent = vi.fn();
     await fixture.controller.sendSessionMessage(message, { onUnsent, assertBeforeHandoff: () => undefined });
     expect(onUnsent).toHaveBeenCalledWith('failed');
-    expect(fixture.coordinator.execute).not.toHaveBeenCalled();
+    expect(fixture.native.requests).toHaveLength(0);
     expect(fixture.input.value).toBe('My draft');
   });
 
@@ -55,7 +56,7 @@ describe('mailbox input', () => {
     ready.resolve(true);
     await sending;
     expect(onUnsent).toHaveBeenCalledWith('user');
-    expect(fixture.coordinator.execute).not.toHaveBeenCalled();
+    expect(fixture.native.requests).toHaveLength(0);
     expect(fixture.input.value).toBe('');
   });
 
@@ -69,7 +70,7 @@ describe('mailbox input', () => {
     await fixture.controller.sendSessionMessage(message, { onUnsent, assertBeforeHandoff: () => undefined });
     expect(onUnsent.mock.calls).toEqual(accepted ? [] : [['failed']]);
     expect(fixture.state.messages).toHaveLength(accepted ? 2 : 0);
-    expect(fixture.coordinator.execute).toHaveBeenCalledTimes(1);
+    expect(fixture.native.requests).toHaveLength(1);
   });
 });
 
@@ -81,8 +82,8 @@ describe('composer wikilinks', () => {
 
     await fixture.controller.sendMessage();
 
-    expect(fixture.coordinator.execute.mock.calls[0][0]).toEqual(expect.objectContaining({
-      canonicalText: content,
+    expect(fixture.native.requests[0]).toEqual(expect.objectContaining({
+      input: [{ type: 'text', text: content }],
     }));
     expect(fixture.state.messages.find(message => message.role === 'user')).toEqual(expect.objectContaining({
       content, displayContent: content,
@@ -144,7 +145,7 @@ describe('InputController admission', () => {
     fixture.input.value = 'keep this draft';
     await fixture.controller.sendMessage();
     expect(fixture.input.value).toBe('keep this draft');
-    expect(fixture.coordinator.execute).not.toHaveBeenCalled();
+    expect(fixture.native.requests).toHaveLength(0);
     expect(fixture.deps.ensureExecutionInitialized).not.toHaveBeenCalled();
     expect(fixture.state.messages).toEqual([]);
     expect(Notice).toHaveBeenCalledWith('Select an available model before sending.');
@@ -158,7 +159,7 @@ describe('InputController admission', () => {
     await fixture.controller.sendMessage();
 
     expect(canStartTurn).toHaveBeenCalledTimes(1);
-    expect(fixture.coordinator.execute).not.toHaveBeenCalled();
+    expect(fixture.native.requests).toHaveLength(0);
     expect(fixture.state.messages).toEqual([]);
     expect(fixture.input.value).toBe('do not send');
   });
@@ -173,29 +174,28 @@ describe('InputController admission', () => {
     expect(fixture.state.cancelRequested).toBe(true);
   });
 
-  it('reports deferred review before a non-replacing built-in command', async () => {
+  it.each([
+    { command: '/resume', notifications: 1 },
+    { command: '/clear', notifications: 0 },
+  ])('settles deferred review before built-in command $command', async ({ command, notifications }) => {
+    vi.useFakeTimers();
     const onReviewableSettlement = vi.fn();
-    const fixture = (await createFixture({ onReviewableSettlement }));
-    // The first turn settles while a continuation owns queued work.
-    vi.spyOn(fixture.controller.queue, 'scheduleContinuation').mockReturnValueOnce(true);
-
-    await fixture.controller.sendMessage({ content: 'first turn' });
-    await fixture.controller.sendMessage({ content: '/resume' });
-
-    expect(onReviewableSettlement).toHaveBeenCalledTimes(1);
-  });
-
-  it('discards deferred review when clear replaces the conversation', async () => {
-    const onReviewableSettlement = vi.fn();
-    const fixture = (await createFixture({ onReviewableSettlement }));
-    // The first turn settles while a continuation owns queued work.
-    vi.spyOn(fixture.controller.queue, 'scheduleContinuation').mockReturnValueOnce(true);
-
-    await fixture.controller.sendMessage({ content: 'first turn' });
-    await fixture.controller.sendMessage({ content: '/clear' });
-
+    const fixture = await createFixture({ onReviewableSettlement });
+    const response = fixture.holdNextResponse();
+    const sending = fixture.controller.sendMessage({ content: 'first turn' });
+    const run = await response.started;
+    await fixture.controller.sendMessage({ content: 'queued follow-up' });
+    run.complete();
+    await sending;
+    expect(fixture.controller.queue.message?.content).toBe('queued follow-up');
     expect(onReviewableSettlement).not.toHaveBeenCalled();
+
+    await fixture.controller.sendMessage({ content: command });
+
+    expect(onReviewableSettlement).toHaveBeenCalledTimes(notifications);
+    expect(fixture.native.requests).toHaveLength(1);
   });
+
 });
 
 describe('async question answer submission', () => {
@@ -213,7 +213,8 @@ describe('async question answer submission', () => {
     fixture.state.addMessage({ id: 'assistant', role: 'assistant', content: '', timestamp: Date.now(), toolCalls: [tool] });
     fixture.input.value = 'Keep my draft';
     await fixture.controller.answerQuestion(tool, { '0': 'Answer' }, 'conversation-1');
-    expect(fixture.coordinator.execute.mock.calls[0][0]).toMatchObject({ canonicalText: 'native reply payload', rawDisplayText: '' });
+    expect(fixture.native.requests[0].input).toEqual([{ type: 'text', text: 'native reply payload' }]);
+    expect(fixture.state.messages.find(message => message.role === 'user')?.displayContent).toBe('');
     expect(fixture.input.value).toBe('Keep my draft');
   });
 
@@ -239,10 +240,10 @@ describe('async question answer submission', () => {
     fixture.nativeSteer.mockResolvedValueOnce(false);
     await fixture.controller.answerQuestion(tool, { '0': 'Answer' }, 'conversation-1');
     expect(fixture.state.queuedMessage).toMatchObject({ content: '', turnRequest: { text: 'native reply payload', draftContent: 'Answer' } });
-    expect(fixture.coordinator.execute).not.toHaveBeenCalled();
+    expect(fixture.native.requests).toHaveLength(0);
     fixture.controller.queue[action]();
     expect(fixture.state.queuedMessage).toBeNull();
-    expect(fixture.coordinator.steer).toHaveBeenCalledTimes(1);
+    expect(fixture.native.steerRequests).toHaveLength(1);
     expect(fixture.input.value).toBe(action === 'withdrawToComposer' ? 'Answer' : '');
   });
 
@@ -252,7 +253,8 @@ describe('async question answer submission', () => {
     fixture.state.addMessage({ id: 'assistant', role: 'assistant', content: '', timestamp: Date.now(), toolCalls: [tool] });
     vi.mocked(ProviderRegistry.formatQuestionReply).mockReturnValue({ content: 'native reply payload', displayContent: `${command}\nYes` });
     await fixture.controller.answerQuestion(tool, { '0': 'Yes' }, 'conversation-1');
-    expect(fixture.coordinator.execute.mock.calls[0][0]).toMatchObject({ canonicalText: 'native reply payload', rawDisplayText: `${command}\nYes` });
+    expect(fixture.native.requests[0].input).toEqual([{ type: 'text', text: 'native reply payload' }]);
+    expect(fixture.state.messages.find(message => message.role === 'user')?.displayContent).toBe(`${command}\nYes`);
     expect(fixture.startNewConversation).not.toHaveBeenCalled();
   });
 
@@ -263,7 +265,8 @@ describe('async question answer submission', () => {
     await fixture.holdResponse();
     await fixture.controller.sendMessage({ content: 'Also check rendering' });
     await fixture.controller.answerQuestion(tool, { '0': 'Answer' }, 'conversation-1');
-    expect(fixture.coordinator.steer.mock.calls[0][0]).toMatchObject({ canonicalText: 'native reply payload', rawDisplayText: '' });
+    expect(fixture.native.steerRequests[0].input).toEqual([{ type: 'text', text: 'native reply payload' }]);
+    expect(fixture.coordinator.getSteerSubmission(fixture.native.steerRequests[0].inputId!)?.rawDisplayText).toBe('');
     expect(fixture.state.queuedMessage?.content).toBe('Also check rendering');
   });
 
@@ -277,7 +280,8 @@ describe('async question answer submission', () => {
       return false;
     });
     await fixture.controller.answerQuestion(tool, { '0': 'Answer' }, 'conversation-1');
-    expect(fixture.coordinator.execute).toHaveBeenCalledWith(expect.objectContaining({ canonicalText: 'native reply payload', rawDisplayText: '' }), expect.any(AbortSignal));
+    expect(fixture.native.requests).toMatchObject([{ input: [{ type: 'text', text: 'native reply payload' }] }]);
+    expect(fixture.state.messages.find(message => message.role === 'user')?.displayContent).toBe('');
     expect(fixture.state.queuedMessage).toBeNull();
   });
 
@@ -290,7 +294,7 @@ describe('async question answer submission', () => {
     else fixture.execution.repository.assertConversationExecutionAuthority.mockRejectedValueOnce(new Error('Authority check failed'));
     await fixture.controller.answerQuestion(tool, { '0': 'Answer' }, 'conversation-1');
     expect(fixture.state.queuedMessage?.turnRequest?.text).toBe('native reply payload');
-    expect(fixture.coordinator.execute).not.toHaveBeenCalled();
+    expect(fixture.native.requests).toHaveLength(0);
   });
 
   it('settles ambiguous answer handoff without queuing or retrying it', async () => {
@@ -300,8 +304,8 @@ describe('async question answer submission', () => {
     await fixture.holdResponse();
     fixture.nativeSteer.mockRejectedValueOnce(new Error('Acknowledgement lost'));
     await fixture.controller.answerQuestion(tool, { '0': 'Answer' }, 'conversation-1');
-    expect(fixture.coordinator.steer).toHaveBeenCalledTimes(1);
-    expect(fixture.coordinator.execute).not.toHaveBeenCalled();
+    expect(fixture.native.steerRequests).toHaveLength(1);
+    expect(fixture.native.requests).toHaveLength(0);
     expect(fixture.state.queuedMessage).toBeNull();
     expect(Notice).toHaveBeenCalledWith(expect.stringContaining('could not be confirmed'));
   });
@@ -315,11 +319,11 @@ describe('async question answer submission', () => {
     await fixture.holdResponse();
     const answering = fixture.controller.answerQuestion(tool, { '0': 'Answer' }, 'conversation-1');
     await fixture.native.waitForSteer();
-    expect(fixture.coordinator.steer).toHaveBeenCalledTimes(1);
+    expect(fixture.native.steerRequests).toHaveLength(1);
     fixture.state.currentConversationId = 'conversation-2';
     handoff.resolve(false);
     await expect(answering).rejects.toThrow('different conversation');
-    expect(fixture.coordinator.execute).not.toHaveBeenCalled();
+    expect(fixture.native.requests).toHaveLength(0);
     expect(fixture.state.queuedMessage).toBeNull();
   });
 
@@ -329,7 +333,7 @@ describe('async question answer submission', () => {
     fixture.state.addMessage({ id: 'assistant', role: 'assistant', content: '', timestamp: Date.now(), toolCalls: [tool] });
     await expect(fixture.controller.answerQuestion(tool, { '0': 'Answer' }, 'other-conversation')).rejects.toThrow('different conversation');
     await expect(fixture.controller.answerQuestion(tool, { '0': 'Answer' }, 'conversation-1')).rejects.toThrow('not sent');
-    expect(fixture.coordinator.execute).not.toHaveBeenCalled();
+    expect(fixture.native.requests).toHaveLength(0);
     expect(fixture.state.queuedMessage).toBeNull();
   });
 });

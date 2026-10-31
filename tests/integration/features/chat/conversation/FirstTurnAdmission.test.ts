@@ -7,7 +7,6 @@ import { createProjectsFake } from '@test/helpers/features/chat/ProjectsFake';
 
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import type { Conversation } from '@/core/types';
-import { type ChatTurnSubmission } from '@/features/chat/execution/ChatExecutionCoordinator';
 
 const nativeCapabilities = ProviderRegistry.getCapabilities('claude');
 beforeEach(() => {
@@ -60,7 +59,7 @@ describe('FirstTurnAdmission', () => {
       'title this',
       expect.any(Function),
     );
-    expect(fixture.coordinator.execute).toHaveBeenCalledTimes(1);
+    expect(fixture.native.requests).toHaveLength(1);
   });
 
   it('creates the first-turn conversation with its frozen Linked content', async () => {
@@ -77,15 +76,12 @@ describe('FirstTurnAdmission', () => {
       selectedModel: 'claude-model',
       linkedContentPath: 'Projects/Plan.md',
     });
-    expect(linkedContentController.beginSubmission).toHaveBeenCalledTimes(1);
-    expect(linkedContentController.commitSubmission).toHaveBeenCalledWith(vi.mocked(linkedContentController.beginSubmission).mock.results[0].value);
-    expect(linkedContentController.rollbackSubmission).not.toHaveBeenCalled();
     expect(linkedContentController.getSnapshot()).toEqual({ mode: 'locked', path: 'Projects/Plan.md' });
-    expect(fixture.coordinator.execute).toHaveBeenCalledWith(expect.objectContaining({
+    expect(fixture.native.requests[0]).toMatchObject({
       context: expect.objectContaining({
         linkedContent: { path: 'Projects/Plan.md' },
       }),
-    }), expect.any(AbortSignal));
+    });
   });
 
   it('restores the reconciled Linked content draft when Conversation creation fails', async () => {
@@ -98,8 +94,6 @@ describe('FirstTurnAdmission', () => {
     await expect(fixture.controller.sendMessage({ content: 'Start linked session' }))
       .rejects.toThrow('storage unavailable');
 
-    expect(linkedContentController.rollbackSubmission).toHaveBeenCalledWith(vi.mocked(linkedContentController.beginSubmission).mock.results[0].value);
-    expect(linkedContentController.commitSubmission).not.toHaveBeenCalled();
     expect(linkedContentController.getSnapshot()).toEqual({ mode: 'explicit-draft', path: 'Projects/Plan.md' });
     expect(fixture.state.currentConversationId).toBeNull();
     expect(fixture.state.messages).toEqual([]);
@@ -136,23 +130,16 @@ describe('FirstTurnAdmission', () => {
 
     expect(fixture.state.currentConversationId).toBe('linked-conversation');
     expect(fixture.state.messages).toEqual([]);
-    expect(linkedContentController.beginSubmission).toHaveBeenCalledTimes(1);
-    expect(linkedContentController.commitSubmission).toHaveBeenCalledWith(vi.mocked(linkedContentController.beginSubmission).mock.results[0].value);
-    expect(linkedContentController.rollbackSubmission).not.toHaveBeenCalled();
     expect(linkedContentController.getSnapshot()).toEqual({ mode: 'locked', path: 'Projects/Plan.md' });
 
+    expect(fixture.native.requests).toHaveLength(0);
     await fixture.controller.sendMessage({ content: 'Retry first turn' });
 
-    const submissions = fixture.coordinator.execute.mock.calls.map(
-      call => call[0] as ChatTurnSubmission,
-    );
-    expect(submissions).toHaveLength(2);
-    expect(submissions[0]).toMatchObject({
+    expect(fixture.native.requests).toMatchObject([{
+      input: [{ type: 'text', text: 'Retry first turn' }],
       context: { linkedContent: { path: 'Projects/Plan.md' } },
-    });
-    expect(submissions[1]).toMatchObject({
-      context: { linkedContent: { path: 'Projects/Plan.md' } },
-    });
+      conversationHistory: [],
+    }]);
     expect(fixture.plugin.createConversation).toHaveBeenCalledTimes(1);
   });
 
@@ -178,10 +165,10 @@ describe('FirstTurnAdmission', () => {
       turnRequestOverride: queuedMessage.turnRequest,
     });
 
-    expect(fixture.coordinator.execute).toHaveBeenCalledWith(expect.objectContaining({
+    expect(fixture.native.requests[0]).toMatchObject({
       context: { linkedContent: { path: 'Projects/Plan.md' } },
-      rawDisplayText: 'Promoted queued turn',
-    }), expect.any(AbortSignal));
+      input: [{ type: 'text', text: 'Promoted queued turn' }],
+    });
   });
 
   it('keeps the frozen first-send path when a queued rename settles during creation', async () => {
@@ -199,9 +186,9 @@ describe('FirstTurnAdmission', () => {
     expect(fixture.plugin.createConversation).toHaveBeenCalledWith(expect.objectContaining({
       linkedContentPath: 'Projects/Old',
     }));
-    expect(fixture.coordinator.execute).toHaveBeenCalledWith(expect.objectContaining({
+    expect(fixture.native.requests[0]).toMatchObject({
       context: { linkedContent: { path: 'Projects/Old' } },
-    }), expect.any(AbortSignal));
+    });
     expect(linkedContentController.getSnapshot()).toMatchObject({
       mode: 'locked',
       path: 'Projects/New',
@@ -214,7 +201,7 @@ describe('FirstTurnAdmission', () => {
 
     await fixture.controller.sendMessage({ content });
 
-    const submission = fixture.coordinator.execute.mock.calls[0][0] as ChatTurnSubmission;
+    const submission = fixture.native.requests[0];
     expect(submission.context).not.toHaveProperty('linkedContent');
   });
 });
@@ -243,10 +230,10 @@ it('does not steer Linked content captured while the first turn resolves session
   (await turn.started).complete();
   await first;
 
-  expect(fixture.coordinator.execute.mock.calls[0][0]).toMatchObject({
+  expect(fixture.native.requests[0]).toMatchObject({
     context: expect.objectContaining({ linkedContent: { path: 'Projects/Plan.md' } }),
   });
-  expect(fixture.coordinator.steer).toHaveBeenCalledTimes(1);
-  expect(fixture.coordinator.steer.mock.calls[0][0]).toMatchObject({ rawDisplayText: 'steered follow-up' });
-  expect(fixture.coordinator.steer.mock.calls[0][0].context).not.toHaveProperty('linkedContent');
+  expect(fixture.native.steerRequests).toHaveLength(1);
+  expect(fixture.native.steerRequests[0].input).toEqual([{ type: 'text', text: 'steered follow-up' }]);
+  expect(fixture.native.steerRequests[0].context).not.toHaveProperty('linkedContent');
 });

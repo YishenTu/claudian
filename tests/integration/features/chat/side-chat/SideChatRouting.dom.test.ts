@@ -3,7 +3,7 @@ import '@/providers';
 
 import { createHarness as createExecutionHarness, FakeBranchSession } from '@test/helpers/ChatExecutionHarness';
 import { deferred } from '@test/helpers/ChatInputHarness';
-import { createTestSession, holdResponse } from '@test/helpers/ConversationPorts';
+import { createTestSession } from '@test/helpers/ConversationPorts';
 import { conversationRecord } from '@test/helpers/features/chat/ConversationFixture';
 import {
   createHarness,
@@ -48,7 +48,6 @@ function createRouting(
     } }),
     onRequestedEvent: event => controller.handleExecutionEvent(event),
   });
-  const cancel = vi.spyOn(execution.coordinator, 'cancel');
   if (failAt === 'handoff') execution.repository.assertConversationExecutionAuthority.mockRejectedValue(new Error('Authority unavailable'));
   const session = createTestSession({ coordinator: execution.coordinator });
   const state = new ChatState({}, undefined, session.turns);
@@ -67,7 +66,6 @@ function createRouting(
     try {
       await execution.coordinator.bindConversation({ conversationId: state.currentConversationId!, providerId: 'claude' });
       await execution.coordinator.prepare();
-      cancel.mockClear();
       return true;
     } catch { return false; }
   };
@@ -116,8 +114,10 @@ function createRouting(
     streamController.dispose(); renderer.dispose(); subagentManager.clear(); linkedContent.destroy();
   });
   return { controller, deps, native, execution,
-    get mainExecutions() { return [...native.requests.map(request => request.input.filter(part => part.type === 'text').map(part => part.text).join('')), ...cancel.mock.calls.map(() => '<cancelled>')]; },
-    get mainMessages() { return addedMessages.mock.calls.map(([message]) => message); },
+    get mainExecutions() { return native.requests.map(request => request.input.filter(part => part.type === 'text').map(part => part.text).join('')); },
+    // Admission can be rolled back before a polling callback sees state.messages.
+    // This observer only gates the draft-recovery outcome assertions below.
+    get hasAdmittedMainMessage() { return addedMessages.mock.calls.length > 0; },
     session, state, tab };
 }
 
@@ -198,12 +198,14 @@ it('cancels only the selected destination', async () => {
   expect(await started).toBe(true);
   expect(native.cancelCalls).toBe(1);
 
-  holdResponse(routing.session.turns);
   harness.controller.collapse();
-  const cancelMain = vi.spyOn(routing.controller, 'cancelStreaming');
+  routing.native.respond.mockImplementationOnce(run => run.emit({ type: 'turn_started', accepted: true }));
+  const running = routing.controller.sendMessage({ content: 'Main work' });
+  const mainRun = await routing.native.waitForRun();
   expect(cancelSelectedDestinationTurn(routing.tab)).toBe(true);
-  expect(cancelMain).toHaveBeenCalledTimes(1);
+  expect(mainRun.cancelCalls).toBe(1);
   expect(native.cancelCalls).toBe(1);
+  await running;
 });
 
 it('keeps main-only commands and nested side commands out of the child', async () => {
@@ -311,7 +313,7 @@ it('keeps unsent side attachments out of a text-only queued main message', async
   routing.controller.queue.enqueue(createQueuedMessage('Text-only main work', { text: 'Text-only main work', images: undefined }));
   routing.controller.queue.scheduleContinuation();
   await waitFor(() => expect(routing.mainExecutions).toEqual(['Text-only main work']));
-  expect(routing.mainMessages.find(message => message.role === 'user')?.images ?? []).toEqual([]);
+  expect(routing.state.messages.find(message => message.role === 'user')?.images ?? []).toEqual([]);
   expect(routing.native.requests[0].input.every(part => part.type !== 'image')).toBe(true);
   expect(harness.imageContextManager.getAttachedImages()).toEqual([sideImage]);
 });
@@ -328,7 +330,7 @@ it.each(['initialization', 'handoff'] as const)('restores a failed main queue to
   harness.imageContextManager.setImages([sideImage]);
   routing.controller.queue.enqueue(createQueuedMessage('Retry this in main', { text: 'Retry this in main', images: undefined }));
   routing.controller.queue.scheduleContinuation();
-  await waitFor(() => expect(routing.mainMessages.length).toBeGreaterThan(0));
+  await waitFor(() => expect(routing.hasAdmittedMainMessage).toBe(true));
   await waitFor(() => expect(routing.state.isStreaming).toBe(false));
   expect(harness.controller.destination).toBe('side');
   expect(harness.inputEl.value).toBe('Unsent side draft');
@@ -357,7 +359,7 @@ it.each(['initialization', 'missing-coordinator', 'handoff'] as const)(
     harness.imageContextManager.setImages([sideImage]);
     routing.controller.queue.enqueue(createQueuedMessage('Retry main work', { text: 'Retry main work', images: [queuedImage] }));
     routing.controller.queue.scheduleContinuation();
-    await waitFor(() => expect(routing.mainMessages.length).toBeGreaterThan(0));
+    await waitFor(() => expect(routing.hasAdmittedMainMessage).toBe(true));
     await waitFor(() => expect(routing.state.isStreaming).toBe(false));
     expect(harness.inputEl.value).toBe('Unsent side draft');
     expect(harness.imageContextManager.getAttachedImages()).toEqual([sideImage]);
@@ -675,11 +677,12 @@ it.each([false, true])('keeps side drafts separate while a branch submission set
   expect(harness.inputEl.value).toBe('Unsent side draft');
   expect(harness.imageContextManager.getAttachedImages()).toEqual([sideImage]);
   expect(routing.mainExecutions).toEqual(cancelled ? [] : ['Edited main']);
-  expect(routing.mainMessages.filter(message => message.role === 'user').map(message => message.images)).toEqual(cancelled ? [] : [[mainImage]]);
+  expect(routing.state.messages.filter(message => message.role === 'user' && message.content === 'Edited main').map(message => message.images)).toEqual(cancelled ? [] : [[mainImage]]);
   expect(harness.drafts.capture('main').content).toBe(cancelled ? 'Edited main' : '');
 });
 
 it.each([false, true])('keeps the captured side mention after collapse (cancel main: %s)', async cancelMain => {
+  let mainCancellationCount = 0;
   const harness = await createHarness();
   const routing = createRouting(harness);
   const { started } = await startSideChat(harness);
@@ -697,8 +700,12 @@ it.each([false, true])('keeps the captured side mention after collapse (cancel m
   await entered.promise;
   harness.controller.collapse();
   if (cancelMain) {
-    holdResponse(routing.session.turns);
+    routing.native.respond.mockImplementationOnce(run => run.emit({ type: 'turn_started', accepted: true }));
+    const running = routing.controller.sendMessage({ content: 'Main work' });
+    const mainRun = await routing.native.waitForRun();
     routing.controller.cancelStreaming();
+    await running;
+    mainCancellationCount = mainRun.cancelCalls;
   }
   harness.inputEl.value = 'new main draft';
   hydration.resolve({
@@ -713,7 +720,8 @@ it.each([false, true])('keeps the captured side mention after collapse (cancel m
   expect(harness.controller.runtime?.state.messages.find(message => message.content === '@"Renamed"')?.displayContent).toBe('@"Renamed"');
   harness.backend.latest.complete();
   await sending;
-  expect(routing.mainExecutions).toEqual(cancelMain ? ['<cancelled>'] : []);
+  expect(routing.mainExecutions).toEqual(cancelMain ? ['Main work'] : []);
+  expect(mainCancellationCount).toBe(cancelMain ? 1 : 0);
   expect(harness.inputEl.value).toBe('new main draft');
 });
 

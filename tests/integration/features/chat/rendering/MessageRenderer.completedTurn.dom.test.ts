@@ -20,11 +20,13 @@ import { LinkedContentController } from '@/features/chat/linked-content';
 import { MessageRenderer } from '@/features/chat/rendering/MessageRenderer';
 import { createResponseTextBlock } from '@/features/chat/rendering/ResponseLayout';
 import { createThinkingBlock, finalizeThinkingBlock } from '@/features/chat/rendering/ThinkingBlockRenderer';
+import { SessionMessagingService } from '@/features/chat/session-messaging/SessionMessagingService';
 import { ChatState } from '@/features/chat/state/ChatState';
 import { SubagentManager } from '@/features/chat/subagents/SubagentManager';
 import { destroyTab } from '@/features/chat/tabs/TabLifecycle';
 import { createTabRuntime } from '@/features/chat/tabs/TabRuntimeFactory';
 import { setLocale } from '@/i18n/i18n';
+import { piProviderRegistration } from '@/providers/pi/registration';
 import { VaultMentionDataProvider } from '@/shared/mention/VaultMentionDataProvider';
 
 let defaultHost: Awaited<ReturnType<typeof createChatFeatureHost>>;
@@ -735,9 +737,17 @@ it('previews a branch without saving it and restores history when focus leaves t
   const prompt: ChatMessage = { id: 'second', role: 'user', content: 'Try B', timestamp: 2,
     userMessageId: 'native-b', treeBranches: ['native-b'] };
   const history = [{ ...messages[0], treeBranches: ['native-u1'] }, prompt, messages[2]];
+  const native = new FakeBranchSession('pi', 'preview-session');
+  ProviderRegistry.register('pi', { ...piProviderRegistration,
+    createExecutionBackend: () => ({ providerId: 'pi', createSession: () => native }),
+  });
+  onTestFinished(() => ProviderRegistry.register('pi', piProviderRegistration));
   const pool = createSessionRuntimePool(() => plugin);
+  const messaging = new SessionMessagingService({
+    getHost: () => plugin, getActiveConversationId: () => 'pi-chat', refreshModelControls: () => undefined,
+  });
   const plugin: ChatFeatureHost = await createChatFeatureHost({
-    sessionRuntimes: pool, updateConversation: vi.fn(), projects: createProjectsFake(),
+    sessionRuntimes: pool, bindSessionTools: id => messaging.bindSessionTools(id), updateConversation: vi.fn(), projects: createProjectsFake(),
     executionPersistence: {
       registerExecutionBinding: vi.fn(), releaseExecutionBinding: vi.fn(),
       assertConversationExecutionAuthority: vi.fn(), recordConversationActivity: vi.fn(),
@@ -752,22 +762,22 @@ it('previews a branch without saving it and restores history when focus leaves t
     mentionDataProvider: new VaultMentionDataProvider(plugin.app), getProviderCatalogConfig: () => null,
     isRuntimeLive: () => true, openConversation: async () => undefined, startNewConversation: async () => undefined,
   });
-  onTestFinished(async () => { await destroyTab(tab); component.unload(); });
+  onTestFinished(async () => { await destroyTab(tab); await pool.dispose(); await messaging.dispose(); component.unload(); });
   const { state, renderer } = tab;
   const { messagesEl, inputComposerEl, inputEl } = tab.dom;
   const controller = tab.controllers.conversationController;
-  const navigateConversationBranch = vi.spyOn(tab.executionCoordinator, 'navigateConversationBranch');
+  await tab.executionCoordinator.bindConversation({ conversationId: 'pi-chat', providerId: 'pi' });
+  await tab.executionCoordinator.prepare();
   state.messages = history;
   tab.hydrationState = 'ready';
   const send = inputComposerEl.createEl('button', { text: 'Send', attr: { type: 'button' } });
   const outside = document.body.createEl('button', { text: 'Outside', attr: { type: 'button' } });
   renderer.renderMessages(history, () => 'Hello');
   fireEvent.click(within(messagesEl).getByRole('button', { name: 'Branch from this prompt' }));
-  await new Promise(resolve => setTimeout(resolve, 0));
-  expect(inputEl.value).toBe('Try B');
+  await waitFor(() => expect(inputEl.value).toBe('Try B'));
   expect(messagesEl.querySelector('[data-message-id="second"]')).toBeNull();
   expect(state.messages).toEqual(history);
-  expect(navigateConversationBranch).not.toHaveBeenCalled();
+  expect(native.navigateConversationBranch).not.toHaveBeenCalled();
   await controller.save();
   expect(plugin.updateConversation).toHaveBeenLastCalledWith('pi-chat', expect.objectContaining({ messages: history }));
   send.focus();
@@ -778,7 +788,7 @@ it('previews a branch without saving it and restores history when focus leaves t
   expect(inputEl.value).toBe('');
   expect(messagesEl.querySelector('[data-message-id="second"]')).not.toBeNull();
   expect(messagesEl.querySelector('[data-message-id="a2"]')).not.toBeNull();
-  expect(navigateConversationBranch).not.toHaveBeenCalled();
+  expect(native.navigateConversationBranch).not.toHaveBeenCalled();
 
 });
 

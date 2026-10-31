@@ -12,15 +12,13 @@ import type { ConversationBranchResult, ProviderExecutionErrorEvent, ProviderExe
 import { buildSystemPrompt } from '@/core/prompt/mainAgent';
 import { renderProjectMemberInstructions } from '@/core/prompt/projectPrompt';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
-import type { Conversation } from '@/core/types';
+import type { ChatMessage, Conversation } from '@/core/types';
 import type { ImageAttachment } from '@/core/types';
-import { type ChatTurnSubmission } from '@/features/chat/execution/ChatExecutionCoordinator';
 import { createQueuedMessage } from '@/features/chat/state/chatTurnRequest';
 
 const nativeCapabilities = ProviderRegistry.getCapabilities('claude');
 beforeEach(() => {
   vi.spyOn(ProviderRegistry, 'getCapabilities').mockReturnValue({ ...nativeCapabilities, supportsTurnSteer: true });
-  vi.spyOn(ProviderRegistry, 'formatQuestionReply');
 });
 afterEach(() => vi.restoreAllMocks());
 
@@ -45,42 +43,50 @@ describe('MainTurnExecution', () => {
       getTabProviderId: () => providerId,
     }));
     await fixture.controller.sendMessage({ content: 'use toolbar settings' });
-    expect(fixture.coordinator.execute).toHaveBeenCalledWith(expect.objectContaining({
-      configuration: expect.objectContaining(toolbar),
-    }), expect.any(AbortSignal));
+    expect(fixture.native.requests).toMatchObject([{ configuration: toolbar }]);
   });
 
-  it('submits first and continued turns through the coordinator', async () => {
+  it('submits and persists separate first and continued turns', async () => {
     const fixture = await createFixture();
     fixture.linkedContentController.lock('Projects');
-    fixture.input.value = 'first';
-
-    await fixture.controller.sendMessage();
-    fixture.input.value = 'second';
-    await fixture.controller.sendMessage();
-
-    const first = fixture.coordinator.execute.mock.calls[0][0] as ChatTurnSubmission;
-    const second = fixture.coordinator.execute.mock.calls[1][0] as ChatTurnSubmission;
-    expect(first).toMatchObject({
-      canonicalText: 'first',
-      context: { linkedContent: { path: 'Projects' } },
-      rawDisplayText: 'first',
-      toolPolicy: { kind: 'provider-default' },
+    let persistedMessages: ChatMessage[] | undefined;
+    fixture.plugin.updateConversation.mockImplementation(async (_id, updates) => {
+      persistedMessages = structuredClone(updates.messages);
     });
-    expect(first.conversationHistory).toEqual([]);
-    expect(second.context).not.toHaveProperty('linkedContent');
-    expect(second.conversationHistory).toHaveLength(2);
-    expect(fixture.deps.conversationController.save).toHaveBeenCalledTimes(2);
-  });
-
-  it('starts the stream controller response once per run', async () => {
-    const fixture = (await createFixture());
+    fixture.native.respond.mockImplementation((run, request) => {
+      run.emit({ type: 'turn_started', accepted: true });
+      const text = request.input.filter(part => part.type === 'text').map(part => part.text).join('');
+      run.emit({ type: 'text_delta', text: `reply:${text}` });
+      run.complete();
+    });
 
     await fixture.controller.sendMessage({ content: 'first' });
-    expect(fixture.deps.streamController.beginResponse).toHaveBeenCalledTimes(1);
+    expect(fixture.state.messages.map(({ role, content }) => ({ role, content }))).toEqual([
+      { role: 'user', content: 'first' }, { role: 'assistant', content: 'reply:first' },
+    ]);
+    expect(persistedMessages).toMatchObject([
+      { role: 'user', content: 'first' }, { role: 'assistant', content: 'reply:first' },
+    ]);
 
     await fixture.controller.sendMessage({ content: 'second' });
-    expect(fixture.deps.streamController.beginResponse).toHaveBeenCalledTimes(2);
+
+    const [first, second] = fixture.native.requests;
+    expect(first).toMatchObject({
+      input: [{ type: 'text', text: 'first' }],
+      context: { linkedContent: { path: 'Projects' } },
+      toolPolicy: { kind: 'provider-default' },
+      conversationHistory: [],
+    });
+    expect(second.context).not.toHaveProperty('linkedContent');
+    expect(second.conversationHistory).toMatchObject([
+      { role: 'user', content: 'first' }, { role: 'assistant', content: 'reply:first' },
+    ]);
+    const expected = [
+      { role: 'user', content: 'first' }, { role: 'assistant', content: 'reply:first' },
+      { role: 'user', content: 'second' }, { role: 'assistant', content: 'reply:second' },
+    ];
+    expect(fixture.state.messages.map(({ role, content }) => ({ role, content }))).toEqual(expected);
+    expect(persistedMessages).toMatchObject(expected);
   });
 
   it.each(['creation', 'initialization'] as const)(
@@ -115,17 +121,19 @@ describe('MainTurnExecution', () => {
       expect(await settled).toEqual(failureAt === 'creation' ? new Error('Disk full') : undefined);
 
       expect(fixture.session.turns.isActive).toBe(false);
-      expect(fixture.coordinator.execute).not.toHaveBeenCalled();
+      expect(fixture.native.requests).toHaveLength(0);
       expect(fixture.state.messages).toEqual([]);
       expect(fixture.controller.queue.message).toBeNull();
       expect(fixture.input.value).toBe('First request\n\nFollow-up request\n\n    newerDraft()\n');
       expect(fixture.images.getAttachedImages()).toEqual(images);
 
       await fixture.controller.sendMessage();
-      expect(fixture.coordinator.execute).toHaveBeenCalledTimes(1);
-      expect(fixture.coordinator.execute.mock.calls[0][0]).toMatchObject({
-        canonicalText: 'First request\n\nFollow-up request\n\n    newerDraft()',
-        images,
+      expect(fixture.native.requests).toHaveLength(1);
+      expect(fixture.native.requests[0]).toMatchObject({
+        input: [
+          { type: 'text', text: 'First request\n\nFollow-up request\n\n    newerDraft()' },
+          ...images.map(image => ({ type: 'image', image })),
+        ],
       });
     },
   );
@@ -141,7 +149,7 @@ describe('MainTurnExecution', () => {
       },
     }));
     await fixture.controller.sendMessage({ content: 'Keep the admitted input' });
-    expect(fixture.coordinator.execute).not.toHaveBeenCalled();
+    expect(fixture.native.requests).toHaveLength(0);
     expect(fixture.state.messages).toEqual([
       expect.objectContaining({ role: 'user', content: 'Keep the admitted input' }),
     ]);
@@ -153,14 +161,13 @@ describe('MainTurnExecution', () => {
 
     await fixture.controller.sendMessage({ content: 'list my projects' });
 
-    const submission = fixture.coordinator.execute.mock.calls[0][0] as ChatTurnSubmission;
+    const submission = fixture.native.requests[0];
     expect(submission).toMatchObject({
-      canonicalText: 'list my projects',
+      input: [{ type: 'text', text: 'list my projects' }],
       configuration: { systemInstructions: {
         kind: 'main-agent',
         instructions: buildSystemPrompt({ customPrompt: 'Prefer short answers.', mediaFolder: 'media', userName: 'Ada', vaultPath: fixture.plugin.providerHost.workingDirectory ?? undefined }),
       } },
-      rawDisplayText: 'list my projects',
     });
     expect(fixture.state.messages[0]?.content).toBe('list my projects');
   });
@@ -172,7 +179,7 @@ describe('MainTurnExecution', () => {
 
     await fixture.controller.sendMessage({ content: 'where am I' });
 
-    const submission = fixture.coordinator.execute.mock.calls[0][0] as ChatTurnSubmission;
+    const submission = fixture.native.requests[0];
     expect(submission.configuration.systemInstructions).toEqual({
       kind: 'main-agent', instructions: buildSystemPrompt({ vaultPath: '/session-vault' }),
     });
@@ -181,7 +188,7 @@ describe('MainTurnExecution', () => {
   describe('project session instructions', () => {
     const message = { from: 'Sender', sessionId: 'sender', text: 'Please inspect this' };
     const systemInstructions = (fixture: Awaited<ReturnType<typeof createFixture>>, call: number) => (
-      (fixture.coordinator.execute.mock.calls[call][0] as ChatTurnSubmission).configuration.systemInstructions
+      fixture.native.requests[call].configuration.systemInstructions
     );
     const mainAgent = (fixture: Awaited<ReturnType<typeof createFixture>>, sessionInstructions?: string) => ({
       kind: 'main-agent', instructions: buildSystemPrompt({ vaultPath: fixture.plugin.providerHost.workingDirectory ?? undefined, sessionInstructions }),
@@ -279,9 +286,9 @@ describe('MainTurnExecution', () => {
       images: [image],
     });
 
-    const submission = fixture.coordinator.execute.mock.calls[0][0] as ChatTurnSubmission;
+    const submission = fixture.native.requests[0];
     expect(submission).toMatchObject({
-      canonicalText: 'B',
+      input: [{ type: 'text', text: 'B' }, { type: 'image', image }],
       context: {
         selections: [
           { kind: 'editor', selection: editorContext },
@@ -289,15 +296,13 @@ describe('MainTurnExecution', () => {
           { kind: 'canvas', selection: canvasContext },
         ],
       },
-      rawDisplayText: 'B',
     });
     expect(submission.conversationHistory?.map(message => message.id)).toEqual([
       'user-a',
       'assistant-a',
       'interrupt-a',
     ]);
-    expect(submission.images).toEqual([image]);
-    expect(submission.images[0]).toBe(image);
+    expect(fixture.state.messages.at(-2)).toMatchObject({ role: 'user', content: 'B', images: [image] });
   });
 
   it('keeps context feature-owned in the normalized submission', async () => {
@@ -314,15 +319,15 @@ describe('MainTurnExecution', () => {
       },
     });
 
-    expect(fixture.coordinator.execute).toHaveBeenCalledWith(expect.objectContaining({
-      canonicalText: 'use context',
+    expect(fixture.native.requests[0]).toMatchObject({
+      input: [{ type: 'text', text: 'use context' }],
       configuration: expect.objectContaining({
         model: 'claude-model',
       }),
       context: expect.objectContaining({
         linkedContent: { path: 'note.md' },
       }),
-    }), expect.any(AbortSignal));
+    });
   });
 
   it('restores composer input and rolls back the local turn on definite pre-handoff failure', async () => {
@@ -344,9 +349,9 @@ describe('MainTurnExecution', () => {
     expect(fixture.input.value).toBe('retry this');
     expect(fixture.images.getAttachedImages()).toEqual([image]);
     expect(fixture.state.messages).toEqual([]);
-    expect(fixture.deps.renderer.removeMessage).toHaveBeenCalledTimes(2);
-    expect(fixture.deps.conversationController.save).not.toHaveBeenCalled();
-    expect(fixture.deps.streamController.appendError).not.toHaveBeenCalled();
+    expect(fixture.deps.getMessagesEl()?.textContent).toBe('');
+    expect(fixture.plugin.updateConversation).not.toHaveBeenCalled();
+    expect(fixture.state.activity?.kind).not.toBe('error');
     expect(Notice).toHaveBeenCalledWith('Message was not sent. Please try again.');
   });
 
@@ -391,9 +396,9 @@ describe('MainTurnExecution', () => {
     expect(Notice).toHaveBeenCalledWith(rejection.message);
     expect(fixture.images.getAttachedImages()).toEqual([image]);
     expect(fixture.state.messages).toEqual([]);
-    expect(fixture.deps.renderer.removeMessage).toHaveBeenCalledTimes(2);
-    expect(fixture.deps.conversationController.save).not.toHaveBeenCalled();
-    expect(fixture.deps.streamController.appendError).not.toHaveBeenCalled();
+    expect(fixture.deps.getMessagesEl()?.textContent).toBe('');
+    expect(fixture.plugin.updateConversation).not.toHaveBeenCalled();
+    expect(fixture.state.activity?.kind).not.toBe('error');
   });
 
   it('does not restore input after an ambiguous post-handoff rejection', async () => {
@@ -408,8 +413,8 @@ describe('MainTurnExecution', () => {
 
     expect(fixture.input.value).toBe('');
     expect(fixture.state.messages).toHaveLength(2);
-    expect(fixture.deps.conversationController.save).toHaveBeenCalledTimes(1);
-    expect(fixture.deps.streamController.appendError).toHaveBeenCalledWith('stream failed');
+    expect(fixture.plugin.updateConversation.mock.calls.at(-1)?.[1].messages).toEqual(fixture.state.messages);
+    expect(fixture.deps.getMessagesEl()?.textContent).toContain('stream failed');
   });
 
   it('puts the completed turn checkpoint and statistics on the final assistant projection after message boundaries', async () => {
@@ -500,7 +505,7 @@ describe('MainTurnExecution', () => {
 
       await fixture.controller.sendMessage({ content: 'test request' });
 
-      expect(fixture.deps.streamController.appendError).toHaveBeenCalledWith('Model overloaded');
+      expect(fixture.deps.getMessagesEl()?.textContent).toContain('Model overloaded');
       const assistantMessage = fixture.state.messages[1];
       expect(assistantMessage.durationSeconds).toBeUndefined();
       expect(assistantMessage.durationFlavorWord).toBeUndefined();
@@ -522,7 +527,7 @@ describe('MainTurnExecution', () => {
 
       await fixture.controller.sendMessage({ content: 'test request' });
 
-      expect(fixture.deps.streamController.appendError).toHaveBeenCalledWith('stream failed');
+      expect(fixture.deps.getMessagesEl()?.textContent).toContain('stream failed');
       const assistantMessage = fixture.state.messages[1];
       expect(assistantMessage.durationSeconds).toBeUndefined();
       expect(assistantMessage.durationFlavorWord).toBeUndefined();
@@ -531,7 +536,7 @@ describe('MainTurnExecution', () => {
     }
   });
 
-  it('routes normalized requested output to StreamController', async () => {
+  it('renders and stores normalized requested output', async () => {
     const fixture = (await createFixture());
     fixture.native.respond.mockImplementationOnce(run => {
       run.emit({ type: 'turn_started', accepted: true });
@@ -541,10 +546,11 @@ describe('MainTurnExecution', () => {
 
     await fixture.controller.sendMessage({ content: 'hello' });
 
-    expect(fixture.deps.streamController.handleStreamChunk).toHaveBeenCalledWith(
-      { content: 'world', type: 'text' },
-      expect.objectContaining({ role: 'assistant' }),
-    );
+    expect(fixture.state.messages.filter(message => message.role === 'assistant').map(message => message.content)).toEqual(['world']);
+    expect(fixture.deps.getMessagesEl()?.textContent).toContain('world');
+    expect(fixture.plugin.updateConversation.mock.calls.at(-1)?.[1].messages).toMatchObject([
+      { role: 'user', content: 'hello' }, { role: 'assistant', content: 'world' },
+    ]);
   });
 
   it('restores pending input when the coordinator reports a missing session', async () => {
@@ -560,7 +566,7 @@ describe('MainTurnExecution', () => {
 
     expect(fixture.input.value).toBe('retry me');
     expect(fixture.state.messages).toEqual([]);
-    expect(fixture.deps.conversationController.save).not.toHaveBeenCalled();
+    expect(fixture.plugin.updateConversation).not.toHaveBeenCalled();
   });
 
   it('keeps an accepted missing-session turn non-retryable while resetting recovery state', async () => {
@@ -577,8 +583,8 @@ describe('MainTurnExecution', () => {
     expect(fixture.input.value).toBe('');
     expect(fixture.state.messages).toHaveLength(2);
     expect(fixture.state.isStreaming).toBe(false);
-    expect(fixture.deps.renderer.removeMessage).not.toHaveBeenCalled();
-    expect(fixture.deps.conversationController.save).not.toHaveBeenCalled();
+    expect(fixture.deps.getMessagesEl()?.querySelectorAll('.claudian-message')).toHaveLength(2);
+    expect(fixture.plugin.updateConversation).not.toHaveBeenCalled();
     expect(Notice).toHaveBeenCalledWith(
       'The provider session no longer exists. Claudian preserved the recoverable history; send again to rebuild the session.',
     );
@@ -596,8 +602,8 @@ describe('MainTurnExecution', () => {
     await fixture.controller.sendMessage();
 
     expect(fixture.input.value).toBe('');
-    expect(fixture.deps.renderer.removeMessage).not.toHaveBeenCalled();
-    expect(fixture.deps.conversationController.save).not.toHaveBeenCalled();
+    expect(fixture.deps.getMessagesEl()?.querySelectorAll('.claudian-message')).toHaveLength(2);
+    expect(fixture.plugin.updateConversation).not.toHaveBeenCalled();
     expect(Notice).toHaveBeenCalledWith(
       'The provider session no longer exists. Its Claudian record was removed; send again to start a new session.',
     );
@@ -633,7 +639,7 @@ describe('MainTurnExecution', () => {
 
     await fixture.controller.sendMessage();
 
-    expect(fixture.coordinator.execute).not.toHaveBeenCalled();
+    expect(fixture.native.requests).toHaveLength(0);
     expect(fixture.input.value).toBe('not sent');
     expect(fixture.state.messages).toEqual([]);
   });
@@ -768,12 +774,12 @@ describe('branch draft submission', () => {
     fixture.input.value = 'Edited';
     const sending = fixture.controller.sendMessage();
     await entered.promise;
-    expect(fixture.coordinator.execute).not.toHaveBeenCalled();
+    expect(fixture.native.requests).toHaveLength(0);
     conversation.cancelBranchDraft(); // Focus changes during admitted submission must not undo it.
     expect(fixture.input.value).toBe('');
     navigation.resolve(cancelled ? { status: 'cancelled' } : { status: 'committed', messages: [first] });
     await sending;
-    expect(fixture.coordinator.execute.mock.calls.map(([request]) => request.canonicalText)).toEqual(cancelled ? [] : ['Edited']);
+    expect(fixture.native.requests.map(request => request.input)).toEqual(cancelled ? [] : [[{ type: 'text', text: 'Edited' }]]);
     expect(fixture.input.value).toBe(cancelled ? 'Edited' : '');
     expect(fixture.state.messages.some(message => message.id === 'second')).toBe(cancelled);
     conversation.cancelBranchDraft();

@@ -27,8 +27,6 @@ import type { ComposerInputElement } from '@/shared/composer-dropdown/types';
 
 function createInput(): ComposerInputElement {
   const input = document.createElement('textarea');
-  vi.spyOn(input, 'focus');
-  vi.spyOn(input, 'dispatchEvent');
   return input;
 }
 
@@ -116,7 +114,6 @@ export async function createFixture(overrides: ChatInputFixtureOptions = {}) {
   state.currentConversationId = 'conversation-1';
   const input = createInput();
   const images = new ImageContextManager(new App().keymap, document.createElement('div'), input, {});
-  for (const method of ['clearImages', 'getAttachedImages', 'hasImages', 'setImages'] as const) vi.spyOn(images, method);
   const queueIndicator = document.createElement('div');
   state.queueIndicatorEl = queueIndicator;
   let id = 0;
@@ -147,27 +144,18 @@ export async function createFixture(overrides: ChatInputFixtureOptions = {}) {
     resolveBackend: id => ({ providerId: id, createSession: () => native }),
     onRequestedEvent: event => controller.handleExecutionEvent(event),
   });
-  const coordinator = Object.assign(execution.coordinator, {
-    execute: vi.spyOn(execution.coordinator, 'execute'),
-    steer: vi.spyOn(execution.coordinator, 'steer'),
-    cancel: vi.spyOn(execution.coordinator, 'cancel'),
-    acceptSteerFromProviderEvent: vi.spyOn(execution.coordinator, 'acceptSteerFromProviderEvent'),
-    releaseSteerCorrelation: vi.spyOn(execution.coordinator, 'releaseSteerCorrelation'),
-  });
+  const coordinator = execution.coordinator;
   const linkedContentController = new LinkedContentController({
     app: plugin.app, getExcludedTags: () => [], getCachedVaultFiles: () => [], getCachedVaultFolders: () => [],
   });
-  for (const method of ['beginSubmission', 'commitSubmission', 'getSnapshot', 'resetAutoDraft', 'rollbackSubmission'] as const) vi.spyOn(linkedContentController, method);
   onTestFinished(() => { images.destroy(); linkedContentController.destroy(); });
   const messagesEl = document.createElement('div');
   const subagents = new SubagentManager(() => undefined);
   const renderer = new MessageRenderer(plugin, new Component(), messagesEl);
-  for (const method of ['addMessage', 'appendInterruptIndicator', 'refreshActionButtons', 'finalizeResponse', 'removeMessage'] as const) vi.spyOn(renderer, method);
   const streamController = new StreamController({
     plugin, state, renderer, subagentManager: subagents,
     getMessagesEl: () => messagesEl, updateQueueIndicator: () => controller.queue.updateIndicator(),
   });
-  for (const method of ['beginResponse', 'appendText', 'appendError', 'finalizeCurrentTextBlock', 'finalizeCurrentThinkingBlock', 'handleStreamChunk'] as const) vi.spyOn(streamController, method);
   const deps: Omit<InputControllerDeps, 'conversationController' | 'drafts' | 'session' | 'builtInCommands' | 'inlinePrompts'> & {
     renderer: MessageRenderer; getImageContextManager: () => ImageContextManager | null;
   } = {
@@ -212,7 +200,6 @@ export async function createFixture(overrides: ChatInputFixtureOptions = {}) {
     ensureExecutionInitialized: () => deps.ensureExecutionInitialized(),
     getExecutionCoordinator: () => deps.getExecutionCoordinator(),
   });
-  vi.spyOn(conversationController, 'save');
   const commandOverrides = Object.fromEntries(
     (['openConversation', 'startNewConversation', 'toggleFastMode'] as const)
       .filter(key => key in dependencyOverrides)
@@ -238,7 +225,6 @@ export async function createFixture(overrides: ChatInputFixtureOptions = {}) {
   }, dependencyOverrides);
   const controller = new InputController(completeDeps);
   await coordinator.bindConversation({ conversationId: 'conversation-1', providerId });
-  coordinator.cancel.mockClear();
   onTestFinished(async () => {
     controller.queue.cancelScheduled();
     coordinator.cancel();
@@ -285,7 +271,8 @@ export async function createFixture(overrides: ChatInputFixtureOptions = {}) {
         await coordinator.execute(createSubmission(), signal);
       });
       const run = await native.waitForRun(index);
-      coordinator.execute.mockClear();
+      // The held setup run is not an input submitted by the case.
+      native.requests.length = 0;
       return async () => { run.complete(); await running; };
     },
     input,

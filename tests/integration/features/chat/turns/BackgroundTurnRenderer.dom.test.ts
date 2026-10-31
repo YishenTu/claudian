@@ -265,7 +265,6 @@ it.each([
     input!.plugin.updateConversation.mockImplementation(async (_id, updates) => {
       if (updates.messages) savedMessages.push(structuredClone(updates.messages));
     });
-    const accept = vi.spyOn(coordinator, 'acceptSteerFromProviderEvent');
     let next: Promise<void> | undefined;
     const late = { type: 'user_message_started' as const, content: '', nativeUserMessageId: 'late-image-user',
       inputId: nativeSteer.mock.calls[0][0].inputId };
@@ -321,7 +320,7 @@ it.each([
       { content: display, images: [image], userMessageId: 'late-image-user' },
       ...(destination === 'requested' ? [{ content: 'new steer', userMessageId: 'new-steer-user' }] : []),
     ]);
-    expect(accept).toHaveBeenCalledWith(expect.any(String), 'late-image-user');
+    expect(coordinator.getSteerSubmission(late.inputId!)).toBeUndefined();
     expect(within(messagesEl).getByRole('img', { name: 'pixel.png' })).toBeTruthy();
     expect(within(messagesEl).getByText('image answer')).toBeTruthy();
     const prefix = 'automatic work before steering';
