@@ -10,13 +10,13 @@ const fs = actualModule0;
 const os = actualModule1;
 
 describe('ClaudeCLIResolver', () => {
-  const originalEnv = process.env;
+  const originalEnv = { ...process.env };
   const isWindows = process.platform === 'win32';
   let tempDir: string;
 
   beforeEach(() => {
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'claude-cli-resolver-'));
-    process.env = { ...originalEnv, PATH: '', HOME: tempDir, USERPROFILE: tempDir };
+    Object.assign(process.env, { PATH: '', HOME: tempDir, USERPROFILE: tempDir });
     for (const key of ['MISE_SHIMS_DIR', 'MISE_DATA_DIR', 'XDG_DATA_HOME', 'LOCALAPPDATA', 'npm_config_prefix']) {
       delete process.env[key];
     }
@@ -33,7 +33,10 @@ describe('ClaudeCLIResolver', () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
-    process.env = originalEnv;
+    for (const key of Object.keys(process.env)) {
+      if (!(key in originalEnv)) delete process.env[key];
+    }
+    Object.assign(process.env, originalEnv);
     fs.rmSync(tempDir, { recursive: true, force: true });
   });
 

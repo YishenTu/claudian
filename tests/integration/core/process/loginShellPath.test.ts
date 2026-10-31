@@ -9,7 +9,7 @@ import type { ClaudianSettings } from '@/core/types';
 const describeUnix = process.platform === 'win32' ? describe.skip : describe;
 
 describeUnix('login shell PATH for GUI-launched processes', () => {
-  const originalEnv = process.env;
+  const originalEnv = { ...process.env };
   let directory: string;
   let loginBin: string;
 
@@ -22,14 +22,17 @@ describeUnix('login shell PATH for GUI-launched processes', () => {
     writeFileSync(cli, '#!/bin/sh\necho ok\n');
     chmodSync(cli, 0o755);
     // Mirrors a GUI app: minimal PATH, and an empty home so no guessed location holds the CLI.
-    process.env = { ...originalEnv, HOME: directory, PATH: '/usr/bin:/bin' };
+    Object.assign(process.env, { HOME: directory, PATH: '/usr/bin:/bin' });
     for (const key of ['FNM_DIR', 'FNM_MULTISHELL_PATH', 'NVM_BIN', 'VOLTA_HOME', 'XDG_DATA_HOME']) {
       delete process.env[key];
     }
   });
 
   afterEach(() => {
-    process.env = originalEnv;
+    for (const key of Object.keys(process.env)) {
+      if (!(key in originalEnv)) delete process.env[key];
+    }
+    Object.assign(process.env, originalEnv);
     rmSync(directory, { recursive: true, force: true });
   });
 

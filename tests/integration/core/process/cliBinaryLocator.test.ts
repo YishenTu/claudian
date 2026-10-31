@@ -12,13 +12,13 @@ import { probeCLIInstallation } from '@/core/providers/cli/CLIInstallationProbe'
 const describeUnix = process.platform === 'win32' ? describe.skip : describe;
 
 describe('enhanced CLI discovery and subprocess PATH', () => {
-  const originalEnv = process.env;
+  const originalEnv = { ...process.env };
   const isWindows = process.platform === 'win32';
   let directory: string;
 
   beforeEach(() => {
     directory = mkdtempSync(path.join(tmpdir(), 'claudian mise '));
-    process.env = { ...originalEnv, PATH: '' };
+    process.env.PATH = '';
     for (const key of ['MISE_SHIMS_DIR', 'MISE_DATA_DIR', 'XDG_DATA_HOME', 'HOME', 'USERPROFILE', 'LOCALAPPDATA', 'npm_config_prefix']) {
       delete process.env[key];
     }
@@ -28,7 +28,10 @@ describe('enhanced CLI discovery and subprocess PATH', () => {
   });
 
   afterEach(() => {
-    process.env = originalEnv;
+    for (const key of Object.keys(process.env)) {
+      if (!(key in originalEnv)) delete process.env[key];
+    }
+    Object.assign(process.env, originalEnv);
     // Windows can briefly lock the copied executable after it exits.
     rmSync(directory, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });

@@ -15,11 +15,9 @@ const isWindows = process.platform === 'win32';
 describe('findClaudeBinaryPath', () => {
   let findClaudeBinaryPath: (pathValue?: string) => string | null;
   const originalPlatform = process.platform;
-  // Restore the worker's own env object: Vitest's stubEnv deletes through a proxy bound to it.
-  const originalEnv = process.env;
+  const originalEnv = { ...process.env };
 
   beforeEach(async () => {
-    process.env = { ...originalEnv };
     // These cases supply virtual files; permission filtering is exercised with real files in CLI discovery integration.
     vi.spyOn(fs, 'accessSync').mockImplementation(() => undefined);
     process.env.PATH = '';
@@ -28,7 +26,10 @@ describe('findClaudeBinaryPath', () => {
   afterEach(() => {
     vi.restoreAllMocks();
     Object.defineProperty(process, 'platform', { value: originalPlatform });
-    process.env = originalEnv;
+    for (const key of Object.keys(process.env)) {
+      if (!(key in originalEnv)) delete process.env[key];
+    }
+    Object.assign(process.env, originalEnv);
   });
 
   describe('on Unix/macOS', () => {
@@ -234,18 +235,19 @@ describe('findClaudeBinaryPath', () => {
 });
 
 describe('native platform CLI discovery', () => {
-  // Restore the worker's own env object: Vitest's stubEnv deletes through a proxy bound to it.
-  const originalEnv = process.env;
+  const originalEnv = { ...process.env };
 
   beforeEach(async () => {
-    process.env = { ...originalEnv };
     // These cases supply virtual files; permission filtering is exercised with real files in CLI discovery integration.
     vi.spyOn(fs, 'accessSync').mockImplementation(() => undefined);
   });
 
   afterEach(() => {
     vi.restoreAllMocks();
-    process.env = originalEnv;
+    for (const key of Object.keys(process.env)) {
+      if (!(key in originalEnv)) delete process.env[key];
+    }
+    Object.assign(process.env, originalEnv);
   });
 
   it('returns null when nothing found', () => {

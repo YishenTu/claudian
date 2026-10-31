@@ -11,14 +11,12 @@ async function buildFromSettings(settings: Record<string, unknown>, cliPath: str
 
 describe('buildGrokRuntimeEnv', () => {
   describe('folder trust', () => {
-    const originalEnv = process.env;
     beforeEach(() => {
-      process.env = { ...process.env };
-      delete process.env.GROK_FOLDER_TRUST;
+      vi.stubEnv('GROK_FOLDER_TRUST', undefined);
     });
 
     afterEach(() => {
-      process.env = originalEnv;
+      vi.unstubAllEnvs();
       vi.restoreAllMocks();
     });
 
