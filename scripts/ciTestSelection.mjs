@@ -15,6 +15,8 @@ const wslTests = [
   'tests/integration/core/process/execution-target/WSLSessionToolRelay.windows.test.ts',
   'tests/integration/providers/deepseek/runtime/DeepSeekWSLHost.windows.test.ts',
   'tests/integration/providers/opencode/runtime/OpencodeWSL.windows.test.ts',
+  'tests/integration/providers/codex/runtime/CodexWSL.windows.test.ts',
+  'tests/integration/providers/grok/runtime/GrokWSL.windows.test.ts',
 ];
 const piTest = 'tests/integration/providers/pi/runtime/PiSubprocess.windows.test.ts';
 const isDocumentation = file => file.endsWith('.md') || file.startsWith('docs/');

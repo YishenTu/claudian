@@ -151,7 +151,10 @@ test('moved skill sync retains native verification', () => {
 
 test('shared test helpers use their graph consumers and validate declaration placement', () => {
   const result = select(['tests/helpers/testClock.ts'], [native]);
-  assert.deepEqual(result.testFiles, [native]);
+  assert.deepEqual(result.testFiles, [native,
+    'tests/integration/providers/codex/runtime/CodexWSL.windows.test.ts',
+    'tests/integration/providers/grok/runtime/GrokWSL.windows.test.ts',
+  ]);
   assert.ok(result.scriptTests.includes('scripts/testDeclarations.test.mjs'));
   assert.equal(select(['tests/helpers/testClock.ts'], [prompt]).crossPlatform, false);
 });
@@ -518,6 +521,23 @@ test('WSL native job follows shared dependencies and provider users but skips un
     assert.ok(selection.testFiles.includes(opencode), `${file} must select the declared OpenCode WSL consumer`);
   }
   assert.equal(select(['src/core/process/execution-target/TargetLaunchSpec.ts'], [wsl]).wslWindows, true);
+  for (const provider of ['codex', 'grok']) {
+    const title = provider === 'codex' ? 'Codex' : 'Grok';
+    const native = `tests/integration/providers/${provider}/runtime/${title}WSL.windows.test.ts`;
+    assert.equal(select([native]).wslWindows, true);
+    for (const input of [
+      `src/providers/${provider}/settings.ts`,
+      `src/providers/${provider}/execution/${title}ExecutionBackend.ts`,
+      `src/providers/${provider}/history/${title}ConversationHistoryService.ts`,
+      `tests/integration/providers/${provider}/execution/${title}ExecutionBackend.test.ts`,
+      `tests/helpers/providers/${provider}/${title}WSLPeer.ts`,
+    ]) {
+      const selection = select([input]);
+      assert.equal(selection.wslWindows, true, input);
+      assert.ok(selection.testFiles.includes(native), `${input} must select ${native}`);
+    }
+    assert.equal(select(['tests/helpers/WSLNativePeer.ts'], [native]).wslWindows, true);
+  }
   assert.equal(select(['src/providers/codex/runtime/CodexLaunchSpecBuilder.ts']).wslWindows, true);
   assert.equal(select(['src/providers/claude/runtime/customSpawn.ts']).wslWindows, true);
   assert.equal(select(['tests/helpers/WSLClaudeFixture.ts'], ['tests/integration/core/process/execution-target/ClaudeWSL.windows.test.ts']).wslWindows, true);

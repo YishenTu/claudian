@@ -342,7 +342,7 @@ jobs:
         env:
           CLAUDIAN_REQUIRE_WSL: '1'
           CLAUDIAN_OPENCODE_WSL_CLI: /tmp/claudian-opencode-v2/opencode
-        run: npm run test:unit -- --maxWorkers=1 tests/integration/core/process/execution-target/WSLExecution.windows.test.ts tests/integration/core/process/execution-target/WSLSessionToolRelay.windows.test.ts tests/integration/core/process/execution-target/ClaudeWSL.windows.test.ts tests/integration/providers/deepseek/runtime/DeepSeekWSLHost.windows.test.ts tests/integration/providers/opencode/runtime/OpencodeWSL.windows.test.ts
+        run: npm run test:unit -- --maxWorkers=1 tests/integration/core/process/execution-target/WSLExecution.windows.test.ts tests/integration/core/process/execution-target/WSLSessionToolRelay.windows.test.ts tests/integration/core/process/execution-target/ClaudeWSL.windows.test.ts tests/integration/providers/deepseek/runtime/DeepSeekWSLHost.windows.test.ts tests/integration/providers/opencode/runtime/OpencodeWSL.windows.test.ts tests/integration/providers/codex/runtime/CodexWSL.windows.test.ts tests/integration/providers/grok/runtime/GrokWSL.windows.test.ts
 
   build-artifacts:
     runs-on: ubuntu-latest
