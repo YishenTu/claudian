@@ -65,21 +65,22 @@ it.each([
 });
 
 it.each([
-  ['SSL_CERT_DIR', 'C:\\certs;D:\\more', { hostPath: true, pathList: true }],
-  ['SSL_CERT_DIR', '/etc/ssl//certs', { hostPath: false, pathList: false }],
-  ['SSL_CERT_FILE', '\\\\server\\share\\ca.pem', { hostPath: true, pathList: false }],
-  ['SSL_CERT_FILE', 'certs\\C:\\ca.pem', { hostPath: false, pathList: false }],
-  ['DSH_HOME', 'd:/DeepSeek', { hostPath: true, pathList: false }],
-  ['NODE_EXTRA_CA_CERTS', 'C:\\certs\\extra.pem', { hostPath: true, pathList: false }],
-  ['TMPDIR', 'C:\\Temp', { hostPath: true, pathList: false }],
-  ['TMP', 'C:\\Temp', { hostPath: true, pathList: false }],
-  ['TEMP', 'C:\\Temp', { hostPath: true, pathList: false }],
-  ['TMPDIR', '/tmp/linux', { hostPath: false, pathList: false }],
-  ['DSH_TOKEN', 'C:\\not-a-path-key', { hostPath: false, pathList: false }],
-])('marks %s=%j for host path translation only when it is a path key with a Windows path', async (key, value, flags) => {
+  ['SSL_CERT_DIR', 'C:\\certs;D:\\more', { hostPath: true, pathList: true }, '/mnt/c/certs:/mnt/d/more'],
+  ['SSL_CERT_DIR', '/etc/ssl//certs', { hostPath: false, pathList: false }, '/etc/ssl//certs'],
+  ['SSL_CERT_FILE', 'C:\\certs\\ca.pem', { hostPath: true, pathList: false }, '/mnt/c/certs/ca.pem'],
+  ['SSL_CERT_FILE', 'certs\\C:\\ca.pem', { hostPath: false, pathList: false }, 'certs\\C:\\ca.pem'],
+  ['DSH_HOME', 'd:/DeepSeek', { hostPath: true, pathList: false }, '/mnt/d/DeepSeek'],
+  ['NODE_EXTRA_CA_CERTS', 'C:\\certs\\extra.pem', { hostPath: true, pathList: false }, '/mnt/c/certs/extra.pem'],
+  ['TMPDIR', 'C:\\Temp', { hostPath: true, pathList: false }, '/mnt/c/Temp'],
+  ['TMP', 'C:\\Temp', { hostPath: true, pathList: false }, '/mnt/c/Temp'],
+  ['TEMP', 'C:\\Temp', { hostPath: true, pathList: false }, '/mnt/c/Temp'],
+  ['TMPDIR', '/tmp/linux', { hostPath: false, pathList: false }, '/tmp/linux'],
+  ['DSH_TOKEN', 'C:\\not-a-path-key', { hostPath: false, pathList: false }, 'C:\\not-a-path-key'],
+])('marks %s=%j for host path translation only when it is a path key with a Windows path', async (key, value, flags, expected) => {
   wsl.environment = { HOME: '/home/alice' };
   const context = await resolveDeepSeekExecutionContext(target, 'C:\\Vault', { [key]: value }, `${key}=${value}`);
   expect(context.forwardEnvironment).toContainEqual({ key, ...flags });
+  expect(wsl.requests[0].env[key]).toBe(expected);
 });
 
 it('fails without Linux home evidence and rejects a different distro before probing its profile', async () => {

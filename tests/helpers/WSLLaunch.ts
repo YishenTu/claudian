@@ -18,9 +18,19 @@ function readWindowsToken(token: string): string {
   return result;
 }
 
-export function readWSLExec(spec: Pick<TargetLaunchSpec, 'args'>): { command: string; args: string[] } {
-  const index = spec.args.indexOf('--exec');
+/** Decodes the full Windows invocation before interpreting its WSL options. */
+export function readWSLInvocation(spec: Pick<TargetLaunchSpec, 'args'>) {
+  const decoded = spec.args.map(readWindowsToken);
+  const index = decoded.indexOf('--exec');
   if (index < 0) throw new Error('Expected direct WSL execution');
-  const [command, ...args] = spec.args.slice(index + 1).map(readWindowsToken);
+  const [command, ...args] = decoded.slice(index + 1);
+  return { command, args,
+    distro: decoded[decoded.indexOf('--distribution') + 1],
+    cwd: decoded[decoded.indexOf('--cd') + 1],
+  };
+}
+
+export function readWSLExec(spec: Pick<TargetLaunchSpec, 'args'>): { command: string; args: string[] } {
+  const { command, args } = readWSLInvocation(spec);
   return { command, args };
 }

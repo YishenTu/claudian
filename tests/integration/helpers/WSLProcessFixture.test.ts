@@ -1,5 +1,9 @@
-import type { ChildProcess } from 'node:child_process';
+// @test-ci {"native":true}
+import { type ChildProcess,spawn as spawnProcess } from 'node:child_process';
 import { once } from 'node:events';
+import * as fs from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import * as path from 'node:path';
 
 import { WSLProcessFixture } from '@test/helpers/WSLProcessFixture';
 import spawn from 'cross-spawn';
@@ -218,4 +222,41 @@ it('reports a path-translated WSLENV read to its sink even though the probe only
 it.fails('fails the running test by default when a probe reads a path-translated WSLENV value', async () => {
   // Passes on its own (the sink test above proves the null); only the default sink can fail it.
   expect(await readTranslatedToken()).toBeNull();
+});
+
+
+describe.skipIf(path.sep === '\\')('external executable projection', () => {
+  async function run(env: Record<string, string>, omitPrivateHome = false) {
+    const cwd = await fs.mkdtemp(path.join(tmpdir(), 'wsl cwd with spaces '));
+    onTestFinished(() => fs.rm(cwd, { recursive: true, force: true }));
+    native.environment = { HOME: '/home/distro' };
+    native.execute = request => spawnProcess(process.execPath, request.argv, { cwd: request.cwd, env: request.env });
+    vi.mocked(spawn).mockImplementation(native.spawn);
+    const spec = buildTargetLaunchSpec({
+      target: launch.target, command: process.execPath,
+      args: ['-e', 'process.stdout.write(JSON.stringify({ cwd: process.cwd(), home: process.env.HOME, list: process.env.LIST }))'],
+      hostCwd: '\\\\wsl$\\Ubuntu' + cwd.replaceAll('/', '\\'), env,
+    });
+    if (omitPrivateHome) delete spec.env.CLAUDIAN_WSL_HOME;
+    const output = await runProcessProbe({ ...spec, cwd: spec.spawnCwd }, 5_000);
+    expect(output).not.toBeNull();
+    return { result: JSON.parse(output!), cwd: await fs.realpath(cwd) };
+  }
+
+  it('decodes the space-containing cwd before launching an external process', async () => {
+    const { result, cwd } = await run({});
+    expect(result.cwd).toBe(cwd);
+    expect(native.requests[0].distro).toBe('Ubuntu');
+  });
+
+  it('applies /l list forwarding before launching an external process', async () => {
+    const { result } = await run({ LIST: 'C:\\Users;C:\\Windows', WSLENV: 'LIST/l' });
+    expect(result.list).toBe('/mnt/c/Users:/mnt/c/Windows');
+  });
+
+  it('restores private HOME and otherwise preserves the distro HOME for external processes', async () => {
+    const env = { HOME: '/home/configured', WSLENV: 'HOME' };
+    expect((await run(env)).result.home).toBe('/home/configured');
+    expect((await run(env, true)).result.home).toBe('/home/distro');
+  });
 });
