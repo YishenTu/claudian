@@ -11,7 +11,7 @@
     "build:css": "node scripts/build-css.mjs",
     "dev": "npm run build:css && node esbuild.config.mjs",
     "build": "node scripts/build.mjs production",
-    "check:lockfile": "bun install --frozen-lockfile --ignore-scripts",
+    "check:lockfile": "bun install --frozen-lockfile --ignore-scripts && node scripts/check-lockfile-parity.mjs",
     "check:open-handles": "node scripts/check-open-handles.mjs",
     "check:performance": "node scripts/check-startup-performance.mjs",
     "typecheck": "tsc --noEmit && tsc --noEmit -p tests/tsconfig.json",
@@ -85,6 +85,7 @@
     "hono": "4.13.13",
     "ip-address": "10.7.4",
     "js-yaml": "4.3.2",
+    "minimatch": "11.0.3",
     "moment": "2.31.0",
     "qs": "6.17.1"
   }
