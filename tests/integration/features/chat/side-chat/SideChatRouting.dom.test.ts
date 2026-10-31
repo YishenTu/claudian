@@ -4,6 +4,7 @@ import '@/providers';
 import { createHarness as createExecutionHarness } from '@test/helpers/ChatExecutionHarness';
 import { deferred } from '@test/helpers/ChatInputHarness';
 import { createTestSession, holdResponse } from '@test/helpers/ConversationPorts';
+import { conversationRecord } from '@test/helpers/features/chat/ConversationFixture';
 import {
   createHarness,
   releaseSideChatHarnesses,
@@ -154,6 +155,26 @@ it('routes ordinary composer input to the selected destination', async () => {
   await routing.controller.sendMessage();
   expect(routing.mainExecutions).toEqual(['Back in main']);
   expect(harness.backend.latest.requests).toHaveLength(2);
+});
+
+it('does not launch a side turn stopped while resolving the execution directory', async () => {
+  const projection = deferred<string>();
+  const resolving = deferred<void>();
+  const harness = await createHarness({ resolveExecutionWorkingDirectory: () => {
+    resolving.resolve();
+    return projection.promise;
+  } });
+  onTestFinished(() => projection.resolve('/target/vault'));
+  let settled = false;
+  const started = harness.controller.handleCommandSubmission('Cancelled input', []).then(() => { settled = true; });
+  await resolving.promise;
+  harness.controller.cancelSide();
+  projection.resolve('/target/vault');
+  await waitFor(() => expect(settled || harness.backend.sessions.some(session => session.requests.length > 0)).toBe(true));
+  const requests = harness.backend.sessions.flatMap(session => session.requests);
+  for (const session of harness.backend.sessions) session.complete();
+  await started;
+  expect(requests).toHaveLength(0);
 });
 
 it('cancels only the selected destination', async () => {
@@ -630,6 +651,7 @@ it('protects parked main drafts and cancels branch previews when switching to si
 it.each([false, true])('keeps side drafts separate while a branch submission settles (cancelled: %s)', async cancelled => {
   const harness = await createHarness();
   harness.plugin.updateConversation = vi.fn();
+  harness.plugin.getConversationSummary = id => conversationRecord(id);
   const navigation = deferred<ConversationBranchResult>();
   const execution = createExecutionHarness();
   const coordinator = execution.coordinator;

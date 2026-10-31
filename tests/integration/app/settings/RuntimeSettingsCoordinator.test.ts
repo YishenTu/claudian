@@ -1,10 +1,13 @@
+// @test-ci {"native":true}
 import '@/providers';
 
 import { DEFAULT_CLAUDIAN_SETTINGS } from '@test/helpers/defaultSettings';
 import { testDate } from '@test/helpers/testClock';
+import { createWSLDistroFixture } from '@test/helpers/WSLProcessFixture';
 
 import { RuntimeSettingsCoordinator } from '@/app/settings/RuntimeSettingsCoordinator';
 import { SettingsCoordinator } from '@/app/settings/SettingsCoordinator';
+import { getInstallationKey } from '@/core/device/InstallationKey';
 
 it.each(['persistence', 'publication'] as const)(
   'keeps invalidation completion consistent with durable settings after %s fails',
@@ -38,3 +41,33 @@ it.each(['persistence', 'publication'] as const)(
     expect(Object.fromEntries(runtime.getPendingGenerations())).toEqual(expected);
   },
 );
+
+// The distro fixture is a POSIX executable standing in for wsl.exe.
+it.skipIf(process.platform === 'win32').each([
+  ['UNC vault', '\\\\wsl$\\Ubuntu\\home\\linux\\vault', false],
+  ['drive vault', 'C:\\Vault', true],
+])('uses the effective distro when reconciling a %s', async (_name, vaultPath, invalidates) => {
+  const distros = await createWSLDistroFixture(Buffer.from('* Debian  Running  2', 'utf16le'));
+  const platform = process.platform;
+  Object.defineProperty(process, 'platform', { value: 'win32' });
+  try {
+    const settings = structuredClone(DEFAULT_CLAUDIAN_SETTINGS);
+    const key = getInstallationKey();
+    settings.providerConfigs.codex = { ...settings.providerConfigs.codex,
+      installationMethodsByHost: { [key]: 'wsl' }, wslDistroOverridesByHost: {},
+    };
+    const options = {
+      settings: new SettingsCoordinator(settings, async () => {}, () => {}),
+      getSettings: () => settings, getVaultPath: () => vaultPath,
+      canCompleteInvalidations: () => true,
+      executionLifecycle: { markSessionsInvalidated: () => undefined },
+      conversations: { invalidateProviderSessions: () => [], persistProviderSessionInvalidations: async () => {} },
+    };
+    const runtime = new RuntimeSettingsCoordinator(options);
+    runtime.reconcile(['codex']);
+    await distros.setOutput(Buffer.from('* Fedora  Running  2', 'utf16le'));
+    expect(runtime.reconcile(['codex']).sessionInvalidationProviderIds).toEqual(invalidates ? ['codex'] : []);
+    settings.providerConfigs.codex.wslDistroOverridesByHost = { [key]: 'Ubuntu' };
+    expect(runtime.reconcile(['codex']).sessionInvalidationProviderIds).toEqual(invalidates ? ['codex'] : []);
+  } finally { Object.defineProperty(process, 'platform', { value: platform }); }
+});

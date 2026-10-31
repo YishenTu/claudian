@@ -124,6 +124,7 @@ export async function startApplication(options: ApplicationStartupOptions): Prom
     conversations: conversationRepository,
     executionLifecycle: options.executionLifecycle,
     getSettings: () => settings,
+    getVaultPath: () => getVaultPath(plugin.app),
     // Consulted only by post-startup commits, after the loader below exists.
     canCompleteInvalidations: (): boolean => sessionMetadata.hasLoadedAll && !options.isUnloading(),
   });
@@ -162,7 +163,7 @@ export async function startApplication(options: ApplicationStartupOptions): Prom
 
   const didNormalizePendingSessionInvalidations = runtimeSettings.syncPendingSessionInvalidations();
   const didNormalizeProviderSelection = providerSettings.normalizeProviderSelection(settings);
-  const didNormalizeModelVariants = providerSettings.normalizeAllModelVariants(settings);
+  const didNormalizeModelVariants = providerSettings.normalizeAllModelVariants(settings, { vaultPath: getVaultPath(plugin.app) });
 
   setLocale(settings.locale as Locale);
 

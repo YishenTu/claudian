@@ -7,9 +7,10 @@ import suites from './testSuites.cjs';
 
 const fullSelection = {
   testFiles: null, scriptTests: null, crossPlatformTests: null,
-  crossPlatform: true, piWindows: true,
+  crossPlatform: true, piWindows: true, wslWindows: true,
 };
 const docsTest = 'tests/unit/docs/Documentation.test.ts';
+const wslTest = 'tests/integration/core/process/execution-target/WSLExecution.windows.test.ts';
 const piTest = 'tests/integration/providers/pi/runtime/PiSubprocess.windows.test.ts';
 const isDocumentation = file => file.endsWith('.md') || file.startsWith('docs/');
 const isVitestTest = file => /^tests\/(?:unit|integration)\/.*\.test\.ts$/.test(file);
@@ -69,6 +70,7 @@ export function selectCiTests({ changes, relatedTests, eventName }) {
       || scripts.has('scripts/ciTestSelection.test.mjs') || scripts.has('scripts/run-tests.test.mjs')
       || changes.some(change => change.path === 'scripts/testDeclarations.test.mjs'),
     piWindows,
+    wslWindows: files.has(wslTest),
   };
 }
 
@@ -119,6 +121,7 @@ function main() {
     `cross-platform-tests=${JSON.stringify(selection.crossPlatformTests)}`,
     `cross-platform=${selection.crossPlatform}`,
     `pi-windows=${selection.piWindows}`,
+    `wsl-windows=${selection.wslWindows}`,
     `has-tests=${selection.testFiles === null || selection.testFiles.length > 0
       || selection.scriptTests === null || selection.scriptTests.length > 0}`,
   ].join('\n');

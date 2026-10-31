@@ -73,6 +73,16 @@ describe('CodexHistoryPathResolver', () => {
     expect(resolveCodexSessionFileHint(sessionPath, context)).toBe(sessionPath);
   });
 
+  it.each(['wsl$', 'wsl.localhost'])('maps an explicitly forwarded Linux HOME to trusted %s history roots', server => {
+    const root = `\\\\${server}\\Ubuntu\\srv\\codex-user\\.codex\\sessions`;
+    const sessionPath = `${root}\\rollout-thread.jsonl`;
+    const context = { ...createWslContext('Ubuntu'), environment: { HOME: '/srv/codex-user' } };
+    expect(resolveCodexTranscriptRootHint(root, context)).toBe(root);
+    expect(resolveCodexSessionFileHint(sessionPath, context)).toBe(sessionPath);
+    expect(getCodexArchivedTranscriptRoots(context)).toContain(root.replace(/sessions$/u, 'archived_sessions'));
+    expect(resolveCodexSessionFileHint(sessionPath.replace('Ubuntu', 'Debian'), context)).toBeNull();
+  });
+
   it('accepts host drive paths mapped from a custom WSL mount Codex home', () => {
     const root = 'D:\\codex-data\\sessions';
     const sessionPath = `${root}\\2026\\07\\12\\rollout-thread.jsonl`;
@@ -108,6 +118,21 @@ describe('CodexHistoryPathResolver', () => {
       await expect(lookup).resolves.toBeNull();
     } finally {
       vi.useRealTimers();
+      access.mockRestore();
+    }
+  });
+
+  it('treats the deadline timer as expiry even when the clock reads just before the deadline', async () => {
+    const access = vi.spyOn(fsPromises, 'access').mockReturnValue(new Promise<never>(() => {}));
+    const start = Date.now();
+    // Timers may fire marginally before Date.now() reaches the deadline.
+    const now = vi.spyOn(Date, 'now').mockReturnValue(start);
+    try {
+      await expect(resolveCodexRolloutFile('/tmp/stalled/sessions/rollout-thread.jsonl', 'thread', null, {
+        environment: { CODEX_HOME: '/tmp/stalled', HOME: '/tmp/home' },
+      }, start + 20)).resolves.toBeNull();
+    } finally {
+      now.mockRestore();
       access.mockRestore();
     }
   });

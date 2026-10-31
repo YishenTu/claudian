@@ -105,6 +105,7 @@ export async function createFixture(overrides: Record<string, unknown> = {}) {
   state.queueIndicatorEl = queueIndicator;
   let id = 0;
   const coordinator = {
+    systemInstructions: { kind: 'main-agent', instructions: 'Active instructions' },
     acceptSteerFromProviderEvent: vi.fn().mockResolvedValue(true),
     cancel: vi.fn().mockResolvedValue(undefined),
     execute: vi.fn().mockResolvedValue({

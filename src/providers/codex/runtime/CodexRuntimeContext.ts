@@ -1,10 +1,11 @@
 import * as path from 'path';
 
+import type { TargetLaunchSpec } from '@/core/process/execution-target/types';
+
 import type { InitializeResult } from './codexAppServerTypes';
-import type { CodexLaunchSpec } from './codexLaunchTypes';
 
 export interface CodexRuntimeContext {
-  launchSpec: CodexLaunchSpec;
+  launchSpec: TargetLaunchSpec;
   initializeResult: InitializeResult;
   codexHomeTarget: string | null;
   codexHomeHost: string | null;
@@ -12,27 +13,27 @@ export interface CodexRuntimeContext {
   sessionsDirHost: string | null;
 }
 
-function normalizeTargetPath(launchSpec: CodexLaunchSpec, value: string): string {
+function normalizeTargetPath(launchSpec: TargetLaunchSpec, value: string): string {
   return launchSpec.target.platformFamily === 'windows'
     ? path.win32.normalize(value)
     : path.posix.normalize(value.startsWith('/') ? value : value.replace(/\\/g, '/'));
 }
 
-function joinTargetPath(launchSpec: CodexLaunchSpec, ...parts: string[]): string {
+function joinTargetPath(launchSpec: TargetLaunchSpec, ...parts: string[]): string {
   return launchSpec.target.platformFamily === 'windows'
     ? path.win32.join(...parts)
     : path.posix.join(...parts.map(part => part.startsWith('/') ? part : part.replace(/\\/g, '/')));
 }
 
 function normalizeOptionalTargetPath(
-  launchSpec: CodexLaunchSpec,
+  launchSpec: TargetLaunchSpec,
   value: string | null | undefined,
 ): string | null {
   const trimmed = typeof value === 'string' ? value.trim() : '';
   return trimmed ? normalizeTargetPath(launchSpec, trimmed) : null;
 }
 
-function resolveFallbackCodexHomeTarget(launchSpec: CodexLaunchSpec): string | null {
+function resolveFallbackCodexHomeTarget(launchSpec: TargetLaunchSpec): string | null {
   const rawCodexHome = typeof launchSpec.env.CODEX_HOME === 'string'
     ? launchSpec.env.CODEX_HOME.trim()
     : '';
@@ -58,7 +59,7 @@ function resolveFallbackCodexHomeTarget(launchSpec: CodexLaunchSpec): string | n
 }
 
 function resolveCodexHomeTarget(
-  launchSpec: CodexLaunchSpec,
+  launchSpec: TargetLaunchSpec,
   initializeResult: InitializeResult,
 ): string | null {
   return normalizeOptionalTargetPath(launchSpec, initializeResult.codexHome)
@@ -66,7 +67,7 @@ function resolveCodexHomeTarget(
 }
 
 function validateInitializeTarget(
-  launchSpec: CodexLaunchSpec,
+  launchSpec: TargetLaunchSpec,
   initializeResult: InitializeResult,
 ): void {
   if (initializeResult.platformOs !== launchSpec.target.platformOs) {
@@ -83,7 +84,7 @@ function validateInitializeTarget(
 }
 
 export function createCodexRuntimeContext(
-  launchSpec: CodexLaunchSpec,
+  launchSpec: TargetLaunchSpec,
   initializeResult: InitializeResult,
 ): CodexRuntimeContext {
   validateInitializeTarget(launchSpec, initializeResult);

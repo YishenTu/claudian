@@ -670,21 +670,8 @@
       }
     },
     "codex": {
-      "installationMethod": {
-        "name": "安装方式",
-        "desc": "Claudian 在 Windows 上启动 Codex 的方式。原生 Windows 使用 Windows 可执行文件路径；WSL 会在所选发行版内启动 Linux CLI。",
-        "nativeWindows": "原生 Windows",
-        "wsl": "WSL"
-      },
       "cliPath": {
-        "name": "Codex CLI 路径",
-        "validation": {
-          "wslWindowsPath": "WSL 模式需要 Linux 命令或 Linux 绝对路径，而不是 Windows 可执行文件路径。"
-        }
-      },
-      "wslDistroOverride": {
-        "name": "WSL 发行版覆盖",
-        "desc": "可选高级覆盖。留空时会尽可能从 WSL 工作区路径推断发行版，否则使用默认 WSL 发行版。"
+        "name": "Codex CLI 路径"
       },
       "safeMode": {
         "workspaceWrite": "工作区可写",
@@ -886,6 +873,19 @@
         "failed": "同步失败:{message}",
         "summary": "已移动 {moved},已转换 {converted},已移到回收站 {trashed},已移除 {unlinked} 个链接。"
       }
+    },
+    "executionTarget": {
+      "installationMethod": {
+        "name": "安装方式",
+        "desc": "Claudian 在 Windows 上启动 {provider} 的方式。原生 Windows 使用 Windows 可执行文件路径；WSL 会在所选发行版内启动 Linux CLI。",
+        "nativeWindows": "原生 Windows",
+        "wsl": "WSL"
+      },
+      "wslDistroOverride": {
+        "name": "WSL 发行版覆盖",
+        "desc": "可选高级覆盖。留空时会尽可能从 WSL 工作区路径推断发行版，否则使用默认 WSL 发行版。"
+      },
+      "wslWindowsPath": "WSL 模式需要 Linux 命令或 Linux 绝对路径，而不是 Windows 可执行文件路径。"
     }
   }
 }

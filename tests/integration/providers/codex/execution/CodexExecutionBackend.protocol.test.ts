@@ -1,5 +1,8 @@
 // @test-ci {"native":true}
+// @vitest-environment jsdom
 import { DesktopVault } from '@test/helpers/core/DesktopVault';
+
+import { codexProviderRegistration } from '@/providers/codex/registration';
 const actualModule0 = await import('node:fs');
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import * as fsPromises from 'node:fs/promises';
@@ -8,6 +11,7 @@ import { basename, dirname, join, normalize, posix, sep } from 'node:path';
 
 import pair from '@test/fixtures/providers/codex/turn-stats-pair.json';
 import { capturedSelectionPrompt, capturedSelections } from '@test/helpers/capturedSelections';
+import { createFixture } from '@test/helpers/ChatInputHarness';
 import { TEST_CODEX_MODEL } from '@test/helpers/codexModels';
 import { createProviderHostFixture } from '@test/helpers/providerRuntimeHost';
 import { type CodexNativeRequest, CodexNativeResponseError, CodexRuntimeHarness } from '@test/helpers/providers/codex/CodexRuntimeHarness';
@@ -22,7 +26,9 @@ import type {
   ProviderSessionEvent,
 } from '@/core/execution';
 import { isSteerableExecutionSession } from '@/core/execution';
+import { ProviderExecutionLifecycleRegistry } from '@/core/execution/ProviderExecutionLifecycleRegistry';
 import type { ProviderHost } from '@/core/providers/ProviderHost';
+import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import type { ClaudianSettings } from '@/core/types';
 import { CodexConversationHistoryService } from '@/providers/codex/history/CodexConversationHistoryService';
 import { CodexAppServerProcess } from '@/providers/codex/runtime/CodexAppServerProcess';
@@ -1377,6 +1383,59 @@ describe('CodexExecutionBackend', () => {
       await eventsPromise;
       await session.dispose();
       vi.useRealTimers();
+    }
+  });
+
+  it.each([
+    { kind: 'chat', hostPath: String.raw`C:\vault`, targetPath: '/mnt/c/vault' },
+    { kind: 'chat', hostPath: String.raw`\\wsl$\Ubuntu\home\linux\vault`, targetPath: '/home/linux/vault' },
+    { kind: 'inline', hostPath: String.raw`C:\vault`, targetPath: '/mnt/c/vault' },
+    { kind: 'inline', hostPath: String.raw`\\wsl$\Ubuntu\home\linux\vault`, targetPath: '/home/linux/vault' },
+  ])('builds $kind runtime context in the Codex filesystem for $hostPath', async ({ kind, hostPath, targetPath }) => {
+    const platform = process.platform;
+    Object.defineProperty(process, 'platform', { value: 'win32' });
+    const lifecycleRegistry = new ProviderExecutionLifecycleRegistry();
+    const host = Object.assign(await createPlugin(), { workingDirectory: hostPath, executionLifecycleRegistry: lifecycleRegistry });
+    host.settings.systemPrompt = `Keep this literal custom path: ${hostPath}`;
+    updateCodexProviderSettings(host.settings, { installationMethod: 'wsl', wslDistroOverride: 'Ubuntu' });
+    const backend = createBackend(host);
+    ProviderRegistry.register('codex', { ...codexProviderRegistration, createExecutionBackend: () => backend });
+    nativeRequest.mockImplementation(async (method: string) => {
+      if (method === 'initialize') return { userAgent: 'test', codexHome: '/home/linux/.codex', platformFamily: 'unix', platformOs: 'linux' };
+      if (method === 'thread/start') return createThreadResult('thread-prompt-path');
+      if (method === 'turn/start') {
+        queueMicrotask(() => completeTurn('thread-prompt-path', 'turn-prompt-path'));
+        return createTurnResult('turn-prompt-path');
+      }
+      throw new Error(`Unexpected method: ${method}`);
+    });
+    try {
+      if (kind === 'chat') {
+        const fixture = await createFixture({ getTabProviderId: () => 'codex', getSettings: () => ({ model: TEST_CODEX_MODEL, reasoning: 'medium', permissionMode: 'normal', serviceTier: 'default' }) });
+        Object.assign(fixture.plugin, { providerHost: host, settings: host.settings });
+        Object.assign(fixture.coordinator, { workingDirectory: hostPath });
+        await fixture.controller.sendMessage({ content: `Inspect this literal user path: ${hostPath}` });
+        const submission = fixture.coordinator.execute.mock.calls[0][0];
+        const session = backend.createSession(createSessionConfig({ workingDirectory: hostPath }));
+        await collectEvents(session.execute(createRequest(undefined, { configuration: submission.configuration,
+          input: [{ type: 'text', text: submission.canonicalText }],
+        })).events);
+        await session.dispose();
+      } else {
+        const service = ProviderRegistry.createInlineEditService(host, 'codex');
+        await service.send({ mode: 'selection', notePath: 'note.md', selectedText: 'draft', instruction: `Inspect this literal user path: ${hostPath}` });
+        service.end();
+      }
+      const thread = nativeRequest.mock.calls.find(([method]) => method === 'thread/start')?.[1];
+      expect(thread).toMatchObject({ cwd: targetPath });
+      expect(thread!.baseInstructions).toContain(`Vault absolute path: ${targetPath}`);
+      expect(thread!.baseInstructions!.includes(`Keep this literal custom path: ${hostPath}`)).toBe(kind === 'chat');
+      const turn = nativeRequest.mock.calls.find(([method]) => method === 'turn/start')?.[1];
+      expect(turn!.input!.some(block => block.type === 'text' && block.text.includes(`Inspect this literal user path: ${hostPath}`))).toBe(true);
+    } finally {
+      await lifecycleRegistry.dispose();
+      ProviderRegistry.register('codex', codexProviderRegistration);
+      Object.defineProperty(process, 'platform', { value: platform });
     }
   });
 

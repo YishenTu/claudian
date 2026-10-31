@@ -5,6 +5,7 @@ import { axe } from '@test/helpers/accessibility';
 import { createHarness as createExecutionHarness } from '@test/helpers/ChatExecutionHarness';
 import { createConversationPorts } from '@test/helpers/ConversationPorts';
 import { createChatFeatureHost } from '@test/helpers/features/chat/ChatFeatureHostFixture';
+import { conversationRecord } from '@test/helpers/features/chat/ConversationFixture';
 import { createProjectsFake } from '@test/helpers/features/chat/ProjectsFake';
 import { createSessionRuntimePool } from '@test/helpers/features/chat/SessionRuntimePoolHarness';
 import { testDate } from '@test/helpers/testClock';
@@ -633,7 +634,7 @@ it.each([true, false])('enables branches after switching and native history corr
     treeBranches: ['native-u2'], ...(hasNativeId ? { userMessageId: 'native-u2' } : {}) };
   const plugin = await createChatFeatureHost({ settings: { mediaFolder: '' }, updateConversation: vi.fn(),
     getConversationById: vi.fn().mockResolvedValue({ id: 'pi-chat', messages: [first, second] }),
-    getConversationSummary: vi.fn().mockReturnValue(null), projects: createProjectsFake() });
+    getConversationSummary: () => conversationRecord('pi-chat', { providerId: 'pi' }), projects: createProjectsFake() });
   const navigateConversationBranch = vi.fn().mockResolvedValue({ status: 'committed', messages: [first] });
   const { coordinator, registry } = createExecutionHarness();
   vi.spyOn(coordinator, 'navigateConversationBranch').mockImplementation(navigateConversationBranch);

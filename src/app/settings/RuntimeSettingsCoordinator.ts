@@ -13,6 +13,7 @@ interface RuntimeSettingsCoordinatorOptions {
   /** Learns which providers' sessions a transition's change invalidated, so preserved sessions follow their bindings. */
   readonly executionLifecycle: Pick<ProviderExecutionLifecycleRegistry, 'markSessionsInvalidated'>;
   readonly getSettings: () => ClaudianSettings;
+  readonly getVaultPath?: () => string | null;
   readonly canCompleteInvalidations: () => boolean;
 }
 
@@ -76,7 +77,7 @@ export class RuntimeSettingsCoordinator {
     providerIds: ProviderId[] = ProviderRegistry.getRegisteredProviderIds(),
     settings = this.options.getSettings(),
   ): SettingsReconciliationResult {
-    return ProviderSettingsCoordinator.reconcileProviders(settings, providerIds);
+    return ProviderSettingsCoordinator.reconcileProviders(settings, providerIds, { vaultPath: this.options.getVaultPath?.() });
   }
 
   syncPendingSessionInvalidations(): boolean {

@@ -1,4 +1,5 @@
 import type { ChatRewindMode, ConversationBranchResult } from '@/core/execution';
+import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import type {
   ChatMessage,
   Conversation,
@@ -102,14 +103,15 @@ export class ConversationController {
       getExecutionCoordinator: () => this.#getExecutionCoordinator(),
       ensureExecutionInitialized,
       getSelectedModel: () => this.deps.getSelectedModel?.() ?? null,
-      getSystemInstructions: workingDirectory => {
+      getSystemInstructions: async workingDirectory => {
         const { plugin, state } = this.deps;
         const id = state.currentConversationId;
-        return resolveChatSystemInstructions(
-          plugin.settings,
-          workingDirectory,
-          resolveSessionInstructions(plugin.projects, id ? plugin.getConversationSummary(id) : null),
-        );
+        const conversation = id ? plugin.getConversationSummary(id) : null;
+        if (!conversation) throw new Error('Conversation is missing.');
+        const promptSettings = { ...plugin.settings };
+        const sessionInstructions = resolveSessionInstructions(plugin.projects, conversation);
+        const executionWorkingDirectory = await ProviderRegistry.resolveExecutionWorkingDirectory(plugin.providerHost, conversation.providerId, workingDirectory);
+        return resolveChatSystemInstructions(promptSettings, executionWorkingDirectory, sessionInstructions);
       },
       isClosing,
       save: () => this.save(),

@@ -170,6 +170,28 @@ describe('Codex shared runtime', () => {
     await skills.dispose();
   });
 
+  it('reuses the WSL server without probing shell state on acquisition', async () => {
+    const platform = process.platform;
+    Object.defineProperty(process, 'platform', { value: 'win32' });
+    Object.defineProperty(plugin, 'workingDirectory', { value: 'C:\\vault', configurable: true });
+    updateCodexProviderSettings(plugin.settings, { installationMethod: 'wsl', wslDistroOverride: 'Ubuntu' });
+    vi.mocked(spawn).mockClear().mockImplementationOnce(() => mockNative.createProcess({ platformFamily: 'unix', platformOs: 'linux' }));
+    const runtime = createRuntime();
+    try {
+      const first = await runtime.acquire({ readiness: 'initialized' });
+      const second = await runtime.acquire({ readiness: 'initialized' });
+      expect(second.connection.fingerprint === first.connection.fingerprint).toBe(true);
+      expect(second.connection).toBe(first.connection);
+      expect(mockNative.processes).toHaveLength(1);
+      expect(spawn).toHaveBeenCalledTimes(1);
+      await first.release();
+      await second.release();
+    } finally {
+      await runtime.dispose();
+      Object.defineProperty(process, 'platform', { value: platform });
+    }
+  });
+
   it('drains the old fingerprint while new consumers use its replacement', async () => {
     const runtime = createRuntime();
     const old = await runtime.acquire({ readiness: 'initialized' });

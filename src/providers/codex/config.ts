@@ -1,4 +1,6 @@
 import { getInstallationKey } from '@/core/device/InstallationKey';
+import { decodeInstallationSettings,
+  DEFAULT_INSTALLATION_SETTINGS, type InstallationMethod,selectInstallationSettings, updateInstallationSettings } from '@/core/providers/settings/InstallationSettings';
 
 import { replaceProviderConfig } from '../../core/providers/providerConfig';
 import { normalizeHostnameStringMap } from '../../core/providers/settings/HostnameStringMap';
@@ -19,8 +21,7 @@ export type CodexSafeMode = 'workspace-write' | 'read-only';
 type CodexResponseStyle = 'pragmatic' | 'friendly' | 'none';
 type CodexResponseVerbosity = 'default' | 'low' | 'medium' | 'high';
 type CodexReasoningSummary = 'auto' | 'concise' | 'detailed' | 'none';
-export type CodexInstallationMethod = 'native-windows' | 'wsl';
-type HostnameInstallationMethods = Record<string, CodexInstallationMethod>;
+type HostnameInstallationMethods = Record<string, InstallationMethod>;
 
 const CODEX_SAFE_MODES = ['workspace-write', 'read-only'] as const;
 const CODEX_REASONING_SUMMARIES = ['auto', 'concise', 'detailed', 'none'] as const;
@@ -64,7 +65,7 @@ export interface CodexProviderSettings {
   sessionEnvironmentHash: CodexProviderConfig['sessionEnvironmentHash'];
   catalogTimestamp: CodexProviderConfig['catalogTimestamp'];
   catalogFingerprint: CodexProviderConfig['catalogFingerprint'];
-  installationMethod: CodexInstallationMethod;
+  installationMethod: InstallationMethod;
   installationMethodsByHost: CodexProviderConfig['installationMethodsByHost'];
   wslDistroOverride: string;
   wslDistroOverridesByHost: CodexProviderConfig['wslDistroOverridesByHost'];
@@ -93,17 +94,8 @@ export const DEFAULT_CODEX_PROVIDER_CONFIG: Readonly<CodexProviderConfig> = Obje
 
 export const DEFAULT_CODEX_PROVIDER_SETTINGS: Readonly<CodexProviderSettings> = Object.freeze({
   ...DEFAULT_CODEX_PROVIDER_CONFIG,
-  installationMethod: 'native-windows',
-  wslDistroOverride: '',
+  ...DEFAULT_INSTALLATION_SETTINGS,
 });
-
-function normalizeCodexInstallationMethod(value: unknown): CodexInstallationMethod {
-  return value === 'wsl' ? 'wsl' : 'native-windows';
-}
-
-function normalizeOptionalString(value: unknown): string {
-  return typeof value === 'string' ? value.trim() : '';
-}
 
 function readStoredCodexSafeMode(
   value: unknown,
@@ -124,16 +116,6 @@ function readStoredCodexReasoningSummary(
   return (CODEX_REASONING_SUMMARIES as readonly unknown[]).includes(value)
     ? value as CodexReasoningSummary
     : fallback;
-}
-
-function shouldPersistCodexInstallationSettings(): boolean {
-  return process.platform === 'win32';
-}
-
-function omitCurrentHost<T>(entries: Record<string, T>, hostnameKey: string): Record<string, T> {
-  const next = { ...entries };
-  delete next[hostnameKey];
-  return next;
 }
 
 export function shouldDisableCodexReasoningSummary(model: string | undefined): boolean {
@@ -245,27 +227,12 @@ function getCodexAliasModelIds(
   return getVisibleCodexModelIds(visibleModels, discoveredModels);
 }
 
-function normalizeInstallationMethodsByHost(value: unknown): HostnameInstallationMethods {
-  const normalized = normalizeHostnameStringMap(value);
-  const result: HostnameInstallationMethods = {};
-  for (const [key, entry] of Object.entries(normalized)) {
-    Object.defineProperty(result, key, {
-      configurable: true,
-      enumerable: true,
-      value: normalizeCodexInstallationMethod(entry),
-      writable: true,
-    });
-  }
-  return result;
-}
-
 /** Decodes a stored Codex configuration without selecting this host's installation entries. */
 export function decodeCodexStoredConfig(
   config: Readonly<Record<string, unknown>>,
 ): CodexProviderConfig {
   const cliPathsByHost = normalizeHostnameStringMap(config.cliPathsByHost,);
-  const installationMethodsByHost = normalizeInstallationMethodsByHost(config.installationMethodsByHost,);
-  const wslDistroOverridesByHost = normalizeHostnameStringMap(config.wslDistroOverridesByHost,);
+  const { installationMethodsByHost, wslDistroOverridesByHost } = decodeInstallationSettings(config);
   const discoveredModels = normalizeCodexDiscoveredModels(config.discoveredModels ?? config.selectedModels);
   const visibleModels = normalizeCodexVisibleModels(config.visibleModels);
 
@@ -332,10 +299,7 @@ export function decodeCodexConfig(
   const storedConfig = decodeCodexStoredConfig(config);
   return {
     ...storedConfig,
-    installationMethod: storedConfig.installationMethodsByHost[hostnameKey]
-      ?? DEFAULT_CODEX_PROVIDER_SETTINGS.installationMethod,
-    wslDistroOverride: storedConfig.wslDistroOverridesByHost[hostnameKey]
-      ?? DEFAULT_CODEX_PROVIDER_SETTINGS.wslDistroOverride,
+    ...selectInstallationSettings(storedConfig, hostnameKey),
   };
 }
 
@@ -346,19 +310,7 @@ export function updateCodexConfig(
 ): CodexProviderSettings {
   const current = decodeCodexConfig(config);
   const hostnameKey = getInstallationKey();
-  const persistInstallationSettings = shouldPersistCodexInstallationSettings();
-  const updatedInstallationMethodsByHost = 'installationMethodsByHost' in updates
-    ? normalizeInstallationMethodsByHost(updates.installationMethodsByHost)
-    : { ...current.installationMethodsByHost };
-  const updatedWslDistroOverridesByHost = 'wslDistroOverridesByHost' in updates
-    ? normalizeHostnameStringMap(updates.wslDistroOverridesByHost)
-    : { ...current.wslDistroOverridesByHost };
-  const installationMethodsByHost = persistInstallationSettings
-    ? updatedInstallationMethodsByHost
-    : omitCurrentHost(updatedInstallationMethodsByHost, hostnameKey);
-  const wslDistroOverridesByHost = persistInstallationSettings
-    ? updatedWslDistroOverridesByHost
-    : omitCurrentHost(updatedWslDistroOverridesByHost, hostnameKey);
+  const installation = updateInstallationSettings(current, updates, hostnameKey);
   const discoveredModels = normalizeCodexDiscoveredModels(updates.discoveredModels ?? current.discoveredModels,);
   const visibleModels = normalizeCodexVisibleModels('visibleModels' in updates ? updates.visibleModels : current.visibleModels);
   const modelAliases = pruneCodexModelAliases(
@@ -366,33 +318,13 @@ export function updateCodexConfig(
     getCodexAliasModelIds(visibleModels, discoveredModels),
   );
 
-  if (persistInstallationSettings && 'installationMethod' in updates) {
-    installationMethodsByHost[hostnameKey] = normalizeCodexInstallationMethod(updates.installationMethod);
-  }
-
-  if (persistInstallationSettings && 'wslDistroOverride' in updates) {
-    const normalizedDistroOverride = normalizeOptionalString(updates.wslDistroOverride);
-    if (normalizedDistroOverride) {
-      wslDistroOverridesByHost[hostnameKey] = normalizedDistroOverride;
-    } else {
-      delete wslDistroOverridesByHost[hostnameKey];
-    }
-  }
-
   const next: CodexProviderSettings = {
     ...current,
     ...updates,
     discoveredModels,
     modelAliases,
     visibleModels,
-    installationMethod: persistInstallationSettings
-      ? installationMethodsByHost[hostnameKey] ?? DEFAULT_CODEX_PROVIDER_SETTINGS.installationMethod
-      : DEFAULT_CODEX_PROVIDER_SETTINGS.installationMethod,
-    installationMethodsByHost,
-    wslDistroOverride: persistInstallationSettings
-      ? wslDistroOverridesByHost[hostnameKey] ?? DEFAULT_CODEX_PROVIDER_SETTINGS.wslDistroOverride
-      : DEFAULT_CODEX_PROVIDER_SETTINGS.wslDistroOverride,
-    wslDistroOverridesByHost,
+    ...installation,
   };
 
   replaceProviderConfig(config, {
@@ -412,8 +344,8 @@ export function updateCodexConfig(
     sessionEnvironmentHash: next.sessionEnvironmentHash,
     catalogTimestamp: next.catalogTimestamp,
     catalogFingerprint: next.catalogFingerprint,
-    installationMethodsByHost,
-    wslDistroOverridesByHost,
+    installationMethodsByHost: next.installationMethodsByHost,
+    wslDistroOverridesByHost: next.wslDistroOverridesByHost,
   });
   return next;
 }

@@ -81,7 +81,7 @@ export class TurnSteering {
       && this.deps.state.currentConversationId !== null
       && this.current === null
       && this.deps.getCapabilities().supportsTurnSteer === true
-      && this.deps.getExecutionCoordinator() !== null;
+      && this.deps.getExecutionCoordinator()?.systemInstructions != null;
   }
 
   async steer(

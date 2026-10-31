@@ -8,6 +8,7 @@ import type { ProviderExecutionEvent } from '@/core/execution';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { ChatExecutionPreHandoffError, type ChatSteerOutcome, type ChatTurnSubmission } from '@/features/chat/execution/ChatExecutionCoordinator';
 import { createQueuedMessage } from '@/features/chat/state/chatTurnRequest';
+import { claudeProviderRegistration } from '@/providers/claude/registration';
 
 const nativeCapabilities = ProviderRegistry.getCapabilities('claude');
 beforeEach(() => {
@@ -55,6 +56,31 @@ describe('TurnQueue', () => {
 
     expect(fixture.coordinator.execute).toHaveBeenCalledTimes(1);
     timeoutSpy.mockRestore();
+  });
+
+  it('keeps queued input while execution-directory preparation has no active request to steer', async () => {
+    const fixture = await createFixture();
+    Object.assign(fixture.coordinator, { systemInstructions: null });
+    const projection = deferred<string>();
+    const resolving = deferred<void>();
+    ProviderRegistry.register('claude', { ...claudeProviderRegistration, resolveExecutionWorkingDirectory: () => {
+      resolving.resolve();
+      return projection.promise;
+    } });
+    onTestFinished(() => {
+      projection.resolve('/vault');
+      ProviderRegistry.register('claude', claudeProviderRegistration);
+    });
+    const started = fixture.controller.sendMessage({ content: 'First' });
+    await resolving.promise;
+    await fixture.controller.sendMessage({ content: 'Keep queued' });
+    let failure: unknown;
+    try { await fixture.controller.queue.steerNow(); } catch (error) { failure = error; }
+    const retained = fixture.controller.queue.message?.content;
+    projection.resolve('/vault');
+    await started;
+    expect({ failure, retained }).toEqual({ failure: undefined, retained: 'Keep queued' });
+    expect(fixture.coordinator.steer).not.toHaveBeenCalled();
   });
 
   it('queues while streaming and steers through the coordinator', async () => {

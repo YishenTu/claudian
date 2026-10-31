@@ -167,6 +167,7 @@ jobs:
       script-tests: ${{ steps.scope.outputs.script-tests }}
       cross-platform-tests: ${{ steps.scope.outputs.cross-platform-tests }}
       pi-windows: ${{ steps.scope.outputs.pi-windows }}
+      wsl-windows: ${{ steps.scope.outputs.wsl-windows }}
       has-tests: ${{ steps.scope.outputs.has-tests }}
       cross-platform: ${{ steps.scope.outputs.cross-platform }}
     steps:
@@ -274,6 +275,57 @@ jobs:
         if: runner.os == 'Windows' && needs.test-scope.outputs.pi-windows == 'true'
         run: npm run test:unit -- --maxWorkers=1 tests/integration/providers/pi/runtime/PiSubprocess.windows.test.ts
 
+  wsl-native:
+    needs: test-scope
+    if: needs.test-scope.outputs.wsl-windows == 'true'
+    runs-on: windows-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+
+      # WSL1 avoids a nested virtualization requirement on hosted runners.
+      # This verifies launch/filesystem/env mechanics, not WSL2 NAT networking.
+      - uses: Vampire/setup-wsl@v7
+        with:
+          distribution: Ubuntu-24.04
+          additional-packages: bash zsh csh tcsh fish curl ca-certificates
+          wsl-version: '1'
+          set-as-default: 'true'
+
+      - name: Provision Linux Node for native WSL fixtures
+        shell: pwsh
+        run: |
+          $installer = @'
+          set -eu
+          archive=$(mktemp)
+          trap 'rm -f "$archive"' EXIT
+          # Ubuntu's Node ELF has 8 KiB LOAD alignment, rejected by WSL1.
+          # This official build uses 4 KiB alignment for every LOAD segment.
+          curl --fail --location --retry 3 https://nodejs.org/dist/v22.14.0/node-v22.14.0-linux-x64.tar.gz -o "$archive"
+          echo "9d942932535988091034dc94cc5f42b6dc8784d6366df3a36c4c9ccb3996f0c2  $archive" | sha256sum -c -
+          mkdir -p /opt/claudian-wsl-node /usr/local/bin
+          tar -xzf "$archive" --strip-components=1 -C /opt/claudian-wsl-node
+          ln -sf /opt/claudian-wsl-node/bin/node /usr/local/bin/node
+          /usr/local/bin/node --version
+          /usr/local/bin/node -e 'if (process.platform !== "linux" || process.arch !== "x64") process.exit(1)'
+          '@
+          # PowerShell pipes CRLF line endings; strip them before sh parses the script.
+          $installer | wsl --exec /bin/sh -c "tr -d '\r' | /bin/sh"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Install dependencies on Windows
+        run: npm ci
+
+      - name: Exercise native Windows to WSL execution
+        env:
+          CLAUDIAN_REQUIRE_WSL: '1'
+        run: npm run test:unit -- --maxWorkers=1 tests/integration/core/process/execution-target/WSLExecution.windows.test.ts
+
   build-artifacts:
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -312,7 +364,7 @@ jobs:
           retention-days: 14
 
   build:
-    needs: [quality, test, build-artifacts]
+    needs: [quality, test, build-artifacts, test-scope, wsl-native]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -322,7 +374,14 @@ jobs:
           QUALITY_RESULT: ${{ needs.quality.result }}
           TEST_RESULT: ${{ needs.test.result }}
           BUILD_RESULT: ${{ needs.build-artifacts.result }}
+          WSL_RESULT: ${{ needs.wsl-native.result }}
+          WSL_REQUIRED: ${{ needs.test-scope.outputs.wsl-windows }}
         run: |
           test "$QUALITY_RESULT" = success
           test "$TEST_RESULT" = success
           test "$BUILD_RESULT" = success
+          if [ "$WSL_REQUIRED" = true ]; then
+            test "$WSL_RESULT" = success
+          else
+            test "$WSL_RESULT" = skipped
+          fi

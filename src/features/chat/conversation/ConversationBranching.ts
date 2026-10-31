@@ -20,7 +20,7 @@ export interface ConversationBranchingDeps {
   ensureExecutionInitialized?: () => Promise<boolean>;
   getSelectedModel?: () => string | null;
   /** The bound conversation's live project instructions, resolved for each branch operation. */
-  getSystemInstructions: (workingDirectory: string) => ProviderSystemInstructions;
+  getSystemInstructions: (workingDirectory: string) => Promise<ProviderSystemInstructions>;
   isClosing?: () => boolean;
   /** Persists the current conversation state. */
   save: () => Promise<void>;
@@ -159,10 +159,10 @@ export class ConversationBranching {
       if (this.deps.ensureExecutionInitialized && !await this.deps.ensureExecutionInitialized()) return result;
       coordinator = this.deps.getExecutionCoordinator();
       if (!coordinator || !isCurrent()) return result;
-      const configuration = buildChatExecutionConfiguration(
-        { model: this.deps.getSelectedModel?.() ?? undefined },
-        this.deps.getSystemInstructions(coordinator.workingDirectory),
-      );
+      const model = this.deps.getSelectedModel?.() ?? undefined;
+      const systemInstructions = await this.deps.getSystemInstructions(coordinator.workingDirectory);
+      if (!isCurrent()) return { status: 'cancelled' };
+      const configuration = buildChatExecutionConfiguration({ model }, systemInstructions);
       const request = { configuration, signal };
       result = message
         ? await coordinator.navigateConversationBranch({ ...request, userMessageId: message.userMessageId!, branchMessageId })

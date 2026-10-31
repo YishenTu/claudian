@@ -3,14 +3,14 @@ import { buildSystemPrompt } from '@/core/prompt/mainAgent';
 import type { ClaudianSettings } from '@/core/types';
 import type { FeatureHost } from '@/features/FeatureHost';
 
-/** The directory chat sessions run in and the Main Agent prompt names: the local Vault root. */
+/** The host Vault root used for local filesystem operations and session configuration. */
 export function getChatWorkingDirectory(host: Pick<FeatureHost, 'providerHost'>): string {
   return host.providerHost.workingDirectory ?? '.';
 }
 
 /**
  * The Main Agent prompt a chat destination sends, resolved by the shared core builder from current settings,
- * the Vault working directory, and the session's own instructions (for example, a project paragraph).
+ * the execution-visible Vault working directory, and the session's own instructions (for example, a project paragraph).
  */
 export function resolveChatSystemInstructions(
   settings: Pick<ClaudianSettings, 'mediaFolder' | 'systemPrompt' | 'userName'>,

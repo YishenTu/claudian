@@ -1,4 +1,5 @@
 // @test-ci {"native":true}
+import type { ProviderCLIResolutionContext } from '@/core/providers/types';
 const actualModule0 = await import('fs');
 import * as fs from 'fs';
 import * as os from 'os';
@@ -44,7 +45,7 @@ it.each(['user', 'system'])('discovers the nested ChatGPT macOS runtime in the %
 
     const resolver = new CodexCLIResolver();
     const settings = { providerConfigs: { codex: {} } };
-    const context = { executionTarget: { method: 'host-native', platformFamily: 'unix', platformOs: 'macos' } };
+    const context: ProviderCLIResolutionContext = { executionTarget: { method: 'host-native', platformFamily: 'unix', platformOs: 'macos' } };
     expect(await resolver.resolveFromSettings(settings, context)).toBe(expectedPath);
   } finally {
     vi.restoreAllMocks();
@@ -79,7 +80,7 @@ it.each(['removed', 'incomplete', 'retained'])('discovers an updated desktop run
     const oldPath = createRuntime('old-hash');
     const resolver = new CodexCLIResolver();
     const settings = { providerConfigs: { codex: {} } };
-    const context = { executionTarget: { method: 'native-windows', platformFamily: 'windows', platformOs: 'windows' } };
+    const context: ProviderCLIResolutionContext = { executionTarget: { method: 'native-windows', platformFamily: 'windows', platformOs: 'windows' } };
     expect(await resolver.resolveFromSettings(settings, context)).toBe(oldPath);
     fs.utimesSync(oldPath, new Date('2020-01-01'), new Date('2020-01-01'));
     if (previousState === 'removed') {

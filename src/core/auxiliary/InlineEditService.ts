@@ -28,7 +28,7 @@ export class InlineEditService {
   private readonly workingDirectory: string;
   private conversing = false;
 
-  constructor(context: AuxiliaryExecutionContext) {
+  constructor(private readonly context: AuxiliaryExecutionContext) {
     this.workingDirectory = context.workingDirectory;
     this.controller = new AuxiliarySessionController(
       context,
@@ -77,7 +77,9 @@ export class InlineEditService {
         model: selection.model,
         reasoning: selection.reasoning,
         prompt,
-        systemPrompt: getInlineEditSystemPrompt(this.workingDirectory),
+        systemPrompt: getInlineEditSystemPrompt(
+          await this.context.resolveExecutionWorkingDirectory?.(this.workingDirectory) ?? this.workingDirectory,
+        ),
       });
       const result = parseInlineEditResponse(text);
       // A clarification opens the conversation; an empty reply leaves it as it was.

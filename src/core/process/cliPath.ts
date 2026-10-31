@@ -111,3 +111,14 @@ export function resolveNvmDefaultBin(home: string): string | null {
 
   return null;
 }
+
+export function isWindowsStyleCLIReference(value: string | null | undefined): boolean {
+  const trimmed = (value ?? '').trim();
+  if (!trimmed) {
+    return false;
+  }
+
+  return /^[A-Za-z]:[\\/]/.test(trimmed)
+    || trimmed.startsWith('\\\\')
+    || /\.(?:exe|cmd|bat|ps1)$/i.test(trimmed);
+}

@@ -3,6 +3,7 @@ import * as path from 'path';
 import type { Mock } from 'vitest';
 
 import { getInstallationKey as getHostnameKey } from '@/core/device/InstallationKey';
+import type { ProviderCLIResolutionContext } from '@/core/providers/types';
 import { CodexCLIResolver } from '@/providers/codex/runtime/CodexCLIResolver';
 
 
@@ -36,7 +37,7 @@ describe('CodexCLIResolver', () => {
     expect(resolved).toBe('/current/codex');
   });
 
-  it.each(['host-native', 'native-windows'])(
+  it.each(['host-native', 'native-windows'] as const)(
     'preserves the cache policy for %s installations',
     (method) => {
       const files = new Set(['/current/codex', '/legacy/codex']);
@@ -45,7 +46,7 @@ describe('CodexCLIResolver', () => {
       const settings = {
         providerConfigs: { codex: { cliPathsByHost: { [getHostnameKey()]: '/current/codex' }, cliPath: '/legacy/codex' } },
       };
-      const context = { executionTarget: { method, platformFamily: 'windows', platformOs: 'windows' } };
+      const context: ProviderCLIResolutionContext = { executionTarget: { method, platformFamily: 'windows', platformOs: 'windows' } };
 
       expect(resolver.resolveFromSettings(settings, context)).toBe('/current/codex');
       files.delete('/current/codex');
@@ -60,7 +61,7 @@ describe('CodexCLIResolver', () => {
     mockedStat.mockReturnValue({ isFile: () => false });
     const resolver = new CodexCLIResolver();
     const settings = { providerConfigs: { codex: { cliPathsByHost: { [getHostnameKey()]: '/installed/codex' } } } };
-    const context = { executionTarget: { method: 'host-native', platformFamily: 'unix', platformOs: 'linux' } };
+    const context: ProviderCLIResolutionContext = { executionTarget: { method: 'host-native', platformFamily: 'unix', platformOs: 'linux' } };
 
     expect(resolver.resolveFromSettings(settings, context)).toBeNull();
     mockedStat.mockImplementation((filePath: string) => ({ isFile: () => filePath === '/installed/codex' }));

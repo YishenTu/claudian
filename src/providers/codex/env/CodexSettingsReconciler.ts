@@ -1,5 +1,6 @@
 import { getInstallationKey } from '@/core/device/InstallationKey';
 import { parseEnvironmentVariables } from '@/core/process/env';
+import { resolveExecutionTarget } from '@/core/process/execution-target/ExecutionTargetResolver';
 
 import {
   createCLIPathFingerprintInputs,
@@ -15,6 +16,7 @@ import {
 import type {
   ProviderEnvironmentReconciliation,
   ProviderSettingsReconciler,
+  ProviderSettingsReconciliationContext,
 } from '../../../core/providers/types';
 import type { Conversation } from '../../../core/types';
 import { codexModelPolicy } from '../CodexModelPolicy';
@@ -50,7 +52,7 @@ function isCurrentLegacyCodexFingerprint(
   return savedFingerprint === legacyFingerprint;
 }
 
-function getCodexRuntimeFingerprintState(settings: Record<string, unknown>): {
+function getCodexRuntimeFingerprintState(settings: Record<string, unknown>, context?: ProviderSettingsReconciliationContext): {
   current: ScopedRuntimeInputFingerprints;
   environmentText: string;
   hasFingerprintInputs: boolean;
@@ -67,6 +69,10 @@ function getCodexRuntimeFingerprintState(settings: Record<string, unknown>): {
     installationMethod: codexSettings.installationMethod,
     wslDistroOverride: codexSettings.wslDistroOverride,
   };
+  if (context?.vaultPath && process.platform === 'win32' && installation.installationMethod === 'wsl') {
+    const target = resolveExecutionTarget({ settings: installation, hostVaultPath: context.vaultPath });
+    installation.wslDistroOverride = target.distroName ?? installation.wslDistroOverride;
+  }
   const environment = parseEnvironmentVariables(environmentText);
   return {
     current: {
@@ -97,8 +103,8 @@ function invalidateCodexConversationSessions(conversations: Conversation[]): Con
 export const codexSettingsReconciler = {
   invalidateConversationSessions: invalidateCodexConversationSessions,
 
-  reconcileModelWithEnvironment(settings: Record<string, unknown>): ProviderEnvironmentReconciliation {
-    const fingerprint = getCodexRuntimeFingerprintState(settings);
+  reconcileModelWithEnvironment(settings: Record<string, unknown>, context?: ProviderSettingsReconciliationContext): ProviderEnvironmentReconciliation {
+    const fingerprint = getCodexRuntimeFingerprintState(settings, context);
     if (!fingerprint.saved.environmentHash && !fingerprint.hasFingerprintInputs) {
       return { changed: false };
     }
@@ -127,9 +133,9 @@ export const codexSettingsReconciler = {
     return { changed: true, sessionPolicy };
   },
 
-  normalizeModelVariantSettings(settings: Record<string, unknown>): boolean {
+  normalizeModelVariantSettings(settings: Record<string, unknown>, context?: ProviderSettingsReconciliationContext): boolean {
     let changed = false;
-    const fingerprint = getCodexRuntimeFingerprintState(settings);
+    const fingerprint = getCodexRuntimeFingerprintState(settings, context);
     // Startup normalizes before reconciling. Upgrade an equivalent legacy
     // fingerprint here so the fingerprint schema change is not treated as a
     // runtime change that invalidates Codex sessions.

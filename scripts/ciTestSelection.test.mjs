@@ -84,9 +84,12 @@ test('real dependency discovery retains native launch checks for shared process 
     changes: [{ status: 'M', path: 'src/core/process/windowsCmdShim.ts' }],
   });
   assert.deepEqual(result.crossPlatformTests.sort(), [
+    'tests/integration/app/settings/RuntimeSettingsCoordinator.test.ts',
     'tests/integration/core/process/ManagedStdioProcess.test.ts',
     'tests/integration/core/process/ProcessProbe.test.ts',
     'tests/integration/core/process/cliBinaryLocator.test.ts',
+    'tests/integration/core/process/execution-target/WSLCaptureCancellation.test.ts',
+    'tests/integration/core/process/execution-target/WSLShellLaunch.test.ts',
     'tests/integration/core/process/loginShellPath.test.ts',
     'tests/integration/features/chat/tabs/forking/ForkSource.opencode-v2.test.ts',
     'tests/integration/features/chat/tabs/forking/ForkSource.opencode.test.ts',
@@ -242,6 +245,7 @@ for (const [name, selector] of [
             crossPlatformTests: ['tests/unit/providers/codex/history/CodexHistoryStore.test.ts'],
             crossPlatform: true,
             piWindows: false,
+            wslWindows: false,
           });
         });
       }
@@ -251,7 +255,7 @@ for (const [name, selector] of [
   test(`${name} selector retains full verification outside the known Codex fixture boundary`, () => {
     const full = {
       testFiles: null, scriptTests: null, crossPlatformTests: null,
-      crossPlatform: true, piWindows: true,
+      crossPlatform: true, piWindows: true, wslWindows: true,
     };
     for (const eventName of ['pull_request', 'push']) {
       for (const changes of [
@@ -447,4 +451,30 @@ test('local selection includes committed, staged, unstaged and untracked edits w
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
+});
+
+test('WSL native job follows shared dependencies and Codex users but skips unrelated UI', () => {
+  const wsl = 'tests/integration/core/process/execution-target/WSLExecution.windows.test.ts';
+  assert.equal(select([wsl]).wslWindows, true);
+  assert.equal(select(['src/core/process/execution-target/TargetLaunchSpec.ts'], [wsl]).wslWindows, true);
+  assert.equal(select(['src/providers/codex/runtime/CodexLaunchSpecBuilder.ts']).wslWindows, true);
+  assert.equal(select(['src/features/chat/ClaudianView.ts'], [panel]).wslWindows, false);
+  for (const file of [
+    'src/core/process/execution-target/types.ts',
+    'src/core/providers/settings/InstallationSettings.ts',
+    'src/shared/settings/ExecutionTargetSettings.ts',
+    'src/core/providers/cli/TargetCLIInstallationProbe.ts',
+    'tests/integration/core/providers/cli/TargetCLIInstallationProbe.test.ts',
+    'tests/unit/core/providers/settings/InstallationSettings.test.ts',
+    'tests/integration/providers/codex/ui/CodexCLIPath.dom.test.ts',
+    // Siblings that do not exist yet still match the declared owner prefixes.
+    'tests/integration/shared/settings/ExecutionTargetSettings.dom.test.ts',
+    'tests/unit/core/providers/settings/InstallationSettings.migration.test.ts',
+    'src/core/providers/settings/InstallationSettingsMigration.ts',
+  ]) {
+    const selection = select([file]);
+    assert.equal(selection.wslWindows, true, file);
+    assert.ok(selection.testFiles.includes(wsl), `${file} must select the declared WSL consumer`);
+  }
+  assert.equal(selectRelatedCiTests({ changes: [{ status: 'M', path: 'src/core/process/execution-target/WSLEnvironment.ts' }] }).wslWindows, true);
 });

@@ -1,8 +1,8 @@
 import { ChildProcess, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { PassThrough, Writable } from 'node:stream';
 
+import type { TargetLaunchSpec } from '@/core/process/execution-target/types';
 import type { JSONRPCError, LegacyDynamicToolSpec, UserInput } from '@/providers/codex/runtime/codexAppServerTypes';
-import type { CodexLaunchSpec } from '@/providers/codex/runtime/codexLaunchTypes';
 
 import { codexThreadId } from './CodexRequests';
 
@@ -35,7 +35,7 @@ export class CodexRuntimeHarness {
   holdSkills = false;
   requestOverride: ((process: CodexNativeTestProcess, request: CodexNativeRequest) => boolean) | null = null;
 
-  createProcess(target?: Pick<CodexLaunchSpec['target'], 'platformFamily' | 'platformOs'>): CodexNativeTestProcess {
+  createProcess(target?: Pick<TargetLaunchSpec['target'], 'platformFamily' | 'platformOs'>): CodexNativeTestProcess {
     const process = new CodexNativeTestProcess(this, target);
     this.processes.push(process);
     return process;
@@ -74,7 +74,7 @@ export class CodexRuntimeHarness {
 export class CodexNativeTestProcess extends ChildProcess implements ChildProcessWithoutNullStreams {
   constructor(
     private readonly harness: CodexRuntimeHarness,
-    private readonly target: Pick<CodexLaunchSpec['target'], 'platformFamily' | 'platformOs'> = {
+    private readonly target: Pick<TargetLaunchSpec['target'], 'platformFamily' | 'platformOs'> = {
       platformFamily: process.platform === 'win32' ? 'windows' : 'unix',
       platformOs: process.platform === 'win32' ? 'windows' : process.platform === 'darwin' ? 'macos' : 'linux',
     },

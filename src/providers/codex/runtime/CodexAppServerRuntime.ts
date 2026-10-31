@@ -1,3 +1,4 @@
+import type { TargetLaunchSpec } from '@/core/process/execution-target/types';
 import type { ProviderRuntimeHost } from '@/core/providers/ProviderRuntimeHost';
 import type { ProviderTransitionOwnerContext } from '@/core/providers/types';
 
@@ -5,7 +6,6 @@ import { decodeCodexConfig } from '../config';
 import { CodexMetadataTransitionGate } from '../metadata/CodexMetadataTransitionGate';
 import { CodexAppServerProcess } from './CodexAppServerProcess';
 import { initializeCodexAppServerTransport, resolveCodexAppServerLaunchSpec } from './codexAppServerSupport';
-import type { CodexLaunchSpec } from './codexLaunchTypes';
 import { CodexRPCTransport } from './CodexRPCTransport';
 import { type CodexRuntimeContext, createCodexRuntimeContext } from './CodexRuntimeContext';
 import { CodexThreadRouter } from './CodexThreadRouter';
@@ -34,7 +34,7 @@ export class CodexAppServerConnection {
   private readonly exitListeners = new Set<() => void>();
 
   constructor(
-    readonly launchSpec: CodexLaunchSpec,
+    readonly launchSpec: TargetLaunchSpec,
     readonly fingerprint: string,
     private readonly invalidate: () => void,
     private readonly stopped: () => void,
@@ -298,7 +298,7 @@ export class CodexAppServerRuntime {
   }
 }
 
-function fingerprintLaunchSpec(spec: CodexLaunchSpec): string {
+function fingerprintLaunchSpec(spec: TargetLaunchSpec): string {
   return JSON.stringify([
     spec.command, spec.args, spec.spawnCwd, spec.targetCwd, spec.target,
     Object.entries(spec.env).sort(([left], [right]) => left.localeCompare(right)),

@@ -13,6 +13,7 @@ import { CodexConversationHistoryService } from './history/CodexConversationHist
 import { findCodexModel } from './models';
 import { formatCodexQuestionReply } from './normalization/codexQuestionNormalization';
 import { codexSubagentLifecycleAdapter } from './normalization/codexSubagentNormalization';
+import { resolveCodexExecutionWorkingDirectory } from './runtime/codexAppServerSupport';
 import {
   getCodexProviderSettings,
   normalizeCodexStoredConfig, projectCodexModelSettings, updateCodexProviderSettings
@@ -46,6 +47,7 @@ export const codexProviderRegistration: ProviderModule = {
       return normalization.changed;
     },
   },
+  resolveExecutionWorkingDirectory: (plugin, workingDirectory) => resolveCodexExecutionWorkingDirectory(plugin.getRuntimeHost('codex'), workingDirectory),
   createExecutionBackend: (plugin) => new CodexExecutionBackend(
     plugin.getRuntimeHost('codex'),
     () => getCodexWorkspaceServices().runtime,

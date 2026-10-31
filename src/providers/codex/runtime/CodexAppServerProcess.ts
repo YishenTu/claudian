@@ -1,8 +1,7 @@
 import type { Readable, Writable } from 'node:stream';
 
+import type { TargetLaunchSpec } from '@/core/process/execution-target/types';
 import { ManagedStdioProcess } from '@/core/process/ManagedStdioProcess';
-
-import type { CodexLaunchSpec } from './codexLaunchTypes';
 
 const STDERR_BUFFER_LIMIT = 8_192;
 
@@ -13,13 +12,14 @@ export class CodexAppServerProcess {
   private readonly process: ManagedStdioProcess;
 
   constructor(
-    launchSpec: Pick<CodexLaunchSpec, 'command' | 'args' | 'spawnCwd' | 'env'>,
+    launchSpec: Pick<TargetLaunchSpec, 'command' | 'args' | 'spawnCwd' | 'env' | 'windowsVerbatimArguments'>,
   ) {
     this.process = new ManagedStdioProcess({
       args: launchSpec.args,
       command: launchSpec.command,
       cwd: launchSpec.spawnCwd,
       env: launchSpec.env,
+      windowsVerbatimArguments: launchSpec.windowsVerbatimArguments,
       stderrBufferLimit: STDERR_BUFFER_LIMIT,
       stdio: ['pipe', 'pipe', 'pipe'],
     });

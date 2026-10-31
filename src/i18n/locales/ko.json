@@ -670,21 +670,8 @@
       }
     },
     "codex": {
-      "installationMethod": {
-        "name": "설치 방식",
-        "desc": "Windows에서 Claudian이 Codex를 실행하는 방식입니다. 네이티브 Windows는 Windows 실행 파일 경로를 사용하고, WSL은 선택한 배포판 안에서 Linux CLI를 실행합니다.",
-        "nativeWindows": "네이티브 Windows",
-        "wsl": "WSL"
-      },
       "cliPath": {
-        "name": "Codex CLI 경로",
-        "validation": {
-          "wslWindowsPath": "WSL 모드에는 Windows 실행 파일 경로가 아니라 Linux 명령 또는 Linux 절대 경로가 필요합니다."
-        }
-      },
-      "wslDistroOverride": {
-        "name": "WSL 배포판 재정의",
-        "desc": "선택적 고급 재정의입니다. 비워 두면 가능한 경우 WSL 작업공간 경로에서 배포판을 추론하고, 그렇지 않으면 기본 WSL 배포판을 사용합니다."
+        "name": "Codex CLI 경로"
       },
       "safeMode": {
         "workspaceWrite": "작업공간 쓰기",
@@ -886,6 +873,19 @@
         "failed": "동기화 실패: {message}",
         "summary": "이동 {moved}, 변환 {converted}, 휴지통 {trashed}, 링크 제거 {unlinked}."
       }
+    },
+    "executionTarget": {
+      "installationMethod": {
+        "name": "설치 방식",
+        "desc": "Windows에서 Claudian이 {provider}를 실행하는 방식입니다. 네이티브 Windows는 Windows 실행 파일 경로를 사용하고, WSL은 선택한 배포판 안에서 Linux CLI를 실행합니다.",
+        "nativeWindows": "네이티브 Windows",
+        "wsl": "WSL"
+      },
+      "wslDistroOverride": {
+        "name": "WSL 배포판 재정의",
+        "desc": "선택적 고급 재정의입니다. 비워 두면 가능한 경우 WSL 작업공간 경로에서 배포판을 추론하고, 그렇지 않으면 기본 WSL 배포판을 사용합니다."
+      },
+      "wslWindowsPath": "WSL 모드에는 Windows 실행 파일 경로가 아니라 Linux 명령 또는 Linux 절대 경로가 필요합니다."
     }
   }
 }

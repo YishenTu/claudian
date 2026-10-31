@@ -24,8 +24,8 @@ describePosix('native Codex paths containing literal backslashes', () => {
   });
   afterEach(async () => { await fs.rm(root, { recursive: true, force: true }); });
 
-  function context() {
-    const launch = buildCodexLaunchSpec({
+  async function context() {
+    const launch = await buildCodexLaunchSpec({
       codexSettings: getCodexProviderSettings({}), resolvedCliCommand: 'codex',
       hostVaultPath: vault, env: { HOME: home }, hostPlatform: process.platform,
     });
@@ -37,7 +37,7 @@ describePosix('native Codex paths containing literal backslashes', () => {
   }
 
   it('launches the actual vault and retains the initialized native home', async () => {
-    const runtime = context();
+    const runtime = await context();
     expect(runtime.launchSpec.targetCwd).toBe(vault);
     expect((await fs.stat(runtime.launchSpec.targetCwd)).isDirectory()).toBe(true);
     expect(runtime.codexHomeHost).toBe(path.join(home, '.codex'));
@@ -69,7 +69,7 @@ describePosix('native Codex paths containing literal backslashes', () => {
       fs.writeFile(path.join(dependencies, 'python/bin/python3'), ''),
       fs.writeFile(path.join(dependencies, 'node/node_modules/@oai/artifact-tool/package.json'), JSON.stringify({ version: 'test' })),
     ]);
-    const result = await resolveCodexWorkspaceDependencies(context());
+    const result = await resolveCodexWorkspaceDependencies(await context());
     expect(result?.runtimeRoot).toBe(runtimeRoot);
     expect(result?.nodeExecutable).toBe(path.join(dependencies, 'node/bin/node'));
     expect((await fs.stat(result!.nodeExecutable)).isFile()).toBe(true);

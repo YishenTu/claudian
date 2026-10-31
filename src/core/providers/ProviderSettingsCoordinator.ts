@@ -7,7 +7,7 @@ import {
   type ProviderProjectionKey,
   type ProviderProjectionMap,
 } from './settings/ProviderProjectionMap';
-import type { ProviderId, ProviderModelPolicy, ProviderPermissionModePolicy } from './types';
+import type { ProviderId, ProviderModelPolicy, ProviderPermissionModePolicy, ProviderSettingsReconciliationContext } from './types';
 
 export interface SettingsReconciliationResult {
   changed: boolean;
@@ -403,6 +403,7 @@ export class ProviderSettingsCoordinator {
   static reconcileProviders(
     settings: Record<string, unknown>,
     providerIds: ProviderId[],
+    context?: ProviderSettingsReconciliationContext,
   ): SettingsReconciliationResult {
     let anyChanged = false;
     const environmentChangedProviderIds: ProviderId[] = [];
@@ -419,7 +420,7 @@ export class ProviderSettingsCoordinator {
         this.projectProviderState(targetSettings, providerId);
       }
 
-      const { changed, sessionPolicy } = reconciler.reconcileModelWithEnvironment(targetSettings);
+      const { changed, sessionPolicy } = reconciler.reconcileModelWithEnvironment(targetSettings, context);
 
       if (changed) {
         anyChanged = true;
@@ -465,7 +466,7 @@ export class ProviderSettingsCoordinator {
       .preservesConversationSession?.(conversation) ?? false;
   }
 
-  static normalizeAllModelVariants(settings: Record<string, unknown>): boolean {
+  static normalizeAllModelVariants(settings: Record<string, unknown>, context?: ProviderSettingsReconciliationContext): boolean {
     let anyChanged = false;
     const settingsProvider = getSettingsProviderId(settings);
 
@@ -479,7 +480,7 @@ export class ProviderSettingsCoordinator {
         this.projectProviderState(targetSettings, providerId);
       }
 
-      const changed = reconciler.normalizeModelVariantSettings?.(targetSettings);
+      const changed = reconciler.normalizeModelVariantSettings?.(targetSettings, context);
       if (changed) {
         anyChanged = true;
         this.persistProjectedProviderState(targetSettings, providerId);
