@@ -56,14 +56,21 @@ export class CodexRuntimeHarness {
     for (const observe of this.requestObservers) observe();
   }
 
-  waitForRequest(method: string, processIndex = 0, count = 1): Promise<CodexNativeTestProcess> {
-    return new Promise(resolve => {
+  waitForRequest(method: string, processIndex = 0, count = 1, matches: (request: CodexNativeRequest) => boolean = () => true): Promise<CodexNativeTestProcess> {
+    return new Promise((resolve, reject) => {
+      const deadline = AbortSignal.timeout(1_000);
+      const missing = () => {
+        this.requestObservers.delete(observe);
+        reject(new Error(`Missing Codex request ${method} (count ${count}, process ${processIndex}); received ${JSON.stringify(this.processes[processIndex]?.requests)}`));
+      };
       const observe = () => {
         const process = this.processes[processIndex];
-        if (!process || process.requests.filter(request => request.method === method).length < count) return;
+        if (!process || process.requests.filter(request => request.method === method && matches(request)).length < count) return;
         this.requestObservers.delete(observe);
+        deadline.removeEventListener('abort', missing);
         resolve(process);
       };
+      deadline.addEventListener('abort', missing, { once: true });
       this.requestObservers.add(observe);
       observe();
     });

@@ -4,7 +4,7 @@
  */
 import '@/providers';
 
-import { createHarness as createCoordinator } from '@test/helpers/ChatExecutionHarness';
+import { createHarness as createCoordinator, deferred } from '@test/helpers/ChatExecutionHarness';
 import { createFixture } from '@test/helpers/ChatInputHarness';
 import { nativeDefaults } from '@test/helpers/deepseek/NativeDefaults';
 import { jobsOf, NATIVE_RESET, NativePeer, type NativePeerHostOptions, type NativePeerLifecycle, rootFollow } from '@test/helpers/deepseek/NativePeer';
@@ -780,10 +780,10 @@ it.each([
 
 it.each(['completes', 'stops'])('keeps a native compaction slower than the RPC deadline valid until it %s', async outcome => {
   let respond: ((value: unknown) => void) | undefined;
+  const invoked = deferred<void>();
   const ordinary = peer.onCall;
   peer.onCall = (method, args) => method === 'commands/execute' && args.line === '/compact'
-    ? new Promise(resolve => { respond = resolve; }) : ordinary(method, args);
-  const settle = async (predicate: () => boolean) => { while (!predicate()) await new Promise(resolve => setImmediate(resolve)); };
+    ? new Promise(resolve => { respond = resolve; invoked.resolve(); }) : ordinary(method, args);
   vi.useFakeTimers({ toNotFake: ['nextTick', 'setImmediate', 'queueMicrotask'] });
   let done: Promise<void>;
   const events: ProviderExecutionEvent[] = [];
@@ -791,9 +791,8 @@ it.each(['completes', 'stops'])('keeps a native compaction slower than the RPC d
     create();
     const run = session.execute(request('/compact'));
     done = collect(run.events, events);
-    await settle(() => !!respond);
-    vi.advanceTimersByTime(31_000);
-    for (let i = 0; i < 10; i++) await new Promise(resolve => setImmediate(resolve));
+    await invoked.promise;
+    await vi.advanceTimersByTimeAsync(31_000);
     expect(events.some(e => ['turn_completed', 'cancelled', 'execution_error'].includes(e.type))).toBe(false);
     if (outcome === 'completes') respond!({ result: { kind: 'success', text: 'Compacted.' } });
     else run.cancel();
@@ -849,14 +848,40 @@ function serveJobs(rows: () => readonly unknown[]): void {
   peer.onOpen = (endpoint, args, send) => endpoint === 'job/list' ? send({ type: 'rows', jobs: rows() }) : ordinaryOpen(endpoint, args, send);
 }
 
-/** Lets fixture I/O answered on immediates settle. */
-async function settle(): Promise<void> {
-  for (let i = 0; i < 20; i++) await new Promise(resolve => setImmediate(resolve));
+/** Waits on an actual client state change; real time only bounds a missing event. */
+function observed(subscribe: (listener: () => void) => () => void, predicate: () => boolean): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const deadline = AbortSignal.timeout(2_000);
+    const missing = () => { off(); reject(new Error('Client state change was not observed.')); };
+    const check = () => {
+      if (!predicate()) return;
+      off(); deadline.removeEventListener('abort', missing); resolve();
+    };
+    const off = subscribe(check);
+    deadline.addEventListener('abort', missing, { once: true });
+    check();
+  });
 }
 
-/** Drives the fake clock in 250 ms steps for up to `ms`, or until `done` holds, settling fixture I/O after each. */
-async function elapse(ms: number, done: () => boolean = () => false): Promise<void> {
-  for (let elapsed = 0; elapsed < ms && !done(); elapsed += 250) { vi.advanceTimersByTime(250); await settle(); }
+/** Hold the native rebaseline response so fake-clock advances cannot outrun socket recovery. */
+async function holdRecovery() {
+  const lease = await deepseek.attach();
+  onTestFinished(() => lease.release());
+  const gate = deferred<void>();
+  const ordinary = peer.onCall;
+  const nextList = peer.calls.filter(call => call.method === 'session/list').length + 1;
+  peer.onCall = async (method, args) => {
+    if (method === 'session/list') await gate.promise;
+    return ordinary(method, args);
+  };
+  const recovering = observed(listener => lease.roster.onChange(listener), () => lease.roster.recovering);
+  for (const stream of peer.streams.values()) stream.socket.terminate();
+  await recovering;
+  await peer.waitForCall('session/list', nextList);
+  return async () => {
+    gate.resolve();
+    await observed(listener => lease.roster.onChange(listener), () => lease.roster.ready);
+  };
 }
 
 it('fails a conversation whose reconnect replay read fails without stopping the native work the live process keeps', async () => {
@@ -906,19 +931,17 @@ it('keeps native work when withdrawing after a failed automatic turn outwaits Ho
   begin();
   event('assistant/message', { turn: nativeTurn, step: 0, message: { content: [{ type: 'text', text: 'automatic work' }] } });
   await until(() => sessionEvents.some(e => e.type === 'background_turn_started'));
-  let recovered = false;
-  const ordinaryCall = peer.onCall;
-  peer.onCall = (method, args) => method === 'session/list' && !recovered ? Promise.reject(new Error('roster unavailable')) : ordinaryCall(method, args);
   vi.useFakeTimers({ toNotFake: ['nextTick', 'setImmediate', 'queueMicrotask'] });
   try {
     // The automatic turn fails just before native's heartbeat drops the client, so the withdrawal waits on recovery.
     failAutomatic();
-    await settle();
-    for (const stream of peer.streams.values()) stream.socket.terminate();
-    await elapse(11_000);
-    recovered = true;
+    await observed(listener => session.onEvent(listener), () => sessionEvents.some(event => event.type === 'background_turn_completed'));
+    const recover = await holdRecovery();
+    await vi.advanceTimersByTimeAsync(11_000);
+    await recover();
     // The withdrawal's deadline resumes with the transport and then expires; native never shows the queued input.
-    await elapse(14_000, () => events.some(e => e.type === 'execution_error'));
+    await vi.advanceTimersByTimeAsync(14_000);
+    await done;
   } finally { vi.useRealTimers(); }
   await done;
   expect(events.at(-1)).toMatchObject({ type: 'execution_error', recoverable: true });
@@ -986,8 +1009,10 @@ it('fails a send whose initial control baseline never arrives instead of waiting
   const events: ProviderExecutionEvent[] = [];
   try {
     create(); const run = session.execute(request());
-    void collect(run.events, events);
-    await elapse(120_000, () => events.some(e => e.type === 'execution_error'));
+    const done = collect(run.events, events);
+    await observed(listener => session.onEvent(listener), () => session.getSnapshot().providerSessionId === 'root');
+    await vi.advanceTimersByTimeAsync(30_001);
+    await done;
   } finally { vi.useRealTimers(); }
   expect(events.at(-1)).toMatchObject({ type: 'execution_error', recoverable: true });
   expect(peer.calls.some(c => c.method === 'session/prompt')).toBe(false);
@@ -998,27 +1023,22 @@ it('holds a message sent during a long Host recovery until the transport returns
   serveJobs(() => jobs);
   create(); await completeRequest();
   expect(session.hasBackgroundWork?.()).toBe(true);
-  let recovered = false;
-  const ordinaryCall = peer.onCall;
-  peer.onCall = (method, args) => method === 'session/list' && !recovered ? Promise.reject(new Error('roster unavailable')) : ordinaryCall(method, args);
   vi.useFakeTimers({ toNotFake: ['nextTick', 'setImmediate', 'queueMicrotask'] });
   const events: ProviderExecutionEvent[] = [];
   const prompts = (): number => peer.calls.filter(c => c.method === 'session/prompt').length;
   let run!: ReturnType<ProviderExecutionSession['execute']>;
   let done!: Promise<void>;
   try {
-    for (const stream of peer.streams.values()) stream.socket.terminate();
-    await settle();
+    const recover = await holdRecovery();
     run = session.execute(request('during recovery'));
     done = collect(run.events, events);
     // Longer than admission's readiness deadline: recovery pauses it.
-    await elapse(20_000);
+    await vi.advanceTimersByTimeAsync(20_000);
     expect(events.some(e => e.type === 'execution_error')).toBe(false);
     expect(prompts()).toBe(1);
-    recovered = true;
-    await elapse(6_000, () => prompts() === 2);
+    await recover();
+    await peer.waitForCall('session/prompt', 2);
   } finally { vi.useRealTimers(); }
-  await until(() => prompts() === 2);
   begin(run.executionId); answer('after recovery'); await done;
   expect(events.at(-1)?.type).toBe('turn_completed');
   expect(peer.calls.some(c => c.method === 'session/cancel' || c.method === 'job/kill')).toBe(false);
@@ -1028,11 +1048,8 @@ it('holds a message sent during a long Host recovery until the transport returns
 it('finishes a background Stop once a Host recovery longer than its deadline completes', async () => {
   let jobs = [{ id: 'job', owner: 'root', status: 'running' }];
   serveJobs(() => jobs);
-  let dropped = false;
-  let recovered = false;
   const ordinaryCall = peer.onCall;
   peer.onCall = (method, args) => {
-    if (method === 'session/list' && dropped && !recovered) return Promise.reject(new Error('roster unavailable'));
     if (method === 'job/kill') { jobs = []; peer.send('job/list', { type: 'rows', jobs }, jobsOf('root')); return { status: 'requested' }; }
     return ordinaryCall(method, args);
   };
@@ -1041,17 +1058,15 @@ it('finishes a background Stop once a Host recovery longer than its deadline com
   vi.useFakeTimers({ toNotFake: ['nextTick', 'setImmediate', 'queueMicrotask'] });
   const kills = (): number => peer.calls.filter(c => c.method === 'job/kill').length;
   try {
-    dropped = true;
-    for (const stream of peer.streams.values()) stream.socket.terminate();
-    await settle();
+    const recover = await holdRecovery();
     session.cancel();
     // Twice Stop's own deadline: recovery pauses it rather than abandoning the job.
-    await elapse(20_000);
+    await vi.advanceTimersByTimeAsync(20_000);
     expect(kills()).toBe(0);
-    recovered = true;
-    await elapse(6_000, () => kills() > 0);
+    await recover();
+    await peer.waitForCall('job/kill');
   } finally { vi.useRealTimers(); }
-  await until(() => kills() === 1 && !session.hasBackgroundWork?.());
+  await observed(listener => session.onEvent(listener), () => kills() === 1 && !session.hasBackgroundWork?.());
   expect(jobs).toEqual([]);
   expect(session.getStatus()).toBe('idle');
   expect(lifecycle.disposed).toBe(0);
@@ -1864,20 +1879,26 @@ it('fails the session recoverably when background Stop does not settle before it
   peer.onCall = (method, args) => method === 'job/kill' ? { status: 'requested' } : ordinary(method, args);
   create(); await completeRequest();
   expect(session.hasBackgroundWork?.()).toBe(true);
-  const flush = async (): Promise<void> => { for (let i = 0; i < 5; i++) await new Promise(resolve => setImmediate(resolve)); };
+  const lease = await deepseek.attach();
+  onTestFinished(() => lease.release());
+  const calls = vi.spyOn(lease.client, 'call');
+  onTestFinished(() => calls.mockRestore());
   vi.useFakeTimers({ toNotFake: ['nextTick', 'setImmediate', 'queueMicrotask'] });
   try {
     session.cancel();
-    await flush();
-    vi.advanceTimersByTime(9_000); await flush();
+    await peer.waitForCall('job/kill');
+    const kill = calls.mock.calls.findIndex(([method]) => method === 'job/kill');
+    await calls.mock.results[kill].value;
+    await vi.advanceTimersByTimeAsync(9_000);
     expect(session.getStatus()).toBe('cancelling');
-    for (let i = 0; i < 40 && session.getStatus() !== 'invalidated'; i++) { vi.advanceTimersByTime(100); await flush(); }
+    await vi.advanceTimersByTimeAsync(1_001);
+    await observed(listener => session.onEvent(listener), () => session.getStatus() === 'invalidated');
     expect(session.getStatus()).toBe('invalidated');
     expect(sessionEvents.filter(e => e.type === 'session_error')).toMatchObject([{ category: 'transport', recoverable: true, message: expect.stringContaining('did not settle') }]);
     // The job ends natively; the failed binding's own stop then settles and releases the Host.
     jobs = [{ id: 'job', owner: 'root', status: 'killed' }];
     peer.send('job/list', { type: 'rows', jobs }, jobsOf('root'));
-    for (let i = 0; i < 40 && session.hasBackgroundWork?.(); i++) { vi.advanceTimersByTime(100); await flush(); }
+    await observed(listener => session.onEvent(listener), () => !session.hasBackgroundWork?.());
     expect(session.hasBackgroundWork?.()).toBe(false);
   } finally { vi.useRealTimers(); }
   expect(peer.calls.filter(c => c.method === 'job/kill').length).toBeGreaterThanOrEqual(1);

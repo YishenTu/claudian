@@ -1,4 +1,5 @@
 // @test-ci {"native":true}
+import { EventEmitter, once } from 'node:events';
 import { existsSync, readFileSync } from 'node:fs';
 
 import { TEST_CODEX_CATALOG, TEST_CODEX_MODEL } from '@test/helpers/codexModels';
@@ -16,6 +17,7 @@ import { CodexCommandCatalog } from '@/providers/codex/commands/CodexCommandCata
 import { CodexExecutionBackend } from '@/providers/codex/execution/CodexExecutionBackend';
 import { CodexAppServerRuntime } from '@/providers/codex/runtime/CodexAppServerRuntime';
 import { CodexModelDiscoveryService } from '@/providers/codex/runtime/CodexModelDiscoveryService';
+import { CodexThreadScope } from '@/providers/codex/runtime/CodexThreadScope';
 import { updateCodexProviderSettings } from '@/providers/codex/settings';
 import { CodexSkillListingService } from '@/providers/codex/skills/CodexSkillListingService';
 
@@ -158,7 +160,6 @@ describe('Codex shared runtime', () => {
     await skills.listSkills();
     expect(process.requests.filter(request => request.method === 'skills/list')).toHaveLength(2);
     process.notify('skills/changed');
-    await Promise.resolve();
     await skills.listSkills();
     expect(process.requests.filter(request => request.method === 'skills/list')).toHaveLength(3);
     process.exit();
@@ -310,7 +311,7 @@ describe('Codex shared runtime', () => {
       const output = collect(session.execute({ ...request, toolPolicy }).events);
       const process = await waitForRequest(resume ? 'thread/resume' : 'turn/start');
       const threadId = resume ? 'persisted' : 'thread-1';
-      for (let count = 0; count < 100 && !process.turns.has(threadId); count++) await Promise.resolve();
+      await waitForRequest('turn/start', 0, 1, rpc => rpc.params.threadId === threadId);
       expect(process.requests.find(call => call.method === 'thread/start')!.params.dynamicTools ?? [])
         .not.toEqual(expect.arrayContaining([expect.objectContaining({ namespace: 'claudian_sessions' })]));
       expect(await sessionToolCall(process, threadId)).toMatchObject({ result: { success: false } });
@@ -345,9 +346,12 @@ describe('Codex shared runtime', () => {
     let signal: AbortSignal | undefined;
     let finishCreation!: () => void;
     const creation = new Promise<void>(resolve => { finishCreation = resolve; });
+    let enter!: () => void;
+    const entered = new Promise<void>(resolve => { enter = resolve; });
     const admitted: string[] = [];
     const port: ProviderSessionToolPort = { list: async () => ({ sessions: [] }), send: async (args, runSignal) => {
       signal = runSignal;
+      enter();
       await creation;
       runSignal.throwIfAborted();
       admitted.push(args.text!);
@@ -358,7 +362,7 @@ describe('Codex shared runtime', () => {
     const output = collect(run.events);
     const process = await waitForRequest('turn/start');
     const response = sessionToolCall(process, 'thread-1', 'claudian_send_message', { text: 'hello' });
-    for (let count = 0; count < 30 && !signal; count++) await Promise.resolve();
+    await entered;
     expect(signal).toBeDefined();
     if (stop === 'interrupt') run.cancel();
     else if (stop === 'settlement') complete(process, 'thread-1');
@@ -391,7 +395,7 @@ describe('Codex shared runtime', () => {
     expect(signal?.aborted).toBe(true);
     expect(admitted).toEqual(['hello']);
     const nextOutput = collect(session.execute(request).events);
-    for (let count = 0; count < 100 && process.turns.get('thread-1')?.id === oldTurn; count++) await Promise.resolve();
+    await waitForRequest('turn/start', 0, 2);
     expect(await sessionToolCall(process, 'thread-1', 'claudian_list_destinations', {}, oldTurn)).toMatchObject({ error: expect.anything() });
     expect(port.list).not.toHaveBeenCalled();
     expect(await sessionToolCall(process, 'thread-1')).toMatchObject({ result: { success: true } });
@@ -426,7 +430,7 @@ describe('Codex shared runtime', () => {
       };
       const nextRun = session.execute(request);
       const nextOutput = collect(nextRun.events);
-      for (let count = 0; count < 100 && heldStart === undefined; count++) await Promise.resolve();
+      await waitForRequest('turn/start', 0, 2);
       expect(heldStart).toBeDefined();
       const response = await sessionToolCall(process, 'thread-1', 'claudian_list_destinations', {}, oldTurn.id);
       const nextTurn = { id: 'next-turn', status: 'inProgress', items: [] };
@@ -464,7 +468,7 @@ describe('Codex shared runtime', () => {
     });
     const nextRun = reopened.execute(request);
     const nextOutput = collect(nextRun.events);
-    for (let count = 0; count < 100 && heldStart === undefined; count++) await Promise.resolve();
+    await waitForRequest('turn/start', 0, 2);
     expect(heldStart).toBeDefined();
     const response = await sessionToolCall(process, 'thread-1', 'claudian_list_destinations', {}, oldTurnId);
     process.respond(heldStart!, { turn: { id: 'next-turn', status: 'inProgress', items: [] } });
@@ -553,7 +557,7 @@ describe('Codex shared runtime', () => {
     const firstOutput = collect(first.execute(request).events);
     const secondOutput = collect(second.execute(request).events);
     const process = await waitForRequest('turn/start');
-    for (let i = 0; i < 100 && process.requests.filter(r => r.method === 'turn/start').length < 2; i++) await Promise.resolve();
+    await waitForRequest('turn/start', 0, 2);
     complete(process, 'thread-1');
     await firstOutput;
     await first.dispose();
@@ -571,7 +575,7 @@ describe('Codex shared runtime', () => {
     // Native turn events are subscription-scoped. Status remains broadcast.
     process.notify('turn/started', { threadId: 'thread-1', turn: { id: 'late-mail', status: 'inProgress', items: [] } });
     process.notify('thread/status/changed', { threadId: 'thread-1', status: { type: 'active', activeFlags: [] } });
-    for (let i = 0; i < 100; i++) await Promise.resolve();
+    await waitForRequest('turn/interrupt', 0, 2, rpc => rpc.params.threadId === 'thread-1');
     expect(process.requests.filter(r => r.method === 'turn/interrupt').map(r => r.params.threadId)).toContain('thread-1');
     expect(process.turns.get('thread-1')?.status).toBe('interrupted');
     // No parent item event survives unsubscribe. A grandchild can become visible
@@ -589,11 +593,12 @@ describe('Codex shared runtime', () => {
       process.notify('turn/started', { threadId, turn: { id: `turn-${threadId}`, status: 'inProgress', items: [] } });
       process.notify('thread/status/changed', { threadId, status: { type: 'active', activeFlags: [] } });
     }
-    for (let i = 0; i < 100; i++) await Promise.resolve();
+    await waitForRequest('thread/read', 0, 1, rpc => rpc.params.threadId === 'late-child');
     expect(childRead).toBeDefined();
     mockNative.requestOverride = null;
     process.respond(childRead!, { thread: { id: 'late-child', parentThreadId: 'thread-1', status: { type: 'active' }, turns: [] } });
-    for (let i = 0; i < 200; i++) await Promise.resolve();
+    await waitForRequest('turn/interrupt', 0, 1, rpc => rpc.params.threadId === 'late-child');
+    await waitForRequest('turn/interrupt', 0, 1, rpc => rpc.params.threadId === 'late-grandchild');
     expect(process.turns.get('late-child')?.status).toBe('interrupted');
     expect(process.turns.get('late-grandchild')?.status).toBe('interrupted');
     expect(process.turns.get('other-child')?.status).toBe('inProgress');
@@ -616,7 +621,7 @@ describe('Codex shared runtime', () => {
     process.parents.set('source-child', 'thread-1');
     process.notify('turn/started', { threadId: 'source-child', turn: { id: 'child-turn', status: 'inProgress', items: [] } });
     process.notify('item/completed', { threadId: 'thread-1', turnId: 'source-turn', item: { type: 'subAgentActivity', id: 'spawn', kind: 'started', agentThreadId: 'source-child', agentPath: '/root/worker' } });
-    for (let i = 0; i < 100; i++) await Promise.resolve();
+    await waitForRequest('thread/read', 0, 1, rpc => rpc.params.threadId === 'source-child');
     const copiedHistory = [{ id: 'old-turn', status: 'completed', items: [{ type: 'subAgentActivity', id: 'old-spawn', kind: 'started', agentThreadId: 'source-child', agentPath: '/root/worker' }] }];
     mockNative.requestOverride = (native, rpc) => {
       if (rpc.method !== 'thread/fork' && rpc.method !== 'thread/resume') return false;
@@ -636,19 +641,21 @@ describe('Codex shared runtime', () => {
   it('transfers idle descendants when a closed chat is reopened before native unloading', async () => {
     mockNative.autoReconcile = true;
     const lease = await createRuntime().acquire();
-    const observer = () => ({ notification: vi.fn(), serverRequest: vi.fn(), stop: vi.fn(), workChanged: vi.fn() });
+    const changed = new EventEmitter();
+    const observer = () => ({ notification: vi.fn(), serverRequest: vi.fn(), stop: vi.fn(), workChanged: () => { changed.emit('work'); } });
     const original = lease.connection.createThreadScope(observer());
     const reopened = lease.connection.createThreadScope(observer());
     const process = mockNative.processes[0];
     await original.open('thread/start', {});
     process.parents.set('existing-child', 'thread-1');
     process.notify('item/completed', { threadId: 'thread-1', turnId: 'old-turn', item: { type: 'subAgentActivity', id: 'spawn', kind: 'started', agentThreadId: 'existing-child', agentPath: '/root/worker' } });
-    for (let i = 0; i < 100; i++) await Promise.resolve();
+    await waitForRequest('thread/read', 0, 1, rpc => rpc.params.threadId === 'existing-child');
+    while (original.hasBackgroundWork) await once(changed, 'work');
     await original.detach();
     await reopened.open('thread/resume', { threadId: 'thread-1' });
     process.notify('turn/started', { threadId: 'existing-child', turn: { id: 'requested-child-turn', status: 'inProgress', items: [] } });
     process.notify('thread/status/changed', { threadId: 'existing-child', status: { type: 'active' } });
-    for (let i = 0; i < 100; i++) await Promise.resolve();
+    while (!reopened.hasBackgroundWork) await once(changed, 'work');
     expect(process.turns.get('existing-child')?.status).toBe('inProgress');
     expect(reopened.hasBackgroundWork).toBe(true);
     await reopened.stop();
@@ -724,7 +731,7 @@ describe('Codex shared runtime', () => {
     const starting = scope.startTurn('turn/start', { threadId: 'thread-1', input: [] }, releaseInput);
     const stopping = detach ? scope.detach() : scope.stop();
     process.notify('thread/status/changed', { threadId: 'thread-1', status: { type: 'idle' } });
-    for (let i = 0; i < 100; i++) await Promise.resolve();
+    await waitForRequest('turn/start');
     plugin.settings.providerConfigs.codex!.environmentVariables = 'KEY=replacement';
     const replacement = await runtime.acquire();
     try {
@@ -763,7 +770,7 @@ describe('Codex shared runtime', () => {
       expect((await events).at(-1)?.type).toBe('turn_completed');
       expect(process.isAlive()).toBe(true);
       process.respond(pendingStart!.id, { turn });
-      for (let i = 0; i < 200 && process.isAlive(); i++) await Promise.resolve();
+      if (process.isAlive()) await once(process, 'exit');
       expect(process.isAlive()).toBe(false);
       expect(mockNative.processes[1].isAlive()).toBe(true);
     } finally {
@@ -775,6 +782,9 @@ describe('Codex shared runtime', () => {
 
   it('keeps the next turn’s image until its own pending start settles after an earlier response', async () => {
     mockNative.autoReconcile = true;
+    // Observe the real client's start completion, including input cleanup after the decoded response.
+    const clientStarts = vi.spyOn(CodexThreadScope.prototype, 'startTurn');
+    onTestFinished(() => clientStarts.mockRestore());
     const starts: FakeProcess['requests'] = [];
     mockNative.requestOverride = (_process, rpc) => {
       if (rpc.method !== 'turn/start') return false;
@@ -792,17 +802,16 @@ describe('Codex shared runtime', () => {
       id: 'image-1', name: 'pasted.png', mediaType: 'image/png', data: 'aGVsbG8=', size: 5, source: 'paste',
     } }] });
     const secondEvents = collect(second.events);
-    for (let i = 0; i < 100 && starts.length < 2; i++) await Promise.resolve();
+    await waitForRequest('turn/start', 0, 2);
     expect(starts).toHaveLength(2);
     const imageInput = starts[1].params.input!.find(item => item.type === 'localImage')!;
     const inputPath: string = imageInput.path;
     try {
       expect(readFileSync(inputPath)).toEqual(Buffer.from('hello'));
       process.respond(starts[0].id, { turn: firstTurn });
-      for (let i = 0; i < 100; i++) await Promise.resolve();
+      await clientStarts.mock.results[0].value;
       second.cancel();
       expect((await secondEvents).at(-1)?.type).toBe('cancelled');
-      for (let i = 0; i < 100; i++) await Promise.resolve();
       expect(existsSync(inputPath)).toBe(true);
     } finally {
       process.respond(starts[0].id, { turn: firstTurn });
@@ -838,11 +847,10 @@ describe('Codex shared runtime', () => {
     const second = backend.createSession({ ...config, interactionPort: { ...config.interactionPort, requestApproval: secondApproval } });
     const output = [first, second].map(session => collect(session.execute(request).events));
     const process = await waitForRequest('turn/start');
-    for (let i = 0; i < 100 && process.requests.filter(r => r.method === 'turn/start').length < 2; i++) await Promise.resolve();
-    process.stdout.write(`${JSON.stringify({ id: 'approval', method: 'item/commandExecution/requestApproval', params: {
+    await waitForRequest('turn/start', 0, 2);
+    await process.requestFromServer('approval', 'item/commandExecution/requestApproval', {
       threadId: 'thread-2', turnId: 'turn-thread-2', itemId: 'command', command: 'pwd', cwd: '/vault',
-    } })}\n`);
-    for (let i = 0; i < 100 && secondApproval.mock.calls.length === 0; i++) await Promise.resolve();
+    });
     expect(secondApproval).toHaveBeenCalledTimes(1);
     expect(firstApproval).not.toHaveBeenCalled();
     complete(process, 'thread-1');
@@ -909,11 +917,11 @@ describe('Codex shared runtime', () => {
       const replacement = await waitForRequest('turn/start', 1);
       complete(old, 'thread-1');
       expect(await firstEvents).toEqual(expect.arrayContaining([expect.objectContaining({ type: 'turn_completed' })]));
-      for (let i = 0; i < 100 && old.isAlive(); i++) await Promise.resolve();
+      if (old.isAlive()) await once(old, 'exit');
       expect(old.isAlive()).toBe(false);
       const resumed = collect(first.session.execute(request).events);
       await waitForRequest('thread/resume', 1);
-      for (let i = 0; i < 100 && replacement.requests.filter(r => r.method === 'turn/start').length < 2; i++) await Promise.resolve();
+      await waitForRequest('turn/start', 1, 2);
       expect(replacement.requests.filter(r => r.method === 'turn/start')).toHaveLength(2);
       complete(replacement, 'thread-1');
       expect(await resumed).toEqual(expect.arrayContaining([expect.objectContaining({ type: 'turn_completed' })]));
@@ -935,14 +943,14 @@ describe('Codex shared runtime', () => {
     const second = backend.createSession(config);
     const runs = [first, second].map(session => collect(session.execute(request).events));
     const process = await waitForRequest('turn/start');
-    for (let i = 0; i < 100 && process.requests.filter(r => r.method === 'turn/start').length < 2; i++) await Promise.resolve();
+    await waitForRequest('turn/start', 0, 2);
     process.exit();
     const failed = await Promise.all(runs);
     for (const events of failed) expect(events.at(-1)).toMatchObject({ type: 'execution_error', category: 'process-exited' });
     expect(mockNative.processes).toHaveLength(1);
     const retries = [first, second].map(session => collect(session.execute(request).events));
     const replacement = await waitForRequest('turn/start', 1);
-    for (let i = 0; i < 100 && replacement.requests.filter(r => r.method === 'turn/start').length < 2; i++) await Promise.resolve();
+    await waitForRequest('turn/start', 1, 2);
     expect(replacement.requests.filter(r => r.method === 'thread/resume').map(r => r.params.threadId).sort()).toEqual(['thread-1', 'thread-2']);
     expect(replacement.requests.filter(r => r.method === 'thread/start')).toHaveLength(0);
     complete(replacement, 'thread-1');
@@ -955,6 +963,9 @@ describe('Codex shared runtime', () => {
 
   it('allows retry when a cancelled turn completes before its late start response and interrupt rejection', async () => {
     mockNative.autoReconcile = true;
+    const stopping = vi.spyOn(CodexThreadScope.prototype, 'stop');
+    onTestFinished(() => stopping.mockRestore());
+    let pendingInterrupt: number | undefined;
     let pendingStart: CodexNativeRequest | undefined;
     mockNative.requestOverride = (process, rpc) => {
       if (rpc.method === 'turn/start') {
@@ -963,7 +974,7 @@ describe('Codex shared runtime', () => {
         return true;
       }
       if (rpc.method === 'turn/interrupt') {
-        process.stdout.write(`${JSON.stringify({ id: rpc.id, error: { code: -32600, message: 'no active turn to interrupt' } })}\n`);
+        pendingInterrupt = rpc.id;
         return true;
       }
       return false;
@@ -971,13 +982,16 @@ describe('Codex shared runtime', () => {
     const session = createBackend(plugin, createRuntime()).createSession(config);
     const run = session.execute(request);
     const process = await waitForRequest('turn/start');
+    process.notify('turn/started', { threadId: 'thread-1', turn: { id: 'turn-thread-1', status: 'inProgress', items: [] } });
     run.cancel();
+    await waitForRequest('turn/interrupt');
     complete(process, 'thread-1');
     process.respond(pendingStart!.id, { turn: { id: 'turn-thread-1', status: 'inProgress' } });
+    process.respondError(pendingInterrupt!, 'no active turn to interrupt', -32600);
     await collect(run.events);
-    for (let i = 0; i < 50; i++) await Promise.resolve();
+    await Promise.all(stopping.mock.results.map(result => result.value));
     const retry = collect(session.execute(request).events);
-    for (let i = 0; i < 100 && process.requests.filter(r => r.method === 'turn/start').length < 2; i++) await Promise.resolve();
+    await waitForRequest('turn/start', 0, 2);
     expect(process.requests.filter(r => r.method === 'turn/start')).toHaveLength(2);
     process.notify('turn/completed', { threadId: 'thread-1', turn: { id: 'retry-turn', status: 'completed', items: [] } });
     expect((await retry).at(-1)?.type).toBe('turn_completed');
@@ -993,7 +1007,7 @@ describe('Codex shared runtime', () => {
     const firstOutput = collect(firstRun.events);
     const secondOutput = collect(second.execute(request).events);
     const process = await waitForRequest('turn/start');
-    for (let i = 0; i < 100 && process.requests.filter(r => r.method === 'turn/start').length < 2; i++) await Promise.resolve();
+    await waitForRequest('turn/start', 0, 2);
     process.notify('item/completed', {
       threadId: 'thread-1', turnId: 'turn-thread-1',
       item: { type: 'subAgentActivity', id: 'spawn', kind: 'started', agentThreadId: 'child', agentPath: '/root/worker' },
@@ -1008,15 +1022,18 @@ describe('Codex shared runtime', () => {
       complete(process, 'thread-1');
       await firstOutput;
     }
+    const stopping = vi.spyOn(CodexThreadScope.prototype, 'stop');
+    onTestFinished(() => stopping.mockRestore());
     first.cancel();
     await firstOutput;
-    for (let i = 0; i < 150; i++) await Promise.resolve();
+    await waitForRequest('turn/interrupt', 0, 1, rpc => rpc.params.threadId === 'grandchild');
+    await Promise.all(stopping.mock.results.map(result => result.value));
     expect(process.requests.filter(r => r.method === 'turn/interrupt').map(r => r.params.threadId)).toEqual(expect.arrayContaining(['child', 'grandchild']));
     expect(first.hasBackgroundWork?.()).toBe(false);
     expect(process.requests.filter(r => r.method === 'thread/unsubscribe')).toHaveLength(0);
     // Codex may already have queued mail that wakes a durably sleeping root.
     process.notify('turn/started', { threadId: 'thread-1', turn: { id: 'mailbox-turn', status: 'inProgress', items: [] } });
-    for (let i = 0; i < 100; i++) await Promise.resolve();
+    await waitForRequest('turn/interrupt', 0, 1, rpc => rpc.params.turnId === 'mailbox-turn');
     expect(process.requests.filter(r => r.method === 'turn/interrupt').map(r => r.params.turnId)).toContain('mailbox-turn');
     expect(process.requests.filter(r => r.method === 'turn/interrupt').map(r => r.params.threadId)).not.toContain('thread-2');
     complete(process, 'thread-2');
@@ -1145,7 +1162,7 @@ describe('Codex shared runtime', () => {
       await vi.advanceTimersByTimeAsync(30_001);
       expect(await failure).toEqual(expect.objectContaining({ message: `Request timeout: ${method} (30000ms)` }));
       process.respond(creationId, { thread: { id: 'late-thread', turns: [] } });
-      for (let i = 0; i < 100 && !process.requests.some(r => r.method === 'thread/unsubscribe'); i++) await Promise.resolve();
+      await waitForRequest('thread/unsubscribe', 0, 1, rpc => rpc.params.threadId === 'late-thread');
       expect(process.requests.filter(r => r.method === 'thread/unsubscribe').map(r => r.params.threadId)).toContain('late-thread');
       expect(process.isAlive()).toBe(true);
       complete(process, 'thread-1');
@@ -1163,7 +1180,12 @@ describe('Codex shared runtime', () => {
     let holdCleanup = true;
     mockNative.requestOverride = (_process, rpc) => holdCleanup && rpc.params?.threadId === 'thread-1'
       && (rpc.method === 'turn/start' || rpc.method === 'thread/read');
-    const backend = createBackend(plugin, createRuntime());
+    const runtime = createRuntime();
+    const lease = await runtime.acquire();
+    onTestFinished(() => lease.release());
+    const scopes = vi.spyOn(lease.connection, 'createThreadScope');
+    onTestFinished(() => scopes.mockRestore());
+    const backend = createBackend(plugin, runtime);
     const first = backend.createSession(config);
     const second = backend.createSession(config);
     vi.useFakeTimers();
@@ -1182,12 +1204,16 @@ describe('Codex shared runtime', () => {
       await disposal;
       holdCleanup = false;
       process.notify('turn/started', { threadId: 'thread-1', turn: { id: 'late-after-cleanup', status: 'inProgress', items: [] } });
-      for (let i = 0; i < 100; i++) await Promise.resolve();
+      await waitForRequest('turn/interrupt', 0, 1, rpc => rpc.params.turnId === 'late-after-cleanup');
       expect(process.requests.filter(r => r.method === 'turn/interrupt').map(r => r.params))
         .toContainEqual({ threadId: 'thread-1', turnId: 'late-after-cleanup' });
+      // Detached scopes no longer publish workChanged. Once the actual interrupt is observed,
+      // bound the wait for their public idle state by real time, including delayed RPC responses.
+      vi.useRealTimers();
+      await vi.waitFor(() => expect(scopes.mock.results[0].value.hasWork).toBe(false));
       const retrySession = dispose ? backend.createSession({ ...config, resumeSeed: { providerSessionId: 'thread-1' } }) : first;
       const retry = collect(retrySession.execute(request).events);
-      for (let i = 0; i < 100 && process.requests.filter(r => r.method === 'turn/start').length < 3; i++) await Promise.resolve();
+      await waitForRequest('turn/start', 0, 3);
       expect(process.requests.filter(r => r.method === 'turn/start')).toHaveLength(3);
       complete(process, 'thread-1');
       complete(process, 'thread-2');
@@ -1219,7 +1245,7 @@ describe('Codex shared runtime', () => {
       const failed = collect(first.execute(request).events);
       const process = await waitForRequest('turn/start');
       const surviving = collect(second.execute(request).events);
-      for (let i = 0; i < 100 && process.requests.filter(r => r.method === 'turn/start').length < 2; i++) await Promise.resolve();
+      await waitForRequest('turn/start', 0, 2);
       await vi.advanceTimersByTimeAsync(30_001);
       expect((await failed).at(-1)?.type).toBe('execution_error');
       await first.dispose();

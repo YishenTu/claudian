@@ -73,10 +73,7 @@ it('keeps an ephemeral fork token until native work ends: no client deadline, an
     vi.useFakeTimers({ toNotFake: ['nextTick', 'setImmediate', 'queueMicrotask'] });
     const forking = lease.fork({ sessionId: 'saved', atSeq: 1 }, true);
     forking.catch(() => undefined);
-    for (let turns = 0; !peer.calls.some(call => call.method === 'session/fork'); turns++) {
-      if (turns > 10_000) throw new Error('Fork never reached native.');
-      await flush();
-    }
+    await peer.waitForCall('session/fork');
     // Native forks have no cancellation; a client deadline would withdraw the token while native still forks.
     vi.advanceTimersByTime(120_000);
     await flush();
@@ -136,10 +133,7 @@ it.each([true, false])('retires the process when a native fork never settles ins
     const queued = lease.fork({ sessionId: 'saved', atSeq: 1 }, false);
     const settled = vi.fn();
     hung.then(settled, settled); queued.then(settled, settled);
-    for (let turns = 0; !peer.calls.some(call => call.method === 'session/fork'); turns++) {
-      if (turns > 10_000) throw new Error('Fork never reached native.');
-      await flush();
-    }
+    await peer.waitForCall('session/fork');
     // Native forks may legitimately wait on MCP discovery; minutes pass before the Host gives up.
     vi.advanceTimersByTime(4 * 60_000);
     await flush();

@@ -112,10 +112,10 @@ export class NativePeer {
   }
 
   /** Observes a wire request without polling or supplying the client's behavior. */
-  async waitForCall(method: string): Promise<(typeof this.calls)[number]> {
+  async waitForCall(method: string, count = 1): Promise<(typeof this.calls)[number]> {
     const signal = AbortSignal.timeout(1_000);
     for (;;) {
-      const call = this.calls.find(call => call.method === method);
+      const call = this.calls.filter(call => call.method === method)[count - 1];
       if (call) return call;
       await once(this.receivedCalls, 'call', { signal });
     }
