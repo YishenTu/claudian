@@ -74,7 +74,11 @@ it('treats signal 0 as a liveness probe and rejects signals it cannot deliver', 
   expect(child.kill(0)).toBe(true);
   expect(child.killed).toBe(true);
   expect(() => child.kill(99_999)).toThrow(expect.objectContaining({ code: 'ERR_UNKNOWN_SIGNAL' }));
-  expect(() => child.kill('SIGUSR1')).toThrow(expect.objectContaining({ code: 'ENOSYS', syscall: 'kill' }));
+  // Windows Node rejects this name before libuv; POSIX recognizes it and reaches the fixture's Windows ENOSYS model.
+  const unsupportedSignalError = process.platform === 'win32'
+    ? { code: 'ERR_UNKNOWN_SIGNAL' }
+    : { code: 'ENOSYS', syscall: 'kill' };
+  expect(() => child.kill('SIGUSR1')).toThrow(expect.objectContaining(unsupportedSignalError));
   native.requests[0].complete({ stdout: 'alive', code: 3 });
   expect(await once(child, 'exit')).toEqual([3, null]);
 });
