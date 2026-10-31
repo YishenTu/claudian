@@ -6,6 +6,47 @@ import { ControlledResizeObserver, resetResizeObservers } from '@test/helpers/do
 import { resetObsidianKeymaps } from '@test/helpers/ObsidianKeymap';
 import { resetWorkspaceTimers } from '@test/helpers/ObsidianWorkspace';
 
+// Setup modules reload per VM file; the native process object lives for the worker.
+const originalEnvKey = Symbol.for('claudian.tests.originalProcessEnv');
+const workerProcess = process as NodeJS.Process & { [originalEnvKey]?: NodeJS.ProcessEnv };
+const originalEnv = workerProcess[originalEnvKey] ??= process.env;
+
+function reportProcessEnvReplacement(): void {
+  const message = `process.env replacement is forbidden in ${expect.getState().testPath}. `
+    + 'Restore environment keys in place or use vi.stubEnv()/vi.unstubAllEnvs().';
+  try {
+    // Record the failure without interrupting the test's remaining cleanup.
+    // eslint-disable-next-line vitest/valid-expect -- Vitest accepts a custom assertion message.
+    expect.soft(false, message).toBe(true);
+  } catch {
+    // Collection and suite hooks have no current test for a soft assertion.
+    throw new Error(message);
+  }
+}
+
+// Reject even temporary replacements, nested suite teardown, and skipped-file collection.
+// Reinstall per file so diagnostics use the current VM's Vitest context.
+Object.defineProperty(workerProcess, 'env', {
+  configurable: true,
+  enumerable: true,
+  get: () => originalEnv,
+  set: (value: NodeJS.ProcessEnv) => {
+    if (value !== originalEnv) reportProcessEnvReplacement();
+  },
+});
+
+// Platform-only process stubs retain env identity. Check others after all test cleanup.
+// eslint-disable-next-line vitest/no-done-callback -- aroundEach supplies an awaitable test runner.
+aroundEach(async (runTest) => {
+  try {
+    await runTest();
+  } finally {
+    if (process.env !== originalEnv) {
+      process.env = originalEnv;
+      reportProcessEnvReplacement();
+    }
+  }
+});
 
 // Node-only suites do not need to load the accessibility engine.
 if (typeof document !== 'undefined') {
