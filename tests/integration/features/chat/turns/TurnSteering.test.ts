@@ -1,73 +1,84 @@
-import type { ChatExecutionCoordinator, ChatTurnSubmission } from '@/features/chat/execution/ChatExecutionCoordinator';
-import { ChatExecutionPreHandoffError } from '@/features/chat/execution/ChatExecutionCoordinator';
+import { createHarness as createExecutionHarness, createSubmission, deferred } from '@test/helpers/ChatExecutionHarness';
+
 import { ChatState } from '@/features/chat/state/ChatState';
 import type { QueuedMessage } from '@/features/chat/state/types';
+import { TurnCoordinator } from '@/features/chat/turns/TurnCoordinator';
 import { TurnSteering } from '@/features/chat/turns/TurnSteering';
+import { claudeProviderRegistration } from '@/providers/claude/registration';
 
 const FAILED_TO_STEER = 'Failed to steer the queued message. It is still available.';
 const UNCONFIRMED = 'Steer delivery could not be confirmed. The message was not requeued to avoid sending it twice.';
 
-function createHarness() {
-  const state = new ChatState({});
+async function createHarness() {
+  const execution = createExecutionHarness();
+  const coordinator = execution.coordinator;
+  const turns = new TurnCoordinator();
+  const state = new ChatState({}, undefined, turns);
   state.currentConversationId = 'conversation-1';
-  const coordinator = {
-    systemInstructions: { kind: 'main-agent', instructions: 'Active instructions' },
-    steer: vi.fn(),
-    acceptSteerFromProviderEvent: vi.fn().mockResolvedValue(true),
-    releaseSteerCorrelation: vi.fn(),
-  };
+  await coordinator.bindConversation({ conversationId: 'conversation-1', providerId: 'claude' });
+  await coordinator.prepare();
+  const native = execution.backends.get('claude')!.sessions[0];
+  const active = turns.run(async signal => {
+    turns.beginResponse();
+    await coordinator.execute(createSubmission(), signal);
+  });
+  await native.waitForRun();
+  onTestFinished(async () => {
+    coordinator.cancel();
+    await active;
+    await coordinator.dispose();
+    await execution.registry.dispose();
+  });
   const returnUnsent = vi.fn();
   const reportFailure = vi.fn();
   const steering = new TurnSteering({
-    state,
-    turns: { isResponding: true },
-    getExecutionCoordinator: () => coordinator as unknown as ChatExecutionCoordinator,
-    getCapabilities: () => ({ supportsTurnSteer: true }) as never,
+    state, turns,
+    getExecutionCoordinator: () => coordinator,
+    getCapabilities: () => ({ ...claudeProviderRegistration.capabilities, supportsTurnSteer: true }),
     toQueuedChatTurn: message => ({ displayContent: message.content, request: { ...message.turnRequest } }),
-    createSubmission: displayContent => ({
+    createSubmission: (displayContent, request) => createSubmission({
       submissionId: `submission-${displayContent}`,
-      timestamp: 0,
       rawDisplayText: displayContent,
-      canonicalText: displayContent,
-      images: [],
-      configuration: { model: 'model' } as ChatTurnSubmission['configuration'],
-      toolPolicy: {} as ChatTurnSubmission['toolPolicy'],
+      canonicalText: request.text,
+      images: request.images ?? [],
+      configuration: { model: 'model', systemInstructions: coordinator.systemInstructions! },
     }),
-    onVisibleSteerChanged: vi.fn(),
-    returnUnsent,
+    onVisibleSteerChanged: vi.fn(), returnUnsent,
   });
   const message: QueuedMessage = {
-    content: 'follow up',
-    onDelivery: vi.fn(),
-    turnRequest: { text: 'follow up' } as QueuedMessage['turnRequest'],
+    content: 'follow up', onDelivery: vi.fn(), turnRequest: { text: 'follow up' },
   };
-  return { coordinator, message, reportFailure, returnUnsent, steering };
+  expect(steering.canSteer).toBe(true);
+  return { coordinator, execution, native, message, reportFailure, returnUnsent, steering };
 }
 
 describe('TurnSteering.steer', () => {
   it('captures submitted input synchronously when its echo precedes the acknowledgement', async () => {
-    const { coordinator, message, returnUnsent, steering } = createHarness();
-    let acknowledge!: (value: unknown) => void;
-    coordinator.steer.mockReturnValue(new Promise(resolve => { acknowledge = resolve; }));
+    const { coordinator, native, message, returnUnsent, steering } = await createHarness();
+    const acknowledgement = deferred<boolean>();
+    native.steerResponse.mockReturnValueOnce(acknowledgement.promise);
     const image = { id: 'image', name: 'pixel.png', mediaType: 'image/png' as const, data: 'aW1hZ2U=', size: 5, source: 'paste' as const };
     message.turnRequest = { text: 'expanded submitted text', images: [image] };
     const steeringResult = steering.steer(message);
+    message.turnRequest.text = 'Edited after submission';
+    await native.waitForSteer();
     steering.finishTurn('conversation-1');
     const claim = steering.claimProviderEcho('late-user');
     expect(claim.expected).toMatchObject({ displayContent: 'follow up', persistedContent: 'expanded submitted text', images: [image] });
-    acknowledge({ delivery: 'accepted' });
+    acknowledgement.resolve(true);
     const pending = await steeringResult;
     await claim.acceptance;
     claim.settle();
     steering.restoreIfDefinitelyUnsent(pending);
     expect(steering.current).toBeNull();
     expect(returnUnsent).not.toHaveBeenCalled();
-    expect(coordinator.acceptSteerFromProviderEvent).toHaveBeenCalledWith('submission-follow up', 'late-user');
+    expect(coordinator.getSteerSubmission('submission-follow up')).toBeUndefined();
+    expect(native.steerRequests[0].input).toEqual([{ type: 'text', text: 'expanded submitted text' }, { type: 'image', image }]);
   });
 
   it('marks an accepted steer as awaiting provider correlation without requeueing it', async () => {
-    const { coordinator, message, reportFailure, steering } = createHarness();
-    coordinator.steer.mockResolvedValue({ delivery: 'accepted' });
+    const { native, message, reportFailure, steering } = await createHarness();
+    native.steerResponse.mockResolvedValueOnce(true);
 
     const pending = await steering.steer(message, reportFailure);
 
@@ -82,8 +93,8 @@ describe('TurnSteering.steer', () => {
   });
 
   it('treats a declined steer as definitely unsent without a failure notice', async () => {
-    const { coordinator, message, reportFailure, steering } = createHarness();
-    coordinator.steer.mockResolvedValue({ delivery: 'not-sent' });
+    const { native, message, reportFailure, steering } = await createHarness();
+    native.steerResponse.mockResolvedValueOnce(false);
 
     const pending = await steering.steer(message, reportFailure);
 
@@ -94,11 +105,8 @@ describe('TurnSteering.steer', () => {
   });
 
   it('reports a failed pre-handoff steer as still available', async () => {
-    const { coordinator, message, reportFailure, steering } = createHarness();
-    coordinator.steer.mockResolvedValue({
-      delivery: 'not-sent',
-      error: new ChatExecutionPreHandoffError(new Error('ledger unavailable')),
-    });
+    const { execution, message, reportFailure, steering } = await createHarness();
+    execution.repository.assertConversationExecutionAuthority.mockRejectedValueOnce(new Error('ledger unavailable'));
 
     const pending = await steering.steer(message, reportFailure);
 
@@ -107,8 +115,8 @@ describe('TurnSteering.steer', () => {
   });
 
   it('keeps an uncertain steer registered for provider reconciliation', async () => {
-    const { coordinator, message, reportFailure, steering } = createHarness();
-    coordinator.steer.mockResolvedValue({ delivery: 'uncertain', error: new Error('transport closed') });
+    const { coordinator, native, message, reportFailure, steering } = await createHarness();
+    native.steerResponse.mockRejectedValueOnce(new Error('transport closed'));
 
     const pending = await steering.steer(message, reportFailure);
 
@@ -117,28 +125,25 @@ describe('TurnSteering.steer', () => {
       uiState: 'cleared',
     });
     expect(steering.current).toBe(pending);
-    expect(coordinator.releaseSteerCorrelation).not.toHaveBeenCalled();
+    expect(coordinator.getSteerSubmission('submission-follow up')).toMatchObject({ canonicalText: 'follow up' });
     expect(reportFailure).toHaveBeenCalledWith(UNCONFIRMED);
     expect(reportFailure).not.toHaveBeenCalledWith(FAILED_TO_STEER);
   });
 
   it.each([
-    ['not sent', { delivery: 'not-sent' }],
-    ['failed before handoff', { delivery: 'not-sent', error: new ChatExecutionPreHandoffError('late cleanup failed') }],
-    ['uncertain', { delivery: 'uncertain', error: new Error('acknowledgement lost') }],
+    ['not sent', false],
+    ['uncertain', new Error('acknowledgement lost')],
   ])('does not let a %s result downgrade a provider echo received during the request', async (_label, outcome) => {
-    const { coordinator, message, reportFailure, returnUnsent, steering } = createHarness();
-    let resolveSteer!: (value: unknown) => void;
-    coordinator.steer.mockReturnValue(new Promise(resolve => { resolveSteer = resolve; }));
+    const { native, message, reportFailure, returnUnsent, steering } = await createHarness();
+    const acknowledgement = deferred<boolean>();
+    native.steerResponse.mockReturnValueOnce(acknowledgement.promise);
 
     const steer = steering.steer(message, reportFailure);
-    for (let attempt = 0; attempt < 10 && coordinator.steer.mock.calls.length === 0; attempt++) {
-      await Promise.resolve();
-    }
-    expect(coordinator.steer).toHaveBeenCalledTimes(1);
+    await native.waitForSteer();
     const claim = steering.claimProviderEcho('native-user');
     await claim.acceptance;
-    resolveSteer(outcome);
+    if (outcome instanceof Error) acknowledgement.reject(outcome);
+    else acknowledgement.resolve(false);
     const pending = await steer;
     steering.restoreIfDefinitelyUnsent(pending);
 

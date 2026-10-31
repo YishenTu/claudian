@@ -1,6 +1,6 @@
 import type { Mocked } from 'vitest';
 
-import { type ProviderExecutionBackend, type ProviderExecutionEvent, ProviderExecutionLifecycleRegistry, type ProviderExecutionRequest, type ProviderExecutionRun, type ProviderExecutionSession, type ProviderInteractionPort, type ProviderSessionConfig, type ProviderSessionEvent, type ProviderSessionSnapshot, type ProviderSessionStatus, type RewindableExecutionSession, type SteerableExecutionSession } from '@/core/execution';
+import { type BranchableExecutionSession, type ConversationBranchState, type ProviderExecutionBackend, type ProviderExecutionEvent, ProviderExecutionLifecycleRegistry, type ProviderExecutionRequest, type ProviderExecutionRun, type ProviderExecutionSession, type ProviderInteractionPort, type ProviderSessionConfig, type ProviderSessionEvent, type ProviderSessionSnapshot, type ProviderSessionStatus, type RewindableExecutionSession, type SteerableExecutionSession } from '@/core/execution';
 import type { ProviderId, SlashCommand } from '@/core/types';
 import { ChatExecutionCoordinator, type ChatExecutionCoordinatorDeps, type ChatExecutionEventContext, type ChatExecutionPersistence, type ChatTurnSubmission, type MissingProviderSessionResolution } from '@/features/chat/execution/ChatExecutionCoordinator';
 
@@ -8,13 +8,14 @@ import { ChatExecutionCoordinator, type ChatExecutionCoordinatorDeps, type ChatE
 
 class EventQueue<T> implements AsyncIterable<T> {
   private readonly values: T[] = [];
-  private readonly waiters: Array<(result: IteratorResult<T>) => void> = [];
+  private readonly waiters: Array<{ resolve: (result: IteratorResult<T>) => void; reject: (error: unknown) => void }> = [];
+  private failure: { error: unknown } | null = null;
   private ended = false;
 
   push(value: T): void {
     const waiter = this.waiters.shift();
     if (waiter) {
-      waiter({ done: false, value });
+      waiter.resolve({ done: false, value });
       return;
     }
     this.values.push(value);
@@ -23,8 +24,13 @@ class EventQueue<T> implements AsyncIterable<T> {
   end(): void {
     this.ended = true;
     for (const waiter of this.waiters.splice(0)) {
-      waiter({ done: true, value: undefined });
+      waiter.resolve({ done: true, value: undefined });
     }
+  }
+
+  fail(error: unknown): void {
+    this.failure = { error };
+    for (const waiter of this.waiters.splice(0)) waiter.reject(error);
   }
 
   [Symbol.asyncIterator](): AsyncIterator<T> {
@@ -32,9 +38,10 @@ class EventQueue<T> implements AsyncIterable<T> {
       next: async () => {
         const value = this.values.shift();
         if (value) return { done: false, value };
+        if (this.failure) throw this.failure.error;
         if (this.ended) return { done: true, value: undefined };
-        return new Promise<IteratorResult<T>>((resolve) => {
-          this.waiters.push(resolve);
+        return new Promise<IteratorResult<T>>((resolve, reject) => {
+          this.waiters.push({ resolve, reject });
         });
       },
       return: async () => {
@@ -45,18 +52,40 @@ class EventQueue<T> implements AsyncIterable<T> {
   }
 }
 
+export type UnscopedExecutionEvent = ProviderExecutionEvent extends infer E
+  ? E extends ProviderExecutionEvent ? Omit<E, 'scope'> : never
+  : never;
+
 export class FakeRun implements ProviderExecutionRun {
   readonly events = new EventQueue<ProviderExecutionEvent>();
   cancelCalls = 0;
+  private sequence = 0;
+  holdCancellation = false;
+  private readonly cancellation = deferred<void>();
+  get cancelled(): Promise<void> { return this.cancellation.promise; }
 
   constructor(
     readonly executionId: string,
     readonly turnId: string,
+    readonly sessionInstanceId = 'session-1',
   ) {}
+
+  emit(event: UnscopedExecutionEvent): ProviderExecutionEvent {
+    const scoped = { ...event, scope: {
+      kind: 'requested' as const, executionId: this.executionId, turnId: this.turnId,
+      sessionInstanceId: this.sessionInstanceId, sequence: ++this.sequence,
+    } };
+    this.events.push(scoped);
+    if (['turn_completed', 'execution_error', 'cancelled'].includes(event.type)) this.events.end();
+    return scoped;
+  }
+
+  complete(): void { this.emit({ type: 'turn_completed', reason: 'completed' }); }
 
   cancel(): void {
     this.cancelCalls += 1;
-    this.events.end();
+    this.cancellation.resolve();
+    if (!this.holdCancellation) this.events.end();
   }
 }
 
@@ -67,6 +96,22 @@ export class FakeSession implements ProviderExecutionSession,
   readonly runs: FakeRun[] = [];
   readonly steerRequests: ProviderExecutionRequest[] = [];
   readonly listeners = new Set<(event: ProviderSessionEvent) => void>();
+  readonly respond = vi.fn<(run: FakeRun, request: ProviderExecutionRequest) => void>();
+  private readonly runWaiters = new Set<() => void>();
+
+  waitForRun(index = 0): Promise<FakeRun> {
+    const existing = this.runs[index];
+    if (existing) return Promise.resolve(existing);
+    return new Promise(resolve => {
+      const check = () => {
+        const run = this.runs[index];
+        if (!run) return;
+        this.runWaiters.delete(check);
+        resolve(run);
+      };
+      this.runWaiters.add(check);
+    });
+  }
   commands: SlashCommand[] | undefined;
   getCommandSnapshot() { return this.commands; }
   cancelCalls = 0;
@@ -74,6 +119,22 @@ export class FakeSession implements ProviderExecutionSession,
   status: ProviderSessionStatus = 'idle';
   snapshot: ProviderSessionSnapshot;
   steerResult = true;
+  readonly steerResponse = vi.fn<(request: ProviderExecutionRequest) => Promise<boolean>>(async () => this.steerResult);
+  private readonly steerWaiters = new Set<() => void>();
+
+  waitForSteer(index = 0): Promise<ProviderExecutionRequest> {
+    const existing = this.steerRequests[index];
+    if (existing) return Promise.resolve(existing);
+    return new Promise(resolve => {
+      const check = () => {
+        const request = this.steerRequests[index];
+        if (!request) return;
+        this.steerWaiters.delete(check);
+        resolve(request);
+      };
+      this.steerWaiters.add(check);
+    });
+  }
   rewindResult = {
     canRewind: true,
     sessionStrategy: 'preserve-provider-session' as const,
@@ -95,14 +156,19 @@ export class FakeSession implements ProviderExecutionSession,
     const run = new FakeRun(
       `execution-${this.runs.length + 1}`,
       `turn-${this.runs.length + 1}`,
+      this.sessionInstanceId,
     );
     this.runs.push(run);
+    this.respond(run, request);
+    for (const check of [...this.runWaiters]) check();
     return run;
   }
 
   async steer(request: ProviderExecutionRequest): Promise<boolean> {
     this.steerRequests.push(request);
-    return this.steerResult;
+    const result = this.steerResponse(request);
+    for (const check of [...this.steerWaiters]) check();
+    return result;
   }
 
   async previewRewind(): Promise<{ canRewind: boolean }> {
@@ -138,6 +204,18 @@ export class FakeSession implements ProviderExecutionSession,
     this.disposeCalls += 1;
     this.status = 'disposed';
   }
+}
+
+/** Optional native branch capability; ordinary fake sessions remain non-branchable. */
+export class FakeBranchSession extends FakeSession implements BranchableExecutionSession {
+  branchState: ConversationBranchState = { branches: {}, userMessageIds: {} };
+  readonly getConversationBranches = vi.fn<BranchableExecutionSession['getConversationBranches']>(async () => this.branchState);
+  readonly navigateConversationBranch = vi.fn<BranchableExecutionSession['navigateConversationBranch']>(async () => {
+    throw new Error('Supply a native branch navigation result for this test.');
+  });
+  readonly reconcileConversationBranch = vi.fn<BranchableExecutionSession['reconcileConversationBranch']>(async () => {
+    throw new Error('Supply a native branch recovery result for this test.');
+  });
 }
 
 class FakeBackend implements ProviderExecutionBackend {
@@ -191,7 +269,18 @@ export function createSubmission(overrides: Partial<ChatTurnSubmission> = {}): C
   };
 }
 
+export function createExecutionPersistence(): Mocked<ChatExecutionPersistence> {
+  return {
+    registerExecutionBinding: vi.fn(),
+    persistExecutionSnapshot: vi.fn(async () => true),
+    releaseExecutionBinding: vi.fn(),
+    recordConversationActivity: vi.fn(async () => undefined),
+    assertConversationExecutionAuthority: vi.fn(async () => undefined),
+  };
+}
+
 export function createHarness(options: {
+  workingDirectory?: string;
   resolveBackend?: ChatExecutionCoordinatorDeps['resolveBackend'];
   onBackgroundWorkChanged?: (isWorking: boolean) => void;
   onError?: (error: unknown) => void;
@@ -212,14 +301,8 @@ export function createHarness(options: {
     ['claude', new FakeBackend('claude')],
     ['codex', new FakeBackend('codex')],
   ]);
-  const repository = {
-    registerExecutionBinding: vi.fn(),
-    persistExecutionSnapshot: vi.fn(async () => true),
-    releaseExecutionBinding: vi.fn(),
-    recordConversationActivity: vi.fn(async () => undefined),
-    assertConversationExecutionAuthority: vi.fn(async () => undefined),
-  } as unknown as Mocked<ChatExecutionPersistence>;
-  const interactionPort = {
+  const repository = createExecutionPersistence();
+  const interactionPort: Mocked<ProviderInteractionPort> = {
     requestApproval: vi.fn(async ({ interactionId }) => ({
       interactionId,
       decision: 'allow',
@@ -229,8 +312,22 @@ export function createHarness(options: {
       answers: null,
     })),
     dismissInteraction: vi.fn(),
-  } as unknown as Mocked<ProviderInteractionPort>;
+  };
   const requestedEvents: ProviderExecutionEvent[] = [];
+  const requestedEventWaiters = new Set<() => void>();
+  const waitForRequestedEvent = (matches: (event: ProviderExecutionEvent) => boolean): Promise<ProviderExecutionEvent> => {
+    const existing = requestedEvents.find(matches);
+    if (existing) return Promise.resolve(existing);
+    return new Promise(resolve => {
+      const check = () => {
+        const event = requestedEvents.find(matches);
+        if (!event) return;
+        requestedEventWaiters.delete(check);
+        resolve(event);
+      };
+      requestedEventWaiters.add(check);
+    });
+  };
   const sessionEvents: ProviderSessionEvent[] = [];
   const sessionEventContexts: ChatExecutionEventContext[] = [];
   const missingSession = vi.fn<(...args: [string, string?]) => Promise<MissingProviderSessionResolution>>(async () => 'reset');
@@ -244,11 +341,13 @@ export function createHarness(options: {
     }),
     persistence: repository,
     interactionPort,
-    workingDirectory: '/vault',
+    workingDirectory: options.workingDirectory ?? '/vault',
     createId: () => `local-${++nextId}`,
-    onRequestedEvent: options.onRequestedEvent ?? ((event) => {
+    onRequestedEvent: async event => {
+      await options.onRequestedEvent?.(event);
       requestedEvents.push(event);
-    }),
+      for (const check of [...requestedEventWaiters]) check();
+    },
     onSessionEvent: (event, context) => {
       sessionEvents.push(event);
       sessionEventContexts.push(context);
@@ -268,7 +367,7 @@ export function createHarness(options: {
     backends,
     repository,
     interactionPort,
-    requestedEvents,
+    requestedEvents, waitForRequestedEvent,
     sessionEvents,
     sessionEventContexts,
     missingSession,
@@ -302,14 +401,10 @@ export async function beginExecution(
       providerState: { leafId: 'leaf-1' },
     },
   });
+  await harness.coordinator.prepare();
+  const session = harness.backends.get('claude')!.sessions.at(-1)!;
+  const started = session.waitForRun(session.runs.length);
   const resultPromise = harness.coordinator.execute(submission);
-  let session: FakeSession | undefined;
-  let run: FakeRun | undefined;
-  for (let attempt = 0; attempt < 20 && !run; attempt += 1) {
-    await Promise.resolve();
-    session = harness.backends.get('claude')!.sessions[0];
-    run = session?.runs[0];
-  }
-  if (!session || !run) throw new Error('Execution did not start');
+  const run = await started;
   return { session, run, resultPromise };
 }

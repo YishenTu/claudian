@@ -2,14 +2,14 @@
 import '@/providers';
 
 import { axe } from '@test/helpers/accessibility';
-import { createHarness as createExecutionHarness } from '@test/helpers/ChatExecutionHarness';
+import { createHarness as createExecutionHarness, FakeBranchSession } from '@test/helpers/ChatExecutionHarness';
 import { createConversationPorts } from '@test/helpers/ConversationPorts';
 import { createChatFeatureHost } from '@test/helpers/features/chat/ChatFeatureHostFixture';
 import { conversationRecord } from '@test/helpers/features/chat/ConversationFixture';
 import { createProjectsFake } from '@test/helpers/features/chat/ProjectsFake';
 import { createSessionRuntimePool } from '@test/helpers/features/chat/SessionRuntimePoolHarness';
 import { testDate } from '@test/helpers/testClock';
-import { fireEvent, within } from '@testing-library/dom';
+import { fireEvent, waitFor, within } from '@testing-library/dom';
 import { Component, MarkdownRenderer } from 'obsidian';
 
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
@@ -633,13 +633,16 @@ it.each([true, false])('enables branches after switching and native history corr
   const second: ChatMessage = { id: 'u2', role: 'user', content: 'Second prompt', timestamp: 2,
     treeBranches: ['native-u2'], ...(hasNativeId ? { userMessageId: 'native-u2' } : {}) };
   const plugin = await createChatFeatureHost({ settings: { mediaFolder: '' }, updateConversation: vi.fn(),
-    getConversationById: vi.fn().mockResolvedValue({ id: 'pi-chat', messages: [first, second] }),
+    getConversationById: vi.fn().mockResolvedValue(conversationRecord('pi-chat', { providerId: 'pi', messages: [first, second] })),
     getConversationSummary: () => conversationRecord('pi-chat', { providerId: 'pi' }), projects: createProjectsFake() });
-  const navigateConversationBranch = vi.fn().mockResolvedValue({ status: 'committed', messages: [first] });
-  const { coordinator, registry } = createExecutionHarness();
-  vi.spyOn(coordinator, 'navigateConversationBranch').mockImplementation(navigateConversationBranch);
-  vi.spyOn(coordinator, 'supportsConversationBranches', 'get').mockReturnValue(true);
-  vi.spyOn(coordinator, 'getConversationBranches').mockResolvedValue({ branches: { 'native-u1': ['native-u1'], 'native-u2': ['native-u2'] }, userMessageIds: { u1: 'native-u1', u2: 'native-u2' } });
+  const native = new FakeBranchSession('pi', 'pi-session-1');
+  native.branchState = { branches: { 'native-u1': ['native-u1'], 'native-u2': ['native-u2'] }, userMessageIds: { u1: 'native-u1', u2: 'native-u2' } };
+  native.navigateConversationBranch.mockResolvedValue({ status: 'committed', messages: [first] });
+  const { coordinator, registry } = createExecutionHarness({
+    resolveBackend: () => ({ providerId: 'pi', createSession: () => native }),
+  });
+  await coordinator.bindConversation({ conversationId: 'pi-chat', providerId: 'pi' });
+  await coordinator.prepare();
   onTestFinished(async () => { await coordinator.dispose(); await registry.dispose(); });
   const renderer: MessageRenderer = new MessageRenderer(plugin,
     new Component(),
@@ -663,11 +666,10 @@ it.each([true, false])('enables branches after switching and native history corr
   const edit = within(messagesEl).getByRole('button', { name: 'Branch from this prompt' }) as HTMLButtonElement;
   expect(edit.disabled).toBe(false);
   edit.click();
-  await new Promise(resolve => setTimeout(resolve, 0));
-  expect(navigateConversationBranch).not.toHaveBeenCalled();
-  expect(inputEl.value).toBe('Second prompt');
+  await waitFor(() => expect(inputEl.value).toBe('Second prompt'));
+  expect(native.navigateConversationBranch).not.toHaveBeenCalled();
   expect(await controller.commitBranchDraft()).toMatchObject({ status: 'committed' });
-  expect(navigateConversationBranch).toHaveBeenCalledWith(expect.objectContaining({ userMessageId: 'native-u2' }));
+  expect(native.navigateConversationBranch).toHaveBeenCalledWith(expect.objectContaining({ userMessageId: 'native-u2' }));
   expect(state.messages).toEqual([first]);
   renderer.dispose();
 });
@@ -754,8 +756,7 @@ it('previews a branch without saving it and restores history when focus leaves t
   const { state, renderer } = tab;
   const { messagesEl, inputComposerEl, inputEl } = tab.dom;
   const controller = tab.controllers.conversationController;
-  const navigateConversationBranch = vi.spyOn(tab.executionCoordinator, 'navigateConversationBranch')
-    .mockResolvedValue({ status: 'committed', messages: [history[0]] });
+  const navigateConversationBranch = vi.spyOn(tab.executionCoordinator, 'navigateConversationBranch');
   state.messages = history;
   tab.hydrationState = 'ready';
   const send = inputComposerEl.createEl('button', { text: 'Send', attr: { type: 'button' } });

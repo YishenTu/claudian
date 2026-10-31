@@ -44,9 +44,9 @@ it('defers hidden side-chat Markdown, catches up when visible, and releases view
     expect(runtime.state.lastMessage?.content).toBe('Hidden output and final output');
     expect(render).toHaveBeenLastCalledWith(expect.anything(), 'Hidden output and final output', { deferMath: true, deferDiagrams: true });
     await harness.controller.discard();
-    expect(observers).toHaveLength(1);
-    expect(observers[0].target?.classList.contains('claudian-side-chat-messages')).toBe(true);
-    expect(observers[0].disconnect).toHaveBeenCalledTimes(1);
+    const sideObservers = observers.filter(observer => observer.target?.classList.contains('claudian-side-chat-messages'));
+    expect(sideObservers).toHaveLength(1);
+    expect(sideObservers[0].disconnect).toHaveBeenCalledTimes(1);
   } finally {
     window.IntersectionObserver = original;
   }

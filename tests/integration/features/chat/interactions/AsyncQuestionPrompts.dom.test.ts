@@ -11,7 +11,6 @@ import { fireEvent, waitFor, within } from '@testing-library/dom';
 import { Component } from 'obsidian';
 
 import type { ChatMessage, ToolCallInfo } from '@/core/types';
-import type { ChatSteerOutcome } from '@/features/chat/execution/ChatExecutionCoordinator';
 import { InputController, type InputControllerDeps } from '@/features/chat/input/InputController';
 import { SessionInteractions } from '@/features/chat/interactions/SessionInteractions';
 import { MessageRenderer } from '@/features/chat/rendering/MessageRenderer';
@@ -33,7 +32,6 @@ it.each(['asking', 'later'] as const)('keeps an unanswered question usable after
     getTabProviderId: () => 'codex', getInputContainerEl: () => composer,
     getExecutionCoordinator: () => execution.coordinator,
   }));
-  Object.assign(fixture.deps.renderer, { updateQuestionTool: vi.fn() });
   await execution.coordinator.bindConversation({ conversationId: 'conversation-1', providerId: 'codex' });
   const running = fixture.controller.sendMessage({ content: 'Start work' });
   const backend = execution.backends.get('codex')!;
@@ -85,7 +83,6 @@ it.each(['authority', 'cancel-and-replace'] as const)('fences an expired answer 
     getTabProviderId: () => 'codex', getInputContainerEl: () => composer,
     getExecutionCoordinator: () => execution.coordinator,
   }));
-  Object.assign(fixture.deps.renderer, { updateQuestionTool: vi.fn() });
   await execution.coordinator.bindConversation({ conversationId: 'conversation-1', providerId: 'codex' });
   const running = fixture.controller.sendMessage({ content: 'Start work' });
   const backend = execution.backends.get('codex')!;
@@ -137,7 +134,6 @@ it.each(['initialization', 'authority', 'cancelled-initialization', 'failed-init
     getTabProviderId: () => 'codex', getInputContainerEl: () => composer,
     getExecutionCoordinator: () => execution.coordinator,
   }));
-  Object.assign(fixture.deps.renderer, { updateQuestionTool: vi.fn() });
   await execution.coordinator.bindConversation({ conversationId: 'conversation-1', providerId: 'codex' });
   const running = fixture.controller.sendMessage({ content: 'Start work' });
   const backend = execution.backends.get('codex')!;
@@ -194,13 +190,11 @@ it('does not restart main chat when an answer outlives cancellation during hando
   const host = document.body.createDiv();
   const composer = host.createDiv();
   const fixture = (await createFixture({ getTabProviderId: () => 'codex', getInputContainerEl: () => composer }));
-  Object.assign(fixture.deps.renderer, { updateQuestionTool: vi.fn() });
-  const execution = deferred<{ accepted: boolean; status: string }>();
-  fixture.coordinator.execute.mockReturnValueOnce(execution.promise);
+  const execution = fixture.holdNextResponse();
   const running = fixture.controller.sendMessage({ content: 'Start work' });
-  await waitFor(() => expect(fixture.coordinator.execute).toHaveBeenCalledTimes(1));
-  const handoff = deferred<ChatSteerOutcome>();
-  fixture.coordinator.steer.mockReturnValueOnce(handoff.promise);
+  await execution.started;
+  const handoff = deferred<boolean>();
+  fixture.nativeSteer.mockReturnValueOnce(handoff.promise);
   const tool: ToolCallInfo = { id: 'ask', name: 'AskUserQuestion', status: 'completed', input: {
     replyMode: 'user-message', questions: [{ id: '0', question: 'Which check?', options: [{ label: 'History' }] }],
   } };
@@ -209,12 +203,11 @@ it('does not restart main chat when an answer outlives cancellation during hando
   const question = within(host).getByRole('region', { name: 'Question' });
   fireEvent.click(within(question).getByRole('button', { name: 'History' }));
   fireEvent.click(within(question).getByRole('button', { name: 'Submit answers' }));
-  await waitFor(() => expect(fixture.coordinator.steer).toHaveBeenCalledTimes(1));
+  await fixture.native.waitForSteer();
   fixture.controller.cancelStreaming();
-  execution.resolve({ accepted: true, status: 'interrupted' });
   await running;
   expect(fixture.state.cancelRequested).toBe(false);
-  handoff.resolve({ delivery: 'not-sent' });
+  handoff.resolve(false);
   await waitFor(() => expect(within(host).queryByRole('region', { name: 'Question' })).toBeNull());
   await new Promise(resolve => setTimeout(resolve, 0));
   expect(fixture.coordinator.execute).toHaveBeenCalledTimes(1);
@@ -227,10 +220,9 @@ it.each([true, false])('settles an active-turn answer without consuming the draf
   const host = document.body.createDiv();
   const composer = host.createDiv();
   const fixture = (await createFixture({ getTabProviderId: () => 'codex', getInputContainerEl: () => composer }));
-  Object.assign(fixture.deps.renderer, { updateQuestionTool: vi.fn() });
   fixture.state.queueIndicatorEl = composer.createDiv();
-  fixture.holdResponse();
-  fixture.coordinator.steer.mockResolvedValueOnce({ delivery: accepted ? 'accepted' : 'not-sent' });
+  await fixture.holdResponse();
+  fixture.nativeSteer.mockResolvedValueOnce(accepted);
   fixture.input.value = 'Keep this draft';
   await fixture.controller.sendMessage({ content: 'Unrelated follow-up' });
   const queued = fixture.state.queuedMessage;

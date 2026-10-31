@@ -7,8 +7,6 @@ import { Notice } from 'obsidian';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { decodeSessionMessage } from '@/core/session-tools/sessionMessageEnvelope';
 import type { ToolCallInfo } from '@/core/types';
-import type { ChatSteerOutcome } from '@/features/chat/execution/ChatExecutionCoordinator';
-import { ChatExecutionPreHandoffError } from '@/features/chat/execution/ChatExecutionCoordinator';
 
 const nativeCapabilities = ProviderRegistry.getCapabilities('claude');
 beforeEach(() => {
@@ -63,7 +61,10 @@ describe('mailbox input', () => {
 
   it.each([true, false])('discards only an unaccepted error (accepted: %s)', async accepted => {
     const fixture = (await createFixture());
-    fixture.coordinator.execute.mockResolvedValue({ accepted, status: 'error' });
+    fixture.native.respond.mockImplementationOnce(run => {
+      run.emit({ type: 'turn_started', accepted });
+      run.emit({ type: 'execution_error', category: 'provider', message: 'Provider failed', recoverable: false });
+    });
     const onUnsent = vi.fn();
     await fixture.controller.sendSessionMessage(message, { onUnsent, assertBeforeHandoff: () => undefined });
     expect(onUnsent.mock.calls).toEqual(accepted ? [] : [['failed']]);
@@ -91,7 +92,7 @@ describe('composer wikilinks', () => {
   it('restores the wikilink source after a definite failure before provider handoff', async () => {
     const fixture = (await createFixture());
     fixture.input.value = '[[Notes/A.md]]';
-    fixture.coordinator.execute.mockRejectedValue(new ChatExecutionPreHandoffError('ledger unavailable'));
+    fixture.execution.repository.assertConversationExecutionAuthority.mockRejectedValueOnce(new Error('ledger unavailable'));
     await fixture.controller.sendMessage();
     expect(fixture.input.value).toBe('[[Notes/A.md]]');
     expect(fixture.state.messages).toEqual([]);
@@ -99,7 +100,7 @@ describe('composer wikilinks', () => {
 
   it('preserves wikilinks when queued messages are merged and returned to the draft', async () => {
     const fixture = (await createFixture());
-    fixture.holdResponse();
+    await fixture.holdResponse();
     fixture.input.value = '  [[Notes/A.md]]  ';
     await fixture.controller.sendMessage();
     fixture.input.value = '[[Notes/B.md]]';
@@ -110,7 +111,7 @@ describe('composer wikilinks', () => {
 
   it('preserves a non-empty unsent suffix when a queued message returns to the composer', async () => {
     const fixture = (await createFixture());
-    const release = fixture.holdResponse();
+    const release = await fixture.holdResponse();
     try {
       fixture.input.value = 'Queued request';
       await fixture.controller.sendMessage();
@@ -164,11 +165,11 @@ describe('InputController admission', () => {
 
   it('cancels active execution through the coordinator', async () => {
     const fixture = (await createFixture());
-    fixture.holdResponse();
+    await fixture.holdResponse();
 
     fixture.controller.cancelStreaming();
 
-    expect(fixture.coordinator.cancel).toHaveBeenCalledTimes(1);
+    expect(fixture.native.runs[0].cancelCalls).toBe(1);
     expect(fixture.state.cancelRequested).toBe(true);
   });
 
@@ -221,7 +222,9 @@ describe('async question answer submission', () => {
     const tool = createQuestion();
     fixture.state.addMessage({ id: 'assistant', role: 'assistant', content: '', timestamp: Date.now(), toolCalls: [tool] });
     fixture.input.value = 'Keep my draft';
-    fixture.coordinator.execute.mockResolvedValueOnce({ accepted: false, status: 'missing-session', missingSessionResolution: 'reset' });
+    fixture.native.respond.mockImplementationOnce(run => run.emit({
+      type: 'execution_error', category: 'provider-session-missing', message: 'Session missing', recoverable: true,
+    }));
     await expect(fixture.controller.answerQuestion(tool, { '0': 'Answer' }, 'conversation-1')).rejects.toThrow('not sent');
     expect(fixture.input.value).toBe('Keep my draft');
     expect(fixture.state.messages).toHaveLength(1);
@@ -232,8 +235,8 @@ describe('async question answer submission', () => {
     const fixture = (await createFixture());
     const tool = createQuestion();
     fixture.state.addMessage({ id: 'assistant', role: 'assistant', content: '', timestamp: Date.now(), toolCalls: [tool] });
-    fixture.holdResponse();
-    fixture.coordinator.steer.mockResolvedValueOnce({ delivery: 'not-sent' });
+    await fixture.holdResponse();
+    fixture.nativeSteer.mockResolvedValueOnce(false);
     await fixture.controller.answerQuestion(tool, { '0': 'Answer' }, 'conversation-1');
     expect(fixture.state.queuedMessage).toMatchObject({ content: '', turnRequest: { text: 'native reply payload', draftContent: 'Answer' } });
     expect(fixture.coordinator.execute).not.toHaveBeenCalled();
@@ -257,7 +260,7 @@ describe('async question answer submission', () => {
     const fixture = (await createFixture());
     const tool = createQuestion();
     fixture.state.addMessage({ id: 'assistant', role: 'assistant', content: '', timestamp: Date.now(), toolCalls: [tool] });
-    fixture.holdResponse();
+    await fixture.holdResponse();
     await fixture.controller.sendMessage({ content: 'Also check rendering' });
     await fixture.controller.answerQuestion(tool, { '0': 'Answer' }, 'conversation-1');
     expect(fixture.coordinator.steer.mock.calls[0][0]).toMatchObject({ canonicalText: 'native reply payload', rawDisplayText: '' });
@@ -268,25 +271,23 @@ describe('async question answer submission', () => {
     const fixture = (await createFixture());
     const tool = createQuestion();
     fixture.state.addMessage({ id: 'assistant', role: 'assistant', content: '', timestamp: Date.now(), toolCalls: [tool] });
-    const releaseTurn = fixture.holdResponse();
-    fixture.coordinator.steer.mockImplementationOnce(async () => {
+    const releaseTurn = await fixture.holdResponse();
+    fixture.nativeSteer.mockImplementationOnce(async () => {
       await releaseTurn();
-      return { delivery: 'not-sent' };
+      return false;
     });
     await fixture.controller.answerQuestion(tool, { '0': 'Answer' }, 'conversation-1');
     expect(fixture.coordinator.execute).toHaveBeenCalledWith(expect.objectContaining({ canonicalText: 'native reply payload', rawDisplayText: '' }), expect.any(AbortSignal));
     expect(fixture.state.queuedMessage).toBeNull();
   });
 
-  it.each([
-    ['declined', { delivery: 'not-sent' }],
-    ['failed before handoff', { delivery: 'not-sent', error: new ChatExecutionPreHandoffError('Authority check failed') }],
-  ] as const)('queues a definitely unsent answer without waiting for delivery (%s)', async (_label, outcome) => {
+  it.each(['declined', 'failed before handoff'] as const)('queues a definitely unsent answer without waiting for delivery (%s)', async outcome => {
     const fixture = (await createFixture());
     const tool = createQuestion();
     fixture.state.addMessage({ id: 'assistant', role: 'assistant', content: '', timestamp: Date.now(), toolCalls: [tool] });
-    fixture.holdResponse();
-    fixture.coordinator.steer.mockResolvedValueOnce(outcome);
+    await fixture.holdResponse();
+    if (outcome === 'declined') fixture.nativeSteer.mockResolvedValueOnce(false);
+    else fixture.execution.repository.assertConversationExecutionAuthority.mockRejectedValueOnce(new Error('Authority check failed'));
     await fixture.controller.answerQuestion(tool, { '0': 'Answer' }, 'conversation-1');
     expect(fixture.state.queuedMessage?.turnRequest?.text).toBe('native reply payload');
     expect(fixture.coordinator.execute).not.toHaveBeenCalled();
@@ -296,8 +297,8 @@ describe('async question answer submission', () => {
     const fixture = (await createFixture());
     const tool = createQuestion();
     fixture.state.addMessage({ id: 'assistant', role: 'assistant', content: '', timestamp: Date.now(), toolCalls: [tool] });
-    fixture.holdResponse();
-    fixture.coordinator.steer.mockResolvedValueOnce({ delivery: 'uncertain', error: new Error('Acknowledgement lost') });
+    await fixture.holdResponse();
+    fixture.nativeSteer.mockRejectedValueOnce(new Error('Acknowledgement lost'));
     await fixture.controller.answerQuestion(tool, { '0': 'Answer' }, 'conversation-1');
     expect(fixture.coordinator.steer).toHaveBeenCalledTimes(1);
     expect(fixture.coordinator.execute).not.toHaveBeenCalled();
@@ -306,16 +307,17 @@ describe('async question answer submission', () => {
   });
 
   it('does not send or queue an answer into a conversation selected during handoff', async () => {
-    const handoff = deferred<ChatSteerOutcome>();
+    const handoff = deferred<boolean>();
     const fixture = (await createFixture());
-    fixture.coordinator.steer.mockReturnValueOnce(handoff.promise);
+    fixture.nativeSteer.mockReturnValueOnce(handoff.promise);
     const tool = createQuestion();
     fixture.state.addMessage({ id: 'assistant', role: 'assistant', content: '', timestamp: Date.now(), toolCalls: [tool] });
-    fixture.holdResponse();
+    await fixture.holdResponse();
     const answering = fixture.controller.answerQuestion(tool, { '0': 'Answer' }, 'conversation-1');
+    await fixture.native.waitForSteer();
     expect(fixture.coordinator.steer).toHaveBeenCalledTimes(1);
     fixture.state.currentConversationId = 'conversation-2';
-    handoff.resolve({ delivery: 'not-sent' });
+    handoff.resolve(false);
     await expect(answering).rejects.toThrow('different conversation');
     expect(fixture.coordinator.execute).not.toHaveBeenCalled();
     expect(fixture.state.queuedMessage).toBeNull();

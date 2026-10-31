@@ -1,12 +1,12 @@
 import '@/providers';
 
 // @vitest-environment jsdom
-import { createFixture, deferred, requestedUserMessageStarted, waitForCall } from '@test/helpers/ChatInputHarness';
+import { createHarness as createExecutionHarness } from '@test/helpers/ChatExecutionHarness';
+import { createFixture, deferred, requestedUserMessageStarted } from '@test/helpers/ChatInputHarness';
 import { Notice } from 'obsidian';
 
-import type { ProviderExecutionEvent } from '@/core/execution';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
-import { ChatExecutionPreHandoffError, type ChatSteerOutcome, type ChatTurnSubmission } from '@/features/chat/execution/ChatExecutionCoordinator';
+import { type ChatExecutionCoordinator, type ChatTurnSubmission } from '@/features/chat/execution/ChatExecutionCoordinator';
 import { createQueuedMessage } from '@/features/chat/state/chatTurnRequest';
 import { claudeProviderRegistration } from '@/providers/claude/registration';
 
@@ -35,32 +35,25 @@ describe('TurnQueue', () => {
   it('retains queued input when admission closes and allows its continuation to be rescheduled', async () => {
     let canStart = false;
     const fixture = (await createFixture({ canStartTurn: () => canStart }));
-    const scheduled: Array<() => void> = [];
-    const timeoutSpy = vi.spyOn(window, 'setTimeout').mockImplementation(callback => {
-      if (typeof callback !== 'function') throw new Error('Expected scheduled callback');
-      scheduled.push(() => callback());
-      return scheduled.length as unknown as ReturnType<typeof window.setTimeout>;
-    });
+    vi.useFakeTimers();
     fixture.controller.queue.enqueue(createQueuedMessage('queued during close', { text: 'queued during close' }));
 
     expect(fixture.controller.queue.scheduleContinuation()).toBe(true);
-    scheduled.shift()?.();
+    await vi.advanceTimersByTimeAsync(0);
     expect(fixture.state.queuedMessage).toMatchObject({ content: 'queued during close' });
 
     canStart = true;
     fixture.controller.queue.scheduleContinuation();
     expect(fixture.state.queuedMessage).toMatchObject({ content: 'queued during close' });
-    scheduled.shift()?.();
-    await waitForCall(fixture.coordinator.execute);
+    await vi.advanceTimersByTimeAsync(0);
+    await fixture.native.waitForRun();
     expect(fixture.state.queuedMessage).toBeNull();
 
     expect(fixture.coordinator.execute).toHaveBeenCalledTimes(1);
-    timeoutSpy.mockRestore();
   });
 
   it('keeps queued input while execution-directory preparation has no active request to steer', async () => {
     const fixture = await createFixture();
-    Object.assign(fixture.coordinator, { systemInstructions: null });
     const projection = deferred<string>();
     const resolving = deferred<void>();
     ProviderRegistry.register('claude', { ...claudeProviderRegistration, resolveExecutionWorkingDirectory: () => {
@@ -85,7 +78,7 @@ describe('TurnQueue', () => {
 
   it('queues while streaming and steers through the coordinator', async () => {
     const fixture = (await createFixture());
-    fixture.holdResponse();
+    await fixture.holdResponse();
     fixture.input.value = 'follow up';
 
     await fixture.controller.sendMessage();
@@ -100,9 +93,9 @@ describe('TurnQueue', () => {
 
   it('restores a queued message only after definite steer rejection', async () => {
     const fixture = (await createFixture());
-    fixture.holdResponse();
+    await fixture.holdResponse();
     fixture.input.value = 'definitely unsent';
-    fixture.coordinator.steer.mockResolvedValueOnce({ delivery: 'not-sent' });
+    fixture.nativeSteer.mockResolvedValueOnce(false);
 
     await fixture.controller.sendMessage();
     await fixture.controller.queue.steerNow();
@@ -116,9 +109,9 @@ describe('TurnQueue', () => {
 
   it('restores a queued message after typed definite pre-handoff steer failure', async () => {
     const fixture = (await createFixture());
-    fixture.holdResponse();
+    await fixture.holdResponse();
     fixture.input.value = 'staging failed';
-    fixture.coordinator.steer.mockResolvedValueOnce({ delivery: 'not-sent', error: new ChatExecutionPreHandoffError(new Error('ledger unavailable')) });
+    fixture.execution.repository.assertConversationExecutionAuthority.mockRejectedValueOnce(new Error('ledger unavailable'));
 
     await fixture.controller.sendMessage();
     await fixture.controller.queue.steerNow();
@@ -133,9 +126,9 @@ describe('TurnQueue', () => {
 
   it('does not requeue an ambiguously delivered steer and retains provider correlation', async () => {
     const fixture = (await createFixture());
-    fixture.holdResponse();
+    await fixture.holdResponse();
     fixture.input.value = 'possibly delivered';
-    fixture.coordinator.steer.mockResolvedValueOnce({ delivery: 'uncertain', error: new Error('transport closed') });
+    fixture.nativeSteer.mockRejectedValueOnce(new Error('transport closed'));
 
     await fixture.controller.sendMessage();
     await fixture.controller.queue.steerNow();
@@ -159,9 +152,9 @@ describe('TurnQueue', () => {
 
   it('does not make a definitely accepted steer retryable while provider correlation is pending', async () => {
     const fixture = (await createFixture());
-    fixture.holdResponse();
+    await fixture.holdResponse();
     fixture.input.value = 'accepted before binding changed';
-    fixture.coordinator.steer.mockResolvedValueOnce({ delivery: 'accepted' });
+    fixture.nativeSteer.mockResolvedValueOnce(true);
 
     await fixture.controller.sendMessage();
     await fixture.controller.queue.steerNow();
@@ -180,20 +173,20 @@ describe('TurnQueue', () => {
 
   it('does not restore an awaiting steer when cancellation races definite acceptance', async () => {
     const fixture = (await createFixture());
-    const nativeResult = deferred<ChatSteerOutcome>();
-    fixture.coordinator.steer.mockReturnValueOnce(nativeResult.promise);
-    fixture.holdResponse();
+    const nativeResult = deferred<boolean>();
+    fixture.nativeSteer.mockReturnValueOnce(nativeResult.promise);
+    await fixture.holdResponse();
     fixture.input.value = 'accepted while cancelling';
 
     await fixture.controller.sendMessage();
     const steer = fixture.controller.queue.steerNow();
-    await waitForCall(fixture.coordinator.steer);
+    await fixture.native.waitForSteer();
     fixture.controller.cancelStreaming();
 
     expect(fixture.input.value).toBe('');
     expect(fixture.state.queuedMessage).toBeNull();
 
-    nativeResult.resolve({ delivery: 'accepted' });
+    nativeResult.resolve(true);
     await steer;
 
     expect(fixture.input.value).toBe('');
@@ -209,16 +202,16 @@ describe('TurnQueue', () => {
 
   it('restores an awaiting steer exactly once when cancellation races definite rejection', async () => {
     const fixture = (await createFixture());
-    const nativeResult = deferred<ChatSteerOutcome>();
-    fixture.coordinator.steer.mockReturnValueOnce(nativeResult.promise);
-    fixture.holdResponse();
+    const nativeResult = deferred<boolean>();
+    fixture.nativeSteer.mockReturnValueOnce(nativeResult.promise);
+    await fixture.holdResponse();
     fixture.input.value = 'rejected while cancelling';
 
     await fixture.controller.sendMessage();
     const steer = fixture.controller.queue.steerNow();
-    await waitForCall(fixture.coordinator.steer);
+    await fixture.native.waitForSteer();
     fixture.controller.cancelStreaming();
-    nativeResult.resolve({ delivery: 'not-sent' });
+    nativeResult.resolve(false);
     await steer;
     fixture.controller.cancelStreaming();
 
@@ -230,16 +223,16 @@ describe('TurnQueue', () => {
 
   it('does not restore an awaiting steer when cancellation races ambiguous rejection', async () => {
     const fixture = (await createFixture());
-    const nativeResult = deferred<ChatSteerOutcome>();
-    fixture.coordinator.steer.mockReturnValueOnce(nativeResult.promise);
-    fixture.holdResponse();
+    const nativeResult = deferred<boolean>();
+    fixture.nativeSteer.mockReturnValueOnce(nativeResult.promise);
+    await fixture.holdResponse();
     fixture.input.value = 'unknown while cancelling';
 
     await fixture.controller.sendMessage();
     const steer = fixture.controller.queue.steerNow();
-    await waitForCall(fixture.coordinator.steer);
+    await fixture.native.waitForSteer();
     fixture.controller.cancelStreaming();
-    nativeResult.resolve({ delivery: 'uncertain', error: new Error('transport closed') });
+    nativeResult.reject(new Error('transport closed'));
     await steer;
 
     expect(fixture.input.value).toBe('');
@@ -255,16 +248,16 @@ describe('TurnQueue', () => {
 
   it('keeps stale definite acceptance non-retryable in its originating conversation', async () => {
     const fixture = (await createFixture());
-    const nativeResult = deferred<ChatSteerOutcome>();
-    fixture.coordinator.steer.mockReturnValueOnce(nativeResult.promise);
-    fixture.holdResponse();
+    const nativeResult = deferred<boolean>();
+    fixture.nativeSteer.mockReturnValueOnce(nativeResult.promise);
+    await fixture.holdResponse();
     fixture.input.value = 'accepted before switch';
 
     await fixture.controller.sendMessage();
     const steer = fixture.controller.queue.steerNow();
-    await waitForCall(fixture.coordinator.steer);
+    await fixture.native.waitForSteer();
     fixture.state.currentConversationId = 'conversation-2';
-    nativeResult.resolve({ delivery: 'accepted' });
+    nativeResult.resolve(true);
     await steer;
 
     expect(fixture.linkedContentController.beginSubmission).not.toHaveBeenCalled();
@@ -283,18 +276,18 @@ describe('TurnQueue', () => {
 
   it('parks stale definite rejection with conversation A until A is active again', async () => {
     const fixture = (await createFixture());
-    const nativeResult = deferred<ChatSteerOutcome>();
-    fixture.coordinator.steer.mockReturnValueOnce(nativeResult.promise);
-    const releaseTurn = fixture.holdResponse();
+    const nativeResult = deferred<boolean>();
+    fixture.nativeSteer.mockReturnValueOnce(nativeResult.promise);
+    const releaseTurn = await fixture.holdResponse();
     fixture.input.value = 'conversation A retry';
 
     await fixture.controller.sendMessage();
     const steer = fixture.controller.queue.steerNow();
-    await waitForCall(fixture.coordinator.steer);
+    await fixture.native.waitForSteer();
     fixture.state.currentConversationId = 'conversation-2';
     await releaseTurn();
     fixture.input.value = 'conversation B draft';
-    nativeResult.resolve({ delivery: 'not-sent' });
+    nativeResult.resolve(false);
     await steer;
 
     expect(fixture.input.value).toBe('conversation B draft');
@@ -317,18 +310,17 @@ describe('TurnQueue', () => {
 
   it('keeps B queue independent while typed pre-handoff retry for A is parked', async () => {
     const fixture = (await createFixture());
-    const nativeResult = deferred<ChatSteerOutcome>();
-    fixture.coordinator.steer.mockReturnValueOnce(nativeResult.promise);
-    const releaseTurn = fixture.holdResponse();
+    const releaseTurn = await fixture.holdResponse();
+    const authority = fixture.holdNextAuthority();
     fixture.input.value = 'conversation A typed retry';
 
     await fixture.controller.sendMessage();
     const steer = fixture.controller.queue.steerNow();
-    await waitForCall(fixture.coordinator.steer);
+    await authority.started;
     fixture.state.currentConversationId = 'conversation-2';
     fixture.input.value = 'conversation B queued';
     await fixture.controller.sendMessage();
-    nativeResult.resolve({ delivery: 'not-sent', error: new ChatExecutionPreHandoffError(new Error('A cleanup failed')) });
+    authority.reject(new Error('A cleanup failed'));
     await steer;
 
     expect(fixture.state.queuedMessage).toMatchObject({ content: 'conversation B queued' });
@@ -356,26 +348,23 @@ describe('TurnQueue', () => {
     steerOutcome,
   ) => {
     const fixture = (await createFixture());
-    const mainResult = deferred<{
-      accepted: boolean;
-      status: 'completed';
-    }>();
-    const nativeResult = deferred<ChatSteerOutcome>();
+    const mainResult = fixture.holdNextResponse();
+    const nativeResult = deferred<boolean>();
     vi.useFakeTimers();
-    fixture.coordinator.execute.mockReturnValueOnce(mainResult.promise);
-    fixture.coordinator.steer.mockReturnValueOnce(nativeResult.promise);
+    fixture.nativeSteer.mockReturnValueOnce(nativeResult.promise);
     fixture.input.value = 'main turn';
 
     const mainTurn = fixture.controller.sendMessage();
-    await waitForCall(fixture.coordinator.execute);
+    await fixture.native.waitForRun();
     fixture.input.value = `${_label} steer`;
     await fixture.controller.sendMessage();
     const steer = fixture.controller.queue.steerNow();
-    await waitForCall(fixture.coordinator.steer);
+    await fixture.native.waitForSteer();
 
-    mainResult.resolve({ accepted: true, status: 'completed' });
+    (await mainResult.started).complete();
     await mainTurn;
-    nativeResult.resolve(steerOutcome as ChatSteerOutcome);
+    if (steerOutcome.delivery === 'accepted') nativeResult.resolve(true);
+    else if ('error' in steerOutcome) nativeResult.reject(steerOutcome.error);
     await steer;
 
     expect(fixture.input.value).toBe('');
@@ -388,25 +377,21 @@ describe('TurnQueue', () => {
 
   it('restores exactly once when turn completion races definite steer rejection', async () => {
     const fixture = (await createFixture());
-    const mainResult = deferred<{
-      accepted: boolean;
-      status: 'completed';
-    }>();
-    const nativeResult = deferred<ChatSteerOutcome>();
+    const mainResult = fixture.holdNextResponse();
+    const nativeResult = deferred<boolean>();
     vi.useFakeTimers();
-    fixture.coordinator.execute.mockReturnValueOnce(mainResult.promise);
-    fixture.coordinator.steer.mockReturnValueOnce(nativeResult.promise);
+    fixture.nativeSteer.mockReturnValueOnce(nativeResult.promise);
     fixture.input.value = 'main turn';
 
     const mainTurn = fixture.controller.sendMessage();
-    await waitForCall(fixture.coordinator.execute);
+    await fixture.native.waitForRun();
     fixture.input.value = 'definitely rejected steer';
     await fixture.controller.sendMessage();
     const steer = fixture.controller.queue.steerNow();
-    await waitForCall(fixture.coordinator.steer);
-    mainResult.resolve({ accepted: true, status: 'completed' });
+    await fixture.native.waitForSteer();
+    (await mainResult.started).complete();
     await mainTurn;
-    nativeResult.resolve({ delivery: 'not-sent' });
+    nativeResult.resolve(false);
     await steer;
 
     expect(fixture.input.value).toBe('definitely rejected steer');
@@ -419,9 +404,9 @@ describe('TurnQueue', () => {
 
   it('blocks queued steer B while ambiguous steer A still owns provider correlation', async () => {
     const fixture = (await createFixture());
-    fixture.holdResponse();
+    await fixture.holdResponse();
     fixture.input.value = 'ambiguous A';
-    fixture.coordinator.steer.mockResolvedValueOnce({ delivery: 'uncertain', error: new Error('A response lost') });
+    fixture.nativeSteer.mockRejectedValueOnce(new Error('A response lost'));
 
     await fixture.controller.sendMessage();
     await fixture.controller.queue.steerNow();
@@ -440,16 +425,12 @@ describe('TurnQueue', () => {
 
   it('releases an ambiguous steer lane at the fenced turn boundary', async () => {
     const fixture = (await createFixture());
-    const mainResult = deferred<{
-      accepted: boolean;
-      status: 'completed';
-    }>();
-    fixture.coordinator.execute.mockReturnValueOnce(mainResult.promise);
-    fixture.coordinator.steer.mockResolvedValueOnce({ delivery: 'uncertain', error: new Error('A response lost') });
+    const mainResult = fixture.holdNextResponse();
+    fixture.nativeSteer.mockRejectedValueOnce(new Error('A response lost'));
     fixture.input.value = 'main turn';
 
     const mainTurn = fixture.controller.sendMessage();
-    await waitForCall(fixture.coordinator.execute);
+    await fixture.native.waitForRun();
     fixture.input.value = 'ambiguous A';
     await fixture.controller.sendMessage();
     await fixture.controller.queue.steerNow();
@@ -457,14 +438,14 @@ describe('TurnQueue', () => {
     expect(fixture.controller['steering']['pendingSteersByConversation'].has('conversation-1'))
       .toBe(true);
 
-    mainResult.resolve({ accepted: true, status: 'completed' });
+    (await mainResult.started).complete();
     await mainTurn;
 
     expect(fixture.input.value).toBe('');
     expect(fixture.controller['steering']['pendingSteersByConversation'].has('conversation-1'))
       .toBe(false);
 
-    fixture.holdResponse();
+    await fixture.holdResponse();
     fixture.input.value = 'later steer B';
     await fixture.controller.sendMessage();
     await fixture.controller.queue.steerNow();
@@ -475,22 +456,18 @@ describe('TurnQueue', () => {
     'keeps early live acceptance authoritative across delayed %s and cancellation',
     async (nativeAccepted) => {
       const fixture = (await createFixture());
-      const mainResult = deferred<{
-        accepted: boolean;
-        status: 'completed';
-      }>();
-      const nativeResult = deferred<ChatSteerOutcome>();
-      fixture.coordinator.execute.mockReturnValueOnce(mainResult.promise);
-      fixture.coordinator.steer.mockReturnValueOnce(nativeResult.promise);
+      const mainResult = fixture.holdNextResponse();
+      const nativeResult = deferred<boolean>();
+        fixture.nativeSteer.mockReturnValueOnce(nativeResult.promise);
       fixture.input.value = 'main turn';
       const mainTurn = fixture.controller.sendMessage();
-      await waitForCall(fixture.coordinator.execute);
+      await fixture.native.waitForRun();
       await fixture.controller.handleExecutionEvent(requestedUserMessageStarted('main turn', 1));
       fixture.input.value = 'early accepted steer';
 
       await fixture.controller.sendMessage();
       const steer = fixture.controller.queue.steerNow();
-      await waitForCall(fixture.coordinator.steer);
+      await fixture.native.waitForSteer();
       const submission = fixture.coordinator.steer.mock.calls[0][0] as ChatTurnSubmission;
       await fixture.controller.handleExecutionEvent(requestedUserMessageStarted(
         'provider-formatted steer',
@@ -498,8 +475,8 @@ describe('TurnQueue', () => {
         'native-steer-user',
       ));
       fixture.controller.cancelStreaming();
-      nativeResult.resolve(nativeAccepted ? { delivery: 'accepted' } : { delivery: 'not-sent' });
-      mainResult.resolve({ accepted: true, status: 'completed' });
+      nativeResult.resolve(nativeAccepted);
+      (await mainResult.started).complete();
       await steer;
       await mainTurn;
 
@@ -525,16 +502,12 @@ describe('TurnQueue', () => {
 
   it('enriches ack-before-live persistence and canonical message identity', async () => {
     const fixture = (await createFixture());
-    const mainResult = deferred<{
-      accepted: boolean;
-      status: 'completed';
-    }>();
-    fixture.coordinator.execute.mockReturnValueOnce(mainResult.promise);
-    fixture.coordinator.steer.mockResolvedValueOnce({ delivery: 'accepted' });
+    const mainResult = fixture.holdNextResponse();
+    fixture.nativeSteer.mockResolvedValueOnce(true);
     fixture.input.value = 'main turn';
 
     const mainTurn = fixture.controller.sendMessage();
-    await waitForCall(fixture.coordinator.execute);
+    await fixture.native.waitForRun();
     await fixture.controller.handleExecutionEvent(requestedUserMessageStarted('main turn', 1));
     fixture.input.value = 'acknowledged before live event';
     await fixture.controller.sendMessage();
@@ -560,28 +533,24 @@ describe('TurnQueue', () => {
     expect(fixture.controller['steering']['pendingSteersByConversation'].has('conversation-1'))
       .toBe(false);
 
-    mainResult.resolve({ accepted: true, status: 'completed' });
+    (await mainResult.started).complete();
     await mainTurn;
   });
 
   it('releases the active lane while retaining acknowledged input for a late echo', async () => {
     const fixture = (await createFixture());
-    const mainResult = deferred<{
-      accepted: boolean;
-      status: 'completed';
-    }>();
-    fixture.coordinator.execute.mockReturnValueOnce(mainResult.promise);
-    fixture.coordinator.steer.mockResolvedValueOnce({ delivery: 'accepted' });
+    const mainResult = fixture.holdNextResponse();
+    fixture.nativeSteer.mockResolvedValueOnce(true);
     fixture.input.value = 'main turn';
 
     const mainTurn = fixture.controller.sendMessage();
-    await waitForCall(fixture.coordinator.execute);
+    await fixture.native.waitForRun();
     fixture.input.value = 'accepted without live event';
     await fixture.controller.sendMessage();
     await fixture.controller.queue.steerNow();
     const submission = fixture.coordinator.steer.mock.calls[0][0] as ChatTurnSubmission;
 
-    mainResult.resolve({ accepted: true, status: 'completed' });
+    (await mainResult.started).complete();
     await mainTurn;
 
     expect(fixture.controller['steering']['pendingSteersByConversation'].has('conversation-1'))
@@ -592,41 +561,33 @@ describe('TurnQueue', () => {
   });
 
   it.each([
-    ['raw acknowledgement loss', { delivery: 'uncertain', error: new Error('acknowledgement lost') }],
-    [
-      'typed pre-handoff failure',
-      { delivery: 'not-sent', error: new ChatExecutionPreHandoffError(new Error('late cleanup failed')) },
-    ],
+    ['acknowledgement loss', new Error('acknowledgement lost')],
+    ['native rejection', false],
   ])('does not let %s downgrade early acceptance after a stale binding', async (
     _label,
     nativeOutcome,
   ) => {
-    let activeCoordinator: Awaited<ReturnType<typeof createFixture>>['coordinator'];
+    let activeCoordinator: ChatExecutionCoordinator;
     const fixture = (await createFixture({
       getExecutionCoordinator: () => activeCoordinator,
     }));
     activeCoordinator = fixture.coordinator;
-    const mainResult = deferred<{
-      accepted: boolean;
-      status: 'completed';
-    }>();
-    const nativeResult = deferred<ChatSteerOutcome>();
-    fixture.coordinator.execute.mockReturnValueOnce(mainResult.promise);
-    fixture.coordinator.steer.mockReturnValueOnce(nativeResult.promise);
+    const mainResult = fixture.holdNextResponse();
+    const nativeResult = deferred<boolean>();
+    fixture.nativeSteer.mockReturnValueOnce(nativeResult.promise);
     fixture.input.value = 'main turn';
     const mainTurn = fixture.controller.sendMessage();
-    await waitForCall(fixture.coordinator.execute);
+    await fixture.native.waitForRun();
     await fixture.controller.handleExecutionEvent(requestedUserMessageStarted('main turn', 1));
     fixture.input.value = 'accepted before switch';
 
     await fixture.controller.sendMessage();
     const steer = fixture.controller.queue.steerNow();
-    await waitForCall(fixture.coordinator.steer);
-    const replacementCoordinator = {
-      ...fixture.coordinator,
-      acceptSteerFromProviderEvent: vi.fn().mockResolvedValue(true),
-      releaseSteerCorrelation: vi.fn(),
-    };
+    await fixture.native.waitForSteer();
+    const replacement = createExecutionHarness();
+    const replacementCoordinator = replacement.coordinator;
+    vi.spyOn(replacementCoordinator, 'acceptSteerFromProviderEvent');
+    onTestFinished(async () => { await replacementCoordinator.dispose(); await replacement.registry.dispose(); });
     activeCoordinator = replacementCoordinator;
     await fixture.controller.handleExecutionEvent(requestedUserMessageStarted(
       'provider-formatted steer',
@@ -634,8 +595,9 @@ describe('TurnQueue', () => {
     ));
     fixture.state.currentConversationId = 'conversation-2';
     fixture.input.value = 'conversation B draft';
-    nativeResult.resolve(nativeOutcome as ChatSteerOutcome);
-    mainResult.resolve({ accepted: true, status: 'completed' });
+    if (nativeOutcome instanceof Error) nativeResult.reject(nativeOutcome);
+    else nativeResult.resolve(false);
+    (await mainResult.started).complete();
     await steer;
     await mainTurn;
 
@@ -652,35 +614,31 @@ describe('TurnQueue', () => {
 
   it('admits a later steer after terminal cleanup when an early-accepted result never settles', async () => {
     const fixture = (await createFixture());
-    const mainResult = deferred<{
-      accepted: boolean;
-      status: 'completed';
-    }>();
-    const nativeResult = deferred<ChatSteerOutcome>();
-    fixture.coordinator.execute.mockReturnValueOnce(mainResult.promise);
-    fixture.coordinator.steer
+    const mainResult = fixture.holdNextResponse();
+    const nativeResult = deferred<boolean>();
+    fixture.nativeSteer
       .mockReturnValueOnce(nativeResult.promise)
-      .mockResolvedValueOnce({ delivery: 'accepted' });
+      .mockResolvedValueOnce(true);
     fixture.input.value = 'main turn';
 
     const mainTurn = fixture.controller.sendMessage();
-    await waitForCall(fixture.coordinator.execute);
+    await fixture.native.waitForRun();
     await fixture.controller.handleExecutionEvent(requestedUserMessageStarted('main turn', 1));
     fixture.input.value = 'never-settling accepted steer';
     await fixture.controller.sendMessage();
     void fixture.controller.queue.steerNow();
-    await waitForCall(fixture.coordinator.steer);
+    await fixture.native.waitForSteer();
     await fixture.controller.handleExecutionEvent(requestedUserMessageStarted(
       'provider-formatted steer',
       2,
     ));
 
-    mainResult.resolve({ accepted: true, status: 'completed' });
+    (await mainResult.started).complete();
     await mainTurn;
     expect(fixture.controller['steering']['pendingSteersByConversation'].has('conversation-1'))
       .toBe(false);
 
-    fixture.holdResponse();
+    await fixture.holdResponse();
     fixture.input.value = 'later steer';
     await fixture.controller.sendMessage();
     await fixture.controller.queue.steerNow();
@@ -689,32 +647,26 @@ describe('TurnQueue', () => {
 
   it('renders accepted live input once and remains non-retryable when acceptance persistence fails', async () => {
     const fixture = (await createFixture());
-    const mainResult = deferred<{
-      accepted: boolean;
-      status: 'completed';
-    }>();
-    const nativeResult = deferred<ChatSteerOutcome>();
-    fixture.coordinator.execute.mockReturnValueOnce(mainResult.promise);
-    fixture.coordinator.steer.mockReturnValueOnce(nativeResult.promise);
-    fixture.coordinator.acceptSteerFromProviderEvent.mockRejectedValueOnce(
-      new Error('accept save failed'),
-    );
+    const mainResult = fixture.holdNextResponse();
+    const nativeResult = deferred<boolean>();
+    fixture.nativeSteer.mockReturnValueOnce(nativeResult.promise);
     fixture.input.value = 'main turn';
     const mainTurn = fixture.controller.sendMessage();
-    await waitForCall(fixture.coordinator.execute);
+    await fixture.native.waitForRun();
     await fixture.controller.handleExecutionEvent(requestedUserMessageStarted('main turn', 1));
+    fixture.execution.repository.recordConversationActivity.mockRejectedValueOnce(new Error('accept save failed'));
     fixture.input.value = 'accepted despite save failure';
 
     await fixture.controller.sendMessage();
     const steer = fixture.controller.queue.steerNow();
-    await waitForCall(fixture.coordinator.steer);
+    await fixture.native.waitForSteer();
     await expect(fixture.controller.handleExecutionEvent(requestedUserMessageStarted(
       'provider-formatted steer',
       2,
       'native-steer-user',
     ))).rejects.toThrow('accept save failed');
-    nativeResult.resolve({ delivery: 'not-sent' });
-    mainResult.resolve({ accepted: true, status: 'completed' });
+    nativeResult.resolve(false);
+    (await mainResult.started).complete();
     await steer;
     await mainTurn;
 
@@ -729,16 +681,12 @@ describe('TurnQueue', () => {
 
   it('uses a matching live steer boundary before releasing its provider correlation', async () => {
     const fixture = (await createFixture());
-    const mainResult = deferred<{
-      accepted: boolean;
-      status: 'completed';
-    }>();
-    fixture.coordinator.execute.mockReturnValueOnce(mainResult.promise);
-    fixture.coordinator.steer.mockResolvedValueOnce({ delivery: 'uncertain', error: new Error('steer acknowledgement lost') });
+    const mainResult = fixture.holdNextResponse();
+    fixture.nativeSteer.mockRejectedValueOnce(new Error('steer acknowledgement lost'));
     fixture.input.value = 'main turn';
 
     const mainTurn = fixture.controller.sendMessage();
-    await waitForCall(fixture.coordinator.execute);
+    await fixture.native.waitForRun();
     await fixture.controller.handleExecutionEvent({
       content: 'main turn',
       scope: {
@@ -774,22 +722,21 @@ describe('TurnQueue', () => {
     expect(fixture.controller['steering']['pendingSteersByConversation'].has('conversation-1'))
       .toBe(false);
 
-    mainResult.resolve({ accepted: true, status: 'completed' });
+    (await mainResult.started).complete();
     await mainTurn;
   });
 
-  it('restores once and removes impossible correlation after typed rejected-steer cleanup failure', async () => {
+  it('restores once when a held authority check rejects after cancellation', async () => {
     const fixture = (await createFixture());
-    const nativeResult = deferred<ChatSteerOutcome>();
-    fixture.coordinator.steer.mockReturnValueOnce(nativeResult.promise);
-    fixture.holdResponse();
+    await fixture.holdResponse();
+    const authority = fixture.holdNextAuthority();
     fixture.input.value = 'retry after cleanup failure';
 
     await fixture.controller.sendMessage();
     const steer = fixture.controller.queue.steerNow();
-    await waitForCall(fixture.coordinator.steer);
+    await authority.started;
     fixture.controller.cancelStreaming();
-    nativeResult.resolve({ delivery: 'not-sent', error: new ChatExecutionPreHandoffError(new Error('discard save failed')) });
+    authority.reject(new Error('discard save failed'));
     await steer;
     fixture.controller.cancelStreaming();
 
@@ -799,77 +746,96 @@ describe('TurnQueue', () => {
       .toBe(false);
   });
 
-  it('reports deferred review when the continuation fails before handoff', async () => {
-    const onReviewableSettlement = vi.fn();
-    const fixture = (await createFixture({ onReviewableSettlement }));
-    // The first turn settles while a continuation owns queued work.
-    vi.spyOn(fixture.controller.queue, 'scheduleContinuation').mockReturnValueOnce(true);
+  async function queueContinuation(fixture: Awaited<ReturnType<typeof createFixture>>) {
+    vi.useFakeTimers();
+    const response = fixture.holdNextResponse();
+    const first = fixture.controller.sendMessage({ content: 'first turn' });
+    const run = await response.started;
+    await fixture.controller.sendMessage({ content: 'continue' });
+    run.emit({ type: 'turn_completed', reason: 'completed', nativeUserMessageId: 'native-first', nativeAssistantId: 'native-answer' });
+    await first;
+    expect(fixture.controller.queue.message?.content).toBe('continue');
+    expect(fixture.native.requests).toHaveLength(1);
+  }
 
-    await fixture.controller.sendMessage({ content: 'first turn' });
+  it('reports deferred review when the queued continuation fails before handoff', async () => {
+    const onReviewableSettlement = vi.fn();
+    const fixture = await createFixture({ onReviewableSettlement });
+    await queueContinuation(fixture);
     expect(onReviewableSettlement).not.toHaveBeenCalled();
-    fixture.coordinator.execute.mockRejectedValueOnce(
-      new ChatExecutionPreHandoffError('continuation not handed off'),
-    );
+    fixture.execution.repository.assertConversationExecutionAuthority.mockRejectedValueOnce(new Error('continuation not handed off'));
 
-    await fixture.controller.sendMessage({ content: 'continue' });
+    await vi.advanceTimersByTimeAsync(0);
+    await fixture.session.turns.drain();
 
     expect(onReviewableSettlement).toHaveBeenCalledTimes(1);
+    expect(fixture.native.requests).toHaveLength(1);
+    expect(fixture.input.value).toBe('continue');
+    expect(fixture.controller.queue.message).toBeNull();
   });
 
-  it('reports deferred review when continuation initialization fails', async () => {
+  it('reports deferred review when queued continuation initialization fails', async () => {
     const onReviewableSettlement = vi.fn();
-    const fixture = (await createFixture({ onReviewableSettlement }));
-    // The first turn settles while a continuation owns queued work.
-    vi.spyOn(fixture.controller.queue, 'scheduleContinuation').mockReturnValueOnce(true);
+    const fixture = await createFixture({ onReviewableSettlement });
+    await queueContinuation(fixture);
+    expect(onReviewableSettlement).not.toHaveBeenCalled();
+    vi.mocked(fixture.deps.ensureExecutionInitialized).mockResolvedValueOnce(false);
 
-    await fixture.controller.sendMessage({ content: 'first turn' });
-    vi.mocked(fixture.deps.ensureExecutionInitialized!).mockResolvedValueOnce(false);
-
-    await fixture.controller.sendMessage({ content: 'continue' });
+    await vi.advanceTimersByTimeAsync(0);
+    await fixture.session.turns.drain();
 
     expect(onReviewableSettlement).toHaveBeenCalledTimes(1);
+    expect(fixture.native.requests).toHaveLength(1);
+    expect(fixture.input.value).toBe('continue');
   });
 
-  it('reports deferred review when continuation exits during preflight', async () => {
+  it('reports deferred review when a submission exits preflight during rewind', async () => {
     const onReviewableSettlement = vi.fn();
-    const fixture = (await createFixture({ onReviewableSettlement }));
-    // The first turn settles while a continuation owns queued work.
-    vi.spyOn(fixture.controller.queue, 'scheduleContinuation').mockReturnValueOnce(true);
-
-    await fixture.controller.sendMessage({ content: 'first turn' });
-    vi.spyOn(fixture.state, 'isRewinding', 'get').mockReturnValue(true);
+    const fixture = await createFixture({ onReviewableSettlement });
+    await queueContinuation(fixture);
+    expect(onReviewableSettlement).not.toHaveBeenCalled();
+    const preview = deferred<{ canRewind: boolean }>();
+    const entered = deferred<void>();
+    vi.spyOn(fixture.native, 'previewRewind').mockImplementationOnce(() => {
+      entered.resolve();
+      return preview.promise;
+    });
+    const rewinding = fixture.deps.conversationController.rewind(fixture.state.messages[0].id);
+    await entered.promise;
+    expect(fixture.state.isRewinding).toBe(true);
 
     await fixture.controller.sendMessage({ content: 'continue' });
 
     expect(onReviewableSettlement).toHaveBeenCalledTimes(1);
+    expect(fixture.native.requests).toHaveLength(1);
+    preview.resolve({ canRewind: false });
+    await rewinding;
+    expect(fixture.state.isRewinding).toBe(false);
   });
 });
 
-const requestedTurnCompleted: ProviderExecutionEvent = {
-  type: 'turn_completed', reason: 'completed',
-  scope: { kind: 'requested', executionId: 'e', turnId: 't', sessionInstanceId: 's', sequence: 1 },
-};
-
 it('does not lose a cancel to native completion when a rejected steer settles afterwards', async () => {
   const fixture = (await createFixture());
-  const turn = deferred<{ accepted: boolean; status: string }>();
-  const steerResult = deferred<ChatSteerOutcome>();
-  fixture.coordinator.execute.mockReturnValueOnce(turn.promise);
-  fixture.coordinator.steer.mockReturnValueOnce(steerResult.promise);
+  vi.useFakeTimers();
+  const turn = fixture.holdNextResponse();
+  const steerResult = deferred<boolean>();
+  fixture.nativeSteer.mockReturnValueOnce(steerResult.promise);
   const active = fixture.controller.sendMessage({ content: 'Work' });
-  await waitForCall(fixture.coordinator.execute);
+  await fixture.native.waitForRun();
   fixture.input.value = 'steer me';
   await fixture.controller.sendMessage();
   const steer = fixture.controller.queue.steerNow();
-  await waitForCall(fixture.coordinator.steer);
+  await fixture.native.waitForSteer();
 
+  const run = await turn.started;
+  run.holdCancellation = true;
   fixture.controller.cancelStreaming();
-  await fixture.controller.handleExecutionEvent(requestedTurnCompleted);
-  steerResult.resolve({ delivery: 'not-sent' });
-  await steer;
-  turn.resolve({ accepted: true, status: 'completed' });
+  await run.cancelled;
+  run.complete();
   await active;
-  await new Promise(resolve => setTimeout(resolve, 0));
+  steerResult.resolve(false);
+  await steer;
+  await vi.runOnlyPendingTimersAsync();
 
   expect(fixture.coordinator.execute).toHaveBeenCalledTimes(1);
   expect(fixture.state.queuedMessage).toBeNull();
@@ -878,10 +844,10 @@ it('does not lose a cancel to native completion when a rejected steer settles af
 
 it('queuing another input must retain the running turn drain handle', async () => {
   const fixture = (await createFixture());
-  const gate = deferred<{ accepted: boolean; status: string }>();
-  fixture.coordinator.execute.mockImplementationOnce(() => gate.promise);
+  const gate = fixture.holdNextResponse();
   const first = fixture.controller.sendMessage({ content: 'first turn' });
-  await waitForCall(fixture.coordinator.execute);
+  const run = await gate.started;
+  run.holdCancellation = true;
   try {
     await fixture.controller.sendMessage({ content: 'queued follow-up' });
     expect(fixture.state.queuedMessage?.content).toBe('queued follow-up');
@@ -889,12 +855,12 @@ it('queuing another input must retain the running turn drain handle', async () =
     let cancellationDrainFinished = false;
     const drain = fixture.session.turns.drain().then(() => { cancellationDrainFinished = true; });
     fixture.controller.cancelStreaming();
-    for (let tick = 0; tick < 20; tick++) await Promise.resolve();
+    await run.cancelled;
     expect(cancellationDrainFinished).toBe(false);
     void drain;
   } finally {
     fixture.controller.queue.clear();
-    gate.resolve({ accepted: true, status: 'completed' });
+    run.complete();
     await first;
   }
 });
