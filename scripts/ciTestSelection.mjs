@@ -11,18 +11,6 @@ const fullSelection = {
 };
 const docsTest = 'tests/unit/docs/Documentation.test.ts';
 const wslTest = 'tests/integration/core/process/execution-target/WSLExecution.windows.test.ts';
-// Type-only and UI/settings edges do not necessarily reach the native runtime test.
-const wslOwners = [
-  'core/process/execution-target/',
-  'core/providers/cli/TargetCLIInstallationProbe',
-  'core/providers/settings/InstallationSettings',
-  'shared/settings/ExecutionTargetSettings',
-  'providers/codex/',
-];
-const isWSLInput = file => {
-  const ownedPath = file.replace(/^(?:src|tests\/(?:unit|integration))\//, '');
-  return wslOwners.some(owner => ownedPath.startsWith(owner));
-};
 const piTest = 'tests/integration/providers/pi/runtime/PiSubprocess.windows.test.ts';
 const isDocumentation = file => file.endsWith('.md') || file.startsWith('docs/');
 const isVitestTest = file => /^tests\/(?:unit|integration)\/.*\.test\.ts$/.test(file);
@@ -82,7 +70,7 @@ export function selectCiTests({ changes, relatedTests, eventName }) {
       || scripts.has('scripts/ciTestSelection.test.mjs') || scripts.has('scripts/run-tests.test.mjs')
       || changes.some(change => change.path === 'scripts/testDeclarations.test.mjs'),
     piWindows,
-    wslWindows: files.has(wslTest) || changes.some(({ path: file }) => isWSLInput(file)),
+    wslWindows: files.has(wslTest),
   };
 }
 

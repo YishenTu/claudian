@@ -1,3 +1,5 @@
+import { execFileSync } from 'node:child_process';
+
 /** Startup files used by local shells and the real WSL distro tests. */
 export function wslShellFixtureFiles(behavior: WSLShellBehavior = 'ordinary'): Record<string, string> {
   const posix = `cd /tmp
@@ -43,7 +45,7 @@ printf '%s\\0' "$@"
   };
 }
 
-export const WSL_LITERAL_ARGS = ['=sh', '~', '*', '$x', 'a\\b\\', 'double\\\\slash', "a'quote", 'a"quote', 'line1\nline2', ''];
+export const WSL_LITERAL_ARGS = ['=sh', '~', '*', '$x', 'a\\b\\', 'double\\\\slash', 'space and trailing\\\\', "a'quote", 'a"quote', 'line1\nline2', ''];
 
 export type WSLShellBehavior = 'ordinary' | 'read' | 'replace' | 'background' | 'fail' | 'temp-file';
 
@@ -56,4 +58,11 @@ function wslShellStartupBehavior(behavior: WSLShellBehavior): string {
     case 'temp-file': return `/bin/sh -c 'printf "%s" "$CLAUDIAN_WSL_ENV_FILE" > "$HOME/capture-path"; /bin/ls -l "$CLAUDIAN_WSL_ENV_FILE" > "$HOME/capture-mode"'\n`;
     default: return '';
   }
+}
+
+/** Optional local interpreters; the Windows contract suite uses its provisioned distro instead. */
+export function localWSLExecutable(name: string): string {
+  if (process.platform === 'win32') return '';
+  try { return execFileSync('/bin/sh', ['-c', 'command -v "$1"', 'fixture', name], { encoding: 'utf8' }).trim(); }
+  catch { return ''; }
 }

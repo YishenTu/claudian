@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
-import { createConversationControllerDeps } from '@test/helpers/features/chat/ConversationControllerFixture';
+import { createConversationControllerDeps as createBaseDeps } from '@test/helpers/features/chat/ConversationControllerFixture';
+import { conversationRecord } from '@test/helpers/features/chat/ConversationFixture';
 import { createProjectsFake, projectRecord } from '@test/helpers/features/chat/ProjectsFake';
 import { testDate } from '@test/helpers/testClock';
 
@@ -7,6 +8,12 @@ import { buildSystemPrompt } from '@/core/prompt/mainAgent';
 import { renderProjectMemberInstructions } from '@/core/prompt/projectPrompt';
 import type { ImageAttachment } from '@/core/types';
 import { ConversationController } from '@/features/chat/conversation/ConversationController';
+
+async function createConversationControllerDeps(...args: Parameters<typeof createBaseDeps>) {
+  const deps = await createBaseDeps(...args);
+  vi.mocked(deps.plugin.getConversationSummary).mockImplementation(id => conversationRecord(id));
+  return deps;
+}
 
 describe('ConversationBranching', () => {
   it.each([undefined, 'other-user'])('restores only the selected history and restores the edited prompt with images (target %s)', async target => {

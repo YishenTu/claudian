@@ -1,6 +1,6 @@
-import { readWSLExec } from '@test/helpers/WSLLaunch';
 import type { CodexNativeTestProcess} from '@test/helpers/providers/codex/CodexRuntimeHarness';
 import { CodexRuntimeHarness } from '@test/helpers/providers/codex/CodexRuntimeHarness';
+import { readWSLExec } from '@test/helpers/WSLLaunch';
 
 import { buildCodexLaunchSpec } from '@/providers/codex/runtime/CodexLaunchSpecBuilder';
 import { getCodexProviderSettings } from '@/providers/codex/settings';

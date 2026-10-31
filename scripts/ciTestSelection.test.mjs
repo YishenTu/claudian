@@ -87,6 +87,7 @@ test('real dependency discovery retains native launch checks for shared process 
     'tests/integration/core/process/ManagedStdioProcess.test.ts',
     'tests/integration/core/process/ProcessProbe.test.ts',
     'tests/integration/core/process/cliBinaryLocator.test.ts',
+    'tests/integration/core/process/execution-target/WSLCaptureCancellation.test.ts',
     'tests/integration/core/process/execution-target/WSLShellLaunch.test.ts',
     'tests/integration/core/process/loginShellPath.test.ts',
     'tests/integration/features/chat/tabs/forking/ForkSource.opencode-v2.test.ts',
@@ -462,6 +463,13 @@ test('WSL native job follows shared dependencies and Codex users but skips unrel
     'src/core/providers/settings/InstallationSettings.ts',
     'src/shared/settings/ExecutionTargetSettings.ts',
     'src/core/providers/cli/TargetCLIInstallationProbe.ts',
-  ]) assert.equal(select([file]).wslWindows, true, file);
+    'tests/integration/core/providers/cli/TargetCLIInstallationProbe.test.ts',
+    'tests/unit/core/providers/settings/InstallationSettings.test.ts',
+    'tests/integration/providers/codex/ui/CodexCLIPath.dom.test.ts',
+  ]) {
+    const selection = select([file]);
+    assert.equal(selection.wslWindows, true, file);
+    assert.ok(selection.testFiles.includes(wsl), `${file} must select the declared WSL consumer`);
+  }
   assert.equal(selectRelatedCiTests({ changes: [{ status: 'M', path: 'src/core/process/execution-target/WSLEnvironment.ts' }] }).wslWindows, true);
 });

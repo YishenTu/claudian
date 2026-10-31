@@ -8,6 +8,7 @@ import type { ProviderExecutionEvent } from '@/core/execution';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { ChatExecutionPreHandoffError, type ChatSteerOutcome, type ChatTurnSubmission } from '@/features/chat/execution/ChatExecutionCoordinator';
 import { createQueuedMessage } from '@/features/chat/state/chatTurnRequest';
+import { claudeProviderRegistration } from '@/providers/claude/registration';
 
 const nativeCapabilities = ProviderRegistry.getCapabilities('claude');
 beforeEach(() => {
@@ -58,12 +59,20 @@ describe('TurnQueue', () => {
   });
 
   it('keeps queued input while execution-directory preparation has no active request to steer', async () => {
-    const fixture = createFixture();
+    const fixture = await createFixture();
     Object.assign(fixture.coordinator, { systemInstructions: null });
     const projection = deferred<string>();
-    vi.mocked(ProviderRegistry.resolveExecutionWorkingDirectory).mockReturnValueOnce(projection.promise);
+    const resolving = deferred<void>();
+    ProviderRegistry.register('claude', { ...claudeProviderRegistration, resolveExecutionWorkingDirectory: () => {
+      resolving.resolve();
+      return projection.promise;
+    } });
+    onTestFinished(() => {
+      projection.resolve('/vault');
+      ProviderRegistry.register('claude', claudeProviderRegistration);
+    });
     const started = fixture.controller.sendMessage({ content: 'First' });
-    await waitForCall(vi.mocked(ProviderRegistry.resolveExecutionWorkingDirectory));
+    await resolving.promise;
     await fixture.controller.sendMessage({ content: 'Keep queued' });
     let failure: unknown;
     try { await fixture.controller.queue.steerNow(); } catch (error) { failure = error; }

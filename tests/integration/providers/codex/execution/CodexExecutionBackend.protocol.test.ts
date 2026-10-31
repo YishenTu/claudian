@@ -1,6 +1,8 @@
-import { codexProviderRegistration } from '@/providers/codex/registration';
 // @test-ci {"native":true}
+// @vitest-environment jsdom
 import { DesktopVault } from '@test/helpers/core/DesktopVault';
+
+import { codexProviderRegistration } from '@/providers/codex/registration';
 const actualModule0 = await import('node:fs');
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import * as fsPromises from 'node:fs/promises';
@@ -25,7 +27,6 @@ import type {
 } from '@/core/execution';
 import { isSteerableExecutionSession } from '@/core/execution';
 import { ProviderExecutionLifecycleRegistry } from '@/core/execution/ProviderExecutionLifecycleRegistry';
-import { createExecutionPathMapper } from '@/core/process/execution-target/WSLPathMapper';
 import type { ProviderHost } from '@/core/providers/ProviderHost';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import type { ClaudianSettings } from '@/core/types';
@@ -1394,16 +1395,12 @@ describe('CodexExecutionBackend', () => {
     const platform = process.platform;
     Object.defineProperty(process, 'platform', { value: 'win32' });
     const lifecycleRegistry = new ProviderExecutionLifecycleRegistry();
-    const host = withRuntimeHosts(Object.assign(createPlugin(), { workingDirectory: hostPath, executionLifecycleRegistry: lifecycleRegistry }));
+    const host = Object.assign(await createPlugin(), { workingDirectory: hostPath, executionLifecycleRegistry: lifecycleRegistry });
     host.settings.systemPrompt = `Keep this literal custom path: ${hostPath}`;
     updateCodexProviderSettings(host.settings, { installationMethod: 'wsl', wslDistroOverride: 'Ubuntu' });
     const backend = createBackend(host);
     ProviderRegistry.register('codex', { ...codexProviderRegistration, createExecutionBackend: () => backend });
-    mockResolveLaunchSpec.mockResolvedValue(buildCodexLaunchSpec({
-      codexSettings: getCodexProviderSettings(host.settings), resolvedCliCommand: 'codex',
-      hostVaultPath: hostPath, env: {}, hostPlatform: 'win32',
-    }));
-    mockTransportRequest.mockImplementation(async (method: string) => {
+    nativeRequest.mockImplementation(async (method: string) => {
       if (method === 'initialize') return { userAgent: 'test', codexHome: '/home/linux/.codex', platformFamily: 'unix', platformOs: 'linux' };
       if (method === 'thread/start') return createThreadResult('thread-prompt-path');
       if (method === 'turn/start') {
@@ -1414,7 +1411,7 @@ describe('CodexExecutionBackend', () => {
     });
     try {
       if (kind === 'chat') {
-        const fixture = createFixture({ getTabProviderId: () => 'codex', getSettings: () => ({ model: TEST_CODEX_MODEL, reasoning: 'medium', permissionMode: 'normal', serviceTier: 'default' }) });
+        const fixture = await createFixture({ getTabProviderId: () => 'codex', getSettings: () => ({ model: TEST_CODEX_MODEL, reasoning: 'medium', permissionMode: 'normal', serviceTier: 'default' }) });
         Object.assign(fixture.plugin, { providerHost: host, settings: host.settings });
         Object.assign(fixture.coordinator, { workingDirectory: hostPath });
         await fixture.controller.sendMessage({ content: `Inspect this literal user path: ${hostPath}` });
@@ -1429,12 +1426,12 @@ describe('CodexExecutionBackend', () => {
         await service.send({ mode: 'selection', notePath: 'note.md', selectedText: 'draft', instruction: `Inspect this literal user path: ${hostPath}` });
         service.end();
       }
-      const thread = mockTransportRequest.mock.calls.find(([method]) => method === 'thread/start')?.[1];
+      const thread = nativeRequest.mock.calls.find(([method]) => method === 'thread/start')?.[1];
       expect(thread).toMatchObject({ cwd: targetPath });
-      expect(thread.baseInstructions).toContain(`Vault absolute path: ${targetPath}`);
-      expect(thread.baseInstructions.includes(`Keep this literal custom path: ${hostPath}`)).toBe(kind === 'chat');
-      const turn = mockTransportRequest.mock.calls.find(([method]) => method === 'turn/start')?.[1];
-      expect(turn.input.some((block: { text?: string }) => block.text?.includes(`Inspect this literal user path: ${hostPath}`))).toBe(true);
+      expect(thread!.baseInstructions).toContain(`Vault absolute path: ${targetPath}`);
+      expect(thread!.baseInstructions!.includes(`Keep this literal custom path: ${hostPath}`)).toBe(kind === 'chat');
+      const turn = nativeRequest.mock.calls.find(([method]) => method === 'turn/start')?.[1];
+      expect(turn!.input!.some(block => block.type === 'text' && block.text.includes(`Inspect this literal user path: ${hostPath}`))).toBe(true);
     } finally {
       await lifecycleRegistry.dispose();
       ProviderRegistry.register('codex', codexProviderRegistration);
