@@ -5,16 +5,6 @@ import { fireEvent, within } from '@testing-library/dom';
 import { InlineAskUserQuestion } from '@/features/chat/interactions/InlineAskUserQuestion';
 import { projectOpencodeFormQuestions } from '@/providers/opencode/http/OpencodeHTTPForms';
 
-beforeAll(() => {
-  Object.assign(HTMLElement.prototype, {
-    empty(this: HTMLElement) { this.replaceChildren(); },
-    addClass(this: HTMLElement, ...names: string[]) { this.classList.add(...names); },
-    removeClass(this: HTMLElement, ...names: string[]) { this.classList.remove(...names); },
-    toggleClass(this: HTMLElement, name: string, force: boolean) { this.classList.toggle(name, force); },
-    scrollIntoView() {},
-  });
-});
-
 // Fields captured from the native v2.0.12 question tool, not UI-shaped fixtures.
 const form = (fields: unknown[]) => ({ title: 'Questions', metadata: { kind: 'question' }, fields });
 function render(fields: unknown[]) {

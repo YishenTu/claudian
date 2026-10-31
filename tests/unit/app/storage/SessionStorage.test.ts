@@ -587,8 +587,8 @@ describe('SessionStorage', () => {
 
       const metadata = toSessionMetadata(conversation);
 
-      expect((metadata.providerState as any)?.subagentData).toBeDefined();
-      expect((metadata.providerState as any)?.subagentData['task-1']).toEqual(expect.objectContaining({
+      expect((metadata.providerState)?.subagentData).toBeDefined();
+      expect((metadata.providerState?.subagentData as Record<string, unknown> | undefined)?.['task-1']).toEqual(expect.objectContaining({
         id: 'task-1',
         description: 'Test subagent',
         status: 'completed',
@@ -653,7 +653,7 @@ describe('SessionStorage', () => {
 
       const metadata = toSessionMetadata(conversation);
 
-      expect((metadata.providerState as any)?.subagentData).toBeUndefined();
+      expect((metadata.providerState)?.subagentData).toBeUndefined();
     });
 
     it('ignores Agent toolCalls without linked subagent', () => {
@@ -677,7 +677,7 @@ describe('SessionStorage', () => {
                 input: { description: 'Background task', run_in_background: true },
                 status: 'completed',
                 result: 'Task running',
-              } as any,
+              },
             ],
           },
         ],
@@ -685,7 +685,7 @@ describe('SessionStorage', () => {
 
       const metadata = toSessionMetadata(conversation);
 
-      expect((metadata.providerState as any)?.subagentData).toBeUndefined();
+      expect((metadata.providerState)?.subagentData).toBeUndefined();
     });
   });
 
@@ -777,7 +777,7 @@ describe('SessionStorage', () => {
       expect(metadata.createdAt).toBe(1700000000);
       expect(metadata.lastActivityAt).toBe(1700000900);
       expect(metadata.sessionId).toBe('sdk-session');
-      expect((metadata.providerState as any)?.providerSessionId).toBe('current-sdk-session');
+      expect((metadata.providerState)?.providerSessionId).toBe('current-sdk-session');
       expect(metadata.linkedContentPath).toBe('notes/test.md');
       expect(metadata.usage).toEqual(usage);
       expect(metadata.titleGenerationStatus).toBe('success');
@@ -800,7 +800,7 @@ describe('SessionStorage', () => {
 
       const metadata = toSessionMetadata(conversation);
 
-      expect((metadata.providerState as any)?.forkSource).toEqual({
+      expect((metadata.providerState)?.forkSource).toEqual({
         sessionId: 'source-session-abc',
         resumeAt: 'asst-uuid-xyz',
       });
@@ -819,7 +819,7 @@ describe('SessionStorage', () => {
 
       const metadata = toSessionMetadata(conversation);
 
-      expect((metadata.providerState as any)?.forkSource).toBeUndefined();
+      expect((metadata.providerState)?.forkSource).toBeUndefined();
     });
   });
 });

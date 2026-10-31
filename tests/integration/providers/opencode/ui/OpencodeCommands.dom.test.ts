@@ -1,15 +1,13 @@
+// @test-ci {"inputs":["tests/helpers/providers/opencode/OpencodeNativePeer.cjs"]}
 /** @vitest-environment jsdom */
-import '@test/helpers/ObsidianSettingsDOM';
 import '@/providers';
 
 import { writeFileSync } from 'node:fs';
 
 import { axe } from '@test/helpers/accessibility';
-import { runtimeHostFor } from '@test/helpers/providerRuntimeHost';
 import { fireEvent, waitFor, within } from '@testing-library/dom';
 
 import { ProviderChatOptionsReconciler } from '@/app/settings/ProviderChatOptionsReconciler';
-import { ProviderExecutionLifecycleRegistry } from '@/core/execution';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { ProviderSettingsCoordinator } from '@/core/providers/ProviderSettingsCoordinator';
 import { ProviderWorkspaceRegistry } from '@/core/providers/ProviderWorkspaceRegistry';
@@ -30,10 +28,8 @@ import { createOpencodeHTTPMetadataFixture } from '../metadata/OpencodeHTTPMetad
 it.each([false, true])('updates an open command menu while preserving focus and its active command (eventless: %s)', async eventless => {
   const fixture = createOpencodeHTTPMetadataFixture();
   if (eventless) { fixture.environment.NO_CATALOG_EVENTS = '1'; fixture.environment.EMPTY_INITIAL_READS = '2'; }
-  const host = fixture.createPlugin();
-  host.executionLifecycleRegistry = new ProviderExecutionLifecycleRegistry();
-  host.runProviderExecutionTransition = async (_ids: unknown, run: (scope: object) => Promise<void>) => run({});
-  const service = new OpencodeMetadataService(runtimeHostFor(host, 'opencode'), host.executionLifecycleRegistry);
+  const { host } = await fixture.createHostFixture();
+  const service = new OpencodeMetadataService(host.getRuntimeHost('opencode'), host.executionLifecycleRegistry);
   const subscriptionSignals: AbortSignal[] = [];
   const subscriptions: Promise<void>[] = [];
   const watchCommands = service.watchCommands.bind(service);

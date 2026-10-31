@@ -1,7 +1,9 @@
+// @test-ci {"native":true,"inputs":["tests/helpers/providers/opencode/OpencodeNativePeer.cjs"]}
 import { readFileSync, writeFileSync } from 'node:fs';
 import * as path from 'node:path';
 
 import { createForkTestEnvironment, type ForkTestEnvironment } from '@test/helpers/features/chat/ProviderForkTestHarness';
+import { writeOpencodeNativePeer } from '@test/helpers/providers/opencode/OpencodeNativePeer';
 import { testDate } from '@test/helpers/testClock';
 
 import { createProviderHistoryPathContext } from '@/core/providers/historyPathContext';
@@ -9,38 +11,6 @@ import { ProviderWorkspaceRegistry } from '@/core/providers/ProviderWorkspaceReg
 import { OpencodeExecutionBackend } from '@/providers/opencode/execution/OpencodeExecutionBackend';
 import { OpencodeConversationHistoryService } from '@/providers/opencode/history/OpencodeConversationHistoryService';
 import { OpencodeServerService } from '@/providers/opencode/http/OpencodeServerService';
-
-// OpenCode 2.0.18 uses an exclusive `before` boundary and ignores `messageID`.
-// Copied messages receive new IDs.
-const fixture = `#!/usr/bin/env node
-const fs = require('node:fs'), http = require('node:http');
-if (process.argv.includes('--version')) { console.log('2.0.18'); return; }
-const file = process.env.OPENCODE_DB;
-const server = http.createServer(async (req, res) => {
- const url = new URL(req.url, 'http://localhost'), [, , , id, action] = url.pathname.split('/');
- const state = JSON.parse(fs.readFileSync(file, 'utf8'));
- let raw = ''; for await (const chunk of req) raw += chunk;
- const body = raw ? JSON.parse(raw) : {};
- res.setHeader('Content-Type', 'application/json');
- if (action === 'message') {
-   const offset = Number(url.searchParams.get('cursor') || 0), messages = state.sessions[id];
-   if (offset && url.searchParams.has('order')) { res.writeHead(400).end(); return; }
-   res.end(JSON.stringify({data:messages.slice(offset, offset + 2), cursor:offset + 2 < messages.length ? {next:String(offset + 2)} : {}})); return;
- }
- if (action === 'fork') {
-   state.requests.push(body);
-   const messages = state.sessions[id], boundary = body.before ? messages.findIndex(m => m.id === body.before) : messages.length;
-   if (boundary < 0) { res.writeHead(400).end(); return; }
-   const child = 'child-' + state.requests.length;
-   state.sessions[child] = messages.slice(0, boundary).map((m, i) => ({...m, id:child + '-' + i}));
-   fs.writeFileSync(file, JSON.stringify(state));
-   res.end(JSON.stringify({data:{id:child}})); return;
- }
- res.writeHead(404).end();
-});
-server.listen(0, '127.0.0.1', () => console.log(JSON.stringify({url:'http://127.0.0.1:' + server.address().port})));
-process.stdin.resume(); process.stdin.on('end', () => server.close());
-`;
 
 describe('OpenCode v2 checkpoint forks', () => {
   let env: ForkTestEnvironment;
@@ -64,12 +34,13 @@ describe('OpenCode v2 checkpoint forks', () => {
   beforeEach(async () => {
     env = await createForkTestEnvironment();
     server = new OpencodeServerService();
-    ProviderWorkspaceRegistry.setServices('opencode', { serverService: server } as any);
+    const services = { serverService: server, dispose: () => server.dispose() };
+    ProviderWorkspaceRegistry.setServices('opencode', services);
     history = new OpencodeConversationHistoryService({ getServerService: async () => server });
     backend = new OpencodeExecutionBackend(env.host.getRuntimeHost('opencode'), { serverService: server });
     databasePath = path.join(env.root, 'native.db');
     const cliPath = path.join(env.root, 'opencode.cjs');
-    writeFileSync(cliPath, fixture, { mode: 0o700 });
+    writeOpencodeNativePeer(cliPath, { scenario: 'history', version: '2.0.18', historyFormat: 'checkpoint', pageSize: 2 });
     writeFileSync(databasePath, JSON.stringify({ sessions: { source: nativeMessages }, requests: [] }));
     env.host.settings.providerConfigs.opencode = { enabled: true, cliPath, environmentVariables: `OPENCODE_DB=${databasePath}` };
   });

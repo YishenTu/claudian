@@ -1,14 +1,11 @@
 import { grokEnvironmentHash } from '@test/helpers/providers/grokSettings';
 
+import { getInstallationKey } from '@/core/device/InstallationKey';
+import { getProviderConfig, setProviderConfig } from '@/core/providers/providerConfig';
 import { isVersionedRuntimeInputFingerprint } from '@/core/providers/settings/RuntimeInputFingerprint';
 import type { Conversation } from '@/core/types';
 import { grokSettingsReconciler } from '@/providers/grok/env/GrokSettingsReconciler';
 import { getGrokProviderSettings } from '@/providers/grok/settings';
-
-vi.mock('@/core/device/InstallationKey', async () => ({
-  ...(await vi.importActual<typeof import('@/core/device/InstallationKey')>('@/core/device/InstallationKey')),
-  getInstallationKey: () => 'current-host',
-}));
 
 describe('GrokSettingsReconciler', () => {
   const catalog = (rawId: string) => ({
@@ -27,7 +24,7 @@ describe('GrokSettingsReconciler', () => {
     const first = grokEnvironmentHash({
       providerConfigs: {
         grok: {
-          cliPathsByHost: { 'current-host': '/bin/grok' },
+          cliPathsByHost: { [getInstallationKey()]: '/bin/grok' },
           environmentVariables: 'XAI_API_KEY=super-secret\nGROK_HOME=/tmp/grok',
         },
       },
@@ -36,7 +33,7 @@ describe('GrokSettingsReconciler', () => {
     const reordered = grokEnvironmentHash({
       providerConfigs: {
         grok: {
-          cliPathsByHost: { 'current-host': '/bin/grok' },
+          cliPathsByHost: { [getInstallationKey()]: '/bin/grok' },
           environmentVariables: 'GROK_HOME=/tmp/grok\nXAI_API_KEY=super-secret',
         },
       },
@@ -54,7 +51,7 @@ describe('GrokSettingsReconciler', () => {
       providerConfigs: {
         grok: {
           cliPath: legacyCliPath,
-          cliPathsByHost: { 'current-host': '/missing/hostname-grok' },
+          cliPathsByHost: { [getInstallationKey()]: '/missing/hostname-grok' },
           environmentVariables: '',
         },
       },
@@ -103,7 +100,7 @@ describe('GrokSettingsReconciler', () => {
         codex: { enabled: true, marker: 'untouched' },
         grok: {
           catalogsByHost: {
-            'current-host': catalog('current-model'),
+            [getInstallationKey()]: catalog('current-model'),
             'other-host': catalog('other-model'),
           },
           enabled: true,
@@ -124,7 +121,7 @@ describe('GrokSettingsReconciler', () => {
     expect(result).toEqual({ changed: true, sessionPolicy: 'reload' });
     expect(grokSettingsReconciler.invalidateConversationSessions([grokConversation])).toEqual([]);
     expect(getGrokProviderSettings(settings).catalogsByHost).toEqual({
-      'current-host': catalog('current-model'),
+      [getInstallationKey()]: catalog('current-model'),
       'other-host': catalog('other-model'),
     });
     expect(getGrokProviderSettings(settings).environmentHash)
@@ -140,14 +137,13 @@ describe('GrokSettingsReconciler', () => {
     const settings: Record<string, unknown> = {
       providerConfigs: {
         grok: {
-          catalogsByHost: { 'current-host': catalog('current-model') },
+          catalogsByHost: { [getInstallationKey()]: catalog('current-model') },
           enabled: true,
           environmentVariables: 'GROK_HOME=/tmp/grok',
         },
       },
     };
-    (settings.providerConfigs as Record<string, any>).grok.environmentHash =
-      grokEnvironmentHash(settings);
+    setProviderConfig(settings, 'grok', { ...getProviderConfig(settings, 'grok'), environmentHash: grokEnvironmentHash(settings) });
 
     expect(grokSettingsReconciler.reconcileModelWithEnvironment(settings)).toEqual({ changed: false });
     expect(getGrokProviderSettings(settings).currentCatalog).toEqual(catalog('current-model'));

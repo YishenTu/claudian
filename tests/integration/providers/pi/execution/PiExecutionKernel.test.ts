@@ -1,8 +1,9 @@
+// @test-ci {"native":true}
 import * as fs from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import * as path from 'node:path';
 
-import { runtimeHostFor } from '@test/helpers/providerRuntimeHost';
+import { createProviderHostFixture } from '@test/helpers/providerRuntimeHost';
 
 import type { ProviderExecutionSession, ProviderSessionToolPort, ProviderToolPolicy } from '@/core/execution';
 import { PiExecutionBackend } from '@/providers/pi/execution/PiExecutionBackend';
@@ -106,13 +107,10 @@ describe('Pi session tools through the generated extension', () => {
   });
 
   async function createSession(bound = true, mismatch = false, persistent = true, startupTool = false) {
-    const host = {
-      getResolvedProviderCliPath: async () => process.execPath,
-      settings: { model: configuration.model, effortLevel: 'off', systemPrompt: '', userName: '',
+    const host = (await createProviderHostFixture({ settings: { model: configuration.model, effortLevel: 'off', systemPrompt: '', userName: '',
         providerConfigs: { pi: { enabled: true, visibleModels: [configuration.model],
-          discoveredModels: [{ encodedId: configuration.model, id: 'claude-sonnet-4', provider: 'anthropic', label: 'Sonnet', input: ['text'], reasoning: true, thinkingLevels: ['off'] }] } } },
-    };
-    const backend = new PiExecutionBackend(runtimeHostFor(host, 'pi'), {
+          discoveredModels: [{ encodedId: configuration.model, id: 'claude-sonnet-4', provider: 'anthropic', label: 'Sonnet', input: ['text'], reasoning: true, thinkingLevels: ['off'] }] } } }, overrides: { getResolvedProviderCliPath: async () => process.execPath } })).host;
+    const backend = new PiExecutionBackend(host.getRuntimeHost('pi'), {
       createKernel: (spec, callbacks) => {
         kernel = new PiRPCSessionKernel({ ...spec, command: process.execPath,
           args: [path.resolve('tests/fixtures/providers/pi/PiSessionProcess.mjs'), ...spec.args],

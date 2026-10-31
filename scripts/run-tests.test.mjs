@@ -10,7 +10,7 @@ test('the runner executes only selected Vitest and script suites, and handles em
   const root = mkdtempSync(path.join(os.tmpdir(), 'claudian-test-runner-'));
   try {
     mkdirSync(path.join(root, 'scripts'));
-    for (const file of ['run-tests.js', 'run-cross-platform-tests.js', 'testSuites.cjs']) copyFileSync(`scripts/${file}`, path.join(root, 'scripts', file));
+    for (const file of ['run-tests.js', 'run-cross-platform-tests.js', 'testSuites.cjs', 'testDeclarations.cjs']) copyFileSync(`scripts/${file}`, path.join(root, 'scripts', file));
     writeFileSync(path.join(root, 'scripts/run-vitest.js'), `require('node:fs').writeFileSync('vitest-args.json', JSON.stringify(process.argv.slice(2)));`);
     writeFileSync(path.join(root, 'scripts/summarize-vitest-results.test.mjs'), `import { writeFileSync } from 'node:fs'; writeFileSync('script-ran', 'yes');`);
     const env = { ...process.env };
@@ -27,6 +27,8 @@ test('the runner executes only selected Vitest and script suites, and handles em
     assert.throws(() => readFileSync(path.join(root, 'vitest-args.json')), { code: 'ENOENT' });
     assert.throws(() => readFileSync(path.join(root, 'script-ran')), { code: 'ENOENT' });
     const nativeTest = 'tests/integration/core/process/ManagedStdioProcess.test.ts';
+    mkdirSync(path.dirname(path.join(root, nativeTest)), { recursive: true });
+    writeFileSync(path.join(root, nativeTest), '// @test-ci {"native":true}\n');
     execFileSync(process.execPath, ['scripts/run-cross-platform-tests.js', '--selection', JSON.stringify([nativeTest])], { cwd: root, env });
     assert.deepEqual(JSON.parse(readFileSync(path.join(root, 'vitest-args.json'))), ['--maxWorkers=1', nativeTest]);
     execFileSync(process.execPath, ['scripts/run-cross-platform-tests.js', '--selection', JSON.stringify([nativeTest]), '--maxWorkers=2'], { cwd: root, env });
@@ -45,7 +47,7 @@ test('full Vitest shards cover every suite once and propagate failures from eith
   try {
     mkdirSync(path.join(root, 'scripts'));
     mkdirSync(path.join(root, 'tests/unit'), { recursive: true });
-    for (const file of ['run-tests.js', 'testSuites.cjs']) copyFileSync(`scripts/${file}`, path.join(root, 'scripts', file));
+    for (const file of ['run-tests.js', 'testSuites.cjs', 'testDeclarations.cjs']) copyFileSync(`scripts/${file}`, path.join(root, 'scripts', file));
     writeFileSync(path.join(root, 'scripts/run-vitest.js'), `require(${JSON.stringify(path.resolve('scripts/run-vitest.js'))});`);
     writeFileSync(path.join(root, 'vitest.config.mjs'), `export default { test: { globals: true, maxWorkers: 1, include: ['tests/unit/**/*.test.ts'] } };`);
     const script = 'scripts/summarize-vitest-results.test.mjs';

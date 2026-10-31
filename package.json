@@ -25,7 +25,9 @@
     "test:coverage": "node scripts/run-vitest.js --coverage",
     "preversion": "bun install --frozen-lockfile",
     "version": "node scripts/sync-version.js && git add manifest.json",
-    "test:cross-platform": "node scripts/run-cross-platform-tests.js"
+    "test:cross-platform": "node scripts/run-cross-platform-tests.js",
+    "mutation": "node scripts/run-mutation.mjs",
+    "smoke:obsidian": "node scripts/run-obsidian-smoke.mjs"
   },
   "keywords": [
     "claude-code",
@@ -41,7 +43,6 @@
     "@eslint/js": "^10.0.1",
     "@testing-library/dom": "^10.4.1",
     "@types/cross-spawn": "6.0.6",
-    "@types/js-yaml": "^4.0.9",
     "@types/jsdom": "^21.1.7",
     "@types/node": "^25.5.2",
     "@types/ws": "8.18.1",

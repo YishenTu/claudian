@@ -1,4 +1,6 @@
 /** @vitest-environment jsdom */
+import { createChatFeatureHost } from '@test/helpers/features/chat/ChatFeatureHostFixture';
+type WithoutScope<T> = T extends unknown ? Omit<T, 'scope'> : never;
 import '@/providers';
 
 import { useClaudeSessionFiles } from '@test/helpers/providers/claudeHistory';
@@ -93,7 +95,7 @@ function expected(turn: Turn) {
 
 async function renderLive(turn: Turn): Promise<HTMLElement> {
   const messagesEl = document.body.createDiv();
-  const plugin = { app: {}, settings: { mediaFolder: '', showMessageTimestamps: false } } as any;
+  const plugin = await createChatFeatureHost({ settings: { mediaFolder: '', showMessageTimestamps: false } });
   const renderer = new MessageRenderer(plugin, new Component(), messagesEl);
   const turns = new TurnCoordinator();
   const state = new ChatState({}, undefined, turns);
@@ -108,7 +110,7 @@ async function renderLive(turn: Turn): Promise<HTMLElement> {
     const background = new BackgroundResponses(host);
     const scope = { kind: 'background' as const, sessionInstanceId: 'native', turnId: 'automatic', sequence: 0 };
     const next = () => ({ ...scope, sequence: ++scope.sequence });
-    const handle = (event: Record<string, unknown>) => background.handle('binding', { ...event, scope: next() } as any, () => true);
+    const handle = (event: WithoutScope<Extract<Parameters<BackgroundResponses['handle']>[1], { scope: { kind: 'background' } }>>) => background.handle('binding', { ...event, scope: next() }, () => true);
     renderSessionTaskNotification(host, 'Trigger finished.', undefined, next());
     background.reserve('binding', 'automatic');
     if (turn.afterTool) {
@@ -136,7 +138,7 @@ async function renderLive(turn: Turn): Promise<HTMLElement> {
     response.start();
     // Provider events carry the run's scope; a notification records the event it followed.
     let scope = { kind: 'requested' as const, sessionInstanceId: 'native', executionId: 'execution', turnId: 'turn', sequence: 0 };
-    const emit = (event: Record<string, unknown>) => {
+    const emit = (event: WithoutScope<Extract<Parameters<BackgroundResponses['handle']>[1], { scope: { kind: 'background' } }>>) => {
       scope = { ...scope, sequence: scope.sequence + 1 };
       return response.handleEvent({ ...event, scope } as ProviderExecutionEvent);
     };
@@ -209,7 +211,7 @@ async function renderClaudeReload(turn: Turn, promptIds = false): Promise<HTMLEl
   const assistants = replay.messages.filter(message => message.role === 'assistant');
   expect(assistants.map(message => message.isAutomaticResponse === true)).toEqual(assistants.map(() => turn.automatic));
   const messagesEl = document.body.createDiv();
-  const renderer = new MessageRenderer({ app: {}, settings: { mediaFolder: '', showMessageTimestamps: false } } as any,
+  const renderer = new MessageRenderer(await createChatFeatureHost({ settings: { mediaFolder: '', showMessageTimestamps: false } }),
     new Component(), messagesEl);
   cleanups.push(() => renderer.dispose());
   renderer.renderMessages(replay.messages, () => 'Welcome');
@@ -269,7 +271,7 @@ it.each([true, false])('folds a turn a Stop hook continued after end_turn identi
   ]));
   expect(replay.error).toBeUndefined();
   const messagesEl = document.body.createDiv();
-  const renderer = new MessageRenderer({ app: {}, settings: { mediaFolder: '', showMessageTimestamps: false } } as any,
+  const renderer = new MessageRenderer(await createChatFeatureHost({ settings: { mediaFolder: '', showMessageTimestamps: false } }),
     new Component(), messagesEl);
   cleanups.push(() => renderer.dispose());
   renderer.renderMessages(replay.messages, () => 'Welcome');
@@ -283,7 +285,7 @@ async function renderTranscript(records: unknown[]): Promise<HTMLElement> {
   const replay = await loadSDKSessionMessages('/vault', 'session', undefined, writeSession(records));
   expect(replay.error).toBeUndefined();
   const messagesEl = document.body.createDiv();
-  const renderer = new MessageRenderer({ app: {}, settings: { mediaFolder: '', showMessageTimestamps: false } } as any,
+  const renderer = new MessageRenderer(await createChatFeatureHost({ settings: { mediaFolder: '', showMessageTimestamps: false } }),
     new Component(), messagesEl);
   cleanups.push(() => renderer.dispose());
   renderer.renderMessages(replay.messages, () => 'Welcome');

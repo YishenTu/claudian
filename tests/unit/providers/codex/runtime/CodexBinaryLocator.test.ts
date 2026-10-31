@@ -1,3 +1,4 @@
+// @test-ci {"native":true}
 const actualModule0 = await import('fs');
 const actualModule1 = await import('fs');
 const actualModule2 = await import('fs');

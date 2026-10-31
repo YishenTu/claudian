@@ -4,9 +4,12 @@ import '@/providers';
 import { deserialize, serialize } from 'node:v8';
 
 import { axe } from '@test/helpers/accessibility';
+import { ControlledResizeObserver, triggerResize } from '@test/helpers/dom/ResizeObserver';
+import { createFeatureHostFixture } from '@test/helpers/FeatureHostFixture';
+import { createChatFeatureHost } from '@test/helpers/features/chat/ChatFeatureHostFixture';
 import { createClaudianView } from '@test/helpers/features/chat/ClaudianViewHarness';
-import { installSessionRuntimePool } from '@test/helpers/features/chat/SessionRuntimePoolHarness';
-import { createHarness, releaseSideChatHarnesses } from '@test/helpers/features/chat/SideChatDOMHarness';
+import { createProjectsFake } from '@test/helpers/features/chat/ProjectsFake';
+import { createSessionRuntimePool } from '@test/helpers/features/chat/SessionRuntimePoolHarness';
 import { FakeSideSession } from '@test/helpers/features/chat/SideChatSessionHarness';
 import { createObsidianWorkspace } from '@test/helpers/ObsidianWorkspace';
 import { modelCatalogCases } from '@test/helpers/providerModelCatalogs';
@@ -16,7 +19,6 @@ import { App, Component, Scope, setIcon } from 'obsidian';
 
 import { ChatModelSelectionCoordinator } from '@/app/settings/ChatModelSelectionCoordinator';
 import { DEFAULT_CLAUDIAN_SETTINGS } from '@/app/settings/defaultSettings';
-import { SettingsCoordinator } from '@/app/settings/SettingsCoordinator';
 import { ClaudianViews } from '@/composition/ClaudianViews';
 import { BUILT_IN_COMMANDS } from '@/core/commands/builtInCommands';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
@@ -24,9 +26,10 @@ import { ProviderWorkspaceRegistry } from '@/core/providers/ProviderWorkspaceReg
 import type { ProviderCapabilities } from '@/core/providers/types';
 import { getToolIcon } from '@/core/tools/toolIcons';
 import type { ClaudianSettings, Conversation, StreamChunk } from '@/core/types';
-import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
+import { SessionMessagingService } from '@/features/chat/session-messaging/SessionMessagingService';
 import { ChatState } from '@/features/chat/state/ChatState';
 import { destroyTab } from '@/features/chat/tabs/TabLifecycle';
+import { TabManager } from '@/features/chat/tabs/TabManager';
 import { createTabRuntime } from '@/features/chat/tabs/TabRuntimeFactory';
 import type { AssembledTabRuntime } from '@/features/chat/tabs/types';
 import { FLAVOR_TEXTS } from '@/features/chat/turns/flavorTexts';
@@ -38,22 +41,20 @@ import { adaptCodexStreamChunk } from '@/providers/codex/execution/CodexExecutio
 import { CodexNotificationRouter } from '@/providers/codex/runtime/CodexNotificationRouter';
 import { VaultMentionDataProvider } from '@/shared/mention/VaultMentionDataProvider';
 
-const originalResizeObserver = globalThis.ResizeObserver;
+const { Scope: HostScope } = await vi.importActual<typeof import('@test/__mocks__/obsidian')>('obsidian');
+
 const originalStructuredClone = globalThis.structuredClone;
 const cleanups: Array<() => Promise<void> | void> = [];
 
 beforeEach(() => {
-  globalThis.ResizeObserver = class { observe() {} unobserve() {} disconnect() {} };
   globalThis.structuredClone = value => deserialize(serialize(value));
 });
 
 afterEach(async () => {
   for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
-  globalThis.ResizeObserver = originalResizeObserver;
   globalThis.structuredClone = originalStructuredClone;
   ProviderWorkspaceRegistry.clear();
   vi.restoreAllMocks();
-  await releaseSideChatHarnesses();
   vi.useRealTimers();
 });
 
@@ -77,7 +78,7 @@ type Leaf = {
   loadIfDeferred?: () => Promise<void>;
 };
 
-/** Narrow stand-in for Obsidian's desktop workspace layout, events and keymap. */
+/** Narrow stand-in for Obsidian's desktop workspace layout and events. */
 function createWorkspace() {
   const containerEl = document.body.createDiv({ cls: 'workspace' });
   const createSplit = (cls: string): Split => {
@@ -112,17 +113,12 @@ function createWorkspace() {
       workspace.trigger('resize');
     }),
   };
-  const scopes: unknown[] = [];
-  const keymap = {
-    pushScope: (scope: unknown) => { scopes.push(scope); },
-    popScope: (scope: unknown) => { scopes.splice(scopes.indexOf(scope), 1); },
-  };
   const setCollapsed = (split: Split, collapsed: boolean) => {
     split.collapsed = collapsed;
     split.containerEl.hidden = collapsed;
     workspace.trigger('resize');
   };
-  return { workspace, keymap, scopes, rootEl, rootSplit, leftSplit, rightSplit, noteEditor, leaves, otherLeaves, setCollapsed };
+  return { workspace, rootEl, rootSplit, leftSplit, rightSplit, noteEditor, leaves, otherLeaves, setCollapsed };
 }
 
 function createSettings(enabled: boolean): ClaudianSettings {
@@ -135,13 +131,23 @@ function createSettings(enabled: boolean): ClaudianSettings {
 
 async function createZenFixture(options: { enabled?: boolean; ready?: boolean } = {}) {
   const settings = createSettings(options.enabled ?? true);
-  const harness = createHarness({ settings: settings as unknown as Record<string, unknown> });
   ProviderWorkspaceRegistry.setServices('claude', {});
+  const { App: HostApp } = await vi.importActual<typeof import('../../../../__mocks__/obsidian')>('obsidian');
   const app = new App();
+  if (!(app instanceof HostApp)) throw new Error('Expected the shared Obsidian App');
+  // Observe scope lifetime; the shared keymap still owns its stack and event routing.
+  const scopes: unknown[] = [];
+  const pushScope = app.keymap.pushScope.getMockImplementation()!;
+  const popScope = app.keymap.popScope.getMockImplementation()!;
+  app.keymap.pushScope.mockImplementation(scope => { scopes.push(scope); pushScope(scope); });
+  app.keymap.popScope.mockImplementation(scope => {
+    const index = scopes.indexOf(scope);
+    if (index !== -1) scopes.splice(index, 1);
+    popScope(scope);
+  });
   Object.assign(app.vault.adapter, { basePath: '/vault' });
-  Object.assign(app.vault, { on: () => ({}), offref: () => undefined });
   const layout = createWorkspace();
-  Object.assign(app, { workspace: layout.workspace, keymap: layout.keymap, scope: new Scope() });
+  Object.assign(app, { workspace: layout.workspace, scope: app.keymap.getRootScope() });
   const sessions: FakeSideSession[] = [];
   vi.spyOn(ProviderRegistry, 'createExecutionBackend').mockImplementation((_host, providerId = 'claude') => ({
     providerId,
@@ -152,7 +158,9 @@ async function createZenFixture(options: { enabled?: boolean; ready?: boolean } 
     },
   }));
   const conversations: Conversation[] = [];
-  const zen = new ZenModeController({
+  const featureFixture = await createFeatureHostFixture({ app, settings: { ...settings, enableAutoTitleGeneration: false }, afterPublish: () => zen.reconcile() });
+  const settingsCoordinator = featureFixture.coordinator;
+  const zen: ZenModeController = new ZenModeController({
     app,
     isEnabled: (): boolean => settingsCoordinator.getCommittedSettings().enableZenMode,
     getPosition: () => settingsCoordinator.getCommittedSettings().zenModePosition,
@@ -160,14 +168,14 @@ async function createZenFixture(options: { enabled?: boolean; ready?: boolean } 
       void settingsCoordinator.mutate((draft) => { draft.zenModePosition = position; });
     },
   });
-  const settingsCoordinator: SettingsCoordinator<ClaudianSettings> = new SettingsCoordinator(
-    settings,
-    async () => undefined,
-    () => zen.reconcile(),
-  );
   const find = (id: string) => conversations.find(entry => entry.id === id) ?? null;
-  const plugin = {
-    ...(harness.plugin as ChatFeatureHost), app, settings,
+  const pool = createSessionRuntimePool(() => plugin);
+  const messaging = new SessionMessagingService({ getHost: () => plugin, getActiveConversationId: () => conversations[0]?.id ?? null, refreshModelControls: () => undefined });
+  cleanups.push(() => messaging.dispose());
+  const plugin = await createChatFeatureHost({
+    fixture: featureFixture, sessionRuntimes: pool,
+    bindSessionTools: id => messaging.bindSessionTools(id),
+    projects: createProjectsFake(),
     chatModelSelection: new ChatModelSelectionCoordinator(settingsCoordinator),
     executionPersistence: {
       registerExecutionBinding: () => undefined,
@@ -176,19 +184,14 @@ async function createZenFixture(options: { enabled?: boolean; ready?: boolean } 
       assertConversationExecutionAuthority: async () => undefined,
       recordConversationActivity: async () => undefined,
     },
-    getActiveEnvironmentVariables: () => '',
     getConversationSummary: find,
     getConversationSync: find,
     getConversationById: async (id: string) => find(id),
-    getConversationList: () => conversations,
+    getConversationList: () => conversations.map(conversation => ({ ...conversation, messageCount: conversation.messages.length, preview: '' })),
     updateConversation: async () => undefined,
     renameConversation: async () => undefined,
-    mutateSettings: settingsCoordinator.mutate.bind(settingsCoordinator),
-    getCommittedSettings: settingsCoordinator.getCommittedSettings.bind(settingsCoordinator),
     registerZenModeSource: (source: Parameters<ZenModeController['register']>[0]) => zen.register(source),
-  } as unknown as ChatFeatureHost;
-
-  installSessionRuntimePool(plugin);
+  });
 
   const tabGroups: Record<'left' | 'right' | 'main', Tabs> = {
     left: { selected: null }, right: { selected: null }, main: { selected: null },
@@ -201,13 +204,14 @@ async function createZenFixture(options: { enabled?: boolean; ready?: boolean } 
   };
 
   const addView = async (placement: 'left' | 'right' | 'main', ready = true) => {
-    const conversation = {
+    const conversation: Conversation = {
       id: `conversation-${conversations.length + 1}`,
+      title: 'Zen conversation', createdAt: testDate().getTime(), lastActivityAt: testDate().getTime(),
       providerId: 'claude',
       selectedModel: modelCatalogCases.find(candidate => candidate.id === 'claude')!.selected,
       messages: [],
       sessionId: `session-${conversations.length + 1}`,
-    } as unknown as Conversation;
+    };
     conversations.push(conversation);
     const split = placement === 'left' ? layout.leftSplit : placement === 'right' ? layout.rightSplit : null;
     const viewContainerEl = (split?.containerEl ?? layout.rootEl).createDiv({ cls: 'claudian-container' });
@@ -216,22 +220,23 @@ async function createZenFixture(options: { enabled?: boolean; ready?: boolean } 
     parent.selected ??= leaf;
     // Obsidian hides unselected tabs of a group.
     viewContainerEl.isShown = () => parent.selected === leaf;
-    const view = createClaudianView({
+    const view = await createClaudianView({
       host: plugin,
       app,
       leaf,
       containerEl: viewContainerEl,
       contentEl: viewContainerEl,
     });
+    Object.assign(app, { scope: app.keymap.getRootScope() });
     // The view-owned footer and tab container that onOpen builds.
-    view.viewContainerEl = viewContainerEl;
-    view.buildViewLayout(viewContainerEl);
+    view['viewContainerEl'] = viewContainerEl;
+    view['buildViewLayout'](viewContainerEl);
     const activeInputSlotEl = viewContainerEl.querySelector<HTMLElement>('.claudian-active-input-slot')!;
     const sideChatChipHostEl = viewContainerEl.querySelector<HTMLElement>('.claudian-side-chat-chip-slot')!;
     const tab: AssembledTabRuntime = await createTabRuntime({
       plugin,
-      component: Object.assign(new Component(), { registerDomEvent: () => undefined, registerEvent: () => undefined }) as never,
-      containerEl: view.tabContentEl,
+      component: new Component(),
+      containerEl: view['tabContentEl']!,
       mentionDataProvider: new VaultMentionDataProvider(plugin.app),
       conversation, getProviderCatalogConfig: () => null, isRuntimeLive: () => true,
     openConversation: async () => {}, startNewConversation: async () => {},
@@ -249,20 +254,21 @@ async function createZenFixture(options: { enabled?: boolean; ready?: boolean } 
     };
     tab.dom.contentEl.removeClass('claudian-hidden');
     cleanups.push(() => destroyTab(tab));
-    view.tabManager = {
+    view['tabManager'] = Object.assign(new TabManager(plugin, view['tabContentEl']!, view, {},
+      new VaultMentionDataProvider(plugin.app)), {
       getActiveTab: () => tab,
       getTab: (id: string) => id === tab.id ? tab : null,
       getTabCount: () => 1,
-    };
+    });
 
-    Object.assign(view.tabWorkspace, { lifecycleRevision: 1, initializedRevision: ready ? 1 : -1 });
+    Object.assign(view['tabWorkspace'], { lifecycleRevision: 1, initializedRevision: ready ? 1 : -1 });
     leaf.view = view;
     layout.leaves.push(leaf);
-    view.presentation.update();
-    view.startZenModeSource();
+    view['presentation'].update();
+    view['startZenModeSource']();
     cleanups.push(() => {
-      view.stopZenModeSource();
-      view.sessions.dispose();
+      view['stopZenModeSource']();
+      view['sessions'].dispose();
     });
     return { view, tab, leaf, activeInputSlotEl, sideChatChipHostEl };
   };
@@ -275,7 +281,7 @@ async function createZenFixture(options: { enabled?: boolean; ready?: boolean } 
     () => views.getInputFocusView(zen.getActiveLeaf())?.getActiveTab()?.composer ?? null,
   );
   return {
-    ...layout, ...primary, app, zen, views, focusCommand, sessions, settingsCoordinator, addView, addSiblingLeaf,
+    ...layout, ...primary, app, scopes, zen, views, focusCommand, sessions, settingsCoordinator, addView, addSiblingLeaf,
     toggleChat: () => views.toggleView(zen),
   };
 }
@@ -328,14 +334,16 @@ it('moves the existing composer and transcript into the central workspace while 
 it('follows the view brand provider after it changes while zen is open', async () => {
   const { view, tab, rightSplit, setCollapsed } = await createZenFixture();
   setCollapsed(rightSplit, true);
-  view.syncProviderBrandColor();
+  view['syncProviderBrandColor']();
   expect(zenPanel()!.dataset.provider).toBe('claude');
 
   // The tab switches to another provider's model from the zen composer.
-  view.plugin.getConversationSummary(tab.conversationId).providerId = 'codex';
-  view.syncProviderBrandColor();
+  const conversation = view['plugin'].getConversationSync(tab.conversationId!);
+  assert(conversation);
+  conversation.providerId = 'codex';
+  view['syncProviderBrandColor']();
 
-  expect(view.viewContainerEl.dataset.provider).toBe('codex');
+  expect(view['viewContainerEl']!.dataset.provider).toBe('codex');
   expect(zenPanel()!.dataset.provider).toBe('codex');
 });
 
@@ -364,8 +372,8 @@ it('waits for ordinary restoration before presenting an already collapsed sideba
   expect(zenPanel()).toBeNull();
   expect(fixture.sessions).toHaveLength(0);
 
-  fixture.view.tabWorkspace.initializedRevision = 1;
-  fixture.view.notifyZenPresentationChanged();
+  fixture.view['tabWorkspace']['initializedRevision'] = 1;
+  fixture.view['notifyZenPresentationChanged']();
 
   expect(zenPanel()!.contains(fixture.tab.dom.inputComposerEl)).toBe(true);
   expect(fixture.sessions).toHaveLength(0);
@@ -640,7 +648,7 @@ it('clears a pending waiting status when provider invalidation ends the turn', a
   const session = await sendFromZen(tab, sessions, 'Invalidate during text');
   session.emitText('Partial response');
   await waitFor(() => expect(preview()).toBe('Partial response'));
-  await view.plugin.providerHost.executionLifecycleRegistry.runTransition(['claude'], async () => undefined);
+  await view['plugin'].providerHost.executionLifecycleRegistry.runTransition(['claude'], async () => undefined);
   await tab.session.turns.drain();
   expect(session.cancelCalls).toBeGreaterThan(0);
 
@@ -881,7 +889,7 @@ it('leaves focus alone when there is no existing composer or its sidebar is coll
   expect(rightSplit.collapsed).toBe(true);
   setCollapsed(rightSplit, false);
   expect(focusCommand.checkCallback!(true)).toBe(true);
-  view.tabManager = null;
+  view['tabManager'] = null;
   expect(focusCommand.checkCallback!(true)).toBe(false);
   leaves.splice(0);
   expect(focusCommand.checkCallback!(false)).toBe(false);
@@ -893,10 +901,10 @@ it.each(['display', 'visibility', 'opacity', 'detached'])('skips a composer hidd
   const other = await addView('left');
   noteEditor.focus();
   expect(focusCommand.checkCallback!(true)).toBe(true);
-  if (reason === 'display') view.viewContainerEl.style.display = 'none';
-  else if (reason === 'visibility') view.viewContainerEl.style.visibility = 'hidden';
-  else if (reason === 'opacity') view.viewContainerEl.style.opacity = '0';
-  else view.viewContainerEl.remove();
+  if (reason === 'display') view['viewContainerEl']!.style.display = 'none';
+  else if (reason === 'visibility') view['viewContainerEl']!.style.visibility = 'hidden';
+  else if (reason === 'opacity') view['viewContainerEl']!.style.opacity = '0';
+  else view['viewContainerEl']!.remove();
 
   expect(focusCommand.checkCallback!(false)).toBe(true);
   expect(document.activeElement).toBe(within(other.tab.dom.inputComposerEl).getByRole('textbox', { name: 'Message' }));
@@ -976,30 +984,13 @@ it('ignores removed focus targets and retains the return target across normal an
 });
 
 it('closes the resume picker with Escape through the Obsidian keymap', async () => {
-  const { app, view, tab, rightSplit, setCollapsed, scopes } = await createZenFixture();
-  Object.assign(app, { metadataCache: { on: () => ({}), offref: () => undefined } });
-  view.wireEventHandlers();
+  const { app, view, tab, rightSplit, setCollapsed } = await createZenFixture();
+  view['wireEventHandlers']();
   // Obsidian answers Escape at the app scope when no nearer scope consumes it.
   const appEscape = vi.fn(() => false);
-  app.scope.register([], 'Escape', appEscape);
-  // The keymap resolves unmodified keys through the active scope chain during window capture and
-  // stops a key a handler consumes before it reaches the focused element.
-  type MockKeyScope = {
-    parent?: MockKeyScope;
-    handlers: Array<{ key: string | null; modifiers: string[] | null; func: (event: KeyboardEvent) => unknown }>;
-  };
-  const dispatch = (event: KeyboardEvent) => {
-    for (let scope = (scopes.at(-1) ?? app.scope) as MockKeyScope | undefined; scope; scope = scope.parent) {
-      const handler = scope.handlers.find(entry => entry.key === event.key && !entry.modifiers?.length);
-      if (handler?.func(event) === false) {
-        event.preventDefault();
-        event.stopPropagation();
-        return;
-      }
-    }
-  };
-  window.addEventListener('keydown', dispatch, true);
-  cleanups.push(() => window.removeEventListener('keydown', dispatch, true));
+  app.keymap.getRootScope().register([], 'Escape', appEscape);
+  assert(view.scope instanceof HostScope);
+  app.keymap.setWindowBaseScope(window, view.scope);
   setCollapsed(rightSplit, true);
   const input = tab.dom.inputEl as unknown as HTMLElement;
   input.focus();
@@ -1010,11 +1001,14 @@ it('closes the resume picker with Escape through the Obsidian keymap', async () 
   );
   const picker = screen.getByRole('listbox', { name: 'Resume conversation' });
   expect(zenPanel()!.contains(picker)).toBe(true);
+  const targetEscape = vi.fn();
+  input.addEventListener('keydown', targetEscape);
 
-  fireEvent.keyDown(input, { key: 'Escape' });
+  expect(fireEvent.keyDown(input, { key: 'Escape' })).toBe(false);
 
   expect(screen.queryByRole('listbox', { name: 'Resume conversation' })).toBeNull();
   expect(appEscape).not.toHaveBeenCalled();
+  expect(targetEscape).not.toHaveBeenCalled();
 });
 
 it('sends with the existing keyboard rules and leaves note input alone', async () => {
@@ -1160,21 +1154,14 @@ it('collapses the expanded transcript on a click or focus move elsewhere in Obsi
 });
 
 it('moves the panel by its grip, docks it magnetically, and remembers where it was left', async () => {
-  const observers: Array<{ callback: ResizeObserverCallback; targets: Set<Element> }> = [];
-  globalThis.ResizeObserver = class {
-    readonly #entry: { callback: ResizeObserverCallback; targets: Set<Element> };
-    constructor(callback: ResizeObserverCallback) {
-      this.#entry = { callback, targets: new Set() };
-      observers.push(this.#entry);
-    }
-    observe(target: Element) { this.#entry.targets.add(target); }
-    unobserve(target: Element) { this.#entry.targets.delete(target); }
-    disconnect() { this.#entry.targets.clear(); }
-  } as unknown as typeof ResizeObserver;
+  const unobserve = vi.spyOn(ControlledResizeObserver.prototype, 'unobserve');
   const resize = (target: Element) => {
-    for (const { callback, targets } of observers) {
-      if (targets.has(target)) callback([], {} as ResizeObserver);
-    }
+    const rect = target.getBoundingClientRect();
+    const size = { inlineSize: rect.width, blockSize: rect.height };
+    triggerResize(target, {
+      contentRect: new DOMRectReadOnly(rect.x ?? rect.left, rect.y ?? rect.top, rect.width, rect.height),
+      contentBoxSize: [size], borderBoxSize: [size], devicePixelContentBoxSize: [size],
+    });
   };
   // jsdom lacks PointerEvent, so fireEvent would dispatch plain events without pointer coordinates.
   const originalPointerEvent = window.PointerEvent;
@@ -1401,7 +1388,7 @@ it('moves the panel by its grip, docks it magnetically, and remembers where it w
   workspace.trigger('layout-change');
   expect(offset(panel)).toEqual(['-200px', '0px']);
   expect(savedPosition()).toEqual({ x: -0.2, y: 0 });
-  expect(observers.every(observer => !observer.targets.has(statusBar))).toBe(true);
+  expect(unobserve).toHaveBeenCalledWith(statusBar);
 });
 
 it('keeps the preview line on the main chat while a side chat is selected', async () => {
@@ -1683,17 +1670,17 @@ it('releases every moved node and subscription on close and disposal', async () 
   setCollapsed(rightSplit, true);
   expect(zenPanel()).not.toBeNull();
 
-  view.stopZenModeSource();
+  view['stopZenModeSource']();
   expect(zenPanel()).toBeNull();
   expect(rootEl.classList.contains('claudian-zen-host')).toBe(false);
   expect(tab.dom.inputComposerEl.parentElement).toBe(fixture.activeInputSlotEl);
   expect(tab.dom.contentEl.firstElementChild).toBe(tab.dom.messagesWrapperEl);
 
-  view.startZenModeSource();
+  view['startZenModeSource']();
   expect(zenPanel()).not.toBeNull();
   zen.dispose();
   expect(zenPanel()).toBeNull();
-  view.sessions.dispose();
+  view['sessions'].dispose();
   expect(workspace.listenerCount()).toBe(0);
   expect(screen.queryByRole('region', { name: 'Claudian chat' })).toBeNull();
 });

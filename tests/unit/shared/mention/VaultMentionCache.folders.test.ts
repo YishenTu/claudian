@@ -1,13 +1,13 @@
-import { TFile, TFolder } from 'obsidian';
+import { App, TFile, TFolder } from 'obsidian';
 
 import { VaultFolderCache } from '@/shared/mention/VaultMentionCache';
 
 function createFolder(path: string): TFolder {
-  return new (TFolder as any)(path) as TFolder;
+  return Object.assign(new TFolder(), { path, name: path.split('/').pop() ?? '' });
 }
 
 function createFile(path: string): TFile {
-  return new (TFile as any)(path) as TFile;
+  return Object.assign(new TFile(), { path, name: path.split('/').pop() ?? '', extension: path.split('.').pop() ?? '' });
 }
 
 describe('VaultFolderCache', () => {
@@ -26,11 +26,10 @@ describe('VaultFolderCache', () => {
       createFolder('src/components'),
       createFile('notes/example.md'),
     ];
-    const app = {
-      vault: {
+    const app = new App();
+    Object.assign(app.vault, {
         getAllLoadedFiles: vi.fn(() => loadedFiles),
-      },
-    } as any;
+    });
     const cache = new VaultFolderCache(app);
 
     const folders = cache.getFolders().map(folder => folder.path);
@@ -41,9 +40,8 @@ describe('VaultFolderCache', () => {
   it('returns cached folders until marked dirty', () => {
     let loadedFiles = [createFolder('src')];
     const getAllLoadedFiles = vi.fn(() => loadedFiles);
-    const app = {
-      vault: { getAllLoadedFiles },
-    } as any;
+    const app = new App();
+    app.vault.getAllLoadedFiles = getAllLoadedFiles;
     const cache = new VaultFolderCache(app);
 
     const initial = cache.getFolders().map(folder => folder.path);
@@ -64,9 +62,8 @@ describe('VaultFolderCache', () => {
   it.each(['background', 'queued twice', 'foreground first'])('supports %s initialization without reloading', ordering => {
     vi.useFakeTimers();
     const getAllLoadedFiles = vi.fn(() => [createFolder('src')]);
-    const app = {
-      vault: { getAllLoadedFiles },
-    } as any;
+    const app = new App();
+    app.vault.getAllLoadedFiles = getAllLoadedFiles;
     const cache = new VaultFolderCache(app);
 
     cache.initializeInBackground();
@@ -90,7 +87,9 @@ describe('VaultFolderCache', () => {
   it('preserves dirty folders after foreground initialization overtakes the queued callback', () => {
     vi.useFakeTimers();
     const getAllLoadedFiles = vi.fn(() => [createFolder('src')]);
-    const cache = new VaultFolderCache({ vault: { getAllLoadedFiles } } as any);
+    const app = new App();
+    app.vault.getAllLoadedFiles = getAllLoadedFiles;
+    const cache = new VaultFolderCache(app);
     cache.initializeInBackground();
     expect(cache.getFolders().map(folder => folder.path)).toEqual(['src']);
     expect(getAllLoadedFiles).toHaveBeenCalledTimes(1);
@@ -112,9 +111,8 @@ describe('VaultFolderCache', () => {
       .mockImplementation(() => {
         throw new Error('Vault error');
       });
-    const app = {
-      vault: { getAllLoadedFiles },
-    } as any;
+    const app = new App();
+    app.vault.getAllLoadedFiles = getAllLoadedFiles;
     const cache = new VaultFolderCache(app);
 
     expect(cache.getFolders().map(folder => folder.path)).toEqual(['src']);
@@ -126,9 +124,8 @@ describe('VaultFolderCache', () => {
 
   it('does not reload repeatedly when vault has no visible folders', () => {
     const getAllLoadedFiles = vi.fn(() => []);
-    const app = {
-      vault: { getAllLoadedFiles },
-    } as any;
+    const app = new App();
+    app.vault.getAllLoadedFiles = getAllLoadedFiles;
     const cache = new VaultFolderCache(app);
 
     expect(cache.getFolders()).toEqual([]);
@@ -142,9 +139,8 @@ describe('VaultFolderCache', () => {
     const getAllLoadedFiles = vi.fn((): TFolder[] => {
       throw new Error('Vault error');
     });
-    const app = {
-      vault: { getAllLoadedFiles },
-    } as any;
+    const app = new App();
+    app.vault.getAllLoadedFiles = getAllLoadedFiles;
     const cache = new VaultFolderCache(app);
 
     cache.initializeInBackground();

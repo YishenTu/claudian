@@ -2,7 +2,8 @@
 import '@/providers';
 
 import { createTabSession } from '@test/helpers/ConversationPorts';
-import { enqueueTabSessionEvent } from '@test/helpers/features/chat/SessionEventsHarness';
+import { createChatFeatureHost } from '@test/helpers/features/chat/ChatFeatureHostFixture';
+import { createTabMessageId } from '@test/helpers/features/chat/SessionEventsHarness';
 import { FakeSideBackend } from '@test/helpers/features/chat/SideChatSessionHarness';
 import { testDate } from '@test/helpers/testClock';
 import { fireEvent, within } from '@testing-library/dom';
@@ -11,19 +12,22 @@ import { Component, MarkdownRenderer } from 'obsidian';
 import { ProviderExecutionLifecycleRegistry } from '@/core/execution';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import type { ChatMessage, ConversationMutablePatch } from '@/core/types';
+import { ComposerDraftController } from '@/features/chat/composer/ComposerDraftController';
 import { ConversationController } from '@/features/chat/conversation/ConversationController';
 import { ChatExecutionCoordinator } from '@/features/chat/execution/ChatExecutionCoordinator';
+import { LinkedContentController } from '@/features/chat/linked-content';
 import { MessageRenderer } from '@/features/chat/rendering/MessageRenderer';
+import { SessionEvents } from '@/features/chat/sessions/SessionEvents';
 import { ChatState } from '@/features/chat/state/ChatState';
 import { SubagentManager } from '@/features/chat/subagents/SubagentManager';
 import { StreamController } from '@/features/chat/turns/StreamController';
 import { CodexSubagentTracker } from '@/providers/codex/execution/CodexSubagentTracker';
 import { CodexNotificationRouter } from '@/providers/codex/runtime/CodexNotificationRouter';
 
-HTMLElement.prototype.appendText = function (text) { this.append(document.createTextNode(text)); };
-HTMLElement.prototype.empty = function () { this.replaceChildren(); };
-HTMLElement.prototype.addClass = function (...classes) { this.classList.add(...classes); };
-HTMLElement.prototype.removeClass = function (...classes) { this.classList.remove(...classes); };
+
+
+
+
 
 /** Longer than any progress-coalescing window; persistence must not depend on its exact value. */
 const QUIET_PERIOD_MS = 60_000;
@@ -42,14 +46,15 @@ afterEach(() => {
 
 async function createCodexChildTab() {
   const messagesEl = document.body.createDiv();
+  const inputEl = document.createElement('textarea');
   const saves: ChatMessage[][] = [];
-  const plugin = {
-    app: {}, settings: { mediaFolder: '', showMessageTimestamps: false },
+  const plugin = await createChatFeatureHost({
+    settings: { mediaFolder: '', showMessageTimestamps: false },
     updateConversation: vi.fn(async (_id: string, patch: ConversationMutablePatch) => {
       saves.push(structuredClone(patch.messages ?? []));
     }),
-    switchConversation: vi.fn(async (id: string) => ({ id, providerId: 'codex', messages: [], sessionId: null })),
-  } as any;
+    switchConversation: vi.fn(async (id: string) => ({ id, providerId: 'codex', title: id, createdAt: testDate().getTime(), lastActivityAt: testDate().getTime(), messages: [], sessionId: null })),
+  });
   const renderer = new MessageRenderer(plugin,
     new Component(), messagesEl,
     undefined, undefined, () => ProviderRegistry.getCapabilities('codex'));
@@ -62,30 +67,35 @@ async function createCodexChildTab() {
   const workChanges: boolean[] = [];
   const coordinator = new ChatExecutionCoordinator({
     lifecycleRegistry, resolveBackend: () => backend,
-    persistence: { persistExecutionSnapshot: async () => true, registerExecutionBinding: () => undefined, releaseExecutionBinding: () => undefined } as any,
-    interactionPort: {} as any, workingDirectory: '/vault', createId: () => 'binding',
+    persistence: { persistExecutionSnapshot: async () => true, registerExecutionBinding: () => undefined, releaseExecutionBinding: () => undefined,
+      assertConversationExecutionAuthority: async () => undefined, recordConversationActivity: async () => undefined },
+    interactionPort: { requestApproval: async () => { throw new Error('Unexpected approval'); },
+      askUserQuestion: async () => { throw new Error('Unexpected question'); }, dismissInteraction: () => undefined }, workingDirectory: '/vault', createId: () => 'binding',
     resolveMissingProviderSession: async () => 'not_found',
-    onSessionEvent: (event, context) => enqueueTabSessionEvent(tab, plugin, event, context),
+    onSessionEvent: (event, context) => events.enqueue(event, context),
     onBackgroundWorkChanged: working => workChanges.push(working),
   });
   const session = createTabSession({ id: 'tab', conversationId: 'conversation', draftModel: null,
-    providerId: 'codex', lifecycleState: 'ready' } as any, coordinator);
+    providerId: 'codex', lifecycleState: 'open' }, coordinator);
+  const linkedContent = new LinkedContentController({ app: plugin.app, getExcludedTags: () => [],
+    getCachedVaultFiles: () => [], getCachedVaultFolders: () => [] });
   const conversationController = new ConversationController({
     plugin, state, renderer, subagentManager: subagents,
-    session: session.runtime, drafts: { restore: vi.fn() }, clearQueuedMessage: vi.fn(),
-    getLinkedContentController: () => ({ lock: vi.fn() }),
-    getWelcomeEl: () => null, setWelcomeEl: () => undefined,
+    session: session.runtime, drafts: new ComposerDraftController({ getInput: () => inputEl, getImages: () => null, getDestination: () => 'main' }),
+    getLinkedContentController: () => linkedContent,
+    getWelcomeEl: () => null, setWelcomeEl: () => undefined, getMessagesEl: () => messagesEl,
     getExecutionCoordinator: () => coordinator,
-    awaitBackgroundWork: () => session.runtime.awaitBackgroundWork(),
-    ensureExecutionForConversation: async (conversation: { id: string; providerId: 'codex' } | null) => {
+    ensureExecutionForConversation: async conversation => {
       await coordinator.bindConversation(conversation && { conversationId: conversation.id, providerId: conversation.providerId });
     },
     isConversationHydrated: () => true,
-  } as any);
-  const tab: any = { state, renderer, session, executionCoordinator: coordinator, lifecycleState: 'ready',
-    dom: { contentEl: messagesEl }, services: { subagentManager: subagents },
-    ui: { promptSuggestion: { discard: () => undefined, receive: () => undefined } },
-    controllers: { streamController: stream, conversationController } };
+  });
+  const events: SessionEvents = new SessionEvents({
+    state, renderer, session: session.runtime, executionCoordinator: coordinator, stream,
+    persistence: conversationController, createMessageId: createTabMessageId,
+    updatePermissionMode: async () => { throw new Error('Unexpected permission change'); },
+    receiveSuggestion: () => undefined, discardSuggestion: () => undefined, canAcceptBackgroundWork: () => true,
+  });
 
   await coordinator.bindConversation({ conversationId: 'conversation', providerId: 'claude' });
   await coordinator.prepare();
@@ -210,7 +220,7 @@ it('coalesces Codex child progress saves between immediate lifecycle saves and k
     streamOutput(view, ['tail\n']);
     view.tracker.turnCompleted('child', { id: 'child-turn', status: 'completed', error: null, items: [
       { type: 'agentMessage', id: 'answer', text: 'Ready.', phase: 'final_answer', memoryCitation: null },
-    ] } as any);
+    ] });
     await view.settle();
     // The terminal transition persists immediately and supersedes the pending progress save.
     expect(view.saves).toHaveLength(2);

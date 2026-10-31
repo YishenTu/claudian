@@ -1,5 +1,3 @@
-const mockGetHostnameKey = vi.fn(() => 'host-a');
-
 import '@/providers';
 
 import { ProviderSettingsCoordinator } from '@/core/providers/ProviderSettingsCoordinator';
@@ -9,11 +7,6 @@ import {
   getPiProviderSettings,
   updatePiProviderSettings
 } from '@/providers/pi/settings';
-
-vi.mock('@/core/device/InstallationKey', async () => ({
-  ...(await vi.importActual<typeof import('@/core/device/InstallationKey')>('@/core/device/InstallationKey')),
-  getInstallationKey: () => mockGetHostnameKey(),
-}));
 
 describe('Pi settings normalization', () => {
   const discoveredModels = [
@@ -39,11 +32,9 @@ describe('Pi settings normalization', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    mockGetHostnameKey.mockReturnValue('host-a');
   });
 
   it('preserves hostname-scoped CLI paths without assigning them to the current device', () => {
-    mockGetHostnameKey.mockReturnValue('device:current');
 
     expect(getPiProviderSettings({
       providerConfigs: {

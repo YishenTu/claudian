@@ -1,12 +1,5 @@
-const mockGetHostnameKey = vi.fn(() => 'device:current');
-
 import { claudeProviderRegistration } from '@/providers/claude/registration';
 import { getClaudeProviderSettings, updateClaudeProviderSettings } from '@/providers/claude/settings';
-
-vi.mock('@/core/device/InstallationKey', async () => ({
-  ...(await vi.importActual<typeof import('@/core/device/InstallationKey')>('@/core/device/InstallationKey')),
-  getInstallationKey: () => mockGetHostnameKey(),
-}));
 
 describe('Claude settings normalization', () => {
   it.each([undefined, null, 'true', 1, false, true])('decodes opt-in prompt suggestions from %o', value => {

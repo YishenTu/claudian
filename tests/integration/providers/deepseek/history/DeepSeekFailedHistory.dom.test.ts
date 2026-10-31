@@ -8,10 +8,11 @@ import '@/providers';
 import { axe } from '@test/helpers/accessibility';
 import { nativeDefaults } from '@test/helpers/deepseek/NativeDefaults';
 import { NativePeer, rootFollow } from '@test/helpers/deepseek/NativePeer';
-import { runtimeHostFor } from '@test/helpers/providerRuntimeHost';
+import { createChatFeatureHost } from '@test/helpers/features/chat/ChatFeatureHostFixture';
+import { createProviderHostFixture } from '@test/helpers/providerRuntimeHost';
 import { testDate } from '@test/helpers/testClock';
 import { fireEvent, waitFor, within } from '@testing-library/dom';
-import { Component, MarkdownRenderer } from 'obsidian';
+import { Component } from 'obsidian';
 
 import type { ProviderExecutionEvent, ProviderExecutionSession } from '@/core/execution';
 import type { ProviderHost } from '@/core/providers/ProviderHost';
@@ -21,25 +22,18 @@ import { DeepSeekExecutionBackend } from '@/providers/deepseek/execution/DeepSee
 import { DeepSeekConversationHistoryService } from '@/providers/deepseek/history/DeepSeekConversationHistoryService';
 import type { DeepSeekHost } from '@/providers/deepseek/runtime/DeepSeekHost';
 
-HTMLElement.prototype.appendText = function (text) { this.append(document.createTextNode(text)); };
-HTMLElement.prototype.empty = function () { this.replaceChildren(); };
-HTMLElement.prototype.addClass = function (...classes) { this.classList.add(...classes); };
-HTMLElement.prototype.removeClass = function (...classes) { this.classList.remove(...classes); };
-
 const time = testDate().getTime();
-const host = { settings: { locale: 'en', providerConfigs: { deepseek: { enabled: true, visibleModels: ['deepseek:native/model'], discoveredModels: [
-  { encodedId: 'deepseek:native/model', provider: 'native', id: 'model', label: 'Model' },
-] } } } } as unknown as ProviderHost;
+let host: ProviderHost;
 let peer: NativePeer;
 let deepseek: DeepSeekHost;
 let session: ProviderExecutionSession;
 let renderer: MessageRenderer;
 
 beforeEach(async () => {
+  ({ host } = await createProviderHostFixture({ settings: { locale: 'en', providerConfigs: { deepseek: { enabled: true, visibleModels: ['deepseek:native/model'], discoveredModels: [
+  { encodedId: 'deepseek:native/model', provider: 'native', id: 'model', label: 'Model' },
+] } } } }));
   document.body.replaceChildren();
-  vi.mocked(MarkdownRenderer.render).mockImplementation(async (_app, markdown, el) => {
-    (el as HTMLElement).createEl('p', { text: markdown });
-  });
   peer = new NativePeer();
   const native = nativeDefaults({ seq: () => 3, roster: () => ['root'] });
   peer.onCall = (method, args) => method === 'session/create'
@@ -47,7 +41,7 @@ beforeEach(async () => {
   peer.onOpen = native.open;
   await peer.open();
   ({ deepseek } = peer.host());
-  session = new DeepSeekExecutionBackend(runtimeHostFor(host, 'deepseek'), () => deepseek).createSession({
+  session = new DeepSeekExecutionBackend(host.getRuntimeHost('deepseek'), () => deepseek).createSession({
     lifecycle: 'persistent', nativePersistence: 'enabled', workingDirectory: '/vault',
     interactionPort: { requestApproval: vi.fn(), askUserQuestion: vi.fn(), dismissInteraction: vi.fn() },
   });
@@ -104,8 +98,8 @@ it.each([
   ]);
   const messagesEl = document.body.createDiv();
   const fork = vi.fn().mockResolvedValue(undefined);
-  renderer = new MessageRenderer({ app: {}, settings: { mediaFolder: '', showMessageTimestamps: true } } as any,
-    new Component() as any, messagesEl, undefined, fork, () => ProviderRegistry.getCapabilities('deepseek'));
+  renderer = new MessageRenderer(await createChatFeatureHost({ settings: { mediaFolder: '', showMessageTimestamps: true } }),
+    new Component(), messagesEl, undefined, fork, () => ProviderRegistry.getCapabilities('deepseek'));
   renderer.renderMessages(messages, () => 'Hello');
   await waitFor(() => expect(within(messagesEl).getByText('Committed partial reply')).toBeDefined());
   const view = within(messagesEl);

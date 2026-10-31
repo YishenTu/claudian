@@ -1,4 +1,6 @@
-import { Setting, type TextComponent } from 'obsidian';
+import { type Setting, type TextComponent } from 'obsidian';
+
+import { AccessibleSetting } from '@/shared/settings/AccessibleSetting';
 
 export interface HostnameCLIPathSettingOptions {
   container: HTMLElement;
@@ -27,7 +29,7 @@ export function renderHostnameCLIPathSetting(
   let currentValue = options.getValue().trim();
   let disabled = options.disabled ?? false;
   let text!: TextComponent;
-  const setting = new Setting(options.container)
+  const setting = new AccessibleSetting(options.container)
     .setName(options.name)
     .setDesc(options.description);
   const validationEl = options.container.createDiv({

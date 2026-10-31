@@ -864,7 +864,8 @@ export class ConversationRepository {
 
   /** Releases only the hydrated projection, after admitted writes and history reads settle. */
   async releaseHistory(id: string, canRelease: () => boolean): Promise<boolean> {
-    await this.hydrationPromises.get(id);
+    // The reader owns hydration errors; cleanup still rechecks whether history may be released.
+    await this.hydrationPromises.get(id)?.catch(() => undefined);
     return this.#enqueuePersistence(id, async () => {
       const conversation = this.#getRecord(id);
       // A deleted record retains no history, so its session can drop the model.

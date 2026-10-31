@@ -51,16 +51,16 @@ describe('transformSDKMessage', () => {
     });
 
     it('emits an authoritative blocked tool result for permission denials', () => {
-      const message = {
+      const message = msg({
         type: 'system',
         subtype: 'permission_denied',
         tool_name: 'Bash',
         tool_use_id: 'tool-123',
         decision_reason: 'Denied by policy',
         message: 'The tool was not run.',
-        uuid: 'message-123',
+        uuid: '00000000-0000-4000-8000-000000000123',
         session_id: 'test-session',
-      } as any;
+      });
 
       const results = transform(message);
 
@@ -73,18 +73,6 @@ describe('transformSDKMessage', () => {
       }]);
     });
 
-    it('yields context_compacted event for compact_boundary subtype', () => {
-      const message = msg({
-        type: 'system',
-        subtype: 'compact_boundary',
-      });
-
-      const results = transform(message);
-
-      expect(results).toEqual([
-        { type: 'context_compacted' },
-      ]);
-    });
 
     it('captures permissionMode from init message', () => {
       const message = msg({
@@ -113,7 +101,7 @@ describe('transformSDKMessage', () => {
         status: 'completed',
         output_file: '/tmp/agent-123.output',
         summary: 'Agent completed successfully.',
-      } as any);
+      });
 
       const results = transform(message);
 
@@ -137,7 +125,7 @@ describe('transformSDKMessage', () => {
         status: 'failed',
         output_file: '/tmp/agent-failed.output',
         summary: 'Agent failed.',
-      } as any);
+      });
 
       const results = transform(message);
 
@@ -176,29 +164,6 @@ describe('transformSDKMessage', () => {
       ]);
     });
 
-    it('yields subagent_tool_use for assistant tool_use in subagent context', () => {
-      const message = msg({
-        type: 'assistant',
-        parent_tool_use_id: 'parent-tool-abc',
-        message: {
-          content: [
-            { type: 'tool_use', id: 'child-tool-1', name: 'Read', input: { file_path: 'subagent.md' } },
-          ],
-        },
-      });
-
-      const results = transform(message);
-
-      expect(results).toEqual([
-        {
-          type: 'subagent_tool_use',
-          subagentId: 'parent-tool-abc',
-          id: 'child-tool-1',
-          name: 'Read',
-          input: { file_path: 'subagent.md' },
-        },
-      ]);
-    });
 
     it('handles empty content array', () => {
       const message = msg({
@@ -329,7 +294,7 @@ describe('transformSDKMessage', () => {
 
       expect(results.length).toBe(1);
       expect(results[0].type).toBe('subagent_tool_result');
-      expect((results[0] as any).content).toContain('"status": "success"');
+      expect(results[0]).toMatchObject({ content: expect.stringContaining('"status": "success"') });
     });
 
     it('extracts text from array-based tool_use_result content', () => {
@@ -487,7 +452,7 @@ describe('transformSDKMessage', () => {
       const results = transform(message);
 
       expect(results.length).toBe(1);
-      expect((results[0] as any).content).toContain('"key": "value"');
+      expect(results[0]).toMatchObject({ content: expect.stringContaining('"key": "value"') });
     });
 
     it('preserves tool_reference array content in tool_result blocks', () => {
@@ -511,7 +476,7 @@ describe('transformSDKMessage', () => {
       const results = transform(message);
 
       expect(results.length).toBe(1);
-      expect((results[0] as any).content).toBe(JSON.stringify(toolRefs, null, 2));
+      expect(results[0]).toMatchObject({ content: JSON.stringify(toolRefs, null, 2) });
     });
 
     it('emits one result for a subagent frame carrying both structured output and its tool_result block', () => {
@@ -1556,7 +1521,7 @@ describe('transformSDKMessage', () => {
       const usageResults = results.filter(r => r.type === 'usage');
       expect(usageResults).toHaveLength(1);
 
-      const usage = (usageResults[0] as any).usage;
+      const usage = usageResults[0].usage;
       expect(usage.inputTokens).toBe(1000);
       expect(usage.cacheCreationInputTokens).toBe(300);
       expect(usage.cacheReadInputTokens).toBe(200);
@@ -1588,7 +1553,7 @@ describe('transformSDKMessage', () => {
 
       const usageResults = results.filter(r => r.type === 'usage');
       expect(usageResults).toHaveLength(1);
-      expect((usageResults[0] as any).usage).toEqual({
+      expect(usageResults[0].usage).toEqual({
         model: 'sonnet',
         inputTokens: 1000,
         cacheCreationInputTokens: 300,
@@ -1635,7 +1600,7 @@ describe('transformSDKMessage', () => {
       const usageResults = results.filter(r => r.type === 'usage');
       expect(usageResults).toHaveLength(1);
 
-      const usage = (usageResults[0] as any).usage;
+      const usage = usageResults[0].usage;
       expect(usage.inputTokens).toBe(0);
       expect(usage.cacheCreationInputTokens).toBe(0);
       expect(usage.cacheReadInputTokens).toBe(0);

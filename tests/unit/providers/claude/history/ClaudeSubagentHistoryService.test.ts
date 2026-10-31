@@ -10,7 +10,7 @@ describe('ClaudeSubagentHistoryService', () => {
 
   it('loads provider-native sidecar data with Claude-owned path context', async () => {
     const loadToolCalls = vi.spyOn(ClaudeHistoryStore, 'loadSubagentToolCalls')
-      .mockResolvedValue([{ id: 'tool-1' }] as any);
+      .mockResolvedValue([{ id: 'tool-1', name: 'Read', input: {}, status: 'completed' }]);
     const loadFinalResult = vi.spyOn(ClaudeHistoryStore, 'loadSubagentFinalResult')
       .mockResolvedValue('Final result');
     const host = { environmentText: 'CLAUDE_CONFIG_DIR=/tmp/claude-config' };
@@ -21,7 +21,7 @@ describe('ClaudeSubagentHistoryService', () => {
       vaultPath: '/vault',
     };
 
-    await expect(service.loadToolCalls(request)).resolves.toEqual([{ id: 'tool-1' }]);
+    await expect(service.loadToolCalls(request)).resolves.toEqual([{ id: 'tool-1', name: 'Read', input: {}, status: 'completed' }]);
     await expect(service.loadFinalResult(request)).resolves.toBe('Final result');
 
     const expectedContext = expect.objectContaining({

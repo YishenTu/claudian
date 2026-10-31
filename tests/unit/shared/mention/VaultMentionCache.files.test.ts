@@ -1,4 +1,4 @@
-import type { App, TFile } from 'obsidian';
+import { App, type TFile } from 'obsidian';
 
 import { VaultFileCache } from '@/shared/mention/VaultMentionCache';
 
@@ -12,11 +12,10 @@ describe('VaultFileCache', () => {
       { path: 'note2.md', name: 'note2.md' } as TFile,
     ];
 
-    mockApp = {
-      vault: {
+    mockApp = new App();
+    Object.assign(mockApp.vault, {
         getFiles: vi.fn().mockReturnValue(mockFiles),
-      },
-    } as any;
+    });
   });
 
   describe('getFiles', () => {
@@ -26,7 +25,7 @@ describe('VaultFileCache', () => {
         .mockImplementation(() => {
           throw new Error('Vault error');
         });
-      mockApp.vault.getFiles = getFiles as any;
+      mockApp.vault.getFiles = getFiles;
       const cache = new VaultFileCache(mockApp);
 
       expect(cache.getFiles()).toEqual(mockFiles);

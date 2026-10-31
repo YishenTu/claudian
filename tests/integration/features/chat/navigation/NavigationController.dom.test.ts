@@ -5,10 +5,7 @@ import { fireEvent, within } from '@testing-library/dom';
 
 import { NavigationController } from '@/features/chat/navigation/NavigationController';
 
-Object.assign(HTMLElement.prototype, {
-  addClass(this: HTMLElement, name: string) { this.classList.add(name); },
-  removeClass(this: HTMLElement, name: string) { this.classList.remove(name); },
-});
+
 
 afterEach(() => { vi.restoreAllMocks(); document.body.replaceChildren(); });
 

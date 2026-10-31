@@ -1,60 +1,23 @@
 /** @vitest-environment jsdom */
 
-import '@test/helpers/ObsidianSettingsDOM';
+
+import '@/providers';
 
 import { axe } from '@test/helpers/accessibility';
-import type * as SettingsDOM from '@test/helpers/ObsidianSettingsDOM';
+import { controlChangeSettled } from '@test/helpers/ObsidianHost';
+import { createCodexWorkspaceHarness } from '@test/helpers/providers/codex/CodexWorkspaceHarness';
 import { fireEvent, waitFor, within } from '@testing-library/dom';
 
-import { SettingsCoordinator } from '@/app/settings/SettingsCoordinator';
 import { getInstallationKey } from '@/core/device/InstallationKey';
-import type { ProviderSettingsTabRendererContext } from '@/core/providers/types';
 import { getCodexProviderSettings } from '@/providers/codex/settings';
-import { createCodexSettingsTabRenderer } from '@/providers/codex/ui/CodexSettingsTab';
 
-let mockPending: Promise<void>;
-let mockError: unknown;
 const originalPlatform = Object.getOwnPropertyDescriptor(process, 'platform')!;
+const fixtures: Awaited<ReturnType<typeof createCodexWorkspaceHarness>>[] = [];
+const controls: Array<{ dispose(): void }> = [];
 
-vi.mock('obsidian', async () => {
-  const actual = (await vi.importActual<typeof SettingsDOM>('../../../../helpers/ObsidianSettingsDOM'));
-  return {
-    ...actual,
-    Setting: class extends actual.Setting {
-      setHeading() { return this; }
-      addToggle(callback: (component: unknown) => void) {
-        const toggleEl = this.settingEl.createEl('input', { attr: { type: 'checkbox', role: 'switch' } });
-        const component = {
-          toggleEl,
-          setValue(value: boolean) { toggleEl.checked = value; return this; },
-          setDisabled(value: boolean) { toggleEl.disabled = value; return this; },
-          onChange(fn: (value: boolean) => void) {
-            toggleEl.addEventListener('change', () => fn(toggleEl.checked)); return this;
-          },
-        };
-        callback(component); return this;
-      }
-      addDropdown(callback: Parameters<typeof actual.Setting.prototype.addDropdown>[0]) {
-        return super.addDropdown(component => {
-          const onChange = component.onChange.bind(component);
-          component.onChange = fn => onChange(value => {
-            mockPending = Promise.resolve(fn(value)).catch(error => { mockError = error; });
-          });
-          callback(component);
-        });
-      }
-    },
-  };
-});
-vi.mock('@/providers/codex/runtime/CodexCLIInstallation', () => ({
-  inspectCodexInstallation: async () => ({ path: null, version: null, source: 'auto' }),
-}));
-vi.mock('@/shared/settings/EnvironmentSettingsSection', () => ({ renderEnvironmentSettingsSection() {} }));
-vi.mock('@/shared/settings/ProviderModelsSection', () => ({
-  renderProviderModelsSection: () => ({ refresh() {}, dispose() {} }),
-}));
-
-afterEach(() => {
+afterEach(async () => {
+  controls.splice(0).forEach(control => control.dispose());
+  await Promise.all(fixtures.splice(0).map(fixture => fixture.dispose()));
   Object.defineProperty(process, 'platform', originalPlatform);
   vi.restoreAllMocks(); document.body.replaceChildren();
 });
@@ -66,36 +29,33 @@ it.each([
 ] as const)('synchronizes %s → %s controls with settings after a %s save', async (initial, requested, outcome) => {
   Object.defineProperty(process, 'platform', { ...originalPlatform, value: 'win32' });
   const key = getInstallationKey();
-  const settings = { providerConfigs: { codex: {
-    enabled: true, installationMethodsByHost: { [key]: initial }, wslDistroOverridesByHost: { [key]: 'Ubuntu' },
-  } } };
   const persist = vi.fn(async () => { if (outcome === 'rejected') throw new Error('Disk full'); });
-  const coordinator = new SettingsCoordinator(settings, persist);
+  const fixture = await createCodexWorkspaceHarness({
+    installationMethodsByHost: { [key]: initial }, wslDistroOverridesByHost: { [key]: 'Ubuntu' },
+  }, { beforePersist: persist });
+  fixtures.push(fixture);
+  const { settings, host } = fixture;
+  await fixture.settingsStorage.save(settings);
+  if (outcome === 'committed-error') {
+    const apply = host.applyProviderRuntimeSettings.bind(host);
+    vi.spyOn(host, 'applyProviderRuntimeSettings').mockImplementation(async (...args) => {
+      await apply(...args);
+      throw new Error('Runtime reset failed');
+    });
+  }
   const container = document.body.createDiv();
-  mockError = undefined;
-  mockPending = Promise.resolve();
-  const context = {
-    plugin: {
-      settings, storage: { installationKey: key }, getRuntimeHost: () => ({}),
-      mutateSettings: coordinator.mutate.bind(coordinator),
-      applyProviderRuntimeSettings: async (_ids: string[], mutation: Parameters<typeof coordinator.mutate>[0]) => {
-        await coordinator.mutate(mutation);
-        if (outcome === 'committed-error') throw new Error('Runtime reset failed');
-      },
-    },
-    notifyProviderModelOptionsChanged() {}, renderCustomContextLimits() {},
-  } as unknown as ProviderSettingsTabRendererContext;
-  createCodexSettingsTabRenderer({ cliResolver: { reset() {} }, modelCatalog: {} } as Parameters<typeof createCodexSettingsTabRenderer>[0])
-    .render(container, context);
-  const row = within(container).getByText('Installation method').parentElement!;
-  const select = within(row).getByRole('combobox') as HTMLSelectElement;
+  const control = fixture.services.settingsTabRenderer!.render(container, {
+    plugin: host, notifyProviderModelOptionsChanged() {}, renderCustomContextLimits() {},
+  });
+  if (control) controls.push(control);
+  const select = within(container).getByRole<HTMLSelectElement>('combobox', { name: 'Installation method' });
   const distro = within(container).getByPlaceholderText('Ubuntu') as HTMLInputElement;
   const cliCard = container.querySelector<HTMLElement>('.claudian-cli-installation')!;
   fireEvent.click(within(cliCard).getByRole('button', { name: 'Codex CLI installation' }));
   const cli = within(cliCard).getByRole('textbox', { name: 'Codex CLI path' }) as HTMLInputElement;
   expect(select.value).toBe(initial);
   fireEvent.change(select, { target: { value: requested } });
-  await mockPending;
+  const error = await controlChangeSettled(select).then(() => undefined, (failure: unknown) => failure);
   const expected = outcome === 'rejected' ? initial : requested;
   expect(getCodexProviderSettings(settings).installationMethod).toBe(expected);
   expect(select.value).toBe(expected);
@@ -104,6 +64,7 @@ it.each([
   fireEvent.input(cli, { target: { value: '/missing/linux/codex' } });
   await waitFor(() => expect(cli.getAttribute('aria-invalid')).toBe(String(expected !== 'wsl')));
   expect((await axe(cliCard)).violations).toEqual([]);
-  expect(persist).toHaveBeenCalledTimes(1);
-  expect(mockError instanceof Error).toBe(outcome !== 'accepted');
+  expect(persist).toHaveBeenCalled();
+  expect(getCodexProviderSettings(await fixture.settingsStorage.load()).installationMethod).toBe(expected);
+  expect(error instanceof Error).toBe(outcome !== 'accepted');
 });

@@ -2,6 +2,7 @@
 import '@/providers';
 
 import { axe } from '@test/helpers/accessibility';
+import { createChatFeatureHost } from '@test/helpers/features/chat/ChatFeatureHostFixture';
 import { useClaudeSessionFiles } from '@test/helpers/providers/claudeHistory';
 import { parseGrokHistoryContent } from '@test/helpers/providers/grokHistory';
 import { testDate, testTime } from '@test/helpers/testClock';
@@ -27,10 +28,6 @@ import { parsePiSessionContent } from '@/providers/pi/history/PiHistoryStore';
 
 vi.mock('node:fs/promises');
 const writeSession = useClaudeSessionFiles();
-HTMLElement.prototype.appendText = function (text) { this.append(document.createTextNode(text)); };
-HTMLElement.prototype.empty = function () { this.replaceChildren(); };
-HTMLElement.prototype.addClass = function (...classes) { this.classList.add(...classes); };
-HTMLElement.prototype.removeClass = function (...classes) { this.classList.remove(...classes); };
 
 const cleanups: Array<() => void> = [];
 beforeEach(() => {
@@ -43,9 +40,9 @@ afterEach(() => {
   document.body.replaceChildren();
 });
 
-function createSession(providerId?: ProviderId, promptText = 'Read the note') {
+async function createSession(providerId?: ProviderId, promptText = 'Read the note') {
   const messagesEl = document.body.createDiv();
-  const plugin = { app: {}, settings: { mediaFolder: '', showMessageTimestamps: false } } as any;
+  const plugin = await createChatFeatureHost({ settings: { mediaFolder: '', showMessageTimestamps: false } });
   const renderer = new MessageRenderer(plugin, new Component(), messagesEl, undefined, undefined,
     providerId ? () => ProviderRegistry.getCapabilities(providerId) : undefined);
   const turns = new TurnCoordinator();
@@ -103,7 +100,7 @@ const expectedTurn = {
 };
 
 it('collapses a stopped turn under Interrupted and renders it identically on rerender and every provider reload', async () => {
-  const session = createSession();
+  const session = (await createSession());
   const { response, stream, messagesEl, renderer, state } = session;
   const live = response.start();
   await stream.handleStreamChunk({ type: 'tool_use', id: 'read', name: 'Read', input: { file_path: 'note.md' } }, live);
@@ -177,7 +174,7 @@ it('collapses a stopped turn under Interrupted and renders it identically on rer
 });
 
 it.each([true, false])('folds a turn stopped across compaction live and on Claude and OpenCode v2 reload (output after compaction: %s)', async after => {
-  const { response, stream, messagesEl, renderer } = createSession();
+  const { response, stream, messagesEl, renderer } = (await createSession());
   const live = response.start();
   await stream.handleStreamChunk({ type: 'text', content: 'Before compaction.' }, live);
   await stream.handleStreamChunk({ type: 'tool_use', id: 'read', name: 'Read', input: { file_path: 'note.md' } }, live);
@@ -222,7 +219,7 @@ it.each([true, false])('folds a turn stopped across compaction live and on Claud
 });
 
 it('folds every segment of a stopped turn continued after a notification, live and on rerender', async () => {
-  const session = createSession();
+  const session = (await createSession());
   const { response, stream, messagesEl, renderer, state, host } = session;
   const first = response.start();
   await stream.handleStreamChunk({ type: 'tool_use', id: 'read', name: 'Read', input: { file_path: 'note.md' } }, first);
@@ -249,7 +246,7 @@ it('folds every segment of a stopped turn continued after a notification, live a
 });
 
 it('keeps a notification that followed the stopped run\'s terminal event out of its fold', async () => {
-  const { response, messagesEl, host, state } = createSession();
+  const { response, messagesEl, host, state } = (await createSession());
   response.start();
   const scope = (sequence: number) => ({ kind: 'requested' as const, sessionInstanceId: 'native', executionId: 'execution', turnId: 'turn', sequence });
   await response.handleEvent({ type: 'text_delta', text: 'Partial answer', scope: scope(1) });
@@ -267,7 +264,7 @@ it('keeps a notification that followed the stopped run\'s terminal event out of 
 });
 
 it('keeps a failed turn expanded', async () => {
-  const { response, stream, messagesEl } = createSession();
+  const { response, stream, messagesEl } = (await createSession());
   const live = response.start();
   await stream.handleStreamChunk({ type: 'tool_use', id: 'read', name: 'Read', input: { file_path: 'note.md' } }, live);
   await stream.handleStreamChunk({ type: 'text', content: 'Partial answer' }, live);
@@ -283,7 +280,7 @@ it.each([
   ':codex-file-citation{path="/vault/note.md" purpose="source"}',
   ':codex-file-citation[codex-file-citation]{line_range_start=3 path="/vault/note.md"}',
 ])('hides native file annotations live and after reload, while user text stays literal: %s', async directive => {
-  const { response, stream, renderer, state, messagesEl } = createSession('codex', `Explain ${directive}`);
+  const { response, stream, renderer, state, messagesEl } = (await createSession('codex', `Explain ${directive}`));
   const live = response.start();
   await stream.handleStreamChunk({ type: 'text', content: `The answer.${directive}` }, live);
   await response.finish(live, { interrupted: false, failed: false });
@@ -308,7 +305,7 @@ it.each([
 
 it('leaves file-annotation-like assistant text from other providers unchanged', async () => {
   const literal = 'Example :codex-file-citation{path="note.md"}';
-  const { response, stream, renderer, state, messagesEl } = createSession('claude');
+  const { response, stream, renderer, state, messagesEl } = (await createSession('claude'));
   const live = response.start();
   await stream.handleStreamChunk({ type: 'text', content: literal }, live);
   await response.finish(live, { interrupted: false, failed: false });
@@ -319,10 +316,10 @@ it('leaves file-annotation-like assistant text from other providers unchanged', 
 
 it.each(['retired-provider', '', 'constructor'])('keeps cached historical presentation readable without a registered formatter (%s)', async providerId => {
   const messagesEl = document.body.createDiv();
-  const plugin = {
-    app: {}, settings: { mediaFolder: '', showMessageTimestamps: false },
-    getConversationSummary: () => ({ providerId }),
-  } as unknown as Parameters<typeof getSessionCapabilities>[1];
+  const plugin = await createChatFeatureHost({
+    settings: { mediaFolder: '', showMessageTimestamps: false },
+    getConversationSummary: () => ({ id: 'cached-session', title: 'Cached', providerId, createdAt: 1, lastActivityAt: 1 }),
+  });
   const identity = { conversationId: 'cached-session', providerId, draftModel: null };
   const renderer = new MessageRenderer(plugin, new Component(), messagesEl, undefined, undefined,
     () => getSessionCapabilities(identity, plugin));
@@ -362,7 +359,7 @@ it.each([true, false].flatMap(defer => [
     final: 'Literal &lt;span title=&quot;\\(raw\\)&quot;&gt;value&lt;/span&gt;.',
   },
 ]))('defers math exposed by literal HTML through the real stream (enabled: $defer, $markdown)', async ({ defer, markdown, live: streaming, final }) => {
-  const { response, stream, plugin } = createSession();
+  const { response, stream, plugin } = (await createSession());
   plugin.settings.deferMathRenderingDuringStreaming = defer;
   const message = response.start();
   vi.mocked(MarkdownRenderer.render).mockClear();

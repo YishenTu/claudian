@@ -1,25 +1,22 @@
+import { createProviderHostFixture } from '@test/helpers/providerRuntimeHost';
+import { createOpencodeKernelLease } from '@test/helpers/providers/opencode/OpencodeKernelFixture';
+
+import type { ProviderSessionConfig } from '@/core/execution';
 import { OpencodeHTTPSessionKernel } from '@/providers/opencode/execution/OpencodeHTTPSessionKernel';
 import { OpencodeSessionPersistence } from '@/providers/opencode/execution/OpencodeSessionPersistence';
 
-function createLease() {
-  return {
-    databasePath: '/db/opencode.db', isReusable: () => true, onRetired: () => {}, onSuperseded: () => {},
-    subscribe: async () => {}, registerAgents: async () => ({}), waitForActivation: async () => {}, refreshGlobalForms: async () => {},
-    dispose: vi.fn(async () => {}),
-    request: vi.fn(async (route: string) => route === '/api/model' ? { data: [{ id: 'model', providerID: 'test', enabled: true }] } : { data: {} }),
-  };
-}
-
-function createKernel() {
+async function createKernel() {
   let release!: () => void;
   const admitted = new Promise<void>(resolve => { release = resolve; });
-  const lease = createLease();
-  const acquire = vi.fn(async (_cliPath: string, _cwd: string, _environment: NodeJS.ProcessEnv) => { await admitted; return lease; });
-  const config = { workingDirectory: '/workspace', lifecycle: 'persistent', nativePersistence: 'provider-default', interactionPort: { dismissInteraction: vi.fn() } } as any;
+  const { host } = await createProviderHostFixture({ overrides: { getResolvedProviderCliPath: async () => '/bin/opencode' } });
+  const { lease, service, acquire } = createOpencodeKernelLease('/db/opencode.db');
+  vi.mocked(lease.request).mockImplementation(async (route: string) => route === '/api/model' ? { data: [{ id: 'model', providerID: 'test', enabled: true }] } : { data: {} });
+  acquire.mockImplementation(async () => { await admitted; return lease; });
+  const config: ProviderSessionConfig = { workingDirectory: '/workspace', lifecycle: 'persistent', nativePersistence: 'provider-default', interactionPort: { dismissInteraction: vi.fn(), requestApproval: vi.fn(() => { throw new Error('Unexpected approval'); }), askUserQuestion: vi.fn(() => { throw new Error('Unexpected question'); }) } };
   const kernel = new OpencodeHTTPSessionKernel({
     config, databasePath: '/db/opencode.db', getActiveTurnId: () => null, onClosed: vi.fn(),
-    host: { resolveCliPath: async () => '/bin/opencode', environmentText: '' },
-  } as any, { acquire } as any, new OpencodeSessionPersistence(config));
+    host: host.getRuntimeHost('opencode'), sessionInstanceId: 'kernel',
+  }, service, new OpencodeSessionPersistence(config));
   return { kernel, lease, acquire, release };
 }
 
@@ -27,7 +24,7 @@ const connectOptions = { profile: 'managed', systemPrompt: '' } as const;
 const prompt = { text: 'hello', files: [], userText: null };
 
 it('shares one connection attempt', async () => {
-  const { kernel, acquire, release } = createKernel();
+  const { kernel, acquire, release } = await createKernel();
   const first = kernel.connect(connectOptions);
   expect(kernel.connect(connectOptions)).toBe(first);
   release();
@@ -38,7 +35,7 @@ it('shares one connection attempt', async () => {
 });
 
 it('settles calls before connection without native work', async () => {
-  const { kernel, lease } = createKernel();
+  const { kernel, lease } = await createKernel();
   await expect(kernel.steer('ses', prompt)).resolves.toBe(false);
   expect(() => kernel.cancel('ses')).not.toThrow();
   await expect(kernel.openSession()).rejects.toThrow('OpenCode session is not connected');
@@ -48,7 +45,7 @@ it('settles calls before connection without native work', async () => {
 });
 
 it('releases a lease admitted after disposal before disposal resolves', async () => {
-  const { kernel, lease, release } = createKernel();
+  const { kernel, lease, release } = await createKernel();
   const connection = kernel.connect(connectOptions);
   void connection.catch(() => undefined);
   await Promise.resolve();

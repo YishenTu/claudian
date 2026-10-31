@@ -1,4 +1,5 @@
 import { NativePeer } from '@test/helpers/deepseek/NativePeer';
+import { nativeRequest } from '@test/helpers/deepseek/NativeRequest';
 
 let peer: NativePeer;
 
@@ -15,7 +16,7 @@ it('runs one fork at a time and lets only an ephemeral fork hold a token, withdr
   peer.onCall = async (method, args) => {
     if (method === 'session/list') return { items: [] };
     if (method !== 'session/fork') return `${method} answered`;
-    if (args.request.sessionId === 'refused') throw Object.assign(new Error('fork refused'), { code: 'session/fork-unavailable' });
+    if (nativeRequest(args).sessionId === 'refused') throw Object.assign(new Error('fork refused'), { code: 'session/fork-unavailable' });
     if (peer.calls.filter(call => call.method === 'session/fork').length === 1) await held;
     return { sessionId: `fork-${peer.calls.filter(call => call.method === 'session/fork').length}` };
   };
@@ -59,7 +60,7 @@ it('keeps an ephemeral fork token until native work ends: no client deadline, an
   peer.onCall = async (method, args) => {
     if (method === 'session/list') return { items: [] };
     if (method !== 'session/fork') return `${method} answered`;
-    if (args.request.atSeq === 1) { await slow; return { sessionId: 'slow-fork' }; }
+    if (nativeRequest(args).atSeq === 1) { await slow; return { sessionId: 'slow-fork' }; }
     // A failure native did not classify: the fork may still complete inside the process.
     throw new Error('connection reset');
   };
@@ -97,7 +98,7 @@ it.each([false, true])('retires the process after an unclassified failure of any
   peer.onCall = async (method, args) => {
     if (method === 'session/list') return { items: [] };
     if (method !== 'session/fork') return `${method} answered`;
-    if (args.request.atSeq === 9) throw Object.assign(new Error('native refused'), { code: 'session/fork-unavailable' });
+    if (nativeRequest(args).atSeq === 9) throw Object.assign(new Error('native refused'), { code: 'session/fork-unavailable' });
     throw new Error('connection reset');
   };
   const { deepseek, lifecycle } = peer.host();
@@ -157,7 +158,7 @@ it('retires the process when a refused fork\'s token cannot be withdrawn, but ke
   peer.onCall = async (method, args) => {
     if (method === 'session/list') return { items: [] };
     if (method !== 'session/fork') return `${method} answered`;
-    if (args.request.atSeq === 9) throw Object.assign(new Error('native refused'), { code: 'session/fork-unavailable' });
+    if (nativeRequest(args).atSeq === 9) throw Object.assign(new Error('native refused'), { code: 'session/fork-unavailable' });
     return { sessionId: 'side' };
   };
   const { deepseek, lifecycle } = peer.host({ failWithdrawals: true });

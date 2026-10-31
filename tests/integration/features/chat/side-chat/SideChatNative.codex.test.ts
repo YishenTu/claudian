@@ -3,6 +3,7 @@ import * as path from 'node:path';
 
 vi.mock('cross-spawn', () => ({ default: vi.fn() }));
 import { createForkTestEnvironment, type ForkTestEnvironment } from '@test/helpers/features/chat/ProviderForkTestHarness';
+import { codexForkRequest, codexTextTurnRequest,codexThreadId } from '@test/helpers/providers/codex/CodexRequests';
 import { createNativeRPCProcess } from '@test/helpers/providers/NativeRPCTestProcess';
 import spawn from 'cross-spawn';
 
@@ -25,7 +26,7 @@ afterEach(async () => { await Promise.all(runtimes.splice(0).map(runtime => runt
 function createNativeCodex(env: ForkTestEnvironment) {
   const threads = new Map<string, string[]>([['codex-source', []]]);
   const prompts: Array<{ threadId: string; context: string[] }> = [];
-  const operations: Array<{ method: string; params: Record<string, any> }> = [];
+  const operations: Array<{ method: string; params: Record<string, unknown> }> = [];
   const sourceFile = path.join(env.root, 'codex-source.jsonl');
   let ordinal = 0;
   const result = (id: string) => ({
@@ -38,17 +39,18 @@ function createNativeCodex(env: ForkTestEnvironment) {
     if (method === 'plugin/reconcile' || method === 'thread/unsubscribe') return {};
     if (method === 'thread/start') return result('codex-source');
     if (method === 'thread/fork') {
-      if (params.ephemeral && !params.excludeTurns) throw new Error('ephemeral paginated thread/fork requires excludeTurns: true');
-      const source = threads.get(params.threadId)!;
-      const end = params.lastTurnId ? source.indexOf(params.lastTurnId) + 1 : source.length;
+      const request = codexForkRequest(params);
+      if (request.ephemeral && !request.excludeTurns) throw new Error('ephemeral paginated thread/fork requires excludeTurns: true');
+      const source = threads.get(request.threadId)!;
+      const end = request.lastTurnId ? source.indexOf(request.lastTurnId) + 1 : source.length;
       threads.set('codex-child', source.slice(0, end));
       return result('codex-child');
     }
-    if (method === 'thread/resume') return result(params.threadId);
+    if (method === 'thread/resume') return result(codexThreadId(params));
     if (method === 'turn/start') {
       const id = `codex-turn-${++ordinal}`;
       const itemId = `msg_codex-${ordinal}`;
-      const threadId = params.threadId as string;
+      const { threadId, input } = codexTextTurnRequest(params);
       const turns = threads.get(threadId)!;
       prompts.push({ context: [...turns], threadId });
       turns.push(id);
@@ -56,7 +58,7 @@ function createNativeCodex(env: ForkTestEnvironment) {
         const records = [
           { payload: { turn_id: id, type: 'task_started' }, type: 'event_msg' },
           { payload: { model: 'gpt-5', turn_id: id }, type: 'turn_context' },
-          { payload: { content: [{ text: params.input[0].text, type: 'input_text' }], role: 'user', type: 'message' }, type: 'response_item' },
+          { payload: { content: [{ text: input[0].text, type: 'input_text' }], role: 'user', type: 'message' }, type: 'response_item' },
           { payload: { content: [{ text: `Reply ${ordinal}`, type: 'output_text' }], id: itemId, role: 'assistant', type: 'message' }, type: 'response_item' },
           { payload: { turn_id: id, type: 'task_complete' }, type: 'event_msg' },
         ];

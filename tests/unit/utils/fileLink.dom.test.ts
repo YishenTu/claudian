@@ -3,34 +3,36 @@
  */
 import { axe } from '@test/helpers/accessibility';
 import { fireEvent, within } from '@testing-library/dom';
+import { App, TFile } from 'obsidian';
 
 import { processFileLinks, registerFileLinkHandler } from '@/utils/fileLink';
 
 function createMockApp(existingFiles: string[]) {
   const fileSet = new Set(existingFiles.map(f => f.toLowerCase()));
 
-  return {
-    metadataCache: {
+  const base = new App();
+  return Object.assign(base, {
+    metadataCache: Object.assign(base.metadataCache, {
       getFirstLinkpathDest: vi.fn((linkPath: string) => {
-        return fileSet.has(linkPath.toLowerCase()) ? { path: linkPath } : null;
+        return fileSet.has(linkPath.toLowerCase()) ? Object.assign(new TFile(), { path: linkPath }) : null;
       }),
-    },
-    vault: {
+    }),
+    vault: Object.assign(base.vault, {
       getAbstractFileByPath: vi.fn((filePath: string) => {
-        if (fileSet.has(filePath.toLowerCase())) return { path: filePath, basename: filePath.replace(/\.md$/, '') };
+        if (fileSet.has(filePath.toLowerCase())) return Object.assign(new TFile(), { path: filePath, basename: filePath.replace(/\.md$/, '') });
         if (!filePath.endsWith('.md') && fileSet.has((filePath + '.md').toLowerCase())) {
-          return { path: filePath + '.md', basename: filePath };
+          return Object.assign(new TFile(), { path: filePath + '.md', basename: filePath });
         }
         return null;
       }),
-    },
-  } as any;
+    }),
+  });
 }
 
 describe('processFileLinks', () => {
   it.each(['', 'note.md'])('uses only the explicit source for same-note targets (%s)', async sourcePath => {
     const app = createMockApp(['note.md']);
-    app.workspace = { getActiveFile: vi.fn(() => ({ path: 'note.md', basename: 'note' })) };
+    vi.spyOn(app.workspace, 'getActiveFile').mockReturnValue(Object.assign(new TFile(), { path: 'note.md', basename: 'note' }));
     const container = document.createElement('main');
     const code = container.appendChild(document.createElement('code'));
     code.textContent = '[[#Overview]] and [[#^quote-of-the-day]]';
@@ -45,12 +47,12 @@ describe('processFileLinks', () => {
   describe('null/empty inputs', () => {
     it('handles null app gracefully', () => {
       const container = document.createElement('div');
-      expect(() => processFileLinks(null as any, container)).not.toThrow();
+      expect(() => processFileLinks(null as unknown as App, container)).not.toThrow();
     });
 
     it('handles null container gracefully', () => {
       const app = createMockApp([]);
-      expect(() => processFileLinks(app, null as any)).not.toThrow();
+      expect(() => processFileLinks(app, null as unknown as HTMLElement)).not.toThrow();
     });
 
     it('handles empty container', () => {
@@ -170,10 +172,10 @@ describe('processFileLinks', () => {
 
     it('keeps inline-code labels inside existing links owned by their original anchor', async () => {
       const app = createMockApp(['note.md']);
-      app.workspace = {
+      Object.assign(app.workspace, {
         iterateAllLeaves: vi.fn(),
         openLinkText: vi.fn().mockResolvedValue(undefined),
-      };
+      });
       const container = document.createElement('div');
       container.innerHTML = '<a href="https://example.com/guide"><code>[[note.md]]</code></a> and <code>[[note.md]]</code>';
       document.body.appendChild(container);

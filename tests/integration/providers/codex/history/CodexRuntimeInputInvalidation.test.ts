@@ -1,8 +1,7 @@
 import '@/providers';
 
 import { TEST_CODEX_CATALOG, TEST_CODEX_MODEL } from '@test/helpers/codexModels';
-import { DEFAULT_CLAUDIAN_SETTINGS } from '@test/helpers/defaultSettings';
-import { withRuntimeHosts } from '@test/helpers/providerRuntimeHost';
+import { createProviderHostFixture } from '@test/helpers/providerRuntimeHost';
 import { testDate } from '@test/helpers/testClock';
 import * as fs from 'fs';
 import * as os from 'os';
@@ -10,13 +9,12 @@ import * as path from 'path';
 
 import { ConversationRepository } from '@/app/conversations/ConversationRepository';
 import { RuntimeSettingsCoordinator } from '@/app/settings/RuntimeSettingsCoordinator';
-import { SettingsCoordinator } from '@/app/settings/SettingsCoordinator';
+import { ConversationPersistenceStore } from '@/app/storage/ConversationPersistenceStore';
 import type { ProviderSessionEvent } from '@/core/execution';
-import { ProviderExecutionLifecycleRegistry } from '@/core/execution/ProviderExecutionLifecycleRegistry';
 import { SessionSnapshotState } from '@/core/execution/SessionSnapshotState';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { ProviderSettingsCoordinator } from '@/core/providers/ProviderSettingsCoordinator';
-import type { ClaudianSettings, Conversation } from '@/core/types';
+import type { Conversation } from '@/core/types';
 import { ExecutionSessionSupervisor } from '@/features/chat/execution/ExecutionSessionSupervisor';
 import { createCodexWorkspaceServices } from '@/providers/codex/app/CodexWorkspaceServices';
 
@@ -50,40 +48,22 @@ function closedConversation(id: string, threadId: string, question: string, answ
   };
 }
 
-function fixture() {
-  const settings = structuredClone(DEFAULT_CLAUDIAN_SETTINGS) as ClaudianSettings & Record<string, any>;
-  settings.providerConfigs = {
-    ...settings.providerConfigs,
-    codex: {
-      enabled: true,
-      discoveredModels: TEST_CODEX_CATALOG,
-      environmentVariables: `CODEX_HOME=${codexHome}`,
-    },
-  };
-  const saveMetadata = vi.fn().mockResolvedValue(undefined);
+async function fixture() {
+  const providerFixture = await createProviderHostFixture({ settings: {
+    providerConfigs: { codex: {
+      enabled: true, discoveredModels: TEST_CODEX_CATALOG, environmentVariables: `CODEX_HOME=${codexHome}`,
+    } },
+  } });
+  const { settings, lifecycle } = providerFixture;
+  const persistence = new ConversationPersistenceStore(providerFixture.vault.files, providerFixture.storage.installationKey);
+  const saveMetadata = vi.spyOn(persistence, 'saveMetadata');
   const repository = new ConversationRepository({
-    providers: ProviderRegistry,
-    providerSettings: ProviderSettingsCoordinator,
-    getSettings: () => settings,
-    getVaultPath: () => '/vault',
-    persistence: {
-      metadataReader: {
-        revalidate: vi.fn().mockResolvedValue([]),
-        load: vi.fn().mockResolvedValue(null),
-        scan: vi.fn().mockResolvedValue({ records: [], complete: true, invalidMetadataCount: 0 }),
-        loadMetadata: vi.fn().mockResolvedValue(null),
-        scanMetadata: vi.fn().mockResolvedValue({ metadata: [], complete: true, invalidMetadataCount: 0 }),
-        listMetadata: vi.fn().mockResolvedValue([]),
-      },
-      saveMetadata,
-      deleteCurrentMetadata: vi.fn().mockResolvedValue(undefined),
-      assignMetadataToDevice: vi.fn().mockResolvedValue(undefined),
-    } as never,
-    onConversationDeleted: async () => undefined,
+    providers: ProviderRegistry, providerSettings: ProviderSettingsCoordinator,
+    getSettings: () => settings, getVaultPath: () => providerFixture.vault.root,
+    persistence, onConversationDeleted: async () => undefined,
   });
-  const lifecycle = new ProviderExecutionLifecycleRegistry();
   const runtimeSettings = new RuntimeSettingsCoordinator({
-    settings: new SettingsCoordinator(settings, async () => undefined),
+    settings: providerFixture.coordinator,
     conversations: repository,
     executionLifecycle: lifecycle,
     getSettings: () => settings,
@@ -95,7 +75,7 @@ function fixture() {
     closedConversation('conv-a', 'thread-a', 'Question A', 'Answer A'),
     closedConversation('conv-b', 'thread-b', 'Question B', 'Answer B'),
   ]);
-  return { lifecycle, repository, runtimeSettings, saveMetadata, settings };
+  return { lifecycle, repository, runtimeSettings, saveMetadata, settings, host: providerFixture.host };
 }
 
 async function visibleHistory(repository: ConversationRepository, id: string): Promise<string[]> {
@@ -113,10 +93,10 @@ describe('Codex runtime-input changes', () => {
   });
 
   it('keeps closed conversations bound and readable after a CLI path change', async () => {
-    const { repository, runtimeSettings } = fixture();
+    const { repository, runtimeSettings } = await fixture();
 
     const reconciliation = await runtimeSettings.commit(['codex'], (settings) => {
-      (settings.providerConfigs as any).codex.cliPath = '/opt/codex/bin/codex';
+      settings.providerConfigs.codex!.cliPath = '/opt/codex/bin/codex';
     }, { failureMessage: 'Failed to save settings' });
 
     expect(reconciliation).toMatchObject({
@@ -134,10 +114,10 @@ describe('Codex runtime-input changes', () => {
   });
 
   it('invalidates bindings on an endpoint change while closed conversations stay readable', async () => {
-    const { repository, runtimeSettings, saveMetadata } = fixture();
+    const { repository, runtimeSettings, saveMetadata } = await fixture();
 
     const reconciliation = await runtimeSettings.commit(['codex'], (settings) => {
-      (settings.providerConfigs as any).codex.environmentVariables
+      settings.providerConfigs.codex!.environmentVariables
         = `CODEX_HOME=${codexHome}\nOPENAI_BASE_URL=https://new.example.com/v1`;
     }, { failureMessage: 'Failed to save settings' });
 
@@ -164,10 +144,8 @@ describe('Codex runtime-input changes', () => {
     ['disabling Codex', (codex: Record<string, unknown>) => { codex.enabled = false; }, false, 'thread-a'],
     ['a CLI path change', (codex: Record<string, unknown>) => { codex.cliPath = '/opt/codex/bin/codex'; }, true, 'thread-a'],
   ])('lets a running session outlive %s only when its binding stays valid', async (_change, change, preserved, binding) => {
-    const { lifecycle, repository, runtimeSettings, settings } = fixture();
-    const workspace = await createCodexWorkspaceServices(withRuntimeHosts({
-      settings, executionLifecycleRegistry: lifecycle,
-    }));
+    const { lifecycle, repository, runtimeSettings, host } = await fixture();
+    const workspace = await createCodexWorkspaceServices(host);
     const live = new SessionSnapshotState({
       providerId: 'codex',
       sessionInstanceId: 'live-session',
@@ -199,7 +177,7 @@ describe('Codex runtime-input changes', () => {
 
       await lifecycle.runTransition(['codex'], async () => {
         await runtimeSettings.commit(['codex'], (draft) => {
-          change((draft.providerConfigs as any).codex);
+          change(draft.providerConfigs.codex!);
         }, { failureMessage: 'Failed to save settings' });
       });
       expect(supervisor.current !== null).toBe(preserved);
@@ -223,14 +201,12 @@ describe('Codex runtime-input changes', () => {
     ['disabling Codex', (codex: Record<string, unknown>) => { codex.enabled = false; }, false, 'thread-a'],
     ['a CLI path change', (codex: Record<string, unknown>) => { codex.cliPath = '/opt/codex/bin/codex'; }, true, 'thread-a'],
   ])('keeps a first thread adopted during %s as history only when its binding was retired', async (_change, change, preserved, binding) => {
-    const { lifecycle, repository, runtimeSettings, settings } = fixture();
+    const { lifecycle, repository, runtimeSettings, host } = await fixture();
     repository.replaceAll(['conv-a', 'conv-b'].map(id => repository.getCachedConversation(id)!).map(conversation => conversation.id === 'conv-a'
       ? { ...conversation, sessionId: null, providerState: undefined, messages: [] }
       : conversation));
     let adoptedThreadId: string | null = null;
-    const workspace = await createCodexWorkspaceServices(withRuntimeHosts({
-      settings, executionLifecycleRegistry: lifecycle,
-    }));
+    const workspace = await createCodexWorkspaceServices(host);
     const live = new SessionSnapshotState({
       providerId: 'codex',
       sessionInstanceId: 'live-session',
@@ -262,7 +238,7 @@ describe('Codex runtime-input changes', () => {
 
       await lifecycle.runTransition(['codex'], async () => {
         await runtimeSettings.commit(['codex'], (draft) => {
-          change((draft.providerConfigs as any).codex);
+          change(draft.providerConfigs.codex!);
         }, {
           failureMessage: 'Failed to save settings',
           onSettingsCommitted: async () => {
@@ -286,7 +262,7 @@ describe('Codex runtime-input changes', () => {
   });
 
   it('keeps a fork child adopted during an endpoint change as one history segment', async () => {
-    const { lifecycle, repository, runtimeSettings, settings } = fixture();
+    const { lifecycle, repository, runtimeSettings, host } = await fixture();
     const sourcePath = repository.getCachedConversation('conv-a')!.providerState!.sessionFilePath as string;
     const childPath = sourcePath.replace('thread-a.jsonl', 'thread-child.jsonl');
     repository.replaceAll(['conv-a', 'conv-b'].map(id => repository.getCachedConversation(id)!).map(conversation => conversation.id === 'conv-a'
@@ -296,9 +272,7 @@ describe('Codex runtime-input changes', () => {
         }, messages: [] }
       : conversation));
     let adoptedThreadId: string | null = null;
-    const workspace = await createCodexWorkspaceServices(withRuntimeHosts({
-      settings, executionLifecycleRegistry: lifecycle,
-    }));
+    const workspace = await createCodexWorkspaceServices(host);
     const live = new SessionSnapshotState({
       providerId: 'codex',
       sessionInstanceId: 'live-session',
@@ -330,7 +304,7 @@ describe('Codex runtime-input changes', () => {
 
       await lifecycle.runTransition(['codex'], async () => {
         await runtimeSettings.commit(['codex'], (draft) => {
-          (draft.providerConfigs as any).codex.environmentVariables
+          draft.providerConfigs.codex!.environmentVariables
             = `CODEX_HOME=${codexHome}\nOPENAI_BASE_URL=https://new.example.com/v1`;
         }, {
           failureMessage: 'Failed to save settings',

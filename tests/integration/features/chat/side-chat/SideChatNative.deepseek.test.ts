@@ -1,5 +1,5 @@
 import { nativeDefaults } from '@test/helpers/deepseek/NativeDefaults';
-import { NativePeer, rootFollow } from '@test/helpers/deepseek/NativePeer';
+import { nativeAddress, NativePeer, nativeRequest, nativeSessionId, rootFollow } from '@test/helpers/deepseek/NativePeer';
 import { createForkTestEnvironment } from '@test/helpers/features/chat/ProviderForkTestHarness';
 import { testDate } from '@test/helpers/testClock';
 
@@ -10,7 +10,7 @@ import { traceSideChild } from './SideChatNativeTracer';
 it('runs the side child on an ephemeral native fork of the checkpoint that ends with its Host process', async () => {
   const env = await createForkTestEnvironment();
   const model = 'deepseek:native/model';
-  (env.host.settings as any).providerConfigs.deepseek = { enabled: true, visibleModels: [model], discoveredModels: [{ encodedId: model, provider: 'native', id: 'model', label: 'Model' }] };
+  (env.host.settings).providerConfigs.deepseek = { enabled: true, visibleModels: [model], discoveredModels: [{ encodedId: model, provider: 'native', id: 'model', label: 'Model' }] };
   const time = testDate().getTime();
   const peer = new NativePeer();
   // Each native session keeps its own durable cursor and the user texts its model context holds.
@@ -33,23 +33,28 @@ it('runs the side child on an ephemeral native fork of the checkpoint that ends 
   peer.onCall = (method, args) => {
     if (method === 'session/create') {
       cursors.set('source', 3); contexts.set('source', []); announce('source');
-      return { sessionId: 'source', agentPreset: args.request.agentPreset };
+      return { sessionId: 'source', agentPreset: nativeRequest(args).agentPreset };
     }
     if (method === 'session/fork') {
-      const { sessionId, atSeq } = args.request;
+      const sessionId = nativeSessionId(args);
+      const { atSeq } = nativeRequest(args);
+      assert(atSeq !== undefined);
       cursors.set('side', atSeq); contexts.set('side', [...contexts.get(sessionId)!]); announce('side');
       return { sessionId: 'side' };
     }
     if (method === 'session/modelCatalog') return { groups: [{ id: 'native', models: [{ id: 'model' }] }] };
     if (method === 'session/selectModel') return { selected: { provider: 'native', model: 'model' } };
     if (method === 'session/projections') {
-      const sessionId = args.request.sessionId as string;
+      const sessionId = nativeSessionId(args);
       if (!cursors.has(sessionId)) throw Object.assign(new Error('missing'), { code: 'session/missing' });
       return { asOfSeq: cursors.get(sessionId), values: { agentPreset: 'claudian', permissions: { currentValue: permissions.get(sessionId) ?? 'workspace-write' } } };
     }
     if (method === 'session/prompt') {
-      const { sessionId, requestId, content } = args.request;
-      const text = content[0].text as string;
+      const sessionId = nativeSessionId(args);
+      const { requestId, content } = nativeRequest(args);
+      const block = content?.[0];
+      assert(block && typeof block === 'object' && 'text' in block && typeof block.text === 'string');
+      const text = block.text;
       prompts.push({ sessionId, context: [...contexts.get(sessionId)!], text });
       contexts.get(sessionId)!.push(text);
       setTimeout(() => {
@@ -63,7 +68,12 @@ it('runs the side child on an ephemeral native fork of the checkpoint that ends 
     return native.call(method, args);
   };
   peer.onOpen = (endpoint, args, send) => {
-    if (endpoint === 'session/follow') { send({ type: 'snapshot', cursor: cursors.get(args.request.address.sessionId) ?? 0, records: [] }); return; }
+    if (endpoint === 'session/follow') {
+      const address = nativeAddress(args);
+      assert(address.kind === 'session');
+      send({ type: 'snapshot', cursor: cursors.get(address.sessionId) ?? 0, records: [] });
+      return;
+    }
     native.open(endpoint, args, send);
   };
   await peer.open();

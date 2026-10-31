@@ -5,8 +5,6 @@ import type { Mock } from 'vitest';
 import type { ConversationMeta, SessionAutoArchiveAfter } from '@/core/types';
 import { InactiveSessionArchiver } from '@/features/chat/conversation/InactiveSessionArchiver';
 
-
-
 describe('InactiveSessionArchiver', () => {
   const clock = testClock();
   const inactiveFor = (days: number): number => clock().getTime() - days * 86_400_000;

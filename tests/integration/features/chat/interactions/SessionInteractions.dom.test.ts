@@ -2,7 +2,7 @@
 import '@/providers';
 
 import { axe } from '@test/helpers/accessibility';
-import { fireEvent, waitFor, within } from '@testing-library/dom';
+import { createEvent, fireEvent, waitFor, within } from '@testing-library/dom';
 import { Notice } from 'obsidian';
 
 import type { ToolCallInfo } from '@/core/types';
@@ -13,13 +13,51 @@ import { setLocale } from '@/i18n/i18n';
 import { ClaudeExecutionInteractionRouter } from '@/providers/claude/execution/ClaudeExecutionInteractionRouter';
 import { CodexExecutionServerRequestRouter } from '@/providers/codex/execution/CodexExecutionServerRequestRouter';
 
-HTMLElement.prototype.empty = function () { this.replaceChildren(); };
-HTMLElement.prototype.addClass = function (...classes) { this.classList.add(...classes); };
-HTMLElement.prototype.removeClass = function (...classes) { this.classList.remove(...classes); };
-HTMLElement.prototype.toggleClass = function (name, force) { for (const item of Array.isArray(name) ? name : [name]) this.classList.toggle(item, force); };
-HTMLElement.prototype.scrollIntoView = function () {};
-
 afterEach(() => { document.body.replaceChildren(); setLocale('en'); });
+
+it('makes long approval details a named keyboard-scrollable region', async () => {
+  const parent = document.body.createDiv();
+  const suppressed = parent.createDiv();
+  const prompts = new SessionInteractions({ getPromptParentEl: () => parent, getSuppressedEl: () => suppressed });
+  const pending = prompts.requestApproval('approval-id', 'Bash', {}, 'A long command description');
+  const details = within(parent).getByRole('region', { name: 'Bash approval details' });
+  details.focus();
+  expect(document.activeElement).toBe(details);
+  const parentKeyDown = vi.fn();
+  parent.addEventListener('keydown', parentKeyDown);
+  for (const key of ['ArrowDown', 'Enter']) {
+    const event = createEvent.keyDown(details, { key });
+    fireEvent(details, event);
+    expect(event.defaultPrevented).toBe(false);
+  }
+  expect(parentKeyDown).not.toHaveBeenCalled();
+  expect(await axe(parent)).toHaveNoViolations();
+  prompts.dismiss('approval-id');
+  await pending;
+});
+
+it('resumes the newest response when an older generation prompt settles last', async () => {
+  const parent = document.body.createDiv();
+  let generation = 1;
+  const resumed: number[] = [];
+  const prompts = new SessionInteractions({
+    getPromptParentEl: () => parent,
+    onBeforeShow: () => {
+      const shownGeneration = generation;
+      return () => resumed.push(shownGeneration);
+    },
+  });
+  const question = { questions: [{ id: '0', question: 'Which check?', options: [{ label: 'History' }] }] };
+  const first = prompts.askUserQuestion('first', question);
+  generation = 2;
+  const second = prompts.askUserQuestion('second', question);
+  prompts.dismiss('second');
+  await second;
+  expect(resumed).toEqual([]);
+  prompts.dismiss('first');
+  await first;
+  expect(resumed).toEqual([2]);
+});
 
 it('keeps an approval requested without a view pending until the user answers after attachment', async () => {
   let parent: HTMLElement | null = null;

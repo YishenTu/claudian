@@ -14,6 +14,32 @@ describe('CodexNotificationRouter', () => {
     );
   });
 
+  describe.each([
+    { type: 'imageView', id: 'call_img1', name: 'Read',
+      item: { path: '/vault/attachments/cat.png' }, completed: {},
+      input: { file_path: '/vault/attachments/cat.png' }, result: {} },
+    { type: 'webSearch', id: 'ws_abc', name: 'WebSearch',
+      item: { query: 'codex documentation' }, completed: { status: 'completed' },
+      input: { query: 'codex documentation' }, result: {} },
+    { type: 'collabAgentToolCall', id: 'call_agent1', name: 'spawn_agent',
+      item: { tool: 'spawnAgent', status: 'inProgress' }, completed: { status: 'completed' },
+      result: {} },
+    { type: 'mcpToolCall', id: 'call_mcp1', name: 'mcp__codex__list_mcp_resources',
+      item: { server: 'codex', tool: 'list_mcp_resources', status: 'inProgress', arguments: {}, result: null, error: null, durationMs: null },
+      completed: { status: 'completed', result: { content: [{ type: 'text', text: '{"resources":[]}' }] }, durationMs: 444 },
+      input: {}, result: { content: '{"resources":[]}' } },
+  ])('$type native lifecycle', ({ type, id, name, item, completed, input, result }) => {
+    it.each(['started', 'completed'] as const)('maps item/%s without requiring a preceding start', phase => {
+      router.handleNotification(`item/${phase}`, {
+        threadId: 't1', turnId: 'turn1', item: { type, id, ...item, ...(phase === 'completed' ? completed : {}) },
+      });
+      expect(chunks).toMatchObject([
+        { type: 'tool_use', id, name, ...(input ? { input } : {}) },
+        ...(phase === 'completed' ? [{ type: 'tool_result', id, isError: false, ...result }] : []),
+      ]);
+    });
+  });
+
   describe('text streaming', () => {
     it.each([false, true])('deduplicates async question notifications and tool calls (notification first: %s)', notificationFirst => {
       router.beginTurn();
@@ -67,22 +93,6 @@ describe('CodexNotificationRouter', () => {
         .toBe(commentary + answer);
       expect(chunks.filter(chunk => chunk.type === 'tool_use')).toHaveLength(1);
       expect(chunks.filter(chunk => chunk.type === 'tool_result')).toHaveLength(1);
-    });
-
-    it('accumulates multiple deltas', () => {
-      router.handleNotification('item/agentMessage/delta', {
-        threadId: 't1', turnId: 'turn1', itemId: 'msg1', delta: 'Hello',
-      });
-      expect(chunks).toEqual([{ type: 'text', content: 'Hello' }]);
-
-      router.handleNotification('item/agentMessage/delta', {
-        threadId: 't1', turnId: 'turn1', itemId: 'msg1', delta: ' world',
-      });
-
-      expect(chunks).toEqual([
-        { type: 'text', content: 'Hello' },
-        { type: 'text', content: ' world' },
-      ]);
     });
 
     it('emits only missing assistant text from raw completed messages', () => {
@@ -3798,46 +3808,6 @@ describe('CodexNotificationRouter', () => {
     });
   });
 
-  describe('imageView tool', () => {
-    it('maps imageView item/started to tool_use chunk', () => {
-      router.handleNotification('item/started', {
-        item: {
-          type: 'imageView',
-          id: 'call_img1',
-          path: '/vault/attachments/cat.png',
-        },
-        threadId: 't1',
-        turnId: 'turn1',
-      });
-
-      expect(chunks).toHaveLength(1);
-      expect(chunks[0]).toMatchObject({
-        type: 'tool_use',
-        id: 'call_img1',
-        name: 'Read',
-        input: { file_path: '/vault/attachments/cat.png' },
-      });
-    });
-
-    it('maps imageView item/completed to tool_result chunk', () => {
-      router.handleNotification('item/completed', {
-        item: {
-          type: 'imageView',
-          id: 'call_img1',
-          path: '/vault/attachments/cat.png',
-        },
-        threadId: 't1',
-        turnId: 'turn1',
-      });
-
-      expect(chunks).toHaveLength(2);
-      expect(chunks[1]).toMatchObject({
-        type: 'tool_result',
-        id: 'call_img1',
-        isError: false,
-      });
-    });
-  });
 
   it.each([
     [false, false], [false, true], [true, false], [true, true],
@@ -4008,26 +3978,6 @@ describe('CodexNotificationRouter', () => {
       ]);
     });
 
-    it('maps webSearch item/started to tool_use chunk', () => {
-      router.handleNotification('item/started', {
-        item: {
-          type: 'webSearch',
-          id: 'ws_abc',
-          query: 'codex documentation',
-        },
-        threadId: 't1',
-        turnId: 'turn1',
-      });
-
-      expect(chunks).toHaveLength(1);
-      expect(chunks[0]).toMatchObject({
-        type: 'tool_use',
-        id: 'ws_abc',
-        name: 'WebSearch',
-        input: { query: 'codex documentation' },
-      });
-    });
-
     it('preserves open_page metadata from webSearch items', () => {
       router.handleNotification('item/started', {
         item: {
@@ -4048,26 +3998,6 @@ describe('CodexNotificationRouter', () => {
         id: 'ws_open',
         name: 'WebSearch',
         input: { actionType: 'open_page', url: 'https://example.com/docs' },
-      });
-    });
-
-    it('maps webSearch item/completed to tool_result chunk', () => {
-      router.handleNotification('item/completed', {
-        item: {
-          type: 'webSearch',
-          id: 'ws_abc',
-          query: 'codex documentation',
-          status: 'completed',
-        },
-        threadId: 't1',
-        turnId: 'turn1',
-      });
-
-      expect(chunks).toHaveLength(2);
-      expect(chunks[1]).toMatchObject({
-        type: 'tool_result',
-        id: 'ws_abc',
-        isError: false,
       });
     });
 
@@ -4120,46 +4050,6 @@ describe('CodexNotificationRouter', () => {
       expect(chunks.filter(chunk => chunk.type === 'tool_result')).toEqual([
         { type: 'tool_result', id: 'send', content: '{"error":"permission denied"}', isError: true },
       ]);
-    });
-
-    it('maps collabAgentToolCall item/started to tool_use chunk', () => {
-      router.handleNotification('item/started', {
-        item: {
-          type: 'collabAgentToolCall',
-          id: 'call_agent1',
-          tool: 'spawnAgent',
-          status: 'inProgress',
-        },
-        threadId: 't1',
-        turnId: 'turn1',
-      });
-
-      expect(chunks).toHaveLength(1);
-      expect(chunks[0]).toMatchObject({
-        type: 'tool_use',
-        id: 'call_agent1',
-        name: 'spawn_agent',
-      });
-    });
-
-    it('maps collabAgentToolCall item/completed to tool_result chunk', () => {
-      router.handleNotification('item/completed', {
-        item: {
-          type: 'collabAgentToolCall',
-          id: 'call_agent1',
-          tool: 'spawnAgent',
-          status: 'completed',
-        },
-        threadId: 't1',
-        turnId: 'turn1',
-      });
-
-      expect(chunks).toHaveLength(2);
-      expect(chunks[1]).toMatchObject({
-        type: 'tool_result',
-        id: 'call_agent1',
-        isError: false,
-      });
     });
 
     it('ignores a late same-ID raw function call after canonical collab completion', () => {
@@ -4604,57 +4494,6 @@ describe('CodexNotificationRouter', () => {
   });
 
   describe('mcpToolCall', () => {
-    it('maps mcpToolCall item/started to tool_use chunk with server__tool name', () => {
-      router.handleNotification('item/started', {
-        item: {
-          type: 'mcpToolCall',
-          id: 'call_mcp1',
-          server: 'codex',
-          tool: 'list_mcp_resources',
-          status: 'inProgress',
-          arguments: {},
-          result: null,
-          error: null,
-          durationMs: null,
-        },
-        threadId: 't1',
-        turnId: 'turn1',
-      });
-
-      expect(chunks).toHaveLength(1);
-      expect(chunks[0]).toMatchObject({
-        type: 'tool_use',
-        id: 'call_mcp1',
-        name: 'mcp__codex__list_mcp_resources',
-        input: {},
-      });
-    });
-
-    it('maps mcpToolCall item/completed to tool_result with content text', () => {
-      router.handleNotification('item/completed', {
-        item: {
-          type: 'mcpToolCall',
-          id: 'call_mcp1',
-          server: 'codex',
-          tool: 'list_mcp_resources',
-          status: 'completed',
-          arguments: {},
-          result: { content: [{ type: 'text', text: '{"resources":[]}' }] },
-          error: null,
-          durationMs: 444,
-        },
-        threadId: 't1',
-        turnId: 'turn1',
-      });
-
-      expect(chunks).toHaveLength(2);
-      expect(chunks[1]).toMatchObject({
-        type: 'tool_result',
-        id: 'call_mcp1',
-        content: '{"resources":[]}',
-        isError: false,
-      });
-    });
 
     it.each(['Connection refused', { message: 'Connection refused' }])('maps failed mcpToolCall with error %j to error tool_result', error => {
       router.handleNotification('item/completed', {

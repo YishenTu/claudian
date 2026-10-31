@@ -4,11 +4,16 @@ import * as sdkModule from '@anthropic-ai/claude-agent-sdk';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { claudeCatalogFixture } from '@test/helpers/claudeModels';
-import { runtimeHostFor } from '@test/helpers/providerRuntimeHost';
+import { DesktopVault } from '@test/helpers/core/DesktopVault';
+import { createProviderHostFixture } from '@test/helpers/providerRuntimeHost';
 
 import type { ProviderExecutionRequest, ProviderSessionConfig, ProviderSessionToolPort } from '@/core/execution';
 import type { SessionToolMCPServer } from '@/core/session-tools/sessionToolMCP';
 import { ClaudeExecutionSession } from '@/providers/claude/execution/ClaudeExecutionSession';
+
+let vault: DesktopVault;
+beforeAll(async () => { vault = await DesktopVault.create(); });
+afterAll(async () => { await vault.dispose(); });
 
 const sdk = sdkModule as unknown as {
   getLastOptions(): sdkModule.Options | undefined;
@@ -29,15 +34,16 @@ function request(toolPolicy: ProviderExecutionRequest['toolPolicy'] = { kind: 'p
     toolPolicy, signal: new AbortController().signal,
   };
 }
-function session(port?: ProviderSessionToolPort, lifecycle: ProviderSessionConfig['lifecycle'] = 'persistent') {
-  const host = runtimeHostFor({
+async function session(port?: ProviderSessionToolPort, lifecycle: ProviderSessionConfig['lifecycle'] = 'persistent') {
+  const { host } = await createProviderHostFixture({ vault,
+    beforePersist: () => { throw new Error('Unexpected write in a read-only host fixture'); },
     settings: {
       providerConfigs: { claude: claudeCatalogFixture(['claude-sonnet-4-5']) },
       model: 'claude-sonnet-4-5', permissionMode: 'manual', mediaFolder: '', systemPrompt: '', userName: '',
     },
-    getResolvedProviderCliPath: async () => '/bin/claude',
-  }, 'claude');
-  return new ClaudeExecutionSession(host, {
+    overrides: { getResolvedProviderCliPath: async () => '/bin/claude' },
+  });
+  return new ClaudeExecutionSession(host.getRuntimeHost('claude'), {
     lifecycle, nativePersistence: 'enabled', workingDirectory: '/vault', sessionTools: port,
     interactionPort: { requestApproval: vi.fn(), askUserQuestion: vi.fn(), dismissInteraction: vi.fn() },
   });
@@ -77,11 +83,11 @@ describe('Claude session tools', () => {
   beforeEach(() => sdk.resetMockMessages());
 
   it.each(['persistent', 'ephemeral'] as const)('attaches only with a port and creates fresh servers for %s queries', async lifecycle => {
-    const unbound = session(undefined, lifecycle);
+    const unbound = await session(undefined, lifecycle);
     await drain(unbound.execute(request()).events);
     expect(sdk.getLastOptions()?.mcpServers).toBeUndefined();
     await unbound.dispose();
-    const bound = session({ list: async () => ({ sessions: [] }), send: vi.fn(), read: vi.fn() }, lifecycle);
+    const bound = await session({ list: async () => ({ sessions: [] }), send: vi.fn(), read: vi.fn() }, lifecycle);
     try {
       await drain(bound.execute(request()).events);
       const first = sdk.getLastOptions()?.mcpServers?.claudian_sessions;
@@ -107,7 +113,7 @@ describe('Claude session tools', () => {
     const end = deferred<unknown>();
     sdk.setMockMessages([tool('call'), end.promise], { appendResult: false });
     const list = vi.fn(async () => ({ sessions: [] }));
-    const bound = session({ list, send: vi.fn(), read: vi.fn() });
+    const bound = await session({ list, send: vi.fn(), read: vi.fn() });
     const run = bound.execute(request(policy));
     const outputs: unknown[] = [];
     const consume = (async () => { for await (const event of run.events) outputs.push(event); })();
@@ -132,7 +138,7 @@ describe('Claude session tools', () => {
     const end = deferred<unknown>();
     sdk.setMockMessages([start.promise, end.promise], { appendResult: false });
     const list = vi.fn(async () => ({ sessions: [] }));
-    const bound = session({ list, send: vi.fn(), read: vi.fn() });
+    const bound = await session({ list, send: vi.fn(), read: vi.fn() });
     const consume = drain(bound.execute(request()).events);
     let client: Client | undefined;
     try {
@@ -163,7 +169,7 @@ describe('Claude session tools', () => {
         signal.addEventListener('abort', () => reject(new Error('Cancelled')), { once: true });
       });
     });
-    const bound = session({ list: vi.fn(), send, read: vi.fn() });
+    const bound = await session({ list: vi.fn(), send, read: vi.fn() });
     const outputs: unknown[] = [];
     const run = bound.execute(request());
     const consume = (async () => { for await (const event of run.events) outputs.push(event); })();
@@ -199,7 +205,7 @@ describe('Claude session tools', () => {
         signal.addEventListener('abort', () => reject(new Error('Cancelled')), { once: true });
       });
     });
-    const bound = session({ list, send: vi.fn(), read: vi.fn() });
+    const bound = await session({ list, send: vi.fn(), read: vi.fn() });
     const run = bound.execute(request());
     const outputs: unknown[] = [];
     const consume = (async () => { for await (const event of run.events) outputs.push(event); })();

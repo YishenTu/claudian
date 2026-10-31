@@ -1,3 +1,4 @@
+import { getInstallationKey } from '@/core/device/InstallationKey';
 import { deepseekModelPolicy } from '@/providers/deepseek/DeepSeekModelPolicy';
 import { decodeDeepSeekModelId, encodeDeepSeekModelId } from '@/providers/deepseek/models';
 import {
@@ -6,8 +7,6 @@ import {
   updateDeepSeekProviderSettings,
 } from '@/providers/deepseek/settings';
 import { decodeDeepSeekState } from '@/providers/deepseek/types';
-
-vi.mock('@/core/device/InstallationKey', () => ({ getInstallationKey: () => 'device:test' }));
 
 describe('DeepSeek saved configuration contracts', () => {
   it('keeps native provider/model pairs distinct, including separators and escapes', () => {
@@ -49,7 +48,7 @@ describe('DeepSeek saved configuration contracts', () => {
     });
     const config = projectDeepSeekModelSettings(settings);
     expect(config).not.toHaveProperty('discoveredModels');
-    expect(config).toMatchObject({ extensionField: 'preserve', cliPathsByHost: { 'device:test': '/custom/dsh' } });
+    expect(config).toMatchObject({ extensionField: 'preserve', cliPathsByHost: { [getInstallationKey()]: '/custom/dsh' } });
     const restored = { providerConfigs: { deepseek: config } };
     expect(getDeepSeekProviderSettings(restored).visibleModels).toEqual(order);
     expect(deepseekModelPolicy.getModelOptions(restored).map(row => row.value)).toEqual(order);

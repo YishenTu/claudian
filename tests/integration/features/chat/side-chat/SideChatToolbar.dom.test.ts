@@ -1,7 +1,8 @@
 /** @vitest-environment jsdom */
 import '@/providers';
 
-import { installSessionRuntimePool } from '@test/helpers/features/chat/SessionRuntimePoolHarness';
+import { createChatFeatureHost } from '@test/helpers/features/chat/ChatFeatureHostFixture';
+import { createSessionRuntimePool } from '@test/helpers/features/chat/SessionRuntimePoolHarness';
 import { createHarness, releaseSideChatHarnesses, startSideChat } from '@test/helpers/features/chat/SideChatDOMHarness';
 import { fireEvent, waitFor, within } from '@testing-library/dom';
 import { App, Component } from 'obsidian';
@@ -12,30 +13,26 @@ import { destroyTab } from '@/features/chat/tabs/TabLifecycle';
 import { createTabRuntime } from '@/features/chat/tabs/TabRuntimeFactory';
 import { VaultMentionDataProvider } from '@/shared/mention/VaultMentionDataProvider';
 
-const originalResizeObserver = globalThis.ResizeObserver;
-beforeEach(() => {
-  globalThis.ResizeObserver = class {
-    observe() {}
-    unobserve() {}
-    disconnect() {}
-  };
-});
 afterEach(async () => {
-  globalThis.ResizeObserver = originalResizeObserver;
   await releaseSideChatHarnesses();
 });
 
 it('refreshes destination settings when the side panel collapses, expands, and is discarded', async () => {
-  const harness = createHarness();
+  const harness = await createHarness();
   const app = new App();
   Object.assign(app.vault.adapter, { basePath: '/vault' });
-  Object.assign(app.vault, { on: () => ({}), offref: () => undefined });
   const conversation = {
     id: 'conversation-1', providerId: 'claude', selectedModel: 'claude-sonnet-4-5',
     sessionId: 'main-session', messages: harness.tab.state.messages,
   } as Conversation;
-  const plugin = {
-    ...(harness.plugin as ChatFeatureHost),
+  const pool = createSessionRuntimePool(() => plugin);
+  const plugin: ChatFeatureHost = await createChatFeatureHost({
+    executionPersistence: {
+      registerExecutionBinding() {}, releaseExecutionBinding() {},
+      assertConversationExecutionAuthority: async () => undefined,
+      persistExecutionSnapshot: async () => true, recordConversationActivity: async () => undefined,
+    },
+    providerHost: harness.plugin.providerHost, bindSessionTools: harness.plugin.bindSessionTools, projects: harness.plugin.projects, sessionRuntimes: pool,
     app,
     getCommittedSettings: () => plugin.settings,
     settings: {
@@ -48,14 +45,13 @@ it('refreshes destination settings when the side panel collapses, expands, and i
         ] } },
     },
     getActiveEnvironmentVariables: () => '',
-    getConversationSummary(id: string) { return (this as unknown as { getConversationSync: (id: string) => any }).getConversationSync(id); },
+    getConversationSummary: () => ({ ...conversation, messageCount: conversation.messages.length, preview: '' }),
     getConversationSync: () => conversation,
-    getConversationList: () => [conversation],
-  } as unknown as ChatFeatureHost;
-  if (!plugin.sessionRuntimes) installSessionRuntimePool(plugin);
+    getConversationList: () => [{ ...conversation, messageCount: conversation.messages.length, preview: '' }],
+  });
   const tab = await createTabRuntime({
     plugin,
-    component: Object.assign(new Component(), { registerDomEvent: () => undefined, registerEvent: () => undefined }) as never,
+    component: new Component(),
     containerEl: document.body.appendChild(document.createElement('div')),
     mentionDataProvider: new VaultMentionDataProvider(plugin.app),
     conversation,
@@ -75,7 +71,7 @@ it('refreshes destination settings when the side panel collapses, expands, and i
     const ui = within(tab.dom.inputComposerEl);
     side.updateSideSettings({ permissionMode: 'yolo', reasoning: 'low' });
     side.collapse();
-    fireEvent.click(ui.getByRole('button', { name: 'Side chat' }));
+    fireEvent.click(ui.getByRole('button', { name: 'Explore settings' }));
     expect(ui.queryByRole('button', { name: 'Permission mode: YOLO' })).not.toBeNull();
     expect(ui.getByText('Low', { selector: '.claudian-thinking-current' })).toBeDefined();
     expect(ui.queryByRole('button', { name: 'Permission mode: Manual' })).toBeNull();
@@ -85,7 +81,7 @@ it('refreshes destination settings when the side panel collapses, expands, and i
     expect(ui.getByText('High', { selector: '.claudian-thinking-current' })).toBeDefined();
     expect(ui.queryByRole('button', { name: 'Permission mode: YOLO' })).toBeNull();
 
-    fireEvent.click(ui.getByRole('button', { name: 'Side chat' }));
+    fireEvent.click(ui.getByRole('button', { name: 'Explore settings' }));
     expect(ui.queryByRole('button', { name: 'Permission mode: YOLO' })).not.toBeNull();
     expect(ui.getByText('Low', { selector: '.claudian-thinking-current' })).toBeDefined();
     expect(ui.queryByRole('button', { name: 'Permission mode: Manual' })).toBeNull();
@@ -114,7 +110,7 @@ it('refreshes destination settings when the side panel collapses, expands, and i
 });
 
 it('side usage must carry the side model when native usage omits model', async () => {
-  const harness = createHarness({ settings: {
+  const harness = await createHarness({ settings: {
     model: 'claude-opus-4-6', settingsProvider: 'claude',
     savedProviderModel: { claude: 'claude-opus-4-6' },
     providerConfigs: { claude: { enabled: true, visibleModels: ['claude-sonnet-4-5', 'claude-opus-4-6'] } },

@@ -1,4 +1,5 @@
 import { NativePeer } from '@test/helpers/deepseek/NativePeer';
+import { nativeRequest } from '@test/helpers/deepseek/NativeRequest';
 import { testDate } from '@test/helpers/testClock';
 
 import { applyDeepSeekPermission, readDeepSeekPermission } from '@/providers/deepseek/execution/DeepSeekPermissions';
@@ -13,7 +14,7 @@ it('validates effective permission facts across a pinned paginated log before ad
     if (method === 'commands/execute') return { result: { kind: 'success' } };
     if (method === 'session/projections') return { asOfSeq: 60, values: { permissions: { currentValue: 'workspace-write' } } };
     if (method === 'session/page') {
-      return args.request.beforeSeq ? { hasMore: false, records: [
+      return nativeRequest(args).beforeSeq ? { hasMore: false, records: [
         { type: 'event', event: { type: 'sandbox/mode', seq: 2, time, data: { mode: 'workspace-write' } } },
         { type: 'event', event: { type: 'approval/policy', seq: 3, time, data: { policy: 'ask' } } },
       ] } : { hasMore: true, records: [{ type: 'event', event: { type: 'turn/end', seq: 60, time, data: {} } }] };
@@ -21,7 +22,7 @@ it('validates effective permission facts across a pinned paginated log before ad
     throw new Error(`Unexpected ${method}`);
   };
   await expect(applyDeepSeekPermission(peer.client, 'root', 'normal')).resolves.toBe('normal');
-  expect(peer.calls.filter(c => c.method === 'session/page').map(c => c.args.request)).toEqual([
+  expect(peer.calls.filter(c => c.method === 'session/page').map(c => nativeRequest(c.args))).toEqual([
     { address: { kind: 'session', sessionId: 'root' }, throughSeq: 60, maxMessages: 100 },
     { address: { kind: 'session', sessionId: 'root' }, throughSeq: 60, beforeSeq: 60, maxMessages: 100 },
   ]);

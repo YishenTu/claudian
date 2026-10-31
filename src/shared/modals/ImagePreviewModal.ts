@@ -2,6 +2,7 @@ import { type Keymap, Scope } from 'obsidian';
 
 import type { ImageAttachment } from '@/core/types';
 import { t } from '@/i18n/i18n';
+import { setModalAccessibility } from '@/shared/modals/AccessibleModal';
 
 function getFocusableActiveElement(ownerDocument: Document): HTMLElement | null {
   const activeElement = ownerDocument.activeElement;
@@ -21,9 +22,7 @@ export class ImagePreviewModal {
     const previouslyFocusedElement = getFocusableActiveElement(ownerDocument);
     const overlay = ownerDocument.body.createDiv({ cls: 'claudian-image-modal-overlay' });
     const modal = overlay.createDiv({ cls: 'claudian-image-modal' });
-    modal.setAttribute('role', 'dialog');
-    modal.setAttribute('aria-modal', 'true');
-    modal.setAttribute('aria-label', t('chat.images.preview', { name: image.name }));
+    setModalAccessibility(modal, t('chat.images.preview', { name: image.name }));
 
     modal.createEl('img', {
       attr: {

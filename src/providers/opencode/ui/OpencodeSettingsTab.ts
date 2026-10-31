@@ -1,11 +1,11 @@
 import * as fs from 'fs';
-import { Setting } from 'obsidian';
 
 import { normalizeConfiguredCLIPath } from '@/core/process/cliPath';
 import { probeCLIInstallation } from '@/core/providers/cli/CLIInstallationProbe';
 import { getRuntimeEnvironmentVariables } from '@/core/providers/providerEnvironment';
 import type { ProviderCLIResolver } from '@/core/providers/types';
 import { OPENCODE_PROVIDER_ICON } from '@/shared/icons';
+import { AccessibleSetting } from '@/shared/settings/AccessibleSetting';
 import { renderCLIInstallationSetting } from '@/shared/settings/CLIInstallationSetting';
 
 import type { ProviderModelCatalog } from '../../../core/providers/models/ProviderModelCatalog';
@@ -125,7 +125,7 @@ export function createOpencodeSettingsTabRenderer(
         validate: validateCLIPath,
       });
 
-      new Setting(container).setName('Models').setHeading();
+      new AccessibleSetting(container).setName('Models').setHeading();
       const modelPicker = renderProviderModelsSection(
         container, 'opencode', 'OpenCode', opencodeWorkspace.modelCatalog, () => modelWarning.refresh(),
         t('settings.opencode.emptyModels'),

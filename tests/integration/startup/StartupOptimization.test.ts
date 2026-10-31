@@ -1,10 +1,7 @@
-import { runtimeHostFor } from '@test/helpers/providerRuntimeHost';
+import { createProviderHostFixture } from '@test/helpers/providerRuntimeHost';
 
-import { ProviderExecutionLifecycleRegistry } from '@/core/execution';
 import { StartupProfiler } from '@/core/performance/StartupProfiler';
-import type { ProviderHost } from '@/core/providers/ProviderHost';
 import { ProviderWorkspaceRegistry } from '@/core/providers/ProviderWorkspaceRegistry';
-import type { ProviderId, ProviderWorkspaceServices } from '@/core/providers/types';
 import { createCodexModelCatalogCommit } from '@/providers/codex/app/CodexWorkspaceServices';
 import { DEFAULT_CODEX_PROVIDER_SETTINGS } from '@/providers/codex/config';
 import type { CodexDiscoveredModel } from '@/providers/codex/models';
@@ -28,47 +25,14 @@ function makeModel(model: string, displayName = model): CodexDiscoveredModel {
   };
 }
 
-function createFakeHost(): ProviderHost {
-  const executionLifecycleRegistry = new ProviderExecutionLifecycleRegistry();
-  return {
-    app: {
-      vault: { adapter: { basePath: '/vault' } },
-      workspace: {
-        onLayoutReady: vi.fn(),
-      },
-    },
-    executionLifecycleRegistry,
-    settings: {
-      providerConfigs: {
-        codex: {
-          ...DEFAULT_CODEX_PROVIDER_SETTINGS,
-          enabled: true,
-        },
-      },
-      environmentVariables: {},
-    },
-    storage: {
-      getAdapter: vi.fn(),
-    } as unknown as ProviderHost['storage'],
-    getResolvedProviderCliPath: vi.fn(() => '/usr/bin/codex'),
-    getActiveEnvironmentVariables: vi.fn(() => 'OPENAI_API_KEY=test'),
-    mutateSettingsConditionally: vi.fn(async () => false),
-    runProviderExecutionTransition: <T>(
-      providerIds: ProviderId[],
-      mutation: () => Promise<T>,
-    ) => (
-      executionLifecycleRegistry.runTransition(providerIds, mutation)
-    ),
-  } as unknown as ProviderHost;
-}
-
 describe('Startup optimization', () => {
   beforeEach(() => {
     StartupProfiler.reset();
     ProviderWorkspaceRegistry.clear();
   });
 
-  afterEach(() => {
+  afterEach(async () => {
+    await ProviderWorkspaceRegistry.disposeInitialized();
     ProviderWorkspaceRegistry.clear();
     StartupProfiler.reset();
   });
@@ -81,17 +45,20 @@ describe('Startup optimization', () => {
       } as CodexModelDiscoveryResult)),
     };
 
+    let catalog!: CodexModelCatalogCoordinator;
     ProviderWorkspaceRegistry.register('codex', {
-      initialize: async ({ plugin }) => ({
-        modelCatalogCoordinator: new CodexModelCatalogCoordinator(
-          runtimeHostFor(plugin, 'codex'),
-          discovery,
-          createCodexModelCatalogCommit(plugin),
-        ),
-      } as unknown as ProviderWorkspaceServices),
+      initialize: async ({ plugin }) => {
+        catalog = new CodexModelCatalogCoordinator(
+          plugin.getRuntimeHost('codex'), discovery, createCodexModelCatalogCommit(plugin),
+        );
+        return { dispose: () => catalog.dispose() };
+      },
     });
 
-    const host = createFakeHost();
+    const { host } = await createProviderHostFixture({
+      settings: { providerConfigs: { codex: { ...DEFAULT_CODEX_PROVIDER_SETTINGS, enabled: true } } },
+      overrides: { getResolvedProviderCliPath: async () => '/usr/bin/codex' },
+    });
     const initPromise = ProviderWorkspaceRegistry.ensureInitialized(host, 'codex', 'startup-test');
     expect(discovery.discoverModels).not.toHaveBeenCalled();
 
@@ -100,10 +67,7 @@ describe('Startup optimization', () => {
     const report = StartupProfiler.getReport();
     expect(report.spans.some((span) => span.name === 'provider-init:codex')).toBe(true);
 
-    const services = ProviderWorkspaceRegistry.getServices('codex') as {
-      modelCatalogCoordinator: CodexModelCatalogCoordinator;
-    };
-    await services.modelCatalogCoordinator.refresh();
+    await catalog.refresh();
     expect(discovery.discoverModels).toHaveBeenCalledTimes(1);
   });
 });

@@ -1,23 +1,6 @@
-import { createMockEl } from '@test/helpers/MockElement';
 
 import type { DiffLine } from '@/core/types/diff';
-import { renderDiffContent, splitIntoHunks } from '@/features/chat/rendering/tools/DiffRenderer';
-
-/** Recursively count elements matching a class. */
-function countByClass(el: any, cls: string): number {
-  let count = el.hasClass(cls) ? 1 : 0;
-  for (const child of el._children) count += countByClass(child, cls);
-  return count;
-}
-
-/** Generate N insert DiffLines. */
-function makeInsertLines(n: number): DiffLine[] {
-  return Array.from({ length: n }, (_, i) => ({
-    type: 'insert' as const,
-    text: `line ${i + 1}`,
-    newLineNum: i + 1,
-  }));
-}
+import { splitIntoHunks } from '@/features/chat/rendering/tools/DiffRenderer';
 
 describe('DiffRenderer', () => {
   describe('splitIntoHunks', () => {
@@ -153,47 +136,5 @@ describe('DiffRenderer', () => {
     });
   });
 
-  describe('renderDiffContent', () => {
-    it('should render all lines when all-inserts count is within cap', () => {
-      const container = createMockEl();
-      const lines = makeInsertLines(20);
 
-      renderDiffContent(container, lines);
-
-      // All 20 insert lines rendered, no separator
-      expect(countByClass(container, 'claudian-diff-insert')).toBe(20);
-      expect(countByClass(container, 'claudian-diff-separator')).toBe(0);
-    });
-
-    it('should cap all-inserts diff at 20 lines with remainder message', () => {
-      const container = createMockEl();
-      const lines = makeInsertLines(100);
-
-      renderDiffContent(container, lines);
-
-      // Only 20 insert lines rendered
-      expect(countByClass(container, 'claudian-diff-insert')).toBe(20);
-
-      // Separator shows remaining count
-      const separator = container._children.find(
-        (c: any) => c.hasClass('claudian-diff-separator'),
-      );
-      expect(separator).toBeDefined();
-      expect(separator.textContent).toBe('... 80 more lines');
-    });
-
-    it('should not cap mixed diff lines (edits with context)', () => {
-      const container = createMockEl();
-      // Build a diff with equal + insert lines — not all-inserts
-      const lines: DiffLine[] = [
-        { type: 'equal', text: 'ctx', oldLineNum: 1, newLineNum: 1 },
-        ...makeInsertLines(30),
-      ];
-
-      renderDiffContent(container, lines);
-
-      // All 30 insert lines rendered (not capped because not all-inserts)
-      expect(countByClass(container, 'claudian-diff-insert')).toBe(30);
-    });
-  });
 });

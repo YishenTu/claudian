@@ -1,6 +1,7 @@
-import { type App, Modal, Notice } from 'obsidian';
+import { type App, Notice } from 'obsidian';
 
 import { t } from '@/i18n/i18n';
+import { AccessibleModal } from '@/shared/modals/AccessibleModal';
 
 import type {
   PiExtensionUIConfirmRequest,
@@ -96,7 +97,7 @@ function getSelectOptions(request: Record<string, unknown>): PiSelectOption[] {
   });
 }
 
-abstract class PiExtensionModal<TResult extends Record<string, unknown>> extends Modal {
+abstract class PiExtensionModal<TResult extends Record<string, unknown>> extends AccessibleModal {
   private done = false;
   private resolve!: (result: TResult) => void;
   private readonly resultPromise = new Promise<TResult>((resolve) => {

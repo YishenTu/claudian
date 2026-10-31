@@ -2,11 +2,13 @@
  * @vitest-environment jsdom
  * @vitest-environment-options {"customExportConditions":["node","node-addons"]}
  */
+import { EventEmitter, once } from 'node:events';
 
 import { axe } from '@test/helpers/accessibility';
 import { nativeDefaults } from '@test/helpers/deepseek/NativeDefaults';
 import { NativePeer, rootFollow } from '@test/helpers/deepseek/NativePeer';
-import { runtimeHostFor } from '@test/helpers/providerRuntimeHost';
+import { nativeRequest } from '@test/helpers/deepseek/NativeRequest';
+import { createProviderHostFixture } from '@test/helpers/providerRuntimeHost';
 import { testDate } from '@test/helpers/testClock';
 import { fireEvent, waitFor,within } from '@testing-library/dom';
 
@@ -29,8 +31,8 @@ let seq: number;
 let nativeTurn: number;
 let port: ProviderInteractionPort;
 const time = testDate().getTime();
-const settings = { locale: 'en', providerConfigs: { deepseek: { enabled: true, visibleModels: ['deepseek:native/model'], discoveredModels: [{ encodedId: 'deepseek:native/model', provider: 'native', id: 'model', label: 'Model', reasoning: [{ id: 'low', name: 'Low' }, { id: 'high', name: 'High' }] }] } } };
-const host = { settings } as unknown as ProviderHost;
+let settings: import('@/core/types').ClaudianSettings;
+let host: ProviderHost;
 
 function request(text = 'requested'): ProviderExecutionRequest {
   return { input: [{ type: 'text', text }], configuration: { systemInstructions: { kind: 'explicit', instructions: 'literal {prompt}' }, permissionMode: 'normal' }, toolPolicy: { kind: 'provider-default' }, signal: new AbortController().signal };
@@ -47,9 +49,13 @@ function answer(text: string): void {
   event('assistant/message', { turn: nativeTurn, step: 0, message: { content: [{ type: 'text', text }] } });
   event('turn/end', { turn: nativeTurn, reason: { kind: 'completed' } });
 }
-async function collect(events: AsyncIterable<ProviderExecutionEvent>, into: ProviderExecutionEvent[]): Promise<void> { for await (const event of events) into.push(event); }
+const publications = new EventEmitter();
+async function collect(events: AsyncIterable<ProviderExecutionEvent>, into: ProviderExecutionEvent[]): Promise<void> {
+  for await (const event of events) { into.push(event); publications.emit('event'); }
+}
 
 beforeEach(async () => {
+  ({ host, settings } = await createProviderHostFixture({ settings: { locale: 'en', providerConfigs: { deepseek: { enabled: true, visibleModels: ['deepseek:native/model'], discoveredModels: [{ encodedId: 'deepseek:native/model', provider: 'native', id: 'model', label: 'Model', reasoning: [{ id: 'low', name: 'Low' }, { id: 'high', name: 'High' }] }] } } } }));
   seq = 3; nativeTurn = 0; settings.locale = 'en';
   port = { requestApproval: vi.fn(), askUserQuestion: vi.fn(), dismissInteraction: vi.fn() };
   peer = new NativePeer();
@@ -62,24 +68,17 @@ beforeEach(async () => {
 afterEach(async () => { setLocale('en'); await session?.dispose(); await deepseek.dispose(); await peer.close(); });
 
 function create(): void {
-  session = new DeepSeekExecutionBackend(runtimeHostFor(host, 'deepseek'), () => deepseek).createSession({
+  session = new DeepSeekExecutionBackend(host.getRuntimeHost('deepseek'), () => deepseek).createSession({
     lifecycle: 'persistent', nativePersistence: 'enabled', workingDirectory: '/vault', interactionPort: port,
   });
 }
 
-
-HTMLElement.prototype.empty = function () { this.replaceChildren(); };
-HTMLElement.prototype.addClass = function (...classes) { this.classList.add(...classes); };
-HTMLElement.prototype.removeClass = function (...classes) { this.classList.remove(...classes); };
-HTMLElement.prototype.toggleClass = function (names, enabled) {
-  for (const name of Array.isArray(names) ? names : [names]) this.classList.toggle(name, enabled);
-};
-HTMLElement.prototype.scrollIntoView = function () {};
-HTMLElement.prototype.setText = function (text) { this.textContent = String(text); };
-
 /** Resolves once the session published an event, which it does only after applying the native frame behind it. */
 async function published(events: ProviderExecutionEvent[], expected: Record<string, unknown>): Promise<void> {
-  await waitFor(() => expect(events).toContainEqual(expect.objectContaining(expected)));
+  const matcher = expect.objectContaining(expected);
+  const signal = AbortSignal.timeout(1_000);
+  while (!events.some(event => matcher.asymmetricMatch(event))) await once(publications, 'event', { signal });
+  expect(events).toContainEqual(matcher);
 }
 const claimed = (events: ProviderExecutionEvent[]) => published(events, { type: 'turn_started', nativeTurnId: String(nativeTurn) });
 
@@ -110,7 +109,7 @@ it.each([
   const run = session.execute(request());
   const events: ProviderExecutionEvent[] = [];
   const done = collect(run.events, events);
-  await waitFor(() => expect(peer.calls.some(c => c.method === 'session/prompt')).toBe(true));
+  await peer.waitForCall('session/prompt');
   begin(run.executionId);
   await claimed(events);
   peer.send('$events', { type: 'waterfall', eventId: 'question', event: 'user-questions/request', agentId: 'root', request: { questions: [question] } });
@@ -119,7 +118,7 @@ it.each([
   await respond();
   fireEvent.click(within(document.body).getByRole('button', { name: 'Submit' }));
   fireEvent.click(within(document.body).getByRole('button', { name: 'Submit answers' }));
-  await waitFor(() => expect(peer.calls.find(c => c.method === '$events/result')?.args).toEqual({ clientId: expect.any(String), eventId: 'question', outcome: { kind: 'result', value: { answers: [sent] } } }));
+  expect((await peer.waitForCall('$events/result')).args).toEqual({ clientId: expect.any(String), eventId: 'question', outcome: { kind: 'result', value: { answers: [sent] } } });
   answer('saved');
   await done;
 });
@@ -162,11 +161,11 @@ it.each([
   const run = session.execute(request());
   const events: ProviderExecutionEvent[] = [];
   const done = collect(run.events, events);
-  await waitFor(() => expect(peer.calls.some(c => c.method === 'session/prompt')).toBe(true));
+  await peer.waitForCall('session/prompt');
   begin(run.executionId);
   await claimed(events);
   peer.send('$events', { type: 'waterfall', eventId: 'question', event: 'user-questions/request', agentId: 'root', request: { questions: [question] } });
-  await waitFor(() => expect(peer.calls.find(c => c.method === '$events/result')?.args).toEqual({ clientId: expect.any(String), eventId: 'question', outcome: { kind: 'result', value: { answers: [sent] } } }));
+  expect((await peer.waitForCall('$events/result')).args).toEqual({ clientId: expect.any(String), eventId: 'question', outcome: { kind: 'result', value: { answers: [sent] } } });
   answer('saved');
   await done;
 });
@@ -245,13 +244,13 @@ async function startChild(): Promise<(value: unknown) => void> {
   let childFollow: ((value: unknown) => void) | undefined;
   const ordinaryOpen = peer.onOpen;
   peer.onOpen = (endpoint, args, send) => {
-    if (endpoint === 'session/follow' && args.request.address.childSessionId === 'child') { childFollow = send; return; }
+    if (endpoint === 'session/follow' && nativeRequest(args).address!.childSessionId === 'child') { childFollow = send; return; }
     ordinaryOpen(endpoint, args, send);
   };
   peer.send('session/control', { type: 'projection', sessionId: 'root', key: 'subagentCatalog', value: [{ id: 'child', mode: 'continuable', label: 'child task' }] });
   peer.send('session/control', { type: 'projection', sessionId: 'child', key: 'subagent', value: { mode: 'continuable', label: 'child task', seq: 0 } });
   peer.send('$events', { type: 'emit', event: 'api-session/added', args: [{ sessionId: 'child', parentSessionId: 'root', origin: 'subagent', agentAvailable: true, running: true }] });
-  await waitFor(() => expect([...peer.streams.values()].map(stream => stream.args.request?.address?.childSessionId)).toContain('child'));
+  await waitFor(() => expect([...peer.streams.values()].filter(stream => stream.endpoint === 'session/follow').map(stream => nativeRequest(stream.args).address?.childSessionId)).toContain('child'));
   childFollow!({ type: 'snapshot', cursor: 0, records: [{ type: 'event', event: { type: 'turn/start', seq: 0, time, data: { turn: 0 } } }] });
   return childFollow!;
 }
@@ -279,7 +278,7 @@ it.each([
   const events: ProviderExecutionEvent[] = [];
   const done = collect(run.events, events);
   try {
-    await waitFor(() => expect(peer.calls.some(c => c.method === 'session/prompt')).toBe(true));
+    await peer.waitForCall('session/prompt');
     begin(run.executionId);
     await claimed(events);
     const ptc = callId.includes(':ptc:');
@@ -303,7 +302,7 @@ it.each([
     expect((await axe(document.body)).violations).toEqual([]);
     if (chinese) fireEvent.click(within(document.body).getByRole('button', { name: allowName }));
     else decide();
-    await waitFor(() => expect(peer.calls.find(c => c.method === '$events/result')?.args).toEqual({ clientId: expect.any(String), eventId: 'approval', outcome: { kind: 'result', value: sent } }));
+    expect((await peer.waitForCall('$events/result')).args).toEqual({ clientId: expect.any(String), eventId: 'approval', outcome: { kind: 'result', value: sent } });
     expect(session.getStatus()).not.toBe('invalidated');
   } finally {
     answer('Done');
@@ -317,12 +316,12 @@ it('declines a subagent approval natively without presenting it', async () => {
   const run = session.execute(request());
   const done = collect(run.events, []);
   try {
-    await waitFor(() => expect(peer.calls.some(c => c.method === 'session/prompt')).toBe(true));
+    await peer.waitForCall('session/prompt');
     begin(run.executionId);
     const child = await startChild();
     child({ type: 'event', event: { type: 'tool/call', seq: 1, time, data: { callId: 'child-bash', name: 'bash', arguments: JSON.stringify({ command }) } } });
     approve('child', 'child-bash');
-    await waitFor(() => expect(peer.calls.find(c => c.method === '$events/result')?.args).toEqual({ clientId: expect.any(String), eventId: 'approval', outcome: { kind: 'result', value: 'rejected' } }));
+    expect((await peer.waitForCall('$events/result')).args).toEqual({ clientId: expect.any(String), eventId: 'approval', outcome: { kind: 'result', value: 'rejected' } });
     expect(requestApproval).not.toHaveBeenCalled();
     expect(within(document.body).queryByRole('region', { name: /approval details/ })).toBeNull();
     expect(session.getStatus()).not.toBe('invalidated');
@@ -337,7 +336,7 @@ it('renders the native reason immediately for an approval without a call ID', as
   const run = session.execute(request());
   const done = collect(run.events, []);
   try {
-    await waitFor(() => expect(peer.calls.some(c => c.method === 'session/prompt')).toBe(true));
+    await peer.waitForCall('session/prompt');
     begin(run.executionId);
     approve('root');
     const details = await waitFor(() => within(document.body).getByRole('region', { name: 'Bash approval details' }), { timeout: 500 });
@@ -355,7 +354,7 @@ it('falls back to the native reason at the deadline when owned call details neve
   const events: ProviderExecutionEvent[] = [];
   const done = collect(run.events, events);
   try {
-    await waitFor(() => expect(peer.calls.some(c => c.method === 'session/prompt')).toBe(true));
+    await peer.waitForCall('session/prompt');
     begin(run.executionId);
     await claimed(events);
     const realTimeout = setTimeout;
@@ -385,7 +384,7 @@ it('gives each approval its own wait for call details', async () => {
   create();
   const run = session.execute(request());
   const done = collect(run.events, []);
-  await waitFor(() => expect(peer.calls.some(c => c.method === 'session/prompt')).toBe(true));
+  await peer.waitForCall('session/prompt');
   begin(run.executionId);
   const realTimeout = setTimeout;
   const settle = () => new Promise(resolve => realTimeout(resolve, 50));

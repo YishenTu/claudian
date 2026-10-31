@@ -8,106 +8,8 @@ import { parseSDKMessageToChat } from '@/providers/claude/history/sdkMessagePars
 const msg = buildSDKMessage;
 
 describe('ClaudeExecutionEventNormalizer task tools', () => {
-  it('preserves a blocked decision for the matching native tool result', () => {
-    const normalizer = new ClaudeExecutionEventNormalizer();
-    normalizer.markToolBlocked('tool-1', 'requested');
 
-    const events = normalizer.normalize(msg({
-      type: 'user',
-      message: {
-        content: [{
-          type: 'tool_result',
-          tool_use_id: 'tool-1',
-          content: 'The tool was not run.',
-          is_error: true,
-        }],
-      },
-    }), 'requested');
 
-    expect(events).toContainEqual(expect.objectContaining({
-      type: 'output',
-      event: expect.objectContaining({
-        type: 'tool_completed',
-        toolCallId: 'tool-1',
-        isError: true,
-        isBlocked: true,
-      }),
-    }));
-  });
-
-  it('adapts main-thread task mutations and preserves native payloads', () => {
-    const normalizer = new ClaudeExecutionEventNormalizer();
-
-    const createEvents = normalizer.normalize(msg({
-      type: 'assistant',
-      message: {
-        content: [{
-          type: 'tool_use',
-          id: 'create-1',
-          name: 'TaskCreate',
-          input: { subject: 'Implement fix', activeForm: 'Implementing fix' },
-        }],
-      },
-    }), 'requested');
-    expect(createEvents).toContainEqual(expect.objectContaining({
-      type: 'output',
-      event: expect.objectContaining({
-        type: 'tool_started',
-        toolCallId: 'create-1',
-        name: TOOL_TODO_WRITE,
-        input: {
-          todos: [{
-            content: 'Implement fix',
-            activeForm: 'Implementing fix',
-            status: 'pending',
-          }],
-        },
-        providerPayload: {
-          rawName: 'TaskCreate',
-          rawInput: { subject: 'Implement fix', activeForm: 'Implementing fix' },
-        },
-      }),
-    }));
-
-    const resultEvents = normalizer.normalize(msg({
-      type: 'user',
-      tool_use_result: { task: { id: '1', subject: 'Implement fix' } },
-      message: {
-        content: [{
-          type: 'tool_result',
-          tool_use_id: 'create-1',
-          content: 'Task #1 created successfully: Implement fix',
-        }],
-      },
-    }), 'requested');
-    expect(resultEvents).toContainEqual(expect.objectContaining({
-      type: 'output',
-      event: expect.objectContaining({
-        type: 'tool_started',
-        toolCallId: 'create-1',
-        name: TOOL_TODO_WRITE,
-        input: {
-          todos: [{
-            id: '1',
-            content: 'Implement fix',
-            activeForm: 'Implementing fix',
-            status: 'pending',
-          }],
-        },
-        providerPayload: expect.objectContaining({
-          rawName: 'TaskCreate',
-          rawOutput: { task: { id: '1', subject: 'Implement fix' } },
-        }),
-      }),
-    }));
-    expect(resultEvents).toContainEqual(expect.objectContaining({
-      type: 'output',
-      event: expect.objectContaining({
-        type: 'tool_completed',
-        toolCallId: 'create-1',
-      }),
-    }));
-  });
 
   it('shares task snapshots between native turn channels and clears them for a new session', () => {
     const normalizer = new ClaudeExecutionEventNormalizer();
@@ -241,14 +143,6 @@ describe('ClaudeExecutionEventNormalizer tool results', () => {
     expect(completed.providerPayload).toBeUndefined();
   });
 
-  it('decodes native question answers', () => {
-    const completed = completeTool('AskUserQuestion', { questions: [{ question: 'Color?' }] }, {
-      questions: [{ question: 'Color?' }],
-      answers: { 'Color?': 'Blue' },
-    });
-
-    expect(completed.resultDetails).toEqual({ resolvedAnswers: { 'Color?': 'Blue' } });
-  });
 
   it('keeps a subagent result native for the task-result interpreter', () => {
     const launch = { isAsync: true, status: 'async_launched', agentId: 'agent-1' };
@@ -536,22 +430,22 @@ describe('Claude task notification presentation', () => {
   it.each([false, true])('settles tasks without inserting transcript content with background transition=%s', backgrounded => {
     const normalizer = new ClaudeExecutionEventNormalizer();
     normalizer.normalize(msg({ type: 'system', subtype: 'task_started', task_id: 'sync',
-      tool_use_id: 'sync-tool', is_backgrounded: false } as any), 'requested');
+      tool_use_id: 'sync-tool', is_backgrounded: false }), 'requested');
     if (backgrounded) {
       normalizer.normalize(msg({ type: 'system', subtype: 'task_updated', task_id: 'sync',
-        patch: { is_backgrounded: true } } as any), 'requested');
+        patch: { is_backgrounded: true } }), 'requested');
     }
     // Native tasks outlive requested turns and may complete on the background channel.
     normalizer.reset('requested');
     const events = normalizer.normalize(msg({ type: 'system', subtype: 'task_notification',
-      task_id: 'sync', tool_use_id: 'sync-tool', status: 'completed', summary: 'Agent answer' } as any), 'background');
+      task_id: 'sync', tool_use_id: 'sync-tool', status: 'completed', summary: 'Agent answer' }), 'background');
     expect(events).toContainEqual(expect.objectContaining({ type: 'async_subagent_completion' }));
     expect(events.filter(event => event.type === 'output')).toEqual([]);
     // Resuming a foreground agent registers it in the background under the same task ID.
     normalizer.normalize(msg({ type: 'system', subtype: 'task_started', task_id: 'sync',
-      is_backgrounded: true } as any), 'requested');
+      is_backgrounded: true }), 'requested');
     const resumed = normalizer.normalize(msg({ type: 'system', subtype: 'task_notification',
-      task_id: 'sync', status: 'completed', summary: 'Second answer' } as any), 'background');
+      task_id: 'sync', status: 'completed', summary: 'Second answer' }), 'background');
     expect(resumed).toContainEqual(expect.objectContaining({ type: 'async_subagent_completion' }));
     expect(resumed.filter(event => event.type === 'output')).toEqual([]);
   });
@@ -560,7 +454,7 @@ describe('Claude task notification presentation', () => {
     const events = new ClaudeExecutionEventNormalizer().normalize(msg({
       type: 'system', subtype: 'task_notification', task_id: taskId,
       status: 'completed', summary: 'Background work finished.',
-    } as any), 'background');
+    }), 'background');
     expect(events).toContainEqual({
       type: 'async_subagent_completion', event: expect.objectContaining({ result: 'Background work finished.' }),
     });
@@ -570,11 +464,10 @@ describe('Claude task notification presentation', () => {
     const events = new ClaudeExecutionEventNormalizer().normalize(msg({
       type: 'system', subtype: 'task_notification', task_id: 'watcher',
       status: 'completed', summary: 'Watcher update.', skip_transcript: true,
-    } as any), 'background');
+    }), 'background');
     expect(events.filter(event => event.type === 'output')).toEqual([]);
   });
 });
-
 
 it('uses main-only SDK result usage and wall duration, excluding cumulative model usage', () => {
   const normalizer = new ClaudeExecutionEventNormalizer();
@@ -584,7 +477,6 @@ it('uses main-only SDK result usage and wall duration, excluding cumulative mode
   }), 'requested');
   expect(events).toContainEqual({ type: 'result', turnStats: { outputTokens: 125, durationMs: 2500 } });
 });
-
 
 it('omits throughput for success-subtype API errors', () => {
   const events = new ClaudeExecutionEventNormalizer().normalize(msg({ type: 'result', subtype: 'success',

@@ -1,21 +1,26 @@
+/**
+ * @vitest-environment jsdom
+ * @vitest-environment-options {"customExportConditions":["node","node-addons"]}
+ */
 import '@/providers';
 
 import { createHarness as createCoordinator } from '@test/helpers/ChatExecutionHarness';
 import { createFixture } from '@test/helpers/ChatInputHarness';
 import { nativeDefaults } from '@test/helpers/deepseek/NativeDefaults';
 import { jobsOf, NATIVE_RESET, NativePeer, type NativePeerHostOptions, type NativePeerLifecycle, rootFollow } from '@test/helpers/deepseek/NativePeer';
-import { runtimeHostFor } from '@test/helpers/providerRuntimeHost';
+import { nativeRequest } from '@test/helpers/deepseek/NativeRequest';
+import { createProviderHostFixture } from '@test/helpers/providerRuntimeHost';
 import { testDate } from '@test/helpers/testClock';
 import type { Mock } from 'vitest';
 
 import { isSteerableExecutionSession, type ProviderExecutionEvent, type ProviderExecutionRequest, type ProviderExecutionSession, type ProviderInteractionPort, type ProviderSessionConfig, type ProviderSessionEvent } from '@/core/execution';
+import { getProviderConfig, setProviderConfig } from '@/core/providers/providerConfig';
 import type { ProviderHost } from '@/core/providers/ProviderHost';
 import type { ImageAttachment } from '@/core/types';
 import { DeepSeekExecutionBackend } from '@/providers/deepseek/execution/DeepSeekExecutionBackend';
+import { isRecord } from '@/providers/deepseek/remote/DeepSeekRemoteClient';
 import { getDeepSeekHome } from '@/providers/deepseek/runtime/DeepSeekHome';
 import type { DeepSeekHost } from '@/providers/deepseek/runtime/DeepSeekHost';
-
-
 
 let peer: NativePeer;
 let deepseek: DeepSeekHost;
@@ -23,14 +28,14 @@ let lifecycle: NativePeerLifecycle;
 let session: ProviderExecutionSession;
 let sessionEvents: ProviderSessionEvent[];
 let permission: string;
-let inbox: unknown[];
+let inbox: Array<{ id: string; source: { kind: string; rpcId: string }; content: Array<{ type: string; text: string }> }>;
 let seq: number;
 let nativeTurn: number;
 /** The native root whose follow stream receives `event` frames. */
 let followed: string;
 let port: ProviderInteractionPort;
 const time = testDate().getTime();
-const host = { settings: { locale: 'en', providerConfigs: { deepseek: { enabled: true, visibleModels: ['deepseek:native/model'], discoveredModels: [{ encodedId: 'deepseek:native/model', provider: 'native', id: 'model', label: 'Model', reasoning: [{ id: 'low', name: 'Low' }, { id: 'high', name: 'High' }] }] } } } } as unknown as ProviderHost;
+let host: ProviderHost;
 
 function request(text = 'requested'): ProviderExecutionRequest {
   return { input: [{ type: 'text', text }], configuration: { systemInstructions: { kind: 'explicit', instructions: 'literal {prompt}' }, permissionMode: 'normal' }, toolPolicy: { kind: 'provider-default' }, signal: new AbortController().signal };
@@ -52,6 +57,7 @@ function answer(text: string, step = 0): void {
 async function collect(events: AsyncIterable<ProviderExecutionEvent>, into: ProviderExecutionEvent[]): Promise<void> { for await (const event of events) into.push(event); }
 
 beforeEach(async () => {
+  ({ host } = await createProviderHostFixture({ settings: { locale: 'en', providerConfigs: { deepseek: { enabled: true, visibleModels: ['deepseek:native/model'], discoveredModels: [{ encodedId: 'deepseek:native/model', provider: 'native', id: 'model', label: 'Model', reasoning: [{ id: 'low', name: 'Low' }, { id: 'high', name: 'High' }] }] } } } }));
   permission = 'workspace-write'; inbox = []; seq = 3; nativeTurn = 0; followed = 'root'; sessionEvents = [];
   port = { requestApproval: vi.fn(), askUserQuestion: vi.fn(), dismissInteraction: vi.fn() };
   peer = new NativePeer();
@@ -63,9 +69,9 @@ beforeEach(async () => {
   });
   peer.onCall = (method, args) => {
     // Native reuses a named session only while no turn has started; the saved root these tests resume has history.
-    if (method === 'session/create') return { sessionId: args.request.sessionId ? 'minted' : 'root', agentPreset: 'claudian' };
+    if (method === 'session/create') return { sessionId: nativeRequest(args).sessionId ? 'minted' : 'root', agentPreset: 'claudian' };
     if (method === 'session/updateQueue') {
-      inbox = inbox.filter((item: any) => item.id !== args.request.itemId);
+      inbox = inbox.filter((item) => item.id !== nativeRequest(args).itemId);
       peer.send('session/control', { type: 'projection', sessionId: 'root', key: 'inbox', seq: ++seq, value: { 'next-turn': inbox } });
       return { accepted: true };
     }
@@ -83,7 +89,7 @@ function savedState(overrides: Record<string, unknown> = {}): Record<string, unk
 }
 function create(resume: boolean | NonNullable<ProviderSessionConfig['resumeSeed']> = false, lifecycle: ProviderSessionConfig['lifecycle'] = 'persistent'): void {
   const resumeSeed = resume === true ? { providerSessionId: 'root', providerState: savedState() } : resume || undefined;
-  session = new DeepSeekExecutionBackend(runtimeHostFor(host, 'deepseek'), () => deepseek).createSession({
+  session = new DeepSeekExecutionBackend(host.getRuntimeHost('deepseek'), () => deepseek).createSession({
     lifecycle, nativePersistence: lifecycle === 'ephemeral' ? 'disabled-if-supported' : 'enabled', workingDirectory: '/vault', interactionPort: port,
     ...(resumeSeed ? { resumeSeed } : {}),
   });
@@ -93,7 +99,7 @@ function create(resume: boolean | NonNullable<ProviderSessionConfig['resumeSeed'
 async function completeRequest(text = 'requested'): Promise<void> {
   const run = session.execute(request(text)); const events: ProviderExecutionEvent[] = [];
   const done = collect(run.events, events);
-  await until(() => peer.calls.some(c => c.method === 'session/prompt' && c.args.request.requestId === run.executionId));
+  await until(() => peer.calls.some(c => c.method === 'session/prompt' && nativeRequest(c.args).requestId! === run.executionId));
   begin(run.executionId); answer(`${text} done`); await done;
   expect(events.at(-1)?.type).toBe('turn_completed');
 }
@@ -122,7 +128,7 @@ it.each(['tool-jobs', 'subagent-settled'])('attributes only the matched native u
   const events: ProviderExecutionEvent[] = [];
   const done = collect(run.events, events);
   await until(() => peer.calls.some(c => c.method === 'session/prompt'));
-  const prompt = peer.calls.find(c => c.method === 'session/prompt')!.args.request;
+  const prompt = nativeRequest(peer.calls.find(c => c.method === 'session/prompt')!.args);
   expect(prompt).toMatchObject({ requestId: run.executionId, mode: 'queue' });
   expect(events.some(e => e.type === 'turn_started')).toBe(false);
   begin(undefined, source); answer('automatic answer');
@@ -147,14 +153,14 @@ function steer(text: string, signal = new AbortController().signal, inputId?: st
   if (!isSteerableExecutionSession(session)) throw new Error('DeepSeek session is not steerable.');
   return session.steer({ ...request(text), signal, inputId });
 }
-const steerCalls = () => peer.calls.filter(c => c.method === 'session/prompt' && c.args.request.mode === 'steer');
+const steerCalls = () => peer.calls.filter(c => c.method === 'session/prompt' && nativeRequest(c.args).mode === 'steer');
 /** Starts a requested run whose native turn is claimed and still running. */
 async function runningTurn(): Promise<{ run: ReturnType<ProviderExecutionSession['execute']>; events: ProviderExecutionEvent[]; done: Promise<void> }> {
   create();
   const run = session.execute(request());
   const events: ProviderExecutionEvent[] = [];
   const done = collect(run.events, events);
-  await until(() => peer.calls.some(c => c.method === 'session/prompt' && c.args.request.requestId === run.executionId));
+  await until(() => peer.calls.some(c => c.method === 'session/prompt' && nativeRequest(c.args).requestId! === run.executionId));
   begin(run.executionId);
   event('assistant/message', { turn: nativeTurn, step: 0, message: { content: [{ type: 'text', text: 'working' }] } });
   await until(() => events.some(e => e.type === 'turn_started'));
@@ -172,7 +178,7 @@ it('joins steered input to the running requested turn once native claims it at a
   let settled: boolean | undefined;
   const steering = steer('also cover tests').then(value => { settled = value; return value; });
   await until(() => steerCalls().length === 1);
-  const [{ args: { request: sent } }] = steerCalls();
+  const sent = nativeRequest(steerCalls()[0].args);
   expect(sent).toMatchObject({ sessionId: 'root', mode: 'steer', content: [{ type: 'text', text: 'also cover tests' }] });
   expect(sent.requestId).toEqual(expect.any(String));
   // Native acknowledged the inbox entry, but only the step boundary that claims it makes it part of the turn.
@@ -212,7 +218,7 @@ it.each([
   const stop = new AbortController();
   const steering = steer('wait, not that', stop.signal);
   await until(() => steerCalls().length === 1);
-  const rpcId = steerCalls()[0].args.request.requestId;
+  const rpcId = nativeRequest(steerCalls()[0].args).requestId!;
   pendingSteers([{ id: 'steer-item', rpcId, text: 'wait, not that' }]);
   const ordinary = peer.onCall;
   peer.onCall = (method, args) => {
@@ -222,7 +228,7 @@ it.each([
   if (trigger === 'cancel') run.cancel(); else stop.abort();
   expect(await steering).toBe(false);
   const removal = peer.calls.findIndex(c => c.method === 'session/updateQueue');
-  expect(peer.calls[removal].args.request).toEqual({ sessionId: 'root', itemId: 'steer-item', action: { kind: 'remove' } });
+  expect(nativeRequest(peer.calls[removal].args)).toEqual({ sessionId: 'root', itemId: 'steer-item', action: { kind: 'remove' } });
   // An abandoned steer leaves the turn running; Stop cancels it only after the steer left native's inbox, so the steer
   // can never prefix a later prompt.
   if (trigger === 'abort') answer('carried on', 1);
@@ -238,7 +244,7 @@ it('reports a steer native refused as unsent and an unconfirmed one as unknown',
   const ordinary = peer.onCall;
   let failure: Error = Object.assign(new Error('image too large'), { code: 'session/attachment-invalid' });
   peer.onCall = (method, args) => {
-    if (method === 'session/prompt' && args.request.mode === 'steer') throw failure;
+    if (method === 'session/prompt' && nativeRequest(args).mode === 'steer') throw failure;
     return ordinary(method, args);
   };
   expect(await steer('with a huge image')).toBe(false);
@@ -254,9 +260,9 @@ it.each(['claims it', 'Stop withdraws it'] as const)('keeps tracking a steer who
   const ordinary = peer.onCall;
   let rpcId = '';
   peer.onCall = (method, args) => {
-    if (method === 'session/prompt' && args.request.mode === 'steer') {
+    if (method === 'session/prompt' && nativeRequest(args).mode === 'steer') {
       // Native admitted the steer, but its acknowledgement never arrived intact.
-      rpcId = args.request.requestId;
+      rpcId = nativeRequest(args).requestId!;
       pendingSteers([{ id: 'steer-item', rpcId, text: 'add a summary' }]);
       throw new Error('socket hang up');
     }
@@ -289,7 +295,7 @@ it('gives back a steer its turn ended without claiming, before any later Stop', 
   };
   const steering = steer('and then deploy');
   await until(() => steerCalls().length === 1);
-  pendingSteers([{ id: 'steer-item', rpcId: steerCalls()[0].args.request.requestId, text: 'and then deploy' }]);
+  pendingSteers([{ id: 'steer-item', rpcId: nativeRequest(steerCalls()[0].args).requestId!, text: 'and then deploy' }]);
   // The model request fails, so native ends the turn before any step boundary claims the steer.
   event('turn/end', { turn: nativeTurn, reason: { kind: 'error', error: { message: 'model unavailable' } } });
   await done;
@@ -309,7 +315,7 @@ it('gives back a steer native claimed but discarded when a prompt hook blocked i
   const { events, done } = await runningTurn();
   const steering = steer('and then deploy');
   await until(() => steerCalls().length === 1);
-  const rpcId = steerCalls()[0].args.request.requestId;
+  const rpcId = nativeRequest(steerCalls()[0].args).requestId!;
   event('agent/inbox/spliced', { target: 'next-step', start: 0, inserted: [{ id: 'steer-item', source: { kind: 'user', rpcId }, content: [{ type: 'text', text: 'and then deploy' }] }] });
   pendingSteers([{ id: 'steer-item', rpcId, text: 'and then deploy' }]);
   event('agent/inbox/spliced', { target: 'next-step', start: 0, removedCount: 1, inserted: [] });
@@ -330,7 +336,7 @@ it('treats a removal native did not confirm as unknown, not as a steer it gave b
   const stop = new AbortController();
   const steering = steer('maybe not', stop.signal);
   await until(() => steerCalls().length === 1);
-  pendingSteers([{ id: 'steer-item', rpcId: steerCalls()[0].args.request.requestId, text: 'maybe not' }]);
+  pendingSteers([{ id: 'steer-item', rpcId: nativeRequest(steerCalls()[0].args).requestId!, text: 'maybe not' }]);
   stop.abort();
   await expect(steering).rejects.toThrow();
   peer.onCall = ordinary;
@@ -351,7 +357,7 @@ it('never lets a Stop delayed by its steer withdrawal cancel a newer turn', asyn
   try {
   const steering = steer('wait');
   await until(() => steerCalls().length === 1);
-  pendingSteers([{ id: 'steer-item', rpcId: steerCalls()[0].args.request.requestId, text: 'wait' }]);
+  pendingSteers([{ id: 'steer-item', rpcId: nativeRequest(steerCalls()[0].args).requestId!, text: 'wait' }]);
   run.cancel();
   await until(() => peer.calls.some(c => c.method === 'session/updateQueue'));
   // Meanwhile the stopped turn finishes on its own and the user sends again.
@@ -360,7 +366,7 @@ it('never lets a Stop delayed by its steer withdrawal cancel a newer turn', asyn
   const next = session.execute(request('next'));
   const nextEvents: ProviderExecutionEvent[] = [];
   const nextDone = collect(next.events, nextEvents);
-  await until(() => peer.calls.some(c => c.method === 'session/prompt' && c.args.request.requestId === next.executionId));
+  await until(() => peer.calls.some(c => c.method === 'session/prompt' && nativeRequest(c.args).requestId! === next.executionId));
   begin(next.executionId);
   await until(() => nextEvents.some(e => e.type === 'turn_started'));
   acknowledge();
@@ -377,9 +383,9 @@ it('withdraws an abandoned steer even when its admission acknowledgement failed'
   const ordinary = peer.onCall;
   const stop = new AbortController();
   peer.onCall = (method, args) => {
-    if (method === 'session/prompt' && args.request.mode === 'steer') {
+    if (method === 'session/prompt' && nativeRequest(args).mode === 'steer') {
       // Native queued it; the caller gave up while the acknowledgement was pending, and then the acknowledgement failed.
-      pendingSteers([{ id: 'steer-item', rpcId: args.request.requestId, text: 'never mind' }]);
+      pendingSteers([{ id: 'steer-item', rpcId: nativeRequest(args).requestId!, text: 'never mind' }]);
       stop.abort();
       throw new Error('socket hang up');
     }
@@ -389,7 +395,7 @@ it('withdraws an abandoned steer even when its admission acknowledgement failed'
   // Unknown or, once native confirms the removal first, definitely unsent: never accepted.
   expect([false, 'unknown']).toContain(await steer('never mind', stop.signal).catch(() => 'unknown'));
   await until(() => peer.calls.some(c => c.method === 'session/updateQueue'));
-  expect(peer.calls.find(c => c.method === 'session/updateQueue')?.args.request).toEqual({ sessionId: 'root', itemId: 'steer-item', action: { kind: 'remove' } });
+  expect(nativeRequest(peer.calls.find(c => c.method === 'session/updateQueue')?.args)).toEqual({ sessionId: 'root', itemId: 'steer-item', action: { kind: 'remove' } });
   peer.onCall = ordinary;
   answer('carried on', 1); await done;
 });
@@ -398,7 +404,7 @@ it.each([false, true])('confirms a late steer in a background turn with precedin
   const { run, events, done } = await runningTurn();
   const steering = steer('one more thing', undefined, 'late-input');
   await until(() => steerCalls().length === 1);
-  const rpcId = steerCalls()[0].args.request.requestId;
+  const rpcId = nativeRequest(steerCalls()[0].args).requestId!;
   // The turn ended before native's step boundary: native starts a new turn with the steered input.
   answer('done', 1); await done;
   expect(events.at(-1)).toMatchObject({ type: 'turn_completed' });
@@ -426,12 +432,12 @@ it.each(['before', 'after'])('routes an old steer claimed %s a newer requested i
   const { done } = await runningTurn();
   const steering = steer('late steer', undefined, 'late-input');
   await until(() => steerCalls().length === 1);
-  const rpcId = steerCalls()[0].args.request.requestId;
+  const rpcId = nativeRequest(steerCalls()[0].args).requestId!;
   answer('first answer', 1); await done;
   const next = session.execute(request('new request'));
   const events: ProviderExecutionEvent[] = [];
   const completed = collect(next.events, events);
-  await until(() => peer.calls.some(c => c.method === 'session/prompt' && c.args.request.requestId === next.executionId));
+  await until(() => peer.calls.some(c => c.method === 'session/prompt' && nativeRequest(c.args).requestId! === next.executionId));
   nativeTurn++; event('turn/start', { turn: nativeTurn });
   const late = () => event('user/message', { id: 'late-user', content: [{ type: 'text', text: 'late steer' }], source: { kind: 'user', rpcId } });
   if (order === 'before') late();
@@ -461,7 +467,7 @@ it('admits the next request sent from the previous request\'s terminal event', a
   const ordinary = peer.onCall;
   peer.onCall = (method, args) => {
     if (method !== 'session/prompt') return ordinary(method, args);
-    begin(args.request.requestId); answer(`answer ${peer.calls.filter(c => c.method === 'session/prompt').length}`);
+    begin(nativeRequest(args).requestId!); answer(`answer ${peer.calls.filter(c => c.method === 'session/prompt').length}`);
     return { accepted: true };
   };
   create();
@@ -476,7 +482,7 @@ it('admits the next request sent from the previous request\'s terminal event', a
   const events: ProviderExecutionEvent[] = [];
   await collect(next!.events, events);
   expect(events.at(-1)?.type).toBe('turn_completed');
-  expect(peer.calls.filter(c => c.method === 'session/prompt').map(c => c.args.request.requestId)).toEqual([first.executionId, next!.executionId]);
+  expect(peer.calls.filter(c => c.method === 'session/prompt').map(c => nativeRequest(c.args).requestId!)).toEqual([first.executionId, next!.executionId]);
   await until(() => session.getStatus() === 'idle');
 });
 
@@ -543,7 +549,7 @@ it('stops owned jobs after a requested turn and drains their automatic wakeup', 
 });
 
 it('routes automatic questions under their background turn and fences late answers', async () => {
-  let reply!: (value: any) => void;
+  let reply!: (value: Awaited<ReturnType<typeof port.askUserQuestion>>) => void;
   port.askUserQuestion = vi.fn<typeof port.askUserQuestion>(() => new Promise(resolve => { reply = resolve; }));
   create(); const run = session.execute(request()); const events: ProviderExecutionEvent[] = [];
   const done = collect(run.events, events);
@@ -564,12 +570,12 @@ it('routes automatic questions under their background turn and fences late answe
 });
 
 it('buffers an early child question until its native turn is observed while the root is idle', async () => {
-  let reply!: (value: any) => void;
+  let reply!: (value: Awaited<ReturnType<typeof port.askUserQuestion>>) => void;
   port.askUserQuestion = vi.fn<typeof port.askUserQuestion>(() => new Promise(resolve => { reply = resolve; }));
   const ordinaryOpen = peer.onOpen;
   let childFollow!: (value: unknown) => void;
   peer.onOpen = (endpoint, args, send) => {
-    if (endpoint === 'session/follow' && args.request.address.childSessionId === 'child') { childFollow = send; return; }
+    if (endpoint === 'session/follow' && nativeRequest(args).address!.childSessionId === 'child') { childFollow = send; return; }
     ordinaryOpen(endpoint, args, send);
   };
   create(); const run = session.execute(request()); const events: ProviderExecutionEvent[] = [];
@@ -690,7 +696,7 @@ it.each([
 function claimBeforeRemoval(itemId: string): never {
   setTimeout(() => {
     const rpcId = itemId.slice('item-'.length);
-    inbox = inbox.filter((item: any) => item.id !== itemId);
+    inbox = inbox.filter((item) => item.id !== itemId);
     peer.send('session/control', { type: 'projection', sessionId: 'root', key: 'inbox', seq: ++seq, value: { 'next-turn': inbox } });
     nativeTurn++; event('turn/start', { turn: nativeTurn });
     event('user/message', { id: `user-${nativeTurn}`, content: [{ type: 'text', text: 'requested' }], source: { kind: 'user', rpcId } });
@@ -700,7 +706,7 @@ function claimBeforeRemoval(itemId: string): never {
 
 it('lets a request claimed during recovery run, then stops it on a later Stop', async () => {
   const ordinary = peer.onCall;
-  peer.onCall = (method, args) => method === 'session/updateQueue' ? claimBeforeRemoval(args.request.itemId) : ordinary(method, args);
+  peer.onCall = (method, args) => method === 'session/updateQueue' ? claimBeforeRemoval(nativeRequest(args).itemId!) : ordinary(method, args);
   const { run, events, done } = await queueBehindFailedAutomaticTurn();
   failAutomatic();
   await until(() => events.some(e => e.type === 'turn_started'));
@@ -719,7 +725,7 @@ it('lets a request claimed during recovery run, then stops it on a later Stop', 
 
 it('completes a request claimed during recovery when Stop was not requested', async () => {
   const ordinary = peer.onCall;
-  peer.onCall = (method, args) => method === 'session/updateQueue' ? claimBeforeRemoval(args.request.itemId) : ordinary(method, args);
+  peer.onCall = (method, args) => method === 'session/updateQueue' ? claimBeforeRemoval(nativeRequest(args).itemId!) : ordinary(method, args);
   const { events, done } = await queueBehindFailedAutomaticTurn();
   failAutomatic();
   await until(() => events.some(e => e.type === 'turn_started'));
@@ -823,7 +829,7 @@ it('reads missed durable records beyond a reconnect snapshot without replaying i
   ];
   const end = { type: 'event', event: { seq: 8, time, type: 'turn/end', data: { turn: nativeTurn, reason: { kind: 'completed' } } } };
   const ordinaryCall = peer.onCall; const ordinaryOpen = peer.onOpen;
-  peer.onCall = (method, args) => method === 'session/page' && args.request.throughSeq === 7
+  peer.onCall = (method, args) => method === 'session/page' && nativeRequest(args).throughSeq === 7
     ? { records: [commit], hasMore: false } : ordinaryCall(method, args);
   peer.onOpen = (endpoint, args, send) => {
     if (endpoint !== 'session/follow') return ordinaryOpen(endpoint, args, send);
@@ -860,7 +866,7 @@ it('fails a conversation whose reconnect replay read fails without stopping the 
   begin(run.executionId);
   const ordinaryCall = peer.onCall; const ordinaryOpen = peer.onOpen;
   const cursor = seq + 5;
-  peer.onCall = (method, args) => method === 'session/page' && args.request.throughSeq === cursor ? NATIVE_RESET : ordinaryCall(method, args);
+  peer.onCall = (method, args) => method === 'session/page' && nativeRequest(args).throughSeq === cursor ? NATIVE_RESET : ordinaryCall(method, args);
   peer.onOpen = (endpoint, args, send) => endpoint === 'session/follow' ? send({ type: 'snapshot', cursor, records: [] })
     : endpoint === 'job/list' ? send({ type: 'rows', jobs }) : ordinaryOpen(endpoint, args, send);
   for (const stream of peer.streams.values()) stream.socket.terminate();
@@ -1138,7 +1144,7 @@ it('fails the conversation on a transport failure without stopping the native wo
 it('resolves native tool image references inside the owning session', async () => {
   const ordinary = peer.onCall;
   peer.onCall = (method, args) => method === 'session/attachment'
-    ? { attachment: { attachmentId: args.request.attachmentId, mediaType: 'image/png' }, data: 'aW1hZ2U=' } : ordinary(method, args);
+    ? { attachment: { attachmentId: nativeRequest(args).attachmentId, mediaType: 'image/png' }, data: 'aW1hZ2U=' } : ordinary(method, args);
   create(); const run = session.execute(request()); const events: ProviderExecutionEvent[] = [];
   const done = collect(run.events, events);
   await until(() => peer.calls.some(c => c.method === 'session/prompt'));
@@ -1153,15 +1159,15 @@ it('resolves native tool image references inside the owning session', async () =
 it('recovers the saved native preset before resuming an unbound conversation', async () => {
   const ordinary = peer.onCall;
   peer.onCall = async (method, args) => {
-    const value = await ordinary(method, args) as any;
+    const value = await ordinary(method, args) as import('@/providers/deepseek/history/DeepSeekJournal').DeepSeekProjection;
     return method === 'session/projections' ? { ...value, values: { ...value.values, agentPreset: 'claudian-code' } } : value;
   };
-  session = new DeepSeekExecutionBackend(runtimeHostFor(host, 'deepseek'), () => deepseek).createSession({
+  session = new DeepSeekExecutionBackend(host.getRuntimeHost('deepseek'), () => deepseek).createSession({
     lifecycle: 'persistent', nativePersistence: 'enabled', workingDirectory: '/vault', interactionPort: port, resumeSeed: { providerSessionId: 'root' },
   });
   const run = session.execute(request()); const events: ProviderExecutionEvent[] = []; const done = collect(run.events, events);
   await until(() => peer.calls.some(c => c.method === 'session/prompt'));
-  expect(peer.calls.find(c => c.method === 'session/prompt')?.args.request.sessionId).toBe('root');
+  expect(nativeRequest(peer.calls.find(c => c.method === 'session/prompt')?.args).sessionId).toBe('root');
   // Claudian archive state is authoritative: a resumed conversation is never left gated by a native archive.
   const methods = peer.calls.map(c => c.method);
   expect(peer.calls.filter(c => c.method === 'workspace/unarchiveSession')).toEqual([{ method: 'workspace/unarchiveSession', args: { request: { sessionId: 'root' } } }]);
@@ -1180,12 +1186,13 @@ it.each([
   { reasoning: null, saved: 'low', sent: undefined },
   { reasoning: 'low', saved: 'high', sent: 'low' },
 ])('honors reasoning semantics for $reasoning with saved preference $saved', async ({ reasoning, saved, sent }) => {
-  const config = (host.settings.providerConfigs as any).deepseek;
+  const config = getProviderConfig(host.settings, 'deepseek');
   config.preferredReasoningByModel = saved ? { 'deepseek:native/model': saved } : {};
+  setProviderConfig(host.settings, 'deepseek', config);
   const ordinary = peer.onCall;
   peer.onCall = (method, args) => {
     if (method === 'session/modelCatalog') return { groups: [{ id: 'native', models: [{ id: 'model', reasoning: { efforts: [{ id: 'low' }, { id: 'high' }] } }] }] };
-    if (method === 'session/selectModel') return { selected: { provider: 'native', model: 'model', ...(args.request.reasoningEffort ? { reasoningEffort: args.request.reasoningEffort } : {}) } };
+    if (method === 'session/selectModel') return { selected: { provider: 'native', model: 'model', ...(nativeRequest(args).reasoningEffort ? { reasoningEffort: nativeRequest(args).reasoningEffort } : {}) } };
     return ordinary(method, args);
   };
   try {
@@ -1193,9 +1200,9 @@ it.each([
     const run = session.execute({ ...input, configuration: { ...input.configuration, model: 'deepseek:native/model', reasoning } });
     const events: ProviderExecutionEvent[] = []; const done = collect(run.events, events);
     await until(() => peer.calls.some(c => c.method === 'session/prompt'));
-    expect(peer.calls.find(c => c.method === 'session/selectModel')?.args.request.reasoningEffort).toBe(sent);
+    expect(nativeRequest(peer.calls.find(c => c.method === 'session/selectModel')?.args).reasoningEffort).toBe(sent);
     begin(run.executionId); answer('model selected'); await done;
-  } finally { delete config.preferredReasoningByModel; }
+  } finally { delete config.preferredReasoningByModel; setProviderConfig(host.settings, 'deepseek', config); }
 });
 
 it('cancels admission during shared Host startup without binding a native session', async () => {
@@ -1281,12 +1288,12 @@ async function createMainChat(options: Omit<NativePeerHostOptions, 'beforeStart'
   await deepseek.dispose();
   ({ deepseek, lifecycle } = peer.host({ ...options, beforeStart: start }));
   const coordinator = createCoordinator({
-    resolveBackend: () => new DeepSeekExecutionBackend(runtimeHostFor(host, 'deepseek'), () => deepseek),
+    resolveBackend: () => new DeepSeekExecutionBackend(host.getRuntimeHost('deepseek'), () => deepseek),
     onRequestedEvent: event => fixture.controller.handleExecutionEvent(event),
   });
   const image: ImageAttachment = { id: 'image', name: 'pixel.png', mediaType: 'image/png', data: 'aW1hZ2U=', size: 5, source: 'paste' };
   let images: ImageAttachment[] = [];
-  const fixture = createFixture({
+  const fixture = await createFixture({
     getTabProviderId: () => 'deepseek',
     getSettings: () => settings,
     getExecutionCoordinator: () => coordinator.coordinator,
@@ -1295,7 +1302,7 @@ async function createMainChat(options: Omit<NativePeerHostOptions, 'beforeStart'
       hasImages: () => images.length > 0, setImages: (next: ImageAttachment[]) => { images = next; },
     }),
   });
-  fixture.plugin.getConversationSync.mockReturnValue({ id: 'conversation-1', providerId: 'deepseek' });
+  fixture.plugin.getConversationSync.mockReturnValue({ ...fixture.plugin.getConversationSync('conversation-1')!, providerId: 'deepseek' });
   await coordinator.coordinator.bindConversation({ conversationId: 'conversation-1', providerId: 'deepseek' });
   return { fixture, start, image, coordinator: coordinator.coordinator, sessionEvents: coordinator.sessionEvents, interactionPort: coordinator.interactionPort, getImages: () => images, clearImages: () => { images = []; }, attachImage: () => { images = [image]; },
     dispose: async () => { await coordinator.coordinator.dispose(); await coordinator.registry.dispose(); },
@@ -1325,10 +1332,10 @@ it('restores text and images after definite native rejection and retries on the 
   const ordinary = peer.onCall;
   peer.onCall = (method, args) => {
     if (method !== 'session/prompt') return ordinary(method, args);
-    if (args.request.content.some((block: { type: string }) => block.type === 'image')) {
+    if (nativeRequest(args).content!.some(block => isRecord(block) && block.type === 'image')) {
       throw Object.assign(new Error('This model does not support image input.'), { code: 'session/attachment-invalid' });
     }
-    begin(args.request.requestId); answer('retry accepted');
+    begin(nativeRequest(args).requestId!); answer('retry accepted');
     return { accepted: true };
   };
   const chat = await createMainChat();
@@ -1358,9 +1365,9 @@ it('restores the draft after a definite model rejection and keeps the binding an
   peer.onCall = (method, args) => {
     if (method === 'session/selectModel') {
       if (reject) throw Object.assign(new Error('Reasoning effort "max" is not supported by native/model.'), { code: 'session/model-unavailable' });
-      return { selected: { provider: 'native', model: 'model', reasoningEffort: args.request.reasoningEffort } };
+      return { selected: { provider: 'native', model: 'model', reasoningEffort: nativeRequest(args).reasoningEffort } };
     }
-    if (method === 'session/prompt') { begin(args.request.requestId); answer('accepted'); return { accepted: true }; }
+    if (method === 'session/prompt') { begin(nativeRequest(args).requestId!); answer('accepted'); return { accepted: true }; }
     return ordinary(method, args);
   };
   const chat = await createMainChat({}, { model: 'deepseek:native/model', reasoning: 'high', permissionMode: 'normal' });
@@ -1395,9 +1402,9 @@ it('restores a queued draft withdrawn after a failed automatic turn and retries 
     if (fail) {
       begin();
       event('assistant/message', { turn: nativeTurn, step: 0, message: { content: [{ type: 'text', text: 'automatic work' }] } });
-      enqueue(args.request.requestId); failAutomatic();
+      enqueue(nativeRequest(args).requestId!); failAutomatic();
     }
-    else { begin(args.request.requestId); answer('retry accepted'); }
+    else { begin(nativeRequest(args).requestId!); answer('retry accepted'); }
     return { accepted: true };
   };
   const chat = await createMainChat();
@@ -1439,12 +1446,11 @@ it.each<Partial<ProviderExecutionRequest>>([
   expect(peer.calls.some(c => c.method === 'commands/execute' || c.method === 'session/prompt')).toBe(false);
 });
 
-
 it('restores the draft and retries a corrected startup on the same chat binding', async () => {
   const ordinary = peer.onCall;
   peer.onCall = (method, args) => {
     if (method !== 'session/prompt') return ordinary(method, args);
-    begin(args.request.requestId); answer('started after repair'); return { accepted: true };
+    begin(nativeRequest(args).requestId!); answer('started after repair'); return { accepted: true };
   };
   const chat = await createMainChat();
   chat.start.mockRejectedValueOnce(new Error('DeepSeek Web profile is unavailable.'));
@@ -1468,12 +1474,12 @@ it.each(['root', 'child'])('closes %s background scope on process exit and waits
   const ordinary = peer.onCall;
   peer.onCall = (method, args) => {
     if (method !== 'session/prompt') return ordinary(method, args);
-    begin(args.request.requestId); answer('answer'); return { accepted: true };
+    begin(nativeRequest(args).requestId!); answer('answer'); return { accepted: true };
   };
   let childFollow!: (value: unknown) => void;
   const ordinaryOpen = peer.onOpen;
   peer.onOpen = (endpoint, args, send) => {
-    if (endpoint === 'session/follow' && args.request.address.childSessionId === 'child') { childFollow = send; return; }
+    if (endpoint === 'session/follow' && nativeRequest(args).address!.childSessionId === 'child') { childFollow = send; return; }
     ordinaryOpen(endpoint, args, send);
   };
   try {
@@ -1502,11 +1508,10 @@ it.each(['root', 'child'])('closes %s background scope on process exit and waits
     expect(chat.start).toHaveBeenCalledTimes(2);
     await until(() => !chat.coordinator.hasBackgroundWork);
     expect(peer.calls.filter(c => c.method === 'session/create')).toMatchObject([{ args: { request: {} } }]);
-    expect(peer.calls.filter(c => c.method === 'session/prompt').map(c => c.args.request.sessionId)).toEqual(['root', 'root']);
+    expect(peer.calls.filter(c => c.method === 'session/prompt').map(c => nativeRequest(c.args).sessionId)).toEqual(['root', 'root']);
     expect(chat.fixture.state.messages.filter(m => m.role === 'user')).toHaveLength(2);
   } finally { release(); await chat.dispose(); }
 });
-
 
 /** A bound root with a running job and a continuable child whose follow snapshot native still holds back. */
 async function holdChildSnapshot(): Promise<{ childSnapshot: () => void; rootJobs: unknown[] }> {
@@ -1515,10 +1520,10 @@ async function holdChildSnapshot(): Promise<{ childSnapshot: () => void; rootJob
   let childJobs: ((value: unknown) => void) | undefined;
   const rootJobs = [{ id: 'job', owner: 'root', status: 'running' }];
   peer.onOpen = (endpoint, args, send) => {
-    if (endpoint === 'session/follow' && args.request.address.childSessionId === 'child') { childFollow = send; return; }
+    if (endpoint === 'session/follow' && nativeRequest(args).address!.childSessionId === 'child') { childFollow = send; return; }
     // Hold only the child's first jobs anchor; its turn-end rebaseline answers at once.
-    if (endpoint === 'job/list' && args.request.sessionId === 'child' && !childJobs) { childJobs = send; return; }
-    if (endpoint === 'job/list') { send({ type: 'rows', jobs: args.request.sessionId === 'root' ? rootJobs : [] }); return; }
+    if (endpoint === 'job/list' && nativeRequest(args).sessionId === 'child' && !childJobs) { childJobs = send; return; }
+    if (endpoint === 'job/list') { send({ type: 'rows', jobs: nativeRequest(args).sessionId === 'root' ? rootJobs : [] }); return; }
     ordinaryOpen(endpoint, args, send);
   };
   const ordinary = peer.onCall;
@@ -1611,7 +1616,7 @@ it('verifies permission once per binding and after mode changes rather than read
   const ordinary = peer.onCall;
   peer.onCall = (method, args) => {
     if (method !== 'session/prompt') return ordinary(method, args);
-    begin(args.request.requestId); answer('done'); return { accepted: true };
+    begin(nativeRequest(args).requestId!); answer('done'); return { accepted: true };
   };
   create();
   const execute = async (mode: string) => {
@@ -1640,7 +1645,7 @@ it('verifies permission once per binding and after mode changes rather than read
   await until(() => sessionEvents.some(e => e.type === 'background_turn_completed'));
   await execute('yolo');
   expect(peer.calls.filter(c => c.method === 'commands/execute')).toHaveLength(2);
-  expect(peer.calls.filter(c => c.method === 'session/page').some(c => c.args.request.throughSeq >= policySeq)).toBe(true);
+  expect(peer.calls.filter(c => c.method === 'session/page').some(c => nativeRequest(c.args).throughSeq! >= policySeq)).toBe(true);
 });
 
 const nativeError = (code: string, message: string): Error => Object.assign(new Error(message), { code });
@@ -1651,7 +1656,7 @@ interface AdmissionCase {
   readonly name: string;
   readonly resume?: NonNullable<ProviderSessionConfig['resumeSeed']>;
   /** Native overrides; each receives the ordinary fixture handler. */
-  readonly native?: Record<string, (args: Record<string, any>, ordinary: () => unknown) => unknown>;
+  readonly native?: Record<string, (args: Record<string, unknown>, ordinary: () => unknown) => unknown>;
   /** Runs on the created session before the rejected request. */
   readonly prepare?: () => Promise<void>;
   readonly input: (input: ProviderExecutionRequest) => ProviderExecutionRequest;
@@ -1662,8 +1667,11 @@ interface AdmissionCase {
 }
 const withConfiguration = (configuration: Partial<ProviderExecutionRequest['configuration']>) => (input: ProviderExecutionRequest): ProviderExecutionRequest =>
   ({ ...input, configuration: { ...input.configuration, ...configuration } });
-const resumedProjection = (values: Record<string, unknown>) => (_args: Record<string, any>, ordinary: () => unknown) =>
-  Promise.resolve(ordinary()).then((value: any) => ({ ...value, values: { ...value.values, ...values } }));
+const resumedProjection = (values: Record<string, unknown>) => (_args: Record<string, unknown>, ordinary: () => unknown) =>
+  Promise.resolve(ordinary()).then(value => {
+    const projection = value as import('@/providers/deepseek/history/DeepSeekJournal').DeepSeekProjection;
+    return { ...projection, values: { ...projection.values, ...values } };
+  });
 
 it.each<AdmissionCase>([
   { name: 'an arbitrary tool allow-list', input: input => ({ ...input, toolPolicy: { kind: 'allow-list', names: ['Read'] } }),
@@ -1704,7 +1712,7 @@ it.each<AdmissionCase>([
     native: { 'commands/list': () => { throw nativeError('session/not-found', 'session "root" not found'); } },
     error: { category: 'provider-session-missing', missingProviderSessionId: 'root' }, sends: 0, status: 'invalidated' },
   { name: 'a resumed native session from another directory', resume: { providerSessionId: 'root', providerState: savedState() }, input: input => input,
-    native: { 'session/list': (_args, ordinary) => ({ items: (ordinary() as any).items.map((row: any) => ({ ...row, cwd: '/copied-from' })) }) },
+    native: { 'session/list': (_args, ordinary) => ({ items: (ordinary() as { items: Array<Record<string, unknown>> }).items.map((row) => ({ ...row, cwd: '/copied-from' })) }) },
     error: { category: 'configuration', message: expect.stringContaining('another directory (/copied-from)') }, sends: 0, status: 'idle' },
   { name: 'a prompt native did not acknowledge', input: input => input, native: { 'session/prompt': () => ({ accepted: false }) },
     error: { category: 'transport', message: expect.stringContaining('did not acknowledge') }, sends: 1, status: 'invalidated' },
@@ -1714,7 +1722,7 @@ it.each<AdmissionCase>([
     const override = native[method];
     if (override) return override(args, () => ordinary(method, args));
     // A request that slips past its guard completes normally, so the fault surfaces as a wrong result rather than a hang.
-    if (method === 'session/prompt') { begin(args.request.requestId); answer('sent'); return { accepted: true }; }
+    if (method === 'session/prompt') { begin(nativeRequest(args).requestId!); answer('sent'); return { accepted: true }; }
     return ordinary(method, args);
   };
   create(resume ?? false);
@@ -1730,7 +1738,7 @@ it.each<AdmissionCase>([
 it('refuses a second requested execution while the first is admitting', async () => {
   const ordinary = peer.onCall;
   peer.onCall = (method, args) => {
-    if (method === 'session/prompt') { begin(args.request.requestId); answer('first only'); return { accepted: true }; }
+    if (method === 'session/prompt') { begin(nativeRequest(args).requestId!); answer('first only'); return { accepted: true }; }
     return ordinary(method, args);
   };
   create();
@@ -1738,7 +1746,7 @@ it('refuses a second requested execution while the first is admitting', async ()
   expect(() => session.execute(request('second'))).toThrow('DeepSeek already has a requested execution.');
   await collect(first.events, events);
   expect(events.at(-1)?.type).toBe('turn_completed');
-  expect(peer.calls.filter(c => c.method === 'session/prompt').map(c => c.args.request.requestId)).toEqual([first.executionId]);
+  expect(peer.calls.filter(c => c.method === 'session/prompt').map(c => nativeRequest(c.args).requestId!)).toEqual([first.executionId]);
 });
 
 it('rejects a send while background Stop is running and admits after Stop settles', async () => {
@@ -1756,9 +1764,9 @@ it('rejects a send while background Stop is running and admits after Stop settle
       return { status: 'requested' };
     }
     if (method === 'session/prompt') {
-      begin(args.request.requestId); answer('sent');
+      begin(nativeRequest(args).requestId!); answer('sent');
       // Native streams are ordered independently of RPC replies: the turn can end before its prompt is acknowledged.
-      if (args.request.requestId === first?.executionId) await acknowledged;
+      if (nativeRequest(args).requestId! === first?.executionId) await acknowledged;
       return { accepted: true };
     }
     return ordinary(method, args);
@@ -1808,7 +1816,7 @@ it.each([
   expect(peer.calls.some(c => c.method === 'session/create')).toBe(false);
   // A fork is an independent native root; unarchiving its source would change another conversation.
   expect(peer.calls.some(c => c.method === 'workspace/unarchiveSession')).toBe(false);
-  expect(peer.calls.find(c => c.method === 'session/prompt')?.args.request.sessionId).toBe('fork');
+  expect(nativeRequest(peer.calls.find(c => c.method === 'session/prompt')?.args).sessionId).toBe('fork');
   const snapshot = session.getSnapshot();
   expect(snapshot).toMatchObject({ providerSessionId: 'fork', providerState: { preset: 'claudian-code' } });
   expect(snapshot.providerState).not.toHaveProperty('pendingFork');
@@ -1818,7 +1826,7 @@ it.each(['continuable', 'one-shot'] as const)('stops a running %s child through 
   let childFollow: ((value: unknown) => void) | undefined;
   const ordinaryOpen = peer.onOpen;
   peer.onOpen = (endpoint, args, send) => {
-    if (endpoint === 'session/follow' && args.request.address.childSessionId === 'child') { childFollow = send; return; }
+    if (endpoint === 'session/follow' && nativeRequest(args).address!.childSessionId === 'child') { childFollow = send; return; }
     ordinaryOpen(endpoint, args, send);
   };
   const endChild = (): void => childFollow!({ type: 'event', event: { type: 'turn/end', seq: 1, time, data: { turn: 0, reason: { kind: 'cancelled' } } } });

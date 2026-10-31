@@ -9,8 +9,6 @@ import { type ProviderExecutionEvent, type ProviderSessionSnapshot, type Provide
 import type { ChatMessage, Conversation } from '@/core/types';
 import { ChatExecutionInteractionStaleError, ChatExecutionPreHandoffError } from '@/features/chat/execution/ChatExecutionCoordinator';
 
-
-
 const IDLE_MS = 30 * 60_000;
 
 afterEach(() => vi.useRealTimers());

@@ -1,7 +1,9 @@
 import type { App } from 'obsidian';
-import { Modal, Notice, setIcon, Setting } from 'obsidian';
+import { Notice, setIcon } from 'obsidian';
 
 import { parseEnvironmentVariables } from '@/core/process/env';
+import { AccessibleModal } from '@/shared/modals/AccessibleModal';
+import { AccessibleSetting } from '@/shared/settings/AccessibleSetting';
 
 import {
   getEnvironmentScopeUpdates,
@@ -14,7 +16,7 @@ import { t } from '../../i18n/i18n';
 import { confirmDelete } from '../modals/ConfirmModal';
 import { formatContextLimit, parseContextLimit } from './contextLimit';
 
-export class EnvSnippetModal extends Modal {
+export class EnvSnippetModal extends AccessibleModal {
   plugin: ProviderHost;
   snippet: EnvSnippet | null;
   snippetScope: EnvironmentScope;
@@ -53,9 +55,6 @@ export class EnvSnippetModal extends Modal {
       if (e.key === 'Enter' && !e.isComposing) {
         e.preventDefault();
         void saveSnippet();
-      } else if (e.key === 'Escape' && !e.isComposing) {
-        e.preventDefault();
-        this.close();
       }
     };
 
@@ -179,7 +178,7 @@ export class EnvSnippetModal extends Modal {
       }
     };
 
-    new Setting(contentEl)
+    new AccessibleSetting(contentEl)
       .setName(t('settings.envSnippets.modal.name'))
       .setDesc(t('settings.envSnippets.modal.namePlaceholder'))
       .addText((text) => {
@@ -189,7 +188,7 @@ export class EnvSnippetModal extends Modal {
                 text.inputEl.addEventListener('keydown', handleKeyDown);
       });
 
-    new Setting(contentEl)
+    new AccessibleSetting(contentEl)
       .setName(t('settings.envSnippets.modal.description'))
       .setDesc(t('settings.envSnippets.modal.descPlaceholder'))
       .addText((text) => {
@@ -199,7 +198,7 @@ export class EnvSnippetModal extends Modal {
                 text.inputEl.addEventListener('keydown', handleKeyDown);
       });
 
-    const envVarsSetting = new Setting(contentEl)
+    const envVarsSetting = new AccessibleSetting(contentEl)
       .setName(t('settings.envSnippets.modal.envVars'))
       .setDesc(t('settings.envSnippets.modal.envVarsPlaceholder'))
       .addTextArea((text) => {

@@ -1,3 +1,4 @@
+import { getProviderConfig, setProviderConfig } from '@/core/providers/providerConfig';
 import { getPiProviderSettings } from '@/providers/pi/settings';
 import { piChatUIConfig } from '@/providers/pi/ui/PiChatUIConfig';
 
@@ -114,7 +115,7 @@ describe('PiChatUIConfig', () => {
     const settingsWithoutPreference: Record<string, unknown> = {
       providerConfigs: {
         pi: {
-          discoveredModels: (settings.providerConfigs as any).pi.discoveredModels,
+          discoveredModels: getProviderConfig(settings, 'pi').discoveredModels,
           preferredThinkingByModel: {},
           visibleModels: ['pi:anthropic/claude-sonnet-4'],
         },
@@ -137,7 +138,7 @@ describe('PiChatUIConfig', () => {
     expect(withPreference.effortLevel).toBe('high');
 
     const withoutPreference = structuredClone(settings);
-    (withoutPreference.providerConfigs as any).pi.preferredThinkingByModel = {};
+    setProviderConfig(withoutPreference, 'pi', { ...getProviderConfig(withoutPreference, 'pi'), preferredThinkingByModel: {} });
     withoutPreference.effortLevel = 'medium';
     piChatUIConfig.applyModelProjectionDefaults?.(
       'pi:anthropic/claude-sonnet-4',

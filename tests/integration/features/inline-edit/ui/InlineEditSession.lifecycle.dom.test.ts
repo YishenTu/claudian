@@ -11,7 +11,8 @@ import {
 } from '@test/helpers/features/inline-edit/InlineEditDOMHarness';
 import { testDate } from '@test/helpers/testClock';
 import { fireEvent, screen, waitFor, within } from '@testing-library/dom';
-import { MarkdownRenderer, Notice } from 'obsidian';
+import { MarkdownView, WorkspaceLeaf } from 'obsidian';
+import { MarkdownRenderer, Notice, TFile } from 'obsidian';
 import type { Mock } from 'vitest';
 
 import { buildCursorContext } from '@/core/prompt/editorContext';
@@ -21,15 +22,13 @@ import { RuntimeCommandCatalog } from '@/core/providers/commands/RuntimeCommandC
 import { ProviderWorkspaceRegistry } from '@/core/providers/ProviderWorkspaceRegistry';
 import { InlineEditModal } from '@/features/inline-edit/ui/InlineEditModal';
 
-
-
 afterEach(async () => {
   await disposeInlineEditHarnesses();
   vi.clearAllMocks();
 });
 
 it('removes completion menus when inline edit is rejected after selection changes', async () => {
-  const h = createHarness();
+  const h = await createHarness();
   const session = h.createSession();
   session.show();
   expect(await axe(input().parentElement!)).toHaveNoViolations();
@@ -46,7 +45,7 @@ it('removes completion menus when inline edit is rejected after selection change
 });
 
 it('settles inline editing and releases provider work when its editor is destroyed', async () => {
-  const h = createHarness();
+  const h = await createHarness();
   h.createSession().show();
   submitInstruction();
   await waitFor(() => expect(h.backend.sessions[0]?.getStatus()).toBe('executing'));
@@ -55,8 +54,8 @@ it('settles inline editing and releases provider work when its editor is destroy
   expect(h.settled.mock.calls).toEqual([[{ decision: 'reject' }]]);
 });
 
-it('mounts another inline edit after the reused editor receives a fresh note state', () => {
-  const h = createHarness();
+it('mounts another inline edit after the reused editor receives a fresh note state', async () => {
+  const h = await createHarness();
   const first = h.createSession();
   first.show();
   expect(input()).toBeDefined();
@@ -75,7 +74,7 @@ it('mounts another inline edit after the reused editor receives a fresh note sta
 });
 
 it('retains clarification when CodeMirror releases and later recreates the input widget', async () => {
-  const h = createHarness();
+  const h = await createHarness();
   const session = h.createSession();
   vi.mocked(MarkdownRenderer.render).mockImplementation(async (_app, markdown, element) => {
     (element as HTMLElement).textContent = markdown;
@@ -102,7 +101,7 @@ it('retains clarification when CodeMirror releases and later recreates the input
 });
 
 it('restarts from the editor context after a clarification reply fails', async () => {
-  const h = createHarness();
+  const h = await createHarness();
   h.createSession().show();
   submitInstruction('Improve');
   await waitFor(() => expect(h.backend.sessions[0]?.requests).toHaveLength(1));
@@ -124,7 +123,7 @@ it('restarts from the editor context after a clarification reply fails', async (
 
 it.each(['plugin unload', 'editor destruction', 'second invocation'] as const)(
   'settles pending initialization on %s and never publishes a late input', async reason => {
-    const h = createHarness();
+    const h = await createHarness();
     let initialized = false;
     let release!: () => void;
     const gate = new Promise<void>(resolve => { release = resolve; });
@@ -146,7 +145,7 @@ it.each(['plugin unload', 'editor destruction', 'second invocation'] as const)(
 );
 
 it.each(['cursor', 'selection'] as const)('rejects changed %s context during provider startup', async mode => {
-  const h = createHarness();
+  const h = await createHarness();
   const sourceDoc = h.editorView.state.doc;
   const context = mode === 'cursor'
     ? { mode, cursorContext: buildCursorContext(line => sourceDoc.line(line + 1).text, sourceDoc.lines, 0, 5) }
@@ -159,7 +158,7 @@ it.each(['cursor', 'selection'] as const)('rejects changed %s context during pro
     async initialize() { initialized = true; await gate; return {}; },
   });
   const modal = new InlineEditModal(
-    h.app, h.plugin, h.plugin, h.editor, { editor: h.editor } as any, context, h.notePath, h.owner,
+    h.app, h.plugin, h.component, h.editor, Object.assign(new MarkdownView(new WorkspaceLeaf()), { editor: h.editor }), context, h.notePath, h.owner,
   );
   const settled = vi.fn();
   const result = modal.openAndWait().then(settled);
@@ -180,7 +179,7 @@ it.each(['cursor', 'selection'] as const)('rejects changed %s context during pro
 });
 
 it('closes a visible edit on plugin unload without refocusing its editor', async () => {
-  const h = createHarness();
+  const h = await createHarness();
   const result = h.createModal().openAndWait();
   await screen.findByRole('textbox', { name: 'Edit instructions' });
   submitInstruction();
@@ -200,7 +199,7 @@ it.each([
   { action: 'Accept', keyboard: true },
   { action: 'Reject', keyboard: true },
 ] as const)('settles the preview through $action (keyboard: $keyboard)', async ({ action, keyboard }) => {
-  const h = createHarness();
+  const h = await createHarness();
   const result = h.createModal().openAndWait();
   await screen.findByRole('textbox', { name: 'Edit instructions' });
   submitInstruction();
@@ -227,7 +226,7 @@ it.each([
 });
 
 it('opens the model menu outside the clipped editor widget, above its chip, and removes it with the edit', async () => {
-  const h = createHarness();
+  const h = await createHarness();
   const session = h.createSession();
   session.show();
   const chip = screen.getByRole('button', { name: 'Model: Sonnet, effort High' });
@@ -260,7 +259,7 @@ it('opens the model menu outside the clipped editor widget, above its chip, and 
 });
 
 it('saves the model and effort chosen on its composer chip as the inline edit default', async () => {
-  const h = createHarness();
+  const h = await createHarness();
   h.createSession().show();
   expect(await axe(input().closest('.claudian-inline-input-container')!)).toHaveNoViolations();
   fireEvent.click(screen.getByRole('button', { name: 'Model: Sonnet, effort High' }));
@@ -274,15 +273,16 @@ it('saves the model and effort chosen on its composer chip as the inline edit de
   // A running request hides the chip, so its choices cannot change mid-request.
   expect(screen.getByRole('button', { name: 'Model: Opus, effort Low' }).closest('.claudian-hidden')).not.toBeNull();
   // The chat's own selection is untouched.
-  expect(h.plugin.settings).toEqual({
+  await waitFor(() => expect(h.plugin.settings).toMatchObject({
     model: 'sonnet',
     effortLevel: 'high',
     inlineEditModel: { providerId: 'claude', model: 'opus', reasoning: 'low' },
-  });
+  }));
+  expect((await h.settingsStorage.load()).inlineEditModel).toEqual({ providerId: 'claude', model: 'opus', reasoning: 'low' });
 });
 
 it('runs a new edit with the model and effort its chip shows when nothing is chosen or saved', async () => {
-  const h = createHarness();
+  const h = await createHarness();
   void h.createModal().openAndWait();
   // The chip resolves the provider's saved model and effort; the request must use exactly those.
   await screen.findByRole('button', { name: 'Model: Sonnet, effort High' });
@@ -297,9 +297,8 @@ it.each([
   // default, is what the chip shows, and it is sent explicitly: some providers omit an unset effort.
   { saved: { providerId: 'claude', model: 'retired' }, chip: 'Model: Sonnet, effort Low', model: 'sonnet', reasoning: 'low' },
 ])('starts a new edit from the saved inline default ($saved.model) or else the chat selection', async ({ saved, chip, model, reasoning }) => {
-  const h = createHarness();
-  h.plugin.settings.effortLevel = 'low';
-  h.plugin.settings.inlineEditModel = saved;
+  const h = await createHarness();
+  await h.plugin.mutateSettings(settings => { settings.effortLevel = 'low'; settings.inlineEditModel = saved; });
   h.plugin.getActiveModelSelection = () => ({ providerId: 'claude', model: 'sonnet' });
   void h.createModal().openAndWait();
   await screen.findByRole('button', { name: chip });
@@ -316,7 +315,7 @@ it.each([
   { key: 'Enter', from: 'the note editor' },
   { key: 'Escape', from: 'the note editor' },
 ] as const)('settles the preview with $key pressed in $from', async ({ key, from }) => {
-  const h = createHarness();
+  const h = await createHarness();
   const result = h.createModal().openAndWait();
   await screen.findByRole('textbox', { name: 'Edit instructions' });
   await showReplacementPreview(h);
@@ -333,7 +332,7 @@ it.each([
 });
 
 it('continues provider execution when vault mentions cannot load and reports one notice', async () => {
-  const h = createHarness();
+  const h = await createHarness();
   h.app.vault.getFiles = () => { throw new Error('vault unavailable'); };
   h.createSession().show();
   submitInstruction('Improve @missing');
@@ -359,15 +358,15 @@ describe('Vault paths that resemble environment variables', () => {
     else process.env[variable] = previous;
   });
 
-  function withVaultFiles(h: ReturnType<typeof createHarness>): void {
+  function withVaultFiles(h: Awaited<ReturnType<typeof createHarness>>): void {
     h.app.vault.getFiles = () => [percentPath, dollarPath].map(filePath => {
       const name = filePath.split('/').pop()!;
-      return { basename: name.replace(/\.md$/, ''), extension: 'md', name, path: filePath, stat: { ctime: 1, mtime: 1, size: 1 } };
+      return Object.assign(new TFile(), { basename: name.replace(/\.md$/, ''), extension: 'md', name, path: filePath, stat: { ctime: 1, mtime: 1, size: 1 } });
     });
   }
 
   it('attaches mentioned files by their literal Vault paths', async () => {
-    const h = createHarness();
+    const h = await createHarness();
     withVaultFiles(h);
     h.createSession().show();
     typeInstruction(`Improve @${percentPath} using @${dollarPath}`);
@@ -382,7 +381,7 @@ describe('Vault paths that resemble environment variables', () => {
   });
 
   it('inserts the literal Vault path of a selected suggestion', async () => {
-    const h = createHarness();
+    const h = await createHarness();
     withVaultFiles(h);
     h.createSession().show();
     typeInstruction(`@a%${variable}`);
@@ -396,17 +395,17 @@ describe('Vault paths that resemble environment variables', () => {
 });
 
 describe('Vault mentions whose literal path ends in punctuation', () => {
-  function withVaultFiles(h: ReturnType<typeof createHarness>, paths: readonly string[]): void {
+  function withVaultFiles(h: Awaited<ReturnType<typeof createHarness>>, paths: readonly string[]): void {
     const timestamp = testDate().getTime();
     h.app.vault.getFiles = () => paths.map(path => {
       const name = path.split('/').pop()!;
-      return {
+      return Object.assign(new TFile(), {
         basename: name.replace(/\.[^.]+$/, ''),
         extension: name.includes('.') ? name.split('.').pop()! : '',
         name,
         path,
         stat: { ctime: timestamp, mtime: timestamp, size: 1 },
-      };
+      });
     });
   }
 
@@ -452,7 +451,7 @@ describe('Vault mentions whose literal path ends in punctuation', () => {
   ])('attaches the literal file for $name and keeps the complete instruction', async ({
     vault, instruction, openSuggestion, contextBlock,
   }) => {
-    const h = createHarness();
+    const h = await createHarness();
     withVaultFiles(h, vault);
     const result = h.createModal().openAndWait();
     await screen.findByRole('textbox', { name: 'Edit instructions' });
@@ -472,7 +471,7 @@ describe('Vault mentions whose literal path ends in punctuation', () => {
 });
 
 it('uses provider-scoped hidden commands and cancels widget-owned discovery on replacement', async () => {
-  const h = createHarness();
+  const h = await createHarness();
   const signals: AbortSignal[] = [];
   const entries = ['analyze', 'visible'].map(name => ({
     name, id: name, providerId: 'claude', kind: 'command', scope: 'runtime', source: 'user',
@@ -484,7 +483,7 @@ it('uses provider-scoped hidden commands and cancels widget-owned discovery on r
     refresh: async () => {},
   };
   ProviderWorkspaceRegistry.setServices('claude', { commandCatalog: catalog });
-  h.plugin.settings.hiddenCommands = ['analyze'];
+  await h.plugin.mutateSettings(settings => { settings.hiddenCommands = ['analyze']; });
   const session = h.createSession();
   session.show();
   typeInstruction('/');
@@ -503,9 +502,8 @@ it('uses provider-scoped hidden commands and cancels widget-owned discovery on r
   expect(screen.queryByRole('listbox')).toBeNull();
 });
 
-
 it('discovers commands as a blank chat tab does when the provider reports them through its loader', async () => {
-  const h = createHarness();
+  const h = await createHarness();
   // A runtime catalog lists only what a session or loader reported; nothing has chatted in this run.
   const catalog = new RuntimeCommandCatalog({
     dropdownConfig: { providerId: 'claude', triggerChars: ['/'], builtInPrefix: '/', skillPrefix: '/', commandPrefix: '/' },
@@ -526,7 +524,7 @@ it('discovers commands as a blank chat tab does when the provider reports them t
   expect(screen.queryByRole('option', { name: '/clear' })).toBeNull();
 });
 
-async function rejectAfterSourceChange(h: ReturnType<typeof createHarness>, expectedRequests: number): Promise<void> {
+async function rejectAfterSourceChange(h: Awaited<ReturnType<typeof createHarness>>, expectedRequests: number): Promise<void> {
   h.editorView.dispatch({ changes: { from: 0, insert: 'XXXXX' } });
   submitInstruction('Use uppercase');
   await waitFor(() => expect(h.settled).toHaveBeenCalledWith({ decision: 'reject' }));
@@ -535,14 +533,14 @@ async function rejectAfterSourceChange(h: ReturnType<typeof createHarness>, expe
 }
 
 it('rejects changed source before first submission without sending stale edit context', async () => {
-  const h = createHarness();
+  const h = await createHarness();
   h.createSession().show();
   await rejectAfterSourceChange(h, 0);
   expect(h.editorView.state.doc.toString()).toBe('XXXXXhello world');
 });
 
 it('rejects changed source before clarification reply without continuing stale edit context', async () => {
-  const h = createHarness();
+  const h = await createHarness();
   h.createSession().show();
   submitInstruction();
   await waitFor(() => expect(h.backend.sessions[0]?.getStatus()).toBe('executing'));
@@ -557,7 +555,7 @@ const STALE_SOURCE_NOTICE = 'Inline edit was not applied because the source docu
 
 it.each(['while the provider runs', 'before the preview is accepted'] as const)(
   'refuses a replacement when the source changes %s', async timing => {
-    const h = createHarness();
+    const h = await createHarness();
     h.createSession().show();
     submitInstruction();
     await waitFor(() => expect(h.backend.sessions[0]?.getStatus()).toBe('executing'));
@@ -578,7 +576,7 @@ it.each(['while the provider runs', 'before the preview is accepted'] as const)(
 );
 
 it('applies an accepted replacement once and ignores later decisions', async () => {
-  const h = createHarness();
+  const h = await createHarness();
   const session = h.createSession();
   session.show();
   fireEvent.click(await showReplacementPreview(h));
@@ -590,7 +588,7 @@ it('applies an accepted replacement once and ignores later decisions', async () 
 });
 
 it('never previews a provider result that resolves after the edit is rejected', async () => {
-  const h = createHarness();
+  const h = await createHarness();
   const session = h.createSession();
   session.show();
   submitInstruction();
@@ -611,7 +609,7 @@ it.each([
   { target: 'editor', key: 'Escape', expected: [[{ decision: 'reject' }]] },
   { target: 'editor', key: 'Enter', expected: [[{ decision: 'accept', editedText: 'Hi' }]] },
 ] as const)('handles $key in the $target only when it belongs to the edit', async ({ target, key, expected }) => {
-  const h = createHarness();
+  const h = await createHarness();
   h.createSession().show();
   await showReplacementPreview(h);
   const outside = document.body.appendChild(document.createElement('button'));

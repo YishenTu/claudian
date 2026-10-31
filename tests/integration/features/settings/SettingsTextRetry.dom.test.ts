@@ -1,56 +1,37 @@
 /** @vitest-environment jsdom */
 import '@/providers';
-import '@test/helpers/ObsidianSettingsDOM';
 
 import { deserialize, serialize } from 'node:v8';
 
 import { axe } from '@test/helpers/accessibility';
 import { beginExecution, createHarness, createSubmission, requestedScope } from '@test/helpers/ChatExecutionHarness';
-import { DesktopVault } from '@test/helpers/core/DesktopVault';
-import { DEFAULT_CLAUDIAN_SETTINGS } from '@test/helpers/defaultSettings';
+import { createFeatureHostFixture } from '@test/helpers/FeatureHostFixture';
+import { createObsidianPlugin } from '@test/helpers/ObsidianSettingsHost';
 import { testDate } from '@test/helpers/testClock';
 import { fireEvent, waitFor, within } from '@testing-library/dom';
 import { Notice } from 'obsidian';
 
-import { ClaudianSettingsStorage } from '@/app/settings/ClaudianSettingsStorage';
-import { SettingsCoordinator } from '@/app/settings/SettingsCoordinator';
+import type { ClaudianSettings } from '@/core/types';
 import { ClaudianSettingTab } from '@/features/settings/ClaudianSettings';
 import { t } from '@/i18n/i18n';
-
-vi.mock('@/shared/settings/EnvironmentSettingsSection', () => ({ renderEnvironmentSettingsSection() {} }));
-vi.mock('obsidian', async () => {
-  const dom = (await vi.importActual<typeof import('@test/helpers/ObsidianSettingsDOM')>('@test/helpers/ObsidianSettingsDOM'));
-  class Setting extends dom.Setting {
-    setHeading() { return this; }
-    addToggle(callback: (control: unknown) => void) {
-      const toggleEl = this.settingEl.createEl('input', { attr: { type: 'checkbox' } });
-      const toggle = {
-        toggleEl,
-        setValue(value: boolean) { toggleEl.checked = value; return this; },
-        onChange(change: (value: boolean) => void) { toggleEl.addEventListener('change', () => change(toggleEl.checked)); return this; },
-      };
-      callback(toggle); return this;
-    }
-  }
-  return { ...(await vi.importActual<typeof import('@test/__mocks__/obsidian')>('@test/__mocks__/obsidian')), ...dom, Setting };
-});
 
 afterEach(() => { document.body.replaceChildren(); vi.clearAllMocks(); });
 
 it('retries an unchanged user-name draft on the next blur after a rejected save', async () => {
   globalThis.structuredClone ??= value => deserialize(serialize(value));
-  const settings = { ...structuredClone(DEFAULT_CLAUDIAN_SETTINGS), userName: 'Before', enableAutoTitleGeneration: false };
-  let saved = JSON.stringify(settings);
+  let saved = JSON.stringify({ userName: 'Before' });
   const persist = vi.fn().mockRejectedValueOnce(new Error('Disk unavailable')).mockImplementation(async draft => {
     saved = JSON.stringify(draft);
   });
-  const coordinator = new SettingsCoordinator(settings, persist);
-  const runProviderExecutionTransition = vi.fn(async () => undefined);
-  const host = { settings, mutateSettings: coordinator.mutate.bind(coordinator), providerHost: { runProviderExecutionTransition } };
-  const tab = new ClaudianSettingTab({} as never, {} as never, host as never);
+  const { settings, host } = await createFeatureHostFixture({
+    settings: { userName: 'Before', enableAutoTitleGeneration: false },
+    beforePersist: persist,
+  });
+  const runProviderExecutionTransition = vi.spyOn(host.providerHost, 'runProviderExecutionTransition');
+  const tab = new ClaudianSettingTab(host.app, createObsidianPlugin(host.app), host);
   const container = document.body.createDiv();
   tab['renderGeneralTab'](container);
-  const row = within(container).getByText(t('settings.userName.name')).parentElement!;
+  const row = within(container).getByRole('textbox', { name: t('settings.userName.name') }).closest<HTMLElement>('.setting-item')!;
   const input = within(row).getByRole('textbox') as HTMLInputElement;
   fireEvent.input(input, { target: { value: 'After' } });
   fireEvent.blur(input);
@@ -63,7 +44,8 @@ it('retries an unchanged user-name draft on the next blur after a rejected save'
   fireEvent.focus(input);
   fireEvent.blur(input);
 
-  await waitFor(() => expect(JSON.parse(saved).userName).toBe('After'));
+  await waitFor(() => expect(settings.userName).toBe('After'));
+  expect(JSON.parse(saved).userName).toBe('After');
   expect(settings.userName).toBe('After');
   expect(input.value).toBe('After');
   expect(persist).toHaveBeenCalledTimes(2);
@@ -71,29 +53,21 @@ it('retries an unchanged user-name draft on the next blur after a rejected save'
   expect((await axe(row, { runOnly: ['aria-valid-attr', 'aria-valid-attr-value'] })).violations).toEqual([]);
 });
 
-
 it.each([false, true])('shows the newest text draft when settings reopen before a successful save finishes (newer edit: %s)', async newerEdit => {
-  const vault = await DesktopVault.create();
-  const settings = { ...structuredClone(DEFAULT_CLAUDIAN_SETTINGS), userName: 'Before', enableAutoTitleGeneration: false };
-  const storage = new ClaudianSettingsStorage(vault.files, DEFAULT_CLAUDIAN_SETTINGS);
-  await storage.save(settings);
   let started!: () => void;
   let finish!: () => void;
   const writing = new Promise<void>(resolve => { started = resolve; });
   const gate = new Promise<void>(resolve => { finish = resolve; });
   let writes = 0;
-  const coordinator = new SettingsCoordinator(settings, async draft => {
-    if (++writes === 1) { started(); await gate; }
-    await storage.save(draft);
+  const { settings, coordinator, settingsStorage: storage, host } = await createFeatureHostFixture({
+    settings: { userName: 'Before', enableAutoTitleGeneration: false },
+    beforePersist: async () => { if (++writes === 1) { started(); await gate; } },
   });
-  const host = {
-    settings, mutateSettings: coordinator.mutate.bind(coordinator), storage: { getAdapter: () => vault.files },
-    providerHost: { runProviderExecutionTransition: async () => undefined },
-  };
-  const tab = new ClaudianSettingTab({} as never, {} as never, host as never);
+  await storage.save(settings);
+  const tab = new ClaudianSettingTab(host.app, createObsidianPlugin(host.app), host);
   const first = document.body.createDiv();
   let cleanup = tab['renderSettings'](first);
-  const userName = (container: HTMLElement) => within(within(container).getByText(t('settings.userName.name')).parentElement!).getByRole<HTMLInputElement>('textbox');
+  const userName = (container: HTMLElement) => within(container).getByRole<HTMLInputElement>('textbox', { name: t('settings.userName.name') });
   try {
     fireEvent.input(userName(first), { target: { value: 'After' } });
     fireEvent.blur(userName(first));
@@ -123,28 +97,26 @@ it.each([false, true])('shows the newest text draft when settings reopen before 
     await waitFor(() => expect(settings.userName).toBe(`${expected} Smith`));
     await coordinator.persistCurrent();
     expect((await storage.load()).userName).toBe(`${expected} Smith`);
-  } finally { finish(); cleanup(); await coordinator.persistCurrent(); await vault.dispose(); }
+  } finally { finish(); cleanup(); await coordinator.persistCurrent(); }
 });
-
 
 it.each([
   { key: 'userName' as const, label: 'settings.userName.name' as const, next: 'After' },
   { key: 'systemPrompt' as const, label: 'settings.systemPrompt.name' as const, next: 'Updated instructions' },
   { key: 'mediaFolder' as const, label: 'settings.mediaFolder.name' as const, next: 'New Attachments' },
 ])('keeps a running reply when unchanged $key loses focus and restarts only after a real edit', async ({ key, label, next }) => {
-  const settings = { ...structuredClone(DEFAULT_CLAUDIAN_SETTINGS), userName: 'Before', systemPrompt: 'Initial instructions', mediaFolder: 'Attachments', enableAutoTitleGeneration: false };
-  let saved = JSON.stringify(settings);
-  const coordinator = new SettingsCoordinator(settings, async draft => { saved = JSON.stringify(draft); });
+  let saved = JSON.stringify({ userName: 'Before' });
   const execution = createHarness();
   const transition = vi.spyOn(execution.registry, 'runTransition');
-  const host = {
-    settings, mutateSettings: coordinator.mutate.bind(coordinator),
-    providerHost: { runProviderExecutionTransition: execution.registry.runTransition.bind(execution.registry) },
-  };
-  const tab = new ClaudianSettingTab({} as never, {} as never, host as never);
+  const { settings, host } = await createFeatureHostFixture({
+    settings: { userName: 'Before', systemPrompt: 'Initial instructions', mediaFolder: 'Attachments', enableAutoTitleGeneration: false },
+    beforePersist: draft => { saved = JSON.stringify(draft); },
+    providerOverrides: { runProviderExecutionTransition: execution.registry.runTransition.bind(execution.registry) },
+  });
+  const tab = new ClaudianSettingTab(host.app, createObsidianPlugin(host.app), host);
   const container = document.body.createDiv();
   tab['renderGeneralTab'](container);
-  const row = within(container).getByText(t(label)).parentElement!;
+  const row = within(container).getByRole('textbox', { name: t(label) }).closest<HTMLElement>('.setting-item')!;
   const input = within(row).getByRole<HTMLInputElement | HTMLTextAreaElement>('textbox');
   const active = await beginExecution(execution, createSubmission({ timestamp: testDate().getTime() }));
   active.run.events.push({ type: 'turn_started', accepted: true, scope: requestedScope(active.session, active.run, 1) });
@@ -166,7 +138,7 @@ it.each([
     await Promise.all(transition.mock.results.map(result => result.value));
     expect(active.session.disposeCalls).toBe(0);
     expect(active.run.cancelCalls).toBe(0);
-    const tags = within(within(container).getByText(t('settings.excludedTags.name')).parentElement!).getByRole('textbox');
+    const tags = within(container).getByRole('textbox', { name: t('settings.excludedTags.name') });
     fireEvent.input(tags, { target: { value: 'excluded' } });
     fireEvent.blur(tags);
     await tab['textEdits'].flush();
@@ -183,6 +155,10 @@ it.each([
     expect(settings[key]).toBe(next);
     expect(JSON.parse(saved)[key]).toBe(next);
     expect(transition).toHaveBeenCalledTimes(1);
+    expect(transition).toHaveBeenCalledWith(
+      expect.arrayContaining(['claude', 'codex', 'grok', 'opencode', 'pi']),
+      expect.any(Function),
+    );
     expect(active.session.disposeCalls).toBe(1);
 
     input.focus();
@@ -209,19 +185,20 @@ it.each([
   }
 });
 
-
 it('does not restart or replay a prompt edit after publication of its durable commit fails', async () => {
-  const settings = { ...structuredClone(DEFAULT_CLAUDIAN_SETTINGS), userName: 'Before', enableAutoTitleGeneration: false };
   let saved = '';
-  const persist = vi.fn(async (draft: typeof settings) => { saved = JSON.stringify(draft); });
-  const coordinator = new SettingsCoordinator(settings, persist, () => { throw new Error('View unavailable'); });
+  const persist = vi.fn(async (draft: ClaudianSettings) => { saved = JSON.stringify(draft); });
   const execution = createHarness();
   const transition = vi.spyOn(execution.registry, 'runTransition');
-  const host = { settings, mutateSettings: coordinator.mutate.bind(coordinator), providerHost: { runProviderExecutionTransition: execution.registry.runTransition.bind(execution.registry) } };
-  const tab = new ClaudianSettingTab({} as never, {} as never, host as never);
+  const { settings, host } = await createFeatureHostFixture({
+    settings: { userName: 'Before', enableAutoTitleGeneration: false },
+    beforePersist: persist, afterPublish: () => { throw new Error('View unavailable'); },
+    providerOverrides: { runProviderExecutionTransition: execution.registry.runTransition.bind(execution.registry) },
+  });
+  const tab = new ClaudianSettingTab(host.app, createObsidianPlugin(host.app), host);
   const container = document.body.createDiv();
   tab['renderGeneralTab'](container);
-  const input = within(within(container).getByText(t('settings.userName.name')).parentElement!).getByRole('textbox');
+  const input = within(container).getByRole('textbox', { name: t('settings.userName.name') });
   try {
     fireEvent.input(input, { target: { value: 'After' } });
     fireEvent.blur(input);

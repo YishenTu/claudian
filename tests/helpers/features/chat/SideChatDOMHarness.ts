@@ -1,13 +1,13 @@
+import { createChatFeatureHost } from '@test/helpers/features/chat/ChatFeatureHostFixture';
 import { createProjectsFake } from '@test/helpers/features/chat/ProjectsFake';
 import { FakeSideBackend } from '@test/helpers/features/chat/SideChatSessionHarness';
-import { waitFor } from '@testing-library/dom';
 import { Component } from 'obsidian';
 
-import { ProviderExecutionLifecycleRegistry } from '@/core/execution';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import type { ProviderConversationHistoryService, ProviderRegistration } from '@/core/providers/types';
 import { getChatSettingsSnapshot } from '@/features/chat/ChatSettings';
 import { ComposerDraftController } from '@/features/chat/composer/ComposerDraftController';
+import { SessionMessagingService } from '@/features/chat/session-messaging/SessionMessagingService';
 import {
   captureLatestCompletedForkSource,
   type LiveForkSourceOwner,
@@ -15,35 +15,6 @@ import {
 import { getSessionSelectedModel } from '@/features/chat/sessions/sessionSettings';
 import { SideChatController } from '@/features/chat/side-chat/SideChatController';
 import type { AssembledTabRuntime } from '@/features/chat/tabs/types';
-
-Object.assign(HTMLElement.prototype, {
-  appendText(this: HTMLElement, text: string) { this.appendChild(this.ownerDocument.createTextNode(text)); },
-  addClass(this: HTMLElement, ...names: string[]) { this.classList.add(...names); },
-  createDiv(this: HTMLElement, options?: Record<string, unknown>) { return createChild(this, 'div', options); },
-  createEl(this: HTMLElement, tag: string, options?: Record<string, unknown>) { return createChild(this, tag, options); },
-  createSpan(this: HTMLElement, options?: Record<string, unknown>) { return createChild(this, 'span', options); },
-  empty(this: HTMLElement) { this.replaceChildren(); },
-  hasClass(this: HTMLElement, name: string) { return this.classList.contains(name); },
-  removeClass(this: HTMLElement, ...names: string[]) { this.classList.remove(...names); },
-  setCssProps(this: HTMLElement, props: Record<string, string>) {
-    for (const [key, value] of Object.entries(props)) this.style.setProperty(key, value);
-  },
-  setText(this: HTMLElement, text: string) { this.textContent = text; },
-  scrollIntoView() {},
-  toggleClass(this: HTMLElement, name: string, enabled: boolean) { this.classList.toggle(name, enabled); },
-});
-
-function createChild(parent: HTMLElement, tag: string, options?: Record<string, unknown>): HTMLElement {
-  const el = parent.ownerDocument.createElement(tag);
-  const cls = options?.cls;
-  if (typeof cls === 'string') el.className = cls;
-  const text = options?.text;
-  if (typeof text === 'string') el.textContent = text;
-  const attrs = options?.attr as Record<string, string> | undefined;
-  for (const [key, value] of Object.entries(attrs ?? {})) el.setAttribute(key, value);
-  parent.appendChild(el);
-  return el;
-}
 
 const cleanups: Array<() => Promise<void>> = [];
 
@@ -53,7 +24,7 @@ export async function releaseSideChatHarnesses(): Promise<void> {
   vi.clearAllMocks();
 }
 
-export function createHarness(options: {
+export async function createHarness(options: {
   formatQuestionReply?: ProviderRegistration['formatQuestionReply'];
   onDestinationChanged?: () => void;
   subagentAdapter?: ProviderRegistration['subagentAdapter'];
@@ -66,7 +37,6 @@ export function createHarness(options: {
   buildForkProviderState?: ProviderConversationHistoryService['buildForkProviderState'];
 } = {}) {
   const backend = new FakeSideBackend();
-  const lifecycleRegistry = new ProviderExecutionLifecycleRegistry();
   const forkState = { forkSource: { resumeAt: 'checkpoint-1', sessionId: 'main-session' } };
   ProviderRegistry.register('claude', {
     formatQuestionReply: options.formatQuestionReply,
@@ -120,17 +90,20 @@ export function createHarness(options: {
     state: { isRewinding: false, isStreaming: false, messages },
   } as unknown as AssembledTabRuntime & LiveForkSourceOwner;
 
-  const app = { vault: { adapter: { basePath: '/vault' }, getFiles: () => [] } };
-  const settings = options.settings ?? {};
-  const plugin = {
-    app,
-    getConversationSummary(id: string) { return (this as unknown as { getConversationSync: (id: string) => any }).getConversationSync(id); },
-    getConversationSync: () => null,
+  const messaging = new SessionMessagingService({
+    getHost: () => plugin,
+    getActiveConversationId: () => tab.conversationId,
+    refreshModelControls: () => undefined,
+  });
+  const plugin = await createChatFeatureHost({
+    bindSessionTools: id => messaging.bindSessionTools(id),
+    getConversationSummary: id => plugin.getConversationSync(id),
+    settings: { enableAutoTitleGeneration: false, ...options.settings },
     projects: createProjectsFake(),
-    providerHost: { app, settings, executionLifecycleRegistry: lifecycleRegistry },
-    settings,
-  } as never;
+  });
 
+  const settings = plugin.settings;
+  const lifecycleRegistry = plugin.providerHost.executionLifecycleRegistry;
   const destinationChanges: string[] = [];
   const drafts: ComposerDraftController = new ComposerDraftController({
     getInput: () => inputEl, getImages: () => imageContextManager as never, getDestination: () => controller.destination,
@@ -150,6 +123,7 @@ export function createHarness(options: {
   controller.attachPresentation({ component: new Component(), composerEl, inputWrapperEl, getInputEl: () => inputEl as never });
   cleanups.push(async () => {
     await controller.dispose();
+    await messaging.dispose();
     await lifecycleRegistry.dispose();
   });
   return {
@@ -163,11 +137,10 @@ export async function startSideChat(
   harness: SideChatDOMHarness,
   prompt = 'Explore B',
 ): Promise<{ started: Promise<boolean> }> {
+  const request = harness.backend.nextRequest(request => request.toolPolicy.kind === 'provider-default');
   const started = harness.controller.handleCommandSubmission(prompt, []);
-  await waitFor(() => expect(harness.backend.sessions.some(
-    session => session.requests[0]?.toolPolicy.kind === 'provider-default',
-  )).toBe(true));
+  expect((await request).toolPolicy.kind).toBe('provider-default');
   return { started };
 }
 
-export type SideChatDOMHarness = ReturnType<typeof createHarness>;
+export type SideChatDOMHarness = Awaited<ReturnType<typeof createHarness>>;

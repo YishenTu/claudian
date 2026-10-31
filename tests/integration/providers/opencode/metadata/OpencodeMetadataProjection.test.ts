@@ -1,13 +1,13 @@
-import { runtimeHostFor } from '@test/helpers/providerRuntimeHost';
+import { createProviderHostFixture } from '@test/helpers/providerRuntimeHost';
 
 import type { ProviderRuntimeHost } from '@/core/providers/ProviderRuntimeHost';
 import { decodeOpencodeConfig } from '@/providers/opencode/config';
 import type { OpencodeNativeModel } from '@/providers/opencode/http/OpencodeNativeModelCatalog';
 import { projectOpencodeMetadata } from '@/providers/opencode/metadata/OpencodeMetadataProjection';
 
-function createHost(): ProviderRuntimeHost {
+async function createHost(): Promise<ProviderRuntimeHost> {
   const settings = { providerConfigs: { opencode: { enabled: true, visibleModels: ['provider/alpha', 'provider/beta'] } } };
-  return runtimeHostFor({ settings }, 'opencode');
+  return (await createProviderHostFixture({ settings })).host.getRuntimeHost('opencode');
 }
 
 function nativeModel(rawId: string, label: string): OpencodeNativeModel {
@@ -16,7 +16,7 @@ function nativeModel(rawId: string, label: string): OpencodeNativeModel {
 }
 
 it('retains independent model warmups published through serialized settings mutations', async () => {
-  const host = createHost();
+  const host = await createHost();
   await Promise.all([
     projectOpencodeMetadata(host, { selectedRawModelId: 'provider/alpha', thinkingLevels: ['high'] }),
     projectOpencodeMetadata(host, { selectedRawModelId: 'provider/beta', thinkingLevels: ['low'] }),
@@ -28,7 +28,7 @@ it('retains independent model warmups published through serialized settings muta
 });
 
 it('replaces an explicitly empty catalog without changing enabled model choices', async () => {
-  const host = createHost();
+  const host = await createHost();
   await projectOpencodeMetadata(host, { models: [nativeModel('provider/alpha', 'Alpha')] });
   await projectOpencodeMetadata(host, { models: [] });
   expect(decodeOpencodeConfig(host.config)).toMatchObject({
@@ -37,7 +37,7 @@ it('replaces an explicitly empty catalog without changing enabled model choices'
 });
 
 it('clears explicitly empty reasoning options while retaining metadata absent from the update', async () => {
-  const host = createHost();
+  const host = await createHost();
   await projectOpencodeMetadata(host, {
     models: [nativeModel('provider/alpha', 'Alpha')],
     selectedRawModelId: 'provider/alpha',
@@ -59,7 +59,7 @@ it('clears explicitly empty reasoning options while retaining metadata absent fr
 });
 
 it('publishes reasoning metadata for an accepted prototype-named model', async () => {
-  const host = runtimeHostFor({ settings: { providerConfigs: { opencode: { enabled: true, visibleModels: ['__proto__'] } } } }, 'opencode');
+  const host = (await createProviderHostFixture({ settings: { providerConfigs: { opencode: { enabled: true, visibleModels: ['__proto__'] } } } })).host.getRuntimeHost('opencode');
   await projectOpencodeMetadata(host, { selectedRawModelId: '__proto__', thinkingLevels: ['high'] });
   expect(Object.entries(decodeOpencodeConfig(JSON.parse(JSON.stringify(host.config))).thinkingOptionsByModel))
     .toEqual([['__proto__', [{ label: 'High', value: 'high' }]]]);

@@ -180,3 +180,82 @@ test('test lint retains alias, callback, focused-test and suite-export checks', 
     assert.ok(result.messages.some(message => message.ruleId === rule), JSON.stringify(result.messages));
   }
 });
+
+test('test imports require declared packages, including Vitest factory imports', async () => {
+  const eslint = new ESLint();
+  const filePath = 'tests/helpers/dependencyProbe.ts';
+  const rule = 'local/declared-test-dependencies';
+  for (const code of [
+    "import value from 'js-yaml'; void value;",
+    "export { value } from '@undeclared/package/subpath';",
+    "export * from 'js-yaml';",
+    "void import('js-yaml');",
+    "void require('js-yaml');",
+    "void vi.importActual('js-yaml');",
+    "void vi.importMock('js-yaml');",
+    "vi.mock('js-yaml', async () => await vi.importActual('js-yaml'));",
+  ]) {
+    const [result] = await eslint.lintText(code, { filePath });
+    assert.ok(result.messages.some(message => message.ruleId === rule), code);
+  }
+  for (const code of [
+    "import { parse } from 'yaml'; void parse;",
+    "void import('@modelcontextprotocol/sdk/types.js');",
+    "void vi.importActual('obsidian');",
+    "void import('node:fs/promises'); void require('fs');",
+    "void import('@/utils/error'); void import('@test/helpers/testClock');",
+    "void import('./fixture'); void import('../fixture');",
+  ]) {
+    const [result] = await eslint.lintText(code, { filePath });
+    assert.equal(result.messages.filter(message => message.ruleId === rule).length, 0, code);
+  }
+});
+
+test('test suites and shared fixtures reject explicit any but accept unknown', async () => {
+  const eslint = new ESLint();
+  const rule = '@typescript-eslint/no-explicit-any';
+  for (const filePath of [
+    'tests/unit/utils/example.test.ts',
+    'tests/integration/app/example.test.ts',
+    'tests/helpers/example.ts',
+    'tests/__mocks__/example.ts',
+  ]) {
+    for (const code of [
+      'export type Fixture = any;',
+      'export const fixture = {} as any;',
+    ]) {
+      const [result] = await eslint.lintText(code, { filePath });
+      assert.ok(result.messages.some(message => message.ruleId === rule), `${filePath}: ${code}`);
+    }
+    const [result] = await eslint.lintText('export type Fixture = unknown;', { filePath });
+    assert.equal(result.messages.filter(message => message.ruleId === rule).length, 0, filePath);
+  }
+});
+
+test('tests use the shared Obsidian fake and seeded installation key instead of per-file module mocks', async () => {
+  const eslint = new ESLint();
+  const filePaths = [
+    'tests/unit/utils/example.test.ts',
+    'tests/integration/app/example.test.ts',
+    'tests/helpers/example.ts',
+  ];
+  const restricted = ['obsidian', '@/core/device/InstallationKey'].flatMap(source =>
+    ['vi', 'vitest'].flatMap(api => ['mock', 'doMock'].flatMap(method => [
+      `${api}.${method}('${source}', () => ({}));`,
+      `${api}.${method}(import('${source}'), () => ({}));`,
+    ])));
+  for (const filePath of filePaths) {
+    for (const code of restricted) {
+      const [result] = await eslint.lintText(code, { filePath });
+      assert.ok(result.messages.some(message => message.ruleId === 'no-restricted-syntax'), `${filePath}: ${code}`);
+    }
+    for (const code of [
+      "vi.mock('node:fs', () => ({}));",
+      "vi.spyOn(app.vault, 'read').mockRejectedValueOnce(new Error('Disk unavailable'));",
+      "void vi.importActual('obsidian');",
+    ]) {
+      const [result] = await eslint.lintText(code, { filePath });
+      assert.equal(result.messages.filter(message => message.ruleId === 'no-restricted-syntax').length, 0, `${filePath}: ${code}`);
+    }
+  }
+});

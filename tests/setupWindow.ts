@@ -2,12 +2,19 @@ import { TextDecoder, TextEncoder } from 'node:util';
 import { deserialize, serialize } from 'node:v8';
 
 import type * as AxeAdapter from '@test/helpers/accessibility';
+import { ControlledResizeObserver, resetResizeObservers } from '@test/helpers/dom/ResizeObserver';
+import { resetObsidianKeymaps } from '@test/helpers/ObsidianKeymap';
+import { resetWorkspaceTimers } from '@test/helpers/ObsidianWorkspace';
 
 
 // Node-only suites do not need to load the accessibility engine.
 if (typeof document !== 'undefined') {
   const { toHaveNoViolations } = await vi.importActual<typeof AxeAdapter>('@test/helpers/accessibility');
   expect.extend(toHaveNoViolations);
+  if (typeof globalThis.ResizeObserver === 'undefined') {
+    globalThis.ResizeObserver = ControlledResizeObserver;
+  }
+  afterEach(resetResizeObservers);
 }
 
 type TestWindow = typeof globalThis & {
@@ -17,6 +24,8 @@ type TestWindow = typeof globalThis & {
 };
 
 const testWindow = globalThis as TestWindow;
+afterEach(resetWorkspaceTimers);
+afterEach(resetObsidianKeymaps);
 
 if (!globalThis.TextEncoder) {
   Object.assign(globalThis, { TextDecoder, TextEncoder });
@@ -48,6 +57,12 @@ if (globalThis.Range && !Reflect.has(globalThis.Range.prototype, 'getClientRects
   });
 }
 
+// jsdom has no layout/scrolling engine. Callers can spy on this native boundary;
+// a successful call does not establish any rendered geometry or scroll position.
+if (globalThis.HTMLElement && !Reflect.has(globalThis.HTMLElement.prototype, 'scrollIntoView')) {
+  globalThis.HTMLElement.prototype.scrollIntoView = function () {};
+}
+
 if (!('window' in globalThis)) {
   Object.defineProperty(globalThis, 'window', {
     configurable: true,
@@ -56,7 +71,8 @@ if (!('window' in globalThis)) {
   });
 }
 
-if (!testWindow.localStorage) {
+// Node's native localStorage is shared across VM workers; use per-file storage instead.
+if (typeof document === 'undefined' || !testWindow.localStorage) {
   const values = new Map<string, string>();
   Object.defineProperty(testWindow, 'localStorage', {
     configurable: true,
@@ -72,6 +88,9 @@ if (!testWindow.localStorage) {
     } satisfies Storage,
   });
 }
+
+// Keep the real identity hashing/cache; tests may replace storage before importing it.
+testWindow.localStorage!.setItem('claudian.deviceSettingsKey', 'claudian-test-installation');
 
 // Polyfill Obsidian DOM helpers for jsdom-based tests.
 const SVG_NS = 'http://www.w3.org/2000/svg';
@@ -96,6 +115,8 @@ function applyDOMElementInfo(el: Element, info: unknown): void {
       el.setAttribute(key, String(value));
     }
   }
+  if (opts.type !== undefined) el.setAttribute('type', String(opts.type));
+  if (opts.value !== undefined && 'value' in el) (el as HTMLInputElement).value = String(opts.value);
   if (opts.title && 'setAttribute' in el) {
     el.setAttribute('title', String(opts.title));
   }
@@ -204,4 +225,17 @@ if (globalThis.SVGElement && !Reflect.has(globalThis.SVGElement.prototype, 'crea
     this.appendChild(el);
     return el;
   };
+}
+
+// Install host DOM methods without importing settings controls or a second DOM model.
+if (typeof document !== 'undefined' && globalThis.HTMLElement) {
+  const prototype = globalThis.HTMLElement.prototype;
+  prototype.empty = function () { this.replaceChildren(); };
+  prototype.addClass = function (...classes) { this.classList.add(...classes); };
+  prototype.removeClass = function (...classes) { this.classList.remove(...classes); };
+  prototype.hasClass = function (name) { return this.classList.contains(name); };
+  prototype.toggleClass = function (classes, value) {
+    for (const name of [classes].flat()) this.classList.toggle(name, value);
+  };
+  prototype.appendText = function (value) { this.append(value); };
 }

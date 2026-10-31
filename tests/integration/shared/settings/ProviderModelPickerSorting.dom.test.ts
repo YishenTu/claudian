@@ -1,20 +1,15 @@
 /** @vitest-environment jsdom */
-
-import '@test/helpers/ObsidianSettingsDOM';
+import '@/providers';
 
 import { deserialize, serialize } from 'node:v8';
 
 import { firePointer } from '@test/helpers/dom/pointer';
+import { createProviderHostFixture } from '@test/helpers/providerRuntimeHost';
 import { fireEvent, waitFor, within } from '@testing-library/dom';
 
-import { SettingsCoordinator } from '@/app/settings/SettingsCoordinator';
-import { createProviderRuntimeHost } from '@/composition/ClaudianProviderHost';
-import type { ProviderHost } from '@/core/providers/ProviderHost';
 import { createCodexModels } from '@/providers/codex/runtime/CodexModels';
 import { getCodexProviderSettings } from '@/providers/codex/settings';
 import { renderProviderModelsSection } from '@/shared/settings/ProviderModelsSection';
-
-vi.mock('obsidian', async () => (await vi.importActual<typeof import('../../../helpers/ObsidianSettingsDOM')>('../../../helpers/ObsidianSettingsDOM')));
 
 const ROW_HEIGHT = 50;
 const ROW_GAP = 6;
@@ -47,17 +42,16 @@ async function setup() {
     model: id, displayName: name, description: '',
     supportedReasoningEfforts: [{ value: 'high', description: 'High' }], defaultReasoningEffort: 'high',
   });
-  const settings = { providerConfigs: { codex: {
+  const initialSettings = { providerConfigs: { codex: {
     enabled: true, visibleModels: ['alpha', 'beta', 'gamma'], modelAliases: {},
     discoveredModels: [model('alpha', 'Alpha'), model('beta', 'Beta'), model('gamma', 'Gamma')],
   } } };
-  const coordinator = new SettingsCoordinator(settings, async () => {});
   const notify = vi.fn();
-  const host = {
-    settings, mutateSettings: coordinator.mutate.bind(coordinator), notifyProviderChatOptionsChanged: notify,
-  } as unknown as ProviderHost;
+  const { settings, host } = await createProviderHostFixture({
+    settings: initialSettings, overrides: { notifyProviderChatOptionsChanged: notify },
+  });
   const catalog = createCodexModels(
-    createProviderRuntimeHost(host, coordinator, 'codex'),
+    host.getRuntimeHost('codex'),
     { refresh: async () => ({ kind: 'skipped', models: [], refreshed: false }) },
   );
   await catalog.refresh();

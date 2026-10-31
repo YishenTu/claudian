@@ -5,6 +5,13 @@ import {
 } from '@/core/device/InstallationKey';
 
 describe('InstallationKey', () => {
+  it('uses the deterministic persisted seed from shared setup without mocking identity', async () => {
+    vi.resetModules();
+    const identity = await import('@/core/device/InstallationKey');
+    expect(window.localStorage.getItem('claudian.deviceSettingsKey')).toBe('claudian-test-installation');
+    expect(identity.getInstallationKey()).toBe('device-ecada47dd9e2bec5e15fc4b4c2943be6b293b19bcc4a8c48cfd8bc571aa28065');
+  });
+
   const valid = `device-${'a'.repeat(64)}`;
 
   it('accepts only the existing opaque per-installation key shape', () => {

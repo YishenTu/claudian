@@ -1,3 +1,4 @@
+import { EventEmitter, once } from 'node:events';
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 
@@ -38,16 +39,23 @@ export interface NativePeerLifecycle {
 /** Returned from `onCall` to reset the HTTP connection instead of answering, as a dropped loopback transport does. */
 export const NATIVE_RESET = Symbol('native transport reset');
 
+export { nativeAddress,nativeRequest, nativeSessionId } from './NativeRequest';
+import { nativeAddress,nativeRequest } from './NativeRequest';
+
 /** Selects one session-scoped stream by its open arguments. */
-export type NativeStreamTarget = (args: Record<string, any>) => boolean;
+export type NativeStreamTarget = (args: Record<string, unknown>) => boolean;
 /** The follow stream of a root session. */
-export const rootFollow = (sessionId: string): NativeStreamTarget => args =>
-  args.request?.address?.kind === 'session' && args.request.address.sessionId === sessionId;
+export const rootFollow = (sessionId: string): NativeStreamTarget => args => {
+  const address = nativeAddress(args);
+  return address.kind === 'session' && address.sessionId === sessionId;
+};
 /** The follow stream of a subagent child session. */
-export const childFollow = (childSessionId: string): NativeStreamTarget => args =>
-  args.request?.address?.kind === 'subagent' && args.request.address.childSessionId === childSessionId;
+export const childFollow = (childSessionId: string): NativeStreamTarget => args => {
+  const address = nativeAddress(args);
+  return address.kind === 'subagent' && address.childSessionId === childSessionId;
+};
 /** The job stream of a session. */
-export const jobsOf = (sessionId: string): NativeStreamTarget => args => args.request?.sessionId === sessionId;
+export const jobsOf = (sessionId: string): NativeStreamTarget => args => nativeRequest(args).sessionId === sessionId;
 
 /** Process-global streams native broadcasts to every subscribed client. */
 export type NativeGlobalEndpoint = '$events' | 'session/control';
@@ -55,12 +63,13 @@ const GLOBAL_ENDPOINTS: ReadonlySet<string> = new Set<NativeGlobalEndpoint>(['$e
 
 /** Native wire peer. All adapter decoding and lifecycle logic runs in production code. */
 export class NativePeer {
-  readonly calls: Array<{ method: string; args: Record<string, any> }> = [];
+  readonly calls: Array<{ method: string; args: Record<string, unknown> }> = [];
+  private readonly receivedCalls = new EventEmitter();
   /** Methods whose HTTP request the client closed before a response, which native treats as cancellation. */
   readonly abandoned: string[] = [];
-  readonly streams = new Map<string, { socket: WebSocket; endpoint: string; args: Record<string, any> }>();
-  onCall: (method: string, args: Record<string, any>) => unknown | Promise<unknown> = () => ({});
-  onOpen: (endpoint: string, args: Record<string, any>, send: (value: unknown) => void, fail?: (error: { code: string; message: string }) => void) => void = () => {};
+  readonly streams = new Map<string, { socket: WebSocket; endpoint: string; args: Record<string, unknown> }>();
+  onCall: (method: string, args: Record<string, unknown>) => unknown | Promise<unknown> = () => ({});
+  onOpen: (endpoint: string, args: Record<string, unknown>, send: (value: unknown) => void, fail?: (error: { code: string; message: string }) => void) => void = () => {};
   private readonly server = createServer((request, response) => {
     if (request.url === '/?token=fixture') {
       response.writeHead(302, { 'Set-Cookie': 'session=fixture', Location: '/' }).end(); return;
@@ -72,6 +81,7 @@ export class NativePeer {
       const frame = JSON.parse(body);
       const args = frame.payload.args;
       this.calls.push({ method: frame.method, args });
+      this.receivedCalls.emit('call');
       response.on('close', () => { if (!response.writableEnded) this.abandoned.push(frame.method); });
       void Promise.resolve().then(() => this.onCall(frame.method, args)).then(
         value => value === NATIVE_RESET ? request.socket.destroy() : response.end(JSON.stringify({ rpcId: frame.rpcId, result: { ok: true, value } })),
@@ -94,6 +104,16 @@ export class NativePeer {
     }));
     await new Promise<void>(resolve => this.server.listen(0, '127.0.0.1', resolve));
     this.client = await this.connect();
+  }
+
+  /** Observes a wire request without polling or supplying the client's behavior. */
+  async waitForCall(method: string): Promise<(typeof this.calls)[number]> {
+    const signal = AbortSignal.timeout(1_000);
+    for (;;) {
+      const call = this.calls.find(call => call.method === method);
+      if (call) return call;
+      await once(this.receivedCalls, 'call', { signal });
+    }
   }
 
   connect(): Promise<DeepSeekRemoteClient> {

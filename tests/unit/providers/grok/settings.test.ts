@@ -1,8 +1,7 @@
-const mockGetHostnameKey = vi.fn(() => 'device:current');
-
 import { readGrokCatalog, writeGrokCatalog } from '@test/helpers/providers/grokSettings';
 import { testDate } from '@test/helpers/testClock';
 
+import { getInstallationKey } from '@/core/device/InstallationKey';
 import { normalizeGrokCatalogSnapshot } from '@/providers/grok/config';
 import { grokModelPolicy } from '@/providers/grok/GrokModelPolicy';
 import {
@@ -13,11 +12,6 @@ import {
   buildPersistedGrokProviderState,
   parseGrokProviderState,
 } from '@/providers/grok/types';
-
-vi.mock('@/core/device/InstallationKey', async () => ({
-  ...(await vi.importActual<typeof import('@/core/device/InstallationKey')>('@/core/device/InstallationKey')),
-  getInstallationKey: () => mockGetHostnameKey(),
-}));
 
 describe('Grok settings', () => {
   const currentCatalog = {
@@ -45,7 +39,6 @@ describe('Grok settings', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    mockGetHostnameKey.mockReturnValue('device:current');
   });
 
   it('preserves hostname-scoped state without assigning it to the current device', () => {
@@ -87,12 +80,12 @@ describe('Grok settings', () => {
       providerConfigs: {
         grok: {
           cliPathsByHost: {
-            ' device:current ': ' /current/grok ',
+            [` ${getInstallationKey()} `]: ' /current/grok ',
             invalid: 42,
           },
         },
       },
-    }).cliPathsByHost).toEqual({ 'device:current': '/current/grok' });
+    }).cliPathsByHost).toEqual({ [getInstallationKey()]: '/current/grok' });
   });
 
   it('round-trips only the current host catalog without changing other hosts', () => {
@@ -100,7 +93,7 @@ describe('Grok settings', () => {
       providerConfigs: {
         grok: {
           catalogsByHost: {
-            'device:current': currentCatalog,
+            [getInstallationKey()]: currentCatalog,
             'other-host': otherCatalog,
           },
         },
@@ -149,7 +142,7 @@ describe('Grok settings', () => {
       providerConfigs: {
         grok: {
           catalogsByHost: {
-            'device:current': {
+            [getInstallationKey()]: {
               defaultModelId: 'grok-future',
               fingerprint: 'future-catalog',
               models: [{
@@ -188,7 +181,7 @@ describe('Grok settings', () => {
       model: 'grok/legacy-model',
       providerConfigs: {
         grok: {
-          catalogsByHost: { 'device:current': currentCatalog },
+          catalogsByHost: { [getInstallationKey()]: currentCatalog },
           modelAliases: {
             ' kimi-coding ': ' Kimi ',
             'legacy-model': ' Legacy ',
@@ -225,7 +218,7 @@ describe('Grok settings', () => {
     const settings: Record<string, unknown> = {
       providerConfigs: {
         codex: { enabled: true },
-        grok: { catalogsByHost: { 'device:current': currentCatalog } },
+        grok: { catalogsByHost: { [getInstallationKey()]: currentCatalog } },
       },
     };
 
@@ -238,7 +231,7 @@ describe('Grok settings', () => {
 
     expect(next).toMatchObject({
       cliPath: '',
-      cliPathsByHost: { 'device:current': '/opt/bin/grok' },
+      cliPathsByHost: { [getInstallationKey()]: '/opt/bin/grok' },
       enabled: true,
       modelAliases: { 'kimi-coding': 'Kimi' },
       visibleModels: ['kimi-coding'],
@@ -251,7 +244,7 @@ describe('Grok settings', () => {
       providerConfigs: {
         grok: {
           catalogsByHost: {
-            'device:current': {
+            [getInstallationKey()]: {
               ...currentCatalog,
               models: currentCatalog.models.map(model => ({
                 ...model,

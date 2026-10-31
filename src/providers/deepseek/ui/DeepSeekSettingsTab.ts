@@ -1,5 +1,3 @@
-import { Setting } from 'obsidian';
-
 import { probeCLIInstallation } from '@/core/providers/cli/CLIInstallationProbe';
 import type { ProviderModelCatalogController } from '@/core/providers/models/ProviderModelCatalog';
 import { getRuntimeEnvironmentVariables } from '@/core/providers/providerEnvironment';
@@ -8,6 +6,7 @@ import { ProviderSettingsCoordinator } from '@/core/providers/ProviderSettingsCo
 import type { ProviderSettingsTabRenderer } from '@/core/providers/types';
 import { t } from '@/i18n/i18n';
 import { DEEPSEEK_PROVIDER_ICON } from '@/shared/icons';
+import { AccessibleSetting } from '@/shared/settings/AccessibleSetting';
 import { renderCLIInstallationSetting } from '@/shared/settings/CLIInstallationSetting';
 import { renderEnvironmentSettingsSection } from '@/shared/settings/EnvironmentSettingsSection';
 import { renderLastEnabledProviderWarning, renderProviderModelEnablementWarning } from '@/shared/settings/ProviderModelEnablementWarning';
@@ -59,10 +58,10 @@ export function createDeepSeekSettingsTabRenderer(workspace: { cliResolver: Deep
           },
         },
       });
-      new Setting(container).setName(t('settings.models')).setHeading();
+      new AccessibleSetting(container).setName(t('settings.models')).setHeading();
       const picker = renderProviderModelsSection(container, 'deepseek', 'DeepSeek Harness', workspace.modelCatalog, () => modelWarning.refresh());
-      new Setting(container).setName(t('settings.deepseek.preset')).setHeading();
-      new Setting(container).setName(t('settings.deepseek.codeMode.name')).setDesc(t('settings.deepseek.codeMode.desc'))
+      new AccessibleSetting(container).setName(t('settings.deepseek.preset')).setHeading();
+      new AccessibleSetting(container).setName(t('settings.deepseek.codeMode.name')).setDesc(t('settings.deepseek.codeMode.desc'))
         .addToggle(toggle => {
           toggle.setValue(settings().codeMode).onChange(async codeMode => { await host.mutateSettings(settings => { updateDeepSeekProviderSettings(settings, { codeMode }); }); });
           toggle.toggleEl.setAttribute('aria-label', t('settings.deepseek.codeMode.name'));
@@ -85,7 +84,7 @@ function renderPresetPlugins(container: HTMLElement, host: ProviderHost, setting
   const name = t('settings.deepseek.presetPlugins.name');
   let field!: HTMLTextAreaElement;
   let error: HTMLElement | undefined;
-  const setting = new Setting(container).setName(name).setDesc(t('settings.deepseek.presetPlugins.desc'))
+  const setting = new AccessibleSetting(container).setName(name).setDesc(t('settings.deepseek.presetPlugins.desc'))
     .setClass('claudian-settings-textarea').setClass('claudian-deepseek-preset-plugins')
     .addTextArea(text => {
       text.setPlaceholder(PRESET_PLUGINS_EXAMPLE).setValue(settings().presetPlugins);

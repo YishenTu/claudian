@@ -1,5 +1,5 @@
 import { spawn as nativeSpawn } from 'node:child_process';
-import { EventEmitter } from 'node:events';
+import { ChildProcess } from 'node:child_process';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -22,15 +22,16 @@ import { PiSubprocess } from '@/providers/pi/runtime/PiSubprocess';
 const mockSpawn = spawn as MockedFunction<typeof spawn>;
 const mockNativeSpawn = vi.mocked(nativeSpawn);
 
-function createMockProcess(): any {
-  const proc = new EventEmitter() as any;
-  proc.stdin = new Writable({ write: (_chunk, _encoding, callback) => callback() });
-  proc.stdout = new Readable({ read() {} });
-  proc.stderr = new Readable({ read() {} });
-  proc.exitCode = null;
-  proc.killed = false;
-  proc.pid = 12345;
-  proc.kill = vi.fn((signal?: string) => {
+function createMockProcess() {
+  const proc = Object.assign(new ChildProcess(), {
+    stdin: new Writable({ write: (_chunk, _encoding, callback) => callback() }),
+    stdout: new Readable({ read() {} }),
+    stderr: new Readable({ read() {} }),
+    exitCode: null as number | null,
+    killed: false,
+    pid: 12345 as number | undefined,
+  });
+  proc.kill = vi.fn((signal?: NodeJS.Signals | number) => {
     proc.killed = signal === 'SIGKILL';
     return true;
   });
@@ -39,7 +40,7 @@ function createMockProcess(): any {
 
 describe('PiSubprocess', () => {
   const originalPlatform = process.platform;
-  let proc: any;
+  let proc: ReturnType<typeof createMockProcess>;
   let windowsNpmPrefix: string;
   let windowsAbsolutePiCommand: string;
   let windowsMalformedCommands: string[];

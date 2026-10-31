@@ -4,86 +4,66 @@ import '@/providers';
 import { axe } from '@test/helpers/accessibility';
 import { deferred } from '@test/helpers/ChatInputHarness';
 import { claudeCatalogFixture } from '@test/helpers/claudeModels';
+import { DEFAULT_CLAUDIAN_SETTINGS } from '@test/helpers/defaultSettings';
+import { triggerResize } from '@test/helpers/dom/ResizeObserver';
+import { createChatFeatureHost } from '@test/helpers/features/chat/ChatFeatureHostFixture';
 import { createProjectsFake, projectRecord } from '@test/helpers/features/chat/ProjectsFake';
-import { installSessionRuntimePool } from '@test/helpers/features/chat/SessionRuntimePoolHarness';
+import { createSessionRuntimePool, type RuntimePoolFixtureOptions } from '@test/helpers/features/chat/SessionRuntimePoolHarness';
 import { FakeSideBackend } from '@test/helpers/features/chat/SideChatSessionHarness';
 import { testDate } from '@test/helpers/testClock';
 import { fireEvent, waitFor, within } from '@testing-library/dom';
-import { App, Component, MarkdownRenderer, Menu, TFile, TFolder } from 'obsidian';
+import { App, Component, Menu, TFile, TFolder } from 'obsidian';
 import type { Mock } from 'vitest';
 
-import { ProviderExecutionLifecycleRegistry } from '@/core/execution';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { ProviderWorkspaceRegistry } from '@/core/providers/ProviderWorkspaceRegistry';
 import type { ClaudianSettings, Conversation, ConversationMutablePatch } from '@/core/types';
-import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
 import { getChatSettingsSnapshot } from '@/features/chat/ChatSettings';
+import { SessionMessagingService } from '@/features/chat/session-messaging/SessionMessagingService';
 import { getSessionSettingsSnapshot, updateSessionProviderSettings, updateSessionReasoning } from '@/features/chat/sessions/sessionSettings';
 import { activateTab, destroyTab } from '@/features/chat/tabs/TabLifecycle';
 import { createTabRuntime } from '@/features/chat/tabs/TabRuntimeFactory';
 import { t } from '@/i18n/i18n';
 import { VaultMentionDataProvider } from '@/shared/mention/VaultMentionDataProvider';
 
+afterEach(() => { ProviderWorkspaceRegistry.clear(); vi.restoreAllMocks(); document.body.replaceChildren(); });
 
-
-const originalResizeObserver = globalThis.ResizeObserver;
-beforeEach(() => {
-  globalThis.ResizeObserver = class { observe() {} unobserve() {} disconnect() {} };
-  vi.mocked(MarkdownRenderer.render).mockImplementation(async (_app, markdown, el) => { el.textContent = markdown; });
-  Object.assign(HTMLElement.prototype, {
-    hasClass(this: HTMLElement, name: string) { return this.classList.contains(name); },
-    addClass(this: HTMLElement, ...names: string[]) { this.classList.add(...names); },
-    removeClass(this: HTMLElement, ...names: string[]) { this.classList.remove(...names); },
-    empty(this: HTMLElement) { this.replaceChildren(); },
-    setText(this: HTMLElement, text: string) { this.textContent = text; },
-    appendText(this: HTMLElement, text: string) { this.appendChild(this.ownerDocument.createTextNode(text)); },
-    setCssProps(this: HTMLElement, props: Record<string, string>) {
-      for (const [key, value] of Object.entries(props)) this.style.setProperty(key, value);
-    },
-    toggleClass(this: HTMLElement, name: string, enabled: boolean) { this.classList.toggle(name, enabled); },
-    scrollIntoView() {},
-  });
-});
-afterEach(() => { globalThis.ResizeObserver = originalResizeObserver; ProviderWorkspaceRegistry.clear(); vi.restoreAllMocks(); document.body.replaceChildren(); });
-
-function setup() {
+async function setup(poolOptions: RuntimePoolFixtureOptions = {}) {
   const app = new App();
   Object.assign(app.vault.adapter, { basePath: '/vault' });
-  Object.assign(app.vault, { on: () => ({}), offref() {} });
   const backend = new FakeSideBackend();
   vi.spyOn(ProviderRegistry, 'createExecutionBackend').mockReturnValue(backend);
   ProviderWorkspaceRegistry.setServices('claude', {});
-  const registry = new ProviderExecutionLifecycleRegistry();
-  const settings = {
+  const settings: ClaudianSettings = Object.assign(structuredClone(DEFAULT_CLAUDIAN_SETTINGS), {
     model: 'claude-sonnet-4-5', permissionMode: 'normal', effortLevel: 'high', excludedTags: [],
     providerConfigs: { claude: claudeCatalogFixture(['claude-sonnet-4-5'], ['low', 'high']) },
-  } as unknown as ClaudianSettings;
+  });
   const conversation = {
     id: 'conversation', providerId: 'claude', selectedModel: settings.model, sessionId: 'native',
     title: 'Conversation', messages: [], createdAt: testDate().getTime(), lastActivityAt: testDate().getTime(),
   } as Conversation;
   let nativeHistory: Conversation['messages'] = [];
   const saves: ConversationMutablePatch[] = [];
-  const plugin = {
+  const statusChanges = vi.fn();
+  const pool = createSessionRuntimePool(() => plugin, { onChanged: statusChanges, ...poolOptions });
+  const messaging = new SessionMessagingService({ getHost: () => plugin, getActiveConversationId: () => conversation.id, refreshModelControls: () => undefined });
+  onTestFinished(() => messaging.dispose());
+  const plugin = await createChatFeatureHost({
+    sessionRuntimes: pool, bindSessionTools: id => messaging.bindSessionTools(id),
     app, settings,
-    providerHost: { app, settings, executionLifecycleRegistry: registry },
-    getCommittedSettings: () => settings, getActiveEnvironmentVariables: () => '',
     getConversationSummary: () => conversation, getConversationSync: () => conversation,
     getCachedConversation: () => conversation,
     getConversationById: vi.fn(async () => ({ ...conversation, messages: structuredClone(nativeHistory) })),
-    getConversationList: () => [conversation], renameConversation: async () => undefined,
+    getConversationList: () => [{ ...conversation, messageCount: conversation.messages.length, preview: '' }], renameConversation: async () => undefined,
     findConversationAcrossViews: () => null,
     updateConversation: async (_id: string, patch: ConversationMutablePatch) => { saves.push(structuredClone(patch)); },
-    mutateSettings: async (mutate: (settings: ClaudianSettings) => void) => mutate(settings),
     executionPersistence: {
       registerExecutionBinding() {}, releaseExecutionBinding() {},
       assertConversationExecutionAuthority: async () => undefined,
       persistExecutionSnapshot: async () => true, recordConversationActivity: async () => undefined,
     },
     projects: createProjectsFake(),
-  } as unknown as ChatFeatureHost;
-  const statusChanges = vi.fn();
-  const pool = installSessionRuntimePool(plugin, { onChanged: statusChanges });
+  });
   const attach = async (options: { blank?: boolean; openConversation?: (id: string) => Promise<void> } = {}) => {
     const tab = await createTabRuntime({
       plugin, conversation: options.blank ? undefined : conversation, component: new Component(), containerEl: document.body.createDiv(),
@@ -98,15 +78,13 @@ function setup() {
 }
 
 it('reattaches a held blank draft session, with its selections, to the next presentation', async () => {
-  const h = setup();
-  Object.assign(h.plugin.app.workspace, { getActiveFile: () => null });
+  const h = (await setup());
   const first = await h.attach({ blank: true });
   const runtime = first.session.runtime;
   runtime.providerSelections.set('claude', { permissionMode: 'yolo', serviceTier: 'default' });
   const hold = h.pool.holdDraft(runtime);
   await destroyTab(first);
-  await Promise.resolve();
-  await Promise.resolve();
+  await new Promise<void>(resolve => setImmediate(resolve));
   expect(runtime.isDisposed).toBe(false);
 
   const second = await createTabRuntime({
@@ -123,7 +101,7 @@ it('reattaches a held blank draft session, with its selections, to the next pres
 });
 
 it('continues a requested response with no tab, then restores a pending approval and open response', async () => {
-  const h = setup();
+  const h = (await setup());
   const first = await h.attach();
   first.controllers.drafts.restore('main', { content: 'Read the note' });
   const sending = first.controllers.inputController.sendMessage();
@@ -156,6 +134,188 @@ it('continues a requested response with no tab, then restores a pending approval
   await destroyTab(second);
 });
 
+it('keeps a model when history release declines and releases unrelated unowned history', async () => {
+  const releases: string[] = [];
+  const h = await setup({ releaseHistory: async (id, canRelease) => {
+    if (!canRelease()) return false;
+    releases.push(id);
+    return id !== 'conversation';
+  } });
+  h.setNativeHistory([{ id: 'retained', role: 'assistant', content: 'Keep this transcript', timestamp: testDate().getTime() }]);
+  const first = await h.attach();
+  const runtime = first.session.runtime;
+  const model = runtime.model;
+  await h.pool.releaseUnownedHistory('conversation');
+  expect(releases).toEqual([]);
+  await h.pool.releaseUnownedHistory('unrelated');
+  expect(releases).toEqual(['unrelated']);
+  await destroyTab(first);
+  // Cleanup has returned false before the next user event can reattach this conversation.
+  await new Promise<void>(resolve => setImmediate(resolve));
+  expect(releases).toEqual(['unrelated', 'conversation']);
+  expect(runtime.peekModel === model).toBe(true);
+  const readHistory = vi.mocked(h.plugin.getConversationById);
+  readHistory.mockClear();
+  const second = await h.attach();
+  expect(second.session.runtime.model === model).toBe(true);
+  expect(second.dom.messagesEl.textContent).toContain('Keep this transcript');
+  expect(readHistory).not.toHaveBeenCalled();
+  await destroyTab(second);
+});
+
+it.each(['unviewed', 'attached'] as const)('does not retry failed history cleanup on an unrelated %s session change', async kind => {
+  const failure = new Error('History storage unavailable');
+  const onError = vi.fn();
+  const h = await setup({ retainedDetachedSessions: 1, onError, releaseHistory: async () => { throw failure; } });
+  const identity = { conversationId: 'other', providerId: 'claude', draftModel: null } as const;
+  let other;
+  if (kind === 'attached') {
+    const first = h.pool.acquire(identity, { reveal() {} });
+    h.pool.release(first.attachment);
+    await new Promise<void>(resolve => setImmediate(resolve));
+    other = h.pool.acquire(identity, { reveal() {} }).attachment.runtime;
+  } else {
+    other = h.pool.ensure(identity);
+  }
+  const runtime = h.pool.ensure({ conversationId: 'conversation', providerId: 'claude', draftModel: null });
+  const model = await runtime.ensureModel();
+  runtime.notifyChanged();
+  await new Promise<void>(resolve => setImmediate(resolve));
+  expect(onError).toHaveBeenCalledTimes(1);
+  expect(onError).toHaveBeenCalledWith(failure);
+
+  other.attention.setActionRequired(true);
+  await new Promise<void>(resolve => setImmediate(resolve));
+  expect(onError).toHaveBeenCalledTimes(1);
+  expect(runtime.peekModel === model).toBe(true);
+});
+
+it.each(['detach', 'reattach'] as const)('keeps history cleanup ownership across another presentation: %s', async action => {
+  const entered = deferred<void>();
+  const finish = deferred<void>();
+  let attempts = 0;
+  const h = await setup({ retainedDetachedSessions: 1, releaseHistory: async (_id, canRelease) => {
+    const released = canRelease();
+    if (++attempts === 1) { entered.resolve(); await finish.promise; }
+    return released;
+  } });
+  const runtime = h.pool.ensure({ conversationId: 'conversation', providerId: 'claude', draftModel: null });
+  const model = await runtime.ensureModel();
+  let shutdown: Promise<void> | undefined;
+  let drained = false;
+  try {
+    runtime.notifyChanged();
+    await entered.promise;
+    const other = h.pool.acquire({ conversationId: action === 'reattach' ? 'conversation' : 'other', providerId: 'claude', draftModel: null }, { reveal() {} });
+    // A reserved attachment owns its model even if history released before it was acquired.
+    if (action === 'reattach') finish.resolve();
+    else h.pool.release(other.attachment);
+    await new Promise<void>(resolve => setImmediate(resolve));
+    expect(runtime.peekModel === model).toBe(true);
+    if (action === 'reattach') h.pool.release(other.attachment);
+    shutdown = h.pool.dispose().then(() => { drained = true; });
+    await new Promise<void>(resolve => setImmediate(resolve));
+    expect(drained).toBe(action === 'reattach');
+  } finally {
+    finish.resolve();
+    await shutdown;
+  }
+  expect(runtime.isDisposed).toBe(true);
+});
+
+it('reports a retirement failure to its caller once when retirement interrupts history cleanup', async () => {
+  const entered = deferred<void>();
+  const finish = deferred<void>();
+  const onError = vi.fn();
+  const h = await setup({ onError, releaseHistory: async (_id, canRelease) => {
+    entered.resolve();
+    await finish.promise;
+    return canRelease();
+  } });
+  const first = await h.attach();
+  await first.session.runtime.model.ensureExecutionInitialized();
+  const native = h.backend.latest;
+  const failure = new Error('Native disposal failed');
+  const dispose = native.dispose.bind(native);
+  vi.spyOn(native, 'dispose').mockImplementation(async () => { await dispose(); throw failure; });
+  await destroyTab(first);
+  await entered.promise;
+  const retirement = h.pool.retire('conversation').then(() => null, (error: unknown) => error);
+  finish.resolve();
+  expect(await retirement).toBeInstanceOf(AggregateError);
+  await new Promise<void>(resolve => setImmediate(resolve));
+  expect(onError).not.toHaveBeenCalled();
+  expect(native.disposeCalls).toBe(1);
+  expect(first.session.runtime.isDisposed).toBe(true);
+  await expect(h.pool.dispose()).resolves.toBeUndefined();
+});
+
+it.each([
+  { fails: false, finishBeforeShutdown: false },
+  { fails: true, finishBeforeShutdown: false },
+  { fails: true, finishBeforeShutdown: true },
+])('joins retired provider cleanup and drains other sessions ($fails, cleanup already finished: $finishBeforeShutdown)', async ({ fails, finishBeforeShutdown }) => {
+  const onError = vi.fn<(error: unknown) => void>();
+  const h = await setup({ onError });
+  const first = await h.attach();
+  await first.session.runtime.model.ensureExecutionInitialized();
+  const native = h.backend.latest;
+  const enteredCleanup = deferred<void>();
+  const releaseCleanup = deferred<void>();
+  const failure = new Error('Native cleanup failed');
+  const dispose = native.dispose.bind(native);
+  vi.spyOn(native, 'dispose').mockImplementation(async () => {
+    enteredCleanup.resolve();
+    await releaseCleanup.promise;
+    await dispose();
+    if (fails) throw failure;
+  });
+  await h.pool.retire('conversation');
+  await destroyTab(first);
+  await enteredCleanup.promise;
+  expect(h.pool.get('conversation')).toBeNull();
+  expect(h.pool.getAll()).not.toContain(first.session.runtime);
+  const other = h.pool.ensure({ conversationId: 'other', providerId: 'claude', draftModel: null });
+  const otherCancelled = deferred<void>();
+  const finishOther = deferred<void>();
+  const work = other.turns.run(async signal => {
+    signal.addEventListener('abort', () => otherCancelled.resolve(), { once: true });
+    await finishOther.promise;
+  });
+  if (finishBeforeShutdown) {
+    releaseCleanup.resolve();
+    await new Promise<void>(resolve => setImmediate(resolve));
+  }
+  expect(onError).toHaveBeenCalledTimes(Number(finishBeforeShutdown));
+  let shutdownFinished = false;
+  const shutdown = h.pool.dispose();
+  const result = shutdown.then(
+    () => { shutdownFinished = true; return { error: null }; },
+    (error: unknown) => { shutdownFinished = true; return { error }; },
+  );
+  try {
+    await otherCancelled.promise;
+    finishOther.resolve();
+    await work;
+    await new Promise<void>(resolve => setImmediate(resolve));
+    expect(shutdownFinished).toBe(finishBeforeShutdown);
+  } finally {
+    finishOther.resolve();
+    releaseCleanup.resolve();
+    await work;
+  }
+  const { error } = await result;
+  expect(native.disposeCalls).toBe(1);
+  expect(other.isDisposed).toBe(true);
+  expect(h.pool.getAll()).toEqual([]);
+  const causes = (value: unknown): unknown[] => value instanceof AggregateError
+    ? value.errors.flatMap(causes) : value === null ? [] : [value];
+  expect(error instanceof AggregateError).toBe(fails && !finishBeforeShutdown);
+  expect(causes(error)).toEqual(fails && !finishBeforeShutdown ? [failure] : []);
+  expect(onError).toHaveBeenCalledTimes(Number(fails));
+  expect(onError.mock.calls.flatMap(([value]) => causes(value))).toEqual(fails ? [failure] : []);
+});
+
 it('opens a reattached conversation at its latest message after rendering it in a hidden presentation', async () => {
   // Browser geometry: a transcript inside a hidden tab has no box and ignores scroll writes.
   const scrollTops = new WeakMap<Element, number>();
@@ -172,14 +332,7 @@ it('opens a reattached conversation at its latest message after rendering it in 
   vi.spyOn(Element.prototype, 'scrollTop', 'set').mockImplementation(function (this: Element, value: number) {
     if (isLaidOut(this)) scrollTops.set(this, Math.max(0, Math.min(value, this.scrollHeight - this.clientHeight)));
   });
-  const resizeCallbacks: Array<() => void> = [];
-  globalThis.ResizeObserver = class {
-    constructor(private readonly callback: ResizeObserverCallback) {}
-    observe() { resizeCallbacks.push(() => this.callback([], this as unknown as ResizeObserver)); }
-    unobserve() {}
-    disconnect() {}
-  };
-  const h = setup();
+  const h = (await setup());
   h.setNativeHistory([{ id: 'native-history', role: 'assistant', content: 'Latest answer', timestamp: testDate().getTime() }]);
   const first = await h.attach();
   await destroyTab(first);
@@ -188,7 +341,11 @@ it('opens a reattached conversation at its latest message after rendering it in 
   const second = await h.attach();
   expect(second.session.runtime).toBe(first.session.runtime);
   expect(second.dom.messagesEl.textContent).toContain('Latest answer');
-  resizeCallbacks.forEach(notify => notify());
+  const visibleSize = { inlineSize: 800, blockSize: 400 };
+  triggerResize(second.dom.messagesEl, {
+    contentRect: new DOMRectReadOnly(0, 0, visibleSize.inlineSize, visibleSize.blockSize),
+    contentBoxSize: [visibleSize], borderBoxSize: [visibleSize], devicePixelContentBoxSize: [visibleSize],
+  });
 
   const { scrollTop, scrollHeight, clientHeight } = second.dom.messagesEl;
   expect(scrollTop).toBe(scrollHeight - clientHeight);
@@ -196,7 +353,7 @@ it('opens a reattached conversation at its latest message after rendering it in 
 });
 
 it('lists every prompt of a long transcript in the directory, including prompts not rendered yet', async () => {
-  const h = setup();
+  const h = (await setup());
   const start = testDate().getTime();
   h.setNativeHistory(Array.from({ length: 30 }, (_, index) => [
     { id: `u${index}`, role: 'user' as const, content: `Prompt ${index}`, timestamp: start + index },
@@ -219,7 +376,7 @@ it('lists every prompt of a long transcript in the directory, including prompts 
 });
 
 it('hydrates an evicted model for a late native notification without replacing the provider binding', async () => {
-  const h = setup();
+  const h = (await setup());
   const first = await h.attach();
   await first.session.runtime.model.ensureExecutionInitialized();
   const runtime = first.session.runtime;
@@ -239,9 +396,8 @@ it('hydrates an evicted model for a late native notification without replacing t
   await waitFor(() => expect(runtime.peekModel).toBeNull());
 });
 
-
 it('keeps a detached parent while its side chat is still resolving the source', async () => {
-  const h = setup();
+  const h = (await setup());
   const first = await h.attach();
   first.state.messages = [
     { id: 'user', role: 'user', content: 'Parent task', timestamp: testDate().getTime() },
@@ -283,14 +439,13 @@ it('keeps a detached parent while its side chat is still resolving the source', 
 });
 
 it('lists Linked content choices from the attached view\'s cached vault index', async () => {
-  const h = setup();
+  const h = (await setup());
   const vault = h.plugin.app.vault as unknown as Record<string, unknown>;
   const note = Object.assign(new TFile(), { path: 'Notes/Plan.md', name: 'Plan.md', basename: 'Plan', extension: 'md' });
   const folder = Object.assign(new TFolder(), { path: 'Notes', name: 'Notes' });
   const getFiles = vi.fn(() => [note]);
   const getAllLoadedFiles = vi.fn(() => [folder, note]);
   Object.assign(vault, { getFiles, getAllLoadedFiles });
-  Object.assign(h.plugin.app.workspace, { getActiveFile: () => null });
   const tab = await h.attach({ blank: true });
   const selector = within(tab.dom.messagesEl).getByRole('button', { name: 'None' });
   for (const query of ['plan', 'notes']) {
@@ -307,7 +462,7 @@ it('lists Linked content choices from the attached view\'s cached vault index', 
 });
 
 it('retains failed queued reference preparation as session recovery after its tab closes', async () => {
-  const h = setup();
+  const h = (await setup());
   const first = await h.attach();
   first.controllers.drafts.restore('main', { content: 'First request' });
   const sending = first.controllers.inputController.sendMessage();
@@ -336,7 +491,7 @@ it('retains failed queued reference preparation as session recovery after its ta
 });
 
 it('preserves raw drafts when multiple reference preparations recover after detachment', async () => {
-  const h = setup();
+  const h = (await setup());
   const first = await h.attach();
   first.controllers.drafts.restore('main', { content: 'First request' });
   const sending = first.controllers.inputController.sendMessage();
@@ -367,7 +522,7 @@ it('preserves raw drafts when multiple reference preparations recover after deta
 });
 
 it('fences a detached side queue synchronously before the plugin shutdown drain', async () => {
-  const h = setup();
+  const h = (await setup());
   const first = await h.attach();
   first.state.messages = [
     { id: 'user', role: 'user', content: 'Parent task', timestamp: testDate().getTime() },
@@ -394,11 +549,17 @@ it('fences a detached side queue synchronously before the plugin shutdown drain'
 });
 
 it('does not save a deleted conversation still attached when the plugin shuts down', async () => {
-  const h = setup();
+  const h = (await setup());
   const tab = await h.attach();
   tab.state.messages = [{ id: 'unsaved', role: 'user', content: 'Unsaved message', timestamp: testDate().getTime() }];
+  const finish = deferred<void>();
+  const running = tab.session.runtime.turns.run(() => finish.promise);
   await h.pool.retire('conversation');
-  expect(h.pool.get('conversation')).toBe(tab.session.runtime);
+  finish.resolve();
+  await running;
+  expect(h.pool.get('conversation') === tab.session.runtime).toBe(true);
+  expect(tab.session.runtime.isDisposed).toBe(false);
+  expect(tab.session.runtime.peekModel).not.toBeNull();
 
   await h.pool.dispose();
 
@@ -407,8 +568,35 @@ it('does not save a deleted conversation still attached when the plugin shuts do
   await destroyTab(tab);
 });
 
+it('does not republish a draft that finishes conversation creation during shutdown', async () => {
+  const h = await setup();
+  const creating = deferred<Conversation>();
+  const creationStarted = deferred<void>();
+  vi.spyOn(h.plugin, 'createConversation').mockImplementation(() => {
+    creationStarted.resolve();
+    return creating.promise;
+  });
+  const tab = await h.attach({ blank: true });
+  tab.controllers.drafts.restore('main', { content: 'Create before shutdown' });
+  const sending = tab.controllers.inputController.sendMessage();
+  await creationStarted.promise;
+  const shutdown = h.pool.dispose();
+  try {
+    await new Promise<void>(resolve => setImmediate(resolve));
+    expect(h.pool.getAll()).toEqual([]);
+  } finally {
+    creating.resolve({ id: 'created-during-shutdown', providerId: 'claude', sessionId: null, title: 'Created', messages: [], createdAt: testDate().getTime(), lastActivityAt: testDate().getTime() });
+    await Promise.all([sending, shutdown]);
+  }
+  expect(tab.session.runtime.conversationId).toBe('created-during-shutdown');
+  expect(tab.session.runtime.isDisposed).toBe(true);
+  expect(h.pool.get('created-during-shutdown')).toBeNull();
+  expect(h.pool.getAll()).toEqual([]);
+  await destroyTab(tab);
+});
+
 it('joins a first-turn title request admitted while the plugin shutdown drain begins', async () => {
-  const h = setup();
+  const h = (await setup());
   Object.assign(h.plugin.settings, { enableAutoTitleGeneration: true, titleGenerationModel: 'claude-sonnet-4-5' });
   const fallbackTitleWritten = deferred<void>();
   const rename = vi.spyOn(h.plugin, 'renameConversation').mockImplementation(() => fallbackTitleWritten.promise);
@@ -430,7 +618,7 @@ it('joins a first-turn title request admitted while the plugin shutdown drain be
 });
 
 it('keeps a detached queued continuation running between provider requests', async () => {
-  const h = setup();
+  const h = (await setup());
   const first = await h.attach();
   first.controllers.drafts.restore('main', { content: 'First request' });
   const sending = first.controllers.inputController.sendMessage();
@@ -450,7 +638,7 @@ it('keeps a detached queued continuation running between provider requests', asy
 });
 
 it.each([false, true])('keeps completed detached work unread until its transcript is visibly attached (reference: %s)', async hasReference => {
-  const h = setup();
+  const h = (await setup());
   const first = await h.attach();
   if (hasReference) {
     vi.mocked(h.plugin.getConversationById).mockResolvedValueOnce({
@@ -484,7 +672,7 @@ it.each([false, true])('keeps completed detached work unread until its transcrip
 const hasBlock = (patch: ConversationMutablePatch | undefined, content: string) => !!patch?.messages?.some(message => message.contentBlocks?.some(block => 'content' in block && block.content === content));
 
 it('persists a detached transcript whose background save failed before releasing it', async () => {
-  const h = setup();
+  const h = (await setup());
   const first = await h.attach();
   await first.session.runtime.model.ensureExecutionInitialized();
   const runtime = first.session.runtime;
@@ -498,12 +686,17 @@ it('persists a detached transcript whose background save failed before releasing
 });
 
 it('publishes session status only when its list projection changes', async () => {
-  const h = setup();
+  const h = (await setup());
   const tab = await h.attach();
+  expect(tab.session.runtime.statusAttention).toBeNull();
+  h.statusChanges.mockClear();
+  const requested = h.backend.nextRequest(() => true);
   tab.controllers.drafts.restore('main', { content: 'Stream a reply' });
   const sending = tab.controllers.inputController.sendMessage();
-  await waitFor(() => expect(h.backend.sessions[0]?.requests).toHaveLength(1));
+  await requested;
   expect(h.pool.isRunning('conversation')).toBe(true);
+  expect(tab.session.runtime.statusAttention).toBeNull();
+  expect(h.statusChanges).toHaveBeenCalled();
   const native = h.backend.latest;
   native.emitText('First chunk.');
   await waitFor(() => expect(tab.state.currentTextContent).toBe('First chunk.'));
@@ -521,10 +714,9 @@ it('publishes session status only when its list projection changes', async () =>
 });
 
 it('keeps a newer composer draft when first conversation creation fails', async () => {
-  const h = setup();
+  const h = (await setup());
   const creating = deferred<Conversation>();
   Object.assign(h.plugin, { createConversation: vi.fn(() => creating.promise) });
-  Object.assign(h.plugin.app.workspace, { getActiveFile: () => null });
   const tab = await h.attach({ blank: true });
   tab.controllers.drafts.restore('main', { content: 'First request' });
   const sending = tab.controllers.inputController.sendMessage();
@@ -546,10 +738,9 @@ it('keeps a newer composer draft when first conversation creation fails', async 
 });
 
 it('releases a closed blank tab whose conversation creation failed with no presentation to recover into', async () => {
-  const h = setup();
+  const h = (await setup());
   const creating = deferred<Conversation>();
   Object.assign(h.plugin, { createConversation: vi.fn(() => creating.promise) });
-  Object.assign(h.plugin.app.workspace, { getActiveFile: () => null });
   const tab = await h.attach({ blank: true });
   const runtime = tab.session.runtime;
   tab.controllers.drafts.restore('main', { content: 'First draft' });
@@ -567,10 +758,9 @@ describe('composer project chip', () => {
   const launch = projectRecord({ id: 'launch', name: 'Launch' });
   const chipName = 'Project: Launch';
 
-  function projectSetup() {
-    const h = setup();
+  async function projectSetup() {
+    const h = (await setup());
     const projects = createProjectsFake([launch]);
-    Object.assign(h.plugin.app.workspace, { getActiveFile: () => null });
     const created = h.plugin.getConversationSummary('conversation') as Conversation;
     // The record keeps whatever project the first-turn creation asked for.
     const createConversation = vi.fn(async (options: { projectId?: string } = {}) => {
@@ -581,7 +771,7 @@ describe('composer project chip', () => {
     return { h, projects, created, createConversation };
   }
 
-  async function sendFirst(tab: Awaited<ReturnType<ReturnType<typeof setup>['attach']>>, h: ReturnType<typeof setup>) {
+  async function sendFirst(tab: Awaited<ReturnType<Awaited<ReturnType<typeof setup>>['attach']>>, h: Awaited<ReturnType<typeof setup>>) {
     tab.controllers.drafts.restore('main', { content: 'First prompt' });
     const sending = tab.controllers.inputController.sendMessage();
     await waitFor(() => expect(h.backend.sessions[0]?.requests).toHaveLength(1));
@@ -590,7 +780,7 @@ describe('composer project chip', () => {
   }
 
   it('follows the draft seed, then membership, until the project is deleted', async () => {
-    const { h, projects, created } = projectSetup();
+    const { h, projects, created } = (await projectSetup());
     const tab = await h.attach({ blank: true });
     const row = within(tab.dom.infoRowEl);
     expect(row.queryByRole('button', { name: chipName })).toBeNull();
@@ -633,7 +823,7 @@ describe('composer project chip', () => {
   }
 
   it('shows no chip for a draft outside any project, including after choosing No project', async () => {
-    const { h } = projectSetup();
+    const { h } = (await projectSetup());
     const tab = await h.attach({ blank: true });
     const row = within(tab.dom.infoRowEl);
     expect(tab.dom.infoRowEl.isConnected).toBe(true);
@@ -646,7 +836,7 @@ describe('composer project chip', () => {
   });
 
   it('lists live projects pinned first with the current one checked, then No project', async () => {
-    const { h, projects } = projectSetup();
+    const { h, projects } = (await projectSetup());
     projects.put(projectRecord({ id: 'ops', name: 'Ops', isPinned: true }));
     projects.put(projectRecord({ id: 'alpha', name: 'Alpha' }));
     const tab = await h.attach({ blank: true });
@@ -666,7 +856,7 @@ describe('composer project chip', () => {
     ['switches', 'ops'],
     ['drops', undefined],
   ])('%s the draft seed from the chip menu for the first input\'s creation', async (_case, projectId) => {
-    const { h, projects, created, createConversation } = projectSetup();
+    const { h, projects, created, createConversation } = (await projectSetup());
     projects.put(projectRecord({ id: 'ops', name: 'Ops' }));
     const tab = await h.attach({ blank: true });
     tab.controllers.conversationController.seedDraftProject(launch.id);
@@ -685,7 +875,7 @@ describe('composer project chip', () => {
   });
 
   it('shows a started session\'s project as a fixed chip, and none outside a project', async () => {
-    const { h, created } = projectSetup();
+    const { h, created } = (await projectSetup());
     Object.assign(created, { projectId: launch.id });
     const tab = await h.attach();
     const row = within(tab.dom.infoRowEl);
@@ -705,7 +895,7 @@ describe('composer project chip', () => {
   });
 
   it('freezes the seed while first-turn creation is pending and releases it when creation fails', async () => {
-    const { h, createConversation } = projectSetup();
+    const { h, createConversation } = (await projectSetup());
     const creating = deferred<Conversation>();
     createConversation.mockImplementationOnce(() => creating.promise);
     const tab = await h.attach({ blank: true });
@@ -740,7 +930,7 @@ describe('composer project chip', () => {
   });
 
   it('shows a held seeded draft\'s project as soon as the next presentation attaches', async () => {
-    const { h } = projectSetup();
+    const { h } = (await projectSetup());
     const first = await h.attach({ blank: true });
     first.controllers.conversationController.seedDraftProject(launch.id);
     const hold = h.pool.holdDraft(first.session.runtime);
@@ -771,7 +961,7 @@ function branchHistory(): Conversation['messages'] {
 }
 
 it('leaves a branch preview when its presentation detaches from a retained model', async () => {
-  const h = setup();
+  const h = (await setup());
   h.setNativeHistory(branchHistory());
   const first = await h.attach();
   await first.controllers.conversationController.navigateBranch('u2');
@@ -801,7 +991,7 @@ it('leaves a branch preview when its presentation detaches from a retained model
 });
 
 it('retains a detached model until its uncertain branch navigation is reconciled', async () => {
-  const h = setup();
+  const h = (await setup());
   h.setNativeHistory(branchHistory());
   const first = await h.attach();
   const coordinator = first.executionCoordinator;
@@ -825,7 +1015,7 @@ it('retains a detached model until its uncertain branch navigation is reconciled
 });
 
 it('holds mailbox delivery behind a branch preview and wakes when the full transcript returns', async () => {
-  const h = setup();
+  const h = (await setup());
   h.setNativeHistory(branchHistory());
   const tab = await h.attach();
   await tab.controllers.conversationController.navigateBranch('u2');
@@ -846,7 +1036,7 @@ it('holds mailbox delivery behind a branch preview and wakes when the full trans
 });
 
 it('rematches an open mention after editing queued input back into the composer', async () => {
-  const h = setup();
+  const h = (await setup());
   const at = testDate().getTime();
   const note = Object.assign(new TFile(), {
     path: 'Notes/Plan.md', name: 'Plan.md', basename: 'Plan', extension: 'md',
@@ -884,7 +1074,7 @@ it('rematches an open mention after editing queued input back into the composer'
 });
 
 it('copies the parent session selections into a new side chat after another session changes preferences', async () => {
-  const h = setup();
+  const h = (await setup());
   const tab = await h.attach();
   const runtime = tab.session.runtime;
   tab.state.messages = [
@@ -931,7 +1121,7 @@ it('copies the parent session selections into a new side chat after another sess
 });
 
 it('keeps archived sessions out of the composer resume picker', async () => {
-  const h = setup();
+  const h = (await setup());
   const current = h.plugin.getConversationSummary('conversation') as Conversation;
   const active = { ...current, id: 'active-session', title: 'Active task' };
   const archived = { ...current, id: 'archived-session', title: 'Archived task', isArchived: true,
@@ -952,8 +1142,7 @@ it('keeps archived sessions out of the composer resume picker', async () => {
 });
 
 it('does not open an empty resume picker when only archived sessions exist', async () => {
-  const h = setup();
-  Object.assign(h.plugin.app.workspace, { getActiveFile: () => null });
+  const h = (await setup());
   const archived = { ...h.plugin.getConversationSummary('conversation')!, isArchived: true };
   Object.assign(h.plugin, { getConversationList: () => [archived] });
   const tab = await h.attach({ blank: true });
@@ -965,7 +1154,7 @@ it('does not open an empty resume picker when only archived sessions exist', asy
 });
 
 it.each(['main', 'side'] as const)('keeps native requested permission changes for the %s destination', async destination => {
-  const h = setup();
+  const h = (await setup());
   await h.plugin.mutateSettings(settings => { settings.permissionMode = 'manual'; });
   const tab = await h.attach();
   let sending: Promise<unknown>;
@@ -1002,7 +1191,7 @@ it.each(['main', 'side'] as const)('keeps native requested permission changes fo
 });
 
 it('returns unsent queued input when a completed response cannot be saved', async () => {
-  const h = setup();
+  const h = (await setup());
   const tab = await h.attach();
   tab.controllers.drafts.restore('main', { content: 'First request' });
   const sending = tab.controllers.inputController.sendMessage();

@@ -2,6 +2,7 @@
 import '@/providers';
 
 import { axe } from '@test/helpers/accessibility';
+import { createChatFeatureHost } from '@test/helpers/features/chat/ChatFeatureHostFixture';
 import { testDate } from '@test/helpers/testClock';
 import { fireEvent, within } from '@testing-library/dom';
 import { Component } from 'obsidian';
@@ -17,14 +18,6 @@ import { StreamController } from '@/features/chat/turns/StreamController';
 import { loadDeepSeekHistory } from '@/providers/deepseek/history/DeepSeekHistoryStore';
 import { DeepSeekOutput, type DeepSeekOutputEvent } from '@/providers/deepseek/normalization/DeepSeekOutput';
 
-HTMLElement.prototype.empty = function () { this.replaceChildren(); };
-HTMLElement.prototype.addClass = function (...classes) { this.classList.add(...classes); };
-HTMLElement.prototype.removeClass = function (...classes) { this.classList.remove(...classes); };
-HTMLElement.prototype.toggleClass = function (names, enabled) {
-  for (const name of Array.isArray(names) ? names : [names]) this.classList.toggle(name, enabled);
-};
-HTMLElement.prototype.scrollIntoView = function () {};
-HTMLElement.prototype.setText = function (text) { this.textContent = String(text); };
 beforeEach(() => document.body.replaceChildren());
 
 const cases = [
@@ -54,8 +47,7 @@ describe.each(['live', 'history'] as const)('%s DeepSeek applied edit', mode => 
         const output = new DeepSeekOutput(event => events.push(event));
         for (const record of records) output.record(record);
         const state = new ChatState();
-        const vault = { adapter: { basePath: '/workspace', list: async () => ({ files: [], folders: [] }) }, getAbstractFileByPath: () => null };
-        const plugin = { app: { vault }, settings: { mediaFolder: '', showMessageTimestamps: false } } as any;
+        const plugin = await createChatFeatureHost({ settings: { mediaFolder: '', showMessageTimestamps: false } });
         component = new Component();
         component.load();
         renderer = new MessageRenderer(plugin, component, messages);

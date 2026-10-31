@@ -1,9 +1,10 @@
 /** @vitest-environment jsdom */
 import '@/providers';
 
+import { createChatFeatureHost } from '@test/helpers/features/chat/ChatFeatureHostFixture';
 import { testClock } from '@test/helpers/testClock';
 import { fireEvent, within } from '@testing-library/dom';
-import { Component, MarkdownRenderer } from 'obsidian';
+import { Component } from 'obsidian';
 
 import type { ProviderExecutionEvent, ProviderRequestedEventScope } from '@/core/execution';
 import type { ProviderCapabilities } from '@/core/providers/types';
@@ -20,24 +21,16 @@ import { StreamController } from '@/features/chat/turns/StreamController';
 import { TurnCoordinator } from '@/features/chat/turns/TurnCoordinator';
 import { ClaudeTaskResultInterpreter } from '@/providers/claude/runtime/ClaudeTaskResultInterpreter';
 
-HTMLElement.prototype.empty = function () { this.replaceChildren(); };
-HTMLElement.prototype.addClass = function (...classes) { this.classList.add(...classes); };
-HTMLElement.prototype.removeClass = function (...classes) { this.classList.remove(...classes); };
-
 const cleanups: Array<() => void> = [];
-beforeEach(() => {
-  vi.mocked(MarkdownRenderer.render).mockImplementation(async (_app, markdown, el) => {
-    (el as HTMLElement).createEl('p', { text: markdown });
-  });
-});
+
 afterEach(() => {
   cleanups.splice(0).forEach(cleanup => cleanup());
   document.body.replaceChildren();
   vi.restoreAllMocks();
 });
 
-function createSession(providerId?: ProviderCapabilities['providerId']) {
-  const plugin = { app: {}, settings: { mediaFolder: '', showMessageTimestamps: false } } as any;
+async function createSession(providerId?: ProviderCapabilities['providerId']) {
+  const plugin = await createChatFeatureHost({ settings: { mediaFolder: '', showMessageTimestamps: false } });
   const turns = new TurnCoordinator();
   const state = new ChatState({}, undefined, turns);
   const subagents = new SubagentManager(info => stream.subagents.onAsyncSubagentStateChange(info), new ClaudeTaskResultInterpreter());
@@ -68,8 +61,8 @@ function createSession(providerId?: ProviderCapabilities['providerId']) {
 it.each(['text', 'thinking'] as const)('reattaches during %s without losing open blocks, child output, or live tools', async openKind => {
   const clock = testClock();
   vi.spyOn(Date, 'now').mockImplementation(() => clock().getTime());
-  const control = createSession();
-  const moved = createSession();
+  const control = (await createSession());
+  const moved = (await createSession());
   control.attach();
   const oldRoot = moved.attach();
   for (const session of [control, moved]) {
@@ -102,7 +95,7 @@ it.each(['text', 'thinking'] as const)('reattaches during %s without losing open
     await session.emit({ type: 'text_delta', text: 'Final answer.' } as Omit<ProviderExecutionEvent, 'scope'>);
     await session.finish();
   }
-  const projection = (session: ReturnType<typeof createSession>) => session.state.messages.map(({ content, contentBlocks, toolCalls }) => ({ content, contentBlocks, toolCalls }));
+  const projection = (session: Awaited<ReturnType<typeof createSession>>) => session.state.messages.map(({ content, contentBlocks, toolCalls }) => ({ content, contentBlocks, toolCalls }));
   expect(projection(moved)).toEqual(projection(control));
   expect(moved.state.messages[0].contentBlocks).toEqual([
     { type: openKind, content: 'Before detached. Reattached.', ...(openKind === 'thinking' ? { durationSeconds: 2 } : {}) },
@@ -120,7 +113,7 @@ it.each(['text', 'thinking'] as const)('reattaches during %s without losing open
 });
 
 it('reattaches a reserved background response before its buffered output completes', async () => {
-  const session = createSession();
+  const session = (await createSession());
   session.attach();
   const scope = { kind: 'background' as const, sessionInstanceId: 'native', turnId: 'background', sequence: 1 };
   session.background.reserve('binding', 'background');
@@ -139,7 +132,7 @@ it('reattaches a reserved background response before its buffered output complet
 });
 
 it('keeps one live card when a buffered subagent resolves after reattachment', async () => {
-  const session = createSession();
+  const session = (await createSession());
   const previous = session.attach();
   session.response.start();
   await session.stream.handleStreamChunk({ type: 'tool_use', id: 'task', name: TOOL_SUBAGENT, input: { description: 'Research' } }, session.response.active!);
@@ -173,9 +166,9 @@ it.each<[string, ProviderCapabilities['providerId'], Pick<ChatMessage, 'toolCall
     ],
     contentBlocks: [{ type: 'tool_use', toolId: 'spawn' }, { type: 'tool_use', toolId: 'wait' }],
   }],
-])('renders %s the same on reattach as on first hydration', (_name, providerId, response) => {
+])('renders %s the same on reattach as on first hydration', async (_name, providerId, response) => {
   const clock = testClock();
-  const session = createSession(providerId);
+  const session = (await createSession(providerId));
   session.state.messages = [
     { id: 'prompt', role: 'user', content: 'Go.', timestamp: clock().getTime() },
     { id: 'answer', role: 'assistant', content: '', timestamp: clock().getTime(), durationSeconds: 1,
@@ -193,7 +186,7 @@ it.each<[string, ProviderCapabilities['providerId'], Pick<ChatMessage, 'toolCall
 
 it('keeps a lifecycle update for an unrendered earlier turn out of the streaming reply', async () => {
   const clock = testClock();
-  const session = createSession('codex');
+  const session = (await createSession('codex'));
   const filler = Array.from({ length: 25 }, (_, index): ChatMessage[] => [
     { id: `u${index}`, role: 'user', content: `Prompt ${index}`, timestamp: clock().getTime() },
     { id: `a${index}`, role: 'assistant', content: `Answer ${index}`, timestamp: clock().getTime(), durationSeconds: 1 },
@@ -222,7 +215,7 @@ it('keeps a lifecycle update for an unrendered earlier turn out of the streaming
 });
 
 it('keeps a background task from a settled response connected across reattachment', async () => {
-  const session = createSession();
+  const session = (await createSession());
   const previous = session.attach();
   session.response.start();
   await session.stream.handleStreamChunk({ type: 'tool_use', id: 'task', name: TOOL_SUBAGENT,

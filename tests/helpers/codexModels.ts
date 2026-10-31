@@ -1,9 +1,11 @@
+import type { CodexDiscoveredModel } from '@/providers/codex/models';
+
 export { CODEX_SPARK_MODEL } from '@/providers/codex/types/models';
 
 export const TEST_CODEX_MODEL = 'gpt-5.5';
 export const TEST_CODEX_MODEL_LABEL = 'GPT-5.5';
 
-export const TEST_CODEX_CATALOG = [
+export const TEST_CODEX_CATALOG: CodexDiscoveredModel[] = [
   {
     model: TEST_CODEX_MODEL,
     displayName: TEST_CODEX_MODEL_LABEL,

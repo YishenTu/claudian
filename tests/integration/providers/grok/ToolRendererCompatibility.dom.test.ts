@@ -2,7 +2,8 @@
 import '@/providers';
 
 import { axe } from '@test/helpers/accessibility';
-import { runtimeHostFor } from '@test/helpers/providerRuntimeHost';
+import { createChatFeatureHost } from '@test/helpers/features/chat/ChatFeatureHostFixture';
+import { createProviderHostFixture } from '@test/helpers/providerRuntimeHost';
 import { parseGrokHistoryContent } from '@test/helpers/providers/grokHistory';
 import { writeGrokCatalog } from '@test/helpers/providers/grokSettings';
 import { testDate } from '@test/helpers/testClock';
@@ -41,11 +42,8 @@ let liveEvents: ProviderExecutionEvent[] = [];
 /** Native `session/update` payloads for one tool call, as Grok 1.0.46 emits them (paths sanitized). */
 type NativeToolUpdates = Array<Record<string, unknown>>;
 
-function createGrokHost(): ProviderHost {
-  const host = {
-    getResolvedProviderCliPath: async () => 'grok',
-    settings: { model: 'grok/grok-4', providerConfigs: { grok: { enabled: true, visibleModels: ['grok-4'] } } },
-  } as unknown as ProviderHost;
+async function createGrokHost(): Promise<ProviderHost> {
+  const host = (await createProviderHostFixture({ settings: { model: 'grok/grok-4', providerConfigs: { grok: { enabled: true, visibleModels: ['grok-4'] } } }, overrides: { getResolvedProviderCliPath: async () => 'grok' } })).host;
   writeGrokCatalog(host.settings, {
     defaultModelId: 'grok-4', fingerprint: 'fixture', refreshedAt: 1,
     models: [{ rawId: 'grok-4', displayName: 'Grok 4', supportsReasoning: false, reasoningEfforts: [] }],
@@ -79,7 +77,7 @@ async function restoreLive(updates: NativeToolUpdates): Promise<ToolCallInfo> {
     nativePersistence: 'enabled',
     workingDirectory: '/workspace',
   };
-  const session = new GrokExecutionBackend(runtimeHostFor(createGrokHost(), 'grok'), { nativeFactory: { create: () => native } })
+  const session = new GrokExecutionBackend((await createGrokHost()).getRuntimeHost('grok'), { nativeFactory: { create: () => native } })
     .createSession(config);
   const output: ProviderExecutionEvent[] = [];
   try {
@@ -100,8 +98,8 @@ async function restoreLive(updates: NativeToolUpdates): Promise<ToolCallInfo> {
   const messages = document.body.createDiv();
   const state = new ChatState();
   // Vault refresh after file edits is an Obsidian boundary; this stub keeps it inert.
-  const vault = { adapter: { basePath: '/workspace', list: async () => ({ files: [], folders: [] }) }, getAbstractFileByPath: () => null };
-  const plugin = { app: { vault }, settings: { mediaFolder: '', showMessageTimestamps: false } } as any;
+  const plugin = await createChatFeatureHost({ settings: { mediaFolder: '', showMessageTimestamps: false } });
+  vi.spyOn(plugin.app.vault.adapter, 'list').mockImplementation(async () => ({ files: [], folders: [] }));
   const renderer = new MessageRenderer(plugin, new Component(), messages);
   const stream = new StreamController({ plugin, state, renderer,
     subagentManager: new SubagentManager(() => undefined), getMessagesEl: () => messages, updateQueueIndicator: () => undefined,

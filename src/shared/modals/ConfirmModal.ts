@@ -1,4 +1,6 @@
-import { type App,Modal, Setting } from 'obsidian';
+import { type App, Setting } from 'obsidian';
+
+import { AccessibleModal } from '@/shared/modals/AccessibleModal';
 
 import { t } from '../../i18n/i18n';
 
@@ -19,7 +21,7 @@ export function confirm(
   });
 }
 
-class ConfirmModal extends Modal {
+class ConfirmModal extends AccessibleModal {
   private message: string;
   private resolve: (confirmed: boolean) => void;
   private resolved = false;

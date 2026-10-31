@@ -7,7 +7,7 @@ import { pathToFileURL } from 'node:url';
 import { selectCiTests, selectRelatedCiTests } from './ciTestSelection.mjs';
 
 const prompt = 'tests/unit/core/prompt/mainAgent.systemPrompt.test.ts';
-const panel = 'tests/unit/features/chat/ClaudianView.test.ts';
+const panel = 'tests/integration/features/chat/ClaudianView.test.ts';
 const native = 'tests/integration/core/process/ManagedStdioProcess.test.ts';
 const docs = 'tests/unit/docs/Documentation.test.ts';
 const select = (paths, relatedTests = [], eventName = 'pull_request') => selectCiTests({
@@ -37,6 +37,10 @@ test('shared dependencies retain affected native consumers', () => {
 
 test('real subprocess consumers run on native platforms when affected', () => {
   for (const consumer of [
+    'tests/integration/providers/opencode/ToolRendererCompatibility.dom.test.ts',
+    'tests/integration/providers/opencode/app/OpencodeCommandLoader.test.ts',
+    'tests/integration/providers/grok/app/GrokWorkspaceServices.test.ts',
+    'tests/integration/features/chat/tabs/forking/ForkSource.opencode-v2.test.ts',
     'tests/integration/core/process/ProcessProbe.test.ts',
     'tests/integration/core/process/ManagedStdioProcess.test.ts',
     'tests/integration/core/process/cliBinaryLocator.test.ts',
@@ -64,7 +68,7 @@ test('platform-sensitive unit tests retain native checks for both direct and sou
     ['src/core/process/env.ts', 'tests/unit/core/process/env.test.ts'],
     ['src/core/storage/VaultFileAdapter.ts', 'tests/unit/core/storage/VaultFileAdapter.test.ts'],
     ['src/providers/codex/history/CodexHistoryStore.ts', 'tests/unit/providers/codex/history/CodexHistoryStore.test.ts'],
-    ['src/providers/deepseek/ui/DeepSeekSettingsTab.ts', 'tests/unit/providers/deepseek/ui/DeepSeekSettingsTab.test.ts'],
+    ['src/providers/deepseek/ui/DeepSeekSettingsTab.ts', 'tests/integration/providers/deepseek/ui/DeepSeekSettingsTab.dom.test.ts'],
   ]) {
     for (const eventName of ['pull_request', 'push']) {
       const result = select([source], [consumer], eventName);
@@ -84,18 +88,34 @@ test('real dependency discovery retains native launch checks for shared process 
     'tests/integration/core/process/ProcessProbe.test.ts',
     'tests/integration/core/process/cliBinaryLocator.test.ts',
     'tests/integration/core/process/loginShellPath.test.ts',
+    'tests/integration/features/chat/tabs/forking/ForkSource.opencode-v2.test.ts',
     'tests/integration/features/chat/tabs/forking/ForkSource.opencode.test.ts',
+    'tests/integration/providers/claude/execution/ClaudeExecutionBackend.test.ts',
+    'tests/integration/providers/codex/execution/CodexExecutionBackend.protocol.test.ts',
+    'tests/integration/providers/codex/execution/CodexExecutionBackend.test.ts',
+    'tests/integration/providers/codex/runtime/CodexSharedRuntime.test.ts',
     'tests/integration/providers/deepseek/app/DeepSeekWorkspaceServices.test.ts',
+    'tests/integration/providers/deepseek/runtime/DeepSeekCLIResolver.test.ts',
     'tests/integration/providers/deepseek/runtime/DeepSeekHostProcess.test.ts',
+    'tests/integration/providers/deepseek/ui/DeepSeekSettingsTab.dom.test.ts',
+    'tests/integration/providers/grok/app/GrokWorkspaceServices.test.ts',
+    'tests/integration/providers/opencode/ToolRendererCompatibility.dom.test.ts',
+    'tests/integration/providers/opencode/app/OpencodeCommandLoader.test.ts',
+    'tests/integration/providers/opencode/execution/OpencodeExecutionBackend.native.test.ts',
+    'tests/integration/providers/opencode/execution/OpencodeHTTPExecution.background.test.ts',
+    'tests/integration/providers/opencode/execution/OpencodeHTTPExecution.compaction.test.ts',
+    'tests/integration/providers/opencode/execution/OpencodeHTTPExecution.interactions.test.ts',
+    'tests/integration/providers/opencode/execution/OpencodeHTTPExecution.profiles.test.ts',
+    'tests/integration/providers/opencode/execution/OpencodeHTTPExecution.prompts.test.ts',
+    'tests/integration/providers/opencode/execution/OpencodeHTTPExecution.steering.test.ts',
     'tests/integration/providers/opencode/execution/OpencodeHTTPExecution.test.ts',
+    'tests/integration/providers/opencode/http/OpencodeSharedServer.ephemeral.test.ts',
+    'tests/integration/providers/opencode/http/OpencodeSharedServer.history.test.ts',
     'tests/integration/providers/opencode/http/OpencodeSharedServer.test.ts',
+    'tests/integration/providers/opencode/http/OpencodeSharedServer.transitions.test.ts',
     'tests/integration/providers/pi/execution/PiExecutionKernel.test.ts',
     'tests/integration/providers/pi/execution/PiRecoveryContext.test.ts',
-    'tests/unit/providers/claude/execution/ClaudeExecutionBackend.test.ts',
-    'tests/unit/providers/codex/execution/CodexExecutionBackend.test.ts',
-    'tests/unit/providers/deepseek/runtime/DeepSeekCLIResolver.test.ts',
     'tests/unit/providers/deepseek/runtime/DeepSeekInstallation.test.ts',
-    'tests/unit/providers/deepseek/ui/DeepSeekSettingsTab.test.ts',
   ]);
   assert.equal(result.piWindows, true);
   assert.ok(result.testFiles.includes('tests/unit/core/process/windowsCmdShim.test.ts'));
@@ -115,8 +135,16 @@ test('changed tests run directly, while removed tests are omitted', () => {
   assert.deepEqual(result.crossPlatformTests, []);
 });
 
-test('shared test helpers use their graph consumers', () => {
-  assert.deepEqual(select(['tests/helpers/testClock.ts'], [native]).testFiles, [native]);
+test('moved skill sync retains native verification', () => {
+  const successor = 'tests/integration/features/agent-skills/ClaudeSkillSync.test.ts';
+  assert.deepEqual(select([successor]).crossPlatformTests, [successor]);
+});
+
+test('shared test helpers use their graph consumers and validate declaration placement', () => {
+  const result = select(['tests/helpers/testClock.ts'], [native]);
+  assert.deepEqual(result.testFiles, [native]);
+  assert.ok(result.scriptTests.includes('scripts/testDeclarations.test.mjs'));
+  assert.equal(select(['tests/helpers/testClock.ts'], [prompt]).crossPlatform, false);
 });
 
 test('filesystem-read documentation, styles, and captured fixtures retain their consumers', () => {
@@ -127,25 +155,60 @@ test('filesystem-read documentation, styles, and captured fixtures retain their 
   for (const consumer of [
     'tests/unit/style/components/zen-mode.test.ts',
     'tests/unit/style/settings/base.test.ts',
-    'tests/unit/features/chat/navigation/NavigationSidebar.dom.test.ts',
+    'tests/integration/features/chat/navigation/NavigationSidebar.dom.test.ts',
   ]) {
     assert.ok(select(['src/style/components/zen-mode.css']).testFiles.includes(consumer), consumer);
   }
   const fixture = select(['tests/fixtures/providers/grok/history/example.json']);
   assert.ok(fixture.testFiles.includes('tests/unit/providers/grok/history/GrokHistoryStore.test.ts'));
+  assert.ok(fixture.testFiles.includes('tests/integration/providers/grok/history/GrokConversationHistoryService.test.ts'));
   for (const status of ['A', 'M']) {
     for (const event of ['pull_request', 'push']) {
       for (const [file, consumers] of [
+        ['tests/helpers/providers/opencode/OpencodeNativePeer.cjs', [
+          'tests/integration/providers/opencode/ToolRendererCompatibility.dom.test.ts',
+          'tests/integration/providers/opencode/app/OpencodeCommandLoader.test.ts',
+          'tests/integration/features/chat/tabs/forking/ForkSource.opencode.test.ts',
+          'tests/integration/features/chat/tabs/forking/ForkSource.opencode-v2.test.ts',
+          'tests/integration/providers/opencode/execution/OpencodeExecutionBackend.native.test.ts',
+          'tests/integration/providers/opencode/execution/OpencodeHTTPExecution.background.test.ts',
+          'tests/integration/providers/opencode/execution/OpencodeHTTPExecution.compaction.test.ts',
+          'tests/integration/providers/opencode/execution/OpencodeHTTPExecution.interactions.test.ts',
+          'tests/integration/providers/opencode/execution/OpencodeHTTPExecution.profiles.test.ts',
+          'tests/integration/providers/opencode/execution/OpencodeHTTPExecution.prompts.test.ts',
+          'tests/integration/providers/opencode/execution/OpencodeHTTPExecution.steering.test.ts',
+          'tests/integration/providers/opencode/execution/OpencodeHTTPExecution.test.ts',
+          'tests/integration/providers/opencode/history/OpencodeConversationHistoryService.test.ts',
+          'tests/integration/providers/opencode/history/OpencodeInvalidatedHistory.test.ts',
+          'tests/integration/providers/opencode/http/OpencodeHTTPHistory.test.ts',
+          'tests/integration/providers/opencode/http/OpencodeProcessRetention.test.ts',
+          'tests/integration/providers/opencode/http/OpencodeSharedServer.ephemeral.test.ts',
+          'tests/integration/providers/opencode/http/OpencodeSharedServer.history.test.ts',
+          'tests/integration/providers/opencode/http/OpencodeSharedServer.test.ts',
+          'tests/integration/providers/opencode/http/OpencodeSharedServer.transitions.test.ts',
+          'tests/integration/providers/opencode/metadata/OpencodeHTTPMetadataCancellation.test.ts',
+          'tests/integration/providers/opencode/metadata/OpencodeHTTPMetadataCatalog.test.ts',
+          'tests/integration/providers/opencode/metadata/OpencodeHTTPMetadataReadiness.test.ts',
+          'tests/integration/providers/opencode/metadata/OpencodeHTTPMetadataServerLifecycle.test.ts',
+          'tests/integration/providers/opencode/ui/OpencodeCommands.dom.test.ts',
+          'tests/integration/providers/opencode/ui/OpencodeModels.dom.test.ts',
+          'tests/integration/providers/opencode/ui/OpencodeSettingsTab.dom.test.ts',
+        ]],
         ['tests/fixtures/providers/grok/runtime/models-list.json', [
+          'tests/integration/providers/grok/app/GrokWorkspaceServices.test.ts',
+          'tests/integration/providers/grok/runtime/GrokModelCatalogCoordinator.test.ts',
           'tests/integration/providers/grok/runtime/GrokModels.test.ts',
           'tests/integration/providers/grok/runtime/GrokModelDiscoveryService.test.ts',
         ]],
         ['tests/fixtures/providers/grok/runtime/models-list-byok.json', [
+          'tests/integration/providers/grok/app/GrokWorkspaceServices.test.ts',
           'tests/integration/providers/grok/runtime/GrokModels.test.ts',
           'tests/integration/providers/grok/runtime/GrokModelDiscoveryService.test.ts',
         ]],
-        ['tests/fixtures/providers/grok/runtime/turn-completed.json', [
-          'tests/unit/providers/grok/execution/GrokExecutionBackend.test.ts',
+        ['tests/fixtures/providers/grok/runtime/GrokModelCatalogProcess.mjs', [
+          'tests/integration/providers/grok/app/GrokWorkspaceServices.test.ts',
+          'tests/integration/providers/grok/runtime/GrokModelCatalogCoordinator.test.ts',
+          'tests/integration/providers/grok/runtime/GrokModelDiscoveryService.test.ts',
         ]],
       ]) {
         const selected = select([{ status, path: file }], [], event);
@@ -221,7 +284,7 @@ test('script edits select their script tests without unrelated Vitest work', () 
 });
 
 test('native script regressions retain a Windows job without selecting unrelated Vitest suites', () => {
-  for (const script of ['scripts/ciTestSelection.test.mjs', 'scripts/run-tests.test.mjs']) {
+  for (const script of ['scripts/ciTestSelection.test.mjs', 'scripts/run-tests.test.mjs', 'scripts/testDeclarations.test.mjs']) {
     const result = select([script]);
     assert.deepEqual(result.scriptTests, [script]);
     assert.deepEqual(result.testFiles, []);
@@ -267,13 +330,14 @@ test('the CI entry point handles real Git ranges, renames, missing bases and rel
   const root = mkdtempSync(path.join(tmpdir(), 'claudian-ci-scope-'));
   try {
     for (const directory of ['scripts', 'src', 'tests/unit']) mkdirSync(path.join(root, directory), { recursive: true });
-    for (const file of ['ciTestSelection.mjs', 'testSuites.cjs']) copyFileSync(`scripts/${file}`, path.join(root, 'scripts', file));
+    for (const file of ['ciTestSelection.mjs', 'testSuites.cjs', 'testDeclarations.cjs']) copyFileSync(`scripts/${file}`, path.join(root, 'scripts', file));
     writeFileSync(path.join(root, 'scripts/run-vitest.js'), `require(${JSON.stringify(path.resolve('scripts/run-vitest.js'))});`);
     writeFileSync(path.join(root, 'scripts/list-related-tests.mjs'), `import ${JSON.stringify(pathToFileURL(path.resolve('scripts/list-related-tests.mjs')).href)};`);
     writeFileSync(path.join(root, 'vitest.config.mjs'), `export default { test: { globals: true, maxWorkers: 1, include: ['tests/unit/**/*.test.ts'] } };`);
     writeFileSync(path.join(root, 'src/value.ts'), 'export const value = 1;');
+    writeFileSync(path.join(root, 'src/value.css'), 'body {}');
     writeFileSync(path.join(root, 'tests/unit/types.test.ts'), "import type { value } from '../../src/value'; const example: typeof value = 1; test('type-only', () => expect(example).toBe(1));");
-    writeFileSync(path.join(root, 'tests/unit/value.test.ts'), "import { value } from '../../src/value'; test('value', () => expect(value).toBe(1));");
+    writeFileSync(path.join(root, 'tests/unit/value.test.ts'), "// @test-ci {\"native\":true,\"inputs\":[\"src/value.css\"]}\nimport { value } from '../../src/value'; test('value', () => expect(value).toBe(1));");
     writeFileSync(path.join(root, '.gitignore'), 'node_modules/\n');
     const git = (...args) => execFileSync('git', args, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
     git('init');
@@ -304,11 +368,17 @@ test('the CI entry point handles real Git ranges, renames, missing bases and rel
     git('add', '.'); git('commit', '-m', 'Rename test');
     const renamed = git('rev-parse', 'HEAD');
     assert.deepEqual(scope(renamed, { BASE_SHA: edited })['test-files'], ['tests/unit/renamed.test.ts']);
+    assert.deepEqual(scope(renamed, { BASE_SHA: edited })['cross-platform-tests'], ['tests/unit/renamed.test.ts']);
+    writeFileSync(path.join(root, 'src/value.css'), 'body { color: red }');
+    git('add', '.'); git('commit', '-m', 'Edit a non-import input');
+    const styled = git('rev-parse', 'HEAD');
+    assert.deepEqual(scope(styled, { BASE_SHA: renamed })['test-files'], ['tests/unit/renamed.test.ts']);
+    assert.deepEqual(scope(styled, { BASE_SHA: renamed })['cross-platform-tests'], ['tests/unit/renamed.test.ts']);
     rmSync(path.join(root, 'tests/unit/renamed.test.ts'));
     git('add', '.'); git('commit', '-m', 'Delete test');
     const deleted = git('rev-parse', 'HEAD');
-    assert.deepEqual(scope(deleted, { BASE_SHA: renamed })['test-files'], []);
-    assert.deepEqual(scope(deleted, { BASE_SHA: renamed })['test-shards'], ['1/1']);
+    assert.deepEqual(scope(deleted, { BASE_SHA: styled })['test-files'], []);
+    assert.deepEqual(scope(deleted, { BASE_SHA: styled })['test-shards'], ['1/1']);
     for (const overrides of [
       { BASE_SHA: 'f'.repeat(40) }, { BASE_SHA: '0'.repeat(40) }, { BASE_SHA: '' },
       { GITHUB_REF: 'refs/tags/2.3.0' },
@@ -342,7 +412,7 @@ test('local selection includes committed, staged, unstaged and untracked edits w
   const root = mkdtempSync(path.join(tmpdir(), 'claudian-local-scope-'));
   try {
     for (const directory of ['scripts', 'src', 'tests/unit']) mkdirSync(path.join(root, directory), { recursive: true });
-    for (const file of ['ciTestSelection.mjs', 'testSuites.cjs', 'run-affected-tests.mjs']) copyFileSync(`scripts/${file}`, path.join(root, 'scripts', file));
+    for (const file of ['ciTestSelection.mjs', 'testSuites.cjs', 'testDeclarations.cjs', 'run-affected-tests.mjs']) copyFileSync(`scripts/${file}`, path.join(root, 'scripts', file));
     writeFileSync(path.join(root, 'scripts/run-vitest.js'), `require(${JSON.stringify(path.resolve('scripts/run-vitest.js'))});`);
     writeFileSync(path.join(root, 'scripts/list-related-tests.mjs'), `import ${JSON.stringify(pathToFileURL(path.resolve('scripts/list-related-tests.mjs')).href)};`);
     writeFileSync(path.join(root, 'vitest.config.mjs'), `export default { test: { globals: true, maxWorkers: 1, include: ['tests/unit/**/*.test.ts'] } };`);

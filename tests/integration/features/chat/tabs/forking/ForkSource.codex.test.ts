@@ -3,6 +3,7 @@ import * as path from 'node:path';
 
 vi.mock('cross-spawn', () => ({ default: vi.fn() }));
 import { createForkTestEnvironment, type ForkTestEnvironment } from '@test/helpers/features/chat/ProviderForkTestHarness';
+import { codexForkRequest, codexRevertRequest,codexTextTurnRequest, codexThreadId } from '@test/helpers/providers/codex/CodexRequests';
 import { createNativeRPCProcess } from '@test/helpers/providers/NativeRPCTestProcess';
 import spawn from 'cross-spawn';
 
@@ -23,7 +24,7 @@ afterEach(async () => { await Promise.all(runtimes.splice(0).map(runtime => runt
 function createNativeCodex(env: ForkTestEnvironment) {
   const threads = new Map<string, string[]>([['codex-source', []]]);
   const prompts: Array<{ threadId: string; context: string[] }> = [];
-  const operations: Array<{ method: string; params: Record<string, any> }> = [];
+  const operations: Array<{ method: string; params: Record<string, unknown> }> = [];
   const sourceFile = path.join(env.root, 'codex-source.jsonl');
   let ordinal = 0;
   const result = (id: string) => ({
@@ -36,22 +37,24 @@ function createNativeCodex(env: ForkTestEnvironment) {
     if (method === 'plugin/reconcile' || method === 'thread/unsubscribe') return {};
     if (method === 'thread/start') return result('codex-source');
     if (method === 'thread/fork') {
-      const turns = threads.get(params.threadId)!;
-      const last = params.lastTurnId === undefined ? turns.length - 1 : turns.indexOf(params.lastTurnId);
-      if (last < 0) throw new Error(`Unknown fork turn: ${params.lastTurnId}`);
+      const request = codexForkRequest(params);
+      const turns = threads.get(request.threadId)!;
+      const last = request.lastTurnId === undefined ? turns.length - 1 : turns.indexOf(request.lastTurnId);
+      if (last < 0) throw new Error(`Unknown fork turn: ${request.lastTurnId}`);
       threads.set('codex-child', turns.slice(0, last + 1));
       return result('codex-child');
     }
-    if (method === 'thread/resume') return result(params.threadId);
+    if (method === 'thread/resume') return result(codexThreadId(params));
     if (method === 'thread/revert') {
-      const turns = threads.get(params.threadId)!;
-      turns.splice(turns.indexOf(params.beforeTurnId));
-      return result(params.threadId);
+      const request = codexRevertRequest(params);
+      const turns = threads.get(request.threadId)!;
+      turns.splice(turns.indexOf(request.beforeTurnId));
+      return result(request.threadId);
     }
     if (method === 'turn/start') {
       const id = `codex-turn-${++ordinal}`;
       const itemId = `msg_codex-${ordinal}`;
-      const threadId = params.threadId as string;
+      const { threadId, input } = codexTextTurnRequest(params);
       const turns = threads.get(threadId)!;
       prompts.push({ threadId, context: [...turns] });
       turns.push(id);
@@ -59,7 +62,7 @@ function createNativeCodex(env: ForkTestEnvironment) {
         const records = [
           { type: 'event_msg', payload: { type: 'task_started', turn_id: id } },
           { type: 'turn_context', payload: { turn_id: id, model: 'gpt-5' } },
-          { type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: params.input[0].text }] } },
+          { type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: input[0].text }] } },
           { type: 'response_item', payload: { type: 'message', id: itemId, role: 'assistant', content: [{ type: 'output_text', text: `Reply ${ordinal}` }] } },
           { type: 'event_msg', payload: { type: 'task_complete', turn_id: id } },
         ];

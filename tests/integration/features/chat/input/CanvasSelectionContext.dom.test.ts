@@ -12,13 +12,6 @@ import { ComposerContextTray } from '@/features/chat/composer/ComposerContextTra
 import { CanvasSelectionController } from '@/features/chat/input/CanvasSelectionController';
 import { ComposerSelections } from '@/features/chat/input/ComposerSelections';
 
-Object.assign(HTMLElement.prototype, {
-  addClass(this: HTMLElement, ...names: string[]) { this.classList.add(...names); },
-  removeClass(this: HTMLElement, ...names: string[]) { this.classList.remove(...names); },
-  toggleClass(this: HTMLElement, name: string, enabled: boolean) { this.classList.toggle(name, enabled); },
-  empty(this: HTMLElement) { this.replaceChildren(); },
-});
-
 let visibility: HTMLStyleElement;
 beforeEach(() => {
   visibility = document.head.appendChild(document.createElement('style'));
@@ -55,7 +48,7 @@ it.each([
   const idle = { start() {}, stop() {}, async poll() {}, clear() {}, getContext: () => null };
   const selections = new ComposerSelections({ canvas, editor: idle, browser: idle });
   const native = createHarness();
-  const fixture = createFixture({ selections, getInputEl: () => input, getExecutionCoordinator: () => native.coordinator });
+  const fixture = (await createFixture({ selections, getInputEl: () => input, getExecutionCoordinator: () => native.coordinator }));
   try {
     await native.coordinator.bindConversation({ conversationId: 'conversation-1', providerId: 'claude' });
     canvas.poll();

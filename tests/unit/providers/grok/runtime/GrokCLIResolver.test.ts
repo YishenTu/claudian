@@ -2,17 +2,11 @@ import * as fs from 'fs';
 import * as path from 'path';
 import type { Mock } from 'vitest';
 
+import { getInstallationKey } from '@/core/device/InstallationKey';
 import { GrokCLIResolver } from '@/providers/grok/runtime/GrokCLIResolver';
-
-
 
 vi.mock('fs');
 const mockedStat = fs.statSync as Mock;
-
-vi.mock('@/core/device/InstallationKey', async () => ({
-  ...(await vi.importActual<typeof import('@/core/device/InstallationKey')>('@/core/device/InstallationKey')),
-  getInstallationKey: () => 'current-host',
-}));
 
 describe('GrokCLIResolver', () => {
   beforeEach(() => {
@@ -31,7 +25,7 @@ describe('GrokCLIResolver', () => {
     expect(new GrokCLIResolver().resolveFromSettings({
       providerConfigs: { grok: {
         cliPathsByHost: {
-          'current-host': '/current/grok',
+          [getInstallationKey()]: '/current/grok',
           'other-host': '/other/grok',
         },
         cliPath: '/legacy/grok',
@@ -72,7 +66,7 @@ describe('GrokCLIResolver', () => {
     const settings = {
       providerConfigs: {
         grok: {
-          cliPathsByHost: { 'current-host': '/configured/grok' },
+          cliPathsByHost: { [getInstallationKey()]: '/configured/grok' },
         },
       },
     };

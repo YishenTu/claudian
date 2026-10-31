@@ -1,3 +1,4 @@
+// @test-ci {"native":true,"inputs":["tests/fixtures/providers/deepseek/runtime/**"]}
 import { realpathSync } from 'node:fs';
 import { access, chmod, copyFile, link, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -5,6 +6,7 @@ import { dirname, join, resolve } from 'node:path';
 import type { Writable } from 'node:stream';
 import { pathToFileURL } from 'node:url';
 
+import type { LaunchPatchEntry } from '@test/helpers/deepseek/LaunchPatch';
 import { NativePeer } from '@test/helpers/deepseek/NativePeer';
 import { testDate } from '@test/helpers/testClock';
 
@@ -165,8 +167,8 @@ describe('native Host process', () => {
       expect(await readdir(prompts)).toEqual([]);
       await hostProcess.writeCodeMode(true);
       expect(await readFile(join(artifactRoot(invocation), 'code-mode'), 'utf8')).toBe('both');
-      const patch = JSON.parse(await readFile(invocation.args[invocation.args.indexOf('--patch') + 1], 'utf8'));
-      const chat = patch.find((entry: { insert?: unknown }) => entry.insert).insert.find((entry: any) => entry.config?.id === 'claudian');
+      const patch: LaunchPatchEntry[] = JSON.parse(await readFile(invocation.args[invocation.args.indexOf('--patch') + 1], 'utf8'));
+      const chat = patch.find((entry) => entry.insert)!.insert!.find((entry) => entry.config?.id === 'claudian')!;
       expect(chat.config.plugins.at(-1)).toEqual({ id: 'tool-todo', name: '@deepseek-ai/dsh-tool-todo' });
     } finally { await hostProcess.dispose(); }
     await expectGone(invocation);

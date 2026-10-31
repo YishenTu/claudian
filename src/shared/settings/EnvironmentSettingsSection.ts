@@ -1,4 +1,6 @@
-import { Notice, Setting } from 'obsidian';
+import { Notice } from 'obsidian';
+
+import { AccessibleSetting } from '@/shared/settings/AccessibleSetting';
 
 import { getEnvironmentReviewKeysForScope } from '../../core/providers/providerEnvironment';
 import type { ProviderHost } from '../../core/providers/ProviderHost';
@@ -32,7 +34,7 @@ export function renderEnvironmentSettingsSection(
   } = options;
 
   if (heading) {
-    new Setting(container).setName(heading).setHeading();
+    new AccessibleSetting(container).setName(heading).setHeading();
   }
 
   const refreshInstallations = (): void => {
@@ -56,7 +58,7 @@ export function renderEnvironmentSettingsSection(
     reviewEl.toggleClass('claudian-hidden', false);
   };
 
-  new Setting(container)
+  new AccessibleSetting(container)
     .setName(name)
     .setDesc(desc)
     .setClass('claudian-settings-textarea')

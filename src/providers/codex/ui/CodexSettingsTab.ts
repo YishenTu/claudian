@@ -1,9 +1,9 @@
 import * as fs from 'fs';
-import { Setting } from 'obsidian';
 
 import { normalizeConfiguredCLIPath, stripSurroundingQuotes } from '@/core/process/cliPath';
 import type { ProviderCLIResolver } from '@/core/providers/types';
 import { OPENAI_PROVIDER_ICON } from '@/shared/icons';
+import { AccessibleSetting } from '@/shared/settings/AccessibleSetting';
 import { renderCLIInstallationSetting } from '@/shared/settings/CLIInstallationSetting';
 
 import type { ProviderModelCatalog } from '../../../core/providers/models/ProviderModelCatalog';
@@ -78,7 +78,7 @@ export function createCodexSettingsTabRenderer(
       });
 
       if (isWindowsHost) {
-        new Setting(container)
+        new AccessibleSetting(container)
           .setName(t('settings.codex.installationMethod.name'))
           .setDesc(t('settings.codex.installationMethod.desc'))
           .addDropdown((dropdown) => {
@@ -199,7 +199,7 @@ export function createCodexSettingsTabRenderer(
       };
 
       if (isWindowsHost) {
-        const wslDistroSetting = new Setting(container)
+        const wslDistroSetting = new AccessibleSetting(container)
           .setName(t('settings.codex.wslDistroOverride.name'))
           .setDesc(t('settings.codex.wslDistroOverride.desc'));
 
@@ -229,11 +229,11 @@ export function createCodexSettingsTabRenderer(
 
       // --- Models ---
 
-      new Setting(container).setName(t('settings.models')).setHeading();
+      new AccessibleSetting(container).setName(t('settings.models')).setHeading();
 
       const modelPicker = renderProviderModelsSection(container, 'codex', 'Codex', codexWorkspace.modelCatalog, () => modelWarning.refresh());
 
-      new Setting(container)
+      new AccessibleSetting(container)
         .setName(t('settings.codex.ultraEffort.name'))
         .setDesc(t('settings.codex.ultraEffort.desc'))
         .addToggle(toggle => toggle
@@ -249,9 +249,9 @@ export function createCodexSettingsTabRenderer(
 
       // --- Responses ---
 
-      new Setting(container).setName(t('settings.responses')).setHeading();
+      new AccessibleSetting(container).setName(t('settings.responses')).setHeading();
 
-      new Setting(container)
+      new AccessibleSetting(container)
         .setName(t('settings.codex.responseStyle.name'))
         .setDesc(t('settings.codex.responseStyle.desc'))
         .addDropdown((dropdown) => {
@@ -270,7 +270,7 @@ export function createCodexSettingsTabRenderer(
             });
         });
 
-      new Setting(container)
+      new AccessibleSetting(container)
         .setName(t('settings.codex.responseVerbosity.name'))
         .setDesc(t('settings.codex.responseVerbosity.desc'))
         .addDropdown((dropdown) => {
@@ -294,7 +294,7 @@ export function createCodexSettingsTabRenderer(
         { value: 'none', label: t('settings.codex.reasoningSummary.off') },
       ];
 
-      new Setting(container)
+      new AccessibleSetting(container)
         .setName(t('settings.codex.reasoningSummary.name'))
         .setDesc(t('settings.codex.reasoningSummary.desc'))
         .addDropdown((dropdown) => {
@@ -314,9 +314,9 @@ export function createCodexSettingsTabRenderer(
 
       // --- Safety ---
 
-      new Setting(container).setName(t('settings.safety')).setHeading();
+      new AccessibleSetting(container).setName(t('settings.safety')).setHeading();
 
-      new Setting(container)
+      new AccessibleSetting(container)
         .setName(t('settings.codexSandbox.name'))
         .setDesc(t('settings.codexSandbox.desc'))
         .addDropdown((dropdown) => {

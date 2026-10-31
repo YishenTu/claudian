@@ -1,4 +1,5 @@
 import { NativePeer } from '@test/helpers/deepseek/NativePeer';
+import { nativeRequest } from '@test/helpers/deepseek/NativeRequest';
 import { testDate } from '@test/helpers/testClock';
 
 import { extractUserDisplayContent } from '@/core/prompt/promptContext';
@@ -31,10 +32,11 @@ beforeEach(async () => {
   peer.onCall = (method, args) => {
     if (method === 'session/projections') return { asOfSeq: 8, values: { agentPreset: 'claudian-code', modelSelection: { lastUsed: { provider: 'native', model: 'old-model' }, next: { provider: 'native', model: 'new-model' } } } };
     if (method === 'session/page') {
-      const visible = records.filter(row => row.event.seq <= args.request.throughSeq && (args.request.beforeSeq === undefined || row.event.seq < args.request.beforeSeq));
+      const { throughSeq, beforeSeq } = nativeRequest(args);
+      const visible = records.filter(row => row.event.seq <= throughSeq! && (beforeSeq === undefined || row.event.seq < beforeSeq));
       return { records: visible.slice(-4), hasMore: visible.length > 4 };
     }
-    if (method === 'session/attachment') return { attachment: { attachmentId: args.request.attachmentId, mediaType: 'image/png', name: 'pixel.png' }, data: 'aW1hZ2U=' };
+    if (method === 'session/attachment') return { attachment: { attachmentId: nativeRequest(args).attachmentId, mediaType: 'image/png', name: 'pixel.png' }, data: 'aW1hZ2U=' };
     // The shared Host baselines its roster at startup; history itself stays on cold endpoints.
     if (method === 'session/list') return { items: [] };
     throw new Error(`Forbidden history endpoint ${method}`);
@@ -50,7 +52,7 @@ it('hydrates fixed-cut native messages, images, tools and exact completed-turn c
   expect(result.messages).toHaveLength(2);
   expect(result.messages?.[0]).toMatchObject({ role: 'user', content: 'read image', userMessageId: 'u', images: [{ id: 'image', data: 'aW1hZ2U=', mediaType: 'image/png' }] });
   expect(result.messages?.[1]).toMatchObject({ role: 'assistant', content: 'checkingdone', assistantMessageId: 'deepseek:seq:7', contentBlocks: [{ type: 'thinking', content: 'thinking' }, { type: 'text', content: 'checking' }, { type: 'tool_use', toolId: 'read' }, { type: 'text', content: 'done' }], toolCalls: [{ name: 'Read', input: { file_path: 'note.md' }, result: 'note contents', resultImages: [{ kind: 'data', data: 'aW1hZ2U=', mediaType: 'image/png' }] }], turnStats: { outputTokens: 7 } });
-  expect(peer.calls.filter(c => c.method === 'session/page').every(c => c.args.request.throughSeq === 8)).toBe(true);
+  expect(peer.calls.filter(c => c.method === 'session/page').every(c => nativeRequest(c.args).throughSeq === 8)).toBe(true);
   expect(peer.calls.find(c => c.method === 'session/attachment')?.args).toEqual({ request: { sessionId: 'root', attachmentId: 'image' } });
   expect(peer.calls.some(c => c.method === 'session/create' || c.method === 'session/follow')).toBe(false);
   expect(history.buildPersistedProviderState({ ...input, messages: result.messages! })).toEqual(state);
@@ -75,7 +77,7 @@ it('defers native forks to first execution and reads only the selected source pr
   expect(fork).toMatchObject({ preset: 'claudian-code', pendingFork: { sessionId: 'root', atSeq: 7 } });
   const result = await history.hydrateConversationHistory({ ...input, sessionId: null, providerState: fork }, '/vault');
   expect(result.messages?.at(-1)?.assistantMessageId).toBe('deepseek:seq:7');
-  expect(peer.calls.filter(c => c.method === 'session/page').every(c => c.args.request.throughSeq === 7)).toBe(true);
+  expect(peer.calls.filter(c => c.method === 'session/page').every(c => nativeRequest(c.args).throughSeq === 7)).toBe(true);
   expect(peer.calls.some(c => c.method === 'session/fork')).toBe(false);
   const pendingFork = { ...input, sessionId: null, providerState: fork };
   expect(history.isPendingForkConversation(pendingFork)).toBe(true);
@@ -118,8 +120,8 @@ it.each(['direct', 'subagent', 'subagent_fork'])('hydrates %s child tools throug
   }
   const ordinary = peer.onCall;
   peer.onCall = (method, args) => {
-    if (method === 'session/projections' && args.request.sessionId === 'child') return { asOfSeq: 7, values: {} };
-    if (method === 'session/page' && args.request.address.childSessionId === 'child') return { hasMore: false, records: [
+    if (method === 'session/projections' && nativeRequest(args).sessionId === 'child') return { asOfSeq: 7, values: {} };
+    if (method === 'session/page' && nativeRequest(args).address!.childSessionId === 'child') return { hasMore: false, records: [
       wire(0, 'turn/start', { turn: 0 }), wire(1, 'tool/call', { callId: 'read', name: 'read', arguments: '{"path":"note.md"}' }),
       wire(2, 'tool/result', { message: { toolCallId: 'read', content: [{ type: 'text', text: 'note' }, { type: 'image', attachment: { attachmentId: 'child-image' } }] } }),
       wire(3, 'tool/call', { callId: 'edit', name: 'edit', arguments: '{"file_path":"note.md","old_string":"b","new_string":"B"}' }),
@@ -188,7 +190,7 @@ it.each([
     : { records: [wire(5, 'turn/start', { turn: 1 })], hasMore: false }, /invalid.*record/i],
 ])('rejects native history pages with %s', async (_case, page, error) => {
   const ordinary = peer.onCall;
-  peer.onCall = (method, args) => method === 'session/page' ? page(args.request) : ordinary(method, args);
+  peer.onCall = (method, args) => method === 'session/page' ? page(nativeRequest(args)) : ordinary(method, args);
   await expect(history.hydrateConversationHistory(input, '/vault')).rejects.toThrow(error);
 });
 

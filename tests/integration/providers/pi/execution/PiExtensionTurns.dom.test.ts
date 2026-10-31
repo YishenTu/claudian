@@ -1,16 +1,15 @@
 /** @vitest-environment jsdom */
 import '@/providers';
 
+import { createChatFeatureHost } from '@test/helpers/features/chat/ChatFeatureHostFixture';
 import { createProjectsFake } from '@test/helpers/features/chat/ProjectsFake';
-import { installSessionRuntimePool } from '@test/helpers/features/chat/SessionRuntimePoolHarness';
-import { runtimeHostFor } from '@test/helpers/providerRuntimeHost';
+import { createSessionRuntimePool } from '@test/helpers/features/chat/SessionRuntimePoolHarness';
 import { waitFor, within } from '@testing-library/dom';
 import { App, Component, MarkdownRenderer } from 'obsidian';
 
-import { ProviderExecutionLifecycleRegistry } from '@/core/execution';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import type { ClaudianSettings, Conversation } from '@/core/types';
-import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
+import { SessionMessagingService } from '@/features/chat/session-messaging/SessionMessagingService';
 import { activateTab, destroyTab } from '@/features/chat/tabs/TabLifecycle';
 import { createTabRuntime } from '@/features/chat/tabs/TabRuntimeFactory';
 import { PiExecutionBackend, type PiExecutionKernel, type PiExecutionKernelCallbacks } from '@/providers/pi/execution';
@@ -118,7 +117,6 @@ async function createPiView() {
   Object.assign(app.vault.adapter, { basePath: '/vault' });
   Object.assign(app.vault, { on: () => ({}), offref() {} });
   Object.assign(app.workspace, { getActiveViewOfType: () => null });
-  const lifecycleRegistry = new ProviderExecutionLifecycleRegistry();
   const settings = {
     model: MODEL, effortLevel: 'off', permissionMode: 'normal',
     enableAutoTitleGeneration: false, excludedTags: [], mediaFolder: '', systemPrompt: '', userName: '',
@@ -130,17 +128,35 @@ async function createPiView() {
       enabled: true,
       visibleModels: [MODEL],
     } },
-  } as unknown as ClaudianSettings;
+  } satisfies Partial<ClaudianSettings>;
   const conversation = {
     id: 'conversation-1', providerId: 'pi', selectedModel: MODEL, messages: [],
-  } as unknown as Conversation;
-  const providerHost = {
-    app, settings, executionLifecycleRegistry: lifecycleRegistry,
-    getResolvedProviderCliPath: async () => '/bin/pi',
-    getActiveEnvironmentVariables: () => '',
-  };
+    title: 'Pi extension', createdAt: 1, lastActivityAt: 1, sessionId: null,
+  } satisfies Conversation;
+  const pool = createSessionRuntimePool(() => plugin);
+  const messaging = new SessionMessagingService({ getHost: () => plugin, getActiveConversationId: () => conversation.id, refreshModelControls: () => undefined });
+  const plugin = await createChatFeatureHost({
+    sessionRuntimes: pool,
+    bindSessionTools: id => messaging.bindSessionTools(id),
+    app, settings,
+    executionPersistence: {
+      registerExecutionBinding() {}, releaseExecutionBinding() {},
+      assertConversationExecutionAuthority: async () => {},
+      persistExecutionSnapshot: async () => true,
+      recordConversationActivity: async () => {},
+    },
+    getConversationSummary: () => conversation,
+    projects: createProjectsFake(),
+    getConversationSync: () => conversation,
+    getConversationById: async () => conversation,
+    getConversationList: () => [{ ...conversation, messageCount: 0, preview: '' }],
+    renameConversation: async () => {},
+    updateConversation: async () => {},
+    chatModelSelection: { beginIntent: () => 1, commitIntent: async () => true },
+  });
+  vi.spyOn(plugin.providerHost, 'getResolvedProviderCliPath').mockResolvedValue('/bin/pi');
   const kernels: ScriptedPiKernel[] = [];
-  const backend = new PiExecutionBackend(runtimeHostFor(providerHost, 'pi'), {
+  const backend = new PiExecutionBackend(plugin.providerHost.getRuntimeHost('pi'), {
     createKernel: (spec, callbacks) => {
       const kernel = new ScriptedPiKernel(spec, callbacks);
       kernels.push(kernel);
@@ -148,27 +164,6 @@ async function createPiView() {
     },
   });
   vi.spyOn(ProviderRegistry, 'createExecutionBackend').mockReturnValue(backend);
-  const plugin = {
-    app, settings, providerHost,
-    executionPersistence: {
-      registerExecutionBinding() {}, releaseExecutionBinding() {},
-      assertConversationExecutionAuthority: async () => {},
-      persistExecutionSnapshot: async () => true,
-      recordConversationActivity: async () => {},
-    },
-    getCommittedSettings: () => settings,
-    getActiveEnvironmentVariables: () => '',
-    getConversationSummary: () => conversation,
-    projects: createProjectsFake(),
-    getConversationSync: () => conversation,
-    getConversationById: async () => conversation,
-    getConversationList: () => [conversation],
-    renameConversation: async () => {},
-    updateConversation: async () => {},
-    mutateSettings: async (mutate: (settings: ClaudianSettings) => void) => mutate(settings),
-    chatModelSelection: { beginIntent: () => 1, commitIntent: async () => true },
-  } as unknown as ChatFeatureHost;
-  if (!plugin.sessionRuntimes) installSessionRuntimePool(plugin);
   const tab = await createTabRuntime({
     plugin, conversation, component: new Component(),
     containerEl: document.body.createDiv(),
@@ -182,7 +177,7 @@ async function createPiView() {
   activateTab(tab);
   return {
     tab, kernels,
-    dispose: async () => { await destroyTab(tab); await lifecycleRegistry.dispose(); },
+    dispose: async () => { await destroyTab(tab); await messaging.dispose(); await plugin.providerHost.executionLifecycleRegistry.dispose(); },
   };
 }
 

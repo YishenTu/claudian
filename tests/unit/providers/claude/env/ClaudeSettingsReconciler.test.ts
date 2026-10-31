@@ -1,6 +1,7 @@
 import '@/providers';
 
 import { getInstallationKey } from '@/core/device/InstallationKey';
+import { getProviderConfig, setProviderConfig } from '@/core/providers/providerConfig';
 import { ProviderSettingsCoordinator } from '@/core/providers/ProviderSettingsCoordinator';
 import { isVersionedRuntimeInputFingerprint } from '@/core/providers/settings/RuntimeInputFingerprint';
 import type { Conversation } from '@/core/types';
@@ -16,7 +17,7 @@ describe('claudeSettingsReconciler', () => {
     };
     claudeSettingsReconciler.reconcileModelWithEnvironment(settings);
     for (const nextEnvironment of [`${key}=/new-home`, '']) {
-      (settings.providerConfigs as any).claude.environmentVariables = nextEnvironment;
+      setProviderConfig(settings, 'claude', { ...getProviderConfig(settings, 'claude'), environmentVariables: nextEnvironment });
       expect(claudeSettingsReconciler.reconcileModelWithEnvironment(settings))
         .toEqual({ changed: true, sessionPolicy: 'invalidate' });
     }
@@ -43,8 +44,8 @@ describe('claudeSettingsReconciler', () => {
       providerConfigs: { claude: toConfig(before) },
     };
     claudeSettingsReconciler.reconcileModelWithEnvironment(settings);
-    (settings.providerConfigs as any).claude = {
-      ...(settings.providerConfigs as any).claude,
+    (settings.providerConfigs as Record<string, unknown>).claude = {
+      ...getProviderConfig(settings, 'claude'),
       ...toConfig(after),
     };
 
@@ -72,10 +73,11 @@ describe('claudeSettingsReconciler', () => {
       },
     };
     claudeSettingsReconciler.reconcileModelWithEnvironment(settings);
-    const config = (settings.providerConfigs as any).claude;
+    const config = getProviderConfig(settings, 'claude');
     const runtimeFingerprint = config.environmentHash;
     delete config.sessionEnvironmentHash;
     config.cliPath = nextCliPath;
+    setProviderConfig(settings, 'claude', config);
 
     const result = claudeSettingsReconciler.reconcileModelWithEnvironment(settings);
 

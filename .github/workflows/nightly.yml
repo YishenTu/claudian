@@ -68,13 +68,13 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-      - name: Check shared-worker state with shuffled files
+      - name: Check shared state with shuffled files and tests
         if: matrix.os == 'ubuntu-latest'
         env:
           SHUFFLE_SEED: ${{ github.run_id }}
         run: |
-          echo "Vitest file shuffle seed: $SHUFFLE_SEED"
-          npm run test:unit -- --sequence.shuffle.files --sequence.seed="$SHUFFLE_SEED"
+          echo "Vitest shuffle seed: $SHUFFLE_SEED"
+          npm run test:unit -- --sequence.shuffle --sequence.seed="$SHUFFLE_SEED"
 
       - name: Build production plugin
         if: startsWith(matrix.shard, '1/')

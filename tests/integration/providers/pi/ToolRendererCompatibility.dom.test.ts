@@ -6,7 +6,8 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 
 import { axe } from '@test/helpers/accessibility';
-import { runtimeHostFor } from '@test/helpers/providerRuntimeHost';
+import { createChatFeatureHost } from '@test/helpers/features/chat/ChatFeatureHostFixture';
+import { createProviderHostFixture } from '@test/helpers/providerRuntimeHost';
 import { testDate } from '@test/helpers/testClock';
 import { fireEvent, within } from '@testing-library/dom';
 import { Component, MarkdownRenderer } from 'obsidian';
@@ -61,11 +62,11 @@ const contentParts = (call: NativeToolCall) => [
 ];
 
 /** A chat stream over a fresh assistant message, rendering into a detached message list. */
-function createChatStream() {
+async function createChatStream() {
   const messages = document.body.createDiv();
   const state = new ChatState();
-  const vault = { adapter: { basePath: '/workspace', list: listVaultFolder }, getAbstractFileByPath: () => null };
-  const plugin = { app: { vault }, settings: { mediaFolder: '', showMessageTimestamps: false } } as any;
+  const plugin = await createChatFeatureHost({ settings: { mediaFolder: '', showMessageTimestamps: false } });
+  vi.spyOn(plugin.app.vault.adapter, 'list').mockImplementation(listVaultFolder);
   const renderer = new MessageRenderer(plugin, new Component(), messages);
   const stream = new StreamController({ plugin, state, renderer,
     subagentManager: new SubagentManager(() => undefined), getMessagesEl: () => messages, updateQueueIndicator: () => undefined,
@@ -91,7 +92,7 @@ async function restoreLiveWithCard(call: NativeToolCall, observe?: (messages: HT
     { type: 'tool_execution_end', toolCallId: 'tool', toolName: call.name, result, isError: call.isError ?? false },
   ].flatMap(event => normalizePiRPCEvent(event, normalization));
 
-  const { stream, response, messages, close } = createChatStream();
+  const { stream, response, messages, close } = (await createChatStream());
   for (const chunk of chunks) await stream.handleStreamChunk(chunk, response);
   await observe?.(messages);
   const liveCard = messages.querySelector<HTMLElement>('.claudian-write-edit-block') ?? undefined;
@@ -125,7 +126,7 @@ it.each([
   { name: 'an image-only result', content: [{ type: 'image', data: 'aGVsbG8=', mimeType: 'image/png' }], expectedImages: [{ kind: 'data', mediaType: 'image/png', data: 'aGVsbG8=' }] },
 ])('replaces live progress with $name at native completion', async ({ content, expectedImages }) => {
   const normalization = createPiEventNormalizationState();
-  const { stream, response, messages, close } = createChatStream();
+  const { stream, response, messages, close } = (await createChatStream());
   const send = async (event: Record<string, unknown>) => {
     for (const chunk of normalizePiRPCEvent(event, normalization)) await stream.handleStreamChunk(chunk, response);
   };
@@ -435,13 +436,10 @@ describe.each(['live', 'history'] as const)('%s Pi tool presentation', mode => {
 it('streams a running script\'s nested calls through the Pi session and refreshes files written before cancellation', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'pi-script-progress-'));
   const configuration = { model: 'pi:anthropic/claude-sonnet-4', reasoning: null, systemInstructions: { kind: 'main-agent' as const, instructions: 'Main Agent prompt.' } };
-  const host = {
-    getResolvedProviderCliPath: async () => process.execPath,
-    settings: { model: configuration.model, effortLevel: 'off', systemPrompt: '', userName: '',
+  const host = (await createProviderHostFixture({ settings: { model: configuration.model, effortLevel: 'off', systemPrompt: '', userName: '',
       providerConfigs: { pi: { enabled: true, visibleModels: [configuration.model],
-        discoveredModels: [{ encodedId: configuration.model, id: 'claude-sonnet-4', provider: 'anthropic', label: 'Sonnet', input: ['text'], reasoning: false, thinkingLevels: ['off'] }] } } },
-  };
-  const backend = new PiExecutionBackend(runtimeHostFor(host, 'pi'), {
+        discoveredModels: [{ encodedId: configuration.model, id: 'claude-sonnet-4', provider: 'anthropic', label: 'Sonnet', input: ['text'], reasoning: false, thinkingLevels: ['off'] }] } } }, overrides: { getResolvedProviderCliPath: async () => process.execPath } })).host;
+  const backend = new PiExecutionBackend(host.getRuntimeHost('pi'), {
     createKernel: (spec, callbacks) => new PiRPCSessionKernel({ ...spec, command: process.execPath,
       args: [path.resolve('tests/fixtures/providers/pi/PiSessionProcess.mjs'), ...spec.args],
       env: { ...spec.env, CLAUDIAN_TEST_PI_ROOT: root },
@@ -451,7 +449,7 @@ it('streams a running script\'s nested calls through the Pi session and refreshe
     lifecycle: 'ephemeral', nativePersistence: 'disabled-if-supported', workingDirectory: root,
     interactionPort: { askUserQuestion: vi.fn(), requestApproval: vi.fn(), dismissInteraction: vi.fn() },
   });
-  const { stream, response, close } = createChatStream();
+  const { stream, response, close } = (await createChatStream());
   try {
     // Captured from Pi 0.99.2: the script wrote out/new.md and is still running `sleep 2` through bash.
     const run = session.execute({ configuration, toolPolicy: { kind: 'provider-default' },
@@ -482,7 +480,7 @@ it('streams a running script\'s nested calls through the Pi session and refreshe
 });
 
 it('presents a native Pi retry as a warning rather than a blocked action', async () => {
-  const { stream, response, messages, close } = createChatStream();
+  const { stream, response, messages, close } = (await createChatStream());
   const render = vi.spyOn(MarkdownRenderer, 'render').mockImplementation(async (_app, markdown, element) => { element.textContent = markdown; });
   try {
     const state = createPiEventNormalizationState();

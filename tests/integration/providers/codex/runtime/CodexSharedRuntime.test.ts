@@ -1,176 +1,55 @@
+// @test-ci {"native":true}
 import { existsSync, readFileSync } from 'node:fs';
-import { PassThrough, Writable } from 'node:stream';
 
 import { TEST_CODEX_CATALOG, TEST_CODEX_MODEL } from '@test/helpers/codexModels';
-import { runtimeHostFor, withRuntimeHosts } from '@test/helpers/providerRuntimeHost';
+import { DesktopVault } from '@test/helpers/core/DesktopVault';
+import { createProviderHostFixture } from '@test/helpers/providerRuntimeHost';
+import { type CodexNativeRequest, type CodexNativeTestProcess as FakeProcess,CodexRuntimeHarness } from '@test/helpers/providers/codex/CodexRuntimeHarness';
 import { testClock } from '@test/helpers/testClock';
+import spawn from 'cross-spawn';
 
 import type { ProviderExecutionEvent, ProviderExecutionRequest, ProviderSessionConfig, ProviderSessionToolPort, ProviderToolPolicy } from '@/core/execution';
-import { ProviderExecutionLifecycleRegistry } from '@/core/execution/ProviderExecutionLifecycleRegistry';
 import type { ProviderHost } from '@/core/providers/ProviderHost';
 import type { ProviderRuntimeHost } from '@/core/providers/ProviderRuntimeHost';
 import { createCodexWorkspaceServices } from '@/providers/codex/app/CodexWorkspaceServices';
-import { decodeCodexConfig } from '@/providers/codex/config';
+import { CodexCommandCatalog } from '@/providers/codex/commands/CodexCommandCatalog';
 import { CodexExecutionBackend } from '@/providers/codex/execution/CodexExecutionBackend';
-import { CodexAppServerProcess } from '@/providers/codex/runtime/CodexAppServerProcess';
 import { CodexAppServerRuntime } from '@/providers/codex/runtime/CodexAppServerRuntime';
-import { buildCodexLaunchSpec } from '@/providers/codex/runtime/CodexLaunchSpecBuilder';
 import { CodexModelDiscoveryService } from '@/providers/codex/runtime/CodexModelDiscoveryService';
 import { updateCodexProviderSettings } from '@/providers/codex/settings';
 import { CodexSkillListingService } from '@/providers/codex/skills/CodexSkillListingService';
 
 /** The backend resolves its runtime per session; tests pin one instance. */
 const fixedRuntime = (runtime: CodexAppServerRuntime) => (): CodexAppServerRuntime => runtime;
-const scoped = (host: ProviderHost): ProviderRuntimeHost => runtimeHostFor(host, 'codex');
+const scoped = (host: ProviderHost): ProviderRuntimeHost => host.getRuntimeHost('codex');
 const createBackend = (host: ProviderHost, runtime: CodexAppServerRuntime): CodexExecutionBackend => new CodexExecutionBackend(
   scoped(host),
   fixedRuntime(runtime),
 );
 
-const mockProcesses: FakeProcess[] = [];
-let mockLaunchKey = 'first';
-let mockAutoReconcile = false;
-let mockThreadCounter = 0;
-let mockHoldSkills = false;
-let mockRequestOverride: ((process: FakeProcess, request: any) => boolean) | null = null;
-const target = { method: 'host-native', platformFamily: 'unix', platformOs: 'linux' } as const;
+const mockNative = new CodexRuntimeHarness();
 
-vi.mock('@/providers/codex/runtime/CodexAppServerProcess', () => ({
-  CodexAppServerProcess: vi.fn().mockImplementation(function () {
-    const process = new FakeProcess();
-    mockProcesses.push(process);
-    return process;
-  }),
-}));
+vi.mock('cross-spawn', () => ({ default: vi.fn(() => mockNative.createProcess()) }));
 
-vi.mock('@/providers/codex/runtime/codexAppServerSupport', async () => ({
-  ...(await vi.importActual<typeof import('@/providers/codex/runtime/codexAppServerSupport')>('@/providers/codex/runtime/codexAppServerSupport')),
-  resolveCodexAppServerLaunchSpec: vi.fn(async (host: ProviderRuntimeHost) => buildCodexLaunchSpec({
-    codexSettings: decodeCodexConfig(host.config), resolvedCliCommand: 'codex', env: { KEY: mockLaunchKey }, hostVaultPath: '/vault',
-    executionTarget: target,
-  })),
-}));
 
-class FakeProcess {
-  readonly stdout = new PassThrough();
-  readonly stderr = new PassThrough();
-  readonly requests: Array<{ id: number; method: string; params: any }> = [];
-  readonly exits = new Set<() => void>();
-  readonly turns = new Map<string, { id: string; status: string; items: unknown[] }>();
-  readonly subscribed = new Set<string>();
-  readonly unsubscribed = new Set<string>();
-  readonly ephemeral = new Set<string>();
-  readonly parents = new Map<string, string>();
-  readonly instructions = new Map<string, string>();
-  readonly turnInstructions: string[] = [];
-  readonly turnCounts = new Map<string, number>();
-  alive = false;
-  reconciled = false;
-  readonly stdin = new Writable({
-    write: (data, _encoding, callback) => {
-      const request = JSON.parse(data.toString());
-      if (request.id !== undefined) {
-        this.requests.push(request);
-        if (mockRequestOverride?.(this, request)) { callback(); return; }
-        if (request.method === 'initialize') this.respond(request.id, {
-          userAgent: 'codex/0.160.0', codexHome: '/home/test/.codex',
-          platformFamily: 'unix', platformOs: 'linux',
-        });
-        if (request.method === 'model/list') this.respond(request.id, { data: [], nextCursor: null });
-        if (request.method === 'plugin/reconcile' && mockAutoReconcile) this.completeReconcile();
-        if (request.method === 'thread/start' || request.method === 'thread/resume') {
-          const id = request.params.threadId ?? `thread-${++mockThreadCounter}`;
-          if (!this.subscribed.has(id)) this.instructions.set(id, request.params.baseInstructions);
-          this.subscribed.add(id);
-          this.unsubscribed.delete(id);
-          if (request.params.ephemeral) this.ephemeral.add(id);
-          this.respond(request.id, { thread: { id, path: `/tmp/${id}.jsonl`, turns: [] }, sandbox: { type: 'dangerFullAccess' } });
-        }
-        if (request.method === 'turn/start') {
-          this.turnInstructions.push(this.instructions.get(request.params.threadId) ?? '');
-          const count = (this.turnCounts.get(request.params.threadId) ?? 0) + 1;
-          this.turnCounts.set(request.params.threadId, count);
-          const turn = { id: `turn-${request.params.threadId}${count === 1 ? '' : `-${count}`}`, status: 'inProgress', items: [] };
-          this.turns.set(request.params.threadId, turn);
-          this.respond(request.id, { turn });
-        }
-        if (request.method === 'turn/interrupt') {
-          this.notify('turn/completed', { threadId: request.params.threadId, turn: { id: request.params.turnId || this.turns.get(request.params.threadId)?.id || 'startup', status: 'interrupted', items: [] } });
-          this.notify('thread/status/changed', { threadId: request.params.threadId, status: { type: 'idle' } });
-          this.respond(request.id, {});
-        }
-        if (request.method === 'thread/read') {
-          if (request.params.includeTurns && this.ephemeral.has(request.params.threadId)) {
-            this.stdout.write(`${JSON.stringify({ id: request.id, error: { code: -32600, message: 'ephemeral threads do not support includeTurns' } })}\n`);
-          } else {
-            const turn = this.turns.get(request.params.threadId);
-            this.respond(request.id, { thread: { id: request.params.threadId, parentThreadId: this.parents.get(request.params.threadId) ?? null, status: { type: turn?.status === 'inProgress' ? 'active' : 'idle' }, ephemeral: this.ephemeral.has(request.params.threadId), turns: request.params.includeTurns && turn ? [turn] : [] } });
-          }
-        }
-        if (request.method === 'thread/unsubscribe') {
-          this.subscribed.delete(request.params.threadId);
-          this.unsubscribed.add(request.params.threadId);
-          this.respond(request.id, { status: 'unsubscribed' });
-        }
-        if (request.method === 'skills/list' && !mockHoldSkills) this.respond(request.id, {
-          data: [{ cwd: '/vault', skills: this.reconciled ? [{
-            name: 'remote-skill', path: '/plugins/remote/SKILL.md', scope: 'user', enabled: true,
-          }] : [] }],
-        });
-      }
-      callback();
-    },
-  });
-  start(): void { this.alive = true; }
-  isAlive(): boolean { return this.alive; }
-  getStderrSnapshot(): string { return ''; }
-  onExit(callback: () => void): void { this.exits.add(callback); }
-  offExit(callback: () => void): void { this.exits.delete(callback); }
-  async shutdown(): Promise<void> {
-    this.alive = false;
-    for (const callback of [...this.exits]) callback();
-  }
-  respond(id: number, result: unknown): void {
-    this.stdout.write(`${JSON.stringify({ id, result })}\n`);
-  }
-  notify(method: string, params: unknown = {}): void {
-    if (method === 'turn/started' || method === 'turn/completed') {
-      const event = params as { threadId: string; turn: { id: string; status: string; items: unknown[] } };
-      this.turns.set(event.threadId, event.turn);
-    }
-    const threadId = (params as { threadId?: string }).threadId;
-    if (threadId && this.unsubscribed.has(threadId) && !['thread/status/changed', 'thread/closed'].includes(method)) return;
-    this.stdout.write(`${JSON.stringify({ method, params })}\n`);
-  }
-  completeReconcile(): void {
-    this.reconciled = true;
-    for (const request of this.requests.filter(request => request.method === 'plugin/reconcile')) {
-      this.respond(request.id, {});
-    }
-  }
-}
 
 describe('Codex shared runtime', () => {
   const runtimes: CodexAppServerRuntime[] = [];
-  const plugin = { settings: { providerConfigs: { codex: { enabled: true, discoveredModels: TEST_CODEX_CATALOG } } } } as unknown as ProviderHost;
+  let plugin: ProviderHost;
   function createRuntime(warn = vi.fn()): CodexAppServerRuntime {
     const runtime = new CodexAppServerRuntime(scoped(plugin), warn);
     runtimes.push(runtime);
     return runtime;
   }
-  beforeEach(() => { mockProcesses.length = 0; mockLaunchKey = 'first'; mockAutoReconcile = false; mockThreadCounter = 0; mockHoldSkills = false; mockRequestOverride = null; });
+  beforeEach(async () => {
+    mockNative.reset();
+    plugin = (await createProviderHostFixture({ vault: sharedVault, overrides: { getResolvedProviderCliPath: async () => '/native/codex' }, settings: { providerConfigs: { codex: { enabled: true, discoveredModels: TEST_CODEX_CATALOG } } } })).host;
+  });
   afterEach(async () => {
     await Promise.all(runtimes.splice(0).map(runtime => runtime.dispose()));
   });
 
-  async function waitForRequest(method: string, processIndex = 0): Promise<FakeProcess> {
-    for (let count = 0; count < 100; count++) {
-      const process = mockProcesses[processIndex];
-      if (process?.requests.some(request => request.method === method)) return process;
-      await Promise.resolve();
-    }
-    throw new Error(`Missing ${method} on process ${processIndex}`);
-  }
+  const waitForRequest = mockNative.waitForRequest.bind(mockNative);
 
   it('shares skill and model discovery and waits for plugin readiness only for skills', async () => {
     const runtime = createRuntime();
@@ -179,22 +58,75 @@ describe('Codex shared runtime', () => {
     const listing = skills.listSkills();
     try {
       await models.discoverModels();
-      expect(mockProcesses).toHaveLength(1);
-      const process = mockProcesses[0];
+      expect(mockNative.processes).toHaveLength(1);
+      const process = mockNative.processes[0];
       expect(process.requests.filter(request => request.method === 'skills/list')).toHaveLength(0);
       process.completeReconcile();
       await expect(listing).resolves.toEqual([expect.objectContaining({ name: 'remote-skill' })]);
       await models.discoverModels();
       await skills.listSkills({ forceReload: true });
-      expect(mockProcesses).toHaveLength(1);
+      expect(mockNative.processes).toHaveLength(1);
       expect(process.requests.filter(request => request.method === 'plugin/reconcile')).toHaveLength(2);
       expect(process.isAlive()).toBe(true);
     } finally {
-      mockProcesses.forEach(process => process.completeReconcile());
+      mockNative.processes.forEach(process => process.completeReconcile());
       await listing;
       await skills.dispose();
       await runtime.dispose();
-      await Promise.all(mockProcesses.map(process => process.shutdown()));
+      mockNative.processes.forEach(process => process.exit());
+    }
+  });
+
+  it('projects native skills into read-only commands after plugin readiness', async () => {
+    const skills = new CodexSkillListingService(createRuntime());
+    const catalog = new CodexCommandCatalog(skills);
+    mockNative.requestOverride = (process, rpc) => {
+      if (rpc.method !== 'skills/list') return false;
+      process.respond(rpc.id, { data: [{ cwd: '/vault', skills: [
+        { name: 'home-skill', path: '/home/user/.agents/skills/home-skill/SKILL.md', scope: 'user', enabled: true },
+        { name: 'shared-skill', path: '/vault/.agents/skills/shared-skill/SKILL.md', scope: 'repo', enabled: true },
+        { name: 'legacy-skill', path: '/vault/.codex/skills/legacy-skill/SKILL.md', scope: 'repo', enabled: true },
+        { name: 'scope:qualified-name', path: '/vault/.agents/skills/qualified-name/SKILL.md', scope: 'repo', enabled: true },
+        { name: 'disabled-skill', path: '/vault/.agents/skills/disabled-skill/SKILL.md', scope: 'repo', enabled: false },
+      ] }] });
+      return true;
+    };
+    const listing = catalog.listDropdownEntries({ includeBuiltIns: false });
+    const process = await waitForRequest('plugin/reconcile');
+    expect(process.requests.filter(rpc => rpc.method === 'skills/list')).toHaveLength(0);
+    process.completeReconcile();
+    try {
+      const entries = await listing;
+      expect(entries.map(entry => entry.name)).toEqual([
+        'legacy-skill', 'scope:qualified-name', 'shared-skill', 'home-skill',
+      ]);
+      for (const entry of entries) {
+        expect(entry).toMatchObject({
+          scope: entry.name === 'home-skill' ? 'user' : 'vault',
+          isEditable: false, isDeletable: false, displayPrefix: '$', insertPrefix: '$',
+        });
+        expect(entry.persistenceKey).toBeUndefined();
+      }
+      expect(process.requests.filter(rpc => rpc.method === 'thread/start')).toHaveLength(0);
+    } finally {
+      await skills.dispose();
+    }
+  });
+
+  it('leaves built-in commands to the shared picker when native skills are empty', async () => {
+    mockNative.autoReconcile = true;
+    mockNative.requestOverride = (process, rpc) => {
+      if (rpc.method !== 'skills/list') return false;
+      process.respond(rpc.id, { data: [{ cwd: '/vault', skills: [] }] });
+      return true;
+    };
+    const skills = new CodexSkillListingService(createRuntime());
+    const catalog = new CodexCommandCatalog(skills);
+    try {
+      await expect(catalog.listDropdownEntries({ includeBuiltIns: true })).resolves.toEqual([]);
+      await expect(catalog.listDropdownEntries({ includeBuiltIns: false })).resolves.toEqual([]);
+    } finally {
+      await skills.dispose();
     }
   });
 
@@ -202,7 +134,8 @@ describe('Codex shared runtime', () => {
     const runtime = createRuntime();
     const skills = new CodexSkillListingService(runtime);
     const abort = new AbortController();
-    const cancelled = skills.listSkills({ signal: abort.signal });
+    const catalog = new CodexCommandCatalog(skills);
+    const cancelled = catalog.listDropdownEntries({ includeBuiltIns: false, signal: abort.signal });
     const surviving = skills.listSkills();
     const process = await waitForRequest('plugin/reconcile');
     abort.abort(new Error('Caller cancelled'));
@@ -210,7 +143,7 @@ describe('Codex shared runtime', () => {
     expect(process.isAlive()).toBe(true);
     process.completeReconcile();
     await expect(surviving).resolves.toEqual([expect.objectContaining({ name: 'remote-skill' })]);
-    expect(mockProcesses).toHaveLength(1);
+    expect(mockNative.processes).toHaveLength(1);
     await skills.dispose();
     expect(process.isAlive()).toBe(true);
   });
@@ -228,8 +161,8 @@ describe('Codex shared runtime', () => {
     await Promise.resolve();
     await skills.listSkills();
     expect(process.requests.filter(request => request.method === 'skills/list')).toHaveLength(3);
-    await process.shutdown();
-    expect(mockProcesses).toHaveLength(1);
+    process.exit();
+    expect(mockNative.processes).toHaveLength(1);
     const restarted = skills.listSkills();
     const replacement = await waitForRequest('plugin/reconcile', 1);
     replacement.completeReconcile();
@@ -240,9 +173,9 @@ describe('Codex shared runtime', () => {
   it('drains the old fingerprint while new consumers use its replacement', async () => {
     const runtime = createRuntime();
     const old = await runtime.acquire({ readiness: 'initialized' });
-    mockLaunchKey = 'second';
+    plugin.settings.providerConfigs.codex!.environmentVariables = 'KEY=second';
     const replacement = await runtime.acquire({ readiness: 'initialized' });
-    expect(mockProcesses).toHaveLength(2);
+    expect(mockNative.processes).toHaveLength(2);
     expect(old.connection.isRetired()).toBe(true);
     expect(old.connection.isAlive()).toBe(true);
     expect(replacement.connection.isAlive()).toBe(true);
@@ -278,8 +211,8 @@ describe('Codex shared runtime', () => {
     await waitForRequest('plugin/reconcile');
     await Promise.all([expect(pending).rejects.toThrow('closed'), runtime.dispose()]);
     await expect(runtime.acquire()).rejects.toThrow('disposed');
-    expect(mockProcesses).toHaveLength(1);
-    expect(mockProcesses[0].isAlive()).toBe(false);
+    expect(mockNative.processes).toHaveLength(1);
+    expect(mockNative.processes[0].isAlive()).toBe(false);
   });
 
   const config: ProviderSessionConfig = {
@@ -302,27 +235,21 @@ describe('Codex shared runtime', () => {
 
   async function sessionToolCall(process: FakeProcess, threadId: string, tool = 'claudian_list_destinations', args: unknown = {}, turnId = process.turns.get(threadId)!.id) {
     const id = `session-call-${process.requests.length}`;
-    process.stdout.write(`${JSON.stringify({ id, method: 'item/tool/call', params: {
+    return process.requestFromServer(id, 'item/tool/call', {
       threadId, turnId, callId: id, namespace: 'claudian_sessions', tool, arguments: args,
-    } })}\n`);
-    for (let count = 0; count < 1000; count++) {
-      const response = process.requests.find(response => String(response.id) === id) as any;
-      if (response) return response;
-      await Promise.resolve();
-    }
-    throw new Error('Session tool response did not arrive');
+    });
   }
 
   it.each([true, false])('registers session specs and their version only with a port (%s)', async ported => {
-    mockAutoReconcile = true;
+    mockNative.autoReconcile = true;
     const port = { list: vi.fn(async () => ({ sessions: [] })), send: vi.fn(), read: vi.fn() };
     const session = createBackend(plugin, createRuntime()).createSession({ ...config, ...(ported ? { sessionTools: port } : {}) });
     const output = collect(session.execute(request).events);
     const process = await waitForRequest('turn/start');
     const specs = process.requests.find(call => call.method === 'thread/start')!.params.dynamicTools ?? [];
-    expect(specs.filter((spec: any) => spec.namespace === 'claudian_sessions').map((spec: any) => spec.name))
+    expect(specs.filter((spec) => spec.namespace === 'claudian_sessions').map((spec) => spec.name))
       .toEqual(ported ? ['claudian_list_destinations', 'claudian_send_message', 'claudian_read_session'] : []);
-    expect(specs.every((spec: any) => !('type' in spec))).toBe(true);
+    expect(specs.every((spec) => !('type' in spec))).toBe(true);
     expect(session.getSnapshot().providerState?.sessionToolVersion).toBe(ported ? 4 : undefined);
     expect(await sessionToolCall(process, 'thread-1')).toMatchObject({ result: { success: ported } });
     expect(port.list.mock.calls).toHaveLength(ported ? 1 : 0);
@@ -332,7 +259,7 @@ describe('Codex shared runtime', () => {
   });
 
   it.each([undefined, 1])('resumes a version %s thread without attempting to replace its fixed specs', async sessionToolVersion => {
-    mockAutoReconcile = true;
+    mockNative.autoReconcile = true;
     const session = createBackend(plugin, createRuntime()).createSession({ ...config,
       sessionTools: { list: async () => ({ sessions: [] }), send: vi.fn(), read: vi.fn() },
       resumeSeed: { providerSessionId: 'existing', providerState: { threadId: 'existing', sessionToolVersion } },
@@ -351,7 +278,7 @@ describe('Codex shared runtime', () => {
   it.each<ProviderToolPolicy>([
     { kind: 'read-only' }, { kind: 'passive' },
   ])('denies session calls under $kind on fresh and resumed tool-bearing threads', async toolPolicy => {
-    mockAutoReconcile = true;
+    mockNative.autoReconcile = true;
     const port = { list: vi.fn(async () => ({ sessions: [] })), send: vi.fn(), read: vi.fn() };
     const backend = createBackend(plugin, createRuntime());
     for (const resume of [false, true]) {
@@ -373,8 +300,8 @@ describe('Codex shared runtime', () => {
   });
 
   it('returns an error result for inherited session specs on an unported fork', async () => {
-    mockAutoReconcile = true;
-    mockRequestOverride = (process, call) => {
+    mockNative.autoReconcile = true;
+    mockNative.requestOverride = (process, call) => {
       if (call.method !== 'thread/fork') return false;
       process.respond(call.id, { thread: { id: 'fork-child', turns: [] } });
       return true;
@@ -392,7 +319,7 @@ describe('Codex shared runtime', () => {
   });
 
   it.each(['interrupt', 'settlement', 'release'] as const)('revokes a deferred send on %s before port admission', async stop => {
-    mockAutoReconcile = true;
+    mockNative.autoReconcile = true;
     let signal: AbortSignal | undefined;
     let finishCreation!: () => void;
     const creation = new Promise<void>(resolve => { finishCreation = resolve; });
@@ -423,7 +350,7 @@ describe('Codex shared runtime', () => {
   });
 
   it('keeps an admitted recipient independent and rejects old calls during the next run', async () => {
-    mockAutoReconcile = true;
+    mockNative.autoReconcile = true;
     const admitted: string[] = [];
     let signal: AbortSignal | undefined;
     const port: ProviderSessionToolPort = { list: vi.fn(async () => ({ sessions: [] })), send: async (args, runSignal) => {
@@ -453,7 +380,7 @@ describe('Codex shared runtime', () => {
 
   it.each(['recovered completion', 'terminal error', 'exhausted recovery'])('rejects old calls after %s while the next start is unacknowledged', async terminal => {
     vi.useFakeTimers();
-    mockAutoReconcile = true;
+    mockNative.autoReconcile = true;
     const port = { list: vi.fn(async () => ({ sessions: [] })), send: vi.fn(), read: vi.fn() };
     const session = createBackend(plugin, createRuntime()).createSession({ ...config, sessionTools: port });
     try {
@@ -470,7 +397,7 @@ describe('Codex shared runtime', () => {
       await vi.advanceTimersByTimeAsync(5_000);
       expect((await output).at(-1)).toMatchObject({ type: terminal === 'recovered completion' ? 'turn_completed' : 'execution_error' });
       let heldStart: number | undefined;
-      mockRequestOverride = (_process, call) => {
+      mockNative.requestOverride = (_process, call) => {
         if (call.method !== 'turn/start') return false;
         heldStart = call.id;
         return true;
@@ -494,7 +421,7 @@ describe('Codex shared runtime', () => {
   });
 
   it('rejects an old native call after the thread is reattached to a new session', async () => {
-    mockAutoReconcile = true;
+    mockNative.autoReconcile = true;
     const port = { list: vi.fn(async () => ({ sessions: [] })), send: vi.fn(), read: vi.fn() };
     const backend = createBackend(plugin, createRuntime());
     const first = backend.createSession({ ...config, sessionTools: port });
@@ -505,7 +432,7 @@ describe('Codex shared runtime', () => {
     await output;
     await first.dispose();
     let heldStart: number | undefined;
-    mockRequestOverride = (_process, call) => {
+    mockNative.requestOverride = (_process, call) => {
       if (call.method !== 'turn/start') return false;
       heldStart = call.id;
       return true;
@@ -527,12 +454,12 @@ describe('Codex shared runtime', () => {
   });
 
   it.each([false, true])('retains native cleanup after retiring a requested turn (start acknowledged: %s)', async acknowledged => {
-    mockAutoReconcile = true;
+    mockNative.autoReconcile = true;
     const lease = await createRuntime().acquire();
     const scope = lease.connection.createThreadScope({ notification: vi.fn(), serverRequest: vi.fn(), stop: vi.fn(), workChanged: vi.fn() });
     await scope.open('thread/start', {});
     let heldStart: number | undefined;
-    mockRequestOverride = (_process, call) => {
+    mockNative.requestOverride = (_process, call) => {
       if (acknowledged || call.method !== 'turn/start') return false;
       heldStart = call.id;
       return true;
@@ -553,10 +480,8 @@ describe('Codex shared runtime', () => {
   });
 
   it('applies verbosity changes and restores defaults while resuming the same conversation', async () => {
-    mockAutoReconcile = true;
-    const host = {
-      settings: { providerConfigs: { codex: { enabled: true, discoveredModels: TEST_CODEX_CATALOG } } },
-    } as unknown as ProviderHost;
+    mockNative.autoReconcile = true;
+    const host = plugin;
     const runtime = new CodexAppServerRuntime(scoped(host), vi.fn());
     runtimes.push(runtime);
     const session = createBackend(host, runtime).createSession(config);
@@ -565,8 +490,8 @@ describe('Codex shared runtime', () => {
         updateCodexProviderSettings(host.settings, { responseVerbosity });
         const output = collect(session.execute(request).events);
         const process = await waitForRequest('turn/start', index);
-        const spec = vi.mocked(CodexAppServerProcess).mock.calls.at(-1)![0];
-        expect(spec.args).toEqual([
+        const args = vi.mocked(spawn).mock.calls.at(-1)![1];
+        expect(args).toEqual([
           'app-server', '--listen', 'stdio://',
           ...(responseVerbosity === 'default' ? [] : ['-c', `model_verbosity="${responseVerbosity}"`]),
         ]);
@@ -576,14 +501,14 @@ describe('Codex shared runtime', () => {
         complete(process, 'thread-1');
         expect((await output).at(-1)?.type).toBe('turn_completed');
       }
-      expect(mockProcesses).toHaveLength(3);
+      expect(mockNative.processes).toHaveLength(3);
     } finally {
       await session.dispose();
     }
   });
 
   it('releases a completed ephemeral thread and lets its retired server drain', async () => {
-    mockAutoReconcile = true;
+    mockNative.autoReconcile = true;
     const runtime = createRuntime();
     const session = createBackend(plugin, runtime).createSession({ ...config, nativePersistence: 'disabled-if-supported' });
     const output = collect(session.execute(request).events);
@@ -592,14 +517,14 @@ describe('Codex shared runtime', () => {
     await output;
     await session.dispose();
     expect(process.requests.filter(r => r.method === 'thread/unsubscribe').map(r => r.params.threadId)).toContain('thread-1');
-    mockLaunchKey = 'replacement';
+    plugin.settings.providerConfigs.codex!.environmentVariables = 'KEY=replacement';
     const next = await runtime.acquire();
     expect(process.isAlive()).toBe(false);
     await next.release();
   });
 
   it('stops late native work through global status after closing and unsubscribing its chat', async () => {
-    mockAutoReconcile = true;
+    mockNative.autoReconcile = true;
     const backend = createBackend(plugin, createRuntime());
     const first = backend.createSession(config);
     const second = backend.createSession(config);
@@ -612,7 +537,7 @@ describe('Codex shared runtime', () => {
     await first.dispose();
     expect(process.unsubscribed.has('thread-1')).toBe(true);
     let wokeAgain = false;
-    mockRequestOverride = (native, rpc) => {
+    mockNative.requestOverride = (native, rpc) => {
       if (rpc.method !== 'turn/interrupt' || rpc.params.threadId !== 'thread-1' || wokeAgain) return false;
       wokeAgain = true;
       native.notify('thread/status/changed', { threadId: 'thread-1', status: { type: 'idle' } });
@@ -633,7 +558,7 @@ describe('Codex shared runtime', () => {
     process.parents.set('late-grandchild', 'late-child');
     process.parents.set('other-child', 'thread-2');
     let childRead: number | undefined;
-    mockRequestOverride = (_native, rpc) => {
+    mockNative.requestOverride = (_native, rpc) => {
       if (rpc.method !== 'thread/read' || rpc.params.threadId !== 'late-child') return false;
       childRead = rpc.id;
       return true;
@@ -644,7 +569,7 @@ describe('Codex shared runtime', () => {
     }
     for (let i = 0; i < 100; i++) await Promise.resolve();
     expect(childRead).toBeDefined();
-    mockRequestOverride = null;
+    mockNative.requestOverride = null;
     process.respond(childRead!, { thread: { id: 'late-child', parentThreadId: 'thread-1', status: { type: 'active' }, turns: [] } });
     for (let i = 0; i < 200; i++) await Promise.resolve();
     expect(process.turns.get('late-child')?.status).toBe('interrupted');
@@ -658,20 +583,20 @@ describe('Codex shared runtime', () => {
   });
 
   it('keeps copied fork history separate from the source chat’s child ownership', async () => {
-    mockAutoReconcile = true;
+    mockNative.autoReconcile = true;
     const runtime = createRuntime();
     const lease = await runtime.acquire();
     const observer = () => ({ notification: vi.fn(), serverRequest: vi.fn(), stop: vi.fn(), workChanged: vi.fn() });
     const source = lease.connection.createThreadScope(observer());
     const fork = lease.connection.createThreadScope(observer());
-    const process = mockProcesses[0];
+    const process = mockNative.processes[0];
     await source.open('thread/start', {});
     process.parents.set('source-child', 'thread-1');
     process.notify('turn/started', { threadId: 'source-child', turn: { id: 'child-turn', status: 'inProgress', items: [] } });
     process.notify('item/completed', { threadId: 'thread-1', turnId: 'source-turn', item: { type: 'subAgentActivity', id: 'spawn', kind: 'started', agentThreadId: 'source-child', agentPath: '/root/worker' } });
     for (let i = 0; i < 100; i++) await Promise.resolve();
     const copiedHistory = [{ id: 'old-turn', status: 'completed', items: [{ type: 'subAgentActivity', id: 'old-spawn', kind: 'started', agentThreadId: 'source-child', agentPath: '/root/worker' }] }];
-    mockRequestOverride = (native, rpc) => {
+    mockNative.requestOverride = (native, rpc) => {
       if (rpc.method !== 'thread/fork' && rpc.method !== 'thread/resume') return false;
       native.respond(rpc.id, { thread: { id: 'fork-root', turns: copiedHistory, status: { type: 'idle' } } });
       return true;
@@ -687,12 +612,12 @@ describe('Codex shared runtime', () => {
   });
 
   it('transfers idle descendants when a closed chat is reopened before native unloading', async () => {
-    mockAutoReconcile = true;
+    mockNative.autoReconcile = true;
     const lease = await createRuntime().acquire();
     const observer = () => ({ notification: vi.fn(), serverRequest: vi.fn(), stop: vi.fn(), workChanged: vi.fn() });
     const original = lease.connection.createThreadScope(observer());
     const reopened = lease.connection.createThreadScope(observer());
-    const process = mockProcesses[0];
+    const process = mockNative.processes[0];
     await original.open('thread/start', {});
     process.parents.set('existing-child', 'thread-1');
     process.notify('item/completed', { threadId: 'thread-1', turnId: 'old-turn', item: { type: 'subAgentActivity', id: 'spawn', kind: 'started', agentThreadId: 'existing-child', agentPath: '/root/worker' } });
@@ -711,16 +636,16 @@ describe('Codex shared runtime', () => {
   });
 
   it('asks for a retry when a chat is reopened while its closed predecessor is still stopping', async () => {
-    mockAutoReconcile = true;
+    mockNative.autoReconcile = true;
     const lease = await createRuntime().acquire();
     const observer = () => ({ notification: vi.fn(), serverRequest: vi.fn(), stop: vi.fn(), workChanged: vi.fn() });
     const original = lease.connection.createThreadScope(observer());
     const reopened = lease.connection.createThreadScope(observer());
-    const process = mockProcesses[0];
+    const process = mockNative.processes[0];
     await original.open('thread/start', {});
     await original.startTurn('turn/start', { threadId: 'thread-1', input: [] });
     let interruptId: number | undefined;
-    mockRequestOverride = (_native, rpc) => {
+    mockNative.requestOverride = (_native, rpc) => {
       if (rpc.method !== 'turn/interrupt') return false;
       interruptId = rpc.id;
       return true;
@@ -730,7 +655,7 @@ describe('Codex shared runtime', () => {
 
     await expect(reopened.open('thread/resume', { threadId: 'thread-1' })).rejects.toThrow(/still stopping/);
 
-    mockRequestOverride = null;
+    mockNative.requestOverride = null;
     process.notify('turn/completed', { threadId: 'thread-1', turn: { id: 'turn-thread-1', status: 'interrupted', items: [] } });
     process.respond(interruptId!, {});
     await closing;
@@ -740,12 +665,12 @@ describe('Codex shared runtime', () => {
   });
 
   it('keeps turn inputs while a start fails without a native response', async () => {
-    mockAutoReconcile = true;
+    mockNative.autoReconcile = true;
     const lease = await createRuntime().acquire();
     const scope = lease.connection.createThreadScope({ notification: vi.fn(), serverRequest: vi.fn(), stop: vi.fn(), workChanged: vi.fn() });
     await scope.open('thread/start', {});
-    const process = mockProcesses[0];
-    mockRequestOverride = (_native, rpc) => rpc.method === 'turn/start';
+    const process = mockNative.processes[0];
+    mockNative.requestOverride = (_native, rpc) => rpc.method === 'turn/start';
     const releaseInput = vi.fn();
     const starting = scope.startTurn('turn/start', { threadId: 'thread-1', input: [] }, releaseInput);
     await waitForRequest('turn/start');
@@ -754,21 +679,21 @@ describe('Codex shared runtime', () => {
     await expect(starting).rejects.toThrow('read ECONNRESET');
     expect(releaseInput).not.toHaveBeenCalled();
 
-    await process.shutdown();
+    process.exit();
     expect(releaseInput).toHaveBeenCalledTimes(1);
     await lease.release();
   });
 
   it.each([false, true])('retains turn inputs and the process while a start is unresolved despite an idle status (detach: %s)', async detach => {
-    mockAutoReconcile = true;
+    mockNative.autoReconcile = true;
     const runtime = createRuntime();
     const lease = await runtime.acquire();
     const scope = lease.connection.createThreadScope({ notification: vi.fn(), serverRequest: vi.fn(), stop: vi.fn(), workChanged: vi.fn() });
     await scope.open('thread/start', {});
     await lease.release();
-    const process = mockProcesses[0];
+    const process = mockNative.processes[0];
     let startId: number | undefined;
-    mockRequestOverride = (_native, rpc) => {
+    mockNative.requestOverride = (_native, rpc) => {
       if (rpc.method !== 'turn/start') return false;
       startId = rpc.id;
       return true;
@@ -778,7 +703,7 @@ describe('Codex shared runtime', () => {
     const stopping = detach ? scope.detach() : scope.stop();
     process.notify('thread/status/changed', { threadId: 'thread-1', status: { type: 'idle' } });
     for (let i = 0; i < 100; i++) await Promise.resolve();
-    mockLaunchKey = 'replacement';
+    plugin.settings.providerConfigs.codex!.environmentVariables = 'KEY=replacement';
     const replacement = await runtime.acquire();
     try {
       expect(process.isAlive()).toBe(true);
@@ -794,9 +719,9 @@ describe('Codex shared runtime', () => {
   });
 
   it('retires a drained server when the completed turn receives its delayed start response', async () => {
-    mockAutoReconcile = true;
+    mockNative.autoReconcile = true;
     let pendingStart: FakeProcess['requests'][number] | undefined;
-    mockRequestOverride = (_process, rpc) => {
+    mockNative.requestOverride = (_process, rpc) => {
       if (rpc.method !== 'turn/start') return false;
       pendingStart = rpc;
       return true;
@@ -807,7 +732,7 @@ describe('Codex shared runtime', () => {
     const process = await waitForRequest('turn/start');
     const turn = { id: 'delayed', status: 'inProgress', items: [] };
     process.notify('turn/started', { threadId: 'thread-1', turn });
-    mockLaunchKey = 'replacement';
+    plugin.settings.providerConfigs.codex!.environmentVariables = 'KEY=replacement';
     const replacement = await runtime.acquire();
     try {
       expect(process.isAlive()).toBe(true);
@@ -818,7 +743,7 @@ describe('Codex shared runtime', () => {
       process.respond(pendingStart!.id, { turn });
       for (let i = 0; i < 200 && process.isAlive(); i++) await Promise.resolve();
       expect(process.isAlive()).toBe(false);
-      expect(mockProcesses[1].isAlive()).toBe(true);
+      expect(mockNative.processes[1].isAlive()).toBe(true);
     } finally {
       process.respond(pendingStart!.id, { turn });
       await session.dispose();
@@ -827,9 +752,9 @@ describe('Codex shared runtime', () => {
   });
 
   it('keeps the next turn’s image until its own pending start settles after an earlier response', async () => {
-    mockAutoReconcile = true;
+    mockNative.autoReconcile = true;
     const starts: FakeProcess['requests'] = [];
-    mockRequestOverride = (_process, rpc) => {
+    mockNative.requestOverride = (_process, rpc) => {
       if (rpc.method !== 'turn/start') return false;
       starts.push(rpc);
       return true;
@@ -847,7 +772,7 @@ describe('Codex shared runtime', () => {
     const secondEvents = collect(second.events);
     for (let i = 0; i < 100 && starts.length < 2; i++) await Promise.resolve();
     expect(starts).toHaveLength(2);
-    const imageInput = starts[1].params.input.find((item: { type: string }) => item.type === 'localImage');
+    const imageInput = starts[1].params.input!.find(item => item.type === 'localImage')!;
     const inputPath: string = imageInput.path;
     try {
       expect(readFileSync(inputPath)).toEqual(Buffer.from('hello'));
@@ -875,14 +800,14 @@ describe('Codex shared runtime', () => {
     expect(process.requests.filter(r => r.method === 'thread/start')).toHaveLength(0);
     process.completeReconcile();
     await waitForRequest('turn/start');
-    expect(mockProcesses).toHaveLength(1);
+    expect(mockNative.processes).toHaveLength(1);
     complete(process, 'thread-1');
     await output;
     await session.dispose();
   });
 
   it('routes a native approval exclusively to its owning chat', async () => {
-    mockAutoReconcile = true;
+    mockNative.autoReconcile = true;
     const backend = createBackend(plugin, createRuntime());
     const approval = () => vi.fn(async interaction => ({ interactionId: interaction.interactionId, decision: 'allow' as const }));
     const firstApproval = approval();
@@ -904,30 +829,33 @@ describe('Codex shared runtime', () => {
     await Promise.all([first.dispose(), second.dispose()]);
   });
 
-  it('refreshes instructions on a retained native thread that ignores subscribed resume overrides', async () => {
-    mockAutoReconcile = true;
+  it.each(['explicit', 'main-agent'] as const)('refreshes %s instructions on a retained native thread that ignores subscribed resume overrides', async kind => {
+    mockNative.autoReconcile = true;
     const session = createBackend(plugin, createRuntime()).createSession(config);
-    const output = collect(session.execute(request).events);
+    const initial = { ...request, configuration: { ...request.configuration, systemInstructions: { kind, instructions: 'Be concise.' } } };
+    const output = collect(session.execute(initial).events);
     const process = await waitForRequest('turn/start');
+    expect(process.requests.find(rpc => rpc.method === 'thread/start')!.params.baseInstructions).toBe('Be concise.');
     complete(process, 'thread-1');
     await output;
     const changed = collect(session.execute({ ...request, configuration: {
-      ...request.configuration, systemInstructions: { kind: 'explicit', instructions: 'Use the new rules.' },
+      ...request.configuration, systemInstructions: { kind, instructions: 'Use the new rules.' },
     } }).events);
-    for (let i = 0; i < 100 && process.turnInstructions.length < 2; i++) await Promise.resolve();
+    await waitForRequest('turn/start', 0, 2);
     expect(process.turnInstructions).toHaveLength(2);
     expect(process.turnInstructions[0]).toContain('Be concise.');
     expect(process.turnInstructions[1]).toContain('Use the new rules.');
     expect(process.turnInstructions[1]).not.toContain('Be concise.');
     complete(process, 'thread-1');
     await changed;
-    expect(mockProcesses).toHaveLength(1);
+    expect(mockNative.processes).toHaveLength(1);
+    expect(process.requests.filter(rpc => rpc.method === 'thread/resume')).toHaveLength(1);
     await session.dispose();
   });
 
   it('aborts an in-flight skills RPC without disrupting model discovery on the same transport', async () => {
-    mockAutoReconcile = true;
-    mockHoldSkills = true;
+    mockNative.autoReconcile = true;
+    mockNative.holdSkills = true;
     const runtime = createRuntime();
     const skills = new CodexSkillListingService(runtime);
     const abort = new AbortController();
@@ -936,26 +864,22 @@ describe('Codex shared runtime', () => {
     abort.abort(new Error('Query cancelled'));
     await expect(listing).rejects.toThrow('Request aborted: skills/list');
     await expect(new CodexModelDiscoveryService(scoped(plugin), runtime).discoverModels()).resolves.toMatchObject({ kind: 'completed' });
-    expect(mockProcesses).toHaveLength(1);
+    expect(mockNative.processes).toHaveLength(1);
     expect(process.isAlive()).toBe(true);
     await skills.dispose();
   });
 
   it('keeps active execution through a workspace transition, resumes on the replacement, and disposes on disable', async () => {
-    mockAutoReconcile = true;
-    const registry = new ProviderExecutionLifecycleRegistry();
-    const host = {
-      ...plugin,
-      settings: { providerConfigs: { codex: { enabled: true, discoveredModels: TEST_CODEX_CATALOG } } },
-      executionLifecycleRegistry: registry,
-    } as unknown as ProviderHost;
-    const services = await createCodexWorkspaceServices(withRuntimeHosts(host));
+    mockNative.autoReconcile = true;
+    const host = plugin;
+    const registry = host.executionLifecycleRegistry;
+    const services = await createCodexWorkspaceServices(host);
     const backend = createBackend(host, services.runtime);
     const first = registry.acquire(backend, config, 'chat');
     const firstEvents = collect(first.session.execute(request).events);
     try {
       const old = await waitForRequest('turn/start');
-      await registry.runTransition(['codex'], async () => { mockLaunchKey = 'second'; });
+      await registry.runTransition(['codex'], async () => { plugin.settings.providerConfigs.codex!.environmentVariables = 'KEY=second'; });
       expect(first.isCurrent()).toBe(true);
       expect(old.isAlive()).toBe(true);
       const second = registry.acquire(backend, config, 'chat');
@@ -983,17 +907,17 @@ describe('Codex shared runtime', () => {
   });
 
   it('fails active chats on a crash and resumes their persistent threads lazily on one replacement', async () => {
-    mockAutoReconcile = true;
+    mockNative.autoReconcile = true;
     const backend = createBackend(plugin, createRuntime());
     const first = backend.createSession(config);
     const second = backend.createSession(config);
     const runs = [first, second].map(session => collect(session.execute(request).events));
     const process = await waitForRequest('turn/start');
     for (let i = 0; i < 100 && process.requests.filter(r => r.method === 'turn/start').length < 2; i++) await Promise.resolve();
-    await process.shutdown();
+    process.exit();
     const failed = await Promise.all(runs);
-    expect(failed.map(events => events.at(-1)?.type)).toEqual(['execution_error', 'execution_error']);
-    expect(mockProcesses).toHaveLength(1);
+    for (const events of failed) expect(events.at(-1)).toMatchObject({ type: 'execution_error', category: 'process-exited' });
+    expect(mockNative.processes).toHaveLength(1);
     const retries = [first, second].map(session => collect(session.execute(request).events));
     const replacement = await waitForRequest('turn/start', 1);
     for (let i = 0; i < 100 && replacement.requests.filter(r => r.method === 'turn/start').length < 2; i++) await Promise.resolve();
@@ -1003,14 +927,14 @@ describe('Codex shared runtime', () => {
     complete(replacement, 'thread-2');
     const completed = await Promise.all(retries);
     expect(completed.map(events => events.at(-1)?.type)).toEqual(['turn_completed', 'turn_completed']);
-    expect(mockProcesses).toHaveLength(2);
+    expect(mockNative.processes).toHaveLength(2);
     await Promise.all([first.dispose(), second.dispose()]);
   });
 
   it('allows retry when a cancelled turn completes before its late start response and interrupt rejection', async () => {
-    mockAutoReconcile = true;
-    let pendingStart: any;
-    mockRequestOverride = (process, rpc) => {
+    mockNative.autoReconcile = true;
+    let pendingStart: CodexNativeRequest | undefined;
+    mockNative.requestOverride = (process, rpc) => {
       if (rpc.method === 'turn/start') {
         if (!pendingStart) pendingStart = rpc;
         else process.respond(rpc.id, { turn: { id: 'retry-turn', status: 'inProgress' } });
@@ -1027,7 +951,7 @@ describe('Codex shared runtime', () => {
     const process = await waitForRequest('turn/start');
     run.cancel();
     complete(process, 'thread-1');
-    process.respond(pendingStart.id, { turn: { id: 'turn-thread-1', status: 'inProgress' } });
+    process.respond(pendingStart!.id, { turn: { id: 'turn-thread-1', status: 'inProgress' } });
     await collect(run.events);
     for (let i = 0; i < 50; i++) await Promise.resolve();
     const retry = collect(session.execute(request).events);
@@ -1039,7 +963,7 @@ describe('Codex shared runtime', () => {
   });
 
   it.each([false, true])('stops owned children and late mailbox turns on Stop (parent completed: %s) while another chat continues', async (parentCompleted) => {
-    mockAutoReconcile = true;
+    mockNative.autoReconcile = true;
     const backend = createBackend(plugin, createRuntime());
     const first = backend.createSession(config);
     const second = backend.createSession(config);
@@ -1079,39 +1003,51 @@ describe('Codex shared runtime', () => {
     await Promise.all([first.dispose(), second.dispose()]);
   });
 
-  it('reads fresh skills without a local result cache or a loaded native thread', async () => {
-    mockAutoReconcile = true;
+  it('reads and refreshes native commands without a local result cache or a loaded thread', async () => {
+    mockNative.autoReconcile = true;
     let diskSkill = 'first-skill';
     let nativeSkill = diskSkill;
-    mockRequestOverride = (process, rpc) => {
+    mockNative.requestOverride = (process, rpc) => {
       if (rpc.method !== 'skills/list') return false;
       if (rpc.params.forceReload) nativeSkill = diskSkill;
       process.respond(rpc.id, { data: [{ cwd: '/vault', skills: [{ name: nativeSkill, path: '/skills/SKILL.md', scope: 'user', enabled: true }] }] });
       return true;
     };
     const skills = new CodexSkillListingService(createRuntime());
-    expect(await skills.listSkills()).toEqual([expect.objectContaining({ name: 'first-skill' })]);
+    const catalog = new CodexCommandCatalog(skills);
+    expect(await catalog.listDropdownEntries({ includeBuiltIns: false }))
+      .toEqual([expect.objectContaining({ name: 'first-skill' })]);
     diskSkill = 'second-skill';
-    expect(await skills.listSkills()).toEqual([expect.objectContaining({ name: 'second-skill' })]);
-    expect(mockProcesses).toHaveLength(1);
-    expect(mockProcesses[0].requests.filter(r => r.method === 'thread/start')).toHaveLength(0);
+    expect(await catalog.listDropdownEntries({ includeBuiltIns: false }))
+      .toEqual([expect.objectContaining({ name: 'second-skill' })]);
+    const process = mockNative.processes[0];
+    expect(process.requests.filter(rpc => rpc.method === 'skills/list')).toHaveLength(2);
+    expect(process.requests.filter(rpc => rpc.method === 'plugin/reconcile')).toHaveLength(1);
+    diskSkill = 'refreshed-skill';
+    await catalog.refresh();
+    expect(process.requests.filter(rpc => rpc.method === 'skills/list')).toHaveLength(3);
+    expect(process.requests.filter(rpc => rpc.method === 'plugin/reconcile')).toHaveLength(2);
+    expect(await catalog.listDropdownEntries({ includeBuiltIns: false }))
+      .toEqual([expect.objectContaining({ name: 'refreshed-skill' })]);
+    expect(mockNative.processes).toHaveLength(1);
+    expect(mockNative.processes[0].requests.filter(r => r.method === 'thread/start')).toHaveLength(0);
     await skills.dispose();
   });
 
   it('refreshes remote plugins in the background on the same server without delaying skills', async () => {
-    mockAutoReconcile = true;
+    mockNative.autoReconcile = true;
     const clock = testClock();
     const now = vi.spyOn(Date, 'now').mockImplementation(() => clock().getTime());
     const skills = new CodexSkillListingService(createRuntime());
     try {
       await skills.listSkills();
-      const process = mockProcesses[0];
-      mockAutoReconcile = false;
+      const process = mockNative.processes[0];
+      mockNative.autoReconcile = false;
       clock.advance({ seconds: 31 });
       await expect(skills.listSkills()).resolves.toEqual([expect.objectContaining({ name: 'remote-skill' })]);
       await skills.listSkills();
       expect(process.requests.filter(r => r.method === 'plugin/reconcile')).toHaveLength(2);
-      expect(mockProcesses).toHaveLength(1);
+      expect(mockNative.processes).toHaveLength(1);
       process.completeReconcile();
     } finally {
       now.mockRestore();
@@ -1120,7 +1056,7 @@ describe('Codex shared runtime', () => {
   });
 
   it.each([false, true])('stops and unsubscribes owned background children when a completed parent tab closes (late work: %s)', async (lateWork) => {
-    mockAutoReconcile = true;
+    mockNative.autoReconcile = true;
     const session = createBackend(plugin, createRuntime()).createSession(config);
     const output = collect(session.execute(request).events);
     const process = await waitForRequest('turn/start');
@@ -1133,7 +1069,7 @@ describe('Codex shared runtime', () => {
     await output;
     expect(session.hasBackgroundWork?.()).toBe(true);
     if (lateWork) {
-      mockRequestOverride = (native, rpc) => {
+      mockNative.requestOverride = (native, rpc) => {
         if (rpc.method !== 'turn/interrupt' || rpc.params.threadId !== 'child') return false;
         native.notify('turn/started', { threadId: 'thread-1', turn: { id: 'late-root', status: 'inProgress', items: [] } });
         native.notify('item/completed', { threadId: 'child', turnId: 'child-turn', item: { type: 'subAgentActivity', id: 'late-spawn', kind: 'started', agentThreadId: 'grandchild', agentPath: '/root/worker/helper' } });
@@ -1150,7 +1086,7 @@ describe('Codex shared runtime', () => {
   });
 
   it('keeps the parent running when one of its child threads closes', async () => {
-    mockAutoReconcile = true;
+    mockNative.autoReconcile = true;
     const session = createBackend(plugin, createRuntime()).createSession(config);
     const output = collect(session.execute(request).events);
     const process = await waitForRequest('turn/start');
@@ -1167,7 +1103,7 @@ describe('Codex shared runtime', () => {
   });
 
   it.each(['thread/start', 'thread/fork'])('unsubscribes a late %s result after its caller times out without stopping another chat', async method => {
-    mockAutoReconcile = true;
+    mockNative.autoReconcile = true;
     const runtime = createRuntime();
     const session = createBackend(plugin, runtime).createSession(config);
     const output = collect(session.execute(request).events);
@@ -1175,7 +1111,7 @@ describe('Codex shared runtime', () => {
     const lease = await runtime.acquire();
     const scope = lease.connection.createThreadScope({ notification: vi.fn(), serverRequest: vi.fn(), stop: vi.fn(), workChanged: vi.fn() });
     let creationId!: number;
-    mockRequestOverride = (_process, rpc) => {
+    mockNative.requestOverride = (_process, rpc) => {
       if (rpc.method !== method) return false;
       creationId = rpc.id;
       return true;
@@ -1201,9 +1137,9 @@ describe('Codex shared runtime', () => {
   });
 
   it.each([false, true])('interrupts a late native start after cancellation cleanup reads time out (dispose: %s)', async (dispose) => {
-    mockAutoReconcile = true;
+    mockNative.autoReconcile = true;
     let holdCleanup = true;
-    mockRequestOverride = (_process, rpc) => holdCleanup && rpc.params?.threadId === 'thread-1'
+    mockNative.requestOverride = (_process, rpc) => holdCleanup && rpc.params?.threadId === 'thread-1'
       && (rpc.method === 'turn/start' || rpc.method === 'thread/read');
     const backend = createBackend(plugin, createRuntime());
     const first = backend.createSession(config);
@@ -1245,8 +1181,8 @@ describe('Codex shared runtime', () => {
   });
 
   it.each([true, false])('interrupts an ambiguous timed-out turn before releasing its root (started notification: %s)', async notifyStarted => {
-    mockAutoReconcile = true;
-    mockRequestOverride = (process, rpc) => {
+    mockNative.autoReconcile = true;
+    mockNative.requestOverride = (process, rpc) => {
       if (rpc.method !== 'turn/start' || rpc.params.threadId !== 'thread-1') return false;
       const turn = { id: 'slow-turn', status: 'inProgress', items: [] };
       process.turns.set('thread-1', turn);
@@ -1279,30 +1215,30 @@ describe('Codex shared runtime', () => {
   });
 
   it('joins an already retiring process shutdown during runtime disposal', async () => {
-    mockAutoReconcile = true;
+    mockNative.autoReconcile = true;
     const runtime = createRuntime();
     const old = await runtime.acquire();
-    const process = mockProcesses[0];
-    const originalShutdown = process.shutdown.bind(process);
-    let finishShutdown!: () => void;
-    const pending = new Promise<void>(resolve => { finishShutdown = resolve; });
-    vi.spyOn(process, 'shutdown').mockImplementation(async () => { await pending; await originalShutdown(); });
-    mockLaunchKey = 'second';
+    const process = mockNative.processes[0];
+    let shutdownStarted!: () => void;
+    const started = new Promise<void>(resolve => { shutdownStarted = resolve; });
+    vi.spyOn(process, 'kill').mockImplementation(() => { shutdownStarted(); return true; });
+    plugin.settings.providerConfigs.codex!.environmentVariables = 'KEY=second';
     const replacement = await runtime.acquire();
     const release = old.release();
     let disposed = false;
     const disposal = runtime.dispose().then(() => { disposed = true; });
     try {
-      for (let i = 0; i < 30; i++) await Promise.resolve();
+      await started;
+      await new Promise<void>(resolve => setImmediate(resolve));
       expect(disposed).toBe(false);
     } finally {
-      finishShutdown();
+      process.exit();
       await Promise.all([release, disposal, replacement.release()]);
     }
   });
 
   it('isolates concurrent chat threads and keeps the server alive when one is cancelled or disposed', async () => {
-    mockAutoReconcile = true;
+    mockNative.autoReconcile = true;
     const backend = createBackend(plugin, createRuntime());
     const first = backend.createSession(config);
     const second = backend.createSession(config);
@@ -1311,13 +1247,10 @@ describe('Codex shared runtime', () => {
     const firstEvents = collect(firstRun.events);
     const secondEvents = collect(secondRun.events);
     try {
-      for (let count = 0; count < 200; count++) {
-        if (mockProcesses.flatMap(process => process.requests).filter(request => request.method === 'turn/start').length === 2) break;
-        await Promise.resolve();
-      }
-      expect(mockProcesses.flatMap(process => process.requests).filter(request => request.method === 'turn/start')).toHaveLength(2);
-      expect(mockProcesses).toHaveLength(1);
-      const process = mockProcesses[0];
+      await waitForRequest('turn/start', 0, 2);
+      expect(mockNative.processes.flatMap(process => process.requests).filter(request => request.method === 'turn/start')).toHaveLength(2);
+      expect(mockNative.processes).toHaveLength(1);
+      const process = mockNative.processes[0];
       firstRun.cancel();
       await firstEvents;
       await first.dispose();
@@ -1334,3 +1267,7 @@ describe('Codex shared runtime', () => {
     }
   });
 });
+
+let sharedVault: DesktopVault;
+beforeAll(async () => { sharedVault = await DesktopVault.create(); });
+afterAll(async () => { await sharedVault.dispose(); });

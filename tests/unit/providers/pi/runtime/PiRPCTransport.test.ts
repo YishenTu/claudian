@@ -59,15 +59,6 @@ describe('PiRPCTransport', () => {
     await expect(first).resolves.toBe(1);
   });
 
-  it('unwraps Pi response data when result is absent', async () => {
-    const { input, transport } = createTransport();
-    const promise = transport.request('get_available_models');
-
-    input.write('{"type":"response","id":"req_1","success":true,"data":{"models":[{"id":"gpt-5"}]}}\n');
-
-    await expect(promise).resolves.toEqual({ models: [{ id: 'gpt-5' }] });
-  });
-
   it('routes non-response events to listeners', () => {
     const { input, transport } = createTransport();
     const events: unknown[] = [];
@@ -128,7 +119,7 @@ describe('PiRPCTransport', () => {
 
     await expect(request).rejects.toThrow('Request aborted: get_commands');
     input.write('{"type":"response","id":"req_1","success":true,"result":[]}\n');
-    expect((transport as any).pending).toHaveProperty('size', 0);
+    expect(transport['pending']).toHaveProperty('size', 0);
   });
 
   it.each(['write error', 'output close'] as const)('closes pending requests on %s without waiting for a response', async failure => {

@@ -1,3 +1,4 @@
+// @test-ci {"native":true}
 const actualModule0 = await import('node:fs/promises');
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';

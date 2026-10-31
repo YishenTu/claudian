@@ -1,3 +1,4 @@
+/** @vitest-environment jsdom */
 const actualModule0 = await vi.importActual<typeof fs>('node:fs/promises');
 const actualModule1 = await vi.importActual<typeof fs>('node:fs/promises');
 import '@/providers';
@@ -630,11 +631,11 @@ describe('ProjectService', () => {
   it('drops a retained draft seed when its project is archived before first submission', async () => {
     const { projects, repository, conversations, persistence } = await fixture();
     const project = await projects.create({ name: 'Draft', instructions: '', memoryPath: 'Draft.md' });
-    const draft = createDraftFixture();
+    const draft = await createDraftFixture();
     draft.state.currentConversationId = null;
     draft.deps.conversationController.seedDraftProject(project.id);
-    draft.plugin.createConversation.mockImplementation(options => conversations.createConversation(options));
-    draft.plugin.getConversationSync.mockImplementation(id => repository.getSync(id));
+    vi.spyOn(draft.plugin, 'createConversation').mockImplementation(options => conversations.createConversation(options));
+    vi.spyOn(draft.plugin, 'getConversationSync').mockImplementation(id => repository.getSync(id));
     await projects.setArchived(project.id, true);
 
     await draft.controller.sendMessage({ content: 'Submit the retained draft' });

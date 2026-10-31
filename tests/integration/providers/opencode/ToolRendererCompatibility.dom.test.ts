@@ -1,7 +1,10 @@
+// @test-ci {"native":true,"inputs":["tests/helpers/providers/opencode/OpencodeNativePeer.cjs"]}
 /** @vitest-environment jsdom */
 import '@/providers';
 
 import { axe } from '@test/helpers/accessibility';
+import { createChatFeatureHost } from '@test/helpers/features/chat/ChatFeatureHostFixture';
+import { createFixture, turn } from '@test/helpers/providers/opencode/OpencodeSharedServerFixture';
 import { testDate } from '@test/helpers/testClock';
 import { fireEvent, within } from '@testing-library/dom';
 import { Component } from 'obsidian';
@@ -16,19 +19,7 @@ import { renderStoredWriteEdit } from '@/features/chat/rendering/tools/WriteEdit
 import { ChatState } from '@/features/chat/state/ChatState';
 import { SubagentManager } from '@/features/chat/subagents/SubagentManager';
 import { StreamController } from '@/features/chat/turns/StreamController';
-import { OpencodeHTTPSessionKernel } from '@/providers/opencode/execution/OpencodeHTTPSessionKernel';
-import { OpencodeSessionPersistence } from '@/providers/opencode/execution/OpencodeSessionPersistence';
 import { mapOpencodeNativeMessages } from '@/providers/opencode/history/OpencodeHistoryStore';
-import type { OpencodeHTTPEvent } from '@/providers/opencode/http/OpencodeHTTPClient';
-
-HTMLElement.prototype.empty = function () { this.replaceChildren(); };
-HTMLElement.prototype.addClass = function (...classes) { this.classList.add(...classes); };
-HTMLElement.prototype.removeClass = function (...classes) { this.classList.remove(...classes); };
-HTMLElement.prototype.toggleClass = function (names, enabled) {
-  for (const name of Array.isArray(names) ? names : [names]) this.classList.toggle(name, enabled);
-};
-HTMLElement.prototype.scrollIntoView = function () {};
-HTMLElement.prototype.setText = function (text) { this.textContent = String(text); };
 
 beforeEach(() => document.body.replaceChildren());
 
@@ -42,63 +33,65 @@ interface NativeToolCall {
 
 /** Replays one native V2 tool call through the live HTTP kernel and chat stream. */
 async function restoreLiveV2(call: NativeToolCall): Promise<ToolCallInfo> {
-  let receive!: (event: OpencodeHTTPEvent) => void;
+  const fixture = await createFixture();
+  await fixture.workspace.metadataService.loadCatalog();
+  const session = fixture.createSession();
+  const control = await fixture.workspace.serverService.acquire(fixture.cli, fixture.root, fixture.environment);
+  let started!: () => void;
+  const startedPromise = new Promise<void>(resolve => { started = resolve; });
   const output: ProviderExecutionEvent[] = [];
-  const lease = {
-    databasePath: null, isReusable: () => true, onRetired: () => {}, onSuperseded: () => {},
-    subscribe: async (callback: typeof receive) => { receive = callback; },
-    registerAgents: async () => ({}), waitForActivation: async () => {}, refreshGlobalForms: async () => {},
-    dispose: async () => {},
-    request: async (route: string) => {
-      if (route === '/api/model') return { data: [{ id: 'model', providerID: 'test', enabled: true }] };
-      if (route === '/api/command') return { data: [] };
-      return { data: { id: 'ses_main' } };
-    },
-  };
-  const config = { workingDirectory: '/workspace', lifecycle: 'persistent', nativePersistence: 'provider-default', interactionPort: { dismissInteraction: vi.fn() } } as any;
-  const kernel = new OpencodeHTTPSessionKernel({ config, host: { resolveCliPath: async () => '/opencode', environmentText: '' }, getActiveTurnId: () => 'turn',
-    onNativeOutput: (event: ProviderExecutionEvent) => output.push(event), onNativeTurn: vi.fn(), onClosed: vi.fn(),
-  } as any, { acquire: async () => lease } as any, new OpencodeSessionPersistence(config));
+  const run = session.execute(turn('hold'));
+  const done = (async () => {
+    for await (const event of run.events) {
+      output.push(event);
+      if (event.type === 'text_delta' && event.text === 'hold') started();
+    }
+  })();
   try {
-    await kernel.connect({ profile: 'managed', systemPrompt: '' });
-    await kernel.openSession();
-    const event = (type: string, data: Record<string, unknown> = {}) => receive({ type, data: {
-      sessionID: 'ses_main', assistantMessageID: 'msg_main', id: 'tool', ...data,
-    } });
-    event('session.tool.input.started', { name: call.name });
-    event('session.tool.called', { input: call.input, executed: true });
+    await Promise.race([startedPromise, done.then(() => { throw new Error('Native turn ended before the held output: ' + JSON.stringify(output)); })]);
+    const sessionID = session.getSnapshot().providerSessionId;
+    const event = (type: string, data: Record<string, unknown> = {}) => control.request('/fixture/event', {
+      method: 'POST', body: { type, data: { sessionID, assistantMessageID: 'msg_main', id: 'tool', ...data } },
+    });
+    await event('session.tool.input.started', { name: call.name });
+    await event('session.tool.called', { input: call.input, executed: true });
     if (call.error) {
-      event('session.tool.failed', { error: call.error, metadata: call.metadata, executed: true });
+      await event('session.tool.failed', { error: call.error, metadata: call.metadata, executed: true });
     } else {
-      event('session.tool.success', {
+      await event('session.tool.success', {
         content: (call.content ?? []).map(text => ({ type: 'text', text })), metadata: call.metadata, executed: true,
       });
     }
+    await event('session.execution.succeeded');
+    await done;
+    return await renderLiveEvents(output);
   } finally {
-    await kernel.dispose();
+    await session.dispose(); await control.dispose(); await fixture.dispose();
   }
-  return renderLiveEvents(output);
 }
 
 async function renderLiveEvents(output: readonly ProviderExecutionEvent[]): Promise<ToolCallInfo> {
   const messages = document.body.createDiv();
   const state = new ChatState();
-  // Vault refresh after file edits is an Obsidian boundary; this stub keeps it inert.
-  const vault = { adapter: { basePath: '/workspace', list: async () => ({ files: [], folders: [] }) }, getAbstractFileByPath: () => null };
-  const plugin = { app: { vault }, settings: { mediaFolder: '', showMessageTimestamps: false } } as any;
+  const plugin = await createChatFeatureHost({ settings: { mediaFolder: '', showMessageTimestamps: false } });
   const renderer = new MessageRenderer(plugin, new Component(), messages);
   const stream = new StreamController({ plugin, state, renderer,
     subagentManager: new SubagentManager(() => undefined), getMessagesEl: () => messages, updateQueueIndicator: () => undefined,
   });
   const response: ChatMessage = { id: 'response', role: 'assistant', timestamp: testDate().getTime(), content: '', contentBlocks: [] };
-  state.addMessage(response);
-  state.currentContentEl = renderer.addMessage(response).querySelector('.claudian-message-content');
-  for (const chunk of output.map(providerOutputEventToStreamChunk)) {
-    if (chunk?.type === 'tool_use' || chunk?.type === 'tool_result') await stream.handleStreamChunk(chunk as StreamChunk, response);
+  try {
+    state.addMessage(response);
+    state.currentContentEl = renderer.addMessage(response).querySelector('.claudian-message-content');
+    for (const chunk of output.map(providerOutputEventToStreamChunk)) {
+      if (chunk?.type === 'tool_use' || chunk?.type === 'tool_result') await stream.handleStreamChunk(chunk as StreamChunk, response);
+    }
+    expect(response.toolCalls).toHaveLength(1);
+    return response.toolCalls![0];
+  } finally {
+    stream.dispose();
+    renderer.dispose();
+    messages.remove();
   }
-  messages.remove();
-  expect(response.toolCalls).toHaveLength(1);
-  return response.toolCalls![0];
 }
 
 function restoreV2History(call: NativeToolCall): ToolCallInfo {
@@ -220,7 +213,6 @@ describe.each(['live', 'history'] as const)('%s OpenCode V2 tool presentation', 
     expect((await axe(block)).violations).toEqual([]);
   });
 });
-
 
 it.each([
   { oldString: 'obsolete', newString: '', removed: ['obsolete'], added: [] },

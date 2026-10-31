@@ -5,6 +5,7 @@ import { axe } from '@test/helpers/accessibility';
 import { createHarness as createExecutionHarness, requestedScope } from '@test/helpers/ChatExecutionHarness';
 import { createFixture, deferred } from '@test/helpers/ChatInputHarness';
 import { createTestSession } from '@test/helpers/ConversationPorts';
+import { createChatFeatureHost } from '@test/helpers/features/chat/ChatFeatureHostFixture';
 import { testDate } from '@test/helpers/testClock';
 import { fireEvent, waitFor, within } from '@testing-library/dom';
 import { Component } from 'obsidian';
@@ -18,15 +19,6 @@ import { ChatState } from '@/features/chat/state/ChatState';
 import { SubagentManager } from '@/features/chat/subagents/SubagentManager';
 import { StreamController } from '@/features/chat/turns/StreamController';
 
-HTMLElement.prototype.empty = function () { this.replaceChildren(); };
-HTMLElement.prototype.addClass = function (...classes) { this.classList.add(...classes); };
-HTMLElement.prototype.removeClass = function (...classes) { this.classList.remove(...classes); };
-HTMLElement.prototype.toggleClass = function (names, enabled) {
-  for (const name of Array.isArray(names) ? names : [names]) this.classList.toggle(name, enabled);
-};
-HTMLElement.prototype.scrollIntoView = function () {};
-HTMLElement.prototype.setText = function (text) { this.textContent = String(text); };
-
 const cleanups: Array<() => void> = [];
 afterEach(() => {
   cleanups.splice(0).forEach(cleanup => cleanup());
@@ -37,10 +29,10 @@ it.each(['asking', 'later'] as const)('keeps an unanswered question usable after
   const host = document.body.createDiv();
   const composer = host.createDiv();
   const execution = createExecutionHarness({ onRequestedEvent: event => fixture.controller.handleExecutionEvent(event) });
-  const fixture = createFixture({
+  const fixture = (await createFixture({
     getTabProviderId: () => 'codex', getInputContainerEl: () => composer,
     getExecutionCoordinator: () => execution.coordinator,
-  });
+  }));
   Object.assign(fixture.deps.renderer, { updateQuestionTool: vi.fn() });
   await execution.coordinator.bindConversation({ conversationId: 'conversation-1', providerId: 'codex' });
   const running = fixture.controller.sendMessage({ content: 'Start work' });
@@ -89,10 +81,10 @@ it.each(['authority', 'cancel-and-replace'] as const)('fences an expired answer 
   const host = document.body.createDiv();
   const composer = host.createDiv();
   const execution = createExecutionHarness({ onRequestedEvent: event => fixture.controller.handleExecutionEvent(event) });
-  const fixture = createFixture({
+  const fixture = (await createFixture({
     getTabProviderId: () => 'codex', getInputContainerEl: () => composer,
     getExecutionCoordinator: () => execution.coordinator,
-  });
+  }));
   Object.assign(fixture.deps.renderer, { updateQuestionTool: vi.fn() });
   await execution.coordinator.bindConversation({ conversationId: 'conversation-1', providerId: 'codex' });
   const running = fixture.controller.sendMessage({ content: 'Start work' });
@@ -102,8 +94,8 @@ it.each(['authority', 'cancel-and-replace'] as const)('fences an expired answer 
   const run = native.runs[0];
   run.events.push({ type: 'turn_started', accepted: true, scope: requestedScope(native, run, 1) });
   const authority = deferred<void>();
-  const entered = vi.fn();
-  execution.repository.assertConversationExecutionAuthority.mockImplementationOnce(() => { entered(); return authority.promise; });
+  const entered = deferred<void>();
+  execution.repository.assertConversationExecutionAuthority.mockImplementationOnce(() => { entered.resolve(); return authority.promise; });
   const tool: ToolCallInfo = { id: 'ask', name: 'AskUserQuestion', status: 'completed', input: {
     replyMode: 'user-message', questions: [{ id: '0', question: 'Which check?', options: [{ label: 'History' }] }],
   } };
@@ -113,7 +105,7 @@ it.each(['authority', 'cancel-and-replace'] as const)('fences an expired answer 
   const question = within(host).getByRole('region', { name: 'Question' });
   fireEvent.click(within(question).getByRole('button', { name: 'History' }));
   fireEvent.click(within(question).getByRole('button', { name: 'Submit answers' }));
-  await waitFor(() => expect(entered).toHaveBeenCalledTimes(1));
+  await entered.promise;
   const answered = (answer.mock.results[0].value as Promise<void>).catch(() => undefined);
   let replacement: Promise<void> | undefined;
   if (phase === 'cancel-and-replace') {
@@ -141,10 +133,10 @@ it.each(['initialization', 'authority', 'cancelled-initialization', 'failed-init
   const host = document.body.createDiv();
   const composer = host.createDiv();
   const execution = createExecutionHarness({ onRequestedEvent: event => fixture.controller.handleExecutionEvent(event) });
-  const fixture = createFixture({
+  const fixture = (await createFixture({
     getTabProviderId: () => 'codex', getInputContainerEl: () => composer,
     getExecutionCoordinator: () => execution.coordinator,
-  });
+  }));
   Object.assign(fixture.deps.renderer, { updateQuestionTool: vi.fn() });
   await execution.coordinator.bindConversation({ conversationId: 'conversation-1', providerId: 'codex' });
   const running = fixture.controller.sendMessage({ content: 'Start work' });
@@ -163,11 +155,11 @@ it.each(['initialization', 'authority', 'cancelled-initialization', 'failed-init
   fixture.input.value = 'Keep this draft';
   const authority = deferred<void>();
   const initialization = deferred<boolean>();
-  const entered = vi.fn();
+  const entered = deferred<void>();
   if (phase !== 'authority') {
-    fixture.deps.ensureExecutionInitialized = () => { entered(); return initialization.promise; };
+    fixture.deps.ensureExecutionInitialized = () => { entered.resolve(); return initialization.promise; };
   } else {
-    execution.repository.assertConversationExecutionAuthority.mockImplementationOnce(() => { entered(); return authority.promise; });
+    execution.repository.assertConversationExecutionAuthority.mockImplementationOnce(() => { entered.resolve(); return authority.promise; });
   }
   const execute = native.execute.bind(native);
   vi.spyOn(native, 'execute').mockImplementation(request => {
@@ -180,7 +172,7 @@ it.each(['initialization', 'authority', 'cancelled-initialization', 'failed-init
   const send = vi.spyOn(fixture.controller, 'sendMessage');
   fireEvent.click(within(host).getByRole('button', { name: 'History' }));
   fireEvent.click(within(host).getByRole('button', { name: 'Submit answers' }));
-  await waitFor(() => expect(entered).toHaveBeenCalledTimes(1));
+  await entered.promise;
   if (phase === 'cancelled-initialization') fixture.controller.cancelStreaming();
   else if (phase !== 'failed-initialization') {
     tool.questionStatus = 'expired';
@@ -201,7 +193,7 @@ it.each(['initialization', 'authority', 'cancelled-initialization', 'failed-init
 it('does not restart main chat when an answer outlives cancellation during handoff', async () => {
   const host = document.body.createDiv();
   const composer = host.createDiv();
-  const fixture = createFixture({ getTabProviderId: () => 'codex', getInputContainerEl: () => composer });
+  const fixture = (await createFixture({ getTabProviderId: () => 'codex', getInputContainerEl: () => composer }));
   Object.assign(fixture.deps.renderer, { updateQuestionTool: vi.fn() });
   const execution = deferred<{ accepted: boolean; status: string }>();
   fixture.coordinator.execute.mockReturnValueOnce(execution.promise);
@@ -234,7 +226,7 @@ it('does not restart main chat when an answer outlives cancellation during hando
 it.each([true, false])('settles an active-turn answer without consuming the draft (steer accepted: %s)', async accepted => {
   const host = document.body.createDiv();
   const composer = host.createDiv();
-  const fixture = createFixture({ getTabProviderId: () => 'codex', getInputContainerEl: () => composer });
+  const fixture = (await createFixture({ getTabProviderId: () => 'codex', getInputContainerEl: () => composer }));
   Object.assign(fixture.deps.renderer, { updateQuestionTool: vi.fn() });
   fixture.state.queueIndicatorEl = composer.createDiv();
   fixture.holdResponse();
@@ -271,7 +263,7 @@ it.each([true, false])('settles an active-turn answer without consuming the draf
   expect(composer.classList.contains('claudian-hidden')).toBe(false);
 });
 
-function createSurface() {
+async function createSurface() {
   const messages = document.body.createDiv();
   const composerHost = document.body.createDiv();
   const composer = composerHost.createDiv();
@@ -280,7 +272,7 @@ function createSurface() {
   const session = createTestSession();
   const state = new ChatState({}, undefined, session.turns);
   state.currentConversationId = 'conversation';
-  const plugin = { app: {}, settings: { mediaFolder: '', showMessageTimestamps: false } } as any;
+  const plugin = await createChatFeatureHost({ settings: { mediaFolder: '', showMessageTimestamps: false } });
   const renderer = new MessageRenderer(plugin, new Component(), messages);
   const stream = new StreamController({ plugin, state, renderer,
     subagentManager: new SubagentManager(() => undefined), getMessagesEl: () => messages,
@@ -307,7 +299,7 @@ function createSurface() {
 }
 
 it('renders the own question-text answer in the live review when the id entry is only inherited', async () => {
-  const h = createSurface();
+  const h = (await createSurface());
   await h.stream.handleStreamChunk({ type: 'tool_use', id: 'ask', name: 'AskUserQuestion', input: {
     replyMode: 'user-message',
     questions: [
@@ -326,7 +318,7 @@ it('renders the own question-text answer in the live review when the id entry is
 });
 
 it('keeps a partial user-message batch on the visible prompt', async () => {
-  const h = createSurface();
+  const h = (await createSurface());
   await h.stream.handleStreamChunk({ type: 'tool_use', id: 'ask', name: 'AskUserQuestion', input: {
     replyMode: 'user-message',
     questions: [
@@ -347,7 +339,7 @@ it('keeps a partial user-message batch on the visible prompt', async () => {
 });
 
 it('replaces the composer immediately and stays visible when the response history collapses', async () => {
-  const h = createSurface();
+  const h = (await createSurface());
   await h.ask();
   const question = within(h.composerHost).getByRole('region', { name: 'Question' });
   expect(within(h.messages).queryByRole('region', { name: 'Question' })).toBeNull();
@@ -377,7 +369,7 @@ it('replaces the composer immediately and stays visible when the response histor
 });
 
 it.each(['error', 'blocked'] as const)('expires a %s question and restores the composer without sending', async status => {
-  const h = createSurface();
+  const h = (await createSurface());
   await h.ask();
   await h.stream.handleStreamChunk({ type: 'tool_result', id: 'ask', content: 'Request expired.',
     ...(status === 'error' ? { isError: true } : { isBlocked: true }),
@@ -392,7 +384,7 @@ it.each(['error', 'blocked'] as const)('expires a %s question and restores the c
 });
 
 it('expires pending delivery on conversation teardown without affecting the next question', async () => {
-  const h = createSurface();
+  const h = (await createSurface());
   await h.ask();
   let accepted!: () => void;
   h.delivery.mockReturnValueOnce(new Promise(resolve => { accepted = resolve; }));

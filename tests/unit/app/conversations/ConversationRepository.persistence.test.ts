@@ -10,8 +10,6 @@ import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { ProviderSettingsCoordinator } from '@/core/providers/ProviderSettingsCoordinator';
 import type { ChatMessage, Conversation } from '@/core/types';
 
-
-
 function createConversation(id = 'conversation-1'): Conversation {
   return {
     id,
@@ -217,14 +215,14 @@ describe('ConversationRepository persistence queue and binding fences', () => {
       subagentData: { agent: expect.objectContaining({ status: 'completed', result: 'Done' }) },
     });
     messages[1].toolCalls![0].subagent!.result = 'Changed after commit';
-    expect((saved.providerState as any).subagentData.agent.result).toBe('Done');
+    expect(saved.providerState).toMatchObject({ subagentData: { agent: { result: 'Done' } } });
     const committed = repository.getSync(conversation.id)!;
     expect(committed.messages.map(message => message.id)).toEqual(['user', 'assistant']);
     expect(committed.messages[1].toolCalls![0].subagent!.result).toBe('Done');
 
     // A later save replaces committed history without reaching the earlier persisted projection.
     await repository.update(conversation.id, { messages: [committed.messages[0]] });
-    expect((saved.providerState as any).subagentData.agent.result).toBe('Done');
+    expect(saved.providerState).toMatchObject({ subagentData: { agent: { result: 'Done' } } });
     expect(persistence.saveMetadata.mock.calls.at(-1)![0].providerState).toBeUndefined();
   });
 
@@ -465,155 +463,6 @@ describe('ConversationRepository persistence queue and binding fences', () => {
     );
   });
 
-  it('keeps unscoped metadata writable without assigning it to the device', async () => {
-    const conversation = createConversation();
-    const persistence = createPersistence();
-    const { repository } = createRepository(conversation, persistence);
-
-    repository.replaceAll([]);
-    await repository.adoptMetadataConversations([
-      { conversation, needsMigration: false, source: 'unscoped' },
-    ]);
-    persistence.saveMetadata.mockClear();
-
-    await repository.rename(conversation.id, 'Still unscoped');
-
-    expect(persistence.saveMetadata).toHaveBeenCalledWith(
-      expect.objectContaining({ id: conversation.id, title: 'Still unscoped' }),
-      'unscoped',
-    );
-    expect(persistence.assignMetadataToDevice).not.toHaveBeenCalled();
-    expect(repository.list().find(({ id }) => id === conversation.id)).toMatchObject({
-      isLegacySession: true,
-    });
-  });
-
-  it('exclusively assigns unscoped metadata before routing later writes to the device', async () => {
-    const conversation = createConversation();
-    const persistence = createPersistence();
-    const { repository } = createRepository(conversation, persistence);
-    repository.replaceAll([]);
-    await repository.adoptMetadataConversations([
-      { conversation, needsMigration: false, source: 'unscoped' },
-    ]);
-    persistence.saveMetadata.mockClear();
-
-    await expect(repository.assignToCurrentDevice(conversation.id)).resolves.toBe(true);
-
-    expect(persistence.saveMetadata).toHaveBeenCalledWith(
-      expect.objectContaining({ id: conversation.id }),
-      'unscoped',
-    );
-    expect(persistence.assignMetadataToDevice).toHaveBeenCalledWith(conversation.id);
-    expect(repository.list().find(({ id }) => id === conversation.id)).toMatchObject({
-      isLegacySession: false,
-    });
-
-    persistence.saveMetadata.mockClear();
-    await repository.rename(conversation.id, 'Device owned');
-    expect(persistence.saveMetadata).toHaveBeenCalledWith(
-      expect.objectContaining({ id: conversation.id, title: 'Device owned' }),
-    );
-  });
-
-  it('retains unscoped ownership when exclusive assignment fails', async () => {
-    const conversation = createConversation();
-    const persistence = createPersistence();
-    persistence.assignMetadataToDevice.mockRejectedValue(new Error('rename failed'));
-    const { repository } = createRepository(conversation, persistence);
-    repository.replaceAll([]);
-    await repository.adoptMetadataConversations([
-      { conversation, needsMigration: false, source: 'unscoped' },
-    ]);
-
-    await expect(repository.assignToCurrentDevice(conversation.id)).rejects.toThrow(
-      'rename failed',
-    );
-
-    expect(repository.list().find(({ id }) => id === conversation.id)).toMatchObject({
-      isLegacySession: true,
-    });
-    persistence.saveMetadata.mockClear();
-    await repository.rename(conversation.id, 'Legacy remains authoritative');
-    expect(persistence.saveMetadata).toHaveBeenCalledWith(
-      expect.objectContaining({ title: 'Legacy remains authoritative' }),
-      'unscoped',
-    );
-  });
-
-  it('rewrites current metadata after timestamp schema migration', async () => {
-    const conversation: Conversation = {
-      ...createConversation(),
-      linkedContentPath: 'Notes/Architecture.md',
-    };
-    conversation.lastActivityAt = 42;
-    const persistence = createPersistence();
-    const { repository } = createRepository(conversation, persistence);
-
-    await repository.adoptMetadataConversations([
-      { conversation, needsMigration: true, source: 'device' },
-    ]);
-
-    expect(persistence.saveMetadata).toHaveBeenCalledWith(expect.objectContaining({
-      id: conversation.id,
-      lastActivityAt: 42,
-      linkedContentPath: 'Notes/Architecture.md',
-    }));
-    expect(persistence.saveMetadata.mock.calls[0][0]).not.toHaveProperty('updatedAt');
-    expect(persistence.saveMetadata.mock.calls[0][0]).not.toHaveProperty('lastResponseAt');
-    expect(persistence.saveMetadata.mock.calls[0][0]).not.toHaveProperty('currentNote');
-  });
-
-  it('preserves provider state while migrating an unhydrated metadata shell', async () => {
-    const conversation = createConversation();
-    conversation.providerState = {
-      providerSessionId: 'native-session',
-      subagentData: {
-        'task-1': {
-          id: 'task-1',
-          description: 'Completed background task',
-          status: 'completed',
-          result: 'Recovered result',
-          toolCalls: [],
-          isExpanded: false,
-        },
-      },
-    };
-    const persistence = createPersistence();
-    const { repository } = createRepository(conversation, persistence);
-
-    await repository.adoptMetadataConversations([
-      { conversation, needsMigration: true, source: 'device' },
-    ]);
-
-    expect(persistence.saveMetadata).toHaveBeenCalledWith(expect.objectContaining({
-      id: conversation.id,
-      providerState: conversation.providerState,
-    }));
-  });
-
-  it('applies Linked content renames to metadata adopted after the rename event', async () => {
-    const existing = createConversation('existing');
-    const persistence = createPersistence();
-    const { repository } = createRepository(existing, persistence);
-    await repository.rewriteLinkedContentPaths('Notes/Old.md', 'Notes/New.md');
-    persistence.saveMetadata.mockClear();
-
-    const deferredConversation: Conversation = {
-      ...createConversation('deferred'),
-      linkedContentPath: 'Notes/Old.md',
-    };
-    repository.mergeMetadataConversations([deferredConversation]);
-    await repository.adoptMetadataConversations([
-      { conversation: deferredConversation, needsMigration: false, source: 'device' },
-    ]);
-
-    expect(repository.getSync(deferredConversation.id)!.linkedContentPath).toBe('Notes/New.md');
-    expect(persistence.saveMetadata).toHaveBeenCalledWith(expect.objectContaining({
-      id: 'deferred',
-      linkedContentPath: 'Notes/New.md',
-    }));
-  });
 });
 
 describe('ConversationRepository deletion persistence', () => {

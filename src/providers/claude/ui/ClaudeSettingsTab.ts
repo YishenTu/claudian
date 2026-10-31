@@ -1,11 +1,12 @@
 import * as fs from 'fs';
-import { type DropdownComponent, Setting } from 'obsidian';
+import { type DropdownComponent } from 'obsidian';
 
 import { normalizeConfiguredCLIPath } from '@/core/process/cliPath';
 import { probeCLIInstallation } from '@/core/providers/cli/CLIInstallationProbe';
 import { getRuntimeEnvironmentVariables } from '@/core/providers/providerEnvironment';
 import type { ProviderCLIResolver } from '@/core/providers/types';
 import { CLAUDE_PROVIDER_ICON } from '@/shared/icons';
+import { AccessibleSetting } from '@/shared/settings/AccessibleSetting';
 import { renderCLIInstallationSetting } from '@/shared/settings/CLIInstallationSetting';
 
 import type { ProviderModelCatalog } from '../../../core/providers/models/ProviderModelCatalog';
@@ -143,7 +144,7 @@ export function createClaudeSettingsTabRenderer(
 
       // --- Models ---
 
-      new Setting(container).setName(t('settings.models')).setHeading();
+      new AccessibleSetting(container).setName(t('settings.models')).setHeading();
       let outputStyleDropdown: DropdownComponent | null = null;
       // Rebuilt whenever discovery reports a new list, keeping a saved style the list lacks selectable.
       const renderOutputStyleOptions = (): void => {
@@ -167,9 +168,9 @@ export function createClaudeSettingsTabRenderer(
 
       // --- Responses ---
 
-      new Setting(container).setName(t('settings.responses')).setHeading();
+      new AccessibleSetting(container).setName(t('settings.responses')).setHeading();
 
-      new Setting(container)
+      new AccessibleSetting(container)
         .setName(t('settings.claude.promptSuggestions.name'))
         .setDesc(t('settings.claude.promptSuggestions.desc'))
         .addToggle(toggle => toggle
@@ -180,7 +181,7 @@ export function createClaudeSettingsTabRenderer(
             });
           }));
 
-      new Setting(container)
+      new AccessibleSetting(container)
         .setName(t('settings.claude.responseStyle.name'))
         .setDesc(t('settings.claude.responseStyle.desc'))
         .addDropdown((dropdown) => {
@@ -196,9 +197,9 @@ export function createClaudeSettingsTabRenderer(
 
       // --- Configuration ---
 
-      new Setting(container).setName(t('settings.claude.configuration')).setHeading();
+      new AccessibleSetting(container).setName(t('settings.claude.configuration')).setHeading();
 
-      new Setting(container)
+      new AccessibleSetting(container)
         .setName(t('settings.loadUserSettings.name'))
         .setDesc(t('settings.loadUserSettings.desc'))
         .addToggle((toggle) =>
@@ -226,9 +227,9 @@ export function createClaudeSettingsTabRenderer(
 
       // --- Experimental ---
 
-      new Setting(container).setName(t('settings.experimental')).setHeading();
+      new AccessibleSetting(container).setName(t('settings.experimental')).setHeading();
 
-      new Setting(container)
+      new AccessibleSetting(container)
         .setName(t('settings.enableChrome.name'))
         .setDesc(t('settings.enableChrome.desc'))
         .addToggle((toggle) =>

@@ -1,3 +1,22 @@
+import { Events } from '@test/helpers/ObsidianEvents';
+import { createObsidianKeymap } from '@test/helpers/ObsidianKeymap';
+import { createObsidianWorkspace } from '@test/helpers/ObsidianWorkspace';
+import type {
+  AbstractTextComponent as ObsidianTextComponent,
+  BaseComponent,
+  ButtonComponent as ObsidianButtonComponent,
+  DropdownComponent as ObsidianDropdownComponent,
+  KeymapContext,
+  Setting as ObsidianSetting,
+  SettingGroup as ObsidianSettingGroup,
+  ToggleComponent as ObsidianToggleComponent,
+  ValueComponent as ObsidianValueComponent,
+} from 'obsidian';
+import type { MarkdownRenderer as ObsidianMarkdownRenderer, SettingDefinitionItem } from 'obsidian';
+import { parse as parseYAML } from 'yaml';
+
+export { Events };
+
 // Pane selection is an Obsidian boundary; callers can provide its native decision.
 export const Keymap = { isModEvent: vi.fn((_event?: unknown): boolean | 'tab' | 'split' | 'window' => false) };
 
@@ -9,11 +28,12 @@ export class Component {
   private children: Component[] = [];
   private cleanups: (() => void)[] = [];
 
-  load(): void {
+  load(): void | Promise<void> {
     if (this.loaded) return;
     this.loaded = true;
-    this.onload();
-    for (const child of this.children.slice()) child.load();
+    const loading = [this.onload(), ...this.children.slice().map(child => child.load())]
+      .filter(result => result !== undefined);
+    if (loading.length) return Promise.all(loading).then(() => {});
   }
 
   unload(): void {
@@ -24,7 +44,7 @@ export class Component {
     this.onunload();
   }
 
-  onload(): void {}
+  onload(): void | Promise<void> {}
   onunload(): void {}
 
   addChild<T extends Component>(child: T): T {
@@ -45,13 +65,32 @@ export class Component {
   register(callback: () => void): void {
     this.cleanups.push(callback);
   }
+
+  registerEvent(ref: import('obsidian').EventRef): void {
+    if (!('e' in ref) || !(ref.e instanceof Events)) throw new Error('Expected an Obsidian Events reference');
+    const owner = ref.e;
+    this.register(() => owner.offref(ref));
+  }
+
+  registerDomEvent<K extends keyof HTMLElementEventMap>(element: HTMLElement, type: K, callback: (event: HTMLElementEventMap[K]) => unknown, options?: boolean | AddEventListenerOptions): void;
+  registerDomEvent<K extends keyof DocumentEventMap>(element: Document, type: K, callback: (event: DocumentEventMap[K]) => unknown, options?: boolean | AddEventListenerOptions): void;
+  registerDomEvent<K extends keyof WindowEventMap>(element: Window, type: K, callback: (event: WindowEventMap[K]) => unknown, options?: boolean | AddEventListenerOptions): void;
+  registerDomEvent(element: EventTarget, type: string, callback: EventListener, options?: boolean | AddEventListenerOptions): void {
+    element.addEventListener(type, callback, options);
+    this.register(() => element.removeEventListener(type, callback, options));
+  }
+
+  registerInterval(id: number): number {
+    this.register(() => clearInterval(id));
+    return id;
+  }
 }
 
 export class Plugin {
-  app: any;
-  manifest: any;
+  app: import('obsidian').App;
+  manifest: import('obsidian').PluginManifest;
 
-  constructor(app?: any, manifest?: any) {
+  constructor(app: import('obsidian').App, manifest: import('obsidian').PluginManifest) {
     this.app = app;
     this.manifest = manifest;
   }
@@ -66,42 +105,55 @@ export class Plugin {
 }
 
 export class PluginSettingTab {
-  app: any;
-  plugin: any;
-  settingItems: any[] = [];
-  containerEl: any = {
-    empty: vi.fn(),
-    createEl: vi.fn().mockReturnValue({ createEl: vi.fn(), createDiv: vi.fn() }),
-    createDiv: vi.fn().mockReturnValue({ createEl: vi.fn(), createDiv: vi.fn() }),
-  };
+  app: import('obsidian').App;
+  plugin: import('obsidian').Plugin;
+  settingItems: SettingDefinitionItem[] = [];
+  private cleanup: (() => void) | undefined;
+  private container: HTMLElement | undefined;
+  get containerEl(): HTMLElement { return this.container ??= hostDocument().createElement('div'); }
+  set containerEl(element: HTMLElement) { this.container = element; }
 
-  constructor(app: any, plugin: any) {
+  constructor(app: import('obsidian').App, plugin: import('obsidian').Plugin) {
     this.app = app;
     this.plugin = plugin;
   }
 
-  getSettingDefinitions(): any[] {
+  getSettingDefinitions(): SettingDefinitionItem[] {
     return [];
   }
 
-  update() {
+  update(): void {
     this.settingItems = this.getSettingDefinitions();
+    this.hide();
+    this.cleanup = renderSettingDefinitions(this.containerEl, this.settingItems);
+  }
+
+  hide(): void {
+    this.cleanup?.();
+    this.cleanup = undefined;
+    this.container?.replaceChildren();
   }
 }
 
-export class ItemView {
-  app: any = { workspace: { on: vi.fn(), offref: vi.fn() } };
-  leaf: any;
-  containerEl: any = {
-    isShown: () => true,
-    children: [{}, { empty: vi.fn(), addClass: vi.fn(), createDiv: vi.fn().mockReturnValue({
-      createEl: vi.fn().mockReturnValue({ addEventListener: vi.fn(), setAttribute: vi.fn() }),
-      createDiv: vi.fn().mockReturnValue({ createEl: vi.fn().mockReturnValue({ addEventListener: vi.fn() }) }),
-    }) }],
-  };
+export class View extends Component {
+  app: App | import('obsidian').App;
+  leaf: import('obsidian').WorkspaceLeaf;
+  private container: HTMLElement | undefined;
+  get containerEl(): HTMLElement {
+    return this.container ??= this.createContainer();
+  }
+  set containerEl(element: HTMLElement) { this.container = element; }
 
-  constructor(leaf: any) {
+  protected createContainer(): HTMLElement {
+    const container = hostDocument().createElement('div');
+    container.className = 'workspace-leaf-content';
+    return container;
+  }
+
+  constructor(leaf: import('obsidian').WorkspaceLeaf & { app?: import('obsidian').App }) {
+    super();
     this.leaf = leaf;
+    this.app = leaf?.app ?? new App();
   }
 
   getViewType(): string {
@@ -117,9 +169,30 @@ export class ItemView {
   }
 }
 
+export class ItemView extends View {
+  override load(): void {
+    // Obsidian's ItemView starts Component loading but does not return its join promise.
+    super.load();
+  }
+
+  private content: HTMLElement | undefined;
+  private header: HTMLElement | undefined;
+  get contentEl(): HTMLElement { return this.content ?? this.containerEl.children[1] as HTMLElement; }
+  set contentEl(element: HTMLElement) { this.content = element; }
+  get headerEl(): HTMLElement { return this.header ?? this.containerEl.children[0] as HTMLElement; }
+  set headerEl(element: HTMLElement) { this.header = element; }
+
+  protected override createContainer(): HTMLElement {
+    const container = super.createContainer();
+    container.createDiv('view-header');
+    container.createDiv('view-content');
+    return container;
+  }
+}
+
 export class FileView extends ItemView {
   allowNoFile = false;
-  file: any = null;
+  file: import('obsidian').TFile | null = null;
   navigation = true;
 }
 
@@ -137,10 +210,11 @@ export class Scope {
   static instances: Scope[] = [];
 
   parent?: Scope;
+  win: Window | null = null;
   handlers: Array<{
     modifiers: string[] | null;
     key: string | null;
-    func: (evt: KeyboardEvent, ctx?: unknown) => false | unknown;
+    func: (evt: KeyboardEvent, ctx: KeymapContext) => unknown;
   }> = [];
 
   constructor(parent?: Scope) {
@@ -151,9 +225,9 @@ export class Scope {
   register = vi.fn((
     modifiers: string[] | null,
     key: string | null,
-    func: (evt: KeyboardEvent, ctx?: unknown) => false | unknown
+    func: (evt: KeyboardEvent, ctx: KeymapContext) => unknown
   ) => {
-    const handler = { modifiers, key, func };
+    const handler = { scope: this, modifiers, key, func };
     this.handlers.push(handler);
     return handler;
   });
@@ -161,6 +235,35 @@ export class Scope {
   unregister = vi.fn((handler: unknown) => {
     this.handlers = this.handlers.filter((entry) => entry !== handler);
   });
+
+  private matches(handler: Scope['handlers'][number], context: KeymapContext): boolean {
+    const modifiers = handler.modifiers?.map(value => value === 'Mod' ? (Platform.isMacOS ? 'Meta' : 'Ctrl') : value)
+      .sort().join(',');
+    return (modifiers === undefined || modifiers === context.modifiers)
+      && (!handler.key || handler.key === context.vkey || handler.key.toLowerCase() === context.key?.toLowerCase());
+  }
+
+  // app.js ly: undefined from a specific binding stops scope fallback but does not consume the DOM event.
+  handleKey(event: KeyboardEvent, context: KeymapContext): unknown {
+    for (const handler of this.handlers) {
+      if (!this.matches(handler, context)) continue;
+      const result = handler.func(event, context);
+      if (result !== undefined || handler.key !== null || handler.modifiers !== null) return result;
+    }
+    return this.parent?.handleKey(event, context);
+  }
+
+  /** Direct boundary dispatch for existing callers; use a real keydown for capture/target behavior. */
+  press(modifiers: string[], key: string): boolean {
+    const compiled = modifiers.map(value => value === 'Mod' ? (Platform.isMacOS ? 'Meta' : 'Ctrl') : value);
+    const context = { modifiers: compiled.sort().join(','), key, vkey: key };
+    if (!this.handlers.some(handler => this.matches(handler, context))) return this.parent?.press(modifiers, key) ?? false;
+    this.handleKey(new KeyboardEvent('keydown', {
+      key, cancelable: true, ctrlKey: compiled.includes('Ctrl'), metaKey: compiled.includes('Meta'),
+      altKey: compiled.includes('Alt'), shiftKey: compiled.includes('Shift'),
+    }), context);
+    return true;
+  }
 }
 
 export const Platform = {
@@ -168,13 +271,33 @@ export const Platform = {
   resourcePathPrefix: 'app://local/',
 };
 
+export class Vault extends Events {
+  adapter = { basePath: '/mock/vault/path' };
+  getAllLoadedFiles(): Array<TFile | TFolder> { return []; }
+  getFiles(): TFile[] { return this.getAllLoadedFiles().filter((file): file is TFile => file instanceof TFile); }
+  getMarkdownFiles(): TFile[] { return this.getFiles().filter(file => file.extension === 'md'); }
+  getAbstractFileByPath(path: string): TFile | TFolder | null {
+    return this.getAllLoadedFiles().find(file => file.path === path) ?? null;
+  }
+}
+
+export class MetadataCache extends Events {
+  resolvedLinks: Record<string, Record<string, number>> = {};
+  unresolvedLinks: Record<string, Record<string, number>> = {};
+  getFileCache(_file: TFile): import('obsidian').CachedMetadata | null { return null; }
+  getFirstLinkpathDest(_linkpath: string, _sourcePath: string): TFile | null { return null; }
+}
+
 export class App {
-  vault: any = {
-    adapter: {
-      basePath: '/mock/vault/path',
-    },
-  };
-  workspace: any = {
+  metadataCache = new MetadataCache();
+  keymap = createObsidianKeymap(new Scope(), () =>
+    activeDocument?.defaultView ?? (typeof document === 'undefined' ? null : document.defaultView));
+  vault = new Vault();
+  // Keep the workspace instance that owns its readiness and callback queue.
+  workspace = Object.assign(createObsidianWorkspace(
+    typeof document === 'undefined' ? undefined : hostDocument().createElement('div'),
+  ), {
+    getActiveFile: (): TFile | null => null,
     getLeavesOfType: vi.fn().mockReturnValue([]),
     getRightLeaf: vi.fn().mockReturnValue({
       setViewState: vi.fn().mockResolvedValue(undefined),
@@ -187,70 +310,266 @@ export class App {
     }),
     setActiveLeaf: vi.fn(),
     revealLeaf: vi.fn(),
-  };
+  });
 }
 
 export class MarkdownView {
-  editor: any;
-  file?: any;
+  editor: import('obsidian').Editor | undefined;
+  file?: import('obsidian').TFile;
+  containerEl: HTMLElement;
 
-  constructor(editor?: any, file?: any) {
+  constructor(editor?: import('obsidian').Editor, file?: import('obsidian').TFile) {
     this.editor = editor;
     this.file = file;
+    this.containerEl = typeof document === 'undefined' ? undefined! : hostDocument().createElement('div');
+  }
+
+  // The host's current mode is source or preview. Tests can select preview through this public port.
+  getMode(): 'source' | 'preview' { return 'source'; }
+}
+
+const pendingChanges = new WeakMap<HTMLElement, Promise<void>>();
+
+/** The latest callback for this control or its owning ancestor; retains rejection for explicit assertions. */
+export function controlChangeSettled(element: HTMLElement): Promise<void> {
+  for (let control: HTMLElement | null = element; control; control = control.parentElement) {
+    const pending = pendingChanges.get(control);
+    if (pending) return pending;
+  }
+  return Promise.resolve();
+}
+
+function runControlCallback(element: HTMLElement, callback: () => unknown): void {
+  let resolve!: () => void;
+  let reject!: (error: unknown) => void;
+  const pending = new Promise<void>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  // Publish before invocation: setValue inside the callback may start a newer change.
+  pendingChanges.set(element, pending);
+  void pending.catch(() => undefined);
+  try { void Promise.resolve(callback()).then(resolve, reject); }
+  catch (error) { reject(error); }
+}
+
+abstract class ValueComponent<T> implements ObsidianValueComponent<T> {
+  disabled = false;
+  then(callback: (component: this) => unknown): this { callback(this); return this; }
+  registerOptionListener(listeners: Record<string, (value?: T) => T>, key: string): this {
+    listeners[key] = value => { if (value !== undefined) this.setValue(value); return this.getValue(); };
+    return this;
+  }
+  abstract setDisabled(disabled: boolean): this;
+  abstract getValue(): T;
+  abstract setValue(value: T): this;
+}
+
+export class TextComponent<T extends HTMLInputElement | HTMLTextAreaElement = HTMLInputElement>
+extends ValueComponent<string> implements ObsidianTextComponent<T> {
+  readonly inputEl: T;
+  private change: ((value: string) => unknown) | undefined;
+  constructor(container: HTMLElement, tag: 'input' | 'textarea' = 'input') {
+    super();
+    this.inputEl = container.appendChild(hostDocument().createElement(tag)) as T;
+    if (tag === 'input') this.inputEl.setAttribute('type', 'text');
+    this.inputEl.setAttribute('spellcheck', 'false');
+    this.inputEl.addEventListener('input', () => this.onChanged());
+  }
+  setDisabled(value: boolean): this { this.disabled = this.inputEl.disabled = value; return this; }
+  getValue(): string { return this.inputEl.value; }
+  setValue(value: string): this { this.inputEl.value = value; return this; }
+  setPlaceholder(value: string): this { this.inputEl.placeholder = value; return this; }
+  onChanged(): void { if (this.change) runControlCallback(this.inputEl, () => this.change!(this.getValue())); }
+  onChange(callback: (value: string) => unknown): this { this.change = callback; return this; }
+}
+
+export class DropdownComponent extends ValueComponent<string> implements ObsidianDropdownComponent {
+  readonly selectEl: HTMLSelectElement;
+  private change: ((value: string) => unknown) | undefined;
+  private readonly measureOption: HTMLOptionElement;
+  constructor(container: HTMLElement) {
+    super();
+    this.selectEl = container.appendChild(hostDocument().createElement('select'));
+    this.selectEl.className = 'dropdown';
+    const measure = container.appendChild(hostDocument().createElement('select'));
+    measure.className = 'dropdown is-measuring';
+    measure.setAttribute('aria-hidden', 'true');
+    measure.tabIndex = -1;
+    this.measureOption = measure.appendChild(hostDocument().createElement('option'));
+    this.selectEl.addEventListener('change', () => {
+      this.resizeToFit();
+      if (this.change) runControlCallback(this.selectEl, () => this.change!(this.getValue()));
+    });
+  }
+  private resizeToFit(): void {
+    const selected = this.selectEl.selectedOptions[0];
+    if (selected) this.measureOption.text = selected.text;
+  }
+  setDisabled(value: boolean): this { this.disabled = this.selectEl.disabled = value; return this; }
+  addOption(value: string, label: string): this { this.selectEl.add(new Option(label, value)); return this; }
+  addOptions(options: Record<string, string>): this {
+    for (const [value, label] of Object.entries(options)) this.addOption(value, label);
+    return this;
+  }
+  getValue(): string { return this.selectEl.value; }
+  setValue(value: string): this { this.selectEl.value = value; this.resizeToFit(); return this; }
+  onChange(callback: (value: string) => unknown): this {
+    this.change = callback;
+    return this;
   }
 }
 
-export class Setting {
-  constructor(_containerEl: any) {}
-  setName = vi.fn().mockReturnThis();
-  setDesc = vi.fn().mockReturnThis();
-  addToggle = vi.fn().mockReturnThis();
-  addTextArea = vi.fn().mockReturnThis();
+export class ToggleComponent extends ValueComponent<boolean> implements ObsidianToggleComponent {
+  readonly toggleEl: HTMLLabelElement;
+  private on = false;
+  private change: ((value: boolean) => unknown) | undefined;
+  constructor(container: HTMLElement) {
+    super();
+    this.toggleEl = container.appendChild(hostDocument().createElement('label'));
+    this.toggleEl.className = 'checkbox-container';
+    this.toggleEl.tabIndex = 0;
+    const input = this.toggleEl.appendChild(hostDocument().createElement('input'));
+    input.type = 'checkbox';
+    input.tabIndex = -1;
+    this.toggleEl.addEventListener('change', () => this.onClick());
+    this.toggleEl.addEventListener('keydown', event => {
+      if (event.key === ' ' || event.key === 'Enter') { event.preventDefault(); this.onClick(); }
+    });
+  }
+  setDisabled(value: boolean): this {
+    this.disabled = value; this.toggleEl.classList.toggle('is-disabled', value); return this;
+  }
+  getValue(): boolean { return this.on; }
+  setValue(value: boolean): this {
+    if (this.on !== value) {
+      this.on = value;
+      this.toggleEl.classList.toggle('is-enabled', value);
+      if (this.change) runControlCallback(this.toggleEl, () => this.change!(value));
+    }
+    return this;
+  }
+  setTooltip(value: string): this { this.toggleEl.setAttribute('aria-label', value); return this; }
+  onClick(): void { if (!this.disabled) this.setValue(!this.getValue()); }
+  onChange(callback: (value: boolean) => unknown): this { this.change = callback; return this; }
 }
 
-export class Modal {
-  app: any;
-  containerEl: any = {
-    createDiv: vi.fn().mockReturnValue({
-      createEl: vi.fn().mockReturnValue({ addEventListener: vi.fn() }),
-      createDiv: vi.fn().mockReturnValue({
-        createEl: vi.fn().mockReturnValue({ addEventListener: vi.fn() }),
-        createDiv: vi.fn().mockReturnValue({
-          createEl: vi.fn(),
-        }),
-        setText: vi.fn(),
-      }),
-      addClass: vi.fn(),
-      setText: vi.fn(),
-    }),
-    empty: vi.fn(),
-    addClass: vi.fn(),
-  };
-  contentEl: any = {
-    createDiv: vi.fn().mockReturnValue({
-      createEl: vi.fn().mockReturnValue({ addEventListener: vi.fn() }),
-      createDiv: vi.fn().mockReturnValue({
-        createEl: vi.fn().mockReturnValue({ addEventListener: vi.fn() }),
-        createDiv: vi.fn().mockReturnValue({
-          createEl: vi.fn(),
-        }),
-        setText: vi.fn(),
-      }),
-      addClass: vi.fn(),
-      setText: vi.fn(),
-    }),
-    empty: vi.fn(),
-    addClass: vi.fn(),
-  };
-
-  constructor(app: any) {
-    this.app = app;
+export class Setting implements ObsidianSetting {
+  readonly components: BaseComponent[] = [];
+  errorEl: HTMLElement | null = null;
+  readonly settingEl: HTMLElement;
+  readonly infoEl: HTMLElement;
+  readonly nameEl: HTMLElement;
+  readonly descEl: HTMLElement;
+  readonly controlEl: HTMLElement;
+  constructor(container: HTMLElement) {
+    this.settingEl = container.appendChild(hostDocument().createElement('div'));
+    this.settingEl.classList.add('setting-item');
+    this.settingEl.tabIndex = -1;
+    this.infoEl = this.settingEl.appendChild(hostDocument().createElement('div'));
+    this.infoEl.className = 'setting-item-info';
+    this.nameEl = this.infoEl.appendChild(hostDocument().createElement('div'));
+    this.nameEl.className = 'setting-item-name';
+    this.descEl = this.infoEl.appendChild(hostDocument().createElement('div'));
+    this.descEl.className = 'setting-item-description';
+    this.controlEl = this.settingEl.appendChild(hostDocument().createElement('div'));
+    this.controlEl.className = 'setting-item-control';
   }
+  then(callback: (setting: this) => unknown): this { callback(this); return this; }
+  clear(): this { this.controlEl.replaceChildren(); this.components.length = 0; this.errorEl = null; this.settingEl.classList.remove('is-invalid'); return this; }
+  setTooltip(value: string): this { this.nameEl.setAttribute('aria-label', value); return this; }
+  setDisabled(value: boolean): this {
+    this.settingEl.classList.toggle('is-disabled', value);
+    for (const control of this.components) control.setDisabled(value);
+    return this;
+  }
+  setErrorMessage(message: string | null): this {
+    this.settingEl.classList.toggle('is-invalid', Boolean(message));
+    if (!message) { this.errorEl?.remove(); this.errorEl = null; return this; }
+    this.errorEl ??= this.controlEl.appendChild(hostDocument().createElement('div'));
+    this.errorEl.textContent = message;
+    return this;
+  }
+  addComponent<T extends BaseComponent>(callback: (element: HTMLElement) => T): this {
+    this.components.push(callback(this.controlEl)); return this;
+  }
+  addExtraButton(): this { throw new Error('Obsidian fake does not model extra buttons'); }
+  addSearch(): this { throw new Error('Obsidian fake does not model search controls'); }
+  addMomentFormat(): this { throw new Error('Obsidian fake does not model moment format controls'); }
+  addColorPicker(): this { throw new Error('Obsidian fake does not model color pickers'); }
+  addProgressBar(): this { throw new Error('Obsidian fake does not model progress bars'); }
+  addSlider(): this { throw new Error('Obsidian fake does not model sliders'); }
+  setName(value: Parameters<ObsidianSetting['setName']>[0]): this { this.nameEl.replaceChildren(value); return this; }
+  setDesc(value: Parameters<ObsidianSetting['setDesc']>[0]): this { this.descEl.replaceChildren(value); return this; }
+  setClass(value: string): this { this.settingEl.classList.add(...value.split(' ').filter(Boolean)); return this; }
+  setHeading(): this {
+    this.settingEl.classList.add('setting-item-heading');
+    return this;
+  }
+  addText(callback: Parameters<ObsidianSetting['addText']>[0]): this {
+    const control = new TextComponent(this.controlEl); this.components.push(control); callback(control); return this;
+  }
+  addTextArea(callback: Parameters<ObsidianSetting['addTextArea']>[0]): this {
+    const control = new TextComponent<HTMLTextAreaElement>(this.controlEl, 'textarea');
+    this.components.push(control); callback(control); return this;
+  }
+  addDropdown(callback: Parameters<ObsidianSetting['addDropdown']>[0]): this {
+    const control = new DropdownComponent(this.controlEl); this.components.push(control); callback(control); return this;
+  }
+  addToggle(callback: Parameters<ObsidianSetting['addToggle']>[0]): this {
+    const control = new ToggleComponent(this.controlEl); this.components.push(control); callback(control);
+    this.settingEl.classList.add('mod-toggle'); return this;
+  }
+  addButton(callback: Parameters<ObsidianSetting['addButton']>[0]): this {
+    const control = new ButtonComponent(this.controlEl); this.components.push(control); callback(control); return this;
+  }
+}
 
-  open = vi.fn();
-  close = vi.fn();
-  onOpen = vi.fn();
-  onClose = vi.fn();
+export class ButtonComponent implements ObsidianButtonComponent {
+  readonly buttonEl: HTMLButtonElement;
+  disabled = false;
+  constructor(container: HTMLElement) {
+    this.buttonEl = container.appendChild(hostDocument().createElement('button'));
+  }
+  then(callback: (component: this) => unknown): this { callback(this); return this; }
+  setDisabled(value: boolean): this { this.disabled = this.buttonEl.disabled = value; return this; }
+  setButtonText(value: string): this { this.buttonEl.textContent = value; return this; }
+  setCta(): this { this.buttonEl.classList.add('mod-cta'); return this; }
+  removeCta(): this { this.buttonEl.classList.remove('mod-cta'); return this; }
+  setDestructive(): this { this.buttonEl.classList.add('mod-destructive'); return this; }
+  removeDestructive(): this { this.buttonEl.classList.remove('mod-destructive'); return this; }
+  setWarning(): this { return this.setDestructive(); }
+  setTooltip(value: string): this { this.buttonEl.setAttribute('aria-label', value); return this; }
+  setIcon(value: string): this { setIcon(this.buttonEl, value); return this; }
+  setClass(value: string): this { this.buttonEl.classList.add(value); return this; }
+  onClick(callback: (event: MouseEvent) => unknown): this {
+    this.buttonEl.addEventListener('click', event => runControlCallback(this.buttonEl, () => callback(event))); return this;
+  }
+}
+
+
+/** Only imperative definition rows are needed by the plugin's declarative tab. */
+export function renderSettingDefinitions(container: HTMLElement, definitions: SettingDefinitionItem[]): () => void {
+  const cleanups: Array<() => void> = [];
+  const group: ObsidianSettingGroup = {
+    listEl: container,
+    setHeading() { throw new Error('Obsidian fake does not model group headings'); },
+    addClass(name) { container.classList.add(name); return this; },
+    addSetting(callback) { callback(new Setting(container)); return this; },
+    addSearch() { throw new Error('Obsidian fake does not model group search'); },
+    addExtraButton() { throw new Error('Obsidian fake does not model group buttons'); },
+  };
+  for (const definition of definitions) {
+    if (definition.visible === false || (typeof definition.visible === 'function' && !definition.visible())) continue;
+    if (!('render' in definition) || typeof definition.render !== 'function') {
+      throw new Error('Obsidian fake only models imperative setting definitions');
+    }
+    const setting = new Setting(container).setName(definition.name);
+    if (definition.desc) setting.setDesc(definition.desc);
+    const cleanup = definition.render(setting, group);
+    if (cleanup) cleanups.push(cleanup);
+  }
+  return () => { for (const cleanup of cleanups.splice(0).reverse()) cleanup(); };
 }
 
 class MockMenuItem {
@@ -335,10 +654,13 @@ export class Menu {
   });
 }
 
-const renderMarkdownMock = vi.fn<(...args: [string, unknown, string, unknown]) => Promise<void>>().mockResolvedValue(undefined);
+const renderMarkdownMock = vi.fn<typeof ObsidianMarkdownRenderer.renderMarkdown>(async (markdown, element) => {
+  element.textContent = markdown;
+});
+
 
 export const MarkdownRenderer = {
-  render: vi.fn<(...args: [unknown, string, unknown, string, unknown]) => Promise<void>>(
+  render: vi.fn<typeof ObsidianMarkdownRenderer.render>(
     (_app, markdown, el, sourcePath, component) => renderMarkdownMock(markdown, el, sourcePath, component),
   ),
   renderMarkdown: renderMarkdownMock,
@@ -350,150 +672,29 @@ export const loadPrism = vi.fn().mockResolvedValue({
   highlightElement: vi.fn(),
 });
 
-export const setIcon = vi.fn();
+export const setIcon = vi.fn((_element: HTMLElement, _iconId: string) => {});
 
 // Notice mock that tracks constructor calls
 export const Notice = vi.fn().mockImplementation(function (_message: string, _timeout?: number) {});
 
-function unquoteYaml(value: string): string {
-  if (
-    (value.startsWith('"') && value.endsWith('"')) ||
-    (value.startsWith("'") && value.endsWith("'"))
-  ) {
-    return value.slice(1, -1);
-  }
-  return value;
+// Obsidian 1.13.7 app.js yL delegates to YAML.parse(source, null, {}),
+// with ordinary errors enabled. The installed yaml public-api implementation matches wT.
+export function parseYaml(content: string): unknown {
+  return parseYAML(content, {});
 }
 
-function parseYamlValue(rawValue: string): unknown {
-  if (!rawValue) return null;
-
-  if (rawValue.startsWith('{') && rawValue.endsWith('}')) {
-    try { return JSON.parse(rawValue); } catch { /* fall through */ }
-  }
-
-  if (rawValue.startsWith('[') && rawValue.endsWith(']')) {
-    return rawValue.slice(1, -1).split(',').map(item => unquoteYaml(item.trim())).filter(Boolean);
-  }
-
-  if (rawValue === 'true' || rawValue === 'false') {
-    return rawValue === 'true';
-  }
-
-  const numberValue = Number(rawValue);
-  if (!Number.isNaN(numberValue) && rawValue !== '') {
-    return numberValue;
-  }
-
-  return unquoteYaml(rawValue);
-}
-
-export function parseYaml(content: string): Record<string, unknown> {
-  const result: Record<string, unknown> = {};
-  const lines = content.split(/\r?\n/);
-  let currentArrayKey: string | null = null;
-  let currentArray: string[] = [];
-  let blockScalarKey: string | null = null;
-  let blockScalarStyle: 'literal' | 'folded' | null = null;
-  let blockScalarLines: string[] = [];
-  let blockScalarIndent: number | null = null;
-
-  const flushArray = () => {
-    if (currentArrayKey) {
-      result[currentArrayKey] = currentArray;
-      currentArrayKey = null;
-      currentArray = [];
-    }
-  };
-
-  const flushBlockScalar = () => {
-    if (!blockScalarKey) return;
-    let value: string;
-    if (blockScalarStyle === 'literal') {
-      value = blockScalarLines.join('\n');
-    } else {
-      value = blockScalarLines.join('\n').replace(/(?<!\n)\n(?!\n)/g, ' ').trim();
-    }
-    result[blockScalarKey] = value;
-    blockScalarKey = null;
-    blockScalarStyle = null;
-    blockScalarLines = [];
-    blockScalarIndent = null;
-  };
-
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    const trimmed = line.trim();
-
-    // Handle block scalar content
-    if (blockScalarKey) {
-      if (trimmed === '') {
-        blockScalarLines.push('');
-        continue;
-      }
-      const leadingSpaces = line.match(/^(\s*)/)?.[1].length ?? 0;
-      if (blockScalarIndent === null) {
-        if (leadingSpaces === 0) {
-          flushBlockScalar();
-          // fall through to process this line
-        } else {
-          blockScalarIndent = leadingSpaces;
-          blockScalarLines.push(line.slice(blockScalarIndent));
-          continue;
-        }
-      } else if (leadingSpaces >= blockScalarIndent) {
-        blockScalarLines.push(line.slice(blockScalarIndent));
-        continue;
-      } else {
-        flushBlockScalar();
-        // fall through
-      }
-    }
-
-    // Handle YAML list items (- value)
-    if (currentArrayKey && trimmed.startsWith('- ')) {
-      currentArray.push(unquoteYaml(trimmed.slice(2).trim()));
-      continue;
-    }
-
-    // Not a list item — flush any pending array
-    if (currentArrayKey && trimmed !== '') {
-      flushArray();
-    }
-
-    if (!trimmed) continue;
-
-    const match = trimmed.match(/^([^:]+):\s*(.*)$/);
-    if (!match) continue;
-
-    const key = match[1].trim();
-    const rawValue = match[2].trim();
-    if (!key) continue;
-
-    // Check for block scalar indicator (| or >) with optional chomping
-    const blockMatch = rawValue.match(/^([|>])([+-])?$/);
-    if (blockMatch) {
-      blockScalarKey = key;
-      blockScalarStyle = blockMatch[1] === '|' ? 'literal' : 'folded';
-      blockScalarLines = [];
-      blockScalarIndent = null;
-      continue;
-    }
-
-    if (!rawValue) {
-      // Could be start of a YAML list or a null value — peek ahead
-      currentArrayKey = key;
-      currentArray = [];
-      continue;
-    }
-
-    result[key] = parseYamlValue(rawValue);
-  }
-
-  if (blockScalarKey) flushBlockScalar();
-  flushArray();
-
-  return result;
+/** Obsidian app.js _T: strict opening delimiter, line-start closing delimiter, original offsets. */
+export function getFrontMatterInfo(content: string): import('obsidian').FrontMatterInfo {
+  const missing = { exists: false, contentStart: 0, from: 0, to: 0, frontmatter: '' };
+  const opening = /^---(\r?\n)/.exec(content);
+  if (!opening) return missing;
+  const from = opening[0].length;
+  const closing = /---(\r?\n|$)/g;
+  closing.lastIndex = from;
+  let match = closing.exec(content);
+  while (match && content.charAt(match.index - 1) !== '\n') match = closing.exec(content);
+  if (!match) return missing;
+  return { exists: true, frontmatter: content.slice(from, match.index), from, to: match.index, contentStart: closing.lastIndex };
 }
 
 // TFile class for instanceof checks
@@ -514,7 +715,7 @@ export class TFile {
 export class TFolder {
   path: string;
   name: string;
-  children: any[] = [];
+  children: Array<TFile | TFolder> = [];
 
   constructor(path: string = '') {
     this.path = path;
@@ -524,3 +725,70 @@ export class TFolder {
 
 // The host serializer is optional; retain the existing fallback exercised by tests.
 export const stringifyYaml = undefined;
+
+
+/** DOM use is explicit; importing the host or constructing non-DOM services remains Node-safe. */
+function hostDocument(): Document {
+  if (typeof document === 'undefined') throw new Error('Obsidian DOM controls require a jsdom test environment');
+  return document;
+}
+
+export { Scope as ModalScope };
+
+let activeDocument: Document | undefined;
+
+/** Selects the Obsidian active-window boundary without replacing Modal or its lifecycle. */
+export function setObsidianActiveDocument(document?: Document): void {
+  activeDocument = document;
+}
+
+export class Modal {
+  private container: HTMLDivElement | undefined;
+  private modal: HTMLDivElement | undefined;
+  private title: HTMLDivElement | undefined;
+  private content: HTMLDivElement | undefined;
+  readonly scope = new Scope();
+  private closeCallback: (() => void) | undefined;
+  constructor(readonly app: App) {
+    this.scope.register([], 'Escape', event => {
+      if (!event.defaultPrevented) { event.preventDefault(); this.close(); }
+    });
+  }
+  // Obsidian 1.13.7 app.js fw: these are plain divs; setTitle adds no ARIA.
+  get containerEl(): HTMLDivElement {
+    if (!this.container) {
+      this.container = hostDocument().createElement('div');
+      this.container.className = 'modal-container';
+      this.container.createDiv('modal-bg');
+      const modal = this.modal = this.container.createDiv('modal');
+      modal.createDiv('modal-header-button mod-raised clickable-icon').addEventListener('click', () => this.close());
+      this.title = modal.createDiv('modal-header').createDiv('modal-title');
+      this.content = modal.createDiv('modal-content');
+    }
+    return this.container;
+  }
+  get modalEl(): HTMLDivElement { if (!this.modal) void this.containerEl; return this.modal!; }
+  get titleEl(): HTMLDivElement { if (!this.title) void this.containerEl; return this.title!; }
+  get contentEl(): HTMLDivElement { if (!this.content) void this.containerEl; return this.content!; }
+  setTitle(title: string): this { this.titleEl.textContent = title; return this; }
+  setContent(content: string | DocumentFragment): this {
+    if (typeof content === 'string') this.contentEl.textContent = content;
+    else this.contentEl.appendChild(content);
+    return this;
+  }
+  setCloseCallback(callback: () => void): this { this.closeCallback = callback; return this; }
+  open(): void {
+    if (this.containerEl.parentNode) return;
+    this.app.keymap.pushScope(this.scope);
+    (activeDocument ?? hostDocument()).body.appendChild(this.containerEl);
+    this.onOpen();
+  }
+  close(): void {
+    this.app.keymap.popScope(this.scope);
+    this.container?.remove();
+    this.onClose();
+    this.closeCallback?.();
+  }
+  onOpen(): void {}
+  onClose(): void {}
+}

@@ -1,14 +1,15 @@
+// @test-ci {"inputs":["tests/helpers/providers/opencode/OpencodeNativePeer.cjs"]}
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { setTimeout as yieldToIO } from 'node:timers/promises';
 
-import { runtimeHostFor } from '@test/helpers/providerRuntimeHost';
 import { testDate } from '@test/helpers/testClock';
 
+import { OpencodeCommandLoader } from '@/providers/opencode/app/OpencodeCommandLoader';
 import { OpencodeServerService } from '@/providers/opencode/http/OpencodeServerService';
 import { OpencodeHTTPMetadataProbe } from '@/providers/opencode/metadata/OpencodeHTTPMetadataProbe';
 import { OpencodeMetadataService } from '@/providers/opencode/metadata/OpencodeMetadataService';
 import { assertOpencodeModelAvailable } from '@/providers/opencode/runtime/OpencodeModelAvailability';
-import { getOpencodeProviderSettings } from '@/providers/opencode/settings';
+import { getOpencodeProviderSettings, updateOpencodeProviderSettings } from '@/providers/opencode/settings';
 
 import { createOpencodeHTTPMetadataFixture, type OpencodeHTTPMetadataFixture, waitUntil } from './OpencodeHTTPMetadataFixture';
 
@@ -32,35 +33,46 @@ it('includes account-backed models in the first discovery and keeps the saved se
   const catalog = JSON.parse(readFileSync(fixture.environment.CATALOG_FILE!, 'utf8'));
   catalog.push({ providerID: 'opencode-go', id: 'deepseek-v4.1-flash', name: 'DeepSeek Flash', enabled: true });
   writeFileSync(fixture.environment.CATALOG_FILE!, JSON.stringify(catalog));
-  const plugin = fixture.createPlugin();
-  plugin.settings.providerConfigs.opencode.visibleModels = ['opencode-go/deepseek-v4.1-flash'];
-  const service = new OpencodeMetadataService(runtimeHostFor(plugin, 'opencode'), plugin.executionLifecycleRegistry);
+  const { host: plugin } = await fixture.createHostFixture();
+  updateOpencodeProviderSettings(plugin.settings, { visibleModels: ['opencode-go/deepseek-v4.1-flash'] });
+  const service = new OpencodeMetadataService(plugin.getRuntimeHost('opencode'), plugin.executionLifecycleRegistry);
   try {
     await expect(service.loadCatalog()).resolves.toBe(true);
     expect(getOpencodeProviderSettings(plugin.settings).discoveredModels).toContainEqual({
       rawId: 'opencode-go/deepseek-v4.1-flash', label: 'opencode-go/DeepSeek Flash',
     });
-    expect(() => assertOpencodeModelAvailable(runtimeHostFor(plugin, 'opencode'), 'opencode:opencode-go/deepseek-v4.1-flash')).not.toThrow();
+    expect(() => assertOpencodeModelAvailable(plugin.getRuntimeHost('opencode'), 'opencode:opencode-go/deepseek-v4.1-flash')).not.toThrow();
   } finally { await service.dispose(); }
 });
 
 it('discovers native commands after catalog loading and lists skills', async () => {
-  const plugin = fixture.createPlugin();
-  const service = new OpencodeMetadataService(runtimeHostFor(plugin, 'opencode'), plugin.executionLifecycleRegistry);
+  const { host: plugin } = await fixture.createHostFixture();
+  updateOpencodeProviderSettings(plugin.settings, { discoveredModels: [{ rawId: 'old/model', label: 'Old model' }] });
+  const host = plugin.getRuntimeHost('opencode');
+  const writes = vi.spyOn(host, 'updateConfig');
+  const service = new OpencodeMetadataService(host, plugin.executionLifecycleRegistry);
   try {
-    const result = await service.discoverCommands();
-    expect(result.loaded).toBe(true);
-    expect(result.commands.map(({ name, kind, description }) => ({ name, kind, description }))).toEqual([
+    const loader = new OpencodeCommandLoader(service);
+    const result = await loader.loadCommands({ plugin, conversation: null, allowIsolatedMetadataCreation: true });
+    expect(result.status).toBe('ready');
+    if (result.status !== 'ready') throw new Error('Native commands did not load');
+    expect(result.items.map(({ name, kind, description }) => ({ name, kind, description }))).toEqual([
       { name: 'review', kind: 'command', description: 'Review changes' },
       { name: 'writing', kind: 'skill', description: 'Writing guide' },
     ]);
+    expect(getOpencodeProviderSettings(plugin.settings).discoveredModels).toEqual([{ rawId: 'old/model', label: 'Old model' }]);
+    expect(writes).not.toHaveBeenCalled();
+    // A borrowed service remains usable, on the same native process, after the loader returns.
+    const endpoint = readFileSync(fixture.environment.ENDPOINT_FILE!, 'utf8');
+    await expect(service.loadCatalog()).resolves.toBe(true);
+    expect(readFileSync(fixture.environment.ENDPOINT_FILE!, 'utf8')).toBe(endpoint);
   } finally { await service.dispose(); }
 });
 
 it.each(['404', '500'])('loads models when the optional readiness endpoint returns %s', async status => {
   fixture.environment.INTEGRATION_STATUS = status;
-  const plugin = fixture.createPlugin();
-  const service = new OpencodeMetadataService(runtimeHostFor(plugin, 'opencode'), plugin.executionLifecycleRegistry);
+  const { host: plugin } = await fixture.createHostFixture();
+  const service = new OpencodeMetadataService(plugin.getRuntimeHost('opencode'), plugin.executionLifecycleRegistry);
   try {
     await expect(service.loadCatalog()).resolves.toBe(true);
     await expect(service.warmModelMetadata('opencode:deepseek/chat')).resolves.toBe(true);
@@ -69,8 +81,8 @@ it.each(['404', '500'])('loads models when the optional readiness endpoint retur
 
 it('bounds the readiness wait and aborts its request without stopping the retained server', async () => {
   fixture.environment.INTEGRATION_STATUS = 'hang';
-  const plugin = fixture.createPlugin();
-  const service = new OpencodeMetadataService(runtimeHostFor(plugin, 'opencode'), plugin.executionLifecycleRegistry);
+  const { host: plugin } = await fixture.createHostFixture();
+  const service = new OpencodeMetadataService(plugin.getRuntimeHost('opencode'), plugin.executionLifecycleRegistry);
   vi.useFakeTimers({ now: testDate(), toFake: ['Date', 'setTimeout', 'clearTimeout'] });
   const loading = service.loadCatalog();
   let settled = false;
@@ -98,8 +110,8 @@ it('bounds the readiness wait and aborts its request without stopping the retain
 it('returns a successful empty command and skill snapshot without waiting for discovery', async () => {
   writeFileSync(fixture.environment.CATALOG_FILE! + '.commands', '[]');
   writeFileSync(fixture.environment.CATALOG_FILE! + '.skills', '[]');
-  const plugin = fixture.createPlugin();
-  const service = new OpencodeMetadataService(runtimeHostFor(plugin, 'opencode'), plugin.executionLifecycleRegistry);
+  const { host: plugin } = await fixture.createHostFixture();
+  const service = new OpencodeMetadataService(plugin.getRuntimeHost('opencode'), plugin.executionLifecycleRegistry);
   try {
     await service.loadCatalog();
     const started = performance.now();

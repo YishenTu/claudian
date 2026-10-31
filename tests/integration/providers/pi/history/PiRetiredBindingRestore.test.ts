@@ -46,7 +46,7 @@ function retiredByEarlierVersion(conversation: Conversation): Conversation {
 }
 
 function fixture(conversations: Conversation[]) {
-  const settings = structuredClone(DEFAULT_CLAUDIAN_SETTINGS) as ClaudianSettings & Record<string, any>;
+  const settings = structuredClone(DEFAULT_CLAUDIAN_SETTINGS) satisfies ClaudianSettings;
   settings.providerConfigs = {
     ...settings.providerConfigs,
     pi: { enabled: true, environmentVariables: `PI_CODING_AGENT_SESSION_DIR=${sessionDir}\nHOME=${root}` },

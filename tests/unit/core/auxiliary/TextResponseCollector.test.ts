@@ -5,7 +5,7 @@ import { TextResponseCollector } from '@/core/auxiliary/TextResponseCollector';
 describe('TextResponseCollector', () => {
   it('collects deltas and requires completion', async () => {
     const session = new FakeAuxiliarySession();
-    const run = session.execute({} as any);
+    const run = session.execute({ input: [], configuration: { model: 'test', permissionMode: 'normal', systemInstructions: { kind: 'explicit', instructions: '' } }, toolPolicy: { kind: 'passive' }, signal: new AbortController().signal });
     const result = new TextResponseCollector().collect(run);
 
     session.emitText('Hello');
@@ -17,7 +17,7 @@ describe('TextResponseCollector', () => {
 
   it('turns normalized terminal failures into typed collector errors', async () => {
     const session = new FakeAuxiliarySession();
-    const run = session.execute({} as any);
+    const run = session.execute({ input: [], configuration: { model: 'test', permissionMode: 'normal', systemInstructions: { kind: 'explicit', instructions: '' } }, toolPolicy: { kind: 'passive' }, signal: new AbortController().signal });
     const result = new TextResponseCollector().collect(run);
     session.fail('provider failed');
 

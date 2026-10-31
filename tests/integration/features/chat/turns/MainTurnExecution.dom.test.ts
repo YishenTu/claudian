@@ -3,6 +3,7 @@ import '@/providers';
 
 import { createFixture } from '@test/helpers/ChatInputHarness';
 import { createTestSession } from '@test/helpers/ConversationPorts';
+import { createChatFeatureHost } from '@test/helpers/features/chat/ChatFeatureHostFixture';
 import { parseCodexSessionContent } from '@test/helpers/providers/codex/parseCodexSessionContent';
 import { testTime } from '@test/helpers/testClock';
 import { fireEvent, within } from '@testing-library/dom';
@@ -14,11 +15,6 @@ import { ChatState } from '@/features/chat/state/ChatState';
 import { SubagentManager } from '@/features/chat/subagents/SubagentManager';
 import { renderSessionTaskNotification } from '@/features/chat/turns/BackgroundTurnRenderer';
 import { StreamController } from '@/features/chat/turns/StreamController';
-
-HTMLElement.prototype.appendText = function (text) { this.append(document.createTextNode(text)); };
-HTMLElement.prototype.empty = function () { this.replaceChildren(); };
-HTMLElement.prototype.addClass = function (...classes) { this.classList.add(...classes); };
-HTMLElement.prototype.removeClass = function (...classes) { this.classList.remove(...classes); };
 
 const cleanups: Array<() => void> = [];
 beforeEach(() => {
@@ -65,14 +61,14 @@ async function stopTurn(events: readonly unknown[]) {
   const messagesEl = document.body.createDiv();
   const session = createTestSession();
   const state = new ChatState({}, undefined, session.turns);
-  const plugin = { app: {}, settings: { mediaFolder: '', showMessageTimestamps: false } } as any;
+  const plugin = await createChatFeatureHost({ settings: { mediaFolder: '', showMessageTimestamps: false } });
   const renderer = new MessageRenderer(plugin, new Component(), messagesEl);
   const subagents = new SubagentManager(() => undefined);
   const streamController = new StreamController({ plugin, state, renderer, subagentManager: subagents,
     getMessagesEl: () => messagesEl, updateQueueIndicator: () => undefined });
   cleanups.push(() => { streamController.dispose(); subagents.clear(); renderer.dispose(); });
-  const fixture = createFixture({ session, state, renderer, streamController, getMessagesEl: () => messagesEl,
-    getTabProviderId: () => 'codex' });
+  const fixture = (await createFixture({ session, state, renderer, streamController, getMessagesEl: () => messagesEl,
+    getTabProviderId: () => 'codex' }));
 
   let sequence = 0;
   const scope = () => ({ kind: 'requested' as const, sessionInstanceId: 'native', executionId: 'execution', turnId: 'turn', sequence });

@@ -1,6 +1,5 @@
 /** @vitest-environment jsdom */
 
-import '@test/helpers/ObsidianSettingsDOM';
 
 import { axe } from '@test/helpers/accessibility';
 import { fireEvent, within } from '@testing-library/dom';

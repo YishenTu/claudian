@@ -13,15 +13,6 @@ import { ComposerContextTray } from '@/features/chat/composer/ComposerContextTra
 import { BrowserSelectionController } from '@/features/chat/input/BrowserSelectionController';
 import { ComposerSelections } from '@/features/chat/input/ComposerSelections';
 
-
-
-Object.assign(HTMLElement.prototype, {
-  addClass(this: HTMLElement, ...names: string[]) { this.classList.add(...names); },
-  removeClass(this: HTMLElement, ...names: string[]) { this.classList.remove(...names); },
-  toggleClass(this: HTMLElement, name: string, enabled: boolean) { this.classList.toggle(name, enabled); },
-  empty(this: HTMLElement) { this.replaceChildren(); },
-});
-
 let visibility: HTMLStyleElement;
 beforeEach(() => {
   visibility = document.head.appendChild(document.createElement('style'));
@@ -63,7 +54,7 @@ it.each([
   const idle = { start() {}, stop() {}, poll() {}, clear() {}, getContext: () => null };
   const selections = new ComposerSelections({ browser, editor: idle, canvas: idle });
   const native = createHarness();
-  const fixture = createFixture({ selections, getInputEl: () => input, getExecutionCoordinator: () => native.coordinator });
+  const fixture = (await createFixture({ selections, getInputEl: () => input, getExecutionCoordinator: () => native.coordinator }));
   try {
     await native.coordinator.bindConversation({ conversationId: 'conversation-1', providerId: 'claude' });
     const pending = browser.poll();

@@ -1,15 +1,19 @@
+// @test-ci {"native":true,"inputs":["tests/fixtures/providers/codex/history/codex-session-{persisted-tools,agent-lifecycle,websearch-persisted}.jsonl"]}
 import { parseCodexSessionContent } from '@test/helpers/providers/codex/parseCodexSessionContent';
 import { testDate, testTime } from '@test/helpers/testClock';
+import type { Dirent } from 'fs';
 import * as path from 'path';
 import { pathToFileURL } from 'url';
 
 import { encodeRecoveryPrompt } from '@/core/prompt/recoveryPrompt';
 import { encodeSessionMessage } from '@/core/session-tools/sessionMessageEnvelope';
 import {
+  CodexHistoryDeadlineError,
   deriveCodexSessionsRootFromSessionPath,
   findCodexSessionFileAsync,
   parseCodexSessionFileAsync,
   parseCodexSessionTurns,
+  runBeforeDeadline,
 } from '@/providers/codex/history/CodexHistoryStore';
 
 const FIXTURES_DIR = path.join(__dirname, '../../../../fixtures/providers/codex/history');
@@ -28,7 +32,7 @@ describe('CodexHistoryStore', () => {
     expect(messages.flatMap(message => message.toolCalls ?? [])).toEqual([expect.objectContaining({ name: 'claudian_send_message', providerPayload: expect.objectContaining({ rawName: 'claudian_sessions__claudian_send_message' }) })]);
   });
 
-  it('replays native activity after parent completion and across follow-up turns', () => {
+  it.each(['function_call', 'custom_tool_call'])('replays native activity across parent turns with a raw %s follow-up', rawType => {
     let seconds = 0;
     const event = (type: string, payload: Record<string, unknown>) => ({ type, timestamp: testDate({ seconds: seconds++ }).toISOString(), payload });
     const activity = (id: string, kind: string) => event('event_msg', { type: 'item_completed', item: {
@@ -46,11 +50,29 @@ describe('CodexHistoryStore', () => {
       event('event_msg', { type: 'task_complete', turn_id: 'second' }),
       activity('complete-2', 'interrupted'),
     ];
-    const tools = parseCodexSessionContent(records.map(record => JSON.stringify(record)).join('\n'))
+    const followupRecords = [
+      event('event_msg', { type: 'task_started', turn_id: 'third' }),
+      event('response_item', rawType === 'function_call'
+        ? { type: rawType, name: 'followup_task', call_id: 'raw-followup', arguments: '{"target":"helper","message":"Continue"}' }
+        : { type: rawType, name: 'exec', call_id: 'raw-followup', input: 'text(await tools.followup_task({target:"helper",message:"Continue"}));' }),
+      activity('raw-followup', 'interacted'),
+      event('event_msg', { type: 'task_complete', turn_id: 'third' }),
+      activity('complete-3', 'completed'),
+      event('event_msg', { type: 'item_completed', item: { type: 'SubAgentActivity', id: 'unrelated-completion', kind: 'completed', agent_thread_id: 'unknown-child', agent_path: '/root/other' } }),
+    ];
+    const allRecords = [...records, ...followupRecords];
+    const tools = parseCodexSessionContent(allRecords.map(record => JSON.stringify(record)).join('\n'))
       .flatMap(message => message.toolCalls ?? []);
-    expect(tools).toHaveLength(2);
+    expect(tools).toHaveLength(3);
     expect(tools[0].subagent).toMatchObject({ id: 'spawn', agentId: 'child', lifecycleSource: 'session', status: 'completed', prompt: '', completedAt: testDate({ seconds: 5 }).getTime() });
     expect(tools[1].subagent).toMatchObject({ id: 'followup', agentId: 'child', lifecycleSource: 'session', status: 'error', startedAt: testDate({ seconds: 7 }).getTime(), completedAt: testDate({ seconds: 9 }).getTime() });
+    expect(tools[2].subagent).toMatchObject({ id: 'raw-followup', description: tools[0].subagent?.description, status: 'completed', startedAt: testDate({ seconds: 12 }).getTime(), completedAt: testDate({ seconds: 14 }).getTime() });
+    const runningTools = parseCodexSessionContent(allRecords.slice(0, 13).map(record => JSON.stringify(record)).join('\n'))
+      .flatMap(message => message.toolCalls ?? []);
+    expect(runningTools[2].subagent).toMatchObject({ status: 'running', description: tools[0].subagent?.description });
+    const initialTools = parseCodexSessionContent(records.slice(0, 3).map(record => JSON.stringify(record)).join('\n'))
+      .flatMap(message => message.toolCalls ?? []);
+    expect(initialTools[0].subagent).toMatchObject({ status: 'running', startedAt: testDate({ seconds: 2 }).getTime() });
     const idleTools = parseCodexSessionContent(records.slice(0, -1).map(record => JSON.stringify(record)).join('\n'))
       .flatMap(message => message.toolCalls ?? []);
     expect(idleTools.filter(tool => tool.subagent)).toHaveLength(1);
@@ -60,28 +82,51 @@ describe('CodexHistoryStore', () => {
       .toMatchObject({ status: 'completed', completedAt: testDate({ seconds: 5 }).getTime() });
   });
 
-  it('settles lookup at the deadline when a directory read never resolves', async () => {
-    vi.useFakeTimers();
+  it('ends the whole lookup at the deadline when a directory read never resolves', async () => {
+    // Only timers are fake: the deadline timer fires while the real clock is still short of the
+    // deadline, as Node timers can by a millisecond.
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     try {
       const root = '/virtual/codex/sessions';
+      const directory = (name: string) => ({ name, isDirectory: () => true, isFile: () => false }) as Dirent;
       const pathExists = vi.fn(async (value: string) => value === root);
-      const readDirectory = vi.fn(() => new Promise<never>(() => {}));
-      const lookup = findCodexSessionFileAsync('thread', root, 10, {
-        pathExists,
-        readDirectory,
-      });
+      const readDirectory = vi.fn((value: string) => (value === root
+        ? Promise.resolve([directory('older'), directory('newer')])
+        : new Promise<never>(() => {})));
+      const lookup = findCodexSessionFileAsync('thread', root, 60_000, { pathExists, readDirectory });
 
-      for (let index = 0; index < 10 && !readDirectory.mock.calls.length; index += 1) {
-        await Promise.resolve();
-      }
-      expect(pathExists).toHaveBeenCalled();
-      expect(readDirectory).toHaveBeenCalled();
-      vi.advanceTimersByTime(11);
+      await vi.waitFor(() => expect(readDirectory).toHaveBeenCalledWith(path.join(root, 'newer')));
+      await vi.advanceTimersByTimeAsync(60_000);
 
       await expect(lookup).resolves.toBeNull();
+      // The expired lookup must not move on to the remaining directory.
+      expect(readDirectory).not.toHaveBeenCalledWith(path.join(root, 'older'));
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it('rejects an expired lookup before starting I/O and clears deadline timers after settlement', async () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(testDate());
+      const operation = vi.fn(async () => 'found');
+      await expect(runBeforeDeadline(operation, Date.now())).rejects.toBeInstanceOf(CodexHistoryDeadlineError);
+      expect(operation).not.toHaveBeenCalled();
+      await expect(runBeforeDeadline(operation, Date.now() + 10_000)).resolves.toBe('found');
+      expect(vi.getTimerCount()).toBe(0);
+      const failure = Object.assign(new Error('Directory denied'), { code: 'EACCES' });
+      await expect(runBeforeDeadline(async () => { throw failure; }, Date.now() + 10_000)).rejects.toBe(failure);
+      expect(vi.getTimerCount()).toBe(0);
+    } finally { vi.useRealTimers(); }
+  });
+
+  it.each(['../outside', 'thread/../../outside', 'thread.jsonl', 'thread\n'])('rejects unsafe session id %j before filesystem access', async threadId => {
+    const pathExists = vi.fn(async () => true);
+    const readDirectory = vi.fn(async () => []);
+    await expect(findCodexSessionFileAsync(threadId, '/vault/sessions', 10_000, { pathExists, readDirectory })).resolves.toBeNull();
+    expect(pathExists).not.toHaveBeenCalled();
+    expect(readDirectory).not.toHaveBeenCalled();
   });
 
   it('ignores retired event-wrapper transcripts', () => {
@@ -104,6 +149,7 @@ describe('CodexHistoryStore', () => {
       ['\\\\wsl$\\Ubuntu\\home\\user\\.codex\\sessions\\2026\\04\\14\\rollout-thread.jsonl', '\\\\wsl$\\Ubuntu\\home\\user\\.codex\\sessions'],
       ['//wsl$\\Ubuntu\\home\\user\\.codex\\sessions\\2026\\04\\14\\rollout-thread.jsonl', '\\\\wsl$\\Ubuntu\\home\\user\\.codex\\sessions'],
       ['C:\\Users\\user\\.codex\\sessions\\2026\\04\\14\\rollout-thread.jsonl', 'C:\\Users\\user\\.codex\\sessions'],
+      ['C:/Users/user/.codex/sessions/2026/04/14/rollout-thread.jsonl', 'C:\\Users\\user\\.codex\\sessions'],
     ])('derives transcript roots from Windows session paths: %s', (sessionFilePath, sessionsRoot) => {
       expect(deriveCodexSessionsRootFromSessionPath(sessionFilePath)).toBe(sessionsRoot);
     });
@@ -111,43 +157,28 @@ describe('CodexHistoryStore', () => {
 
   describe('parseCodexSessionFileAsync - simple session', () => {
 
-    it('should rebuild thinking text from persisted reasoning content blocks', () => {
-      const content = [
-        JSON.stringify({
-          timestamp: '2026-03-29T00:00:00.000Z',
-          type: 'response_item',
-          payload: {
-            type: 'message',
-            role: 'user',
-            content: [{ type: 'input_text', text: 'Explain this.' }],
-          },
-        }),
-        JSON.stringify({
-          timestamp: '2026-03-29T00:00:00.000Z',
-          type: 'response_item',
-          payload: {
-            type: 'reasoning',
-            summary: [],
-            content: ['First thought', ' second thought'],
-          },
-        }),
-        JSON.stringify({
-          timestamp: '2026-03-29T00:00:00.002Z',
-          type: 'response_item',
-          payload: {
-            type: 'message',
-            role: 'assistant',
-            content: [{ type: 'output_text', text: 'Done.' }],
-          },
-        }),
-      ].join('\n');
-
-      const messages = parseCodexSessionContent(content);
+    it.each([
+      { source: 'content', reasoning: { summary: [], content: ['First thought', '  ', ' second thought'] }, completed: true },
+      { source: 'summary only', reasoning: { summary: [{ type: 'summary_text', text: 'First thought' }, { type: 'summary_text', text: ' second thought' }] }, completed: false },
+      { source: 'summary over raw content', reasoning: { summary: ['First thought', ' second thought'], content: ['Raw reasoning is not the displayed summary'], text: 'Fallback text' }, completed: false },
+      { source: 'text after null content', reasoning: { content: null, text: 'First thought\n\nsecond thought' }, completed: false },
+      { source: 'text after empty content', reasoning: { content: [], text: 'First thought\n\nsecond thought' }, completed: false },
+    ])('rebuilds $source reasoning from a persisted transcript (completed: $completed)', ({ reasoning, completed }) => {
+      const records = [
+        { type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'Explain this.' }] } },
+        { type: 'response_item', payload: { type: 'reasoning', ...reasoning } },
+        ...(completed ? [{ type: 'response_item', payload: { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'Done.' }] } }] : []),
+      ];
+      const messages = parseCodexSessionContent(records.map((record, seconds) => JSON.stringify({
+        timestamp: testDate({ seconds }).toISOString(), ...record,
+      })).join('\n'));
 
       expect(messages).toHaveLength(2);
+      expect(messages[0]).toMatchObject({ role: 'user', content: 'Explain this.' });
+      expect(messages[1]).toMatchObject({ role: 'assistant', content: completed ? 'Done.' : '' });
       expect(messages[1].contentBlocks).toEqual([
         { type: 'thinking', content: 'First thought\n\nsecond thought' },
-        { type: 'text', content: 'Done.' },
+        ...(completed ? [{ type: 'text', content: 'Done.' }] : []),
       ]);
     });
 
@@ -251,10 +282,23 @@ describe('CodexHistoryStore', () => {
     });
 
     it('replays memory citations without exposing raw markup or duplicating assistant text', () => {
+      const baseEntries = [
+        { path: 'MEMORY.md', lineStart: 10, lineEnd: 12, note: 'Used project conventions' },
+        { path: 'notes/build.md', lineStart: 30, lineEnd: 35, note: 'Build instructions' },
+      ];
+      const differentGroups = [
+        [baseEntries[0], { ...baseEntries[1], path: 'notes/test.md' }],
+        [baseEntries[0], { ...baseEntries[1], lineStart: 31 }],
+        [baseEntries[0], { ...baseEntries[1], lineEnd: 36 }],
+        [baseEntries[0], { ...baseEntries[1], note: 'Updated build instructions' }],
+        [...baseEntries, { path: 'notes/deploy.md', lineStart: 1, lineEnd: 2, note: 'Deployment' }],
+      ];
+      const adjacentGroups = [baseEntries, baseEntries, ...differentGroups.flatMap(entries => [entries, baseEntries])];
       const citationMarkup = [
         '<oai-mem-citation>',
         '<citation_entries>',
         'MEMORY.md:10-12|note=[Used project conventions]',
+        'notes/build.md:30-35|note=[Build instructions]',
         '</citation_entries>',
         '<rollout_ids>',
         'thread-1',
@@ -263,29 +307,24 @@ describe('CodexHistoryStore', () => {
       ].join('\n');
       const content = [
         JSON.stringify({
-          timestamp: '2026-07-29T00:00:00.000Z',
+          timestamp: testDate({ seconds: 0 }).toISOString(),
           type: 'event_msg',
           payload: { type: 'task_started' },
         }),
         JSON.stringify({
-          timestamp: '2026-07-29T00:00:01.000Z',
+          timestamp: testDate({ seconds: 1 }).toISOString(),
           type: 'event_msg',
           payload: {
             type: 'agent_message',
             message: 'Answer',
             memory_citation: {
-              entries: [{
-                path: 'MEMORY.md',
-                lineStart: 10,
-                lineEnd: 12,
-                note: 'Used project conventions',
-              }],
+              entries: baseEntries,
               rolloutIds: ['thread-1'],
             },
           },
         }),
         JSON.stringify({
-          timestamp: '2026-07-29T00:00:01.001Z',
+          timestamp: testDate({ seconds: 2 }).toISOString(),
           type: 'response_item',
           payload: {
             type: 'message',
@@ -293,8 +332,12 @@ describe('CodexHistoryStore', () => {
             content: [{ type: 'output_text', text: `Answer\n${citationMarkup}` }],
           },
         }),
+        ...adjacentGroups.map((entries, index) => JSON.stringify({
+          timestamp: testDate({ seconds: 2 + (index + 1) / 100 }).toISOString(),
+          type: 'event_msg', payload: { type: 'agent_message', message: '', memory_citation: { entries } },
+        })),
         JSON.stringify({
-          timestamp: '2026-07-29T00:00:02.000Z',
+          timestamp: testDate({ seconds: 3 }).toISOString(),
           type: 'event_msg',
           payload: { type: 'task_complete' },
         }),
@@ -307,66 +350,46 @@ describe('CodexHistoryStore', () => {
       expect(assistantMessage?.content).not.toContain('oai-mem-citation');
       expect(assistantMessage?.contentBlocks).toEqual([
         { type: 'text', content: 'Answer' },
-        {
-          type: 'citations',
-          citations: {
-            kind: 'memory',
-            entries: [{
-              path: 'MEMORY.md',
-              lineStart: 10,
-              lineEnd: 12,
-              note: 'Used project conventions',
-            }],
-          },
-        },
+        ...[baseEntries, ...differentGroups.flatMap(entries => [entries, baseEntries])]
+          .map(entries => ({ type: 'citations', citations: { kind: 'memory', entries } })),
       ]);
     });
 
-    it('rehydrates user images from persisted input_image parts', () => {
-      const content = [
-        JSON.stringify({
-          timestamp: '2026-07-06T00:00:00.000Z',
-          type: 'response_item',
-          payload: {
-            type: 'message',
-            role: 'user',
-            content: [
-              { type: 'input_text', text: '<image name=[Image #1] path="/tmp/1-image-1.png">' },
-              { type: 'input_image', image_url: 'data:image/png;base64,aGVsbG8=' },
-              { type: 'input_text', text: '</image>' },
-              { type: 'input_text', text: 'What is in this image?' },
-            ],
-          },
-        }),
-        JSON.stringify({
-          timestamp: '2026-07-06T00:00:01.000Z',
-          type: 'response_item',
-          payload: {
-            type: 'message',
-            role: 'assistant',
-            content: [{ type: 'output_text', text: 'It says hello.' }],
-          },
-        }),
-      ].join('\n');
-
+    it.each([
+      { kind: 'text and string URL', visibleText: true },
+      { kind: 'image-only string URL', visibleText: false },
+    ])('rehydrates user images from persisted input_image parts: $kind', ({ visibleText }) => {
+      const data = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jP9sAAAAASUVORK5CYII=';
+      const url = `data:image/png;base64,${data}`;
+      const records = [
+        { type: 'response_item', payload: { type: 'message', role: 'user', content: [
+          ...(visibleText ? [{ type: 'input_text', text: '<image name=[Image #1] path="/tmp/1-image-1.png">' }] : []),
+          { type: 'input_image', image_url: url },
+          { type: 'input_image', image_url: 'data:image/png;base64,c2Vjb25k' },
+          { type: 'input_text', text: '' },
+          ...(visibleText ? [{ type: 'input_text', text: '</image>' }, { type: 'input_text', text: 'What is in this image?' }] : []),
+        ] } },
+        { type: 'response_item', payload: { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'A single pixel.' }] } },
+      ];
+      const content = records.map((record, seconds) => JSON.stringify({
+        timestamp: testDate({ seconds }).toISOString(), ...record,
+      })).join('\n');
       const messages = parseCodexSessionContent(content);
 
+      expect(messages).toHaveLength(2);
       expect(messages[0]).toMatchObject({
-        content: 'What is in this image?',
-        images: [{
-          data: 'aGVsbG8=',
-          id: 'codex-img-turn-1-0',
-          mediaType: 'image/png',
-          name: 'image-1.png',
-          size: 5,
-          source: 'paste',
-        }],
-        role: 'user',
+        role: 'user', content: visibleText ? 'What is in this image?' : '',
+        images: [
+          { data, id: expect.any(String), mediaType: 'image/png', name: 'image-1.png', size: Buffer.from(data, 'base64').length, source: 'paste' },
+          { data: 'c2Vjb25k', id: expect.any(String), mediaType: 'image/png', name: 'image-2.png', size: 6, source: 'paste' },
+        ],
       });
+      expect(messages[0].images?.every(image => image.id.length > 0)).toBe(true);
+      expect(new Set(messages[0].images?.map(image => image.id)).size).toBe(2);
+      expect(parseCodexSessionContent(content)[0].images).toEqual(messages[0].images);
+      expect(messages[1]).toMatchObject({ role: 'assistant', content: 'A single pixel.', durationSeconds: 1 });
     });
   });
-
-
 
   describe('parseCodexSessionFileAsync - non-existent file', () => {
     it('should return empty array for missing files', async () => {
@@ -542,34 +565,34 @@ describe('CodexHistoryStore', () => {
       const patch = '*** Begin Patch\n*** Update File: note.md\n*** End Patch';
       const content = [
         JSON.stringify({
-          timestamp: '2026-07-10T00:00:00.000Z',
+          timestamp: testTime({ seconds: 0 }),
           type: 'event_msg',
           payload: { type: 'task_started' },
         }),
         JSON.stringify({
-          timestamp: '2026-07-10T00:00:01.000Z',
+          timestamp: testTime({ seconds: 1 }),
           type: 'response_item',
           payload: {
             type: 'custom_tool_call',
             name: 'exec',
             call_id: 'call_exec_wrapper',
-            input: 'const r = await tools.exec_command({cmd:"ls -1",workdir:"/vault"}); text(r.output);',
+            input: 'const r = await tools.exec_command({cmd:"ls -1",workdir:"/vault"}); text(r.output.toUpperCase());',
           },
         }),
         JSON.stringify({
-          timestamp: '2026-07-10T00:00:02.000Z',
+          timestamp: testTime({ seconds: 2 }),
           type: 'response_item',
           payload: {
             type: 'custom_tool_call_output',
             call_id: 'call_exec_wrapper',
             output: [
               { type: 'input_text', text: 'Script completed\nWall time 0.1 seconds\nOutput:\n' },
-              { type: 'input_text', text: 'file.txt\n' },
+              { type: 'input_text', text: 'FILE.TXT\n' },
             ],
           },
         }),
         JSON.stringify({
-          timestamp: '2026-07-10T00:00:03.000Z',
+          timestamp: testTime({ seconds: 3 }),
           type: 'response_item',
           payload: {
             type: 'custom_tool_call',
@@ -579,7 +602,7 @@ describe('CodexHistoryStore', () => {
           },
         }),
         JSON.stringify({
-          timestamp: '2026-07-10T00:00:04.000Z',
+          timestamp: testTime({ seconds: 4 }),
           type: 'response_item',
           payload: {
             type: 'custom_tool_call_output',
@@ -587,6 +610,9 @@ describe('CodexHistoryStore', () => {
             output: [{ type: 'input_text', text: 'Script completed\nOutput:\nApplied patch' }],
           },
         }),
+        JSON.stringify({ timestamp: testTime({ seconds: 5 }), type: 'event_msg', payload: { type: 'item_completed', item: {
+          type: 'CommandExecution', id: 'native-command', command: ['zsh', '-lc', 'ls -1'], cwd: '/vault', aggregated_output: 'file.txt\n', exit_code: 0,
+        } } }),
       ].join('\n');
 
       const messages = parseCodexSessionContent(content);
@@ -598,7 +624,7 @@ describe('CodexHistoryStore', () => {
           name: 'Bash',
           input: { command: 'ls -1' },
           status: 'completed',
-          result: 'file.txt\n',
+          result: 'FILE.TXT\n',
         }),
         expect.objectContaining({
           id: 'call_patch_wrapper',
@@ -678,11 +704,13 @@ describe('CodexHistoryStore', () => {
     });
 
     it.each([
-      [0, 'completed'],
-      [1, 'error'],
-      [-1, 'error'],
-    ])('restores structured command exit code %s through direct and exec outputs', (exitCode, status) => {
-      const result = JSON.stringify({ output: 'command output', exit_code: exitCode, wall_time_seconds: 1 });
+      { exitCode: 0, status: 'completed', settled: false },
+      { exitCode: 1, status: 'error', settled: false },
+      { exitCode: -1, status: 'error', settled: false },
+      { exitCode: 2, status: 'error', settled: true },
+    ])('restores structured command exit code $exitCode through direct and exec outputs (settled: $settled)', ({ exitCode, status, settled }) => {
+      const metadata = { output: 'command output', exit_code: exitCode, wall_time_seconds: 1 };
+      const result = JSON.stringify(settled ? { status: 'fulfilled', value: metadata } : metadata);
       const content = [
         { type: 'event_msg', payload: { type: 'task_started' } },
         { type: 'response_item', payload: { type: 'function_call', name: 'exec_command', call_id: 'direct', arguments: '{"cmd":"check"}' } },
@@ -701,13 +729,28 @@ describe('CodexHistoryStore', () => {
       ]);
     });
 
-    it('joins structured terminal polling output to its running command and restores its failure', () => {
+    it.each([
+      { label: 'non-fulfilled status', value: { status: 'pending', value: { output: 'nested application data' } } },
+      { label: 'fulfilled status without command metadata', value: { status: 'fulfilled', value: { report: 'application data' } } },
+    ])('preserves ordinary command JSON output with $label', ({ value }) => {
+      const output = JSON.stringify(value);
+      const records = [
+        { type: 'response_item', payload: { type: 'function_call', name: 'exec_command', call_id: 'command', arguments: '{"cmd":"cat report.json"}' } },
+        { type: 'response_item', payload: { type: 'function_call_output', call_id: 'command', output } },
+      ];
+      expect(parseCodexSessionContent(records.map((record, seconds) => JSON.stringify({ timestamp: testTime({ seconds }), ...record })).join('\n')).flatMap(message => message.toolCalls ?? []))
+        .toEqual([expect.objectContaining({ id: 'command', result: output })]);
+    });
+
+    it.each([42, '42'])('joins terminal session %j polling output to its running command and restores its failure', sessionId => {
       const records = [
         { type: 'event_msg', payload: { type: 'task_started' } },
         { type: 'response_item', payload: { type: 'function_call', name: 'exec_command', call_id: 'command', arguments: '{"cmd":"long check"}' } },
         { type: 'response_item', payload: { type: 'function_call_output', call_id: 'command', output: JSON.stringify({ output: 'started', exit_code: null, session_id: 42 }) } },
-        { type: 'response_item', payload: { type: 'function_call', name: 'write_stdin', call_id: 'poll', arguments: '{"session_id":42,"chars":""}' } },
-        { type: 'response_item', payload: { type: 'function_call_output', call_id: 'poll', output: JSON.stringify({ output: 'failed', exit_code: 2 }) } },
+        { type: 'response_item', payload: { type: 'function_call', name: 'write_stdin', call_id: 'poll', arguments: JSON.stringify({ session_id: sessionId, chars: '' }) } },
+        { type: 'response_item', payload: { type: 'function_call_output', call_id: 'poll', output: 'progress' } },
+        { type: 'response_item', payload: { type: 'function_call', name: 'write_stdin', call_id: 'final-poll', arguments: JSON.stringify({ session_id: sessionId, chars: '' }) } },
+        { type: 'response_item', payload: { type: 'function_call_output', call_id: 'final-poll', output: JSON.stringify({ output: 'failed', exit_code: 2 }) } },
         { type: 'event_msg', payload: { type: 'task_complete' } },
       ];
       const serialize = (entries: typeof records) => entries.map((record, seconds) => JSON.stringify({ timestamp: testTime({ seconds }), ...record })).join('\n');
@@ -715,8 +758,11 @@ describe('CodexHistoryStore', () => {
       expect(parseCodexSessionContent(serialize(records.slice(0, 3))).flatMap(message => message.toolCalls ?? [])).toEqual([
         expect.objectContaining({ id: 'command', status: 'running', result: 'started' }),
       ]);
+      expect(parseCodexSessionContent(serialize(records.slice(0, 5))).flatMap(message => message.toolCalls ?? [])).toEqual([
+        expect.objectContaining({ id: 'command', status: 'running', result: 'started\nprogress' }),
+      ]);
       expect(parseCodexSessionContent(serialize(records)).flatMap(message => message.toolCalls ?? [])).toEqual([
-        expect.objectContaining({ id: 'command', status: 'error', result: 'started\nfailed' }),
+        expect.objectContaining({ id: 'command', status: 'error', result: 'started\nprogress\nfailed' }),
       ]);
     });
 
@@ -791,6 +837,17 @@ describe('CodexHistoryStore', () => {
       expect(turns[1].messages).toEqual([expect.objectContaining({ content: 'Next turn.', toolCalls: undefined })]);
     });
 
+    it('retains a wait for an unknown script cell instead of attributing it to a command', () => {
+      const records = [
+        { type: 'event_msg', payload: { type: 'task_started' } },
+        { type: 'response_item', payload: { type: 'function_call', name: 'wait', call_id: 'unknown-wait', arguments: '{"cell_id":"prior-cell"}' } },
+        { type: 'response_item', payload: { type: 'function_call_output', call_id: 'unknown-wait', output: 'Script completed\nWall time 0.1 seconds\nOutput:\nRecovered output' } },
+      ];
+      const tools = parseCodexSessionContent(records.map((record, seconds) => JSON.stringify({ timestamp: testTime({ seconds }), ...record })).join('\n'))
+        .flatMap(message => message.toolCalls ?? []);
+      expect(tools).toEqual([expect.objectContaining({ id: 'unknown-wait', name: 'wait', status: 'completed', result: 'Script completed\nWall time 0.1 seconds\nOutput:\nRecovered output' })]);
+    });
+
     it('retains an unresolved polling wrapper through its yielded script cell', () => {
       const records = [
         { type: 'event_msg', payload: { type: 'task_started' } },
@@ -847,22 +904,25 @@ describe('CodexHistoryStore', () => {
       ]);
     });
 
-    it.each(['absent', 'before', 'after'] as const)(
-      'keeps reordered script output separate from command results with native evidence %s the envelope', nativePosition => {
+    it.each(['absent', 'before', 'after', 'script error'] as const)(
+      'keeps reordered script output separate from command results: %s', nativePosition => {
         const source = [
           'const first = await tools.exec_command({cmd:"printf FIRST"});',
-          'const second = await tools.exec_command({cmd:"printf SECOND"});',
+          nativePosition === 'before'
+            ? 'const second = await tools.exec_command({cmd:"printf SECOND",workdir:"subdir"});'
+            : 'const second = await tools.exec_command({cmd:"printf SECOND"});',
           'text(second.output); text(first.output);',
         ].join('\n');
         const native = { type: 'event_msg', payload: { type: 'item_completed', item: {
           type: 'CommandExecution', id: 'native-second', command: ['/bin/zsh', '-lc', 'printf SECOND'],
-          cwd: '/vault', aggregated_output: 'Native second result', exit_code: 7,
+          parsed_cmd: [{ cmd: "printf 'SECOND'" }], cwd: pathToFileURL(nativePosition === 'before' ? '/vault/subdir' : '/vault').href, aggregated_output: 'Native second result', exit_code: 7,
         } } };
         const records = [
-          { type: 'turn_context', payload: { cwd: '/vault' } },
+          { type: 'turn_context', payload: { cwd: '/vault/.' } },
+          { type: 'response_item', payload: { type: 'function_call', name: 'view_image', call_id: 'unrelated', arguments: '{"path":"/tmp/preview.png"}' } },
           { type: 'response_item', payload: { type: 'custom_tool_call', name: 'exec', call_id: 'reordered', input: source } },
           ...(nativePosition === 'before' ? [native] : []),
-          { type: 'response_item', payload: { type: 'custom_tool_call_output', call_id: 'reordered', output: [
+          { type: 'response_item', payload: { type: 'custom_tool_call_output', call_id: 'reordered', output: nativePosition === 'script error' ? 'Error: execution cancelled' : [
             { type: 'input_text', text: 'Script completed\nWall time 0.1 seconds\nOutput:\n' },
             { type: 'input_text', text: 'SECOND\n' },
             { type: 'input_text', text: 'FIRST\n' },
@@ -874,10 +934,11 @@ describe('CodexHistoryStore', () => {
         })).join('\n')).flatMap(message => message.toolCalls ?? []);
 
         expect(tools.map(tool => [tool.id, tool.name, tool.status, tool.result])).toEqual([
-          ['reordered:1', 'Bash', 'completed', undefined],
+          ['unrelated', 'Read', 'running', undefined],
+          ['reordered:1', 'Bash', nativePosition === 'script error' ? 'error' : 'completed', undefined],
           ['reordered:2', 'Bash', nativePosition === 'absent' ? 'completed' : 'error',
-            nativePosition === 'absent' ? undefined : 'Native second result'],
-          ['reordered', 'exec', 'completed', 'SECOND\nFIRST\n'],
+            nativePosition === 'absent' || nativePosition === 'script error' ? undefined : 'Native second result'],
+          ['reordered', 'exec', nativePosition === 'script error' ? 'error' : 'completed', nativePosition === 'script error' ? 'Error: execution cancelled' : 'SECOND\nFIRST\n'],
         ]);
         expect(tools.find(tool => tool.id === 'reordered')?.input).toEqual({ raw: source });
       },
@@ -1264,15 +1325,15 @@ describe('CodexHistoryStore', () => {
       })]);
     });
 
-    it('restores raw custom_tool_call apply_patch input as patch text', () => {
+    it.each(['Applied', 'Error: patch rejected'])('restores raw apply_patch input and its result: %s', output => {
       const content = [
         JSON.stringify({
-          timestamp: '2026-03-27T00:00:00.000Z',
+          timestamp: testTime({ seconds: 0 }),
           type: 'event_msg',
           payload: { type: 'task_started' },
         }),
         JSON.stringify({
-          timestamp: '2026-03-27T00:00:01.000Z',
+          timestamp: testTime({ seconds: 1 }),
           type: 'response_item',
           payload: {
             type: 'custom_tool_call',
@@ -1281,12 +1342,13 @@ describe('CodexHistoryStore', () => {
             input: '*** Begin Patch\n*** Update File: src/main.ts\n*** End Patch',
           },
         }),
+        JSON.stringify({ timestamp: testTime({ seconds: 1 }), type: 'response_item', payload: { type: 'custom_tool_call_output', call_id: 'call_patch_raw', output } }),
       ].join('\n');
 
       const messages = parseCodexSessionContent(content);
       const assistantMsg = messages.find(m => m.role === 'assistant' && m.toolCalls);
       const patchTool = assistantMsg!.toolCalls!.find(tc => tc.name === 'apply_patch');
-      expect(patchTool).toBeDefined();
+      expect(patchTool).toMatchObject({ status: output.startsWith('Error:') ? 'error' : 'completed', result: output });
       expect(patchTool!.input.patch).toBe('*** Begin Patch\n*** Update File: src/main.ts\n*** End Patch');
     });
 
@@ -1382,42 +1444,26 @@ describe('CodexHistoryStore', () => {
       expect(stdinTool!.input.chars).toBe('y\n');
     });
 
-    it.each(['Input sent.', ''])('suppresses acknowledgement-only standalone polling output: %s', output => {
-      const content = [
-        JSON.stringify({
-          timestamp: testDate({ seconds: 0 }).toISOString(),
-          type: 'response_item',
-          payload: {
-            type: 'function_call',
-            name: 'write_stdin',
-            arguments: '{"session_id":2404,"chars":"","yield_time_ms":1000}',
-            call_id: 'call_poll',
-          },
-        }),
-        JSON.stringify({
-          timestamp: testDate({ seconds: 1 }).toISOString(),
-          type: 'response_item',
-          payload: {
-            type: 'function_call_output',
-            call_id: 'call_poll',
-            output,
-          },
-        }),
-        JSON.stringify({
-          timestamp: testDate({ seconds: 2 }).toISOString(),
-          type: 'response_item',
-          payload: {
-            type: 'message',
-            role: 'assistant',
-            content: [{ type: 'output_text', text: 'Done.' }],
-          },
-        }),
-      ].join('\n');
-
-      const messages = parseCodexSessionContent(content);
-      const assistantMsg = messages.find(m => m.role === 'assistant');
-
-      expect(assistantMsg!.toolCalls).toBeUndefined();
+    it.each(['Input sent.', '', 'Script completed\nWall time 0.1 seconds\nOutput:\nInput sent.'])('suppresses acknowledgement-only standalone polling output: %s', output => {
+      const records = [
+        { type: 'event_msg', payload: { type: 'task_started' } },
+        { type: 'response_item', payload: { type: 'function_call', name: 'view_image', call_id: 'image', arguments: '{"path":"/tmp/image.png"}' } },
+        { type: 'response_item', payload: { type: 'function_call', name: 'write_stdin', call_id: 'poll', arguments: '{"session_id":2404,"chars":""}' } },
+        { type: 'response_item', payload: { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'Checking.' }] } },
+        { type: 'response_item', payload: { type: 'function_call_output', call_id: 'poll', output } },
+        { type: 'response_item', payload: { type: 'function_call_output', call_id: 'image', output: [{ type: 'input_image', image_url: 'data:image/png;base64,cGljdHVyZQ==' }] } },
+        { type: 'response_item', payload: { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'Done.' }] } },
+      ];
+      const messages = parseCodexSessionContent(records.map((record, seconds) => JSON.stringify({
+        timestamp: testDate({ seconds }).toISOString(), ...record,
+      })).join('\n'));
+      expect(messages).toHaveLength(1);
+      expect(messages[0]).toMatchObject({ role: 'assistant', content: 'Checking.\n\nDone.', toolCalls: [
+        { id: 'image', name: 'Read', status: 'completed', result: '/tmp/image.png' },
+      ] });
+      expect(messages[0].contentBlocks).toEqual([
+        { type: 'tool_use', toolId: 'image' }, { type: 'text', content: 'Checking.\n\nDone.' },
+      ]);
     });
 
     it('maps long-running write_stdin polling output back to the parent Bash tool', () => {
@@ -1493,9 +1539,9 @@ describe('CodexHistoryStore', () => {
     });
 
     it('keeps non-empty write_stdin separate from the parent Bash tool', () => {
-      const content = [
+      const records = [
         JSON.stringify({
-          timestamp: '2026-03-27T00:00:00.000Z',
+          timestamp: testTime({ seconds: 0 }),
           type: 'response_item',
           payload: {
             type: 'message',
@@ -1504,7 +1550,7 @@ describe('CodexHistoryStore', () => {
           },
         }),
         JSON.stringify({
-          timestamp: '2026-03-27T00:00:01.000Z',
+          timestamp: testTime({ seconds: 1 }),
           type: 'response_item',
           payload: {
             type: 'function_call',
@@ -1514,7 +1560,7 @@ describe('CodexHistoryStore', () => {
           },
         }),
         JSON.stringify({
-          timestamp: '2026-03-27T00:00:02.000Z',
+          timestamp: testTime({ seconds: 2 }),
           type: 'response_item',
           payload: {
             type: 'function_call_output',
@@ -1523,7 +1569,7 @@ describe('CodexHistoryStore', () => {
           },
         }),
         JSON.stringify({
-          timestamp: '2026-03-27T00:00:03.000Z',
+          timestamp: testTime({ seconds: 3 }),
           type: 'response_item',
           payload: {
             type: 'function_call',
@@ -1533,16 +1579,24 @@ describe('CodexHistoryStore', () => {
           },
         }),
         JSON.stringify({
-          timestamp: '2026-03-27T00:00:04.000Z',
+          timestamp: testTime({ seconds: 4 }),
           type: 'response_item',
           payload: {
             type: 'function_call_output',
             call_id: 'call_stdin',
-            output: 'Input sent.',
+            output: JSON.stringify({ output: 'Input sent.', session_id: 2404 }),
           },
         }),
-      ].join('\n');
+        JSON.stringify({ timestamp: testTime({ seconds: 5 }), type: 'response_item', payload: { type: 'function_call', name: 'write_stdin', call_id: 'poll-after-input', arguments: '{"session_id":2404,"chars":""}' } }),
+        JSON.stringify({ timestamp: testTime({ seconds: 6 }), type: 'response_item', payload: { type: 'function_call_output', call_id: 'poll-after-input', output: 'Process exited with code 0\nOutput:\nFinished' } }),
+      ];
+      const content = records.join('\n');
 
+      const beforePoll = parseCodexSessionContent(records.slice(0, 5).join('\n')).flatMap(message => message.toolCalls ?? []);
+      expect(beforePoll).toEqual([
+        expect.objectContaining({ id: 'call_cmd', status: 'running', result: 'Proceed? [y/N]\n' }),
+        expect.objectContaining({ id: 'call_stdin', status: 'completed', input: { session_id: 2404, chars: 'y\n' }, result: 'Input sent.' }),
+      ]);
       const messages = parseCodexSessionContent(content);
       const assistantMsg = messages.find(m => m.role === 'assistant' && m.toolCalls);
       const bashTool = assistantMsg!.toolCalls!.find(tc => tc.name === 'Bash');
@@ -1550,8 +1604,8 @@ describe('CodexHistoryStore', () => {
 
       expect(bashTool).toMatchObject({
         id: 'call_cmd',
-        status: 'running',
-        result: 'Proceed? [y/N]\n',
+        status: 'completed',
+        result: 'Proceed? [y/N]\nFinished',
       });
       expect(stdinTool).toMatchObject({
         id: 'call_stdin',
@@ -1563,8 +1617,9 @@ describe('CodexHistoryStore', () => {
 
     it('drops orphan custom_tool_call_output rows instead of rendering generic tool cards', () => {
       const content = [
+        JSON.stringify({ timestamp: testTime(), type: 'response_item', payload: { type: 'function_call_output', output: 'Unowned output' } }),
         JSON.stringify({
-          timestamp: '2026-03-27T00:00:00.000Z',
+          timestamp: testTime({ seconds: 0 }),
           type: 'response_item',
           payload: {
             type: 'custom_tool_call_output',
@@ -1573,7 +1628,7 @@ describe('CodexHistoryStore', () => {
           },
         }),
         JSON.stringify({
-          timestamp: '2026-03-27T00:00:01.000Z',
+          timestamp: testTime({ seconds: 1 }),
           type: 'response_item',
           payload: {
             type: 'message',
@@ -1638,6 +1693,21 @@ describe('CodexHistoryStore', () => {
   });
 
   describe('parseCodexSessionContent - system-injected user messages', () => {
+    it('ignores injected user context without splitting an active assistant bubble', () => {
+      const records = [
+        { type: 'event_msg', payload: { type: 'task_started', turn_id: 'active' } },
+        { type: 'response_item', payload: { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'Before' }] } },
+        { type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: '<environment_context>\n  <cwd>/vault</cwd>\n</environment_context>' }] } },
+        { type: 'response_item', payload: { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'After' }] } },
+        { type: 'event_msg', payload: { type: 'task_complete', turn_id: 'active' } },
+      ];
+      const turns = parseCodexSessionTurns(records.map((record, seconds) => JSON.stringify({ timestamp: testTime({ seconds }), ...record })).join('\n'));
+      expect(turns).toEqual([{ turnId: 'active', messages: [expect.objectContaining({
+        role: 'assistant', content: 'Before\n\nAfter', assistantMessageId: 'active',
+        contentBlocks: [{ type: 'text', content: 'Before\n\nAfter' }],
+      })] }]);
+    });
+
     it.each([
       ['with a current input', 'Earlier answer', 'Next question', ['Next question', 'Next answer']],
       ['without a current input', 'Earlier answer', null, ['Next answer']],
@@ -2020,13 +2090,21 @@ describe('CodexHistoryStore', () => {
 
       const searchTool = assistantMsg!.toolCalls!.find(tc => tc.name === 'WebSearch');
       expect(searchTool).toBeDefined();
-      expect(searchTool!.id).toBe('call_ws_1');
+      expect(searchTool!.id).toBe('tail-ws-1');
       expect(searchTool!.input.actionType).toBe('search');
       expect(searchTool!.input.query).toBe('obsidian plugin API');
       expect(searchTool!.status).toBe('completed');
     });
 
-    it('keeps distinct persisted web_search_call entries when call_id is missing', () => {
+    it('restores an in-progress native search before its result arrives', () => {
+      const records = [
+        { type: 'response_item', payload: { type: 'web_search_call', id: 'search', status: 'in_progress', action: { type: 'search', query: 'Obsidian' } } },
+      ];
+      expect(parseCodexSessionContent(records.map((record, seconds) => JSON.stringify({ timestamp: testTime({ seconds }), ...record })).join('\n')).flatMap(message => message.toolCalls ?? []))
+        .toEqual([expect.objectContaining({ id: 'tail-ws-0', name: 'WebSearch', status: 'running', input: expect.objectContaining({ query: 'Obsidian' }) })]);
+    });
+
+    it('keeps distinct persisted web_search_call entries', () => {
       const content = [
         JSON.stringify({
           timestamp: '2026-03-27T00:00:00.000Z',
@@ -2086,12 +2164,14 @@ describe('CodexHistoryStore', () => {
         call('e'), call('f'), native('f'), output('f'), native('f'), output('e'),
         // A repeated event must not claim a later search for the same query.
         call('g'), native('g'), output('g'), call('h', 'g'), native('g'), output('h'),
+        call('i', 'b'), { ...native('b'), payload: { ...native('b').payload, item: { ...native('b').payload.item, id: 'native-i' } } }, output('i'),
+        native('no-script'),
       ];
       const tools = parseCodexSessionContent(records.map((record, seconds) => JSON.stringify({ timestamp: testTime({ seconds }), ...record })).join('\n'))
         .flatMap(message => message.toolCalls ?? []);
 
       expect(Object.fromEntries(tools.map(tool => [tool.id, tool.webSearchResults?.map(result => result.title)]))).toEqual({
-        a: undefined, b: ['b source'], c: ['c source'], d: undefined, e: undefined, f: ['f source'], g: ['g source'], h: undefined,
+        a: undefined, b: ['b source'], c: ['c source'], d: undefined, e: undefined, f: ['f source'], g: ['g source'], h: undefined, i: ['b source'],
       });
     });
   });
@@ -2153,33 +2233,31 @@ describe('CodexHistoryStore', () => {
       expect(messages[1]).toMatchObject({ role: 'assistant', content: 'Hi there!' });
     });
 
-    it('turn_aborted marks bubble as interrupted', () => {
-      const content = [
-        JSON.stringify({
-          timestamp: '2026-03-27T00:00:00.000Z',
-          type: 'event_msg',
-          payload: { type: 'task_started' },
-        }),
-        JSON.stringify({
-          timestamp: '2026-03-27T00:00:01.000Z',
-          type: 'event_msg',
-          payload: { type: 'agent_message', message: 'Working on it...' },
-        }),
-        JSON.stringify({
-          timestamp: '2026-03-27T00:00:02.000Z',
-          type: 'event_msg',
-          payload: { type: 'turn_aborted' },
-        }),
-      ].join('\n');
+    it('turn_aborted marks the last bubble as interrupted and clears duration across the turn', () => {
+      const records = [
+        { type: 'event_msg', payload: { type: 'task_started', turn_id: 'interrupted-turn' } },
+        { type: 'event_msg', payload: { type: 'user_message', message: 'Investigate the build.' } },
+        { type: 'event_msg', payload: { type: 'agent_message', message: 'Reading the build notes.' } },
+        { type: 'event_msg', payload: { type: 'context_compacted' } },
+        { type: 'event_msg', payload: { type: 'agent_message', message: 'Checking the build command.' } },
+        { type: 'event_msg', payload: { type: 'turn_aborted' } },
+      ].map((record, seconds) => JSON.stringify({ timestamp: testDate({ seconds }).toISOString(), ...record }));
+      const beforeInterrupt = parseCodexSessionContent(records.slice(0, -1).join('\n'));
+      expect(beforeInterrupt.at(-1)?.durationSeconds).toBeGreaterThan(0);
 
-      const messages = parseCodexSessionContent(content);
-
-      expect(messages).toHaveLength(1);
-      expect(messages[0]).toMatchObject({
-        role: 'assistant',
-        content: 'Working on it...',
-        isInterrupt: true,
-      });
+      const messages = parseCodexSessionContent(records.join('\n'));
+      const assistants = messages.filter(message => message.role === 'assistant');
+      expect(assistants).toHaveLength(3);
+      expect(assistants[0]).toMatchObject({ content: 'Reading the build notes.' });
+      expect(assistants[1].contentBlocks).toEqual([{ type: 'context_compacted' }]);
+      expect(assistants[2]).toMatchObject({ content: 'Checking the build command.', isInterrupt: true });
+      expect(assistants[0].isInterrupt).not.toBe(true);
+      for (const message of assistants) {
+        expect(message.durationSeconds).toBeUndefined();
+        expect(message.completedAt).toBeUndefined();
+        expect(message.turnStats).toBeUndefined();
+        expect(message.assistantMessageId).toBeUndefined();
+      }
     });
 
     it('user_message reconstructs user ChatMessage from event_msg', () => {
@@ -2465,29 +2543,38 @@ describe('CodexHistoryStore', () => {
 
   describe('parseCodexSessionContent - interrupted message granularity', () => {
 
-    it('interrupted empty bubble sets isInterrupt on bare ChatMessage', () => {
-      const content = [
-        JSON.stringify({
-          timestamp: '2026-03-27T00:00:00.000Z',
-          type: 'event_msg',
-          payload: { type: 'task_started' },
-        }),
-        JSON.stringify({
-          timestamp: '2026-03-27T00:00:01.000Z',
-          type: 'event_msg',
-          payload: { type: 'turn_aborted' },
-        }),
-      ].join('\n');
-
-      const messages = parseCodexSessionContent(content);
-
-      expect(messages).toHaveLength(1);
-      expect(messages[0].content).toBe('');
-      expect(messages[0].isInterrupt).toBe(true);
+    it.each(['turn_aborted', 'task_complete', 'unfinished'])('preserves an empty turn ending in %s without phantom content', ending => {
+      const records = [
+        { type: 'event_msg', payload: { type: 'task_started', turn_id: 'empty-turn' } },
+        { type: 'response_item', payload: { type: 'reasoning', summary: [], content: [], text: '  ' } },
+        { type: 'response_item', payload: { type: 'message', role: 'assistant', content: [] } },
+        ...(ending === 'unfinished' ? [] : [{ type: 'event_msg', payload: { type: ending } }]),
+      ];
+      const messages = parseCodexSessionContent(records.map((record, seconds) => JSON.stringify({
+        timestamp: testDate({ seconds }).toISOString(), ...record,
+      })).join('\n'));
+      expect(messages.map(({ role, content, isInterrupt, timestamp, contentBlocks, completedAt }) => ({
+        role, content, isInterrupt, timestamp, contentBlocks, completedAt,
+      }))).toEqual(ending === 'turn_aborted' ? [{
+        role: 'assistant', content: '', isInterrupt: true, timestamp: testDate({ seconds: 2 }).getTime(),
+        contentBlocks: undefined, completedAt: undefined,
+      }] : []);
     });
   });
 
   describe('parseCodexSessionContent - response duration', () => {
+    it.each([0, -1])('does not report a response duration when assistant time is %s seconds after the user', offset => {
+      const records = [
+        { type: 'event_msg', timestamp: testTime({ seconds: -2 }), payload: { type: 'task_started' } },
+        { type: 'event_msg', timestamp: testTime(), payload: { type: 'user_message', message: 'Question' } },
+        { type: 'response_item', timestamp: testTime({ seconds: offset }), payload: { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'Answer' }] } },
+        { type: 'event_msg', timestamp: testTime({ seconds: 2 }), payload: { type: 'task_complete' } },
+      ];
+      const messages = parseCodexSessionContent(records.map(record => JSON.stringify(record)).join('\n'));
+      expect(messages.map(message => message.content)).toEqual(['Question', 'Answer']);
+      expect(messages[1].durationSeconds).toBeUndefined();
+    });
+
     it('calculates durationSeconds from user timestamp to last assistant event', () => {
       const content = [
         JSON.stringify({
@@ -2699,107 +2786,77 @@ describe('CodexHistoryStore', () => {
       expect(lastAssistant.assistantMessageId).toBe('019d-uuid-multi');
     });
 
-    it('works without task_started (no server turn ID)', () => {
-      const content = [
-        JSON.stringify({
-          timestamp: '2026-03-27T00:00:00.000Z',
-          type: 'response_item',
-          payload: {
-            type: 'message',
-            role: 'user',
-            content: [{ type: 'input_text', text: 'Hello' }],
-          },
-        }),
-        JSON.stringify({
-          timestamp: '2026-03-27T00:00:01.000Z',
-          type: 'response_item',
-          payload: {
-            type: 'message',
-            role: 'assistant',
-            content: [{ type: 'output_text', text: 'Hi!' }],
-          },
-        }),
-      ].join('\n');
-
-      const messages = parseCodexSessionContent(content);
-
-      expect(messages).toHaveLength(2);
+    it.each([false, true])('retains history without a server turn ID when later turns have IDs (legacy start: %s)', legacyStart => {
+      const records = [
+        ...(legacyStart ? [{ type: 'event_msg', payload: { type: 'task_started' } }] : []),
+        { type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'Hello' }] } },
+        { type: 'response_item', payload: { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'Hi!' }] } },
+        { type: 'event_msg', payload: { type: 'task_complete' } },
+        { type: 'event_msg', payload: { type: 'task_started', turn_id: 'later-turn' } },
+        { type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'Continue' }] } },
+        { type: 'response_item', payload: { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'Ready.' }] } },
+        { type: 'event_msg', payload: { type: 'task_complete', turn_id: 'later-turn' } },
+      ];
+      const messages = parseCodexSessionContent(records.map((record, seconds) => JSON.stringify({ timestamp: testTime({ seconds }), ...record })).join('\n'));
+      expect(messages.map(message => message.content)).toEqual(['Hello', 'Hi!', 'Continue', 'Ready.']);
       expect(messages[0].userMessageId).toBeUndefined();
       expect(messages[1].assistantMessageId).toBeUndefined();
+      expect(messages[2].userMessageId).toBe('later-turn');
+      expect(messages[3].assistantMessageId).toBe('later-turn');
     });
   });
 
   describe('parseCodexSessionTurns - turn-aware parsing', () => {
-    it('returns structured turns with stable turn IDs and messages', () => {
-      const content = [
-        JSON.stringify({
-          timestamp: '2026-03-27T00:00:00.000Z',
-          type: 'event_msg',
-          payload: { type: 'task_started', turn_id: 'uuid-turn-1' },
-        }),
-        JSON.stringify({
-          timestamp: '2026-03-27T00:00:00.500Z',
-          type: 'response_item',
-          payload: {
-            type: 'message',
-            role: 'user',
-            content: [{ type: 'input_text', text: 'First question' }],
-          },
-        }),
-        JSON.stringify({
-          timestamp: '2026-03-27T00:00:01.000Z',
-          type: 'response_item',
-          payload: {
-            type: 'message',
-            role: 'assistant',
-            content: [{ type: 'output_text', text: 'First answer' }],
-          },
-        }),
-        JSON.stringify({
-          timestamp: '2026-03-27T00:00:02.000Z',
-          type: 'event_msg',
-          payload: { type: 'task_complete', turn_id: 'uuid-turn-1' },
-        }),
-        JSON.stringify({
-          timestamp: '2026-03-27T00:00:03.000Z',
-          type: 'event_msg',
-          payload: { type: 'task_started', turn_id: 'uuid-turn-2' },
-        }),
-        JSON.stringify({
-          timestamp: '2026-03-27T00:00:03.500Z',
-          type: 'response_item',
-          payload: {
-            type: 'message',
-            role: 'user',
-            content: [{ type: 'input_text', text: 'Second question' }],
-          },
-        }),
-        JSON.stringify({
-          timestamp: '2026-03-27T00:00:04.000Z',
-          type: 'response_item',
-          payload: {
-            type: 'message',
-            role: 'assistant',
-            content: [{ type: 'output_text', text: 'Second answer' }],
-          },
-        }),
-        JSON.stringify({
-          timestamp: '2026-03-27T00:00:05.000Z',
-          type: 'event_msg',
-          payload: { type: 'task_complete', turn_id: 'uuid-turn-2' },
-        }),
-      ].join('\n');
-
+    it('returns structured turns with stable unique message IDs and bubble grouping', () => {
+      const records = [
+        { type: 'event_msg', payload: { type: 'task_started', turn_id: 'uuid-turn-1' } },
+        { type: 'event_msg', payload: { type: 'user_message', message: 'First question' } },
+        { type: 'response_item', payload: { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'First answer' }] } },
+        { type: 'event_msg', payload: { type: 'context_compacted' } },
+        { type: 'event_msg', payload: { type: 'agent_message', message: 'More details' } },
+        { type: 'event_msg', payload: { type: 'task_complete', turn_id: 'uuid-turn-1' } },
+        { type: 'event_msg', payload: { type: 'task_started', turn_id: 'uuid-turn-2' } },
+        { type: 'event_msg', payload: { type: 'user_message', message: 'Second question' } },
+        { type: 'event_msg', payload: { type: 'turn_aborted' } },
+        { type: 'event_msg', payload: { type: 'task_started', turn_id: 'uuid-turn-3' } },
+        { type: 'event_msg', payload: { type: 'user_message', message: 'Follow-up question' } },
+        { type: 'response_item', payload: { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'Follow-up answer' }] } },
+        { type: 'event_msg', payload: { type: 'task_complete', turn_id: 'uuid-turn-3' } },
+      ];
+      const content = records.map((record, seconds) => JSON.stringify({
+        timestamp: testDate({ seconds }).toISOString(), ...record,
+      })).join('\n');
       const turns = parseCodexSessionTurns(content);
+      expect(turns.map(turn => turn.turnId)).toEqual(['uuid-turn-1', 'uuid-turn-2', 'uuid-turn-3']);
+      expect(turns.map(turn => turn.messages.map(message => [message.role, message.content]))).toEqual([
+        [['user', 'First question'], ['assistant', 'First answer'], ['assistant', ''], ['assistant', 'More details']],
+        [['user', 'Second question'], ['assistant', '']],
+        [['user', 'Follow-up question'], ['assistant', 'Follow-up answer']],
+      ]);
+      expect(turns[1].messages[1].isInterrupt).toBe(true);
+      expect(turns.map(turn => turn.messages.map(message => message.timestamp))).toEqual([
+        [testDate({ seconds: 1 }).getTime(), testDate({ seconds: 2 }).getTime(), testDate({ seconds: 3 }).getTime(), testDate({ seconds: 4 }).getTime()],
+        [testDate({ seconds: 7 }).getTime(), testDate({ seconds: 8 }).getTime()],
+        [testDate({ seconds: 10 }).getTime(), testDate({ seconds: 11 }).getTime()],
+      ]);
+      expect(turns[0].messages.map(message => message.completedAt)).toEqual([undefined, undefined, undefined, testDate({ seconds: 5 }).getTime()]);
+      expect(parseCodexSessionTurns(content, 'uuid-turn-1')).toEqual(turns.slice(0, 1));
+      expect(parseCodexSessionTurns(content, 'uuid-turn-2')).toEqual(turns.slice(0, 2));
+      expect(parseCodexSessionTurns(content, 'uuid-turn-3')).toEqual(turns);
+      expect(parseCodexSessionTurns(content, 'unavailable-checkpoint')).toEqual(turns);
 
-      expect(turns).toHaveLength(2);
-      expect(turns[0].turnId).toBe('uuid-turn-1');
-      expect(turns[0].messages).toHaveLength(2);
-      expect(turns[0].messages[0].role).toBe('user');
-      expect(turns[0].messages[1].role).toBe('assistant');
-
-      expect(turns[1].turnId).toBe('uuid-turn-2');
-      expect(turns[1].messages).toHaveLength(2);
+      const ids = turns.flatMap(turn => turn.messages.map(message => message.id));
+      expect(ids.every(id => id.length > 0)).toBe(true);
+      expect(new Set(ids).size).toBe(ids.length);
+      expect(parseCodexSessionTurns(content).flatMap(turn => turn.messages.map(message => message.id))).toEqual(ids);
+      const bubbleGroups = turns.map(turn => {
+        const assistants = turn.messages.filter(message => message.role === 'assistant');
+        const group = assistants[0].turnId;
+        expect(group).toBeTruthy();
+        expect(assistants.every(message => message.turnId === group)).toBe(true);
+        return group;
+      });
+      expect(new Set(bubbleGroups).size).toBe(turns.length);
     });
 
     it('ignores retired records without losing modern messages in a mixed transcript', () => {
@@ -2813,115 +2870,6 @@ describe('CodexHistoryStore', () => {
       expect(turns).toHaveLength(1);
       expect(turns[0].turnId).toBe('turn-modern');
       expect(turns[0].messages.map(message => message.content)).toEqual(['Current']);
-    });
-  });
-
-  describe('parseCodexSessionContent - persisted mcp_tool_call', () => {
-    it('restores mcp_tool_call from response_item as mcp__server__tool', () => {
-      const content = [
-        JSON.stringify({
-          timestamp: '2026-03-27T00:00:00.000Z',
-          type: 'response_item',
-          payload: {
-            type: 'message',
-            role: 'user',
-            content: [{ type: 'input_text', text: 'Use MCP tool.' }],
-          },
-        }),
-        JSON.stringify({
-          timestamp: '2026-03-27T00:00:01.000Z',
-          type: 'response_item',
-          payload: {
-            type: 'mcp_tool_call',
-            server: 'myserver',
-            tool: 'mytool',
-            call_id: 'call_mcp_1',
-            status: 'completed',
-          },
-        }),
-        JSON.stringify({
-          timestamp: '2026-03-27T00:00:02.000Z',
-          type: 'response_item',
-          payload: {
-            type: 'message',
-            role: 'assistant',
-            content: [{ type: 'output_text', text: 'MCP tool executed.' }],
-          },
-        }),
-      ].join('\n');
-
-      const messages = parseCodexSessionContent(content);
-
-      const assistant = messages.find(m => m.role === 'assistant' && m.toolCalls);
-      expect(assistant).toBeDefined();
-
-      const mcpTool = assistant!.toolCalls!.find(tc => tc.name === 'mcp__myserver__mytool');
-      expect(mcpTool).toBeDefined();
-      expect(mcpTool!.id).toBe('call_mcp_1');
-      expect(mcpTool!.status).toBe('completed');
-    });
-
-    it('preserves MCP arguments and structured result text', () => {
-      const content = [
-        JSON.stringify({
-          timestamp: '2026-03-27T00:00:00.000Z',
-          type: 'response_item',
-          payload: {
-            type: 'mcp_tool_call',
-            server: 'filesystem',
-            tool: 'read_file',
-            call_id: 'call_mcp_2',
-            status: 'completed',
-            arguments: { path: 'README.md' },
-            result: {
-              content: [
-                { type: 'text', text: 'line 1' },
-                { type: 'text', text: 'line 2' },
-              ],
-            },
-          },
-        }),
-      ].join('\n');
-
-      const messages = parseCodexSessionContent(content);
-      const assistant = messages.find(m => m.role === 'assistant' && m.toolCalls);
-      const mcpTool = assistant!.toolCalls!.find(tc => tc.id === 'call_mcp_2');
-
-      expect(mcpTool).toMatchObject({
-        name: 'mcp__filesystem__read_file',
-        input: { path: 'README.md' },
-        status: 'completed',
-        result: 'line 1\nline 2',
-      });
-    });
-
-    it.each(['Permission denied', { message: 'Permission denied' }])('preserves MCP error output %j', error => {
-      const content = [
-        JSON.stringify({
-          timestamp: '2026-03-27T00:00:00.000Z',
-          type: 'response_item',
-          payload: {
-            type: 'mcp_tool_call',
-            server: 'filesystem',
-            tool: 'write_file',
-            call_id: 'call_mcp_3',
-            status: 'failed',
-            arguments: '{"path":"README.md"}',
-            error,
-          },
-        }),
-      ].join('\n');
-
-      const messages = parseCodexSessionContent(content);
-      const assistant = messages.find(m => m.role === 'assistant' && m.toolCalls);
-      const mcpTool = assistant!.toolCalls!.find(tc => tc.id === 'call_mcp_3');
-
-      expect(mcpTool).toMatchObject({
-        name: 'mcp__filesystem__write_file',
-        input: { path: 'README.md' },
-        status: 'error',
-        result: 'Permission denied',
-      });
     });
   });
 
@@ -3240,8 +3188,8 @@ it.each([false, true])('restores direct main-thread turn usage without counting 
     { type: 'token_usage_record', payload: { thread_id: 'main', turn_id: 'turn', turn_token_usage: { output_tokens: 125 } } },
     { type: 'token_usage_record', payload: { thread_id: 'child', turn_id: 'turn', session_id: 'main', root_turn_id: 'turn', turn_token_usage: { output_tokens: 900 } } },
     { type: 'response_item', payload: { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'Done' }] } },
-    { type: 'event_msg', payload: { type: aborted ? 'turn_aborted' : 'task_complete', turn_id: 'turn', duration_ms: 2500 } },
-  ].map((record, i) => JSON.stringify({ timestamp: new Date(1000 + i * 400).toISOString(), ...record })).join('\n');
+    { type: 'event_msg', payload: { type: aborted ? 'turn_aborted' : 'task_complete', thread_id: 'main', turn_id: 'turn', duration_ms: 2500 } },
+  ].map((record, i) => JSON.stringify({ timestamp: testTime({ milliseconds: i * 400 }), ...record })).join('\n');
   const messages = parseCodexSessionContent(records);
   expect(messages.at(-1)?.turnStats).toEqual(aborted ? undefined : { outputTokens: 125, durationMs: 2500 });
 });

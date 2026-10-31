@@ -98,6 +98,90 @@ describe('ClaudeCLIResolver', () => {
 
     expect(resolveClaudeCLIPath(cliPath, '', '')).toBe(cliPath);
   });
+
+  it('prefers the current installation override over legacy and discovered paths', () => {
+    const preferred = createExecutable('host', 'claude');
+    const legacy = createExecutable('legacy', 'claude');
+    const automatic = createExecutable('bin', isWindows ? 'claude.exe' : 'claude');
+    expect(resolveClaudeCLIPath(preferred, legacy, `PATH=${path.dirname(automatic)}`)).toBe(preferred);
+  });
+
+  it.each(['undefined', 'empty', 'other-host', 'missing', 'directory', 'denied'] as const)(
+    'falls back to the legacy file for a %s host override', state => {
+      const legacy = createExecutable('legacy', 'claude');
+      const hostPath = path.join(tempDir, 'host');
+      if (state === 'directory') fs.mkdirSync(hostPath);
+      if (state === 'denied') {
+        const stat = vi.mocked(fs.statSync).getMockImplementation()!;
+        vi.spyOn(fs, 'statSync').mockImplementation(((file, options) => {
+          if (String(file) === hostPath) throw Object.assign(new Error('Access denied'), { code: 'EACCES' });
+          return stat(file, options);
+        }) as typeof fs.statSync);
+      }
+      const cliPathsByHost = state === 'other-host' ? { 'other-installation': hostPath }
+        : { [getHostnameKey()]: state === 'undefined' ? undefined : state === 'empty' ? '' : hostPath };
+      expect(new ClaudeCLIResolver().resolveFromSettings({
+        providerConfigs: { claude: { cliPathsByHost, cliPath: legacy } },
+      })).toBe(legacy);
+    },
+  );
+
+  it.each(['undefined', 'empty', 'missing', 'directory', 'denied'] as const)(
+    'discovers the configured PATH after a %s legacy path', state => {
+      const automatic = createExecutable('custom bin', isWindows ? 'claude.exe' : 'claude');
+      const legacy = path.join(tempDir, 'legacy');
+      if (state === 'directory') fs.mkdirSync(legacy);
+      if (state === 'denied') {
+        const stat = vi.mocked(fs.statSync).getMockImplementation()!;
+        vi.spyOn(fs, 'statSync').mockImplementation(((file, options) => {
+          if (String(file) === legacy) throw Object.assign(new Error('Access denied'), { code: 'EACCES' });
+          return stat(file, options);
+        }) as typeof fs.statSync);
+      }
+      expect(resolveClaudeCLIPath('', state === 'undefined' ? undefined : state === 'empty' ? '' : legacy,
+        `PATH=${path.dirname(automatic)}`)).toBe(automatic);
+    },
+  );
+
+  it('trims a configured path without changing its file-admission policy', () => {
+    const executable = createExecutable('configured', 'claude');
+    fs.chmodSync(executable, 0o644);
+    expect(resolveClaudeCLIPath(`  ${executable}  `, '', '')).toBe(executable);
+  });
+
+  it('retries a missing installation without a settings change', () => {
+    const resolver = new ClaudeCLIResolver();
+    const bin = path.join(tempDir, 'late install');
+    const settings = { sharedEnvironmentVariables: `PATH=${bin}` };
+    expect(resolver.resolveFromSettings(settings)).toBeNull();
+    const executable = createExecutable('late install', isWindows ? 'claude.exe' : 'claude');
+    expect(resolver.resolveFromSettings(settings)).toBe(executable);
+    fs.unlinkSync(executable);
+    expect(resolver.resolveFromSettings(settings)).toBe(executable); // Successful discovery is cached.
+  });
+
+  it('keeps a resolved configured path cached until reset and then rechecks the filesystem', () => {
+    const executable = createExecutable('configured', 'claude');
+    const legacy = createExecutable('legacy', 'claude');
+    const resolver = new ClaudeCLIResolver();
+    const settings = { providerConfigs: { claude: { cliPathsByHost: { [getHostnameKey()]: executable }, cliPath: legacy } } };
+    expect(resolver.resolveFromSettings(settings)).toBe(executable);
+    fs.unlinkSync(executable);
+    expect(resolver.resolveFromSettings(settings)).toBe(executable);
+    resolver.reset();
+    expect(resolver.resolveFromSettings(settings)).toBe(legacy);
+  });
+
+  it('invalidates the cached result when the installation override changes', () => {
+    const first = createExecutable('first', 'claude');
+    const second = createExecutable('second', 'claude');
+    const resolver = new ClaudeCLIResolver();
+    const settings = { providerConfigs: { claude: { cliPathsByHost: { [getHostnameKey()]: first } } } };
+    expect(resolver.resolveFromSettings(settings)).toBe(first);
+    settings.providerConfigs.claude.cliPathsByHost[getHostnameKey()] = second;
+    expect(resolver.resolveFromSettings(settings)).toBe(second);
+  });
+
 });
 
 function resolveClaudeCLIPath(hostnamePath: string | undefined, legacyPath: string | undefined, envText: string): string | null {

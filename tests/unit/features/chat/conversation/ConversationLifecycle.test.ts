@@ -5,8 +5,6 @@ import type { Mock, Mocked } from 'vitest';
 import type { ProjectRecord } from '@/core/types';
 import { ConversationLifecycle, type ConversationLifecycleStore } from '@/features/chat/conversation/ConversationLifecycle';
 
-
-
 interface FakeTab {
   id: string;
   conversationId: string | null;

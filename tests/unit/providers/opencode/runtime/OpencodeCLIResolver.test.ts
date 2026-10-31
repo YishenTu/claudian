@@ -2,17 +2,11 @@ import * as fs from 'fs';
 import * as path from 'path';
 import type { Mock } from 'vitest';
 
+import { getInstallationKey } from '@/core/device/InstallationKey';
 import { OpencodeCLIResolver } from '@/providers/opencode/runtime/OpencodeCLIResolver';
-
-
 
 vi.mock('fs');
 const mockedStat = fs.statSync as Mock;
-
-vi.mock('@/core/device/InstallationKey', async () => ({
-  ...(await vi.importActual<typeof import('@/core/device/InstallationKey')>('@/core/device/InstallationKey')),
-  getInstallationKey: () => 'current-host',
-}));
 
 describe('OpencodeCLIResolver', () => {
   beforeEach(() => {
@@ -33,7 +27,7 @@ describe('OpencodeCLIResolver', () => {
       providerConfigs: { opencode: {
         cliPathsByHost: {
           'other-host': '/other/opencode',
-          'current-host': '/current/opencode',
+          [getInstallationKey()]: '/current/opencode',
         },
         cliPath: '/legacy/opencode',
       } },

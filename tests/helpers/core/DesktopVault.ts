@@ -2,7 +2,7 @@ import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
-import type { App } from 'obsidian';
+import { App } from 'obsidian';
 
 import { VaultFileAdapter } from '@/core/storage/VaultFileAdapter';
 
@@ -20,6 +20,7 @@ export class DesktopVault {
   private constructor(readonly root: string) {
     const resolve = (relativePath: string) => this.resolve(relativePath);
     const adapter = {
+      basePath: root,
       getBasePath: () => root,
       exists: async (relativePath: string) => fs.lstat(resolve(relativePath)).then(() => true, () => false),
       stat: async (relativePath: string) => {
@@ -65,7 +66,10 @@ export class DesktopVault {
         throw new Error('Unexpected local trash');
       },
     };
-    this.app = { vault: { adapter } } as unknown as App;
+    // This disk adapter does not maintain Obsidian's asynchronous file index.
+    // Files written directly on disk are therefore unindexed, not synthetic TFiles.
+    this.app = new App();
+    Object.assign(this.app.vault.adapter, adapter);
     this.files = new VaultFileAdapter(this.app);
   }
 

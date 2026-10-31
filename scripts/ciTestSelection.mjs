@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { appendFileSync, existsSync, readdirSync, realpathSync } from 'node:fs';
+import { appendFileSync, realpathSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -15,53 +15,16 @@ const isDocumentation = file => file.endsWith('.md') || file.startsWith('docs/')
 const isVitestTest = file => /^tests\/(?:unit|integration)\/.*\.test\.ts$/.test(file);
 const isGraphInput = file => /^(?:src|tests)\/.*\.(?:[cm]?[jt]sx?|json)$/.test(file);
 
-const repositoryRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
-const styleTestRoot = 'tests/unit/style';
-// Every style suite reads CSS through fs; list them from disk so new suites are never skipped.
-const styleSuiteDirectory = path.join(repositoryRoot, styleTestRoot);
-const styleSuites = (existsSync(styleSuiteDirectory) ? readdirSync(styleSuiteDirectory, { recursive: true }) : [])
-  .map(file => `${styleTestRoot}/${String(file).split(path.sep).join('/')}`)
-  .filter(file => file.endsWith('.test.ts'))
-  .sort();
-
-// Runtime imports drive related selection; type-only dependents are covered by typecheck.
-// These consumers read files through fs rather than imports, so Vitest cannot find their edges.
-const fileConsumers = [
-  [/^(?:tests\/fixtures\/providers\/models\/|src\/providers\/(?:grok|opencode)\/(?:settings|config|models|discoveryState|internal\/compareCollections)\.ts$|src\/core\/(?:device\/InstallationKey\.ts|providers\/(?:providerConfig\.ts|settings\/|models\/)))/, ['tests/integration/app/settings/ProviderModelDictionaryPersistence.test.ts']],
-  [/^src\/i18n\/locales\/.*\.json$/, ['tests/integration/build/dependency-envelope.test.ts', 'tests/unit/i18n/i18n.test.ts']],
-  [/^src\/style\//, [
-    ...styleSuites,
-    'tests/unit/features/chat/navigation/NavigationSidebar.dom.test.ts',
-    'tests/unit/features/chat/rendering/MessageRenderer.codeFences.dom.test.ts',
-  ]],
-  [/^tests\/fixtures\/providers\/deepseek\/runtime\//, ['tests/integration/providers/deepseek/runtime/DeepSeekHostProcess.test.ts']],
-  [/^tests\/fixtures\/providers\/grok\/history\//, [
-    'tests/unit/providers/grok/history/GrokConversationHistoryService.test.ts',
-    'tests/unit/providers/grok/history/GrokHistoryStore.test.ts',
-  ]],
-  [/^tests\/fixtures\/providers\/grok\/runtime\/models-list\.json$/, [
-    'tests/integration/providers/grok/runtime/GrokModels.test.ts',
-    'tests/integration/providers/grok/runtime/GrokModelDiscoveryService.test.ts',
-  ]],
-  [/^tests\/fixtures\/providers\/grok\/runtime\/models-list-byok\.json$/, [
-    'tests/integration/providers/grok/runtime/GrokModels.test.ts',
-    'tests/integration/providers/grok/runtime/GrokModelDiscoveryService.test.ts',
-  ]],
-  [/^tests\/fixtures\/providers\/grok\/runtime\/turn-completed\.json$/, [
-    'tests/unit/providers/grok/execution/GrokExecutionBackend.test.ts',
-  ]],
-  [/^tests\/fixtures\/providers\/codex\/history\/codex-session-(?:persisted-tools|agent-lifecycle|websearch-persisted)\.jsonl$/, [
-    'tests/unit/providers/codex/history/CodexHistoryStore.test.ts',
-  ]],
-  [/^src\/style\/base\/visibility\.css$/, ['tests/integration/features/chat/composer/PromptHistoryNavigation.dom.test.ts']],
-];
+// Runtime imports drive related selection; declarations supply non-import edges.
+const { fileConsumers } = suites;
+const matchesInput = (file, pattern) => path.posix.matchesGlob(file, pattern);
 const scriptConsumers = new Map(suites.scriptTests.flatMap(file => [
   [file, file], [file.replace('.test.mjs', '.mjs'), file],
 ]));
 const globalInputs = new Set([
   'src/main.ts', 'tests/setupWindow.ts', 'scripts/ciTestSelection.mjs',
   'scripts/run-tests.js', 'scripts/run-vitest.js', 'scripts/run-cross-platform-tests.js',
-  'scripts/testSuites.cjs', 'scripts/list-related-tests.mjs', 'scripts/vitestMetadataReporter.mjs',
+  'scripts/testSuites.cjs', 'scripts/testDeclarations.cjs', 'scripts/list-related-tests.mjs', 'scripts/vitestMetadataReporter.mjs',
 ]);
 
 export function selectCiTests({ changes, relatedTests, eventName }) {
@@ -71,7 +34,7 @@ export function selectCiTests({ changes, relatedTests, eventName }) {
   for (const { status, path: file } of changes) {
     if (status === 'D' && !isVitestTest(file) && !isDocumentation(file)) return { ...fullSelection };
     if (file.startsWith('tests/fixtures/') && !isDocumentation(file)
-      && !file.endsWith('.json') && !fileConsumers.some(([pattern]) => pattern.test(file))) return { ...fullSelection };
+      && !file.endsWith('.json') && !fileConsumers.some(([pattern]) => matchesInput(file, pattern))) return { ...fullSelection };
     if (globalInputs.has(file)) return { ...fullSelection };
     if (isVitestTest(file)) {
       if (status !== 'D') files.add(file);
@@ -79,8 +42,11 @@ export function selectCiTests({ changes, relatedTests, eventName }) {
       files.add(docsTest);
     } else if (scriptConsumers.has(file)) {
       scripts.add(scriptConsumers.get(file));
-    } else if (!isGraphInput(file) && !fileConsumers.some(([pattern]) => pattern.test(file))) {
+    } else if (!isGraphInput(file) && !fileConsumers.some(([pattern]) => matchesInput(file, pattern))) {
       return { ...fullSelection };
+    }
+    if (/^tests\/.*\.[cm]?[jt]sx?$/.test(file) && !isVitestTest(file)) {
+      scripts.add('scripts/testDeclarations.test.mjs');
     }
     if (/^(?:src\/.*\.[jt]sx?|tests\/.*\.ts|.*\/(?:AGENTS|CLAUDE)\.md|AGENTS\.md|CLAUDE\.md)$/.test(file)) {
       scripts.add('scripts/check-architecture-boundaries.test.mjs');
@@ -88,7 +54,7 @@ export function selectCiTests({ changes, relatedTests, eventName }) {
   }
   for (const file of [...changes.map(change => change.path), ...relatedTests]) {
     for (const [pattern, consumers] of fileConsumers) {
-      if (pattern.test(file)) consumers.forEach(consumer => files.add(consumer));
+      if (matchesInput(file, pattern)) consumers.forEach(consumer => files.add(consumer));
     }
   }
   for (const { status, path: file } of changes) {
@@ -100,7 +66,8 @@ export function selectCiTests({ changes, relatedTests, eventName }) {
   return {
     testFiles, scriptTests: [...scripts], crossPlatformTests,
     crossPlatform: crossPlatformTests.length > 0 || piWindows
-      || scripts.has('scripts/ciTestSelection.test.mjs') || scripts.has('scripts/run-tests.test.mjs'),
+      || scripts.has('scripts/ciTestSelection.test.mjs') || scripts.has('scripts/run-tests.test.mjs')
+      || changes.some(change => change.path === 'scripts/testDeclarations.test.mjs'),
     piWindows,
   };
 }

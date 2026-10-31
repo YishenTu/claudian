@@ -1,7 +1,12 @@
 import type { ChatSessionRuntime, SessionIdentity } from './ChatSessionRuntime';
 
+export interface SessionRevealOptions {
+  /** Navigation may wait for a closing presentation to release its attachment before choosing another owner. */
+  awaitClose?: boolean;
+}
+
 export interface SessionAttachmentOwner {
-  reveal(isCurrent?: () => boolean): void | Promise<void>;
+  reveal(isCurrent?: () => boolean, options?: SessionRevealOptions): void | Promise<void>;
 }
 
 /** Object identity is the attachment generation; only the pool can issue a current handle. */

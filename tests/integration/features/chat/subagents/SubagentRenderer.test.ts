@@ -1,0 +1,651 @@
+/** @vitest-environment jsdom */
+import { fireEvent } from '@testing-library/dom';
+import { setIcon } from 'obsidian';
+
+import type { SubagentInfo, ToolCallInfo } from '@/core/types';
+import {
+  createAsyncSubagentBlock,
+  createSubagentBlock,
+  renderStoredAsyncSubagent,
+  renderStoredSubagent,
+  updateAsyncSubagentBlock,
+  updateSubagentBlock,
+} from '@/features/chat/subagents/SubagentRenderer';
+
+const getTextByClass = (el: Element, cls: string): string[] => {
+  const results: string[] = [];
+  const visit = (node: Element) => {
+    if (node.hasClass(cls)) {
+      results.push(node.textContent);
+    }
+    Array.from(node.children).forEach(visit);
+  };
+  visit(el);
+  return results;
+};
+
+describe('Sync Subagent Renderer', () => {
+  let parentEl: HTMLElement;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    parentEl = document.body.createDiv();
+  });
+
+  describe('createSubagentBlock', () => {
+
+    it('should show description in label', () => {
+      const state = createSubagentBlock(parentEl, { id: 'task-1', status: 'running', toolCalls: [], isExpanded: false, ...{ description: 'My task description' } });
+
+      expect(state.labelEl.textContent).toBe('My task description');
+    });
+
+    it('should not show a tool count badge in the header', () => {
+      const state = createSubagentBlock(parentEl, { id: 'task-1', status: 'running', toolCalls: [], isExpanded: false, ...{ description: 'Test task' } });
+
+      expect(getTextByClass(state.wrapperEl, 'claudian-subagent-count')).toEqual([]);
+    });
+  });
+
+  describe('renderStoredSubagent', () => {
+    it('should toggle expand/collapse on click', () => {
+      const subagent: SubagentInfo = {
+        id: 'task-1',
+        description: 'Test task',
+        status: 'completed',
+        toolCalls: [],
+        isExpanded: false,
+      };
+
+      const wrapperEl = renderStoredSubagent(parentEl, subagent);
+      const headerEl = (wrapperEl).children[0];
+      const contentEl = (wrapperEl).children[1];
+
+      // Initially collapsed
+      expect((wrapperEl).hasClass('expanded')).toBe(false);
+      expect(contentEl.classList.contains('claudian-hidden')).toBe(true);
+
+      expect(headerEl.getAttribute('aria-expanded')).toBe('false');
+
+      // Click to expand
+      fireEvent.click(headerEl);
+      expect((wrapperEl).hasClass('expanded')).toBe(true);
+      expect(contentEl.hasClass('claudian-hidden')).toBe(false);
+      expect(headerEl.getAttribute('aria-expanded')).toBe('true');
+
+      // Click to collapse
+      fireEvent.click(headerEl);
+      expect((wrapperEl).hasClass('expanded')).toBe(false);
+      expect(contentEl.classList.contains('claudian-hidden')).toBe(true);
+      expect(headerEl.getAttribute('aria-expanded')).toBe('false');
+    });
+  });
+});
+
+describe('keyboard navigation', () => {
+  let parentEl: HTMLElement;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    parentEl = document.body.createDiv();
+  });
+
+  it('should support keyboard navigation (Enter/Space) on renderStoredSubagent', () => {
+    const subagent: SubagentInfo = {
+      id: 'task-1',
+      description: 'Test task',
+      status: 'completed',
+      toolCalls: [],
+      isExpanded: false,
+    };
+
+    const wrapperEl = renderStoredSubagent(parentEl, subagent);
+    const headerEl = (wrapperEl).children[0];
+
+    // Simulate Enter key
+    const enterEvent = { key: 'Enter' };
+    fireEvent.keyDown(headerEl, {...enterEvent});
+
+    expect((wrapperEl).hasClass('expanded')).toBe(true);
+
+    // Simulate Space key to collapse
+    const spaceEvent = { key: ' ' };
+    fireEvent.keyDown(headerEl, {...spaceEvent});
+
+    expect((wrapperEl).hasClass('expanded')).toBe(false);
+  });
+});
+
+describe('Async Subagent Renderer', () => {
+  let parentEl: HTMLElement;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    parentEl = document.body.createDiv();
+  });
+
+  it('shows label immediately and initializing status text', () => {
+    const state = createAsyncSubagentBlock(parentEl, { id: 'task-1', status: 'running', toolCalls: [], isExpanded: false, mode: 'async', asyncStatus: 'pending', ...{ description: 'Background job' } });
+
+    expect(state.labelEl.textContent).toBe('Background job');
+    expect(state.statusTextEl.textContent).toBe('Initializing');
+    expect((state.wrapperEl).className.split(' ')).toEqual(expect.arrayContaining(['async', 'pending']));
+  });
+
+  it('shows prompt in content and keeps label visible while running', () => {
+    const state = createAsyncSubagentBlock(parentEl, { id: 'task-2', status: 'running', toolCalls: [], isExpanded: false, mode: 'async', asyncStatus: 'pending', ...{ description: 'Background job', prompt: 'Do the work' } });
+
+    updateAsyncSubagentBlock(state, { ...state.info, agentId: 'agent-xyz', asyncStatus: 'running' });
+
+    expect(state.labelEl.textContent).toBe('Background job');
+    expect(state.statusTextEl.textContent).toBe('');
+    const contentText = getTextByClass(state.contentEl, 'claudian-subagent-prompt-text')[0];
+    expect(contentText).toContain('Do the work');
+    expect((state.wrapperEl).className.split(' ')).toEqual(expect.arrayContaining(['running', 'async']));
+  });
+
+  it('finalizes to completed and reveals description', () => {
+    const state = createAsyncSubagentBlock(parentEl, { id: 'task-3', status: 'running', toolCalls: [], isExpanded: false, mode: 'async', asyncStatus: 'pending', ...{ description: 'Background job' } });
+    state.info.toolCalls.push(
+      {
+        id: 'tool-1',
+        name: 'Read',
+        input: { file_path: 'a.md' },
+        status: 'completed',
+        result: 'A',
+        isExpanded: false,
+      },
+      {
+        id: 'tool-2',
+        name: 'Grep',
+        input: { pattern: 'x' },
+        status: 'completed',
+        result: 'B',
+        isExpanded: false,
+      }
+    );
+    updateAsyncSubagentBlock(state, { ...state.info, agentId: 'agent-complete', asyncStatus: 'running' });
+
+    vi.mocked(setIcon).mockClear();
+    updateAsyncSubagentBlock(state, { ...state.info, result: 'all done', status: 'completed', asyncStatus: 'completed' });
+
+    expect(state.labelEl.textContent).toBe('Background job');
+    expect(state.statusTextEl.textContent).toBe('');
+    expect((state.wrapperEl).hasClass('done')).toBe(true);
+    const contentText = getTextByClass(state.contentEl, 'claudian-subagent-result-output')[0];
+    expect(contentText).toBe('all done');
+    const lastIcon = vi.mocked(setIcon).mock.calls.pop();
+    expect(lastIcon?.[1]).toBe('check');
+  });
+
+  it('finalizes to error and displays result text', () => {
+    const state = createAsyncSubagentBlock(parentEl, { id: 'task-4', status: 'running', toolCalls: [], isExpanded: false, mode: 'async', asyncStatus: 'pending', ...{ description: 'Background job' } });
+    updateAsyncSubagentBlock(state, { ...state.info, agentId: 'agent-error', asyncStatus: 'running' });
+
+    vi.mocked(setIcon).mockClear();
+    updateAsyncSubagentBlock(state, { ...state.info, result: 'failure happened', status: 'error', asyncStatus: 'error' });
+
+    expect(state.statusTextEl.textContent).toBe('Error');
+    expect((state.wrapperEl).hasClass('error')).toBe(true);
+    const contentText = getTextByClass(state.contentEl, 'claudian-subagent-result-output')[0];
+    expect(contentText).toBe('failure happened');
+    const lastIcon = vi.mocked(setIcon).mock.calls.pop();
+    expect(lastIcon?.[1]).toBe('x');
+  });
+
+  it('marks async subagent as orphaned', () => {
+    const state = createAsyncSubagentBlock(parentEl, { id: 'task-5', status: 'running', toolCalls: [], isExpanded: false, mode: 'async', asyncStatus: 'pending', ...{ description: 'Background job' } });
+
+    updateAsyncSubagentBlock(state, { ...state.info, status: 'error', asyncStatus: 'orphaned' });
+
+    expect(state.statusTextEl.textContent).toBe('Orphaned');
+    expect((state.wrapperEl).hasClass('orphaned')).toBe(true);
+    const contentText = getTextByClass(state.contentEl, 'claudian-subagent-result-output')[0];
+    expect(contentText).toContain('Conversation ended before task completed');
+  });
+
+  describe('renderStoredAsyncSubagent', () => {
+    it('should expand on Enter key', () => {
+      const subagent: SubagentInfo = {
+        id: 'task-1',
+        description: 'Test task',
+        status: 'completed',
+        toolCalls: [],
+        isExpanded: false,
+        mode: 'async',
+        asyncStatus: 'completed',
+      };
+
+      const wrapperEl = renderStoredAsyncSubagent(parentEl, subagent);
+      const headerEl = (wrapperEl).children[0];
+
+      const enterEvent = { key: 'Enter' };
+      fireEvent.keyDown(headerEl, {...enterEvent});
+
+      expect((wrapperEl).hasClass('expanded')).toBe(true);
+    });
+
+    it('should toggle expansion on repeated clicks', () => {
+      const subagent: SubagentInfo = {
+        id: 'task-1',
+        description: 'Test task',
+        status: 'completed',
+        toolCalls: [],
+        isExpanded: false,
+        mode: 'async',
+        asyncStatus: 'completed',
+      };
+
+      const wrapperEl = renderStoredAsyncSubagent(parentEl, subagent);
+      expect(wrapperEl).toBeDefined();
+      expect((wrapperEl).hasClass('claudian-subagent-list')).toBe(true);
+      const headerEl = (wrapperEl).children[0];
+      expect(headerEl.getAttribute('aria-label')).toContain('click to expand');
+
+      // Click to expand
+      fireEvent.click(headerEl);
+      expect((wrapperEl).hasClass('expanded')).toBe(true);
+
+      // Click to collapse
+      fireEvent.click(headerEl);
+      expect((wrapperEl).hasClass('expanded')).toBe(false);
+    });
+
+    it('renders error status correctly', () => {
+      const subagent: SubagentInfo = {
+        id: 'task-1',
+        description: 'Failed task',
+        status: 'error',
+        toolCalls: [],
+        isExpanded: false,
+        mode: 'async',
+        asyncStatus: 'error',
+      };
+
+      const wrapperEl = renderStoredAsyncSubagent(parentEl, subagent);
+
+      expect((wrapperEl).hasClass('error')).toBe(true);
+      const contentText = getTextByClass(wrapperEl, 'claudian-subagent-result-output')[0];
+      expect(contentText).toBe('ERROR');
+    });
+
+    it('renders orphaned status correctly', () => {
+      const subagent: SubagentInfo = {
+        id: 'task-1',
+        description: 'Lost task',
+        status: 'error',
+        toolCalls: [],
+        isExpanded: false,
+        mode: 'async',
+        asyncStatus: 'orphaned',
+      };
+
+      vi.mocked(setIcon).mockClear();
+      const wrapperEl = renderStoredAsyncSubagent(parentEl, subagent);
+
+      expect((wrapperEl).hasClass('error')).toBe(true);
+      expect((wrapperEl).hasClass('orphaned')).toBe(true);
+      const contentText = getTextByClass(wrapperEl, 'claudian-subagent-result-output')[0];
+      expect(contentText).toContain('Conversation ended before task completed');
+      // Should use alert-circle icon
+      expect(setIcon).toHaveBeenCalledWith(expect.anything(), 'alert-circle');
+    });
+
+    it('renders running status with prompt', () => {
+      const subagent: SubagentInfo = {
+        id: 'task-1',
+        description: 'Running task',
+        status: 'running',
+        toolCalls: [],
+        isExpanded: false,
+        mode: 'async',
+        asyncStatus: 'running',
+        prompt: 'Do some work',
+      };
+
+      const wrapperEl = renderStoredAsyncSubagent(parentEl, subagent);
+
+      expect((wrapperEl).hasClass('running')).toBe(true);
+      const contentText = getTextByClass(wrapperEl, 'claudian-subagent-prompt-text')[0];
+      expect(contentText).toContain('Do some work');
+    });
+
+    it('renders pending status consistently with live cards', () => {
+      const subagent: SubagentInfo = {
+        id: 'task-1',
+        description: 'Pending task',
+        status: 'running',
+        toolCalls: [],
+        isExpanded: false,
+        mode: 'async',
+        asyncStatus: 'pending',
+      };
+
+      const wrapperEl = renderStoredAsyncSubagent(parentEl, subagent);
+
+      // Pending cards retain their initializing state.
+      expect((wrapperEl).hasClass('pending')).toBe(true);
+    });
+  });
+});
+
+describe('tool snapshots', () => {
+  let parentEl: HTMLElement;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    parentEl = document.body.createDiv();
+  });
+
+  it('retains distinct tool calls without rendering a header count', () => {
+    const state = createSubagentBlock(parentEl, { id: 'task-1', status: 'running', toolCalls: [], isExpanded: false, ...{ description: 'Test task' } });
+
+    const toolCall1: ToolCallInfo = {
+      id: 'tool-1',
+      name: 'Read',
+      input: { file_path: 'test.md' },
+      status: 'running',
+      isExpanded: false,
+    };
+    updateSubagentBlock(state, { ...state.info, toolCalls: [...state.info.toolCalls, toolCall1] });
+    expect(state.info.toolCalls).toHaveLength(1);
+    expect(getTextByClass(state.wrapperEl, 'claudian-subagent-count')).toEqual([]);
+
+    const toolCall2: ToolCallInfo = {
+      id: 'tool-2',
+      name: 'Grep',
+      input: { pattern: 'test' },
+      status: 'running',
+      isExpanded: false,
+    };
+    updateSubagentBlock(state, { ...state.info, toolCalls: [...state.info.toolCalls, toolCall2] });
+
+    expect(state.info.toolCalls).toHaveLength(2);
+    expect(getTextByClass(state.wrapperEl, 'claudian-subagent-count')).toEqual([]);
+  });
+
+  it('updates the same tool row from successive snapshots', () => {
+    const state = createSubagentBlock(parentEl, { id: 'task-1', status: 'running', toolCalls: [], isExpanded: false, ...{ description: 'Test task' } });
+    (state.headerEl).click();
+
+    updateSubagentBlock(state, { ...state.info, toolCalls: [...state.info.toolCalls, {
+      id: 'tool-1',
+      name: 'Write',
+      input: {},
+      status: 'running',
+      isExpanded: false,
+    }] });
+
+    updateSubagentBlock(state, { ...state.info, toolCalls: [{
+      id: 'tool-1',
+      name: 'Write',
+      input: { file_path: 'notes.md' },
+      status: 'running',
+      isExpanded: false,
+    }] });
+
+    expect(state.info.toolCalls).toHaveLength(1);
+    expect(state.info.toolCalls[0]).toEqual(
+      expect.objectContaining({
+        id: 'tool-1',
+        input: { file_path: 'notes.md' },
+      })
+    );
+    expect(getTextByClass(state.wrapperEl, 'claudian-subagent-count')).toEqual([]);
+    expect(getTextByClass(state.toolsContainerEl, 'claudian-subagent-tool-name')).toEqual(['Write']);
+    expect(getTextByClass(state.toolsContainerEl, 'claudian-subagent-tool-summary')).toEqual(['notes.md']);
+  });
+});
+
+describe('tool result snapshots', () => {
+  let parentEl: HTMLElement;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    parentEl = document.body.createDiv();
+  });
+
+  it('updates tool call status in state', () => {
+    const state = createSubagentBlock(parentEl, { id: 'task-1', status: 'running', toolCalls: [], isExpanded: false, ...{ description: 'Test task' } });
+
+    const toolCall: ToolCallInfo = {
+      id: 'tool-1',
+      name: 'Read',
+      input: { file_path: 'test.md' },
+      status: 'running',
+      isExpanded: false,
+    };
+    updateSubagentBlock(state, { ...state.info, toolCalls: [...state.info.toolCalls, toolCall] });
+
+    const updatedToolCall: ToolCallInfo = {
+      ...toolCall,
+      status: 'completed',
+      result: 'File contents here',
+    };
+    updateSubagentBlock(state, { ...state.info, toolCalls: [updatedToolCall] });
+
+    expect(state.info.toolCalls[0].status).toBe('completed');
+  });
+
+  it('removes tool rows absent from the next snapshot', () => {
+    const state = createSubagentBlock(parentEl, { id: 'task-1', status: 'running', toolCalls: [], isExpanded: false, ...{ description: 'Test task' } });
+
+    const toolCall: ToolCallInfo = {
+      id: 'tool-1',
+      name: 'Read',
+      input: { file_path: 'test.md' },
+      status: 'running',
+      isExpanded: false,
+    };
+    updateSubagentBlock(state, { ...state.info, toolCalls: [...state.info.toolCalls, toolCall] });
+
+    updateSubagentBlock(state, { ...state.info, toolCalls: [] });
+
+    expect(state.toolElements.size).toBe(0);
+  });
+});
+
+describe('terminal snapshots', () => {
+  let parentEl: HTMLElement;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    parentEl = document.body.createDiv();
+  });
+
+  it('sets status to completed and adds done class', () => {
+    const state = createSubagentBlock(parentEl, { id: 'task-1', status: 'running', toolCalls: [], isExpanded: false, ...{ description: 'Test task' } });
+
+    vi.mocked(setIcon).mockClear();
+    updateSubagentBlock(state, { ...state.info, result: 'All done', status: 'completed' });
+
+    expect(state.info.status).toBe('completed');
+    expect(state.info.result).toBe('All done');
+    expect((state.wrapperEl).hasClass('done')).toBe(true);
+    expect(setIcon).toHaveBeenCalledWith(expect.anything(), 'check');
+  });
+
+  it('sets status to error and adds error class', () => {
+    const state = createSubagentBlock(parentEl, { id: 'task-1', status: 'running', toolCalls: [], isExpanded: false, ...{ description: 'Test task' } });
+
+    vi.mocked(setIcon).mockClear();
+    updateSubagentBlock(state, { ...state.info, result: 'Something failed', status: 'error' });
+
+    expect(state.info.status).toBe('error');
+    expect(state.info.result).toBe('Something failed');
+    expect((state.wrapperEl).hasClass('error')).toBe(true);
+    expect(setIcon).toHaveBeenCalledWith(expect.anything(), 'x');
+    const errorText = getTextByClass(state.contentEl, 'claudian-subagent-result-output')[0];
+    expect(errorText).toBe('Something failed');
+  });
+
+  it('shows result section text after a task with tools', () => {
+    const state = createSubagentBlock(parentEl, { id: 'task-1', status: 'running', toolCalls: [], isExpanded: false, ...{ description: 'Test task' } });
+
+    // Add a tool call first to populate content
+    updateSubagentBlock(state, { ...state.info, toolCalls: [...state.info.toolCalls, {
+      id: 'tool-1',
+      name: 'Read',
+      input: { file_path: 'test.md' },
+      status: 'running',
+      isExpanded: false,
+    }] });
+
+    updateSubagentBlock(state, { ...state.info, result: 'Done', status: 'completed' });
+
+    const doneText = getTextByClass(state.contentEl, 'claudian-subagent-result-output')[0];
+    expect(doneText).toBe('Done');
+  });
+
+  it('does not restore a tool count badge after finalization', () => {
+    const state = createSubagentBlock(parentEl, { id: 'task-1', status: 'running', toolCalls: [], isExpanded: false, ...{ description: 'Test task' } });
+
+    updateSubagentBlock(state, { ...state.info, toolCalls: [...state.info.toolCalls, {
+      id: 'tool-1',
+      name: 'Read',
+      input: {},
+      status: 'running',
+      isExpanded: false,
+    }] });
+    updateSubagentBlock(state, { ...state.info, toolCalls: [...state.info.toolCalls, {
+      id: 'tool-2',
+      name: 'Grep',
+      input: {},
+      status: 'running',
+      isExpanded: false,
+    }] });
+
+    updateSubagentBlock(state, { ...state.info, result: 'Done', status: 'completed' });
+
+    expect(getTextByClass(state.wrapperEl, 'claudian-subagent-count')).toEqual([]);
+  });
+});
+
+describe('renderStoredSubagent status variants', () => {
+  let parentEl: HTMLElement;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    parentEl = document.body.createDiv();
+  });
+
+  it('renders completed subagent with done class and check icon', () => {
+    const subagent: SubagentInfo = {
+      id: 'task-1',
+      description: 'Completed task',
+      status: 'completed',
+      toolCalls: [],
+      isExpanded: false,
+    };
+
+    vi.mocked(setIcon).mockClear();
+    const wrapperEl = renderStoredSubagent(parentEl, subagent);
+
+    expect((wrapperEl).hasClass('done')).toBe(true);
+    expect(setIcon).toHaveBeenCalledWith(expect.anything(), 'check');
+    const doneText = getTextByClass(wrapperEl, 'claudian-subagent-result-output')[0];
+    expect(doneText).toBe('DONE');
+  });
+
+  it('renders error subagent with error class and x icon', () => {
+    const subagent: SubagentInfo = {
+      id: 'task-1',
+      description: 'Failed task',
+      status: 'error',
+      toolCalls: [],
+      isExpanded: false,
+    };
+
+    vi.mocked(setIcon).mockClear();
+    const wrapperEl = renderStoredSubagent(parentEl, subagent);
+
+    expect((wrapperEl).hasClass('error')).toBe(true);
+    expect(setIcon).toHaveBeenCalledWith(expect.anything(), 'x');
+    const errorText = getTextByClass(wrapperEl, 'claudian-subagent-result-output')[0];
+    expect(errorText).toBe('ERROR');
+  });
+
+  it('keeps running stored subagents free of terminal classes', () => {
+    const subagent: SubagentInfo = {
+      id: 'task-1',
+      description: 'Running task',
+      status: 'running',
+      toolCalls: [
+        { id: 'tool-1', name: 'Read', input: { file_path: 'test.md' }, status: 'completed', isExpanded: false },
+        { id: 'tool-2', name: 'Grep', input: { pattern: 'test' }, status: 'running', isExpanded: false },
+      ],
+      isExpanded: false,
+    };
+
+    const wrapperEl = renderStoredSubagent(parentEl, subagent);
+
+    // Should not have done or error class
+    expect((wrapperEl).hasClass('done')).toBe(false);
+    expect((wrapperEl).hasClass('error')).toBe(false);
+  });
+
+  it('renders running subagent tool call with expanded-style result', () => {
+    const subagent: SubagentInfo = {
+      id: 'task-1',
+      description: 'Running task',
+      status: 'running',
+      toolCalls: [
+        {
+          id: 'tool-1',
+          name: 'Read',
+          input: { file_path: 'test.md' },
+          status: 'completed',
+          result: 'File contents here',
+          isExpanded: false,
+        },
+      ],
+      isExpanded: false,
+    };
+
+    const wrapperEl = renderStoredSubagent(parentEl, subagent);
+    wrapperEl!.querySelector<HTMLElement>('.claudian-subagent-header')!.click();
+    wrapperEl!.querySelector<HTMLElement>('.claudian-subagent-tool-header')!.click();
+    const contentEl = (wrapperEl).children[1]; // content area
+
+    // Should show result text
+    const resultTexts = getTextByClass(contentEl, 'claudian-tool-line');
+    expect(resultTexts.length).toBe(1);
+    expect(resultTexts[0]).toContain('File contents here');
+  });
+
+  it('does not render a tool count badge for stored subagents', () => {
+    const subagent: SubagentInfo = {
+      id: 'task-1',
+      description: 'Task with tools',
+      status: 'completed',
+      toolCalls: [
+        { id: 'tool-1', name: 'Read', input: {}, status: 'completed', isExpanded: false },
+        { id: 'tool-2', name: 'Grep', input: {}, status: 'completed', isExpanded: false },
+        { id: 'tool-3', name: 'Edit', input: {}, status: 'completed', isExpanded: false },
+      ],
+      isExpanded: false,
+    };
+
+    const wrapperEl = renderStoredSubagent(parentEl, subagent);
+
+    expect(getTextByClass(wrapperEl, 'claudian-subagent-count')).toEqual([]);
+  });
+
+  it('truncates long descriptions', () => {
+    const longDesc = 'A'.repeat(50);
+    const subagent: SubagentInfo = {
+      id: 'task-1',
+      description: longDesc,
+      status: 'completed',
+      toolCalls: [],
+      isExpanded: false,
+    };
+
+    const wrapperEl = renderStoredSubagent(parentEl, subagent);
+
+    const labelTexts = getTextByClass(wrapperEl, 'claudian-subagent-label');
+    expect(labelTexts[0]).toBe('A'.repeat(40) + '...');
+  });
+});
+
+afterEach(() => { document.body.replaceChildren(); vi.restoreAllMocks(); });

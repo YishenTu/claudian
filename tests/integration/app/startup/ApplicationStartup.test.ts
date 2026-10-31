@@ -1,5 +1,7 @@
 import { DesktopVault } from '@test/helpers/core/DesktopVault';
 import { DEFAULT_CLAUDIAN_SETTINGS } from '@test/helpers/defaultSettings';
+import { createObsidianPlugin } from '@test/helpers/ObsidianSettingsHost';
+import { App } from 'obsidian';
 
 import { SettingsCoordinator } from '@/app/settings/SettingsCoordinator';
 import { type ApplicationDomains, startApplication } from '@/app/startup/ApplicationStartup';
@@ -15,20 +17,46 @@ vi.mock('fs');
 
 import '@/providers';
 
-import type { Mock } from 'vitest';
 
 
 
 describe('startApplication', () => {
-  let mockApp: any;
-  let plugin: { app: any; loadData: Mock; saveData: Mock };
+  let mockApp: ReturnType<typeof createApp>;
+  let plugin: ReturnType<typeof createPlugin>;
+  function createPlugin() {
+    const plugin = createObsidianPlugin(mockApp);
+    return Object.assign(plugin, { loadData: vi.fn<() => Promise<unknown>>().mockResolvedValue({}), saveData: vi.fn<(data: unknown) => Promise<void>>().mockResolvedValue(undefined) });
+  }
   const disposals: Array<() => Promise<void>> = [];
+
+  function createApp() {
+    const app = new App();
+    return Object.assign(app, {
+      vault: Object.assign(app.vault, {
+        adapter: Object.assign(app.vault.adapter, {
+          basePath: '/test/vault',
+          exists: vi.fn<import('obsidian').DataAdapter['exists']>().mockResolvedValue(false),
+          read: vi.fn<import('obsidian').DataAdapter['read']>().mockResolvedValue(''),
+          write: vi.fn<import('obsidian').DataAdapter['write']>().mockResolvedValue(undefined),
+          remove: vi.fn<import('obsidian').DataAdapter['remove']>().mockResolvedValue(undefined),
+          mkdir: vi.fn<import('obsidian').DataAdapter['mkdir']>().mockResolvedValue(undefined),
+          list: vi.fn<import('obsidian').DataAdapter['list']>().mockResolvedValue({ files: [], folders: [] }),
+          stat: vi.fn<import('obsidian').DataAdapter['stat']>().mockResolvedValue(null),
+          rename: vi.fn<import('obsidian').DataAdapter['rename']>().mockResolvedValue(undefined),
+        }),
+      }),
+      workspace: Object.assign(app.workspace, {
+        layoutReady: true,
+        onLayoutReady: vi.fn((callback: () => void) => callback()),
+      }),
+    });
+  }
 
   async function loadApplication(
     overrides: { providers?: typeof ProviderRegistry; onAllMetadataLoaded?: () => void } = {},
   ): Promise<ApplicationDomains> {
     const domains = await startApplication({
-      plugin: plugin as never,
+      plugin,
       defaultSettings: DEFAULT_CLAUDIAN_SETTINGS,
       providers: overrides.providers ?? ProviderRegistry,
       providerSettings: ProviderSettingsCoordinator,
@@ -72,30 +100,8 @@ describe('startApplication', () => {
         sessionPath: `/test/claude-project/${sessionId}.jsonl`,
       }]),
     ));
-    mockApp = {
-      vault: {
-        adapter: {
-          basePath: '/test/vault',
-          exists: vi.fn().mockResolvedValue(false),
-          read: vi.fn().mockResolvedValue(''),
-          write: vi.fn().mockResolvedValue(undefined),
-          remove: vi.fn().mockResolvedValue(undefined),
-          mkdir: vi.fn().mockResolvedValue(undefined),
-          list: vi.fn().mockResolvedValue({ files: [], folders: [] }),
-          stat: vi.fn().mockResolvedValue(null),
-          rename: vi.fn().mockResolvedValue(undefined),
-        },
-      },
-      workspace: {
-        layoutReady: true,
-        onLayoutReady: vi.fn((callback: () => void) => callback()),
-      },
-    };
-    plugin = {
-      app: mockApp,
-      loadData: vi.fn().mockResolvedValue({}),
-      saveData: vi.fn().mockResolvedValue(undefined),
-    };
+    mockApp = createApp();
+    plugin = createPlugin();
   });
 
   afterEach(async () => {
@@ -360,7 +366,7 @@ describe('startApplication', () => {
       const loaded = await domains.conversations.getConversationById('conv-saved-1');
       expect(loaded?.sessionId).toBeNull();
 
-      const sessionWrite = (mockApp.vault.adapter.write as Mock).mock.calls.find(
+      const sessionWrite = mockApp.vault.adapter.write.mock.calls.find(
         ([path]) => path === '.claudian/sessions/conv-saved-1.meta.json'
       );
       expect(sessionWrite).toBeDefined();
@@ -425,8 +431,8 @@ describe('startApplication', () => {
       const domains = await loadApplicationWithMetadata();
 
       const loaded = await domains.conversations.getConversationById('conv-multi-session');
-      expect((loaded?.providerState as any)?.previousProviderSessionIds).toEqual(['session-A']);
-      expect((loaded?.providerState as any)?.providerSessionId).toBe('session-B');
+      expect((loaded?.providerState)?.previousProviderSessionIds).toEqual(['session-A']);
+      expect((loaded?.providerState)?.providerSessionId).toBe('session-B');
     });
   });
   describe('projects', () => {
@@ -443,7 +449,7 @@ describe('startApplication', () => {
         id: 'conv-member', title: 'Member', createdAt: timestamp, lastActivityAt: timestamp,
         sessionId: null, projectId: 'project-a',
       }));
-      mockApp.vault = vault.app.vault;
+      plugin.app.vault = vault.app.vault;
       const projectFiles = async () => new Map([...await vault.snapshot()].filter(([path]) => (
         path.startsWith('.claudian/projects/')
       )));

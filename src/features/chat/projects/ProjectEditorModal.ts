@@ -1,8 +1,10 @@
-import { type App, Modal, Notice, Setting } from 'obsidian';
+import { type App, Notice } from 'obsidian';
 
 import { defaultProjectMemoryPath, normalizeProjectMemoryPath } from '@/core/path/ProjectMemoryPath';
 import { type ProjectCreateInput, ProjectMemoryPathTakenError, type ProjectRecord } from '@/core/types';
 import { t } from '@/i18n/i18n';
+import { AccessibleModal } from '@/shared/modals/AccessibleModal';
+import { AccessibleSetting } from '@/shared/settings/AccessibleSetting';
 
 const MEMORY_PATH_ERROR_ID = 'claudian-project-memory-path-error';
 
@@ -19,7 +21,7 @@ export interface ProjectEditorOptions {
  * Edits a project's name, instructions and memory file path; instructions have no length limit. A new project's
  * path follows the name until the user edits the path.
  */
-export class ProjectEditorModal extends Modal {
+export class ProjectEditorModal extends AccessibleModal {
   private nameInput!: HTMLInputElement;
   private instructionsArea!: HTMLTextAreaElement;
   private memoryPathInput!: HTMLInputElement;
@@ -37,7 +39,7 @@ export class ProjectEditorModal extends Modal {
     this.setTitle(project ? t('chat.projects.editor.titleEdit') : t('chat.projects.editor.titleNew'));
     this.modalEl.addClass('claudian-project-modal');
 
-    new Setting(this.contentEl)
+    new AccessibleSetting(this.contentEl)
       .setName(t('chat.projects.editor.name'))
       .setDesc(t('chat.projects.editor.nameDesc'))
       .addText((text) => {
@@ -58,7 +60,7 @@ export class ProjectEditorModal extends Modal {
         });
       });
 
-    new Setting(this.contentEl)
+    new AccessibleSetting(this.contentEl)
       .setName(t('chat.projects.editor.instructions'))
       .setDesc(t('chat.projects.editor.instructionsDesc'));
     this.instructionsArea = this.contentEl.createEl('textarea', {
@@ -67,7 +69,7 @@ export class ProjectEditorModal extends Modal {
     });
     this.instructionsArea.value = project?.instructions ?? '';
 
-    const memoryPathSetting = new Setting(this.contentEl)
+    const memoryPathSetting = new AccessibleSetting(this.contentEl)
       .setName(t('chat.projects.editor.memoryPath'))
       .setDesc(t('chat.projects.editor.memoryPathDesc'))
       .addText((text) => {

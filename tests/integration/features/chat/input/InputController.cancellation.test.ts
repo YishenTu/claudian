@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { createHarness, deferred, FakeSession, requestedScope } from '@test/helpers/ChatExecutionHarness';
 import { createFixture } from '@test/helpers/ChatInputHarness';
 import { createTabSession } from '@test/helpers/ConversationPorts';
@@ -27,7 +28,7 @@ test.each(['execution initialization', 'handoff authority'] as const)(
         await release.promise;
       });
     }
-    const input = createFixture({ getExecutionCoordinator: () => native.coordinator });
+    const input = (await createFixture({ getExecutionCoordinator: () => native.coordinator }));
     if (phase === 'execution initialization') {
       input.deps.ensureExecutionInitialized = async () => {
         started.resolve();
@@ -55,8 +56,6 @@ test.each(['execution initialization', 'handoff authority'] as const)(
   },
 );
 
-
-
 test('shutdown cancels a preparing turn and retains its unsent input for the final snapshot', async () => {
   const native = createHarness();
   await native.coordinator.bindConversation({ conversationId: 'conversation-1', providerId: 'claude' });
@@ -65,12 +64,12 @@ test('shutdown cancels a preparing turn and retains its unsent input for the fin
   }, native.coordinator).runtime;
   const started = deferred<void>();
   const release = deferred<void>();
-  const input = createFixture({
+  const input = (await createFixture({
     getExecutionCoordinator: () => native.coordinator,
     session,
     isClosing: () => session.isDisposed,
     canStartTurn: () => session.acceptsIntents,
-  });
+  }));
   input.deps.ensureExecutionInitialized = async () => {
     started.resolve();
     await release.promise;

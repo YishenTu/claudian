@@ -1,15 +1,15 @@
-import { TFile, TFolder } from 'obsidian';
+import { App, TFile, TFolder } from 'obsidian';
 
 import { VaultMentionDataProvider } from '@/shared/mention/VaultMentionDataProvider';
 
 function createFile(path: string): TFile {
-  const file = new (TFile as any)(path) as TFile;
-  (file as any).stat = { mtime: Date.now(), ctime: Date.now(), size: 0 };
+  const file = Object.assign(new TFile(), { path, name: path.split('/').pop() ?? '', extension: path.split('.').pop() ?? '' });
+  (file).stat = { mtime: Date.now(), ctime: Date.now(), size: 0 };
   return file;
 }
 
 function createFolder(path: string): TFolder {
-  return new (TFolder as any)(path) as TFolder;
+  return Object.assign(new TFolder(), { path, name: path.split('/').pop() ?? '' });
 }
 
 describe('VaultMentionDataProvider', () => {
@@ -20,12 +20,11 @@ describe('VaultMentionDataProvider', () => {
   it('returns cached vault files and folders without reloading until dirty', () => {
     const files = [createFile('notes/a.md')];
     const folders = [createFolder('notes')];
-    const app = {
-      vault: {
+    const app = new App();
+    Object.assign(app.vault, {
         getFiles: vi.fn(() => files),
         getAllLoadedFiles: vi.fn(() => folders),
-      },
-    } as any;
+    });
     const provider = new VaultMentionDataProvider(app);
 
     expect(provider.getCachedVaultFiles()).toEqual(files);
@@ -49,12 +48,11 @@ describe('VaultMentionDataProvider', () => {
     vi.useFakeTimers();
     const files = [createFile('notes/a.md')];
     const folders = [createFolder('notes')];
-    const app = {
-      vault: {
+    const app = new App();
+    Object.assign(app.vault, {
         getFiles: vi.fn(() => files),
         getAllLoadedFiles: vi.fn(() => folders),
-      },
-    } as any;
+    });
     const provider = new VaultMentionDataProvider(app);
 
     provider.initializeInBackground();
@@ -83,14 +81,13 @@ describe('VaultMentionDataProvider', () => {
 
   it('reports file load errors only once while continuing to return an empty result', () => {
     const onFileLoadError = vi.fn();
-    const app = {
-      vault: {
+    const app = new App();
+    Object.assign(app.vault, {
         getFiles: vi.fn(() => {
           throw new Error('Vault unavailable');
         }),
         getAllLoadedFiles: vi.fn(() => []),
-      },
-    } as any;
+    });
     const provider = new VaultMentionDataProvider(app, { onFileLoadError });
 
     expect(provider.getCachedVaultFiles()).toEqual([]);

@@ -4,6 +4,7 @@ import '@/providers';
 import { deserialize, serialize } from 'node:v8';
 
 import { axe } from '@test/helpers/accessibility';
+import { createChatFeatureHost } from '@test/helpers/features/chat/ChatFeatureHostFixture';
 import { useClaudeSessionFiles } from '@test/helpers/providers/claudeHistory';
 import { testDate, testTime } from '@test/helpers/testClock';
 import { fireEvent, within } from '@testing-library/dom';
@@ -31,9 +32,6 @@ async function hydrateCachedMessages(messages: ChatMessage[]): Promise<ChatMessa
   }, null);
   return history.messages!;
 }
-HTMLElement.prototype.empty = function () { this.replaceChildren(); };
-HTMLElement.prototype.addClass = function (...classes) { this.classList.add(...classes); };
-HTMLElement.prototype.removeClass = function (...classes) { this.classList.remove(...classes); };
 
 beforeEach(() => {
   document.body.replaceChildren();
@@ -45,7 +43,7 @@ beforeEach(() => {
 it.each([false, true])('collapses work across compaction on completion and reload (notification split: %s)', async notification => {
   const { renderSessionTaskNotification } = await import('@/features/chat/turns/BackgroundTurnRenderer');
   const messagesEl = document.body.createDiv();
-  const plugin = { app: {}, settings: { mediaFolder: '', showMessageTimestamps: false } } as any;
+  const plugin = await createChatFeatureHost({ settings: { mediaFolder: '', showMessageTimestamps: false } });
   const renderer = new MessageRenderer(plugin, new Component(), messagesEl);
   const state = new ChatState();
   const subagents = new SubagentManager(() => undefined);
@@ -107,7 +105,7 @@ it.each(['early', 'late', 'none'])('matches live and JSONL notification order wi
   const lateResult = resultTiming === 'late';
   const { renderSessionTaskNotification } = await import('@/features/chat/turns/BackgroundTurnRenderer');
   const messagesEl = document.body.createDiv();
-  const plugin = { app: {}, settings: { mediaFolder: '', showMessageTimestamps: false } } as any;
+  const plugin = await createChatFeatureHost({ settings: { mediaFolder: '', showMessageTimestamps: false } });
   const renderer = new MessageRenderer(plugin,
     new Component(), messagesEl);
   const state = new ChatState();
@@ -188,7 +186,7 @@ it.each(['early', 'late', 'none'])('matches live and JSONL notification order wi
 it.each(['between', 'during-second', 'after-second'])('groups an older task notification by consumption position: %s', async position => {
   const { renderSessionTaskNotification } = await import('@/features/chat/turns/BackgroundTurnRenderer');
   const messagesEl = document.body.createDiv();
-  const plugin = { app: {}, settings: { mediaFolder: '', showMessageTimestamps: false } } as any;
+  const plugin = await createChatFeatureHost({ settings: { mediaFolder: '', showMessageTimestamps: false } });
   const renderer = new MessageRenderer(plugin,
     new Component(), messagesEl);
   const state = new ChatState();
@@ -297,7 +295,7 @@ it.each(['between', 'during-second', 'after-second'])('groups an older task noti
 it.each(['child', 'result', 'snapshot'] as const)('keeps a pending Agent before a notification when resolved by %s', async resolution => {
   const { renderSessionTaskNotification } = await import('@/features/chat/turns/BackgroundTurnRenderer');
   const messagesEl = document.body.createDiv();
-  const plugin = { app: {}, settings: { mediaFolder: '', showMessageTimestamps: false } } as any;
+  const plugin = await createChatFeatureHost({ settings: { mediaFolder: '', showMessageTimestamps: false } });
   const renderer = new MessageRenderer(plugin,
     new Component(), messagesEl);
   const state = new ChatState();
@@ -335,7 +333,7 @@ it.each(['child', 'result', 'snapshot'] as const)('keeps a pending Agent before 
 it('does not recreate a response after its conversation is cleared during finalization', async () => {
   const { renderSessionTaskNotification } = await import('@/features/chat/turns/BackgroundTurnRenderer');
   const messagesEl = document.body.createDiv();
-  const plugin = { app: {}, settings: { mediaFolder: '', showMessageTimestamps: false } } as any;
+  const plugin = await createChatFeatureHost({ settings: { mediaFolder: '', showMessageTimestamps: false } });
   const renderer = new MessageRenderer(plugin,
     new Component(), messagesEl);
   const state = new ChatState();
@@ -362,7 +360,7 @@ it('does not recreate a response after its conversation is cleared during finali
 it.each(['background', 'user'] as const)('groups only the requested response across notifications with intervening %s output', async intervening => {
   const { renderSessionTaskNotification } = await import('@/features/chat/turns/BackgroundTurnRenderer');
   const messagesEl = document.body.createDiv();
-  const plugin = { app: {}, settings: { mediaFolder: '', showMessageTimestamps: false } } as any;
+  const plugin = await createChatFeatureHost({ settings: { mediaFolder: '', showMessageTimestamps: false } });
   const renderer = new MessageRenderer(plugin,
     new Component(), messagesEl);
   const state = new ChatState();
@@ -413,7 +411,7 @@ it.each(['background', 'user'] as const)('groups only the requested response acr
 it('keeps a notification consumed by an automatic response outside an admitted requested turn', async () => {
   const { renderAutoTriggeredTurn, renderSessionTaskNotification } = await import('@/features/chat/turns/BackgroundTurnRenderer');
   const messagesEl = document.body.createDiv();
-  const plugin = { app: {}, settings: { mediaFolder: '', showMessageTimestamps: false } } as any;
+  const plugin = await createChatFeatureHost({ settings: { mediaFolder: '', showMessageTimestamps: false } });
   const renderer = new MessageRenderer(plugin,
     new Component(), messagesEl);
   const state = new ChatState();

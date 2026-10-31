@@ -1,8 +1,9 @@
+// @test-ci {"inputs":["tests/fixtures/providers/grok/runtime/models-list.json","tests/fixtures/providers/grok/runtime/models-list-byok.json","tests/fixtures/providers/grok/runtime/GrokModelCatalogProcess.mjs"]}
 import { type ChildProcess, spawn as nodeSpawn } from 'node:child_process';
 import * as path from 'node:path';
 
 vi.mock('cross-spawn', () => ({ default: vi.fn() }));
-import { runtimeHostFor } from '@test/helpers/providerRuntimeHost';
+import { createProviderHostFixture } from '@test/helpers/providerRuntimeHost';
 import spawn from 'cross-spawn';
 
 import { GrokModelDiscoveryService } from '@/providers/grok/runtime/GrokModelDiscoveryService';
@@ -11,18 +12,14 @@ const fixture = path.resolve('tests/fixtures/providers/grok/runtime/GrokModelCat
 let children: ChildProcess[];
 let onWaiting: (() => void) | undefined;
 
-function makeService(scenario = '', timeoutMs = 2_000): GrokModelDiscoveryService {
-  const host = {
-    workingDirectory: process.cwd(),
-    getResolvedProviderCliPath: async () => 'fixture-grok',
-    settings: {
+async function makeService(scenario = '', timeoutMs = 2_000): Promise<GrokModelDiscoveryService> {
+  const host = (await createProviderHostFixture({ settings: {
       providerConfigs: { grok: {
         enabled: true,
         environmentVariables: `GROK_CATALOG_SCENARIO=${scenario}`,
       } },
-    },
-  };
-  return new GrokModelDiscoveryService(runtimeHostFor(host, 'grok'), { modelCommandTimeoutMs: timeoutMs });
+    }, overrides: { workingDirectory: process.cwd(), getResolvedProviderCliPath: async () => 'fixture-grok' } })).host;
+  return new GrokModelDiscoveryService(host.getRuntimeHost('grok'), { modelCommandTimeoutMs: timeoutMs });
 }
 
 beforeEach(() => {
@@ -51,7 +48,7 @@ function expectProcessesClosed(): void {
 }
 
 it('discovers distinct native effort menus without a chat session and closes the process', async () => {
-  const result = await makeService().discoverCatalog();
+  const result = await (await makeService()).discoverCatalog();
 
   expect(result).toMatchObject({
     kind: 'completed',
@@ -83,7 +80,7 @@ it('discovers distinct native effort menus without a chat session and closes the
 
 it.each(['unsupported', 'malformed', 'extension-error'])(
   'falls back to CLI model discovery after %s and closes both processes', async scenario => {
-    const result = await makeService(scenario).discoverCatalog();
+    const result = await (await makeService(scenario)).discoverCatalog();
 
     expect(result).toMatchObject({
       kind: 'completed', defaultModelId: 'legacy-model',
@@ -95,7 +92,7 @@ it.each(['unsupported', 'malformed', 'extension-error'])(
 );
 
 it('preserves an authoritative empty catalog', async () => {
-  expect(await makeService('empty').discoverCatalog()).toMatchObject({
+  expect(await (await makeService('empty')).discoverCatalog()).toMatchObject({
     kind: 'completed', models: [],
   });
   expectProcessesClosed();
@@ -106,7 +103,7 @@ it.each(['hang-initialize', 'hang-list'])(
     const controller = new AbortController();
     onWaiting = () => controller.abort();
 
-    expect(await makeService(scenario).discoverCatalog(controller.signal)).toMatchObject({
+    expect(await (await makeService(scenario)).discoverCatalog(controller.signal)).toMatchObject({
       kind: 'completed', models: [], diagnostics: 'Grok Build models command was cancelled',
     });
     expectProcessesClosed();
@@ -115,7 +112,7 @@ it.each(['hang-initialize', 'hang-list'])(
 
 it.each(['hang-initialize', 'hang-list'])(
   'times out %s, closes the process, and uses the legacy catalog', async scenario => {
-    expect(await makeService(scenario, 200).discoverCatalog()).toMatchObject({
+    expect(await (await makeService(scenario, 200)).discoverCatalog()).toMatchObject({
       kind: 'completed', models: [{ rawId: 'legacy-model' }],
     });
     expectProcessesClosed();
@@ -123,7 +120,7 @@ it.each(['hang-initialize', 'hang-list'])(
 );
 
 it('distinguishes configurable Grok 4.7 reasoning from non-reasoning API-key models', async () => {
-  expect(await makeService('byok').discoverCatalog()).toMatchObject({
+  expect(await (await makeService('byok')).discoverCatalog()).toMatchObject({
     kind: 'completed',
     models: [
       { rawId: 'grok-4.20-0309-non-reasoning', reasoningMetadataResolved: true, reasoningEfforts: [], supportsReasoning: false },

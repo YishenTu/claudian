@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import '@/providers';
 
 import { createHarness, FakeSession, requestedScope } from '@test/helpers/ChatExecutionHarness';
@@ -5,7 +6,7 @@ import { createFixture, deferred, waitForCall } from '@test/helpers/ChatInputHar
 import { testDate } from '@test/helpers/testClock';
 import { Notice } from 'obsidian';
 
-import type { ToolCallInfo } from '@/core/types';
+import type { Conversation, ToolCallInfo } from '@/core/types';
 import { FileContextManager } from '@/features/chat/composer/FileContextManager';
 import { cancelSelectedDestinationTurn } from '@/features/chat/tabs/TabInputEvents';
 import { VaultMentionDataProvider } from '@/shared/mention/VaultMentionDataProvider';
@@ -14,9 +15,9 @@ const id = 'conv-1-source';
 const token = `@[Old title](claudian-session:${id})`;
 const time = testDate().getTime();
 
-function setup(sourceId = id) {
+async function setup(sourceId = id) {
   const native = createHarness();
-  const fixture = createFixture({ getExecutionCoordinator: () => native.coordinator });
+  const fixture = (await createFixture({ getExecutionCoordinator: () => native.coordinator }));
   Object.assign(fixture.plugin, { findConversationAcrossViews: () => null });
   fixture.plugin.getConversationById.mockResolvedValue({
     id: sourceId, title: 'Current title', providerId: 'codex', createdAt: time, lastActivityAt: time,
@@ -42,7 +43,7 @@ beforeEach(() => {
 afterEach(() => vi.restoreAllMocks());
 
 it.each(['\n', '\r\n', '\r'])('sends a picker reference whose saved title contains %j', async newline => {
-  const fixture = setup();
+  const fixture = (await setup());
   const manager = new FileContextManager(new VaultMentionDataProvider({
     vault: { getFiles: () => [], getAllLoadedFiles: () => [] },
   } as never), {
@@ -78,7 +79,7 @@ it.each(['\n', '\r\n', '\r'])('sends a picker reference whose saved title contai
 
 it.each(['f690c4f6-a773-4cb0-a67b-4b08a6ec21b3', 'ses_native-ID.1'])(
   'sends a native-ID picker selection as a reference the agent reads by id (%s)', async sourceId => {
-    const fixture = setup(sourceId);
+    const fixture = (await setup(sourceId));
     const app = { vault: { getFiles: () => [], getAllLoadedFiles: () => [] } };
     const manager = new FileContextManager(new VaultMentionDataProvider(app as never), {
       getConversationList: () => [{
@@ -117,7 +118,7 @@ it.each(['f690c4f6-a773-4cb0-a67b-4b08a6ec21b3', 'ses_native-ID.1'])(
 );
 
 it.each([false, true])('resolves current titles once and carries snapshots through real handoff (queued: %s)', async queued => {
-  const fixture = setup();
+  const fixture = (await setup());
   await fixture.native.coordinator.bindConversation({ conversationId: 'conversation-1', providerId: 'claude' });
   try {
     const releaseTurn = queued ? fixture.holdResponse() : async () => undefined;
@@ -141,7 +142,7 @@ it.each([false, true])('resolves current titles once and carries snapshots throu
 });
 
 it('preserves the original token draft when the session cannot be loaded', async () => {
-  const fixture = setup();
+  const fixture = (await setup());
   try {
     fixture.plugin.getConversationById.mockResolvedValue(null);
     fixture.input.value = token;
@@ -154,7 +155,7 @@ it('preserves the original token draft when the session cannot be loaded', async
 });
 
 it('does not send to a replaced conversation while hydration is pending', async () => {
-  const fixture = setup();
+  const fixture = (await setup());
   const gate = deferred<never>();
   fixture.plugin.getConversationById.mockReturnValue(gate.promise);
   fixture.input.value = token;
@@ -169,7 +170,7 @@ it('does not send to a replaced conversation while hydration is pending', async 
 });
 
 it('restores a plain follow-up queued during failed snapshot preparation', async () => {
-  const fixture = setup();
+  const fixture = (await setup());
   const gate = deferred<never>();
   fixture.plugin.getConversationById.mockReturnValue(gate.promise);
   try {
@@ -188,8 +189,8 @@ it('restores a plain follow-up queued during failed snapshot preparation', async
 });
 
 it('preserves submission order when a busy-main mention hydrates more slowly than a later plain send', async () => {
-  const fixture = setup();
-  const gate = deferred<any>();
+  const fixture = (await setup());
+  const gate = deferred<Conversation | null>();
   const source = await fixture.plugin.getConversationById(id);
   fixture.plugin.getConversationById.mockClear().mockReturnValue(gate.promise);
   fixture.holdResponse();
@@ -213,7 +214,7 @@ it('preserves submission order when a busy-main mention hydrates more slowly tha
 
 it('withdraws an expired async answer waiting behind busy-main reference preparation', async () => {
   holdNativeTurns();
-  const fixture = setup();
+  const fixture = (await setup());
   fixture.deps.getTabProviderId = () => 'codex';
   const source = await fixture.plugin.getConversationById(id);
   const hydration = deferred<typeof source>();
@@ -261,9 +262,9 @@ it('withdraws an expired async answer waiting behind busy-main reference prepara
 });
 
 it('cancels and drains queued snapshot preparation before plugin shutdown finishes', async () => {
-  const fixture = setup();
+  const fixture = (await setup());
   const session = fixture.session;
-  const gate = deferred<any>();
+  const gate = deferred<Conversation | null>();
   const source = await fixture.plugin.getConversationById(id);
   fixture.plugin.getConversationById.mockClear().mockReturnValue(gate.promise);
   fixture.holdResponse();
@@ -283,8 +284,8 @@ it('cancels and drains queued snapshot preparation before plugin shutdown finish
 });
 
 it.each([false, true])('restores prepared drafts when rewind begins during hydration (plain follow-up: %s)', async followUp => {
-  const fixture = setup();
-  const hydration = deferred<any>();
+  const fixture = (await setup());
+  const hydration = deferred<Conversation | null>();
   const initialization = deferred<boolean>();
   const source = await fixture.plugin.getConversationById(id);
   fixture.plugin.getConversationById.mockClear().mockReturnValue(hydration.promise);
@@ -351,9 +352,9 @@ async function until(check: () => boolean) {
 
 it('dispatches an older queued message before a newer mention still hydrating', async () => {
   const execute = holdNativeTurns();
-  const fixture = setup();
+  const fixture = (await setup());
   const source = await fixture.plugin.getConversationById(id);
-  const hydration = deferred<any>();
+  const hydration = deferred<Conversation | null>();
   fixture.plugin.getConversationById.mockClear().mockReturnValue(hydration.promise);
   await fixture.native.coordinator.bindConversation({ conversationId: 'conversation-1', providerId: 'claude' });
   fixture.input.value = 'active turn';
@@ -389,9 +390,9 @@ it('dispatches an older queued message before a newer mention still hydrating', 
 
 it.each([false, true])('releases preparation ordering at admission while the next turn is still running (mention fails: %s)', async fails => {
   const execute = holdNativeTurns();
-  const fixture = setup();
+  const fixture = (await setup());
   const source = await fixture.plugin.getConversationById(id);
-  const hydration = deferred<any>();
+  const hydration = deferred<Conversation | null>();
   fixture.plugin.getConversationById.mockClear().mockReturnValue(hydration.promise);
   await fixture.native.coordinator.bindConversation({ conversationId: 'conversation-1', providerId: 'claude' });
   fixture.input.value = 'active turn';
@@ -428,7 +429,7 @@ it.each([false, true])('releases preparation ordering at admission while the nex
 });
 
 it.each(['withdraw', 'cancel', 'initialization'])('restores token text and refreshes references after %s', async recovery => {
-  const fixture = setup();
+  const fixture = (await setup());
   await fixture.native.coordinator.bindConversation({ conversationId: 'conversation-1', providerId: 'claude' });
   try {
     const releaseTurn = recovery !== 'initialization' ? fixture.holdResponse() : async () => undefined;
@@ -457,9 +458,9 @@ it.each(['withdraw', 'cancel', 'initialization'])('restores token text and refre
 it.each([false, true])('retains queued priority and captured selections through the timer gap (new selection: %s)', async different => {
   holdNativeTurns();
   vi.useFakeTimers();
-  const fixture = setup();
+  const fixture = (await setup());
   const source = await fixture.plugin.getConversationById(id);
-  const loading = deferred<any>();
+  const loading = deferred<Conversation | null>();
   fixture.plugin.getConversationById.mockClear().mockReturnValue(loading.promise);
   await fixture.native.coordinator.bindConversation({ conversationId: 'conversation-1', providerId: 'claude' });
   fixture.input.value = 'active turn';
@@ -527,7 +528,7 @@ it.each([false, true])('retains queued priority and captured selections through 
 it.each(['cancel', 'withdraw', 'discard', 'shutdown', 'replacement'] as const)(
   'retains scheduled queued input through %s without a stray handoff', async action => {
     vi.useFakeTimers();
-    const fixture = setup();
+    const fixture = (await setup());
     const session = fixture.session;
     fixture.deps.canStartTurn = () => session.acceptsIntents;
     await fixture.native.coordinator.bindConversation({ conversationId: 'conversation-1', providerId: 'claude' });
@@ -559,9 +560,9 @@ it.each(['cancel', 'withdraw', 'discard', 'shutdown', 'replacement'] as const)(
 
 it('cancels a still-hydrating queued mention after the active turn completes', async () => {
   const execute = holdNativeTurns();
-  const fixture = setup();
+  const fixture = (await setup());
   const source = await fixture.plugin.getConversationById(id);
-  const hydration = deferred<any>();
+  const hydration = deferred<Conversation | null>();
   fixture.plugin.getConversationById.mockClear().mockReturnValue(hydration.promise);
   await fixture.native.coordinator.bindConversation({ conversationId: 'conversation-1', providerId: 'claude' });
   fixture.input.value = 'active turn';
