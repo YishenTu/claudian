@@ -1411,14 +1411,13 @@ describe('CodexExecutionBackend', () => {
     });
     try {
       if (kind === 'chat') {
-        const fixture = await createFixture({ getTabProviderId: () => 'codex', getSettings: () => ({ model: TEST_CODEX_MODEL, reasoning: 'medium', permissionMode: 'normal', serviceTier: 'default' }) });
+        const fixture = await createFixture({ workingDirectory: hostPath, getTabProviderId: () => 'codex', getSettings: () => ({ model: TEST_CODEX_MODEL, reasoning: 'medium', permissionMode: 'normal', serviceTier: 'default' }) });
         Object.assign(fixture.plugin, { providerHost: host, settings: host.settings });
-        Object.assign(fixture.coordinator, { workingDirectory: hostPath });
         await fixture.controller.sendMessage({ content: `Inspect this literal user path: ${hostPath}` });
-        const submission = fixture.coordinator.execute.mock.calls[0][0];
+        const submission = fixture.native.requests[0];
         const session = backend.createSession(createSessionConfig({ workingDirectory: hostPath }));
         await collectEvents(session.execute(createRequest(undefined, { configuration: submission.configuration,
-          input: [{ type: 'text', text: submission.canonicalText }],
+          input: submission.input,
         })).events);
         await session.dispose();
       } else {

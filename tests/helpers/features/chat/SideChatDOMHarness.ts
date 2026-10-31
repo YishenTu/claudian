@@ -1,20 +1,28 @@
+import { createExecutionPersistence } from '@test/helpers/ChatExecutionHarness';
 import { createChatFeatureHost } from '@test/helpers/features/chat/ChatFeatureHostFixture';
+import { conversationRecord } from '@test/helpers/features/chat/ConversationFixture';
 import { createProjectsFake } from '@test/helpers/features/chat/ProjectsFake';
+import { createSessionRuntimePool } from '@test/helpers/features/chat/SessionRuntimePoolHarness';
 import { FakeSideBackend } from '@test/helpers/features/chat/SideChatSessionHarness';
+import { testDate } from '@test/helpers/testClock';
 import { Component } from 'obsidian';
 
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import type { ProviderConversationHistoryService, ProviderRegistration } from '@/core/providers/types';
+import type { ChatMessage } from '@/core/types';
 import { getChatSettingsSnapshot } from '@/features/chat/ChatSettings';
 import { ComposerDraftController } from '@/features/chat/composer/ComposerDraftController';
+import { ImageContextManager } from '@/features/chat/composer/ImageContextManager';
 import { SessionMessagingService } from '@/features/chat/session-messaging/SessionMessagingService';
 import {
   captureLatestCompletedForkSource,
-  type LiveForkSourceOwner,
 } from '@/features/chat/sessions/SessionForkSource';
 import { getSessionSelectedModel } from '@/features/chat/sessions/sessionSettings';
 import { SideChatController } from '@/features/chat/side-chat/SideChatController';
-import type { AssembledTabRuntime } from '@/features/chat/tabs/types';
+import { destroyTab } from '@/features/chat/tabs/TabLifecycle';
+import { createTabRuntime } from '@/features/chat/tabs/TabRuntimeFactory';
+import { claudeProviderRegistration } from '@/providers/claude/registration';
+import { VaultMentionDataProvider } from '@/shared/mention/VaultMentionDataProvider';
 
 const cleanups: Array<() => Promise<void>> = [];
 
@@ -40,22 +48,24 @@ export async function createHarness(options: {
   const backend = new FakeSideBackend();
   const forkState = { forkSource: { resumeAt: 'checkpoint-1', sessionId: 'main-session' } };
   ProviderRegistry.register('claude', {
+    ...claudeProviderRegistration,
     formatQuestionReply: options.formatQuestionReply,
     resolveExecutionWorkingDirectory: options.resolveExecutionWorkingDirectory,
-    capabilities: { providerId: 'claude', supportsFork: options.supportsFork ?? true, supportsEphemeralSessions: true, supportsEphemeralFork: options.supportsEphemeralFork, supportsForkDuringTurn: options.supportsForkDuringTurn },
+    capabilities: { ...claudeProviderRegistration.capabilities, providerId: 'claude', supportsFork: options.supportsFork ?? true, supportsEphemeralSessions: true, supportsEphemeralFork: options.supportsEphemeralFork, supportsForkDuringTurn: options.supportsForkDuringTurn },
     modelPolicy: ProviderRegistry.getModelPolicy('claude'),
     chatUIConfig: ProviderRegistry.getChatUIConfig('claude'),
     createExecutionBackend: () => backend,
     subagentAdapter: options.subagentAdapter,
-    taskResultInterpreter: options.taskResultInterpreter,
+    taskResultInterpreter: options.taskResultInterpreter ?? claudeProviderRegistration.taskResultInterpreter,
     historyService: {
+      ...claudeProviderRegistration.historyService,
       buildForkProviderState: options.buildForkProviderState ?? (() => forkState),
       hydrateConversationHistory: async () => ({}),
       isPendingForkConversation: () => false,
       resolveSessionIdForConversation: () => 'main-session',
     },
     isEnabled: () => true,
-  } as unknown as ProviderRegistration);
+  });
 
   const composerEl = document.body.appendChild(document.createElement('div'));
   composerEl.className = 'claudian-input-composer';
@@ -66,49 +76,47 @@ export async function createHarness(options: {
   const inputEl = inputWrapperEl.appendChild(document.createElement('textarea'));
   inputEl.placeholder = 'Ask to make changes';
 
-  let images: unknown[] = [];
-  const imageContextManager = {
-    clearImages: () => { images = []; },
-    getAttachedImages: () => images,
-    hasImages: () => images.length > 0,
-    setImages: (next: unknown[]) => { images = next; },
-  };
-
   const checkpoint = options.checkpoint === undefined ? 'checkpoint-1' : options.checkpoint;
-  const messages = [
-    { content: 'Remember A', id: 'u1', role: 'user', timestamp: 1 },
+  const messages: ChatMessage[] = [
+    { content: 'Remember A', id: 'u1', role: 'user', timestamp: testDate().getTime() },
     {
       ...(checkpoint ? { assistantMessageId: checkpoint } : {}),
-      content: 'Noted A', id: 'a1', role: 'assistant', timestamp: 2,
+      content: 'Noted A', id: 'a1', role: 'assistant', timestamp: testDate({ seconds: 1 }).getTime(),
     },
   ];
-  const tab = {
-    settledTranscriptEnd: (messages: readonly unknown[]) => messages.length,
-    conversationId: 'conversation-1',
-    controllers: {},
-    executionCoordinator: { resolveForkSource: async () => ({ resumeAt: checkpoint, sessionId: 'main-session' }) },
-    id: 'tab-1',
-    providerId: 'claude',
-    state: { isRewinding: false, isStreaming: false, messages },
-  } as unknown as AssembledTabRuntime & LiveForkSourceOwner;
-
+  const conversation = conversationRecord('conversation-1', { sessionId: 'main-session', messages });
+  const pool = createSessionRuntimePool(() => plugin);
   const messaging = new SessionMessagingService({
     getHost: () => plugin,
     getActiveConversationId: () => tab.conversationId,
     refreshModelControls: () => undefined,
   });
   const plugin = await createChatFeatureHost({
+    sessionRuntimes: pool, executionPersistence: createExecutionPersistence(),
     bindSessionTools: id => messaging.bindSessionTools(id),
+    getConversationSync: () => conversation,
+    getConversationById: async () => conversation,
+    updateConversation: async () => undefined,
+    renameConversation: async () => undefined,
     getConversationSummary: id => plugin.getConversationSync(id),
     settings: { enableAutoTitleGeneration: false, ...options.settings },
     projects: createProjectsFake(),
   });
 
+  const component = new Component();
+  const tab = await createTabRuntime({
+    plugin, component, containerEl: document.createElement('div'), conversation, tabId: 'tab-1',
+    mentionDataProvider: new VaultMentionDataProvider(plugin.app), getProviderCatalogConfig: () => null,
+    isRuntimeLive: () => true, openConversation: async () => undefined, startNewConversation: async () => undefined,
+  });
+  tab.state.messages = messages;
+  tab.hydrationState = 'ready';
+  const imageContextManager = new ImageContextManager(plugin.app.keymap, inputWrapperEl, inputEl, {});
   const settings = plugin.settings;
   const lifecycleRegistry = plugin.providerHost.executionLifecycleRegistry;
   const destinationChanges: string[] = [];
   const drafts: ComposerDraftController = new ComposerDraftController({
-    getInput: () => inputEl, getImages: () => imageContextManager as never, getDestination: () => controller.destination,
+    getInput: () => inputEl, getImages: () => imageContextManager, getDestination: () => controller.destination,
   });
   const controller = new SideChatController({
     drafts,
@@ -117,16 +125,23 @@ export async function createHarness(options: {
       get providerId() { return tab.providerId; },
       get isLive() { return true; },
       getSettings: () => getChatSettingsSnapshot(settings, tab.providerId!, getSessionSelectedModel(tab, plugin)),
-      captureForkSource: () => captureLatestCompletedForkSource(tab, plugin, () => true),
+      captureForkSource: () => captureLatestCompletedForkSource({
+        ...tab, settledTranscriptEnd: messages => tab.controllers.inputController.settledTranscriptEnd(messages),
+      }, plugin, () => true),
     },
     onDestinationChanged: () => { destinationChanges.push(controller.destination); options.onDestinationChanged?.(); },
     plugin,
   });
-  controller.attachPresentation({ component: new Component(), composerEl, inputWrapperEl, getInputEl: () => inputEl as never });
+  controller.attachPresentation({ component: new Component(), composerEl, inputWrapperEl, getInputEl: () => inputEl });
   cleanups.push(async () => {
     await controller.dispose();
+    imageContextManager.destroy();
+    await destroyTab(tab);
+    await pool.dispose();
+    component.unload();
     await messaging.dispose();
     await lifecycleRegistry.dispose();
+    ProviderRegistry.register('claude', claudeProviderRegistration);
   });
   return {
     backend, composerEl, controller, drafts, destinationChanges, imageContextManager,

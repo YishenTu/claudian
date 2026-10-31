@@ -195,9 +195,11 @@ it('retains the CLI path draft for retry after a pre-commit write failure', asyn
 
 it('keeps a committed CLI path after recycle failure and allows reverting it', async () => {
   const file = await executable();
-  const reset = vi.spyOn(workspace.cliResolver, 'reset').mockImplementationOnce(() => { throw new Error('recycle failed'); });
   const transitions: string[] = [];
-  fixture.lifecycle.registerTransitionHook('grok', { beforeTransition: () => { transitions.push('start'); } });
+  fixture.lifecycle.registerTransitionHook('grok', {
+    beforeTransition: () => { transitions.push('start'); },
+    afterTransition: () => { if (transitions.length === 1) throw new Error('recycle failed'); },
+  });
   await render();
   await setCLIPath(file);
   expect(getGrokProviderSettings(fixture.settings).cliPathsByHost).toEqual({ [fixture.storage.installationKey]: file });
@@ -207,7 +209,6 @@ it('keeps a committed CLI path after recycle failure and allows reverting it', a
   await setCLIPath('');
   expect(transitions).toEqual(['start', 'start']);
   expect(persist).toHaveBeenCalledTimes(2);
-  expect(reset).toHaveBeenCalledTimes(2);
   expect(getGrokProviderSettings(fixture.settings).cliPathsByHost).toEqual({});
   expectSuccessfulSave();
 });
@@ -222,19 +223,25 @@ it('rejects an existing relative CLI path', async () => {
   expect(within(container).getByRole('alert').textContent).toBe(t('settings.cliPath.validation.mustBeAbsolute'));
 });
 
-it('retains the current catalog and resets the resolver inside a provider execution transition', async () => {
+it('retains the current catalog and resolves the committed CLI inside a provider execution transition', async () => {
   const file = await executable();
   const catalog = structuredClone(getGrokProviderSettings(fixture.settings).currentCatalog);
-  const reset = vi.spyOn(workspace.cliResolver, 'reset');
-  const boundaries: Array<{ path: string | undefined; resets: number; models: typeof catalog }> = [];
+  const previous = await executable('old/grok');
+  updateGrokProviderSettings(fixture.settings, { cliPathsByHost: { [fixture.storage.installationKey]: previous } });
+  expect(workspace.cliResolver.resolveFromSettings(fixture.settings)).toBe(previous);
+  const boundaries: Array<{ path: string | undefined; resolvedPath: string | null; models: typeof catalog }> = [];
   const observe = () => { boundaries.push({
     path: getGrokProviderSettings(fixture.settings).cliPathsByHost[fixture.storage.installationKey],
-    resets: reset.mock.calls.length, models: structuredClone(getGrokProviderSettings(fixture.settings).currentCatalog),
+    resolvedPath: workspace.cliResolver.resolveFromSettings(fixture.settings),
+    models: structuredClone(getGrokProviderSettings(fixture.settings).currentCatalog),
   }); };
   fixture.lifecycle.registerTransitionHook('grok', { beforeTransition: observe, afterTransition: observe });
   await render();
   await setCLIPath(file);
-  expect(boundaries).toEqual([{ path: undefined, resets: 0, models: catalog }, { path: file, resets: 1, models: catalog }]);
+  expect(boundaries).toEqual([
+    { path: previous, resolvedPath: previous, models: catalog },
+    { path: file, resolvedPath: file, models: catalog },
+  ]);
   expect(getGrokProviderSettings(fixture.settings).currentCatalog?.models).toHaveLength(2);
   expectSuccessfulSave();
 });

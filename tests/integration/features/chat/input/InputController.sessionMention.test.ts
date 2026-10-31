@@ -121,7 +121,7 @@ it.each([false, true])('resolves current titles once and carries snapshots throu
   const fixture = (await setup());
   await fixture.native.coordinator.bindConversation({ conversationId: 'conversation-1', providerId: 'claude' });
   try {
-    const releaseTurn = queued ? fixture.holdResponse() : async () => undefined;
+    const releaseTurn = queued ? await fixture.holdResponse() : async () => undefined;
     fixture.input.value = `Use ${token} and ${token}`;
     await fixture.controller.sendMessage();
     if (queued) {
@@ -193,7 +193,7 @@ it('preserves submission order when a busy-main mention hydrates more slowly tha
   const gate = deferred<Conversation | null>();
   const source = await fixture.plugin.getConversationById(id);
   fixture.plugin.getConversationById.mockClear().mockReturnValue(gate.promise);
-  fixture.holdResponse();
+  await fixture.holdResponse();
   try {
     fixture.input.value = token;
     const first = fixture.controller.sendMessage();
@@ -267,7 +267,7 @@ it('cancels and drains queued snapshot preparation before plugin shutdown finish
   const gate = deferred<Conversation | null>();
   const source = await fixture.plugin.getConversationById(id);
   fixture.plugin.getConversationById.mockClear().mockReturnValue(gate.promise);
-  fixture.holdResponse();
+  await fixture.holdResponse();
   fixture.input.value = token;
   const sending = fixture.controller.sendMessage();
   await waitForCall(fixture.plugin.getConversationById);
@@ -296,7 +296,7 @@ it.each([false, true])('restores prepared drafts when rewind begins during hydra
     { id: 'previous-user', role: 'user', content: 'previous prompt', userMessageId: 'native-user', timestamp: time },
     { id: 'previous-assistant', role: 'assistant', content: 'previous answer', assistantMessageId: 'native-assistant', timestamp: time },
   ];
-  const releaseTurn = fixture.holdResponse();
+  const releaseTurn = await fixture.holdResponse();
   fixture.input.value = token;
   const sending = fixture.controller.sendMessage();
   await waitForCall(fixture.plugin.getConversationById);
@@ -432,7 +432,7 @@ it.each(['withdraw', 'cancel', 'initialization'])('restores token text and refre
   const fixture = (await setup());
   await fixture.native.coordinator.bindConversation({ conversationId: 'conversation-1', providerId: 'claude' });
   try {
-    const releaseTurn = recovery !== 'initialization' ? fixture.holdResponse() : async () => undefined;
+    const releaseTurn = recovery !== 'initialization' ? await fixture.holdResponse() : async () => undefined;
     if (recovery === 'initialization') fixture.deps.ensureExecutionInitialized = async () => false;
     fixture.input.value = token;
     await fixture.controller.sendMessage();
@@ -533,7 +533,7 @@ it.each(['cancel', 'withdraw', 'discard', 'shutdown', 'replacement'] as const)(
     fixture.deps.canStartTurn = () => session.acceptsIntents;
     await fixture.native.coordinator.bindConversation({ conversationId: 'conversation-1', providerId: 'claude' });
     try {
-      const releaseTurn = fixture.holdResponse();
+      const releaseTurn = await fixture.holdResponse();
       fixture.input.value = token;
       await fixture.controller.sendMessage();
       await releaseTurn();

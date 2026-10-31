@@ -7,7 +7,6 @@ import { createProjectsFake } from '@test/helpers/features/chat/ProjectsFake';
 
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import type { Conversation } from '@/core/types';
-import { ChatExecutionPreHandoffError, type ChatTurnSubmission } from '@/features/chat/execution/ChatExecutionCoordinator';
 
 const nativeCapabilities = ProviderRegistry.getCapabilities('claude');
 beforeEach(() => {
@@ -33,7 +32,7 @@ describe('FirstTurnAdmission', () => {
   it('skips title generation when no enabled title selection resolves', async () => {
     vi.mocked(ProviderRegistry.resolveTitleGenerationSelection).mockReturnValueOnce(null);
     const generateTitle = vi.fn().mockResolvedValue(undefined);
-    const fixture = (await createFixture({ getTitleGenerationService: () => ({ generateTitle }) }));
+    const fixture = (await createFixture({ getTitleGenerationService: () => ({ generateTitle, cancel: vi.fn() }) }));
     fixture.plugin.settings.enableAutoTitleGeneration = true;
     fixture.plugin.settings.titleGenerationModel = 'removed-title-model';
     await fixture.controller.sendMessage({ content: 'keep this fallback' });
@@ -48,7 +47,7 @@ describe('FirstTurnAdmission', () => {
     vi.mocked(ProviderRegistry.resolveTitleGenerationSelection).mockReturnValueOnce({ providerId: 'claude', model: 'sonnet' });
     const generateTitle = vi.fn().mockResolvedValue(undefined);
     const fixture = (await createFixture({
-      getTitleGenerationService: () => ({ generateTitle }),
+      getTitleGenerationService: () => ({ generateTitle, cancel: vi.fn() }),
     }));
     fixture.plugin.settings.enableAutoTitleGeneration = true;
     fixture.plugin.settings.titleGenerationModel = 'sonnet';
@@ -60,26 +59,13 @@ describe('FirstTurnAdmission', () => {
       'title this',
       expect.any(Function),
     );
-    expect(fixture.coordinator.execute).toHaveBeenCalledTimes(1);
+    expect(fixture.native.requests).toHaveLength(1);
   });
 
   it('creates the first-turn conversation with its frozen Linked content', async () => {
-    const token = Object.freeze({ path: 'Projects/Plan.md' });
-    const linkedContentController = {
-      beginSubmission: vi.fn().mockReturnValue(token),
-      commitSubmission: vi.fn().mockReturnValue({
-        linkedContentPath: 'Projects/Plan.md',
-        queuedEvents: [],
-      }),
-      getSnapshot: vi.fn().mockReturnValue({
-        mode: 'explicit-draft',
-        path: 'Projects/Plan.md',
-      }),
-      rollbackSubmission: vi.fn(),
-    };
-    const fixture = (await createFixture({
-      getLinkedContentController: () => linkedContentController,
-    }));
+    const fixture = await createFixture();
+    const linkedContentController = fixture.linkedContentController;
+    linkedContentController.selectExplicit('Projects/Plan.md');
     fixture.state.currentConversationId = null;
     fixture.plugin.createConversation.mockResolvedValue(conversationRecord('linked-conversation'));
 
@@ -90,38 +76,25 @@ describe('FirstTurnAdmission', () => {
       selectedModel: 'claude-model',
       linkedContentPath: 'Projects/Plan.md',
     });
-    expect(linkedContentController.beginSubmission).toHaveBeenCalledTimes(1);
-    expect(linkedContentController.commitSubmission).toHaveBeenCalledWith(token);
-    expect(linkedContentController.rollbackSubmission).not.toHaveBeenCalled();
-    expect(fixture.coordinator.execute).toHaveBeenCalledWith(expect.objectContaining({
+    expect(linkedContentController.getSnapshot()).toEqual({ mode: 'locked', path: 'Projects/Plan.md' });
+    expect(fixture.native.requests[0]).toMatchObject({
       context: expect.objectContaining({
         linkedContent: { path: 'Projects/Plan.md' },
       }),
-    }), expect.any(AbortSignal));
+    });
   });
 
   it('restores the reconciled Linked content draft when Conversation creation fails', async () => {
-    const token = Object.freeze({ path: 'Projects/Plan.md' });
-    const linkedContentController = {
-      beginSubmission: vi.fn().mockReturnValue(token),
-      commitSubmission: vi.fn(),
-      getSnapshot: vi.fn().mockReturnValue({
-        mode: 'explicit-draft',
-        path: 'Projects/Plan.md',
-      }),
-      rollbackSubmission: vi.fn(),
-    };
-    const fixture = (await createFixture({
-      getLinkedContentController: () => linkedContentController,
-    }));
+    const fixture = await createFixture();
+    const linkedContentController = fixture.linkedContentController;
+    linkedContentController.selectExplicit('Projects/Plan.md');
     fixture.state.currentConversationId = null;
     fixture.plugin.createConversation.mockRejectedValue(new Error('storage unavailable'));
 
     await expect(fixture.controller.sendMessage({ content: 'Start linked session' }))
       .rejects.toThrow('storage unavailable');
 
-    expect(linkedContentController.rollbackSubmission).toHaveBeenCalledWith(token);
-    expect(linkedContentController.commitSubmission).not.toHaveBeenCalled();
+    expect(linkedContentController.getSnapshot()).toEqual({ mode: 'explicit-draft', path: 'Projects/Plan.md' });
     expect(fixture.state.currentConversationId).toBeNull();
     expect(fixture.state.messages).toEqual([]);
     expect(fixture.input.value).toBe('Start linked session');
@@ -146,62 +119,38 @@ describe('FirstTurnAdmission', () => {
   });
 
   it('keeps a created zero-message Conversation locked and retries ordinal one', async () => {
-    const token = Object.freeze({ path: 'Projects/Plan.md' });
-    const linkedContentController = {
-      beginSubmission: vi.fn().mockReturnValue(token),
-      commitSubmission: vi.fn().mockReturnValue({
-        linkedContentPath: 'Projects/Plan.md',
-        queuedEvents: [],
-      }),
-      getSnapshot: vi.fn().mockReturnValue({
-        mode: 'locked',
-        path: 'Projects/Plan.md',
-      }),
-      rollbackSubmission: vi.fn(),
-    };
-    const fixture = (await createFixture({
-      getLinkedContentController: () => linkedContentController,
-    }));
+    const fixture = await createFixture();
+    const linkedContentController = fixture.linkedContentController;
+    linkedContentController.selectExplicit('Projects/Plan.md');
     fixture.state.currentConversationId = null;
     fixture.plugin.createConversation.mockResolvedValue(conversationRecord('linked-conversation'));
-    fixture.coordinator.execute
-      .mockRejectedValueOnce(new ChatExecutionPreHandoffError('not handed off'))
-      .mockResolvedValueOnce({ accepted: true, status: 'completed' });
+    fixture.execution.repository.assertConversationExecutionAuthority.mockRejectedValueOnce(new Error('not handed off'));
 
     await fixture.controller.sendMessage({ content: 'First attempt' });
 
     expect(fixture.state.currentConversationId).toBe('linked-conversation');
     expect(fixture.state.messages).toEqual([]);
-    expect(linkedContentController.beginSubmission).toHaveBeenCalledTimes(1);
-    expect(linkedContentController.commitSubmission).toHaveBeenCalledWith(token);
-    expect(linkedContentController.rollbackSubmission).not.toHaveBeenCalled();
+    expect(linkedContentController.getSnapshot()).toEqual({ mode: 'locked', path: 'Projects/Plan.md' });
 
+    expect(fixture.native.requests).toHaveLength(0);
     await fixture.controller.sendMessage({ content: 'Retry first turn' });
 
-    const submissions = fixture.coordinator.execute.mock.calls.map(
-      call => call[0] as ChatTurnSubmission,
-    );
-    expect(submissions).toHaveLength(2);
-    expect(submissions[0]).toMatchObject({
+    expect(fixture.native.requests).toMatchObject([{
+      input: [{ type: 'text', text: 'Retry first turn' }],
       context: { linkedContent: { path: 'Projects/Plan.md' } },
-    });
-    expect(submissions[1]).toMatchObject({
-      context: { linkedContent: { path: 'Projects/Plan.md' } },
-    });
+      conversationHistory: [],
+    }]);
     expect(fixture.plugin.createConversation).toHaveBeenCalledTimes(1);
   });
 
   it('rebinds Linked content when queued work is promoted to the first turn', async () => {
-    const fixture = (await createFixture({
-      getLinkedContentController: () => ({
-        getSnapshot: () => ({ mode: 'locked', path: 'Projects/Plan.md' }),
-      }),
-    }));
+    const fixture = await createFixture();
+    fixture.linkedContentController.lock('Projects/Plan.md');
     fixture.state.messages = [
       { id: 'user-1', role: 'user', content: 'rolled back', timestamp: 1 },
       { id: 'assistant-1', role: 'assistant', content: '', timestamp: 2 },
     ];
-    const releaseTurn = fixture.holdResponse();
+    const releaseTurn = await fixture.holdResponse();
 
     await fixture.controller.sendMessage({ content: 'Promoted queued turn' });
 
@@ -216,40 +165,30 @@ describe('FirstTurnAdmission', () => {
       turnRequestOverride: queuedMessage.turnRequest,
     });
 
-    expect(fixture.coordinator.execute).toHaveBeenCalledWith(expect.objectContaining({
+    expect(fixture.native.requests[0]).toMatchObject({
       context: { linkedContent: { path: 'Projects/Plan.md' } },
-      rawDisplayText: 'Promoted queued turn',
-    }), expect.any(AbortSignal));
+      input: [{ type: 'text', text: 'Promoted queued turn' }],
+    });
   });
 
   it('keeps the frozen first-send path when a queued rename settles during creation', async () => {
-    let currentPath = 'Projects/Old';
-    const token = Object.freeze({ path: currentPath });
-    const linkedContentController = {
-      beginSubmission: vi.fn().mockReturnValue(token),
-      commitSubmission: vi.fn().mockImplementation(() => {
-        currentPath = 'Projects/New';
-      }),
-      getSnapshot: vi.fn().mockImplementation(() => ({
-        mode: currentPath === 'Projects/Old' ? 'explicit-draft' : 'locked',
-        path: currentPath,
-      })),
-      rollbackSubmission: vi.fn(),
-    };
-    const fixture = (await createFixture({
-      getLinkedContentController: () => linkedContentController,
-    }));
+    const fixture = await createFixture();
+    const linkedContentController = fixture.linkedContentController;
+    linkedContentController.selectExplicit('Projects/Old');
     fixture.state.currentConversationId = null;
-    fixture.plugin.createConversation.mockResolvedValue(conversationRecord('linked-conversation'));
+    fixture.plugin.createConversation.mockImplementationOnce(async () => {
+      linkedContentController.handleRenamed('Projects/Old', 'Projects/New');
+      return conversationRecord('linked-conversation');
+    });
 
     await fixture.controller.sendMessage({ content: 'Use the frozen target' });
 
     expect(fixture.plugin.createConversation).toHaveBeenCalledWith(expect.objectContaining({
       linkedContentPath: 'Projects/Old',
     }));
-    expect(fixture.coordinator.execute).toHaveBeenCalledWith(expect.objectContaining({
+    expect(fixture.native.requests[0]).toMatchObject({
       context: { linkedContent: { path: 'Projects/Old' } },
-    }), expect.any(AbortSignal));
+    });
     expect(linkedContentController.getSnapshot()).toMatchObject({
       mode: 'locked',
       path: 'Projects/New',
@@ -257,28 +196,19 @@ describe('FirstTurnAdmission', () => {
   });
 
   it.each(['/compact', ' \t/CoMpAcT  '])('does not attach Linked content to compact command %j', async content => {
-    const fixture = (await createFixture({
-      getLinkedContentController: () => ({
-        getSnapshot: () => ({ mode: 'locked', path: 'Projects/Plan.md' }),
-      }),
-    }));
+    const fixture = await createFixture();
+    fixture.linkedContentController.lock('Projects/Plan.md');
 
     await fixture.controller.sendMessage({ content });
 
-    const submission = fixture.coordinator.execute.mock.calls[0][0] as ChatTurnSubmission;
+    const submission = fixture.native.requests[0];
     expect(submission.context).not.toHaveProperty('linkedContent');
   });
 });
 
 it('does not steer Linked content captured while the first turn resolves session references', async () => {
-  const token = Object.freeze({ path: 'Projects/Plan.md' });
-  const linkedContentController = {
-    beginSubmission: vi.fn().mockReturnValue(token),
-    commitSubmission: vi.fn().mockReturnValue({ linkedContentPath: 'Projects/Plan.md', queuedEvents: [] }),
-    getSnapshot: vi.fn().mockReturnValue({ mode: 'explicit-draft', path: 'Projects/Plan.md' }),
-    rollbackSubmission: vi.fn(),
-  };
-  const fixture = (await createFixture({ getLinkedContentController: () => linkedContentController }));
+  const fixture = await createFixture();
+  fixture.linkedContentController.selectExplicit('Projects/Plan.md');
   fixture.state.currentConversationId = null;
   fixture.plugin.createConversation.mockResolvedValue(conversationRecord('linked-conversation'));
   const source = deferred<Conversation | null>();
@@ -286,8 +216,7 @@ it('does not steer Linked content captured while the first turn resolves session
   Object.assign(fixture.plugin, {
     findConversationAcrossViews: () => null,
   });
-  const turn = deferred<{ accepted: boolean; status: string }>();
-  fixture.coordinator.execute.mockReturnValueOnce(turn.promise);
+  const turn = fixture.holdNextResponse();
 
   const first = fixture.controller.sendMessage({ content: 'Use @[Source](claudian-session:conv-1-source)' });
   await waitForCall(fixture.plugin.getConversationById);
@@ -296,15 +225,15 @@ it('does not steer Linked content captured while the first turn resolves session
     id: 'conv-1-source', title: 'Source', providerId: 'claude', sessionId: null, createdAt: 1, lastActivityAt: 2,
     messages: [{ id: 'u', role: 'user', content: 'source prompt', timestamp: 1 }],
   });
-  await waitForCall(fixture.coordinator.execute);
+  await turn.started;
   await fixture.controller.queue.steerNow();
-  turn.resolve({ accepted: true, status: 'completed' });
+  (await turn.started).complete();
   await first;
 
-  expect(fixture.coordinator.execute.mock.calls[0][0]).toMatchObject({
+  expect(fixture.native.requests[0]).toMatchObject({
     context: expect.objectContaining({ linkedContent: { path: 'Projects/Plan.md' } }),
   });
-  expect(fixture.coordinator.steer).toHaveBeenCalledTimes(1);
-  expect(fixture.coordinator.steer.mock.calls[0][0]).toMatchObject({ rawDisplayText: 'steered follow-up' });
-  expect(fixture.coordinator.steer.mock.calls[0][0].context).not.toHaveProperty('linkedContent');
+  expect(fixture.native.steerRequests).toHaveLength(1);
+  expect(fixture.native.steerRequests[0].input).toEqual([{ type: 'text', text: 'steered follow-up' }]);
+  expect(fixture.native.steerRequests[0].context).not.toHaveProperty('linkedContent');
 });

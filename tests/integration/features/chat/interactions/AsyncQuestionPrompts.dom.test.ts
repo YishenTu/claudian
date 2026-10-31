@@ -4,20 +4,10 @@ import '@/providers';
 import { axe } from '@test/helpers/accessibility';
 import { createHarness as createExecutionHarness, requestedScope } from '@test/helpers/ChatExecutionHarness';
 import { createFixture, deferred } from '@test/helpers/ChatInputHarness';
-import { createTestSession } from '@test/helpers/ConversationPorts';
-import { createChatFeatureHost } from '@test/helpers/features/chat/ChatFeatureHostFixture';
 import { testDate } from '@test/helpers/testClock';
 import { fireEvent, waitFor, within } from '@testing-library/dom';
-import { Component } from 'obsidian';
 
 import type { ChatMessage, ToolCallInfo } from '@/core/types';
-import type { ChatSteerOutcome } from '@/features/chat/execution/ChatExecutionCoordinator';
-import { InputController, type InputControllerDeps } from '@/features/chat/input/InputController';
-import { SessionInteractions } from '@/features/chat/interactions/SessionInteractions';
-import { MessageRenderer } from '@/features/chat/rendering/MessageRenderer';
-import { ChatState } from '@/features/chat/state/ChatState';
-import { SubagentManager } from '@/features/chat/subagents/SubagentManager';
-import { StreamController } from '@/features/chat/turns/StreamController';
 
 const cleanups: Array<() => void> = [];
 afterEach(() => {
@@ -33,7 +23,6 @@ it.each(['asking', 'later'] as const)('keeps an unanswered question usable after
     getTabProviderId: () => 'codex', getInputContainerEl: () => composer,
     getExecutionCoordinator: () => execution.coordinator,
   }));
-  Object.assign(fixture.deps.renderer, { updateQuestionTool: vi.fn() });
   await execution.coordinator.bindConversation({ conversationId: 'conversation-1', providerId: 'codex' });
   const running = fixture.controller.sendMessage({ content: 'Start work' });
   const backend = execution.backends.get('codex')!;
@@ -85,7 +74,6 @@ it.each(['authority', 'cancel-and-replace'] as const)('fences an expired answer 
     getTabProviderId: () => 'codex', getInputContainerEl: () => composer,
     getExecutionCoordinator: () => execution.coordinator,
   }));
-  Object.assign(fixture.deps.renderer, { updateQuestionTool: vi.fn() });
   await execution.coordinator.bindConversation({ conversationId: 'conversation-1', providerId: 'codex' });
   const running = fixture.controller.sendMessage({ content: 'Start work' });
   const backend = execution.backends.get('codex')!;
@@ -137,7 +125,6 @@ it.each(['initialization', 'authority', 'cancelled-initialization', 'failed-init
     getTabProviderId: () => 'codex', getInputContainerEl: () => composer,
     getExecutionCoordinator: () => execution.coordinator,
   }));
-  Object.assign(fixture.deps.renderer, { updateQuestionTool: vi.fn() });
   await execution.coordinator.bindConversation({ conversationId: 'conversation-1', providerId: 'codex' });
   const running = fixture.controller.sendMessage({ content: 'Start work' });
   const backend = execution.backends.get('codex')!;
@@ -194,13 +181,11 @@ it('does not restart main chat when an answer outlives cancellation during hando
   const host = document.body.createDiv();
   const composer = host.createDiv();
   const fixture = (await createFixture({ getTabProviderId: () => 'codex', getInputContainerEl: () => composer }));
-  Object.assign(fixture.deps.renderer, { updateQuestionTool: vi.fn() });
-  const execution = deferred<{ accepted: boolean; status: string }>();
-  fixture.coordinator.execute.mockReturnValueOnce(execution.promise);
+  const execution = fixture.holdNextResponse();
   const running = fixture.controller.sendMessage({ content: 'Start work' });
-  await waitFor(() => expect(fixture.coordinator.execute).toHaveBeenCalledTimes(1));
-  const handoff = deferred<ChatSteerOutcome>();
-  fixture.coordinator.steer.mockReturnValueOnce(handoff.promise);
+  await execution.started;
+  const handoff = deferred<boolean>();
+  fixture.nativeSteer.mockReturnValueOnce(handoff.promise);
   const tool: ToolCallInfo = { id: 'ask', name: 'AskUserQuestion', status: 'completed', input: {
     replyMode: 'user-message', questions: [{ id: '0', question: 'Which check?', options: [{ label: 'History' }] }],
   } };
@@ -209,15 +194,14 @@ it('does not restart main chat when an answer outlives cancellation during hando
   const question = within(host).getByRole('region', { name: 'Question' });
   fireEvent.click(within(question).getByRole('button', { name: 'History' }));
   fireEvent.click(within(question).getByRole('button', { name: 'Submit answers' }));
-  await waitFor(() => expect(fixture.coordinator.steer).toHaveBeenCalledTimes(1));
+  await fixture.native.waitForSteer();
   fixture.controller.cancelStreaming();
-  execution.resolve({ accepted: true, status: 'interrupted' });
   await running;
   expect(fixture.state.cancelRequested).toBe(false);
-  handoff.resolve({ delivery: 'not-sent' });
+  handoff.resolve(false);
   await waitFor(() => expect(within(host).queryByRole('region', { name: 'Question' })).toBeNull());
   await new Promise(resolve => setTimeout(resolve, 0));
-  expect(fixture.coordinator.execute).toHaveBeenCalledTimes(1);
+  expect(fixture.native.requests).toHaveLength(1);
   expect(fixture.state.queuedMessage).toBeNull();
   expect(tool.questionStatus).toBe('expired');
   cleanups.push(() => fixture.controller.dismissPendingApproval());
@@ -227,10 +211,9 @@ it.each([true, false])('settles an active-turn answer without consuming the draf
   const host = document.body.createDiv();
   const composer = host.createDiv();
   const fixture = (await createFixture({ getTabProviderId: () => 'codex', getInputContainerEl: () => composer }));
-  Object.assign(fixture.deps.renderer, { updateQuestionTool: vi.fn() });
   fixture.state.queueIndicatorEl = composer.createDiv();
-  fixture.holdResponse();
-  fixture.coordinator.steer.mockResolvedValueOnce({ delivery: accepted ? 'accepted' : 'not-sent' });
+  await fixture.holdResponse();
+  fixture.nativeSteer.mockResolvedValueOnce(accepted);
   fixture.input.value = 'Keep this draft';
   await fixture.controller.sendMessage({ content: 'Unrelated follow-up' });
   const queued = fixture.state.queuedMessage;
@@ -245,46 +228,38 @@ it.each([true, false])('settles an active-turn answer without consuming the draf
   expect(await axe(question)).toHaveNoViolations();
   fireEvent.click(within(question).getByRole('button', { name: 'Submit answers' }));
   await waitFor(() => expect(within(host).queryByRole('region', { name: 'Question' })).toBeNull());
-  expect(fixture.coordinator.steer).toHaveBeenCalledTimes(1);
-  const submission = fixture.coordinator.steer.mock.calls[0][0];
-  expect(JSON.parse(submission.canonicalText.split('\n')[1])).toEqual([{
+  expect(fixture.native.steerRequests).toHaveLength(1);
+  const request = fixture.native.steerRequests[0];
+  const canonicalText = request.input.filter(part => part.type === 'text').map(part => part.text).join('');
+  expect(JSON.parse(canonicalText.split('\n')[1])).toEqual([{
     questionItemId: '["request_user_input_async","ask",0]', question: 'Which check?', answer: 'History',
   }]);
-  expect(submission.rawDisplayText).toBe('');
+  const replyState = accepted ? fixture.coordinator.getSteerSubmission(request.inputId!)?.rawDisplayText
+    : fixture.state.queuedMessage?.content.slice('Unrelated follow-up'.length);
+  expect(replyState).toBe('');
   expect(tool.resolvedAnswers).toEqual({ '0': 'History' });
   expect(fixture.state.queuedMessage?.content).toBe('Unrelated follow-up');
   expect(fixture.state.queuedMessage === queued).toBe(accepted);
   expect(fixture.state.queuedMessage?.turnRequest?.text).toBe(accepted
-    ? 'Unrelated follow-up' : `Unrelated follow-up\n\n${submission.canonicalText}`);
+    ? 'Unrelated follow-up' : `Unrelated follow-up\n\n${canonicalText}`);
   expect(within(composer).getByText('Queued')).toBeDefined();
   expect(fixture.state.isStreaming).toBe(true);
-  expect(fixture.coordinator.cancel).not.toHaveBeenCalled();
+  expect(fixture.native.runs[0].cancelCalls).toBe(0);
   expect(fixture.input.value).toBe('Keep this draft');
   expect(composer.classList.contains('claudian-hidden')).toBe(false);
 });
 
 async function createSurface() {
-  const messages = document.body.createDiv();
   const composerHost = document.body.createDiv();
   const composer = composerHost.createDiv();
-  const draft = composer.createEl('textarea');
+  const fixture = await createFixture({ getTabProviderId: () => 'codex', getInputContainerEl: () => composer });
+  const { state, controller: input } = fixture;
+  const { renderer, streamController: stream } = fixture.deps;
+  const messages = fixture.deps.getMessagesEl()!;
+  document.body.prepend(messages);
+  const draft = fixture.input;
+  composer.append(draft);
   draft.value = 'Unsent draft';
-  const session = createTestSession();
-  const state = new ChatState({}, undefined, session.turns);
-  state.currentConversationId = 'conversation';
-  const plugin = await createChatFeatureHost({ settings: { mediaFolder: '', showMessageTimestamps: false } });
-  const renderer = new MessageRenderer(plugin, new Component(), messages);
-  const stream = new StreamController({ plugin, state, renderer,
-    subagentManager: new SubagentManager(() => undefined), getMessagesEl: () => messages,
-    updateQueueIndicator: () => undefined, onQuestionToolChanged: tool => input.updateAsyncQuestion(tool),
-  });
-  const input = new InputController({ state, renderer, streamController: stream, session,
-    inlinePrompts: new SessionInteractions({
-      getPromptParentEl: () => composerHost,
-      getSuppressedEl: () => composer,
-    }),
-  } as unknown as InputControllerDeps);
-  const delivery = vi.spyOn(input, 'answerQuestion').mockResolvedValue(undefined);
   const response: ChatMessage = { id: 'response', role: 'assistant', timestamp: testDate().getTime(), content: '', contentBlocks: [] };
   state.addMessage(response);
   state.currentContentEl = renderer.addMessage(response).querySelector('.claudian-message-content');
@@ -294,8 +269,8 @@ async function createSurface() {
     } }, response);
     await stream.handleStreamChunk({ type: 'tool_result', id, content: 'Question sent.' }, response);
   };
-  cleanups.push(() => { input.dismissPendingApproval(); stream.dispose(); renderer.dispose(); });
-  return { messages, composerHost, composer, draft, state, renderer, stream, input, delivery, response, ask };
+  cleanups.push(() => input.dismissPendingApproval());
+  return { ...fixture, messages, composerHost, composer, draft, state, renderer, stream, input, response, ask };
 }
 
 it('renders the own question-text answer in the live review when the id entry is only inherited', async () => {
@@ -351,13 +326,24 @@ it('replaces the composer immediately and stays visible when the response histor
   h.renderer.finalizeResponse(h.response, h.state.messages);
   expect(within(h.messages).getByRole('button', { name: 'Worked for 00:18' }).getAttribute('aria-expanded')).toBe('false');
   expect(question.closest('[hidden]')).toBeNull();
-  let accepted!: () => void;
-  h.delivery.mockReturnValue(new Promise(resolve => { accepted = resolve; }));
+  const authority = h.holdNextAuthority();
+  const delivery = vi.spyOn(h.input, 'answerQuestion');
   fireEvent.click(within(question).getByRole('button', { name: 'History' }));
   fireEvent.click(within(question).getByRole('button', { name: 'Submit answers' }));
+  const delivered = delivery.mock.results[0].value as Promise<void>;
+  await expect(Promise.race([authority.started, delivered])).resolves.toBeUndefined();
   expect(h.composer.classList.contains('claudian-hidden')).toBe(true);
-  expect(h.delivery).toHaveBeenCalledWith(h.response.toolCalls![0], { '0': 'History' }, 'conversation', expect.any(AbortSignal));
-  accepted();
+  expect(h.native.requests).toHaveLength(0);
+  expect(h.response.toolCalls![0].resolvedAnswers).toBeUndefined();
+  authority.resolve();
+  await expect(delivered).resolves.toBeUndefined();
+  expect(h.native.requests).toHaveLength(1);
+  const text = h.native.requests[0].input.filter(part => part.type === 'text').map(part => part.text).join('');
+  expect(JSON.parse(text.split('\n')[1])).toEqual([{
+    questionItemId: '["request_user_input_async","ask",0]', question: 'Which check?', answer: 'History',
+  }]);
+  expect(h.response.toolCalls![0].resolvedAnswers).toEqual({ '0': 'History' });
+  expect(h.response.toolCalls![0].questionStatus).toBeUndefined();
   await waitFor(() => expect(within(h.composerHost).queryByRole('region', { name: 'Question' })).toBeNull());
   expect(h.composer.classList.contains('claudian-hidden')).toBe(false);
   await waitFor(() => expect(h.state.requiresAction).toBe(false));
@@ -378,7 +364,8 @@ it.each(['error', 'blocked'] as const)('expires a %s question and restores the c
   expect(h.composer.classList.contains('claudian-hidden')).toBe(false);
   await waitFor(() => expect(h.state.requiresAction).toBe(false));
   expect(h.draft.value).toBe('Unsent draft');
-  expect(h.delivery).not.toHaveBeenCalled();
+  expect(h.native.requests).toHaveLength(0);
+  expect(h.response.toolCalls![0].resolvedAnswers).toBeUndefined();
   h.renderer.renderMessages(h.state.messages, () => 'Welcome');
   expect(within(h.composerHost).queryByRole('region', { name: 'Question' })).toBeNull();
 });
@@ -386,19 +373,22 @@ it.each(['error', 'blocked'] as const)('expires a %s question and restores the c
 it('expires pending delivery on conversation teardown without affecting the next question', async () => {
   const h = (await createSurface());
   await h.ask();
-  let accepted!: () => void;
-  h.delivery.mockReturnValueOnce(new Promise(resolve => { accepted = resolve; }));
+  const authority = h.holdNextAuthority();
+  const delivery = vi.spyOn(h.input, 'answerQuestion');
   const question = within(h.composerHost).getByRole('region', { name: 'Question' });
   fireEvent.click(within(question).getByRole('button', { name: 'History' }));
   fireEvent.click(within(question).getByRole('button', { name: 'Submit answers' }));
+  const delivered = delivery.mock.results[0].value as Promise<void>;
+  const settled = delivered.catch(() => undefined);
+  await authority.started;
   const old = h.response.toolCalls![0];
   h.input.dismissPendingApproval();
   expect(h.composer.classList.contains('claudian-hidden')).toBe(false);
   const next = { ...old, questionStatus: undefined, status: 'running' as const };
   h.input.updateAsyncQuestion(next);
-  accepted();
-  await Promise.resolve();
-  await Promise.resolve();
+  authority.resolve();
+  await settled;
+  expect(h.native.requests).toHaveLength(0);
   expect(old.resolvedAnswers).toBeUndefined();
   expect(within(h.composerHost).getByRole('region', { name: 'Question' })).toBeDefined();
   expect(h.composer.classList.contains('claudian-hidden')).toBe(true);

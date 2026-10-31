@@ -18,6 +18,7 @@ import { createExecutionPathMapper } from '@/core/process/execution-target/WSLPa
 import { getProviderConfig, setProviderConfig } from '@/core/providers/providerConfig';
 import type { ProviderHost } from '@/core/providers/ProviderHost';
 import type { ImageAttachment } from '@/core/types';
+import type { ChatSettings } from '@/features/chat/ChatSettings';
 import { DeepSeekExecutionBackend } from '@/providers/deepseek/execution/DeepSeekExecutionBackend';
 import { isRecord } from '@/providers/deepseek/remote/DeepSeekRemoteClient';
 import { getDeepSeekHome } from '@/providers/deepseek/runtime/DeepSeekHome';
@@ -1299,7 +1300,7 @@ it('checks the permission boundary after reading native permission state', async
   answer('background remains live');
 });
 
-async function createMainChat(options: Omit<NativePeerHostOptions, 'beforeStart'> = {}, settings: Record<string, unknown> = { model: '', permissionMode: 'normal' }) {
+async function createMainChat(options: Omit<NativePeerHostOptions, 'beforeStart'> = {}, settings: Partial<ChatSettings> = {}) {
   const start = vi.fn(async (_signal: AbortSignal) => {});
   await deepseek.dispose();
   ({ deepseek, lifecycle } = peer.host({ ...options, beforeStart: start }));
@@ -1308,19 +1309,14 @@ async function createMainChat(options: Omit<NativePeerHostOptions, 'beforeStart'
     onRequestedEvent: event => fixture.controller.handleExecutionEvent(event),
   });
   const image: ImageAttachment = { id: 'image', name: 'pixel.png', mediaType: 'image/png', data: 'aW1hZ2U=', size: 5, source: 'paste' };
-  let images: ImageAttachment[] = [];
   const fixture = await createFixture({
     getTabProviderId: () => 'deepseek',
-    getSettings: () => settings,
+    getSettings: () => ({ model: '', reasoning: null, permissionMode: 'normal', serviceTier: 'default', ...settings }),
     getExecutionCoordinator: () => coordinator.coordinator,
-    getImageContextManager: () => ({
-      clearImages: () => { images = []; }, getAttachedImages: () => images,
-      hasImages: () => images.length > 0, setImages: (next: ImageAttachment[]) => { images = next; },
-    }),
   });
   fixture.plugin.getConversationSync.mockReturnValue({ ...fixture.plugin.getConversationSync('conversation-1')!, providerId: 'deepseek' });
   await coordinator.coordinator.bindConversation({ conversationId: 'conversation-1', providerId: 'deepseek' });
-  return { fixture, start, image, coordinator: coordinator.coordinator, sessionEvents: coordinator.sessionEvents, interactionPort: coordinator.interactionPort, getImages: () => images, clearImages: () => { images = []; }, attachImage: () => { images = [image]; },
+  return { fixture, start, image, coordinator: coordinator.coordinator, sessionEvents: coordinator.sessionEvents, interactionPort: coordinator.interactionPort, getImages: () => fixture.images.getAttachedImages(), clearImages: () => fixture.images.clearImages(), attachImage: () => fixture.images.setImages([image]),
     dispose: async () => { await coordinator.coordinator.dispose(); await coordinator.registry.dispose(); },
   };
 }
@@ -1340,7 +1336,7 @@ it.each([true, false])('executes compact from main chat independently of the nat
     expect(peer.calls.filter(c => c.method === 'commands/execute')).toMatchObject([{ args: { line: '/compact' } }]);
     expect(peer.calls.some(c => c.method === 'session/prompt')).toBe(false);
     expect(chat.fixture.input.value).toBe('');
-    expect(chat.fixture.deps.streamController.appendError).not.toHaveBeenCalled();
+    expect(chat.fixture.state.activity?.kind).not.toBe('error');
   } finally { await chat.dispose(); }
 });
 
@@ -1361,14 +1357,14 @@ it('restores text and images after definite native rejection and retries on the 
     expect(chat.fixture.input.value).toBe('inspect this');
     expect(chat.getImages()).toEqual([chat.image]);
     expect(chat.fixture.state.messages).toEqual([]);
-    expect(chat.fixture.deps.streamController.appendError).not.toHaveBeenCalled();
+    expect(chat.fixture.state.activity?.kind).not.toBe('error');
     chat.clearImages();
     await chat.fixture.controller.sendMessage();
     expect(chat.fixture.input.value).toBe('');
     expect(chat.fixture.state.messages.map(m => m.role)).toEqual(['user', 'assistant']);
     expect(peer.calls.filter(c => c.method === 'session/create')).toHaveLength(1);
     expect(chat.start).toHaveBeenCalledTimes(1);
-    expect(chat.fixture.deps.streamController.appendError).not.toHaveBeenCalled();
+    expect(chat.fixture.state.activity?.kind).not.toBe('error');
   } finally { await chat.dispose(); }
 });
 

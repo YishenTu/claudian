@@ -261,7 +261,10 @@ it.each([
     native.complete();
     await first;
     state.hasPendingConversationSave = false;
-    const accept = vi.spyOn(coordinator, 'acceptSteerFromProviderEvent');
+    const savedMessages: ChatMessage[][] = [];
+    input!.plugin.updateConversation.mockImplementation(async (_id, updates) => {
+      if (updates.messages) savedMessages.push(structuredClone(updates.messages));
+    });
     let next: Promise<void> | undefined;
     const late = { type: 'user_message_started' as const, content: '', nativeUserMessageId: 'late-image-user',
       inputId: nativeSteer.mock.calls[0][0].inputId };
@@ -317,7 +320,7 @@ it.each([
       { content: display, images: [image], userMessageId: 'late-image-user' },
       ...(destination === 'requested' ? [{ content: 'new steer', userMessageId: 'new-steer-user' }] : []),
     ]);
-    expect(accept).toHaveBeenCalledWith(expect.any(String), 'late-image-user');
+    expect(coordinator.getSteerSubmission(late.inputId!)).toBeUndefined();
     expect(within(messagesEl).getByRole('img', { name: 'pixel.png' })).toBeTruthy();
     expect(within(messagesEl).getByText('image answer')).toBeTruthy();
     const prefix = 'automatic work before steering';
@@ -337,7 +340,13 @@ it.each([
     expect((await axe(messagesEl)).violations).toEqual([]);
     expect(input!.input.value).toBe(destination === 'rejected' ? 'new message' : '');
     expect(input!.controller.queue.message).toBeNull();
-    expect(state.hasPendingConversationSave).toBe(true);
+    expect(state.hasPendingConversationSave).toBe(destination !== 'requested');
+    const savedLateMessages = savedMessages.at(-1)?.filter(message =>
+      message.userMessageId === 'late-image-user' || message.content === 'image answer') ?? [];
+    expect(savedLateMessages).toMatchObject(destination === 'requested' ? [
+      { role: 'user', userMessageId: 'late-image-user', images: [image] },
+      { role: 'assistant', content: 'image answer' },
+    ] : []);
     expect(native.requests).toHaveLength(destination === 'requested' ? 2 : 1);
     expect(nativeSteer).toHaveBeenCalledTimes(destination === 'requested' ? 2 : 1);
   } finally { await dispose(); }
@@ -368,15 +377,13 @@ async function createBackgroundChat(withInput = false) {
   const subagents = new SubagentManager(() => undefined);
   const stream = new StreamController({ plugin, state, renderer, subagentManager: subagents,
     getMessagesEl: () => messagesEl, updateQueueIndicator: () => undefined });
-  let images: ImageAttachment[] = [];
-  const setImages = (next: ImageAttachment[]) => { images = next; };
+  const setImages = (next: ImageAttachment[]) => {
+    if (!input) throw new Error('Input fixture required for attachments');
+    input.images.setImages(next);
+  };
   if (withInput) input = (await createFixture({
     state, session, renderer, streamController: stream,
     getMessagesEl: () => messagesEl, getExecutionCoordinator: () => coordinator,
-    getImageContextManager: () => ({
-      clearImages: () => setImages([]), getAttachedImages: () => images,
-      hasImages: () => images.length > 0, setImages,
-    }),
   }));
   const events: SessionEvents = new SessionEvents({ state, renderer, stream, session, executionCoordinator: coordinator,
     persistence: { save: async () => undefined, scheduleProgressSave: () => undefined },

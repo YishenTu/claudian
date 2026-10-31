@@ -1,6 +1,7 @@
 /** @vitest-environment jsdom */
 import '@/providers';
 
+import type { UnscopedExecutionEvent } from '@test/helpers/ChatExecutionHarness';
 import { createFixture } from '@test/helpers/ChatInputHarness';
 import { createTestSession } from '@test/helpers/ConversationPorts';
 import { createChatFeatureHost } from '@test/helpers/features/chat/ChatFeatureHostFixture';
@@ -9,7 +10,6 @@ import { testTime } from '@test/helpers/testClock';
 import { fireEvent, within } from '@testing-library/dom';
 import { Component, MarkdownRenderer } from 'obsidian';
 
-import type { ProviderExecutionEvent } from '@/core/execution';
 import { MessageRenderer } from '@/features/chat/rendering/MessageRenderer';
 import { ChatState } from '@/features/chat/state/ChatState';
 import { SubagentManager } from '@/features/chat/subagents/SubagentManager';
@@ -50,14 +50,14 @@ function inspect(root: HTMLElement) {
   return { headers: 1, collapsed, body };
 }
 
-const boundary = { type: 'assistant_message_started' };
-const text = (value: string) => ({ type: 'text_delta', text: value });
+const boundary = { type: 'assistant_message_started' } as const;
+const text = (value: string) => ({ type: 'text_delta' as const, text: value });
 const agentMessage = (message: string) => ({ type: 'event_msg', payload: { type: 'agent_message', message } });
 /** A session notification that arrives during the run, after the event before it. */
 const notification = 'notification';
 
 /** Runs a requested turn through the real execution and rendering stack, emitting `events` and then stopping it. */
-async function stopTurn(events: readonly unknown[]) {
+async function stopTurn(events: readonly (UnscopedExecutionEvent | typeof notification)[]) {
   const messagesEl = document.body.createDiv();
   const session = createTestSession();
   const state = new ChatState({}, undefined, session.turns);
@@ -70,24 +70,18 @@ async function stopTurn(events: readonly unknown[]) {
   const fixture = (await createFixture({ session, state, renderer, streamController, getMessagesEl: () => messagesEl,
     getTabProviderId: () => 'codex' }));
 
-  let sequence = 0;
-  const scope = () => ({ kind: 'requested' as const, sessionInstanceId: 'native', executionId: 'execution', turnId: 'turn', sequence });
-  const emit = (event: Record<string, unknown>) => {
-    sequence++;
-    return fixture.controller.handleExecutionEvent({ ...event, scope: scope() } as ProviderExecutionEvent);
-  };
   let notifications = 0;
   const host = { state, renderer, createMessageId: () => `notification-${++notifications}` };
-  fixture.coordinator.execute.mockImplementationOnce(async () => {
-    await emit({ type: 'turn_started', accepted: true });
-    await emit(boundary);
-    for (const event of events) {
-      if (event === notification) renderSessionTaskNotification(host, 'Job finished.', scope());
-      else await emit(event as Record<string, unknown>);
-    }
-    return { accepted: true, status: 'cancelled' };
-  });
-  await fixture.controller.sendMessage({ content: 'Read the note' });
+  const response = fixture.holdNextResponse();
+  const sending = fixture.controller.sendMessage({ content: 'Read the note' });
+  const run = await response.started;
+  let scope = (await fixture.emit(run, boundary)).scope;
+  for (const event of events) {
+    if (event === notification) renderSessionTaskNotification(host, 'Job finished.', scope);
+    else scope = (await fixture.emit(run, event)).scope;
+  }
+  run.emit({ type: 'cancelled', reason: 'Stopped' });
+  await sending;
   await Promise.resolve();
 
   return { messagesEl, state, renderer };
