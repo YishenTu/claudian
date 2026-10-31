@@ -16,6 +16,7 @@ import {
 } from './modelOptions';
 import { projectClaudeModelConfig } from './modelPersistence';
 import { ClaudeTaskResultInterpreter } from './runtime/ClaudeTaskResultInterpreter';
+import { resolveClaudeExecutionWorkingDirectory } from './runtime/probeClaudeRuntime';
 import { getClaudeModelSource, getClaudeProviderSettings, updateClaudeProviderSettings } from './settings';
 import { claudeSubagentAdapter } from './subagentAdapter';
 import { claudeChatUIConfig } from './ui/ClaudeChatUIConfig';
@@ -43,7 +44,7 @@ export const claudeProviderRegistration: ProviderModule = {
         || !hasClaudeModelIdentity(catalog, id)
         || (!option.supportedEffortLevels?.length && !option.reasoningMetadataResolved));
     },
-    hostScopedFields: ['cliPathsByHost'],
+    hostScopedFields: ['cliPathsByHost', 'installationMethodsByHost', 'wslDistroOverridesByHost'],
     normalizeStored(target, stored) {
       const storedConfig = getProviderConfig(stored, 'claude');
       const storedSettings = getClaudeProviderSettings(stored);
@@ -58,6 +59,7 @@ export const claudeProviderRegistration: ProviderModule = {
         || hasStoredConfigNormalization(storedConfig, targetConfig);
     },
   },
+  resolveExecutionWorkingDirectory: (plugin, workingDirectory) => resolveClaudeExecutionWorkingDirectory(plugin.getRuntimeHost('claude'), workingDirectory),
   createExecutionBackend: plugin => new ClaudeExecutionBackend(plugin.getRuntimeHost('claude'), {
     publishSessionCatalog: catalog => getClaudeWorkspaceServices()?.publishSessionCatalog(catalog),
   }),

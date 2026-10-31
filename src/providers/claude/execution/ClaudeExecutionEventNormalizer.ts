@@ -1,5 +1,7 @@
 import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 
+import type { ExecutionTarget } from '@/core/process/execution-target/types';
+
 import type {
   ProviderAssistantMessageStartedEvent,
   ProviderCitationsEvent,
@@ -16,6 +18,7 @@ import type {
 } from '../../../core/execution';
 import type { TurnStats, UsageInfo } from '../../../core/types';
 import { createTurnStats } from '../../../core/types';
+import { mapClaudeToolInputPaths, mapClaudeToolResultPaths } from '../normalization/claudePaths';
 import { normalizeClaudeSessionToolName } from '../normalization/claudeSessionToolNames';
 import { ClaudeTaskToolNormalizer } from '../normalization/ClaudeTaskToolNormalizer';
 import { normalizeClaudeToolResultDetails } from '../normalization/claudeToolResultDetails';
@@ -121,6 +124,7 @@ export class ClaudeExecutionEventNormalizer {
     message: SDKMessage,
     channel: ClaudeExecutionEventChannel,
     options: {
+      readonly executionTarget?: ExecutionTarget;
       readonly intendedModel?: string;
       readonly reportedContextWindow?: number;
     } = {},
@@ -166,7 +170,17 @@ export class ClaudeExecutionEventNormalizer {
       normalized.push({ type: 'result', turnStats: message.subtype === 'success' && !message.is_error
         ? createTurnStats(message.usage?.output_tokens, message.duration_ms) : undefined });
     }
-    return normalized;
+    return normalized.map(item => {
+      if (item.type !== 'output') return item;
+      const event = item.event;
+      if (event.type === 'tool_started') return { ...item, event: {
+        ...event, input: mapClaudeToolInputPaths(event.name, event.input, options.executionTarget),
+      } };
+      if (event.type === 'tool_completed' && event.resultDetails) return { ...item, event: {
+        ...event, resultDetails: mapClaudeToolResultPaths(event.resultDetails, options.executionTarget),
+      } };
+      return item;
+    });
   }
 
   updateContextWindow(

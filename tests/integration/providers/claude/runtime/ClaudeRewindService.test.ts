@@ -1,8 +1,14 @@
+import * as nodeFS from 'node:fs';
 import * as fs from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import * as path from 'node:path';
 
+import { createWindowsHostFS } from '@test/helpers/WindowsHostFS';
+
 import { executeClaudeRewind } from '@/providers/claude/runtime/ClaudeRewindService';
+
+vi.mock('fs', async () => ({ ...await vi.importActual<typeof import('fs')>('fs') }));
+vi.mock('fs/promises', async () => ({ ...await vi.importActual<typeof import('fs/promises')>('fs/promises') }));
 
 describe('Claude rewind filesystem recovery', () => {
   let root: string;
@@ -85,5 +91,33 @@ describe('Claude rewind filesystem recovery', () => {
     } finally {
       await fs.rm(recoveryDirectory, { recursive: true, force: true });
     }
+  });
+
+  // WindowsHostFS models Windows paths on POSIX hosts; on Windows they are real host paths.
+  it.skipIf(process.platform === 'win32')('backs up and restores WSL preview paths through their host paths after a failed rewind', async () => {
+    const host = createWindowsHostFS({ fs: nodeFS, fsPromises: fs });
+    const files = { '/mnt/c/Vault/note.md': 'C:\\Vault\\note.md', '/home/me/external.md': '\\\\wsl$\\Ubuntu\\home\\me\\external.md' };
+    for (const hostPath of Object.values(files)) await host.write(hostPath, `Original ${hostPath}`);
+    const executionTarget = { method: 'wsl', platformFamily: 'unix', platformOs: 'linux', distroName: 'Ubuntu' } as const;
+    await expect(executeClaudeRewind('user-1', {
+      executionTarget, vaultPath: 'C:\\Vault', assistantMessageId: 'assistant-1', mode: 'code-and-conversation',
+      closePersistentQuery: () => {},
+      rewindFiles: async (_id, dryRun) => {
+        if (dryRun) return { canRewind: true, filesChanged: Object.keys(files) };
+        for (const hostPath of Object.values(files)) await host.write(hostPath, 'Partially rewound');
+        throw new Error('Provider rewind interrupted');
+      },
+    })).rejects.toThrow('files were restored');
+    for (const hostPath of Object.values(files)) expect(await host.read(hostPath)).toBe(`Original ${hostPath}`);
+  });
+
+  it.skipIf(process.platform === 'win32')('reports WSL rewind changes as host paths', async () => {
+    createWindowsHostFS({ fs: nodeFS, fsPromises: fs });
+    const executionTarget = { method: 'wsl', platformFamily: 'unix', platformOs: 'linux', distroName: 'Ubuntu' } as const;
+    await expect(executeClaudeRewind('user-1', {
+      executionTarget, vaultPath: '\\\\wsl.localhost\\Ubuntu\\home\\me\\vault', assistantMessageId: undefined, mode: 'code-and-conversation',
+      closePersistentQuery: () => {},
+      rewindFiles: async () => ({ canRewind: true, filesChanged: ['note.md', '/mnt/d/shared.md'] }),
+    })).resolves.toMatchObject({ canRewind: true, filesChanged: ['\\\\wsl$\\Ubuntu\\home\\me\\vault\\note.md', 'D:\\shared.md'] });
   });
 });

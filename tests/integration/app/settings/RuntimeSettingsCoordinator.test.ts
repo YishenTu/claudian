@@ -44,16 +44,18 @@ it.each(['persistence', 'publication'] as const)(
 
 // The distro fixture is a POSIX executable standing in for wsl.exe.
 it.skipIf(process.platform === 'win32').each([
-  ['UNC vault', '\\\\wsl$\\Ubuntu\\home\\linux\\vault', false],
-  ['drive vault', 'C:\\Vault', true],
-])('uses the effective distro when reconciling a %s', async (_name, vaultPath, invalidates) => {
+  ['codex', 'UNC vault', '\\\\wsl$\\Ubuntu\\home\\linux\\vault', false],
+  ['codex', 'drive vault', 'C:\\Vault', true],
+  ['claude', 'UNC vault', '\\\\wsl$\\Ubuntu\\home\\linux\\vault', false],
+  ['claude', 'drive vault', 'C:\\Vault', true],
+] as const)('uses the effective distro for %s when reconciling a %s', async (providerId, _name, vaultPath, invalidates) => {
   const distros = await createWSLDistroFixture(Buffer.from('* Debian  Running  2', 'utf16le'));
   const platform = process.platform;
   Object.defineProperty(process, 'platform', { value: 'win32' });
   try {
     const settings = structuredClone(DEFAULT_CLAUDIAN_SETTINGS);
     const key = getInstallationKey();
-    settings.providerConfigs.codex = { ...settings.providerConfigs.codex,
+    settings.providerConfigs[providerId] = { ...settings.providerConfigs[providerId],
       installationMethodsByHost: { [key]: 'wsl' }, wslDistroOverridesByHost: {},
     };
     const options = {
@@ -64,10 +66,10 @@ it.skipIf(process.platform === 'win32').each([
       conversations: { invalidateProviderSessions: () => [], persistProviderSessionInvalidations: async () => {} },
     };
     const runtime = new RuntimeSettingsCoordinator(options);
-    runtime.reconcile(['codex']);
+    runtime.reconcile([providerId]);
     await distros.setOutput(Buffer.from('* Fedora  Running  2', 'utf16le'));
-    expect(runtime.reconcile(['codex']).sessionInvalidationProviderIds).toEqual(invalidates ? ['codex'] : []);
-    settings.providerConfigs.codex.wslDistroOverridesByHost = { [key]: 'Ubuntu' };
-    expect(runtime.reconcile(['codex']).sessionInvalidationProviderIds).toEqual(invalidates ? ['codex'] : []);
+    expect(runtime.reconcile([providerId]).sessionInvalidationProviderIds).toEqual(invalidates ? [providerId] : []);
+    settings.providerConfigs[providerId]!.wslDistroOverridesByHost = { [key]: 'Ubuntu' };
+    expect(runtime.reconcile([providerId]).sessionInvalidationProviderIds).toEqual(invalidates ? [providerId] : []);
   } finally { Object.defineProperty(process, 'platform', { value: platform }); }
 });

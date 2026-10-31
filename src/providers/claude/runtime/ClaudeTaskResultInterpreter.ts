@@ -2,6 +2,9 @@ import { existsSync, readFileSync, realpathSync } from 'fs';
 import { tmpdir } from 'os';
 import { isAbsolute, sep } from 'path';
 
+import { createExecutionPathMapper } from '@/core/process/execution-target/WSLPathMapper';
+import { isPathWithinRoot } from '@/core/storage/pathContainment';
+
 import type {
   ProviderTaskDescription,
   ProviderTaskLaunch,
@@ -12,6 +15,7 @@ import type {
 } from '../../../core/providers/types';
 import { extractToolResultContent } from '../../../core/tools/toolResultContent';
 import type { ToolProviderPayload } from '../../../core/types';
+import { type ClaudeConfigDirContext, getClaudeExecutionTarget } from '../config/ClaudeConfigDir';
 import {
   extractAgentIdFromToolUseResult,
   hasAgentOutputReport,
@@ -87,6 +91,8 @@ function parseJSONValue(value: string): unknown {
 }
 
 export class ClaudeTaskResultInterpreter implements ProviderTaskResultInterpreter {
+  constructor(private readonly pathContext?: ClaudeConfigDirContext) {}
+
   private static readonly TRUSTED_OUTPUT_EXT = '.output';
   private static readonly TRUSTED_TMP_ROOTS = ClaudeTaskResultInterpreter.resolveTrustedTmpRoots();
 
@@ -389,7 +395,23 @@ export class ClaudeTaskResultInterpreter implements ProviderTaskResultInterprete
 
   #readFullOutputFile(fullOutputPath: string): string | null {
     try {
-      if (!this.#isTrustedOutputPath(fullOutputPath)) {
+      const target = getClaudeExecutionTarget(this.pathContext);
+      if (target?.method === 'wsl') {
+        const mapper = createExecutionPathMapper(target);
+        if (!fullOutputPath.startsWith('/') || !fullOutputPath.toLowerCase().endsWith(ClaudeTaskResultInterpreter.TRUSTED_OUTPUT_EXT)) return null;
+        const hostPath = mapper.toHostPath(fullOutputPath);
+        if (!hostPath) return null;
+        const resolved = realpathSync(hostPath);
+        const roots = ['/tmp', this.pathContext?.environment?.TMPDIR]
+          .filter((root): root is string => Boolean(root?.startsWith('/')));
+        const trusted = roots.some(root => {
+          const hostRoot = mapper.toHostPath(root);
+          if (!hostRoot) return false;
+          try { return isPathWithinRoot(resolved, realpathSync(hostRoot)); } catch { return false; }
+        });
+        if (!trusted) return null;
+        fullOutputPath = hostPath;
+      } else if (!this.#isTrustedOutputPath(fullOutputPath)) {
         return null;
       }
 

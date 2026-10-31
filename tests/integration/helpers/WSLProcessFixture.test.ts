@@ -107,6 +107,24 @@ it('rejects detached launches, which would signal a host process group for the f
   expect(() => start({ detached: true })).toThrow('Detached WSL process groups are not modeled');
 });
 
+it('streams held output in response to stdin on later turns and rejects output after exit', async () => {
+  let request: Parameters<NonNullable<WSLProcessFixture['reply']>>[0] | undefined;
+  native.reply = next => { request = next; return { hold: true }; };
+  const child = start();
+  const output: string[] = [];
+  const delivered = once(child.stdout!.setEncoding('utf8').on('data', (chunk: string) => output.push(chunk)), 'data');
+  request!.onStdin(chunk => request!.write(`echo:${chunk}`));
+  child.stdin!.write('ping');
+  // Output never arrives inside the client's write.
+  expect(output).toEqual([]);
+  await delivered;
+  expect(output).toEqual(['echo:ping']);
+  expect(request!.stdin).toBe('ping');
+  child.kill();
+  await once(child, 'close');
+  expect(() => request!.write('late')).toThrow('output has ended');
+});
+
 describe('Windows PowerShell interop', () => {
   const powershell = '/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe';
   const encoded = Buffer.from(SESSION_TOOL_RELAY_COMMAND, 'utf16le').toString('base64');

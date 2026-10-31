@@ -1,5 +1,6 @@
 import { getInstallationKey } from '@/core/device/InstallationKey';
 import { parseEnvironmentVariables } from '@/core/process/env';
+import { resolveExecutionTarget } from '@/core/process/execution-target/ExecutionTargetResolver';
 
 import {
   type CLIPathFingerprintInputs,
@@ -16,9 +17,11 @@ import {
 import type {
   ProviderEnvironmentReconciliation,
   ProviderSettingsReconciler,
+  ProviderSettingsReconciliationContext,
 } from '../../../core/providers/types';
 import type { Conversation } from '../../../core/types';
 import { CLAUDE_MODEL_ENV_KEYS } from '../claudeModelEnv';
+import { invalidateClaudeHistoryContext } from '../history/ClaudeHistoryContext';
 import { getClaudeProviderSettings, updateClaudeProviderSettings } from '../settings';
 import { clearClaudeResumeState } from '../types/providerState';
 
@@ -30,6 +33,7 @@ const NATIVE_HOME_ENV_KEYS = ['CLAUDE_CONFIG_DIR', 'HOME', 'USERPROFILE', 'HOMED
 const ALL_FINGERPRINT_ENV_KEYS = [...SESSION_ENV_KEYS, ...LAUNCH_ENV_KEYS, ...NATIVE_HOME_ENV_KEYS];
 
 interface FingerprintInputs {
+  targetInputs?: Record<string, string | undefined>;
   environmentText: string;
   environment: Record<string, string>;
   cliPathInputs: CLIPathFingerprintInputs;
@@ -38,10 +42,12 @@ interface FingerprintInputs {
 }
 
 /** Reads every fingerprint input once per reconciliation. */
-function readFingerprintInputs(settings: Record<string, unknown>): FingerprintInputs {
+function readFingerprintInputs(settings: Record<string, unknown>, context?: ProviderSettingsReconciliationContext): FingerprintInputs {
   const environmentText = getRuntimeEnvironmentText(settings, 'claude');
   const claudeSettings = getClaudeProviderSettings(settings);
   return {
+    targetInputs: process.platform === 'win32' && claudeSettings.installationMethod === 'wsl'
+      ? { ...resolveExecutionTarget({ settings: claudeSettings, hostVaultPath: context?.vaultPath }) } : undefined,
     environmentText,
     environment: parseEnvironmentVariables(environmentText),
     cliPathInputs: createCLIPathFingerprintInputs(
@@ -61,16 +67,17 @@ function withConfiguredHomeKeys(keys: readonly string[], environment: Record<str
   ];
 }
 
-function computeRuntimeFingerprint({ environmentText, environment, cliPathInputs }: FingerprintInputs): string {
+function computeRuntimeFingerprint({ environmentText, environment, cliPathInputs, targetInputs }: FingerprintInputs): string {
   return createRuntimeInputFingerprint({
-    additionalInputs: cliPathInputs,
+    additionalInputs: { ...cliPathInputs, ...targetInputs },
     environmentKeys: withConfiguredHomeKeys([...SESSION_ENV_KEYS, ...LAUNCH_ENV_KEYS], environment),
     environmentText,
   });
 }
 
-function computeSessionFingerprint({ environmentText, environment }: Pick<FingerprintInputs, 'environment' | 'environmentText'>): string {
+function computeSessionFingerprint({ environmentText, environment, targetInputs }: Pick<FingerprintInputs, 'environment' | 'environmentText' | 'targetInputs'>): string {
   return createRuntimeInputFingerprint({
+    additionalInputs: targetInputs,
     environmentKeys: withConfiguredHomeKeys(SESSION_ENV_KEYS, environment),
     environmentText,
   });
@@ -80,8 +87,8 @@ function computeFingerprints(inputs: FingerprintInputs): ScopedRuntimeInputFinge
   return { runtime: computeRuntimeFingerprint(inputs), session: computeSessionFingerprint(inputs) };
 }
 
-function hasFingerprintInputs({ environment, cliPathInputs }: FingerprintInputs): boolean {
-  return hasCLIPathFingerprintInputs(cliPathInputs)
+function hasFingerprintInputs({ environment, cliPathInputs, targetInputs }: FingerprintInputs): boolean {
+  return Boolean(targetInputs) || hasCLIPathFingerprintInputs(cliPathInputs)
     || ALL_FINGERPRINT_ENV_KEYS.some(key => Object.prototype.hasOwnProperty.call(environment, key));
 }
 
@@ -90,9 +97,10 @@ function hasFingerprintInputs({ environment, cliPathInputs }: FingerprintInputs)
  * one lets it upgrade without invalidating sessions. Remove this branch after 2027-02-03, once settings
  * saved before #1024 are no longer migrated.
  */
-function isCurrentLegacyFingerprint({ environment, cliPathInputs, savedFingerprint }: FingerprintInputs): boolean {
+function isCurrentLegacyFingerprint({ environment, cliPathInputs, savedFingerprint, targetInputs }: FingerprintInputs): boolean {
   if (
     !savedFingerprint
+    || targetInputs
     || isVersionedRuntimeInputFingerprint(savedFingerprint)
     || hasCLIPathFingerprintInputs(cliPathInputs)
   ) {
@@ -116,8 +124,8 @@ function invalidateClaudeConversationSessions(conversations: Conversation[]): Co
 export const claudeSettingsReconciler = {
   invalidateConversationSessions: invalidateClaudeConversationSessions,
 
-  reconcileModelWithEnvironment(settings: Record<string, unknown>): ProviderEnvironmentReconciliation {
-    const inputs = readFingerprintInputs(settings);
+  reconcileModelWithEnvironment(settings: Record<string, unknown>, context?: ProviderSettingsReconciliationContext): ProviderEnvironmentReconciliation {
+    const inputs = readFingerprintInputs(settings, context);
     if (!inputs.savedFingerprint && !hasFingerprintInputs(inputs)) {
       return { changed: false };
     }
@@ -134,6 +142,7 @@ export const claudeSettingsReconciler = {
       return { changed: false };
     }
 
+    if (sessionPolicy === 'invalidate') invalidateClaudeHistoryContext();
     updateClaudeProviderSettings(settings, {
       environmentHash: current.runtime,
       sessionEnvironmentHash: current.session,
@@ -141,8 +150,8 @@ export const claudeSettingsReconciler = {
     return { changed: true, sessionPolicy };
   },
 
-  normalizeModelVariantSettings(settings: Record<string, unknown>): boolean {
-    const inputs = readFingerprintInputs(settings);
+  normalizeModelVariantSettings(settings: Record<string, unknown>, context?: ProviderSettingsReconciliationContext): boolean {
+    const inputs = readFingerprintInputs(settings, context);
     if (!isCurrentLegacyFingerprint(inputs)) return false;
     const current = computeFingerprints(inputs);
     updateClaudeProviderSettings(settings, {

@@ -1,8 +1,10 @@
 import * as fs from 'fs/promises';
 
-import type { ProviderHistoryEnvironment } from '../../../core/providers/types';
 import type { ChatMessage, SubagentInfo, ToolCallInfo } from '../../../core/types';
 import { settleInterruptedTurn } from '../../../core/types';
+import type { ClaudeConfigDirContext } from '../config/ClaudeConfigDir';
+import { getClaudeExecutionTarget } from '../config/ClaudeConfigDir';
+import { mapClaudeHistoryToolPaths } from '../normalization/claudePaths';
 import { ClaudeTaskToolNormalizer } from '../normalization/ClaudeTaskToolNormalizer';
 import { ClaudeTaskResultInterpreter } from '../runtime/ClaudeTaskResultInterpreter';
 import { isClaudeSubagentToolName } from '../subagentToolNames';
@@ -72,7 +74,7 @@ function resolveSessionPath(
   vaultPath: string,
   sessionId: string,
   sessionPath: string | undefined,
-  pathContext: ProviderHistoryEnvironment | undefined,
+  pathContext: ClaudeConfigDirContext | undefined,
 ): string | null {
   if (sessionPath) return sessionPath;
   try {
@@ -101,7 +103,7 @@ async function readSessionEntries(
   vaultPath: string,
   sessionId: string,
   sessionPath: string | undefined,
-  pathContext: ProviderHistoryEnvironment | undefined,
+  pathContext: ClaudeConfigDirContext | undefined,
 ): Promise<SDKSessionReadResult> {
   return sessionPath
     ? readSDKSessionFile(sessionPath)
@@ -120,7 +122,7 @@ export async function loadSDKSessionMessages(
   sessionId: string,
   resumeAtMessageId?: string,
   sessionPath?: string,
-  pathContext?: ProviderHistoryEnvironment,
+  pathContext?: ClaudeConfigDirContext,
   checkpointPolicy: SDKCheckpointPolicy = 'latest-branch',
 ): Promise<SDKSessionLoadResult> {
   const result = await takePendingModelRead(resolveSessionPath(vaultPath, sessionId, sessionPath, pathContext))
@@ -280,7 +282,19 @@ export async function loadSDKSessionMessages(
 
   flushPendingAssistant(true);
 
-  const taskResults = new ClaudeTaskResultInterpreter();
+  const taskResults = new ClaudeTaskResultInterpreter(pathContext);
+  // TaskOutput-era transcripts can still refer to Linux temp files. Recover them
+  // while the current store's target context is available, before neutral replay.
+  if (getClaudeExecutionTarget(pathContext)?.method === 'wsl') {
+    for (const message of chatMessages) {
+      for (const tool of message.toolCalls ?? []) {
+        if (tool.name !== 'TaskOutput' || tool.result === undefined) continue;
+        tool.result = taskResults.interpretResult(tool.result, tool.status === 'error', {
+          mode: 'async', agentId: taskResults.getOutputTaskId(tool.input) ?? undefined,
+        }, { rawOutput: toolUseResults.get(tool.id) }).result;
+      }
+    }
+  }
   const sidecarLoads: Array<{ subagent: SubagentInfo; promise: Promise<ToolCallInfo[]> }> = [];
   const loadSidecarToolCalls = (subagent: SubagentInfo, runWindow?: SubagentRunWindow): void => {
     if (!subagent.agentId || !isValidAgentId(subagent.agentId)) return;
@@ -388,6 +402,10 @@ export async function loadSDKSessionMessages(
     sectionStart = index + 1;
   }
 
+  const target = getClaudeExecutionTarget(pathContext);
+  for (const message of chatMessages) {
+    for (const tool of message.toolCalls ?? []) mapClaudeHistoryToolPaths(tool, target);
+  }
   return { messages: chatMessages, skippedLines: result.skippedLines };
 }
 
@@ -497,7 +515,7 @@ export async function loadSDKSessionModel(
   sessionId: string,
   resumeAtMessageId?: string,
   sessionPath?: string,
-  pathContext?: ProviderHistoryEnvironment,
+  pathContext?: ClaudeConfigDirContext,
   checkpointPolicy: SDKCheckpointPolicy = 'latest-branch',
 ): Promise<string | null> {
   const resolvedPath = resolveSessionPath(vaultPath, sessionId, sessionPath, pathContext);

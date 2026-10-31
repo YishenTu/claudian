@@ -143,9 +143,9 @@ it('carries the live project paragraph on branch navigation and recovery, and dr
   Object.assign(deps.plugin, {
     projects,
     getConversationSummary: (id: string) => ({ id, providerId: 'claude', projectId: record.id }),
-    // The prompt names the coordinator's captured directory, never a later host value.
-    providerHost: { workingDirectory: '/moved-vault' },
   });
+  // The prompt names the coordinator's captured directory, never the host's current vault.
+  expect(deps.plugin.providerHost.workingDirectory).not.toBe(coordinator.workingDirectory);
   deps.state.currentConversationId = 'conversation';
   deps.state.messages = [first, prompt];
   const controller = new ConversationController(deps);

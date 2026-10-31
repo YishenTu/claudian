@@ -8,8 +8,29 @@ import { parseSDKMessageToChat } from '@/providers/claude/history/sdkMessagePars
 const msg = buildSDKMessage;
 
 describe('ClaudeExecutionEventNormalizer task tools', () => {
-
-
+  it('maps Linux file input and patch paths at the neutral event boundary', () => {
+    const normalizer = new ClaudeExecutionEventNormalizer();
+    const executionTarget = { method: 'wsl', platformFamily: 'unix', platformOs: 'linux', distroName: 'Ubuntu' } as const;
+    const native = msg({ type: 'assistant', message: { content: [{ type: 'tool_use', id: 'edit-1', name: 'Edit',
+      input: { file_path: '/mnt/c/Vault/note.md', old_string: '/home/me/literal text', new_string: 'text' },
+    }] } });
+    expect(normalizer.normalize(native, 'requested', { executionTarget })).toContainEqual(expect.objectContaining({
+      type: 'output', event: expect.objectContaining({ type: 'tool_started', input: {
+        file_path: 'C:\\Vault\\note.md', old_string: '/home/me/literal text', new_string: 'text',
+      } }),
+    }));
+    expect(native).toMatchObject({ message: { content: [{ input: { file_path: '/mnt/c/Vault/note.md' } }] } });
+    const result = normalizer.normalize(msg({ type: 'user', message: { content: [{
+      type: 'tool_result', tool_use_id: 'edit-1', content: 'edited',
+    }] }, tool_use_result: { filePath: '/home/me/vault/note.md', structuredPatch: [{
+      oldStart: 1, oldLines: 1, newStart: 1, newLines: 1, lines: ['-old', '+new'],
+    }] } }), 'requested', { executionTarget });
+    expect(result).toContainEqual(expect.objectContaining({ type: 'output', event: expect.objectContaining({
+      type: 'tool_completed', resultDetails: expect.objectContaining({ diff: expect.objectContaining({
+        filePath: '\\\\wsl$\\Ubuntu\\home\\me\\vault\\note.md',
+      }) }),
+    }) }));
+  });
 
   it('shares task snapshots between native turn channels and clears them for a new session', () => {
     const normalizer = new ClaudeExecutionEventNormalizer();

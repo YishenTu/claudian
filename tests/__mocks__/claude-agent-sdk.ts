@@ -112,6 +112,7 @@ let mockSupportedCommandsImplementation: (() => Promise<Array<{
 let mockSupportedModels: ModelInfo[] = [];
 let mockOutputStyles: string[] = [];
 let mockContextUsage: { rawMaxTokens: number } | null = null;
+let mockRewindFiles: Query['rewindFiles'] = async () => ({ canRewind: true, filesChanged: [] });
 let lastResponse: (AsyncGenerator<unknown> & {
   interrupt: Mock<Query['interrupt']>;
   setModel: Mock<Query['setModel']>;
@@ -123,6 +124,7 @@ let lastResponse: (AsyncGenerator<unknown> & {
   initializationResult: Mock<Query['initializationResult']>;
   close: Mock<Query['close']>;
   getContextUsage: Mock;
+  rewindFiles: Mock<Query['rewindFiles']>;
 }) | null = null;
 
 let queryCallCount = 0;
@@ -145,6 +147,7 @@ export function resetMockMessages() {
   mockSupportedModels = [];
   mockOutputStyles = [];
   mockContextUsage = null;
+  mockRewindFiles = async () => ({ canRewind: true, filesChanged: [] });
   lastResponse = null;
   queryCallCount = 0;
   receivedMessages = [];
@@ -181,6 +184,11 @@ export function setMockContextUsage(contextUsage: { rawMaxTokens: number } | nul
 /**
  * Get the number of times query() was called (useful for verifying restart behavior).
  */
+/** The native CLI's file checkpoint answer, for previews (`dryRun`) and rewinds of the next queries. */
+export function setMockRewindFiles(implementation: Query['rewindFiles']): void {
+  mockRewindFiles = implementation;
+}
+
 export function getQueryCallCount(): number {
   return queryCallCount;
 }
@@ -259,6 +267,7 @@ export function query({ prompt, options }: { prompt: string | AsyncIterable<SDKU
     initializationResult: Mock<Query['initializationResult']>;
     close: Mock<Query['close']>;
     getContextUsage: Mock;
+    rewindFiles: Mock<Query['rewindFiles']>;
   };
   gen.interrupt = vi.fn().mockResolvedValue(undefined);
   // Dynamic update methods for persistent queries
@@ -286,6 +295,7 @@ export function query({ prompt, options }: { prompt: string | AsyncIterable<SDKU
       ? Promise.resolve(mockContextUsage)
       : Promise.reject(new Error('Context usage unavailable'))
   ));
+  gen.rewindFiles = vi.fn<Query['rewindFiles']>().mockImplementation((...args) => mockRewindFiles(...args));
   lastResponse = gen;
 
   return gen;

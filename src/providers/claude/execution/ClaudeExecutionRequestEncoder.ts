@@ -5,6 +5,8 @@ import type {
 } from '@anthropic-ai/claude-agent-sdk';
 
 import { parseCompactCommand } from '@/core/commands/compactCommand';
+import { resolveExecutionTargetAsync } from '@/core/process/execution-target/ExecutionTargetResolver';
+import type { ExecutionTarget } from '@/core/process/execution-target/types';
 import {
   buildContextFromHistory,
   buildPromptWithHistoryContext,
@@ -51,6 +53,7 @@ export interface ClaudeNativeResume {
 }
 
 export interface ClaudeEncodedExecutionRequest {
+  readonly executionTarget: ExecutionTarget;
   readonly prompt: string;
   readonly images: ImageAttachment[];
   readonly options: Options;
@@ -85,7 +88,10 @@ export class ClaudeExecutionRequestEncoder {
     resume: ClaudeNativeResume,
     replayConversationHistory: boolean,
   ): Promise<ClaudeEncodedExecutionRequest> {
-    const cliPath = await this.deps.host.resolveCliPath();
+    const target = await resolveExecutionTargetAsync({
+      settings: decodeClaudeConfig(this.deps.host.config), hostVaultPath: sessionConfig.workingDirectory,
+    });
+    const cliPath = await this.deps.host.resolveCliPath({ executionTarget: target });
     if (!cliPath) {
       throw new Error('Claude Code CLI not found');
     }
@@ -135,6 +141,7 @@ export class ClaudeExecutionRequestEncoder {
         this.deps.host,
         sessionConfig.workingDirectory,
         cliPath,
+        { executionTarget: target },
       ),
       systemPrompt: {
         type: 'custom',
@@ -195,6 +202,7 @@ export class ClaudeExecutionRequestEncoder {
     }
 
     return {
+      executionTarget: target,
       prompt,
       images: compact ? [] : encodeImages(request),
       options,
@@ -208,6 +216,8 @@ export class ClaudeExecutionRequestEncoder {
         tools: policy.tools,
         hooks: Boolean(policy.hooks),
         cliPath,
+        target,
+        cwd: options.cwd,
         settingSources: options.settingSources,
         additionalDirectories: options.additionalDirectories,
         enableChrome: claudeSettings.enableChrome,
