@@ -13,6 +13,7 @@ import { GrokExecutionBackend } from './execution/GrokExecutionBackend';
 import { grokModelPolicy } from './GrokModelPolicy';
 import { GrokConversationHistoryService } from './history/GrokConversationHistoryService';
 import { grokSubagentLifecycleAdapter } from './normalization/grokSubagentNormalization';
+import { resolveGrokExecutionWorkingDirectory } from './runtime/GrokExecutionContext';
 import { getGrokProviderSettings, projectGrokModelSettings, updateGrokProviderSettings } from './settings';
 import { grokChatUIConfig } from './ui/GrokChatUIConfig';
 
@@ -22,6 +23,7 @@ export const grokProviderRegistration: ProviderModule = {
   capabilities: GROK_PROVIDER_CAPABILITIES,
   modelPolicy: grokModelPolicy,
   chatUIConfig: grokChatUIConfig,
+  resolveExecutionWorkingDirectory: (host, cwd) => resolveGrokExecutionWorkingDirectory(host.getRuntimeHost('grok'), cwd),
   createExecutionBackend: (plugin) => {
     const workspace = getGrokWorkspaceServices();
     return new GrokExecutionBackend(plugin.getRuntimeHost('grok'), {
@@ -44,7 +46,7 @@ export const grokProviderRegistration: ProviderModule = {
         return !model || (!model.reasoningEfforts.length && !model.reasoningMetadataResolved);
       });
     },
-    hostScopedFields: ['cliPathsByHost', 'catalogsByHost', 'selectedModelsByHost'],
+    hostScopedFields: ['installationMethodsByHost', 'wslDistroOverridesByHost', 'cliPathsByHost', 'catalogsByHost', 'selectedModelsByHost'],
     normalizeStored(target, stored) {
       const storedConfig = getProviderConfig(stored, 'grok');
       const current = getGrokProviderSettings(stored);

@@ -1,4 +1,5 @@
 import { getInstallationKey } from '@/core/device/InstallationKey';
+import { decodeInstallationSettings, type InstallationSettings, selectInstallationSettings, type StoredInstallationSettings,updateInstallationSettings } from '@/core/providers/settings/InstallationSettings';
 
 import { replaceProviderConfig } from '../../core/providers/providerConfig';
 import type { ProviderSelectionInputs } from '../../core/providers/ProviderRuntimeHost';
@@ -18,7 +19,8 @@ export interface GrokCatalogSnapshot {
   refreshedAt: number;
 }
 
-export interface PersistedGrokProviderSettings {
+export interface PersistedGrokProviderSettings extends StoredInstallationSettings {
+  sessionEnvironmentHash: string;
   enabled: boolean;
   cliPath: string;
   cliPathsByHost: HostnameCLIPaths;
@@ -30,11 +32,14 @@ export interface PersistedGrokProviderSettings {
   preferredReasoningByModel: Record<string, string>;
 }
 
-export interface GrokProviderSettings extends PersistedGrokProviderSettings {
+export interface GrokProviderSettings extends PersistedGrokProviderSettings, InstallationSettings {
   currentCatalog: GrokCatalogSnapshot | null;
 }
 
 export const DEFAULT_GROK_PROVIDER_SETTINGS: Readonly<PersistedGrokProviderSettings> = Object.freeze({
+  installationMethodsByHost: {},
+  wslDistroOverridesByHost: {},
+  sessionEnvironmentHash: '',
   catalogsByHost: {},
   cliPath: '',
   cliPathsByHost: {},
@@ -107,7 +112,11 @@ export function decodeGrokConfig(
     visibleModels ?? catalogModels.map(model => model.rawId),
   );
 
+  const installation = decodeInstallationSettings(config);
   return {
+    ...installation,
+    ...selectInstallationSettings(installation, currentHostKey),
+    sessionEnvironmentHash: readTrimmedString(config.sessionEnvironmentHash),
     catalogsByHost,
     cliPath: readTrimmedString(config.cliPath)
       || DEFAULT_GROK_PROVIDER_SETTINGS.cliPath,
@@ -139,7 +148,7 @@ export function decodeGrokConfig(
 export function updateGrokConfig(
   config: Record<string, unknown>,
   selection: Pick<ProviderSelectionInputs, 'referencedModelIds'>,
-  updates: Partial<PersistedGrokProviderSettings>,
+  updates: Partial<GrokProviderSettings>,
 ): GrokProviderSettings {
   const current = decodeGrokConfig(config, selection);
   const currentHostKey = getInstallationKey();
@@ -178,7 +187,11 @@ export function updateGrokConfig(
     visibleModels ?? catalogModels.map(model => model.rawId),
   );
 
+  const installation = updateInstallationSettings(current, updates, currentHostKey);
   const next: PersistedGrokProviderSettings = {
+    installationMethodsByHost: installation.installationMethodsByHost,
+    wslDistroOverridesByHost: installation.wslDistroOverridesByHost,
+    sessionEnvironmentHash: updates.sessionEnvironmentHash ?? current.sessionEnvironmentHash,
     catalogsByHost,
     cliPath,
     cliPathsByHost,
@@ -202,7 +215,7 @@ export function updateGrokConfig(
   };
 
   replaceProviderConfig(config, next as unknown as Record<string, unknown>);
-  return { ...next, currentCatalog };
+  return { ...next, ...selectInstallationSettings(next, currentHostKey), currentCatalog };
 }
 
 export function updateCurrentGrokCatalogConfig(

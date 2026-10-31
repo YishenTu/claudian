@@ -1,3 +1,4 @@
+import { buildTargetLaunchSpec } from '@/core/process/execution-target/TargetLaunchSpec';
 import { OwnedProbeRegistry } from '@/core/providers/metadata/OwnedProbeRegistry';
 import { ProviderTransitionFence } from '@/core/providers/metadata/ProviderTransitionFence';
 import type { ProviderRuntimeHost } from '@/core/providers/ProviderRuntimeHost';
@@ -8,7 +9,7 @@ import type {
   GrokExecutionNativeFactory,
 } from '../execution/GrokExecutionBackend';
 import { GrokExecutionNativeConnectionImpl } from '../execution/GrokExecutionNativeConnection';
-import { buildGrokRuntimeEnv } from '../runtime/GrokRuntimeEnvironment';
+import { resolveGrokExecutionContext } from '../runtime/GrokExecutionContext';
 
 const DEFAULT_NATIVE_FACTORY: GrokExecutionNativeFactory = {
   create: options => new GrokExecutionNativeConnectionImpl(options),
@@ -48,15 +49,15 @@ export class GrokCommandMetadataProbe {
 
     return await this.probes.run({
       create: async (ownedSignal) => {
-        const command = await this.host.resolveCliPath() ?? 'grok';
+        const context = await resolveGrokExecutionContext(this.host);
+        const launch = buildTargetLaunchSpec({ ...context, args: ['agent', '--no-leader', 'stdio'] });
         ownedSignal.throwIfAborted();
-        const cwd = this.host.workingDirectory ?? process.cwd();
+        const cwd = launch.targetCwd;
         return {
           cwd,
           native: this.nativeFactory.create({
-            command,
-            cwd,
-            env: buildGrokRuntimeEnv(this.host.environmentText, command),
+            ...launch,
+            cwd: launch.spawnCwd,
             requestExtension: async () => null,
             requestPermission: async () => ({ outcome: { outcome: 'cancelled' } }),
             version: this.host.clientVersion ?? '0.0.0',

@@ -1,6 +1,8 @@
 import { randomUUID } from 'node:crypto';
 
 import { parseCompactCommand } from '@/core/commands/compactCommand';
+import { buildTargetLaunchSpec } from '@/core/process/execution-target/TargetLaunchSpec';
+import type { TargetLaunchSpec } from '@/core/process/execution-target/types';
 import {
   buildContextFromHistory,
   buildPromptWithHistoryContext,
@@ -9,6 +11,7 @@ import { appendExecutionContext } from '@/core/prompt/promptContext';
 import { invokeSessionTool } from '@/core/session-tools/invokeSessionTool';
 import { SESSION_TOOL_ROUTE_HEADER, type SessionToolRoute } from '@/core/session-tools/SessionToolEndpoint';
 import { SESSION_TOOL_MCP_SERVER_NAME } from '@/core/session-tools/sessionToolMCP';
+import { createWSLSessionToolRelay } from '@/core/session-tools/WSLSessionToolRelay';
 import { isSessionTool } from '@/core/tools/toolNames';
 import {
   type ACPContentBlock,
@@ -46,11 +49,13 @@ import { ProviderModelUnavailableError } from '../../../core/providers/models/Pr
 import type { ProviderRuntimeHost } from '../../../core/providers/ProviderRuntimeHost';
 import type { ChatMessage } from '../../../core/types';
 import { decodeGrokConfig } from '../config';
+import { type GrokHistoryEnvironment,resolveGrokHistoryEnvironment } from '../history/GrokHistoryEnvironment';
 import {
   resolveGrokSessionCwd,
   resolveGrokSessionDirectory,
 } from '../history/GrokHistoryPathResolver';
 import { resolveGrokLiveMessageId } from '../history/GrokHistoryStore';
+import { resolveGrokSessionHome } from '../history/GrokSessionStore';
 import {
   decodeGrokModelId,
   findGrokModel,
@@ -58,6 +63,7 @@ import {
   type GrokDiscoveredModel,
   normalizeGrokDiscoveredModels,
 } from '../models';
+import { mapGrokNativePaths } from '../normalization/grokNativePaths';
 import {
   buildGrokToolProviderPayload,
   normalizeGrokToolInput,
@@ -69,11 +75,12 @@ import {
 import { parseGrokPromptUsage, parseGrokUsage } from '../normalization/grokUsage';
 import { shouldAutoApproveGrokPermission } from '../permissionModes';
 import { waitForGrokCancelDelivery } from '../runtime/GrokCancelDelivery';
+import { resolveGrokExecutionContext } from '../runtime/GrokExecutionContext';
 import { assertGrokModelAvailable } from '../runtime/GrokModelAvailability';
 import type { GrokModelCatalogCoordinator } from '../runtime/GrokModelCatalogCoordinator';
-import { buildGrokRuntimeEnv, computeGrokRuntimeInputHash } from '../runtime/GrokRuntimeEnvironment';
+import { computeGrokRuntimeInputHash, computeGrokSessionEnvironmentHash } from '../runtime/GrokRuntimeEnvironment';
 import { GrokSessionNotificationMirrorDeduplicator } from '../runtime/GrokSessionNotificationMirrorDeduplicator';
-import { parseGrokProviderState } from '../types';
+import { clearGrokResumeState, parseGrokProviderState } from '../types';
 import type {
   GrokExecutionNativeConnection,
   GrokExecutionNativeFactory,
@@ -118,6 +125,9 @@ interface GrokNativeSession {
 }
 
 interface GrokNativeOwner {
+  readonly sessionStoreKey?: string;
+  readonly launch: TargetLaunchSpec;
+  readonly historyContext: GrokHistoryEnvironment;
   initialized: boolean;
   loadedSessionConfigurationKey: string | null;
   loadedSessionId: string | null;
@@ -429,14 +439,24 @@ RewindableExecutionSession {
   ): Promise<GrokExecutionNativeConnection> {
     const previousOwner = this.nativeOwner;
     if (previousOwner) await this.#shutdownNativeOwner(previousOwner);
-    const command = await this.host.resolveCliPath() ?? 'grok';
+    const context = await resolveGrokExecutionContext(this.host, this.config.workingDirectory);
+    const launch = buildTargetLaunchSpec({ ...context, args: ['agent', '--no-leader', 'stdio'] });
+    const historyContext = await resolveGrokHistoryEnvironment({
+      environment: context.env, environmentText: this.host.environmentText,
+      hostPlatform: process.platform, vaultPath: this.config.workingDirectory,
+    }, context.target);
     if (quarantineGeneration !== this.quarantineGeneration || this.disposed) {
       throw new Error('Grok Build native startup was cancelled.');
     }
+    if (context.target.method === 'wsl' && !resolveGrokSessionHome(historyContext.environment, process.platform, context.target)) {
+      throw new Error('Could not determine the Grok WSL session store. Check Linux HOME/GROK_HOME and shell startup.');
+    }
+    const sessionStoreKey = context.target.method === 'wsl'
+      ? computeGrokSessionEnvironmentHash('', context.target, historyContext.environment) : undefined;
+    this.#retireChangedSessionStore(sessionStoreKey);
     const native = this.options.nativeFactory.create({
-      command,
-      cwd: this.config.workingDirectory,
-      env: buildGrokRuntimeEnv(this.host.environmentText, command),
+      ...launch,
+      cwd: launch.spawnCwd,
       requestPermission: (request, signal) => {
         const active = this.active;
         const sessionTool = normalizeGrokToolName(
@@ -476,6 +496,7 @@ RewindableExecutionSession {
       version: this.host.clientVersion ?? '0.0.0',
     });
     const owner: GrokNativeOwner = {
+      launch, historyContext, sessionStoreKey,
       initialized: false,
       loadedSessionConfigurationKey: null,
       loadedSessionId: null,
@@ -484,6 +505,7 @@ RewindableExecutionSession {
       modelContextKey: computeGrokRuntimeInputHash(
         decodeGrokConfig(this.host.config, this.host.selection),
         this.host.environmentText,
+        launch.target,
       ),
       modelsUnsubscribe: () => {},
       native,
@@ -584,12 +606,12 @@ RewindableExecutionSession {
         native,
         state.forkSource.sessionId,
         {
-          newCwd: this.config.workingDirectory,
+          newCwd: owner.launch.targetCwd,
           ...(request?.configuration.model
             ? { newModelId: decodeGrokModelId(request.configuration.model) ?? undefined }
             : {}),
           sourceCwd: resolveGrokSessionCwd(state.forkSourceSessionDirectory)
-            ?? this.config.workingDirectory,
+            ?? owner.launch.targetCwd,
           sourceSessionId: state.forkSource.sessionId,
           targetPromptIndex,
         },
@@ -611,7 +633,7 @@ RewindableExecutionSession {
     this.#throwIfCancellationRequested(active);
     const response = await native.newSession({
       _meta: buildSessionMeta(request),
-      cwd: this.config.workingDirectory,
+      cwd: owner.launch.targetCwd,
       mcpServers,
     });
     this.#throwIfCancellationRequested(active);
@@ -638,7 +660,7 @@ RewindableExecutionSession {
     this.#throwIfCancellationRequested(active);
     const response = await native.loadSession({
       _meta: buildSessionMeta(request),
-      cwd: this.config.workingDirectory,
+      cwd: owner.launch.targetCwd,
       mcpServers,
       sessionId: targetSessionId,
     });
@@ -682,6 +704,15 @@ RewindableExecutionSession {
       throw error;
     });
     const route = await this.sessionToolRoute;
+    const launch = this.nativeOwner!.launch;
+    if (launch.target.method === 'wsl') {
+      const relay = await createWSLSessionToolRelay({
+        target: launch.target, hostCwd: launch.spawnCwd, env: launch.env, route, mode: 'mcp',
+      });
+      return [{ name: SESSION_TOOL_MCP_SERVER_NAME, command: relay.command, args: relay.args,
+        env: Object.entries(relay.env).map(([name, value]) => ({ name, value })),
+      }];
+    }
     return [{
       type: 'http',
       name: SESSION_TOOL_MCP_SERVER_NAME,
@@ -788,7 +819,7 @@ RewindableExecutionSession {
       }
       return;
     }
-    let update = notification.update;
+    let update = mapGrokNativePaths(notification.update, this.nativeOwner?.launch.pathMapper);
     if (update.sessionUpdate === 'agent_message_chunk' || update.sessionUpdate === 'user_message_chunk') {
       const role = update.sessionUpdate === 'agent_message_chunk' ? 'assistant' : 'user';
       const messageId = resolveGrokLiveMessageId(update, role, notification._meta);
@@ -1021,15 +1052,23 @@ RewindableExecutionSession {
     if (!this.options.resolvePromptIndex) {
       return { canRewind: false, error: 'Grok Build prompt index resolution is unavailable.' };
     }
+    const checkpointSessionId = this.providerSessionId;
     const promptIndex = await this.options.resolvePromptIndex(
       state.sessionDirectory,
-      this.providerSessionId,
+      checkpointSessionId,
       assistantMessageId,
     );
     if (promptIndex === null) {
       return { canRewind: false, error: 'The Grok Build prompt could not be located.' };
     }
-    const { native } = await this.#ensureSession(await this.#ensureNative(), undefined);
+    const connection = await this.#ensureNative();
+    if (this.providerSessionId !== checkpointSessionId) {
+      const error = 'The Grok Build session store changed; this checkpoint is no longer resumable.';
+      this.#updateSnapshot('invalidated', { message: error, reason: 'configuration-changed', recoverable: true });
+      this.#emitCurrentSnapshot();
+      return { canRewind: false, error };
+    }
+    const { native } = await this.#ensureSession(connection, undefined);
     if (!native.rewind) return { canRewind: false, error: 'Grok Build rewind is unavailable.' };
     const response = await native.rewind({
       force,
@@ -1040,9 +1079,23 @@ RewindableExecutionSession {
     return {
       canRewind: response.success,
       ...(response.error ? { error: response.error } : {}),
-      conflicts: response.conflicts,
-      filesChanged: [...response.cleanFiles, ...response.revertedFiles],
+      conflicts: mapGrokNativePaths(response.conflicts, this.nativeOwner?.launch.pathMapper),
+      filesChanged: [...response.cleanFiles, ...response.revertedFiles].map(value => this.nativeOwner?.launch.target.method === 'wsl'
+        ? this.nativeOwner.launch.pathMapper.toHostPath(value) ?? value : value),
     };
+  }
+
+  #retireChangedSessionStore(sessionStoreKey: string | undefined): void {
+    const previous = this.state.providerState.sessionStoreKey;
+    if (!previous || !sessionStoreKey || previous === sessionStoreKey) return;
+    const draft = { sessionId: this.providerSessionId ?? null, providerState: { ...this.state.providerState } };
+    if (!clearGrokResumeState(draft)) return;
+    this.providerSessionId = undefined;
+    for (const key of Object.keys(this.state.providerState)) {
+      if (!(key in draft.providerState)) this.state.deleteProviderStateValue(key);
+    }
+    for (const [key, value] of Object.entries(draft.providerState)) this.state.setProviderStateValue(key, value);
+    this.#setNativeConversationContextEstablished(false);
   }
 
   #captureProviderSession(
@@ -1050,15 +1103,15 @@ RewindableExecutionSession {
     persistedSessionDirectory: string | null | undefined,
   ): void {
     this.providerSessionId = providerSessionId;
+    if (this.nativeOwner?.sessionStoreKey) this.state.setProviderStateValue('sessionStoreKey', this.nativeOwner.sessionStoreKey);
+    for (const key of ['historySessionId', 'historyResumeAt']) {
+      if (key in this.state.providerState) this.state.deleteProviderStateValue(key);
+    }
     const sessionDirectory = resolveGrokSessionDirectory(
       persistedSessionDirectory,
       providerSessionId,
       this.config.workingDirectory,
-      {
-        environment: buildGrokRuntimeEnv(this.host.environmentText, ''),
-        hostPlatform: process.platform,
-        vaultPath: this.config.workingDirectory,
-      },
+      this.nativeOwner!.historyContext,
     );
     if (sessionDirectory) {
       this.state.setProviderStateValue('sessionDirectory', sessionDirectory);

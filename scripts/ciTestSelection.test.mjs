@@ -453,9 +453,26 @@ test('local selection includes committed, staged, unstaged and untracked edits w
   }
 });
 
-test('WSL native job follows shared dependencies and Codex users but skips unrelated UI', () => {
+test('WSL native job follows shared dependencies and provider users but skips unrelated UI', () => {
   const wsl = 'tests/integration/core/process/execution-target/WSLExecution.windows.test.ts';
   assert.equal(select([wsl]).wslWindows, true);
+  const relay = 'tests/integration/core/process/execution-target/WSLSessionToolRelay.windows.test.ts';
+  assert.equal(select([relay]).wslWindows, true);
+  assert.equal(select(['tests/helpers/WSLNativeTarget.ts'], [relay]).wslWindows, true);
+  for (const file of [
+    'src/core/session-tools/sessionToolRelayCommand.ts',
+    // Type-only and sibling session-tool edges reach the relay through its declaration.
+    'src/core/session-tools/SessionToolEndpoint.ts',
+    'tests/integration/core/session-tools/WSLSessionToolRelay.test.ts',
+    // Grok launches the relay as its WSL MCP child.
+    'src/providers/grok/runtime/GrokExecutionContext.ts',
+    'src/providers/grok/types.ts',
+    'tests/integration/providers/grok/ui/GrokSettingsTab.dom.test.ts',
+  ]) {
+    const selection = select([file]);
+    assert.equal(selection.wslWindows, true, file);
+    assert.ok(selection.testFiles.includes(relay), `${file} must select the declared relay consumer`);
+  }
   assert.equal(select(['src/core/process/execution-target/TargetLaunchSpec.ts'], [wsl]).wslWindows, true);
   assert.equal(select(['src/providers/codex/runtime/CodexLaunchSpecBuilder.ts']).wslWindows, true);
   assert.equal(select(['src/features/chat/ClaudianView.ts'], [panel]).wslWindows, false);

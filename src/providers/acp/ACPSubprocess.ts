@@ -5,6 +5,7 @@ import { ManagedStdioProcess } from '@/core/process/ManagedStdioProcess';
 const STDERR_BUFFER_LIMIT = 8_000;
 
 export interface ACPSubprocessLaunchSpec {
+  windowsVerbatimArguments?: boolean;
   args: string[];
   command: string;
   cwd: string;

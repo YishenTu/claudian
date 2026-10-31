@@ -33,6 +33,17 @@ describe('GrokConversationHistoryService', () => {
     await fs.writeFile(updatesPath, fixture, 'utf8');
   });
 
+  it('retains retired history locators across an unavailable store without restoring resume identity', async () => {
+    const service = new GrokConversationHistoryService();
+    const retired = { sessionId: null, messages: [], providerState: { historySessionId: 'session-fixture', sessionDirectory } };
+    const unavailable = await service.hydrateConversationHistory(retired, vaultPath, { environment: { GROK_HOME: path.join(tempRoot, 'other-store') } });
+    expect(unavailable.providerState).toMatchObject({ historySessionId: 'session-fixture', sessionDirectory });
+    expect(unavailable.messages).toEqual([]);
+    const restored = await service.hydrateConversationHistory({ ...retired, ...unavailable }, vaultPath, { environment: { HOME: tempRoot } });
+    expect(restored.messages?.length).toBeGreaterThan(0);
+    expect(restored.sessionId).toBeNull();
+  });
+
   afterEach(async () => {
     await fs.rm(tempRoot, { force: true, recursive: true });
   });

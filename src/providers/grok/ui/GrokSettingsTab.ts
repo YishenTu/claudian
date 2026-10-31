@@ -2,11 +2,13 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 
 import { normalizeConfiguredCLIPath } from '@/core/process/cliPath';
-import { probeCLIInstallation } from '@/core/providers/cli/CLIInstallationProbe';
-import { getRuntimeEnvironmentVariables } from '@/core/providers/providerEnvironment';
+import { resolveExecutionTargetAsync } from '@/core/process/execution-target/ExecutionTargetResolver';
+import { probeTargetCLIInstallation } from '@/core/providers/cli/TargetCLIInstallationProbe';
+import { getRuntimeEnvironmentText } from '@/core/providers/providerEnvironment';
 import { GROK_PROVIDER_ICON } from '@/shared/icons';
 import { AccessibleSetting } from '@/shared/settings/AccessibleSetting';
 import { renderCLIInstallationSetting } from '@/shared/settings/CLIInstallationSetting';
+import { renderExecutionTargetSettings, validateExecutionTargetCLIPath } from '@/shared/settings/ExecutionTargetSettings';
 
 import { ProviderSettingsCoordinator } from '../../../core/providers/ProviderSettingsCoordinator';
 import { ProviderWorkspaceRegistry } from '../../../core/providers/ProviderWorkspaceRegistry';
@@ -23,6 +25,9 @@ import {
 } from '../../../shared/settings/ProviderModelEnablementWarning';
 import { renderProviderModelsSection } from '../../../shared/settings/ProviderModelsSection';
 import type { GrokWorkspaceServices } from '../app/GrokWorkspaceServices';
+import { resolveGrokWSLCLIPath } from '../runtime/grokCLIReference';
+import { buildGrokRuntimeEnv } from '../runtime/GrokRuntimeEnvironment';
+import { getGrokWSLForwardedEnvironment } from '../runtime/grokWSLEnvironment';
 import {
   getGrokProviderSettings,
   updateGrokProviderSettings
@@ -82,17 +87,23 @@ export const grokSettingsTabRenderer: ProviderSettingsTabRenderer = {
       providerName: 'Grok Build',
     });
 
-    renderCLIInstallationSetting({
+    const cliPathControl = renderCLIInstallationSetting({
       cliName: 'Grok Build',
       icon: GROK_PROVIDER_ICON,
       inspect: async () => {
         const settings = context.plugin.settings as unknown as Record<string, unknown>;
         const config = getGrokProviderSettings(settings);
-        return probeCLIInstallation({
-          path: await context.plugin.getResolvedProviderCliPath('grok'),
+        const hostCwd = context.plugin.workingDirectory ?? process.cwd();
+        const target = await resolveExecutionTargetAsync({ settings: config, hostVaultPath: hostCwd });
+        const command = target.method === 'wsl' ? resolveGrokWSLCLIPath(config) : await context.plugin.getResolvedProviderCliPath('grok');
+        const environmentText = getRuntimeEnvironmentText(settings, 'grok');
+        const env = Object.fromEntries(Object.entries(buildGrokRuntimeEnv(environmentText, command ?? '', target)).filter((entry): entry is [string, string] => entry[1] !== undefined));
+        return probeTargetCLIInstallation({
+          target, hostCwd, command,
+          forwardEnvironment: getGrokWSLForwardedEnvironment(env, environmentText),
           configuredPath: config.cliPathsByHost[hostnameKey] || config.cliPath,
           args: ['--version'],
-          env: { ...process.env, ...getRuntimeEnvironmentVariables(settings, 'grok') },
+          env,
         });
       },
       container: installationContainer,
@@ -124,10 +135,28 @@ export const grokSettingsTabRenderer: ProviderSettingsTabRenderer = {
         );
         modelWarning.context.notifyProviderModelOptionsChanged(GROK_PROVIDER_ID);
       },
-      placeholder: process.platform === 'win32'
+      placeholder: process.platform === 'win32' && getGrokProviderSettings(settingsBag).installationMethod === 'wsl' ? 'grok' : process.platform === 'win32'
         ? 'C:\\Users\\you\\AppData\\Roaming\\npm\\grok.cmd'
         : '/usr/local/bin/grok',
-      validate: validateCLIPath,
+      validate: value => process.platform === 'win32' && getGrokProviderSettings(settingsBag).installationMethod === 'wsl'
+        ? validateExecutionTargetCLIPath(value, getGrokProviderSettings(settingsBag)) : validateCLIPath(value),
+    });
+
+    renderExecutionTargetSettings({
+      container, providerName: 'Grok Build',
+      getValue: () => getGrokProviderSettings(settingsBag),
+      onChange: async updates => {
+        await context.plugin.applyProviderRuntimeSettings(
+          [GROK_PROVIDER_ID],
+          settings => { updateGrokProviderSettings(settings, updates); },
+          () => workspace.cliResolver.reset(),
+        );
+      },
+      onRefresh: () => {
+        cliPathControl.setPlaceholder(getGrokProviderSettings(settingsBag).installationMethod === 'wsl' ? 'grok' : 'C:\\Users\\you\\AppData\\Roaming\\npm\\grok.cmd');
+        cliPathControl.revalidate();
+        void cliPathControl.refresh();
+      },
     });
 
     new AccessibleSetting(container).setName('Models').setHeading();

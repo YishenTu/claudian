@@ -4,6 +4,7 @@ import * as fs from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import * as path from 'node:path';
 
+import { hasNativeWSL } from '@test/helpers/WSLNativeTarget';
 import { WSL_LITERAL_ARGS, type WSLShellBehavior, wslShellFixtureFiles } from '@test/helpers/WSLShellFixture';
 
 import { resolveExecutionTarget, resolveExecutionTargetAsync } from '@/core/process/execution-target/ExecutionTargetResolver';
@@ -15,17 +16,8 @@ import { runProcessProbe } from '@/core/process/ProcessProbe';
 import { probeTargetCLIInstallation } from '@/core/providers/cli/TargetCLIInstallationProbe';
 
 const settings = { installationMethod: 'wsl' as const, wslDistroOverride: '' };
-const target = process.platform === 'win32' ? resolveExecutionTarget({ settings }) : null;
-let available = false;
-if (target?.distroName) {
-  try {
-    execFileSync('wsl.exe', ['--distribution', target.distroName, '--exec', '/bin/true'], { timeout: 20_000, windowsHide: true });
-    available = true;
-  } catch { /* Machines without a usable WSL distro skip the native suite. */ }
-}
-if (process.env.CLAUDIAN_REQUIRE_WSL === '1' && !available) {
-  throw new Error('The WSL CI job requires a running distro; native tests must not skip.');
-}
+const available = hasNativeWSL();
+const target = available ? resolveExecutionTarget({ settings }) : null;
 
 const shells = ['bash', 'zsh', 'csh', 'tcsh', 'fish'];
 const installedShells = new Set(shells.filter(shell => {

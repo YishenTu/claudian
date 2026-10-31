@@ -83,6 +83,8 @@ export interface GrokExecutionNativeConnection {
 }
 
 export interface GrokExecutionNativeCreateOptions {
+  readonly args?: string[];
+  readonly windowsVerbatimArguments?: boolean;
   readonly command: string;
   readonly cwd: string;
   readonly env: NodeJS.ProcessEnv;

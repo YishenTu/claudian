@@ -1,19 +1,22 @@
 import * as fs from 'node:fs';
-import * as os from 'node:os';
 import * as path from 'node:path';
 
-import type { ProviderHistoryEnvironment } from '../../../core/providers/types';
+import { createExecutionPathMapper } from '@/core/process/execution-target/WSLPathMapper';
+
 import { isPathWithinRoot } from '../../../core/storage/pathContainment';
+import type { GrokHistoryEnvironment } from './GrokHistoryEnvironment';
+import { resolveGrokSessionHome } from './GrokSessionStore';
 
 const MAX_CWD_DIRECTORIES_TO_SCAN = 1_024;
 
 export function encodeGrokSessionCwd(cwd: string): string {
-  return encodeURIComponent(path.resolve(cwd));
+  return encodeURIComponent(cwd.startsWith('/') ? path.posix.resolve(cwd) : path.resolve(cwd));
 }
 
 export function decodeGrokSessionCwd(encodedCwd: string): string | null {
   try {
     const decoded = decodeURIComponent(encodedCwd);
+    if (decoded.startsWith('/')) return path.posix.resolve(decoded);
     if (!path.isAbsolute(decoded)) return null;
     return path.resolve(decoded);
   } catch {
@@ -28,7 +31,7 @@ export function resolveGrokSessionCwd(sessionDirectory: string): string | null {
 
   try {
     const storedCwd = fs.readFileSync(path.join(cwdDirectory, '.cwd'), 'utf8').trim();
-    return path.isAbsolute(storedCwd) ? path.resolve(storedCwd) : null;
+    return storedCwd.startsWith('/') ? path.posix.resolve(storedCwd) : path.isAbsolute(storedCwd) ? path.resolve(storedCwd) : null;
   } catch {
     return null;
   }
@@ -38,7 +41,7 @@ export function resolveGrokSessionDirectory(
   persistedHint: string | null | undefined,
   sessionId: string | null | undefined,
   vaultPath: string | null,
-  context: ProviderHistoryEnvironment,
+  context: GrokHistoryEnvironment,
 ): string | null {
   const normalizedSessionId = normalizeSessionId(sessionId);
   if (!normalizedSessionId) {
@@ -46,18 +49,20 @@ export function resolveGrokSessionDirectory(
   }
 
   const roots = getTrustedSessionRoots(context);
+  const hostPath = context.target?.method === 'wsl' ? path.win32 : path;
   if (
     persistedHint
-    && path.basename(path.normalize(persistedHint)) === normalizedSessionId
+    && hostPath.basename(hostPath.normalize(persistedHint)) === normalizedSessionId
     && roots.some(root => isPathWithinRoot(persistedHint, root))
     && isDirectory(persistedHint)
   ) {
-    return path.resolve(persistedHint);
+    return hostPath.resolve(persistedHint);
   }
 
-  if (vaultPath && path.isAbsolute(vaultPath)) {
+  const nativeCwd = context.targetCwd ?? vaultPath;
+  if (nativeCwd && (path.posix.isAbsolute(nativeCwd) || path.win32.isAbsolute(nativeCwd))) {
     for (const root of roots) {
-      const direct = path.join(root, encodeGrokSessionCwd(vaultPath), normalizedSessionId);
+      const direct = hostPath.join(root, encodeGrokSessionCwd(nativeCwd), normalizedSessionId);
       if (isDirectory(direct)) {
         return direct;
       }
@@ -65,7 +70,7 @@ export function resolveGrokSessionDirectory(
   }
 
   for (const root of roots) {
-    const found = findExactSessionDirectory(root, normalizedSessionId);
+    const found = findExactSessionDirectory(root, normalizedSessionId, hostPath);
     if (found) {
       return found;
     }
@@ -73,25 +78,16 @@ export function resolveGrokSessionDirectory(
   return null;
 }
 
-function getTrustedSessionRoots(context: ProviderHistoryEnvironment): string[] {
-  const configuredHome = context.environment.GROK_HOME?.trim();
-  if (configuredHome) {
-    return path.isAbsolute(configuredHome)
-      ? [path.resolve(configuredHome, 'sessions')]
-      : [];
+function getTrustedSessionRoots(context: GrokHistoryEnvironment): string[] {
+  const home = resolveGrokSessionHome(context.environment, context.hostPlatform, context.target);
+  if (!home) return [];
+  if (context.target?.method === 'wsl') {
+    if (!context.target.distroName) return [];
+    const root = createExecutionPathMapper(context.target).toHostPath(path.posix.join(home, 'sessions'));
+    return root ? [root] : [];
   }
-  const home = resolveUserHome(context.environment, context.hostPlatform);
-  return [path.resolve(home, '.grok', 'sessions')];
-}
-
-function resolveUserHome(
-  environment: NodeJS.ProcessEnv,
-  platform: NodeJS.Platform | undefined,
-): string {
-  const preferred = platform === 'win32'
-    ? environment.USERPROFILE?.trim() || environment.HOME?.trim()
-    : environment.HOME?.trim() || environment.USERPROFILE?.trim();
-  return preferred && path.isAbsolute(preferred) ? preferred : os.homedir();
+  const paths = context.hostPlatform === 'win32' ? path.win32 : path;
+  return [paths.join(home, 'sessions')];
 }
 
 function normalizeSessionId(value: string | null | undefined): string | null {
@@ -109,7 +105,7 @@ function normalizeSessionId(value: string | null | undefined): string | null {
     : null;
 }
 
-function findExactSessionDirectory(root: string, sessionId: string): string | null {
+function findExactSessionDirectory(root: string, sessionId: string, hostPath = path): string | null {
   let entries: fs.Dirent[];
   try {
     entries = fs.readdirSync(root, { withFileTypes: true });
@@ -126,7 +122,7 @@ function findExactSessionDirectory(root: string, sessionId: string): string | nu
     if (scanned > MAX_CWD_DIRECTORIES_TO_SCAN) {
       break;
     }
-    const candidate = path.join(root, entry.name, sessionId);
+    const candidate = hostPath.join(root, entry.name, sessionId);
     if (isDirectory(candidate)) {
       return candidate;
     }

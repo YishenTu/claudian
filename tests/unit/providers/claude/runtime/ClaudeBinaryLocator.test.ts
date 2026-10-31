@@ -15,10 +15,11 @@ const isWindows = process.platform === 'win32';
 describe('findClaudeBinaryPath', () => {
   let findClaudeBinaryPath: (pathValue?: string) => string | null;
   const originalPlatform = process.platform;
-  let originalEnv: NodeJS.ProcessEnv;
+  // Restore the worker's own env object: Vitest's stubEnv deletes through a proxy bound to it.
+  const originalEnv = process.env;
 
   beforeEach(async () => {
-    originalEnv = { ...process.env };
+    process.env = { ...originalEnv };
     // These cases supply virtual files; permission filtering is exercised with real files in CLI discovery integration.
     vi.spyOn(fs, 'accessSync').mockImplementation(() => undefined);
     process.env.PATH = '';
@@ -233,10 +234,11 @@ describe('findClaudeBinaryPath', () => {
 });
 
 describe('native platform CLI discovery', () => {
-  let originalEnv: NodeJS.ProcessEnv;
+  // Restore the worker's own env object: Vitest's stubEnv deletes through a proxy bound to it.
+  const originalEnv = process.env;
 
   beforeEach(async () => {
-    originalEnv = { ...process.env };
+    process.env = { ...originalEnv };
     // These cases supply virtual files; permission filtering is exercised with real files in CLI discovery integration.
     vi.spyOn(fs, 'accessSync').mockImplementation(() => undefined);
   });

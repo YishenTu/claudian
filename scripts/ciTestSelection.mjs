@@ -10,7 +10,10 @@ const fullSelection = {
   crossPlatform: true, piWindows: true, wslWindows: true,
 };
 const docsTest = 'tests/unit/docs/Documentation.test.ts';
-const wslTest = 'tests/integration/core/process/execution-target/WSLExecution.windows.test.ts';
+const wslTests = [
+  'tests/integration/core/process/execution-target/WSLExecution.windows.test.ts',
+  'tests/integration/core/process/execution-target/WSLSessionToolRelay.windows.test.ts',
+];
 const piTest = 'tests/integration/providers/pi/runtime/PiSubprocess.windows.test.ts';
 const isDocumentation = file => file.endsWith('.md') || file.startsWith('docs/');
 const isVitestTest = file => /^tests\/(?:unit|integration)\/.*\.test\.ts$/.test(file);
@@ -70,7 +73,7 @@ export function selectCiTests({ changes, relatedTests, eventName }) {
       || scripts.has('scripts/ciTestSelection.test.mjs') || scripts.has('scripts/run-tests.test.mjs')
       || changes.some(change => change.path === 'scripts/testDeclarations.test.mjs'),
     piWindows,
-    wslWindows: files.has(wslTest),
+    wslWindows: wslTests.some(file => files.has(file)),
   };
 }
 

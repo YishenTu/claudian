@@ -1,3 +1,5 @@
+import { resolveExecutionTarget } from '@/core/process/execution-target/ExecutionTargetResolver';
+
 import type { ProviderRuntimeHost } from '../../../core/providers/ProviderRuntimeHost';
 import type {
   ProviderModelCatalogRefreshResult,
@@ -394,7 +396,7 @@ export class GrokModelCatalogCoordinator {
           && !this.#isCurrentRefresh(expectedGeneration)
         )
         // Settings transactions are serialized, so the committed environment is the draft's.
-        || computeGrokRuntimeInputHash(settings, this.host.environmentText) !== expectedContextKey
+        || computeGrokRuntimeInputHash(settings, this.host.environmentText, resolveExecutionTarget({ settings, hostVaultPath: this.host.workingDirectory })) !== expectedContextKey
       ) {
         return false;
       }
@@ -412,9 +414,10 @@ export class GrokModelCatalogCoordinator {
   }
 
   #getContextKey(): string {
+    const settings = decodeGrokConfig(this.host.config, this.host.selection);
     return computeGrokRuntimeInputHash(
-      decodeGrokConfig(this.host.config, this.host.selection),
-      this.host.environmentText,
+      settings, this.host.environmentText,
+      resolveExecutionTarget({ settings, hostVaultPath: this.host.workingDirectory }),
     );
   }
 
