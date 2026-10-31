@@ -44,10 +44,12 @@ it.skipIf(onWindows)('discovers the Linux home for ID-only reads and shares an i
   service.resolveSessionIdForConversation(input);
   service.hasConversationModelRecoverySource(input);
   expect(environmentProbes()).toHaveLength(1);
-  // The same launch inputs in another order are the same store.
+  // Concurrent probes share identical launch inputs regardless of object key order.
   const reordered = { ...context, environment: { OTHER: '1', ...context.environment } };
-  await service.hydrateConversationHistory(input, 'C:\\Vault', { ...context, environment: { ...context.environment, OTHER: '1' } });
-  await service.hydrateConversationHistory(input, 'C:\\Vault', reordered);
+  await Promise.all([
+    service.hydrateConversationHistory(input, 'C:\\Vault', { ...context, environment: { ...context.environment, OTHER: '1' } }),
+    service.hydrateConversationHistory(input, 'C:\\Vault', reordered),
+  ]);
   expect(environmentProbes()).toHaveLength(2);
 });
 
@@ -60,7 +62,7 @@ it.skipIf(onWindows)('reads the store under a configured Linux HOME that WSL for
     .toMatchObject([{ content: 'Linux history' }]);
 });
 
-it.skipIf(onWindows)('uses shell-only store variables and invalidates discovery when store inputs change', async () => {
+it.skipIf(onWindows)('refreshes shell-only store variables without changing forwarded inputs', async () => {
   const files = createWindowsHostFS({ fs: nodeFS, fsPromises: nodeFSPromises });
   const service = new PiConversationHistoryService();
   const input = conversation('session-store');
@@ -70,8 +72,7 @@ it.skipIf(onWindows)('uses shell-only store variables and invalidates discovery 
   await files.remove(files.fromLinux('/srv/shell-sessions'));
   native.environment = { HOME: '/home/bob', PI_CODING_AGENT_DIR: '~/work' };
   await files.write(files.fromLinux('/home/bob/work/sessions/session-store.jsonl'), transcript('session-store'));
-  const changed = { ...context, environment: { ...context.environment, PI_CODING_AGENT_DIR: '~/work' }, environmentText: 'PI_CODING_AGENT_DIR=~/work' };
-  expect((await service.hydrateConversationHistory(input, 'C:\\Vault', changed)).messages).toMatchObject([{ content: 'Linux history' }]);
+  expect((await service.hydrateConversationHistory(input, 'C:\\Vault', context)).messages).toMatchObject([{ content: 'Linux history' }]);
   expect(environmentProbes()).toHaveLength(2);
 });
 
