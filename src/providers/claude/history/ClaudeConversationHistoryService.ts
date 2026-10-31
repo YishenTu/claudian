@@ -5,7 +5,6 @@ import { encodeProviderModelSelectionId } from '../../../core/providers/modelSel
 import type {
   ProviderConversationHistoryService,
   ProviderConversationSessionAvailability,
-  ProviderHistoryEnvironment,
   ProviderHistoryInput,
   ProviderHistoryResult,
   ProviderHistoryState,
@@ -21,6 +20,7 @@ import type {
   SubagentInfo,
   ToolCallInfo,
 } from '../../../core/types';
+import type { ClaudeConfigDirContext } from '../config/ClaudeConfigDir';
 import { extractHandbackResult } from '../normalization/claudeSubagentResult';
 import { isClaudeSubagentToolName } from '../subagentToolNames';
 import {
@@ -30,6 +30,7 @@ import {
   getClaudeState,
   isFullClaudeSubagent,
 } from '../types/providerState';
+import { getClaudeHistoryContextForProjection, resolveClaudeHistoryContext } from './ClaudeHistoryContext';
 import type { SDKSessionLocation } from './ClaudeHistoryPathResolver';
 import {
   encodeVaultPathForSDK,
@@ -371,7 +372,7 @@ async function enrichAsyncSubagents(
   vaultPath: string,
   sessionIds: string[],
   relocatedSessionPaths: Map<string, string>,
-  pathContext?: ProviderHistoryEnvironment,
+  pathContext?: ClaudeConfigDirContext,
 ): Promise<void> {
   const uniqueSessionIds = [...new Set(sessionIds)];
   if (uniqueSessionIds.length === 0) return;
@@ -608,12 +609,12 @@ export class ClaudeConversationHistoryService implements ProviderConversationHis
   #getSessionLocationCache(
     conversation: ProviderHistoryInput,
     vaultPath: string,
-    pathContext?: ProviderHistoryEnvironment,
+    pathContext?: ClaudeConfigDirContext,
   ): SessionLocationCache {
     const state = getClaudeState(conversation.providerState);
     const cacheKey = JSON.stringify([
       getSDKProjectsPath(pathContext),
-      encodeVaultPathForSDK(vaultPath),
+      encodeVaultPathForSDK(vaultPath, pathContext),
       this.#getConversationSessionIds(conversation),
       conversation.resumeAtMessageId ?? null,
       state.forkSource?.resumeAt ?? null,
@@ -637,7 +638,7 @@ export class ClaudeConversationHistoryService implements ProviderConversationHis
   async getConversationSessionAvailability(
     conversation: ProviderHistoryInput,
     vaultPath: string | null,
-    pathContext?: ProviderHistoryEnvironment,
+    pathContext?: ClaudeConfigDirContext,
   ): Promise<ProviderConversationSessionAvailability> {
     const sessionId = this.resolveSessionIdForConversation(conversation);
     if (!vaultPath) {
@@ -645,6 +646,7 @@ export class ClaudeConversationHistoryService implements ProviderConversationHis
     }
     if (!sessionId) return 'unknown';
 
+    pathContext = await resolveClaudeHistoryContext(pathContext, vaultPath);
     const location = await locateSDKSession(vaultPath, sessionId, pathContext);
     const cache = this.#getSessionLocationCache(conversation, vaultPath, pathContext);
     cache.pending = new Map([[sessionId, location]]);
@@ -659,7 +661,7 @@ export class ClaudeConversationHistoryService implements ProviderConversationHis
   async prepareRelocatedConversationSession(
     input: ProviderHistoryInput,
     vaultPath: string | null,
-    pathContext?: ProviderHistoryEnvironment,
+    pathContext?: ClaudeConfigDirContext,
   ): Promise<ProviderHistoryUpdate | null> {
     const conversation = copyProviderHistoryState(input);
     const sessionId = this.resolveSessionIdForConversation(conversation);
@@ -694,7 +696,7 @@ export class ClaudeConversationHistoryService implements ProviderConversationHis
     input: ProviderHistoryInput,
     vaultPath: string | null,
     missingProviderSessionId?: string,
-    pathContext?: ProviderHistoryEnvironment,
+    pathContext?: ClaudeConfigDirContext,
   ): Promise<ProviderHistoryResult<'delete' | 'reset' | 'preserve'>> {
     const conversation = copyProviderHistoryState(input);
     const currentSessionId = this.resolveSessionIdForConversation(conversation);
@@ -707,6 +709,7 @@ export class ClaudeConversationHistoryService implements ProviderConversationHis
       return { outcome: 'preserve' };
     }
 
+    pathContext = await resolveClaudeHistoryContext(pathContext, vaultPath);
     const sessionIds = this.#getConversationSessionIds(conversation);
     const locations = await locateSDKSessions(vaultPath, sessionIds, pathContext);
     const cache = this.#getSessionLocationCache(input, vaultPath, pathContext);
@@ -762,7 +765,7 @@ export class ClaudeConversationHistoryService implements ProviderConversationHis
     conversation: ProviderHistoryInput,
     options: {
       preserveProviderState?: boolean;
-      getNativeHistory?: () => { vaultPath: string | null; pathContext?: ProviderHistoryEnvironment };
+      getNativeHistory?: () => { vaultPath: string | null; pathContext?: ClaudeConfigDirContext };
     } = {},
   ): Record<string, unknown> | undefined {
     const providerState: ClaudeProviderState = {
@@ -790,7 +793,7 @@ export class ClaudeConversationHistoryService implements ProviderConversationHis
   hasRedundantPersistedState(
     conversation: ProviderHistoryInput,
     vaultPath: string | null,
-    pathContext?: ProviderHistoryEnvironment,
+    pathContext?: ClaudeConfigDirContext,
   ): boolean {
     const findNativeSidecar = this.#createSidecarLookup(conversation, vaultPath, pathContext);
     // Redundant exactly when the save projection would drop or reduce a stored full record.
@@ -809,9 +812,12 @@ export class ClaudeConversationHistoryService implements ProviderConversationHis
   #createSidecarLookup(
     conversation: ProviderHistoryInput,
     vaultPath: string | null | undefined,
-    pathContext: ProviderHistoryEnvironment | undefined,
+    pathContext: ClaudeConfigDirContext | undefined,
   ): (subagent: SubagentInfo) => string | null {
     if (!vaultPath) return () => null;
+    const resolvedContext = getClaudeHistoryContextForProjection(pathContext, vaultPath);
+    if (resolvedContext === null) return () => null;
+    pathContext = resolvedContext;
     const sessionIds = [...new Set(this.#getConversationSessionIds(conversation))];
     let toolUseIndex: Map<string, string> | null = null;
     return (subagent) => {
@@ -830,12 +836,13 @@ export class ClaudeConversationHistoryService implements ProviderConversationHis
   async recoverConversationSessionReference(
     input: ProviderHistoryInput,
     vaultPath: string | null,
-    pathContext?: ProviderHistoryEnvironment,
+    pathContext?: ClaudeConfigDirContext,
   ): Promise<ProviderHistoryUpdate | null> {
     const conversation = copyProviderHistoryState(input);
     if (!vaultPath || this.resolveSessionIdForConversation(conversation)) {
       return null;
     }
+    pathContext = await resolveClaudeHistoryContext(pathContext, vaultPath);
     const state = getClaudeState(conversation.providerState);
     // Retired sessions are exact locators; matching by time must never stand in for them.
     if (state.previousProviderSessionIds?.length) {
@@ -871,7 +878,7 @@ export class ClaudeConversationHistoryService implements ProviderConversationHis
     conversation: ProviderHistoryState,
     state: ClaudeProviderState,
     vaultPath: string,
-    pathContext?: ProviderHistoryEnvironment,
+    pathContext?: ClaudeConfigDirContext,
   ): Promise<ProviderHistoryUpdate | null> {
     if (state.bindingRetired) return null;
     const previousSessionIds = state.previousProviderSessionIds ?? [];
@@ -896,7 +903,7 @@ export class ClaudeConversationHistoryService implements ProviderConversationHis
   async hydrateConversationHistory(
     input: ProviderHistoryInput,
     vaultPath: string | null,
-    pathContext?: ProviderHistoryEnvironment,
+    pathContext?: ClaudeConfigDirContext,
   ): Promise<ProviderHistoryUpdate> {
     return (await this.#readHistory(input, vaultPath, pathContext)).changes;
   }
@@ -904,7 +911,7 @@ export class ClaudeConversationHistoryService implements ProviderConversationHis
   async #readHistory(
     input: ProviderHistoryInput,
     vaultPath: string | null,
-    pathContext?: ProviderHistoryEnvironment,
+    pathContext?: ClaudeConfigDirContext,
   ): Promise<{ changes: ProviderHistoryState; complete: boolean }> {
     const conversation = copyProviderHistoryState(input);
     normalizeCachedSyncResults(conversation.messages);
@@ -912,6 +919,7 @@ export class ClaudeConversationHistoryService implements ProviderConversationHis
       return { changes: conversation, complete: false };
     }
 
+    pathContext = await resolveClaudeHistoryContext(pathContext, vaultPath);
     Object.assign(conversation, await this.recoverConversationSessionReference(input, vaultPath, pathContext));
     const allSessionIds = this.#getConversationSessionIds(conversation);
 
@@ -1025,7 +1033,7 @@ export class ClaudeConversationHistoryService implements ProviderConversationHis
   async recoverConversationModelSelection(
     conversation: ProviderHistoryInput,
     vaultPath: string | null,
-    pathContext?: ProviderHistoryEnvironment,
+    pathContext?: ClaudeConfigDirContext,
   ): Promise<string | null> {
     if (!vaultPath) return null;
 
@@ -1034,6 +1042,7 @@ export class ClaudeConversationHistoryService implements ProviderConversationHis
     if (sessionIds.length === 0) return null;
 
     // Reuse locations already resolved for this history; hydration still consumes them.
+    pathContext = await resolveClaudeHistoryContext(pathContext, vaultPath);
     const cache = this.#getSessionLocationCache(conversation, vaultPath, pathContext);
     const knownLocations = new Map(cache.pending);
     for (const [sessionId, sessionPath] of cache.relocated) {

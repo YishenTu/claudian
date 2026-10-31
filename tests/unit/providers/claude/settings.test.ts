@@ -1,7 +1,24 @@
+import { getInstallationKey } from '@/core/device/InstallationKey';
 import { claudeProviderRegistration } from '@/providers/claude/registration';
 import { getClaudeProviderSettings, updateClaudeProviderSettings } from '@/providers/claude/settings';
 
 describe('Claude settings normalization', () => {
+  it('projects and updates installation settings by durable installation key', () => {
+    const platform = process.platform;
+    Object.defineProperty(process, 'platform', { value: 'win32' });
+    try {
+      const key = getInstallationKey();
+      const settings = { providerConfigs: { claude: {
+        installationMethodsByHost: { [key]: 'wsl', other: 'native-windows' },
+        wslDistroOverridesByHost: { [key]: 'Ubuntu', other: 'Debian' },
+      } } };
+      expect(getClaudeProviderSettings(settings)).toMatchObject({ installationMethod: 'wsl', wslDistroOverride: 'Ubuntu' });
+      updateClaudeProviderSettings(settings, { wslDistroOverride: ' Fedora ' });
+      expect(settings.providerConfigs.claude.wslDistroOverridesByHost).toEqual({ [key]: 'Fedora', other: 'Debian' });
+      expect(settings.providerConfigs.claude).not.toHaveProperty('wslDistroOverride');
+    } finally { Object.defineProperty(process, 'platform', { value: platform }); }
+  });
+
   it.each([undefined, null, 'true', 1, false, true])('decodes opt-in prompt suggestions from %o', value => {
     const settings = { providerConfigs: { claude: { promptSuggestions: value } } };
     expect(getClaudeProviderSettings(settings).promptSuggestions).toBe(value === true);

@@ -3,9 +3,12 @@ import * as path from 'path';
 
 import { forEachJSONLLine } from '@/utils/jsonlFile';
 
-import type { ProviderHistoryEnvironment } from '../../../core/providers/types';
 import { extractToolResultContent } from '../../../core/tools/toolResultContent';
 import type { ToolCallInfo } from '../../../core/types';
+import type { ClaudeConfigDirContext } from '../config/ClaudeConfigDir';
+import { getClaudeExecutionTarget } from '../config/ClaudeConfigDir';
+import { getClaudeHostPathModule } from '../config/ClaudeConfigDir';
+import { mapClaudeHistoryToolPaths } from '../normalization/claudePaths';
 import {
   encodeVaultPathForSDK,
   getSDKProjectsPath,
@@ -192,16 +195,16 @@ function getSubagentsDirectory(
   vaultPath: string,
   sessionId: string,
   sessionPath?: string,
-  pathContext?: ProviderHistoryEnvironment,
+  pathContext?: ClaudeConfigDirContext,
 ): string | null {
   if (!isValidSessionId(sessionId)) {
     return null;
   }
 
   const projectPath = sessionPath
-    ? path.dirname(sessionPath)
-    : path.join(getSDKProjectsPath(pathContext), encodeVaultPathForSDK(vaultPath));
-  return path.join(projectPath, sessionId, 'subagents');
+    ? getClaudeHostPathModule(pathContext).dirname(sessionPath)
+    : getClaudeHostPathModule(pathContext).join(getSDKProjectsPath(pathContext), encodeVaultPathForSDK(vaultPath, pathContext));
+  return getClaudeHostPathModule(pathContext).join(projectPath, sessionId, 'subagents');
 }
 
 function getSubagentSidecarPath(
@@ -209,13 +212,13 @@ function getSubagentSidecarPath(
   sessionId: string,
   agentId: string,
   sessionPath?: string,
-  pathContext?: ProviderHistoryEnvironment,
+  pathContext?: ClaudeConfigDirContext,
 ): string | null {
   if (!isValidAgentId(agentId)) {
     return null;
   }
   const directory = getSubagentsDirectory(vaultPath, sessionId, sessionPath, pathContext);
-  return directory ? path.join(directory, `agent-${agentId}.jsonl`) : null;
+  return directory ? getClaudeHostPathModule(pathContext).join(directory, `agent-${agentId}.jsonl`) : null;
 }
 
 /** Whether Claude's native sidecar holds this subagent's transcript. */
@@ -223,7 +226,7 @@ export function hasSubagentSidecar(
   vaultPath: string,
   sessionId: string,
   agentId: string,
-  pathContext?: ProviderHistoryEnvironment,
+  pathContext?: ClaudeConfigDirContext,
 ): boolean {
   try {
     const subagentFilePath = getSubagentSidecarPath(vaultPath, sessionId, agentId, undefined, pathContext);
@@ -237,7 +240,7 @@ export function hasSubagentSidecar(
 export function readSubagentToolUseIndex(
   vaultPath: string,
   sessionId: string,
-  pathContext?: ProviderHistoryEnvironment,
+  pathContext?: ClaudeConfigDirContext,
 ): Map<string, string> {
   const index = new Map<string, string>();
   try {
@@ -270,7 +273,7 @@ export async function loadSubagentToolCalls(
   sessionId: string,
   agentId: string,
   sessionPath?: string,
-  pathContext?: ProviderHistoryEnvironment,
+  pathContext?: ClaudeConfigDirContext,
   runWindow?: SubagentRunWindow,
 ): Promise<ToolCallInfo[]> {
   const subagentFilePath = getSubagentSidecarPath(
@@ -317,7 +320,9 @@ export async function loadSubagentToolCalls(
       return [];
     }
 
-    return buildToolCallsFromSubagentEvents(events);
+    const tools = buildToolCallsFromSubagentEvents(events);
+    for (const tool of tools) mapClaudeHistoryToolPaths(tool, getClaudeExecutionTarget(pathContext));
+    return tools;
   } catch {
     return [];
   }
@@ -328,7 +333,7 @@ export async function loadSubagentFinalResult(
   sessionId: string,
   agentId: string,
   sessionPath?: string,
-  pathContext?: ProviderHistoryEnvironment,
+  pathContext?: ClaudeConfigDirContext,
 ): Promise<string | null> {
   const subagentFilePath = getSubagentSidecarPath(
     vaultPath,

@@ -62,6 +62,16 @@ describe('ClaudeCLIResolver', () => {
     },
   );
 
+  it('selects a Linux reference without host filesystem lookup for WSL', () => {
+    const resolver = new ClaudeCLIResolver();
+    const target = { method: 'wsl', platformOs: 'linux', platformFamily: 'unix', distroName: 'Ubuntu' } as const;
+    expect(resolver.resolveFromSettings({ providerConfigs: { claude: {
+      cliPathsByHost: { [getHostnameKey()]: '/home/me/Claude Code/claude' },
+    } } }, { executionTarget: target })).toBe('/home/me/Claude Code/claude');
+    expect(resolver.resolveFromSettings({ providerConfigs: { claude: { cliPath: 'C:\\native\\claude.exe' } } }, { executionTarget: target })).toBe('claude');
+    expect(fs.statSync).not.toHaveBeenCalled();
+  });
+
   it('prefers the configured PATH over an auto-detected installation', () => {
     createExecutable('.local', 'bin', isWindows ? 'claude.exe' : 'claude');
     const cliPath = createExecutable('custom bin', isWindows ? 'claude.exe' : 'claude');

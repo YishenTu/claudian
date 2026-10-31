@@ -94,6 +94,8 @@ test('real dependency discovery retains native launch checks for shared process 
     'tests/integration/features/chat/tabs/forking/ForkSource.opencode-v2.test.ts',
     'tests/integration/features/chat/tabs/forking/ForkSource.opencode.test.ts',
     'tests/integration/providers/claude/execution/ClaudeExecutionBackend.test.ts',
+    'tests/integration/providers/claude/runtime/ClaudeCLIInstallation.test.ts',
+    'tests/integration/providers/claude/runtime/ClaudeSDKSpawn.test.ts',
     'tests/integration/providers/codex/execution/CodexExecutionBackend.protocol.test.ts',
     'tests/integration/providers/codex/execution/CodexExecutionBackend.test.ts',
     'tests/integration/providers/codex/runtime/CodexSharedRuntime.test.ts',
@@ -475,6 +477,9 @@ test('WSL native job follows shared dependencies and provider users but skips un
   }
   assert.equal(select(['src/core/process/execution-target/TargetLaunchSpec.ts'], [wsl]).wslWindows, true);
   assert.equal(select(['src/providers/codex/runtime/CodexLaunchSpecBuilder.ts']).wslWindows, true);
+  assert.equal(select(['src/providers/claude/runtime/customSpawn.ts']).wslWindows, true);
+  assert.equal(select(['tests/helpers/WSLClaudeFixture.ts'], ['tests/integration/core/process/execution-target/ClaudeWSL.windows.test.ts']).wslWindows, true);
+  assert.equal(select(['tests/integration/core/process/execution-target/ClaudeWSL.windows.test.ts']).wslWindows, true);
   assert.equal(select(['src/features/chat/ClaudianView.ts'], [panel]).wslWindows, false);
   for (const file of [
     'src/core/process/execution-target/types.ts',

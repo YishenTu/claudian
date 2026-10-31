@@ -1,7 +1,8 @@
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 
-import type { ProviderHistoryEnvironment } from '../../../core/providers/types';
+import type { ClaudeConfigDirContext } from '../config/ClaudeConfigDir';
+import { getClaudeHostPathModule } from '../config/ClaudeConfigDir';
 import {
   encodeVaultPathForSDK,
   getSDKProjectsPath,
@@ -81,11 +82,11 @@ function selectUniqueCandidate(
 export async function recoverSDKSessionIdByTime(
   vaultPath: string,
   fingerprint: ClaudeSessionTimeFingerprint,
-  pathContext?: ProviderHistoryEnvironment,
+  pathContext?: ClaudeConfigDirContext,
 ): Promise<string | null> {
-  const projectPath = path.join(
+  const projectPath = getClaudeHostPathModule(pathContext).join(
     getSDKProjectsPath(pathContext),
-    encodeVaultPathForSDK(vaultPath),
+    encodeVaultPathForSDK(vaultPath, pathContext),
   );
   try {
     const candidates = await getRecoveryIndex(projectPath);

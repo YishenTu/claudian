@@ -36,6 +36,7 @@ import type { ProviderRuntimeHost } from '../../../core/providers/ProviderRuntim
 import type { SlashCommand, TurnStats } from '../../../core/types';
 import { mapSDKCommands } from '../commands/probeRuntimeCommands';
 import { decodeClaudeConfig } from '../config';
+import { resolveClaudeHistoryContext } from '../history/ClaudeHistoryContext';
 import { loadClaudeTurnStats } from '../history/ClaudeTurnStats';
 import { type ClaudePermissionMode, fromClaudeSDKPermissionMode } from '../permissionModes';
 import { assertClaudeModelAvailable } from '../runtime/ClaudeModelAvailability';
@@ -402,6 +403,7 @@ ClaudeExecutionStrategySink {
       },
       closePersistentQuery: () => this.strategy.cancel(null, true),
       vaultPath: this.config.workingDirectory,
+      executionTarget: this.lastEncodedRequest?.executionTarget,
     });
     return result.canRewind
       ? {
@@ -525,6 +527,7 @@ ClaudeExecutionStrategySink {
       message,
       channel,
       {
+        executionTarget: this.lastEncodedRequest?.executionTarget,
         intendedModel: this.lastEncodedRequest?.model,
         reportedContextWindow,
       },
@@ -665,10 +668,17 @@ ClaudeExecutionStrategySink {
       turnStats = undefined;
       const sessionId = this.resume.providerSessionId;
       if (sessionId && active.nativeAssistantId) {
-        turnStats = await loadClaudeTurnStats(
-          this.config.workingDirectory, sessionId, active.nativeAssistantId,
-          { environment: this.lastEncodedRequest?.options.env ?? process.env },
-        ).catch(() => undefined);
+        try {
+          const context = await resolveClaudeHistoryContext({
+            config: this.host.config, environmentText: this.host.environmentText,
+            environment: this.lastEncodedRequest?.options.env ?? process.env,
+          }, this.config.workingDirectory);
+          turnStats = await loadClaudeTurnStats(
+            this.config.workingDirectory, sessionId, active.nativeAssistantId, context,
+          );
+        } catch {
+          // Optional history-derived statistics cannot fail a completed native turn.
+        }
       }
     }
     if (this.activeRun === active && !active.run.isTerminal) {

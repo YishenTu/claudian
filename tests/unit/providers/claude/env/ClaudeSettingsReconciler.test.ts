@@ -9,6 +9,27 @@ import { claudeSettingsReconciler } from '@/providers/claude/env/ClaudeSettingsR
 import { getClaudeProviderSettings } from '@/providers/claude/settings';
 
 describe('claudeSettingsReconciler', () => {
+  it('invalidates on WSL target and distro changes but reloads for a CLI-only change', () => {
+    const platform = process.platform;
+    Object.defineProperty(process, 'platform', { value: 'win32' });
+    try {
+      const key = getInstallationKey();
+      const config = {
+        cliPath: '/home/me/claude',
+        installationMethodsByHost: { [key]: 'native-windows' },
+        wslDistroOverridesByHost: { [key]: 'Ubuntu' },
+      };
+      const settings = { providerConfigs: { claude: config } };
+      claudeSettingsReconciler.reconcileModelWithEnvironment(settings);
+      settings.providerConfigs.claude.installationMethodsByHost[key] = 'wsl';
+      expect(claudeSettingsReconciler.reconcileModelWithEnvironment(settings)).toEqual({ changed: true, sessionPolicy: 'invalidate' });
+      settings.providerConfigs.claude.wslDistroOverridesByHost[key] = 'Debian';
+      expect(claudeSettingsReconciler.reconcileModelWithEnvironment(settings)).toEqual({ changed: true, sessionPolicy: 'invalidate' });
+      settings.providerConfigs.claude.cliPath = '/new/claude';
+      expect(claudeSettingsReconciler.reconcileModelWithEnvironment(settings)).toEqual({ changed: true, sessionPolicy: 'reload' });
+    } finally { Object.defineProperty(process, 'platform', { value: platform }); }
+  });
+
   it.each([
     'CLAUDE_CONFIG_DIR', 'HOME', 'USERPROFILE', 'HOMEDRIVE', 'HOMEPATH', 'ANTHROPIC_BASE_URL', 'ANTHROPIC_MODEL',
   ])('invalidates native bindings when session-scope %s changes or is removed', key => {

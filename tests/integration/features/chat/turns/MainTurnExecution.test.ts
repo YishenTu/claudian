@@ -178,7 +178,8 @@ describe('MainTurnExecution', () => {
   it('names the working directory the session runs in, not a later host value', async () => {
     const fixture = (await createFixture());
     Object.assign(fixture.coordinator, { workingDirectory: '/session-vault' });
-    Object.assign(fixture.plugin, { providerHost: { workingDirectory: '/moved-vault' } });
+    // The real host's vault is a different, later value.
+    expect(fixture.plugin.providerHost.workingDirectory).not.toBe('/session-vault');
 
     await fixture.controller.sendMessage({ content: 'where am I' });
 

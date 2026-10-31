@@ -3,6 +3,9 @@ import * as fs from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
 
+import type { ExecutionTarget } from '@/core/process/execution-target/types';
+import { createExecutionPathMapper } from '@/core/process/execution-target/WSLPathMapper';
+
 import type { ChatRewindMode, ChatRewindResult } from '../../../core/execution';
 
 interface BackupEntry {
@@ -17,6 +20,7 @@ export interface ClaudeRewindBackup {
 }
 
 export interface ExecuteClaudeRewindDeps {
+  executionTarget?: ExecutionTarget;
   assistantMessageId: string | undefined;
   mode: ChatRewindMode;
   rewindFiles: (userMessageId: string, dryRun?: boolean) => Promise<RewindFilesResult>;
@@ -24,7 +28,15 @@ export interface ExecuteClaudeRewindDeps {
   vaultPath: string | null;
 }
 
-function resolveRewindFilePath(filePath: string, vaultPath: string | null): string {
+function resolveRewindFilePath(filePath: string, vaultPath: string | null, target?: ExecutionTarget): string {
+  if (target?.method === 'wsl') {
+    const mapper = createExecutionPathMapper(target);
+    const cwd = vaultPath && mapper.toTargetPath(vaultPath);
+    if (!path.posix.isAbsolute(filePath) && !cwd) throw new Error('Unable to resolve Claude rewind working directory');
+    const hostPath = mapper.toHostPath(path.posix.resolve(cwd || '/', filePath));
+    if (!hostPath) throw new Error('Unable to map Claude rewind path to the host');
+    return hostPath;
+  }
   if (path.isAbsolute(filePath)) {
     return filePath;
   }
@@ -116,7 +128,8 @@ export async function executeClaudeRewind(
     return preview;
   }
 
-  const backup = await createClaudeRewindBackup(preview.filesChanged, deps.vaultPath);
+  const filesChanged = preview.filesChanged?.map(file => resolveRewindFilePath(file, deps.vaultPath, deps.executionTarget));
+  const backup = await createClaudeRewindBackup(filesChanged, null);
 
   try {
     const result = await deps.rewindFiles(userMessageId);
@@ -129,7 +142,7 @@ export async function executeClaudeRewind(
     if (deps.assistantMessageId) deps.closePersistentQuery();
     return {
       ...result,
-      filesChanged: preview.filesChanged,
+      filesChanged,
       insertions: preview.insertions,
       deletions: preview.deletions,
     };

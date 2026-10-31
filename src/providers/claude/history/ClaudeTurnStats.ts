@@ -1,8 +1,8 @@
 import * as fs from 'node:fs/promises';
 
-import type { ProviderHistoryEnvironment } from '@/core/providers/types';
 import { createTurnStats, isTokenCount, type TurnStats } from '@/core/types';
 
+import type { ClaudeConfigDirContext } from '../config/ClaudeConfigDir';
 import { getSDKSessionPath } from './ClaudeHistoryPathResolver';
 import { filterActiveBranch } from './sdkBranchFilter';
 import type { SDKNativeMessage } from './sdkHistoryTypes';
@@ -40,7 +40,7 @@ export async function loadClaudeTurnStats(
   vaultPath: string,
   sessionId: string,
   assistantId: string,
-  context?: ProviderHistoryEnvironment,
+  context?: ClaudeConfigDirContext,
 ): Promise<TurnStats | undefined> {
   const file = await fs.open(getSDKSessionPath(vaultPath, sessionId, context), 'r');
   try {

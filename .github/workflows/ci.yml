@@ -293,7 +293,7 @@ jobs:
       - uses: Vampire/setup-wsl@v7
         with:
           distribution: Ubuntu-24.04
-          additional-packages: bash zsh csh tcsh fish curl ca-certificates
+          additional-packages: bash zsh csh tcsh fish curl ca-certificates python3
           wsl-version: '1'
           set-as-default: 'true'
 
@@ -324,7 +324,7 @@ jobs:
       - name: Exercise native Windows to WSL execution
         env:
           CLAUDIAN_REQUIRE_WSL: '1'
-        run: npm run test:unit -- --maxWorkers=1 tests/integration/core/process/execution-target/WSLExecution.windows.test.ts tests/integration/core/process/execution-target/WSLSessionToolRelay.windows.test.ts
+        run: npm run test:unit -- --maxWorkers=1 tests/integration/core/process/execution-target/WSLExecution.windows.test.ts tests/integration/core/process/execution-target/WSLSessionToolRelay.windows.test.ts tests/integration/core/process/execution-target/ClaudeWSL.windows.test.ts
 
   build-artifacts:
     runs-on: ubuntu-latest

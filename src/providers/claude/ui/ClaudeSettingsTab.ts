@@ -1,13 +1,10 @@
-import * as fs from 'fs';
 import { type DropdownComponent } from 'obsidian';
 
-import { normalizeConfiguredCLIPath } from '@/core/process/cliPath';
-import { probeCLIInstallation } from '@/core/providers/cli/CLIInstallationProbe';
-import { getRuntimeEnvironmentVariables } from '@/core/providers/providerEnvironment';
 import type { ProviderCLIResolver } from '@/core/providers/types';
 import { CLAUDE_PROVIDER_ICON } from '@/shared/icons';
 import { AccessibleSetting } from '@/shared/settings/AccessibleSetting';
 import { renderCLIInstallationSetting } from '@/shared/settings/CLIInstallationSetting';
+import { renderExecutionTargetSettings, validateExecutionTargetCLIPath } from '@/shared/settings/ExecutionTargetSettings';
 
 import type { ProviderModelCatalog } from '../../../core/providers/models/ProviderModelCatalog';
 import { ProviderSettingsCoordinator } from '../../../core/providers/ProviderSettingsCoordinator';
@@ -20,6 +17,7 @@ import { renderProviderModelsSection } from '../../../shared/settings/ProviderMo
 import {
   getClaudeModelOptions,
 } from '../modelOptions';
+import { inspectClaudeInstallation } from '../runtime/ClaudeCLIInstallation';
 import {
   getClaudeModelSource,
   getClaudeProviderSettings,
@@ -80,35 +78,14 @@ export function createClaudeSettingsTabRenderer(
       });
 
       const hostnameKey = context.plugin.storage.installationKey;
-      const validatePath = (value: string): string | null => {
-        const trimmed = value.trim();
-        if (!trimmed) return null;
-
-        const expandedPath = normalizeConfiguredCLIPath(trimmed);
-
-        if (!fs.existsSync(expandedPath)) {
-          return t('settings.cliPath.validation.notExist');
-        }
-        const stat = fs.statSync(expandedPath);
-        if (!stat.isFile()) {
-          return t('settings.cliPath.validation.isDirectory');
-        }
-        return null;
-      };
-
-      renderCLIInstallationSetting({
+      const getPlaceholder = () => process.platform === 'win32'
+        ? (getClaudeProviderSettings(settingsBag).installationMethod === 'wsl'
+          ? 'claude' : 'D:\\nodejs\\node_global\\node_modules\\@anthropic-ai\\claude-code\\cli-wrapper.cjs')
+        : '/usr/local/lib/node_modules/@anthropic-ai/claude-code/cli-wrapper.cjs';
+      const cliPathControl = renderCLIInstallationSetting({
         cliName: 'Claude Code',
         icon: CLAUDE_PROVIDER_ICON,
-        inspect: async () => {
-          const settings = context.plugin.settings as unknown as Record<string, unknown>;
-          const config = getClaudeProviderSettings(settings);
-          return probeCLIInstallation({
-            path: await context.plugin.getResolvedProviderCliPath('claude'),
-            configuredPath: config.cliPathsByHost[hostnameKey] || config.cliPath,
-            args: ['--version'],
-            env: { ...process.env, ...getRuntimeEnvironmentVariables(settings, 'claude') },
-          });
-        },
+        inspect: () => inspectClaudeInstallation(context.plugin.getRuntimeHost('claude')),
         container: installationContainer,
         enablement,
         getValue: () => {
@@ -136,10 +113,24 @@ export function createClaudeSettingsTabRenderer(
             },
           );
         },
-        placeholder: process.platform === 'win32'
-          ? 'D:\\nodejs\\node_global\\node_modules\\@anthropic-ai\\claude-code\\cli-wrapper.cjs'
-          : '/usr/local/lib/node_modules/@anthropic-ai/claude-code/cli-wrapper.cjs',
-        validate: validatePath,
+        placeholder: getPlaceholder(),
+        validate: value => validateExecutionTargetCLIPath(value, getClaudeProviderSettings(settingsBag)),
+      });
+      renderExecutionTargetSettings({
+        container, providerName: 'Claude Code',
+        getValue: () => getClaudeProviderSettings(settingsBag),
+        onChange: async updates => {
+          await context.plugin.applyProviderRuntimeSettings(
+            ['claude'],
+            settings => { updateClaudeProviderSettings(settings, updates); },
+            () => claudeWorkspace.cliResolver.reset(),
+          );
+        },
+        onRefresh: () => {
+          cliPathControl.setPlaceholder(getPlaceholder());
+          cliPathControl.revalidate();
+          void cliPathControl.refresh();
+        },
       });
 
       // --- Models ---

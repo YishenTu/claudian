@@ -3,16 +3,21 @@ import { type ChildProcess, spawn as nodeSpawn } from 'child_process';
 import crossSpawn from 'cross-spawn';
 
 import { cliPathRequiresNode, findNodeExecutable } from '@/core/process/env';
+import { buildTargetLaunchSpec } from '@/core/process/execution-target/TargetLaunchSpec';
+import type { ExecutionTarget } from '@/core/process/execution-target/types';
 import {
   resolveWindowsCmdShimSpawnSpec,
   terminateSpawnedProcess,
   type WindowsCmdShimSpawnSpec,
 } from '@/core/process/windowsCmdShim';
 
+import { getClaudeWSLForwardedEnvironment } from './claudeWSLEnvironment';
+
 const spawn = crossSpawn as typeof nodeSpawn;
 
 export function createCustomSpawnFunction(
-  enhancedPath: string
+  enhancedPath: string,
+  execution?: { target: ExecutionTarget; hostCwd: string; environmentText: string },
 ): (options: SpawnOptions) => SpawnedProcess {
   return (options: SpawnOptions): SpawnedProcess => {
     let { command } = options;
@@ -22,7 +27,8 @@ export function createCustomSpawnFunction(
 
     // The SDK only routes some script extensions through `node`; normalize the
     // remaining Node-backed paths here before Electron spawns with shell=false.
-    const requiresNode = command === 'node' || cliPathRequiresNode(command);
+    const isWSL = execution?.target.method === 'wsl';
+    const requiresNode = !isWSL && (command === 'node' || cliPathRequiresNode(command));
     if (requiresNode) {
       const nodeFullPath = findNodeExecutable(enhancedPath);
       if (command === 'node') {
@@ -35,19 +41,25 @@ export function createCustomSpawnFunction(
       }
     }
 
-    const resolvedSpawnSpec = resolveWindowsCmdShimSpawnSpec({ args, command });
+    const wslSpec = isWSL ? buildTargetLaunchSpec({
+      target: execution.target, hostCwd: execution.hostCwd, command, args,
+      env: env as Record<string, string>,
+      forwardEnvironment: getClaudeWSLForwardedEnvironment(env as Record<string, string>, execution.environmentText),
+    }) : undefined;
+    const resolvedSpawnSpec = wslSpec ?? resolveWindowsCmdShimSpawnSpec({ args, command });
 
     // Do not pass `signal` directly to spawn() — Obsidian's Electron runtime
     // uses a different realm for AbortSignal, causing `instanceof EventTarget`
     // checks inside Node's internals to fail. Handle abort manually instead.
-    const spawnProcess = process.platform === 'win32' && requiresNode ? nodeSpawn : spawn;
+    const spawnProcess = isWSL || (process.platform === 'win32' && requiresNode) ? nodeSpawn : spawn;
     const child = spawnProcess(resolvedSpawnSpec.command, resolvedSpawnSpec.args, {
-      cwd,
-      env: env,
+      cwd: wslSpec?.spawnCwd ?? cwd,
+      env: wslSpec?.env ?? env,
+      ...(wslSpec ? { windowsVerbatimArguments: wslSpec.windowsVerbatimArguments } : {}),
       stdio: ['pipe', 'pipe', shouldPipeStderr ? 'pipe' : 'ignore'],
       windowsHide: true,
     });
-    installTreeAwareKill(child, resolvedSpawnSpec);
+    if (!wslSpec) installTreeAwareKill(child, resolvedSpawnSpec);
 
     if (signal) {
       const killChild = (): void => {

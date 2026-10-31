@@ -18,6 +18,10 @@ export interface WSLProcessRequest {
   stdin: string;
   /** Exits a process whose reply held it; it otherwise runs until killed. */
   complete(reply: WSLProcessReply): void;
+  /** Writes output from a held process on a later turn, as its Linux command would; throws once output ended. */
+  write(stdout: string): void;
+  /** Calls the listener with each stdin chunk the Linux command receives from now on. */
+  onStdin(listener: (chunk: string) => void): void;
 }
 export interface WSLProcessReply {
   stdout?: string;
@@ -49,6 +53,11 @@ export class WSLProcessFixture {
       command, args, options, executable, argv, stdin: '',
       // The OS reports the exit later, never inside the caller's turn.
       complete: reply => { setImmediate(() => child.complete(reply)); },
+      write: stdout => {
+        if (child.stdout.writableEnded) throw new Error('The WSL process output has ended');
+        setImmediate(() => { if (!child.stdout.writableEnded) child.stdout.write(stdout); });
+      },
+      onStdin: listener => { child.stdin.on('data', listener); },
     };
     child.stdin.setEncoding('utf8').on('data', (chunk: string) => { request.stdin += chunk; });
     this.requests.push(request);

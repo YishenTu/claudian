@@ -2,11 +2,12 @@ import { existsSync } from 'fs';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 
+import { createExecutionPathMapper } from '@/core/process/execution-target/WSLPathMapper';
 import { forEachJSONLLine } from '@/utils/jsonlFile';
 
 import type { ProviderConversationSessionAvailability } from '../../../core/providers/types';
 import type { ClaudeConfigDirContext } from '../config/ClaudeConfigDir';
-import { resolveClaudeConfigDir } from '../config/ClaudeConfigDir';
+import { getClaudeExecutionTarget, getClaudeHostPathModule, resolveClaudeConfigDir } from '../config/ClaudeConfigDir';
 import type { SDKNativeMessage, SDKSessionReadResult } from './sdkHistoryTypes';
 
 export interface SDKSessionLocation {
@@ -19,8 +20,11 @@ export interface SDKSessionLocation {
  * The SDK replaces non-alphanumeric characters with `-`; long names use its
  * 200-character prefix and a base-36 hash of the original absolute path.
  */
-export function encodeVaultPathForSDK(vaultPath: string): string {
-  const absolutePath = path.resolve(vaultPath);
+export function encodeVaultPathForSDK(vaultPath: string, context?: ClaudeConfigDirContext): string {
+  const target = getClaudeExecutionTarget(context);
+  const linuxCwd = target?.method === 'wsl' ? createExecutionPathMapper(target).toTargetPath(vaultPath) : undefined;
+  if (target?.method === 'wsl' && !linuxCwd) throw new Error('Claude workspace is outside the selected WSL distro');
+  const absolutePath = linuxCwd ? path.posix.resolve(linuxCwd) : path.resolve(vaultPath);
   const encoded = absolutePath.replace(/[^a-zA-Z0-9]/g, '-');
   if (encoded.length <= 200) return encoded;
   let hash = 0;
@@ -31,7 +35,7 @@ export function encodeVaultPathForSDK(vaultPath: string): string {
 }
 
 export function getSDKProjectsPath(context?: ClaudeConfigDirContext): string {
-  return path.join(resolveClaudeConfigDir(context), 'projects');
+  return getClaudeHostPathModule(context).join(resolveClaudeConfigDir(context), 'projects');
 }
 
 /** Validates an identifier for safe use in filesystem paths (no traversal, bounded length). */
@@ -58,9 +62,10 @@ export function getSDKSessionPath(
     throw new Error(`Invalid session ID: ${sessionId}`);
   }
 
-  const projectsPath = getSDKProjectsPath(context);
-  const encodedVault = encodeVaultPathForSDK(vaultPath);
-  return path.join(projectsPath, encodedVault, `${sessionId}.jsonl`);
+  const pathContext = context ? { ...context, vaultPath } : undefined;
+  const projectsPath = getSDKProjectsPath(pathContext);
+  const encodedVault = encodeVaultPathForSDK(vaultPath, pathContext);
+  return getClaudeHostPathModule(pathContext).join(projectsPath, encodedVault, `${sessionId}.jsonl`);
 }
 
 function hasFileSystemErrorCode(error: unknown, code: string): boolean {
@@ -128,7 +133,7 @@ export async function locateSDKSessions(
     }
 
     for (const entry of entries) {
-      const entryPath = path.join(directory, entry.name);
+      const entryPath = getClaudeHostPathModule(context).join(directory, entry.name);
       if (entry.isFile()) {
         const sessionId = targetIdsByFileName.get(entry.name);
         if (sessionId && unresolvedIds.has(sessionId)) {

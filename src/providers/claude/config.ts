@@ -1,3 +1,13 @@
+import { getInstallationKey } from '@/core/device/InstallationKey';
+import {
+  decodeInstallationSettings,
+  DEFAULT_INSTALLATION_SETTINGS,
+  type InstallationSettings,
+  selectInstallationSettings,
+  type StoredInstallationSettings,
+  updateInstallationSettings,
+} from '@/core/providers/settings/InstallationSettings';
+
 import { decodeModelAliases } from '../../core/providers/models/modelAliases';
 import { replaceProviderConfig } from '../../core/providers/providerConfig';
 import { normalizeHostnameStringMap } from '../../core/providers/settings/HostnameStringMap';
@@ -10,7 +20,7 @@ import { type ClaudeDiscoveredModel, decodeClaudeModels } from './models';
 
 type ClaudeSettingSource = 'user' | 'project' | 'local';
 
-export interface ClaudeProviderSettings {
+export interface ClaudeProviderSettings extends InstallationSettings, StoredInstallationSettings {
   enabled: boolean;
   /** Native output style name; null inherits Claude Code's own setting. */
   outputStyle: string | null;
@@ -33,6 +43,9 @@ export interface ClaudeProviderSettings {
 }
 
 export const DEFAULT_CLAUDE_PROVIDER_SETTINGS: Readonly<ClaudeProviderSettings> = Object.freeze({
+  ...DEFAULT_INSTALLATION_SETTINGS,
+  installationMethodsByHost: {},
+  wslDistroOverridesByHost: {},
   enabled: true,
   outputStyle: null,
   promptSuggestions: false,
@@ -56,7 +69,10 @@ export function decodeClaudeConfig(config: Readonly<Record<string, unknown>>): C
     config.cliPathsByHost,
   );
 
+  const installation = decodeInstallationSettings(config);
   return {
+    ...installation,
+    ...selectInstallationSettings(installation, getInstallationKey()),
     enabled: readStoredBoolean(
       config.enabled,
       DEFAULT_CLAUDE_PROVIDER_SETTINGS.enabled,
@@ -107,9 +123,11 @@ export function updateClaudeConfig(
     ...config,
     ...current,
     ...updates,
+    ...updateInstallationSettings(current, updates, getInstallationKey()),
     modelAliases: decodeModelAliases(updates.modelAliases ?? current.modelAliases),
   };
-  replaceProviderConfig(config, next);
+  const { installationMethod: _method, wslDistroOverride: _distro, ...stored } = next;
+  replaceProviderConfig(config, stored);
   return next;
 }
 

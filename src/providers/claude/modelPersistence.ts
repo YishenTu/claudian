@@ -19,6 +19,6 @@ export function projectClaudeModelConfig(source: ClaudeModelSource): Record<stri
     selectedModels,
     modelAliases: selectModelMetadata(current.modelAliases, aliasIds),
   };
-  for (const key of ['discoveredModels', 'catalogTimestamp', 'catalogFingerprint', 'availableModes']) delete (config as Record<string, unknown>)[key];
+  for (const key of ['discoveredModels', 'catalogTimestamp', 'catalogFingerprint', 'availableModes', 'installationMethod', 'wslDistroOverride']) delete (config as Record<string, unknown>)[key];
   return config;
 }
