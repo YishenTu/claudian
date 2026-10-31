@@ -15,11 +15,12 @@ const FS_FUNCTIONS = new Set<string>([
   'createReadStream', 'existsSync', 'lstatSync', 'readFileSync', 'readdirSync', 'realpathSync', 'statSync',
 ] satisfies (keyof typeof NodeFS)[]);
 const FS_PROMISES_FUNCTIONS = new Set<string>([
-  'access', 'copyFile', 'lstat', 'mkdir', 'open', 'readFile', 'readdir', 'realpath', 'rm', 'stat', 'writeFile',
+  'access', 'copyFile', 'lstat', 'mkdir', 'mkdtemp', 'open', 'readFile', 'readdir', 'realpath', 'rename', 'rm', 'stat', 'writeFile',
 ] satisfies (keyof typeof NodeFSPromises)[]);
-const REALPATH = new Set(['realpath', 'realpathSync']);
+/** Functions that return a path, which maps back to the Windows host path. */
+const RETURNS_PATH = new Set(['mkdtemp', 'realpath', 'realpathSync']);
 /** Leading path arguments; the rest (such as file contents) pass through unchanged. */
-const PATH_ARGUMENT_COUNT: Readonly<Record<string, number>> = { copyFile: 2 };
+const PATH_ARGUMENT_COUNT: Readonly<Record<string, number>> = { copyFile: 2, rename: 2 };
 
 export interface WindowsHostFSOptions {
   /** The real host's platform; a Windows host has the real paths, so its suites skip instead. */
@@ -33,7 +34,7 @@ export interface WindowsHostFSOptions {
  * `\\wsl$` / `\\wsl.localhost` share. As on Windows, share, distro and drive paths match case-insensitively
  * and keep the casing of the existing entry; Linux paths inside a distro are case-sensitive, so a
  * case-only variant of an existing distro entry throws instead of depending on the host filesystem.
- * realpath results map back to `\\wsl$\<Distro>\…` and `<DRIVE>:\…`. A distro's `/mnt/<drive>` is the
+ * realpath and mkdtemp results map back to `\\wsl$\<Distro>\…` and `<DRIVE>:\…`. A distro's `/mnt/<drive>` is the
  * Windows drive: `fromLinux('/mnt/c/…')` is `C:\…`; the share route to `/mnt` is not aliased, so a reader
  * that maps drive files through the distro share is detected. Listed fs functions are redirected;
  * any other fs function given a Windows-shaped path throws, so a missed redirect is visible.
@@ -104,7 +105,7 @@ export function createWindowsHostFS(
         const pathCount = PATH_ARGUMENT_COUNT[name] ?? 1;
         const mapped = args.map((arg, index) => index < pathCount && typeof arg === 'string' ? toLocal(arg) : arg);
         const result = Reflect.apply(original, module, mapped);
-        if (!REALPATH.has(name)) return result;
+        if (!RETURNS_PATH.has(name)) return result;
         // fs/promises comes from the host realm, so its promises fail a VM-realm `instanceof Promise`.
         return isThenable(result) ? result.then(value => toHost(String(value))) : toHost(String(result));
       };
