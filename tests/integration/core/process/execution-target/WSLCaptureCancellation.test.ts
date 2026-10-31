@@ -45,7 +45,13 @@ for (const { name, executable } of captureShells) {
       const fixture = await createWSLCaptureFixture(executable);
       try {
         await fixture.startup(`/bin/sh -c 'printf "%s" "$$" > "$HOME/blocking-pid.tmp"; mv "$HOME/blocking-pid.tmp" "$HOME/blocking-pid"; trap "" TERM; exec tail -f /dev/null'`);
-        expect(await runProcessProbe(fixture.launchOptions(), 300)).toBeNull();
+        // The descendant blocks capture forever; hold the deadline until it has published its PID.
+        vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+        const probe = runProcessProbe(fixture.launchOptions(), 300);
+        await fixture.captureStarted('blocking-pid');
+        await vi.advanceTimersByTimeAsync(300);
+        vi.useRealTimers();
+        expect(await probe).toBeNull();
         const pid = Number(await fs.readFile(path.join(fixture.root, 'blocking-pid'), 'utf8'));
         // Observe kernel exit; PID 1 may retain an already dead orphan as a zombie.
         await vi.waitFor(async () => {
@@ -53,7 +59,7 @@ for (const { name, executable } of captureShells) {
           expect(status === '' || /\) Z /.test(status), `Startup child has not exited: ${status}`).toBe(true);
         });
         await expect(fs.stat(await fixture.captureFile())).rejects.toThrow(/ENOENT/);
-      } finally { await fixture.dispose(); }
+      } finally { vi.useRealTimers(); await fixture.dispose(); }
     });
   });
 }

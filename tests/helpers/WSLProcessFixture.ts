@@ -49,7 +49,9 @@ export class WSLProcessFixture {
     child.stdin.setEncoding('utf8').on('data', (chunk: string) => { request.stdin += chunk; });
     this.requests.push(request);
     const reply = this.reply?.(request) ?? this.respond(request);
-    queueMicrotask(() => {
+    // Node announces a started child on nextTick; output and exit come from the OS on a later turn.
+    process.nextTick(() => child.emit('spawn'));
+    setImmediate(() => {
       if (!reply.hold) child.complete(reply);
       else {
         if (reply.stdout) child.stdout.write(reply.stdout);
@@ -102,7 +104,10 @@ class WSLTestProcess extends ChildProcess implements ChildProcessWithoutNullStre
   override kill(signal: NodeJS.Signals | number = 'SIGTERM'): boolean {
     const name = signalName(signal);
     if (this.exited) return false;
-    if (name !== null && !TERMINATING_SIGNALS.has(name)) throw new Error(`Unsupported WSL process signal: ${name}`);
+    if (name !== null && !TERMINATING_SIGNALS.has(name)) {
+      // Windows libuv rejects other signals with UV_ENOSYS, which Node throws as an ErrnoException.
+      throw Object.assign(new Error('kill ENOSYS'), { code: 'ENOSYS', errno: -constants.errno.ENOSYS, syscall: 'kill' });
+    }
     // Node marks a delivered signal, including the liveness probe 0, as killed.
     this.killed = true;
     if (name === null) return true;
@@ -125,10 +130,11 @@ class WSLTestProcess extends ChildProcess implements ChildProcessWithoutNullStre
   }
 }
 
-/** Returns null for the liveness probe 0; unknown signals throw, as Node does. */
+/** Returns null for the liveness probe 0; names are case-insensitive and unknown signals throw, as in Node. */
 function signalName(signal: NodeJS.Signals | number): NodeJS.Signals | null {
   if (signal === 0) return null;
-  const name = Object.entries(constants.signals).find(([key, value]) => key === signal || value === signal)?.[0];
+  const key = typeof signal === 'string' ? signal.toUpperCase() : signal;
+  const name = Object.entries(constants.signals).find(([entry, value]) => entry === key || value === key)?.[0];
   if (!name) throw Object.assign(new TypeError(`Unknown signal: ${signal}`), { code: 'ERR_UNKNOWN_SIGNAL' });
   return name as NodeJS.Signals;
 }

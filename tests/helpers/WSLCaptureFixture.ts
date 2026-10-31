@@ -57,9 +57,9 @@ export async function createWSLCaptureFixture(
     return file;
   }
 
-  /** Resolves when startup publishes its capture PID; a filesystem event, so it needs no timer. */
-  function captureStarted(): Promise<void> {
-    const published = path.join(root, 'capture-path');
+  /** Resolves when startup atomically publishes `name`; a filesystem event, so it needs no timer. */
+  function captureStarted(name: 'capture-path' | 'blocking-pid' = 'capture-path'): Promise<void> {
+    const published = path.join(root, name);
     return new Promise((resolve, reject) => {
       const watcher = watch(root, () => { if (existsSync(published)) { watcher.close(); resolve(); } });
       watcher.once('error', reject);
