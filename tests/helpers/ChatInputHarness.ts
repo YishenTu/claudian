@@ -155,6 +155,7 @@ export async function createFixture(overrides: ChatInputFixtureOptions = {}) {
   const streamController = new StreamController({
     plugin, state, renderer, subagentManager: subagents,
     getMessagesEl: () => messagesEl, updateQueueIndicator: () => controller.queue.updateIndicator(),
+    onQuestionToolChanged: tool => controller.updateAsyncQuestion(tool),
   });
   const deps: Omit<InputControllerDeps, 'conversationController' | 'drafts' | 'session' | 'builtInCommands' | 'inlinePrompts'> & {
     renderer: MessageRenderer; getImageContextManager: () => ImageContextManager | null;

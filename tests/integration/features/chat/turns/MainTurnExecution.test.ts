@@ -53,9 +53,17 @@ describe('MainTurnExecution', () => {
     fixture.plugin.updateConversation.mockImplementation(async (_id, updates) => {
       persistedMessages = structuredClone(updates.messages);
     });
+    const usage = { model: 'claude-model', inputTokens: 10, contextWindow: 100, contextTokens: 10, percentage: 10 };
     fixture.native.respond.mockImplementation((run, request) => {
       run.emit({ type: 'turn_started', accepted: true });
       const text = request.input.filter(part => part.type === 'text').map(part => part.text).join('');
+      if (text === 'first') {
+        run.emit({ type: 'tool_started', toolCallId: 'agent-1', toolScope: { kind: 'main' }, name: 'Agent',
+          input: { run_in_background: false, prompt: 'Inspect', subagent_type: 'Explore' } });
+        run.emit({ type: 'tool_completed', toolCallId: 'agent-1', toolScope: { kind: 'main' }, content: 'Done' });
+      } else {
+        run.emit({ type: 'usage_updated', usage });
+      }
       run.emit({ type: 'text_delta', text: `reply:${text}` });
       run.complete();
     });
@@ -68,7 +76,9 @@ describe('MainTurnExecution', () => {
       { role: 'user', content: 'first' }, { role: 'assistant', content: 'reply:first' },
     ]);
 
+    expect(fixture.state.messages[1].contentBlocks).toEqual(expect.arrayContaining([expect.objectContaining({ type: 'subagent' })]));
     await fixture.controller.sendMessage({ content: 'second' });
+    expect(fixture.state.usage).toMatchObject(usage);
 
     const [first, second] = fixture.native.requests;
     expect(first).toMatchObject({
