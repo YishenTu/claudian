@@ -1,4 +1,5 @@
 import { parseEnvironmentVariables } from '@/core/process/env';
+import { resolveExecutionTargetAsync } from '@/core/process/execution-target/ExecutionTargetResolver';
 import { OwnedProbeRegistry } from '@/core/providers/metadata/OwnedProbeRegistry';
 import { ProviderTransitionFence } from '@/core/providers/metadata/ProviderTransitionFence';
 import type { ProviderRuntimeHost } from '@/core/providers/ProviderRuntimeHost';
@@ -50,10 +51,13 @@ export class PiCommandMetadataProbe {
 
     return await this.probes.run({
       create: async (ownedSignal) => {
-        const command = await this.host.resolveCliPath() ?? 'pi';
+        const settings = decodePiConfig(this.host.config, this.host.selection);
+        const executionTarget = await resolveExecutionTargetAsync({ settings, hostVaultPath: workingDirectory });
+        const command = await this.host.resolveCliPath({ executionTarget }) ?? 'pi';
         ownedSignal.throwIfAborted();
         const envText = this.host.environmentText;
         const launchSpec = buildPiLaunchSpec({
+          executionTarget,
           command,
           cwd: workingDirectory,
           env: {
@@ -62,7 +66,7 @@ export class PiCommandMetadataProbe {
           },
           envText,
           noSession: true,
-          settings: decodePiConfig(this.host.config, this.host.selection),
+          settings,
         });
         let pushedCommands: SlashCommand[] | null = null;
         const kernel = this.createKernel(

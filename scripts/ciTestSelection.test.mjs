@@ -120,8 +120,10 @@ test('real dependency discovery retains native launch checks for shared process 
     'tests/integration/providers/opencode/http/OpencodeSharedServer.history.test.ts',
     'tests/integration/providers/opencode/http/OpencodeSharedServer.test.ts',
     'tests/integration/providers/opencode/http/OpencodeSharedServer.transitions.test.ts',
+    'tests/integration/providers/pi/env/PiSettingsReconciler.test.ts',
     'tests/integration/providers/pi/execution/PiExecutionKernel.test.ts',
     'tests/integration/providers/pi/execution/PiRecoveryContext.test.ts',
+    'tests/integration/providers/pi/runtime/PiCLIInstallation.test.ts',
     'tests/unit/providers/deepseek/runtime/DeepSeekInstallation.test.ts',
   ]);
   assert.equal(result.piWindows, true);
@@ -483,8 +485,10 @@ test('WSL native job follows shared dependencies and provider users but skips un
   assert.equal(fixture.wslWindows, true);
   assert.ok(fixture.testFiles.includes('tests/integration/providers/deepseek/runtime/DeepSeekHostProcess.test.ts'));
   assert.ok(fixture.testFiles.includes(deepseek));
-  // Pi has no WSL launch path, so its settings reach no native WSL suite.
-  assert.equal(select(['src/providers/pi/settings.ts']).wslWindows, false);
+  // No WSL suite declares Markdown math as an input, so declarations alone don't select the WSL job.
+  assert.equal(select(['src/utils/markdownMath.ts']).wslWindows, false);
+  // Pi settings now decide its WSL launch, so they select the WSL job.
+  assert.equal(select(['src/providers/pi/settings.ts']).wslWindows, true);
   assert.equal(select(['tests/helpers/WSLNativeTarget.ts'], [relay]).wslWindows, true);
   for (const file of [
     'src/core/session-tools/sessionToolRelayCommand.ts',
@@ -518,6 +522,19 @@ test('WSL native job follows shared dependencies and provider users but skips un
   assert.equal(select(['src/providers/claude/runtime/customSpawn.ts']).wslWindows, true);
   assert.equal(select(['tests/helpers/WSLClaudeFixture.ts'], ['tests/integration/core/process/execution-target/ClaudeWSL.windows.test.ts']).wslWindows, true);
   assert.equal(select(['tests/integration/core/process/execution-target/ClaudeWSL.windows.test.ts']).wslWindows, true);
+  assert.equal(select(['src/providers/pi/runtime/PiSubprocess.ts']).wslWindows, true);
+  // Suites run the Pi RPC peer from its file; the native WSL suite copies it into the distro.
+  const piFixture = select(['tests/fixtures/providers/pi/PiSessionProcess.mjs']);
+  assert.equal(piFixture.wslWindows, true);
+  for (const consumer of [
+    wsl,
+    'tests/integration/features/chat/side-chat/SideChatNative.pi.test.ts',
+    'tests/integration/features/chat/tabs/forking/ForkSource.pi.test.ts',
+    'tests/integration/providers/pi/ToolRendererCompatibility.dom.test.ts',
+    'tests/integration/providers/pi/execution/PiExecutionKernel.test.ts',
+    'tests/integration/providers/pi/execution/PiTreeNavigation.test.ts',
+  ]) assert.ok(piFixture.testFiles.includes(consumer), `${consumer} must follow Pi RPC fixture changes`);
+  assert.equal(select(['tests/integration/providers/pi/history/PiWSLHistory.test.ts']).wslWindows, true);
   assert.equal(select(['src/features/chat/ClaudianView.ts'], [panel]).wslWindows, false);
   for (const file of [
     'src/core/process/execution-target/types.ts',

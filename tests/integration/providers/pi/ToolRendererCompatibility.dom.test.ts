@@ -1,3 +1,4 @@
+// @test-ci {"inputs":["tests/fixtures/providers/pi/**"]}
 /** @vitest-environment jsdom */
 import '@/providers';
 

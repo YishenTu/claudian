@@ -1,4 +1,5 @@
 import { getInstallationKey } from '@/core/device/InstallationKey';
+import { decodeInstallationSettings, DEFAULT_INSTALLATION_SETTINGS, type InstallationSettings, selectInstallationSettings, type StoredInstallationSettings,updateInstallationSettings } from '@/core/providers/settings/InstallationSettings';
 
 import { replaceProviderConfig } from '../../core/providers/providerConfig';
 import type { ProviderSelectionInputs } from '../../core/providers/ProviderRuntimeHost';
@@ -18,7 +19,7 @@ import {
   type PiThinkingLevel
 } from './models';
 
-interface PersistedPiProviderSettings {
+interface PersistedPiProviderSettings extends StoredInstallationSettings {
   cliPath: string;
   cliPathsByHost: HostnameCLIPaths;
   discoveredModels: PiDiscoveredModel[];
@@ -33,9 +34,12 @@ interface PersistedPiProviderSettings {
   visibleModels: string[];
 }
 
-export type PiProviderSettings = PersistedPiProviderSettings;
+export type PiProviderSettings = PersistedPiProviderSettings & InstallationSettings;
 
-export const DEFAULT_PI_PROVIDER_SETTINGS: Readonly<PersistedPiProviderSettings> = Object.freeze({
+export const DEFAULT_PI_PROVIDER_SETTINGS: Readonly<PiProviderSettings> = Object.freeze({
+  ...DEFAULT_INSTALLATION_SETTINGS,
+  installationMethodsByHost: {},
+  wslDistroOverridesByHost: {},
   cliPath: '',
   cliPathsByHost: {},
   discoveredModels: [],
@@ -84,7 +88,10 @@ export function decodePiConfig(
   const visibleModels = normalizePiVisibleModels(config.visibleModels);
   const persistableIds = getPersistablePiModelIds(selection, visibleModels);
 
+  const installation = decodeInstallationSettings(config);
   return {
+    ...installation,
+    ...selectInstallationSettings(installation, getInstallationKey()),
     cliPath: readStoredString(config.cliPath, DEFAULT_PI_PROVIDER_SETTINGS.cliPath),
     cliPathsByHost,
     discoveredModels,
@@ -166,6 +173,7 @@ export function updatePiConfig(
   const next: PiProviderSettings = {
     ...current,
     ...updates,
+    ...updateInstallationSettings(current, updates, hostnameKey),
     cliPath: nextCliPath,
     cliPathsByHost: nextCliPathsByHost,
     discoveredModels: nextDiscoveredModels,
@@ -175,6 +183,8 @@ export function updatePiConfig(
   };
 
   replaceProviderConfig(config, {
+    installationMethodsByHost: next.installationMethodsByHost,
+    wslDistroOverridesByHost: next.wslDistroOverridesByHost,
     cliPath: next.cliPath,
     cliPathsByHost: next.cliPathsByHost,
     discoveredModels: next.discoveredModels,

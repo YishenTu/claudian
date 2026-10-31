@@ -48,6 +48,8 @@ export interface ParsePiSessionContentOptions {
 }
 
 export interface CreatePiForkSessionFileOptions {
+  /** Native parent path for the written header; returned locators stay host-side. */
+  parentSession?: string;
   now?: Date;
   sessionDir?: string;
   sessionId?: string;
@@ -425,7 +427,7 @@ export async function createPiForkSessionFile(
     id: sessionId,
     timestamp: timestampText,
     cwd: options.targetCwd ?? sourceCwd,
-    parentSession: sourceSessionFile,
+    parentSession: options.parentSession ?? sourceSessionFile,
   };
 
   await fsp.mkdir(sessionDir, { recursive: true });

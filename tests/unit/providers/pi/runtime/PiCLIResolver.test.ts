@@ -14,6 +14,15 @@ describe('PiCLIResolver', () => {
     (fs.existsSync as Mock).mockReturnValue(false);
   });
 
+  it('resolves a Linux CLI without inspecting Windows shims for WSL', () => {
+    const resolver = new PiCLIResolver();
+    expect(resolver.resolveFromSettings({ providerConfigs: { pi: {
+      cliPathsByHost: { [getInstallationKey()]: '/home/me/.local/bin/pi' }, cliPath: 'C:\\Tools\\pi.cmd',
+    } } }, { executionTarget: { method: 'wsl', platformFamily: 'unix', platformOs: 'linux', distroName: 'Ubuntu' } }))
+      .toBe('/home/me/.local/bin/pi');
+    expect(mockedStat).not.toHaveBeenCalled();
+  });
+
   it('resolves the current host path before the legacy Pi CLI path', () => {
     mockedStat.mockImplementation((filePath: string) => {
       if (filePath === '/current/pi') {

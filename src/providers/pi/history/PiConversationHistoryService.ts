@@ -1,18 +1,19 @@
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 
+import type { ExecutionTarget } from '@/core/process/execution-target/types';
 import { copyProviderHistoryState } from '@/core/providers/providerHistory';
 
 import { mergePersistedProviderState } from '../../../core/providers/providerState';
 import type {
   ProviderConversationHistoryService,
-  ProviderHistoryEnvironment,
   ProviderHistoryInput,
   ProviderHistoryResult,
   ProviderHistoryState,
   ProviderHistoryUpdate,
 } from '../../../core/providers/types';
 import type { ChatMessage } from '../../../core/types';
+import { piHostPath } from '../runtime/piTargetPaths';
 import {
   addPiPreviousSession,
   buildPersistedPiState,
@@ -21,8 +22,11 @@ import {
   type PiPreviousSession,
   type PiProviderState,
 } from '../types';
+import { PiHistoryContextResolver } from './PiHistoryContextResolver';
 import {
   isPiSessionPathReference,
+  type PiHistoryPathContext,
+  resolvePiHistoryTarget,
   resolvePiSessionFileHint,
 } from './PiHistoryPathResolver';
 import {
@@ -48,6 +52,7 @@ const PI_PROVIDER_STATE_KEYS = [
 ] as const;
 
 export class PiConversationHistoryService implements ProviderConversationHistoryService {
+  private readonly contextResolver = new PiHistoryContextResolver();
 
   hasConversationModelRecoverySource(conversation: ProviderHistoryInput): boolean {
     const state = getPiState(conversation.providerState);
@@ -63,8 +68,9 @@ export class PiConversationHistoryService implements ProviderConversationHistory
   async recoverConversationModelSelection(
     conversation: ProviderHistoryInput,
     vaultPath: string | null,
-    pathContext?: ProviderHistoryEnvironment,
+    pathContext?: PiHistoryPathContext,
   ): Promise<string | null> {
+    if (pathContext) pathContext = await this.contextResolver.resolve(vaultPath, pathContext);
     const state = getPiState(conversation.providerState);
     const isPendingFork = this.isPendingForkConversation(conversation);
     const sessionId = isPendingFork
@@ -90,10 +96,13 @@ export class PiConversationHistoryService implements ProviderConversationHistory
   async hydrateConversationHistory(
     input: ProviderHistoryInput,
     vaultPath: string | null,
-    pathContext?: ProviderHistoryEnvironment,
+    pathContext?: PiHistoryPathContext,
   ): Promise<ProviderHistoryUpdate> {
     const conversation = copyProviderHistoryState(input);
     const state = getPiState(conversation.providerState);
+    if (!state.sessionId && !conversation.sessionId && !state.sessionFile && !state.forkSource && !state.previousSessions?.length) return conversation;
+    if (pathContext) pathContext = await this.contextResolver.resolve(vaultPath, pathContext);
+    const executionTarget = pathContext ? resolvePiHistoryTarget(vaultPath, pathContext) : undefined;
     if (this.isPendingForkConversation(conversation)) {
       const sourceSessionFile = await this.#resolvePreviousSessionFile(
         {
@@ -110,6 +119,7 @@ export class PiConversationHistoryService implements ProviderConversationHistory
         'forkSourceSessionFile',
         state.forkSourceSessionFile,
         sourceSessionFile,
+        executionTarget,
       );
       if (conversation.messages.length > 0) {
         return conversation;
@@ -183,6 +193,7 @@ export class PiConversationHistoryService implements ProviderConversationHistory
           'sessionFile',
           item.source.sessionFile,
           sessionFile,
+          executionTarget,
         );
       }
       if (sessionFile) {
@@ -261,7 +272,7 @@ export class PiConversationHistoryService implements ProviderConversationHistory
   async recoverConversationSessionReference(
     input: ProviderHistoryInput,
     vaultPath: string | null,
-    pathContext?: ProviderHistoryEnvironment,
+    pathContext?: PiHistoryPathContext,
   ): Promise<ProviderHistoryUpdate | null> {
     const conversation = copyProviderHistoryState(input);
     const state = getPiState(conversation.providerState);
@@ -273,9 +284,10 @@ export class PiConversationHistoryService implements ProviderConversationHistory
       return null;
     }
 
+    pathContext = await this.contextResolver.resolve(vaultPath, pathContext);
     const sessionFile = resolvePiSessionFileHint(latest.sessionFile, latest.sessionId, vaultPath, pathContext);
     const sessionId = sessionFile
-      ? await readOwnPiSessionId(sessionFile, latest, vaultPath, input.createdAt)
+      ? await readOwnPiSessionId(sessionFile, latest, vaultPath, input.createdAt, pathContext)
       : null;
     const nextState: PiProviderState = sessionFile && sessionId
       ? {
@@ -367,8 +379,9 @@ export class PiConversationHistoryService implements ProviderConversationHistory
     resumeAt: string,
     sourceProviderState?: Record<string, unknown>,
     vaultPath: string | null = null,
-    pathContext?: ProviderHistoryEnvironment,
+    pathContext?: PiHistoryPathContext,
   ): Promise<Record<string, unknown>> {
+    if (pathContext) pathContext = await this.contextResolver.resolve(vaultPath, pathContext);
     const sourceState = getPiState(sourceProviderState);
     const candidates: PiForkSourceCandidate[] = [];
     const addCandidate = (source: PiPreviousSession, sessionFile: string | null): void => {
@@ -414,6 +427,9 @@ export class PiConversationHistoryService implements ProviderConversationHistory
       );
     }
     const dedupedCandidates = dedupeForkSources(candidates);
+    if (dedupedCandidates.length === 0 && pathContext && resolvePiHistoryTarget(vaultPath, pathContext).method === 'wsl') {
+      throw new Error('Cannot fork Pi session: the source file is unavailable in the current WSL store.');
+    }
     const matchingSource = await findForkSourceContainingCheckpoint(dedupedCandidates, resumeAt)
       ?? dedupedCandidates[0]
       ?? { sessionId: sourceSessionId };
@@ -442,11 +458,16 @@ export class PiConversationHistoryService implements ProviderConversationHistory
     field: 'forkSourceSessionFile' | 'sessionFile',
     persistedPath: string | undefined,
     resolvedPath: string | null,
+    executionTarget?: ExecutionTarget,
   ): void {
     if (!persistedPath || persistedPath === resolvedPath) {
       return;
     }
 
+    if (!resolvedPath && executionTarget?.method === 'wsl') {
+      clearPiResumeState(conversation);
+      return;
+    }
     const nextState = { ...getPiState(conversation.providerState) };
     if (resolvedPath) {
       nextState[field] = resolvedPath;
@@ -463,7 +484,7 @@ export class PiConversationHistoryService implements ProviderConversationHistory
   async #resolvePreviousSessionFile(
     source: PiPreviousSession,
     vaultPath: string | null,
-    pathContext?: ProviderHistoryEnvironment,
+    pathContext?: PiHistoryPathContext,
     preferResolvedPath = false,
   ): Promise<string | null> {
     const resolved = resolvePiSessionFileHint(
@@ -478,17 +499,18 @@ export class PiConversationHistoryService implements ProviderConversationHistory
     if (
       preferResolvedPath
       && resolved
-      && await isMatchingArchivedPiSession(resolved, source, vaultPath)
+      && await isMatchingArchivedPiSession(resolved, source, vaultPath, pathContext)
     ) {
       return resolved;
     }
     if (
-      source.sessionFile
-      && await isMatchingArchivedPiSession(source.sessionFile, source, vaultPath)
+      (!pathContext || resolvePiHistoryTarget(vaultPath, pathContext).method !== 'wsl')
+      && source.sessionFile
+      && await isMatchingArchivedPiSession(source.sessionFile, source, vaultPath, pathContext)
     ) {
       return source.sessionFile;
     }
-    if (resolved && await isMatchingArchivedPiSession(resolved, source, vaultPath)) {
+    if (resolved && await isMatchingArchivedPiSession(resolved, source, vaultPath, pathContext)) {
       return resolved;
     }
     return null;
@@ -573,6 +595,7 @@ async function isMatchingArchivedPiSession(
   sessionFile: string,
   source: PiPreviousSession,
   vaultPath: string | null,
+  pathContext?: PiHistoryPathContext,
 ): Promise<boolean> {
   const header = await readPiSessionHeader(sessionFile);
   if (!header) {
@@ -596,7 +619,8 @@ async function isMatchingArchivedPiSession(
     return false;
   }
 
-  return await resolveRealPath(header.cwd) === await resolveRealPath(vaultPath);
+  const target = pathContext ? resolvePiHistoryTarget(vaultPath, pathContext) : undefined;
+  return await resolveRealPath(piHostPath(header.cwd, target)) === await resolveRealPath(vaultPath);
 }
 
 /** Retired-binding migration: the session's own id when it started no earlier than its conversation. */
@@ -605,8 +629,9 @@ async function readOwnPiSessionId(
   source: PiPreviousSession,
   vaultPath: string,
   createdAt: number,
+  pathContext?: PiHistoryPathContext,
 ): Promise<string | null> {
-  if (!await isMatchingArchivedPiSession(sessionFile, source, vaultPath)) return null;
+  if (!await isMatchingArchivedPiSession(sessionFile, source, vaultPath, pathContext)) return null;
   const header = await readPiSessionHeader(sessionFile);
   const startedAt = typeof header?.timestamp === 'string' ? Date.parse(header.timestamp) : Number.NaN;
   return typeof header?.id === 'string' && header.id.trim() && startedAt >= createdAt

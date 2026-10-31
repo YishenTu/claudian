@@ -1,3 +1,4 @@
+import * as nodeFS from 'node:fs';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -7,7 +8,11 @@ import { capturedSelections } from '@test/helpers/capturedSelections';
 import { createProviderRecoveryTestHarness } from '@test/helpers/features/chat/ProviderRecoveryTestHarness';
 import { createProviderHostFixture } from '@test/helpers/providerRuntimeHost';
 import { testDate, testTime } from '@test/helpers/testClock';
+import { createWindowsHostFS } from '@test/helpers/WindowsHostFS';
+import { WSLProcessFixture } from '@test/helpers/WSLProcessFixture';
+import spawn from 'cross-spawn';
 
+import { getInstallationKey } from '@/core/device/InstallationKey';
 import type {
   ProviderExecutionEvent,
   ProviderExecutionRequest,
@@ -17,6 +22,7 @@ import type {
   ProviderSessionEvent,
 } from '@/core/execution';
 import {
+  isBranchableExecutionSession,
   isSteerableExecutionSession,
 } from '@/core/execution';
 import type { ChatMessage, Conversation } from '@/core/types';
@@ -31,6 +37,20 @@ import { PiConversationHistoryService } from '@/providers/pi/history/PiConversat
 import type { PiLaunchSpec } from '@/providers/pi/runtime/PiLaunchSpecBuilder';
 import { PiRPCResponseError, PiRPCTransport } from '@/providers/pi/runtime/PiRPCTransport';
 import { getPiProviderSettings, updatePiProviderSettings } from '@/providers/pi/settings';
+
+// Pi kernels are scripted; the only process boundary left is the WSL environment probe.
+vi.mock('cross-spawn', () => ({ default: vi.fn() }));
+vi.mock('node:fs', async () => ({ ...(await vi.importActual<typeof import('node:fs')>('node:fs')) }));
+vi.mock('node:fs/promises', async () => ({ ...(await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises')) }));
+// Windows hosts have real drive paths and distro shares, so the modeled host only runs elsewhere.
+const onWindows = process.platform === 'win32';
+
+let native: WSLProcessFixture;
+beforeEach(() => {
+  native = new WSLProcessFixture();
+  native.environment = { HOME: '/home/alice' };
+  vi.mocked(spawn).mockReset().mockImplementation(native.spawn);
+});
 
 class FakeKernel implements PiExecutionKernel {
   readonly requests: Array<{ payload: Record<string, unknown>; type: string }> = [];
@@ -85,9 +105,9 @@ class FakeKernel implements PiExecutionKernel {
   }
 }
 
-async function createHost() {
+async function createHost(resolveCliPath: () => string = () => '/bin/pi') {
   return (await createProviderHostFixture({
-    overrides: { workingDirectory: '/vault', getResolvedProviderCliPath: vi.fn(async () => '/bin/pi') },
+    overrides: { workingDirectory: '/vault', getResolvedProviderCliPath: async () => resolveCliPath() },
     settings: {
       effortLevel: 'off',
       mediaFolder: 'media',
@@ -463,10 +483,9 @@ describe('PiExecutionBackend', () => {
   });
 
   it('quiesces an in-flight command probe before a configured CLI transition', async () => {
-    const host = (await createHost());
     let cliPath = '/bin/pi-a';
+    const host = (await createHost(() => cliPath));
     let staleRequestStarted = false;
-    vi.spyOn(host, 'getResolvedProviderCliPath').mockImplementation(async () => cliPath);
     const kernels: FakeKernel[] = [];
     const probe = new PiCommandMetadataProbe(host.getRuntimeHost('pi'),
       (spec, callbacks) => {
@@ -497,7 +516,6 @@ describe('PiExecutionBackend', () => {
         return kernel;
       },
     );
-    const quiesce = vi.spyOn(probe, 'quiesceForEnvironmentChange');
     const services = await createPiWorkspaceServices(host, {
       commandMetadataProbe: probe,
     });
@@ -523,19 +541,18 @@ describe('PiExecutionBackend', () => {
       '/bin/pi-a',
       '/bin/pi-b',
     ]);
-    expect(quiesce).toHaveBeenCalledTimes(2);
 
     await services.dispose!();
-    expect(quiesce).toHaveBeenCalledTimes(3);
-    await host.executionLifecycleRegistry.runTransition(['pi'], async () => undefined);
-    expect(quiesce).toHaveBeenCalledTimes(3);
+    // A disposed workspace leaves later transitions alone and cannot reopen a probe.
+    await expect(host.executionLifecycleRegistry.runTransition(['pi'], async () => undefined)).resolves.toBeUndefined();
+    await expect(services.commandLoader!.loadCommands(context)).resolves.toMatchObject({ status: 'error' });
+    expect(kernels).toHaveLength(2);
     await host.executionLifecycleRegistry.dispose();
   });
 
   it('fences command metadata started during a transition and reopens on the new CLI', async () => {
-    const host = (await createHost());
     let cliPath = '/bin/pi-a';
-    vi.spyOn(host, 'getResolvedProviderCliPath').mockImplementation(async () => cliPath);
+    const host = (await createHost(() => cliPath));
     const kernels: FakeKernel[] = [];
     const probe = new PiCommandMetadataProbe(host.getRuntimeHost('pi'), (spec, callbacks) => {
       const kernel = new FakeKernel(
@@ -675,6 +692,249 @@ describe('PiExecutionBackend', () => {
       sessionId: 'pi-session-1',
     });
     await fs.rm(sessionDir, { force: true, recursive: true });
+  });
+
+  it.skipIf(onWindows)('resolves an ID-only WSL resume using the discovered Linux home before sending input', async () => {
+    const platform = process.platform;
+    Object.defineProperty(process, 'platform', { value: 'win32', configurable: true });
+    const nativeFile = '/home/linux-user/.pi/agent/sessions/session-id-only.jsonl';
+    const files = createWindowsHostFS({ fs: nodeFS, fsPromises: fs });
+    await files.write(files.fromLinux(nativeFile), '');
+    native.environment = { HOME: '/home/linux-user' };
+    const harness = await createHarness(createConfig({
+      workingDirectory: String.raw`C:\Vault`,
+      resumeSeed: { providerSessionId: 'session-id-only', providerState: { sessionId: 'session-id-only' } },
+    }));
+    updatePiProviderSettings(harness.host.settings, {
+      installationMethodsByHost: { [getInstallationKey()]: 'wsl' },
+      wslDistroOverridesByHost: { [getInstallationKey()]: 'Ubuntu' },
+    });
+    harness.responses.set('get_state', { sessionId: 'session-id-only', sessionFile: nativeFile });
+    try {
+      const result = collect(harness.session.execute(createRequest()).events);
+      await waitFor(() => harness.kernels.length === 1 && getPromptMessages(harness.kernels[0]).length === 1);
+      completeTurn(harness.kernels[0]);
+      expect((await result).at(-1)).toMatchObject({ type: 'turn_completed' });
+      expect(harness.kernels[0].launchSpec.sessionTarget).toBe(nativeFile);
+    } finally {
+      await harness.session.dispose();
+      Object.defineProperty(process, 'platform', { value: platform, configurable: true });
+    }
+  });
+
+  it.skipIf(onWindows).each([true, false])('proves case-sensitive WSL resume identity before input (matching=%s)', async matching => {
+    const platform = process.platform;
+    const sessionFile = String.raw`\\wsl$\Ubuntu\home\alice\.pi\agent\sessions\Vault\Session.jsonl`;
+    const nativeFile = '/home/alice/.pi/agent/sessions/Vault/Session.jsonl';
+    const files = createWindowsHostFS({ fs: nodeFS, fsPromises: fs });
+    await files.write(files.fromLinux(nativeFile), '');
+    Object.defineProperty(process, 'platform', { value: 'win32', configurable: true });
+    const harness = await createHarness(createConfig({
+      workingDirectory: String.raw`C:\Vault`,
+      resumeSeed: { providerSessionId: 'session-case', providerState: { sessionFile, sessionId: 'session-case' } },
+    }));
+    updatePiProviderSettings(harness.host.settings, {
+      installationMethodsByHost: { [getInstallationKey()]: 'wsl' },
+      wslDistroOverridesByHost: { [getInstallationKey()]: 'Ubuntu' },
+    });
+    harness.responses.set('get_state', { sessionId: 'session-case', sessionFile: matching ? nativeFile : nativeFile.replace('Session', 'session') });
+    try {
+      const result = collect(harness.session.execute(createRequest()).events);
+      await waitFor(() => harness.kernels.length === 1);
+      await waitFor(() => harness.kernels[0].requests.some(request => request.type === 'get_state'));
+      if (matching) {
+        await waitFor(() => getPromptMessages(harness.kernels[0]).length === 1);
+        completeTurn(harness.kernels[0]);
+      }
+      const events = await result;
+      expect(harness.kernels[0].launchSpec.sessionTarget).toBe(nativeFile);
+      expect(getPromptMessages(harness.kernels[0])).toEqual(matching ? ['Hello Pi'] : []);
+      expect(events.at(-1)).toMatchObject({ type: matching ? 'turn_completed' : 'execution_error' });
+      expect(harness.session.getSnapshot().providerState).toMatchObject({ sessionFile, sessionId: 'session-case' });
+    } finally {
+      await harness.session.dispose();
+      Object.defineProperty(process, 'platform', { value: platform, configurable: true });
+    }
+  });
+
+  it('retires an untrusted WSL file before a direct retry can resume it', async () => {
+    const platform = process.platform;
+    Object.defineProperty(process, 'platform', { value: 'win32', configurable: true });
+    const sessionFile = String.raw`\\wsl$\Ubuntu\tmp\untrusted.jsonl`;
+    const harness = await createHarness(createConfig({
+      workingDirectory: String.raw`C:\Vault`,
+      resumeSeed: { providerSessionId: 'session-untrusted', providerState: { sessionFile, sessionId: 'session-untrusted' } },
+    }), kernel => { kernel.start.mockImplementation(() => kernel.close()); });
+    updatePiProviderSettings(harness.host.settings, {
+      installationMethodsByHost: { [getInstallationKey()]: 'wsl' },
+      wslDistroOverridesByHost: { [getInstallationKey()]: 'Ubuntu' },
+      environmentVariables: 'PI_CODING_AGENT_SESSION_DIR=/srv/sessions',
+    });
+    try {
+      const first = await collect(harness.session.execute(createRequest()).events);
+      const retired = harness.session.getSnapshot();
+      await collect(harness.session.execute(createRequest()).events);
+      expect(first.at(-1)).toMatchObject({ type: 'execution_error', category: 'provider' });
+      expect(retired.providerSessionId).toBeUndefined();
+      expect(retired.providerState).toEqual({ bindingRetired: true, previousSessions: [{ sessionFile, sessionId: 'session-untrusted' }] });
+      expect(harness.kernels.map(kernel => kernel.launchSpec.sessionTarget)).toEqual([null]);
+      expect(harness.session.getSnapshot().providerState).toMatchObject({ previousSessions: [{ sessionFile, sessionId: 'session-untrusted' }] });
+    } finally {
+      await harness.session.dispose();
+      Object.defineProperty(process, 'platform', { value: platform, configurable: true });
+    }
+  });
+
+  it.skipIf(onWindows).each([
+    String.raw`\\wsl$\Debian\home\alice\.pi\agent\sessions\session.jsonl`,
+    '/tmp/rejected.jsonl',
+    '/home/alice/.pi/agent/sessions/missing.jsonl',
+  ])('retires rejected WSL locator %s through hydration, execution and retry', async sessionFile => {
+    const platform = process.platform;
+    Object.defineProperty(process, 'platform', { value: 'win32', configurable: true });
+    const harness = await createHarness(createConfig({ workingDirectory: String.raw`C:\Vault` }), kernel => {
+      // The current distro has a different session with the same ID. Only an ID/file
+      // resume may select it; a new process without --session creates a fresh session.
+      const resumesOriginal = kernel.launchSpec.sessionTarget === 'session-rejected'
+        || kernel.launchSpec.sessionTarget === '/home/alice/.pi/agent/sessions/session-rejected.jsonl';
+      harness.responses.set('get_state', {
+        sessionId: resumesOriginal ? 'session-rejected' : 'fresh-session',
+        sessionFile: resumesOriginal
+          ? '/home/alice/.pi/agent/sessions/session-rejected.jsonl'
+          : '/home/alice/.pi/agent/sessions/fresh.jsonl',
+      });
+    });
+    updatePiProviderSettings(harness.host.settings, {
+      installationMethodsByHost: { [getInstallationKey()]: 'wsl' },
+      wslDistroOverridesByHost: { [getInstallationKey()]: 'Ubuntu' },
+      environmentVariables: 'HOME=/home/alice',
+    });
+    const conversation: Conversation = {
+      id: 'wsl-recovery', providerId: 'pi', title: 'WSL', messages: [],
+      createdAt: testDate().getTime(), lastActivityAt: testDate().getTime(), sessionId: 'session-rejected',
+      providerState: { sessionFile, sessionId: 'session-rejected' },
+    };
+    const files = createWindowsHostFS({ fs: nodeFS, fsPromises: fs });
+    for (const name of ['session-rejected', 'fresh']) await files.write(files.fromLinux(`/home/alice/.pi/agent/sessions/${name}.jsonl`), '');
+    Object.assign(conversation, await new PiConversationHistoryService().hydrateConversationHistory(conversation, String.raw`C:\Vault`, {
+      config: harness.host.settings.providerConfigs.pi, environment: { HOME: '/home/alice' }, environmentText: 'HOME=/home/alice', hostPlatform: 'win32',
+    }));
+    const hydrated = structuredClone(conversation);
+    const resolveMissing = vi.fn(async () => 'reset' as const);
+    const recovery = createProviderRecoveryTestHarness({
+      backend: harness.backend, conversation, workingDirectory: String.raw`C:\Vault`,
+      configuration: createRequest().configuration, resolveMissingProviderSession: resolveMissing,
+    });
+    try {
+      for (let attempt = 1; attempt <= 2; attempt++) {
+        const execution = recovery.execute().then(value => ({ value }), error => ({ error }));
+        await waitFor(() => harness.kernels.reduce((count, kernel) => count + getPromptMessages(kernel).length, 0) === attempt);
+        completeTurn(harness.kernels.at(-1)!);
+        await expect(execution).resolves.toMatchObject({ value: { status: 'completed' } });
+      }
+      expect(hydrated.sessionId).toBeNull();
+      expect(hydrated.providerState).toEqual({ bindingRetired: true, previousSessions: [{ sessionFile, sessionId: 'session-rejected' }] });
+      expect(resolveMissing).not.toHaveBeenCalled();
+      expect(harness.kernels[0].launchSpec.sessionTarget).toBeNull();
+      expect(harness.kernels.every(kernel => kernel.launchSpec.sessionTarget === null
+        || kernel.launchSpec.sessionTarget === '/home/alice/.pi/agent/sessions/fresh.jsonl')).toBe(true);
+      expect(conversation.sessionId).toBe('fresh-session');
+      expect(conversation.providerState).toMatchObject({ previousSessions: [{ sessionFile, sessionId: 'session-rejected' }] });
+    } finally {
+      await recovery.coordinator.dispose();
+      await harness.session.dispose();
+      Object.defineProperty(process, 'platform', { value: platform, configurable: true });
+    }
+  });
+
+  it.skipIf(onWindows)('maps WSL session paths between host and Linux forms across branching and later turns', async () => {
+    const platform = process.platform;
+    Object.defineProperty(process, 'platform', { value: 'win32', configurable: true });
+    const nativeFile = '/home/alice/.pi/agent/sessions/session-paths.jsonl';
+    const nativeParent = '/home/alice/.pi/agent/sessions/session-paths-parent.jsonl';
+    const files = createWindowsHostFS({ fs: nodeFS, fsPromises: fs });
+    const sessionFile = files.fromLinux(nativeFile);
+    await files.write(sessionFile, [
+      { type: 'session', id: 'session-paths', cwd: '/mnt/c/Vault' },
+      { type: 'message', id: 'user-1', message: { role: 'user', content: 'First question' } },
+      { type: 'message', id: 'assistant-1', parentId: 'user-1', message: { role: 'assistant', content: [{ type: 'text', text: 'First answer' }] } },
+      { type: 'message', id: 'user-2', parentId: 'assistant-1', message: { role: 'user', content: 'Second question' } },
+    ].map(entry => JSON.stringify(entry)).join('\n') + '\n');
+    const responses = new Map<string, unknown>();
+    // Native Pi reports its leaf on inspect and lands on the requested leaf on restore.
+    const handler = async <T,>(type: string, payload: Record<string, unknown>): Promise<T> => (type === 'claudian_tree'
+      ? { cancelled: false, leafId: payload.operation === 'inspect' ? 'user-2' : payload.leafId, sessionId: 'session-paths', sessionFile: nativeFile }
+      : responses.get(type)) as T;
+    const harness = await createHarness(createConfig({
+      workingDirectory: String.raw`C:\Vault`,
+      resumeSeed: { providerSessionId: 'session-paths', providerState: { sessionFile, sessionId: 'session-paths' } },
+    }), undefined, handler);
+    for (const [type, response] of harness.responses) responses.set(type, response);
+    updatePiProviderSettings(harness.host.settings, {
+      installationMethodsByHost: { [getInstallationKey()]: 'wsl' },
+      wslDistroOverridesByHost: { [getInstallationKey()]: 'Ubuntu' },
+    });
+    responses.set('get_state', { sessionId: 'session-paths', sessionFile: nativeFile, parentSession: nativeParent });
+    const session = harness.session;
+    if (!isBranchableExecutionSession(session)) throw new Error('Missing tree capability');
+    try {
+      // Branching right after resume relies on the resume check alone to record the host locator.
+      const edit = await session.navigateConversationBranch({ userMessageId: 'user-2', configuration: createRequest().configuration });
+      expect(edit).toMatchObject({ status: 'committed' });
+      expect(harness.kernels[0].launchSpec).toMatchObject({ executionTarget: { method: 'wsl', distroName: 'Ubuntu' }, sessionTarget: nativeFile });
+      expect(harness.kernels[0].requests.filter(request => request.type === 'claudian_tree').map(request => request.payload.sessionFile))
+        .toEqual([nativeFile, nativeFile]);
+      expect(session.getSnapshot().providerState).toMatchObject({ sessionFile });
+      // State reports without a file keep the stored host locator, which must still match the live kernel.
+      responses.set('get_state', { sessionId: 'session-paths', parentSession: nativeParent });
+      for (let turn = 1; turn <= 2; turn++) {
+        const events = collect(session.execute(createRequest()).events);
+        await waitFor(() => getPromptMessages(harness.kernels.at(-1)!).length === turn);
+        completeTurn(harness.kernels.at(-1)!);
+        expect((await events).at(-1)).toMatchObject({ type: 'turn_completed' });
+      }
+      expect(harness.kernels).toHaveLength(1);
+      expect(session.getSnapshot().providerState).toMatchObject({ sessionFile, parentSession: files.fromLinux(nativeParent) });
+    } finally {
+      await session.dispose();
+      Object.defineProperty(process, 'platform', { value: platform, configurable: true });
+    }
+  });
+
+  it.skipIf(onWindows)('forks a WSL source through the Linux paths of the source and working directory', async () => {
+    const platform = process.platform;
+    Object.defineProperty(process, 'platform', { value: 'win32', configurable: true });
+    const nativeSource = '/home/alice/.pi/agent/sessions/fork-source.jsonl';
+    const nativeChild = '/home/alice/.pi/agent/sessions/fork-child.jsonl';
+    const files = createWindowsHostFS({ fs: nodeFS, fsPromises: fs });
+    await files.write(files.fromLinux(nativeSource), JSON.stringify({ type: 'session', id: 'fork-source', cwd: '/mnt/c/Vault' }) + '\n');
+    const createForkSessionFile = vi.fn(async () => ({
+      leafEntryId: 'assistant-1', parentSession: nativeSource, sessionFile: files.fromLinux(nativeChild), sessionId: 'fork-child',
+    }));
+    const harness = await createHarness(createConfig({
+      workingDirectory: String.raw`C:\Vault`,
+      resumeSeed: { providerState: {
+        forkSource: { resumeAt: 'assistant-1', sessionId: 'fork-source' }, forkSourceSessionFile: files.fromLinux(nativeSource),
+      } },
+    }), undefined, undefined, { createForkSessionFile, rollbackForkSessionFile: vi.fn(async () => undefined) });
+    updatePiProviderSettings(harness.host.settings, {
+      installationMethodsByHost: { [getInstallationKey()]: 'wsl' },
+      wslDistroOverridesByHost: { [getInstallationKey()]: 'Ubuntu' },
+    });
+    harness.responses.set('get_state', { sessionId: 'fork-child', sessionFile: nativeChild });
+    try {
+      const events = collect(harness.session.execute(createRequest()).events);
+      await waitFor(() => harness.kernels.length === 1 && getPromptMessages(harness.kernels[0]).length === 1);
+      completeTurn(harness.kernels[0]);
+      expect((await events).at(-1)).toMatchObject({ type: 'turn_completed' });
+      expect(createForkSessionFile).toHaveBeenCalledWith(files.fromLinux(nativeSource), 'assistant-1', {
+        parentSession: nativeSource, targetCwd: '/mnt/c/Vault',
+      });
+      expect(harness.kernels[0].launchSpec.sessionTarget).toBe(nativeChild);
+    } finally {
+      await harness.session.dispose();
+      Object.defineProperty(process, 'platform', { value: platform, configurable: true });
+    }
   });
 
   it('fails before dispatch when Pi reports a replacement for the requested session', async () => {

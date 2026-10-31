@@ -1,4 +1,5 @@
 import { parseEnvironmentVariables } from '@/core/process/env';
+import { resolveExecutionTargetAsync } from '@/core/process/execution-target/ExecutionTargetResolver';
 
 import type { ProviderRuntimeHost } from '../../../core/providers/ProviderRuntimeHost';
 import { decodePiConfig } from '../config';
@@ -31,13 +32,15 @@ export class PiModelDiscoveryService {
     }
 
     const cwd = this.host.workingDirectory ?? process.cwd();
-    const command = await this.host.resolveCliPath() ?? 'pi';
+    const executionTarget = await resolveExecutionTargetAsync({ settings, hostVaultPath: cwd });
+    const command = await this.host.resolveCliPath({ executionTarget }) ?? 'pi';
     const envText = this.host.environmentText;
     const env = {
       ...process.env,
       ...parseEnvironmentVariables(envText),
     };
     const launchSpec = buildPiLaunchSpec({
+      executionTarget,
       command,
       cwd,
       env,

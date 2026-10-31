@@ -39,6 +39,8 @@ export class WSLProcessFixture {
   reply: ((request: WSLProcessRequest) => WSLProcessReply | undefined) | undefined;
   /** WSL interop runs Windows executables mounted under /mnt; false models `[interop] enabled=false`. */
   interop = true;
+  /** Receives requests for behavior this fake does not model; the default fails the running test. */
+  onUnmodeled: (error: Error) => void = failRunningTest;
 
   readonly spawn = (command: string, args: readonly string[] = [], options: SpawnOptions = {}): ChildProcess => {
     if (!/(?:^|[\\/])wsl\.exe$/u.test(command)) throw new Error(`Unexpected WSL process: ${command}`);
@@ -77,9 +79,16 @@ export class WSLProcessFixture {
   private respond({ executable, argv, options }: WSLProcessRequest): WSLProcessReply {
     if (executable === WINDOWS_POWERSHELL) return this.runPowerShell(argv, options.env ?? {});
     if (executable === '/usr/bin/awk') {
+      const imported = importedEnvironment(options.env);
       // Model native environment records, not the owned parser's returned object.
       return { stdout: argv.slice(1).map(key => {
-        const value = this.environment[key];
+        if (imported.get(key) === null) {
+          const unmodeled = new Error(`Path-translated WSLENV value is not modeled: ${key}`);
+          // Probe clients report a throwing spawn as a host failure, so the sink must surface it.
+          this.onUnmodeled(unmodeled);
+          throw unmodeled;
+        }
+        const value = imported.has(key) ? imported.get(key)! : this.environment[key];
         return value === undefined ? '\0\0' : `x\0${value}\0`;
       }).join('') };
     }
@@ -108,6 +117,46 @@ export class WSLProcessFixture {
     if (mode === undefined) return { code: 1, stderr: 'Windows PowerShell could not start the session tool relay.\r\n' };
     throw new Error('Unsupported relay mode: route traffic is covered by the native WSL job');
   }
+}
+
+function failRunningTest(error: Error): void {
+  try {
+    onTestFinished(() => { throw error; });
+  } catch {
+    // No test is running (e.g. beforeAll): report it as an uncaught error, which fails the run.
+    setImmediate(() => { throw error; });
+  }
+}
+
+/**
+ * wsl.exe imports WSLENV-listed host values, and the launcher re-exports them after shell startup.
+ * WSL init resets HOME, so only the launcher's CLAUDIAN_WSL_HOME copy restores it. Null marks a
+ * `/p` or `/l` value whose Windows path form is not modeled.
+ */
+function importedEnvironment(env: SpawnOptions['env']): Map<string, string | null> {
+  const imported = new Map<string, string | null>();
+  for (const entry of (env?.WSLENV ?? '').split(':')) {
+    const [key, flags = ''] = entry.split('/');
+    const value = env?.[key];
+    // `/w` values only travel from Linux to Windows.
+    if (!key || key === 'HOME' || flags.includes('w') || value === undefined) continue;
+    imported.set(key === 'CLAUDIAN_WSL_HOME' ? 'HOME' : key, translateImportedValue(value, flags));
+  }
+  return imported;
+}
+
+/**
+ * wsl.exe sends `/p` and `/l` values through one path-list translator: each `;`-separated absolute drive
+ * path maps to `/mnt/<drive>/…`, joined by `:`.
+ */
+function translateImportedValue(value: string, flags: string): string | null {
+  if (!/[pl]/u.test(flags)) return value;
+  const translated = value.split(';').map(entry => {
+    const drive = /^([a-z]):[\\/](.*)$/iu.exec(entry);
+    return drive ? `/mnt/${drive[1].toLowerCase()}/${drive[2].replaceAll('\\', '/')}` : null;
+  });
+  // WSL skips relative entries such as a bare `E:`; those and UNC shares are not modeled.
+  return translated.includes(null) ? null : translated.join(':');
 }
 
 // Windows ChildProcess.kill() terminates wsl.exe for these; signal 0 only checks liveness; others throw.

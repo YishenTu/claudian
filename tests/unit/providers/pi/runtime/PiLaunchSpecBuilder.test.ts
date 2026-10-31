@@ -1,7 +1,8 @@
-import type { PiProviderSettings } from '@/providers/pi/config';
+import { DEFAULT_PI_PROVIDER_SETTINGS, type PiProviderSettings } from '@/providers/pi/config';
 import { buildPiLaunchSpec } from '@/providers/pi/runtime/PiLaunchSpecBuilder';
 
 const baseSettings: PiProviderSettings = {
+  ...DEFAULT_PI_PROVIDER_SETTINGS,
   cliPath: '',
   cliPathsByHost: {},
   discoveredModels: [],
@@ -15,6 +16,19 @@ const baseSettings: PiProviderSettings = {
 };
 
 describe('PiLaunchSpecBuilder', () => {
+  it('maps a WSL resume file and includes the resolved distro in process compatibility', () => {
+    const params = {
+      command: 'pi', cwd: 'C:\\Vault', settings: baseSettings,
+      providerState: { sessionFile: '\\\\wsl$\\Ubuntu\\home\\me\\session.jsonl' },
+      executionTarget: { method: 'wsl' as const, platformFamily: 'unix' as const, platformOs: 'linux' as const, distroName: 'Ubuntu' },
+    };
+    const launch = buildPiLaunchSpec(params);
+    expect(launch.sessionTarget).toBe('/home/me/session.jsonl');
+    expect(launch.args).toContain('/home/me/session.jsonl');
+    expect(buildPiLaunchSpec({ ...params, providerState: null, executionTarget: { ...params.executionTarget, distroName: 'Debian' } }).processKey)
+      .not.toBe(buildPiLaunchSpec({ ...params, providerState: null }).processKey);
+  });
+
   it('builds main launch args with replacement system prompt and model flags', () => {
     expect(buildPiLaunchSpec({
       command: '/bin/pi',

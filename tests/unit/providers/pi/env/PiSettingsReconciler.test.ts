@@ -24,6 +24,20 @@ function toPiConfig({ cliPath = '', environment = '', hostCliPath }: PiFingerpri
 }
 
 describe('piSettingsReconciler', () => {
+  it('invalidates bindings on WSL distro changes and keeps them for process-only input changes', () => {
+    const platform = process.platform;
+    Object.defineProperty(process, 'platform', { value: 'win32', configurable: true });
+    const config = { ...toPiConfig({}), installationMethodsByHost: { [getInstallationKey()]: 'wsl' }, wslDistroOverridesByHost: { [getInstallationKey()]: 'Ubuntu' } };
+    const settings = { providerConfigs: { pi: config } };
+    try {
+      expect(piSettingsReconciler.reconcileModelWithEnvironment(settings)).toEqual({ changed: true, sessionPolicy: 'invalidate' });
+      settings.providerConfigs.pi.wslDistroOverridesByHost[getInstallationKey()] = 'Debian';
+      expect(piSettingsReconciler.reconcileModelWithEnvironment(settings)).toEqual({ changed: true, sessionPolicy: 'invalidate' });
+      settings.providerConfigs.pi.environmentVariables = 'CUSTOM_API_TOKEN=updated';
+      expect(piSettingsReconciler.reconcileModelWithEnvironment(settings)).toEqual({ changed: true, sessionPolicy: 'reload' });
+    } finally { Object.defineProperty(process, 'platform', { value: platform, configurable: true }); }
+  });
+
   it.each(['PI_CODING_AGENT_DIR', 'PI_CODING_AGENT_SESSION_DIR', 'PI_PACKAGE_DIR'])(
     'invalidates native bindings when location-affecting %s changes or is removed',
     key => {

@@ -18,7 +18,8 @@ it('probes the Linux store with the forwarded Grok environment at the vault cwd'
     environment: { GROK_PROFILE: 'review', GROK_UNSET: undefined, HOME: '/custom/home', OTHER: 'host' }, environmentText: 'HOME=/custom/home',
     hostPlatform: 'win32', vaultPath: 'C:\\vault',
   }, target);
-  expect(resolved).toMatchObject({ environment: { HOME: '/home/alice', GROK_HOME: '/opt/grok' }, target, targetCwd: '/mnt/c/vault' });
+  // The configured HOME is forwarded, so the probed child sees it over the account home, as the CLI does.
+  expect(resolved).toMatchObject({ environment: { HOME: '/custom/home', GROK_HOME: '/opt/grok' }, target, targetCwd: '/mnt/c/vault' });
   const [probe] = native.requests;
   expect(native.requests).toHaveLength(1);
   expect(probe.args).toEqual(expect.arrayContaining(['--distribution', 'Ubuntu', '--cd', '/mnt/c/vault']));

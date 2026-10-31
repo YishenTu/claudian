@@ -13,6 +13,7 @@ import {
 } from '../runtime/PiRPCTransport';
 import { PI_SESSION_TOOLS_EXTENSION_SOURCE, PI_SESSION_TOOLS_TITLE } from '../runtime/PiSessionTools';
 import { PiSubprocess } from '../runtime/PiSubprocess';
+import { piTargetPath } from '../runtime/piTargetPaths';
 import { isPiTreeResponse, PI_TREE_EXTENSION_SOURCE, requestPiTree } from '../runtime/PiTreeBridge';
 
 export interface PiExecutionKernelCallbacks {
@@ -77,7 +78,7 @@ export class PiRPCSessionKernel implements PiExecutionKernel {
           if (!enabled) continue;
           const extension = path.join(directory, name + '.ts');
           fs.writeFileSync(extension, source, 'utf8');
-          args.push('--extension', extension);
+          args.push('--extension', piTargetPath(extension, launchSpec.executionTarget));
         }
         processSpec = { ...launchSpec, args };
         this.extensionDirectory = directory;
@@ -86,7 +87,12 @@ export class PiRPCSessionKernel implements PiExecutionKernel {
         throw error;
       }
     }
-    this.subprocess = new PiSubprocess(processSpec);
+    try {
+      this.subprocess = new PiSubprocess(processSpec);
+    } catch (error) {
+      if (this.extensionDirectory) fs.rmSync(this.extensionDirectory, { recursive: true, force: true });
+      throw error;
+    }
     this.extensionUiRenderer = extensionUiRenderer;
   }
 

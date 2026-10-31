@@ -1,5 +1,6 @@
 import { getInstallationKey } from '@/core/device/InstallationKey';
 import { parseEnvironmentVariables } from '@/core/process/env';
+import { resolveExecutionTarget } from '@/core/process/execution-target/ExecutionTargetResolver';
 
 import {
   type CLIPathFingerprintInputs,
@@ -16,6 +17,7 @@ import {
 import type {
   ProviderEnvironmentReconciliation,
   ProviderSettingsReconciler,
+  ProviderSettingsReconciliationContext,
 } from '../../../core/providers/types';
 import type { Conversation } from '../../../core/types';
 import {
@@ -54,19 +56,23 @@ const PI_ENV_HASH_KEYS = [
 function computePiFingerprints(
   environmentText: string,
   cliPathInputs: CLIPathFingerprintInputs,
+  targetInputs: Record<string, string | undefined> = {},
 ): ScopedRuntimeInputFingerprints {
   return {
     runtime: createRuntimeInputFingerprint({
-      additionalInputs: cliPathInputs,
-      environmentKeys: PI_ENV_HASH_KEYS,
+      additionalInputs: { ...cliPathInputs, ...targetInputs },
+      environmentKeys: [...new Set([...PI_ENV_HASH_KEYS, ...Object.keys(parseEnvironmentVariables(environmentText))])],
       environmentText,
     }),
-    session: computePiSessionFingerprint(environmentText),
+    session: computePiSessionFingerprint(environmentText, targetInputs),
   };
 }
 
-function computePiSessionFingerprint(environmentText: string): string {
-  return createRuntimeInputFingerprint({ environmentKeys: PI_SESSION_ENV_KEYS, environmentText });
+function computePiSessionFingerprint(environmentText: string, targetInputs: Record<string, string | undefined> = {}): string {
+  return createRuntimeInputFingerprint({
+    additionalInputs: targetInputs,
+    environmentKeys: targetInputs.method === 'wsl' ? [...PI_SESSION_ENV_KEYS, 'HOME'] : PI_SESSION_ENV_KEYS, environmentText,
+  });
 }
 
 function invalidatePiConversationSessions(conversations: Conversation[]): Conversation[] {
@@ -101,7 +107,7 @@ export const piSettingsReconciler = {
 
   invalidateConversationSessions: invalidatePiConversationSessions,
 
-  reconcileModelWithEnvironment(settings: Record<string, unknown>): ProviderEnvironmentReconciliation {
+  reconcileModelWithEnvironment(settings: Record<string, unknown>, context?: ProviderSettingsReconciliationContext): ProviderEnvironmentReconciliation {
     const envText = getRuntimeEnvironmentText(settings, 'pi');
     const piSettings = getPiProviderSettings(settings);
     const cliPathInputs = createCLIPathFingerprintInputs(
@@ -109,16 +115,19 @@ export const piSettingsReconciler = {
       piSettings.cliPath,
     );
     const savedHash = piSettings.environmentHash;
+    const target = resolveExecutionTarget({ settings: piSettings, hostVaultPath: context?.vaultPath });
+    const targetInputs = target.method === 'wsl' ? { method: target.method, distroName: target.distroName } : {};
 
     const environment = parseEnvironmentVariables(envText);
     const hasFingerprintInputs = Boolean(
       hasCLIPathFingerprintInputs(cliPathInputs)
-      || PI_ENV_HASH_KEYS.some(key => Object.prototype.hasOwnProperty.call(environment, key))
+      || target.method === 'wsl'
+      || Object.keys(environment).length > 0
     );
     if (!savedHash && !hasFingerprintInputs) {
       return { changed: false };
     }
-    const current = computePiFingerprints(envText, cliPathInputs);
+    const current = computePiFingerprints(envText, cliPathInputs, targetInputs);
     const { changed, sessionPolicy } = compareScopedRuntimeInputFingerprints(
       { environmentHash: savedHash, sessionEnvironmentHash: piSettings.sessionEnvironmentHash },
       current,

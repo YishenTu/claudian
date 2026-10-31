@@ -1,16 +1,22 @@
 import { spawn as nativeSpawn } from 'node:child_process';
 import { ChildProcess } from 'node:child_process';
+import * as syncFS from 'node:fs';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { Readable, Writable } from 'node:stream';
 
+// WindowsHostFS serves the Windows temporary directory on POSIX hosts through these forwarding namespaces.
+vi.mock('node:fs', async () => ({ ...(await vi.importActual<typeof import('node:fs')>('node:fs')) }));
+vi.mock('node:fs/promises', async () => ({ ...(await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises')) }));
 vi.mock('cross-spawn', () => ({ default: vi.fn() }));
 vi.mock('node:child_process', async () => ({
   ...(await vi.importActual<typeof import('node:child_process')>('node:child_process')),
   spawn: vi.fn(),
 }));
 
+import { createWindowsHostFS } from '@test/helpers/WindowsHostFS';
+import { readWSLExec } from '@test/helpers/WSLLaunch';
 import spawn from 'cross-spawn';
 import type { MockedFunction } from 'vitest';
 
@@ -55,6 +61,36 @@ describe('PiSubprocess', () => {
   let windowsUnknownCommand: string;
   let windowsYarnBin: string;
   let windowsYarnCommand: string;
+
+  // Windows hosts have a real Windows temporary directory, so the modeled one only runs elsewhere.
+  it.skipIf(process.platform === 'win32')('delivers a literal >32K WSL system prompt through a mapped file and cleans it on exit', async () => {
+    const files = createWindowsHostFS({ fs: syncFS, fsPromises: fs });
+    await fs.mkdir(String.raw`C:\Temp`, { recursive: true });
+    // POSIX os.tmpdir() follows TMPDIR, so the prompt directory lands on the modeled Windows drive.
+    vi.stubEnv('TMPDIR', String.raw`C:\Temp`);
+    onTestFinished(() => { vi.unstubAllEnvs(); });
+    const prompt = '  literal $HOME `command` "quotes"\n' + 'x'.repeat(40_000) + '\n  ';
+    const child = createMockProcess();
+    mockNativeSpawn.mockReturnValue(child);
+    mockSpawn.mockReturnValue(child);
+    const subprocess = new PiSubprocess({
+      command: 'pi', cwd: 'C:\\Vault', env: {}, args: ['--mode', 'rpc', '--system-prompt', prompt],
+      executionTarget: { method: 'wsl', platformFamily: 'unix', platformOs: 'linux', distroName: 'Ubuntu' },
+    });
+    subprocess.start();
+    const [directory] = syncFS.readdirSync(String.raw`C:\Temp`);
+    expect(directory).toMatch(/^claudian-pi-prompt-/u);
+    expect(await files.read(`C:\\Temp\\${directory}\\system-prompt.txt`)).toBe(prompt);
+    const call = mockNativeSpawn.mock.calls.at(-1)!;
+    expect(call[0]).toMatch(/wsl\.exe$/i);
+    const args = call[1] as string[];
+    expect(args.join(' ').length).toBeLessThan(32_767);
+    const native = readWSLExec({ args }).args;
+    expect(native.at(-1)).toBe(`/mnt/c/Temp/${directory}/system-prompt.txt`);
+    expect(call[2]).toMatchObject({ windowsVerbatimArguments: true });
+    child.emit('exit', 0, null);
+    expect(syncFS.readdirSync(String.raw`C:\Temp`)).toEqual([]);
+  });
 
   beforeAll(async () => {
     windowsNpmPrefix = await fs.mkdtemp(path.join(os.tmpdir(), 'pi-windows-launch-'));

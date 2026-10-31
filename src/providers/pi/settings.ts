@@ -29,6 +29,6 @@ export function projectPiModelSettings(settings: Record<string, unknown>): Recor
     preferredThinkingByModel: selectModelMetadata(current.preferredThinkingByModel, selected),
     selectedModels: current.discoveredModels.filter(model => selected.has(model.encodedId)),
   };
-  for (const key of ['discoveredModels', 'catalogTimestamp', 'catalogFingerprint', 'availableModes']) delete (config as Record<string, unknown>)[key];
+  for (const key of ['discoveredModels', 'catalogTimestamp', 'catalogFingerprint', 'availableModes', 'installationMethod', 'wslDistroOverride']) delete (config as Record<string, unknown>)[key];
   return config;
 }
