@@ -2,9 +2,14 @@ import { randomBytes } from 'node:crypto';
 import { type IncomingMessage, request } from 'node:http';
 import { StringDecoder } from 'node:string_decoder';
 
+import { resolveExecutionTarget } from '@/core/process/execution-target/ExecutionTargetResolver';
+import { buildTargetLaunchSpec } from '@/core/process/execution-target/TargetLaunchSpec';
+import type { ExecutionTarget } from '@/core/process/execution-target/types';
 import { ManagedStdioProcess } from '@/core/process/ManagedStdioProcess';
 import { toAbortError } from '@/utils/abort';
 import { LineBuffer } from '@/utils/LineBuffer';
+
+import { getOpencodeWSLForwardedEnvironment, opencodeEnvironment } from '../runtime/OpencodeExecutionTarget';
 
 export interface OpencodeHTTPEvent {
   readonly type: string;
@@ -22,11 +27,16 @@ export class OpencodeHTTPClient {
   private readonly process: ManagedStdioProcess;
   private endpoint: Promise<string> | null = null;
 
-  constructor(cliPath: string, private readonly cwd: string, environment: NodeJS.ProcessEnv) {
-    this.process = new ManagedStdioProcess({
+  readonly cwd: string;
+
+  constructor(cliPath: string, cwd: string, environment: NodeJS.ProcessEnv, readonly target: ExecutionTarget = resolveExecutionTarget({ settings: { installationMethod: 'native-windows', wslDistroOverride: '' } })) {
+    const env = opencodeEnvironment({ ...environment, OPENCODE_PASSWORD: this.password });
+    const spec = buildTargetLaunchSpec({
+      target, hostCwd: cwd, env, forwardEnvironment: getOpencodeWSLForwardedEnvironment(env),
       command: cliPath, args: ['serve', '--stdio', '--hostname', '127.0.0.1', '--port', '0'],
-      cwd, env: { ...environment, OPENCODE_PASSWORD: this.password },
     });
+    this.cwd = spec.targetCwd;
+    this.process = new ManagedStdioProcess({ ...spec, cwd: spec.spawnCwd });
   }
 
   signal(signal?: AbortSignal): AbortSignal {
@@ -142,7 +152,8 @@ export class OpencodeHTTPClient {
         if (options.streaming) window.clearTimeout(timer);
         resolve(response);
       });
-      req.on('error', reject);
+      req.on('error', error => reject(this.target.method === 'wsl' && !signal.aborted
+        ? new Error(`Cannot reach OpenCode in WSL on localhost. Enable localhostForwarding=true in [wsl2] in %UserProfile%\\.wslconfig and restart WSL, or use mirrored networking. ${error.message}`) : error));
       const timer = options.timeoutMs === 0 ? undefined : window.setTimeout(() => req.destroy(new Error('OpenCode HTTP request timed out.')), options.timeoutMs ?? 30_000);
       req.on('close', () => window.clearTimeout(timer));
       req.end(options.body === undefined ? undefined : JSON.stringify(options.body));

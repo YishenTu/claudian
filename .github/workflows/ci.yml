@@ -321,10 +321,28 @@ jobs:
       - name: Install dependencies on Windows
         run: npm ci
 
+      - name: Install isolated OpenCode v2 in WSL
+        shell: pwsh
+        run: |
+          $installer = @'
+          set -eu
+          mkdir -p /tmp/claudian-opencode-v2
+          cd /tmp/claudian-opencode-v2
+          curl --fail --location --retry 3 https://opencode.ai/files/bin/2.2.3/opencode-linux-x64-baseline.tar.gz -o opencode.tar.gz
+          echo 'ef3aeeaf5522b10d69a3da7bbd6e6d8d259f845833d96b8310767d3407b18a35  opencode.tar.gz' | sha256sum -c -
+          tar -xzf opencode.tar.gz
+          chmod +x opencode
+          ./opencode --version
+          '@
+          # PowerShell pipes CRLF line endings; strip them before sh parses the script.
+          $installer | wsl --exec /bin/sh -c "tr -d '\r' | /bin/sh"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
       - name: Exercise native Windows to WSL execution
         env:
           CLAUDIAN_REQUIRE_WSL: '1'
-        run: npm run test:unit -- --maxWorkers=1 tests/integration/core/process/execution-target/WSLExecution.windows.test.ts tests/integration/core/process/execution-target/WSLSessionToolRelay.windows.test.ts tests/integration/core/process/execution-target/ClaudeWSL.windows.test.ts tests/integration/providers/deepseek/runtime/DeepSeekWSLHost.windows.test.ts
+          CLAUDIAN_OPENCODE_WSL_CLI: /tmp/claudian-opencode-v2/opencode
+        run: npm run test:unit -- --maxWorkers=1 tests/integration/core/process/execution-target/WSLExecution.windows.test.ts tests/integration/core/process/execution-target/WSLSessionToolRelay.windows.test.ts tests/integration/core/process/execution-target/ClaudeWSL.windows.test.ts tests/integration/providers/deepseek/runtime/DeepSeekWSLHost.windows.test.ts tests/integration/providers/opencode/runtime/OpencodeWSL.windows.test.ts
 
   build-artifacts:
     runs-on: ubuntu-latest

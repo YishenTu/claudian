@@ -13,6 +13,7 @@ const HOST_IS_WINDOWS = path.sep === '\\';
 /** Path-taking functions production reads, writes and resolves through. */
 const FS_FUNCTIONS = new Set<string>([
   'createReadStream', 'existsSync', 'lstatSync', 'readFileSync', 'readdirSync', 'realpathSync', 'statSync',
+  'unwatchFile', 'watchFile',
 ] satisfies (keyof typeof NodeFS)[]);
 const FS_PROMISES_FUNCTIONS = new Set<string>([
   'access', 'copyFile', 'lstat', 'mkdir', 'mkdtemp', 'open', 'readFile', 'readdir', 'realpath', 'rename', 'rm', 'stat', 'writeFile',

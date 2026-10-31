@@ -67,8 +67,8 @@ export function selectOpencodeTurnStats(messages: readonly NativeRecord[], selec
 
 /**
  * Reads the selected turn's statistics backward from the newest native message,
- * stopping at the turn's user boundary or at the first message created before
- * the prompt started, so earlier history is never requested.
+ * stopping at the turn's user boundary. Only selectors without a native ID use
+ * the host start time as a cutoff; native and host clocks can differ.
  */
 export async function readOpencodeTurnStats(
   client: Pick<OpencodeServerLease, 'request'>,
@@ -79,7 +79,7 @@ export async function readOpencodeTurnStats(
   for await (const message of readOpencodeHTTPMessagesBackward(client, sessionId)) {
     newestFirst.push(message);
     if (isTurnStart(message, selector)) return selectOpencodeTurnStats(newestFirst.reverse(), selector);
-    if ((getMessageCreatedAt(message) ?? Infinity) < selector.startedAt) return undefined;
+    if (!selector.userMessageId && (getMessageCreatedAt(message) ?? Infinity) < selector.startedAt) return undefined;
   }
   return undefined;
 }

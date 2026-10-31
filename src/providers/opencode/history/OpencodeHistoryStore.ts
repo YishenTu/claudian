@@ -2,6 +2,7 @@ import {
   buildImageAttachmentFromBase64,
   parseImageDataUri,
 } from '@/core/execution/imageAttachment';
+import type { ExecutionTarget } from '@/core/process/execution-target/types';
 import { extractUserQuery } from '@/core/prompt/promptContext';
 import { decodeRecoveryPrompt } from '@/core/prompt/recoveryPrompt';
 import { decodeSessionMessage } from '@/core/session-tools/sessionMessageEnvelope';
@@ -28,7 +29,7 @@ interface StoredMessage {
 
 const OPENCODE_HYDRATION_DIAGNOSTIC_ID_PREFIX = 'opencode-hydration-error';
 
-function mapStoredMessage(message: StoredMessage): ChatMessage | null {
+function mapStoredMessage(message: StoredMessage, target?: ExecutionTarget): ChatMessage | null {
   const role = getString(message.info.role);
   const id = getString(message.info.id);
   if (!id) {
@@ -63,7 +64,7 @@ function mapStoredMessage(message: StoredMessage): ChatMessage | null {
   }
 
   const contentBlocks = buildAssistantContentBlocks(message.parts);
-  const toolCalls = buildAssistantToolCalls(message.parts);
+  const toolCalls = buildAssistantToolCalls(message.parts, target);
   const completedAt = getMessageCompletedAt(message.info);
   const durationSeconds = completedAt && completedAt >= createdAt
     ? Math.max(0, (completedAt - createdAt) / 1_000)
@@ -229,7 +230,7 @@ function buildAssistantContentBlocks(parts: StoredRow[]): ContentBlock[] {
   return blocks;
 }
 
-function buildAssistantToolCalls(parts: StoredRow[]): ToolCallInfo[] {
+function buildAssistantToolCalls(parts: StoredRow[], target?: ExecutionTarget): ToolCallInfo[] {
   return parts.flatMap((part) => {
     if (getString(part.type) !== 'tool') {
       return [];
@@ -243,7 +244,7 @@ function buildAssistantToolCalls(parts: StoredRow[]): ToolCallInfo[] {
       return [];
     }
 
-    const input = normalizeOpencodeToolInput(rawName, getObject(state?.input) ?? {});
+    const input = normalizeOpencodeToolInput(rawName, getObject(state?.input) ?? {}, target);
     const name = normalizeOpencodeToolName(rawName);
     const nativeContent = Array.isArray(state?.content) ? state.content.filter(isPlainObject) : [];
     const nativeResult = getString(state?.output) ?? getString(state?.error)
@@ -253,7 +254,7 @@ function buildAssistantToolCalls(parts: StoredRow[]): ToolCallInfo[] {
       ...(nativeResult ? { output: nativeResult } : {}),
       ...(getObject(state?.metadata) ? { metadata: getObject(state?.metadata) } : {}),
     };
-    const details = normalizeOpencodeToolResultDetails(rawName, input, rawOutput);
+    const details = normalizeOpencodeToolResultDetails(rawName, input, rawOutput, target);
     const normalizedResult = nativeResult === undefined || nativeStatus === 'running'
       ? undefined
       : normalizeOpencodeToolResult(rawName, nativeResult, rawOutput);
@@ -406,7 +407,7 @@ function markInterruptedTurn(messages: ChatMessage[], turnStart: number, marker:
 }
 
 /** v2 control entries delimit turns even when they have no chat presentation. */
-export function mapOpencodeNativeMessages(messages: StoredRow[]): ChatMessage[] {
+export function mapOpencodeNativeMessages(messages: StoredRow[], target?: ExecutionTarget): ChatMessage[] {
   const result: ChatMessage[] = [];
   let segment: ChatMessage[] = [];
   const stats = new OpencodeTurnStats();
@@ -451,7 +452,7 @@ export function mapOpencodeNativeMessages(messages: StoredRow[]): ChatMessage[] 
         ]
       : Array.isArray(row.content) ? row.content.filter(isPlainObject) : [];
     const info = { ...row, role: row.type };
-    const message = mapStoredMessage({ info, parts });
+    const message = mapStoredMessage({ info, parts }, target);
     if (message) {
       if (message.role === 'user') previousAssistant = undefined;
       else {

@@ -1,4 +1,5 @@
 import { getInstallationKey } from '@/core/device/InstallationKey';
+import { decodeInstallationSettings, type InstallationSettings, selectInstallationSettings, type StoredInstallationSettings, updateInstallationSettings } from '@/core/providers/settings/InstallationSettings';
 
 import { normalizeHostnameStringMap } from '../../core/providers/settings/HostnameStringMap';
 import {
@@ -15,7 +16,7 @@ import {
   type OpencodeThinkingOptionsByModel,
 } from './models';
 
-interface PersistedOpencodeProviderSettings {
+interface PersistedOpencodeProviderSettings extends StoredInstallationSettings {
   cliPath: string;
   cliPathsByHost: HostnameCLIPaths;
   enabled: boolean;
@@ -27,11 +28,13 @@ interface PersistedOpencodeProviderSettings {
   visibleModels: string[];
 }
 
-export interface OpencodeProviderSettings extends PersistedOpencodeProviderSettings {
+export interface OpencodeProviderSettings extends PersistedOpencodeProviderSettings, InstallationSettings {
   discoveredModels: OpencodeDiscoveredModel[];
 }
 
 export const DEFAULT_OPENCODE_PROVIDER_SETTINGS: Readonly<PersistedOpencodeProviderSettings> = Object.freeze({
+  installationMethodsByHost: {},
+  wslDistroOverridesByHost: {},
   cliPath: '',
   cliPathsByHost: {},
   enabled: false,
@@ -126,7 +129,10 @@ export function decodeOpencodeConfig(
   const cliPathsByHost = normalizeHostnameStringMap(config.cliPathsByHost);
   const { discoveredModels, thinkingOptionsByModel } = getOpencodeDiscoveryState(config);
 
+  const installation = decodeInstallationSettings(config);
   return {
+    ...installation,
+    ...selectInstallationSettings(installation, getInstallationKey()),
     cliPath: readStoredString(config.cliPath, DEFAULT_OPENCODE_PROVIDER_SETTINGS.cliPath),
     cliPathsByHost,
     discoveredModels,
@@ -202,6 +208,7 @@ export function updateOpencodeConfig(
   const next: OpencodeProviderSettings = {
     ...current,
     ...updates,
+    ...updateInstallationSettings(current, updates, hostnameKey),
     cliPath: nextCliPath,
     cliPathsByHost: nextCliPathsByHost,
     discoveredModels: nextDiscoveredModels,
@@ -214,6 +221,8 @@ export function updateOpencodeConfig(
   };
 
   Object.assign(config, {
+    installationMethodsByHost: next.installationMethodsByHost,
+    wslDistroOverridesByHost: next.wslDistroOverridesByHost,
     discoveredModels: nextDiscoveredModels,
     cliPath: next.cliPath,
     cliPathsByHost: next.cliPathsByHost,

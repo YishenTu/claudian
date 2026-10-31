@@ -294,7 +294,7 @@ const handle = async (req, res, url, body, route) => {
   if (route.endsWith('/prompt') || route.endsWith('/command')) {
     releaseModel?.();
     if (body.text.includes('Old local history')) { res.writeHead(400).end(); return; }
-    const assistantMessageID = 'msg_assistant_' + (++turn), userMessage = { id: body.id ?? 'msg_user', type: 'user', time: { created: Date.now() } };
+    const assistantMessageID = 'msg_assistant_' + (++turn), userMessage = { id: body.id ?? 'msg_user', type: 'user', time: { created: Date.now() + Number(env.NATIVE_CLOCK_OFFSET_MS || 0) } };
     // Steering scenarios need client admission before their first steer-triggering output.
     const eventsReleased = body.text.startsWith('steer')
       ? new Promise(resolve => promptEventReleases.set(body.id, () => resolve(undefined))) : Promise.resolve();
@@ -536,7 +536,7 @@ const handle = async (req, res, url, body, route) => {
  if (route === '/fixture/system') return reply({ sessions:Object.fromEntries([...sessions].map(([id,s]) => [id, agents().find(a => a.id === s.agent)?.system ?? null])), agents:agents().map(a => a.id) });
  if (route === '/fixture/hold-sessions') { held = []; res.writeHead(204).end(); return; }
  if (route === '/fixture/release-sessions') { const pending = held ?? []; held = null; for (const send of pending) send(); res.writeHead(204).end(); return; }
- if (route === '/api/session') { const id = 'ses_' + (++sequence); const session = {id, agent:body.agent}; sessions.set(id,session); save(); if (held) { held.push(() => reply(session)); return; } return reply(session); }
+ if (route === '/api/session') { const id = 'ses_' + (++sequence); const session = {id, agent:body.agent, ...(body.location ? {location:body.location} : {})}; sessions.set(id,session); save(); if (held) { held.push(() => reply(session)); return; } return reply(session); }
  const session = sessions.get(id);
  if (!session) { res.writeHead(404).end(); return; }
  if (parts.length === 4 && req.method === 'DELETE') { sessions.delete(id); deleted.push(id); save(); res.writeHead(204).end(); return; }

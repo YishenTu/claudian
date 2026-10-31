@@ -2,13 +2,17 @@ import { randomUUID } from 'node:crypto';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath } from 'node:url';
 
 import { parse, type ParseError } from 'jsonc-parser';
+
+import { probeTargetEnvironment } from '@/core/process/execution-target/TargetEnvironmentProbe';
+import type { ExecutionTarget } from '@/core/process/execution-target/types';
 
 import { CLAUDIAN_STORAGE_PATH } from '../../../core/bootstrap/storagePaths';
 import { expandHomePath } from '../../../utils/path';
 import { buildAgentConfig, OPENCODE_BUILD_AGENT_ID } from './OpencodeExecutionAgents';
+import { opencodeEnvironment, opencodeFileURL, opencodeHostPath, opencodeTargetPath } from './OpencodeExecutionTarget';
 import { resolveOpencodeDatabasePath } from './OpencodePaths';
 
 export interface OpencodeLaunchArtifacts {
@@ -28,6 +32,7 @@ const DEFAULT_OPENCODE_MANAGED_AGENT_CONFIGS: readonly OpencodeManagedAgentConfi
 ];
 
 export interface PrepareOpencodeLaunchArtifactsParams {
+  target?: ExecutionTarget;
   sessionToolsPluginPath?: string;
   runtimeEnv: NodeJS.ProcessEnv;
   workspaceRoot: string;
@@ -36,15 +41,16 @@ export interface PrepareOpencodeLaunchArtifactsParams {
 export async function prepareOpencodeLaunchArtifacts(
   params: PrepareOpencodeLaunchArtifactsParams,
 ): Promise<OpencodeLaunchArtifacts> {
-  const artifactsDir = path.join(params.workspaceRoot, CLAUDIAN_STORAGE_PATH, 'opencode');
+  const artifactsDir = (params.target?.method === 'wsl' ? path.win32 : path).join(params.workspaceRoot, CLAUDIAN_STORAGE_PATH, 'opencode');
   const inlineConfig = params.runtimeEnv.OPENCODE_CONFIG_CONTENT?.trim();
   const managedBase = inlineConfig
-    ? await parseOpencodeConfig(inlineConfig, 'OPENCODE_CONFIG_CONTENT', params.runtimeEnv, params.workspaceRoot)
+    ? await parseOpencodeConfig(inlineConfig, 'OPENCODE_CONFIG_CONTENT', params.runtimeEnv, params.workspaceRoot, params.target)
     : {};
+  resolveOpencodePluginReferences(managedBase, params.workspaceRoot, params.target);
   if (params.sessionToolsPluginPath) {
     managedBase.plugins = [
       ...(Array.isArray(managedBase.plugins) ? managedBase.plugins as unknown[] : []),
-      { package: pathToFileURL(params.sessionToolsPluginPath).href },
+      { package: opencodeFileURL(params.sessionToolsPluginPath, params.target) },
     ];
   }
   // Protect substituted user text from native expansion a second time.
@@ -53,21 +59,21 @@ export async function prepareOpencodeLaunchArtifacts(
     [...DEFAULT_OPENCODE_MANAGED_AGENT_CONFIGS, buildAgentConfig('readonly'), buildAgentConfig('passive')],
     OPENCODE_BUILD_AGENT_ID,
   ), null, 2)}\n`.replace(/\{(env|file):/g, '\\u007b$1:');
-  const databasePath = resolveOpencodeDatabasePath(params.runtimeEnv);
+  const databasePath = resolveOpencodeDatabasePath(params.runtimeEnv, params.target);
 
-  await ensureOpencodeDatabaseDirectory(databasePath);
+  await ensureOpencodeDatabaseDirectory(databasePath, params.target);
   // Earlier versions wrote per-profile prompt files here; nothing references them anymore.
   await fs.rm(path.join(artifactsDir, 'prompts'), { recursive: true, force: true });
 
   return { configContent, databasePath };
 }
 
-async function ensureOpencodeDatabaseDirectory(databasePath: string | null): Promise<void> {
+async function ensureOpencodeDatabaseDirectory(databasePath: string | null, target?: ExecutionTarget): Promise<void> {
   if (!databasePath || databasePath === ':memory:') {
     return;
   }
 
-  await fs.mkdir(path.dirname(databasePath), { recursive: true });
+  await fs.mkdir((target?.method === 'wsl' ? path.win32 : path).dirname(databasePath), { recursive: true });
 }
 
 export function buildOpencodeManagedConfig(
@@ -169,9 +175,16 @@ export async function parseOpencodeConfig(
   source: string,
   environment: NodeJS.ProcessEnv,
   directory: string,
+  target?: ExecutionTarget,
 ): Promise<Record<string, unknown>> {
   // Native OpenCode substitutes environment, then file expressions before JSONC,
   // including expressions used as unquoted booleans or objects.
+  const references = [...new Set([...content.matchAll(/\{env:([a-zA-Z_][a-zA-Z0-9_]*)\}/g)].map(match => match[1]))];
+  if (target?.method === 'wsl' && references.length) {
+    const native = await probeTargetEnvironment({ target, hostCwd: directory, env: opencodeEnvironment(environment), variables: references });
+    if (!native) throw new Error(`Could not resolve the WSL environment for OpenCode config: ${source}`);
+    environment = { ...environment, ...native };
+  }
   const substituted = content.replace(/\{env:([^}]+)\}/g, (_, name: string) => environment[name] || '');
   let expanded = '';
   let cursor = 0;
@@ -183,9 +196,11 @@ export async function parseOpencodeConfig(
       expanded += match[0];
       continue;
     }
-    const nativeHome = (process.platform === 'win32' ? environment.USERPROFILE : environment.HOME) || os.homedir();
-    const filePath = match[1].startsWith('~/') ? path.join(nativeHome, match[1].slice(2)) : match[1];
-    const referencePath = path.resolve(directory, filePath);
+    const nativeHome = (target?.method === 'wsl' ? environment.HOME : process.platform === 'win32' ? environment.USERPROFILE : environment.HOME) || os.homedir();
+    const filePath = match[1].startsWith('~/') ? (target?.method === 'wsl' ? path.posix : path).join(nativeHome, match[1].slice(2)) : match[1];
+    const referencePath = target?.method === 'wsl'
+      ? opencodeHostPath(path.posix.resolve(opencodeTargetPath(directory, target), opencodeTargetPath(filePath, target)), target)
+      : path.resolve(directory, filePath);
     let fileContent: string;
     try {
       fileContent = await fs.readFile(referencePath, 'utf8');
@@ -217,4 +232,31 @@ function nativePermissionRules(value: unknown): Array<{ action: string; resource
         ? [{ action, resource, effect }]
         : []);
   });
+}
+
+/** Preserve the meaning of local plugin packages when their config is moved to managed storage. */
+export function resolveOpencodePluginReferences(config: Record<string, unknown>, directory: string, target?: ExecutionTarget): void {
+  const resolve = (value: unknown): unknown => {
+    if (typeof value !== 'string') return value;
+    if (value.startsWith('./') || value.startsWith('../')) {
+      const resolved = target?.method === 'wsl'
+        ? path.posix.resolve(opencodeTargetPath(directory, target), value) : path.resolve(directory, value);
+      return opencodeFileURL(resolved, target);
+    }
+    if (target?.method === 'wsl') {
+      if (/^(?:[a-zA-Z]:[\\/]|[\\/]{2})/u.test(value)) return opencodeFileURL(value, target);
+      if (value.startsWith('file:')) {
+        const url = new URL(value);
+        if (url.hostname || /^\/[a-zA-Z]:\//u.test(url.pathname)) return opencodeFileURL(fileURLToPath(url, { windows: true }), target);
+      }
+    }
+    return value;
+  };
+  for (const key of ['plugin', 'plugins']) {
+    if (!Array.isArray(config[key])) continue;
+    config[key] = config[key].map(value => {
+      if (isPlainObject(value)) return { ...value, package: resolve(value.package) };
+      return Array.isArray(value) ? [resolve(value[0]), ...(value as unknown[]).slice(1)] : resolve(value);
+    });
+  }
 }

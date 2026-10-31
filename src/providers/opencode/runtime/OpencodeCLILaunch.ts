@@ -1,12 +1,17 @@
+import type { ExecutionTarget } from '@/core/process/execution-target/types';
+
 import {
   CachedProviderCLIResolver,
   type ProviderCLISettingsProjection,
 } from '../../../core/providers/cli/CachedProviderCLIResolver';
 import type { ProviderHistoryPathContext } from '../../../core/providers/types';
 import { decodeOpencodeConfig } from '../config';
+import { resolveOpencodeWSLCLIPath } from './opencodeCLIReference';
+import { resolveOpencodeTarget } from './OpencodeExecutionTarget';
 
 /** The CLI and environment text a native history read launches with. */
 export interface OpencodeHistoryLaunch {
+  readonly target: ExecutionTarget;
   readonly cliPath: string;
   readonly environmentText: string;
 }
@@ -35,11 +40,13 @@ export function createOpencodeCLIResolver(
 }
 
 /** Resolves a native history read's launch from the configuration a history path context carries. */
-export function resolveOpencodeHistoryLaunch(context?: ProviderHistoryPathContext): OpencodeHistoryLaunch {
+export async function resolveOpencodeHistoryLaunch(context?: ProviderHistoryPathContext, cwd = context?.vaultPath ?? process.cwd()): Promise<OpencodeHistoryLaunch> {
+  const target = await resolveOpencodeTarget(context?.config ?? {}, cwd);
   const environmentText = context?.environmentText ?? '';
   const projection = projectOpencodeCLIConfig(context?.config ?? {}, environmentText);
   return {
-    cliPath: createOpencodeCLIResolver(() => projection).resolve(projection) ?? 'opencode',
+    target,
+    cliPath: target.method === 'wsl' ? resolveOpencodeWSLCLIPath(decodeOpencodeConfig(context?.config ?? {})) : createOpencodeCLIResolver(() => projection).resolve(projection) ?? 'opencode',
     environmentText,
   };
 }

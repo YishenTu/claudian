@@ -11,6 +11,7 @@ import { opencodeSettingsReconciler } from './env/OpencodeSettingsReconciler';
 import { OpencodeExecutionBackend } from './execution/OpencodeExecutionBackend';
 import { OpencodeConversationHistoryService } from './history/OpencodeConversationHistoryService';
 import { opencodeModelPolicy } from './OpencodeModelPolicy';
+import { opencodeTargetPath, resolveOpencodeTarget } from './runtime/OpencodeExecutionTarget';
 import { opencodeTaskResultInterpreter } from './runtime/OpencodeTaskResultInterpreter';
 import { getOpencodeProviderSettings, projectOpencodeModelSettings, updateOpencodeProviderSettings } from './settings';
 import { opencodeSubagentAdapter } from './subagentAdapter';
@@ -18,6 +19,7 @@ import { opencodeChatUIConfig } from './ui/OpencodeChatUIConfig';
 
 export const opencodeProviderRegistration: ProviderModule = {
   id: 'opencode',
+  resolveExecutionWorkingDirectory: async (host, cwd) => opencodeTargetPath(cwd, await resolveOpencodeTarget(host.getRuntimeHost('opencode').config, cwd)),
   blankTabOrder: 10,
   capabilities: OPENCODE_PROVIDER_CAPABILITIES,
   modelPolicy: opencodeModelPolicy,
@@ -48,7 +50,7 @@ export const opencodeProviderRegistration: ProviderModule = {
       return current.visibleModels.some(id => !Object.hasOwn(current.thinkingOptionsByModel, id)
         || !current.discoveredModels.some(model => model.rawId === id));
     },
-    hostScopedFields: ['cliPathsByHost'],
+    hostScopedFields: ['cliPathsByHost', 'installationMethodsByHost', 'wslDistroOverridesByHost'],
     normalizeStored(target, stored) {
       const storedConfig = getProviderConfig(stored, 'opencode');
       const normalized = getOpencodeProviderSettings(stored);

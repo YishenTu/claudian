@@ -1,5 +1,7 @@
 import { getInstallationKey } from '@/core/device/InstallationKey';
 import { parseEnvironmentVariables } from '@/core/process/env';
+import { resolveExecutionTarget } from '@/core/process/execution-target/ExecutionTargetResolver';
+import type { ExecutionTarget } from '@/core/process/execution-target/types';
 
 import {
   type CLIPathFingerprintInputs,
@@ -8,7 +10,7 @@ import {
 } from '../../../core/providers/cli/CLIPathFingerprintInputs';
 import { getRuntimeEnvironmentText } from '../../../core/providers/providerEnvironment';
 import { createRuntimeInputFingerprint } from '../../../core/providers/settings/RuntimeInputFingerprint';
-import type { ProviderEnvironmentReconciliation, ProviderSettingsReconciler } from '../../../core/providers/types';
+import type { ProviderEnvironmentReconciliation, ProviderSettingsReconciler, ProviderSettingsReconciliationContext } from '../../../core/providers/types';
 import type { Conversation } from '../../../core/types';
 import {
   getOpencodeProviderSettings,
@@ -17,6 +19,8 @@ import {
 import { clearOpencodeResumeState, getOpencodeState } from '../types';
 
 const OPENCODE_ENV_HASH_KEYS = [
+  'HOME',
+  'OPENCODE_CONFIG_CONTENT',
   'OPENCODE_CONFIG',
   'OPENCODE_DB',
   'OPENCODE_DISABLE_PROJECT_CONFIG',
@@ -27,9 +31,10 @@ const OPENCODE_ENV_HASH_KEYS = [
 function computeOpencodeRuntimeFingerprint(
   environmentText: string,
   cliPathInputs: CLIPathFingerprintInputs,
+  target: ExecutionTarget,
 ): string {
   return createRuntimeInputFingerprint({
-    additionalInputs: cliPathInputs,
+    additionalInputs: { ...cliPathInputs, target: JSON.stringify(target) },
     environmentKeys: OPENCODE_ENV_HASH_KEYS,
     environmentText,
   });
@@ -70,19 +75,20 @@ export const opencodeSettingsReconciler = {
 
   preservesConversationSession: preservesOpencodeConversationSession,
 
-  reconcileModelWithEnvironment(settings: Record<string, unknown>): ProviderEnvironmentReconciliation {
+  reconcileModelWithEnvironment(settings: Record<string, unknown>, context?: ProviderSettingsReconciliationContext): ProviderEnvironmentReconciliation {
     const envText = getRuntimeEnvironmentText(settings, 'opencode');
     const opencodeSettings = getOpencodeProviderSettings(settings);
     const cliPathInputs = createCLIPathFingerprintInputs(
       opencodeSettings.cliPathsByHost[getInstallationKey()],
       opencodeSettings.cliPath,
     );
-    const currentHash = computeOpencodeRuntimeFingerprint(envText, cliPathInputs);
+    const target = resolveExecutionTarget({ settings: opencodeSettings, hostVaultPath: context?.vaultPath });
+    const currentHash = computeOpencodeRuntimeFingerprint(envText, cliPathInputs, target);
     const savedHash = opencodeSettings.environmentHash;
 
     const environment = parseEnvironmentVariables(envText);
     const hasFingerprintInputs = Boolean(
-      hasCLIPathFingerprintInputs(cliPathInputs)
+      target.method === 'wsl' || hasCLIPathFingerprintInputs(cliPathInputs)
       || OPENCODE_ENV_HASH_KEYS.some(
         key => Object.prototype.hasOwnProperty.call(environment, key),
       )

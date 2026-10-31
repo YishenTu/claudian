@@ -1,8 +1,11 @@
+import type { ExecutionTarget } from '@/core/process/execution-target/types';
+
 import { readOpencodeHTTPMessages } from '../http/OpencodeHTTPHistory';
 import { type OpencodeServerLease, type OpencodeServerService, withOpencodeServerLease } from '../http/OpencodeServerService';
 
 export interface OpencodeSessionForkOptions {
   resolveServerService?: () => Promise<OpencodeServerService | null | undefined>;
+  target?: ExecutionTarget;
   cliPath: string;
   cwd: string;
   environment: NodeJS.ProcessEnv;
@@ -14,7 +17,7 @@ export interface OpencodeSessionForkOptions {
 export async function forkOpencodeSession(options: OpencodeSessionForkOptions): Promise<string> {
   return withOpencodeServerLease(await options.resolveServerService?.(), options.cliPath, options.cwd, options.environment, client => (
     forkOpencodeHTTPSession(client, options.sourceSessionId, options.resumeAt)
-  ));
+  ), options.target);
 }
 
 /** Fork before the next native entry so the selected assistant reply is retained. */

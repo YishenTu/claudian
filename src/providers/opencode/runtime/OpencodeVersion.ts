@@ -1,4 +1,8 @@
-import { probeCLIInstallation } from '@/core/providers/cli/CLIInstallationProbe';
+import { resolveExecutionTarget } from '@/core/process/execution-target/ExecutionTargetResolver';
+import type { ExecutionTarget } from '@/core/process/execution-target/types';
+import { probeTargetCLIInstallation } from '@/core/providers/cli/TargetCLIInstallationProbe';
+
+import { getOpencodeWSLForwardedEnvironment, opencodeEnvironment } from './OpencodeExecutionTarget';
 
 /** The only supported native major. */
 type OpencodeNativeVersion = 2;
@@ -21,12 +25,15 @@ export class OpencodeCLINotInstalledError extends Error {
 export async function verifyOpencodeNativeVersion(
   cliPath: string,
   environment: NodeJS.ProcessEnv,
+  target: ExecutionTarget = resolveExecutionTarget({ settings: { installationMethod: 'native-windows', wslDistroOverride: '' } }),
+  hostCwd = process.cwd(),
 ): Promise<OpencodeNativeVersion> {
-  const installation = await probeCLIInstallation({
-    path: cliPath,
+  const installation = await probeTargetCLIInstallation({
+    target, hostCwd, forwardEnvironment: getOpencodeWSLForwardedEnvironment(environment),
+    command: cliPath,
     configuredPath: cliPath,
     args: ['--version'],
-    env: environment,
+    env: opencodeEnvironment(environment),
   });
   if (!installation.path) throw new OpencodeCLINotInstalledError();
   const version = parseOpencodeNativeVersion(installation.version);

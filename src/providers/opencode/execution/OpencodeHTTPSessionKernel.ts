@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 
 import { parseCompactCommand } from '@/core/commands/compactCommand';
 import { PendingInteractionLedger } from '@/core/execution';
+import type { ExecutionTarget } from '@/core/process/execution-target/types';
 import type { SessionToolInvocation } from '@/core/session-tools/invokeSessionTool';
 import { isSessionTool } from '@/core/tools/toolNames';
 import type { TurnStats } from '@/core/types';
@@ -18,7 +19,7 @@ import { normalizeOpencodeToolInput, normalizeOpencodeToolName, normalizeOpencod
 import type { OpencodePrompt } from '../runtime/buildOpencodePrompt';
 import { resolveOpencodeBindingDatabase } from '../runtime/OpencodeBindingDatabase';
 import { AUX_AGENT_IDS, OPENCODE_BUILD_AGENT_ID } from '../runtime/OpencodeExecutionAgents';
-import { buildOpencodeRuntimeEnv } from '../runtime/OpencodeRuntimeEnvironment';
+import { resolveOpencodeTarget } from '../runtime/OpencodeExecutionTarget';
 import {
   type OpencodeKernelConnectOptions,
   type OpencodeNativeOutput,
@@ -66,7 +67,7 @@ export class OpencodeHTTPSessionKernel implements OpencodeSessionKernel {
 
   private agents: Record<string, string> = {};
   private connecting: Promise<void> | null = null;
-  private launch: { cliPath: string; environment: NodeJS.ProcessEnv } | null = null;
+  private launch: { target: ExecutionTarget; cliPath: string; environment: NodeJS.ProcessEnv } | null = null;
   constructor(private readonly options: OpencodeSessionKernelOptions, private readonly serverService: OpencodeServerService, private readonly persistence: OpencodeSessionPersistence) {
     this.interactions = new PendingInteractionLedger(options.config.interactionPort);
   }
@@ -102,15 +103,17 @@ export class OpencodeHTTPSessionKernel implements OpencodeSessionKernel {
     const environmentText = this.options.host.environmentText;
     // A session to resume or fork is refused before any launch while its recorded database is
     // inaccessible; only a fresh session starts on the current database.
-    const database = resolveOpencodeBindingDatabase(this.options.databasePath, buildOpencodeRuntimeEnv(environmentText, cliPath));
+    const target = await resolveOpencodeTarget(this.options.host.config, this.options.config.workingDirectory);
+    const environment = await this.serverService.targetEnvironment.resolve(target, this.options.config.workingDirectory, environmentText, cliPath);
+    const database = resolveOpencodeBindingDatabase(this.options.databasePath, environment, target);
     if (!database.accessible && database.recorded) {
       const refusal = new Error(`OpenCode database ${database.recorded} is not accessible with the current settings.`);
       if (options.resumeSessionId) throw new OpencodeSessionMissingError(options.resumeSessionId, refusal);
       if (this.options.forkSource) throw refusal;
     }
-    const launch = { cliPath, environment: buildOpencodeRuntimeEnv(environmentText, cliPath, database.accessible) };
+    const launch = { cliPath, target, environment: { ...environment, ...(database.accessible ? { OPENCODE_DB: database.accessible } : {}) } };
     this.launch = launch;
-    this.client = await this.serverService.acquire(launch.cliPath, this.options.config.workingDirectory, launch.environment, this.controller.signal);
+    this.client = await this.serverService.acquire(launch.cliPath, this.options.config.workingDirectory, launch.environment, this.controller.signal, launch.target);
     if (this.disposed) await this.client.dispose();
     this.controller.signal.throwIfAborted();
     this.client.onRetired(() => this.options.onRetired?.());
@@ -137,12 +140,12 @@ export class OpencodeHTTPSessionKernel implements OpencodeSessionKernel {
         const fork = !resumeSessionId ? this.options.forkSource : undefined;
         if (fork) return forkOpencodeHTTPSession(client, fork.sessionId, fork.resumeAt);
         const { data } = await client.request<{ data: Record<string, unknown> }>(resumeSessionId ? `/api/session/${encodeURIComponent(resumeSessionId)}` : '/api/session',
-          resumeSessionId ? {} : { method: 'POST', body: { location: { directory: this.options.config.workingDirectory }, agent: this.agents[this.profile === 'managed' ? OPENCODE_BUILD_AGENT_ID : AUX_AGENT_IDS[this.profile]] } });
+          resumeSessionId ? {} : { method: 'POST', body: { location: { directory: client.workingDirectory }, agent: this.agents[this.profile === 'managed' ? OPENCODE_BUILD_AGENT_ID : AUX_AGENT_IDS[this.profile]] } });
         if (typeof data.id !== 'string' || (resumeSessionId && data.id !== resumeSessionId)) throw new Error('Invalid OpenCode session response.');
         return data.id;
       }, () => this.client?.isReusable()
         ? Promise.resolve(this.client.retain())
-        : this.serverService.acquireCleanup(launch.cliPath, this.options.config.workingDirectory, launch.environment));
+        : this.serverService.acquireCleanup(launch.cliPath, this.options.config.workingDirectory, launch.environment, launch.target));
     } catch (error) {
       if (resumeSessionId && error instanceof OpencodeHTTPError && error.status === 404) throw new OpencodeSessionMissingError(resumeSessionId, error);
       throw error;
@@ -439,7 +442,7 @@ export class OpencodeHTTPSessionKernel implements OpencodeSessionKernel {
       case 'session.tool.called': {
         const tool = this.tools.get(key);
         if (!tool) break;
-        tool.input = normalizeOpencodeToolInput(tool.name, isRecord(data.input) ? data.input : {});
+        tool.input = normalizeOpencodeToolInput(tool.name, isRecord(data.input) ? data.input : {}, this.launch?.target);
         const name = normalizeOpencodeToolName(tool.name);
         this.emit({ type: 'tool_started', ...identity, name, input: tool.input, providerPayload: { rawName: tool.name, rawInput: data.input } }, child?.outputSessionId);
         if (child) {
@@ -484,7 +487,7 @@ export class OpencodeHTTPSessionKernel implements OpencodeSessionKernel {
         tool?.shell?.stop();
         const content = Array.isArray(data.content) ? data.content.filter(isRecord).flatMap(item => typeof item.text === 'string' ? [item.text] : []).join('\n') : '';
         const result = normalizeOpencodeToolResult(tool?.name, content || (data.error ? errorText(data.error) : ''), { metadata: data.metadata });
-        this.emit({ type: 'tool_completed', ...identity, content: result.content, isError: event.type.endsWith('.failed') || result.isError, providerPayload: { rawName: tool?.name, rawInput: tool?.input, rawOutput: { ...data, metadata: data.metadata } }, resultDetails: tool ? normalizeOpencodeToolResultDetails(tool.name, tool.input, { output: content, metadata: data.metadata }) : undefined }, child?.outputSessionId);
+        this.emit({ type: 'tool_completed', ...identity, content: result.content, isError: event.type.endsWith('.failed') || result.isError, providerPayload: { rawName: tool?.name, rawInput: tool?.input, rawOutput: { ...data, metadata: data.metadata } }, resultDetails: tool ? normalizeOpencodeToolResultDetails(tool.name, tool.input, { output: content, metadata: data.metadata }, this.launch?.target) : undefined }, child?.outputSessionId);
         this.tools.delete(key);
         break;
       }
