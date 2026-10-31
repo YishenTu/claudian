@@ -372,7 +372,8 @@ it('retries a failed reconnection of the live process, failing attached sessions
     expect(losses).toEqual([]);
     expect(lifecycle.disposed).toBe(0);
     vi.advanceTimersByTime(6_000);
-    for (let turns = 0; !losses.length && turns < 1_000; turns++) await flush();
+    // Socket teardown is real I/O: bound the wait by real time, not by a count of flushes a loaded runner can exhaust.
+    for (const deadline = realNow() + 2_000; !losses.length && realNow() < deadline;) await flush();
     vi.useRealTimers();
     expect(losses).toHaveLength(1);
     const [[loss, error]] = losses;
@@ -399,6 +400,9 @@ function dropHost(): void {
 function openSockets(): number {
   return new Set([...peer.streams.values()].filter(stream => stream.socket.readyState === stream.socket.OPEN).map(stream => stream.socket)).size;
 }
+
+// Captured before any test fakes timers, so waits on real I/O stay bounded by real time.
+const realNow = performance.now.bind(performance);
 
 /** Settles every pending microtask continuation. */
 function flush(): Promise<void> {
