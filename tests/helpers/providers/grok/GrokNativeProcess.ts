@@ -2,7 +2,7 @@ import type { ChildProcessWithoutNullStreams } from 'node:child_process';
 
 import { createNativeRPCProcess } from '@test/helpers/providers/NativeRPCTestProcess';
 
-import type { ACPLoadSessionRequest, ACPNewSessionRequest, ACPPromptRequest,
+import type { ACPLoadSessionRequest, ACPNewSessionRequest, ACPNewSessionResponse, ACPPromptRequest,
   ACPSetSessionModelRequest, ACPSetSessionModeRequest } from '@/providers/acp';
 
 /** Raw peer responses and notifications, recorded after the real ACP transport serializes them. */
@@ -18,6 +18,7 @@ export class GrokNativeProcess {
   shutdownCalls = 0;
   readonly commandRequests: Record<string, unknown>[] = [];
   commandsImplementation: () => unknown | Promise<unknown> = () => { throw new Error('Unexpected command discovery'); };
+  newImplementation = async (_request: ACPNewSessionRequest): Promise<ACPNewSessionResponse> => ({ sessionId: 'session-new' });
   loadImplementation = async (request: ACPLoadSessionRequest): Promise<unknown> => ({ sessionId: request.sessionId });
   modelImplementation = async (): Promise<unknown> => ({});
   promptImplementation = async (): Promise<Record<string, unknown>> => ({ stopReason: 'end_turn' });
@@ -41,7 +42,7 @@ export class GrokNativeProcess {
           return this.loadImplementation(params as unknown as ACPLoadSessionRequest);
         case 'session/new':
           this.newRequests.push(params as unknown as ACPNewSessionRequest);
-          return { sessionId: 'session-new' };
+          return this.newImplementation(params as unknown as ACPNewSessionRequest);
         case 'session/set_model':
           this.modelRequests.push(params as unknown as ACPSetSessionModelRequest);
           return this.modelImplementation();
