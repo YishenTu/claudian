@@ -4,7 +4,7 @@ import { constants, tmpdir } from 'node:os';
 import * as path from 'node:path';
 import { PassThrough } from 'node:stream';
 
-import { readWSLExec } from '@test/helpers/WSLLaunch';
+import { readWSLInvocation } from '@test/helpers/WSLLaunch';
 
 const WINDOWS_POWERSHELL = '/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe';
 
@@ -12,6 +12,9 @@ export interface WSLProcessRequest {
   command: string;
   args: readonly string[];
   options: SpawnOptions;
+  distro: string;
+  cwd: string;
+  env: NodeJS.ProcessEnv;
   executable: string;
   argv: string[];
   /** Text the client wrote to stdin, in order; wsl.exe forwards it to the Linux command. */
@@ -37,6 +40,13 @@ export class WSLProcessFixture {
   environment: Record<string, string | undefined> = {};
   readonly binaries = new Map<string, { path: string; version: string }>();
   reply: ((request: WSLProcessRequest) => WSLProcessReply | undefined) | undefined;
+  /** Runs a provider-native executable after the shared OS projection, leaving its protocol external. */
+  execute: ((request: Pick<WSLProcessRequest, 'distro' | 'cwd' | 'env' | 'executable' | 'argv' | 'options'>) => ChildProcess | undefined) | undefined;
+  /** Optional real-directory bridge for Windows paths mounted into the fixture's Linux tree. */
+  translatePath: (value: string) => string | null = value => {
+    const drive = /^([a-z]):[\\/](.*)$/iu.exec(value);
+    return drive ? `/mnt/${drive[1].toLowerCase()}/${drive[2].replaceAll('\\', '/')}` : null;
+  };
   /** WSL interop runs Windows executables mounted under /mnt; false models `[interop] enabled=false`. */
   interop = true;
   /** Receives requests for behavior this fake does not model; the default fails the running test. */
@@ -47,48 +57,60 @@ export class WSLProcessFixture {
     if (!options.windowsVerbatimArguments) throw new Error('WSL launch must preserve Windows argv');
     // wsl.exe is a Windows process: there is no POSIX process group, and signalling a fake pid's group would hit the test host.
     if (options.detached) throw new Error('Detached WSL process groups are not modeled');
-    const exec = readWSLExec({ args: [...args] });
+    const exec = readWSLInvocation({ args: [...args] });
     if (exec.command !== '/bin/sh' || exec.args[0] !== '-c') throw new Error('Expected WSL shell launch');
     const [executable, ...argv] = exec.args.slice(3);
-    const child = new WSLTestProcess();
+    const env = { ...this.environment };
+    for (const [key, value] of importedEnvironment(options.env, this.translatePath)) {
+      if (value === null) {
+        const error = new Error(`Path-translated WSLENV value is not modeled: ${key}`);
+        this.onUnmodeled(error);
+        throw error;
+      }
+      env[key] = value;
+    }
+    const simulated = () => {
+      if (!(child instanceof WSLTestProcess)) throw new Error('Use the external peer controls for a native process');
+      return child;
+    };
     const request: WSLProcessRequest = {
       command, args, options, executable, argv, stdin: '',
+      distro: exec.distro, cwd: exec.cwd, env,
       // The OS reports the exit later, never inside the caller's turn.
-      complete: reply => { setImmediate(() => child.complete(reply)); },
+      complete: reply => { const process = simulated(); setImmediate(() => process.complete(reply)); },
       write: stdout => {
+        const child = simulated();
         if (child.stdout.writableEnded) throw new Error('The WSL process output has ended');
         setImmediate(() => { if (!child.stdout.writableEnded) child.stdout.write(stdout); });
       },
-      onStdin: listener => { child.stdin.on('data', listener); },
+      onStdin: listener => { child.stdin?.on('data', listener); },
     };
-    child.stdin.setEncoding('utf8').on('data', (chunk: string) => { request.stdin += chunk; });
     this.requests.push(request);
+    const external = this.execute?.(request);
+    const child = external ?? new WSLTestProcess();
+    if (child instanceof WSLTestProcess) child.stdin.setEncoding('utf8');
+    child.stdin?.on('data', (chunk: string) => { request.stdin += chunk; });
+    if (external) return external;
+    const processChild = simulated();
     const reply = this.reply?.(request) ?? this.respond(request);
     // Node announces a started child on nextTick; output and exit come from the OS on a later turn.
     process.nextTick(() => child.emit('spawn'));
     setImmediate(() => {
-      if (!reply.hold) child.complete(reply);
+      if (!reply.hold) processChild.complete(reply);
       else {
-        if (reply.stdout) child.stdout.write(reply.stdout);
-        if (reply.stderr) child.stderr.write(reply.stderr);
+        if (reply.stdout) processChild.stdout.write(reply.stdout);
+        if (reply.stderr) processChild.stderr.write(reply.stderr);
       }
     });
     return child;
   };
 
-  private respond({ executable, argv, options }: WSLProcessRequest): WSLProcessReply {
+  private respond({ executable, argv, env, options }: WSLProcessRequest): WSLProcessReply {
     if (executable === WINDOWS_POWERSHELL) return this.runPowerShell(argv, options.env ?? {});
     if (executable === '/usr/bin/awk') {
-      const imported = importedEnvironment(options.env);
       // Model native environment records, not the owned parser's returned object.
       return { stdout: argv.slice(1).map(key => {
-        if (imported.get(key) === null) {
-          const unmodeled = new Error(`Path-translated WSLENV value is not modeled: ${key}`);
-          // Probe clients report a throwing spawn as a host failure, so the sink must surface it.
-          this.onUnmodeled(unmodeled);
-          throw unmodeled;
-        }
-        const value = imported.has(key) ? imported.get(key)! : this.environment[key];
+        const value = env[key];
         return value === undefined ? '\0\0' : `x\0${value}\0`;
       }).join('') };
     }
@@ -133,14 +155,14 @@ function failRunningTest(error: Error): void {
  * WSL init resets HOME, so only the launcher's CLAUDIAN_WSL_HOME copy restores it. Null marks a
  * `/p` or `/l` value whose Windows path form is not modeled.
  */
-function importedEnvironment(env: SpawnOptions['env']): Map<string, string | null> {
+function importedEnvironment(env: SpawnOptions['env'], translatePath: (value: string) => string | null): Map<string, string | null> {
   const imported = new Map<string, string | null>();
   for (const entry of (env?.WSLENV ?? '').split(':')) {
     const [key, flags = ''] = entry.split('/');
     const value = env?.[key];
     // `/w` values only travel from Linux to Windows.
     if (!key || key === 'HOME' || flags.includes('w') || value === undefined) continue;
-    imported.set(key === 'CLAUDIAN_WSL_HOME' ? 'HOME' : key, translateImportedValue(value, flags));
+    imported.set(key === 'CLAUDIAN_WSL_HOME' ? 'HOME' : key, translateImportedValue(value, flags, translatePath));
   }
   return imported;
 }
@@ -149,12 +171,9 @@ function importedEnvironment(env: SpawnOptions['env']): Map<string, string | nul
  * wsl.exe sends `/p` and `/l` values through one path-list translator: each `;`-separated absolute drive
  * path maps to `/mnt/<drive>/…`, joined by `:`.
  */
-function translateImportedValue(value: string, flags: string): string | null {
+function translateImportedValue(value: string, flags: string, translatePath: (value: string) => string | null): string | null {
   if (!/[pl]/u.test(flags)) return value;
-  const translated = value.split(';').map(entry => {
-    const drive = /^([a-z]):[\\/](.*)$/iu.exec(entry);
-    return drive ? `/mnt/${drive[1].toLowerCase()}/${drive[2].replaceAll('\\', '/')}` : null;
-  });
+  const translated = value.split(';').map(translatePath);
   // WSL skips relative entries such as a bare `E:`; those and UNC shares are not modeled.
   return translated.includes(null) ? null : translated.join(':');
 }

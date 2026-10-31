@@ -1,10 +1,11 @@
 import '@/providers';
 
+import { conversationRecord } from '@test/helpers/features/chat/ConversationFixture';
+
 import { getInstallationKey } from '@/core/device/InstallationKey';
 import { getProviderConfig, setProviderConfig } from '@/core/providers/providerConfig';
 import { ProviderSettingsCoordinator } from '@/core/providers/ProviderSettingsCoordinator';
 import { isVersionedRuntimeInputFingerprint } from '@/core/providers/settings/RuntimeInputFingerprint';
-import type { Conversation } from '@/core/types';
 import { piSettingsReconciler } from '@/providers/pi/env/PiSettingsReconciler';
 import { getPiProviderSettings } from '@/providers/pi/settings';
 
@@ -125,7 +126,7 @@ describe('piSettingsReconciler', () => {
         },
       },
     };
-    const piConversation = {
+    const piConversation = conversationRecord('conversation', {
       id: 'pi-conversation',
       messages: [],
       providerId: 'pi',
@@ -135,14 +136,14 @@ describe('piSettingsReconciler', () => {
         sessionFile: '/old/session.jsonl',
       },
       sessionId: 'session-1',
-    } as unknown as Conversation;
-    const claudeConversation = {
+    });
+    const claudeConversation = conversationRecord('conversation', {
       id: 'claude-conversation',
       messages: [],
       providerId: 'claude',
       providerState: { providerSessionId: 'claude-session' },
       sessionId: 'claude-session',
-    } as unknown as Conversation;
+    });
 
     expect(piSettingsReconciler.reconcileModelWithEnvironment(settings))
       .toEqual({ changed: true, sessionPolicy: 'invalidate' });
@@ -188,7 +189,7 @@ describe('piSettingsReconciler', () => {
   });
 
   it('converts pending forks into replayable previous sessions idempotently', () => {
-    const conversation = {
+    const conversation = conversationRecord('conversation', {
       id: 'pi-pending-fork',
       messages: [],
       providerId: 'pi',
@@ -201,7 +202,7 @@ describe('piSettingsReconciler', () => {
         futureResumeCursor: { token: 'keep-me' },
       },
       sessionId: null,
-    } as unknown as Conversation;
+    });
 
     expect(piSettingsReconciler.invalidateConversationSessions([conversation])).toEqual([
       conversation,

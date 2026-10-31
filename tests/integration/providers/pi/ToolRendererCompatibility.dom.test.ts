@@ -10,7 +10,7 @@ import { axe } from '@test/helpers/accessibility';
 import { createChatFeatureHost } from '@test/helpers/features/chat/ChatFeatureHostFixture';
 import { createProviderHostFixture } from '@test/helpers/providerRuntimeHost';
 import { testDate } from '@test/helpers/testClock';
-import { fireEvent, within } from '@testing-library/dom';
+import { fireEvent, waitFor, within } from '@testing-library/dom';
 import { Component, MarkdownRenderer } from 'obsidian';
 
 import { getToolIcon } from '@/core/tools/toolIcons';
@@ -463,9 +463,7 @@ it('streams a running script\'s nested calls through the Pi session and refreshe
       if (response.toolCalls?.[0]?.scriptToolCalls?.length === 2) run.cancel();
     }
     clearTimeout(fallback);
-    await new Promise(resolve => setTimeout(resolve, 250));
-
-    expect(listVaultFolder).toHaveBeenCalledWith('out');
+    await waitFor(() => expect(listVaultFolder).toHaveBeenCalledWith('out'));
     expect(response.toolCalls).toHaveLength(1);
     const block = renderStoredToolCall(document.body.createDiv(), { ...response.toolCalls![0], status: 'running' });
     const calls = within(within(block).getByRole('list', { name: 'Tool calls' })).getAllByRole('listitem');

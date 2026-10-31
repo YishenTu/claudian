@@ -1,9 +1,9 @@
+import { conversationRecord } from '@test/helpers/features/chat/ConversationFixture';
 import { grokEnvironmentHash } from '@test/helpers/providers/grokSettings';
 
 import { getInstallationKey } from '@/core/device/InstallationKey';
 import { getProviderConfig, setProviderConfig } from '@/core/providers/providerConfig';
 import { isVersionedRuntimeInputFingerprint } from '@/core/providers/settings/RuntimeInputFingerprint';
-import type { Conversation } from '@/core/types';
 import { grokSettingsReconciler } from '@/providers/grok/env/GrokSettingsReconciler';
 import { getGrokProviderSettings } from '@/providers/grok/settings';
 
@@ -63,12 +63,12 @@ describe('GrokSettingsReconciler', () => {
   });
 
   it('retires resume identity while retaining a history-only locator', () => {
-    const grokConversation = {
+    const grokConversation = conversationRecord('conversation', {
       messages: [],
       providerId: 'grok',
       providerState: { sessionDirectory: '/tmp/grok/session-1' },
       sessionId: 'session-1',
-    } as unknown as Conversation;
+    });
 
     expect(grokSettingsReconciler.invalidateConversationSessions([grokConversation]))
       .toEqual([grokConversation]);
@@ -109,12 +109,12 @@ describe('GrokSettingsReconciler', () => {
         },
       },
     };
-    const grokConversation = {
+    const grokConversation = conversationRecord('conversation', {
       messages: [],
       providerId: 'grok',
       providerState: { sessionDirectory: '/tmp/grok/session-1' },
       sessionId: 'session-1',
-    } as unknown as Conversation;
+    });
 
     const result = grokSettingsReconciler.reconcileModelWithEnvironment(settings);
 

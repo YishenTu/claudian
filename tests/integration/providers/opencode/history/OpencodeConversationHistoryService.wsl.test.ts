@@ -73,7 +73,10 @@ describe.skipIf(path.sep === '\\')('native history in a WSL distro', () => {
     cli = '/opt/opencode/bin/opencode';
     native.environment = { HOME: `${root}/home` };
     native.binaries.set(cli, { path: cli, version: 'opencode 2.0.12' });
-    launches = routeOpencodeWSLPeer(native, { command: cli, peer }, value => value.startsWith(distro) ? toLinux(value) : null);
+    const translateDrive = native.translatePath;
+    native.translatePath = value => value.startsWith(distro) ? toLinux(value) : translateDrive(value);
+    launches = routeOpencodeWSLPeer(native, { command: cli, peer });
+    vi.mocked(spawn).mockImplementation(native.spawn);
     // The distro's Linux tree is this real directory: the native peer reads its Linux paths directly,
     // and production reaches the same files through `\\wsl$`.
     const link = createWindowsHostFS({ fs, fsPromises }).local(hostPath(root));

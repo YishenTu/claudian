@@ -28,6 +28,8 @@ export class GrokNativeProcess {
   });
 
   constructor() {
+    // ACP requests arrive as decoded external JSON records; the casts bridge that wire shape to
+    // the SDK request interfaces (which lack the record index signature), not partial owned fixtures.
     this.child = createNativeRPCProcess(async (method, params) => {
       switch (method) {
         case 'initialize': return {

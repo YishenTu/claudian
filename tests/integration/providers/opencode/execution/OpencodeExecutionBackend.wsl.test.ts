@@ -12,6 +12,7 @@ import { turn } from '@test/helpers/providers/opencode/OpencodeSharedServerFixtu
 import { type OpencodeWSLPeerLaunch, routeOpencodeWSLPeer } from '@test/helpers/providers/opencode/OpencodeWSLPeer';
 import { createWindowsHostFS } from '@test/helpers/WindowsHostFS';
 import { WSLProcessFixture } from '@test/helpers/WSLProcessFixture';
+import spawn from 'cross-spawn';
 
 import { getInstallationKey } from '@/core/device/InstallationKey';
 import type { ProviderExecutionEvent } from '@/core/execution';
@@ -59,7 +60,10 @@ describe.skipIf(path.sep === '\\')('OpenCode sessions in a WSL distro', () => {
     // The Linux environment as WSL presents it, including the forwarded configured OPENCODE_CONFIG.
     native.environment = { HOME: `${root}/home`, OPENCODE_CONFIG: '~/opencode.json' };
     native.binaries.set(cli, { path: cli, version: 'opencode 2.0.14' });
-    launches = routeOpencodeWSLPeer(native, { command: cli, peer }, value => value.startsWith(distro) ? toLinux(value) : null);
+    const translateDrive = native.translatePath;
+    native.translatePath = value => value.startsWith(distro) ? toLinux(value) : translateDrive(value);
+    launches = routeOpencodeWSLPeer(native, { command: cli, peer });
+    vi.mocked(spawn).mockImplementation(native.spawn);
     // The distro's Linux tree is this real directory: the native peer reads its Linux paths directly,
     // and production reaches the same files through `\\wsl$`.
     const link = createWindowsHostFS({ fs, fsPromises }).local(hostPath(root));

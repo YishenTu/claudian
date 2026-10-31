@@ -58,7 +58,8 @@ it.each([
     while (!existsSync(hold) && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 10));
     expect(existsSync(hold)).toBe(true);
     interrupt(run);
-    await new Promise(resolve => setTimeout(resolve, 50));
+    // Stream loss must reach the client before history is released; cancellation is synchronous.
+    if (status === 'invalidated') await consumed;
     rmSync(hold);
     await consumed;
     expect(events.at(-1)).toEqual({ type: 'turn_completed', reason: 'completed', ...stats, scope: expect.any(Object) });
