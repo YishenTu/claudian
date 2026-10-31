@@ -1,8 +1,9 @@
 import { randomUUID } from 'node:crypto';
-import * as path from 'node:path';
 
 import { parseCompactCommand } from '@/core/commands/compactCommand';
 import { parseEnvironmentVariables } from '@/core/process/env';
+import { resolveExecutionTargetAsync } from '@/core/process/execution-target/ExecutionTargetResolver';
+import type { ExecutionTarget } from '@/core/process/execution-target/types';
 import {
   buildContextFromHistory,
   getHistoryImages,
@@ -46,6 +47,7 @@ import {
   type PiProviderSettings,
 } from '../config';
 import { PiConversationHistoryService } from '../history/PiConversationHistoryService';
+import { PiHistoryContextResolver } from '../history/PiHistoryContextResolver';
 import {
   isPiSessionPathReference,
   resolvePiSessionFileHint,
@@ -84,7 +86,9 @@ import {
 import { assertPiModelAvailable } from '../runtime/PiModelAvailability';
 import { buildPiSetModelPayload } from '../runtime/PiRPCPayloads';
 import { type PiRPCRecord, PiRPCResponseError } from '../runtime/PiRPCTransport';
+import { piHostPath, piTargetPath, samePiTargetPath } from '../runtime/piTargetPaths';
 import {
+  clearPiResumeState,
   getPiState,
   type PiProviderState,
   type PiTreeCursor,
@@ -187,6 +191,7 @@ const PI_NATIVE_PROVIDER_STATE_KEYS = [
 export class PiExecutionSession
 implements ProviderExecutionSession, SteerableExecutionSession {
   readonly providerId = 'pi' as const;
+  private readonly historyContextResolver = new PiHistoryContextResolver();
   readonly sessionInstanceId = randomUUID();
 
   private activeRun: ActiveRun | null = null;
@@ -414,7 +419,7 @@ implements ProviderExecutionSession, SteerableExecutionSession {
     if (!this.kernel || signal?.aborted) throw new Error('Pi navigation is unavailable.');
     const state = getPiState(this.state.providerState);
     const result = await this.kernel.request<Record<string, unknown>>('claudian_tree', {
-      ...payload, sessionFile: state.sessionFile, sessionId: state.sessionId,
+      ...payload, sessionFile: state.sessionFile ? piTargetPath(state.sessionFile, this.kernel.launchSpec.executionTarget) : undefined, sessionId: state.sessionId,
     }, 10_000, signal).catch(async (error: unknown) => {
       // A timed-out extension may still be awaiting a native hook. Fence it before accepting more input.
       if (!(error instanceof PiRPCResponseError)) await this.#shutdownKernel();
@@ -425,11 +430,12 @@ implements ProviderExecutionSession, SteerableExecutionSession {
       return { cancelled: true, leafId: null };
     }
     if (result?.cancelled !== false || result.sessionId !== state.sessionId
-      || result.sessionFile !== state.sessionFile || (result.leafId !== null && typeof result.leafId !== 'string')) {
+      || typeof result.sessionFile !== 'string' || !state.sessionFile
+      || !samePiTargetPath(result.sessionFile, state.sessionFile, this.kernel?.launchSpec.executionTarget) || (result.leafId !== null && typeof result.leafId !== 'string')) {
       throw new Error('Invalid Pi branch identity or cursor.');
     }
     if (payload.operation === 'restore' && result.leafId !== payload.leafId) {
-      const parsed = await readPiSessionEntries(state.sessionFile!);
+      const parsed = await readPiSessionEntries(state.sessionFile);
       const anchor = parsed.entries.find(entry => entry.id === result.leafId);
       if (anchor?.type !== 'custom' || anchor.raw.customType !== 'claudian-tree-anchor' || anchor.parentId !== payload.leafId) {
         throw new Error('Pi navigation did not reach the selected branch.');
@@ -725,18 +731,20 @@ implements ProviderExecutionSession, SteerableExecutionSession {
       model,
       this.host.selection,
     );
-    await this.#materializePendingFork(active);
+    const executionTarget = await resolveExecutionTargetAsync({ settings, hostVaultPath: this.config.workingDirectory });
+    await this.#materializePendingFork(active, executionTarget);
     const envText = this.host.environmentText;
     const env = {
       ...process.env,
       ...parseEnvironmentVariables(envText),
     };
-    this.#validateResumeSeed(env);
+    await this.#validateResumeSeed(env, executionTarget);
     const toolProfile = resolveToolProfile(request.toolPolicy);
     const launchSpec = buildPiLaunchSpec({
+      executionTarget,
       enableTreeBridge: !this.#shouldDisableNativePersistence(),
       enableSessionTools: this.config.sessionTools !== undefined,
-      command: await this.host.resolveCliPath() ?? 'pi',
+      command: await this.host.resolveCliPath({ executionTarget }) ?? 'pi',
       cwd: this.config.workingDirectory,
       env,
       envText,
@@ -773,18 +781,23 @@ implements ProviderExecutionSession, SteerableExecutionSession {
     };
   }
 
-  #validateResumeSeed(environment: NodeJS.ProcessEnv): void {
+  async #validateResumeSeed(environment: NodeJS.ProcessEnv, executionTarget: ExecutionTarget): Promise<void> {
     if (!this.resumeSeedNeedsValidation) return;
-    this.resumeSeedNeedsValidation = false;
     const state = getPiState(this.state.providerState);
     const currentTarget = state.sessionFile ?? state.sessionId;
-    if (!currentTarget) return;
+    if (!currentTarget) {
+      this.resumeSeedNeedsValidation = false;
+      return;
+    }
 
+    const pathContext = await this.historyContextResolver.resolve(this.config.workingDirectory, {
+      environment, executionTarget, config: this.host.config, environmentText: this.host.environmentText,
+    });
     const resolvedSessionFile = resolvePiSessionFileHint(
       state.sessionFile,
       state.sessionId,
       this.config.workingDirectory,
-      { environment },
+      pathContext,
     );
     if (resolvedSessionFile) {
       let changed = false;
@@ -800,12 +813,17 @@ implements ProviderExecutionSession, SteerableExecutionSession {
         changed = true;
       }
       if (changed) this.state.bumpRevision();
+      this.resumeSeedNeedsValidation = false;
       return;
     }
 
     const pathTarget = state.sessionFile
       ?? (isPiSessionPathReference(state.sessionId) ? state.sessionId : null);
     if (pathTarget) {
+      if (executionTarget.method === 'wsl') {
+        this.#retireNativeBinding();
+        throw new Error(`The Pi WSL session file is missing or outside the current session store: ${pathTarget}`);
+      }
       const fallbackSessionId = state.sessionId
         && !isPiSessionPathReference(state.sessionId)
         ? state.sessionId
@@ -818,11 +836,13 @@ implements ProviderExecutionSession, SteerableExecutionSession {
           this.providerSessionId = fallbackSessionId;
         }
         this.state.bumpRevision();
+        this.resumeSeedNeedsValidation = false;
         return;
       }
       this.nativeConversationContextEstablished = false;
       throw new PiProviderSessionMissingError(pathTarget);
     }
+    this.resumeSeedNeedsValidation = false;
   }
 
   async #ensureKernel(
@@ -909,9 +929,10 @@ implements ProviderExecutionSession, SteerableExecutionSession {
       expectedTarget,
       getPiState(this.state.providerState),
       reportedIdentity,
+      kernel.launchSpec.executionTarget,
     )) {
       this.kernelResumeValidationTarget = null;
-      if (reportedIdentity.sessionFile) this.#setProviderStateValue('sessionFile', reportedIdentity.sessionFile);
+      if (reportedIdentity.sessionFile) this.#setProviderStateValue('sessionFile', piHostPath(reportedIdentity.sessionFile, kernel.launchSpec.executionTarget));
       if (reportedIdentity.sessionId) {
         this.providerSessionId = reportedIdentity.sessionId;
         this.#setProviderStateValue('sessionId', reportedIdentity.sessionId);
@@ -1495,9 +1516,9 @@ implements ProviderExecutionSession, SteerableExecutionSession {
       ?? getPiState(this.state.providerState).parentSession;
     this.providerSessionId = sessionId ?? null;
     this.#setOptionalProviderStateValue('sessionId', sessionId);
-    this.#setOptionalProviderStateValue('sessionFile', sessionFile);
+    this.#setOptionalProviderStateValue('sessionFile', sessionFile ? piHostPath(sessionFile, this.kernel?.launchSpec.executionTarget) : undefined);
     this.#setOptionalProviderStateValue('leafEntryId', leafEntryId);
-    this.#setOptionalProviderStateValue('parentSession', parentSession);
+    this.#setOptionalProviderStateValue('parentSession', isPiSessionPathReference(parentSession) ? piHostPath(parentSession, this.kernel?.launchSpec.executionTarget) : parentSession);
     this.#replaceKernelSessionTargets(sessionFile, sessionId);
     this.#deleteProviderStateValue('forkSource');
     this.#deleteProviderStateValue('forkSourceSessionFile');
@@ -1575,7 +1596,7 @@ implements ProviderExecutionSession, SteerableExecutionSession {
     return buildPiUsageInfo(response, model, contextWindow);
   }
 
-  async #materializePendingFork(active: ActiveRun): Promise<void> {
+  async #materializePendingFork(active: ActiveRun, executionTarget: ExecutionTarget): Promise<void> {
     while (this.forkMaterializationFlight) {
       const priorFlight = this.forkMaterializationFlight;
       await priorFlight.catch(() => undefined);
@@ -1586,7 +1607,7 @@ implements ProviderExecutionSession, SteerableExecutionSession {
         throw new PiExecutionCancelledError();
       }
     }
-    const flight = this.#materializePendingForkForRun(active);
+    const flight = this.#materializePendingForkForRun(active, executionTarget);
     this.forkMaterializationFlight = flight;
     try {
       await flight;
@@ -1600,26 +1621,33 @@ implements ProviderExecutionSession, SteerableExecutionSession {
     }
   }
 
-  async #materializePendingForkForRun(active: ActiveRun): Promise<void> {
+  async #materializePendingForkForRun(active: ActiveRun, executionTarget: ExecutionTarget): Promise<void> {
     if (this.#shouldDisableNativePersistence()) return;
     const state = getPiState(this.state.providerState);
     const forkSource = state.forkSource;
     if (!forkSource) return;
     const envText = this.host.environmentText;
-    const env = parseEnvironmentVariables(envText);
-    const sourceFile = state.forkSourceSessionFile
+    const env = { ...process.env, ...parseEnvironmentVariables(envText) };
+    const pathContext = await this.historyContextResolver.resolve(this.config.workingDirectory, {
+      environment: env, config: this.host.config, executionTarget, environmentText: envText,
+    });
+    const sourceFile = executionTarget.method === 'wsl'
+      ? resolvePiSessionFileHint(state.forkSourceSessionFile, forkSource.sessionId, this.config.workingDirectory, pathContext)
+      : state.forkSourceSessionFile
       ?? findPiSessionFile(
         forkSource.sessionId,
         this.config.workingDirectory,
         getString(env.PI_CODING_AGENT_SESSION_DIR),
       );
     if (!sourceFile) {
+      if (executionTarget.method === 'wsl') this.#retireNativeBinding();
       throw new Error(`Pi fork source session not found: ${forkSource.sessionId}`);
     }
     const fork = await this.options.createForkSessionFile(
       sourceFile,
       forkSource.resumeAt,
-      { targetCwd: this.config.workingDirectory },
+      { targetCwd: piTargetPath(this.config.workingDirectory, executionTarget),
+        ...(executionTarget.method === 'wsl' ? { parentSession: piTargetPath(sourceFile, executionTarget) } : {}), },
     );
     if (!this.isActive(active) || active.abortController.signal.aborted) {
       // Best effort: a failed cleanup only leaves an unreferenced fork file behind.
@@ -1778,7 +1806,7 @@ implements ProviderExecutionSession, SteerableExecutionSession {
   ): void {
     this.kernelSessionTargets.clear();
     for (const target of targets) {
-      if (target) this.kernelSessionTargets.add(target);
+      if (target) this.kernelSessionTargets.add(isPiSessionPathReference(target) ? piTargetPath(target, this.kernel?.launchSpec.executionTarget) : target);
     }
   }
 
@@ -1826,6 +1854,22 @@ implements ProviderExecutionSession, SteerableExecutionSession {
   /** Records a persisted deletion only for keys this session actually held. */
   #deleteProviderStateValue(key: keyof PiProviderState): void {
     if (this.state.hasProviderStateValue(key)) this.state.deleteProviderStateValue(key);
+  }
+
+  #retireNativeBinding(): void {
+    const retired = { sessionId: this.providerSessionId, providerState: { ...this.state.providerState } };
+    clearPiResumeState(retired);
+    this.#removeNativeProviderState();
+    for (const key of ['bindingRetired', 'previousSessions'] as const) {
+      const value = retired.providerState?.[key];
+      if (value !== undefined) this.#setProviderStateValue(key, value);
+      else this.#deleteProviderStateValue(key);
+    }
+    this.providerSessionId = null;
+    this.nativeConversationContextEstablished = false;
+    this.resumeSeedNeedsValidation = false;
+    this.kernelSessionTargets.clear();
+    this.state.bumpRevision();
   }
 
   #removeNativeProviderState(): void {
@@ -1985,14 +2029,6 @@ function getFirstRejectedError(
   return rejected ? toError(rejected.reason) : null;
 }
 
-function isSamePath(left: string, right: string): boolean {
-  const resolvedLeft = path.resolve(left);
-  const resolvedRight = path.resolve(right);
-  return process.platform === 'win32'
-    ? resolvedLeft.toLowerCase() === resolvedRight.toLowerCase()
-    : resolvedLeft === resolvedRight;
-}
-
 function toError(error: unknown): Error {
   return error instanceof Error ? error : new Error(String(error));
 }
@@ -2069,6 +2105,7 @@ function matchesExpectedPiSession(
   expectedTarget: string,
   expectedState: PiProviderState,
   reported: ReportedPiSessionIdentity,
+  target?: ExecutionTarget,
 ): boolean {
   const expectedFile = expectedState.sessionFile
     ?? (isPiSessionPathReference(expectedState.sessionId)
@@ -2086,7 +2123,7 @@ function matchesExpectedPiSession(
 
   if (expectedFile && reported.sessionFile) {
     compared = true;
-    if (!isSamePath(expectedFile, reported.sessionFile)) return false;
+    if (!samePiTargetPath(expectedFile, reported.sessionFile, target)) return false;
   }
   if (expectedId && reported.sessionId) {
     compared = true;

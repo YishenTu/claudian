@@ -1,3 +1,4 @@
+// @test-ci {"inputs":["tests/fixtures/providers/pi/**"]}
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -12,7 +13,7 @@ import { PiConversationHistoryService } from '@/providers/pi/history/PiConversat
 
 const configuration = { model: 'pi:anthropic/claude-sonnet-4', reasoning: null, systemInstructions: { kind: 'main-agent' as const, instructions: 'Main Agent prompt.' } };
 
-it.each([false, true])('edits, switches and resumes native branches without losing history (recreate during recovery: %s)', async recreateDuringRecovery => {
+async function createTreeScenario() {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'pi-tree-integration-'));
   const sessionDir = path.join(root, '.pi', 'agent', 'sessions');
   await fs.mkdir(sessionDir, { recursive: true });
@@ -36,15 +37,28 @@ it.each([false, true])('edits, switches and resumes native branches without losi
     interactionPort: { askUserQuestion: vi.fn(), requestApproval: vi.fn(), dismissInteraction: vi.fn() },
     resumeSeed: { providerSessionId: 'pi-source', providerState },
   });
-  let session: ProviderExecutionSession = createSession({ sessionFile, sessionId: 'pi-source' });
   const send = async (text: string) => {
     const request: ProviderExecutionRequest = { configuration, toolPolicy: { kind: 'provider-default' },
       input: [{ type: 'text', text }], signal: new AbortController().signal };
     const events = [];
-    for await (const event of session.execute(request).events) events.push(event);
+    for await (const event of scenario.session.execute(request).events) events.push(event);
     const sent = (await fs.readFile(path.join(root, 'contexts.jsonl'), 'utf8')).trim().split('\n').length;
     expect(events.at(-1)).toMatchObject({ type: 'turn_completed', nativeUserMessageId: `pi-user-${sent}` });
   };
+  const scenario: {
+    root: string; sessionFile: string; session: ProviderExecutionSession; readonly kernel: PiRPCSessionKernel;
+    createSession: typeof createSession; send: typeof send;
+  } = {
+    root, sessionFile, createSession, send, session: createSession({ sessionFile, sessionId: 'pi-source' }),
+    get kernel() { return kernel; },
+  };
+  return scenario;
+}
+
+it.each([false, true])('edits, switches and resumes native branches without losing history (recreate during recovery: %s)', async recreateDuringRecovery => {
+  const scenario = await createTreeScenario();
+  const { root, sessionFile, createSession, send } = scenario;
+  let session = scenario.session;
   try {
     await send('A');
     if (!isBranchableExecutionSession(session)) throw new Error('Missing tree capability');
@@ -54,7 +68,7 @@ it.each([false, true])('edits, switches and resumes native branches without losi
     expect(await fs.readFile(sessionFile, 'utf8')).toBe(original);
     const saved = session.getSnapshot().providerState!;
     await session.dispose();
-    session = createSession({ ...saved });
+    session = scenario.session = createSession({ ...saved });
     const history = await new PiConversationHistoryService().hydrateConversationHistory({
       sessionId: 'pi-source', providerState: { ...saved }, messages: [{ id: 'stale', role: 'user', content: 'stale', timestamp: Date.now() }],
     }, root);
@@ -66,49 +80,38 @@ it.each([false, true])('edits, switches and resumes native branches without losi
     const branchA = await session.navigateConversationBranch({ userMessageId: 'pi-user-2', branchMessageId: 'pi-user-1', configuration });
     expect((branchA.status === 'committed' ? branchA.messages : []).map(message => message.content)).toEqual(['A', 'Reply 1']);
     expect(branchA).toMatchObject({ usage: { contextTokens: 1010, contextWindow: 200000 } });
-    await kernel.request('fixture_tree_cancel', { cancel: true });
+    await scenario.kernel.request('fixture_tree_cancel', { cancel: true });
     const beforeCancel = session.getSnapshot().providerState;
     expect(await session.navigateConversationBranch({ userMessageId: 'pi-user-1', branchMessageId: 'pi-user-2', configuration })).toMatchObject({ status: 'cancelled' });
     expect(session.getSnapshot().providerState).toEqual(beforeCancel);
-    await kernel.request('fixture_tree_cancel', { cancel: false });
+    await scenario.kernel.request('fixture_tree_cancel', { cancel: false });
     const branchB = await session.navigateConversationBranch({ userMessageId: 'pi-user-1', branchMessageId: 'pi-user-2', configuration });
     expect((branchB.status === 'committed' ? branchB.messages : []).map(message => message.content)).toEqual(['B', 'Reply 2']);
     expect(branchB).toMatchObject({ usage: { contextTokens: 2010, contextWindow: 200000 } });
-    const requestBeforeLoss = kernel.request.bind(kernel);
-    const lostReply = vi.spyOn(kernel, 'request').mockImplementation((async (type, payload, timeout, signal) => {
-      const reply = await requestBeforeLoss(type, payload, timeout, signal);
-      if (type === 'claudian_tree' && payload?.operation === 'restore' && payload.leafId === 'pi-assistant-1') {
-        throw new Error('Reply lost after native navigation');
-      }
-      return reply;
-    }) as typeof kernel.request);
+    // The peer moves natively, then exits before its reply reaches the client.
+    await scenario.kernel.request('fixture_tree_fault', { kind: 'lose-reply', leafId: 'pi-assistant-1' });
     expect(await session.navigateConversationBranch({ userMessageId: 'pi-user-2', branchMessageId: 'pi-user-1', configuration }))
       .toMatchObject({ status: 'recovery-required' });
-    lostReply.mockRestore();
     if (recreateDuringRecovery) {
       const recoveryState = session.getSnapshot().providerState!;
       await session.dispose();
-      session = createSession({ ...recoveryState });
+      session = scenario.session = createSession({ ...recoveryState });
       if (!isBranchableExecutionSession(session)) throw new Error('Missing tree capability');
     }
     const rolledBack = await session.reconcileConversationBranch({ configuration });
     expect(rolledBack).toMatchObject({ status: 'cancelled', usage: { contextTokens: 2010 } });
     expect(('messages' in rolledBack ? rolledBack.messages : [])?.map(message => message.content)).toEqual(['B', 'Reply 2']);
-    const hydration = vi.spyOn(PiConversationHistoryService.prototype, 'hydrateConversationHistory').mockRejectedValueOnce(new Error('History read unavailable'));
-    expect(await session.navigateConversationBranch({ userMessageId: 'pi-user-2', branchMessageId: 'pi-user-1', configuration }))
-      .toMatchObject({ status: 'recovery-required' });
-    const recovered = await session.reconcileConversationBranch({ configuration });
-    expect(recovered).toMatchObject({ status: 'committed', usage: { contextTokens: 1010 } });
-    expect((recovered.status === 'committed' ? recovered.messages : []).map(message => message.content)).toEqual(['A', 'Reply 1']);
-    hydration.mockRestore();
+    const branchAgain = await session.navigateConversationBranch({ userMessageId: 'pi-user-2', branchMessageId: 'pi-user-1', configuration });
+    expect(branchAgain).toMatchObject({ status: 'committed', usage: { contextTokens: 1010 } });
+    expect((branchAgain.status === 'committed' ? branchAgain.messages : []).map(message => message.content)).toEqual(['A', 'Reply 1']);
     const switched = session.getSnapshot().providerState!;
     await session.dispose();
-    session = createSession({ ...switched });
+    session = scenario.session = createSession({ ...switched });
     await send('Continue A');
     const contexts = (await fs.readFile(path.join(root, 'contexts.jsonl'), 'utf8')).trim().split('\n').map(line => JSON.parse(line));
     expect(contexts.map(item => item.ids)).toEqual([[], [], ['pi-user-1', 'pi-assistant-1']]);
     expect(await fs.readFile(sessionFile, 'utf8')).toContain('Reply 2');
-    await kernel.request('fixture_hold_next', { userOnly: true });
+    await scenario.kernel.request('fixture_hold_next', { userOnly: true });
     const interrupted = session.execute({ configuration, toolPolicy: { kind: 'provider-default' },
       input: [{ type: 'text', text: 'Interrupted continuation' }], signal: new AbortController().signal });
     for await (const event of interrupted.events) {
@@ -127,7 +130,7 @@ it.each([false, true])('edits, switches and resumes native branches without losi
       sessionId: 'pi-source', providerState: interruptedState, messages: [],
     }, root);
     expect(interruptedHistory.messages?.map(message => message.content)).toContain('Interrupted continuation');
-    session = createSession(interruptedState);
+    session = scenario.session = createSession(interruptedState);
     if (!isBranchableExecutionSession(session)) throw new Error('Missing tree capability');
     await session.navigateConversationBranch({ userMessageId: 'pi-user-1', branchMessageId: 'pi-user-2', configuration });
     const incompleteA = await session.navigateConversationBranch({ userMessageId: 'pi-user-2', branchMessageId: 'pi-user-1', configuration });
@@ -138,7 +141,7 @@ it.each([false, true])('edits, switches and resumes native branches without losi
     // A legacy native branch may have no saved metadata cursor or assistant entry.
     await fs.appendFile(sessionFile, JSON.stringify({ type: 'message', id: 'legacy-user', parentId: null,
       message: { role: 'user', content: 'Legacy interrupted branch' } }) + '\n');
-    await kernel.request('fixture_tree_cancel', { cancel: true });
+    await scenario.kernel.request('fixture_tree_cancel', { cancel: true });
     expect(await session.navigateConversationBranch({ userMessageId: 'pi-user-1', branchMessageId: 'legacy-user', configuration })).toMatchObject({ status: 'cancelled' });
     const legacy = await session.navigateConversationBranch({ userMessageId: 'pi-user-1', branchMessageId: 'legacy-user', configuration });
     expect((legacy.status === 'committed' ? legacy.messages : []).map(message => message.content)).toEqual(['Legacy interrupted branch']);
@@ -146,7 +149,7 @@ it.each([false, true])('edits, switches and resumes native branches without losi
     const legacyContext = JSON.parse((await fs.readFile(path.join(root, 'contexts.jsonl'), 'utf8')).trim().split('\n').at(-1)!);
     expect(legacyContext.ids).toEqual(['legacy-user']);
     for (const outcome of ['error', 'steer', 'queued-steer'] as const) {
-      await kernel.request('fixture_hold_next');
+      await scenario.kernel.request('fixture_hold_next');
       const ordinal = (await fs.readFile(path.join(root, 'contexts.jsonl'), 'utf8')).trim().split('\n').length + 1;
       const pending = session.execute({ configuration, toolPolicy: { kind: 'provider-default' },
         input: [{ type: 'text', text: 'Original ' + outcome }], signal: new AbortController().signal });
@@ -154,10 +157,10 @@ it.each([false, true])('edits, switches and resumes native branches without losi
       for await (const event of pending.events) {
         if (event.type !== 'text_delta' || triggered) continue;
         triggered = true;
-        if (outcome === 'error') await kernel.request('fixture_fail');
+        if (outcome === 'error') await scenario.kernel.request('fixture_fail');
         else {
           if (!isSteerableExecutionSession(session)) throw new Error('Missing steer capability');
-          if (outcome === 'queued-steer') await kernel.request('fixture_queue_steer');
+          if (outcome === 'queued-steer') await scenario.kernel.request('fixture_queue_steer');
           await session.steer({ configuration, toolPolicy: { kind: 'provider-default' },
             input: [{ type: 'text', text: outcome === 'queued-steer' ? 'Queued input' : 'Steered input' }], signal: new AbortController().signal });
           if (outcome === 'queued-steer') pending.cancel();
@@ -180,5 +183,26 @@ it.each([false, true])('edits, switches and resumes native branches without losi
       expect(recovered.userMessageIds['local-Original ' + outcome]).toBe(`pi-user-${ordinal}`);
       expect(recovered.userMessageIds['local-Steered input']).toBe(outcome === 'steer' ? `pi-user-${ordinal + 1}` : undefined);
     }
+  } finally { await session.dispose(); await fs.rm(root, { recursive: true, force: true }); }
+});
+
+// Windows chmod cannot remove read access, and root reads any file, so only these hosts can fail the read.
+const canRevokeRead = process.platform !== 'win32' && process.getuid?.() !== 0;
+it.skipIf(!canRevokeRead)('requires recovery when the selected branch history is unreadable after the native move', async () => {
+  const scenario = await createTreeScenario();
+  const { root, sessionFile, send } = scenario;
+  const session = scenario.session;
+  try {
+    await send('A');
+    if (!isBranchableExecutionSession(session)) throw new Error('Missing tree capability');
+    await session.navigateConversationBranch({ userMessageId: 'pi-user-1', configuration });
+    await send('B');
+    await scenario.kernel.request('fixture_tree_fault', { kind: 'hide-history', leafId: 'pi-assistant-1' });
+    expect(await session.navigateConversationBranch({ userMessageId: 'pi-user-2', branchMessageId: 'pi-user-1', configuration }))
+      .toMatchObject({ status: 'recovery-required' });
+    await fs.chmod(sessionFile, 0o644);
+    const recovered = await session.reconcileConversationBranch({ configuration });
+    expect(recovered).toMatchObject({ status: 'committed', usage: { contextTokens: 1010 } });
+    expect((recovered.status === 'committed' ? recovered.messages : []).map(message => message.content)).toEqual(['A', 'Reply 1']);
   } finally { await session.dispose(); await fs.rm(root, { recursive: true, force: true }); }
 });

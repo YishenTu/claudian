@@ -1,4 +1,4 @@
-// @test-ci {"native":true}
+// @test-ci {"native":true,"inputs":["tests/fixtures/providers/pi/**"]}
 import * as fs from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import * as path from 'node:path';

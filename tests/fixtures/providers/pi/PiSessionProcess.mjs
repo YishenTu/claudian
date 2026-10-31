@@ -4,6 +4,7 @@ import * as readline from 'node:readline';
 import { pathToFileURL } from 'node:url';
 
 // A deterministic external Pi RPC peer that loads the generated launch extensions.
+if (process.argv.includes('--version')) { process.stdout.write('pi 1.1.0\n'); process.exit(0); }
 const root = process.env.CLAUDIAN_TEST_PI_ROOT;
 const args = process.argv.slice(2);
 const sessionIndex = args.indexOf('--session');
@@ -17,9 +18,10 @@ const respond = (request, data) => write({ type: 'response', id: request.id, com
 const readRecords = file => file === null ? memoryRecords : fs.existsSync(file)
   ? fs.readFileSync(file, 'utf8').trim().split('\n').filter(Boolean).map(line => JSON.parse(line))
   : [];
-const lines = readline.createInterface({ input: process.stdin, crlfDelay: Infinity });
 let leafId = readRecords(sessionFile).filter(record => record.id && record.type !== 'session').at(-1)?.id ?? null;
 let cancelTree = false;
+// Tree faults strike after native navigation, when the extension reports where it moved.
+let treeFault = null;
 let holdNext = false;
 let userOnlyNext = false;
 let queueNextSteer = false;
@@ -34,7 +36,10 @@ for (let extensionIndex = 0; extensionIndex < args.length; extensionIndex++) {
   fs.mkdirSync(sdkDir, { recursive: true });
   fs.writeFileSync(path.join(sdkDir, 'package.json'), JSON.stringify({ type: 'module', main: 'index.js' }));
   fs.copyFileSync(new URL('./PiSessionManager.mjs', import.meta.url), path.join(sdkDir, 'index.js'));
-  const extension = await import(pathToFileURL(args[extensionIndex + 1]).href);
+  // The generated extensions are plain JavaScript; older Linux fixture Node versions need .mjs.
+  const moduleFile = args[extensionIndex + 1] + '.mjs';
+  fs.copyFileSync(args[extensionIndex + 1], moduleFile);
+  const extension = await import(pathToFileURL(moduleFile).href);
   extension.default({
     registerCommand: (name, command) => commands.set(name, command),
     registerTool: tool => tools.set(tool.name, tool),
@@ -81,9 +86,21 @@ const extensionContext = {
       options.signal?.addEventListener('abort', abort, { once: true });
       write({ type: 'extension_ui_request', id, method: 'input', title, placeholder });
     }),
-    setStatus: (statusKey, statusText) => write({ type: 'extension_ui_request', method: 'setStatus', statusKey, statusText }) },
+    setStatus: (statusKey, statusText) => {
+      const reply = JSON.parse(statusText);
+      if (treeFault && reply.cancelled === false && reply.leafId === treeFault.leafId) {
+        const { kind } = treeFault;
+        treeFault = null;
+        if (kind === 'lose-reply') process.exit(18);
+        // An unreadable transcript makes the client's history read fail until the test restores access.
+        fs.chmodSync(sessionFile, 0o000);
+      }
+      write({ type: 'extension_ui_request', method: 'setStatus', statusKey, statusText });
+    } },
 };
 
+// Start consuming stdin only once extension loading has finished.
+const lines = readline.createInterface({ input: process.stdin, crlfDelay: Infinity });
 for await (const line of lines) {
   const request = JSON.parse(line);
   switch (request.type) {
@@ -105,8 +122,16 @@ for await (const line of lines) {
       });
       break;
     }
+    case 'fixture_launch': {
+      const promptFile = args[args.indexOf('--system-prompt') + 1];
+      respond(request, { cwd: process.cwd(), args, promptFile, prompt: args.includes('--system-prompt') ? fs.readFileSync(promptFile, 'utf8') : null,
+        sessionDir: process.env.PI_CODING_AGENT_SESSION_DIR, customValue: process.env.PI_FIXTURE_VALUE });
+      break;
+    }
+    case 'get_available_models': respond(request, { models: [{ id: 'fixture', name: 'Fixture', provider: 'test', input: ['text'], reasoning: false, contextWindow: 1000 }] }); break;
     case 'get_commands': respond(request, { commands: [...commands.keys()].map(name => ({ name, source: 'extension' })) }); break;
     case 'fixture_tree_cancel': cancelTree = request.cancel; respond(request, {}); break;
+    case 'fixture_tree_fault': treeFault = { kind: request.kind, leafId: request.leafId }; respond(request, {}); break;
     case 'fixture_queue_steer': queueNextSteer = true; respond(request, {}); break;
     case 'fixture_hold_next': holdNext = true; userOnlyNext = request.userOnly === true; respond(request, {}); break;
     case 'set_model':

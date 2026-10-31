@@ -10,6 +10,8 @@ import { axe } from '@test/helpers/accessibility';
 import { DEFAULT_CLAUDIAN_SETTINGS } from '@test/helpers/defaultSettings';
 import { controlChangeSettled } from '@test/helpers/ObsidianHost';
 import { createProviderHostFixture } from '@test/helpers/providerRuntimeHost';
+import { mountProviderSettings } from '@test/helpers/ProviderSettingsHarness';
+import { WSLProcessFixture } from '@test/helpers/WSLProcessFixture';
 import { fireEvent, waitFor, within } from '@testing-library/dom';
 import spawn from 'cross-spawn';
 
@@ -29,13 +31,11 @@ let notify: ReturnType<typeof vi.fn<(providerId: string) => void>>;
 let fixture: Awaited<ReturnType<typeof createProviderHostFixture>>;
 let lifecycle: ProviderExecutionLifecycleRegistry;
 let workspace: PiWorkspaceServices;
-let renderer: { dispose(): void } | undefined;
 let tempRoot: string;
 let installationKey: string;
 
 beforeEach(async () => {
   globalThis.structuredClone ??= value => deserialize(serialize(value));
-  container = document.body.createDiv();
   settings = structuredClone(DEFAULT_CLAUDIAN_SETTINGS);
   updatePiProviderSettings(settings, { enabled: false });
   persist = vi.fn(async () => undefined);
@@ -45,15 +45,12 @@ beforeEach(async () => {
   settings = fixture.settings;
   lifecycle = fixture.lifecycle;
   tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'pi-settings-dom-'));
-  vi.mocked(spawn).mockClear();
+  vi.mocked(spawn).mockReset();
 });
 
 afterEach(async () => {
-  renderer?.dispose();
-  renderer = undefined;
   await workspace?.dispose();
   await fixture.dispose();
-  container.remove();
   await fs.rm(tempRoot, { recursive: true, force: true });
   vi.restoreAllMocks();
 });
@@ -61,13 +58,10 @@ afterEach(async () => {
 async function render() {
   const plugin = fixture.host;
   workspace = await createPiWorkspaceServices(plugin);
-  const rendered = workspace.settingsTabRenderer!.render(container, {
-    plugin,
+  ({ container } = mountProviderSettings(workspace.settingsTabRenderer!, plugin, {
     notifyProviderModelOptionsChanged: notify,
     renderCustomContextLimits: () => { throw new Error("Pi does not render custom context limits"); },
-  });
-  if (!rendered) throw new Error("Pi settings must expose cleanup");
-  renderer = rendered;
+  }));
   return fixture.coordinator;
 }
 
@@ -159,26 +153,24 @@ it('validates CLI paths and commits a quoted path while retaining discovery insi
     discoveredModels: cachedModels,
   });
   await render();
-  const reset = vi.spyOn(workspace.cliResolver!, 'reset');
   await setCLIPath(path.join(tempRoot, 'missing'));
   expect(persist).not.toHaveBeenCalled();
-  expect(reset).not.toHaveBeenCalled();
   expect(cliInput().getAttribute('aria-invalid')).toBe('true');
   const boundaryPaths: string[] = [];
-  const completedTransitions: Array<{ resetCalls: number; discoveredModels: typeof cachedModels }> = [];
+  const completedTransitions: Array<{ resolvedPath: string | null; discoveredModels: typeof cachedModels }> = [];
   lifecycle.registerTransitionHook('pi', {
     beforeTransition: () => { boundaryPaths.push(getPiProviderSettings(settings).cliPathsByHost[installationKey]); },
-    afterTransition: () => {
+    afterTransition: async () => {
       boundaryPaths.push(getPiProviderSettings(settings).cliPathsByHost[installationKey]);
       completedTransitions.push({
-        resetCalls: reset.mock.calls.length,
+        resolvedPath: await workspace.cliResolver!.resolveFromSettings(settings),
         discoveredModels: structuredClone(getPiProviderSettings(settings).discoveredModels),
       });
     },
   });
   await setCLIPath(`"${executable}"`);
   expect(boundaryPaths).toEqual(['/old/pi', `"${executable}"`]);
-  expect(completedTransitions).toEqual([{ resetCalls: 1, discoveredModels: cachedModels }]);
+  expect(completedTransitions).toEqual([{ resolvedPath: executable, discoveredModels: cachedModels }]);
   expect(getPiProviderSettings(settings).cliPathsByHost).toEqual({ [installationKey]: `"${executable}"` });
   expect(cliInput().value).toBe(`"${executable}"`);
   expect(persist).toHaveBeenCalled();
@@ -191,15 +183,14 @@ it.each(['before', 'after'] as const)('keeps the CLI input consistent when a fai
   await fs.writeFile(executable, '#!/bin/sh\n');
   updatePiProviderSettings(settings, { cliPathsByHost: { [installationKey]: '/old/pi' } });
   await render();
-  const reset = vi.spyOn(workspace.cliResolver!, 'reset');
-  if (phase === 'before') lifecycle.registerTransitionHook('pi', { beforeTransition: () => { throw new Error('transition failed'); } });
-  else reset.mockImplementationOnce(() => { throw new Error('resolver reset failed'); });
+  lifecycle.registerTransitionHook('pi', phase === 'before'
+    ? { beforeTransition: () => { throw new Error('transition failed'); } }
+    : { afterTransition: () => { throw new Error('transition completion failed'); } });
   await setCLIPath(executable);
   expect(getPiProviderSettings(settings).cliPathsByHost).toEqual({ [installationKey]: phase === 'before' ? '/old/pi' : executable });
   expect(cliInput().value).toBe(executable);
   expect(within(container).getByRole('alert').textContent).toBe(t('settings.cliInstallation.saveFailed'));
   expect(notify).not.toHaveBeenCalled();
-  expect(reset).toHaveBeenCalledTimes(phase === 'before' ? 0 : 1);
 });
 
 it('renders accessible Pi controls without skill or hidden-command management', async () => {
@@ -209,4 +200,44 @@ it('renders accessible Pi controls without skill or hidden-command management', 
   cliInput();
   for (const name of ['Skills', 'Commands', 'Hidden Pi commands and skills']) expect(within(container).queryByText(name)).toBeNull();
   expect((await axe(container, { runOnly: ['button-name', 'label', 'aria-valid-attr', 'aria-valid-attr-value'] })).violations).toEqual([]);
+});
+
+it('preserves spaces typed into the real Pi WSL CLI path until the final commit', async () => {
+  const platform = Object.getOwnPropertyDescriptor(process, 'platform')!;
+  Object.defineProperty(process, 'platform', { value: 'win32' });
+  // The Linux CLI inspection runs through wsl.exe; the fixture models an installation lookup that finds nothing.
+  const native = new WSLProcessFixture();
+  vi.mocked(spawn).mockImplementation(native.spawn);
+  try {
+    updatePiProviderSettings(settings, { enabled: true, installationMethodsByHost: { [installationKey]: 'wsl' } });
+    await render();
+    const input = cliInput();
+    expect(getPiProviderSettings(settings).installationMethod).toBe('wsl');
+    input.focus();
+    const typed = '/home/user/my tools/pi';
+    for (const character of typed) {
+      fireEvent.input(input, { target: { value: input.value + character } });
+      await Promise.resolve();
+    }
+    expect(getPiProviderSettings(settings).cliPathsByHost[installationKey]).toBeUndefined();
+    fireEvent.keyDown(input, { key: 'Enter' });
+    await waitFor(() => expect(getPiProviderSettings(settings).cliPathsByHost[installationKey]).toBe(typed));
+    expect(getPiProviderSettings(await fixture.settingsStorage.load()).cliPathsByHost[installationKey]).toBe(typed);
+    expect(input.value).toBe(typed);
+    const method = within(container).getByRole('combobox', { name: 'Installation method' });
+    const distro = within(container).getByRole('textbox', { name: 'WSL distro override' }) as HTMLInputElement;
+    expect(distro.disabled).toBe(false);
+    fireEvent.change(method, { target: { value: 'native-windows' } });
+    await waitFor(() => expect(distro.disabled).toBe(true));
+    expect(getPiProviderSettings(settings).installationMethod).toBe('native-windows');
+    fireEvent.change(method, { target: { value: 'wsl' } });
+    await waitFor(() => expect(distro.disabled).toBe(false));
+    fireEvent.input(distro, { target: { value: 'Debian' } });
+    await waitFor(() => expect(getPiProviderSettings(settings).wslDistroOverride).toBe('Debian'));
+    expect((await axe(method.parentElement!)).violations).toEqual([]);
+    expect((await axe(distro.parentElement!)).violations).toEqual([]);
+    expect((await axe(input.closest('.claudian-cli-installation')!)).violations).toEqual([]);
+  } finally {
+    Object.defineProperty(process, 'platform', platform);
+  }
 });

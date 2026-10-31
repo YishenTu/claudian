@@ -155,3 +155,67 @@ describe('Windows PowerShell interop', () => {
     expect(() => native.spawn(spec.command, spec.args, { windowsVerbatimArguments: true })).toThrow('Unsupported PowerShell invocation');
   });
 });
+
+it('reports WSLENV-imported values over the distro environment, with HOME from the launcher copy', async () => {
+  native.reply = undefined;
+  vi.mocked(spawn).mockReset().mockImplementation(native.spawn);
+  native.environment = { HOME: '/home/distro', TOKEN: 'distro', KEPT: 'distro' };
+  const read = (env: Record<string, string>) => {
+    const spec = buildTargetLaunchSpec({ target: launch.target, command: '/usr/bin/awk', args: ['program', 'HOME', 'TOKEN', 'KEPT'], hostCwd: 'C:\\vault', env });
+    return runProcessProbe({ ...spec, cwd: spec.spawnCwd }, 5_000);
+  };
+  expect(await read({ HOME: '/home/host', TOKEN: 'host', KEPT: 'host', WSLENV: 'TOKEN:KEPT/w' }))
+    .toBe('x\0/home/distro\0x\0host\0x\0distro\0');
+  // The real launch spec adds the CLAUDIAN_WSL_HOME copy that survives WSL init.
+  expect(await read({ HOME: '/home/host', WSLENV: 'HOME' })).toBe('x\0/home/host\0x\0distro\0x\0distro\0');
+});
+
+it('translates /p and /l drive paths the way wsl.exe imports them', async () => {
+  native.reply = undefined;
+  vi.mocked(spawn).mockReset().mockImplementation(native.spawn);
+  const spec = buildTargetLaunchSpec({ target: launch.target, command: '/usr/bin/awk', args: ['program', 'STORE', 'ROOT'], hostCwd: 'C:\\vault',
+    env: { STORE: 'D:\\DeepSeek Home', ROOT: 'E:\\', WSLENV: 'STORE/p:ROOT/p' } });
+  expect(await runProcessProbe({ ...spec, cwd: spec.spawnCwd }, 5_000)).toBe('x\0/mnt/d/DeepSeek Home\0x\0/mnt/e/\0');
+});
+
+// Upstream WslEnv test: both flags share the list translator (microsoft/WSL test/windows/wsl/UnitTests.cpp).
+it.each(['p', 'l', 'pl', 'lp'])('translates a ;-separated drive list under /%s', async flags => {
+  native.reply = undefined;
+  vi.mocked(spawn).mockReset().mockImplementation(native.spawn);
+  const spec = buildTargetLaunchSpec({ target: launch.target, command: '/usr/bin/awk', args: ['program', 'PATHS'], hostCwd: 'C:\\vault',
+    env: { PATHS: 'C:\\Users;C:\\Windows', WSLENV: `PATHS/${flags}` } });
+  expect(await runProcessProbe({ ...spec, cwd: spec.spawnCwd }, 5_000)).toBe('x\0/mnt/c/Users:/mnt/c/Windows\0');
+});
+
+it('reports a bare drive, which WSL skips as a relative path, as unmodeled', async () => {
+  native.reply = undefined;
+  vi.mocked(spawn).mockReset().mockImplementation(native.spawn);
+  const unmodeled: Error[] = [];
+  native.onUnmodeled = error => { unmodeled.push(error); };
+  const spec = buildTargetLaunchSpec({ target: launch.target, command: '/usr/bin/awk', args: ['program', 'DRIVE'], hostCwd: 'C:\\vault',
+    env: { DRIVE: 'E:', WSLENV: 'DRIVE/p' } });
+  expect(await runProcessProbe({ ...spec, cwd: spec.spawnCwd }, 5_000)).toBeNull();
+  expect(unmodeled.map(error => error.message)).toEqual(['Path-translated WSLENV value is not modeled: DRIVE']);
+});
+
+// A UNC share is a Windows path form the fixture does not translate.
+function readTranslatedToken() {
+  vi.mocked(spawn).mockReset().mockImplementation(native.spawn);
+  native.reply = undefined;
+  const spec = buildTargetLaunchSpec({ target: launch.target, command: '/usr/bin/awk', args: ['program', 'TOKEN'], hostCwd: 'C:\\vault',
+    env: { TOKEN: '\\\\server\\share\\token', WSLENV: 'TOKEN/p' } });
+  return runProcessProbe({ ...spec, cwd: spec.spawnCwd }, 5_000);
+}
+
+it('reports a path-translated WSLENV read to its sink even though the probe only sees a failed launch', async () => {
+  const unmodeled: Error[] = [];
+  native.onUnmodeled = error => { unmodeled.push(error); };
+  expect(await readTranslatedToken()).toBeNull();
+  expect(unmodeled.map(error => error.message)).toEqual(['Path-translated WSLENV value is not modeled: TOKEN']);
+});
+
+// The default sink fails the test that reached the unmodeled path.
+it.fails('fails the running test by default when a probe reads a path-translated WSLENV value', async () => {
+  // Passes on its own (the sink test above proves the null); only the default sink can fail it.
+  expect(await readTranslatedToken()).toBeNull();
+});

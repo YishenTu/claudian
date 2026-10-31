@@ -1,12 +1,18 @@
-// @test-ci {"inputs":["src/{core/process/execution-target,providers/codex,providers/claude}/**","src/{core/providers/cli/TargetCLIInstallationProbe,core/providers/settings/InstallationSettings,shared/settings/ExecutionTargetSettings}*","tests/{unit,integration}/{core/process/execution-target,providers/codex,providers/claude}/**","tests/{unit,integration}/{core/providers/cli/TargetCLIInstallationProbe,core/providers/settings/InstallationSettings,shared/settings/ExecutionTargetSettings}*","tests/helpers/WSLClaudeFixture.ts"]}
+// @test-ci {"inputs":["src/{core/process/execution-target,providers/codex,providers/claude,providers/pi}/**","src/{core/providers/cli/TargetCLIInstallationProbe,core/providers/settings/InstallationSettings,shared/settings/ExecutionTargetSettings}*","tests/{unit,integration}/{core/process/execution-target,providers/codex,providers/claude,providers/pi}/**","tests/fixtures/providers/pi/**","tests/{unit,integration}/{core/providers/cli/TargetCLIInstallationProbe,core/providers/settings/InstallationSettings,shared/settings/ExecutionTargetSettings}*","tests/helpers/WSLClaudeFixture.ts"]}
 import { execFileSync, spawn } from 'node:child_process';
 import * as fs from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import * as path from 'node:path';
 
+import { createChatFeatureHost } from '@test/helpers/features/chat/ChatFeatureHostFixture';
+import { createSessionRuntimePool } from '@test/helpers/features/chat/SessionRuntimePoolHarness';
+import { createProviderHostFixture } from '@test/helpers/providerRuntimeHost';
+import { testDate } from '@test/helpers/testClock';
 import { hasNativeWSL } from '@test/helpers/WSLNativeTarget';
 import { WSL_LITERAL_ARGS, type WSLShellBehavior, wslShellFixtureFiles } from '@test/helpers/WSLShellFixture';
 
+import { getInstallationKey } from '@/core/device/InstallationKey';
+import { parseEnvironmentVariables } from '@/core/process/env';
 import { resolveExecutionTarget, resolveExecutionTargetAsync } from '@/core/process/execution-target/ExecutionTargetResolver';
 import { probeTargetEnvironment } from '@/core/process/execution-target/TargetEnvironmentProbe';
 import { buildTargetLaunchSpec } from '@/core/process/execution-target/TargetLaunchSpec';
@@ -14,6 +20,19 @@ import type { ExecutionTarget, TargetLaunchSpec } from '@/core/process/execution
 import { createExecutionPathMapper } from '@/core/process/execution-target/WSLPathMapper';
 import { runProcessProbe } from '@/core/process/ProcessProbe';
 import { probeTargetCLIInstallation } from '@/core/providers/cli/TargetCLIInstallationProbe';
+import type { ProviderRuntimeHost } from '@/core/providers/ProviderRuntimeHost';
+import { createClaudianAPI } from '@/features/chat/session-messaging/ClaudianAPI';
+import { SessionMessagingService } from '@/features/chat/session-messaging/SessionMessagingService';
+import { decodePiConfig } from '@/providers/pi/config';
+import { PiCommandMetadataProbe } from '@/providers/pi/execution/PiCommandMetadataProbe';
+import { PiRPCSessionKernel } from '@/providers/pi/execution/PiExecutionKernel';
+import { PiConversationHistoryService } from '@/providers/pi/history/PiConversationHistoryService';
+import { createPiForkSessionFile, readPiSessionEntries } from '@/providers/pi/history/PiHistoryStore';
+import { inspectPiInstallation } from '@/providers/pi/runtime/PiCLIInstallation';
+import { PiCLIResolver } from '@/providers/pi/runtime/PiCLIResolver';
+import { buildPiLaunchSpec } from '@/providers/pi/runtime/PiLaunchSpecBuilder';
+import { PiModelDiscoveryService } from '@/providers/pi/runtime/PiModelDiscoveryService';
+import { piHostPath, piTargetPath } from '@/providers/pi/runtime/piTargetPaths';
 
 const settings = { installationMethod: 'wsl' as const, wslDistroOverride: '' };
 const available = hasNativeWSL();
@@ -45,6 +64,141 @@ describe.skipIf(!available)('native Windows to WSL execution', { timeout: 60_000
     env = Object.fromEntries(Object.entries(process.env).filter((entry): entry is [string, string] => entry[1] !== undefined));
   });
   afterAll(async () => { if (hostCwd) await fs.rm(hostCwd, { recursive: true, force: true }); });
+
+  describe('Pi adoption with a Linux-only fixture CLI', () => {
+    let linuxRoot: string;
+    let command: string;
+    let sessionFile: string;
+    let piConfig: Record<string, unknown>;
+    let piHost: ProviderRuntimeHost;
+    beforeAll(async () => {
+      linuxRoot = (await probe(buildTargetLaunchSpec({ target: resolvedTarget, hostCwd, env, command: 'mktemp', args: ['-d', '/tmp/claudian-pi-XXXXXX'] })))!.trim();
+      const mapper = createExecutionPathMapper(resolvedTarget);
+      const fixtureRoot = mapper.toHostPath(linuxRoot)!;
+      for (const name of ['PiSessionProcess.mjs', 'PiSessionManager.mjs']) {
+        await fs.copyFile(path.resolve('tests/fixtures/providers/pi', name), path.join(fixtureRoot, name));
+      }
+      command = `${linuxRoot}/pi`;
+      await fs.writeFile(path.join(fixtureRoot, 'pi'), '#!/bin/sh\nexec node "$(dirname "$0")/PiSessionProcess.mjs" "$@"\n');
+      await probe(buildTargetLaunchSpec({ target: resolvedTarget, hostCwd, env, command: 'chmod', args: ['+x', command] }));
+      // Fail setup with the interpreter's stderr instead of an opaque null probe/RPC close.
+      const fixtureVersion = execFileSync('wsl.exe', [
+        '--distribution', resolvedTarget.distroName!, '--exec', '/usr/bin/env', 'node', `${linuxRoot}/PiSessionProcess.mjs`, '--version',
+      ], { encoding: 'utf8', timeout: 20_000, windowsHide: true });
+      if (fixtureVersion !== 'pi 1.1.0\n') throw new Error(`Linux Pi fixture returned unexpected version output: ${JSON.stringify(fixtureVersion)}`);
+      sessionFile = path.join(fixtureRoot, 'source.jsonl');
+      const timestamp = testDate().toISOString();
+      await fs.writeFile(sessionFile, [
+        { type: 'session', version: 3, id: 'pi-source', cwd: mapper.toTargetPath(hostCwd), timestamp },
+        { type: 'message', id: 'user-1', parentId: null, timestamp, message: { role: 'user', content: 'Question from WSL' } },
+        { type: 'message', id: 'answer-1', parentId: 'user-1', timestamp, message: { role: 'assistant', content: [{ type: 'text', text: 'Reply stored in WSL.' }] } },
+      ].map(record => JSON.stringify(record)).join('\n') + '\n');
+      const installationKey = getInstallationKey();
+      piConfig = {
+        enabled: true, cliPathsByHost: { [installationKey]: command },
+        installationMethodsByHost: { [installationKey]: 'wsl' }, wslDistroOverridesByHost: { [installationKey]: resolvedTarget.distroName },
+        environmentVariables: `CLAUDIAN_TEST_PI_ROOT=${linuxRoot}\nPI_CODING_AGENT_SESSION_DIR=${fixtureRoot}\nPI_FIXTURE_VALUE=literal $HOME`,
+      };
+    });
+    // The host fixture is test-scoped; native CLI lookup is the external answer the real Pi resolver supplies.
+    beforeEach(async () => {
+      const resolver = new PiCLIResolver();
+      const fixture = await createProviderHostFixture({
+        settings: { providerConfigs: { pi: structuredClone(piConfig) } },
+        overrides: {
+          workingDirectory: hostCwd,
+          getResolvedProviderCliPath: async (_provider, context) => resolver.resolveFromSettings(fixture.settings, context),
+        },
+      });
+      piHost = fixture.host.getRuntimeHost('pi');
+    });
+    afterAll(async () => {
+      if (linuxRoot) await probe(buildTargetLaunchSpec({ target: resolvedTarget, hostCwd, env, command: 'rm', args: ['-rf', linuxRoot] }));
+    });
+
+    it('detects the Linux CLI and runs model and command probes through the same target', async () => {
+      expect(await inspectPiInstallation(piHost)).toEqual({ path: command, version: '1.1.0', source: 'custom' });
+      expect(await new PiModelDiscoveryService(piHost).discoverModels()).toMatchObject({ kind: 'completed', models: [{ encodedId: 'pi:test/fixture' }] });
+      const metadata = new PiCommandMetadataProbe(piHost);
+      try { expect(await metadata.load(hostCwd)).toEqual([]); } finally { await metadata.dispose(); }
+    });
+
+    it('delivers a >32K literal prompt, maps extensions/session paths and round-trips session tools over stdio', async () => {
+      const promptText = '  Literal $HOME `uname` "quotes"\n' + '正文'.repeat(25_000) + '\n  ';
+      const launch = buildPiLaunchSpec({
+        command, cwd: hostCwd, executionTarget: resolvedTarget,
+        env: { ...env, ...parseEnvironmentVariables(piHost.environmentText) }, envText: piHost.environmentText,
+        settings: decodePiConfig(piHost.config, piHost.selection), systemPrompt: promptText,
+        providerState: { sessionFile }, enableTreeBridge: true, enableSessionTools: true,
+      });
+      const port = { list: vi.fn().mockResolvedValue({ sessions: [] }), send: vi.fn(), read: vi.fn() };
+      const kernel = new PiRPCSessionKernel(launch, {
+        getSessionToolInvocation: () => ({ port, toolPolicy: { kind: 'provider-default' }, signal: new AbortController().signal }),
+        onClose() {}, onEvent() {}, onExtensionChunk() {}, onExtensionRequest: () => true,
+      }, null);
+      let promptFile: string | undefined;
+      let extensionFiles: string[];
+      try {
+        kernel.start();
+        const details = await kernel.request<{ cwd: string; args: string[]; prompt: string; promptFile: string; sessionDir: string; customValue: string }>('fixture_launch');
+        expect(details.prompt).toBe(promptText);
+        expect(details.cwd).toBe(createExecutionPathMapper(resolvedTarget).toTargetPath(hostCwd));
+        expect(details.sessionDir).toBe(linuxRoot);
+        expect(details.customValue).toBe('literal $HOME');
+        promptFile = piHostPath(details.promptFile, resolvedTarget);
+        extensionFiles = details.args.flatMap((arg, index) => arg === '--extension' ? [piHostPath(details.args[index + 1], resolvedTarget)] : []);
+        expect(extensionFiles).toHaveLength(2);
+        expect(await kernel.request('get_state')).toMatchObject({ sessionId: 'pi-source', sessionFile: piTargetPath(sessionFile, resolvedTarget) });
+        expect(await kernel.request('claudian_tree', { operation: 'inspect', sessionId: 'pi-source', sessionFile: piTargetPath(sessionFile, resolvedTarget) }))
+          .toMatchObject({ cancelled: false, sessionId: 'pi-source', leafId: 'answer-1' });
+        expect(await kernel.request('fixture_tool', { name: 'claudian_list_destinations', toolCallId: 'list', args: {} }))
+          .toMatchObject({ isError: false, content: [{ text: '{"sessions":[]}' }] });
+        expect(port.list).toHaveBeenCalledOnce();
+      } finally { await kernel.shutdown(); }
+      await expect(fs.stat(promptFile!)).rejects.toMatchObject({ code: 'ENOENT' });
+      for (const extension of extensionFiles) await expect(fs.stat(extension)).rejects.toMatchObject({ code: 'ENOENT' });
+    });
+
+    it('discovers the default Linux home for an ID-only history read', async () => {
+      const nativeHome = (await probe(buildTargetLaunchSpec({ target: resolvedTarget, hostCwd, env,
+        command: '/bin/sh', args: ['-c', 'printf "%s" "$HOME"'],
+      })))!;
+      const hostRoot = piHostPath(`${nativeHome}/.pi/agent/sessions`, resolvedTarget);
+      await fs.mkdir(hostRoot, { recursive: true });
+      const directory = await fs.mkdtemp(path.join(hostRoot, 'claudian-wsl-test-'));
+      const sessionId = path.basename(directory);
+      try {
+        await fs.writeFile(path.join(directory, `${sessionId}.jsonl`),
+          (await fs.readFile(sessionFile, 'utf8')).replace('"id":"pi-source"', `"id":${JSON.stringify(sessionId)}`));
+        const result = await new PiConversationHistoryService().hydrateConversationHistory({
+          sessionId, providerState: { sessionId }, messages: [],
+        }, hostCwd, {
+          executionTarget: resolvedTarget,
+          environment: { ...env, PI_CODING_AGENT_DIR: '', PI_CODING_AGENT_SESSION_DIR: '', PI_PACKAGE_DIR: '' },
+          environmentText: 'PI_CODING_AGENT_DIR=\nPI_CODING_AGENT_SESSION_DIR=\nPI_PACKAGE_DIR=',
+        });
+        expect(result.messages).toMatchObject([{ content: 'Question from WSL' }, { content: 'Reply stored in WSL.' }]);
+      } finally { await fs.rm(directory, { recursive: true, force: true }); }
+    });
+
+    it('reads the transcript through the plugin API and writes Linux fork header paths', async () => {
+      const history = new PiConversationHistoryService();
+      const context = { config: piHost.config, environmentText: piHost.environmentText, environment: { ...env, ...parseEnvironmentVariables(piHost.environmentText) }, hostPlatform: 'win32' as const };
+      const conversation = { id: 'pi-chat', providerId: 'pi' as const, sessionId: 'pi-source', providerState: { sessionId: 'pi-source', sessionFile }, messages: [], title: 'WSL', createdAt: testDate().getTime(), lastActivityAt: testDate().getTime() };
+      const host = await createChatFeatureHost({
+        ensureConversationMetadataLoaded: async () => undefined,
+        getConversationById: async () => ({ ...conversation, ...(await history.hydrateConversationHistory(conversation, hostCwd, context)) }),
+        sessionRuntimes: createSessionRuntimePool(() => host),
+      });
+      const messaging = new SessionMessagingService({ getHost: () => host, getActiveConversationId: () => null, refreshModelControls() {} });
+      expect(await createClaudianAPI(messaging).read('pi-chat')).toBe('Reply stored in WSL.');
+      const fork = await createPiForkSessionFile(sessionFile, 'answer-1', { targetCwd: piTargetPath(hostCwd, resolvedTarget), parentSession: piTargetPath(sessionFile, resolvedTarget) });
+      expect((await readPiSessionEntries(fork.sessionFile)).header).toMatchObject({ cwd: piTargetPath(hostCwd, resolvedTarget), parentSession: piTargetPath(sessionFile, resolvedTarget) });
+      expect(fork.parentSession).toBe(sessionFile);
+      expect(await fs.readFile(sessionFile, 'utf8')).not.toContain(fork.sessionId);
+      await fs.rm(fork.sessionFile);
+    });
+  });
 
   it('detects the same real default distro synchronously and asynchronously', async () => {
     expect(resolvedTarget.distroName).toBeTruthy();

@@ -1,12 +1,8 @@
-import * as fs from 'node:fs';
-
-import { normalizeConfiguredCLIPath } from '@/core/process/cliPath';
-import { probeCLIInstallation } from '@/core/providers/cli/CLIInstallationProbe';
-import { getRuntimeEnvironmentVariables } from '@/core/providers/providerEnvironment';
 import type { ProviderCLIResolver } from '@/core/providers/types';
 import { PI_PROVIDER_ICON } from '@/shared/icons';
 import { AccessibleSetting } from '@/shared/settings/AccessibleSetting';
 import { renderCLIInstallationSetting } from '@/shared/settings/CLIInstallationSetting';
+import { renderExecutionTargetSettings, validateExecutionTargetCLIPath } from '@/shared/settings/ExecutionTargetSettings';
 
 import type { ProviderModelCatalog } from '../../../core/providers/models/ProviderModelCatalog';
 import { ProviderSettingsCoordinator } from '../../../core/providers/ProviderSettingsCoordinator';
@@ -21,7 +17,7 @@ import {
   renderProviderModelEnablementWarning,
 } from '../../../shared/settings/ProviderModelEnablementWarning';
 import { renderProviderModelsSection } from '../../../shared/settings/ProviderModelsSection';
-import { resolvePiProcessSpec } from '../runtime/PiSubprocess';
+import { inspectPiInstallation } from '../runtime/PiCLIInstallation';
 import {
   getPiProviderSettings,
   updatePiProviderSettings
@@ -77,20 +73,13 @@ export function createPiSettingsTabRenderer(
         providerName: 'Pi',
       });
 
-      renderCLIInstallationSetting({
+      const getCLIPlaceholder = () => process.platform === 'win32'
+        ? getPiProviderSettings(settingsBag).installationMethod === 'wsl' ? 'pi' : 'C:\\Users\\you\\AppData\\Roaming\\npm\\pi.cmd'
+        : '/usr/local/bin/pi';
+      const installation = renderCLIInstallationSetting({
         cliName: 'Pi',
         icon: PI_PROVIDER_ICON,
-        inspect: async () => {
-          const settings = context.plugin.settings as unknown as Record<string, unknown>;
-          const config = getPiProviderSettings(settings);
-          return probeCLIInstallation({
-            path: await context.plugin.getResolvedProviderCliPath('pi'),
-            configuredPath: config.cliPathsByHost[hostnameKey] || config.cliPath,
-            args: ['--version'],
-            env: { ...process.env, ...getRuntimeEnvironmentVariables(settings, 'pi') },
-            prepareLaunch: (spec) => ({ ...spec, ...resolvePiProcessSpec(spec, spec.env.PATH ?? '') }),
-          });
-        },
+        inspect: () => inspectPiInstallation(context.plugin.getRuntimeHost('pi')),
         container: installationContainer,
         enablement,
         getValue: () => {
@@ -119,10 +108,23 @@ export function createPiSettingsTabRenderer(
           );
           context.notifyProviderModelOptionsChanged('pi');
         },
-        placeholder: process.platform === 'win32'
-          ? 'C:\\Users\\you\\AppData\\Roaming\\npm\\pi.cmd'
-          : '/usr/local/bin/pi',
-        validate: validateCLIPath,
+        placeholder: getCLIPlaceholder(),
+        validate: value => validateExecutionTargetCLIPath(value, getPiProviderSettings(settingsBag)),
+      });
+
+      renderExecutionTargetSettings({
+        container, providerName: 'Pi', getValue: () => getPiProviderSettings(settingsBag),
+        onChange: async updates => {
+          await context.plugin.applyProviderRuntimeSettings(['pi'], settings => {
+            updatePiProviderSettings(settings, updates);
+          }, () => workspace.cliResolver.reset());
+          context.notifyProviderModelOptionsChanged('pi');
+        },
+        onRefresh: () => {
+          installation.setPlaceholder(getCLIPlaceholder());
+          installation.revalidate();
+          void installation.refresh();
+        },
       });
 
       new AccessibleSetting(container).setName('Models').setDesc(t('settings.pi.models.desc')).setHeading();
@@ -140,22 +142,4 @@ export function createPiSettingsTabRenderer(
       return modelPicker;
     },
   };
-}
-
-function validateCLIPath(value: string): string | null {
-  const trimmed = value.trim();
-  if (!trimmed) {
-    return null;
-  }
-
-  const expandedPath = normalizeConfiguredCLIPath(trimmed);
-  if (!fs.existsSync(expandedPath)) {
-    return t('settings.cliPath.validation.notExist');
-  }
-
-  if (!fs.statSync(expandedPath).isFile()) {
-    return t('settings.cliPath.validation.notFile');
-  }
-
-  return null;
 }

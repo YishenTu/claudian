@@ -12,14 +12,14 @@ const HOST_IS_WINDOWS = path.sep === '\\';
 
 /** Path-taking functions production reads, writes and resolves through. */
 const FS_FUNCTIONS = new Set<string>([
-  'createReadStream', 'existsSync', 'lstatSync', 'readFileSync', 'readdirSync', 'realpathSync', 'statSync',
-  'unwatchFile', 'watchFile',
+  'createReadStream', 'existsSync', 'lstatSync', 'mkdtempSync', 'readFileSync', 'readdirSync', 'realpathSync', 'rmSync',
+  'statSync', 'unwatchFile', 'watchFile', 'writeFileSync',
 ] satisfies (keyof typeof NodeFS)[]);
 const FS_PROMISES_FUNCTIONS = new Set<string>([
   'access', 'copyFile', 'lstat', 'mkdir', 'mkdtemp', 'open', 'readFile', 'readdir', 'realpath', 'rename', 'rm', 'stat', 'writeFile',
 ] satisfies (keyof typeof NodeFSPromises)[]);
 /** Functions that return a path, which maps back to the Windows host path. */
-const RETURNS_PATH = new Set(['mkdtemp', 'realpath', 'realpathSync']);
+const RETURNS_PATH = new Set(['mkdtemp', 'mkdtempSync', 'realpath', 'realpathSync']);
 /** Leading path arguments; the rest (such as file contents) pass through unchanged. */
 const PATH_ARGUMENT_COUNT: Readonly<Record<string, number>> = { copyFile: 2, rename: 2 };
 
@@ -98,20 +98,23 @@ export function createWindowsHostFS(
     for (const [name, original] of Object.entries(module)) {
       // Classes (Stats, Dirent, streams) and nested namespaces stay as they are.
       if (typeof original !== 'function' || /^[A-Z]/u.test(name)) continue;
-      const replacement = (...args: unknown[]) => {
+      const redirect = (target: (...args: unknown[]) => unknown) => (...args: unknown[]) => {
         if (!listed.has(name)) {
           if (args.some(isWindowsShaped)) throw new Error(`WindowsHostFS does not model ${label}.${name}; add it to the redirected functions`);
-          return Reflect.apply(original, module, args);
+          return Reflect.apply(target, module, args);
         }
         const pathCount = PATH_ARGUMENT_COUNT[name] ?? 1;
         const mapped = args.map((arg, index) => index < pathCount && typeof arg === 'string' ? toLocal(arg) : arg);
-        const result = Reflect.apply(original, module, mapped);
+        const result = Reflect.apply(target, module, mapped);
         if (!RETURNS_PATH.has(name)) return result;
         // fs/promises comes from the host realm, so its promises fail a VM-realm `instanceof Promise`.
         return isThenable(result) ? result.then(value => toHost(String(value))) : toHost(String(result));
       };
-      // Keep properties such as realpathSync.native, which host-path containment reads.
-      Reflect.set(module, name, Object.assign(replacement, original));
+      const replacement = Object.assign(redirect(original), original);
+      // `realpathSync.native`, which host-path containment reads, takes the same paths as its parent.
+      const nativeAlias: unknown = Reflect.get(original, 'native');
+      if (typeof nativeAlias === 'function') Reflect.set(replacement, 'native', redirect(nativeAlias as (...args: unknown[]) => unknown));
+      Reflect.set(module, name, replacement);
     }
   };
   wrap(modules.fs, FS_FUNCTIONS, 'fs');

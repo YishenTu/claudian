@@ -1,10 +1,15 @@
+import { resolveExecutionTarget } from '@/core/process/execution-target/ExecutionTargetResolver';
+import type { ExecutionTarget } from '@/core/process/execution-target/types';
 import { SESSION_TOOLS } from '@/core/tools/toolNames';
 
 import type { PiProviderSettings } from '../config';
+import { isPiSessionPathReference } from '../history/PiHistoryPathResolver';
 import { decodePiModelId, normalizePiThinkingLevel } from '../models';
 import type { PiProviderState } from '../types';
+import { piTargetPath } from './piTargetPaths';
 
 export interface BuildPiLaunchSpecParams {
+  executionTarget?: ExecutionTarget;
   command: string;
   cwd: string;
   env?: NodeJS.ProcessEnv;
@@ -23,6 +28,8 @@ export interface BuildPiLaunchSpecParams {
 }
 
 export interface PiLaunchSpec {
+  executionTarget?: ExecutionTarget;
+  envText?: string;
   enableSessionTools?: boolean;
   enableTreeBridge?: boolean;
   args: string[];
@@ -36,12 +43,14 @@ export interface PiLaunchSpec {
 const READONLY_TOOLS = 'read,grep,find,ls';
 
 export function buildPiLaunchSpec(params: BuildPiLaunchSpecParams): PiLaunchSpec {
+  const target = params.executionTarget ?? resolveExecutionTarget({ settings: params.settings, hostVaultPath: params.cwd });
   const args = ['--mode', 'rpc'];
   let sessionFlagIndex: number | null = null;
-  const sessionTarget = params.providerState?.sessionFile
+  const storedTarget = params.providerState?.sessionFile
     ?? params.providerState?.sessionId
     ?? null;
-  const systemPrompt = params.systemPrompt?.trim();
+  const sessionTarget = isPiSessionPathReference(storedTarget) ? piTargetPath(storedTarget, target) : storedTarget;
+  const systemPrompt = params.systemPrompt;
   if (systemPrompt) {
     args.push('--system-prompt', systemPrompt);
   }
@@ -72,6 +81,8 @@ export function buildPiLaunchSpec(params: BuildPiLaunchSpecParams): PiLaunchSpec
   }
 
   return {
+    executionTarget: target,
+    envText: params.envText ?? params.settings.environmentVariables,
     ...(params.enableSessionTools ? { enableSessionTools: true } : {}),
     ...(params.enableTreeBridge ? { enableTreeBridge: true } : {}),
     args,
@@ -79,6 +90,7 @@ export function buildPiLaunchSpec(params: BuildPiLaunchSpecParams): PiLaunchSpec
     cwd: params.cwd,
     env: params.env ?? process.env,
     processKey: JSON.stringify({
+      target,
       enableSessionTools: params.enableSessionTools === true,
       args: withoutSessionTarget(args, sessionFlagIndex),
       command: params.command,

@@ -41,6 +41,27 @@ describe.skipIf(path.sep === '\\')('WindowsHostFS on a POSIX host', () => {
     expect(await fsPromises.realpath(String.raw`d:\Data\file.txt`)).toBe(String.raw`D:\Data\file.txt`);
   });
 
+  it('resolves realpathSync.native through the same host mapping as realpathSync', async () => {
+    const host = createWindowsHostFS(modules);
+    await host.write(String.raw`C:\Elsewhere\target.jsonl`, 'outside');
+    await fsPromises.mkdir(String.raw`C:\Sessions`, { recursive: true });
+    fs.symlinkSync(host.local(String.raw`C:\Elsewhere\target.jsonl`), host.local(String.raw`C:\Sessions\link.jsonl`));
+    expect(fs.realpathSync.native(String.raw`c:\sessions\link.jsonl`)).toBe(String.raw`C:\Elsewhere\target.jsonl`);
+    expect(fs.realpathSync.native(String.raw`C:\Sessions\link.jsonl`)).toBe(fs.realpathSync(String.raw`C:\Sessions\link.jsonl`));
+  });
+
+  it('creates, writes and removes a temporary directory at its Windows path', async () => {
+    const host = createWindowsHostFS(modules);
+    await fsPromises.mkdir(String.raw`C:\Temp`, { recursive: true });
+    const directory = fs.mkdtempSync(String.raw`C:\Temp\claudian-`);
+    expect(directory).toMatch(/^C:\\Temp\\claudian-\w+$/u);
+    fs.writeFileSync(`${directory}\\prompt.txt`, String.raw`D:\literal`, { encoding: 'utf8' });
+    expect(await host.read(`${directory}\\prompt.txt`)).toBe(String.raw`D:\literal`);
+    fs.rmSync(directory, { recursive: true, force: true });
+    expect(fs.existsSync(directory)).toBe(false);
+    expect(fs.readdirSync(String.raw`C:\Temp`)).toEqual([]);
+  });
+
   it('matches Windows paths case-insensitively and Linux paths case-sensitively on any host filesystem', async () => {
     const host = createWindowsHostFS(modules);
     await host.write(String.raw`C:\Vault\Note.md`, 'first casing');

@@ -2,6 +2,8 @@ import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
+import { createPiCommandShim } from '@test/helpers/providers/pi/PiWindowsLaunchers';
+
 import { findNodeExecutable, getEnhancedPath } from '@/core/process/env';
 import { PiSubprocess } from '@/providers/pi/runtime/PiSubprocess';
 
@@ -57,7 +59,7 @@ describeOnWindows('PiSubprocess Windows argv integration', () => {
 async function writeNpmShimFixture(npmPrefix: string): Promise<PiLaunchFixture> {
   const cliPath = await writeArgvPiPackage(path.join(npmPrefix, ...PI_PACKAGE_PATH));
   const commandPath = path.join(npmPrefix, 'pi.cmd');
-  await fs.writeFile(commandPath, createWindowsCommandShim(commandPath, cliPath));
+  await fs.writeFile(commandPath, createPiCommandShim(commandPath, cliPath));
   return { cliPath, commandPath };
 }
 
@@ -111,29 +113,6 @@ async function writeArgvPiPackage(packageRoot: string): Promise<string> {
     'process.stdin.resume();',
   ].join('\n'));
   return cliPath;
-}
-
-function createWindowsCommandShim(commandPath: string, targetPath: string): string {
-  const relativeTarget = path.relative(path.dirname(commandPath), targetPath)
-    .split(path.sep)
-    .join('\\');
-  return [
-    '@ECHO off',
-    'GOTO start',
-    ':find_dp0',
-    'SET dp0=%~dp0',
-    'EXIT /b',
-    ':start',
-    'SETLOCAL',
-    'CALL :find_dp0',
-    'IF EXIST "%dp0%\\node.exe" (',
-    '  SET "_prog=%dp0%\\node.exe"',
-    ') ELSE (',
-    '  SET "_prog=node"',
-    ')',
-    `endLocal & goto #_undefined_# 2>NUL || title %COMSPEC% & "%_prog%"  "%dp0%\\${relativeTarget}" %*`,
-    '',
-  ].join('\r\n');
 }
 
 function readFirstLine(subprocess: PiSubprocess, launch: Record<string, unknown>): Promise<unknown> {

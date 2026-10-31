@@ -1,4 +1,5 @@
 import * as fs from 'node:fs';
+import * as os from 'node:os';
 import * as path from 'node:path';
 import type { Readable, Writable } from 'node:stream';
 
@@ -7,6 +8,8 @@ import {
   findNodeExecutable,
   getEnhancedPath,
 } from '@/core/process/env';
+import { buildTargetLaunchSpec } from '@/core/process/execution-target/TargetLaunchSpec';
+import type { ExecutionTarget } from '@/core/process/execution-target/types';
 import { ManagedStdioProcess } from '@/core/process/ManagedStdioProcess';
 import {
   readPackageBin,
@@ -14,12 +17,17 @@ import {
   resolveOwningPackageBin,
 } from '@/core/process/windowsCmdShim';
 
+import { piTargetPath } from './piTargetPaths';
+import { getPiWSLForwardedEnvironment } from './piWSLEnvironment';
+
 const STDERR_BUFFER_LIMIT = 8_000;
 const PI_PACKAGE_NAME = '@earendil-works/pi-coding-agent';
 const PI_MANAGED_LAUNCHER = 'pi-launcher.js';
 const PI_MANAGED_RELEASE_VERSION = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/u;
 
 export interface PiSubprocessLaunchSpec {
+  executionTarget?: ExecutionTarget;
+  envText?: string;
   args: string[];
   command: string;
   cwd: string;
@@ -29,31 +37,57 @@ export interface PiSubprocessLaunchSpec {
 type CloseListener = (error?: Error) => void;
 
 export class PiSubprocess {
+  private promptDirectory: string | null = null;
   private closeError: Error | null = null;
   private readonly closeListeners = new Set<CloseListener>();
   private notifiedClose = false;
   private readonly process: ManagedStdioProcess;
 
   constructor(launchSpec: PiSubprocessLaunchSpec) {
-    const enhancedPath = getEnhancedPath(
-      launchSpec.env.PATH,
-      path.isAbsolute(launchSpec.command) ? launchSpec.command : undefined,
-    );
-    const processSpec = resolvePiProcessSpec(launchSpec, enhancedPath);
-    this.process = new ManagedStdioProcess({
-      ...launchSpec,
-      ...processSpec,
-      env: {
-        ...launchSpec.env,
-        PATH: enhancedPath,
-      },
-      stderrBufferLimit: STDERR_BUFFER_LIMIT,
-    });
+    try {
+      if (launchSpec.executionTarget?.method === 'wsl') {
+        const args = [...launchSpec.args];
+        const promptIndex = args.indexOf('--system-prompt');
+        if (promptIndex >= 0 && args[promptIndex + 1] !== undefined) {
+          this.promptDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'claudian-pi-prompt-'));
+          const promptFile = path.join(this.promptDirectory, 'system-prompt.txt');
+          fs.writeFileSync(promptFile, args[promptIndex + 1], { encoding: 'utf8', mode: 0o600 });
+          args[promptIndex + 1] = piTargetPath(promptFile, launchSpec.executionTarget);
+        }
+        const env = Object.fromEntries(Object.entries(launchSpec.env).filter((entry): entry is [string, string] => entry[1] !== undefined));
+        const spec = buildTargetLaunchSpec({
+          target: launchSpec.executionTarget, command: launchSpec.command, args,
+          hostCwd: launchSpec.cwd, env,
+          forwardEnvironment: getPiWSLForwardedEnvironment(env, launchSpec.envText ?? ''),
+        });
+        this.process = new ManagedStdioProcess({ ...spec, cwd: spec.spawnCwd, directSpawn: true, stderrBufferLimit: STDERR_BUFFER_LIMIT });
+      } else {
+        const enhancedPath = getEnhancedPath(
+          launchSpec.env.PATH,
+          path.isAbsolute(launchSpec.command) ? launchSpec.command : undefined,
+        );
+        const processSpec = resolvePiProcessSpec(launchSpec, enhancedPath);
+        this.process = new ManagedStdioProcess({
+          ...launchSpec,
+          ...processSpec,
+          env: {
+            ...launchSpec.env,
+            PATH: enhancedPath,
+          },
+          stderrBufferLimit: STDERR_BUFFER_LIMIT,
+        });
+      }
+    } catch (error) {
+      this.#cleanupPrompt();
+      throw error;
+    }
     this.process.onError((error) => {
+      this.#cleanupPrompt();
       this.closeError = error;
       this.#notifyClose(error);
     });
     this.process.onExit(({ code, signal }) => {
+      this.#cleanupPrompt();
       const exitError = this.closeError ?? (
         code === 0 && signal === null
           ? undefined
@@ -92,8 +126,14 @@ export class PiSubprocess {
     };
   }
 
-  shutdown(): Promise<void> {
-    return this.process.shutdown();
+  async shutdown(): Promise<void> {
+    try { await this.process.shutdown(); } finally { this.#cleanupPrompt(); }
+  }
+
+  #cleanupPrompt(): void {
+    if (!this.promptDirectory) return;
+    fs.rmSync(this.promptDirectory, { recursive: true, force: true });
+    this.promptDirectory = null;
   }
 
   #assertStarted(): void {
