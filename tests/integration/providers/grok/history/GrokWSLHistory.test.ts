@@ -31,7 +31,12 @@ const platform = Object.getOwnPropertyDescriptor(process, 'platform')!;
 afterEach(() => { Object.defineProperty(process, 'platform', platform); vi.restoreAllMocks(); });
 
 describe.skipIf(path.sep === '\\')('Grok WSL history on a simulated Windows host', () => {
-  it.each(['HOME', 'GROK_HOME'] as const)('reads a WSL Grok transcript through the plugin API using Linux %s and cwd', async homeKey => {
+  it.each([
+    { homeKey: 'HOME', storedCwd: '/mnt/c/vault' },
+    { homeKey: 'GROK_HOME', storedCwd: '/mnt/c/vault' },
+    { homeKey: 'HOME', storedCwd: '/mnt/c/old-vault' },
+    { homeKey: 'GROK_HOME', storedCwd: '/mnt/c/old-vault' },
+  ] as const)('reads a WSL Grok transcript through the plugin API using Linux $homeKey stored under $storedCwd', async ({ homeKey, storedCwd }) => {
     const native = new WSLProcessFixture();
     native.environment = homeKey === 'HOME' ? { HOME: '/home/alice' } : { HOME: '/home/alice', GROK_HOME: '/opt/grok' };
     vi.mocked(spawn).mockReset().mockImplementation(native.spawn);
@@ -41,7 +46,8 @@ describe.skipIf(path.sep === '\\')('Grok WSL history on a simulated Windows host
     } } } });
     Object.defineProperty(process, 'platform', { ...platform, value: 'win32' });
     const root = homeKey === 'HOME' ? '\\\\wsl$\\Ubuntu\\home\\alice\\.grok\\sessions' : '\\\\wsl$\\Ubuntu\\opt\\grok\\sessions';
-    const directory = path.win32.join(root, '%2Fmnt%2Fc%2Fvault', 'native-session');
+    // Prior-cwd transcripts require enumeration after rejecting the wrong-distro hint.
+    const directory = path.win32.join(root, encodeURIComponent(storedCwd), 'native-session');
     const updates = [
       { sessionUpdate: 'user_message_chunk', content: { type: 'text', text: 'Question' }, _meta: { promptIndex: 0 } },
       ...grokWSLToolUpdates,
