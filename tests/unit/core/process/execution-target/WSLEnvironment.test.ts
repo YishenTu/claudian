@@ -1,4 +1,4 @@
-import { forwardWSLEnvironment } from '@/core/process/execution-target/WSLEnvironment';
+import { forwardWSLEnvironment, selectWSLForwardedEnvironment } from '@/core/process/execution-target/WSLEnvironment';
 
 it('forwards only declared existing keys with caller-selected path flags and preserves existing WSLENV semantics', () => {
   const env = { WSLENV: 'EXISTING/lu:ALREADY/p', EXISTING: 'one:two', ALREADY: 'C:\\keep', TOKEN: 'secret', ROOT: 'C:\\data', ROOTS: 'C:\\one;D:\\two', HOME: 'C:\\Users\\me', PATH: 'C:\\Windows' };
@@ -35,4 +35,30 @@ it('retains native environment values without inventing a forwarding list', () =
 it('clears an inherited forwarding entry when the caller declares an absent value', () => {
   expect(forwardWSLEnvironment({ WSLENV: 'REMOVED/p', TOKEN: 'native-token' }, [{ key: 'REMOVED' }]))
     .toEqual({ WSLENV: '', TOKEN: 'native-token' });
+});
+
+it.each([
+  'SSL_CERT_FILE', 'SSL_CERT_DIR', 'REQUESTS_CA_BUNDLE', 'CURL_CA_BUNDLE',
+  'NODE_EXTRA_CA_CERTS', 'TMPDIR', 'TMP', 'TEMP',
+])('selects standard path policy only for approved %s values', key => {
+  const env = { [key]: String.raw`C:\Paths\one` };
+  const select = (configured: Record<string, string>, inheritedKeys: string[]) =>
+    selectWSLForwardedEnvironment({ env, configured, inheritedKeys, providerPathVariables: [] });
+  expect(select({}, [])).toEqual([]);
+  const expected = [{ key, hostPath: true, pathList: key === 'SSL_CERT_DIR' }];
+  expect(select(env, [])).toEqual(expected);
+  expect(select({}, [key])).toEqual(expected);
+});
+
+it('combines provider paths with configured values without replacing Linux defaults or forwarding unrelated host keys', () => {
+  const env = {
+    HOME: String.raw`C:\Users\host`, PATH: String.raw`C:\bin`, USERPROFILE: '/home/ignored', WSLENV: 'KEEP/lu',
+    PRIVATE_TOKEN: 'host-only', PROVIDER_ROOTS: String.raw`C:\one;D:\two`, CUSTOM: 'value',
+  };
+  const variables = selectWSLForwardedEnvironment({
+    env, configured: { CUSTOM: 'value', USERPROFILE: '/home/ignored', WSLENV: 'KEEP/lu' },
+    inheritedKeys: ['HOME', 'PATH', 'PROVIDER_ROOTS', 'CUSTOM'],
+    providerPathVariables: [{ key: 'PROVIDER_ROOTS', pathList: true }],
+  });
+  expect(forwardWSLEnvironment(env, variables).WSLENV).toBe('KEEP/lu:CUSTOM:PROVIDER_ROOTS/pl');
 });

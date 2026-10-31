@@ -1,8 +1,9 @@
 import { WSLProcessFixture } from '@test/helpers/WSLProcessFixture';
 import spawn from 'cross-spawn';
 
+import { probeTargetEnvironment } from '@/core/process/execution-target/TargetEnvironmentProbe';
 import type { ExecutionTarget } from '@/core/process/execution-target/types';
-import { OpencodeTargetEnvironment } from '@/providers/opencode/runtime/OpencodeExecutionTarget';
+import { getOpencodeWSLForwardedEnvironment, OpencodeTargetEnvironment } from '@/providers/opencode/runtime/OpencodeExecutionTarget';
 import { OpencodeCLINotInstalledError, verifyOpencodeNativeVersion } from '@/providers/opencode/runtime/OpencodeVersion';
 
 vi.mock('cross-spawn', () => ({ default: vi.fn() }));
@@ -77,4 +78,16 @@ it('keeps an explicitly configured inline document without round-tripping it thr
   const result = await new OpencodeTargetEnvironment().resolve(target, 'C:\\Vault', `OPENCODE_CONFIG_CONTENT=${content}`, 'opencode');
   expect(result.OPENCODE_CONFIG_CONTENT).toBe(content);
   expect(environmentProbes()[0].argv.slice(1)).toEqual(['HOME', 'XDG_DATA_HOME', 'OPENCODE_DB', 'OPENCODE_CONFIG']);
+});
+
+it('translates both configured Windows certificate directories as a WSL path list', async () => {
+  const env = { SSL_CERT_DIR: String.raw`C:\Certs;D:\Company Certs` };
+  const result = await probeTargetEnvironment({
+    target, hostCwd: 'C:\\Vault', env,
+    forwardEnvironment: getOpencodeWSLForwardedEnvironment(env, `SSL_CERT_DIR=${env.SSL_CERT_DIR}`),
+    variables: ['SSL_CERT_DIR'],
+  });
+  expect(result).toEqual({ SSL_CERT_DIR: '/mnt/c/Certs:/mnt/d/Company Certs' });
+  // The OS requires both flags; the fixture models the resulting directory translation.
+  expect(environmentProbes()[0].options.env?.WSLENV?.split(':')).toContain('SSL_CERT_DIR/pl');
 });

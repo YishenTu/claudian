@@ -1,8 +1,41 @@
-/** Callers own which values cross into Linux and whether they are host paths. */
+/** Describes a value selected for forwarding into Linux. */
 export interface WSLForwardedVariable {
   key: string;
   hostPath?: boolean;
   pathList?: boolean;
+}
+
+export interface WSLPathVariable {
+  key: string;
+  pathList?: boolean;
+}
+
+const STANDARD_PATH_VARIABLES: readonly WSLPathVariable[] = [
+  { key: 'SSL_CERT_FILE' }, { key: 'SSL_CERT_DIR', pathList: true },
+  { key: 'REQUESTS_CA_BUNDLE' }, { key: 'CURL_CA_BUNDLE' }, { key: 'NODE_EXTRA_CA_CERTS' },
+  { key: 'TMPDIR' }, { key: 'TMP' }, { key: 'TEMP' },
+];
+
+/** Providers approve inherited names and describe their own paths; process path policy is shared. */
+export function selectWSLForwardedEnvironment({ env, configured, inheritedKeys, providerPathVariables }: {
+  env: Readonly<NodeJS.ProcessEnv>;
+  configured: Readonly<Record<string, string>>;
+  inheritedKeys: readonly string[];
+  providerPathVariables: readonly WSLPathVariable[];
+}): WSLForwardedVariable[] {
+  const keys = new Set([...Object.keys(configured), ...inheritedKeys]);
+  const pathVariables = new Map([...STANDARD_PATH_VARIABLES, ...providerPathVariables].map(variable => [variable.key, variable]));
+  return [...keys].filter(key => {
+    // Only explicitly configured Linux HOME/PATH may replace the distro defaults.
+    if (['HOME', 'PATH', 'USERPROFILE'].includes(key)) {
+      return key !== 'USERPROFILE' && configured[key]?.startsWith('/') && !configured[key].includes('\\');
+    }
+    return key !== 'WSLENV';
+  }).map(key => {
+    const pathVariable = pathVariables.get(key);
+    const hostPath = pathVariable !== undefined && /^(?:[a-zA-Z]:[\\/]|[\\/]{2})/u.test(env[key] ?? '');
+    return { key, hostPath, pathList: hostPath && pathVariable?.pathList === true };
+  });
 }
 
 export function forwardWSLEnvironment(

@@ -5,13 +5,11 @@ import { parseEnvironmentVariables } from '@/core/process/env';
 import { resolveExecutionTargetAsync } from '@/core/process/execution-target/ExecutionTargetResolver';
 import { probeTargetEnvironment } from '@/core/process/execution-target/TargetEnvironmentProbe';
 import type { ExecutionTarget } from '@/core/process/execution-target/types';
-import { forwardWSLEnvironment, type WSLForwardedVariable } from '@/core/process/execution-target/WSLEnvironment';
+import { forwardWSLEnvironment, selectWSLForwardedEnvironment, type WSLForwardedVariable } from '@/core/process/execution-target/WSLEnvironment';
 import { createExecutionPathMapper } from '@/core/process/execution-target/WSLPathMapper';
 
 import { decodeOpencodeConfig } from '../config';
 import { buildOpencodeRuntimeEnv } from './OpencodeRuntimeEnvironment';
-
-const PATH_KEYS = new Set(['HOME', 'XDG_DATA_HOME', 'OPENCODE_DB', 'OPENCODE_CONFIG', 'SSL_CERT_FILE', 'SSL_CERT_DIR', 'NODE_EXTRA_CA_CERTS', 'TMPDIR']);
 
 export function opencodeEnvironment(env: NodeJS.ProcessEnv): Record<string, string> {
   return Object.fromEntries(Object.entries(env).filter((entry): entry is [string, string] => entry[1] !== undefined));
@@ -19,11 +17,11 @@ export function opencodeEnvironment(env: NodeJS.ProcessEnv): Record<string, stri
 
 /** Only provider-owned values and explicitly configured user values cross the boundary. */
 export function getOpencodeWSLForwardedEnvironment(env: NodeJS.ProcessEnv, environmentText = ''): WSLForwardedVariable[] {
-  const configured = parseEnvironmentVariables(environmentText);
-  const keys = new Set([...Object.keys(configured), ...Object.keys(env).filter(key => /^(?:OPENCODE_|CLAUDIAN_SESSION_TOOLS_)/u.test(key)), 'XDG_DATA_HOME']);
-  return [...keys].filter(key => key !== 'WSLENV' && key !== 'USERPROFILE' &&
-    (!['HOME', 'PATH'].includes(key) || (configured[key]?.startsWith('/') && !configured[key].includes('\\'))))
-    .map(key => ({ key, hostPath: PATH_KEYS.has(key) && /^(?:[a-zA-Z]:[\\/]|[\\/]{2})/u.test(env[key] ?? '') }));
+  return selectWSLForwardedEnvironment({
+    env, configured: parseEnvironmentVariables(environmentText),
+    inheritedKeys: [...Object.keys(env).filter(key => /^(?:OPENCODE_|CLAUDIAN_SESSION_TOOLS_)/u.test(key)), 'XDG_DATA_HOME'],
+    providerPathVariables: [{ key: 'XDG_DATA_HOME' }, { key: 'OPENCODE_DB' }, { key: 'OPENCODE_CONFIG' }],
+  });
 }
 
 export function opencodeTargetPath(value: string, target?: ExecutionTarget): string {

@@ -5,9 +5,9 @@ it('forwards configured and Pi variables, marking only Windows store locations a
     CUSTOM: 'value', UNRELATED: 'host', WSLENV: 'X', HOME: '/home/a', PATH: '/bin', USERPROFILE: '/home/u',
     PI_CODING_AGENT_DIR: 'C:\\Pi', PI_CODING_AGENT_SESSION_DIR: '\\\\server\\sessions', PI_PACKAGE_DIR: '/opt/C:/pi', PI_OTHER: 'C:\\x',
   }, 'CUSTOM=value\nWSLENV=X\nHOME=/home/a\nPATH=/usr/bin\nUSERPROFILE=/home/u')).toEqual([
-    { key: 'CUSTOM', hostPath: false }, { key: 'HOME', hostPath: false }, { key: 'PATH', hostPath: false },
-    { key: 'PI_CODING_AGENT_DIR', hostPath: true }, { key: 'PI_CODING_AGENT_SESSION_DIR', hostPath: true },
-    { key: 'PI_PACKAGE_DIR', hostPath: false }, { key: 'PI_OTHER', hostPath: false },
+    { key: 'CUSTOM', hostPath: false, pathList: false }, { key: 'HOME', hostPath: false, pathList: false }, { key: 'PATH', hostPath: false, pathList: false },
+    { key: 'PI_CODING_AGENT_DIR', hostPath: true, pathList: false }, { key: 'PI_CODING_AGENT_SESSION_DIR', hostPath: true, pathList: false },
+    { key: 'PI_PACKAGE_DIR', hostPath: false, pathList: false }, { key: 'PI_OTHER', hostPath: false, pathList: false },
   ]);
 });
 
@@ -20,5 +20,5 @@ it.each([
 });
 
 it('marks a Windows package directory as a host path', () => {
-  expect(getPiWSLForwardedEnvironment({ PI_PACKAGE_DIR: 'D:\\pkg' }, '')).toEqual([{ key: 'PI_PACKAGE_DIR', hostPath: true }]);
+  expect(getPiWSLForwardedEnvironment({ PI_PACKAGE_DIR: 'D:\\pkg' }, '')).toEqual([{ key: 'PI_PACKAGE_DIR', hostPath: true, pathList: false }]);
 });

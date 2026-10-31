@@ -5,7 +5,7 @@ import { resolveExecutionTargetAsync } from '@/core/process/execution-target/Exe
 import { probeTargetEnvironment } from '@/core/process/execution-target/TargetEnvironmentProbe';
 import { buildTargetLaunchSpec } from '@/core/process/execution-target/TargetLaunchSpec';
 import type { ExecutionPathMapper, ExecutionTarget } from '@/core/process/execution-target/types';
-import type { WSLForwardedVariable } from '@/core/process/execution-target/WSLEnvironment';
+import { selectWSLForwardedEnvironment, type WSLForwardedVariable } from '@/core/process/execution-target/WSLEnvironment';
 import type { ProviderRuntimeHost } from '@/core/providers/ProviderRuntimeHost';
 
 import { decodeDeepSeekConfig } from '../config';
@@ -22,20 +22,12 @@ export interface DeepSeekExecutionContext {
   readonly forwardEnvironment: readonly WSLForwardedVariable[];
 }
 
-const PATH_KEYS = new Set(['DSH_HOME', 'SSL_CERT_FILE', 'SSL_CERT_DIR', 'NODE_EXTRA_CA_CERTS', 'TMPDIR', 'TMP', 'TEMP']);
-
 /** DeepSeek declares the meaning of its exports; shared mechanics encode WSLENV. */
 export function getDeepSeekWSLForwardedEnvironment(env: Record<string, string>, environmentText: string): WSLForwardedVariable[] {
-  const configured = parseEnvironmentVariables(environmentText);
-  const keys = new Set([...Object.keys(configured), ...Object.keys(env).filter(key => /^(?:DSH_|DEEPSEEK_)/u.test(key))]);
-  return [...keys].filter(key => {
-    if (['HOME', 'PATH', 'USERPROFILE'].includes(key)) {
-      return key !== 'USERPROFILE' && configured[key]?.startsWith('/') && !configured[key].includes('\\');
-    }
-    return key !== 'WSLENV';
-  }).map(key => {
-    const hostPath = PATH_KEYS.has(key) && /^(?:[a-zA-Z]:[\\/]|[\\/]{2})/u.test(env[key] ?? '');
-    return { key, hostPath, pathList: hostPath && key === 'SSL_CERT_DIR' };
+  return selectWSLForwardedEnvironment({
+    env, configured: parseEnvironmentVariables(environmentText),
+    inheritedKeys: Object.keys(env).filter(key => /^(?:DSH_|DEEPSEEK_)/u.test(key)),
+    providerPathVariables: [{ key: 'DSH_HOME' }],
   });
 }
 
