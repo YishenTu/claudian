@@ -20,7 +20,7 @@ export function getOpencodeWSLForwardedEnvironment(env: NodeJS.ProcessEnv, envir
   return selectWSLForwardedEnvironment({
     env, configured: parseEnvironmentVariables(environmentText),
     inheritedKeys: [...Object.keys(env).filter(key => /^(?:OPENCODE_|CLAUDIAN_SESSION_TOOLS_)/u.test(key)), 'XDG_DATA_HOME'],
-    providerPathVariables: [{ key: 'XDG_DATA_HOME' }, { key: 'OPENCODE_DB' }, { key: 'OPENCODE_CONFIG' }],
+    providerPathVariables: [{ key: 'HOME' }, { key: 'XDG_DATA_HOME' }, { key: 'OPENCODE_DB' }, { key: 'OPENCODE_CONFIG' }],
   });
 }
 

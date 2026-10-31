@@ -3,6 +3,7 @@ import spawn from 'cross-spawn';
 
 import { probeTargetEnvironment } from '@/core/process/execution-target/TargetEnvironmentProbe';
 import type { ExecutionTarget } from '@/core/process/execution-target/types';
+import { forwardWSLEnvironment } from '@/core/process/execution-target/WSLEnvironment';
 import { getOpencodeWSLForwardedEnvironment, OpencodeTargetEnvironment } from '@/providers/opencode/runtime/OpencodeExecutionTarget';
 import { OpencodeCLINotInstalledError, verifyOpencodeNativeVersion } from '@/providers/opencode/runtime/OpencodeVersion';
 
@@ -91,3 +92,12 @@ it('translates both configured Windows certificate directories as a WSL path lis
   // The OS requires both flags; the fixture models the resulting directory translation.
   expect(environmentProbes()[0].options.env?.WSLENV?.split(':')).toContain('SSL_CERT_DIR/pl');
 });
+
+it.each(['//wsl.localhost/Ubuntu/home/alice', '//wsl$/Ubuntu/home/alice'])(
+  'preserves path translation for configured distro UNC HOME and its restored shadow (%s)', HOME => {
+    const env = { HOME };
+    const forwarded = forwardWSLEnvironment(env, getOpencodeWSLForwardedEnvironment(env, `HOME=${HOME}`));
+    expect(forwarded.WSLENV.split(':')).toEqual(['HOME/p', 'CLAUDIAN_WSL_HOME/p']);
+    expect(forwarded.CLAUDIAN_WSL_HOME).toBe(HOME);
+  },
+);
