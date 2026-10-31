@@ -359,7 +359,13 @@ it('retries a failed reconnection of the live process, failing attached sessions
       : hang ? (hung++, new Promise<never>(() => {})) : Promise.reject(new Error('roster unavailable'));
     // The fixture server answers on immediates; reconnection waits and client deadlines run on the fake clock.
     vi.useFakeTimers({ toNotFake: ['nextTick', 'setImmediate', 'queueMicrotask'] });
+    // The budget starts when the client observes the close, which is real I/O. The Host subscribed at boot, before this
+    // listener, so once it runs the budget timer exists on the fake clock; advancing earlier would spend budget time.
+    let observed = false;
+    lease.client.onDisconnect(() => { observed = true; });
     dropHost();
+    for (const deadline = realNow() + 2_000; !observed && realNow() < deadline;) await flush();
+    expect(observed).toBe(true);
     for (let elapsed = 0; elapsed < 55_000; elapsed += 250) {
       hang = elapsed >= 50_000;
       const attempts = lists();
