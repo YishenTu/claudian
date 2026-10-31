@@ -23,7 +23,8 @@ function readNativeLog(root: string): Array<Record<string, unknown>> {
 describe('OpenCode fork integration', () => {
   let root: string;
   beforeEach(() => { root = realpathSync(mkdtempSync(path.join(tmpdir(), 'claudian-opencode-fork-'))); });
-  afterEach(() => { rmSync(root, { recursive: true, force: true }); });
+  // Windows can keep a just-exited executable's image (the copied node.exe) locked briefly after the process is gone.
+  afterEach(() => { rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }); });
 
   function fork(cliPath: string, environment: NodeJS.ProcessEnv = process.env) {
     const databasePath = path.join(root, 'opencode.db');
@@ -52,6 +53,8 @@ describe('OpenCode fork integration', () => {
     const launch = readNativeLog(root).find(entry => 'launch' in entry);
     expect(String(launch?.path).split(path.delimiter)).toContain(root);
     expect(readNativeLog(root)).toContainEqual({ method: 'POST', route: '/api/session/ses-source/fork' });
+    // The auxiliary server has exited before the fork resolves; only the OS may still hold its image.
+    expect(() => process.kill(Number(launch?.launch), 0)).toThrow();
   });
 
   it('reports native fork errors and shuts down the auxiliary server', async () => {
