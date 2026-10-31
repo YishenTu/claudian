@@ -23,31 +23,31 @@ it('forwards only owned keys and explicit user values, translating Windows-path 
     XDG_DATA_HOME: '/home/alice/C:/data',
   };
   expect(byKey(getOpencodeWSLForwardedEnvironment(env, configured))).toEqual([
-    { key: 'CLAUDIAN_SESSION_TOOLS_RELAY', hostPath: false },
-    { key: 'CUSTOM', hostPath: false },
-    { key: 'NODE_EXTRA_CA_CERTS', hostPath: true },
-    { key: 'OPENCODE_CONFIG', hostPath: true },
-    { key: 'OPENCODE_CONFIG_CONTENT', hostPath: false },
-    { key: 'OPENCODE_DB', hostPath: true },
-    { key: 'OPENCODE_PASSWORD', hostPath: false },
-    { key: 'SSL_CERT_DIR', hostPath: true },
-    { key: 'SSL_CERT_FILE', hostPath: true },
-    { key: 'TMPDIR', hostPath: true },
-    { key: 'XDG_DATA_HOME', hostPath: false },
+    { key: 'CLAUDIAN_SESSION_TOOLS_RELAY', hostPath: false, pathList: false },
+    { key: 'CUSTOM', hostPath: false, pathList: false },
+    { key: 'NODE_EXTRA_CA_CERTS', hostPath: true, pathList: false },
+    { key: 'OPENCODE_CONFIG', hostPath: true, pathList: false },
+    { key: 'OPENCODE_CONFIG_CONTENT', hostPath: false, pathList: false },
+    { key: 'OPENCODE_DB', hostPath: true, pathList: false },
+    { key: 'OPENCODE_PASSWORD', hostPath: false, pathList: false },
+    { key: 'SSL_CERT_DIR', hostPath: true, pathList: true },
+    { key: 'SSL_CERT_FILE', hostPath: true, pathList: false },
+    { key: 'TMPDIR', hostPath: true, pathList: false },
+    { key: 'XDG_DATA_HOME', hostPath: false, pathList: false },
   ]);
 });
 
 it.each([
-  ['Linux HOME and PATH', 'HOME=/home/alice\nPATH=/usr/local/bin:/usr/bin', [{ key: 'HOME', hostPath: false }, { key: 'PATH', hostPath: false }]],
+  ['Linux HOME and PATH', 'HOME=/home/alice\nPATH=/usr/local/bin:/usr/bin', [{ key: 'HOME', hostPath: false, pathList: false }, { key: 'PATH', hostPath: false, pathList: false }]],
   ['Windows HOME and PATH', 'HOME=C:\\Users\\Alice\nPATH=C:\\bin', []],
   ['relative HOME and backslashed PATH', 'HOME=home\nPATH=/usr/bin\\x', []],
 ] as const)('forwards a configured HOME or PATH only as a Linux value (%s)', (_name, configured, forwarded) => {
   const env = Object.fromEntries(configured.split('\n').map(line => line.split('=') as [string, string]));
-  expect(byKey(getOpencodeWSLForwardedEnvironment(env, configured))).toEqual([...forwarded, { key: 'XDG_DATA_HOME', hostPath: false }]);
+  expect(byKey(getOpencodeWSLForwardedEnvironment(env, configured))).toEqual([...forwarded, { key: 'XDG_DATA_HOME', hostPath: false, pathList: false }]);
 });
 
 it('translates a Windows-path data home, which crosses even when not configured', () => {
-  expect(getOpencodeWSLForwardedEnvironment({ XDG_DATA_HOME: 'D:\\OpenCode' })).toEqual([{ key: 'XDG_DATA_HOME', hostPath: true }]);
+  expect(getOpencodeWSLForwardedEnvironment({ XDG_DATA_HOME: 'D:\\OpenCode' })).toEqual([{ key: 'XDG_DATA_HOME', hostPath: true, pathList: false }]);
 });
 
 it('drops unset values from a launch environment', () => {
