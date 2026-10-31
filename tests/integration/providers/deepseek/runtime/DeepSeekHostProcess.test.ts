@@ -1,9 +1,9 @@
 // @test-ci {"native":true,"inputs":["tests/fixtures/providers/deepseek/runtime/**"]}
+import * as childProcess from 'node:child_process';
 import { realpathSync } from 'node:fs';
 import { access, chmod, copyFile, link, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
-import type { Writable } from 'node:stream';
 import { pathToFileURL } from 'node:url';
 
 import type { LaunchPatchEntry } from '@test/helpers/deepseek/LaunchPatch';
@@ -12,6 +12,9 @@ import { testDate } from '@test/helpers/testClock';
 
 import { LoopbackSessionToolServer } from '@/core/session-tools/LoopbackSessionToolServer';
 import { DeepSeekHostProcess } from '@/providers/deepseek/runtime/DeepSeekHostProcess';
+
+// Forward the native namespace so the spawn observer still starts real processes.
+vi.mock('node:child_process', async importOriginal => ({ ...await importOriginal<typeof childProcess>() }));
 
 const FAKE_DSH = resolve(__dirname, '../../../../fixtures/providers/deepseek/runtime/FakeDeepSeekCLI.mjs');
 
@@ -177,12 +180,15 @@ describe('native Host process', () => {
   });
 
   it('reports an exit once its owner\'s end of stdin closes, and stays silent for exits caused by disposal', async () => {
+    const spawned = vi.spyOn(childProcess, 'spawn');
     const hostProcess = await start('serve');
     const invocation = await launched();
     try {
       const exited = new Promise<void>(resolve => hostProcess.onExit(resolve));
       // Claudian's end of the pipe closing is what the bundled lifecycle plugin tethers the native Host to.
-      (hostProcess as unknown as { process: { stdin: Writable } }).process.stdin.end();
+      const native = spawned.mock.results.find(result => result.type === 'return' && result.value.pid === invocation.pid)?.value;
+      expect(native?.stdin).toBeDefined();
+      native!.stdin!.end();
       await exited;
       expect(() => process.kill(invocation.pid, 0)).toThrow();
     } finally { await hostProcess.dispose(); }

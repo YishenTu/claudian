@@ -1,10 +1,11 @@
 import '@/providers';
 
+import { conversationRecord } from '@test/helpers/features/chat/ConversationFixture';
+
 import { getInstallationKey } from '@/core/device/InstallationKey';
 import { getProviderConfig, setProviderConfig } from '@/core/providers/providerConfig';
 import { ProviderSettingsCoordinator } from '@/core/providers/ProviderSettingsCoordinator';
 import { isVersionedRuntimeInputFingerprint } from '@/core/providers/settings/RuntimeInputFingerprint';
-import type { Conversation } from '@/core/types';
 import { claudeSettingsReconciler } from '@/providers/claude/env/ClaudeSettingsReconciler';
 import { getClaudeProviderSettings } from '@/providers/claude/settings';
 
@@ -155,7 +156,7 @@ describe('claudeSettingsReconciler', () => {
 
   describe('invalidateConversationSessions', () => {
     it('invalidates only Claude conversations and preserves Claude transcript references', () => {
-      const claudeConversation = {
+      const claudeConversation = conversationRecord('conversation', {
         id: 'claude-conversation',
         providerId: 'claude',
         sessionId: 'legacy-session',
@@ -168,14 +169,14 @@ describe('claudeSettingsReconciler', () => {
           uiMetadata: { keep: true },
         },
         messages: [{ id: 'message', role: 'user', content: 'Keep me', timestamp: 1 }],
-      } as unknown as Conversation;
-      const codexConversation = {
+      });
+      const codexConversation = conversationRecord('conversation', {
         id: 'codex-conversation',
         providerId: 'codex',
         sessionId: 'codex-session',
         providerState: { threadId: 'codex-thread' },
         messages: [],
-      } as unknown as Conversation;
+      });
 
       const invalidated = claudeSettingsReconciler.invalidateConversationSessions(
         [claudeConversation, codexConversation],
@@ -198,13 +199,13 @@ describe('claudeSettingsReconciler', () => {
     });
 
     it('invalidates Claude provider resume state even when the generic session id is absent', () => {
-      const conversation = {
+      const conversation = conversationRecord('conversation', {
         id: 'claude-provider-state-only',
         providerId: 'claude',
         sessionId: null,
         providerState: { providerSessionId: 'provider-session' },
         messages: [],
-      } as unknown as Conversation;
+      });
 
       expect(claudeSettingsReconciler.invalidateConversationSessions([conversation])).toEqual([conversation]);
       expect(conversation.providerState).toEqual({
@@ -214,7 +215,7 @@ describe('claudeSettingsReconciler', () => {
     });
 
     it('preserves transcript session ids when invalidating resumable Claude state', () => {
-      const conversation = {
+      const conversation = conversationRecord('conversation', {
         id: 'claude-history-backed',
         providerId: 'claude',
         sessionId: 'legacy-session',
@@ -225,7 +226,7 @@ describe('claudeSettingsReconciler', () => {
           subagentData: { task: { id: 'task' } },
         },
         messages: [],
-      } as unknown as Conversation;
+      });
 
       const first = claudeSettingsReconciler.invalidateConversationSessions([conversation]);
       const second = claudeSettingsReconciler.invalidateConversationSessions([conversation]);
@@ -247,7 +248,7 @@ describe('claudeSettingsReconciler', () => {
     });
 
     it('converts a pending fork into replayable history at the fork checkpoint', () => {
-      const conversation = {
+      const conversation = conversationRecord('conversation', {
         id: 'pending-fork',
         providerId: 'claude',
         sessionId: null,
@@ -258,7 +259,7 @@ describe('claudeSettingsReconciler', () => {
           },
         },
         messages: [],
-      } as unknown as Conversation;
+      });
 
       const invalidated = claudeSettingsReconciler.invalidateConversationSessions([conversation]);
 

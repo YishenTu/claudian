@@ -1,7 +1,8 @@
+import { conversationRecord } from '@test/helpers/features/chat/ConversationFixture';
+
 import { getInstallationKey } from '@/core/device/InstallationKey';
 import { getProviderConfig, setProviderConfig } from '@/core/providers/providerConfig';
 import { isVersionedRuntimeInputFingerprint } from '@/core/providers/settings/RuntimeInputFingerprint';
-import type { Conversation } from '@/core/types';
 import { deepseekSettingsReconciler } from '@/providers/deepseek/env/DeepSeekSettingsReconciler';
 import { getDeepSeekProviderSettings, updateDeepSeekProviderSettings } from '@/providers/deepseek/settings';
 
@@ -60,10 +61,10 @@ describe('DeepSeekSettingsReconciler', () => {
   });
 
   it('declares reload and preserves every conversation binding', () => {
-    const conversation = {
+    const conversation = conversationRecord('conversation', {
       messages: [], providerId: 'deepseek', sessionId: 'session-1',
       providerState: { schemaVersion: 1, home: '/home', profile: 'web', preset: 'claudian' },
-    } as unknown as Conversation;
+    });
     const settings: Record<string, unknown> = {
       providerConfigs: { deepseek: { environmentHash: 'stale', environmentVariables: 'DSH_HOME=/home' } },
     };

@@ -1,4 +1,5 @@
 import { TEST_CODEX_CATALOG, TEST_CODEX_MODEL } from '@test/helpers/codexModels';
+import { conversationRecord } from '@test/helpers/features/chat/ConversationFixture';
 
 import { getInstallationKey } from '@/core/device/InstallationKey';
 import { isVersionedRuntimeInputFingerprint } from '@/core/providers/settings/RuntimeInputFingerprint';
@@ -9,7 +10,7 @@ import { computeCodexEnvHash } from '@/providers/codex/runtime/codexEnvironmentH
 type CodexSettingsDocument = Record<string, unknown> & { providerConfigs: { codex: Record<string, unknown> } };
 
 function establishedConversation(threadId: string): Conversation {
-  return {
+  return conversationRecord('conversation', {
     providerId: 'codex',
     sessionId: threadId,
     providerState: {
@@ -20,7 +21,7 @@ function establishedConversation(threadId: string): Conversation {
       sessionToolVersion: 3,
     },
     messages: [],
-  } as unknown as Conversation;
+  });
 }
 
 describe('codexSettingsReconciler', () => {
@@ -67,7 +68,7 @@ describe('codexSettingsReconciler', () => {
 
   it('retires an established binding into recovery-only history', () => {
     const conversation = establishedConversation('thread-123');
-    const otherProvider = { providerId: 'claude', sessionId: 'claude-session', messages: [] } as unknown as Conversation;
+    const otherProvider = conversationRecord('conversation', { providerId: 'claude', sessionId: 'claude-session', messages: [] });
 
     expect(codexSettingsReconciler.invalidateConversationSessions([conversation, otherProvider]))
       .toEqual([conversation]);
