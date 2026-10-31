@@ -110,6 +110,26 @@ describe.skipIf(path.sep === '\\')('WindowsHostFS on a POSIX host', () => {
     expect(fs.existsSync(path.win32.join(drive, 'state.tmp'))).toBe(false);
   });
 
+  it('watches and unwatches a Windows path through the same local file', async () => {
+    const host = createWindowsHostFS(modules);
+    const file = host.fromLinux('/home/alice/opencode.json');
+    await host.write(file, 'first');
+    const changes: string[] = [];
+    let changed!: () => void;
+    const listener = () => { changes.push(fs.readFileSync(file, 'utf8')); changed(); };
+    const seen = new Promise<void>(resolve => { changed = resolve; });
+    fs.watchFile(file, { persistent: false, interval: 10 }, listener);
+    onTestFinished(() => fs.unwatchFile(file, listener));
+    await host.write(file, 'second!');
+    await seen;
+    expect(changes).toEqual(['second!']);
+    fs.unwatchFile(file, listener);
+    await host.write(file, 'third, after unwatching');
+    // Bounds a missing signal: a watcher still attached polls every 10 ms.
+    await new Promise(resolve => setTimeout(resolve, 100));
+    expect(changes).toEqual(['second!']);
+  });
+
   it('throws when production reaches an unredirected fs function with a Windows path', async () => {
     const native = await fsPromises.mkdtemp(path.join(tmpdir(), 'claudian-windows-native-'));
     onTestFinished(() => fsPromises.rm(native, { recursive: true, force: true }));

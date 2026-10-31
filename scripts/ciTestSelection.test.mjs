@@ -107,6 +107,7 @@ test('real dependency discovery retains native launch checks for shared process 
     'tests/integration/providers/opencode/ToolRendererCompatibility.dom.test.ts',
     'tests/integration/providers/opencode/app/OpencodeCommandLoader.test.ts',
     'tests/integration/providers/opencode/execution/OpencodeExecutionBackend.native.test.ts',
+    'tests/integration/providers/opencode/execution/OpencodeExecutionBackend.wsl.test.ts',
     'tests/integration/providers/opencode/execution/OpencodeHTTPExecution.background.test.ts',
     'tests/integration/providers/opencode/execution/OpencodeHTTPExecution.compaction.test.ts',
     'tests/integration/providers/opencode/execution/OpencodeHTTPExecution.interactions.test.ts',
@@ -114,6 +115,7 @@ test('real dependency discovery retains native launch checks for shared process 
     'tests/integration/providers/opencode/execution/OpencodeHTTPExecution.prompts.test.ts',
     'tests/integration/providers/opencode/execution/OpencodeHTTPExecution.steering.test.ts',
     'tests/integration/providers/opencode/execution/OpencodeHTTPExecution.test.ts',
+    'tests/integration/providers/opencode/history/OpencodeConversationHistoryService.wsl.test.ts',
     'tests/integration/providers/opencode/http/OpencodeSharedServer.ephemeral.test.ts',
     'tests/integration/providers/opencode/http/OpencodeSharedServer.history.test.ts',
     'tests/integration/providers/opencode/http/OpencodeSharedServer.test.ts',
@@ -176,6 +178,7 @@ test('filesystem-read documentation, styles, and captured fixtures retain their 
           'tests/integration/features/chat/tabs/forking/ForkSource.opencode.test.ts',
           'tests/integration/features/chat/tabs/forking/ForkSource.opencode-v2.test.ts',
           'tests/integration/providers/opencode/execution/OpencodeExecutionBackend.native.test.ts',
+          'tests/integration/providers/opencode/execution/OpencodeExecutionBackend.wsl.test.ts',
           'tests/integration/providers/opencode/execution/OpencodeHTTPExecution.background.test.ts',
           'tests/integration/providers/opencode/execution/OpencodeHTTPExecution.compaction.test.ts',
           'tests/integration/providers/opencode/execution/OpencodeHTTPExecution.interactions.test.ts',
@@ -184,6 +187,7 @@ test('filesystem-read documentation, styles, and captured fixtures retain their 
           'tests/integration/providers/opencode/execution/OpencodeHTTPExecution.steering.test.ts',
           'tests/integration/providers/opencode/execution/OpencodeHTTPExecution.test.ts',
           'tests/integration/providers/opencode/history/OpencodeConversationHistoryService.test.ts',
+          'tests/integration/providers/opencode/history/OpencodeConversationHistoryService.wsl.test.ts',
           'tests/integration/providers/opencode/history/OpencodeInvalidatedHistory.test.ts',
           'tests/integration/providers/opencode/http/OpencodeHTTPHistory.test.ts',
           'tests/integration/providers/opencode/http/OpencodeProcessRetention.test.ts',
@@ -479,7 +483,8 @@ test('WSL native job follows shared dependencies and provider users but skips un
   assert.equal(fixture.wslWindows, true);
   assert.ok(fixture.testFiles.includes('tests/integration/providers/deepseek/runtime/DeepSeekHostProcess.test.ts'));
   assert.ok(fixture.testFiles.includes(deepseek));
-  assert.equal(select(['src/providers/opencode/settings.ts']).wslWindows, false);
+  // Pi has no WSL launch path, so its settings reach no native WSL suite.
+  assert.equal(select(['src/providers/pi/settings.ts']).wslWindows, false);
   assert.equal(select(['tests/helpers/WSLNativeTarget.ts'], [relay]).wslWindows, true);
   for (const file of [
     'src/core/session-tools/sessionToolRelayCommand.ts',

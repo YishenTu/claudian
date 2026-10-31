@@ -202,7 +202,6 @@ describe('OpenCode v2 tools', () => {
   });
 });
 
-
 it('maps only normalized tool and diff paths from WSL before host consumers receive them', () => {
   const target = { method: 'wsl', platformOs: 'linux', platformFamily: 'unix', distroName: 'Ubuntu' } as const;
   const input = normalizeOpencodeToolInput('edit', { filePath: '/mnt/c/Vault/note.md', oldString: '/home/alice/literal', newString: 'changed' }, target);

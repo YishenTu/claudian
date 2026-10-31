@@ -109,14 +109,18 @@ describe('OpencodeCLIResolver', () => {
 });
 
 it('uses Linux command references without touching host files for a Windows WSL installation', () => {
-  vi.stubGlobal('process', { ...process, platform: 'win32' });
+  const platform = Object.getOwnPropertyDescriptor(process, 'platform')!;
+  Object.defineProperty(process, 'platform', { ...platform, value: 'win32' });
   try {
     mockedStat.mockClear();
     const resolver = new OpencodeCLIResolver();
-    const config = { installationMethodsByHost: { 'current-host': 'wsl' }, cliPathsByHost: { 'current-host': '/home/alice/bin/open code' } };
+    const key = getInstallationKey();
+    const config = { installationMethodsByHost: { [key]: 'wsl' }, cliPathsByHost: { [key]: '/home/alice/bin/open code' } };
     expect(resolver.resolveFromSettings({ providerConfigs: { opencode: config } })).toBe('/home/alice/bin/open code');
-    config.cliPathsByHost['current-host'] = 'C:\\Tools\\opencode.cmd';
+    // A stored legacy path keeps pasted whitespace and quotes; neither reaches the Linux command.
+    expect(resolver.resolveFromSettings({ providerConfigs: { opencode: { installationMethodsByHost: { [key]: 'wsl' }, cliPath: '  "/home/alice/bin/legacy"  ' } } })).toBe('/home/alice/bin/legacy');
+    config.cliPathsByHost[key] = 'C:\\Tools\\opencode.cmd';
     expect(resolver.resolveFromSettings({ providerConfigs: { opencode: config } })).toBe('opencode');
     expect(mockedStat).not.toHaveBeenCalled();
-  } finally { vi.unstubAllGlobals(); }
+  } finally { Object.defineProperty(process, 'platform', platform); }
 });

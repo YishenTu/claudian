@@ -5,13 +5,16 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import * as path from 'node:path';
 
-import { runtimeHostFor } from '@test/helpers/providerRuntimeHost';
+import { createFeatureHostFixture } from '@test/helpers/FeatureHostFixture';
+import { createChatFeatureHost } from '@test/helpers/features/chat/ChatFeatureHostFixture';
+import { createSessionRuntimePool } from '@test/helpers/features/chat/SessionRuntimePoolHarness';
 import { testDate } from '@test/helpers/testClock';
 import { hasNativeWSL } from '@test/helpers/WSLNativeTarget';
+import spawn from 'cross-spawn';
 import { onTestFinished } from 'vitest';
 
 import { ConversationRepository } from '@/app/conversations/ConversationRepository';
-import type { ConversationPersistence } from '@/app/storage/ConversationPersistenceStore';
+import { ConversationPersistenceStore } from '@/app/storage/ConversationPersistenceStore';
 import { getInstallationKey } from '@/core/device/InstallationKey';
 import type { ProviderSessionConfig } from '@/core/execution';
 import { resolveExecutionTargetAsync } from '@/core/process/execution-target/ExecutionTargetResolver';
@@ -20,15 +23,17 @@ import { ManagedStdioProcess } from '@/core/process/ManagedStdioProcess';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { ProviderSettingsCoordinator } from '@/core/providers/ProviderSettingsCoordinator';
 import { ProviderWorkspaceRegistry } from '@/core/providers/ProviderWorkspaceRegistry';
-import { LoopbackSessionToolServer } from '@/core/session-tools/LoopbackSessionToolServer';
-import type { Conversation } from '@/core/types';
 import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
 import { createClaudianAPI } from '@/features/chat/session-messaging/ClaudianAPI';
 import { SessionMessagingService } from '@/features/chat/session-messaging/SessionMessagingService';
+import { createOpencodeWorkspaceServices } from '@/providers/opencode/app/OpencodeWorkspaceServices';
 import { OpencodeHTTPSessionKernel } from '@/providers/opencode/execution/OpencodeHTTPSessionKernel';
 import { OpencodeSessionPersistence } from '@/providers/opencode/execution/OpencodeSessionPersistence';
-import { OpencodeServerService } from '@/providers/opencode/http/OpencodeServerService';
 import { opencodeEnvironment, opencodeHostPath, opencodeTargetPath } from '@/providers/opencode/runtime/OpencodeExecutionTarget';
+
+// Observe the real wsl.exe children; the OS process boundary is not replaced.
+vi.mock('cross-spawn', async importOriginal => ({ default: vi.fn((await importOriginal<{ default: typeof spawn }>()).default) }));
+const { default: nativeSpawn } = await vi.importActual<{ default: typeof spawn }>('cross-spawn');
 
 const cli = process.env.CLAUDIAN_OPENCODE_WSL_CLI;
 const available = hasNativeWSL();
@@ -79,8 +84,6 @@ describe.skipIf(!available || !cli)('native OpenCode WSL adoption', () => {
         if (text.includes('\n')) resolve((JSON.parse(text.slice(0, text.indexOf('\n'))) as { url: string }).url);
       });
     });
-    const endpoint = new LoopbackSessionToolServer();
-    const service = new OpencodeServerService(endpoint);
     const list = vi.fn(async () => ({ sessions: [{ sessionId: 'peer', title: 'WSL relay 中文', provider: 'opencode', status: 'idle' as const, active: false }] }));
     const environmentText = Object.entries({
       HOME: `${targetRoot}/home`, XDG_CONFIG_HOME: `${targetRoot}/config`, XDG_CACHE_HOME: `${targetRoot}/cache`,
@@ -89,26 +92,31 @@ describe.skipIf(!available || !cli)('native OpenCode WSL adoption', () => {
       OPENCODE_DISABLE_PROJECT_CONFIG: 'true',
       OPENCODE_CONFIG_CONTENT: JSON.stringify({ providers: { fake: { package: '@opencode/ai/providers/openai-compatible', settings: { baseURL: `${modelURL}/v1`, apiKey: 'test-only' }, models: { fake: { name: 'Fake', limit: { context: 32768, output: 4096 } } } } }, model: 'fake/fake' }),
     }).map(([key, value]) => `${key}=${value}`).join('\n');
-    const settings = { providerConfigs: { opencode: {
-      enabled: true, cliPathsByHost: { [getInstallationKey()]: cli! },
-      installationMethodsByHost: { [getInstallationKey()]: 'wsl' }, wslDistroOverridesByHost: { [getInstallationKey()]: target.distroName! },
-      environmentVariables: environmentText,
-    } } };
-    const host = runtimeHostFor({ settings, workingDirectory: root, sessionToolEndpoint: endpoint, getResolvedProviderCliPath: () => cli! }, 'opencode');
+    const key = getInstallationKey();
+    const fixture = await createFeatureHostFixture({
+      settings: { providerConfigs: { opencode: {
+        enabled: true, cliPathsByHost: { [key]: cli! },
+        installationMethodsByHost: { [key]: 'wsl' }, wslDistroOverridesByHost: { [key]: target.distroName! },
+        environmentVariables: environmentText,
+      } } },
+      providerOverrides: { workingDirectory: root, getResolvedProviderCliPath: async () => cli! },
+    });
+    const workspace = await createOpencodeWorkspaceServices(fixture.providerHost);
+    const service = workspace.serverService;
+    const host = fixture.providerHost.getRuntimeHost('opencode');
     const config: ProviderSessionConfig = { workingDirectory: root, lifecycle: 'persistent', nativePersistence: 'provider-default', interactionPort: { requestApproval: async request => ({ interactionId: request.interactionId, decision: 'allow' }), askUserQuestion: async request => ({ interactionId: request.interactionId, answers: {} }), dismissInteraction() {} }, sessionTools: { list, read: async () => { throw new Error('unused'); }, send: async () => { throw new Error('unused'); } } };
     const output: unknown[] = [];
     const kernel = new OpencodeHTTPSessionKernel({ host, config, getActiveTurnId: () => 'wsl', sessionInstanceId: 'wsl', onClosed: error => output.push(error), onNativeOutput: event => output.push(event) }, service, new OpencodeSessionPersistence(config));
     let serverURL: string | undefined;
-    const start = ManagedStdioProcess.prototype.start;
-    const observation = vi.spyOn(ManagedStdioProcess.prototype, 'start').mockImplementation(function (this: ManagedStdioProcess) {
-      start.call(this);
+    vi.mocked(spawn).mockImplementation((command, args, options) => {
+      const child = nativeSpawn(command, args, options);
       let text = '';
-      this.stdout.on('data', chunk => {
+      child.stdout?.on('data', chunk => {
         text += String(chunk);
-        if (text.startsWith('{') && text.includes('\n')) {
-          try { const ready = JSON.parse(text.slice(0, text.indexOf('\n'))) as { url?: string }; if (ready.url) serverURL = ready.url; } catch { /* Environment and version probes are not readiness records. */ }
-        }
+        if (serverURL || !text.startsWith('{') || !text.includes('\n')) return;
+        try { const ready = JSON.parse(text.slice(0, text.indexOf('\n'))) as { url?: string }; if (ready.url) serverURL = ready.url; } catch { /* Environment and version probes are not readiness records. */ }
       });
+      return child;
     });
     let messaging: SessionMessagingService | undefined;
     try {
@@ -129,27 +137,27 @@ describe.skipIf(!available || !cli)('native OpenCode WSL adoption', () => {
         expect(await control.request(`/api/session/${session.sessionId}`)).toMatchObject({ data: { location: { directory: targetRoot } } });
       } finally { await control.dispose(); }
       // The public API must hydrate the Linux database through the same provider policy.
-      ProviderWorkspaceRegistry.setServices('opencode', { serverService: service } as any);
+      ProviderWorkspaceRegistry.setServices('opencode', workspace);
       const repository = new ConversationRepository({
-        providers: ProviderRegistry, providerSettings: ProviderSettingsCoordinator, getSettings: () => settings, getVaultPath: () => root, onConversationDeleted: async () => undefined,
-        persistence: {
-          metadataReader: { revalidate: vi.fn(), load: vi.fn(), scan: vi.fn(), loadMetadata: vi.fn(), scanMetadata: vi.fn(), listMetadata: vi.fn() },
-          saveMetadata: async () => undefined, deleteCurrentMetadata: async () => undefined, assignMetadataToDevice: async () => undefined,
-        } as ConversationPersistence,
+        providers: ProviderRegistry, providerSettings: ProviderSettingsCoordinator, getSettings: () => fixture.settings, getVaultPath: () => root, onConversationDeleted: async () => undefined,
+        persistence: new ConversationPersistenceStore(fixture.vault.files, fixture.storage.installationKey),
       });
-      repository.replaceAll([{ id: 'conversation', providerId: 'opencode', sessionId: session.sessionId, messages: [], title: 'WSL', providerState: { databasePath: session.databasePath }, createdAt: testDate().getTime(), lastActivityAt: testDate().getTime() } as Conversation]);
-      const chatHost = { ensureConversationMetadataLoaded: async () => undefined, getConversationById: (id: string) => repository.getById(id), sessionRuntimes: { get: () => undefined } } as unknown as ChatFeatureHost;
+      repository.replaceAll([{ id: 'conversation', providerId: 'opencode', sessionId: session.sessionId, messages: [], title: 'WSL', providerState: { databasePath: session.databasePath }, createdAt: testDate().getTime(), lastActivityAt: testDate().getTime() }]);
+      const chatHost: ChatFeatureHost = await createChatFeatureHost({
+        fixture, sessionRuntimes: createSessionRuntimePool(() => chatHost),
+        ensureConversationMetadataLoaded: async () => undefined,
+        getConversationById: id => repository.getById(id),
+      });
       messaging = new SessionMessagingService({ getHost: () => chatHost, getActiveConversationId: () => null, refreshModelControls: () => undefined });
       expect(await createClaudianAPI(messaging).read('conversation')).toContain('Reply from OpenCode in WSL.');
       const requests = (await readFile(log, 'utf8')).trim().split('\n').map(line => JSON.parse(line) as { messages?: Array<{ role: string; content: unknown }> });
       expect(requests.flatMap(request => request.messages ?? [])).toEqual(expect.arrayContaining([expect.objectContaining({ role: 'tool', content: expect.stringContaining('WSL relay 中文') })]));
     } finally {
-      observation.mockRestore();
       await messaging?.dispose();
       ProviderWorkspaceRegistry.setServices('opencode', undefined);
       await kernel.dispose();
-      await service.dispose();
-      await endpoint.close();
+      await workspace.dispose?.();
+      await fixture.dispose();
       // EOF closes the Linux fixture itself; killing wsl.exe does not prove that.
       model.stdin.end();
       await modelClosed;

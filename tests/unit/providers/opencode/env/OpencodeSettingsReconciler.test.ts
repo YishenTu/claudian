@@ -1,10 +1,15 @@
 import '@/providers';
 
+import { testDate } from '@test/helpers/testClock';
+
+import { getInstallationKey } from '@/core/device/InstallationKey';
 import { getProviderConfig } from '@/core/providers/providerConfig';
 import { ProviderSettingsCoordinator } from '@/core/providers/ProviderSettingsCoordinator';
 import { isVersionedRuntimeInputFingerprint } from '@/core/providers/settings/RuntimeInputFingerprint';
+import type { Conversation } from '@/core/types';
 import { getOpencodeDiscoveryState, updateOpencodeDiscoveryState } from '@/providers/opencode/discoveryState';
 import { opencodeSettingsReconciler } from '@/providers/opencode/env/OpencodeSettingsReconciler';
+import { opencodeProviderRegistration } from '@/providers/opencode/registration';
 
 describe('coordinated OpenCode environment changes', () => {
   it('retains provider-owned discovery state when environment changes', () => {
@@ -79,18 +84,21 @@ describe('opencodeSettingsReconciler.reconcileModelWithEnvironment', () => {
   });
 });
 
-it('reconciles vault-inferred distro changes and preserves recorded locators', async () => {
-  const { getInstallationKey } = await import('@/core/device/InstallationKey');
-  const { opencodeProviderRegistration } = await import('@/providers/opencode/registration');
-  vi.stubGlobal('process', { ...process, platform: 'win32' });
+it('reconciles vault-inferred distro changes and preserves recorded locators', () => {
+  const platform = Object.getOwnPropertyDescriptor(process, 'platform')!;
+  Object.defineProperty(process, 'platform', { ...platform, value: 'win32' });
   try {
     const key = getInstallationKey();
     const settings = { providerConfigs: { opencode: { enabled: true, installationMethodsByHost: { [key]: 'wsl' } } } };
     expect(opencodeSettingsReconciler.reconcileModelWithEnvironment(settings, { vaultPath: '\\\\wsl$\\Ubuntu\\vault' }).changed).toBe(true);
     expect(opencodeSettingsReconciler.reconcileModelWithEnvironment(settings, { vaultPath: '\\\\wsl$\\Ubuntu\\vault' }).changed).toBe(false);
     expect(opencodeSettingsReconciler.reconcileModelWithEnvironment(settings, { vaultPath: '\\\\wsl$\\Debian\\vault' }).changed).toBe(true);
-    const conversation: any = { providerId: 'opencode', sessionId: 'native', providerState: { databasePath: '\\\\wsl$\\Ubuntu\\home\\alice\\.local\\share\\opencode\\opencode.db' } };
+    const databasePath = '\\\\wsl$\\Ubuntu\\home\\alice\\.local\\share\\opencode\\opencode.db';
+    const conversation: Conversation = {
+      id: 'conversation', providerId: 'opencode', title: 'WSL', messages: [], sessionId: 'native', providerState: { databasePath },
+      createdAt: testDate().getTime(), lastActivityAt: testDate().getTime(),
+    };
     expect(opencodeSettingsReconciler.invalidateConversationSessions([conversation])).toEqual([]);
-    expect(opencodeProviderRegistration.historyService?.buildPersistedProviderState?.(conversation)).toMatchObject({ databasePath: conversation.providerState.databasePath });
-  } finally { vi.unstubAllGlobals(); }
+    expect(opencodeProviderRegistration.historyService?.buildPersistedProviderState?.(conversation)).toMatchObject({ databasePath });
+  } finally { Object.defineProperty(process, 'platform', platform); }
 });
