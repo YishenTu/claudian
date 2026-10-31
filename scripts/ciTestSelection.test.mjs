@@ -84,6 +84,7 @@ test('real dependency discovery retains native launch checks for shared process 
     changes: [{ status: 'M', path: 'src/core/process/windowsCmdShim.ts' }],
   });
   assert.deepEqual(result.crossPlatformTests.sort(), [
+    'tests/integration/app/settings/RuntimeSettingsCoordinator.test.ts',
     'tests/integration/core/process/ManagedStdioProcess.test.ts',
     'tests/integration/core/process/ProcessProbe.test.ts',
     'tests/integration/core/process/cliBinaryLocator.test.ts',
@@ -466,6 +467,10 @@ test('WSL native job follows shared dependencies and Codex users but skips unrel
     'tests/integration/core/providers/cli/TargetCLIInstallationProbe.test.ts',
     'tests/unit/core/providers/settings/InstallationSettings.test.ts',
     'tests/integration/providers/codex/ui/CodexCLIPath.dom.test.ts',
+    // Siblings that do not exist yet still match the declared owner prefixes.
+    'tests/integration/shared/settings/ExecutionTargetSettings.dom.test.ts',
+    'tests/unit/core/providers/settings/InstallationSettings.migration.test.ts',
+    'src/core/providers/settings/InstallationSettingsMigration.ts',
   ]) {
     const selection = select([file]);
     assert.equal(selection.wslWindows, true, file);

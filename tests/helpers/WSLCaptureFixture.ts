@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process';
+import { existsSync, watch } from 'node:fs';
 import * as fs from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import * as path from 'node:path';
@@ -24,18 +25,18 @@ export async function createWSLCaptureFixture(
   await fs.writeFile(path.join(root, '.bash_profile'), '. "$HOME/.bashrc"\n');
   const children: ReturnType<typeof spawn>[] = [];
 
-  function launchOptions(): ManagedStdioProcessOptions {
+  function launchOptions(command = '/bin/sh'): ManagedStdioProcessOptions {
     const spec = buildTargetLaunchSpec({
       target: { method: 'wsl', distroName: 'Ubuntu', platformFamily: 'unix', platformOs: 'linux' },
-      hostCwd: 'C:\\vault', env: {}, command: '/bin/sh', args: ['-c', 'printf "CLI_OK:%s" "$OPENAI_API_KEY"; umask'],
+      hostCwd: 'C:\\vault', env: {}, command, args: ['-c', 'printf "CLI_OK:%s" "$OPENAI_API_KEY"; umask'],
     });
     return { command: shell, args: readWSLExec(spec).args, cwd: root, env: {
       ...spec.env, PATH: '/usr/bin:/bin', SHELL: '/bin/bash', HOME: root, OPENAI_API_KEY: 'base-key',
     } };
   }
 
-  function start() {
-    const options = launchOptions();
+  function start(command?: string) {
+    const options = launchOptions(command);
     const child = spawn(options.command, options.args, { cwd: options.cwd, env: options.env });
     children.push(child);
     let stdout = '';
@@ -56,9 +57,19 @@ export async function createWSLCaptureFixture(
     return file;
   }
 
+  /** Resolves when startup publishes its capture PID; a filesystem event, so it needs no timer. */
+  function captureStarted(): Promise<void> {
+    const published = path.join(root, 'capture-path');
+    return new Promise((resolve, reject) => {
+      const watcher = watch(root, () => { if (existsSync(published)) { watcher.close(); resolve(); } });
+      watcher.once('error', reject);
+      if (existsSync(published)) { watcher.close(); resolve(); }
+    });
+  }
+
   let disposed = false;
   const fixture = {
-    root, launchOptions, start, captureFile,
+    root, launchOptions, start, captureFile, captureStarted,
     async startup(body: string) {
       await fs.writeFile(path.join(root, '.bashrc'), `printf '%s' "$CLAUDIAN_WSL_ENV_FILE" > "$HOME/capture-path.tmp"
 printf '%s' "$$" > "$HOME/capture-pid.tmp"

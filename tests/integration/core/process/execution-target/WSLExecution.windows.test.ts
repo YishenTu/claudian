@@ -1,4 +1,4 @@
-// @test-ci {"inputs":["src/core/process/execution-target/**","src/core/providers/cli/TargetCLIInstallationProbe.ts","src/core/providers/settings/InstallationSettings.ts","src/shared/settings/ExecutionTargetSettings.ts","src/providers/codex/**","tests/{unit,integration}/core/process/execution-target/**","tests/{unit,integration}/providers/codex/**","tests/{unit,integration}/core/providers/cli/TargetCLIInstallationProbe.test.ts","tests/{unit,integration}/core/providers/settings/InstallationSettings.test.ts"]}
+// @test-ci {"inputs":["src/{core/process/execution-target,providers/codex}/**","src/{core/providers/cli/TargetCLIInstallationProbe,core/providers/settings/InstallationSettings,shared/settings/ExecutionTargetSettings}*","tests/{unit,integration}/{core/process/execution-target,providers/codex}/**","tests/{unit,integration}/{core/providers/cli/TargetCLIInstallationProbe,core/providers/settings/InstallationSettings,shared/settings/ExecutionTargetSettings}*"]}
 import { execFileSync, spawn } from 'node:child_process';
 import * as fs from 'node:fs/promises';
 import { tmpdir } from 'node:os';

@@ -95,7 +95,6 @@ Debian            Stopped         2
   });
 });
 
-
 it.each([
   ['linux', { method: 'host-native', platformFamily: 'unix', platformOs: 'linux' }],
   ['darwin', { method: 'host-native', platformFamily: 'unix', platformOs: 'macos' }],

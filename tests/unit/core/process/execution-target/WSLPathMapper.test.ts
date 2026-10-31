@@ -55,7 +55,6 @@ describe('createExecutionPathMapper', () => {
   });
 });
 
-
 it('maps extended UNC roots case-insensitively and distinguishes drive mounts from Linux directories', () => {
   const mapper = createExecutionPathMapper({ method: 'wsl', platformFamily: 'unix', platformOs: 'linux', distroName: 'Ubuntu' });
   expect(mapper.toTargetPath(String.raw`\\?\UNC\WSL.LOCALHOST\uBuNtU\home\user\..\notes`)).toBe('/home/notes');

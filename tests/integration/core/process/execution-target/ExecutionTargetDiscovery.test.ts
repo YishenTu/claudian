@@ -14,7 +14,6 @@ it.skipIf(process.platform === 'win32')('discovers the default distro through re
   expect(await resolveExecutionTargetAsync(options)).toEqual({ ...expected, distroName: undefined });
 });
 
-
 it.skipIf(process.platform === 'win32')('bounds synchronous distro discovery before a late list response', async () => {
   const fixture = await createWSLDistroFixture(Buffer.from('* Ubuntu  Running  2', 'utf16le'));
   await fixture.delay(6_000);

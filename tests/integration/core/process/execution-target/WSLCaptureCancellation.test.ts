@@ -11,22 +11,30 @@ for (const { name, executable } of captureShells) {
     it('reaps capture on a production probe timeout before removing its private file', async () => {
       const fixture = await createWSLCaptureFixture(executable);
       try {
-        await fixture.startup('export OPENAI_API_KEY=fixture-key-only\nsleep 0.8');
-        expect(await runProcessProbe(fixture.launchOptions(), 300)).toBeNull();
+        // Startup blocks until cleanup kills it, so only the deadline can end the probe.
+        await fixture.startup('export OPENAI_API_KEY=fixture-key-only\nexec /bin/sleep 30');
+        // Hold the deadline until capture has started, however slowly the host runs startup.
+        vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+        const probe = runProcessProbe(fixture.launchOptions(), 300);
+        await fixture.captureStarted();
+        await vi.advanceTimersByTimeAsync(300);
+        vi.useRealTimers();
+        expect(await probe).toBeNull();
         const pid = await fixture.capturePid();
         expect(() => process.kill(pid, 0)).toThrow();
         await expect(fs.stat(await fixture.captureFile())).rejects.toThrow(/ENOENT/);
-      } finally { await fixture.dispose(); }
+      } finally { vi.useRealTimers(); await fixture.dispose(); }
     });
 
-    it.each(['SIGHUP', 'SIGINT', 'SIGTERM'] as const)('cleans up capture on %s without leaving a late writer', async signal => {
+    it.each([['SIGHUP', 129], ['SIGINT', 130], ['SIGTERM', 143]] as const)('cleans up capture on %s without leaving a late writer', async (signal, code) => {
       const fixture = await createWSLCaptureFixture(executable);
       try {
-        await fixture.startup('sleep 0.5');
+        // Startup never completes on its own, so the trap's exit code proves the signal path ran.
+        await fixture.startup('exec /bin/sleep 30');
         const { child, closed } = fixture.start();
         const file = await fixture.captureFile();
         child.kill(signal);
-        await closed;
+        expect((await closed).code).toBe(code);
         const pid = await fixture.capturePid();
         expect(() => process.kill(pid, 0)).toThrow();
         await expect(fs.stat(file)).rejects.toThrow(/ENOENT/);

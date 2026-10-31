@@ -21,7 +21,6 @@ it('preserves forwarded HOME path flags on the copy protected from WSL account d
     .toEqual({ HOME: 'C:\\home', WSLENV: 'HOME/w' });
 });
 
-
 it.each<Record<string, string>>([
   { WSLENV: 'OTHER_HOME/p', HOME: 'C:\\home', OTHER_HOME: 'C:\\other' },
   { WSLENV: 'HOME/p' },

@@ -56,7 +56,6 @@ for (const { name, executable } of shells) {
       return output;
     }
 
-
     it('keeps explicitly forwarded credentials and home authoritative over startup exports', async () => {
       const spec = buildTargetLaunchSpec({ ...options(`${root}/bin/test-cli`, ['--exports']),
         env: { OPENAI_API_KEY: 'caller-key', CODEX_HOME: '/caller-home' },

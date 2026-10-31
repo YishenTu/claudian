@@ -14,7 +14,6 @@ it('locates wsl.exe independently of an explicitly configured Linux PATH', () =>
   } finally { vi.unstubAllEnvs(); }
 });
 
-
 it('keeps native Windows argv quoting and environment independent of a saved WSL distro', () => {
   const env = { HOME: 'C:\\Users\\me', WSLENV: 'HOME/p:KEY', KEY: 'native-key' };
   const args = ['a b', 'quote"', 'trailing\\'];
@@ -32,6 +31,7 @@ it('keeps native Windows argv quoting and environment independent of a saved WSL
 });
 
 it('does not implicitly forward named host variables when no forwarding list is supplied', () => {
+  // `undefined` is a legal key; it guards the default forwarding list against non-declaration entries.
   const env = { undefined: 'host-value' };
   const spec = buildTargetLaunchSpec({
     target: { method: 'wsl', distroName: 'Ubuntu', platformFamily: 'unix', platformOs: 'linux' },
