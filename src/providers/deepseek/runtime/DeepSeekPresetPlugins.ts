@@ -58,7 +58,7 @@ const PREVIEW_PATHS: DeepSeekPresetPaths = {
  * and only they take the user's additional rows, after Claudian's own.
  */
 export function buildDeepSeekPresetPlugins(
-  preset: DeepSeekPreset, paths: DeepSeekPresetPaths, additional: readonly DeepSeekPresetPlugin[] = [],
+  preset: DeepSeekPreset, paths: DeepSeekPresetPaths, additional: readonly DeepSeekPresetPlugin[] = [], platform: NodeJS.Platform = process.platform,
 ): DeepSeekPresetPlugin[] {
   const auxiliary = isDeepSeekAuxiliaryPreset(preset);
   const allow = preset === 'claudian-passive' ? [] : ['read', 'read_image', 'glob', 'grep'];
@@ -80,7 +80,7 @@ export function buildDeepSeekPresetPlugins(
     ...(preset !== 'claudian-passive' ? [plugin('skill-filesystem'), plugin('tool-skill')] : []),
     ...(!auxiliary ? [
       // Native mounts only the platform's shell executor (PowerShell on Windows); its tool must match.
-      plugin(process.platform === 'win32' ? 'tool-pwsh' : 'tool-bash'),
+      plugin(platform === 'win32' ? 'tool-pwsh' : 'tool-bash'),
       plugin('tool-jobs'),
       plugin('tool-subagent-control'),
       { id: 'tool-subagent-list-agents', name: '@deepseek-ai/dsh-tool-subagent-control/list-agents' },
@@ -103,7 +103,7 @@ export function buildDeepSeekPresetPlugins(
 }
 
 /** Every row id Claudian's chat preset declares, including rows nested in its groups. */
-function ownRowIds(): Set<string> {
+function ownRowIds(platform: NodeJS.Platform): Set<string> {
   const ids = new Set<string>();
   const visit = (rows: readonly unknown[]): void => {
     for (const row of rows) {
@@ -113,7 +113,7 @@ function ownRowIds(): Set<string> {
       if (Array.isArray(config)) visit(config);
     }
   };
-  visit(buildDeepSeekPresetPlugins('claudian', PREVIEW_PATHS));
+  visit(buildDeepSeekPresetPlugins('claudian', PREVIEW_PATHS, [], platform));
   return ids;
 }
 
@@ -121,7 +121,7 @@ function ownRowIds(): Set<string> {
  * Parses the user's additional rows: a YAML list (dsh's dialect, so JSON too) of native plugin rows, each with its
  * own id and module name. Blank text means none. Throws an actionable message for anything else.
  */
-export function parseDeepSeekPresetPlugins(text: string): DeepSeekPresetPlugin[] {
+export function parseDeepSeekPresetPlugins(text: string, platform: NodeJS.Platform = process.platform): DeepSeekPresetPlugin[] {
   let value: unknown;
   try { value = parse(text, YAML_OPTIONS); } catch (error) {
     if (!(error instanceof YAMLError)) throw error;
@@ -131,7 +131,7 @@ export function parseDeepSeekPresetPlugins(text: string): DeepSeekPresetPlugin[]
   if (value === undefined || value === null) return [];
   if (!Array.isArray(value)) throw new Error('Additional plugins must be a YAML list of plugin rows.');
   assertEntryValue(value, 'rows');
-  const own = ownRowIds();
+  const own = ownRowIds(platform);
   const seen = new Set<string>();
   return value.map((row: unknown, index) => {
     if (!row || typeof row !== 'object' || Array.isArray(row)) throw new Error(`Plugin row ${index + 1} must be an object.`);
@@ -146,6 +146,6 @@ export function parseDeepSeekPresetPlugins(text: string): DeepSeekPresetPlugin[]
 }
 
 /** The effective chat preset as it launches, with machine-specific launch paths shown as placeholders. */
-export function renderDeepSeekPresetPreview(additional: readonly DeepSeekPresetPlugin[]): string {
-  return stringify(buildDeepSeekPresetPlugins('claudian', PREVIEW_PATHS, additional), { ...YAML_OPTIONS, lineWidth: 0 });
+export function renderDeepSeekPresetPreview(additional: readonly DeepSeekPresetPlugin[], platform: NodeJS.Platform = process.platform): string {
+  return stringify(buildDeepSeekPresetPlugins('claudian', PREVIEW_PATHS, additional, platform), { ...YAML_OPTIONS, lineWidth: 0 });
 }

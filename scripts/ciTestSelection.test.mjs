@@ -460,6 +460,26 @@ test('WSL native job follows shared dependencies and provider users but skips un
   assert.equal(select([wsl]).wslWindows, true);
   const relay = 'tests/integration/core/process/execution-target/WSLSessionToolRelay.windows.test.ts';
   assert.equal(select([relay]).wslWindows, true);
+  const deepseek = 'tests/integration/providers/deepseek/runtime/DeepSeekWSLHost.windows.test.ts';
+  assert.equal(select([deepseek]).wslWindows, true);
+  for (const file of [
+    'src/providers/deepseek/runtime/DeepSeekHostProcess.ts',
+    // Type-only, UI and sibling-test edges reach the native DeepSeek suite through its declaration.
+    'src/providers/deepseek/types.ts',
+    'src/providers/deepseek/ui/DeepSeekSettingsTab.ts',
+    'tests/integration/providers/deepseek/runtime/DeepSeekHostProcess.wsl.test.ts',
+    'tests/unit/providers/deepseek/settings.test.ts',
+  ]) {
+    const selection = select([file]);
+    assert.equal(selection.wslWindows, true, file);
+    assert.ok(selection.testFiles.includes(deepseek), `${file} must select the declared DeepSeek consumer`);
+  }
+  // The Linux Host fixture is read through fs by both its local and native WSL consumers.
+  const fixture = select(['tests/fixtures/providers/deepseek/runtime/FakeDeepSeekWSLHost.mjs']);
+  assert.equal(fixture.wslWindows, true);
+  assert.ok(fixture.testFiles.includes('tests/integration/providers/deepseek/runtime/DeepSeekHostProcess.test.ts'));
+  assert.ok(fixture.testFiles.includes(deepseek));
+  assert.equal(select(['src/providers/opencode/settings.ts']).wslWindows, false);
   assert.equal(select(['tests/helpers/WSLNativeTarget.ts'], [relay]).wslWindows, true);
   for (const file of [
     'src/core/session-tools/sessionToolRelayCommand.ts',

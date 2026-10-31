@@ -1,13 +1,17 @@
 // @test-ci {"native":true}
 import { execFile, spawn } from 'node:child_process';
+import * as fs from 'node:fs';
+import * as fsPromises from 'node:fs/promises';
 import { access, mkdir, mkdtemp, readdir, readFile, rename, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { dirname, join, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
 
 import type { LaunchPatchEntry, LaunchPlugin } from '@test/helpers/deepseek/LaunchPatch';
+import { createWindowsHostFS } from '@test/helpers/WindowsHostFS';
 
+import { createExecutionPathMapper } from '@/core/process/execution-target/WSLPathMapper';
 import { LoopbackSessionToolServer } from '@/core/session-tools/LoopbackSessionToolServer';
 import { SESSION_TOOL_SPECS } from '@/core/session-tools/sessionToolSpecs';
 import { prepareDeepSeekLaunchArtifacts } from '@/providers/deepseek/runtime/DeepSeekLaunchArtifacts';
@@ -17,6 +21,8 @@ vi.mock('node:fs/promises', async () => {
   const actual = (await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises'));
   return { __esModule: true, ...actual, rename: vi.fn(actual.rename) };
 });
+// WindowsHostFS serves `C:\Temp` on POSIX hosts for the WSL launch.
+vi.mock('fs', async () => ({ ...await vi.importActual<typeof import('fs')>('fs') }));
 
 it('gives every preset the session prompt directory and its tool policy while keeping prompt text out of code', async () => {
   const root = await mkdtemp(join(tmpdir(), 'deepseek packaged # 文档 '));
@@ -291,7 +297,7 @@ it('keeps ephemeral sessions in process memory and out of every durable dsh stor
       import { pathToFileURL } from 'node:url';
       import { AsyncLocalStorage } from 'node:async_hooks';
       import { mkdir, readFile, writeFile } from 'node:fs/promises';
-      import { dirname, join } from 'node:path';
+      import { dirname, join, sep } from 'node:path';
       const plugin = await import(pathToFileURL(process.argv[1]).href);
       const config = JSON.parse(process.argv[2]);
       const out = { backend: [], projcache: [], workspaces: [], global: [], spilled: [], errors: {} };
@@ -533,7 +539,7 @@ describe('owner lifecycle tether', () => {
   });
 });
 
-it('runs the sessions plugin in a child, forwarding caller identity, re-reading the route, and cancelling HTTP calls', async () => {
+it.each(['http', 'relay'])('runs the sessions plugin over %s, forwarding caller identity, re-reading the route, and cancelling calls', async transport => {
   const endpoint = new LoopbackSessionToolServer();
   const replacement = new LoopbackSessionToolServer();
   const artifacts = await prepareDeepSeekLaunchArtifacts();
@@ -565,7 +571,34 @@ it('runs the sessions plugin in a child, forwarding caller identity, re-reading 
     expect(JSON.parse(await readFile(file, 'utf8'))).toEqual({ url: first.url, routeId: first.routeId });
     const modes = await Promise.all([stat(file), stat(new URL(row.name))]);
     expect(process.platform === 'win32' || modes.every(mode => (mode.mode & 0o777) === 0o600)).toBe(true);
+    const relay = {
+      command: process.execPath,
+      args: ['--input-type=module', '-e', `
+        import { createInterface } from 'node:readline';
+        const abort = new AbortController();
+        process.stdin.on('end', () => abort.abort());
+        let called = false;
+        createInterface({ input: process.stdin }).on('line', async line => {
+          if (called) process.exit(2);
+          called = true;
+          const body = JSON.parse(line);
+          if (body.routeId || body.token) process.exit(3);
+          try {
+            const response = await fetch(process.env.CLAUDIAN_SESSION_TOOL_URL, {
+              method: 'POST', headers: { 'Content-Type': 'application/json', 'x-claudian-route': process.env.CLAUDIAN_SESSION_TOOL_ROUTE },
+              body: line, signal: abort.signal,
+            });
+            if (!response.ok) process.exit(4);
+            const text = await response.text();
+            if (process.stdin.readableEnded) process.exit(5);
+            process.stdout.write(text + '\\n', () => process.exit(0));
+          } catch { process.exit(abort.signal.aborted ? 0 : 6); }
+        });
+      `],
+      env: { CLAUDIAN_SESSION_TOOL_MODE: 'call' },
+    };
     const child = promisify(execFile)(process.execPath, ['--input-type=module', '-e', `
+      if (process.env.CLAUDIAN_DEEPSEEK_SESSION_RELAY) globalThis.fetch = () => { throw new Error('WSL plugin must use its relay'); };
       const plugin = await import(process.argv[1]);
       const tools = [];
       await plugin.apply({ loader: { import: async name => {
@@ -588,7 +621,7 @@ it('runs the sessions plugin in a child, forwarding caller identity, re-reading 
       let aborted = false;
       try { await pending; } catch { aborted = true; }
       process.stdout.write(JSON.stringify({ before, after, aborted, tools: tools.map(tool => ({ name: tool.name, timeoutMs: tool.timeoutMs, parameters: tool.parameters })) }));
-    `, row.name, JSON.stringify(row.config)], { timeout: 10_000 });
+    `, row.name, JSON.stringify(row.config)], { timeout: 10_000, env: { ...process.env, ...(transport === 'relay' ? { CLAUDIAN_DEEPSEEK_SESSION_RELAY: JSON.stringify(relay) } : {}) } });
     // Stop only after the real endpoint has received the call and installed its disconnect listener.
     stopCall = () => { child.child.stdin!.end('abort'); };
     const { stdout } = await child;
@@ -607,4 +640,37 @@ it('runs the sessions plugin in a child, forwarding caller identity, re-reading 
       { name: 'claudian_send_message', args: { text: 'hold' }, callerNativeId: 'child-native' },
     ]);
   } finally { await endpoint.close(); await replacement.close(); await artifacts.dispose(); }
+});
+
+// Windows hosts have a real C:\Temp; WindowsHostFS models it on POSIX hosts.
+it.skipIf(sep === '\\')('maps every nested launch path for Linux while retaining host files for mutations and disposal', async () => {
+  createWindowsHostFS({ fs, fsPromises });
+  await mkdir('C:\\Temp', { recursive: true });
+  const mapper = createExecutionPathMapper({ method: 'wsl', distroName: 'Ubuntu', platformOs: 'linux', platformFamily: 'unix' });
+  const artifacts = await prepareDeepSeekLaunchArtifacts('C:\\Temp', [], undefined, mapper);
+  try {
+    const patch: LaunchPatchEntry[] = JSON.parse(await readFile(artifacts.patchPath, 'utf8'));
+    const rows = patch.flatMap(row => row.insert ?? []);
+    const ephemeral = rows.find(row => row.id === 'claudian-ephemeral')!;
+    const preset = rows.find(row => row.config?.id === 'claudian')!;
+    const compatibility = preset.config.plugins.find(row => row.id === 'claudian-compatibility')!;
+    const sessions = preset.config.plugins.find(row => row.id === 'claudian-sessions')!;
+    for (const path of [rows[0].name, ephemeral.name, ...Object.values(ephemeral.config), ...Object.values(compatibility.config), sessions.config.endpointFile]) {
+      expect(path).toMatch(/^\/mnt\/c\/Temp\/claudian-deepseek-/);
+    }
+    for (const row of [compatibility, sessions]) expect(row.name).toMatch(/^file:\/\/\/mnt\/c\/Temp\//);
+    expect(preset.config.plugins.map(row => row.id)).toContain('tool-bash');
+    expect(preset.config.plugins.map(row => row.id)).not.toContain('tool-pwsh');
+    await artifacts.writePrompt('alpha', 'Linux prompt');
+    await artifacts.writeCodeMode(true);
+    const hostRoot = dirname(artifacts.patchPath);
+    expect(await readFile(join(hostRoot, 'code-mode'), 'utf8')).toBe('both');
+    const [prompt] = await readdir(join(hostRoot, 'prompts'));
+    expect(await readFile(join(hostRoot, 'prompts', prompt), 'utf8')).toBe('Linux prompt');
+    const withdraw = await artifacts.offerEphemeralFork('saved', 7);
+    expect(JSON.parse(await readFile(join(hostRoot, 'ephemeral-forks.json'), 'utf8')).forks).toHaveLength(1);
+    await withdraw();
+    await artifacts.dispose();
+    await expect(access(artifacts.patchPath)).rejects.toThrow();
+  } finally { await artifacts.dispose(); }
 });

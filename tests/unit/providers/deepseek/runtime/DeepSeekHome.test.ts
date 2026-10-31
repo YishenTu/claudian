@@ -38,3 +38,14 @@ describe('DeepSeek native store home', () => {
     expect(isSameDeepSeekHome('/Users/me/.dsh', '/Users/Me/.dsh', 'darwin')).toBe(false);
   });
 });
+
+it('compares WSL UNC aliases with Linux path case sensitivity even on Windows', () => {
+  const original = '\\\\wsl$\\Ubuntu\\home\\alice\\.dsh';
+  expect(isSameDeepSeekHome(original, '\\\\wsl.localhost\\ubuntu\\home\\alice\\.dsh', 'win32')).toBe(true);
+  expect(isSameDeepSeekHome(original, '\\\\wsl$\\Ubuntu\\home\\Alice\\.dsh', 'win32')).toBe(false);
+  expect(isSameDeepSeekHome(original, '\\\\wsl$\\Debian\\home\\alice\\.dsh', 'win32')).toBe(false);
+
+  // A native store and a Linux store are distinct whichever one the caller names first.
+  expect(isSameDeepSeekHome('C:\\Users\\Alice\\.dsh', original, 'win32')).toBe(false);
+  expect(isSameDeepSeekHome(original, 'C:\\Users\\Alice\\.dsh', 'win32')).toBe(false);
+});

@@ -324,7 +324,7 @@ jobs:
       - name: Exercise native Windows to WSL execution
         env:
           CLAUDIAN_REQUIRE_WSL: '1'
-        run: npm run test:unit -- --maxWorkers=1 tests/integration/core/process/execution-target/WSLExecution.windows.test.ts tests/integration/core/process/execution-target/WSLSessionToolRelay.windows.test.ts tests/integration/core/process/execution-target/ClaudeWSL.windows.test.ts
+        run: npm run test:unit -- --maxWorkers=1 tests/integration/core/process/execution-target/WSLExecution.windows.test.ts tests/integration/core/process/execution-target/WSLSessionToolRelay.windows.test.ts tests/integration/core/process/execution-target/ClaudeWSL.windows.test.ts tests/integration/providers/deepseek/runtime/DeepSeekWSLHost.windows.test.ts
 
   build-artifacts:
     runs-on: ubuntu-latest

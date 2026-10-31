@@ -1,3 +1,5 @@
+import { globalAgent } from 'node:http';
+
 import { NativePeer } from '@test/helpers/deepseek/NativePeer';
 import { nativeRequest } from '@test/helpers/deepseek/NativeRequest';
 
@@ -363,21 +365,41 @@ it('retries a failed reconnection of the live process, failing attached sessions
     // listener, so once it runs the budget timer exists on the fake clock; advancing earlier would spend budget time.
     let observed = false;
     lease.client.onDisconnect(() => { observed = true; });
+    let attempts = 0;
+    lease.roster.onReset(() => { attempts++; });
+    const listed = lists();
     dropHost();
     for (const deadline = realNow() + 2_000; !observed && realNow() < deadline;) await flush();
     expect(observed).toBe(true);
-    for (let elapsed = 0; elapsed < 55_000; elapsed += 250) {
-      hang = elapsed >= 50_000;
-      const attempts = lists();
-      vi.advanceTimersByTime(250);
-      for (let turns = 0; lists() === attempts && turns < 50; turns++) await flush();
+    // The budget timer was armed at this virtual instant.
+    const budgetEnds = Date.now() + 60_000;
+    /** Fires the Host's pending backoff, which starts its next attempt. */
+    const startNextAttempt = async (): Promise<void> => {
+      for (const started = attempts; attempts === started;) {
+        expect(Date.now()).toBeLessThan(budgetEnds);
+        vi.advanceTimersToNextTimer();
+        await flush();
+      }
+    };
+    for (let attempt = 1; ; attempt++) {
+      // Each attempt connects and asks native's roster over real I/O. Once its roster request has reached native and the
+      // client's HTTP exchange has ended, the failure was consumed in that turn and the Host is waiting on its backoff.
+      await settle(() => lists() === listed + attempt && !httpInFlight());
+      if (Date.now() >= budgetEnds - 10_000) break;
+      await startNextAttempt();
     }
     expect(lists()).toBeGreaterThan(5);
+    // Late in the budget native stops answering; the next attempt's roster request reaches it and stays outstanding.
+    hang = true;
+    await startNextAttempt();
+    await settle(() => hung === 1);
     // Its own 30-second deadline cannot elapse before the budget ends, so this request is outstanding at expiry.
+    vi.advanceTimersByTime(budgetEnds - Date.now() - 1);
+    await flush();
     expect(hung).toBe(1);
     expect(losses).toEqual([]);
     expect(lifecycle.disposed).toBe(0);
-    vi.advanceTimersByTime(6_000);
+    vi.advanceTimersByTime(1);
     // Socket teardown is real I/O: bound the wait by real time, not by a count of flushes a loaded runner can exhaust.
     for (const deadline = realNow() + 2_000; !losses.length && realNow() < deadline;) await flush();
     vi.useRealTimers();
@@ -409,6 +431,17 @@ function openSockets(): number {
 
 // Captured before any test fakes timers, so waits on real I/O stay bounded by real time.
 const realNow = performance.now.bind(performance);
+
+/** Waits on real I/O for a lifecycle point; the real-time bound only reports a missing signal. */
+async function settle(predicate: () => boolean): Promise<void> {
+  for (const deadline = realNow() + 2_000; !predicate() && realNow() < deadline;) await flush();
+  expect(predicate()).toBe(true);
+}
+
+/** Whether a client HTTP exchange is still open: the agent releases its socket once the response has ended. */
+function httpInFlight(): boolean {
+  return Object.values(globalAgent.sockets).some(sockets => sockets?.length);
+}
 
 /** Settles every pending microtask continuation. */
 function flush(): Promise<void> {

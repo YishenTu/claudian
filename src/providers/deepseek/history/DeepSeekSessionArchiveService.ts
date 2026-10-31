@@ -42,7 +42,7 @@ export class DeepSeekSessionArchiveService implements ProviderSessionArchive {
       let firstFailure: Error | undefined;
       for (const { sessionId, isArchived, home } of requests) {
         // Another store's session id cannot name a session in this Host's store.
-        if (home && !isSameDeepSeekHome(home, lease.home)) continue;
+        if (home && !isSameDeepSeekHome(home, lease.home, lease.execution?.target.platformOs === 'linux' ? 'linux' : undefined)) continue;
         try {
           // Claudian archives only closed sessions, so leftover native work is stopped rather than refusing the archive.
           if (isArchived) await lease.client.call('workspace/archiveSession', { request: { sessionId, stopActivity: true } });

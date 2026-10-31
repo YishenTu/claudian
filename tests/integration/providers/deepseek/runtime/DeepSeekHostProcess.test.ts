@@ -10,6 +10,7 @@ import type { LaunchPatchEntry } from '@test/helpers/deepseek/LaunchPatch';
 import { NativePeer } from '@test/helpers/deepseek/NativePeer';
 import { testDate } from '@test/helpers/testClock';
 
+import { LoopbackSessionToolServer } from '@/core/session-tools/LoopbackSessionToolServer';
 import { DeepSeekHostProcess } from '@/providers/deepseek/runtime/DeepSeekHostProcess';
 
 const FAKE_DSH = resolve(__dirname, '../../../../fixtures/providers/deepseek/runtime/FakeDeepSeekCLI.mjs');
@@ -294,4 +295,29 @@ describe('native Host process', () => {
       }
     }, 20_000);
   });
+});
+
+it('runs the WSL CI fixture locally through real authenticated HTTP/WebSocket and the generated plugins', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'deepseek WSL fixture '));
+  const home = join(root, 'home');
+  const server = new LoopbackSessionToolServer();
+  let child: DeepSeekHostProcess | undefined;
+  try {
+    await mkdir(join(home, 'profiles/web'), { recursive: true });
+    await writeFile(join(home, 'profiles/web/package.json'), '{}');
+    const route = await server.registerCallRoute(async call => ({ isError: false, text: call.callerNativeId }));
+    child = await DeepSeekHostProcess.start({
+      cliPath: resolve(__dirname, '../../../../fixtures/providers/deepseek/runtime/FakeDeepSeekWSLHost.mjs'), cwd: root,
+      sessionToolRoute: route,
+      environment: { ...process.env, DSH_HOME: home, DSH_FIXTURE_PACKAGE: resolve('package.json'), DSH_FIXTURE_EXIT: join(root, 'exit.log') },
+    }, new AbortController().signal);
+    await child.writePrompt('root', 'fixture prompt'); await child.writeCodeMode(true);
+    const withdraw = await child.offerEphemeralFork('root', 7);
+    expect(await child.client.call('fixture/inspect')).toMatchObject({ prompt: 'fixture prompt', presentation: ['both'],
+      forks: [{ parent: 'root', atSeq: 7 }], spill: 'Linux artifact', attachment: 'Linux artifact' });
+    expect(await child.client.call('fixture/tool', { id: 'one', caller: 'root', tool: 'claudian_list_destinations', input: {} }))
+      .toEqual({ isError: false, text: 'root' });
+    await withdraw(); await child.dispose();
+    expect(await readFile(join(root, 'exit.log'), 'utf8')).toBe('owner\n');
+  } finally { await child?.dispose(); await server.close(); await rm(root, { recursive: true, force: true }); }
 });

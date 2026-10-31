@@ -2,10 +2,12 @@ import { randomUUID } from 'node:crypto';
 
 import { ProviderTransitionFence } from '@/core/providers/metadata/ProviderTransitionFence';
 import type { SessionToolEndpoint } from '@/core/session-tools/SessionToolEndpoint';
+import { createWSLSessionToolRelay } from '@/core/session-tools/WSLSessionToolRelay';
 
 import { type DeepSeekReader, type DeepSeekRemoteClient, DeepSeekRemoteError, isRecord } from '../remote/DeepSeekRemoteClient';
 import type { DeepSeekProfile } from '../types';
 import { DEEPSEEK_EPHEMERAL_PREFIX } from './DeepSeekCompatibility';
+import type { DeepSeekExecutionContext } from './DeepSeekExecutionContext';
 import { getDeepSeekHome } from './DeepSeekHome';
 import type { DeepSeekHostProcess, DeepSeekLaunchOptions } from './DeepSeekHostProcess';
 import { DeepSeekRoster, type DeepSeekSessionToolCapture } from './DeepSeekRoster';
@@ -16,6 +18,7 @@ export type DeepSeekHostLoss = 'process-exited' | 'transport';
 
 /** One attachment to the running Host generation. Releasing it never stops native work. */
 export interface DeepSeekHostLease {
+  readonly execution?: DeepSeekExecutionContext;
   readonly client: DeepSeekRemoteClient;
   readonly roster: DeepSeekRoster;
   readonly home: string;
@@ -42,7 +45,7 @@ export interface DeepSeekHostLease {
   release(): void;
 }
 
-interface Ready { readonly process: DeepSeekProcess; readonly roster: DeepSeekRoster; readonly home: string; readonly ephemeral: boolean }
+interface Ready { readonly execution?: DeepSeekExecutionContext; readonly process: DeepSeekProcess; readonly roster: DeepSeekRoster; readonly home: string; readonly ephemeral: boolean }
 
 interface Generation {
   readonly id: number;
@@ -98,14 +101,14 @@ export class DeepSeekHost {
     try { ready = await abortable(generation.ready, signal); } catch (error) { this.leave(generation); throw error; }
     // Loss can land between startup and this continuation; its listeners have already run.
     if (generation.retirement) { this.leave(generation); throw new Error('DeepSeek process exited during startup.'); }
-    const { process, roster, home, ephemeral } = ready;
+    const { process, roster, home, ephemeral, execution } = ready;
     const claims = new Map<string, () => void>();
     const lost = new Set<(loss: DeepSeekHostLoss, error: Error) => void>();
     const relay = (loss: DeepSeekHostLoss, error: Error): void => { for (const listener of [...lost]) listener(loss, error); lost.clear(); };
     generation.lost.add(relay);
     let released = false;
     return {
-      client: process.client, roster, home, profile: process.profile, generation: generation.id, ephemeral,
+      client: process.client, roster, home, execution, profile: process.profile, generation: generation.id, ephemeral,
       ephemeralSessionId: () => {
         if (!ephemeral) throw new Error('DeepSeek cannot keep this session ephemeral.');
         return `${DEEPSEEK_EPHEMERAL_PREFIX}${randomUUID()}`;
@@ -179,10 +182,10 @@ export class DeepSeekHost {
   }
 
   /** Cold, non-activating reads against the native store at `home`. History browsing never claims a writer. */
-  async read<T>(operation: (reader: DeepSeekReader, home: string) => Promise<T>, signal?: AbortSignal): Promise<T> {
+  async read<T>(operation: (reader: DeepSeekReader, home: string, execution?: DeepSeekExecutionContext) => Promise<T>, signal?: AbortSignal): Promise<T> {
     const generation = await this.enter(signal);
     try {
-      const { process, home } = await abortable(generation.ready, signal);
+      const { process, home, execution } = await abortable(generation.ready, signal);
       const reader: DeepSeekReader = {
         call: (method, args, options = {}) => {
           if (!COLD_METHODS.has(method)) return Promise.reject(new Error(`DeepSeek history reads cannot call ${method}.`));
@@ -190,7 +193,7 @@ export class DeepSeekHost {
           return process.client.call(method, args, { ...options, ...(signals.length ? { signal: AbortSignal.any(signals) } : {}) });
         },
       };
-      return await abortable(operation(reader, home), signal);
+      return await abortable(operation(reader, home, execution), signal);
     } finally {
       this.leave(generation);
     }
@@ -248,7 +251,11 @@ export class DeepSeekHost {
     signal.addEventListener('abort', revoke, { once: true });
     try {
       signal.throwIfAborted();
-      const process = await this.spawn({ ...options, ...(route ? { sessionToolRoute: route } : {}) }, signal);
+      const sessionToolRelay = route && options.execution?.target.method === 'wsl'
+        ? await createWSLSessionToolRelay({ target: options.execution.target, hostCwd: options.cwd,
+          env: Object.fromEntries(Object.entries(options.environment).filter((entry): entry is [string, string] => entry[1] !== undefined)), route, mode: 'call' })
+        : undefined;
+      const process = await this.spawn({ ...options, sessionToolRelay, ...(route ? { sessionToolRoute: route } : {}) }, signal);
       try {
         signal.throwIfAborted();
         const activeRoster = new DeepSeekRoster(process.client, error => this.lose(self(), 'transport', error));
@@ -258,7 +265,7 @@ export class DeepSeekHost {
         await roster.start();
         // The plugin reports during native startup; a missing or partial report leaves sessions native.
         const ephemeral = await process.readEphemeralReady().catch(() => false);
-        return { process, roster, home: getDeepSeekHome(options.environment, options.cwd), ephemeral };
+        return { process, roster, home: options.execution?.home ?? getDeepSeekHome(options.environment, options.cwd), execution: options.execution, ephemeral };
       } catch (error) { roster?.dispose(); await process.dispose(); throw error; }
     } catch (error) {
       signal.removeEventListener('abort', revoke); revoke(); throw error;

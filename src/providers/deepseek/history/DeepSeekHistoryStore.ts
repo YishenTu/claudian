@@ -11,7 +11,7 @@ import { encodeDeepSeekCheckpoint } from '../types';
 import { materializeDeepSeekToolImages, readDeepSeekImages } from './DeepSeekImages';
 import { type DeepSeekRecord, readDeepSeekJournal, readDeepSeekProjection } from './DeepSeekJournal';
 
-export async function loadDeepSeekHistory(client: DeepSeekReader, sessionId: string, throughSeq: number): Promise<ChatMessage[]> {
+export async function loadDeepSeekHistory(client: DeepSeekReader, sessionId: string, throughSeq: number, hostPath: (path: string) => string = path => path): Promise<ChatMessage[]> {
   const records: DeepSeekRecord[] = [];
   for await (const page of readDeepSeekJournal(client, sessionId, throughSeq)) records.unshift(...page);
   const messages: ChatMessage[] = [];
@@ -44,7 +44,7 @@ export async function loadDeepSeekHistory(client: DeepSeekReader, sessionId: str
     if (record.type === 'turn/start') {
       assistant = undefined; automatic = true; turnStart = record.time; pendingNotices.length = 0;
       turnId = `deepseek:${sessionId}:turn:${typeof record.data.turn === 'number' ? record.data.turn : record.seq}`;
-      output = new DeepSeekOutput(event => applyOutput(ensureAssistant(current!), tools, event));
+      output = new DeepSeekOutput(event => applyOutput(ensureAssistant(current!), tools, event), hostPath);
       continue;
     }
     if (record.type === 'user/message') {
@@ -99,12 +99,12 @@ export async function loadDeepSeekHistory(client: DeepSeekReader, sessionId: str
       continue;
     }
     if (record.type.startsWith('assistant/') || record.type.startsWith('tool/') || record.type === 'compaction/end' || record.type === 'request/context') {
-      output ??= new DeepSeekOutput(event => applyOutput(ensureAssistant(current!), tools, event));
+      output ??= new DeepSeekOutput(event => applyOutput(ensureAssistant(current!), tools, event), hostPath);
       output.record(await materializeDeepSeekToolImages(client, sessionId, record));
     }
   }
   if (pendingNotices.length && records.length) ensureAssistant(records.at(-1)!);
-  await hydrateChildren(client, sessionId, records, messages);
+  await hydrateChildren(client, sessionId, records, messages, hostPath);
   return messages;
 }
 
@@ -136,9 +136,9 @@ function applyOutput(message: ChatMessage, tools: Map<string, ToolCallInfo>, eve
 }
 
 
-async function hydrateChildren(client: DeepSeekReader, root: string, records: DeepSeekRecord[], messages: ChatMessage[]): Promise<void> {
+async function hydrateChildren(client: DeepSeekReader, root: string, records: DeepSeekRecord[], messages: ChatMessage[], hostPath: (path: string) => string): Promise<void> {
   const snapshots = new Map<string, SubagentInfo>();
-  const tracker = new DeepSeekSubagents(info => snapshots.set(info.id, info));
+  const tracker = new DeepSeekSubagents(info => snapshots.set(info.id, info), hostPath);
   const queue = [{ id: root, records, depth: 0 }];
   const seen = new Set([root]);
   while (queue.length) {

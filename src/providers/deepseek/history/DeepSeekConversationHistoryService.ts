@@ -8,6 +8,7 @@ import type {
 
 import { encodeDeepSeekModelId } from '../models';
 import { type DeepSeekReader,DeepSeekRemoteError, isRecord } from '../remote/DeepSeekRemoteClient';
+import { type DeepSeekExecutionContext, toDeepSeekHostPath } from '../runtime/DeepSeekExecutionContext';
 import { isSameDeepSeekHome } from '../runtime/DeepSeekHome';
 import type { DeepSeekHost } from '../runtime/DeepSeekHost';
 import { decodeDeepSeekCheckpoint, decodeDeepSeekState } from '../types';
@@ -51,11 +52,11 @@ export class DeepSeekConversationHistoryService implements ProviderConversationH
     const id = this.resolveSessionIdForConversation(input);
     if (!id) return {};
     const state = decodeDeepSeekState(input.providerState);
-    return this.read(input, context, async client => {
+    return this.read(input, context, async (client, execution) => {
       const projection = await readDeepSeekProjection(client, id);
       const cut = state?.pendingFork?.atSeq ?? projection.asOfSeq;
       if (cut > projection.asOfSeq) throw new Error('DeepSeek fork checkpoint is not present in native history.');
-      const messages = await loadDeepSeekHistory(client, id, cut);
+      const messages = await loadDeepSeekHistory(client, id, cut, path => toDeepSeekHostPath(path, execution));
       return { messages };
     });
   }
@@ -71,12 +72,12 @@ export class DeepSeekConversationHistoryService implements ProviderConversationH
     return state ? { ...state } : undefined;
   }
 
-  private async read<T>(input: ProviderHistoryInput, context: ProviderHistoryPathContext | undefined, operation: (client: DeepSeekReader) => Promise<T>): Promise<T> {
+  private async read<T>(input: ProviderHistoryInput, context: ProviderHistoryPathContext | undefined, operation: (client: DeepSeekReader, execution?: DeepSeekExecutionContext) => Promise<T>): Promise<T> {
     const host = await this.resolveHost(context);
     const state = decodeDeepSeekState(input.providerState);
-    return host.read((reader, home) => {
-      if (state && !isSameDeepSeekHome(state.home, home)) throw new Error('DeepSeek history belongs to a different native store. Restore the original store binding before continuing.');
-      return operation(reader);
+    return host.read((reader, home, execution) => {
+      if (state && !isSameDeepSeekHome(state.home, home, execution?.target.platformOs === 'linux' ? 'linux' : undefined)) throw new Error('DeepSeek history belongs to a different native store. Restore the original store binding before continuing.');
+      return operation(reader, execution);
     });
   }
 }

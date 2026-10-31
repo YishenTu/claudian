@@ -99,3 +99,12 @@ it.each([['claudian', true], ['claudian-read-only', true], ['claudian-passive', 
   const ids = buildDeepSeekPresetPlugins(preset, paths).map(row => row.id);
   expect(ids.includes('skill-filesystem') && ids.includes('tool-skill')).toBe(mounted);
 });
+
+it('reserves the shell tool of the Linux target when validation runs on Windows', () => {
+  const platform = Object.getOwnPropertyDescriptor(process, 'platform')!;
+  Object.defineProperty(process, 'platform', { ...platform, value: 'win32' });
+  try {
+    expect(() => parseDeepSeekPresetPlugins('- id: tool-bash\n  name: custom-shell', 'linux')).toThrow(/already part/);
+    expect(() => parseDeepSeekPresetPlugins('- id: tool-pwsh\n  name: custom-shell', 'win32')).toThrow(/already part/);
+  } finally { Object.defineProperty(process, 'platform', platform); }
+});

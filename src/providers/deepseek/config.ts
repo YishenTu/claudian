@@ -1,11 +1,12 @@
 import { getInstallationKey } from '@/core/device/InstallationKey';
 import { decodeModelAliases } from '@/core/providers/models/modelAliases';
 import { normalizeHostnameStringMap } from '@/core/providers/settings/HostnameStringMap';
+import { decodeInstallationSettings, type InstallationSettings, selectInstallationSettings, type StoredInstallationSettings, updateInstallationSettings } from '@/core/providers/settings/InstallationSettings';
 import { readStoredBoolean, readStoredString } from '@/core/providers/settings/storedSettings';
 
 import { decodeDeepSeekModelId, type DeepSeekModel, normalizeDeepSeekModels } from './models';
 
-export interface DeepSeekProviderSettings {
+export interface DeepSeekProviderSettings extends StoredInstallationSettings, InstallationSettings {
   enabled: boolean;
   codeMode: boolean;
   /** Raw YAML list of additional chat preset rows, validated before it is saved. */
@@ -21,6 +22,7 @@ export interface DeepSeekProviderSettings {
 }
 
 export const DEFAULT_DEEPSEEK_PROVIDER_SETTINGS: Readonly<DeepSeekProviderSettings> = Object.freeze({
+  installationMethodsByHost: {}, wslDistroOverridesByHost: {}, installationMethod: 'native-windows', wslDistroOverride: '',
   enabled: false, codeMode: false, presetPlugins: '', cliPath: '', cliPathsByHost: {}, environmentVariables: '',
   environmentHash: '',
   discoveredModels: [], visibleModels: [], modelAliases: {}, preferredReasoningByModel: {},
@@ -31,6 +33,8 @@ export function decodeDeepSeekConfig(config: Readonly<Record<string, unknown>>):
     ? [...new Set(config.visibleModels.filter((value): value is string => typeof value === 'string' && !!decodeDeepSeekModelId(value)))]
     : [];
   return {
+    ...decodeInstallationSettings(config),
+    ...selectInstallationSettings(decodeInstallationSettings(config), getInstallationKey()),
     enabled: readStoredBoolean(config.enabled, false),
     codeMode: readStoredBoolean(config.codeMode, false),
     presetPlugins: readStoredString(config.presetPlugins, ''),
@@ -50,7 +54,7 @@ export function updateDeepSeekConfig(
   config: Record<string, unknown>, updates: Partial<DeepSeekProviderSettings>,
 ): DeepSeekProviderSettings {
   const current = decodeDeepSeekConfig(config);
-  const next = { ...current, ...updates };
+  const next = { ...current, ...updates, ...updateInstallationSettings(current, updates, getInstallationKey()) };
   if ('cliPath' in updates && !('cliPathsByHost' in updates)) {
     next.cliPathsByHost = { ...current.cliPathsByHost };
     const key = getInstallationKey();
@@ -62,6 +66,8 @@ export function updateDeepSeekConfig(
   Object.assign(config, next);
   const normalized = decodeDeepSeekConfig(config);
   Object.assign(config, normalized);
+  delete config.installationMethod;
+  delete config.wslDistroOverride;
   return normalized;
 }
 

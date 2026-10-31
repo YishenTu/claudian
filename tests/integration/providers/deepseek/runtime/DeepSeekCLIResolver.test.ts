@@ -51,6 +51,26 @@ describe('DeepSeek installation selection', () => {
     rmSync(root, { recursive: true, force: true });
   });
 
+  it('selects Linux dsh without treating Windows Desktop, npm shims or host PATH as a WSL installation', () => {
+    Object.defineProperty(process, 'platform', { ...platform, value: 'win32' });
+    // Native Windows runs discover these PATH shims; WSL resolution must keep the bare Linux command instead.
+    for (const name of ['dsh', 'dsh.cmd', 'dsh.exe']) writeFileSync(join(root, name), '');
+    const key = getInstallationKey();
+    const config = { providerConfigs: { deepseek: { installationMethodsByHost: { [key]: 'wsl' },
+      cliPath: '', cliPathsByHost: { [key]: 'C:\\Users\\me\\AppData\\Local\\Programs\\DeepSeek Harness' } } } };
+    expect(resolver.resolveFromSettings(config)).toBe('dsh');
+    config.providerConfigs.deepseek.cliPathsByHost[key] = 'C:\\Users\\me\\AppData\\Roaming\\npm\\dsh.cmd';
+    config.providerConfigs.deepseek.cliPath = ' "/opt/DeepSeek Linux/bin/dsh" ';
+    expect(resolver.resolveFromSettings(config)).toBe('/opt/DeepSeek Linux/bin/dsh');
+    config.providerConfigs.deepseek.cliPathsByHost[key] = '/home/me/.npm-global/bin/dsh';
+    expect(resolver.resolveFromSettings(config)).toBe('/home/me/.npm-global/bin/dsh');
+  });
+
+  it.skipIf(windows)('keeps host discovery for a WSL selection stored on a non-Windows host', () => {
+    const config = { providerConfigs: { deepseek: { installationMethodsByHost: { [getInstallationKey()]: 'wsl' }, cliPathsByHost: {} } } };
+    expect(resolver.resolveFromSettings(config)).toBe(cli);
+  });
+
   it('discovers Desktop without a registered dsh command and notices removal and reinstall', () => {
     expect(resolver.resolveFromSettings(settings())).toBe(cli);
     rmSync(app, { recursive: true });

@@ -19,7 +19,7 @@ export class DeepSeekSubagents {
   private readonly children = new Map<string, Child>();
   private readonly parents = new Map<string, string>();
 
-  constructor(private readonly publish: (info: SubagentInfo) => void) {}
+  constructor(private readonly publish: (info: SubagentInfo) => void, private readonly hostPath: (path: string) => string = path => path) {}
 
   clear(): void { this.calls.clear(); this.children.clear(); this.parents.clear(); }
 
@@ -61,7 +61,7 @@ export class DeepSeekSubagents {
       if (event.surfaceOp !== undefined && event.surfaceOp !== 'append') continue;
       if (event.type === 'turn/start') {
         child.info = { ...child.info, status: 'running', result: '', toolCalls: [], startedAt: typeof event.time === 'number' ? event.time : undefined, completedAt: undefined };
-        child.output = new DeepSeekOutput(output => this.output(id, child, output));
+        child.output = new DeepSeekOutput(output => this.output(id, child, output), this.hostPath);
       } else if (event.type === 'turn/end') {
         const reason = isRecord(event.data.reason) ? event.data.reason.kind : undefined;
         child.info = { ...child.info, status: reason === 'completed' ? 'completed' : 'error', completedAt: typeof event.time === 'number' ? event.time : undefined };

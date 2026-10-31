@@ -774,7 +774,8 @@
     },
     "deepseek": {
       "installation": {
-        "desc": "自動模式優先使用 dsh，其次偵測 macOS 或 Windows 上的 Desktop。兩者都已安裝時，輸入 Desktop 的 .app 路徑或 Windows 安裝資料夾即可選擇它。請先開啟 Desktop 完成初始設定。"
+        "desc": "自動模式優先使用 dsh，其次偵測 macOS 或 Windows 上的 Desktop。兩者都已安裝時，輸入 Desktop 的 .app 路徑或 Windows 安裝資料夾即可選擇它。請先開啟 Desktop 完成初始設定。",
+        "wslDesc": "WSL 需要在所選發行版中安裝 Linux Node.js 和 npm dsh，並設定其原生 Web 設定檔。DeepSeek Harness Desktop 無法作為 WSL 安裝使用。請在該發行版中安裝 @deepseek-ai/dsh，或選擇「原生 Windows」以使用 Desktop。"
       },
       "preset": "預設集",
       "codeMode": {

@@ -29,6 +29,7 @@ import { decodeDeepSeekModelId } from '../models';
 import { DeepSeekOutput, type DeepSeekOutputEvent, DeepSeekReplayError, deepseekText, type DeepSeekToolCall, deepseekToolName } from '../normalization/DeepSeekOutput';
 import { DeepSeekSubagents } from '../normalization/DeepSeekSubagents';
 import { DeepSeekRemoteError, isRecord } from '../remote/DeepSeekRemoteClient';
+import { toDeepSeekHostPath } from '../runtime/DeepSeekExecutionContext';
 import { isSameDeepSeekHome } from '../runtime/DeepSeekHome';
 import type { DeepSeekHost, DeepSeekHostLease } from '../runtime/DeepSeekHost';
 import { assertDeepSeekModelAvailable } from '../runtime/DeepSeekModels';
@@ -129,7 +130,7 @@ export class DeepSeekExecutionSession implements ProviderExecutionSession {
   private readonly inboxPlaces = new Map<string, { readonly target: unknown; index: number }>();
   /** Native generation holding this session's in-memory identity; unset for sessions native stores. */
   private ephemeralGeneration?: number;
-  private readonly subagents = new DeepSeekSubagents(subagent => this.snapshots.emit({ type: 'subagent_updated', subagent }));
+  private readonly subagents = new DeepSeekSubagents(subagent => this.snapshots.emit({ type: 'subagent_updated', subagent }), path => toDeepSeekHostPath(path, this.lease?.execution));
 
   constructor(
     private readonly host: ProviderRuntimeHost,
@@ -347,7 +348,7 @@ export class DeepSeekExecutionSession implements ProviderExecutionSession {
     try {
       this.assertRequest(requested);
       const saved = this.binding ?? decodeDeepSeekState(this.config.resumeSeed?.providerState);
-      if (saved && !isSameDeepSeekHome(saved.home, lease.home)) throw new AdmissionError('DeepSeek native history belongs to a different store. Restore its native store or select the original DeepSeek environment before continuing.');
+      if (saved && !isSameDeepSeekHome(saved.home, lease.home, lease.execution?.target.platformOs === 'linux' ? 'linux' : undefined)) throw new AdmissionError('DeepSeek native history belongs to a different store. Restore its native store or select the original DeepSeek environment before continuing.');
       this.binding = saved ?? { schemaVersion: 1, home: lease.home, profile: lease.profile, preset: policy ?? 'claudian' };
       if (this.ephemeralGeneration !== undefined && this.ephemeralGeneration !== lease.generation) throw new AdmissionError(EPHEMERAL_ENDED);
       // The Host retires a lost process, which ends all of its native work; a retained binding has nothing left to stop.
@@ -434,7 +435,7 @@ export class DeepSeekExecutionSession implements ProviderExecutionSession {
     const listed = await lease.client.call('session/list', { _request: {} }, { signal });
     if (!isRecord(listed) || !Array.isArray(listed.items)) throw new Error('Malformed DeepSeek session roster.');
     const cwd = listed.items.filter(isRecord).find(item => item.sessionId === sessionId)?.cwd;
-    if (cwd !== this.config.workingDirectory) {
+    if (cwd !== (lease.execution?.targetCwd ?? this.config.workingDirectory)) {
       throw new AdmissionError(`This DeepSeek conversation belongs to ${typeof cwd === 'string' ? `another directory (${cwd})` : 'an unknown directory'}. Open it from that vault, or start a new conversation.`);
     }
   }
@@ -442,7 +443,7 @@ export class DeepSeekExecutionSession implements ProviderExecutionSession {
   /** Creates or resumes the native session; a reloaded Claudian may still be releasing its writer. */
   private async createNative(lease: DeepSeekHostLease, signal: AbortSignal, ephemeralId?: string): Promise<string> {
     const resumed = this.nativeId;
-    const request = { cwd: this.config.workingDirectory, agentPreset: this.binding!.preset, ...(ephemeralId ? { sessionId: ephemeralId } : {}) };
+    const request = { cwd: lease.execution?.targetCwd ?? this.config.workingDirectory, agentPreset: this.binding!.preset, ...(ephemeralId ? { sessionId: ephemeralId } : {}) };
     const deadline = Date.now() + WRITER_HANDOFF_MS;
     for (let delay = 100; ; delay = Math.min(delay * 2, 1_000)) {
       try {
@@ -548,7 +549,7 @@ export class DeepSeekExecutionSession implements ProviderExecutionSession {
       if (this.turn) throw new Error('DeepSeek opened overlapping native turns.');
       if (typeof data.turn !== 'number') throw new Error('Missing DeepSeek turn identity.');
       const turn: Turn = { native: data.turn, id: randomUUID(), startedAt: typeof event.time === 'number' ? event.time : Date.now(),
-        buffered: [], sequence: 0, output: new DeepSeekOutput(value => this.output(turn, value)),
+        buffered: [], sequence: 0, output: new DeepSeekOutput(value => this.output(turn, value), path => toDeepSeekHostPath(path, this.lease?.execution)),
       };
       this.turn = turn;
       return;

@@ -1,6 +1,9 @@
 import { homedir } from 'node:os';
 import { posix, win32 } from 'node:path';
 
+import { inferWSLDistroFromWindowsPath } from '@/core/process/execution-target/ExecutionTargetResolver';
+import { createExecutionPathMapper } from '@/core/process/execution-target/WSLPathMapper';
+
 /**
  * The native store native resolves in a child with this environment (rc.2 `resolveDshHome`): a non-blank DSH_HOME with a
  * leading `~` expanded, else `.dsh` under the child's os.homedir(), which reads USERPROFILE on Windows and HOME elsewhere.
@@ -17,6 +20,13 @@ export function getDeepSeekHome(environment: NodeJS.ProcessEnv, cwd: string, pla
 
 /** Whether two resolved homes name one native store; Windows paths are case-insensitive. */
 export function isSameDeepSeekHome(left: string, right: string, platform: NodeJS.Platform = process.platform): boolean {
+  const leftDistro = inferWSLDistroFromWindowsPath(left);
+  const rightDistro = inferWSLDistroFromWindowsPath(right);
+  if (leftDistro || rightDistro) {
+    if (!leftDistro || !rightDistro || leftDistro.toLowerCase() !== rightDistro.toLowerCase()) return false;
+    const mapper = createExecutionPathMapper({ method: 'wsl', distroName: leftDistro, platformFamily: 'unix', platformOs: 'linux' });
+    return mapper.toTargetPath(left) === mapper.toTargetPath(right);
+  }
   if (platform !== 'win32') return left === right;
   return win32.resolve(left).toLowerCase() === win32.resolve(right).toLowerCase();
 }

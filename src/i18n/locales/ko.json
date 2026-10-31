@@ -774,7 +774,8 @@
     },
     "deepseek": {
       "installation": {
-        "desc": "자동 감지는 dsh를 우선하고 다음으로 macOS 또는 Windows의 Desktop을 찾습니다. 둘 다 설치된 경우 Desktop의 .app 경로 또는 Windows 설치 폴더를 입력하면 선택할 수 있습니다. 먼저 Desktop을 열어 초기 설정을 완료하세요."
+        "desc": "자동 감지는 dsh를 우선하고 다음으로 macOS 또는 Windows의 Desktop을 찾습니다. 둘 다 설치된 경우 Desktop의 .app 경로 또는 Windows 설치 폴더를 입력하면 선택할 수 있습니다. 먼저 Desktop을 열어 초기 설정을 완료하세요.",
+        "wslDesc": "WSL을 사용하려면 선택한 배포판에 Linux Node.js와 npm dsh를 설치하고 기본 Web 프로필을 설정해야 합니다. DeepSeek Harness Desktop은 WSL 설치로 사용할 수 없습니다. 배포판에 @deepseek-ai/dsh를 설치하거나 Desktop을 사용하려면 네이티브 Windows를 선택하세요."
       },
       "preset": "프리셋",
       "codeMode": {

@@ -97,6 +97,19 @@ describe.skipIf(path.sep === '\\')('WindowsHostFS on a POSIX host', () => {
     expect(host.local(String.raw`C:\Vault\note.md`)).toBe(local);
   });
 
+  it('creates temporary directories at Windows host paths and renames between two mapped paths', async () => {
+    const host = createWindowsHostFS(modules);
+    await fsPromises.mkdir(String.raw`C:\Temp`, { recursive: true });
+    await fsPromises.mkdir(String.raw`\\wsl$\Ubuntu\tmp`, { recursive: true });
+    const drive = await fsPromises.mkdtemp(String.raw`c:\temp\job-`);
+    expect(drive).toMatch(/^C:\\Temp\\job-[^\\]+$/u);
+    expect(await fsPromises.mkdtemp('//wsl.localhost/ubuntu/tmp/job-')).toMatch(/^\\\\wsl\$\\Ubuntu\\tmp\\job-[^\\]+$/u);
+    await fsPromises.writeFile(path.win32.join(drive, 'state.tmp'), 'next');
+    await fsPromises.rename(path.win32.join(drive, 'state.tmp'), path.win32.join(drive, 'state.json'));
+    expect(await host.read(path.win32.join(drive, 'state.json'))).toBe('next');
+    expect(fs.existsSync(path.win32.join(drive, 'state.tmp'))).toBe(false);
+  });
+
   it('throws when production reaches an unredirected fs function with a Windows path', async () => {
     const native = await fsPromises.mkdtemp(path.join(tmpdir(), 'claudian-windows-native-'));
     onTestFinished(() => fsPromises.rm(native, { recursive: true, force: true }));

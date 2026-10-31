@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { isAbsolute, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
+import type { ExecutionPathMapper } from '@/core/process/execution-target/types';
 import type { SessionToolRoute } from '@/core/session-tools/SessionToolEndpoint';
 
 import { DEEPSEEK_PRESETS } from '../types';
@@ -35,6 +36,7 @@ export interface DeepSeekLaunchArtifacts {
 export async function prepareDeepSeekLaunchArtifacts(
   directory = tmpdir(), presetPlugins: readonly DeepSeekPresetPlugin[] = [],
   sessionToolRoute?: Pick<SessionToolRoute, 'url' | 'routeId'>,
+  pathMapper?: ExecutionPathMapper,
 ): Promise<DeepSeekLaunchArtifacts> {
   const root = await mkdtemp(join(directory, 'claudian-deepseek-'));
   const compatibilityPath = join(root, 'claudian-compatibility.mjs');
@@ -94,8 +96,15 @@ export async function prepareDeepSeekLaunchArtifacts(
         && ready.spillGuard === true && ready.attachmentGuard === true;
     } catch { return false; }
   };
-  const paths = { sessions: sessionsPath, sessionToolsFile, compatibility: compatibilityPath, codeModeFile: codeModePath, promptDirectory };
+  const targetPath = (path: string): string => {
+    if (!pathMapper || pathMapper.target.method !== 'wsl') return path;
+    const mapped = pathMapper.toTargetPath(path);
+    if (!mapped) throw new Error('DeepSeek launch files must be accessible inside the selected WSL distro.');
+    return mapped;
+  };
+  const platform = pathMapper?.target.platformOs === 'linux' ? 'linux' : process.platform;
   try {
+    const paths = { sessions: targetPath(sessionsPath), sessionToolsFile: targetPath(sessionToolsFile), compatibility: targetPath(compatibilityPath), codeModeFile: targetPath(codeModePath), promptDirectory: targetPath(promptDirectory) };
     await mkdir(promptDirectory, { mode: 0o700 });
     const patch = [
       { id: 'config-editor', disabled: true },
@@ -103,13 +112,13 @@ export async function prepareDeepSeekLaunchArtifacts(
       { id: 'hmr', disabled: true },
       { id: 'session-title-llm', disabled: true },
       { insert: [
-        { id: 'claudian-lifecycle', name: lifecyclePath },
+        { id: 'claudian-lifecycle', name: targetPath(lifecyclePath) },
         ...DEEPSEEK_PRESETS.map(preset => ({
           id: `preset-${preset}`, name: '@deepseek-ai/dsh-agent-preset',
-          config: { id: preset, name: 'Claudian', plugins: buildDeepSeekPresetPlugins(preset, paths, presetPlugins).map(anchorModuleName) },
+          config: { id: preset, name: 'Claudian', plugins: buildDeepSeekPresetPlugins(preset, paths, presetPlugins, platform).map(row => anchorModuleName(row, platform)) },
         })),
       ] },
-      { insert: [{ id: 'claudian-ephemeral', name: ephemeralPath, config: { stateFile: ephemeralStatePath, readyFile: ephemeralReadyPath, spillRoot: ephemeralSpillPath, attachmentRoot: ephemeralAttachmentPath } }] },
+      { insert: [{ id: 'claudian-ephemeral', name: targetPath(ephemeralPath), config: { stateFile: targetPath(ephemeralStatePath), readyFile: targetPath(ephemeralReadyPath), spillRoot: targetPath(ephemeralSpillPath), attachmentRoot: targetPath(ephemeralAttachmentPath) } }] },
     ];
     await Promise.all([
       replace(sessionsPath, DEEPSEEK_SESSIONS_SOURCE),
@@ -138,9 +147,9 @@ function deepseekPromptFileName(sessionId: string): string {
  * Native converts absolute `insert` row names (and their group children) to file URLs, but imports names nested in a
  * preset's `plugins` literally, where a Windows drive letter reads as a URL scheme and `#` as a fragment.
  */
-function anchorModuleName<Row extends { readonly name?: unknown; readonly group?: unknown; readonly config?: unknown }>(row: Row): Row {
-  const name = typeof row.name === 'string' && isAbsolute(row.name) ? pathToFileURL(row.name).href : row.name;
-  return { ...row, name, ...(row.group && Array.isArray(row.config) ? { config: row.config.map(anchorModuleName) } : {}) };
+function anchorModuleName<Row extends { readonly name?: unknown; readonly group?: unknown; readonly config?: unknown }>(row: Row, platform: NodeJS.Platform): Row {
+  const name = typeof row.name === 'string' && (platform === 'linux' ? row.name.startsWith('/') : isAbsolute(row.name)) ? pathToFileURL(row.name, { windows: platform === 'win32' }).href : row.name;
+  return { ...row, name, ...(row.group && Array.isArray(row.config) ? { config: row.config.map(child => anchorModuleName(child as Record<string, unknown>, platform)) } : {}) };
 }
 
 // Windows refuses a replacement or removal while a reader, scanner or exiting Host briefly holds a file.

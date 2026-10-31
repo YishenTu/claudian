@@ -71,6 +71,7 @@ export function apply(ctx, config) {
 
 /** Registers only Claudian's session tools; the Host owns routing and the execution session owns policy/lifetime. */
 export const DEEPSEEK_SESSIONS_SOURCE = String.raw`
+import { spawn } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
 
 export const name = 'claudian-sessions';
@@ -102,12 +103,22 @@ export async function apply(ctx, config) {
         // Read on every call: an endpoint replacement never restarts the shared native Host.
         const route = JSON.parse(await readFile(config.endpointFile, 'utf8'));
         if (typeof route.url !== 'string' || typeof route.routeId !== 'string') throw new Error('Claudian session tools are unavailable.');
-        const response = await fetch(route.url, {
-          method: 'POST', headers: { 'Content-Type': 'application/json', [config.routeHeader]: route.routeId },
-          body: JSON.stringify({ tool: spec.name, args, callerNativeId }), signal: exec.signal,
-        });
-        if (!response.ok) throw new Error('Claudian session tool endpoint returned HTTP ' + response.status);
-        const result = await response.json();
+        const body = { tool: spec.name, args, callerNativeId };
+        let result;
+        if (process.env.CLAUDIAN_DEEPSEEK_SESSION_RELAY) {
+          const descriptor = JSON.parse(process.env.CLAUDIAN_DEEPSEEK_SESSION_RELAY);
+          // The endpoint file remains authoritative, including after an atomic route replacement.
+          result = await callRelay({ ...descriptor, env: { ...descriptor.env,
+            CLAUDIAN_SESSION_TOOL_URL: route.url, CLAUDIAN_SESSION_TOOL_ROUTE: route.routeId,
+          } }, body, exec.signal);
+        } else {
+          const response = await fetch(route.url, {
+            method: 'POST', headers: { 'Content-Type': 'application/json', [config.routeHeader]: route.routeId },
+            body: JSON.stringify(body), signal: exec.signal,
+          });
+          if (!response.ok) throw new Error('Claudian session tool endpoint returned HTTP ' + response.status);
+          result = await response.json();
+        }
         if (typeof result?.text !== 'string' || typeof result?.isError !== 'boolean') throw new Error('Invalid Claudian session tool result.');
         if (result.isError) throw new Error(result.text);
         return result;
@@ -115,6 +126,41 @@ export async function apply(ctx, config) {
     }));
   }
 }
+
+function callRelay(descriptor, body, signal) {
+  return new Promise((resolve, reject) => {
+    signal.throwIfAborted();
+    const child = spawn(descriptor.command, descriptor.args, {
+      env: { ...process.env, ...descriptor.env }, stdio: ['pipe', 'pipe', 'ignore'],
+    });
+    let settled = false;
+    let output = '';
+    const finish = (error, result) => {
+      if (settled) return;
+      settled = true;
+      signal.removeEventListener('abort', abort);
+      // EOF cancels the relay's pending HTTP call. Keep stdin open until response, abort or exit.
+      child.stdin.end();
+      if (error) reject(error); else resolve(result);
+    };
+    const abort = () => finish(new Error('Claudian session tool cancelled.'));
+    child.on('error', () => finish(new Error('Could not start the WSL session tool relay. Check Windows PowerShell interop.')));
+    child.stdin.on('error', () => finish(new Error('WSL session tool relay input closed.')));
+    child.on('close', () => finish(new Error('WSL session tool relay exited without a response.')));
+    child.stdout.setEncoding('utf8');
+    child.stdout.on('data', chunk => {
+      output += chunk;
+      const newline = output.indexOf('\n');
+      if (newline < 0) return;
+      try { finish(undefined, JSON.parse(output.slice(0, newline))); }
+      catch { finish(new Error('Invalid WSL session tool relay response.')); }
+    });
+    signal.addEventListener('abort', abort, { once: true });
+    if (signal.aborted) abort();
+    else child.stdin.write(JSON.stringify(body) + '\n');
+  });
+}
+
 `;
 
 /**

@@ -14,6 +14,7 @@ import { testDate } from '@test/helpers/testClock';
 import type { Mock } from 'vitest';
 
 import { isSteerableExecutionSession, type ProviderExecutionEvent, type ProviderExecutionRequest, type ProviderExecutionSession, type ProviderInteractionPort, type ProviderSessionConfig, type ProviderSessionEvent } from '@/core/execution';
+import { createExecutionPathMapper } from '@/core/process/execution-target/WSLPathMapper';
 import { getProviderConfig, setProviderConfig } from '@/core/providers/providerConfig';
 import type { ProviderHost } from '@/core/providers/ProviderHost';
 import type { ImageAttachment } from '@/core/types';
@@ -1881,4 +1882,79 @@ it('fails the session recoverably when background Stop does not settle before it
   } finally { vi.useRealTimers(); }
   expect(peer.calls.filter(c => c.method === 'job/kill').length).toBeGreaterThanOrEqual(1);
   expect(lifecycle.disposed).toBe(0);
+});
+
+/** Replaces the shared Host with one whose generation resolved a WSL execution context for `C:\Vault`. */
+async function useWSLHost(targetHome = '/home/alice/.dsh') {
+  await deepseek.dispose();
+  const target = { method: 'wsl' as const, distroName: 'Ubuntu', platformFamily: 'unix' as const, platformOs: 'linux' as const };
+  const pathMapper = createExecutionPathMapper(target);
+  const home = pathMapper.toHostPath(targetHome)!;
+  ({ deepseek, lifecycle } = peer.host({ execution: { target, pathMapper, targetCwd: '/mnt/c/Vault', targetHome, home, forwardEnvironment: [] } }));
+  return { pathMapper };
+}
+
+it('creates and resumes against the Linux cwd while keeping Linux store comparisons case-sensitive', async () => {
+  const { pathMapper } = await useWSLHost();
+  const nativeCall = peer.onCall;
+  peer.onCall = (method, args) => method === 'session/list'
+    ? { items: [{ sessionId: 'root', agentAvailable: true, running: false, cwd: '/mnt/c/Vault' }] }
+    : nativeCall(method, args);
+  create();
+  await completeRequest();
+  expect(nativeRequest(peer.calls.find(call => call.method === 'session/create')!.args).cwd).toBe('/mnt/c/Vault');
+  const saved = session.getSnapshot().providerState;
+  await session.dispose();
+  create({ providerSessionId: 'root', providerState: saved });
+  await completeRequest('resume');
+  expect(peer.calls.filter(call => call.method === 'session/create')).toHaveLength(1);
+  expect(lifecycle.starts).toBe(1);
+  await session.dispose();
+  create({ providerSessionId: 'root', providerState: { ...saved, home: pathMapper.toHostPath('/home/Alice/.dsh')! } });
+  const failure: ProviderExecutionEvent[] = [];
+  await collect(session.execute(request()).events, failure);
+  expect(failure).toContainEqual(expect.objectContaining({ type: 'execution_error', message: expect.stringMatching(/different store/) }));
+});
+
+it('refuses a case-variant drive-mounted Linux store on Windows, where native stores would compare case-insensitively', async () => {
+  await useWSLHost('/mnt/c/DeepSeek');
+  const platform = Object.getOwnPropertyDescriptor(process, 'platform')!;
+  Object.defineProperty(process, 'platform', { ...platform, value: 'win32' });
+  try {
+    create({ providerSessionId: 'root', providerState: savedState({ home: 'C:\\deepseek' }) });
+    const failure: ProviderExecutionEvent[] = [];
+    await collect(session.execute(request()).events, failure);
+    expect(failure).toContainEqual(expect.objectContaining({ type: 'execution_error', message: expect.stringMatching(/different store/) }));
+    expect(peer.calls.some(call => call.method === 'session/prompt')).toBe(false);
+  } finally { Object.defineProperty(process, 'platform', platform); }
+});
+
+it('projects live Linux tool paths and subagent tool paths to host paths before chat consumers see them', async () => {
+  await useWSLHost();
+  let childFollow: ((value: unknown) => void) | undefined;
+  const ordinaryOpen = peer.onOpen;
+  peer.onOpen = (endpoint, args, send) => {
+    if (endpoint === 'session/follow' && nativeRequest(args).address?.childSessionId === 'child') { childFollow = send; return; }
+    ordinaryOpen(endpoint, args, send);
+  };
+  create();
+  await completeRequest();
+  const run = session.execute(request('edit')); const events: ProviderExecutionEvent[] = [];
+  const done = collect(run.events, events);
+  await until(() => peer.calls.some(c => c.method === 'session/prompt' && nativeRequest(c.args).requestId === run.executionId));
+  begin(run.executionId);
+  event('tool/call', { callId: 'edit', name: 'edit', arguments: { path: 'notes/a.md' } });
+  event('tool/call', { callId: 'spawn', name: 'subagent', arguments: { description: 'Review', prompt: 'check notes' } });
+  event('tool/result', { message: { toolCallId: 'spawn', content: [{ type: 'text', text: 'started subagent child' }] } });
+  answer('edited'); await done;
+  expect(events.find(e => e.type === 'tool_started')).toMatchObject({ input: { file_path: 'C:\\Vault\\notes\\a.md' } });
+  announceChild('continuable', true);
+  await until(() => !!childFollow);
+  childFollow!({ type: 'snapshot', cursor: 0, records: [
+    { type: 'event', event: { type: 'turn/start', seq: 0, time, data: { turn: 0 } } },
+    { type: 'event', event: { type: 'tool/call', seq: 1, time, data: { callId: 'read', name: 'read', arguments: { path: '/home/alice/notes.md' } } } },
+  ] });
+  await until(() => sessionEvents.some(e => e.type === 'subagent_updated' && e.subagent.toolCalls.length > 0));
+  const updates = sessionEvents.flatMap(e => e.type === 'subagent_updated' ? e.subagent.toolCalls : []);
+  expect(updates.at(-1)).toMatchObject({ input: { file_path: '\\\\wsl$\\Ubuntu\\home\\alice\\notes.md' } });
 });

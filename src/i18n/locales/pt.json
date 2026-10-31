@@ -774,7 +774,8 @@
     },
     "deepseek": {
       "installation": {
-        "desc": "A detecção automática prioriza dsh e depois procura Desktop no macOS ou no Windows. Se ambos estiverem instalados, informe o caminho .app do Desktop ou a pasta de instalação no Windows para selecioná-lo. Abra o Desktop primeiro para concluir a configuração."
+        "desc": "A detecção automática prioriza dsh e depois procura Desktop no macOS ou no Windows. Se ambos estiverem instalados, informe o caminho .app do Desktop ou a pasta de instalação no Windows para selecioná-lo. Abra o Desktop primeiro para concluir a configuração.",
+        "wslDesc": "O WSL requer Node.js para Linux e npm dsh na distribuição selecionada, com o perfil Web nativo configurado. O DeepSeek Harness Desktop não serve como instalação do WSL. Instale @deepseek-ai/dsh na distribuição ou selecione Windows nativo para usar o Desktop."
       },
       "preset": "Preset",
       "codeMode": {

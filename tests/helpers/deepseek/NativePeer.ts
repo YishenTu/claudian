@@ -5,10 +5,13 @@ import type { AddressInfo } from 'node:net';
 import { WebSocket, WebSocketServer } from 'ws';
 
 import { DeepSeekRemoteClient } from '@/providers/deepseek/remote/DeepSeekRemoteClient';
-import { DeepSeekHost } from '@/providers/deepseek/runtime/DeepSeekHost';
+import type { DeepSeekExecutionContext } from '@/providers/deepseek/runtime/DeepSeekExecutionContext';
+import { DeepSeekHost, type DeepSeekProcessFactory } from '@/providers/deepseek/runtime/DeepSeekHost';
+import type { DeepSeekLaunchOptions } from '@/providers/deepseek/runtime/DeepSeekHostProcess';
 import type { DeepSeekLaunchArtifacts } from '@/providers/deepseek/runtime/DeepSeekLaunchArtifacts';
 
 export interface NativePeerHostOptions {
+  readonly execution?: DeepSeekExecutionContext;
   readonly profile?: 'web' | 'desktop';
   readonly idleMs?: number;
   /** Runs before each process start; reject to simulate a failed launch. */
@@ -26,6 +29,8 @@ export interface NativePeerHostOptions {
 export interface NativePeerLifecycle {
   starts: number;
   disposed: number;
+  /** Launch options the production Host resolved for each start. */
+  readonly launches: DeepSeekLaunchOptions[];
   /** Prompt writes and removals (`text: null`) per native session. */
   readonly prompts: Array<{ sessionId: string; text: string | null }>;
   /** Code-mode preferences written to the Host, with how many prompts native had received at that point. */
@@ -122,10 +127,18 @@ export class NativePeer {
 
   /** A production shared Host whose process is this peer, recording only process lifecycle, launch files and fork tokens. */
   host(options: NativePeerHostOptions = {}): { deepseek: DeepSeekHost; lifecycle: NativePeerLifecycle } {
+    const { start, lifecycle } = this.process(options);
+    const deepseek = new DeepSeekHost(async () => ({ cliPath: '/bin/dsh', cwd: '/vault', environment: process.env, execution: options.execution }), start, options.idleMs);
+    return { deepseek, lifecycle };
+  }
+
+  /** The native process port over this peer, for a production Host the test does not construct; records launch options. */
+  process(options: Omit<NativePeerHostOptions, 'execution' | 'idleMs'> = {}): { start: DeepSeekProcessFactory; lifecycle: NativePeerLifecycle } {
     const exits = new Set<() => void>();
-    const lifecycle: NativePeerLifecycle = { starts: 0, disposed: 0, prompts: [], codeModes: [], ephemeralForks: [], exit: () => { for (const listener of [...exits]) listener(); } };
-    const deepseek = new DeepSeekHost(async () => ({ cliPath: '/bin/dsh', cwd: '/vault', environment: process.env }), async (_options, signal) => {
+    const lifecycle: NativePeerLifecycle = { starts: 0, disposed: 0, launches: [], prompts: [], codeModes: [], ephemeralForks: [], exit: () => { for (const listener of [...exits]) listener(); } };
+    const start: DeepSeekProcessFactory = async (launch, signal) => {
       lifecycle.starts++;
+      lifecycle.launches.push(launch);
       await options.beforeStart?.(signal);
       const client = await this.connect();
       return {
@@ -146,8 +159,8 @@ export class NativePeer {
         },
         dispose: async () => { exits.clear(); client.dispose(); lifecycle.disposed++; await options.onDispose?.(); },
       };
-    }, options.idleMs);
-    return { deepseek, lifecycle };
+    };
+    return { start, lifecycle };
   }
 
   /** Base launch URL a native process would print, with the fixture login token. */
@@ -174,7 +187,8 @@ export class NativePeer {
   async close(): Promise<void> {
     this.client?.dispose();
     for (const socket of this.sockets.clients) socket.terminate();
-    this.sockets.close(); this.server.closeAllConnections();
-    await new Promise<void>(resolve => this.server.close(() => resolve()));
+    const socketsClosed = new Promise<void>(resolve => this.sockets.close(() => resolve()));
+    this.server.closeAllConnections();
+    await Promise.all([socketsClosed, new Promise<void>(resolve => this.server.close(() => resolve()))]);
   }
 }
