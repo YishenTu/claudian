@@ -4,7 +4,7 @@ import { getToolIcon } from '@/core/tools/toolIcons';
 import { TOOL_SUBAGENT } from '@/core/tools/toolNames';
 import type { SubagentInfo, SubagentProgress, ToolCallInfo } from '@/core/types';
 import { setupCollapsible } from '@/features/chat/rendering/collapsible';
-import { setToolIcon } from '@/features/chat/rendering/tools/toolContentPrimitives';
+import { setToolIcon, truncateText } from '@/features/chat/rendering/tools/toolContentPrimitives';
 import {
   getToolLabel,
   getToolName,
@@ -49,8 +49,7 @@ export interface SubagentState {
 }
 
 function truncateDescription(description: string, maxLength = 40): string {
-  if (description.length <= maxLength) return description;
-  return description.substring(0, maxLength) + '...';
+  return truncateText(description, maxLength);
 }
 
 function createSection(parentEl: HTMLElement, title: string, bodyClass?: string): SubagentSection {
