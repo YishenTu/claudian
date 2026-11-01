@@ -356,6 +356,7 @@ export class InlineEditSession {
   private modelOverride: string | undefined;
   private reasoningOverride: string | undefined;
   private mentionDataProvider: VaultMentionDataProvider;
+  private releaseMentionCacheEvents: (() => void) | null = null;
   private agentReplyRenderVersion = 0;
   private readonly previewScopes = new Map<HTMLElement, MarkdownRenderScope>();
   /** The document the edit was computed against; CodeMirror documents are immutable. */
@@ -423,6 +424,7 @@ export class InlineEditSession {
   }
 
   show() {
+    this.releaseMentionCacheEvents ??= this.mentionDataProvider.register(this.app.vault);
     this.releaseEditorLifetime = onInlineEditEditorDestroyed(this.editorView, () => {
       this.editorDestroyed = true;
       this.close();
@@ -1113,6 +1115,8 @@ export class InlineEditSession {
   }
 
   private cleanup(options?: { keepSelectionHighlight?: boolean }) {
+    this.releaseMentionCacheEvents?.();
+    this.releaseMentionCacheEvents = null;
     this.generating = false;
     this.releasePreviews();
     this.releaseEditorLifetime?.();
