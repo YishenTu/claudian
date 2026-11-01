@@ -24,6 +24,7 @@ export interface ProjectServiceDeps {
   readonly memory: Pick<
     VaultFileAdapter,
     | 'ensureManagedFolder'
+    | 'isSameManagedFile'
     | 'moveManagedFile'
     | 'readManagedFile'
     | 'removeManagedFile'
@@ -260,7 +261,10 @@ export class ProjectService implements ProjectReader, ProjectMutations, ProjectM
 
   /** Relocates existing memory, keeping a copy for other owners; a missing file is only repointed. */
   async #relocateMemory(source: string, target: string, preserveSource: boolean): Promise<boolean> {
-    if (await this.#memoryExists(target)) throw new ProjectMemoryPathTakenError(target);
+    if (await this.#memoryExists(target)) {
+      if (await this.deps.memory.isSameManagedFile(source, target)) return false;
+      throw new ProjectMemoryPathTakenError(target);
+    }
     if (!await this.#memoryExists(source)) return false;
     if (preserveSource) {
       if (!await this.#createMemory(target, await this.deps.memory.readManagedFile(source))) {

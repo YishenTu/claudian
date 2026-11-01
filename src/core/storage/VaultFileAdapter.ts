@@ -180,6 +180,22 @@ export class VaultFileAdapter {
     throw new ManagedResourcePathError(`Managed resource does not exist: ${normalized}`);
   }
 
+  /** Same verified canonical directory entry; different hard-link names remain distinct. */
+  async isSameManagedFile(sourcePath: string, targetPath: string): Promise<boolean> {
+    const source = normalizeManagedPath(sourcePath);
+    const target = normalizeManagedPath(targetPath);
+    const sourceExists = await this.verifyManagedPath(source, { expectedType: 'file', allowMissing: true });
+    const targetExists = await this.verifyManagedPath(target, { expectedType: 'file', allowMissing: true });
+    if (!sourceExists || !targetExists) return false;
+    const base = this.#basePath();
+    try {
+      return await fs.realpath(this.#resolveManagedDesktopPath(base, source))
+        === await fs.realpath(this.#resolveManagedDesktopPath(base, target));
+    } catch (error) {
+      throw new ManagedResourcePathError(`Could not compare managed files: ${source} and ${target}`, { cause: error });
+    }
+  }
+
   /**
    * Verifies each existing segment root to leaf, rejecting links, vault escapes and wrong types, and returns how many
    * leading segments exist.

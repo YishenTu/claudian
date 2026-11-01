@@ -280,10 +280,23 @@ describe('ProjectService', () => {
     expect(reloaded.projects.get(record.id)?.memoryPath).toBe('Elsewhere/Lost.md');
   });
 
-  it('refuses to move onto an existing file and changes neither the record nor any file', async () => {
+  it.for(['different file', 'hard link'] as const)('refuses an existing %s and changes neither the record nor any file', async (kind, { skip }) => {
     const { vault, projects } = await fixture();
     const record = await projects.create({ name: 'Taken', instructions: 'Keep.', memoryPath: 'Taken/MEMORY.md' });
-    await vault.write('Work/Notes.md', '# Someone else\n');
+    if (kind === 'hard link') {
+      await vault.mkdir('Work');
+      try { await fs.link(vault.resolve(record.memoryPath), vault.resolve('Work/Notes.md')); }
+      catch (error) {
+        if (['EPERM', 'ENOSYS', 'ENOTSUP'].includes((error as NodeJS.ErrnoException).code ?? '')) skip();
+        throw error;
+      }
+    } else {
+      await vault.write('Work/Notes.md', '# Someone else\n');
+    }
+    expect(await fs.realpath(vault.resolve('Work/Notes.md'))).not.toBe(await fs.realpath(vault.resolve(record.memoryPath)));
+    const sourceStat = await fs.stat(vault.resolve(record.memoryPath));
+    const targetStat = await fs.stat(vault.resolve('Work/Notes.md'));
+    expect(targetStat.dev === sourceStat.dev && targetStat.ino === sourceStat.ino).toBe(kind === 'hard link');
     const before = await vault.snapshot();
     const changed = vi.fn();
     projects.onChanged(changed);
@@ -296,6 +309,81 @@ describe('ProjectService', () => {
     expect(await vault.snapshot()).toEqual(before);
     expect(await readFile(vault, record.memoryPath)).toBe(`# Taken\n\n${TEMPLATE_SECTIONS}`);
     expect(changed).not.toHaveBeenCalled();
+  });
+
+  it.for(['commit', 'metadata failure', 'shared claim'] as const)('handles a native same-entry memory alias without relocating: %s', async (outcome, { skip }) => {
+    const { vault, projects, store } = await fixture();
+    const record = await projects.create({ name: 'Case spelling', instructions: 'Original', memoryPath: 'Notes/MEMORY.md' });
+    const original = await projects.readMemory(record.id);
+    if ('missing' in original) throw new Error('Fixture memory missing');
+    const bytes = '  Keep the original decisions.\n';
+    await projects.saveMemory(record.id, bytes, original.revision);
+    const alias = 'Notes/memory.md';
+    const canonical = await fs.realpath(vault.resolve(record.memoryPath));
+    const aliasCanonical = await fs.realpath(vault.resolve(alias)).catch(error => {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
+      throw error;
+    });
+    if (aliasCanonical !== canonical) skip();
+
+    if (outcome === 'shared claim') {
+      const other = await projects.create({ name: 'Other', instructions: '', memoryPath: 'Other.md' });
+      await store.save({ ...other, memoryPath: alias });
+    }
+    const active = outcome === 'shared claim' ? (await fixture({ vault })).projects : projects;
+    const beforeMetadata = await vault.read(`${PROJECTS_PATH}/${record.id}.json`);
+    const moved = vi.spyOn(vault.files, 'moveManagedFile');
+    const removed = vi.spyOn(vault.files, 'removeManagedFile');
+    try {
+      if (outcome === 'metadata failure') failWritesInto(vault, PROJECTS_PATH);
+      const patch = { name: 'Revised', instructions: 'New instructions', memoryPath: alias };
+      const [result] = await Promise.allSettled([active.update(record.id, patch)]);
+      const rejected = {
+        status: 'rejected', reason: expect.objectContaining({ message: expect.stringContaining(
+          outcome === 'metadata failure' ? 'Could not write managed resource' : 'project memory path',
+        ) }),
+      };
+      expect(result).toEqual(outcome === 'commit' ? { status: 'fulfilled', value: undefined } : rejected);
+      const expectedRecord = outcome === 'commit' ? { ...record, ...patch } : record;
+      expect(active.get(record.id)).toEqual(expectedRecord);
+      expect(await vault.read(`${PROJECTS_PATH}/${record.id}.json`)).toBe(outcome === 'commit'
+        ? `${JSON.stringify(expectedRecord, null, 2)}\n` : beforeMetadata);
+      expect(moved).not.toHaveBeenCalled();
+      expect(removed).not.toHaveBeenCalled();
+      expect(await fs.readdir(vault.resolve('Notes'))).toEqual(['MEMORY.md']);
+      expect(await vault.read(record.memoryPath)).toBe(bytes);
+      const reloaded = await fixture({ vault });
+      expect(reloaded.projects.get(record.id)).toMatchObject(outcome === 'commit'
+        ? { memoryPath: alias, name: 'Revised', instructions: 'New instructions' }
+        : record);
+      const memory = await reloaded.projects.readMemory(record.id);
+      if ('missing' in memory) throw new Error('Aliased memory missing');
+      expect(memory.content).toBe(bytes);
+      allowWrites();
+      await reloaded.projects.saveMemory(record.id, bytes + 'Saved through current path.\n', memory.revision);
+      expect(await vault.read(expectedRecord.memoryPath)).toBe(bytes + 'Saved through current path.\n');
+      const reopened = await fixture({ vault });
+      await expect(reopened.projects.readMemory(record.id)).resolves.toMatchObject({ content: bytes + 'Saved through current path.\n' });
+    } finally {
+      moved.mockRestore(); removed.mockRestore();
+    }
+  });
+
+  // eslint-disable-next-line vitest/no-done-callback -- Uses Vitest's native-volume skip context, not a done callback.
+  it('keeps differently cased native entries distinct on a case-sensitive vault', async ({ skip }) => {
+    const { vault, projects } = await fixture();
+    const record = await projects.create({ name: 'Distinct', instructions: '', memoryPath: 'Notes/MEMORY.md' });
+    const target = 'Notes/memory.md';
+    try { await fs.writeFile(vault.resolve(target), 'Separate target', { flag: 'wx' }); }
+    catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'EEXIST') skip();
+      throw error;
+    }
+    expect(await fs.realpath(vault.resolve(target))).not.toBe(await fs.realpath(vault.resolve(record.memoryPath)));
+    const before = await vault.snapshot();
+    await expect(projects.update(record.id, { memoryPath: target })).rejects.toBeInstanceOf(ProjectMemoryPathTakenError);
+    expect(projects.get(record.id)).toEqual(record);
+    expect(await vault.snapshot()).toEqual(before);
   });
 
   it('treats a path another live project records as taken, even while its file is missing', async () => {
