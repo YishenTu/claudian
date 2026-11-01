@@ -125,6 +125,7 @@ test('real dependency discovery retains native launch checks for shared process 
     'tests/integration/providers/pi/env/PiSettingsReconciler.test.ts',
     'tests/integration/providers/pi/execution/PiExecutionKernel.test.ts',
     'tests/integration/providers/pi/execution/PiRecoveryContext.test.ts',
+    'tests/integration/providers/pi/history/PiConversationHistoryService.test.ts',
     'tests/integration/providers/pi/runtime/PiCLIInstallation.test.ts',
     'tests/unit/providers/deepseek/runtime/DeepSeekInstallation.test.ts',
   ]);
