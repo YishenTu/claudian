@@ -306,9 +306,12 @@ export class VaultFileAdapter {
     const separator = normalized.lastIndexOf('/');
     // The vault root itself needs no verification.
     if (separator !== -1) await this.verifyManagedPath(normalized.slice(0, separator), { expectedType: 'folder' });
-    await this.verifyManagedPath(normalized, { expectedType: 'file', allowMissing: true });
+    const exists = await this.verifyManagedPath(normalized, { expectedType: 'file', allowMissing: true });
     try {
-      await this.#writeFileAtomically(normalized, content);
+      const mode = exists
+        ? (await fs.lstat(this.#resolveManagedDesktopPath(this.#basePath(), normalized))).mode
+        : undefined;
+      await this.#writeFileAtomically(normalized, content, mode);
     } catch (error) {
       throw new ManagedResourcePathError(`Could not write managed resource: ${normalized}`, {
         cause: error,
