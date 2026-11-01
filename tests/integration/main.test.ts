@@ -1316,7 +1316,6 @@ describe('ClaudianPlugin', () => {
       const identity = { conversationId: ids[0], providerId: 'codex', draftModel: null } as const;
       const first = pool.acquire(identity, { reveal() {} }).attachment;
       const model = await first.runtime.ensureModel();
-      await new Promise<void>(resolve => setImmediate(resolve));
       pool.release(first);
       await new Promise<void>(resolve => setImmediate(resolve));
       expect(first.runtime.peekModel === model).toBe(true);
@@ -1324,7 +1323,10 @@ describe('ClaudianPlugin', () => {
       const external = { id: 'external', role: 'assistant' as const, content: 'Reply from the CLI', timestamp: messages[0].timestamp };
       hydrate.mockImplementation(async () => ({ messages: [...structuredClone(messages), external] }));
       revision = 'after';
-      await pool.revalidate(ids[0]);
+      // A recorded baseline is what makes the return checkable at all.
+      const revalidation = pool.revalidate(ids[0]);
+      expect(revalidation).not.toBeNull();
+      await revalidation;
       expect(first.runtime.peekModel).toBeNull();
       expect(repository.getSync(ids[0])?.messages).toEqual([]);
       const second = pool.acquire(identity, { reveal() {} }).attachment;

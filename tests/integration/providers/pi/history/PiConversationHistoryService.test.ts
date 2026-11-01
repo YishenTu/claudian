@@ -857,7 +857,9 @@ describe('PiConversationHistoryService', () => {
       const { mtime, size } = await fs.stat(sessionFile);
       await fs.writeFile(sessionFile, 'x'.repeat(size));
       await fs.utimes(sessionFile, mtime, new Date(mtime.getTime() + 5_000));
-      expect(await service.readNativeHistoryRevision(conversation, null)).not.toBe(appended);
+      const rewritten = await service.readNativeHistoryRevision(conversation, null);
+      expect(rewritten).toEqual(expect.any(String));
+      expect(rewritten).not.toBe(appended);
     });
 
     it('is null without a live native session file', async () => {

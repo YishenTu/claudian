@@ -1623,9 +1623,11 @@ describe('CodexConversationHistoryService', () => {
     const line = (text: string) => `${JSON.stringify({ timestamp: testDate().toISOString(), type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text }] } })}\n`;
 
     it('changes when the live rollout located by thread id is appended or rewritten', async () => {
-      const dir = path.join(tempHome, '.codex', 'sessions', '2026', '03', '27');
+      // Codex files rollouts under their creation date.
+      const [day, time] = testDate().toISOString().slice(0, 19).replace(/:/g, '-').split('T');
+      const dir = path.join(tempHome, '.codex', 'sessions', ...day.split('-'));
       fs.mkdirSync(dir, { recursive: true });
-      const file = path.join(dir, 'rollout-2026-03-27T00-00-00-live-thread.jsonl');
+      const file = path.join(dir, `rollout-${day}T${time}-live-thread.jsonl`);
       fs.writeFileSync(file, line('First'));
       const service = new CodexConversationHistoryService();
       const conversation = { sessionId: 'live-thread', providerState: { threadId: 'live-thread' }, messages: [] };
@@ -1642,7 +1644,9 @@ describe('CodexConversationHistoryService', () => {
       const { mtime, size } = fs.statSync(file);
       fs.writeFileSync(file, 'x'.repeat(size));
       fs.utimesSync(file, mtime, new Date(mtime.getTime() + 5_000));
-      expect(await service.readNativeHistoryRevision(conversation, null)).not.toBe(appended);
+      const rewritten = await service.readNativeHistoryRevision(conversation, null);
+      expect(rewritten).toEqual(expect.any(String));
+      expect(rewritten).not.toBe(appended);
     });
 
     it('tracks the fork child rollout of an established fork', async () => {

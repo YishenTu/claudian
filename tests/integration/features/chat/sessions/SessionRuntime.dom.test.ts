@@ -166,7 +166,14 @@ it('keeps a model when history release declines and releases unrelated unowned h
 // The user continues a conversation in the provider's own client, which changes its native revision.
 async function setupRevisionedSession(options: RuntimePoolFixtureOptions = {}) {
   const native = { revision: 'before' };
-  const h = await setup({ retainedDetachedSessions: 1, readNativeHistoryRevision: async () => native.revision, ...options });
+  // Each read's result, in call order; a read reports the revision current when it was requested.
+  const reads: Array<string | null> = [];
+  const read = options.readNativeHistoryRevision ?? (async () => native.revision);
+  const h = await setup({ retainedDetachedSessions: 1, ...options, readNativeHistoryRevision: async id => {
+    const revision = read(id);
+    reads.push(await revision);
+    return revision;
+  } });
   const at = testDate().getTime();
   const cached = { id: 'cached', role: 'assistant' as const, content: 'Cached reply', timestamp: at };
   h.setNativeHistory([cached]);
@@ -174,8 +181,6 @@ async function setupRevisionedSession(options: RuntimePoolFixtureOptions = {}) {
   const runtime = first.session.runtime;
   const model = runtime.model;
   await model.ensureExecutionInitialized();
-  // The baseline read started at attach; let it land before anything changes.
-  await new Promise<void>(resolve => setImmediate(resolve));
   const continueElsewhere = () => {
     native.revision = 'after external turn';
     h.setNativeHistory([cached, { id: 'external', role: 'assistant', content: 'Reply from the CLI', timestamp: at }]);
@@ -185,7 +190,7 @@ async function setupRevisionedSession(options: RuntimePoolFixtureOptions = {}) {
     await new Promise<void>(resolve => setImmediate(resolve));
     expect(runtime.peekModel === model).toBe(true);
   };
-  return { h, native, first, runtime, model, provider: h.backend.latest, continueElsewhere, detach };
+  return { h, native, reads, first, runtime, model, provider: h.backend.latest, continueElsewhere, detach };
 }
 
 it.each([
@@ -199,6 +204,8 @@ it.each([
   if (change === 'while detached') s.continueElsewhere();
 
   const second = await s.h.attach();
+  // The baseline from attach, then the check on return: the outcome is that comparison's, not a missing baseline's.
+  expect(s.reads).toEqual(['before', reloads ? 'after external turn' : 'before', ...reloads ? ['after external turn'] : []]);
   expect(second.session.runtime).toBe(s.runtime);
   expect(s.runtime.peekModel === s.model).toBe(!reloads);
   expect(second.dom.messagesEl.textContent?.includes('Reply from the CLI')).toBe(reloads);
@@ -251,11 +258,13 @@ it.each(['completed', 'pending'] as const)('keeps its own completed turn when re
 it.each(['completed', 'pending'] as const)('learns an initially unknown native revision after hydration with a %s initial read', async initialRead => {
   let hostRunning = false;
   const finishInitialRead = deferred<void>();
+  const hydratedRead = deferred<void>();
   const native = { revision: 'hydrated' };
   const h = await setup({ retainedDetachedSessions: 1,
     readNativeHistoryRevision: async () => {
       const revision = hostRunning ? native.revision : null;
       if (revision === null && initialRead === 'pending') await finishInitialRead.promise;
+      if (revision !== null) hydratedRead.resolve();
       return revision;
     },
   });
@@ -269,7 +278,8 @@ it.each(['completed', 'pending'] as const)('learns an initially unknown native r
   await first.session.runtime.model.ensureExecutionInitialized();
   const provider = h.backend.latest;
   await destroyTab(first);
-  await new Promise<void>(resolve => setImmediate(resolve));
+  // The baseline is the read hydration started; the external write must come after it.
+  await hydratedRead.promise;
   native.revision = 'external';
   h.setNativeHistory([{ id: 'external', role: 'assistant', content: 'External after host startup', timestamp: testDate().getTime() }]);
 

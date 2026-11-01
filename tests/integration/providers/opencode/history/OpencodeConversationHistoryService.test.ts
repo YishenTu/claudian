@@ -1,9 +1,10 @@
-// @test-ci {"inputs":["tests/helpers/providers/opencode/OpencodeNativePeer.cjs"]}
+// @test-ci {"native":true,"inputs":["tests/helpers/providers/opencode/OpencodeNativePeer.cjs"]}
 import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
 import { seedFakeOpencodeSession, writeFakeOpencodeHistoryCLI } from '@test/helpers/providers/opencode/FakeOpencodeHistoryServer';
+import { testDate } from '@test/helpers/testClock';
 
 import { createProviderHistoryPathContext } from '@/core/providers/historyPathContext';
 import type { ProviderHistoryPathContext } from '@/core/providers/types';
@@ -119,15 +120,16 @@ describe('OpencodeConversationHistoryService', () => {
     let dbPath: string;
     let processLog: string;
     const sessionId = 'session-live';
-    const user = { id: 'msg-user', type: 'user', text: 'Prompt', time: { created: 1_000 } };
-    const reply = { id: 'msg-reply', type: 'assistant', time: { created: 1_100 }, content: [{ type: 'text', text: 'Partial' }] };
+    const at = (offset: number) => testDate().getTime() + offset;
+    const user = { id: 'msg-user', type: 'user', text: 'Prompt', time: { created: at(0) } };
+    const reply = { id: 'msg-reply', type: 'assistant', time: { created: at(100) }, content: [{ type: 'text', text: 'Partial' }] };
 
     beforeEach(() => {
       servers = new OpencodeServerService();
       service = new OpencodeConversationHistoryService({ getServerService: async () => servers });
       dbPath = path.join(tmpRoot, 'opencode.db');
       processLog = path.join(tmpRoot, 'processes');
-      seedFakeOpencodeSession(dbPath, sessionId, { time: { created: 1_000, updated: 1_100 }, messages: [user, reply] });
+      seedFakeOpencodeSession(dbPath, sessionId, { time: { created: at(0), updated: at(100) }, messages: [user, reply] });
     });
 
     afterEach(async () => { await servers.dispose(); });
@@ -149,14 +151,14 @@ describe('OpencodeConversationHistoryService', () => {
 
       // The newest reply streams in place, then completes; another client then appends a turn.
       const streamed = { ...reply, content: [{ type: 'text', text: 'Partial and more' }] };
-      seedFakeOpencodeSession(dbPath, sessionId, { time: { created: 1_000, updated: 1_100 }, messages: [user, streamed] });
+      seedFakeOpencodeSession(dbPath, sessionId, { time: { created: at(0), updated: at(100) }, messages: [user, streamed] });
       const afterStream = await revision();
-      const completed = { ...streamed, time: { created: 1_100, completed: 1_200 } };
-      seedFakeOpencodeSession(dbPath, sessionId, { time: { created: 1_000, updated: 1_100 }, messages: [user, completed] });
+      const completed = { ...streamed, time: { created: at(100), completed: at(200) } };
+      seedFakeOpencodeSession(dbPath, sessionId, { time: { created: at(0), updated: at(100) }, messages: [user, completed] });
       const afterCompletion = await revision();
-      seedFakeOpencodeSession(dbPath, sessionId, { time: { created: 1_000, updated: 1_100 }, messages: [user, completed, { ...user, id: 'msg-next' }] });
+      seedFakeOpencodeSession(dbPath, sessionId, { time: { created: at(0), updated: at(100) }, messages: [user, completed, { ...user, id: 'msg-next' }] });
       const afterAppend = await revision();
-      seedFakeOpencodeSession(dbPath, sessionId, { time: { created: 1_000, updated: 1_100, idle: 1_300 }, messages: [user, completed, { ...user, id: 'msg-next' }] });
+      seedFakeOpencodeSession(dbPath, sessionId, { time: { created: at(0), updated: at(100), idle: at(300) }, messages: [user, completed, { ...user, id: 'msg-next' }] });
       const afterIdle = await revision();
 
       const tokens = [initial, afterStream, afterCompletion, afterAppend, afterIdle];

@@ -15,6 +15,8 @@ let history: DeepSeekConversationHistoryService;
 const time = testDate().getTime();
 const state = { schemaVersion: 1, home: getDeepSeekHome(process.env, process.cwd()), profile: 'web', preset: 'claudian-code' };
 const input = { sessionId: 'root', providerState: state, messages: [] };
+/** The session projection native serves, cut at its last committed record. */
+const projection = (asOfSeq: number) => ({ asOfSeq, values: { agentPreset: 'claudian-code', modelSelection: { lastUsed: { provider: 'native', model: 'old-model' }, next: { provider: 'native', model: 'new-model' } } } });
 const wire = (seq: number, type: string, data: unknown, surfaceOp: unknown = 'append') => ({ type: 'event', event: { seq, type, time: time + seq, data, surfaceOp } });
 let records: ReturnType<typeof wire>[];
 
@@ -31,7 +33,7 @@ beforeEach(async () => {
   ];
   peer = new NativePeer();
   peer.onCall = (method, args) => {
-    if (method === 'session/projections') return { asOfSeq: 8, values: { agentPreset: 'claudian-code', modelSelection: { lastUsed: { provider: 'native', model: 'old-model' }, next: { provider: 'native', model: 'new-model' } } } };
+    if (method === 'session/projections') return projection(8);
     if (method === 'session/page') {
       const { throughSeq, beforeSeq } = nativeRequest(args);
       const visible = records.filter(row => row.event.seq <= throughSeq! && (beforeSeq === undefined || row.event.seq < beforeSeq));
@@ -102,8 +104,7 @@ it('reads a native history revision only from an already-running Host, changing 
 
   // Another native client (dsh web) commits a turn to the same session.
   const ordinary = peer.onCall;
-  peer.onCall = (method, args) => method === 'session/projections'
-    ? { ...ordinary(method, args) as Record<string, unknown>, asOfSeq: 11 } : ordinary(method, args);
+  peer.onCall = (method, args) => method === 'session/projections' ? projection(11) : ordinary(method, args);
   const advanced = await history.readNativeHistoryRevision(input, '/vault');
   expect(advanced).not.toBeNull();
   expect(advanced).not.toBe(revision);
