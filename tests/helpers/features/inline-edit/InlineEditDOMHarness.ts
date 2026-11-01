@@ -78,6 +78,7 @@ export function registerFakeInlineEditProvider(
     },
     historyService: {
       hydrateConversationHistory: unsupported,
+      readNativeHistoryRevision: unsupported,
       resolveSessionIdForConversation: unsupported,
       isPendingForkConversation: unsupported,
       buildForkProviderState: unsupported,

@@ -1250,6 +1250,7 @@ describe('ClaudianPlugin', () => {
       const hydrate = vi.fn(async () => ({ messages: structuredClone(messages) }));
       vi.spyOn(ProviderRegistry, 'getConversationHistoryService').mockReturnValue({
         hydrateConversationHistory: hydrate,
+        readNativeHistoryRevision: async () => null,
         resolveSessionIdForConversation: conversation => conversation?.sessionId ?? null,
         isPendingForkConversation: () => false,
         buildForkProviderState: () => ({}),
@@ -1304,6 +1305,31 @@ describe('ClaudianPlugin', () => {
       expect(host.sessionRuntimes.get(ids[0])).toBe(runtime);
       expect((await host.getConversationById(ids[0]))?.messages).toEqual(messages);
       expect(repository.getSync(ids[0])?.messages).toEqual([]);
+    });
+
+    it('reloads a retained session whose native history revision changed before it is shown again', async () => {
+      const { host, repository, ids, hydrate, messages } = await setupHistoryReads();
+      let revision = 'before';
+      const service = ProviderRegistry.getConversationHistoryService('codex');
+      vi.spyOn(service, 'readNativeHistoryRevision').mockImplementation(async () => revision);
+      const pool = host.sessionRuntimes;
+      const identity = { conversationId: ids[0], providerId: 'codex', draftModel: null } as const;
+      const first = pool.acquire(identity, { reveal() {} }).attachment;
+      const model = await first.runtime.ensureModel();
+      await new Promise<void>(resolve => setImmediate(resolve));
+      pool.release(first);
+      await new Promise<void>(resolve => setImmediate(resolve));
+      expect(first.runtime.peekModel === model).toBe(true);
+
+      const external = { id: 'external', role: 'assistant' as const, content: 'Reply from the CLI', timestamp: messages[0].timestamp };
+      hydrate.mockImplementation(async () => ({ messages: [...structuredClone(messages), external] }));
+      revision = 'after';
+      await pool.revalidate(ids[0]);
+      expect(first.runtime.peekModel).toBeNull();
+      expect(repository.getSync(ids[0])?.messages).toEqual([]);
+      const second = pool.acquire(identity, { reveal() {} }).attachment;
+      expect((await second.runtime.ensureModel()).state.messages.at(-1)).toEqual(external);
+      pool.release(second);
     });
 
     async function prepareHeldHistoryRelease() {

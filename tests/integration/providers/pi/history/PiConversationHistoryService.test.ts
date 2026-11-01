@@ -835,6 +835,49 @@ describe('PiConversationHistoryService', () => {
   });
 
 
+  describe('readNativeHistoryRevision', () => {
+    const line = (id: string, content: string) => `${JSON.stringify({ type: 'message', id, message: { role: 'user', content } })}\n`;
+
+    it('changes when the live session file is appended or rewritten', async () => {
+      const dir = await createTempDirectory('pi-revision-');
+      const sessionFile = path.join(dir, 'session.jsonl');
+      await fs.writeFile(sessionFile, line('u1', 'Hello'));
+      const service = new PiConversationHistoryService();
+      const conversation = createConversation(sessionFile);
+
+      const initial = await service.readNativeHistoryRevision(conversation, null);
+      expect(initial).not.toBeNull();
+      expect(await service.readNativeHistoryRevision(conversation, null)).toBe(initial);
+
+      await fs.appendFile(sessionFile, line('u2', 'Continued in the Pi CLI'));
+      const appended = await service.readNativeHistoryRevision(conversation, null);
+      expect(appended).not.toBeNull();
+      expect(appended).not.toBe(initial);
+
+      const { mtime, size } = await fs.stat(sessionFile);
+      await fs.writeFile(sessionFile, 'x'.repeat(size));
+      await fs.utimes(sessionFile, mtime, new Date(mtime.getTime() + 5_000));
+      expect(await service.readNativeHistoryRevision(conversation, null)).not.toBe(appended);
+    });
+
+    it('is null without a live native session file', async () => {
+      const dir = await createTempDirectory('pi-revision-');
+      const sourceFile = path.join(dir, 'source.jsonl');
+      await fs.writeFile(sourceFile, line('u1', 'Source'));
+      const service = new PiConversationHistoryService();
+      const unbound = createConversation(sourceFile);
+      unbound.sessionId = null;
+      unbound.providerState = { previousSessions: [{ sessionFile: sourceFile, sessionId: 'old' }] };
+      const pendingFork = createConversation(sourceFile);
+      pendingFork.sessionId = null;
+      pendingFork.providerState = { forkSource: { sessionId: 'source', resumeAt: 'u1' }, forkSourceSessionFile: sourceFile };
+
+      expect(await service.readNativeHistoryRevision(unbound, null)).toBeNull();
+      expect(await service.readNativeHistoryRevision(pendingFork, null)).toBeNull();
+      expect(await service.readNativeHistoryRevision(createConversation(path.join(dir, 'missing.jsonl')), null)).toBeNull();
+    });
+  });
+
   describe('resolveMissingConversationSession', () => {
 
 

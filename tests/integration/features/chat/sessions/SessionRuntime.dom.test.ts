@@ -163,6 +163,70 @@ it('keeps a model when history release declines and releases unrelated unowned h
   await destroyTab(second);
 });
 
+// The user continues a conversation in the provider's own client, which changes its native revision.
+async function setupRevisionedSession() {
+  const native = { revision: 'before' };
+  const h = await setup({ retainedDetachedSessions: 1, readNativeHistoryRevision: async () => native.revision });
+  const at = testDate().getTime();
+  const cached = { id: 'cached', role: 'assistant' as const, content: 'Cached reply', timestamp: at };
+  h.setNativeHistory([cached]);
+  const first = await h.attach();
+  const runtime = first.session.runtime;
+  const model = runtime.model;
+  await model.ensureExecutionInitialized();
+  // The baseline read started at attach; let it land before anything changes.
+  await new Promise<void>(resolve => setImmediate(resolve));
+  const continueElsewhere = () => {
+    native.revision = 'after external turn';
+    h.setNativeHistory([cached, { id: 'external', role: 'assistant', content: 'Reply from the CLI', timestamp: at }]);
+  };
+  const detach = async () => {
+    await destroyTab(first);
+    await new Promise<void>(resolve => setImmediate(resolve));
+    expect(runtime.peekModel === model).toBe(true);
+  };
+  return { h, native, first, runtime, model, provider: h.backend.latest, continueElsewhere, detach };
+}
+
+it.each([
+  { change: 'none', reloads: false },
+  { change: 'while detached', reloads: true },
+  { change: 'while still shown', reloads: true },
+] as const)('returning to a retained session with native history changed $change reloads: $reloads', async ({ change, reloads }) => {
+  const s = await setupRevisionedSession();
+  if (change === 'while still shown') s.continueElsewhere();
+  await s.detach();
+  if (change === 'while detached') s.continueElsewhere();
+
+  const second = await s.h.attach();
+  expect(second.session.runtime).toBe(s.runtime);
+  expect(s.runtime.peekModel === s.model).toBe(!reloads);
+  expect(second.dom.messagesEl.textContent?.includes('Reply from the CLI')).toBe(reloads);
+  // A stale provider process would answer from context that misses the external turn.
+  expect(s.provider.disposeCalls).toBe(reloads ? 1 : 0);
+  await destroyTab(second);
+});
+
+it('keeps a retained session whose native history changed only through its own turn', async () => {
+  const s = await setupRevisionedSession();
+  s.first.controllers.drafts.restore('main', { content: 'Continue' });
+  const sending = s.first.controllers.inputController.sendMessage();
+  await waitFor(() => expect(s.provider.requests).toHaveLength(1));
+  // The provider appends this turn to native history before the turn settles.
+  s.native.revision = 'after own turn';
+  s.provider.emitText('Own reply');
+  s.provider.complete();
+  await sending;
+  await waitFor(() => expect(s.runtime.isWorking).toBe(false));
+  await s.detach();
+
+  const second = await s.h.attach();
+  expect(s.runtime.peekModel === s.model).toBe(true);
+  expect(second.dom.messagesEl.textContent).toContain('Own reply');
+  expect(s.provider.disposeCalls).toBe(0);
+  await destroyTab(second);
+});
+
 it.each(['unviewed', 'attached'] as const)('does not retry failed history cleanup on an unrelated %s session change', async kind => {
   const failure = new Error('History storage unavailable');
   const onError = vi.fn();

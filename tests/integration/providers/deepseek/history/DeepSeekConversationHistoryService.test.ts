@@ -1,4 +1,4 @@
-import { NativePeer } from '@test/helpers/deepseek/NativePeer';
+import { NativePeer, type NativePeerLifecycle } from '@test/helpers/deepseek/NativePeer';
 import { nativeRequest } from '@test/helpers/deepseek/NativeRequest';
 import { testDate } from '@test/helpers/testClock';
 
@@ -10,6 +10,7 @@ import type { DeepSeekHost } from '@/providers/deepseek/runtime/DeepSeekHost';
 
 let peer: NativePeer;
 let deepseek: DeepSeekHost;
+let lifecycle: NativePeerLifecycle;
 let history: DeepSeekConversationHistoryService;
 const time = testDate().getTime();
 const state = { schemaVersion: 1, home: getDeepSeekHome(process.env, process.cwd()), profile: 'web', preset: 'claudian-code' };
@@ -42,7 +43,7 @@ beforeEach(async () => {
     throw new Error(`Forbidden history endpoint ${method}`);
   };
   await peer.open();
-  ({ deepseek } = peer.host());
+  ({ deepseek, lifecycle } = peer.host());
   history = new DeepSeekConversationHistoryService(async () => deepseek);
 });
 afterEach(async () => { await deepseek.dispose(); await peer.close(); });
@@ -87,6 +88,36 @@ it('defers native forks to first execution and reads only the selected source pr
   const beyondSource = history.buildForkProviderState('root', 'deepseek:seq:9', state);
   await expect(history.hydrateConversationHistory({ ...input, sessionId: null, providerState: beyondSource }, '/vault'))
     .rejects.toThrow(/checkpoint is not present/i);
+});
+
+it('reads a native history revision only from an already-running Host, changing as native commits history', async () => {
+  // A cold Host stays cold: the revision never starts the native process.
+  await expect(history.readNativeHistoryRevision(input, '/vault')).resolves.toBeNull();
+  expect(lifecycle.starts).toBe(0);
+
+  await deepseek.start();
+  const revision = await history.readNativeHistoryRevision(input, '/vault');
+  expect(revision).not.toBeNull();
+  await expect(history.readNativeHistoryRevision(input, '/vault')).resolves.toBe(revision);
+
+  // Another native client (dsh web) commits a turn to the same session.
+  const ordinary = peer.onCall;
+  peer.onCall = (method, args) => method === 'session/projections'
+    ? { ...ordinary(method, args) as Record<string, unknown>, asOfSeq: 11 } : ordinary(method, args);
+  const advanced = await history.readNativeHistoryRevision(input, '/vault');
+  expect(advanced).not.toBeNull();
+  expect(advanced).not.toBe(revision);
+
+  await expect(history.readNativeHistoryRevision({ ...input, sessionId: null }, '/vault')).resolves.toBeNull();
+  const fork = history.buildForkProviderState('root', 'deepseek:seq:7', state);
+  await expect(history.readNativeHistoryRevision({ ...input, sessionId: null, providerState: fork }, '/vault')).resolves.toBeNull();
+  await expect(history.readNativeHistoryRevision({ ...input, providerState: { ...state, home: '/another-machine/.dsh' } }, '/vault')).resolves.toBeNull();
+  peer.onCall = () => null;
+  await expect(history.readNativeHistoryRevision(input, '/vault')).resolves.toBeNull();
+  peer.onCall = () => { throw new Error('Native read failed'); };
+  await expect(history.readNativeHistoryRevision(input, '/vault')).resolves.toBeNull();
+  expect(lifecycle.starts).toBe(1);
+  expect(peer.calls.some(c => c.method === 'session/follow' || c.method === 'session/create')).toBe(false);
 });
 
 it('recovers the native next model and distinguishes relocated stores from missing history', async () => {

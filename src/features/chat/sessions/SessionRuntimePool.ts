@@ -46,6 +46,13 @@ interface SessionRecord {
   settledWaiters: Array<(settled: boolean) => void>;
   /** When a presentation last detached it; 0 if none ever has. Orders retention of viewed sessions. */
   viewedAt: number;
+  /**
+   * The native history revision its cached history and provider session last matched: read when a
+   * presentation first loads it and whenever its own work settles. Undefined until read; null if unknown.
+   */
+  nativeRevision: string | null | undefined;
+  /** Orders revision reads so a slower, older read cannot replace a newer one. */
+  nativeRevisionReads: number;
   unsubscribe(): void;
 }
 
@@ -66,6 +73,8 @@ export class SessionRuntimePool {
   constructor(private readonly deps: {
     createRuntime(identity: SessionIdentity): ChatSessionRuntime;
     releaseHistory(id: string, canRelease: () => boolean): Promise<boolean>;
+    /** The provider's opaque revision of a conversation's native history; null when unknown. */
+    readNativeHistoryRevision?(id: string): Promise<string | null>;
     /** Recently viewed idle conversation sessions that keep their loaded history; 0 when omitted. */
     retainedDetachedSessions?: number;
     onChanged(): void;
@@ -109,7 +118,53 @@ export class SessionRuntimePool {
     }
     const attachment = Object.freeze({ runtime: record.runtime, owner });
     record.attachment = attachment;
+    // Read before the presentation hydrates, so a change landing during hydration counts as newer.
+    if (record.nativeRevision === undefined) this.observeNativeRevision(record);
     return { acquired: true, attachment };
+  }
+
+  /**
+   * Before a presentation reattaches a conversation's idle session, drops its cached history and
+   * provider session when native history changed outside Claudian since they last matched it, so the
+   * presentation reloads the history and the next send resumes from it. Null, without yielding, when
+   * there is no idle session with a known revision to check.
+   */
+  revalidate(conversationId: string): Promise<void> | null {
+    const record = this.conversations.get(conversationId);
+    return record?.nativeRevision && this.canEvict(record) ? this.revalidateRecord(conversationId, record, record.nativeRevision) : null;
+  }
+
+  private async revalidateRecord(conversationId: string, record: SessionRecord, nativeRevision: string): Promise<void> {
+    const { nativeRevisionReads } = record;
+    const current = await this.readNativeRevision(conversationId);
+    if (current === null || current === nativeRevision || record.nativeRevisionReads !== nativeRevisionReads) return;
+    await record.eviction;
+    if (!this.canEvict(record)) return;
+    record.nativeRevision = undefined;
+    record.nativeRevisionReads += 1;
+    record.eviction = this.evict(record, { retain: false }).then(interrupted => {
+      record.eviction = null;
+      if (interrupted) this.changed(record);
+    }, error => {
+      record.eviction = null;
+      this.deps.onError(error);
+    });
+    await record.eviction;
+    // Opening the presentation must not fail on it; the next send then resumes the old process.
+    if (this.canEvict(record)) await record.runtime.executionCoordinator.releaseIfIdle().catch(error => this.deps.onError(error));
+  }
+
+  private observeNativeRevision(record: SessionRecord): void {
+    const id = record.runtime.conversationId;
+    if (!id || !this.deps.readNativeHistoryRevision) return;
+    const reads = ++record.nativeRevisionReads;
+    void this.readNativeRevision(id).then(revision => {
+      if (record.nativeRevisionReads === reads && this.records.get(record.runtime) === record) record.nativeRevision = revision;
+    });
+  }
+
+  private async readNativeRevision(id: string): Promise<string | null> {
+    return await this.deps.readNativeHistoryRevision?.(id).catch(() => null) ?? null;
   }
 
   /**
@@ -126,6 +181,7 @@ export class SessionRuntimePool {
     const record: SessionRecord = {
       runtime, status: readStatus(runtime),
       attachment: null, eviction: null, retired: false, holds: 0, settledWaiters: [], viewedAt: 0,
+      nativeRevision: undefined, nativeRevisionReads: 0,
       unsubscribe: () => undefined,
     };
     this.records.set(runtime, record);
@@ -178,7 +234,11 @@ export class SessionRuntimePool {
     record.status = status;
     // Streaming, usage and presentation changes leave session lists untouched.
     if (promoted || status.isWorking !== previous.isWorking || status.attention !== previous.attention) this.deps.onChanged();
-    if (previous.isWorking && !status.isWorking && status.conversationId) this.deps.onSessionSettled?.(status.conversationId);
+    if (previous.isWorking && !status.isWorking && status.conversationId) {
+      // Its own writes are complete, so they become part of the history it matches.
+      this.observeNativeRevision(record);
+      this.deps.onSessionSettled?.(status.conversationId);
+    }
     if (!status.isWorking) this.settleWaiters(record, true);
     if (record.retired) {
       if (this.isReleasable(record)) void this.disposeRecord(record).catch(error => this.deps.onError(error));
@@ -231,7 +291,7 @@ export class SessionRuntimePool {
   }
 
   /** Returns true when changing retention conditions interrupted the attempt. */
-  private async evict(record: SessionRecord): Promise<boolean> {
+  private async evict(record: SessionRecord, options: { retain: boolean } = { retain: true }): Promise<boolean> {
     const { runtime } = record;
     const model = runtime.peekModel;
     const eligible = () => this.canEvict(record) && runtime.peekModel === model;
@@ -247,8 +307,9 @@ export class SessionRuntimePool {
       await model.conversationController.save(false);
       if (!eligible()) return true;
     }
-    if (this.isRetained(record)) return false;
-    const releasable = () => eligible() && !this.isRetained(record);
+    const retained = () => options.retain && this.isRetained(record);
+    if (retained()) return false;
+    const releasable = () => eligible() && !retained();
     const released = await this.deps.releaseHistory(runtime.conversationId, releasable);
     if (!releasable()) return true;
     if (released) runtime.releaseModel(model);

@@ -70,6 +70,28 @@ export class OpencodeServerService {
     return this.borrow(cliPath, cwd, environment, undefined, true, target);
   }
 
+  /**
+   * Leases the server already up for a launch, or null: never starts, reconnects or retires a
+   * process, and never waits out a transition. The launch is resolved only while some server is up.
+   */
+  async acquireRunning(resolveLaunch: () => Promise<{ cliPath: string; cwd: string; environment: NodeJS.ProcessEnv; target?: ExecutionTarget } | null>): Promise<OpencodeServerLease | null> {
+    if (this.disposal || this.fence.isUnavailable() || this.servers.size === 0) return null;
+    const generation = this.generation.signal;
+    const resolved = await resolveLaunch();
+    if (!resolved) return null;
+    const { cliPath, cwd, environment, target } = resolved;
+    const launch = normalizeLaunch(cliPath, cwd, environment, target);
+    const entry = launch.ephemeral ? undefined : this.servers.get(launch.key);
+    if (!entry || generation.aborted || this.fence.isUnavailable()) return null;
+    entry.consumers += 1;
+    try {
+      const server = await entry.promise;
+      if (!generation.aborted && !entry.retired && !server.close && server.client.isReusable()) return this.lease(entry, server);
+    } catch { /* A failed start is not a running server. */ }
+    await this.release(entry);
+    return null;
+  }
+
   private async borrow(cliPath: string, cwd: string, environment: NodeJS.ProcessEnv, signal: AbortSignal | undefined, cleanup: boolean, target?: ExecutionTarget): Promise<OpencodeServerLease> {
     if (this.disposal) throw new Error('OpenCode server service is disposed.');
     if (!cleanup) await this.waitUntilAvailable(signal);

@@ -862,6 +862,31 @@ export class ConversationRepository {
     return this.getSync(id);
   }
 
+  /**
+   * The provider's opaque revision of a conversation's live native history, compared by sessions to
+   * notice changes made outside Claudian. Null when the record is gone or the provider cannot tell.
+   */
+  async readNativeHistoryRevision(id: string): Promise<string | null> {
+    const conversation = this.#getRecord(id);
+    if (!conversation) return null;
+    const vaultPath = this.deps.getVaultPath();
+    try {
+      return await this.deps.providers.getConversationHistoryService(conversation.providerId).readNativeHistoryRevision(
+        {
+          sessionId: conversation.sessionId,
+          providerState: conversation.providerState,
+          resumeAtMessageId: conversation.resumeAtMessageId,
+          // Revisions describe the native store; cached messages play no part.
+          messages: [],
+        },
+        vaultPath,
+        this.#getHistoryPathContext(conversation.providerId, vaultPath),
+      );
+    } catch {
+      return null;
+    }
+  }
+
   /** Releases only the hydrated projection, after admitted writes and history reads settle. */
   async releaseHistory(id: string, canRelease: () => boolean): Promise<boolean> {
     // The reader owns hydration errors; cleanup still rechecks whether history may be released.

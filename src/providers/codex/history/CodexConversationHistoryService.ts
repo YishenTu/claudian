@@ -1,4 +1,5 @@
 import { copyProviderHistoryState } from '@/core/providers/providerHistory';
+import { readFileRevision } from '@/utils/fileRevision';
 
 import type {
   ProviderConversationHistoryService,
@@ -187,6 +188,35 @@ export class CodexConversationHistoryService implements ProviderConversationHist
       this.#markNativeConversationContextEstablished(conversation);
     }
     return conversation;
+  }
+
+  /** Revision of the live thread's rollout; an established fork's live file is its child rollout. */
+  async readNativeHistoryRevision(
+    conversation: ProviderHistoryInput,
+    _vaultPath: string | null,
+    historyPathContext?: ProviderHistoryPathContext,
+  ): Promise<string | null> {
+    if (this.isPendingForkConversation(conversation)) return null;
+    try {
+      const pathContext = this.#pathContext(historyPathContext);
+      const state = getCodexState(conversation.providerState);
+      const threadId = state.threadId ?? conversation.sessionId ?? null;
+      if (!threadId && !state.sessionFilePath) return null;
+      const transcriptRootPath = resolveCodexTranscriptRootHint(
+        state.transcriptRootPath ?? deriveCodexSessionsRootFromSessionPath(state.sessionFilePath),
+        pathContext,
+      );
+      const sessionFilePath = await resolveCodexRolloutFile(
+        state.sessionFilePath,
+        threadId,
+        transcriptRootPath,
+        pathContext,
+        Date.now() + CODEX_HISTORY_LOOKUP_TIMEOUT_MS,
+      );
+      return sessionFilePath ? await readFileRevision(sessionFilePath) : null;
+    } catch {
+      return null;
+    }
   }
 
   /**

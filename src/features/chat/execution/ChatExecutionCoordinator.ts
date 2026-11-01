@@ -786,6 +786,21 @@ export class ChatExecutionCoordinator {
     this.#idleTimer = null;
   }
 
+  /**
+   * Releases the provider session now if it is idle, so the next send resumes from native history
+   * instead of a process whose context predates changes made outside Claudian.
+   */
+  releaseIfIdle(): Promise<void> {
+    return this.#enqueuePreparation(async () => {
+      const binding = this.#sessionBinding;
+      if (!binding || !this.#isIdle()) return;
+      await this.#persistSnapshot(binding, binding.session.getSnapshot());
+      if (this.#sessionBinding !== binding || !this.#isIdle()) return;
+      await this.#releaseSessionBinding();
+      this.deps.onIdleRelease?.();
+    });
+  }
+
   async #releaseIdleSession(generation: number): Promise<void> {
     const binding = this.#sessionBinding;
     if (!binding || generation !== this.#idleTimerGeneration) return;

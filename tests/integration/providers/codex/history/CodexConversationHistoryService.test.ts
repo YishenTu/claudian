@@ -1619,6 +1619,72 @@ describe('CodexConversationHistoryService', () => {
     },
   );
 
+  describe('readNativeHistoryRevision', () => {
+    const line = (text: string) => `${JSON.stringify({ timestamp: testDate().toISOString(), type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text }] } })}\n`;
+
+    it('changes when the live rollout located by thread id is appended or rewritten', async () => {
+      const dir = path.join(tempHome, '.codex', 'sessions', '2026', '03', '27');
+      fs.mkdirSync(dir, { recursive: true });
+      const file = path.join(dir, 'rollout-2026-03-27T00-00-00-live-thread.jsonl');
+      fs.writeFileSync(file, line('First'));
+      const service = new CodexConversationHistoryService();
+      const conversation = { sessionId: 'live-thread', providerState: { threadId: 'live-thread' }, messages: [] };
+
+      const initial = await service.readNativeHistoryRevision(conversation, null);
+      expect(initial).not.toBeNull();
+      expect(await service.readNativeHistoryRevision(conversation, null)).toBe(initial);
+
+      fs.appendFileSync(file, line('Continued in the Codex CLI'));
+      const appended = await service.readNativeHistoryRevision(conversation, null);
+      expect(appended).not.toBeNull();
+      expect(appended).not.toBe(initial);
+
+      const { mtime, size } = fs.statSync(file);
+      fs.writeFileSync(file, 'x'.repeat(size));
+      fs.utimesSync(file, mtime, new Date(mtime.getTime() + 5_000));
+      expect(await service.readNativeHistoryRevision(conversation, null)).not.toBe(appended);
+    });
+
+    it('tracks the fork child rollout of an established fork', async () => {
+      const dir = path.join(tempHome, '.codex', 'sessions');
+      fs.mkdirSync(dir, { recursive: true });
+      const sourceFile = path.join(dir, 'rollout-source-rev.jsonl');
+      const childFile = path.join(dir, 'rollout-child-rev.jsonl');
+      fs.writeFileSync(sourceFile, line('Source'));
+      fs.writeFileSync(childFile, line('Child'));
+      const service = new CodexConversationHistoryService();
+      const conversation = {
+        sessionId: null, messages: [], providerState: {
+          threadId: 'child-rev', sessionFilePath: childFile,
+          forkSource: { sessionId: 'source-rev', resumeAt: 'turn-1' }, forkSourceSessionFilePath: sourceFile,
+        },
+      };
+
+      const initial = await service.readNativeHistoryRevision(conversation, null);
+      expect(initial).not.toBeNull();
+      fs.appendFileSync(childFile, line('Continued fork'));
+      expect(await service.readNativeHistoryRevision(conversation, null)).not.toBe(initial);
+    });
+
+    it('is null without a live native transcript', async () => {
+      const dir = path.join(tempHome, '.codex', 'sessions');
+      fs.mkdirSync(dir, { recursive: true });
+      const sourceFile = path.join(dir, 'rollout-pending-source.jsonl');
+      fs.writeFileSync(sourceFile, line('Source'));
+      const service = new CodexConversationHistoryService();
+
+      expect(await service.readNativeHistoryRevision({ sessionId: null, messages: [] }, null)).toBeNull();
+      expect(await service.readNativeHistoryRevision({
+        sessionId: 'missing-thread', providerState: { threadId: 'missing-thread' }, messages: [],
+      }, null)).toBeNull();
+      expect(await service.readNativeHistoryRevision({
+        sessionId: null, messages: [], providerState: {
+          forkSource: { sessionId: 'pending-source', resumeAt: 'turn-1' }, forkSourceSessionFilePath: sourceFile,
+        },
+      }, null)).toBeNull();
+    });
+  });
+
   it('retries hydration after an empty transcript parse', async () => {
     const threadId = 'thread-789';
     const sessionsDir = path.join(tempHome, '.codex', 'sessions', '2026', '03', '27');

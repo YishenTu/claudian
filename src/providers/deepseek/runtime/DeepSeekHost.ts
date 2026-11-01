@@ -51,6 +51,8 @@ interface Generation {
   readonly id: number;
   readonly abort: AbortController;
   readonly ready: Promise<Ready>;
+  /** Set once `ready` resolves, for callers that must not wait on a startup. */
+  settled?: Ready;
   forks: Promise<unknown>;
   readonly lost: Set<(loss: DeepSeekHostLoss, error: Error) => void>;
   users: number;
@@ -186,17 +188,21 @@ export class DeepSeekHost {
     const generation = await this.enter(signal);
     try {
       const { process, home, execution } = await abortable(generation.ready, signal);
-      const reader: DeepSeekReader = {
-        call: (method, args, options = {}) => {
-          if (!COLD_METHODS.has(method)) return Promise.reject(new Error(`DeepSeek history reads cannot call ${method}.`));
-          const signals = [signal, options.signal].filter((value): value is AbortSignal => !!value);
-          return process.client.call(method, args, { ...options, ...(signals.length ? { signal: AbortSignal.any(signals) } : {}) });
-        },
-      };
-      return await abortable(operation(reader, home, execution), signal);
+      return await abortable(operation(coldReader(process, signal), home, execution), signal);
     } finally {
       this.leave(generation);
     }
+  }
+
+  /**
+   * Cold reads only while a process is already ready; resolves `undefined` instead of starting, awaiting or
+   * reconnecting one, and leaves its idle lifetime untouched. A retirement mid-read fails the operation.
+   */
+  async readIfRunning<T>(operation: (reader: DeepSeekReader, home: string, execution?: DeepSeekExecutionContext) => Promise<T>): Promise<T | undefined> {
+    const generation = this.current;
+    if (!generation?.settled || generation.retirement || this.fence.isUnavailable()) return undefined;
+    const { process, home, execution } = generation.settled;
+    return operation(coldReader(process), home, execution);
   }
 
   async beginTransition(): Promise<void> {
@@ -236,7 +242,7 @@ export class DeepSeekHost {
     const abort = new AbortController();
     const generation: Generation = { id: ++this.generations, abort, lost: new Set(), users: 0, forks: Promise.resolve(), ready: this.boot(abort.signal, () => generation) };
     // A failed startup leaves no generation behind; the next caller starts fresh.
-    generation.ready.catch(() => { if (this.current === generation) this.current = undefined; });
+    generation.ready.then(ready => { generation.settled = ready; }, () => { if (this.current === generation) this.current = undefined; });
     this.current = generation;
     return generation;
   }
@@ -335,6 +341,16 @@ export class DeepSeekHost {
     void retirement.finally(() => this.retiring.delete(retirement));
     return retirement;
   }
+}
+
+function coldReader(process: DeepSeekProcess, signal?: AbortSignal): DeepSeekReader {
+  return {
+    call: (method, args, options = {}) => {
+      if (!COLD_METHODS.has(method)) return Promise.reject(new Error(`DeepSeek history reads cannot call ${method}.`));
+      const signals = [signal, options.signal].filter((value): value is AbortSignal => !!value);
+      return process.client.call(method, args, { ...options, ...(signals.length ? { signal: AbortSignal.any(signals) } : {}) });
+    },
+  };
 }
 
 function abortable<T>(promise: Promise<T>, signal?: AbortSignal): Promise<T> {

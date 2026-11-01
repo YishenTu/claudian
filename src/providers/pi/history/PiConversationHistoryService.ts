@@ -3,6 +3,7 @@ import * as path from 'node:path';
 
 import type { ExecutionTarget } from '@/core/process/execution-target/types';
 import { copyProviderHistoryState } from '@/core/providers/providerHistory';
+import { readFileRevision } from '@/utils/fileRevision';
 
 import { mergePersistedProviderState } from '../../../core/providers/providerState';
 import type {
@@ -261,6 +262,25 @@ export class PiConversationHistoryService implements ProviderConversationHistory
 
     conversation.messages = dedupeMessages(messages);
     return conversation;
+  }
+
+  /** Revision of the live session file; previous sessions are frozen and pending forks have none. */
+  async readNativeHistoryRevision(
+    conversation: ProviderHistoryInput,
+    vaultPath: string | null,
+    pathContext?: PiHistoryPathContext,
+  ): Promise<string | null> {
+    if (this.isPendingForkConversation(conversation)) return null;
+    const state = getPiState(conversation.providerState);
+    const sessionId = state.sessionId ?? conversation.sessionId;
+    if (!state.sessionFile && !sessionId) return null;
+    try {
+      if (pathContext) pathContext = await this.contextResolver.resolve(vaultPath, pathContext);
+      const sessionFile = resolvePiSessionFileHint(state.sessionFile, sessionId, vaultPath, pathContext);
+      return sessionFile ? await readFileRevision(sessionFile) : null;
+    } catch {
+      return null;
+    }
   }
 
   /**
