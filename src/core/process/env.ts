@@ -315,8 +315,11 @@ export function cliPathRequiresNode(cliPath: string): boolean {
       const bytesRead = fs.readSync(fd, buffer, 0, buffer.length, 0);
       const header = buffer.subarray(0, bytesRead).toString('utf8');
       if (!header.startsWith('#!')) return false;
-      const shebangLine = header.split(/\r?\n/)[0].toLowerCase();
-      return shebangLine.includes('node');
+      const [interpreter, ...args] = header.split(/\r?\n/)[0].slice(2).trim().split(/\s+/);
+      const command = path.basename(interpreter).toLowerCase() === 'env'
+        ? args[args[0] === '-S' ? 1 : 0]
+        : interpreter;
+      return /^(?:node|nodejs)(?:\.exe)?$/i.test(path.basename(command ?? ''));
     } finally {
       if (fd !== null) {
         try {

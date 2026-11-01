@@ -666,9 +666,20 @@ describe('cliPathRequiresNode', () => {
     expect(cliPathRequiresNode('C:\\path\\to\\claude.exe')).toBe(false);
   });
 
-  it('returns true for scripts with node shebang', () => {
+  it.each([
+    ['#!/usr/bin/node', true],
+    ['#!/usr/bin/nodejs', true],
+    ['#!/usr/bin/env node', true],
+    ['#!/usr/bin/env -S node --no-warnings', true],
+    ['#!/usr/bin/node --no-warnings', true],
+    ['#!/tmp/node-wrapper/bin/sh', false],
+    ['#!/usr/bin/env nodemon', false],
+    ['#!/usr/bin/env ts-node', false],
+    ['#!/bin/sh node', false],
+    ['#!/usr/bin/env python node', false],
+  ])('classifies the actual interpreter in %s as Node: %s', (firstLine, expected) => {
     const scriptPath = isWindows ? 'C:\\temp\\claude' : '/tmp/claude';
-    const shebang = '#!/usr/bin/env node\nconsole.log("hi");\n';
+    const shebang = `${firstLine}\nconsole.log("hi");\n`;
 
     vi.spyOn(fs, 'openSync').mockImplementation(() => 1);
     vi.spyOn(fs, 'fstatSync').mockImplementation(
@@ -680,7 +691,7 @@ describe('cliPathRequiresNode', () => {
     });
     vi.spyOn(fs, 'closeSync').mockImplementation(() => {});
 
-    expect(cliPathRequiresNode(scriptPath)).toBe(true);
+    expect(cliPathRequiresNode(scriptPath)).toBe(expected);
   });
 
   it('returns false when path exists but is a directory', () => {
