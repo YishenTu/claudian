@@ -257,11 +257,14 @@ it('keeps committed settings reloadable when a transactional save writes only a 
 
   expect(fs.rename).not.toHaveBeenCalled();
   expect(settings.userName).toBe('Committed');
-  expect(await new ClaudianSettingsStorage(vault.files, DEFAULT_CLAUDIAN_SETTINGS).load())
-    .toMatchObject({ userName: 'Committed' });
   expect(await vault.read(CLAUDIAN_SETTINGS_PATH)).toBe(committed);
   expect(await fs.readdir(path.dirname(vault.resolve(CLAUDIAN_SETTINGS_PATH))))
     .not.toEqual(expect.arrayContaining([expect.stringMatching(/\.tmp$/)]));
+
+  // Loading may persist Windows provider normalization after this failed-save checkpoint.
+  if (process.platform !== 'win32') Object.defineProperty(process, 'platform', { ...platformDescriptor, value: 'win32' });
+  expect(await new ClaudianSettingsStorage(vault.files, DEFAULT_CLAUDIAN_SETTINGS).load())
+    .toMatchObject({ userName: 'Committed' });
 });
 
 it('keeps committed conversation metadata available after a torn save', async () => {
