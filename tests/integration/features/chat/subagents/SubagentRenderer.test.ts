@@ -1,5 +1,6 @@
 /** @vitest-environment jsdom */
-import { fireEvent } from '@testing-library/dom';
+import { axe } from '@test/helpers/accessibility';
+import { fireEvent, within } from '@testing-library/dom';
 import { setIcon } from 'obsidian';
 
 import type { SubagentInfo, ToolCallInfo } from '@/core/types';
@@ -34,10 +35,34 @@ describe('Sync Subagent Renderer', () => {
 
   describe('createSubagentBlock', () => {
 
-    it('should show description in label', () => {
-      const state = createSubagentBlock(parentEl, { id: 'task-1', status: 'running', toolCalls: [], isExpanded: false, ...{ description: 'My task description' } });
-
+    it('keeps the disclosure action and current task status aligned with visible content', async () => {
+      const state = createSubagentBlock(parentEl, {
+        id: 'task-1', status: 'running', description: 'My task description', isExpanded: false,
+        toolCalls: [{ id: 'tool-1', name: 'Read', input: { file_path: 'a.md' }, status: 'completed', result: 'A' }],
+      });
+      const ui = within(parentEl);
+      const header = ui.getByRole('button', { name: 'Subagent task: My task description - Status: running - click to expand' });
       expect(state.labelEl.textContent).toBe('My task description');
+      expect(header.getAttribute('aria-expanded')).toBe('false');
+      expect(state.contentEl.hasClass('claudian-hidden')).toBe(true);
+      expect(state.toolsContainerEl.children).toHaveLength(0);
+
+      fireEvent.click(header);
+      expect(ui.getByRole('button', { name: 'Subagent task: My task description - Status: running - click to collapse' })).toBe(header);
+      expect(header.getAttribute('aria-expanded')).toBe('true');
+      expect(state.contentEl.hasClass('claudian-hidden')).toBe(false);
+      expect(state.toolsContainerEl.children).toHaveLength(1);
+
+      updateSubagentBlock(state, { ...state.info, description: 'Reviewed task', status: 'completed', result: 'Done' });
+      expect(ui.getByRole('button', { name: 'Subagent task: Reviewed task - Status: completed - click to collapse' })).toBe(header);
+      expect(state.statusEl.getAttribute('aria-label')).toBe('Status: completed');
+      expect(state.contentEl.hasClass('claudian-hidden')).toBe(false);
+      expect(await axe(parentEl)).toHaveNoViolations();
+
+      fireEvent.keyDown(header, { key: ' ' });
+      expect(ui.getByRole('button', { name: 'Subagent task: Reviewed task - Status: completed - click to expand' })).toBe(header);
+      expect(header.getAttribute('aria-expanded')).toBe('false');
+      expect(state.contentEl.hasClass('claudian-hidden')).toBe(true);
     });
 
     it('should not show a tool count badge in the header', () => {
@@ -144,7 +169,7 @@ describe('Async Subagent Renderer', () => {
     expect((state.wrapperEl).className.split(' ')).toEqual(expect.arrayContaining(['running', 'async']));
   });
 
-  it('finalizes to completed and reveals description', () => {
+  it('finalizes to completed and reveals description', async () => {
     const state = createAsyncSubagentBlock(parentEl, { id: 'task-3', status: 'running', toolCalls: [], isExpanded: false, mode: 'async', asyncStatus: 'pending', ...{ description: 'Background job' } });
     state.info.toolCalls.push(
       {
@@ -165,11 +190,29 @@ describe('Async Subagent Renderer', () => {
       }
     );
     updateAsyncSubagentBlock(state, { ...state.info, agentId: 'agent-complete', asyncStatus: 'running' });
+    const ui = within(parentEl);
+    const header = ui.getByRole('button', { name: 'Background task: Background job - Running in background - click to expand' });
+    expect(header.getAttribute('aria-expanded')).toBe('false');
+    expect(state.contentEl.hasClass('claudian-hidden')).toBe(true);
+    expect(state.toolsContainerEl.children).toHaveLength(0);
+    fireEvent.keyDown(header, { key: 'Enter' });
+    expect(ui.getByRole('button', { name: 'Background task: Background job - Running in background - click to collapse' })).toBe(header);
+    expect(header.getAttribute('aria-expanded')).toBe('true');
+    expect(state.contentEl.hasClass('claudian-hidden')).toBe(false);
+    expect(state.toolsContainerEl.children).toHaveLength(2);
 
     vi.mocked(setIcon).mockClear();
-    updateAsyncSubagentBlock(state, { ...state.info, result: 'all done', status: 'completed', asyncStatus: 'completed' });
+    updateAsyncSubagentBlock(state, { ...state.info, description: 'Reviewed background job', result: 'all done', status: 'completed', asyncStatus: 'completed' });
+    expect(ui.getByRole('button', { name: 'Background task: Reviewed background job - Completed - click to collapse' })).toBe(header);
+    expect(header.getAttribute('aria-expanded')).toBe('true');
+    expect(state.contentEl.hasClass('claudian-hidden')).toBe(false);
+    expect(await axe(parentEl)).toHaveNoViolations();
+    fireEvent.keyDown(header, { key: ' ' });
+    expect(ui.getByRole('button', { name: 'Background task: Reviewed background job - Completed - click to expand' })).toBe(header);
+    expect(header.getAttribute('aria-expanded')).toBe('false');
+    expect(state.contentEl.hasClass('claudian-hidden')).toBe(true);
 
-    expect(state.labelEl.textContent).toBe('Background job');
+    expect(state.labelEl.textContent).toBe('Reviewed background job');
     expect(state.statusTextEl.textContent).toBe('');
     expect((state.wrapperEl).hasClass('done')).toBe(true);
     const contentText = getTextByClass(state.contentEl, 'claudian-subagent-result-output')[0];
@@ -178,13 +221,22 @@ describe('Async Subagent Renderer', () => {
     expect(lastIcon?.[1]).toBe('check');
   });
 
-  it('finalizes to error and displays result text', () => {
+  it('finalizes to error and displays result text', async () => {
     const state = createAsyncSubagentBlock(parentEl, { id: 'task-4', status: 'running', toolCalls: [], isExpanded: false, mode: 'async', asyncStatus: 'pending', ...{ description: 'Background job' } });
     updateAsyncSubagentBlock(state, { ...state.info, agentId: 'agent-error', asyncStatus: 'running' });
+    const ui = within(parentEl);
+    const header = ui.getByRole('button', { name: 'Background task: Background job - Running in background - click to expand' });
+    fireEvent.click(header);
+    expect(ui.getByRole('button', { name: 'Background task: Background job - Running in background - click to collapse' })).toBe(header);
+    expect(state.contentEl.hasClass('claudian-hidden')).toBe(false);
 
     vi.mocked(setIcon).mockClear();
     updateAsyncSubagentBlock(state, { ...state.info, result: 'failure happened', status: 'error', asyncStatus: 'error' });
 
+    expect(ui.getByRole('button', { name: 'Background task: Background job - Error - click to collapse' })).toBe(header);
+    expect(header.getAttribute('aria-expanded')).toBe('true');
+    expect(state.contentEl.hasClass('claudian-hidden')).toBe(false);
+    expect(await axe(parentEl)).toHaveNoViolations();
     expect(state.statusTextEl.textContent).toBe('Error');
     expect((state.wrapperEl).hasClass('error')).toBe(true);
     const contentText = getTextByClass(state.contentEl, 'claudian-subagent-result-output')[0];
