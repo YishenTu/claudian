@@ -109,6 +109,7 @@ export function classifyEnvironmentVariablesByOwnership(input: string): {
 } {
   const result = createClassifiedEnvironmentLines();
   let pendingDecorators: string[] = [];
+  let lastTarget: string[] | undefined;
 
   for (const line of input.split(/\r?\n/)) {
     const trimmed = line.trim();
@@ -120,6 +121,7 @@ export function classifyEnvironmentVariablesByOwnership(input: string): {
     const key = extractEnvironmentKey(line);
     if (!key) {
       appendLines(result.shared, pendingDecorators, line);
+      lastTarget = result.shared;
       pendingDecorators = [];
       continue;
     }
@@ -129,8 +131,10 @@ export function classifyEnvironmentVariablesByOwnership(input: string): {
       const target = result.providers[ownership.providerId] ?? [];
       appendLines(target, pendingDecorators, line);
       result.providers[ownership.providerId] = target;
+      lastTarget = target;
     } else {
       appendLines(result.shared, pendingDecorators, line);
+      lastTarget = result.shared;
       if (ownership.type === 'shared-unknown') {
         result.reviewKeys.add(key);
       }
@@ -138,8 +142,8 @@ export function classifyEnvironmentVariablesByOwnership(input: string): {
     pendingDecorators = [];
   }
 
-  if (pendingDecorators.length > 0) {
-    result.shared.push(...pendingDecorators);
+  if (lastTarget) {
+    lastTarget.push(...pendingDecorators);
   }
 
   return {
