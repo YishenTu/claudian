@@ -390,9 +390,10 @@ describe('VaultFileAdapter', () => {
           vault: { adapter: { getBasePath: () => vaultPath } },
         } as unknown as App;
 
-        await expect(new VaultFileAdapter(desktopApp).verifyManagedPath(relative, {
-          expectedType: type,
-        })).rejects.toThrow('symlink');
+        const files = new VaultFileAdapter(desktopApp);
+        await expect(files.verifyManagedPath(relative, { expectedType: type })).rejects.toThrow('symlink');
+        await expect(files.isSameManagedFile(relative, 'missing.md')).rejects.toThrow('symlink');
+        await expect(files.isSameManagedFile('missing.md', relative)).rejects.toThrow('symlink');
       } finally {
         await fs.rm(vaultPath, { recursive: true, force: true });
         await fs.rm(externalPath, { recursive: true, force: true });
