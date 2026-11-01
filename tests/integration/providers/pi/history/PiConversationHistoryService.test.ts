@@ -34,6 +34,34 @@ afterEach(async () => {
 const describePosix = process.platform === 'win32' ? describe.skip : describe;
 
 describe('PiConversationHistoryService', () => {
+  it('hydrates a native partial reply and its terminal provider failure', async () => {
+    const dir = await createTempDirectory('pi-failed-history-');
+    const sessionFile = path.join(dir, 'session.jsonl');
+    const transcript = [
+      { type: 'message', id: 'u1', message: { role: 'user', content: 'Review this' } },
+      { type: 'message', id: 'a1', parentId: 'u1', message: {
+        role: 'assistant', stopReason: 'error', errorMessage: 'Provider quota exceeded', content: [
+          { type: 'thinking', thinking: 'Inspecting the input' },
+          { type: 'text', text: 'Partial answer' },
+        ],
+      } },
+    ].map(entry => JSON.stringify(entry)).join('\n');
+    await fs.writeFile(sessionFile, transcript);
+    const conversation = createConversation(sessionFile);
+
+    Object.assign(conversation, await new PiConversationHistoryService().hydrateConversationHistory(conversation, null));
+
+    expect(conversation.messages[1]).toMatchObject({
+      content: 'Partial answer\n\n**Error:** Provider quota exceeded',
+      contentBlocks: [
+        { type: 'thinking', content: 'Inspecting the input' },
+        { type: 'text', content: 'Partial answer' },
+        { type: 'text', content: '\n\n**Error:** Provider quota exceeded' },
+      ],
+    });
+    expect(await fs.readFile(sessionFile, 'utf8')).toBe(transcript);
+  });
+
   it('hydrates from providerState sessionFile', async () => {
     const dir = await createTempDirectory('pi-history-');
     const sessionFile = path.join(dir, 'session.jsonl');

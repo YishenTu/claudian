@@ -17,6 +17,7 @@ import type { ChatMessage, ContentBlock, ImageAttachment, ToolCallInfo, TurnStat
 import { createTurnStats, isTokenCount, settleInterruptedTurn } from '../../../core/types';
 import { encodePiModelId } from '../models';
 import { getPiCustomMessageDisplayText } from '../normalization/piCustomMessageNormalization';
+import { getPiTerminalErrorMessage } from '../normalization/piEventNormalization';
 import { PI_PEEPS_RUN_ENTRY_TYPE, PiPeepsSubagents } from '../normalization/PiPeepsSubagents';
 import {
   extractPiToolResultText,
@@ -520,15 +521,25 @@ function mapPiSessionEntries(
   let turnStart = 0;
   let turnRunning = false;
   const stats = new PiTurnStats();
+  let pendingError: { message: ChatMessage; text: string } | undefined;
+  const flushPendingError = (): void => {
+    if (!pendingError) return;
+    const content = `\n\n**Error:** ${pendingError.text}`;
+    pendingError.message.content += content;
+    (pendingError.message.contentBlocks ??= []).push({ type: 'text', content });
+    pendingError = undefined;
+  };
 
   for (const entry of entries) {
     // Native triggers start turns even when their notification is hidden.
     if (entry.type === 'custom_message' && !turnRunning) {
+      flushPendingError();
       turnStart = messages.length;
       turnRunning = true;
     }
     const mapped = mapPiSessionEntry(entry, messages, syntheticIdNamespace);
     if (mapped) {
+      if (mapped.role === 'user') flushPendingError();
       if (!promptedTurnOpen && (entry.type === 'custom_message'
         || (isAssistantMessageEntry(entry) && turnRunning && messages.length === turnStart))) {
         mapped.isAutomaticResponse = true;
@@ -558,6 +569,13 @@ function mapPiSessionEntries(
         turnStartedAt = undefined;
       } else if (isAssistantMessageEntry(entry)) {
         const stopReason = getString(nativeMessage.stopReason);
+        const error = getPiTerminalErrorMessage({ type: 'message_end', message: nativeMessage });
+        if (error) {
+          pendingError = { message: messages[messages.length - 1], text: error };
+        } else if (stopReason === 'stop' || stopReason === 'length' || stopReason === 'aborted') {
+          // A retry can recover after overflow compaction without a new prompt.
+          pendingError = undefined;
+        }
         // Pi's inner assistant timestamp is generation start; the entry is written on completion.
         const completedAt = parseTimestamp(entry.raw.timestamp);
         if ((stopReason === 'stop' || stopReason === 'length')
@@ -577,6 +595,7 @@ function mapPiSessionEntries(
     }
   }
 
+  flushPendingError();
   applyPiPeepsSubagents(entries, messages);
   return messages;
 }
