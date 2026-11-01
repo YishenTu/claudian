@@ -271,7 +271,7 @@ it('keeps open inline suggestions anchored after note scroll and viewport resize
   typeInstruction('@s');
   const option = await screen.findByRole('option', { name: /src\// });
   const list = screen.getByRole('listbox', { name: 'Input suggestions' });
-  expect(list.style.getPropertyValue('--claudian-fixed-dropdown-bottom')).toBe(`${window.innerHeight - top + 4}px`);
+  expect(list.style.getPropertyValue('--claudian-fixed-dropdown-bottom')).toBe(`${window.innerHeight - top + 8}px`);
   const active = input().getAttribute('aria-activedescendant');
   measure.mockClear();
   list.scrollTop = 25;
@@ -280,7 +280,7 @@ it('keeps open inline suggestions anchored after note scroll and viewport resize
   expect(list.scrollTop).toBe(25);
   top = 210;
   fireEvent.scroll(h.editorView.scrollDOM);
-  expect(list.style.getPropertyValue('--claudian-fixed-dropdown-bottom')).toBe(`${window.innerHeight - top + 4}px`);
+  expect(list.style.getPropertyValue('--claudian-fixed-dropdown-bottom')).toBe(`${window.innerHeight - top + 8}px`);
   left = 160;
   fireEvent.resize(window);
   expect(list.style.getPropertyValue('--claudian-fixed-dropdown-left')).toBe('160px');
