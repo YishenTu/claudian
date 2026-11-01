@@ -1,3 +1,4 @@
+// @test-ci {"native":true}
 const actualModule0 = await vi.importActual<typeof fs>('node:fs/promises');
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
@@ -610,6 +611,81 @@ describe('AgentSkillRepository', () => {
       expect(await vault.exists(`${AGENT_SKILLS_ROOT}/Weekly_Review`)).toBe(false);
       expect(await vault.read(`${AGENT_SKILLS_ROOT}/weekly-review/notes.md`)).toBe('extra');
       expect((await desktop.list()).skills.map(skill => skill.name)).toEqual(['weekly-review']);
+    });
+
+    it.for(['success', 'write failure'] as const)('repairs native case aliases with physical spelling preserved through %s', async (outcome, context) => {
+      const original = markdown('Example', 'Original', 'Original instructions');
+      await addSkill('Example', original);
+      await vault.write(`${AGENT_SKILLS_ROOT}/Example/assets/reference.txt`, 'nested asset');
+      await vault.write(`${AGENT_SKILLS_ROOT}/Example/notes.md`, 'additional file');
+      const root = vault.resolve(AGENT_SKILLS_ROOT);
+      const source = vault.resolve(`${AGENT_SKILLS_ROOT}/Example`);
+      const target = vault.resolve(`${AGENT_SKILLS_ROOT}/example`);
+      const canonicalTarget = await actualFs.realpath(target).catch(error => {
+        if (error.code === 'ENOENT') return undefined;
+        throw error;
+      });
+      if (canonicalTarget === undefined) context.skip();
+      expect(await actualFs.readdir(root)).toEqual(['Example']);
+      expect(canonicalTarget).toBe(await actualFs.realpath(source));
+      const originalSnapshot = await vault.snapshot();
+      const draft = await repository.readForRepair('Example');
+      const input = { name: 'example', description: 'Repaired', instructions: 'Updated instructions' };
+      let spellingAtFailure: string[] | undefined;
+      let rollback: unknown;
+      if (outcome === 'write failure') {
+        vi.mocked(fs.writeFile).mockImplementation(async (file, data, options) => {
+          if (path.dirname(String(file)) === target && path.basename(String(file)).startsWith('.claudian-')) {
+            spellingAtFailure = await actualFs.readdir(root);
+            throw new Error('case repair write failed');
+          }
+          return actualFs.writeFile(file, data, options);
+        });
+        try {
+          const error = await repository.repair('Example', draft.revision, input).catch(error => error);
+          rollback = {
+            error, spellingAtFailure, entries: await actualFs.readdir(root),
+            raw: await vault.read(`${AGENT_SKILLS_ROOT}/Example/SKILL.md`),
+            draft: await repository.readForRepair('Example'), snapshot: await vault.snapshot(),
+            packageEntries: (await actualFs.readdir(source)).sort(),
+          };
+        } finally {
+          vi.mocked(fs.writeFile).mockImplementation(actualFs.writeFile);
+        }
+      }
+      const expectedRollback = {
+        error: expect.objectContaining({ message: expect.stringContaining('Could not write managed resource') }),
+        spellingAtFailure: ['example'], entries: ['Example'], raw: original,
+        draft, snapshot: originalSnapshot, packageEntries: ['SKILL.md', 'assets', 'notes.md'],
+      };
+      expect(rollback).toEqual(outcome === 'write failure' ? expectedRollback : undefined);
+      const repaired = await repository.repair('Example', draft.revision, input);
+      expect(await actualFs.readdir(root)).toEqual(['example']);
+      expect(repaired).toMatchObject({ ...input, directoryPath: `${AGENT_SKILLS_ROOT}/example`, frontmatter: { license: 'MIT', metadata: { owner: 'team' } } });
+      expect(repaired.revision).not.toBe(draft.revision);
+      expect(await vault.read(`${AGENT_SKILLS_ROOT}/example/assets/reference.txt`)).toBe('nested asset');
+      expect(await vault.read(`${AGENT_SKILLS_ROOT}/example/notes.md`)).toBe('additional file');
+      expect((await actualFs.readdir(target)).sort()).toEqual(['SKILL.md', 'assets', 'notes.md']);
+      const reloaded = await new AgentSkillRepository(vault.files).list();
+      expect(reloaded.diagnostics).toEqual([]);
+      expect(reloaded.skills).toEqual([repaired]);
+    });
+
+    // eslint-disable-next-line vitest/no-done-callback -- The destructured argument is Vitest's capability-skip context.
+    it('preserves distinct case-sensitive package destinations', async ({ skip }) => {
+      const original = markdown('Example');
+      await addSkill('Example', original);
+      if (await vault.exists(`${AGENT_SKILLS_ROOT}/example`)) skip();
+      await addSkill('example', markdown('example', 'Occupied'));
+      expect((await actualFs.readdir(vault.resolve(AGENT_SKILLS_ROOT))).sort()).toEqual(['Example', 'example']);
+      expect(await actualFs.realpath(vault.resolve(`${AGENT_SKILLS_ROOT}/Example`)))
+        .not.toBe(await actualFs.realpath(vault.resolve(`${AGENT_SKILLS_ROOT}/example`)));
+      const before = await vault.snapshot();
+      const draft = await repository.readForRepair('Example');
+      await expect(repository.repair('Example', draft.revision, {
+        name: 'example', description: 'Updated', instructions: 'Updated instructions',
+      })).rejects.toBeInstanceOf(AgentSkillCollisionError);
+      expect(await vault.snapshot()).toEqual(before);
     });
 
     it('still lists the other skills when the root holds a dangling link', async () => {

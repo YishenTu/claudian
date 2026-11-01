@@ -15,6 +15,7 @@ import type { Mocked } from 'vitest';
 
 import {
   ManagedResourceCollisionError,
+  ManagedResourcePathError,
   VaultFileAdapter,
 } from '@/core/storage/VaultFileAdapter';
 
@@ -460,6 +461,28 @@ describe('VaultFileAdapter', () => {
         await expect(fs.stat(path.join(vaultPath, '.agents/skills/new'))).rejects.toMatchObject({ code: 'ENOENT' });
       } finally {
         rename.mockReset().mockImplementation(actualModule1.rename);
+        await fs.rm(vaultPath, { recursive: true, force: true });
+      }
+    });
+
+    it.each(['unchanged', 'target link'] as const)('rejects an existing %s package destination', async kind => {
+      const vaultPath = await fs.mkdtemp(path.join(os.tmpdir(), 'claudian-vault-'));
+      try {
+        const source = path.join(vaultPath, '.agents/skills/old');
+        const target = path.join(vaultPath, '.agents/skills/new');
+        await fs.mkdir(source, { recursive: true });
+        await fs.writeFile(path.join(source, 'SKILL.md'), 'skill');
+        if (kind === 'target link') await fs.symlink(source, target, 'junction');
+        const adapter = new VaultFileAdapter({ vault: { adapter: createDesktopFsAdapter(vaultPath) } } as unknown as App);
+        await expect(adapter.relocateManagedPackage('.agents/skills/old',
+          kind === 'unchanged' ? '.agents/skills/old' : '.agents/skills/new'))
+          .rejects.toBeInstanceOf(kind === 'unchanged' ? ManagedResourceCollisionError : ManagedResourcePathError);
+        expect(await fs.readFile(path.join(source, 'SKILL.md'), 'utf8')).toBe('skill');
+        const destination = kind === 'unchanged' ? source : target;
+        expect((await fs.lstat(destination)).isSymbolicLink()).toBe(kind === 'target link');
+        expect(await fs.realpath(destination)).toBe(await fs.realpath(source));
+        expect((await fs.readdir(path.dirname(source))).sort()).toEqual(kind === 'unchanged' ? ['old'] : ['new', 'old']);
+      } finally {
         await fs.rm(vaultPath, { recursive: true, force: true });
       }
     });

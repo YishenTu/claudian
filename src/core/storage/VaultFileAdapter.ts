@@ -419,8 +419,8 @@ export class VaultFileAdapter {
   }
 
   /**
-   * Renames the complete package after rejecting existing targets. A directory created
-   * after the check may be replaced if it is still empty when the filesystem renames.
+   * Renames the complete package, allowing only its own verified entry as an existing target.
+   * A directory created after the check may be replaced if it is still empty when the filesystem renames.
    */
   async relocateManagedPackage(sourcePath: string, targetPath: string): Promise<void> {
     const source = normalizeManagedPath(sourcePath);
@@ -428,10 +428,19 @@ export class VaultFileAdapter {
     await this.verifyManagedPath(source, { expectedType: 'folder' });
     const parent = path.posix.dirname(target);
     if (parent !== '.') await this.verifyManagedPath(parent, { expectedType: 'folder' });
-    if (await this.#managedTargetExists(target)) {
-      throw new ManagedResourceCollisionError(target);
-    }
     const basePath = this.#basePath();
+    if (await this.#managedTargetExists(target)) {
+      if (source === target) throw new ManagedResourceCollisionError(target);
+      await this.verifyManagedPath(target, { expectedType: 'folder' });
+      let sameEntry: boolean;
+      try {
+        sameEntry = await fs.realpath(this.#resolveManagedDesktopPath(basePath, source))
+          === await fs.realpath(this.#resolveManagedDesktopPath(basePath, target));
+      } catch (error) {
+        throw new ManagedResourcePathError(`Could not inspect managed package destination: ${target}`, { cause: error });
+      }
+      if (!sameEntry) throw new ManagedResourceCollisionError(target);
+    }
     try {
       await fs.rename(
         this.#resolveManagedDesktopPath(basePath, source),
