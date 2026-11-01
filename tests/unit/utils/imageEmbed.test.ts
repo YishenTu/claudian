@@ -271,10 +271,24 @@ describe('replaceImageEmbedsWithHTML', () => {
 
       expect(result).toContain('src="app://local/image.png"');
     });
-    it('keeps media folder precedence over native resolution when source path is blank', () => {
+    it.each([
+      ['media', 'media/image.png'],
+      ['media/', 'media/image.png'],
+      ['./media', 'media/image.png'],
+      ['media//', 'media/image.png'],
+      ['media/./', 'media/image.png'],
+      ['configured//media', 'configured/media/image.png'],
+      ['$TASK_LITERAL', '$TASK_LITERAL/image.png'],
+      ['~', '~/image.png'],
+    ])('keeps configured folder %s ahead of native basename resolution', (mediaFolder, expectedPath) => {
+      vi.stubEnv('TASK_LITERAL', 'expanded');
+      onTestFinished(() => { vi.unstubAllEnvs(); });
       const app = createMockApp(
         new Map([
           ['media/image.png', 'app://local/media/image.png'],
+          ['configured/media/image.png', 'app://local/configured/media/image.png'],
+          ['$TASK_LITERAL/image.png', 'app://local/$TASK_LITERAL/image.png'],
+          ['~/image.png', 'app://local/~/image.png'],
           ['s/image.png', 'app://local/s/image.png'],
         ]),
         (linkPath, sourcePath, files) =>
@@ -285,10 +299,10 @@ describe('replaceImageEmbedsWithHTML', () => {
 
       const result = replaceImageEmbedsWithHTML('![[image.png]]', app, {
         sourcePath: '',
-        mediaFolder: 'media',
+        mediaFolder,
       });
 
-      expect(result).toContain('src="app://local/media/image.png"');
+      expect(result).toContain(`src="app://local/${expectedPath}"`);
       expect(result).not.toContain('app://local/s/image.png');
     });
   });
