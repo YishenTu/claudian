@@ -112,6 +112,15 @@ function holdProviderStart(heldProviderId: string) {
 
 it('switches provider from the model picker until the first request, then keeps it', async () => {
   const h = await createHarness();
+  const saves: Array<() => Promise<void>> = [];
+  const mutateSettings = h.plugin.mutateSettings;
+  h.plugin.mutateSettings = (mutation) => {
+    let release!: () => void;
+    const held = new Promise<void>(resolve => { release = resolve; });
+    const saving = held.then(() => mutateSettings(mutation));
+    saves.push(() => { release(); return saving; });
+    return saving;
+  };
   // GPT's Max effort is known only once the provider has fetched the picked model's metadata.
   let gptMetadataReady = false;
   const codex = registerFakeInlineEditProvider('codex', [{ value: 'gpt', label: 'GPT' }], {
@@ -127,40 +136,50 @@ it('switches provider from the model picker until the first request, then keeps 
   typeInstruction('Make it formal');
   const codexStart = holdProviderStart('codex');
 
-  fireEvent.click(screen.getByRole('button', { name: 'Model: Sonnet, effort High' }));
-  const providers = within(screen.getByRole('dialog', { name: 'Model options' })).getAllByRole('tab');
-  expect(providers.map(tab => tab.getAttribute('aria-label'))).toEqual(['claude', 'codex']);
-  fireEvent.click(within(screen.getByRole('tablist', { name: 'Provider' })).getByRole('tab', { name: 'codex' }));
-  fireEvent.click(screen.getByRole('option', { name: 'GPT' }));
-  // The chip shows the pick while its provider starts, and an effort chosen meanwhile is kept.
-  await screen.findByRole('button', { name: 'Model: GPT, effort High' });
-  fireEvent.click(within(screen.getByRole('listbox', { name: 'Thinking' })).getByRole('option', { name: 'Low' }));
-  await screen.findByRole('button', { name: 'Model: GPT, effort Low' });
-  // Enter while the provider starts sends nothing until the edit runs on it.
-  fireEvent.keyDown(input(), { key: 'Enter' });
-  await new Promise(resolve => window.setTimeout(resolve, 0));
-  expect([h.backend.sessions, codex.sessions]).toEqual([[], []]);
-  codexStart.finish();
+  try {
+    fireEvent.click(screen.getByRole('button', { name: 'Model: Sonnet, effort High' }));
+    const providers = within(screen.getByRole('dialog', { name: 'Model options' })).getAllByRole('tab');
+    expect(providers.map(tab => tab.getAttribute('aria-label'))).toEqual(['claude', 'codex']);
+    fireEvent.click(within(screen.getByRole('tablist', { name: 'Provider' })).getByRole('tab', { name: 'codex' }));
+    fireEvent.click(screen.getByRole('option', { name: 'GPT' }));
+    // The chip shows the pick while its provider starts, and an effort chosen meanwhile is kept.
+    await screen.findByRole('button', { name: 'Model: GPT, effort High' });
+    fireEvent.click(within(screen.getByRole('listbox', { name: 'Thinking' })).getByRole('option', { name: 'Low' }));
+    await screen.findByRole('button', { name: 'Model: GPT, effort Low' });
+    // Enter while the provider starts sends nothing until the edit runs on it.
+    fireEvent.keyDown(input(), { key: 'Enter' });
+    // Request admission is independent of remembering the low selection.
+    await saves[0]();
+    expect(h.plugin.settings.inlineEditModel).toEqual({ providerId: 'codex', model: 'gpt', reasoning: 'high' });
+    expect([h.backend.sessions, codex.sessions]).toEqual([[], []]);
+    codexStart.finish();
 
-  await waitFor(() => expect(codex.sessions[0]?.requests).toHaveLength(1));
-  expect(h.backend.sessions).toHaveLength(0);
-  expect(codex.sessions[0].requests[0].configuration).toMatchObject({ model: 'gpt', reasoning: 'low' });
-  // The instruction typed before the switch survives the composer's rebuild.
-  expect(codex.sessions[0].requests[0].input[0]).toMatchObject({ text: expect.stringContaining('Make it formal') });
-  expect(h.plugin.settings.inlineEditModel).toEqual({ providerId: 'codex', model: 'gpt', reasoning: 'low' });
+    await waitFor(() => expect(codex.sessions[0]?.requests).toHaveLength(1));
+    expect(h.backend.sessions).toHaveLength(0);
+    expect(codex.sessions[0].requests[0].configuration).toMatchObject({ model: 'gpt', reasoning: 'low' });
+    // The instruction typed before the switch survives the composer's rebuild.
+    expect(codex.sessions[0].requests[0].input[0]).toMatchObject({ text: expect.stringContaining('Make it formal') });
+    // Sending the local low pick does not wait for its default to become durable.
+    expect(h.plugin.settings.inlineEditModel).toEqual({ providerId: 'codex', model: 'gpt', reasoning: 'high' });
+    await saves[1]();
+    await waitFor(() => expect(h.plugin.settings.inlineEditModel).toEqual({ providerId: 'codex', model: 'gpt', reasoning: 'low' }));
 
-  // A clarification continues the conversation on its provider, so the picker offers only its models.
-  codex.sessions[0].emitText('Which tone?');
-  codex.sessions[0].complete();
-  await waitFor(() => expect(input().placeholder).toBe('Reply to continue...'));
-  fireEvent.click(screen.getByRole('button', { name: 'Model: GPT, effort Low' }));
-  const menu = screen.getByRole('dialog', { name: 'Model options' });
-  expect(within(menu).getAllByRole('option').map(option => option.textContent)).toContain('GPT');
-  expect(within(menu).queryAllByRole('tab')).toEqual([]);
-  expect(within(within(menu).getByRole('listbox', { name: 'Thinking' })).getByRole('option', { name: 'Max' })).toBeDefined();
-  fireEvent.keyDown(h.editorView.contentDOM, { key: 'Escape' });
-  fireEvent.keyDown(h.editorView.contentDOM, { key: 'Escape' });
-  await expect(result).resolves.toEqual({ decision: 'reject' });
+    // A clarification continues the conversation on its provider, so the picker offers only its models.
+    codex.sessions[0].emitText('Which tone?');
+    codex.sessions[0].complete();
+    await waitFor(() => expect(input().placeholder).toBe('Reply to continue...'));
+    fireEvent.click(screen.getByRole('button', { name: 'Model: GPT, effort Low' }));
+    const menu = screen.getByRole('dialog', { name: 'Model options' });
+    expect(within(menu).getAllByRole('option').map(option => option.textContent)).toContain('GPT');
+    expect(within(menu).queryAllByRole('tab')).toEqual([]);
+    expect(within(within(menu).getByRole('listbox', { name: 'Thinking' })).getByRole('option', { name: 'Max' })).toBeDefined();
+    fireEvent.keyDown(h.editorView.contentDOM, { key: 'Escape' });
+    fireEvent.keyDown(h.editorView.contentDOM, { key: 'Escape' });
+    await expect(result).resolves.toEqual({ decision: 'reject' });
+  } finally {
+    codexStart.finish();
+    await Promise.all(saves.map(save => save()));
+  }
 });
 
 describe('a submit waiting for a picked provider to start', () => {
