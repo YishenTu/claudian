@@ -791,26 +791,23 @@ export class ChatExecutionCoordinator {
    * instead of a process whose context predates changes made outside Claudian.
    */
   releaseIfIdle(): Promise<void> {
-    return this.#enqueuePreparation(async () => {
-      const binding = this.#sessionBinding;
-      if (!binding || !this.#isIdle()) return;
-      await this.#persistSnapshot(binding, binding.session.getSnapshot());
-      if (this.#sessionBinding !== binding || !this.#isIdle()) return;
-      await this.#releaseSessionBinding();
-      this.deps.onIdleRelease?.();
-    });
+    return this.#enqueuePreparation(() => this.#releaseIdleBinding());
+  }
+
+  async #releaseIdleBinding(isCurrent: () => boolean = () => true): Promise<void> {
+    const binding = this.#sessionBinding;
+    if (!binding || !isCurrent() || !this.#isIdle()) return;
+    await this.#persistSnapshot(binding, binding.session.getSnapshot());
+    if (this.#sessionBinding !== binding || !isCurrent() || !this.#isIdle()) return;
+    await this.#releaseSessionBinding();
+    this.deps.onIdleRelease?.();
   }
 
   async #releaseIdleSession(generation: number): Promise<void> {
     const binding = this.#sessionBinding;
     if (!binding || generation !== this.#idleTimerGeneration) return;
     try {
-      if (!this.#isIdle()) return;
-      await this.#persistSnapshot(binding, binding.session.getSnapshot());
-      if (this.#sessionBinding === binding && generation === this.#idleTimerGeneration && this.#isIdle()) {
-        await this.#releaseSessionBinding();
-        this.deps.onIdleRelease?.();
-      }
+      await this.#releaseIdleBinding(() => generation === this.#idleTimerGeneration);
     } finally {
       // Retry busy or failed releases without replacing a newer activity timer.
       if (this.#sessionBinding === binding && generation === this.#idleTimerGeneration) {

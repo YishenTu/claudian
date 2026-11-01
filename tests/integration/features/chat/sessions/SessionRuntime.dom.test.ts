@@ -74,7 +74,7 @@ async function setup(poolOptions: RuntimePoolFixtureOptions = {}) {
     activateTab(tab);
     return tab;
   };
-  return { attach, pool, plugin, backend, saves, statusChanges, setNativeHistory: (messages: Conversation['messages']) => { nativeHistory = messages; } };
+  return { attach, pool, plugin, backend, messaging, saves, statusChanges, setNativeHistory: (messages: Conversation['messages']) => { nativeHistory = messages; } };
 }
 
 it('reattaches a held blank draft session, with its selections, to the next presentation', async () => {
@@ -164,9 +164,9 @@ it('keeps a model when history release declines and releases unrelated unowned h
 });
 
 // The user continues a conversation in the provider's own client, which changes its native revision.
-async function setupRevisionedSession() {
+async function setupRevisionedSession(options: RuntimePoolFixtureOptions = {}) {
   const native = { revision: 'before' };
-  const h = await setup({ retainedDetachedSessions: 1, readNativeHistoryRevision: async () => native.revision });
+  const h = await setup({ retainedDetachedSessions: 1, readNativeHistoryRevision: async () => native.revision, ...options });
   const at = testDate().getTime();
   const cached = { id: 'cached', role: 'assistant' as const, content: 'Cached reply', timestamp: at };
   h.setNativeHistory([cached]);
@@ -225,6 +225,160 @@ it('keeps a retained session whose native history changed only through its own t
   expect(second.dom.messagesEl.textContent).toContain('Own reply');
   expect(s.provider.disposeCalls).toBe(0);
   await destroyTab(second);
+});
+
+it.each(['completed', 'pending'] as const)('learns an initially unknown native revision after hydration with a %s initial read', async initialRead => {
+  let hostRunning = false;
+  const finishInitialRead = deferred<void>();
+  const native = { revision: 'hydrated' };
+  const h = await setup({ retainedDetachedSessions: 1,
+    readNativeHistoryRevision: async () => {
+      const revision = hostRunning ? native.revision : null;
+      if (revision === null && initialRead === 'pending') await finishInitialRead.promise;
+      return revision;
+    },
+  });
+  const readHistory = vi.mocked(h.plugin.getConversationById).getMockImplementation()!;
+  vi.spyOn(h.plugin, 'getConversationById').mockImplementation(async id => {
+    hostRunning = true;
+    return readHistory(id);
+  });
+  const first = await h.attach();
+  finishInitialRead.resolve();
+  await first.session.runtime.model.ensureExecutionInitialized();
+  const provider = h.backend.latest;
+  await destroyTab(first);
+  await new Promise<void>(resolve => setImmediate(resolve));
+  native.revision = 'external';
+  h.setNativeHistory([{ id: 'external', role: 'assistant', content: 'External after host startup', timestamp: testDate().getTime() }]);
+
+  const second = await h.attach();
+  expect(second.dom.messagesEl.textContent).toContain('External after host startup');
+  expect(provider.disposeCalls).toBe(1);
+  await destroyTab(second);
+});
+
+it('keeps a known baseline when native history changes during hydration', async () => {
+  let revision = 'before';
+  const h = await setup({ retainedDetachedSessions: 1, readNativeHistoryRevision: async () => revision });
+  const entered = deferred<void>();
+  const finish = deferred<void>();
+  const readHistory = vi.mocked(h.plugin.getConversationById).getMockImplementation()!;
+  vi.mocked(h.plugin.getConversationById).mockImplementationOnce(async id => {
+    const snapshot = await readHistory(id);
+    entered.resolve();
+    await finish.promise;
+    return snapshot;
+  });
+  const opening = h.attach();
+  await entered.promise;
+  revision = 'external';
+  h.setNativeHistory([{ id: 'external', role: 'assistant', content: 'Arrived during hydration', timestamp: testDate().getTime() }]);
+  finish.resolve();
+  const first = await opening;
+  expect(first.dom.messagesEl.textContent).not.toContain('Arrived during hydration');
+  await destroyTab(first);
+  const second = await h.attach();
+  expect(second.dom.messagesEl.textContent).toContain('Arrived during hydration');
+  await destroyTab(second);
+});
+
+it.each(['token read', 'history eviction', 'provider release'] as const)(
+  'concurrent openers wait for the same revalidation during %s', async phase => {
+    const entered = deferred<void>();
+    const finish = deferred<void>();
+    let held = false;
+    let revision = 'before';
+    const barrier = async () => { entered.resolve(); await finish.promise; };
+    const s = await setupRevisionedSession({
+      readNativeHistoryRevision: async () => {
+        if (held && phase === 'token read') { held = false; await barrier(); }
+        return revision;
+      },
+      releaseHistory: async (_id, canRelease) => {
+        if (held && phase === 'history eviction') { held = false; await barrier(); }
+        return canRelease();
+      },
+    });
+    await s.detach();
+    s.continueElsewhere();
+    revision = 'external';
+    if (phase === 'provider release') {
+      // A new snapshot forces release to await the persistence boundary.
+      s.provider.establishChild('native');
+      vi.spyOn(s.h.plugin.executionPersistence, 'persistExecutionSnapshot').mockImplementation(async () => {
+        if (held) { held = false; await barrier(); }
+        return true;
+      });
+    }
+    held = true;
+    const opening = s.h.attach().then(tab => ({ tab }), error => ({ error }));
+    await entered.promise;
+    const joined = s.h.pool.revalidate('conversation');
+    const competing = s.h.attach().then(tab => ({ tab }), error => ({ error }));
+    await new Promise<void>(resolve => setImmediate(resolve));
+    const attachedBeforeRelease = s.h.pool.getAttachment('conversation') !== null;
+    const disposedBeforeRelease = s.provider.disposeCalls;
+    finish.resolve();
+    const [first, other] = await Promise.all([opening, competing]);
+    await joined;
+    const shown = 'tab' in first ? first.tab : 'tab' in other ? other.tab : null;
+    const transcript = shown?.dom.messagesEl.textContent;
+    if ('tab' in first) await destroyTab(first.tab);
+    if ('tab' in other) await destroyTab(other.tab);
+    expect(attachedBeforeRelease).toBe(false);
+    expect(joined !== null).toBe(true);
+    expect(disposedBeforeRelease).toBe(0);
+    expect('tab' in first).toBe(true);
+    expect('error' in other).toBe(true);
+    expect(transcript).toContain('Reply from the CLI');
+    expect(s.provider.disposeCalls).toBe(1);
+  },
+);
+
+it('does not absorb external main history changes when only a side chat settles', async () => {
+  const s = await setupRevisionedSession();
+  s.first.state.messages = [
+    { id: 'user', role: 'user', content: 'Parent task', timestamp: testDate().getTime() },
+    { id: 'answer', role: 'assistant', content: 'Parent answer', assistantMessageId: 'checkpoint', timestamp: testDate().getTime() },
+  ];
+  vi.spyOn(ProviderRegistry.getConversationHistoryService('claude'), 'buildForkProviderState').mockResolvedValue({});
+  const requested = s.h.backend.nextRequest(() => true);
+  const sending = s.first.controllers.sideChatController.handleCommandSubmission('Explore the answer', []);
+  await requested;
+  expect(s.runtime.isWorking).toBe(true);
+  s.continueElsewhere();
+  s.h.backend.latest.complete();
+  await sending;
+  await s.detach();
+
+  const second = await s.h.attach();
+  expect(second.dom.messagesEl.textContent).toContain('Reply from the CLI');
+  expect(s.provider.disposeCalls).toBe(1);
+  await destroyTab(second);
+});
+
+it.each(['user API', 'session tool'] as const)('revalidates a retained headless recipient before delivery from %s', async entry => {
+  const s = await setupRevisionedSession();
+  await s.detach();
+  s.continueElsewhere();
+  vi.spyOn(s.h.plugin, 'ensureConversationMetadataLoaded').mockResolvedValue(undefined);
+  const recipient = s.h.plugin.getConversationList()[0];
+  vi.spyOn(s.h.plugin, 'getConversationList').mockReturnValue([
+    recipient, { ...recipient, id: 'sender', title: 'Sender' },
+  ]);
+  const requested = s.h.backend.nextRequest(() => true);
+  if (entry === 'user API') await s.h.messaging.sendAsUser('conversation', { text: 'Continue after CLI' });
+  else await s.h.messaging.bindSessionTools('sender').port.send({ sessionId: 'conversation', text: 'Continue after CLI' }, new AbortController().signal);
+  await requested;
+  const provider = s.h.backend.latest;
+  const messages = s.runtime.model.state.messages;
+  provider.complete();
+  await s.runtime.turns.drain();
+  expect(s.provider.disposeCalls).toBe(1);
+  expect(provider).not.toBe(s.provider);
+  expect(messages.some(message => message.content === 'Reply from the CLI')).toBe(true);
+  expect(provider.requests).toHaveLength(1);
 });
 
 it.each(['unviewed', 'attached'] as const)('does not retry failed history cleanup on an unrelated %s session change', async kind => {

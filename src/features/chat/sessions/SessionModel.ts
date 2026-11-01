@@ -321,7 +321,7 @@ export class SessionModel {
     if (this.hydration) return this.hydration;
     this.hydrationState = 'loading';
     this.hydration = this.conversationController.loadActive()
-      .then(() => { this.hydrationState = 'ready'; })
+      .then(() => { this.hydrationState = 'ready'; this.session.notifyHydrated(); })
       .catch(error => { this.hydrationState = 'failed'; throw error; })
       .finally(() => { this.hydration = null; });
     return this.hydration;

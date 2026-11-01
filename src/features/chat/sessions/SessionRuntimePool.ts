@@ -30,6 +30,7 @@ export class SessionAlreadyAttached extends Error {
 interface SessionStatus {
   readonly conversationId: string | null;
   readonly isWorking: boolean;
+  readonly isMainWorking: boolean;
   readonly attention: ChatSessionRuntime['statusAttention'];
 }
 
@@ -51,13 +52,15 @@ interface SessionRecord {
    * presentation first loads it and whenever its own work settles. Undefined until read; null if unknown.
    */
   nativeRevision: string | null | undefined;
-  /** Orders revision reads so a slower, older read cannot replace a newer one. */
-  nativeRevisionReads: number;
+  /** Latest baseline read; older reads cannot replace it, and hydration joins it before retrying. */
+  nativeRevisionRead: Promise<void> | null;
+  /** Every opener joins the complete check, eviction and provider release. */
+  revalidation: Promise<void> | null;
   unsubscribe(): void;
 }
 
 function readStatus(runtime: ChatSessionRuntime): SessionStatus {
-  return { conversationId: runtime.conversationId, isWorking: runtime.isWorking, attention: runtime.statusAttention };
+  return { conversationId: runtime.conversationId, isWorking: runtime.isWorking, isMainWorking: runtime.isMainWorking, attention: runtime.statusAttention };
 }
 
 export class SessionRuntimePool {
@@ -131,17 +134,21 @@ export class SessionRuntimePool {
    */
   revalidate(conversationId: string): Promise<void> | null {
     const record = this.conversations.get(conversationId);
-    return record?.nativeRevision && this.canEvict(record) ? this.revalidateRecord(conversationId, record, record.nativeRevision) : null;
+    if (record?.revalidation) return record.revalidation;
+    if (!record?.nativeRevision || !this.canEvict(record)) return null;
+    record.revalidation = this.revalidateRecord(conversationId, record, record.nativeRevision)
+      .finally(() => { record.revalidation = null; });
+    return record.revalidation;
   }
 
   private async revalidateRecord(conversationId: string, record: SessionRecord, nativeRevision: string): Promise<void> {
-    const { nativeRevisionReads } = record;
+    const { nativeRevisionRead } = record;
     const current = await this.readNativeRevision(conversationId);
-    if (current === null || current === nativeRevision || record.nativeRevisionReads !== nativeRevisionReads) return;
+    if (current === null || current === nativeRevision || record.nativeRevisionRead !== nativeRevisionRead) return;
     await record.eviction;
     if (!this.canEvict(record)) return;
     record.nativeRevision = undefined;
-    record.nativeRevisionReads += 1;
+    record.nativeRevisionRead = null;
     record.eviction = this.evict(record, { retain: false }).then(interrupted => {
       record.eviction = null;
       if (interrupted) this.changed(record);
@@ -157,10 +164,15 @@ export class SessionRuntimePool {
   private observeNativeRevision(record: SessionRecord): void {
     const id = record.runtime.conversationId;
     if (!id || !this.deps.readNativeHistoryRevision) return;
-    const reads = ++record.nativeRevisionReads;
-    void this.readNativeRevision(id).then(revision => {
-      if (record.nativeRevisionReads === reads && this.records.get(record.runtime) === record) record.nativeRevision = revision;
+    const read = this.readNativeRevision(id).then(revision => {
+      if (record.nativeRevisionRead === read && this.records.get(record.runtime) === record) record.nativeRevision = revision;
     });
+    record.nativeRevisionRead = read;
+  }
+
+  private async observeHydratedRevision(record: SessionRecord): Promise<void> {
+    await record.nativeRevisionRead;
+    if (this.records.get(record.runtime) === record && record.nativeRevision == null) this.observeNativeRevision(record);
   }
 
   private async readNativeRevision(id: string): Promise<string | null> {
@@ -181,13 +193,18 @@ export class SessionRuntimePool {
     const record: SessionRecord = {
       runtime, status: readStatus(runtime),
       attachment: null, eviction: null, retired: false, holds: 0, settledWaiters: [], viewedAt: 0,
-      nativeRevision: undefined, nativeRevisionReads: 0,
+      nativeRevision: undefined, nativeRevisionRead: null, revalidation: null,
       unsubscribe: () => undefined,
     };
     this.records.set(runtime, record);
     this.keys.set(runtime.sessionKey, record);
     if (record.status.conversationId) this.conversations.set(record.status.conversationId, record);
-    record.unsubscribe = runtime.subscribe(() => this.changed(record));
+    const unsubscribeChanged = runtime.subscribe(() => this.changed(record));
+    const unsubscribeHydrated = runtime.subscribeHydrated(() => {
+      // Hydration can start a native host that was unavailable at the initial read.
+      void this.observeHydratedRevision(record);
+    });
+    record.unsubscribe = () => { unsubscribeChanged(); unsubscribeHydrated(); };
     return record;
   }
 
@@ -234,11 +251,9 @@ export class SessionRuntimePool {
     record.status = status;
     // Streaming, usage and presentation changes leave session lists untouched.
     if (promoted || status.isWorking !== previous.isWorking || status.attention !== previous.attention) this.deps.onChanged();
-    if (previous.isWorking && !status.isWorking && status.conversationId) {
-      // Its own writes are complete, so they become part of the history it matches.
-      this.observeNativeRevision(record);
-      this.deps.onSessionSettled?.(status.conversationId);
-    }
+    // Only main work reconciles the cached main transcript and provider context.
+    if (previous.isMainWorking && !status.isMainWorking && status.conversationId) this.observeNativeRevision(record);
+    if (previous.isWorking && !status.isWorking && status.conversationId) this.deps.onSessionSettled?.(status.conversationId);
     if (!status.isWorking) this.settleWaiters(record, true);
     if (record.retired) {
       if (this.isReleasable(record)) void this.disposeRecord(record).catch(error => this.deps.onError(error));
