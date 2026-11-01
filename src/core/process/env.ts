@@ -379,12 +379,16 @@ export function getEnhancedPath(additionalPaths?: string, cliPath?: string): str
   return unique.join(PATH_SEPARATOR);
 }
 
+export function stripEnvironmentExportPrefix(line: string): string {
+  return line.replace(/^export[ \t]+/, '');
+}
+
 export function parseEnvironmentVariables(input: string): Record<string, string> {
   const result: Record<string, string> = {};
   for (const line of input.split(/\r?\n/)) {
     const trimmed = line.trim();
     if (!trimmed || trimmed.startsWith('#')) continue;
-    const normalized = trimmed.startsWith('export ') ? trimmed.slice(7) : trimmed;
+    const normalized = stripEnvironmentExportPrefix(trimmed);
     const eqIndex = normalized.indexOf('=');
     if (eqIndex > 0) {
       const key = normalized.substring(0, eqIndex).trim();
