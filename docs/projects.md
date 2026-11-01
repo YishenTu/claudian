@@ -75,8 +75,14 @@ Each project in the **Projects** section has a collapse toggle, a New button and
 | Pin project / Unpin project | Moves the project, with all its members, into Pinned. |
 | Edit project | Opens the editor for the name, instructions and memory file. |
 | Open project memory | Opens the memory window. |
-| Archive all sessions | Archives the project's sessions, skipping running ones. The project stays listed until you delete it. |
+| Archive project | Archives the project and its member sessions. Disabled while any member is running. |
 | Delete project | Deletes the project after confirmation. See below. |
+
+After a successful archive, the project and its sessions appear in the archive
+view instead of the active list. There, the project's menu offers **Restore
+project** and **Delete project**. Choose **Restore project** to restore the project
+and its archived sessions. If a member cannot be archived, the project stays
+active.
 
 Drag a project row up or down in the sidebar to reorder projects. Pinned projects stay above the others, and each group reorders on its own. New projects appear at the top until you move them. In single-pane mode, the history drop-up shows the same Projects section and actions in the same order.
 
