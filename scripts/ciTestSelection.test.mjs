@@ -68,6 +68,7 @@ test('platform-sensitive unit tests retain native checks for both direct and sou
   for (const [source, consumer] of [
     ['src/core/process/env.ts', 'tests/unit/core/process/env.test.ts'],
     ['src/core/storage/VaultFileAdapter.ts', 'tests/unit/core/storage/VaultFileAdapter.test.ts'],
+    ['src/core/storage/pathContainment.ts', 'tests/unit/core/storage/pathContainment.test.ts'],
     ['src/providers/codex/history/CodexHistoryStore.ts', 'tests/unit/providers/codex/history/CodexHistoryStore.test.ts'],
     ['src/providers/deepseek/ui/DeepSeekSettingsTab.ts', 'tests/integration/providers/deepseek/ui/DeepSeekSettingsTab.dom.test.ts'],
   ]) {
