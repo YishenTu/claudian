@@ -15,7 +15,6 @@ const {
   cliPathRequiresNode,
   findNodeDirectory,
   findNodeExecutable,
-  findNodeExecutables,
   getEnhancedPath,
   parseEnvironmentVariables,
 } = env;
@@ -851,7 +850,6 @@ describe('findNodeDirectory', () => {
     process.env.PATH = '';
     const search = `/first/bin${SEP}/second/bin`;
     expect(findNodeDirectory(search)).toBeNull();
-    expect(findNodeExecutables(search)).toEqual([]);
   });
 });
 
