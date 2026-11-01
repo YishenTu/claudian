@@ -163,6 +163,13 @@ it('settles an in-flight thinking render before finalizing a newly collapsed blo
 });
 
 it.each([
+  [false, 'Use <meta_name>.', 'Use &lt;meta_name&gt;.'],
+  [false, String.raw`Math \(a<b, c>d\) and <placeholder>.`, 'Math $a<b, c>d$ and &lt;placeholder&gt;.'],
+  [true, String.raw`Math \(a<b, c>d\) and <placeholder>.`, String.raw`Math \$a<b, c>d\$ and &lt;placeholder&gt;.`],
+  [false, String.raw`Math \[a<b, c>d\] and <placeholder>.`, 'Math $$a<b, c>d$$ and &lt;placeholder&gt;.'],
+  [true, String.raw`Math \[a<b, c>d\] and <placeholder>.`, String.raw`Math \$\$a<b, c>d\$\$ and &lt;placeholder&gt;.`],
+  [false, '\\[\na<b,\nc>d\n\\]', '$$\na<b,\nc>d\n$$'],
+  [true, '\\[\na<b,\nc>d\n\\]', '\\$\\$\na<b,\nc>d\n\\$\\$'],
   [false, 'Inline \\(x<y\\).\n\\[y^2\\]\n`echo $PATH`', 'Inline $x<y$.\n$$y^2$$\n`echo $PATH`'],
   [true, 'Inline \\(x<y\\).\n\\[y^2\\]\n`echo $PATH`', 'Inline \\$x<y\\$.\n\\$\\$y^2\\$\\$\n`echo $PATH`'],
   [false, 'Padded \\(  x + y  \\).', 'Padded $x + y$.'],
