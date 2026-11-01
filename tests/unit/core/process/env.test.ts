@@ -911,8 +911,8 @@ describe('getExtraBinaryPaths (Windows branches)', () => {
     const candidates = [
       '/configured data/mise/shims', 'relative-data/mise/shims', '/mock/AppData/Local/mise/shims',
       '/explicit data/shims', '/explicit shims',
-    ].map(entry => path.normalize(entry));
-    expect(entries.filter(entry => candidates.includes(entry))).toEqual([path.normalize(expected)]);
+    ].flatMap(entry => [entry, path.normalize(entry)]);
+    expect(entries.filter(entry => candidates.includes(entry))).toEqual([shims ?? path.normalize(expected)]);
   });
 
   it('includes APPDATA npm path when APPDATA is set', async () => {
