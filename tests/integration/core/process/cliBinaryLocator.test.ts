@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import * as path from 'node:path';
 
 import { findCLIBinaryPath } from '@/core/process/cliBinaryLocator';
-import { getEnhancedPath } from '@/core/process/env';
+import { getEnhancedPath, setLoginShellPathEntries } from '@/core/process/env';
 import { CachedProviderCLIResolver } from '@/core/providers/cli/CachedProviderCLIResolver';
 import { probeCLIInstallation } from '@/core/providers/cli/CLIInstallationProbe';
 
@@ -19,7 +19,8 @@ describe('enhanced CLI discovery and subprocess PATH', () => {
   beforeEach(() => {
     directory = mkdtempSync(path.join(tmpdir(), 'claudian mise '));
     process.env.PATH = '';
-    for (const key of ['MISE_SHIMS_DIR', 'MISE_DATA_DIR', 'XDG_DATA_HOME', 'HOME', 'USERPROFILE', 'LOCALAPPDATA', 'npm_config_prefix']) {
+    setLoginShellPathEntries([]);
+    for (const key of ['MISE_SHIMS_DIR', 'MISE_DATA_DIR', 'XDG_DATA_HOME', 'HOME', 'USERPROFILE', 'LOCALAPPDATA', 'npm_config_prefix', 'FNM_DIR', 'PNPM_HOME', 'PROTO_HOME', 'NODENV_ROOT', 'N_PREFIX', 'NVS_HOME']) {
       delete process.env[key];
     }
     // Windows normally supplies USERPROFILE even when HOME is absent.
@@ -32,15 +33,25 @@ describe('enhanced CLI discovery and subprocess PATH', () => {
       if (!(key in originalEnv)) delete process.env[key];
     }
     Object.assign(process.env, originalEnv);
+    setLoginShellPathEntries([]);
     // Windows can briefly lock the copied executable after it exits.
     rmSync(directory, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
 
-  it.each(['default', 'home fallback', 'XDG_DATA_HOME', 'MISE_DATA_DIR', 'MISE_SHIMS_DIR', 'npm_config_prefix', ...(!isWindows ? ['.npm-global'] : [])])(
+  it.each(['default', 'home fallback', 'XDG_DATA_HOME', 'MISE_DATA_DIR', 'MISE_SHIMS_DIR', 'npm_config_prefix', ...(!isWindows ? ['.npm-global', 'empty XDG_DATA_HOME', 'relative XDG_DATA_HOME', 'absolute pi-node XDG_DATA_HOME'] : [])])(
     'discovers and launches a CLI using %s',
     (configuration) => {
       let shims: string;
       switch (configuration) {
+        case 'empty XDG_DATA_HOME':
+        case 'relative XDG_DATA_HOME':
+        case 'absolute pi-node XDG_DATA_HOME':
+          process.env.XDG_DATA_HOME = configuration === 'empty XDG_DATA_HOME' ? ''
+            : configuration === 'relative XDG_DATA_HOME' ? 'relative-data' : path.join(directory, 'pi data');
+          shims = configuration === 'absolute pi-node XDG_DATA_HOME'
+            ? path.join(directory, 'pi data', 'pi-node', 'current', 'bin')
+            : path.join(directory, '.local', 'share', 'pi-node', 'current', 'bin');
+          break;
         case 'npm_config_prefix':
           process.env.npm_config_prefix = path.join(directory, 'npm prefix');
           shims = isWindows ? process.env.npm_config_prefix : path.join(process.env.npm_config_prefix, 'bin');
