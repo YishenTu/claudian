@@ -2,6 +2,7 @@ import { TextDecoder, TextEncoder } from 'node:util';
 import { deserialize, serialize } from 'node:v8';
 
 import type * as AxeAdapter from '@test/helpers/accessibility';
+import { installNodeInsertionEvents } from '@test/helpers/dom/nodeInsertion';
 import { ControlledResizeObserver, resetResizeObservers } from '@test/helpers/dom/ResizeObserver';
 import { resetObsidianKeymaps } from '@test/helpers/ObsidianKeymap';
 import { resetWorkspaceTimers } from '@test/helpers/ObsidianWorkspace';
@@ -271,6 +272,7 @@ if (globalThis.SVGElement && !Reflect.has(globalThis.SVGElement.prototype, 'crea
 // Install host DOM methods without importing settings controls or a second DOM model.
 if (typeof document !== 'undefined' && globalThis.HTMLElement) {
   const prototype = globalThis.HTMLElement.prototype;
+  installNodeInsertionEvents(prototype);
   prototype.empty = function () { this.replaceChildren(); };
   prototype.addClass = function (...classes) { this.classList.add(...classes); };
   prototype.removeClass = function (...classes) { this.classList.remove(...classes); };
