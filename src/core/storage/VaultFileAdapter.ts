@@ -326,7 +326,18 @@ export class VaultFileAdapter {
     try {
       await fs.writeFile(temp, content, { encoding: 'utf8', flag: 'wx', mode });
       if (mode !== undefined) await fs.chmod(temp, mode);
-      await fs.rename(temp, target);
+      for (let attempt = 1; ; attempt++) {
+        try {
+          await fs.rename(temp, target);
+          break;
+        } catch (error) {
+          const code = error && typeof error === 'object' && 'code' in error ? error.code : undefined;
+          if (process.platform !== 'win32' || attempt >= 5 || !['EPERM', 'EACCES', 'EBUSY'].includes(String(code))) {
+            throw error;
+          }
+          await new Promise(resolve => window.setTimeout(resolve, 20 * attempt));
+        }
+      }
     } catch (error) {
       await fs.rm(temp, { force: true }).catch(() => undefined);
       throw error;
