@@ -104,6 +104,7 @@ test('real dependency discovery retains native launch checks for shared process 
     'tests/integration/providers/deepseek/app/DeepSeekWorkspaceServices.test.ts',
     'tests/integration/providers/deepseek/runtime/DeepSeekCLIResolver.test.ts',
     'tests/integration/providers/deepseek/runtime/DeepSeekHostProcess.test.ts',
+    'tests/integration/providers/deepseek/runtime/DeepSeekInstallation.test.ts',
     'tests/integration/providers/deepseek/ui/DeepSeekSettingsTab.dom.test.ts',
     'tests/integration/providers/grok/app/GrokWorkspaceServices.test.ts',
     'tests/integration/providers/opencode/ToolRendererCompatibility.dom.test.ts',
@@ -126,7 +127,6 @@ test('real dependency discovery retains native launch checks for shared process 
     'tests/integration/providers/pi/execution/PiExecutionKernel.test.ts',
     'tests/integration/providers/pi/execution/PiRecoveryContext.test.ts',
     'tests/integration/providers/pi/runtime/PiCLIInstallation.test.ts',
-    'tests/unit/providers/deepseek/runtime/DeepSeekInstallation.test.ts',
   ]);
   assert.equal(result.piWindows, true);
   assert.ok(result.testFiles.includes('tests/unit/core/process/windowsCmdShim.test.ts'));
