@@ -207,24 +207,45 @@ it.each([
   await destroyTab(second);
 });
 
-it('keeps a retained session whose native history changed only through its own turn', async () => {
-  const s = await setupRevisionedSession();
+it.each(['completed', 'pending'] as const)('keeps its own completed turn when reopening with a %s settlement revision read', async settlementRead => {
+  let revision = 'before';
+  let holdNextRead = false;
+  const readStarted = deferred<void>();
+  const finishRead = deferred<void>();
+  const s = await setupRevisionedSession({ readNativeHistoryRevision: async () => {
+    const current = revision;
+    if (holdNextRead) {
+      holdNextRead = false;
+      readStarted.resolve();
+      await finishRead.promise;
+    }
+    return current;
+  } });
   s.first.controllers.drafts.restore('main', { content: 'Continue' });
   const sending = s.first.controllers.inputController.sendMessage();
   await waitFor(() => expect(s.provider.requests).toHaveLength(1));
   // The provider appends this turn to native history before the turn settles.
-  s.native.revision = 'after own turn';
+  revision = 'after own turn';
+  holdNextRead = settlementRead === 'pending';
   s.provider.emitText('Own reply');
   s.provider.complete();
   await sending;
   await waitFor(() => expect(s.runtime.isWorking).toBe(false));
+  if (settlementRead === 'pending') await readStarted.promise;
   await s.detach();
 
-  const second = await s.h.attach();
-  expect(s.runtime.peekModel === s.model).toBe(true);
-  expect(second.dom.messagesEl.textContent).toContain('Own reply');
-  expect(s.provider.disposeCalls).toBe(0);
+  // Revalidation starts while the settlement read still holds the old baseline.
+  // Both reads see the same post-turn token: there has been no external write.
+  const reopening = s.h.attach();
+  finishRead.resolve();
+  const second = await reopening;
+  const keptModel = s.runtime.peekModel === s.model;
+  const transcript = second.dom.messagesEl.textContent;
+  const disposals = s.provider.disposeCalls;
   await destroyTab(second);
+  expect(keptModel).toBe(true);
+  expect(transcript).toContain('Own reply');
+  expect(disposals).toBe(0);
 });
 
 it.each(['completed', 'pending'] as const)('learns an initially unknown native revision after hydration with a %s initial read', async initialRead => {

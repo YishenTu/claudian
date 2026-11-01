@@ -136,13 +136,18 @@ export class SessionRuntimePool {
     const record = this.conversations.get(conversationId);
     if (record?.revalidation) return record.revalidation;
     if (!record?.nativeRevision || !this.canEvict(record)) return null;
-    record.revalidation = this.revalidateRecord(conversationId, record, record.nativeRevision)
+    record.revalidation = this.revalidateRecord(conversationId, record)
       .finally(() => { record.revalidation = null; });
     return record.revalidation;
   }
 
-  private async revalidateRecord(conversationId: string, record: SessionRecord, nativeRevision: string): Promise<void> {
+  private async revalidateRecord(conversationId: string, record: SessionRecord): Promise<void> {
     const { nativeRevisionRead } = record;
+    // A just-settled turn may still be recording its own writes as the baseline.
+    await nativeRevisionRead;
+    if (record.nativeRevisionRead !== nativeRevisionRead || !this.canEvict(record)) return;
+    const { nativeRevision } = record;
+    if (nativeRevision == null) return;
     const current = await this.readNativeRevision(conversationId);
     if (current === null || current === nativeRevision || record.nativeRevisionRead !== nativeRevisionRead) return;
     await record.eviction;
