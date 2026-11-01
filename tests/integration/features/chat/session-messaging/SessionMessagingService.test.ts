@@ -581,6 +581,10 @@ describe('outside-client API', () => {
 
     expect(model.state.messages.some(message => message.responseContinuationOf !== undefined)).toBe(true);
     expect(await api.read('recipient')).toBe(expected);
+    const snapshot = await h.binding.port.read({ sessionId: 'recipient' }, signal());
+    expect(snapshot).toMatchObject({ fromTurn: 1, toTurn: 1, totalTurns: 1 });
+    expect(snapshot.content.slice(snapshot.content.indexOf('## T1 user\n')))
+      .toBe(`## T1 user\nInspect the note\n\n## T1 assistant\n${expected}\n`);
   });
 
   it('delivers client text as the user\'s own prompt, reports the active session, and reads the finished reply', async () => {

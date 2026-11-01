@@ -14,6 +14,17 @@ it.each([
   ['interrupt', [user('go'), assistant({ isInterrupt: true })], false, '## T1 user\ngo\n\n## T1 assistant\n(interrupted)'],
   ['error', [user('go'), assistant({ toolCalls: [{ id: 't', name: 'Read', input: {}, status: 'error' }] })], false, '## T1 user\ngo\n\n## T1 assistant\n(error)'],
   ['automatic response', [user('go'), assistant({ content: 'first' }), assistant({ content: 'later', isAutomaticResponse: true })], false, '## T1 user\ngo\n\n## T1 assistant\nfirst\n\nlater'],
+  ['linked answer segments', [
+    user('go'),
+    assistant({ id: 'a1', contentBlocks: [{ type: 'tool_use', toolId: 't' }, { type: 'text', content: 'Part one.' }] }),
+    assistant({ id: 'a2', responseContinuationOf: 'a1', contentBlocks: [{ type: 'text', content: 'Part two.' }] }),
+  ], false, '## T1 user\ngo\n\n## T1 assistant\nPart one.\n\nPart two.'],
+  ['interleaved independent answer', [
+    user('go'),
+    assistant({ id: 'a1', contentBlocks: [{ type: 'tool_use', toolId: 't' }, { type: 'text', content: 'Part one.' }] }),
+    assistant({ id: 'auto', content: 'Independent answer.', isAutomaticResponse: true }),
+    assistant({ id: 'a2', responseContinuationOf: 'a1', contentBlocks: [{ type: 'text', content: 'Part two.' }] }),
+  ], false, '## T1 user\ngo\n\n## T1 assistant\nPart one.\n\nPart two.\n\nIndependent answer.'],
   ['compacted context', [user('hidden', { isRebuiltContext: true }), user('go'), assistant({ contentBlocks: [{ type: 'context_compacted' }, { type: 'text', content: 'final' }] })], false, '## T1 user\ngo\n\n## T1 assistant\nfinal'],
   ['verbatim nested prompt', [user('transport', { displayContent: '  ref @"Nested"\n```x```  ' }), assistant({ content: 'done' })], false, '## T1 user\n  ref @"Nested"\n```x```  \n\n## T1 assistant\ndone'],
   ['preparing after completed turn', [user('go'), assistant({ content: 'done', completedAt: time })], true, '## T1 user\ngo\n\n## T1 assistant\ndone'],
