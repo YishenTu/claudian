@@ -50,16 +50,18 @@ it.each(['marked', 'legacy'] as const)('preserves command ownership through the 
     const items = source.load(trigger, new AbortController().signal);
     expect(items.filter(item => item.id === 'sdk:debug' || item.id === 'sdk:init').map(item => ({
       id: item.id, label: item.label, detail: item.detail, replacement: item.kind === 'value' ? item.replacement : undefined,
-    }))).toEqual(provenance === 'marked' ? [
+    }))).toEqual([
       { id: 'sdk:debug', label: '/debug', detail: 'My debugging workflow', replacement: '/debug ' },
       { id: 'sdk:init', label: '/init', detail: 'My note initialization', replacement: '/init ' },
-    ] : []);
-    expect(items.filter(item => item.label === '/cost' || item.label === '/simplify')).toEqual([]);
+    ]);
+    // Only a marked snapshot identifies Claude Code's own commands and the custom rows they shadow.
+    expect(items.filter(item => item.label === '/cost' || item.label === '/simplify').map(item => item.detail))
+      .toEqual(provenance === 'marked' ? [] : ['Native cost display', 'Shadowed custom workflow']);
     expect(items.filter(item => item.label === '/new')).toEqual([
       expect.objectContaining({ id: 'builtin:new' }),
     ]);
     expect(source.resolveCommandKind('/new', true)).toBe('command');
-    expect(source.resolveCommandKind('/debug', true)).toBe(provenance === 'marked' ? 'skill' : null);
+    expect(source.resolveCommandKind('/debug', true)).toBe('skill');
     const snapshot = discovery.getSnapshot();
     if (snapshot.status !== 'ready') throw new Error('Expected settled native command discovery');
     expect(snapshot.items.filter(entry => ['commit', 'compact', 'pdf', 'review'].includes(entry.name)))
@@ -68,14 +70,13 @@ it.each(['marked', 'legacy'] as const)('preserves command ownership through the 
         ['compact', 'Compact context', '<focus>', 'command', true],
         ['pdf', 'Work with PDFs', '', 'skill', false],
         ['review', 'Review changes', '', 'skill', true],
-      ].map(([name, description, argumentHint, kind, builtin]) => ({
-        id: `sdk:${name}`, name, description, argumentHint, kind, content: '',
-        providerId: 'claude',
-        source: builtin && provenance === 'marked' ? 'builtin' : 'sdk',
-        scope: builtin && provenance === 'marked' ? 'builtin' : 'runtime',
-        isEditable: false, isDeletable: false, displayPrefix: '/', insertPrefix: '/',
-      })));
-    for (const name of ['commit', 'pdf', 'review']) {
+      ].filter(([, , , , builtin]) => provenance === 'legacy' || !builtin)
+        .map(([name, description, argumentHint, kind]) => ({
+          id: `sdk:${name}`, name, description, argumentHint, kind, content: '',
+          providerId: 'claude', source: 'sdk', scope: 'runtime',
+          isEditable: false, isDeletable: false, displayPrefix: '/', insertPrefix: '/',
+        })));
+    for (const name of provenance === 'marked' ? ['commit', 'pdf'] : ['commit', 'pdf', 'review']) {
       const item = items.find(item => item.id === `sdk:${name}`);
       expect(item).toMatchObject({ label: `/${name}`, kind: 'value' });
       expect(item?.kind === 'value' ? source.select(item, trigger) : undefined)
@@ -86,10 +87,10 @@ it.each(['marked', 'legacy'] as const)('preserves command ownership through the 
       .toEqual({ kind: 'replace', text: '/new ' });
     const debugEntry = snapshot.items.find(entry => entry.name === 'debug');
     expect(debugEntry && { source: debugEntry.source, isEditable: debugEntry.isEditable, isDeletable: debugEntry.isDeletable })
-      .toEqual(provenance === 'marked' ? { source: 'sdk', isEditable: false, isDeletable: false } : undefined);
+      .toEqual({ source: 'sdk', isEditable: false, isDeletable: false });
     const debug = items.find(item => item.id === 'sdk:debug');
-    const selected = debug?.kind === 'value' ? source.select(debug, trigger) : undefined;
-    expect(selected).toEqual(provenance === 'marked' ? { kind: 'replace', text: '/debug ' } : undefined);
+    expect(debug?.kind === 'value' ? source.select(debug, trigger) : undefined)
+      .toEqual({ kind: 'replace', text: '/debug ' });
   } finally {
     source.destroy();
   }

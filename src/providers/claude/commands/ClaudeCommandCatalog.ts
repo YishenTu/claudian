@@ -36,12 +36,6 @@ function slashCommandToEntry(cmd: SlashCommand): ProviderCommandEntry {
   };
 }
 
-// SDK built-in skills that have no meaning inside Claudian
-const BUILTIN_HIDDEN_COMMANDS = new Set([
-  'context', 'cost', 'debug', 'extra-usage', 'heapdump', 'init',
-  'insights', 'loop', 'schedule', 'security-review', 'simplify', 'update-config',
-]);
-
 // A cold CLI start plus capped MCP startup can exceed the shared picker deadline.
 const CLAUDE_COMMAND_DISCOVERY_TIMEOUT_MS = 30_000;
 
@@ -69,15 +63,14 @@ export class ClaudeCommandCatalog implements ProviderCommandCatalog {
     // SDK commands already include vault commands/skills (the SDK scans
     // .claude/commands/ and .claude/skills/ internally). No file scan needed.
     const commands = context.commandSnapshot ?? await this.#ensureProbed(context.signal);
-    // A marked row proves this native snapshot reports provenance; older CLIs omit it entirely.
-    const reportsNativeProvenance = commands.some(cmd => cmd.source === 'builtin');
-    // A marked native row owns its name even when an unmarked custom row shares it.
-    const hiddenNativeNames = new Set(commands
-      .filter(cmd => (!reportsNativeProvenance || cmd.source === 'builtin')
-        && BUILTIN_HIDDEN_COMMANDS.has(cmd.name.toLowerCase()))
+    // Claude Code's own commands mostly target its terminal UI, so the picker offers only skills and
+    // custom commands. A marked row runs for its name, so it also hides an unmarked row sharing that name.
+    // Snapshots from CLIs that do not mark built-ins cannot be classified and are kept whole.
+    const nativeNames = new Set(commands
+      .filter(cmd => cmd.source === 'builtin')
       .map(cmd => cmd.name.toLowerCase()));
     return commands
-      .filter(cmd => !hiddenNativeNames.has(cmd.name.toLowerCase()))
+      .filter(cmd => !nativeNames.has(cmd.name.toLowerCase()))
       .map(slashCommandToEntry);
   }
 

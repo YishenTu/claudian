@@ -8,6 +8,7 @@ import { setIcon } from 'obsidian';
 
 import { ComposerDropdownController } from '@/shared/composer-dropdown/ComposerDropdownController';
 import { MentionSource } from '@/shared/composer-dropdown/MentionSource';
+import { SlashCommandSource } from '@/shared/composer-dropdown/SlashCommandSource';
 
 // jsdom has no layout or scrolling.
 Element.prototype.scrollIntoView = vi.fn();
@@ -38,6 +39,8 @@ it('shows vault mentions on the keystroke that requests them and updates the ren
     expect(options().map(option => option.textContent)).toEqual(['Alpha one.md', 'Alpha two.md', 'Gamma.md']);
     expect(input.getAttribute('aria-activedescendant')).toBe(options()[0].id);
     expect(await axe(container)).toHaveNoViolations();
+    // Obsidian renders any aria-label as a hover tooltip over the whole menu.
+    expect(ui.getByRole('listbox', { name: 'Input suggestions' }).hasAttribute('aria-label')).toBe(false);
 
     const firstRow = options()[0];
     const iconCalls = vi.mocked(setIcon).mock.calls.length;
@@ -73,6 +76,7 @@ it('repositions fixed suggestions from their own window and releases that listen
   frame.contentDocument!.body.appendChild(container);
   // Obsidian supplies this element helper in each window.
   container.createDiv = HTMLElement.prototype.createDiv;
+  container.createSpan = HTMLElement.prototype.createSpan;
   const input = frame.contentDocument!.createElement('textarea');
   input.setAttribute('aria-label', 'Message');
   container.appendChild(input);
@@ -196,4 +200,38 @@ describe.each([false, true])('local suggestion scrolling (fixed: %s)', fixed => 
       expect(h.input.value).toBe('@Gamma.md ');
     } finally { h.dispose(); }
   });
+});
+
+it('marks the typed text in slash command names and shows the alias a query matched', () => {
+  const container = document.body.createDiv();
+  const input = container.createEl('textarea', { attr: { 'aria-label': 'Message' } });
+  const slash = new SlashCommandSource();
+  const controller = new ComposerDropdownController(container, input, [slash]);
+  const type = (value: string): void => {
+    input.value = value;
+    input.selectionStart = input.selectionEnd = value.length;
+    controller.handleInputChange();
+  };
+  const list = (): HTMLElement => within(container).getByRole('listbox', { name: 'Input suggestions' });
+  const option = (name: string): HTMLElement => within(list()).getByRole('option', { name: new RegExp(`^${name} `) });
+  const marked = (row: HTMLElement): Array<string | null> => [...row.querySelectorAll('.claudian-composer-dropdown-match')]
+    .map(mark => mark.textContent);
+  try {
+    type('/ID');
+    const side = option('/side');
+    expect(marked(side)).toEqual(['id']);
+
+    type('/bt');
+    const viaAlias = option('/side \\(btw\\)');
+    expect(within(list()).getAllByRole('option')[0]).toBe(viaAlias);
+    expect(marked(viaAlias)).toEqual(['bt']);
+
+    type('/');
+    expect(marked(list())).toEqual([]);
+    expect(marked(option('/side'))).toEqual([]);
+  } finally {
+    controller.destroy();
+    slash.destroy();
+    container.remove();
+  }
 });

@@ -11,22 +11,30 @@ describe('ClaudeCommandCatalog', () => {
       expect(entries).toHaveLength(0);
     });
 
-    it.each(['legacy', 'marked'] as const)('filters out built-in hidden SDK commands in a %s snapshot', async provenance => {
+    it('hides every Claude Code built-in and custom rows its names shadow, keeping skills and custom commands', async () => {
       const catalog = new ClaudeCommandCatalog();
 
       const entries = await catalog.listDropdownEntries({ includeBuiltIns: false, commandSnapshot: [
-        { id: 'sdk:commit', name: 'commit', description: 'Commit', content: '', source: 'sdk' },
-        { id: 'sdk:init', name: 'init', description: 'Init', content: '', source: provenance === 'marked' ? 'builtin' : 'sdk' },
-        { id: 'sdk:debug', name: 'debug', description: 'Debug', content: '', source: provenance === 'marked' ? 'builtin' : 'sdk' },
-        { id: 'sdk:cost', name: 'cost', description: 'Cost', content: '', source: provenance === 'marked' ? 'builtin' : 'sdk' },
-        { id: 'sdk:review', name: 'review', description: 'Review', content: '', source: 'sdk' },
+        { id: 'sdk:commit', name: 'commit', description: 'Commit', content: '', source: 'sdk', kind: 'skill' },
+        { id: 'sdk:agents', name: 'agents', description: 'Agents', content: '', source: 'builtin' },
+        { id: 'sdk:review', name: 'review', description: 'Review', content: '', source: 'builtin' },
+        { id: 'sdk:init', name: 'init', description: 'My init', content: '', source: 'sdk' },
+        { id: 'sdk:simplify', name: 'simplify', description: 'Shadowed', content: '', source: 'sdk' },
+        { id: 'sdk:simplify', name: 'Simplify', description: 'Native', content: '', source: 'builtin' },
       ] });
 
-      const names = entries.map(e => e.name);
-      expect(names).toEqual(['commit', 'review']);
-      expect(names).not.toContain('init');
-      expect(names).not.toContain('debug');
-      expect(names).not.toContain('cost');
+      expect(entries.map(e => e.name)).toEqual(['commit', 'init']);
+    });
+
+    it('keeps every row of a snapshot without built-in provenance', async () => {
+      const catalog = new ClaudeCommandCatalog();
+
+      const entries = await catalog.listDropdownEntries({ includeBuiltIns: false, commandSnapshot: [
+        { id: 'sdk:cost', name: 'cost', description: 'Cost', content: '', source: 'sdk' },
+        { id: 'sdk:init', name: 'init', description: 'Init', content: '', source: 'sdk' },
+      ] });
+
+      expect(entries.map(e => e.name)).toEqual(['cost', 'init']);
     });
 
     it('probes SDK when the request carries no snapshot', async () => {

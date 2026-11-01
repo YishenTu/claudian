@@ -2,7 +2,7 @@ import { setIcon } from 'obsidian';
 
 import { t } from '@/i18n/i18n';
 
-import type { ComposerDropdownItem, ComposerInputElement } from './types';
+import type { ComposerDropdownItem, ComposerInputElement, ComposerTextMatch } from './types';
 
 export interface ComposerDropdownViewOptions {
   readonly fixed?: boolean;
@@ -13,6 +13,17 @@ export interface ComposerDropdownViewOptions {
 }
 
 let nextListboxId = 0;
+
+/** Builds through the parent so rows in a pop-out window own their nodes. */
+function appendMarkedText(parent: HTMLElement, text: string, match: ComposerTextMatch | undefined): void {
+  if (!match || match.end <= match.start) {
+    parent.appendText(text);
+    return;
+  }
+  parent.appendText(text.slice(0, match.start));
+  parent.createSpan({ cls: 'claudian-composer-dropdown-match', text: text.slice(match.start, match.end) });
+  parent.appendText(text.slice(match.end));
+}
 
 interface ItemRow {
   readonly el: HTMLElement;
@@ -25,6 +36,7 @@ interface ItemRow {
 
 export class ComposerDropdownView {
   private dropdownEl: HTMLElement | null = null;
+  private labelEl: HTMLElement | null = null;
   private rows: ItemRow[] = [];
   private positioningWindow: Window | null = null;
   private readonly listboxId = `claudian-composer-listbox-${++nextListboxId}`;
@@ -46,6 +58,8 @@ export class ComposerDropdownView {
     for (const attribute of [...this.writtenAttributes.keys()]) this.#releaseInputAttribute(attribute);
     this.dropdownEl?.remove();
     this.dropdownEl = null;
+    this.labelEl?.remove();
+    this.labelEl = null;
     this.rows = [];
     if (wasVisible) this.options.onVisibilityChange?.();
   }
@@ -136,7 +150,19 @@ export class ComposerDropdownView {
       setIcon(row.iconEl, icon);
       row.icon = icon;
     }
-    row.labelEl.textContent = item.label;
+    if (item.kind === 'value' && (item.labelMatch || item.labelNote)) {
+      row.labelEl.empty();
+      appendMarkedText(row.labelEl, item.label, item.labelMatch);
+      if (item.labelNote) {
+        row.labelEl.appendText(' ');
+        const noteEl = row.labelEl.createSpan({ cls: 'claudian-composer-dropdown-label-note' });
+        noteEl.appendText('(');
+        appendMarkedText(noteEl, item.labelNote.text, item.labelNote.match);
+        noteEl.appendText(')');
+      }
+    } else {
+      row.labelEl.textContent = item.label;
+    }
     if (row.detailEl) row.detailEl.textContent = item.detail ?? '';
   }
 
@@ -166,12 +192,17 @@ export class ComposerDropdownView {
 
   #ensureDropdown(): HTMLElement {
     if (this.dropdownEl) return this.dropdownEl;
+    // Named through a hidden sibling: Obsidian shows an aria-label as a hover tooltip over the whole menu.
+    this.labelEl = this.containerEl.createSpan({
+      attr: { hidden: '', id: `${this.listboxId}-label` },
+      text: t('common.inputSuggestions'),
+    });
     this.dropdownEl = this.containerEl.createDiv({
       cls: [
         'claudian-composer-dropdown',
         this.options.fixed ? 'claudian-composer-dropdown--fixed' : '',
       ].filter(Boolean).join(' '),
-      attr: { id: this.listboxId, role: 'listbox', 'aria-label': t('common.inputSuggestions') },
+      attr: { id: this.listboxId, role: 'listbox', 'aria-labelledby': this.labelEl.id },
     });
     this.#setInputAttribute('aria-autocomplete', 'list');
     return this.dropdownEl;
