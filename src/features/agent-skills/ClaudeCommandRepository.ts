@@ -6,6 +6,7 @@ import type { AgentSkillDiagnostic, AgentSkillInput } from '@/features/agent-ski
 import { normalizeInstructionMarkdown, serializeMarkdownWithFrontmatter } from '@/features/agent-skills/AgentSkillCodec';
 import {
   AgentSkillRepositoryError,
+  AgentSkillRollbackError,
   CLAUDE_COMMANDS_ROOT,
   type SkillFrontmatterPolicy,
 } from '@/features/agent-skills/AgentSkillRepository';
@@ -140,7 +141,21 @@ export class ClaudeCommandRepository {
       if (await this.#exists(targetPath)) throw new ClaudeCommandCollisionError(input.name);
       await this.files.ensureManagedFolder(path.posix.dirname(targetPath));
       await this.files.writeManagedFile(targetPath, content);
-      await this.files.removeManagedFile(current.filePath);
+      try {
+        await this.files.removeManagedFile(current.filePath);
+      } catch (error) {
+        try {
+          await this.files.removeManagedFile(targetPath);
+        } catch (rollbackError) {
+          throw new AgentSkillRollbackError(
+            `Could not rename command "${previousName}" and rollback was incomplete: "${targetPath}" could not be removed`,
+            error,
+            [rollbackError instanceof Error ? rollbackError : new Error(String(rollbackError))],
+          );
+        }
+        await this.#pruneEmptyFolders(path.posix.dirname(targetPath));
+        throw error;
+      }
       await this.#pruneEmptyFolders(path.posix.dirname(current.filePath));
       return this.#documentFromRaw(targetPath, content);
     });
