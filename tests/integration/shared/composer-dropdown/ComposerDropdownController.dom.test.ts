@@ -6,6 +6,9 @@ import { fireEvent, within } from '@testing-library/dom';
 import type { TFile } from 'obsidian';
 import { setIcon } from 'obsidian';
 
+import { ProviderCommandDiscoveryStore } from '@/core/providers/commands/ProviderCommandDiscoveryStore';
+import { GrokCommandCatalog } from '@/providers/grok/commands/GrokCommandCatalog';
+import { normalizeGrokCommands } from '@/providers/grok/normalization/grokCommandNormalization';
 import { ComposerDropdownController } from '@/shared/composer-dropdown/ComposerDropdownController';
 import { MentionSource } from '@/shared/composer-dropdown/MentionSource';
 import { SlashCommandSource } from '@/shared/composer-dropdown/SlashCommandSource';
@@ -232,6 +235,53 @@ it('marks the typed text in slash command names and shows the alias a query matc
   } finally {
     controller.destroy();
     slash.destroy();
+    container.remove();
+  }
+});
+
+it.each([
+  ['İstanbul', 'stanbul', 2, 9, 'stanbul'],
+  ['preİpost', 'İp', 4, 6, 'İp'],
+  ['İΟΣ', 'ος', 2, 4, 'ΟΣ'],
+  ['𐐀İstanbul', 'stanbul', 4, 11, 'stanbul'],
+])('marks original native command %s for query %s', async (name, query, start, end, expected) => {
+  const catalog = new GrokCommandCatalog();
+  const discovery = new ProviderCommandDiscoveryStore(async () => {
+    const items = await catalog.listDropdownEntries({
+      includeBuiltIns: false,
+      commandSnapshot: normalizeGrokCommands([{ name, description: 'Native command' }]),
+    });
+    if (!items.length) throw new Error('Expected a native command');
+    return { status: 'ready', items: [items[0], ...items.slice(1)] };
+  });
+  await discovery.load();
+  const slash = new SlashCommandSource({
+    includeBuiltIns: false,
+    providerConfig: catalog.getDropdownConfig(),
+    providerDiscovery: discovery,
+  });
+  const container = document.body.createDiv();
+  const input = container.createEl('textarea', { attr: { 'aria-label': 'Message' } });
+  const controller = new ComposerDropdownController(container, input, [slash]);
+  try {
+    input.value = `/${query}`;
+    input.selectionStart = input.selectionEnd = input.value.length;
+    controller.handleInputChange();
+    const row = within(container).getByRole('option', { name: `/${name} Native command` });
+    expect([...row.querySelectorAll('.claudian-composer-dropdown-match')].map(mark => mark.textContent))
+      .toEqual([expected]);
+    const trigger = slash.match(input.value, input.value.length)!;
+    expect(slash.load(trigger, new AbortController().signal)[0]).toMatchObject({
+      label: `/${name}`,
+      labelMatch: { start, end },
+    });
+    expect(await axe(container)).toHaveNoViolations();
+    expect(controller.handleKeydown(new KeyboardEvent('keydown', { key: 'Enter', cancelable: true }))).toBe(true);
+    expect(input.value).toBe(`/${name} `);
+  } finally {
+    controller.destroy();
+    slash.destroy();
+    discovery.dispose();
     container.remove();
   }
 });

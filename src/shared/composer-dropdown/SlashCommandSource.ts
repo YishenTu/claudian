@@ -34,6 +34,24 @@ function nameRank(name: string, query: string): number {
   return key.includes(query) ? 2 : Number.POSITIVE_INFINITY;
 }
 
+/** Maps search-key offsets to enclosing boundaries in the unchanged command name. */
+function originalMatchRange(name: string, key: string, start: number, end: number) {
+  if (key.length === name.length) return { start, end };
+  let originalStart = 0;
+  let originalEnd = name.length;
+  let boundary = 0;
+  for (const character of name) {
+    boundary += character.length;
+    const foldedBoundary = name.slice(0, boundary).toLocaleLowerCase().length;
+    if (foldedBoundary <= start) originalStart = boundary;
+    if (foldedBoundary >= end) {
+      originalEnd = boundary;
+      break;
+    }
+  }
+  return { start: originalStart, end: originalEnd };
+}
+
 /** Ranks by the best-matching name and marks it; an alias is shown only when it beats the primary name. */
 function rankCommand(item: SlashCommandDropdownItem, query: string): RankedCommand | null {
   const prefix = item.label.slice(0, item.label.length - item.name.length);
@@ -42,8 +60,11 @@ function rankCommand(item: SlashCommandDropdownItem, query: string): RankedComma
     .map(name => ({ name, rank: nameRank(name, query) }))
     .reduce<{ name: string; rank: number } | null>((best, next) => (!best || next.rank < best.rank ? next : best), null);
   const matchIn = (name: string, offset: number) => {
-    const start = name.toLocaleLowerCase().indexOf(query);
-    return query ? { start: offset + start, end: offset + start + query.length } : undefined;
+    if (!query) return undefined;
+    const key = name.toLocaleLowerCase();
+    const start = key.indexOf(query);
+    const range = originalMatchRange(name, key, start, start + query.length);
+    return { start: offset + range.start, end: offset + range.end };
   };
   if (alias && alias.rank < primary) {
     return {
