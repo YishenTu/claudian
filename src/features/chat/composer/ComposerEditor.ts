@@ -145,6 +145,7 @@ export class ComposerEditor {
   private linkRevision = 0;
   private commandResolver: ComposerCommandResolver | null = null;
   private readonly removeFileLinkHandler: () => void;
+  private readonly removeWindowMigrationHandler: () => void;
 
   constructor(parent: HTMLElement, private readonly app: App, private readonly component: Component) {
     const host = parent.createDiv({
@@ -261,6 +262,9 @@ export class ComposerEditor {
     };
     host.setAttribute('data-placeholder', this.placeholderText);
     host.addEventListener('focusin', this.onFocusIn);
+    // CodeMirror resolves its root document once; a tab moved to a pop-out keeps the old one, so focus and
+    // selection writes would target the wrong window.
+    this.removeWindowMigrationHandler = host.onWindowMigrated(win => this.view?.setRoot(win.document));
   }
 
   refreshLinks(): void {
@@ -300,6 +304,7 @@ export class ComposerEditor {
   destroy(): void {
     this.destroyed = true;
     this.element.removeEventListener('focusin', this.onFocusIn);
+    this.removeWindowMigrationHandler();
     this.removeFileLinkHandler();
     this.view?.destroy();
     this.view = null;

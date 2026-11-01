@@ -2,6 +2,8 @@
 
 import { EditorView } from '@codemirror/view';
 import { axe } from '@test/helpers/accessibility';
+import { startNodeInsertAnimations } from '@test/helpers/dom/nodeInsertion';
+import { createPopoutDocument } from '@test/helpers/dom/popoutDocument';
 import { testDate } from '@test/helpers/testClock';
 import { createEvent, fireEvent, waitFor, within } from '@testing-library/dom';
 import { type App, Component, MarkdownRenderer, Notice, Platform, TFile } from 'obsidian';
@@ -671,8 +673,33 @@ it('upgrades to the editor when a focusin reaches the composer host', () => {
   }
 });
 
+it('keeps focus and the caret in a pop-out window the mounted composer moves to', () => {
+  const parent = document.body.createDiv();
+  const editor = createEditor(parent);
+  const popout = createPopoutDocument();
+  try {
+    editor.element.value = 'abcde';
+    editor.element.focus();
+    popout.body.append(parent);
+    startNodeInsertAnimations(parent);
+    const textbox = within(popout.body).getByRole('textbox', { name: 'Message' });
+    textbox.focus();
+    for (let i = 0; i < 3; i++) fireEvent.keyDown(textbox, { key: 'Backspace', code: 'Backspace' });
+
+    expect(editor.element.value).toBe('ab');
+    expect(parent.querySelector('.cm-editor')!.classList.contains('cm-focused')).toBe(true);
+    const selection = popout.getSelection()!;
+    expect(textbox.contains(selection.focusNode)).toBe(true);
+    expect(selection.focusNode!.textContent!.slice(0, selection.focusOffset)).toBe('ab');
+  } finally {
+    editor.destroy();
+    parent.remove();
+    popout.defaultView!.frameElement!.remove();
+  }
+});
+
 it.each([
-  ['Draft ] \\ review', '@[Draft \\] \\\\ review](claudian-session:conv-1-abc)'],
+  ['Draft ] \\ review','@[Draft \\] \\\\ review](claudian-session:conv-1-abc)'],
   ['Fix `bug`', '@[Fix `bug`](claudian-session:conv-1-abc)'],
 ])('renders session title %s accessibly and deletes its token', async (title, token) => {
   const parent = document.body.createDiv();
