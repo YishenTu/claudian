@@ -282,3 +282,15 @@ if (typeof document !== 'undefined' && globalThis.HTMLElement) {
   };
   prototype.appendText = function (value) { this.append(value); };
 }
+
+// jsdom leaves `display` empty for phrasing elements, so accessible-name computation treats them as
+// blocks and splits a label such as `/s<span>id</span>e`. Browsers default these to inline.
+const INLINE_TAGS = new Set(['A', 'ABBR', 'B', 'CODE', 'EM', 'I', 'KBD', 'MARK', 'S', 'SMALL', 'SPAN', 'STRONG', 'SUB', 'SUP', 'U']);
+if (typeof window !== 'undefined' && typeof window.getComputedStyle === 'function') {
+  const getComputedStyle = window.getComputedStyle.bind(window);
+  window.getComputedStyle = (element, pseudo) => {
+    const style = getComputedStyle(element, pseudo);
+    if (!pseudo && style.display === '' && INLINE_TAGS.has(element.tagName)) style.display = 'inline';
+    return style;
+  };
+}

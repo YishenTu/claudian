@@ -79,6 +79,16 @@
   font-size: 13px;
 }
 
+.claudian-composer-dropdown-match {
+  background: none;
+  color: var(--text-accent);
+  font-weight: var(--font-semibold);
+}
+
+.claudian-composer-dropdown-label-note {
+  color: var(--text-muted);
+}
+
 .claudian-composer-dropdown-detail {
   margin-top: 2px;
   color: var(--text-muted);
