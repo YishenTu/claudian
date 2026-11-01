@@ -271,7 +271,11 @@ export function normalizePathForVault(
     const absolute = path.isAbsolute(normalizedRaw)
       ? normalizedRaw
       : path.resolve(vaultPath, normalizedRaw);
-    const relative = path.relative(vaultPath, absolute);
+    let relative = path.relative(vaultPath, absolute);
+    // Providers may report a canonical path while the vault was opened through a symlink.
+    if (relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
+      relative = path.relative(resolveRealPath(vaultPath), resolveRealPath(absolute));
+    }
     return relative ? relative.replace(/\\/g, '/') : null;
   }
 
