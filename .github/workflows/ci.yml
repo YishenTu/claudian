@@ -241,9 +241,10 @@ jobs:
         shell: bash
         env:
           TEST_SELECTION: ${{ needs.test-scope.outputs.cross-platform-tests }}
+          TEST_WORKERS: ${{ runner.os == 'Windows' && '4' || '3' }}
         run: |
           mkdir -p test-results
-          npm run test:cross-platform -- --selection "$TEST_SELECTION" --maxWorkers=3 --reporter=default --reporter=json --outputFile=test-results/native.json
+          npm run test:cross-platform -- --selection "$TEST_SELECTION" --maxWorkers="$TEST_WORKERS" --reporter=default --reporter=json --outputFile=test-results/native.json
 
       - name: Summarize native test timings
         if: always() && steps.native-tests.outcome != 'skipped' && needs.test-scope.outputs.cross-platform-tests != '[]'
