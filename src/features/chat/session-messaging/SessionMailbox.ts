@@ -21,6 +21,17 @@ export interface SessionMessageDelivery {
   /** Omitted for a queued message. */
   readonly mode?: SessionToolSendMode;
   readonly signal: AbortSignal;
+  /** The place this message reserved before it had to wait; delivery takes it. */
+  readonly reservation?: MailboxReservation;
+}
+
+/** A queue place held by a delivery that waits before it is admitted. */
+export interface MailboxReservation {
+  readonly rank: number;
+  /** Stop cleared this mailbox since the place was reserved, withdrawing the waiting message. */
+  stopped(): boolean;
+  /** Gives up the place; later messages are no longer held behind it. */
+  release(): void;
 }
 
 /**
@@ -32,7 +43,7 @@ export class SessionMailbox {
   private generation = 0;
   private admissions = 0;
   private dispatching = false;
-  private waiting = 0;
+  private readonly waiting = new Set<number>();
 
   constructor(private readonly deps: {
     runtime: ChatSessionRuntime;
@@ -43,27 +54,26 @@ export class SessionMailbox {
   get hasPending(): boolean { return this.pending.length > 0; }
 
   /** Deliveries waiting before admission; Stop can withdraw them, but they are not work the session runs. */
-  get hasWaiting(): boolean { return this.waiting > 0; }
+  get hasWaiting(): boolean { return this.waiting.size > 0; }
 
   /**
-   * Registers a delivery that must wait before it is admitted. `stopped` tells whether Stop cleared this
-   * mailbox since, which withdraws a waiting message like one already queued; `release` ends the wait.
+   * Reserves the next queue place for a delivery that must wait before it is admitted, so messages sent
+   * meanwhile queue behind it. Stop withdraws a waiting message like one already queued.
    */
-  reserve(): { stopped(): boolean; release(): void } {
+  reserve(): MailboxReservation {
     const generation = this.generation;
-    this.waiting++;
-    let released = false;
+    const rank = ++this.admissions;
+    this.waiting.add(rank);
     return {
+      rank,
       stopped: () => generation !== this.generation,
       release: () => {
-        if (released) return;
-        released = true;
-        this.waiting--;
+        if (this.waiting.delete(rank)) this.wake();
       },
     };
   }
 
-  async deliver({ message, mode, signal }: SessionMessageDelivery): Promise<SessionToolSendStatus> {
+  async deliver({ message, mode, signal, reservation }: SessionMessageDelivery): Promise<SessionToolSendStatus> {
     if (mode === 'steer' && message) {
       const model = this.deps.runtime.peekModel;
       const steered = model ? await model.inputController.steerSessionMessage(message, signal) : 'not-sent';
@@ -75,13 +85,14 @@ export class SessionMailbox {
     if (!message) return this.stop() ? 'interrupted' : 'idle';
     if (!this.isAvailable) throw new Error('The target session is unavailable');
 
-    const admission = ++this.admissions;
+    const admission = reservation?.rank ?? ++this.admissions;
     const entry: MailboxEntry = { message, rank: mode === 'interrupt' ? -admission : admission };
+    if (reservation) this.waiting.delete(reservation.rank);
     // Stopped before the entry is queued; a dispatch woken meanwhile picks its head only after the
     // model is ready, by which time the entry is already first.
     const interrupted = mode === 'interrupt' && this.stop();
     this.insert(entry);
-    const starts = this.pending[0] === entry && !this.dispatching && this.canDispatch;
+    const starts = this.pending[0] === entry && !this.dispatching && this.canDispatch && !this.waitsForEarlier(entry);
     this.notify();
     return interrupted ? 'interrupted' : starts ? 'started' : 'queued';
   }
@@ -101,7 +112,7 @@ export class SessionMailbox {
       this.clear();
       return;
     }
-    if (this.dispatching || !this.canDispatch) return;
+    if (this.dispatching || !this.canDispatch || this.waitsForEarlier(this.pending[0])) return;
     this.dispatching = true;
     const generation = this.generation;
     let entry: MailboxEntry | undefined;
@@ -111,7 +122,7 @@ export class SessionMailbox {
       if (!this.deps.isTargetAvailable()) { this.clear(); return; }
       // Chosen once the model is ready, so nothing admitted while it hydrated is overtaken.
       const head = this.pending[0];
-      if (!head || !this.canDispatch) return;
+      if (!head || !this.canDispatch || this.waitsForEarlier(head)) return;
       entry = head;
       this.remove(head);
       await model.inputController.sendSessionMessage(head.message, {
@@ -141,6 +152,12 @@ export class SessionMailbox {
       this.deps.runtime.publish('work');
       this.wake();
     });
+  }
+
+  /** A message reserved an earlier place and is still waiting to take it. */
+  private waitsForEarlier(entry: MailboxEntry): boolean {
+    for (const rank of this.waiting) if (rank < entry.rank) return true;
+    return false;
   }
 
   private get isAvailable(): boolean {

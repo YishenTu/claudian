@@ -24,6 +24,7 @@ import type { ChatMessage, Conversation, ConversationMeta } from '@/core/types';
 import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
 import { getChatSettingsSnapshot } from '@/features/chat/ChatSettings';
 import { formatLastReply, formatSessionSnapshot } from '@/features/chat/session-messaging/formatSessionSnapshot';
+import type { MailboxReservation } from '@/features/chat/session-messaging/SessionMailbox';
 import type { ChatSessionRuntime } from '@/features/chat/sessions/ChatSessionRuntime';
 import { setSessionReasoningSelection } from '@/features/chat/sessions/sessionSettings';
 import { throwIfAborted } from '@/utils/abort';
@@ -84,9 +85,11 @@ export class SessionMessagingService {
       const host = this.deps.getHost();
       if (!host.sessionRuntimes.get(sessionId)) await host.sessionRuntimes.awaitConversationCreations();
       const target = await this.resolve(sessionId, signal);
-      const mailbox = (await this.ensureRecipient(target, signal)).mailbox;
-      if (!mailbox) throw new Error('The target session cannot receive messages');
-      return mailbox.deliver({ message: text === undefined ? null : { text }, ...(mode === 'queue' ? {} : { mode }), signal });
+      return this.deliverToRecipient(target, signal, (runtime, reservation) => {
+        const mailbox = runtime.mailbox;
+        if (!mailbox) throw new Error('The target session cannot receive messages');
+        return mailbox.deliver({ message: text === undefined ? null : { text }, ...(mode === 'queue' ? {} : { mode }), signal, reservation });
+      });
     });
   }
 
@@ -199,26 +202,35 @@ export class SessionMessagingService {
       : runtime?.isWorking ? 'running' : 'idle';
   }
 
-  private async ensureRecipient(target: ConversationMeta, signal: AbortSignal): Promise<ChatSessionRuntime> {
+  /**
+   * Readies the recipient, then hands its mailbox to `deliver`. A message that waits for the recipient's
+   * history check first reserves its queue place, so messages sent meanwhile stay behind it, and Stop on the
+   * recipient withdraws it as it discards one already queued.
+   */
+  private async deliverToRecipient<T>(
+    target: ConversationMeta,
+    signal: AbortSignal,
+    deliver: (runtime: ChatSessionRuntime, reservation: MailboxReservation | undefined) => Promise<T>,
+  ): Promise<T> {
     const { sessionRuntimes } = this.deps.getHost();
     // Check while the recipient is still idle, before the mailbox admits pending work. A recipient open in a
     // tab, even a hidden one, keeps its model: a changed history is loaded again in place before delivery.
     const attachment = sessionRuntimes.getAttachment(target.id) ?? undefined;
     const revalidation = sessionRuntimes.revalidate(target.id, attachment);
-    if (revalidation) {
-      // Stop on the recipient withdraws a message waiting here, as it discards one already queued.
-      const waiting = attachment?.runtime.mailbox?.reserve();
-      try {
+    const reservation = revalidation ? attachment?.runtime.mailbox?.reserve() : undefined;
+    try {
+      if (revalidation) {
         await revalidation;
         const model = attachment?.runtime.peekModel;
         if (model && model.hydrationState !== 'ready') await model.hydrate();
-      } finally {
-        waiting?.release();
+        if (reservation?.stopped()) throw new Error('The target session was stopped before the message was delivered');
       }
-      if (waiting?.stopped()) throw new Error('The target session was stopped before the message was delivered');
+      throwIfAborted(signal, 'Session tool call was cancelled');
+      const runtime = sessionRuntimes.ensure({ conversationId: target.id, providerId: target.providerId, draftModel: null });
+      return await deliver(runtime, reservation);
+    } finally {
+      reservation?.release();
     }
-    throwIfAborted(signal, 'Session tool call was cancelled');
-    return sessionRuntimes.ensure({ conversationId: target.id, providerId: target.providerId, draftModel: null });
   }
 
   private async send(callerId: string, args: SessionToolSendMessageArgs, signal: AbortSignal): Promise<SessionToolSendMessageResult> {
@@ -251,24 +263,25 @@ export class SessionMessagingService {
     let model: string | undefined;
     if (args.sessionId) ({ model, reasoning } = resolveSessionSwitch(args, target, host));
     throwIfAborted(signal, 'Session tool call was cancelled');
-    const runtime = await this.ensureRecipient(target, signal);
-    const mailbox = runtime.mailbox;
-    if (!mailbox) throw new Error('The target session cannot receive messages');
     const recipient = { sessionId: target.id, title: target.title, provider: target.providerId };
-    const message = args.text === undefined ? null : { from: caller.title, sessionId: caller.id, text: args.text };
-    // Applied like the user's own choice: a later choice wins, and a send that fails after it keeps the switch.
-    if (model !== undefined) {
-      await host.updateConversation(target.id, { selectedModel: model });
-      throwIfAborted(signal, 'Session tool call was cancelled');
-    }
-    if (reasoning !== undefined) {
-      const resultingModel = model ?? resolveConversationModel(host.getCommittedSettings(), target.providerId, target).model;
-      setSessionReasoningSelection(runtime, target.providerId, resultingModel, reasoning);
-    }
-    if (args.sessionId && (model !== undefined || reasoning !== undefined)) {
-      try { this.deps.refreshModelControls(target.providerId); } catch { /* The switch already committed. */ }
-    }
-    const status = await mailbox.deliver({ message, mode: args.mode, signal });
+    const status = await this.deliverToRecipient(target, signal, async (runtime, reservation) => {
+      const mailbox = runtime.mailbox;
+      if (!mailbox) throw new Error('The target session cannot receive messages');
+      const message = args.text === undefined ? null : { from: caller.title, sessionId: caller.id, text: args.text };
+      // Applied like the user's own choice: a later choice wins, and a send that fails after it keeps the switch.
+      if (model !== undefined) {
+        await host.updateConversation(target.id, { selectedModel: model });
+        throwIfAborted(signal, 'Session tool call was cancelled');
+      }
+      if (reasoning !== undefined) {
+        const resultingModel = model ?? resolveConversationModel(host.getCommittedSettings(), target.providerId, target).model;
+        setSessionReasoningSelection(runtime, target.providerId, resultingModel, reasoning);
+      }
+      if (args.sessionId && (model !== undefined || reasoning !== undefined)) {
+        try { this.deps.refreshModelControls(target.providerId); } catch { /* The switch already committed. */ }
+      }
+      return mailbox.deliver({ message, mode: args.mode, signal, reservation });
+    });
     return { ...recipient, status };
   }
 }

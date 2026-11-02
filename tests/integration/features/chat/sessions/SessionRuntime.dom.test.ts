@@ -780,6 +780,35 @@ it.each(['', 'Composer input'])('lets Stop withdraw a session message waiting fo
   await destroyTab(s.first);
 });
 
+it('keeps session messages in order when a later one arrives while the first waits for the reload', async () => {
+  const s = await setupRevisionedSession();
+  s.continueElsewhere();
+  vi.spyOn(s.h.plugin, 'ensureConversationMetadataLoaded').mockResolvedValue(undefined);
+  const readConversation = vi.mocked(s.h.plugin.getConversationById).getMockImplementation()!;
+  const loadStarted = deferred<void>();
+  const finishLoad = deferred<void>();
+  vi.mocked(s.h.plugin.getConversationById).mockImplementationOnce(async id => {
+    loadStarted.resolve();
+    await finishLoad.promise;
+    return readConversation(id);
+  });
+  const first = s.h.messaging.sendAsUser('conversation', { text: 'FIRST message' });
+  await loadStarted.promise;
+  const second = s.h.messaging.sendAsUser('conversation', { text: 'SECOND message' });
+
+  const requested = s.h.backend.nextRequest(() => true);
+  finishLoad.resolve();
+  const request = await requested;
+  expect(JSON.stringify(request.input)).toContain('FIRST message');
+  await Promise.all([first, second]);
+  s.h.backend.latest.complete();
+  await waitFor(() => expect(s.h.backend.latest.requests).toHaveLength(2));
+  expect(JSON.stringify(s.h.backend.latest.requests[1].input)).toContain('SECOND message');
+  s.h.backend.latest.complete();
+  await s.runtime.turns.drain();
+  await destroyTab(s.first);
+});
+
 it('revalidates a recipient open in a tab before delivery and reloads it there', async () => {
   const s = await setupRevisionedSession();
   s.continueElsewhere();
