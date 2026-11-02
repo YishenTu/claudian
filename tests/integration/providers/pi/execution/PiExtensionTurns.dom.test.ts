@@ -1,5 +1,4 @@
 /** @vitest-environment jsdom */
-import '@/providers';
 
 import { createChatFeatureHost } from '@test/helpers/features/chat/ChatFeatureHostFixture';
 import { createProjectsFake } from '@test/helpers/features/chat/ProjectsFake';
@@ -8,15 +7,20 @@ import { waitFor, within } from '@testing-library/dom';
 import { App, Component, MarkdownRenderer } from 'obsidian';
 
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
+import { registerProviderModules } from '@/core/providers/registerProviderModules';
 import type { ClaudianSettings, Conversation } from '@/core/types';
 import { SessionMessagingService } from '@/features/chat/session-messaging/SessionMessagingService';
 import { activateTab, destroyTab } from '@/features/chat/tabs/TabLifecycle';
 import { createTabRuntime } from '@/features/chat/tabs/TabRuntimeFactory';
+import { claudeProviderRegistration } from '@/providers/claude/registration';
 import { PiExecutionBackend, type PiExecutionKernel, type PiExecutionKernelCallbacks } from '@/providers/pi/execution';
+import { piProviderRegistration } from '@/providers/pi/registration';
 import { PiExtensionUIBridge } from '@/providers/pi/runtime/PiExtensionUIBridge';
 import type { PiLaunchSpec } from '@/providers/pi/runtime/PiLaunchSpecBuilder';
 import type { PiRPCTransport } from '@/providers/pi/runtime/PiRPCTransport';
 import { VaultMentionDataProvider } from '@/shared/mention/VaultMentionDataProvider';
+
+registerProviderModules([claudeProviderRegistration, piProviderRegistration]);
 
 const MODEL = 'pi:anthropic/claude-sonnet-4';
 

@@ -2,7 +2,6 @@
  * @vitest-environment jsdom
  * @vitest-environment-options {"customExportConditions":["node","node-addons"]}
  */
-import '@/providers';
 
 import { createHarness as createCoordinator, deferred } from '@test/helpers/ChatExecutionHarness';
 import { createFixture } from '@test/helpers/ChatInputHarness';
@@ -17,12 +16,17 @@ import { isSteerableExecutionSession, type ProviderExecutionEvent, type Provider
 import { createExecutionPathMapper } from '@/core/process/execution-target/WSLPathMapper';
 import { getProviderConfig, setProviderConfig } from '@/core/providers/providerConfig';
 import type { ProviderHost } from '@/core/providers/ProviderHost';
+import { registerProviderModules } from '@/core/providers/registerProviderModules';
 import type { ImageAttachment } from '@/core/types';
 import type { ChatSettings } from '@/features/chat/ChatSettings';
+import { claudeProviderRegistration } from '@/providers/claude/registration';
 import { DeepSeekExecutionBackend } from '@/providers/deepseek/execution/DeepSeekExecutionBackend';
+import { deepseekProviderRegistration } from '@/providers/deepseek/registration';
 import { isRecord } from '@/providers/deepseek/remote/DeepSeekRemoteClient';
 import { getDeepSeekHome } from '@/providers/deepseek/runtime/DeepSeekHome';
 import type { DeepSeekHost } from '@/providers/deepseek/runtime/DeepSeekHost';
+
+registerProviderModules([claudeProviderRegistration, deepseekProviderRegistration]);
 
 let peer: NativePeer;
 let deepseek: DeepSeekHost;

@@ -1,5 +1,4 @@
 // @test-ci {"inputs":["src/providers/grok/**","tests/{unit,integration}/providers/grok/**","tests/helpers/providers/grok/**","tests/helpers/providers/NativeRPCTestProcess.ts","tests/helpers/testClock.ts"]}
-import '@/providers';
 
 import * as path from 'node:path';
 
@@ -12,8 +11,13 @@ import { hasNativeWSL } from '@test/helpers/WSLNativeTarget';
 import { getInstallationKey } from '@/core/device/InstallationKey';
 import type { ProviderExecutionEvent } from '@/core/execution';
 import { parseEnvironmentVariables } from '@/core/process/env';
+import { registerProviderModules } from '@/core/providers/registerProviderModules';
+import { claudeProviderRegistration } from '@/providers/claude/registration';
 import { GrokExecutionBackend } from '@/providers/grok/execution/GrokExecutionBackend';
 import { GrokConversationHistoryService } from '@/providers/grok/history/GrokConversationHistoryService';
+import { grokProviderRegistration } from '@/providers/grok/registration';
+
+registerProviderModules([claudeProviderRegistration, grokProviderRegistration]);
 
 // CI uses WSL1. The real Grok peer executes in Linux; no credentials or vendor CLI are needed.
 describe.skipIf(!hasNativeWSL())('native Grok WSL session and history', () => {

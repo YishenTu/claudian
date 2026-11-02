@@ -1,5 +1,4 @@
 /** @vitest-environment jsdom */
-import '@/providers';
 
 import { axe } from '@test/helpers/accessibility';
 import { createChatFeatureHost } from '@test/helpers/features/chat/ChatFeatureHostFixture';
@@ -8,6 +7,7 @@ import { testDate, testTime } from '@test/helpers/testClock';
 import { fireEvent, waitFor, within } from '@testing-library/dom';
 import { Component, MarkdownRenderer } from 'obsidian';
 
+import { registerProviderModules } from '@/core/providers/registerProviderModules';
 import { getToolIcon } from '@/core/tools/toolIcons';
 import { applyToolResultPresentation } from '@/core/tools/toolResultDetails';
 import type { ChatMessage, StreamChunk, ToolCallInfo } from '@/core/types';
@@ -18,9 +18,13 @@ import { renderStoredToolCall, renderToolCall, updateToolCallResult } from '@/fe
 import { ChatState } from '@/features/chat/state/ChatState';
 import { SubagentManager } from '@/features/chat/subagents/SubagentManager';
 import { StreamController } from '@/features/chat/turns/StreamController';
+import { claudeProviderRegistration } from '@/providers/claude/registration';
 import { CODEX_PROVIDER_CAPABILITIES } from '@/providers/codex/capabilities';
 import { formatCodexQuestionReply } from '@/providers/codex/normalization/codexQuestionNormalization';
+import { codexProviderRegistration } from '@/providers/codex/registration';
 import { CodexNotificationRouter } from '@/providers/codex/runtime/CodexNotificationRouter';
+
+registerProviderModules([claudeProviderRegistration, codexProviderRegistration]);
 
 HTMLElement.prototype.empty = function () { this.replaceChildren(); };
 HTMLElement.prototype.addClass = function (...classes) { this.classList.add(...classes); };

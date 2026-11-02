@@ -345,6 +345,16 @@ test('real dependency graph preserves prompt and provider coverage without Colla
   assert.equal(relatedTests.some(file => /collab/i.test(file)), false);
 });
 
+test('a provider-internal change selects no other provider suites through the real dependency graph', () => {
+  const tracker = 'src/providers/codex/execution/CodexSubagentTracker.ts';
+  const selection = selectRelatedCiTests({ changes: [{ status: 'M', path: tracker }] });
+  const others = /^tests\/(?:unit|integration)\/providers\/(?:claude|deepseek|grok|opencode|pi)\//;
+  assert.ok(selection.testFiles.includes('tests/unit/providers/codex/execution/CodexSubagentTracker.test.ts'));
+  assert.ok(selection.testFiles.includes('tests/integration/providers/codex/runtime/CodexWSL.windows.test.ts'));
+  assert.deepEqual(selection.testFiles.filter(file => others.test(file)), []);
+  assert.deepEqual(selection.wslSuites.filter(file => others.test(file)), []);
+});
+
 test('Vitest shards scale with the selection and script checks run in their own lane', () => {
   const files = count => Array.from({ length: count }, (_, index) => `tests/unit/${index}.test.ts`);
   assert.deepEqual(ciTestLanes({ testFiles: [], scriptTests: [] }), []);

@@ -1,3 +1,5 @@
+import '@/providers';
+
 import { deferred } from '@test/helpers/ChatInputHarness';
 import { DEFAULT_CLAUDIAN_SETTINGS as DEFAULT_SETTINGS } from '@test/helpers/defaultSettings';
 import { grokEnvironmentHash, writeGrokCatalog } from '@test/helpers/providers/grokSettings';
