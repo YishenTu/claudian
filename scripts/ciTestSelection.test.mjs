@@ -5,7 +5,7 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { pathToFileURL } from 'node:url';
 
-import { selectCiTests, selectRelatedCiTests, wslTests } from './ciTestSelection.mjs';
+import { ciTestLanes, selectCiTests, selectRelatedCiTests, wslTests } from './ciTestSelection.mjs';
 
 const prompt = 'tests/unit/core/prompt/mainAgent.systemPrompt.test.ts';
 const panel = 'tests/integration/features/chat/ClaudianView.test.ts';
@@ -341,6 +341,16 @@ test('real dependency graph preserves prompt and provider coverage without Colla
   assert.equal(relatedTests.some(file => /collab/i.test(file)), false);
 });
 
+test('Vitest shards scale with the selection and script checks run in their own lane', () => {
+  const files = count => Array.from({ length: count }, (_, index) => `tests/unit/${index}.test.ts`);
+  assert.deepEqual(ciTestLanes({ testFiles: [], scriptTests: [] }), []);
+  assert.deepEqual(ciTestLanes({ testFiles: [], scriptTests: ['scripts/run-tests.test.mjs'] }), ['scripts']);
+  assert.deepEqual(ciTestLanes({ testFiles: files(200), scriptTests: [] }), ['1/1']);
+  assert.deepEqual(ciTestLanes({ testFiles: files(201), scriptTests: [] }), ['1/2', '2/2']);
+  assert.deepEqual(ciTestLanes({ testFiles: files(5000), scriptTests: [] }), ['1/3', '2/3', '3/3']);
+  assert.deepEqual(ciTestLanes({ testFiles: null, scriptTests: null }), ['1/3', '2/3', '3/3', 'scripts']);
+});
+
 test('the CI entry point handles real Git ranges, renames, missing bases and release tags', async () => {
   const { copyFileSync, mkdirSync, mkdtempSync, renameSync, rmSync, writeFileSync } = await import('node:fs');
   const { tmpdir } = await import('node:os');
@@ -380,7 +390,7 @@ test('the CI entry point handles real Git ranges, renames, missing bases and rel
     git('add', '.'); git('commit', '-m', 'Edit source');
     const edited = git('rev-parse', 'HEAD');
     assert.deepEqual(scope(edited)['test-files'], ['tests/unit/value.test.ts']);
-    assert.deepEqual(scope(edited)['test-shards'], ['1/1']);
+    assert.deepEqual(scope(edited)['test-lanes'], ['1/1', 'scripts']);
     assert.deepEqual(scope(edited, { GITHUB_EVENT_NAME: 'pull_request' })['test-files'], ['tests/unit/value.test.ts']);
     renameSync(path.join(root, 'tests/unit/value.test.ts'), path.join(root, 'tests/unit/renamed.test.ts'));
     git('add', '.'); git('commit', '-m', 'Rename test');
@@ -396,14 +406,14 @@ test('the CI entry point handles real Git ranges, renames, missing bases and rel
     git('add', '.'); git('commit', '-m', 'Delete test');
     const deleted = git('rev-parse', 'HEAD');
     assert.deepEqual(scope(deleted, { BASE_SHA: styled })['test-files'], []);
-    assert.deepEqual(scope(deleted, { BASE_SHA: styled })['test-shards'], ['1/1']);
+    assert.deepEqual(scope(deleted, { BASE_SHA: styled })['test-lanes'], ['scripts']);
     for (const overrides of [
       { BASE_SHA: 'f'.repeat(40) }, { BASE_SHA: '0'.repeat(40) }, { BASE_SHA: '' },
       { GITHUB_REF: 'refs/tags/2.3.0' },
     ]) {
       const full = scope(deleted, overrides);
       assert.equal(full['test-files'], null);
-      assert.deepEqual(full['test-shards'], ['1/2', '2/2']);
+      assert.deepEqual(full['test-lanes'], ['1/3', '2/3', '3/3', 'scripts']);
     }
     // Release scope must work before dependency installation, without invoking Vitest.
     writeFileSync(path.join(root, 'scripts/run-vitest.js'), "throw new Error('Vitest is unavailable');");

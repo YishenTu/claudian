@@ -82,6 +82,21 @@ export function selectCiTests({ changes, relatedTests, eventName }) {
   };
 }
 
+// A full run fills three runners; smaller selections stop adding runners once a shard
+// would hold fewer suites than its fixed setup and Vitest startup cost justify.
+const fullVitestShards = 3;
+const suitesPerShard = 200;
+
+// Script checks run on their own runner so they overlap the Vitest shards.
+export function ciTestLanes({ testFiles, scriptTests }) {
+  const shards = testFiles === null ? fullVitestShards
+    : Math.min(fullVitestShards, Math.ceil(testFiles.length / suitesPerShard));
+  return [
+    ...Array.from({ length: shards }, (_, index) => `${index + 1}/${shards}`),
+    ...(scriptTests === null || scriptTests.length > 0 ? ['scripts'] : []),
+  ];
+}
+
 export function selectRelatedCiTests({ changes, eventName = 'pull_request' }) {
   let selection = selectCiTests({ changes, relatedTests: [], eventName });
   const inputs = changes.filter(change => change.status !== 'D' && isGraphInput(change.path))
@@ -122,16 +137,16 @@ function main() {
       selection = selectRelatedCiTests({ changes, eventName });
     }
   }
+  const lanes = ciTestLanes(selection);
   const output = [
     `test-files=${JSON.stringify(selection.testFiles)}`,
-    `test-shards=${JSON.stringify(selection.testFiles === null ? ['1/2', '2/2'] : ['1/1'])}`,
+    `test-lanes=${JSON.stringify(lanes)}`,
     `script-tests=${JSON.stringify(selection.scriptTests)}`,
     `cross-platform-tests=${JSON.stringify(selection.crossPlatformTests)}`,
     `cross-platform=${selection.crossPlatform}`,
     `pi-windows=${selection.piWindows}`,
     `wsl-windows=${selection.wslWindows}`,
-    `has-tests=${selection.testFiles === null || selection.testFiles.length > 0
-      || selection.scriptTests === null || selection.scriptTests.length > 0}`,
+    `has-tests=${lanes.length > 0}`,
   ].join('\n');
   if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, `${output}\n`);
   console.log(output);

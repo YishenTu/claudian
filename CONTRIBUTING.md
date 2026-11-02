@@ -86,10 +86,7 @@ checks on other platforms.
 
 For documentation-only changes, a production build is not required. Follow the authoritative rules in [AGENTS.md](AGENTS.md): run `git diff --check` and the affected documentation tests.
 
-Full Linux CI verification uses two Vitest shards, with script checks on the first
-shard. Affected selections use one job. Each Linux test job uses three workers.
-Both shards must pass the aggregate test gate, and each uploads its own timing artifact. Sharding uses more runner capacity
-to reduce elapsed time; compare runner minutes as well as wall time.
+Full Linux CI verification uses three Vitest shards; affected selections add a shard per 200 selected suites, up to three. Script checks run in their own `scripts` lane alongside the shards. Each Linux Vitest shard uses three workers. Every lane must pass the aggregate test gate, and each Vitest shard uploads its own timing artifact. Sharding uses more runner capacity to reduce elapsed time; compare runner minutes as well as wall time.
 
 Vitest runs through the package wrappers with `--outputFile=<path>` produce JSON, suite execution timings and metadata including resolved workers and unhandled-error counts. Suite execution timings exclude import/worker startup; wall time includes them. CI uploads these
 for Linux, native smoke and scheduled suites. To compare native worker counts locally:
