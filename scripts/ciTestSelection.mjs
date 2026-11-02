@@ -1,28 +1,23 @@
 import { execFileSync } from 'node:child_process';
-import { appendFileSync, realpathSync } from 'node:fs';
+import { appendFileSync, readFileSync, realpathSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import suites from './testSuites.cjs';
 
 const docsTest = 'tests/unit/docs/Documentation.test.ts';
-// Each group runs as its own wsl-native matrix job.
-export const wslTestGroups = [
-  { name: 'shared', maxWorkers: 3, tests: [
-    'tests/integration/core/process/execution-target/ClaudeWSL.windows.test.ts',
-    'tests/integration/core/process/execution-target/WSLExecution.windows.test.ts',
-    'tests/integration/core/process/execution-target/WSLSessionToolRelay.windows.test.ts',
-    'tests/integration/providers/opencode/runtime/OpencodeWSL.windows.test.ts',
-    'tests/integration/providers/codex/runtime/CodexWSL.windows.test.ts',
-    'tests/integration/providers/grok/runtime/GrokWSL.windows.test.ts',
-  ] },
-  // DeepSeek's launch probes use the production 5s process-probe deadline, which concurrent WSL1 suites can exceed.
-  { name: 'deepseek', maxWorkers: 1, tests: ['tests/integration/providers/deepseek/runtime/DeepSeekWSLHost.windows.test.ts'] },
+export const wslTests = [
+  'tests/integration/core/process/execution-target/ClaudeWSL.windows.test.ts',
+  'tests/integration/core/process/execution-target/WSLExecution.windows.test.ts',
+  'tests/integration/core/process/execution-target/WSLSessionToolRelay.windows.test.ts',
+  'tests/integration/providers/deepseek/runtime/DeepSeekWSLHost.windows.test.ts',
+  'tests/integration/providers/opencode/runtime/OpencodeWSL.windows.test.ts',
+  'tests/integration/providers/codex/runtime/CodexWSL.windows.test.ts',
+  'tests/integration/providers/grok/runtime/GrokWSL.windows.test.ts',
 ];
-export const wslTests = wslTestGroups.flatMap(group => group.tests);
 const fullSelection = {
   testFiles: null, scriptTests: null, crossPlatformTests: null,
-  crossPlatform: true, piWindows: true, wslWindows: true, wslGroups: wslTestGroups,
+  crossPlatform: true, piWindows: true, wslWindows: true, wslSuites: wslTests,
   build: true, dependencies: true, workflows: true,
 };
 const piTest = 'tests/integration/providers/pi/runtime/PiSubprocess.windows.test.ts';
@@ -40,6 +35,20 @@ const isBuildInput = file => !isDocumentation(file) && !isAutomation(file) && !f
 // Inputs to the lockfile parity check; other manifest and lockfile edits already select everything.
 const dependencyInputs = new Set(['scripts/check-lockfile-parity.mjs']);
 const architectureTest = 'scripts/check-architecture-boundaries.test.mjs';
+// Source whose behavior can differ under WSL: launch, execution target, path handling, the session-tool relay,
+// and anything that chooses or reads the installation method. Other source is platform-neutral for WSL.
+const wslSourceReference = /core\/process\/execution-target|core\/providers\/settings\/InstallationSettings|ExecutionTarget|['"]wsl['"]|WSL|wslDistro|installationMethod|[Rr]elay/;
+const isWSLSource = file => {
+  if (/^src\/core\/(?:process|session-tools)\//.test(file) || /wsl|path/i.test(path.posix.basename(file))) return true;
+  try {
+    return wslSourceReference.test(readFileSync(file, 'utf8'));
+  } catch {
+    return true;
+  }
+};
+// The native WSL job runs only for WSL-related source or the WSL suites and their test infrastructure.
+const isWSLInput = file => file.startsWith('src/') ? isWSLSource(file)
+  : wslTests.includes(file) || /^tests\/(?:helpers|fixtures)\//.test(file) || file.startsWith('.github/wsl/');
 
 // Runtime imports drive related selection; declarations supply non-import edges.
 const { fileConsumers } = suites;
@@ -99,17 +108,16 @@ export function selectCiTests({ changes, relatedTests, eventName }) {
   const testFiles = [...files];
   const crossPlatformTests = suites.crossPlatformTests.filter(file => files.has(file));
   const piWindows = files.has(piTest);
-  const wslGroups = wslTestGroups
-    .map(group => ({ ...group, tests: wslProvisioning ? group.tests : group.tests.filter(file => files.has(file)) }))
-    .filter(group => group.tests.length > 0);
+  const wslSuites = wslProvisioning ? wslTests
+    : changes.some(change => isWSLInput(change.path)) ? wslTests.filter(file => files.has(file)) : [];
   return {
     testFiles, scriptTests: [...scripts], crossPlatformTests,
     crossPlatform: crossPlatformTests.length > 0 || piWindows
       || scripts.has('scripts/ciTestSelection.test.mjs') || scripts.has('scripts/run-tests.test.mjs')
       || changes.some(change => change.path === 'scripts/testDeclarations.test.mjs'),
     piWindows,
-    wslWindows: wslGroups.length > 0,
-    wslGroups,
+    wslWindows: wslSuites.length > 0,
+    wslSuites,
     build: changes.some(change => isBuildInput(change.path)),
     dependencies: changes.some(change => dependencyInputs.has(change.path)),
     workflows: changes.some(change => isWorkflow(change.path)),
@@ -181,7 +189,7 @@ function main() {
     `pi-windows=${selection.piWindows}`,
     `wsl-windows=${selection.wslWindows}`,
     `has-tests=${lanes.length > 0}`,
-    `wsl-groups=${JSON.stringify(selection.wslGroups)}`,
+    `wsl-suites=${JSON.stringify(selection.wslSuites)}`,
     `build=${selection.build}`,
     `dependencies=${selection.dependencies}`,
     `workflows=${selection.workflows}`,

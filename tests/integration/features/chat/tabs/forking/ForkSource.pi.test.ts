@@ -1,4 +1,6 @@
 // @test-ci {"inputs":["tests/fixtures/providers/pi/**"]}
+import '@/providers';
+
 const actualModule0 = (await vi.importActual<{ default: typeof spawn }>('cross-spawn')).default;
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';

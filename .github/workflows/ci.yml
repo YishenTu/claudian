@@ -233,7 +233,7 @@ jobs:
       cross-platform-tests: ${{ steps.scope.outputs.cross-platform-tests }}
       pi-windows: ${{ steps.scope.outputs.pi-windows }}
       wsl-windows: ${{ steps.scope.outputs.wsl-windows }}
-      wsl-groups: ${{ steps.scope.outputs.wsl-groups }}
+      wsl-suites: ${{ steps.scope.outputs.wsl-suites }}
       has-tests: ${{ steps.scope.outputs.has-tests }}
       cross-platform: ${{ steps.scope.outputs.cross-platform }}
       build: ${{ steps.scope.outputs.build }}
@@ -365,15 +365,9 @@ jobs:
           SCRIPT_SELECTION: ${{ needs.test-scope.outputs.script-tests }}
         run: npm run test -- --selection '[]' --script-selection "$SCRIPT_SELECTION"
 
-  # Each affected WSL group provisions its own runner so groups run in parallel.
   wsl-native:
     needs: test-scope
     if: needs.test-scope.outputs.wsl-windows == 'true'
-    name: WSL native (${{ matrix.name }})
-    strategy:
-      fail-fast: false
-      matrix:
-        include: ${{ fromJSON(needs.test-scope.outputs.wsl-groups) }}
     runs-on: windows-latest
     timeout-minutes: 25
     steps:
@@ -446,10 +440,10 @@ jobs:
         env:
           CLAUDIAN_REQUIRE_WSL: '1'
           CLAUDIAN_OPENCODE_WSL_CLI: /opt/claudian-opencode-v2/opencode
-          WSL_TESTS: ${{ join(matrix.tests, ' ') }}
-          WSL_WORKERS: ${{ matrix.maxWorkers }}
+          # Space-separated repository paths of the affected WSL suites.
+          WSL_TESTS: ${{ join(fromJSON(needs.test-scope.outputs.wsl-suites), ' ') }}
         # PowerShell, unlike Git Bash, passes the POSIX CLI path through unconverted.
-        run: npm run test:unit -- "--maxWorkers=$env:WSL_WORKERS" @($env:WSL_TESTS -split ' ')
+        run: npm run test:unit -- --maxWorkers=3 @($env:WSL_TESTS -split ' ')
 
   build-artifacts:
     needs: test-scope

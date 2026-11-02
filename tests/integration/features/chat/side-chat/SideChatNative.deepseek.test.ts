@@ -1,3 +1,5 @@
+import '@/providers';
+
 import { nativeDefaults } from '@test/helpers/deepseek/NativeDefaults';
 import { nativeAddress, NativePeer, nativeRequest, nativeSessionId, rootFollow } from '@test/helpers/deepseek/NativePeer';
 import { createForkTestEnvironment } from '@test/helpers/features/chat/ProviderForkTestHarness';

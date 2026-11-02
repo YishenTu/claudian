@@ -1,6 +1,5 @@
 // @test-ci {"inputs":["tests/fixtures/providers/pi/**"]}
 /** @vitest-environment jsdom */
-import '@/providers';
 
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
@@ -13,6 +12,7 @@ import { testDate } from '@test/helpers/testClock';
 import { fireEvent, waitFor, within } from '@testing-library/dom';
 import { Component, MarkdownRenderer } from 'obsidian';
 
+import { registerProviderModules } from '@/core/providers/registerProviderModules';
 import { getToolIcon } from '@/core/tools/toolIcons';
 import type { ChatMessage, ToolCallInfo } from '@/core/types';
 import { MessageRenderer } from '@/features/chat/rendering/MessageRenderer';
@@ -22,10 +22,14 @@ import { renderStoredWriteEdit } from '@/features/chat/rendering/tools/WriteEdit
 import { ChatState } from '@/features/chat/state/ChatState';
 import { SubagentManager } from '@/features/chat/subagents/SubagentManager';
 import { StreamController } from '@/features/chat/turns/StreamController';
+import { claudeProviderRegistration } from '@/providers/claude/registration';
 import { PiExecutionBackend } from '@/providers/pi/execution/PiExecutionBackend';
 import { PiRPCSessionKernel } from '@/providers/pi/execution/PiExecutionKernel';
 import { parsePiSessionContent } from '@/providers/pi/history/PiHistoryStore';
 import { createPiEventNormalizationState, normalizePiRPCEvent } from '@/providers/pi/normalization/piEventNormalization';
+import { piProviderRegistration } from '@/providers/pi/registration';
+
+registerProviderModules([claudeProviderRegistration, piProviderRegistration]);
 
 HTMLElement.prototype.empty = function () { this.replaceChildren(); };
 HTMLElement.prototype.addClass = function (...classes) { this.classList.add(...classes); };

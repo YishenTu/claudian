@@ -1,5 +1,11 @@
 import { ManagedStdioProcess, type ManagedStdioProcessOptions } from './ManagedStdioProcess';
 
+/**
+ * Deadline for a probe launched through wsl.exe. Starting a command in a cold or loaded distro can take
+ * several seconds, so a native-process deadline would misreport a working WSL installation as missing.
+ */
+export const WSL_PROCESS_PROBE_TIMEOUT_MS = 20_000;
+
 /** Runs a bounded, read-only command without sharing a chat process. */
 export async function runProcessProbe(
   options: ManagedStdioProcessOptions,

@@ -1,6 +1,5 @@
 // @test-ci {"native":true,"inputs":["tests/helpers/providers/opencode/OpencodeNativePeer.cjs"]}
 /** @vitest-environment jsdom */
-import '@/providers';
 
 import { axe } from '@test/helpers/accessibility';
 import { createChatFeatureHost } from '@test/helpers/features/chat/ChatFeatureHostFixture';
@@ -10,6 +9,7 @@ import { fireEvent, within } from '@testing-library/dom';
 import { Component } from 'obsidian';
 
 import type { ProviderExecutionEvent } from '@/core/execution';
+import { registerProviderModules } from '@/core/providers/registerProviderModules';
 import { getToolIcon } from '@/core/tools/toolIcons';
 import type { ChatMessage, StreamChunk, ToolCallInfo } from '@/core/types';
 import { MessageRenderer } from '@/features/chat/rendering/MessageRenderer';
@@ -19,7 +19,11 @@ import { renderStoredWriteEdit } from '@/features/chat/rendering/tools/WriteEdit
 import { ChatState } from '@/features/chat/state/ChatState';
 import { SubagentManager } from '@/features/chat/subagents/SubagentManager';
 import { StreamController } from '@/features/chat/turns/StreamController';
+import { claudeProviderRegistration } from '@/providers/claude/registration';
 import { mapOpencodeNativeMessages } from '@/providers/opencode/history/OpencodeHistoryStore';
+import { opencodeProviderRegistration } from '@/providers/opencode/registration';
+
+registerProviderModules([claudeProviderRegistration, opencodeProviderRegistration]);
 
 beforeEach(() => document.body.replaceChildren());
 

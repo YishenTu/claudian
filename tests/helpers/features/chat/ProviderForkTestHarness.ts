@@ -1,5 +1,3 @@
-import '@/providers';
-
 import * as path from 'node:path';
 
 import { claudeCatalogFixture } from '@test/helpers/claudeModels';

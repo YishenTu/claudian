@@ -1,6 +1,5 @@
 /** @vitest-environment jsdom */
 
-import '@/providers';
 
 import { axe } from '@test/helpers/accessibility';
 import { createCodexWorkspaceHarness } from '@test/helpers/providers/codex/CodexWorkspaceHarness';
@@ -8,7 +7,12 @@ import { mountProviderSettings } from '@test/helpers/ProviderSettingsHarness';
 import { fireEvent, waitFor, within } from '@testing-library/dom';
 
 import { getInstallationKey } from '@/core/device/InstallationKey';
+import { registerProviderModules } from '@/core/providers/registerProviderModules';
+import { claudeProviderRegistration } from '@/providers/claude/registration';
+import { codexProviderRegistration } from '@/providers/codex/registration';
 import { getCodexProviderSettings } from '@/providers/codex/settings';
+
+registerProviderModules([claudeProviderRegistration, codexProviderRegistration]);
 
 it('preserves spaces typed into the real Codex WSL CLI path until the final commit', async () => {
   const platform = Object.getOwnPropertyDescriptor(process, 'platform')!;

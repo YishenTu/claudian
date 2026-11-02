@@ -1,12 +1,15 @@
-import '@/providers';
-
 import { createProviderHostFixture } from '@test/helpers/providerRuntimeHost';
 import { readWSLExec } from '@test/helpers/WSLLaunch';
 
 import { getInstallationKey } from '@/core/device/InstallationKey';
 import { buildTargetLaunchSpec } from '@/core/process/execution-target/TargetLaunchSpec';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
+import { registerProviderModules } from '@/core/providers/registerProviderModules';
+import { claudeProviderRegistration } from '@/providers/claude/registration';
+import { grokProviderRegistration } from '@/providers/grok/registration';
 import { resolveGrokExecutionContext } from '@/providers/grok/runtime/GrokExecutionContext';
+
+registerProviderModules([claudeProviderRegistration, grokProviderRegistration]);
 
 const platform = Object.getOwnPropertyDescriptor(process, 'platform')!;
 beforeEach(() => { Object.defineProperty(process, 'platform', { ...platform, value: 'win32' }); });

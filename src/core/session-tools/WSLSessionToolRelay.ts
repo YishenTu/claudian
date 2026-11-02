@@ -3,7 +3,7 @@ import * as path from 'node:path';
 import { buildTargetLaunchSpec } from '@/core/process/execution-target/TargetLaunchSpec';
 import type { ExecutionTarget } from '@/core/process/execution-target/types';
 import { createExecutionPathMapper } from '@/core/process/execution-target/WSLPathMapper';
-import { runProcessProbe } from '@/core/process/ProcessProbe';
+import { runProcessProbe, WSL_PROCESS_PROBE_TIMEOUT_MS } from '@/core/process/ProcessProbe';
 
 import type { SessionToolRoute } from './SessionToolEndpoint';
 import { SESSION_TOOL_RELAY_COMMAND } from './sessionToolRelayCommand';
@@ -52,7 +52,7 @@ export async function createWSLSessionToolRelay(options: {
     env: { ...options.env, WSLENV: wslenv, CLAUDIAN_SESSION_TOOL_MODE: 'probe' },
     forwardEnvironment: [{ key: 'CLAUDIAN_SESSION_TOOL_MODE' }],
   });
-  const result = await runProcessProbe({ ...probe, cwd: probe.spawnCwd }, 20_000);
+  const result = await runProcessProbe({ ...probe, cwd: probe.spawnCwd }, WSL_PROCESS_PROBE_TIMEOUT_MS);
   if (result?.trim() !== 'claudian-relay-ready') {
     throw new Error('WSL interop could not run Windows PowerShell for session tools. Enable [interop] enabled=true in /etc/wsl.conf, restart WSL, and allow Windows PowerShell under your application policy.');
   }

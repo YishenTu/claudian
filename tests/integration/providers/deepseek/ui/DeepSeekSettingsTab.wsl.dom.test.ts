@@ -1,5 +1,4 @@
 /** @vitest-environment jsdom */
-import '@/providers';
 
 import { axe } from '@test/helpers/accessibility';
 import { NativePeer } from '@test/helpers/deepseek/NativePeer';
@@ -11,11 +10,16 @@ import { fireEvent, waitFor, within } from '@testing-library/dom';
 import spawn from 'cross-spawn';
 
 import { getInstallationKey } from '@/core/device/InstallationKey';
+import { registerProviderModules } from '@/core/providers/registerProviderModules';
+import { claudeProviderRegistration } from '@/providers/claude/registration';
 import { createDeepSeekWorkspaceServices } from '@/providers/deepseek/app/DeepSeekWorkspaceServices';
+import { deepseekProviderRegistration } from '@/providers/deepseek/registration';
 import { DeepSeekCLIResolver } from '@/providers/deepseek/runtime/DeepSeekCLIResolver';
 import { createDeepSeekModels } from '@/providers/deepseek/runtime/DeepSeekModels';
 import { getDeepSeekProviderSettings } from '@/providers/deepseek/settings';
 import { createDeepSeekSettingsTabRenderer } from '@/providers/deepseek/ui/DeepSeekSettingsTab';
+
+registerProviderModules([claudeProviderRegistration, deepseekProviderRegistration]);
 
 vi.mock('cross-spawn', () => ({ default: vi.fn() }));
 

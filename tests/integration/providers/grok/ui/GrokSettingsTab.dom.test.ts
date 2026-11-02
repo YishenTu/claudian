@@ -1,5 +1,4 @@
 /** @vitest-environment jsdom */
-import '@/providers';
 
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
@@ -15,11 +14,16 @@ import spawn from 'cross-spawn';
 
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { ProviderWorkspaceRegistry } from '@/core/providers/ProviderWorkspaceRegistry';
+import { registerProviderModules } from '@/core/providers/registerProviderModules';
 import type { ClaudianSettings } from '@/core/types';
 import { t } from '@/i18n/i18n';
+import { claudeProviderRegistration } from '@/providers/claude/registration';
 import { createGrokWorkspaceServices, type GrokWorkspaceServices } from '@/providers/grok/app/GrokWorkspaceServices';
+import { grokProviderRegistration } from '@/providers/grok/registration';
 import { getGrokProviderSettings, updateGrokProviderSettings } from '@/providers/grok/settings';
 import { grokSettingsTabRenderer } from '@/providers/grok/ui/GrokSettingsTab';
+
+registerProviderModules([claudeProviderRegistration, grokProviderRegistration]);
 
 vi.mock('cross-spawn', () => ({ default: vi.fn(() => { throw new Error('Native CLI unavailable in settings test'); }) }));
 

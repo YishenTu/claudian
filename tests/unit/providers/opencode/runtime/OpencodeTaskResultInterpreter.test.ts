@@ -1,7 +1,10 @@
-import '@/providers';
-
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
+import { registerProviderModules } from '@/core/providers/registerProviderModules';
+import { claudeProviderRegistration } from '@/providers/claude/registration';
 import { normalizeOpencodeToolInput } from '@/providers/opencode/normalization/opencodeToolNormalization';
+import { opencodeProviderRegistration } from '@/providers/opencode/registration';
+
+registerProviderModules([claudeProviderRegistration, opencodeProviderRegistration]);
 
 it('preserves OpenCode task descriptions and plain output through its registered interpreter', () => {
   const interpreter = ProviderRegistry.getTaskResultInterpreter('opencode');

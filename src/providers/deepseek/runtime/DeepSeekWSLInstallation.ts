@@ -1,5 +1,5 @@
 import { buildTargetLaunchSpec } from '@/core/process/execution-target/TargetLaunchSpec';
-import { runProcessProbe } from '@/core/process/ProcessProbe';
+import { runProcessProbe, WSL_PROCESS_PROBE_TIMEOUT_MS } from '@/core/process/ProcessProbe';
 import type { CLIInstallation } from '@/core/providers/cli/CLIInstallationProbe';
 import { probeTargetCLIInstallation, type TargetCLIInstallationProbeOptions } from '@/core/providers/cli/TargetCLIInstallationProbe';
 
@@ -38,7 +38,7 @@ export async function probeDeepSeekWSLInstallation(options: Omit<TargetCLIInstal
   const node = await probeTargetCLIInstallation({ ...options, command: 'node', configuredPath: '', args: ['--version'] });
   if (!node.path || /\.(?:exe|cmd|ps1)$/iu.test(node.path)) return missing;
   const spec = buildTargetLaunchSpec({ ...options, command: node.path, args: ['-e', RESOLVE_PACKAGE_ENTRY, installation.path] });
-  const output = await runProcessProbe({ ...spec, cwd: spec.spawnCwd });
+  const output = await runProcessProbe({ ...spec, cwd: spec.spawnCwd }, WSL_PROCESS_PROBE_TIMEOUT_MS);
   let entryPath: unknown;
   try { entryPath = JSON.parse(output ?? 'null'); } catch { return missing; }
   if (typeof entryPath !== 'string' || !entryPath.startsWith('/')) return missing;

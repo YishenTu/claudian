@@ -1,6 +1,5 @@
 // @test-ci {"inputs":["tests/helpers/providers/opencode/OpencodeNativePeer.cjs"]}
 /** @vitest-environment jsdom */
-import '@/providers';
 
 import { existsSync, writeFileSync } from 'node:fs';
 import * as path from 'node:path';
@@ -14,16 +13,21 @@ import { fireEvent, waitFor, within } from '@testing-library/dom';
 import spawn from 'cross-spawn';
 
 import { getInstallationKey } from '@/core/device/InstallationKey';
+import { registerProviderModules } from '@/core/providers/registerProviderModules';
 import type { ClaudianSettings } from '@/core/types';
+import { claudeProviderRegistration } from '@/providers/claude/registration';
 import { OpencodeExecutionBackend } from '@/providers/opencode/execution/OpencodeExecutionBackend';
 import { OpencodeServerService } from '@/providers/opencode/http/OpencodeServerService';
 import { OpencodeMetadataService } from '@/providers/opencode/metadata/OpencodeMetadataService';
+import { opencodeProviderRegistration } from '@/providers/opencode/registration';
 import { OpencodeCLIResolver } from '@/providers/opencode/runtime/OpencodeCLIResolver';
 import { createOpencodeModels } from '@/providers/opencode/runtime/OpencodeModels';
 import { getOpencodeProviderSettings, updateOpencodeProviderSettings } from '@/providers/opencode/settings';
 import { createOpencodeSettingsTabRenderer } from '@/providers/opencode/ui/OpencodeSettingsTab';
 
 import { createOpencodeHTTPMetadataFixture } from '../metadata/OpencodeHTTPMetadataFixture';
+
+registerProviderModules([claudeProviderRegistration, opencodeProviderRegistration]);
 
 // The native peer runs through the real spawn; WSL cases route only wsl.exe to the shared fixture.
 vi.mock('cross-spawn', async importOriginal => ({ default: vi.fn((await importOriginal<{ default: typeof spawn }>()).default) }));

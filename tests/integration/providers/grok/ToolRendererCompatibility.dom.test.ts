@@ -1,5 +1,4 @@
 /** @vitest-environment jsdom */
-import '@/providers';
 
 import { axe } from '@test/helpers/accessibility';
 import { createChatFeatureHost } from '@test/helpers/features/chat/ChatFeatureHostFixture';
@@ -12,6 +11,7 @@ import { Component, Platform } from 'obsidian';
 
 import type { ProviderExecutionEvent, ProviderSessionConfig } from '@/core/execution';
 import type { ProviderHost } from '@/core/providers/ProviderHost';
+import { registerProviderModules } from '@/core/providers/registerProviderModules';
 import { getToolIcon } from '@/core/tools/toolIcons';
 import type { ChatMessage, StreamChunk, ToolCallInfo } from '@/core/types';
 import { MessageRenderer } from '@/features/chat/rendering/MessageRenderer';
@@ -21,7 +21,11 @@ import { ChatState } from '@/features/chat/state/ChatState';
 import { SubagentManager } from '@/features/chat/subagents/SubagentManager';
 import { StreamController } from '@/features/chat/turns/StreamController';
 import type { ACPSessionNotification } from '@/providers/acp';
+import { claudeProviderRegistration } from '@/providers/claude/registration';
 import { GrokExecutionBackend, type GrokExecutionNativeConnection } from '@/providers/grok/execution/GrokExecutionBackend';
+import { grokProviderRegistration } from '@/providers/grok/registration';
+
+registerProviderModules([claudeProviderRegistration, grokProviderRegistration]);
 
 HTMLElement.prototype.empty = function () { this.replaceChildren(); };
 HTMLElement.prototype.addClass = function (...classes) { this.classList.add(...classes); };

@@ -1,5 +1,4 @@
-import { ProviderRegistry } from '../core/providers/ProviderRegistry';
-import { ProviderWorkspaceRegistry } from '../core/providers/ProviderWorkspaceRegistry';
+import { registerProviderModules } from '../core/providers/registerProviderModules';
 import { claudeProviderRegistration } from './claude/registration';
 import { codexProviderRegistration } from './codex/registration';
 import { deepseekProviderRegistration } from './deepseek/registration';
@@ -23,10 +22,7 @@ export function registerBuiltInProviders(): void {
     return;
   }
 
-  for (const providerModule of BUILT_IN_PROVIDER_MODULES) {
-    ProviderRegistry.register(providerModule.id, providerModule);
-    ProviderWorkspaceRegistry.register(providerModule.id, providerModule.workspace);
-  }
+  registerProviderModules(BUILT_IN_PROVIDER_MODULES);
   builtInProvidersRegistered = true;
 }
 

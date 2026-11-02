@@ -1,5 +1,4 @@
 /** @vitest-environment jsdom */
-import '@/providers';
 
 import { axe } from '@test/helpers/accessibility';
 import { TEST_CODEX_MODEL } from '@test/helpers/codexModels';
@@ -11,9 +10,14 @@ import * as fs from 'fs';
 
 import { getInstallationKey } from '@/core/device/InstallationKey';
 import { ProviderExecutionTransitionError } from '@/core/execution';
+import { registerProviderModules } from '@/core/providers/registerProviderModules';
+import { claudeProviderRegistration } from '@/providers/claude/registration';
 import { CodexExecutionBackend } from '@/providers/codex/execution/CodexExecutionBackend';
+import { codexProviderRegistration } from '@/providers/codex/registration';
 import { getCodexProviderSettings } from '@/providers/codex/settings';
 import { codexChatUIConfig } from '@/providers/codex/ui/CodexChatUIConfig';
+
+registerProviderModules([claudeProviderRegistration, codexProviderRegistration]);
 
 const mockNative = new CodexRuntimeHarness();
 vi.mock('fs', async () => ({ ...(await vi.importActual<typeof import('fs')>('fs')) }));

@@ -1,3 +1,5 @@
+import '@/providers';
+
 import type { ForkTestEnvironment } from '@test/helpers/features/chat/ProviderForkTestHarness';
 
 import type {

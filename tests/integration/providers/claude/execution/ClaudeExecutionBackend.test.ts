@@ -2,7 +2,6 @@
 import { buildSDKMessage } from '@test/helpers/sdkMessages';
 const actualModule0 = await import('node:fs/promises');
 const actualModule1 = await import('node:fs/promises');
-import '@/providers';
 
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
@@ -30,14 +29,20 @@ import * as env from '@/core/process/env';
 import { ProviderModelUnavailableError } from '@/core/providers/models/ProviderModelUnavailableError';
 import type { ProviderHost } from '@/core/providers/ProviderHost';
 import type { ProviderRuntimeHost } from '@/core/providers/ProviderRuntimeHost';
+import { registerProviderModules } from '@/core/providers/registerProviderModules';
 import type { Conversation } from '@/core/types';
 import { createClaudeWorkspaceServices } from '@/providers/claude/app/ClaudeWorkspaceServices';
 import { ClaudeExecutionBackend } from '@/providers/claude/execution/ClaudeExecutionBackend';
 import { ClaudeExecutionSession } from '@/providers/claude/execution/ClaudeExecutionSession';
 import { ClaudeConversationHistoryService } from '@/providers/claude/history/ClaudeConversationHistoryService';
 import * as historyStore from '@/providers/claude/history/ClaudeHistoryStore';
+import { claudeProviderRegistration } from '@/providers/claude/registration';
 import { assertClaudeModelAvailable } from '@/providers/claude/runtime/ClaudeModelAvailability';
 import { getClaudeProviderSettings, updateClaudeProviderSettings } from '@/providers/claude/settings';
+import { codexProviderRegistration } from '@/providers/codex/registration';
+
+// Codex is registered so another provider can own the active settings.
+registerProviderModules([claudeProviderRegistration, codexProviderRegistration]);
 
 const {
   createFailingPersistentQuery, createIdlePersistentQuery, createInputDrivenQuery,
