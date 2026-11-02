@@ -133,7 +133,7 @@ jobs:
 
       - name: Install dependencies and libfaketime
         run: |
-          sudo apt-get install -y --no-install-recommends faketime > "$RUNNER_TEMP/faketime.log" 2>&1 &
+          (sudo apt-get install -y --no-install-recommends faketime) > "$RUNNER_TEMP/faketime.log" 2>&1 &
           faketime_install=$!
           npm ci
           wait "$faketime_install" || { cat "$RUNNER_TEMP/faketime.log"; exit 1; }
@@ -156,7 +156,7 @@ jobs:
             faketime -m -f +1100d npm run test -- --selection '[]' --script-selection "$SCRIPT_SELECTION"
           else
             mkdir -p test-results
-            faketime -m -f +1100d npm run test -- --selection "$TEST_SELECTION" --script-selection '[]' --shard="$TEST_LANE" --maxWorkers=3 --reporter=default --reporter=json --outputFile=test-results/vitest.json
+            faketime -m -f +1100d npm run test -- --selection "$TEST_SELECTION" --script-selection '[]' --shard="$TEST_LANE" --maxWorkers=4 --reporter=default --reporter=json --outputFile=test-results/vitest.json
           fi
 
       - name: Show interrupted test progress
