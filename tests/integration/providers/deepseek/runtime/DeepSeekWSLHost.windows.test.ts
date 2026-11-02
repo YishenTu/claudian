@@ -44,12 +44,9 @@ interface FixtureInspection {
 // CI uses WSL1. Run this same suite on a WSL2 NAT/mirrored workstation to qualify localhost forwarding.
 // Real dsh's authenticated profile and ephemeral storage semantics require separate manual verification.
 describe.skipIf(!hasNativeWSL())('DeepSeek fixture Host in native WSL', { timeout: 120_000 }, () => {
-  it.each(['drive', 'unc'])('launches from a %s vault with Linux artifacts, authenticated transport and call relay', async location => {
-    // TEMP timing diagnostics
-    let last = Date.now();
-    const mark = (label: string) => { const now = Date.now(); console.log(`[deepseek-timing] ${location} ${label} +${now - last}ms`); last = now; };
+  // Each case owns its roots and server; each session tool call cold-starts a Windows PowerShell relay.
+  it.concurrent.each(['drive', 'unc'])('launches from a %s vault with Linux artifacts, authenticated transport and call relay', async location => {
     const target = await resolveExecutionTargetAsync({ settings: { installationMethod: 'wsl', wslDistroOverride: '' } });
-    mark('resolve target');
     const mapper = createExecutionPathMapper(target);
     const env = Object.fromEntries(Object.entries(process.env).filter((entry): entry is [string, string] => entry[1] !== undefined));
     const run = async (command: string, args: string[]) => {
@@ -58,7 +55,6 @@ describe.skipIf(!hasNativeWSL())('DeepSeek fixture Host in native WSL', { timeou
     };
     const root = location === 'drive' ? await mkdtemp(join(tmpdir(), 'DeepSeek WSL # 文档 '))
       : mapper.toHostPath((await run('/usr/bin/mktemp', ['-d', '/tmp/deepseek WSL # 文档.XXXXXX']))!.trim())!;
-    mark('root');
     const hostCwd = join(root, 'Vault');
     const home = join(root, 'native home');
     const packageRoot = join(root, 'npm package # 中文');
@@ -74,22 +70,19 @@ describe.skipIf(!hasNativeWSL())('DeepSeek fixture Host in native WSL', { timeou
       await copyFile(resolve(__dirname, '../../../../fixtures/providers/deepseek/runtime/FakeDeepSeekWSLHost.mjs'), entry);
       const cliPath = mapper.toTargetPath(entry)!;
       expect(await run('/bin/chmod', ['+x', cliPath])).toBe('');
-      mark('files+chmod');
       Object.assign(env, { DSH_HOME: home,
         DSH_FIXTURE_PACKAGE: mapper.toTargetPath(resolve('package.json'))!, DSH_FIXTURE_EXIT: mapper.toTargetPath(exitFile)!,
       });
       const execution = await resolveDeepSeekExecutionContext(target, hostCwd, env, '');
-      mark('execution context');
       host = new DeepSeekHost(async () => ({ cliPath, cwd: hostCwd, environment: env, execution }), async (options, signal) => {
         const from = spawned.length;
         try {
-          mark('before start'); started = await DeepSeekHostProcess.start(options, signal); mark('start'); return started;
+          started = await DeepSeekHostProcess.start(options, signal); return started;
         } catch (error) {
           throw new Error(`DeepSeek WSL fixture startup failed: ${String(error)}; discovery/launch processes: ${JSON.stringify(spawned.slice(from).map(({ args, child, stderr }) => ({ args, code: child.exitCode, signal: child.signalCode, stderr })))}`, { cause: error });
         }
       }, undefined, server);
       const lease = await host.attach();
-      mark('attach');
       const calls: Array<{ caller: string; input: unknown }> = [];
       let cancelled = false;
       const lifetime = new AbortController();
@@ -103,9 +96,7 @@ describe.skipIf(!hasNativeWSL())('DeepSeek fixture Host in native WSL', { timeou
       await lease.writePrompt('root', 'literal {{prompt}} $HOME 中文');
       await lease.writeCodeMode(true);
       const withdraw = await started!.offerEphemeralFork('root', 7);
-      mark('prompt/fork artifacts');
       const info = await lease.client.call('fixture/inspect') as FixtureInspection;
-      mark('inspect');
       expect(info).toMatchObject({ relayHasCredentials: false, platform: 'linux', cwd: mapper.toTargetPath(hostCwd),
         prompt: 'literal {{prompt}} $HOME 中文', presentation: ['both'], spill: 'Linux artifact', attachment: 'Linux artifact',
         forks: [{ parent: 'root', atSeq: 7 }],
@@ -125,7 +116,6 @@ describe.skipIf(!hasNativeWSL())('DeepSeek fixture Host in native WSL', { timeou
       await lease.client.call('fixture/cancel', { id: 'held' });
       expect(await rejected).toMatchObject({ message: expect.stringMatching(/cancelled/) });
       await vi.waitFor(() => expect(cancelled).toBe(true), { timeout: 20_000 });
-      mark('tool calls');
       // Descriptor credentials are absent from artifacts other than the existing private endpoint file.
       const artifactRoot = dirname(mapper.toHostPath(info.patchPath)!);
       const endpoint = JSON.parse(await readFile(join(artifactRoot, 'session-tools.json'), 'utf8'));
@@ -133,15 +123,11 @@ describe.skipIf(!hasNativeWSL())('DeepSeek fixture Host in native WSL', { timeou
         if (!file.isFile() || file.name === 'session-tools.json') continue;
         expect(await readFile(join(artifactRoot, file.name), 'utf8')).not.toContain(endpoint.routeId);
       }
-      mark('artifact scan');
       await server.close();
-      mark('server close');
       await expect(tool('revoked', 'child', {})).rejects.toThrow(/relay/);
-      mark('revoked call');
       lease.release(); await host.dispose();
-      mark('dispose');
       expect(await readFile(exitFile, 'utf8')).toBe('owner\n');
       await expect(readdir(artifactRoot)).rejects.toThrow();
-    } finally { await host?.dispose(); await server.close(); await rm(root, { recursive: true, force: true }); mark('cleanup'); }
+    } finally { await host?.dispose(); await server.close(); await rm(root, { recursive: true, force: true }); }
   });
 });
