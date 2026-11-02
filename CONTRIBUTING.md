@@ -86,7 +86,7 @@ checks on other platforms.
 
 For documentation-only changes, a production build is not required. Follow the authoritative rules in [AGENTS.md](AGENTS.md): run `git diff --check` and the affected documentation tests.
 
-CI skips documentation-only changes. Every other change runs typecheck, lint and the dependency audit in parallel from the start; the production build, lockfile, dependency-review, workflow and WSL checks run only when their inputs change. `scripts/ciTestSelection.mjs` owns that policy.
+CI skips documentation-only changes. Every other change runs typecheck, lint and the dependency audit in parallel from the start; the production build, lockfile, dependency-review and workflow checks run only when their inputs change. The native WSL job runs only for WSL-related source (launch, execution target, path mapping, the session-tool relay, or installation-method handling) or WSL test infrastructure; scheduled verification runs every WSL suite weekly. `scripts/ciTestSelection.mjs` owns that policy.
 
 Full Linux CI verification uses four Vitest shards; affected selections add a shard per 200 selected suites, up to four. Script checks run in their own `scripts` lane alongside the shards. Each Linux Vitest shard uses four workers and restores the latest recorded file durations, so Vitest starts the slowest suites first; shard membership depends only on file paths. Every lane must pass the aggregate test gate, and each Vitest shard uploads its own timing artifact. Sharding uses more runner capacity to reduce elapsed time; compare runner minutes as well as wall time.
 

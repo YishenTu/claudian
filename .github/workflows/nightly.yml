@@ -13,6 +13,11 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # PR and push CI runs native WSL suites only for WSL-related changes; the full reusable CI here
+  # runs every WSL suite weekly so a WSL regression outside that selection surfaces within a week.
+  full-ci:
+    uses: ./.github/workflows/ci.yml
+
   full-platform:
     name: Full suite (${{ matrix.os }}, ${{ matrix.shard }})
     strategy:

@@ -333,7 +333,11 @@ test('unsafe deletions and global or unknown changes retain full verification', 
 test('scheduled and reusable verification retain full coverage', () => {
   for (const event of ['workflow_call', 'schedule', 'workflow_dispatch']) {
     assert.equal(select([], [], event).testFiles, null);
+    assert.deepEqual(select([], [], event).wslSuites, wslTests);
   }
+  // Scheduled verification reuses CI so every WSL suite runs weekly.
+  const nightly = parse(readFileSync(new URL('../.github/workflows/nightly.yml', import.meta.url), 'utf8'));
+  assert.ok(Object.values(nightly.jobs).some(job => job.uses === './.github/workflows/ci.yml'));
 });
 
 test('real dependency graph preserves prompt and provider coverage without Collab suites', () => {
@@ -350,9 +354,12 @@ test('a provider-internal change selects no other provider suites through the re
   const selection = selectRelatedCiTests({ changes: [{ status: 'M', path: tracker }] });
   const others = /^tests\/(?:unit|integration)\/providers\/(?:claude|deepseek|grok|opencode|pi)\//;
   assert.ok(selection.testFiles.includes('tests/unit/providers/codex/execution/CodexSubagentTracker.test.ts'));
-  assert.ok(selection.testFiles.includes('tests/integration/providers/codex/runtime/CodexWSL.windows.test.ts'));
-  assert.deepEqual(selection.testFiles.filter(file => others.test(file)), []);
-  assert.deepEqual(selection.wslSuites.filter(file => others.test(file)), []);
+  // Another provider's suite is selected only when it registers Codex itself.
+  const registersCodex = file => readFileSync(file, 'utf8').includes('codexProviderRegistration');
+  assert.deepEqual(selection.testFiles.filter(file => others.test(file) && !registersCodex(file)), []);
+  assert.ok(selection.testFiles.includes('tests/integration/providers/claude/execution/ClaudeExecutionBackend.test.ts'));
+  // The tracker is platform-neutral, so the native WSL job does not run.
+  assert.deepEqual(selection.wslSuites, []);
 });
 
 test('Vitest shards scale with the selection and script checks run in their own lane', () => {
@@ -493,116 +500,78 @@ test('local selection includes committed, staged, unstaged and untracked edits w
   }
 });
 
-test('WSL native job follows shared dependencies and provider users but skips unrelated UI', () => {
+test('WSL suites run only for changes to WSL-related code or WSL test infrastructure', () => {
   const wsl = 'tests/integration/core/process/execution-target/WSLExecution.windows.test.ts';
-  assert.equal(select([wsl]).wslWindows, true);
   const relay = 'tests/integration/core/process/execution-target/WSLSessionToolRelay.windows.test.ts';
-  assert.equal(select([relay]).wslWindows, true);
   const deepseek = 'tests/integration/providers/deepseek/runtime/DeepSeekWSLHost.windows.test.ts';
-  assert.equal(select([deepseek]).wslWindows, true);
-  for (const file of [
-    'src/providers/deepseek/runtime/DeepSeekHostProcess.ts',
-    // Type-only, UI and sibling-test edges reach the native DeepSeek suite through its declaration.
-    'src/providers/deepseek/types.ts',
-    'src/providers/deepseek/ui/DeepSeekSettingsTab.ts',
-    'tests/integration/providers/deepseek/runtime/DeepSeekHostProcess.wsl.test.ts',
-    'tests/unit/providers/deepseek/settings.test.ts',
-  ]) {
-    const selection = select([file]);
-    assert.equal(selection.wslWindows, true, file);
-    assert.ok(selection.testFiles.includes(deepseek), `${file} must select the declared DeepSeek consumer`);
-  }
-  // The Linux Host fixture is read through fs by both its local and native WSL consumers.
-  const fixture = select(['tests/fixtures/providers/deepseek/runtime/FakeDeepSeekWSLHost.mjs']);
-  assert.equal(fixture.wslWindows, true);
-  assert.ok(fixture.testFiles.includes('tests/integration/providers/deepseek/runtime/DeepSeekHostProcess.test.ts'));
-  assert.ok(fixture.testFiles.includes(deepseek));
-  // No WSL suite declares Markdown math as an input, so declarations alone don't select the WSL job.
-  assert.equal(select(['src/utils/markdownMath.ts']).wslWindows, false);
-  // Pi settings now decide its WSL launch, so they select the WSL job.
-  assert.equal(select(['src/providers/pi/settings.ts']).wslWindows, true);
-  assert.equal(select(['tests/helpers/WSLNativeTarget.ts'], [relay]).wslWindows, true);
-  for (const file of [
-    'src/core/session-tools/sessionToolRelayCommand.ts',
-    // Type-only and sibling session-tool edges reach the relay through its declaration.
-    'src/core/session-tools/SessionToolEndpoint.ts',
-    'tests/integration/core/session-tools/WSLSessionToolRelay.test.ts',
-    // Grok launches the relay as its WSL MCP child.
-    'src/providers/grok/runtime/GrokExecutionContext.ts',
-    'src/providers/grok/types.ts',
-    'tests/integration/providers/grok/ui/GrokSettingsTab.dom.test.ts',
-  ]) {
-    const selection = select([file]);
-    assert.equal(selection.wslWindows, true, file);
-    assert.ok(selection.testFiles.includes(relay), `${file} must select the declared relay consumer`);
-  }
   const opencode = 'tests/integration/providers/opencode/runtime/OpencodeWSL.windows.test.ts';
-  assert.equal(select([opencode]).wslWindows, true);
-  for (const file of [
-    'src/providers/opencode/runtime/OpencodeExecutionTarget.ts',
-    // Type-only, UI and sibling-test edges reach the OpenCode WSL suite through its declaration.
-    'src/providers/opencode/settings.ts',
-    'src/providers/opencode/ui/OpencodeSettingsTab.ts',
-    'tests/integration/providers/opencode/ui/OpencodeSettingsTab.dom.test.ts',
+  const codex = 'tests/integration/providers/codex/runtime/CodexWSL.windows.test.ts';
+  const grok = 'tests/integration/providers/grok/runtime/GrokWSL.windows.test.ts';
+  const claude = 'tests/integration/core/process/execution-target/ClaudeWSL.windows.test.ts';
+  // Source that launches, targets, maps paths or chooses the installation method for WSL keeps its declared suites.
+  for (const [file, suite] of [
+    ['src/core/process/execution-target/TargetLaunchSpec.ts', wsl],
+    ['src/core/process/execution-target/types.ts', wsl],
+    ['src/core/session-tools/SessionToolEndpoint.ts', relay],
+    ['src/core/providers/settings/InstallationSettings.ts', wsl],
+    ['src/core/providers/cli/TargetCLIInstallationProbe.ts', wsl],
+    ['src/shared/settings/ExecutionTargetSettings.ts', wsl],
+    ['src/providers/deepseek/runtime/DeepSeekHostProcess.ts', deepseek],
+    ['src/providers/deepseek/ui/DeepSeekSettingsTab.ts', deepseek],
+    ['src/providers/grok/runtime/GrokExecutionContext.ts', relay],
+    ['src/providers/grok/history/GrokConversationHistoryService.ts', grok],
+    ['src/providers/opencode/runtime/OpencodeExecutionTarget.ts', opencode],
+    ['src/providers/opencode/ui/OpencodeSettingsTab.ts', opencode],
+    ['src/providers/codex/runtime/CodexLaunchSpecBuilder.ts', codex],
+    ['src/providers/codex/settings.ts', codex],
+    ['src/providers/codex/history/CodexConversationHistoryService.ts', codex],
+    ['src/providers/pi/settings.ts', wsl],
+    ['src/providers/pi/runtime/PiSubprocess.ts', wsl],
   ]) {
     const selection = select([file]);
-    assert.equal(selection.wslWindows, true, file);
-    assert.ok(selection.testFiles.includes(opencode), `${file} must select the declared OpenCode WSL consumer`);
+    assert.ok(selection.wslSuites.includes(suite), `${file} must select ${suite}`);
   }
-  assert.equal(select(['src/core/process/execution-target/TargetLaunchSpec.ts'], [wsl]).wslWindows, true);
-  for (const provider of ['codex', 'grok']) {
-    const title = provider === 'codex' ? 'Codex' : 'Grok';
-    const native = `tests/integration/providers/${provider}/runtime/${title}WSL.windows.test.ts`;
-    assert.equal(select([native]).wslWindows, true);
-    for (const input of [
-      `src/providers/${provider}/settings.ts`,
-      `src/providers/${provider}/execution/${title}ExecutionBackend.ts`,
-      `src/providers/${provider}/history/${title}ConversationHistoryService.ts`,
-      `tests/integration/providers/${provider}/execution/${title}ExecutionBackend.test.ts`,
-      `tests/helpers/providers/${provider}/${title}WSLPeer.ts`,
-    ]) {
-      const selection = select([input]);
-      assert.equal(selection.wslWindows, true, input);
-      assert.ok(selection.testFiles.includes(native), `${input} must select ${native}`);
-    }
-    assert.equal(select(['tests/helpers/WSLNativePeer.ts'], [native]).wslWindows, true);
+  assert.ok(select(['src/providers/claude/runtime/customSpawn.ts'], [claude]).wslSuites.includes(claude));
+  assert.deepEqual(selectRelatedCiTests({ changes: [{ status: 'M', path: 'src/core/process/execution-target/WSLEnvironment.ts' }] }).wslSuites.includes(wsl), true);
+  // WSL suites, helpers and fixtures change what the native job runs.
+  for (const [file, suite] of [
+    [wsl, wsl], [relay, relay], [deepseek, deepseek], [opencode, opencode], [codex, codex], [grok, grok], [claude, claude],
+    ['tests/fixtures/providers/deepseek/runtime/FakeDeepSeekWSLHost.mjs', deepseek],
+    ['tests/fixtures/providers/pi/PiSessionProcess.mjs', wsl],
+    ['tests/helpers/providers/codex/CodexWSLPeer.ts', codex],
+  ]) assert.ok(select([file]).wslSuites.includes(suite), `${file} must select ${suite}`);
+  for (const [helper, suite] of [['tests/helpers/WSLNativeTarget.ts', relay], ['tests/helpers/WSLNativePeer.ts', grok], ['tests/helpers/WSLClaudeFixture.ts', claude]]) {
+    assert.ok(select([helper], [suite]).wslSuites.includes(suite), `${helper} must select ${suite}`);
   }
-  assert.equal(select(['src/providers/codex/runtime/CodexLaunchSpecBuilder.ts']).wslWindows, true);
-  assert.equal(select(['src/providers/claude/runtime/customSpawn.ts']).wslWindows, true);
-  assert.equal(select(['tests/helpers/WSLClaudeFixture.ts'], ['tests/integration/core/process/execution-target/ClaudeWSL.windows.test.ts']).wslWindows, true);
-  assert.equal(select(['tests/integration/core/process/execution-target/ClaudeWSL.windows.test.ts']).wslWindows, true);
-  assert.equal(select(['src/providers/pi/runtime/PiSubprocess.ts']).wslWindows, true);
-  // Suites run the Pi RPC peer from its file; the native WSL suite copies it into the distro.
+  // Platform-neutral source and test-only edits leave the native WSL job out, even when declarations select the suite on Linux.
+  for (const file of [
+    'src/providers/deepseek/types.ts',
+    'src/providers/grok/types.ts',
+    'src/providers/codex/execution/CodexExecutionBackend.ts',
+    'src/providers/codex/execution/CodexSubagentTracker.ts',
+    'src/providers/grok/execution/GrokExecutionBackend.ts',
+    'src/utils/markdownMath.ts',
+    'tests/unit/providers/deepseek/settings.test.ts',
+    'tests/integration/providers/deepseek/runtime/DeepSeekHostProcess.wsl.test.ts',
+    'tests/integration/providers/grok/ui/GrokSettingsTab.dom.test.ts',
+    'tests/integration/providers/pi/history/PiWSLHistory.test.ts',
+    'tests/integration/core/providers/cli/TargetCLIInstallationProbe.test.ts',
+  ]) {
+    const selection = select([file]);
+    assert.deepEqual([selection.wslSuites, selection.wslWindows], [[], false], file);
+  }
+  assert.deepEqual(select(['src/features/chat/ClaudianView.ts'], [panel]).wslSuites, []);
+  // Declarations still select the suites on Linux, where they skip without a distro.
+  assert.ok(select(['src/providers/deepseek/types.ts']).testFiles.includes(deepseek));
   const piFixture = select(['tests/fixtures/providers/pi/PiSessionProcess.mjs']);
-  assert.equal(piFixture.wslWindows, true);
   for (const consumer of [
-    wsl,
     'tests/integration/features/chat/side-chat/SideChatNative.pi.test.ts',
     'tests/integration/features/chat/tabs/forking/ForkSource.pi.test.ts',
-    'tests/integration/providers/pi/ToolRendererCompatibility.dom.test.ts',
     'tests/integration/providers/pi/execution/PiExecutionKernel.test.ts',
-    'tests/integration/providers/pi/execution/PiTreeNavigation.test.ts',
   ]) assert.ok(piFixture.testFiles.includes(consumer), `${consumer} must follow Pi RPC fixture changes`);
-  assert.equal(select(['tests/integration/providers/pi/history/PiWSLHistory.test.ts']).wslWindows, true);
-  assert.equal(select(['src/features/chat/ClaudianView.ts'], [panel]).wslWindows, false);
-  for (const file of [
-    'src/core/process/execution-target/types.ts',
-    'src/core/providers/settings/InstallationSettings.ts',
-    'src/shared/settings/ExecutionTargetSettings.ts',
-    'src/core/providers/cli/TargetCLIInstallationProbe.ts',
-    'tests/integration/core/providers/cli/TargetCLIInstallationProbe.test.ts',
-    'tests/unit/core/providers/settings/InstallationSettings.test.ts',
-    'tests/integration/providers/codex/ui/CodexCLIPath.dom.test.ts',
-    // Siblings that do not exist yet still match the declared owner prefixes.
-    'tests/integration/shared/settings/ExecutionTargetSettings.dom.test.ts',
-    'tests/unit/core/providers/settings/InstallationSettings.migration.test.ts',
-    'src/core/providers/settings/InstallationSettingsMigration.ts',
-  ]) {
-    const selection = select([file]);
-    assert.equal(selection.wslWindows, true, file);
-    assert.ok(selection.testFiles.includes(wsl), `${file} must select the declared WSL consumer`);
-  }
-  assert.equal(selectRelatedCiTests({ changes: [{ status: 'M', path: 'src/core/process/execution-target/WSLEnvironment.ts' }] }).wslWindows, true);
+  // A mixed change runs WSL suites only through its WSL-related part.
+  const mixed = select(['src/providers/codex/execution/CodexSubagentTracker.ts', 'src/providers/codex/runtime/CodexLaunchSpecBuilder.ts']);
+  assert.ok(mixed.wslSuites.includes(codex));
 });
 
 
