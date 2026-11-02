@@ -1665,9 +1665,11 @@ describe('CodexConversationHistoryService', () => {
       };
 
       const initial = await service.readNativeHistoryRevision(conversation, null);
-      expect(initial).not.toBeNull();
+      expect(initial).toEqual(expect.any(String));
       fs.appendFileSync(childFile, line('Continued fork'));
-      expect(await service.readNativeHistoryRevision(conversation, null)).not.toBe(initial);
+      const appended = await service.readNativeHistoryRevision(conversation, null);
+      expect(appended).toEqual(expect.any(String));
+      expect(appended).not.toBe(initial);
     });
 
     it('is null without a live native transcript', async () => {

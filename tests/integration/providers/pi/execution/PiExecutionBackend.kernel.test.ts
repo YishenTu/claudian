@@ -450,10 +450,8 @@ describe('PiExecutionBackend', () => {
     }
   });
 
-  it.each([
-    { appended: 'branches from an earlier entry', parent: 'u1', restores: true },
-    { appended: 'continues the saved leaf', parent: 'a1', restores: false },
-  ])('resumes the shown turn leaf after restart when another Pi client $appended', async ({ parent, restores }) => {
+  /** A resumed Pi session whose saved turn leaf `a1` another Pi client left at `a2` by appending from `parent`. */
+  async function createAppendedPiSession(parent: string, treeResponses: Array<Record<string, unknown>>) {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), 'pi-leaf-resume-'));
     const sessionFile = path.join(root, 'session.jsonl');
     const entry = (id: string, parentId: string | null, role: 'user' | 'assistant', text: string) => `${JSON.stringify({
@@ -462,28 +460,73 @@ describe('PiExecutionBackend', () => {
     await fs.writeFile(sessionFile, JSON.stringify({ type: 'session', id: 'pi-session-1', cwd: root }) + '\n'
       + entry('u1', null, 'user', 'Hello') + entry('a1', 'u1', 'assistant', 'Hi')
       + entry('u2', parent, 'user', 'From the CLI') + entry('a2', 'u2', 'assistant', 'CLI reply'));
-    const harness = (await createHarness(createConfig({
+    let prompted = createDeferred();
+    const responses: { current?: Map<string, unknown> } = {};
+    const harness = await createHarness(createConfig({
       workingDirectory: root,
       resumeSeed: { providerSessionId: 'pi-session-1', providerState: { sessionId: 'pi-session-1', sessionFile, leafEntryId: 'a1' } },
-    })));
+    }), undefined, async <T>(type: string): Promise<T> => {
+      if (type === 'prompt') prompted.resolve();
+      if (type === 'claudian_tree') return { sessionId: 'pi-session-1', sessionFile, ...treeResponses.shift() } as T;
+      return responses.current?.get(type) as T;
+    });
+    responses.current = harness.responses;
     harness.responses.set('get_state', { sessionId: 'pi-session-1', sessionFile });
-    harness.responses.set('claudian_tree', { cancelled: false, leafId: 'a1', sessionId: 'pi-session-1', sessionFile });
+    // The session file is in the configured store, so the resumed process stays bound to it across turns.
+    harness.host.settings.providerConfigs.pi!.environmentVariables = `PI_CODING_AGENT_SESSION_DIR=${root}`;
+    return {
+      ...harness, sessionFile,
+      /** Resolves when the next prompt reaches the kernel. */
+      nextPrompt: () => { prompted = createDeferred(); return prompted.promise; },
+      cleanup: async () => { await harness.session.dispose(); await fs.rm(root, { recursive: true, force: true }); },
+    };
+  }
+
+  it.each([
+    { appended: 'branches from an earlier entry', parent: 'u1', restores: true },
+    { appended: 'continues the saved leaf', parent: 'a1', restores: false },
+  ])('resumes the shown turn leaf after restart when another Pi client $appended', async ({ parent, restores }) => {
+    const pi = await createAppendedPiSession(parent, [{ cancelled: false, leafId: 'a1' }]);
     try {
-      const events = collect(harness.session.execute(createRequest()).events);
-      await waitFor(() => harness.kernels[0]?.requests.some(r => r.type === 'prompt') ?? false);
-      const requests = harness.kernels[0].requests;
+      const prompted = pi.nextPrompt();
+      const events = collect(pi.session.execute(createRequest()).events);
+      await prompted;
+      const requests = pi.kernels[0].requests;
       const restoreIndex = requests.findIndex(r => r.type === 'claudian_tree');
       const expected = restores
-        ? { operation: 'restore', targetId: 'a1', leafId: 'a1', appendId: 'a2', sessionFile, sessionId: 'pi-session-1' }
+        ? { operation: 'restore', targetId: 'a1', leafId: 'a1', appendId: 'a2', sessionFile: pi.sessionFile, sessionId: 'pi-session-1' }
         : null;
       expect(restoreIndex === -1 ? null : requests[restoreIndex].payload).toEqual(expected);
       // Restoration, when needed, happens before the prompt reaches the resumed process.
       expect(restoreIndex).toBeLessThan(requests.findIndex(r => r.type === 'prompt'));
-      completeTurn(harness.kernels[0]);
+      completeTurn(pi.kernels[0]);
       await events;
     } finally {
-      await harness.session.dispose();
-      await fs.rm(root, { recursive: true, force: true });
+      await pi.cleanup();
+    }
+  });
+
+  it('retries aligning the resumed turn leaf after a cancelled restoration', async () => {
+    const pi = await createAppendedPiSession('u1', [{ cancelled: true, leafId: null }, { cancelled: false, leafId: 'a1' }]);
+    try {
+      const failed = await collect(pi.session.execute(createRequest()).events);
+      expect(failed).toContainEqual(expect.objectContaining({ type: 'execution_error' }));
+      expect(pi.kernels[0].requests.some(r => r.type === 'prompt')).toBe(false);
+
+      const prompted = pi.nextPrompt();
+      const events = collect(pi.session.execute(createRequest()).events);
+      await prompted;
+      expect(pi.kernels).toHaveLength(1);
+      const kernel = pi.kernels[0];
+      // The same process is retried; it must be brought back to the shown leaf again before the prompt.
+      const restores = kernel.requests.filter(r => r.type === 'claudian_tree');
+      expect(restores).toHaveLength(2);
+      expect(restores[1].payload).toMatchObject({ operation: 'restore', targetId: 'a1', leafId: 'a1' });
+      expect(kernel.requests.indexOf(restores[1])).toBeLessThan(kernel.requests.findIndex(r => r.type === 'prompt'));
+      completeTurn(kernel);
+      await events;
+    } finally {
+      await pi.cleanup();
     }
   });
 

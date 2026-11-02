@@ -449,10 +449,12 @@ implements ProviderExecutionSession, SteerableExecutionSession {
 
   async #restoreTreeCursor(signal: AbortSignal): Promise<void> {
     const state = getPiState(this.state.providerState);
-    const alignLeaf = this.#alignResumedLeaf;
-    this.#alignResumedLeaf = false;
-    let cursor = state.treeCursor ?? (alignLeaf ? await this.#resumedLeafCursor(state) : undefined);
-    if (!cursor) return;
+    // Alignment stays pending until a restoration succeeds, so a cancelled or failed one is retried.
+    let cursor = state.treeCursor ?? (this.#alignResumedLeaf ? await this.#resumedLeafCursor(state) : undefined);
+    if (!cursor) {
+      this.#alignResumedLeaf = false;
+      return;
+    }
     if (state.sessionFile) {
       const parsed = await readPiSessionEntries(state.sessionFile);
       cursor = resolvePiTreeCursor(parsed.entries, cursor);
@@ -460,6 +462,7 @@ implements ProviderExecutionSession, SteerableExecutionSession {
     const result = await this.#treeRequest({ operation: 'restore', ...cursor }, signal);
     if (result.cancelled) throw new Error('Pi branch restoration was cancelled.');
     if (result.leafId !== cursor.leafId) cursor = { targetId: result.leafId!, leafId: result.leafId, appendId: result.leafId! };
+    this.#alignResumedLeaf = false;
     this.#setProviderStateValue('treeCursor', cursor);
     this.#setOptionalProviderStateValue('leafEntryId', cursor.leafId ?? undefined);
     this.state.bumpRevision();
