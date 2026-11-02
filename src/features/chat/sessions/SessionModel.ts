@@ -257,54 +257,27 @@ export class SessionModel {
   }
 
   /**
-   * Checks the shown history, and reloads it when `reload` drops it (returning true). Until the check ends,
-   * or the presentation's next hydration has loaded the history again, main sends are refused and session
-   * messages wait: nothing can reach a provider session that predates the reloaded history.
+   * Checks the shown history and, when `reload` drops it (returning true), loads it again. Until then main
+   * sends are refused and session messages wait: nothing can reach a provider session that predates it.
    */
   async refreshHistory(reload: () => Promise<boolean>): Promise<void> {
-    // A check or reload already pending covers this one: its hydration reads the history as it is then.
-    if (this.historyRefresh) return;
-    let finished!: () => void;
-    const refresh = { reloading: false, finished: new Promise<void>(resolve => { finished = resolve; }), finish: () => finished() };
-    this.historyRefresh = refresh;
+    this.refreshingHistory = true;
     this.publish('work');
-    let reloaded: boolean;
     try {
-      reloaded = await reload();
-    } catch (error) {
-      this.endHistoryRefresh(refresh);
-      throw error;
+      if (!await reload()) return;
+      if (this.hydrationState === 'ready') this.hydrationState = 'idle';
+      // A failed load leaves hydration failed, for the presentation to show and retry.
+      await this.hydrate().catch(() => undefined);
+    } finally {
+      this.refreshingHistory = false;
+      this.publish('work');
     }
-    if (!reloaded) {
-      this.endHistoryRefresh(refresh);
-      return;
-    }
-    if (this.hydrationState === 'ready') this.hydrationState = 'idle';
-    refresh.reloading = true;
   }
 
-  private historyRefresh: { reloading: boolean; readonly finished: Promise<void>; finish(): void } | null = null;
+  private refreshingHistory = false;
 
   /** Sends are refused while the shown history is checked or reloaded. */
-  get isRefreshingHistory(): boolean { return this.historyRefresh !== null; }
-
-  /** Settles when the pending check or reload ends; null when none is pending. */
-  get historyRefreshed(): Promise<void> | null { return this.historyRefresh?.finished ?? null; }
-
-  /**
-   * The presentation's activation ended. Activation can stop before hydration runs (workspace setup
-   * failed, the tab closed), which must not leave sends refused.
-   */
-  endHistoryReload(): void {
-    if (this.historyRefresh?.reloading) this.endHistoryRefresh(this.historyRefresh);
-  }
-
-  private endHistoryRefresh(refresh: NonNullable<SessionModel['historyRefresh']>): void {
-    if (this.historyRefresh !== refresh) return;
-    this.historyRefresh = null;
-    refresh.finish();
-    this.publish('work');
-  }
+  get isRefreshingHistory(): boolean { return this.refreshingHistory; }
 
   /** Applies native permission changes through the same owner as toolbar selections. */
   async updatePermissionMode(mode: string): Promise<void> {
@@ -370,7 +343,6 @@ export class SessionModel {
     this.linkedContentController.unmountInfoRow();
     this.transcript.detach();
     this.presentation = null;
-    if (this.historyRefresh) this.endHistoryRefresh(this.historyRefresh);
   }
 
   async hydrate(): Promise<void> {
@@ -381,13 +353,8 @@ export class SessionModel {
       .then(() => {
         this.hydrationState = 'ready';
         this.session.notifyHydrated();
-        if (this.historyRefresh?.reloading) this.endHistoryRefresh(this.historyRefresh);
       })
-      .catch(error => {
-        this.hydrationState = 'failed';
-        if (this.historyRefresh?.reloading) this.endHistoryRefresh(this.historyRefresh);
-        throw error;
-      })
+      .catch(error => { this.hydrationState = 'failed'; throw error; })
       .finally(() => { this.hydration = null; });
     return this.hydration;
   }

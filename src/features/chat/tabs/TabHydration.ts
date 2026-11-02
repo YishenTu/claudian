@@ -34,15 +34,6 @@ export class TabHydration {
    * Failures before hydration starts propagate so the caller can roll back activation.
    */
   async hydrateActivatedTab(tab: AssembledTabRuntime): Promise<TabHydrationOutcome> {
-    try {
-      return await this.#hydrateActivatedTab(tab);
-    } finally {
-      // Sends refused during a history reload never stay refused past the activation that was to hydrate it.
-      tab.session.runtime.peekModel?.endHistoryReload();
-    }
-  }
-
-  async #hydrateActivatedTab(tab: AssembledTabRuntime): Promise<TabHydrationOutcome> {
     const { deps } = this;
     const providerId = tab.providerId;
     // A tab kept open while hidden returns with the history it last showed.

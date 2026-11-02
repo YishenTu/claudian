@@ -1211,24 +1211,6 @@ describe('returning to a tab whose native history changed', () => {
     expect(t.one.dom.messagesEl.textContent).toContain('Reply from the CLI');
   });
 
-  it('stops refusing sends when workspace setup fails after the reload', async () => {
-    const read = holdNext();
-    const t = await setupChangedTab({}, { beforeRevisionRead: read.gate });
-    t.continueElsewhere();
-    await t.manager.switchToTab('two');
-    const finishRead = read.arm();
-    const returning = t.manager.switchToTab('one');
-    await read.held;
-    vi.spyOn(ProviderWorkspaceRegistry, 'ensureInitialized').mockRejectedValueOnce(new Error('Workspace unavailable'));
-    expect(t.one.session.runtime.model.isRefreshingHistory).toBe(true);
-
-    finishRead.resolve();
-    await returning;
-    expect(t.one.hydrationState).toBe('failed');
-    expect(t.one.session.runtime.model.isRefreshingHistory).toBe(false);
-  });
-
-
   it('keeps a declined reload pending across a local turn on the stale transcript', async () => {
     let declineNext = true;
     const t = await setupChangedTab({ releaseHistory: async (_id, canRelease) => {

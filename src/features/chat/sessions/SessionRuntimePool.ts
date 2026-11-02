@@ -145,8 +145,8 @@ export class SessionRuntimePool {
    * Before a presentation shows a conversation's idle session, drops its cached history and provider
    * session when native history changed outside Claudian since they last matched it, so the history is
    * read again and the next send resumes from it. Detached sessions are evicted; the presentation that
-   * holds `attachment` keeps its model, whose hydration is reset for the caller to run, and its main sends
-   * wait for the check and reload. A revision that can no longer be read after one was known counts as
+   * holds `attachment` keeps its model, which loads the history again in place, refusing main sends until
+   * the check and reload end. A revision that can no longer be read after one was known counts as
    * changed; a change whose reload was declined is retried by the next check. Null, without yielding,
    * when there is nothing to check.
    */
@@ -206,7 +206,7 @@ export class SessionRuntimePool {
     if (!record.runtime.peekModel) record.freshness = { state: 'unknown' };
   }
 
-  /** Drops the cached history under its presentation; true when it did, so the presentation hydrates it again. */
+  /** Drops the cached history under its presentation; true when it did, so the model loads it again. */
   private async reloadAttached(conversationId: string, record: SessionRecord, attachment: SessionAttachment): Promise<boolean> {
     const model = record.runtime.peekModel;
     const freshness = record.freshness;
