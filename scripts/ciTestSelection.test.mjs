@@ -583,8 +583,9 @@ test('registered WSL suites exactly match the wsl-native CI invocation', () => {
   const workflow = readFileSync(new URL('../.github/workflows/ci.yml', import.meta.url), 'utf8');
   const job = workflow.split('  wsl-native:')[1]?.split('  build-artifacts:')[0];
   assert.ok(job, 'wsl-native job must exist');
-  const invocation = job.split('\n').find(line => line.trim().startsWith('run: npm run test:unit --'));
-  assert.ok(invocation, 'native WSL test invocation must exist');
-  const invoked = invocation.match(/tests\/[^\s]+\.test\.ts/g);
+  const invocations = job.split('\n').filter(line => line.trim().startsWith('run: npm run test:unit --'));
+  assert.ok(invocations.length > 0, 'native WSL test invocation must exist');
+  const invoked = invocations.flatMap(line => line.match(/tests\/[^\s]+\.test\.ts/g) ?? []);
+  assert.equal(invoked.length, new Set(invoked).size, 'each WSL suite runs once');
   assert.deepEqual(new Set(wslTests), new Set(invoked));
 });
