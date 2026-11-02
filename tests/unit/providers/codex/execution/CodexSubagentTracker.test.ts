@@ -49,8 +49,11 @@ it('restores agent identity on resume and assigns a separate card to new child t
   const publish = vi.fn();
   const tracker = new CodexSubagentTracker(publish, async () => child('Ready.'));
   tracker.seed({ ...child(''), id: 'parent', turns: [{ id: 'parent-turn', status: 'completed', error: null,
-    items: [started, { ...started, id: 'complete', kind: 'completed' }],
+    items: [started, { ...started, id: 'complete', kind: 'completed' },
+      // A child's send_message back to the parent targets the resumed thread itself.
+      { ...started, id: 'reply-to-parent', kind: 'interacted', agentThreadId: 'parent', agentPath: '/root' }],
   }] });
+  expect(tracker.turnStarted('parent', 'parent-turn-2')).toBe(false);
   tracker.activity({ ...started, id: 'followup', kind: 'interacted' }, 'parent-turn-2');
   await Promise.resolve();
   tracker.turnStarted('child', 'new-turn');
