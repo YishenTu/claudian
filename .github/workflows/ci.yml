@@ -233,18 +233,6 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # The selected script suite normally includes this check; retain it for script-only changes.
-      - name: Run Windows architecture boundaries
-        if: runner.os == 'Windows' && needs.test-scope.outputs.script-tests != 'null' && !contains(fromJSON(needs.test-scope.outputs.script-tests), 'scripts/check-architecture-boundaries.test.mjs')
-        run: npm run test:architecture
-
-      - name: Run affected Windows script checks
-        if: runner.os == 'Windows'
-        shell: bash
-        env:
-          SCRIPT_SELECTION: ${{ needs.test-scope.outputs.script-tests }}
-        run: npm run test -- --selection '[]' --script-selection "$SCRIPT_SELECTION"
-
       - name: Build production plugin
         run: npm run build
 
@@ -253,7 +241,7 @@ jobs:
         shell: bash
         env:
           TEST_SELECTION: ${{ needs.test-scope.outputs.cross-platform-tests }}
-          TEST_WORKERS: ${{ runner.os == 'Windows' && '1' || '3' }}
+          TEST_WORKERS: ${{ runner.os == 'Windows' && '4' || '3' }}
         run: |
           mkdir -p test-results
           npm run test:cross-platform -- --selection "$TEST_SELECTION" --maxWorkers="$TEST_WORKERS" --reporter=default --reporter=json --outputFile=test-results/native.json
@@ -274,6 +262,36 @@ jobs:
       - name: Run Windows Pi launch integration
         if: runner.os == 'Windows' && needs.test-scope.outputs.pi-windows == 'true'
         run: npm run test:unit -- --maxWorkers=1 tests/integration/providers/pi/runtime/PiSubprocess.windows.test.ts
+
+  # Script checks do not need the build or native suites, so they run on their own runner in parallel.
+  windows-scripts:
+    needs: test-scope
+    if: needs.test-scope.outputs.cross-platform == 'true'
+    name: Windows script checks
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # The selected script suite normally includes this check; retain it for script-only changes.
+      - name: Run Windows architecture boundaries
+        if: needs.test-scope.outputs.script-tests != 'null' && !contains(fromJSON(needs.test-scope.outputs.script-tests), 'scripts/check-architecture-boundaries.test.mjs')
+        run: npm run test:architecture
+
+      - name: Run affected Windows script checks
+        shell: bash
+        env:
+          SCRIPT_SELECTION: ${{ needs.test-scope.outputs.script-tests }}
+        run: npm run test -- --selection '[]' --script-selection "$SCRIPT_SELECTION"
 
   wsl-native:
     needs: test-scope
@@ -349,7 +367,13 @@ jobs:
         env:
           CLAUDIAN_REQUIRE_WSL: '1'
           CLAUDIAN_OPENCODE_WSL_CLI: /opt/claudian-opencode-v2/opencode
-        run: npm run test:unit -- --maxWorkers=3 tests/integration/core/process/execution-target/WSLExecution.windows.test.ts tests/integration/core/process/execution-target/WSLSessionToolRelay.windows.test.ts tests/integration/core/process/execution-target/ClaudeWSL.windows.test.ts tests/integration/providers/deepseek/runtime/DeepSeekWSLHost.windows.test.ts tests/integration/providers/opencode/runtime/OpencodeWSL.windows.test.ts tests/integration/providers/codex/runtime/CodexWSL.windows.test.ts tests/integration/providers/grok/runtime/GrokWSL.windows.test.ts
+        run: npm run test:unit -- --maxWorkers=3 tests/integration/core/process/execution-target/WSLExecution.windows.test.ts tests/integration/core/process/execution-target/WSLSessionToolRelay.windows.test.ts tests/integration/core/process/execution-target/ClaudeWSL.windows.test.ts tests/integration/providers/opencode/runtime/OpencodeWSL.windows.test.ts tests/integration/providers/codex/runtime/CodexWSL.windows.test.ts tests/integration/providers/grok/runtime/GrokWSL.windows.test.ts
+
+      # DeepSeek's launch probes use the production 5s process-probe deadline, which concurrent WSL1 suites can exceed.
+      - name: Exercise native Windows to WSL DeepSeek host
+        env:
+          CLAUDIAN_REQUIRE_WSL: '1'
+        run: npm run test:unit -- --maxWorkers=1 tests/integration/providers/deepseek/runtime/DeepSeekWSLHost.windows.test.ts
 
   build-artifacts:
     runs-on: ubuntu-latest
