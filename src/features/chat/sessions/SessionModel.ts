@@ -201,7 +201,6 @@ export class SessionModel {
       isClosing: () => session.isDisposed,
       getSideChatController: () => session.sideChat,
       ensureExecutionInitialized: () => this.ensureExecutionInitialized(),
-      awaitCurrentHistory: () => this.awaitCurrentHistory(),
       captureReviewableSettlement: outcome => this.captureReview(outcome),
     });
     this.events = new SessionEvents({
@@ -256,9 +255,34 @@ export class SessionModel {
       && (!this.composer.hasRecovery || !this.session.conversationId);
   }
 
-  /** Released history must be read again; the presentation's next hydration renders it. */
-  invalidateHydration(): void {
+  /**
+   * Checks the shown history while main sends wait with their input captured. When `reload` drops the
+   * loaded history it returns true; the sends then wait for the presentation's next hydration to render
+   * it again, and return to the composer if that fails or the presentation detaches first.
+   */
+  async refreshHistory(reload: () => Promise<boolean>): Promise<void> {
+    let settle!: (reloaded: boolean) => void;
+    this.inputController.holdForHistoryRefresh(new Promise<boolean>(resolve => { settle = resolve; }));
+    try {
+      if (!await reload()) {
+        settle(true);
+        return;
+      }
+    } catch (error) {
+      settle(true);
+      throw error;
+    }
     if (this.hydrationState === 'ready') this.hydrationState = 'idle';
+    this.finishHistoryReload(false);
+    this.settleHistoryReload = settle;
+  }
+
+  private settleHistoryReload: ((reloaded: boolean) => void) | null = null;
+
+  private finishHistoryReload(reloaded: boolean): void {
+    const settle = this.settleHistoryReload;
+    this.settleHistoryReload = null;
+    settle?.(reloaded);
   }
 
   /** Applies native permission changes through the same owner as toolbar selections. */
@@ -325,6 +349,7 @@ export class SessionModel {
     this.linkedContentController.unmountInfoRow();
     this.transcript.detach();
     this.presentation = null;
+    this.finishHistoryReload(false);
   }
 
   async hydrate(): Promise<void> {
@@ -332,28 +357,10 @@ export class SessionModel {
     if (this.hydration) return this.hydration;
     this.hydrationState = 'loading';
     this.hydration = this.conversationController.loadActive()
-      .then(() => { this.hydrationState = 'ready'; this.session.notifyHydrated(); })
-      .catch(error => { this.hydrationState = 'failed'; throw error; })
+      .then(() => { this.hydrationState = 'ready'; this.session.notifyHydrated(); this.finishHistoryReload(true); })
+      .catch(error => { this.hydrationState = 'failed'; this.finishHistoryReload(false); throw error; })
       .finally(() => { this.hydration = null; });
     return this.hydration;
-  }
-
-  /** A send never reaches a session whose history is being checked or reloaded after an outside change. */
-  private awaitCurrentHistory(): Promise<boolean> | null {
-    const id = this.session.conversationId;
-    const check = id ? this.plugin.sessionRuntimes.whenRevalidated(id) : null;
-    return check && this.reloadAfter(check);
-  }
-
-  private async reloadAfter(check: Promise<void>): Promise<boolean> {
-    await check;
-    if (this.session.isDisposed) return false;
-    try {
-      await this.hydrate();
-    } catch {
-      return false;
-    }
-    return !this.session.isDisposed;
   }
 
   async ensureExecutionInitialized(): Promise<boolean> {

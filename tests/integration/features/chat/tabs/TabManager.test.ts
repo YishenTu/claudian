@@ -1137,12 +1137,25 @@ it('holds a send on a returning tab until its revision check and reload finish',
 });
 
 describe('returning to a tab whose native history changed', () => {
-  async function setupChangedTab(poolOptions: Parameters<typeof createPlugin>[1] = {}) {
+  async function setupChangedTab(poolOptions: Parameters<typeof createPlugin>[1] = {}, gates: {
+    beforeLoad?: () => Promise<void>;
+    beforeRevisionRead?: () => Promise<void>;
+  } = {}) {
     const at = testDate().getTime();
     const native = { revision: 'before', messages: [{ id: 'cached', role: 'assistant' as const, content: 'Cached reply', timestamp: at }] };
     const plugin = await createPlugin({
-      getConversationById: async id => conversationRecord(id, id === 'one' ? { messages: structuredClone(native.messages) } : {}),
-    }, { readNativeHistoryRevision: async id => id === 'one' ? native.revision : null, ...poolOptions });
+      getConversationById: async id => {
+        if (id !== 'one') return conversationRecord(id);
+        const messages = structuredClone(native.messages);
+        await gates.beforeLoad?.();
+        return conversationRecord(id, { messages });
+      },
+    }, { readNativeHistoryRevision: async id => {
+      if (id !== 'one') return null;
+      const revision = native.revision;
+      await gates.beforeRevisionRead?.();
+      return revision;
+    }, ...poolOptions });
     const { manager } = await createManager(plugin);
     await manager.restoreState({ openTabs: ['one', 'two'].map(id => ({ tabId: id, conversationId: id })), activeTabId: 'one' });
     const one = manager.getTab('one')!;
@@ -1163,6 +1176,97 @@ describe('returning to a tab whose native history changed', () => {
     t.continueElsewhere();
     await t.goAwayAndBack();
     expect(t.one.dom.messagesEl.textContent).not.toContain('Reply from the CLI');
+
+    await t.goAwayAndBack();
+    expect(t.one.dom.messagesEl.textContent).toContain('Reply from the CLI');
+  });
+
+  it('holds a send made while the reload hydrates until the reloaded history is in place', async () => {
+    let holdLoad: ReturnType<typeof deferred<void>> | null = null;
+    const loadHeld = deferred<void>();
+    const t = await setupChangedTab({}, { beforeLoad: async () => {
+      const hold = holdLoad;
+      if (!hold) return;
+      holdLoad = null;
+      loadHeld.resolve();
+      await hold.promise;
+    } });
+    t.continueElsewhere();
+    await t.manager.switchToTab('two');
+    const finishLoad = deferred<void>();
+    holdLoad = finishLoad;
+    const returning = t.manager.switchToTab('one');
+    await loadHeld.promise;
+    t.one.controllers.drafts.restore('main', { content: 'Continue from the CLI turn' });
+    const sending = t.one.controllers.inputController.sendMessage();
+
+    finishLoad.resolve();
+    await returning;
+    const fresh = await vi.waitFor(() => {
+      const session = provider.sessions.find(candidate => candidate.requests.length > 0);
+      if (!session) throw new Error('The send has not reached a provider session');
+      return session;
+    });
+    expect(fresh.requests[0].conversationHistory?.map(message => message.content)).toEqual(['Cached reply', 'Reply from the CLI']);
+    (await fresh.waitForRun()).complete();
+    await sending;
+    expect(t.one.dom.messagesEl.textContent).toContain('Reply from the CLI');
+    expect(t.one.dom.messagesEl.textContent).toContain('Continue from the CLI turn');
+  });
+
+  it('sends the text submitted during the check and keeps later edits as a draft', async () => {
+    let holdRead: ReturnType<typeof deferred<void>> | null = null;
+    const readHeld = deferred<void>();
+    const t = await setupChangedTab({}, { beforeRevisionRead: async () => {
+      const hold = holdRead;
+      if (!hold) return;
+      holdRead = null;
+      readHeld.resolve();
+      await hold.promise;
+    } });
+    t.continueElsewhere();
+    await t.manager.switchToTab('two');
+    const finishRead = deferred<void>();
+    holdRead = finishRead;
+    const returning = t.manager.switchToTab('one');
+    await readHeld.promise;
+    t.one.controllers.drafts.restore('main', { content: 'submitted prompt' });
+    const sending = t.one.controllers.inputController.sendMessage();
+    t.one.controllers.drafts.restore('main', { content: 'later draft' });
+
+    finishRead.resolve();
+    await returning;
+    const fresh = await vi.waitFor(() => {
+      const session = provider.sessions.find(candidate => candidate.requests.length > 0);
+      if (!session) throw new Error('The send has not reached a provider session');
+      return session;
+    });
+    expect(fresh.requests[0].input).toEqual([{ type: 'text', text: 'submitted prompt' }]);
+    (await fresh.waitForRun()).complete();
+    await sending;
+    expect(t.one.controllers.drafts.capture('main').content).toBe('later draft');
+    expect(fresh.requests).toHaveLength(1);
+  });
+
+  it('keeps a declined reload pending across a local turn on the stale transcript', async () => {
+    let declineNext = true;
+    const t = await setupChangedTab({ releaseHistory: async (_id, canRelease) => {
+      if (declineNext) { declineNext = false; return false; }
+      return canRelease();
+    } });
+    t.continueElsewhere();
+    await t.goAwayAndBack();
+    expect(t.one.dom.messagesEl.textContent).not.toContain('Reply from the CLI');
+
+    t.one.controllers.drafts.restore('main', { content: 'Local follow-up' });
+    const sending = t.one.controllers.inputController.sendMessage();
+    const session = await vi.waitFor(() => {
+      const candidate = provider.sessions.find(entry => entry.requests.length > 0);
+      if (!candidate) throw new Error('The local send has not reached a provider session');
+      return candidate;
+    });
+    (await session.waitForRun()).complete();
+    await sending;
 
     await t.goAwayAndBack();
     expect(t.one.dom.messagesEl.textContent).toContain('Reply from the CLI');

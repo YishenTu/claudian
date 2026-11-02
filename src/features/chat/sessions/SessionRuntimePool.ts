@@ -34,6 +34,17 @@ interface SessionStatus {
   readonly attention: ChatSessionRuntime['statusAttention'];
 }
 
+/**
+ * Whether a session's cached history and provider session match its native history. `current` holds the
+ * revision they last matched: read when a presentation first loads them and whenever their own main work
+ * settles. `stale` means it changed outside Claudian; only a completed reload clears it, from the revision
+ * read just before that reload's hydration.
+ */
+type NativeHistoryFreshness =
+  | { readonly state: 'unknown' }
+  | { readonly state: 'current'; readonly revision: string }
+  | { readonly state: 'stale'; readonly reloadRevision: Promise<string | null> | null };
+
 interface SessionRecord {
   readonly runtime: ChatSessionRuntime;
   /** Last published projection; its conversation id is also this record's index key. */
@@ -47,15 +58,9 @@ interface SessionRecord {
   settledWaiters: Array<(settled: boolean) => void>;
   /** When a presentation last detached it; 0 if none ever has. Orders retention of viewed sessions. */
   viewedAt: number;
-  /**
-   * The native history revision its cached history and provider session last matched: read when a
-   * presentation first loads it and whenever its own work settles. Undefined until read; null if unknown.
-   */
-  nativeRevision: string | null | undefined;
-  /** Counts baseline reads, so an older read cannot replace a newer one or a cleared baseline. */
-  nativeRevisionReads: number;
-  /** The latest baseline read while it is in flight; checks and retries join it. */
-  nativeRevisionPending: Promise<void> | null;
+  freshness: NativeHistoryFreshness;
+  /** The latest baseline read while it is in flight; only it may set the baseline, and checks join it. */
+  revisionRead: Promise<void> | null;
   /** Every opener joins the complete check, eviction and provider release. */
   revalidation: Promise<void> | null;
   unsubscribe(): void;
@@ -124,7 +129,7 @@ export class SessionRuntimePool {
     const attachment = Object.freeze({ runtime: record.runtime, owner });
     record.attachment = attachment;
     // Read before the presentation hydrates, so a change landing during hydration counts as newer.
-    if (record.nativeRevision === undefined && !record.nativeRevisionPending) this.observeNativeRevision(record);
+    if (record.freshness.state === 'unknown' && !record.revisionRead) this.observeNativeRevision(record);
     return { acquired: true, attachment };
   }
 
@@ -132,24 +137,24 @@ export class SessionRuntimePool {
    * Before a presentation shows a conversation's idle session, drops its cached history and provider
    * session when native history changed outside Claudian since they last matched it, so the history is
    * read again and the next send resumes from it. Detached sessions are evicted; the presentation that
-   * holds `attachment` keeps its model, whose hydration is reset for the caller to run. A revision that
-   * can no longer be read after one was known counts as changed. Null, without yielding, when there is
-   * nothing to check.
+   * holds `attachment` keeps its model, whose hydration is reset for the caller to run, and its main sends
+   * wait for the check and reload. A revision that can no longer be read after one was known counts as
+   * changed; a change whose reload was declined is retried by the next check. Null, without yielding,
+   * when there is nothing to check.
    */
   revalidate(conversationId: string, attachment?: SessionAttachment): Promise<void> | null {
     const record = this.conversations.get(conversationId);
     if (!record) return null;
     if (record.revalidation) return record.revalidation;
-    const hasBaseline = !!record.nativeRevision || !!record.nativeRevisionPending;
-    if (!hasBaseline || !this.canRevalidate(record, attachment)) return null;
-    record.revalidation = this.revalidateRecord(conversationId, record, attachment)
+    if (record.freshness.state === 'unknown' && !record.revisionRead) return null;
+    if (!this.canRevalidate(record, attachment)) return null;
+    const model = record.runtime.peekModel;
+    record.revalidation = (attachment && model
+      ? model.refreshHistory(async () => await this.isStale(conversationId, record, attachment)
+        && await this.reloadAttached(conversationId, record, attachment))
+      : this.revalidateDetached(conversationId, record))
       .finally(() => { record.revalidation = null; });
     return record.revalidation;
-  }
-
-  /** The conversation's revision check in flight, if any. */
-  whenRevalidated(conversationId: string): Promise<void> | null {
-    return this.conversations.get(conversationId)?.revalidation ?? null;
   }
 
   private canRevalidate(record: SessionRecord, attachment: SessionAttachment | undefined): boolean {
@@ -159,24 +164,26 @@ export class SessionRuntimePool {
       && record.runtime.isIdle && !!model && model.canRefreshHistory;
   }
 
-  private async revalidateRecord(conversationId: string, record: SessionRecord, attachment: SessionAttachment | undefined): Promise<void> {
+  /** Compares a current baseline with native history, marking it stale on a change; true while stale. */
+  private async isStale(conversationId: string, record: SessionRecord, attachment: SessionAttachment | undefined): Promise<boolean> {
     // The baseline may still be landing: a first read, a retry after hydration, or a settled turn's own writes.
-    while (record.nativeRevisionPending) await record.nativeRevisionPending;
-    const reads = record.nativeRevisionReads;
-    const baseline = record.nativeRevision;
-    if (baseline == null || !this.canRevalidate(record, attachment)) return;
+    while (record.revisionRead) await record.revisionRead;
+    const baseline = record.freshness;
+    if (baseline.state !== 'current') return baseline.state === 'stale' && this.canRevalidate(record, attachment);
+    if (!this.canRevalidate(record, attachment)) return false;
     const current = await this.readNativeRevision(conversationId);
-    if (current === baseline || record.nativeRevisionReads !== reads) return;
+    // A newer baseline supersedes this comparison.
+    if (current === baseline.revision || record.freshness !== baseline || record.revisionRead) return false;
+    record.freshness = { state: 'stale', reloadRevision: null };
     await record.eviction;
-    if (!this.canRevalidate(record, attachment)) return;
+    if (!this.canRevalidate(record, attachment)) return false;
     // Opening the presentation must not fail on it; a session that cannot release stays marked stale.
     await record.runtime.executionCoordinator.releaseForChangedHistory().catch(error => this.deps.onError(error));
-    // The baseline stays until the history is actually dropped, so a declined attempt is retried next time.
-    if (attachment) await this.reloadAttached(conversationId, record, attachment);
-    else await this.evictChanged(record);
+    return this.canRevalidate(record, attachment);
   }
 
-  private async evictChanged(record: SessionRecord): Promise<void> {
+  private async revalidateDetached(conversationId: string, record: SessionRecord): Promise<void> {
+    if (!await this.isStale(conversationId, record, undefined)) return;
     record.eviction = this.evict(record, { retain: false }).then(interrupted => {
       record.eviction = null;
       if (interrupted) this.changed(record);
@@ -185,47 +192,53 @@ export class SessionRuntimePool {
       this.deps.onError(error);
     });
     await record.eviction;
-    if (record.runtime.peekModel) return;
-    // The next presentation hydrates afresh and reads a new baseline as it attaches.
-    record.nativeRevision = undefined;
-    record.nativeRevisionReads += 1;
-    record.nativeRevisionPending = null;
+    // Nothing cached remains to be stale; the next presentation hydrates afresh and reads a new baseline.
+    if (!record.runtime.peekModel) record.freshness = { state: 'unknown' };
   }
 
-  /** Drops the cached history under its presentation, which hydrates it again; the new baseline is read first. */
-  private async reloadAttached(conversationId: string, record: SessionRecord, attachment: SessionAttachment): Promise<void> {
+  /** Drops the cached history under its presentation; true when it did, so the presentation hydrates it again. */
+  private async reloadAttached(conversationId: string, record: SessionRecord, attachment: SessionAttachment): Promise<boolean> {
     const model = record.runtime.peekModel;
-    if (!model) return;
-    const eligible = () => this.canRevalidate(record, attachment) && record.runtime.peekModel === model;
+    const freshness = record.freshness;
+    if (!model || freshness.state !== 'stale') return false;
+    const eligible = () => this.canRevalidate(record, attachment) && record.runtime.peekModel === model && record.freshness === freshness;
     try {
       // A dirty transcript is written before native history replaces it, as detached eviction does.
       if (model.state.hasPendingConversationSave) await model.conversationController.save(false);
-      if (model.state.hasPendingConversationSave || !eligible()) return;
-      if (!await this.deps.releaseHistory(conversationId, eligible) || !eligible()) return;
+      if (model.state.hasPendingConversationSave || !eligible()) return false;
+      if (!await this.deps.releaseHistory(conversationId, eligible) || !eligible()) return false;
     } catch (error) {
       this.deps.onError(error);
-      return;
+      return false;
     }
-    record.nativeRevision = undefined;
-    this.observeNativeRevision(record);
-    model.invalidateHydration();
+    // Read before the presentation hydrates, so a change landing during hydration counts as newer.
+    record.freshness = { state: 'stale', reloadRevision: this.readNativeRevision(conversationId) };
+    return true;
   }
 
   private observeNativeRevision(record: SessionRecord): void {
     const id = record.runtime.conversationId;
-    if (!id || !this.deps.readNativeHistoryRevision) return;
-    const reads = ++record.nativeRevisionReads;
-    const pending: Promise<void> = this.readNativeRevision(id).then(revision => {
-      if (record.nativeRevisionReads === reads && this.records.get(record.runtime) === record) record.nativeRevision = revision;
+    if (!id || !this.deps.readNativeHistoryRevision || record.freshness.state === 'stale') return;
+    const read: Promise<void> = this.readNativeRevision(id).then(revision => {
+      if (record.revisionRead !== read || record.freshness.state === 'stale' || this.records.get(record.runtime) !== record) return;
+      record.freshness = revision ? { state: 'current', revision } : { state: 'unknown' };
     }).finally(() => {
-      if (record.nativeRevisionPending === pending) record.nativeRevisionPending = null;
+      if (record.revisionRead === read) record.revisionRead = null;
     });
-    record.nativeRevisionPending = pending;
+    record.revisionRead = read;
   }
 
   private async observeHydratedRevision(record: SessionRecord): Promise<void> {
-    while (record.nativeRevisionPending) await record.nativeRevisionPending;
-    if (this.records.get(record.runtime) === record && record.nativeRevision == null) this.observeNativeRevision(record);
+    const freshness = record.freshness;
+    if (freshness.state === 'stale') {
+      if (!freshness.reloadRevision) return;
+      const revision = await freshness.reloadRevision;
+      if (record.freshness !== freshness || this.records.get(record.runtime) !== record) return;
+      record.freshness = revision ? { state: 'current', revision } : { state: 'unknown' };
+      if (revision) return;
+    }
+    while (record.revisionRead) await record.revisionRead;
+    if (this.records.get(record.runtime) === record && record.freshness.state === 'unknown') this.observeNativeRevision(record);
   }
 
   private async readNativeRevision(id: string): Promise<string | null> {
@@ -246,7 +259,7 @@ export class SessionRuntimePool {
     const record: SessionRecord = {
       runtime, status: readStatus(runtime),
       attachment: null, eviction: null, retired: false, holds: 0, settledWaiters: [], viewedAt: 0,
-      nativeRevision: undefined, nativeRevisionReads: 0, nativeRevisionPending: null, revalidation: null,
+      freshness: { state: 'unknown' }, revisionRead: null, revalidation: null,
       unsubscribe: () => undefined,
     };
     this.records.set(runtime, record);

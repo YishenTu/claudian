@@ -180,7 +180,6 @@ export async function createFixture(overrides: ChatInputFixtureOptions = {}) {
         ? { conversationId: state.currentConversationId, providerId } : null);
       return true;
     }),
-    awaitCurrentHistory: () => null,
     canStartTurn: () => true,
     isClosing: () => false,
     ...dependencyOverrides,

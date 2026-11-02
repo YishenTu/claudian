@@ -68,11 +68,6 @@ export interface InputControllerDeps {
   getTabProviderId: () => ProviderId | null;
   /** Returns true if ready. */
   ensureExecutionInitialized: () => Promise<boolean>;
-  /**
-   * A pending check that the shown history is still current, settling after its reload; false drops the
-   * send. Null, so the send stays synchronous, when nothing is pending.
-   */
-  awaitCurrentHistory: () => Promise<boolean> | null;
   builtInCommands: Pick<BuiltInCommandController, 'execute'>;
   /** Captures a review reporter when a terminal provider turn becomes visible. */
   captureReviewableSettlement?: (outcome: TabReviewOutcome) => () => void;
@@ -113,6 +108,7 @@ export class InputController {
   private readonly steering: TurnSteering;
   private readonly execution: MainTurnExecution;
   private readonly preparations: SubmissionPreparations;
+  #historyRefresh: Promise<boolean> | null = null;
 
   constructor(deps: InputControllerDeps) {
     this.deps = deps;
@@ -212,18 +208,56 @@ export class InputController {
         new Notice(t('chat.selectAvailableModel'));
         return;
       }
-      const historyCheck = this.deps.awaitCurrentHistory();
-      if (historyCheck && (!await historyCheck || !this.deps.canStartTurn())) return;
-      const result = await this.#dispatchMessage(options);
+      const refresh = this.#historyRefresh;
+      const result = refresh && (options?.destination ?? this.deps.drafts.destination) === 'main'
+        ? await this.#dispatchAfterHistoryRefresh(refresh, options)
+        : await this.#dispatchMessage(options);
       queued = result === 'queued';
     } finally {
       if (!queued) options?.onDelivery?.(false);
     }
   }
 
+  /**
+   * Holds main submissions while the session's shown history is checked and possibly reloaded. Each keeps
+   * the input captured when it was submitted and is dispatched once `refresh` settles true, or returned to
+   * the composer when it settles false. Later composer edits stay a separate draft.
+   */
+  holdForHistoryRefresh(refresh: Promise<boolean>): void {
+    this.#historyRefresh = refresh;
+    void refresh.finally(() => {
+      if (this.#historyRefresh !== refresh) return;
+      this.#historyRefresh = null;
+      this.deps.onWorkChanged?.();
+    });
+  }
+
+  async #dispatchAfterHistoryRefresh(refresh: Promise<boolean>, options?: SendMessageOptions): Promise<DispatchResult> {
+    const conversationId = this.deps.state.currentConversationId;
+    const shouldUseInput = options?.content === undefined;
+    const original = shouldUseInput
+      ? this.deps.drafts.consume('main')
+      : { content: options.content ?? '', images: options.images ?? [] };
+    const captured = this.#resolveSelections(options);
+    const refreshed = await refresh.catch(() => false);
+    if (!refreshed || this.deps.state.currentConversationId !== conversationId || !this.deps.canStartTurn()) {
+      if (shouldUseInput) this.deps.drafts.restore('main', original, { merge: true });
+      return 'rejected';
+    }
+    const result = await this.#dispatchMessage({
+      ...options, destination: 'main', content: original.content, images: [...(original.images ?? [])],
+      editorContextOverride: captured.editorSelection,
+      browserContextOverride: captured.browserSelection,
+      canvasContextOverride: captured.canvasSelection,
+      draftConsumed: shouldUseInput,
+    });
+    if (result === 'rejected' && shouldUseInput) this.deps.drafts.restore('main', original, { merge: true });
+    return result;
+  }
+
   /** Mailbox dispatch never reads the composer destination, drafts, or live selections. */
   get canStartSessionMessage(): boolean {
-    return this.deps.canStartTurn() && !this.turns.isActive && !this.queue.message
+    return this.deps.canStartTurn() && !this.turns.isActive && !this.queue.message && !this.#historyRefresh
       && !this.preparations.pendingMainAdmission && !this.isPreparingMainTurn
       && !this.deps.conversationController.hasBranchDraft;
   }
