@@ -290,70 +290,65 @@ jobs:
 
       # WSL1 avoids a nested virtualization requirement on hosted runners.
       # This verifies launch/filesystem/env mechanics, not WSL2 NAT networking.
-      - uses: Vampire/setup-wsl@v7
+      # Importing a small provisioned ubuntu-base rootfs is much faster than installing the full Ubuntu WSL image:
+      # WSL1 import time scales with file count. Bump the key's base version together with the URL below.
+      - name: Restore provisioned WSL rootfs
+        id: rootfs
+        uses: actions/cache/restore@v4
         with:
-          distribution: Ubuntu-24.04
-          wsl-version: '1'
-          set-as-default: 'true'
+          path: ${{ runner.temp }}/claudian-wsl-rootfs.tar
+          key: wsl-rootfs-ubuntu-base-24.04.5-${{ hashFiles('.github/wsl/provision-rootfs.sh') }}
 
-      # Windows dependencies and WSL fixtures are independent, so install them concurrently.
-      - name: Install dependencies and provision WSL fixtures
+      # Windows dependencies and the WSL distro are independent, so install them concurrently.
+      - name: Install dependencies and import WSL distro
         shell: pwsh
+        env:
+          ROOTFS_HIT: ${{ steps.rootfs.outputs.cache-hit }}
         run: |
           $npmLog = Join-Path $env:RUNNER_TEMP 'npm-ci.log'
           $npmErr = Join-Path $env:RUNNER_TEMP 'npm-ci.err.log'
           $npm = Start-Process -FilePath npm.cmd -ArgumentList ci -NoNewWindow -PassThru -RedirectStandardOutput $npmLog -RedirectStandardError $npmErr
           # Without a cached handle, ExitCode is unavailable after the process exits.
           $null = $npm.Handle
-          $installer = @'
-          set -eu
-          # Ubuntu's Node ELF has 8 KiB LOAD alignment, rejected by WSL1.
-          # This official build uses 4 KiB alignment for every LOAD segment.
-          (
-            archive=/tmp/claudian-wsl-node.tar.gz
-            curl --fail --silent --show-error --location --retry 3 https://nodejs.org/dist/v22.14.0/node-v22.14.0-linux-x64.tar.gz -o "$archive"
-            echo "9d942932535988091034dc94cc5f42b6dc8784d6366df3a36c4c9ccb3996f0c2  $archive" | sha256sum -c -
-            mkdir -p /opt/claudian-wsl-node /usr/local/bin
-            tar -xzf "$archive" --strip-components=1 -C /opt/claudian-wsl-node node-v22.14.0-linux-x64/bin/node
-            rm -f "$archive"
-            ln -sf /opt/claudian-wsl-node/bin/node /usr/local/bin/node
-          ) &
-          node_job=$!
-          (
-            mkdir -p /tmp/claudian-opencode-v2
-            cd /tmp/claudian-opencode-v2
-            curl --fail --silent --show-error --location --retry 3 https://opencode.ai/files/bin/2.2.3/opencode-linux-x64-baseline.tar.gz -o opencode.tar.gz
-            echo 'ef3aeeaf5522b10d69a3da7bbd6e6d8d259f845833d96b8310767d3407b18a35  opencode.tar.gz' | sha256sum -c -
-            tar -xzf opencode.tar.gz
-            chmod +x opencode
-          ) &
-          opencode_job=$!
-          # The base image already ships bash, curl and python3; fetch only the shells under test.
-          # WSL1 file I/O is slow, so skip index targets and files the tests never read.
-          printf '%s\n' 'Acquire::Languages "none";' 'Acquire::IndexTargets::deb::DEP-11::DefaultEnabled "false";' 'Acquire::IndexTargets::deb::CNF::DefaultEnabled "false";' > /etc/apt/apt.conf.d/99claudian-ci
-          printf '%s\n' 'path-exclude=/usr/share/doc/*' 'path-exclude=/usr/share/man/*' 'path-exclude=/usr/share/locale/*' 'path-exclude=/usr/share/fish/completions/*' 'path-exclude=/usr/share/zsh/functions/Completion/*' > /etc/dpkg/dpkg.cfg.d/99claudian-ci
-          rm -f /var/lib/man-db/auto-update
-          apt-get update -qq
-          DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends zsh csh tcsh fish
-          wait "$node_job"
-          wait "$opencode_job"
-          for command in bash zsh csh tcsh fish python3; do command -v "$command"; done
-          /usr/local/bin/node --version
-          /usr/local/bin/node -e 'if (process.platform !== "linux" || process.arch !== "x64") process.exit(1)'
-          /tmp/claudian-opencode-v2/opencode --version
-          '@
-          # PowerShell pipes CRLF line endings; strip them before sh parses the script.
-          $installer | wsl --exec /bin/sh -c "tr -d '\r' | /bin/sh"
+          $distro = 'claudian-ci'
+          $rootfs = Join-Path $env:RUNNER_TEMP 'claudian-wsl-rootfs.tar'
+          $location = Join-Path $env:RUNNER_TEMP 'claudian-wsl'
+          if ($env:ROOTFS_HIT -eq 'true') {
+            wsl --import $distro $location $rootfs --version 1
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          } else {
+            $base = Join-Path $env:RUNNER_TEMP 'ubuntu-base.tar.gz'
+            curl.exe --fail --silent --show-error --location --retry 3 -o $base https://cdimage.ubuntu.com/ubuntu-base/releases/24.04.5/release/ubuntu-base-24.04.5-base-amd64.tar.gz
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            if ((Get-FileHash -Algorithm SHA256 $base).Hash -ne 'E77B6F10C2590CEF872B33EE9F635A0E3FD1F57FB074C0E52B5C7F56147A0C86') { throw 'ubuntu-base checksum mismatch' }
+            wsl --import $distro $location $base --version 1
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            # Windows checkouts may use CRLF line endings; strip them before sh parses the script.
+            Get-Content -Raw .github/wsl/provision-rootfs.sh | wsl --distribution $distro --exec /bin/sh -c "tr -d '\r' | /bin/sh"
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            wsl --export $distro $rootfs
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+          wsl --set-default $distro
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          'for c in bash zsh csh tcsh fish python3 node; do command -v "$c"; done; node --version; /opt/claudian-opencode-v2/opencode --version' | wsl --exec /bin/sh -c "tr -d '\r' | /bin/sh -e"
           $wslExit = $LASTEXITCODE
           $npm.WaitForExit()
           Get-Content $npmLog, $npmErr
           if ($wslExit -ne 0) { exit $wslExit }
           if ($npm.ExitCode -ne 0) { exit $npm.ExitCode }
 
+      - name: Save provisioned WSL rootfs
+        if: steps.rootfs.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ runner.temp }}/claudian-wsl-rootfs.tar
+          key: ${{ steps.rootfs.outputs.cache-primary-key }}
+
       - name: Exercise native Windows to WSL execution
         env:
           CLAUDIAN_REQUIRE_WSL: '1'
-          CLAUDIAN_OPENCODE_WSL_CLI: /tmp/claudian-opencode-v2/opencode
+          CLAUDIAN_OPENCODE_WSL_CLI: /opt/claudian-opencode-v2/opencode
         run: npm run test:unit -- --maxWorkers=3 tests/integration/core/process/execution-target/WSLExecution.windows.test.ts tests/integration/core/process/execution-target/WSLSessionToolRelay.windows.test.ts tests/integration/core/process/execution-target/ClaudeWSL.windows.test.ts tests/integration/providers/deepseek/runtime/DeepSeekWSLHost.windows.test.ts tests/integration/providers/opencode/runtime/OpencodeWSL.windows.test.ts tests/integration/providers/codex/runtime/CodexWSL.windows.test.ts tests/integration/providers/grok/runtime/GrokWSL.windows.test.ts
 
   build-artifacts:
