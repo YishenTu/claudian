@@ -331,7 +331,7 @@ jobs:
           # The base image already ships bash, curl and python3; fetch only the shells under test.
           # WSL1 file I/O is slow, so skip index targets and files the tests never read.
           printf '%s\n' 'Acquire::Languages "none";' 'Acquire::IndexTargets::deb::DEP-11::DefaultEnabled "false";' 'Acquire::IndexTargets::deb::CNF::DefaultEnabled "false";' > /etc/apt/apt.conf.d/99claudian-ci
-          printf '%s\n' 'path-exclude=/usr/share/doc/*' 'path-exclude=/usr/share/man/*' 'path-exclude=/usr/share/locale/*' > /etc/dpkg/dpkg.cfg.d/99claudian-ci
+          printf '%s\n' 'path-exclude=/usr/share/doc/*' 'path-exclude=/usr/share/man/*' 'path-exclude=/usr/share/locale/*' 'path-exclude=/usr/share/fish/completions/*' 'path-exclude=/usr/share/zsh/functions/Completion/*' > /etc/dpkg/dpkg.cfg.d/99claudian-ci
           rm -f /var/lib/man-db/auto-update
           apt-get update -qq
           DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends zsh csh tcsh fish
