@@ -109,6 +109,8 @@ export class InputController {
   private readonly execution: MainTurnExecution;
   private readonly preparations: SubmissionPreparations;
   #historyRefresh: Promise<boolean> | null = null;
+  /** Main submissions waiting on `#historyRefresh`; Stop returns them to the composer. */
+  readonly #heldSends = new Set<AbortController>();
 
   constructor(deps: InputControllerDeps) {
     this.deps = deps;
@@ -239,7 +241,19 @@ export class InputController {
       ? this.deps.drafts.consume('main')
       : { content: options.content ?? '', images: options.images ?? [] };
     const captured = this.#resolveSelections(options);
-    const refreshed = await refresh.catch(() => false);
+    const held = new AbortController();
+    this.#heldSends.add(held);
+    this.deps.getInputEl()?.setAttribute?.('aria-busy', 'true');
+    let refreshed: boolean;
+    try {
+      refreshed = await Promise.race([
+        refresh.catch(() => false),
+        new Promise<false>(resolve => { held.signal.addEventListener('abort', () => resolve(false), { once: true }); }),
+      ]);
+    } finally {
+      this.#heldSends.delete(held);
+      if (this.#heldSends.size === 0) this.deps.getInputEl()?.removeAttribute?.('aria-busy');
+    }
     if (!refreshed || this.deps.state.currentConversationId !== conversationId || !this.deps.canStartTurn()) {
       if (shouldUseInput) this.deps.drafts.restore('main', original, { merge: true });
       return 'rejected';
@@ -354,6 +368,14 @@ export class InputController {
 
   get isPreparingMainTurn(): boolean {
     return this.preparations.isPreparing('main');
+  }
+
+  /**
+   * Main input Stop can withdraw: a preparation, or a send held by a history check. Held sends are not
+   * session work, so the check that holds them still sees the session idle.
+   */
+  get hasWithdrawableMainInput(): boolean {
+    return this.isPreparingMainTurn || this.#heldSends.size > 0;
   }
 
   handleExecutionEvent(event: ProviderExecutionEvent): Promise<void> {
@@ -647,7 +669,9 @@ export class InputController {
   }
 
   cancelStreaming(): void {
-    const cancelledPreparation = this.preparations.isPreparing(this.deps.drafts.destination);
+    const withdrawsHeld = this.deps.drafts.destination === 'main' && this.#heldSends.size > 0;
+    if (withdrawsHeld) for (const held of this.#heldSends) held.abort();
+    const cancelledPreparation = this.preparations.isPreparing(this.deps.drafts.destination) || withdrawsHeld;
     this.preparations.abort(this.deps.drafts.destination);
     const sideChat = this.deps.getSideChatController?.() ?? null;
     if (sideChat?.destination === 'side') {

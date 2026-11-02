@@ -201,9 +201,15 @@ export class SessionMessagingService {
 
   private async ensureRecipient(target: ConversationMeta, signal: AbortSignal): Promise<ChatSessionRuntime> {
     const { sessionRuntimes } = this.deps.getHost();
-    // Check while the recipient is still idle, before the mailbox admits pending work.
-    const revalidation = sessionRuntimes.revalidate(target.id);
-    if (revalidation) await revalidation;
+    // Check while the recipient is still idle, before the mailbox admits pending work. A recipient open in a
+    // tab, even a hidden one, keeps its model: a changed history is loaded again in place before delivery.
+    const attachment = sessionRuntimes.getAttachment(target.id) ?? undefined;
+    const revalidation = sessionRuntimes.revalidate(target.id, attachment);
+    if (revalidation) {
+      await revalidation;
+      const model = attachment?.runtime.peekModel;
+      if (model && model.hydrationState !== 'ready') await model.hydrate();
+    }
     throwIfAborted(signal, 'Session tool call was cancelled');
     return sessionRuntimes.ensure({ conversationId: target.id, providerId: target.providerId, draftModel: null });
   }

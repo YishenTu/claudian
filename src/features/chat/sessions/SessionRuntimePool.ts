@@ -66,6 +66,12 @@ interface SessionRecord {
   unsubscribe(): void;
 }
 
+/**
+ * How long a revision read may take. Sends wait on the check, so a provider that does not answer (a hung
+ * `opencode serve`) is treated as unknown: after a known revision that counts as changed and reloads.
+ */
+export const NATIVE_REVISION_READ_TIMEOUT_MS = 5_000;
+
 function readStatus(runtime: ChatSessionRuntime): SessionStatus {
   return { conversationId: runtime.conversationId, isWorking: runtime.isWorking, isMainWorking: runtime.isMainWorking, attention: runtime.statusAttention };
 }
@@ -244,7 +250,15 @@ export class SessionRuntimePool {
   }
 
   private async readNativeRevision(id: string): Promise<string | null> {
-    return await this.deps.readNativeHistoryRevision?.(id).catch(() => null) ?? null;
+    const read = this.deps.readNativeHistoryRevision?.(id).catch(() => null);
+    if (!read) return null;
+    let timer: number | undefined;
+    const timeout = new Promise<null>(resolve => { timer = window.setTimeout(() => resolve(null), NATIVE_REVISION_READ_TIMEOUT_MS); });
+    try {
+      return await Promise.race([read, timeout]);
+    } finally {
+      window.clearTimeout(timer);
+    }
   }
 
   /**

@@ -8,7 +8,9 @@ import { testDate } from '@test/helpers/testClock';
 
 import { ProviderWorkspaceRegistry } from '@/core/providers/ProviderWorkspaceRegistry';
 import type { Conversation } from '@/core/types';
+import { NATIVE_REVISION_READ_TIMEOUT_MS } from '@/features/chat/sessions/SessionRuntimePool';
 import { createQueuedMessage } from '@/features/chat/state/chatTurnRequest';
+import { cancelSelectedDestinationTurn } from '@/features/chat/tabs/TabInputEvents';
 import type { TabManager } from '@/features/chat/tabs/TabManager';
 
 let provider: ReturnType<typeof registerChatTestProvider>;
@@ -1212,6 +1214,102 @@ describe('returning to a tab whose native history changed', () => {
     await sending;
     expect(t.one.dom.messagesEl.textContent).toContain('Reply from the CLI');
     expect(t.one.dom.messagesEl.textContent).toContain('Continue from the CLI turn');
+  });
+
+  /** Holds the next revision read of tab one; the returned release finishes it. */
+  function holdNextRead() {
+    let hold: ReturnType<typeof deferred<void>> | null = null;
+    const held = deferred<void>();
+    return {
+      held: held.promise,
+      gate: async () => {
+        const current = hold;
+        if (!current) return;
+        hold = null;
+        held.resolve();
+        await current.promise;
+      },
+      arm: () => { const release = deferred<void>(); hold = release; return release; },
+    };
+  }
+
+  it('returns a send held by the check to the composer on Stop', async () => {
+    const read = holdNextRead();
+    const t = await setupChangedTab({}, { beforeRevisionRead: read.gate });
+    t.continueElsewhere();
+    await t.manager.switchToTab('two');
+    const finishRead = read.arm();
+    const returning = t.manager.switchToTab('one');
+    await read.held;
+    t.one.controllers.drafts.restore('main', { content: 'submitted prompt' });
+    const sending = t.one.controllers.inputController.sendMessage();
+    expect(t.one.controllers.drafts.capture('main').content).toBe('');
+
+    expect(cancelSelectedDestinationTurn(t.one)).toBe(true);
+    await sending;
+    expect(t.one.controllers.drafts.capture('main').content).toBe('submitted prompt');
+    finishRead.resolve();
+    await returning;
+    expect(t.one.dom.messagesEl.textContent).toContain('Reply from the CLI');
+    expect(provider.sessions.flatMap(session => session.requests)).toHaveLength(0);
+  });
+
+  it('stops holding sends when the revision read does not answer, and reloads', async () => {
+    const read = holdNextRead();
+    const t = await setupChangedTab({}, { beforeRevisionRead: read.gate });
+    t.continueElsewhere();
+    await t.manager.switchToTab('two');
+    read.arm();
+    // The read never answers; only its time limit is skipped, and other timers keep real time.
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'], shouldAdvanceTime: true });
+    try {
+      const returning = t.manager.switchToTab('one');
+      await read.held;
+      t.one.controllers.drafts.restore('main', { content: 'submitted prompt' });
+      const sending = t.one.controllers.inputController.sendMessage();
+      await vi.advanceTimersByTimeAsync(NATIVE_REVISION_READ_TIMEOUT_MS);
+      await returning;
+      const fresh = await vi.waitFor(() => {
+        const session = provider.sessions.find(candidate => candidate.requests.length > 0);
+        if (!session) throw new Error('The send has not reached a provider session');
+        return session;
+      });
+      expect(fresh.requests[0].conversationHistory?.map(message => message.content)).toEqual(['Cached reply', 'Reply from the CLI']);
+      (await fresh.waitForRun()).complete();
+      await sending;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('dispatches several sends held by the check in submission order', async () => {
+    const read = holdNextRead();
+    const t = await setupChangedTab({}, { beforeRevisionRead: read.gate });
+    t.continueElsewhere();
+    await t.manager.switchToTab('two');
+    const finishRead = read.arm();
+    const returning = t.manager.switchToTab('one');
+    await read.held;
+    t.one.controllers.drafts.restore('main', { content: 'first prompt' });
+    const first = t.one.controllers.inputController.sendMessage();
+    t.one.controllers.drafts.restore('main', { content: 'second prompt' });
+    const second = t.one.controllers.inputController.sendMessage();
+
+    finishRead.resolve();
+    await returning;
+    const fresh = await vi.waitFor(() => {
+      const session = provider.sessions.find(candidate => candidate.requests.length > 0);
+      if (!session) throw new Error('No send has reached a provider session');
+      return session;
+    });
+    await second;
+    expect(fresh.requests.map(request => request.input)).toEqual([[{ type: 'text', text: 'first prompt' }]]);
+    expect(t.one.state.queuedMessage?.content).toBe('second prompt');
+    (await fresh.waitForRun()).complete();
+    await vi.waitFor(() => expect(fresh.requests).toHaveLength(2));
+    expect(fresh.requests[1].input).toEqual([{ type: 'text', text: 'second prompt' }]);
+    (await fresh.waitForRun(1)).complete();
+    await first;
   });
 
   it('sends the text submitted during the check and keeps later edits as a draft', async () => {

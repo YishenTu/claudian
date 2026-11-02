@@ -647,6 +647,24 @@ it.each(['user API', 'session tool'] as const)('revalidates a retained headless 
   expect(provider.requests).toHaveLength(1);
 });
 
+it('revalidates a recipient open in a tab before delivery and reloads it there', async () => {
+  const s = await setupRevisionedSession();
+  s.continueElsewhere();
+  vi.spyOn(s.h.plugin, 'ensureConversationMetadataLoaded').mockResolvedValue(undefined);
+  const requested = s.h.backend.nextRequest(() => true);
+  await s.h.messaging.sendAsUser('conversation', { text: 'Continue after CLI' });
+  await requested;
+  const provider = s.h.backend.latest;
+  expect(provider).not.toBe(s.provider);
+  expect(s.provider.disposeCalls).toBe(1);
+  expect(s.provider.requests).toHaveLength(0);
+  expect(provider.requests[0].conversationHistory?.map(message => message.content)).toContain('Reply from the CLI');
+  expect(s.first.dom.messagesEl.textContent).toContain('Reply from the CLI');
+  provider.complete();
+  await s.runtime.turns.drain();
+  await destroyTab(s.first);
+});
+
 it.each(['unviewed', 'attached'] as const)('does not retry failed history cleanup on an unrelated %s session change', async kind => {
   const failure = new Error('History storage unavailable');
   const onError = vi.fn();
