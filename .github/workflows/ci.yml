@@ -106,7 +106,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Vitest shards (`1/3`) plus a `scripts` lane for the Node script checks.
+        # Vitest shards (`1/4`) plus a `scripts` lane for the Node script checks.
         lane: ${{ fromJSON(needs.test-scope.outputs.test-lanes) }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
