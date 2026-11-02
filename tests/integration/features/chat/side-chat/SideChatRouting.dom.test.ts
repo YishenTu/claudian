@@ -301,6 +301,45 @@ it('forwards captured selection context on initial, expanded, and collapsed side
   }
 });
 
+it('sends a side command held by a history refresh with the selection captured at Send', async () => {
+  const harness = await createHarness();
+  const context: ComposerSelectionCapture = { editorSelection: { mode: 'selection', notePath: 'A.md', selectedText: 'Excerpt from A' } };
+  const routing = createRouting(harness, context);
+  const refresh = deferred<boolean>();
+  routing.controller.holdForHistoryRefresh(refresh.promise);
+  harness.inputEl.value = '/side Explain this';
+  const sent = routing.controller.sendMessage();
+  context.editorSelection = { mode: 'selection', notePath: 'B.md', selectedText: 'Excerpt from B' };
+
+  refresh.resolve(true);
+  await waitFor(() => expect(harness.backend.sessions).toHaveLength(1));
+  await waitFor(() => expect(harness.backend.latest.requests).toHaveLength(1));
+  expect(harness.backend.latest.requests[0].context).toEqual({ selections: [
+    { kind: 'editor', selection: { mode: 'selection', notePath: 'A.md', selectedText: 'Excerpt from A' } },
+  ] });
+  harness.backend.latest.establishChild('child-session');
+  harness.backend.latest.complete();
+  await sent;
+});
+
+it('returns sends withdrawn from a history refresh in submission order, ahead of later edits', async () => {
+  const harness = await createHarness();
+  const routing = createRouting(harness);
+  const refresh = deferred<boolean>();
+  routing.controller.holdForHistoryRefresh(refresh.promise);
+  harness.inputEl.value = 'first';
+  const first = routing.controller.sendMessage();
+  harness.inputEl.value = 'second';
+  const second = routing.controller.sendMessage();
+  harness.inputEl.value = 'later draft';
+
+  routing.controller.cancelStreaming();
+  await Promise.all([first, second]);
+  expect(harness.inputEl.value).toBe('first\n\nsecond\n\nlater draft');
+  refresh.resolve(true);
+  expect(routing.mainExecutions).toEqual([]);
+});
+
 it('keeps unsent side attachments out of a text-only queued main message', async () => {
   const harness = await createHarness();
   const routing = createRouting(harness);

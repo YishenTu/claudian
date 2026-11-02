@@ -647,6 +647,23 @@ it.each(['user API', 'session tool'] as const)('revalidates a retained headless 
   expect(provider.requests).toHaveLength(1);
 });
 
+it('keeps a send held by a pending reload when a second refresh of the same model joins it', async () => {
+  const s = await setupRevisionedSession();
+  const model = s.runtime.model;
+  await model.refreshHistory(async () => true);
+  s.first.controllers.drafts.restore('main', { content: 'Held prompt' });
+  const sending = s.first.controllers.inputController.sendMessage();
+  await model.refreshHistory(async () => true);
+
+  const requested = s.h.backend.nextRequest(() => true);
+  await model.hydrate();
+  expect((await requested).input).toEqual([{ type: 'text', text: 'Held prompt' }]);
+  expect(s.first.controllers.drafts.capture('main').content).toBe('');
+  s.h.backend.latest.complete();
+  await sending;
+  await destroyTab(s.first);
+});
+
 it('revalidates a recipient open in a tab before delivery and reloads it there', async () => {
   const s = await setupRevisionedSession();
   s.continueElsewhere();

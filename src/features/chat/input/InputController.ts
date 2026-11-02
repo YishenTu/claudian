@@ -430,7 +430,7 @@ export class InputController {
       // The side controller owns composer clearing so a rejected command keeps the draft, and restores
       // a draft consumed before dispatch on any failure.
       const submitted = options?.draftConsumed ? { content: contentOverride ?? '', images } : undefined;
-      const accepted = await sideChat.handleCommandSubmission(sideCommand.argument, images, this.#captureSideContext(), submitted);
+      const accepted = await sideChat.handleCommandSubmission(sideCommand.argument, images, this.#captureSideContext(options), submitted);
       return accepted || submitted ? 'handled' : 'rejected';
     }
 
@@ -500,7 +500,7 @@ export class InputController {
       const capturedSideRuntime = sideChat?.runtime;
       const images = [...(imageOverride ?? composerDraft.images)];
       const captured = this.#buildTurnSubmission(content, images, options);
-      const sideContext = this.#captureSideContext();
+      const sideContext = this.#captureSideContext(options);
       const original = shouldUseInput ? this.deps.drafts.consume(destination) : { content, images };
       const preparation = new AbortController();
       const ownsMainTurn = destination === 'main' && !this.turns.isActive && !this.queue.message;
@@ -563,7 +563,7 @@ export class InputController {
       const images = hasImages
         ? [...(imageOverride ?? composerDraft.images)]
         : [];
-      const context = this.#captureSideContext();
+      const context = this.#captureSideContext(options);
       const previousDraft = shouldUseInput ? this.deps.drafts.consume('side') : null;
       const accepted = await sideChat.submitToSide(
         content,
@@ -618,8 +618,9 @@ export class InputController {
   }
 
   /** Live selections for a side-chat turn, in capture order. */
-  #captureSideContext(): ProviderExecutionContext {
-    const selections = captureSelectionSnapshots(this.deps.selections.capture());
+  /** Uses the selections captured at Send when a held submission carries them. */
+  #captureSideContext(options?: SendMessageOptions): ProviderExecutionContext {
+    const selections = captureSelectionSnapshots(this.#resolveSelections(options));
     return selections.length ? { selections } : {};
   }
 
@@ -670,7 +671,9 @@ export class InputController {
 
   cancelStreaming(): void {
     const withdrawsHeld = this.deps.drafts.destination === 'main' && this.#heldSends.size > 0;
-    if (withdrawsHeld) for (const held of this.#heldSends) held.abort();
+    // Each withdrawn send is restored ahead of the composer, so the latest goes back first and the
+    // earliest ends up on top, all ahead of later edits.
+    if (withdrawsHeld) for (const held of [...this.#heldSends].reverse()) held.abort();
     const cancelledPreparation = this.preparations.isPreparing(this.deps.drafts.destination) || withdrawsHeld;
     this.preparations.abort(this.deps.drafts.destination);
     const sideChat = this.deps.getSideChatController?.() ?? null;

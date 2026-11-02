@@ -261,6 +261,9 @@ export class SessionModel {
    * it again, and return to the composer if that fails or the presentation detaches first.
    */
   async refreshHistory(reload: () => Promise<boolean>): Promise<void> {
+    // A reload still waiting for hydration covers this check: that hydration reads the history as it is
+    // then, and the sends it holds go when it completes.
+    if (this.historyReloads.length) return;
     let settle!: (reloaded: boolean) => void;
     this.inputController.holdForHistoryRefresh(new Promise<boolean>(resolve => { settle = resolve; }));
     try {
@@ -273,11 +276,11 @@ export class SessionModel {
       throw error;
     }
     if (this.hydrationState === 'ready') this.hydrationState = 'idle';
-    this.finishHistoryReload(false);
-    this.settleHistoryReload = settle;
+    this.historyReloads.push(settle);
   }
 
-  private settleHistoryReload: ((reloaded: boolean) => void) | null = null;
+  /** Settles the sends held by a reload once the presentation's hydration has run. */
+  private historyReloads: Array<(reloaded: boolean) => void> = [];
 
   /**
    * The presentation's activation ended; held sends go only if it left the history loaded. Activation
@@ -289,9 +292,9 @@ export class SessionModel {
   }
 
   private finishHistoryReload(reloaded: boolean): void {
-    const settle = this.settleHistoryReload;
-    this.settleHistoryReload = null;
-    settle?.(reloaded);
+    const settles = this.historyReloads;
+    this.historyReloads = [];
+    for (const settle of settles) settle(reloaded);
   }
 
   /** Applies native permission changes through the same owner as toolbar selections. */
