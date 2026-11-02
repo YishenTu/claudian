@@ -126,15 +126,18 @@ jobs:
         uses: ./.github/actions/setup-dependencies
 
       # Vitest orders files with recorded durations longest-first; without them it orders by
-      # file size, so a slow suite can start last. Durations merge into each newer snapshot.
+      # file size, so a slow suite can start last. Each lane prefers its own latest snapshot, and
+      # durations merge into each newer one.
       # Shard membership hashes file paths and does not depend on these results.
       - name: Restore Vitest file durations
         if: matrix.lane != 'scripts'
         uses: actions/cache/restore@v4
         with:
           path: node_modules/.vite/vitest
-          key: vitest-results-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.lane }}
-          restore-keys: vitest-results-
+          key: vitest-results-${{ matrix.lane }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            vitest-results-${{ matrix.lane }}-
+            vitest-results-
 
       - name: Wait for libfaketime
         timeout-minutes: 2
@@ -168,7 +171,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: node_modules/.vite/vitest
-          key: vitest-results-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.lane }}
+          key: vitest-results-${{ matrix.lane }}-${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: Show interrupted test progress
         if: always() && steps.tests.outcome != 'success'
