@@ -1248,6 +1248,34 @@ describe('returning to a tab whose native history changed', () => {
     expect(fresh.requests).toHaveLength(1);
   });
 
+  it('returns a send held by the check to the composer when workspace setup then fails', async () => {
+    let holdRead: ReturnType<typeof deferred<void>> | null = null;
+    const readHeld = deferred<void>();
+    const t = await setupChangedTab({}, { beforeRevisionRead: async () => {
+      const hold = holdRead;
+      if (!hold) return;
+      holdRead = null;
+      readHeld.resolve();
+      await hold.promise;
+    } });
+    t.continueElsewhere();
+    await t.manager.switchToTab('two');
+    const finishRead = deferred<void>();
+    holdRead = finishRead;
+    const returning = t.manager.switchToTab('one');
+    await readHeld.promise;
+    t.one.controllers.drafts.restore('main', { content: 'submitted prompt' });
+    const sending = t.one.controllers.inputController.sendMessage();
+    vi.spyOn(ProviderWorkspaceRegistry, 'ensureInitialized').mockRejectedValueOnce(new Error('Workspace unavailable'));
+
+    finishRead.resolve();
+    await returning;
+    expect(t.one.hydrationState).toBe('failed');
+    await sending;
+    expect(t.one.controllers.drafts.capture('main').content).toBe('submitted prompt');
+    expect(provider.sessions.flatMap(session => session.requests)).toHaveLength(0);
+  });
+
   it('keeps a declined reload pending across a local turn on the stale transcript', async () => {
     let declineNext = true;
     const t = await setupChangedTab({ releaseHistory: async (_id, canRelease) => {

@@ -406,8 +406,8 @@ export class InputController {
         ? [...(imageOverride ?? composerDraft.images)]
         : [];
       // The side controller owns composer clearing so a rejected command keeps the draft.
-      await sideChat.handleCommandSubmission(sideCommand.argument, images, this.#captureSideContext());
-      return 'handled';
+      const accepted = await sideChat.handleCommandSubmission(sideCommand.argument, images, this.#captureSideContext());
+      return accepted ? 'handled' : 'rejected';
     }
 
     // Check for built-in commands first (e.g., /new, /clear)

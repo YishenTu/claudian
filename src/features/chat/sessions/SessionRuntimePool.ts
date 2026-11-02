@@ -169,16 +169,18 @@ export class SessionRuntimePool {
     // The baseline may still be landing: a first read, a retry after hydration, or a settled turn's own writes.
     while (record.revisionRead) await record.revisionRead;
     const baseline = record.freshness;
-    if (baseline.state !== 'current') return baseline.state === 'stale' && this.canRevalidate(record, attachment);
-    if (!this.canRevalidate(record, attachment)) return false;
-    const current = await this.readNativeRevision(conversationId);
-    // A newer baseline supersedes this comparison.
-    if (current === baseline.revision || record.freshness !== baseline || record.revisionRead) return false;
-    record.freshness = { state: 'stale', reloadRevision: null };
-    await record.eviction;
-    if (!this.canRevalidate(record, attachment)) return false;
-    // Opening the presentation must not fail on it; a session that cannot release stays marked stale.
+    if (baseline.state === 'unknown') return false;
+    if (baseline.state === 'current') {
+      if (!this.canRevalidate(record, attachment)) return false;
+      const current = await this.readNativeRevision(conversationId);
+      // A newer baseline supersedes this comparison.
+      if (current === baseline.revision || record.freshness !== baseline || record.revisionRead) return false;
+      record.freshness = { state: 'stale', reloadRevision: null };
+    }
+    // Every check of a stale record marks its provider session, even one busy now: an idle session is
+    // released, and one that cannot be is replaced by its next send. Opening must not fail on it.
     await record.runtime.executionCoordinator.releaseForChangedHistory().catch(error => this.deps.onError(error));
+    await record.eviction;
     return this.canRevalidate(record, attachment);
   }
 

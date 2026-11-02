@@ -279,6 +279,15 @@ export class SessionModel {
 
   private settleHistoryReload: ((reloaded: boolean) => void) | null = null;
 
+  /**
+   * The presentation's activation ended; held sends go only if it left the history loaded. Activation
+   * can stop before hydration runs (workspace setup failed, the tab closed), which would otherwise
+   * leave them waiting.
+   */
+  endHistoryReload(): void {
+    this.finishHistoryReload(this.hydrationState === 'ready');
+  }
+
   private finishHistoryReload(reloaded: boolean): void {
     const settle = this.settleHistoryReload;
     this.settleHistoryReload = null;

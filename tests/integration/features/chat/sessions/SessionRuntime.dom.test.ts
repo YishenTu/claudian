@@ -484,6 +484,80 @@ it.each(['token read', 'history eviction', 'provider release'] as const)(
   },
 );
 
+/** A revision read that the test holds once, after the fixture's own reads. */
+function holdableRead(native: { revision: string }) {
+  let hold: ReturnType<typeof deferred<void>> | null = null;
+  const held = deferred<void>();
+  return {
+    held: held.promise,
+    holdNext: () => { const release = deferred<void>(); hold = release; return release; },
+    read: async () => {
+      const revision = native.revision;
+      const current = hold;
+      if (current) { hold = null; held.resolve(); await current.promise; }
+      return revision;
+    },
+  };
+}
+
+it('replaces the provider session on reopen when a busy session skipped its release during the check', async () => {
+  const native = { revision: 'before' };
+  const gate = holdableRead(native);
+  const s = await setupRevisionedSession({ readNativeHistoryRevision: gate.read });
+  s.first.state.messages = [
+    { id: 'user', role: 'user', content: 'Parent task', timestamp: testDate().getTime() },
+    { id: 'answer', role: 'assistant', content: 'Parent answer', assistantMessageId: 'checkpoint', timestamp: testDate().getTime() },
+  ];
+  vi.spyOn(ProviderRegistry.getConversationHistoryService('claude'), 'buildForkProviderState').mockResolvedValue({});
+  s.continueElsewhere();
+  native.revision = 'after external turn';
+  const finishRead = gate.holdNext();
+  const checking = s.h.pool.revalidate('conversation', s.h.pool.getAttachment('conversation')!);
+  await gate.held;
+  const requested = s.h.backend.nextRequest(() => true);
+  const sideSending = s.first.controllers.sideChatController.handleCommandSubmission('Explore the answer', []);
+  await requested;
+  expect(s.runtime.isWorking).toBe(true);
+  finishRead.resolve();
+  await checking;
+  s.h.backend.latest.complete();
+  await sideSending;
+  await s.detach();
+
+  const second = await s.h.attach();
+  expect(second.dom.messagesEl.textContent).toContain('Reply from the CLI');
+  second.controllers.drafts.restore('main', { content: 'Continue from the CLI turn' });
+  const mainRequested = s.h.backend.nextRequest(() => true);
+  const sending = second.controllers.inputController.sendMessage();
+  await mainRequested;
+  expect(s.provider.requests).toHaveLength(0);
+  expect(s.provider.disposeCalls).toBe(1);
+  s.h.backend.latest.complete();
+  await sending;
+  await destroyTab(second);
+});
+
+it('returns a rejected side command submitted during the check to the composer with later edits', async () => {
+  const native = { revision: 'before' };
+  const gate = holdableRead(native);
+  const s = await setupRevisionedSession({ readNativeHistoryRevision: gate.read });
+  const finishRead = gate.holdNext();
+  const checking = s.h.pool.revalidate('conversation', s.h.pool.getAttachment('conversation')!);
+  await gate.held;
+  s.first.controllers.drafts.restore('main', { content: '/side' });
+  const sending = s.first.controllers.inputController.sendMessage();
+  s.first.controllers.drafts.restore('main', { content: 'later draft' });
+
+  finishRead.resolve();
+  await checking;
+  await sending;
+  const draft = s.first.controllers.drafts.capture('main').content;
+  expect(draft).toContain('/side');
+  expect(draft).toContain('later draft');
+  expect(s.first.controllers.sideChatController.runtime).toBeNull();
+  await destroyTab(s.first);
+});
+
 it('does not absorb external main history changes when only a side chat settles', async () => {
   const s = await setupRevisionedSession();
   s.first.state.messages = [
