@@ -55,14 +55,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version-file: .node-version
-          cache: npm
-
-      - name: Install dependencies
-        run: npm ci
+      - name: Set up Node and dependencies
+        uses: ./.github/actions/setup-dependencies
 
       - name: Typecheck
         run: npm run typecheck
@@ -73,14 +67,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version-file: .node-version
-          cache: npm
-
-      - name: Install dependencies
-        run: npm ci
+      - name: Set up Node and dependencies
+        uses: ./.github/actions/setup-dependencies
 
       - name: Lint
         run: npm run lint
@@ -125,18 +113,23 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version-file: .node-version
-          cache: npm
-
-      - name: Install dependencies and libfaketime
+      # Install libfaketime while Node dependencies are restored; the Test step waits for it.
+      - name: Start libfaketime installation
         run: |
-          (sudo apt-get install -y --no-install-recommends faketime) > "$RUNNER_TEMP/faketime.log" 2>&1 &
-          faketime_install=$!
-          npm ci
-          wait "$faketime_install" || { cat "$RUNNER_TEMP/faketime.log"; exit 1; }
+          # Detach output so the step finishes without waiting for the installation.
+          {
+            (sudo apt-get install -y --no-install-recommends faketime) > "$RUNNER_TEMP/faketime.log" 2>&1
+            echo "$?" > "$RUNNER_TEMP/faketime.status"
+          } > /dev/null 2>&1 &
+
+      - name: Set up Node and dependencies
+        uses: ./.github/actions/setup-dependencies
+
+      - name: Wait for libfaketime
+        timeout-minutes: 2
+        run: |
+          until [ -f "$RUNNER_TEMP/faketime.status" ]; do sleep 0.2; done
+          if [ "$(cat "$RUNNER_TEMP/faketime.status")" != 0 ]; then cat "$RUNNER_TEMP/faketime.log"; exit 1; fi
 
       # Run about three years ahead so a test that depends on today's date fails here, not on the day its fixture expires.
       - name: Test
@@ -200,15 +193,16 @@ jobs:
           fetch-depth: 0
           filter: blob:none
 
+      # Release tags select the full suite without the dependency graph.
       - name: Setup Node
+        if: startsWith(github.ref, 'refs/tags/')
         uses: actions/setup-node@v4
         with:
           node-version-file: .node-version
-          cache: npm
 
-      - name: Install dependencies
+      - name: Set up Node and dependencies
         if: ${{ !startsWith(github.ref, 'refs/tags/') }}
-        run: npm ci
+        uses: ./.github/actions/setup-dependencies
 
       - name: Select affected tests and platform checks
         id: scope
@@ -406,14 +400,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version-file: .node-version
-          cache: npm
-
-      - name: Install dependencies
-        run: npm ci
+      - name: Set up Node and dependencies
+        uses: ./.github/actions/setup-dependencies
 
       - name: Validate release version
         if: startsWith(github.ref, 'refs/tags/')
