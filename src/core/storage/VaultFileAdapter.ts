@@ -13,6 +13,7 @@ import * as path from 'node:path';
 import type { App, DataAdapter } from 'obsidian';
 
 import { mapWithConcurrency } from '@/utils/concurrency';
+import { replaceFile } from '@/utils/fileReplace';
 
 export type ManagedResourceType = 'file' | 'folder';
 
@@ -318,15 +319,17 @@ export class VaultFileAdapter {
 
   /**
    * Writes a sibling temp file and renames it over the target, so a failed or
-   * torn write never leaves the previous content partially overwritten.
+   * torn write never leaves the previous content partially overwritten. Unchanged
+   * content is not rewritten: sync clients treat each replacement as delete + create.
    */
   async #writeFileAtomically(normalized: string, content: string, mode?: number): Promise<void> {
     const target = this.#resolveManagedDesktopPath(this.#basePath(), normalized);
+    if (await fs.readFile(target, 'utf8').catch(() => undefined) === content) return;
     const temp = path.join(path.dirname(target), `.claudian-${randomUUID()}.tmp`);
     try {
       await fs.writeFile(temp, content, { encoding: 'utf8', flag: 'wx', mode });
       if (mode !== undefined) await fs.chmod(temp, mode);
-      await fs.rename(temp, target);
+      await replaceFile(temp, target);
     } catch (error) {
       await fs.rm(temp, { force: true }).catch(() => undefined);
       throw error;
