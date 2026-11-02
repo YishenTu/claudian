@@ -367,7 +367,13 @@ jobs:
         env:
           CLAUDIAN_REQUIRE_WSL: '1'
           CLAUDIAN_OPENCODE_WSL_CLI: /opt/claudian-opencode-v2/opencode
-        run: npm run test:unit -- --maxWorkers=3 tests/integration/core/process/execution-target/WSLExecution.windows.test.ts tests/integration/core/process/execution-target/WSLSessionToolRelay.windows.test.ts tests/integration/core/process/execution-target/ClaudeWSL.windows.test.ts tests/integration/providers/deepseek/runtime/DeepSeekWSLHost.windows.test.ts tests/integration/providers/opencode/runtime/OpencodeWSL.windows.test.ts tests/integration/providers/codex/runtime/CodexWSL.windows.test.ts tests/integration/providers/grok/runtime/GrokWSL.windows.test.ts
+        run: npm run test:unit -- --maxWorkers=3 tests/integration/core/process/execution-target/WSLExecution.windows.test.ts tests/integration/core/process/execution-target/WSLSessionToolRelay.windows.test.ts tests/integration/core/process/execution-target/ClaudeWSL.windows.test.ts tests/integration/providers/opencode/runtime/OpencodeWSL.windows.test.ts tests/integration/providers/codex/runtime/CodexWSL.windows.test.ts tests/integration/providers/grok/runtime/GrokWSL.windows.test.ts
+
+      # DeepSeek's launch probes use the production 5s process-probe deadline, which concurrent WSL1 suites can exceed.
+      - name: Exercise native Windows to WSL DeepSeek host
+        env:
+          CLAUDIAN_REQUIRE_WSL: '1'
+        run: npm run test:unit -- --maxWorkers=1 tests/integration/providers/deepseek/runtime/DeepSeekWSLHost.windows.test.ts
 
   build-artifacts:
     runs-on: ubuntu-latest
