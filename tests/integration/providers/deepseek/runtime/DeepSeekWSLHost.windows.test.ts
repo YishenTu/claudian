@@ -127,6 +127,6 @@ describe.skipIf(!hasNativeWSL())('DeepSeek fixture Host in native WSL', { timeou
       lease.release(); await host.dispose();
       expect(await readFile(exitFile, 'utf8')).toBe('owner\n');
       await expect(readdir(artifactRoot)).rejects.toThrow();
-    } finally { await host?.dispose(); await server.close(); await rm(root, { recursive: true, force: true }); }
+    } finally { await host?.dispose(); await server.close(); await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }); }
   });
 });

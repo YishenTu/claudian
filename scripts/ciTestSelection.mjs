@@ -6,23 +6,18 @@ import { fileURLToPath } from 'node:url';
 import suites from './testSuites.cjs';
 
 const docsTest = 'tests/unit/docs/Documentation.test.ts';
-// Each group runs as its own wsl-native matrix job.
-export const wslTestGroups = [
-  { name: 'shared', maxWorkers: 3, tests: [
-    'tests/integration/core/process/execution-target/ClaudeWSL.windows.test.ts',
-    'tests/integration/core/process/execution-target/WSLExecution.windows.test.ts',
-    'tests/integration/core/process/execution-target/WSLSessionToolRelay.windows.test.ts',
-    'tests/integration/providers/opencode/runtime/OpencodeWSL.windows.test.ts',
-    'tests/integration/providers/codex/runtime/CodexWSL.windows.test.ts',
-    'tests/integration/providers/grok/runtime/GrokWSL.windows.test.ts',
-  ] },
-  // DeepSeek's launch probes use the production 5s process-probe deadline, which concurrent WSL1 suites can exceed.
-  { name: 'deepseek', maxWorkers: 1, tests: ['tests/integration/providers/deepseek/runtime/DeepSeekWSLHost.windows.test.ts'] },
+export const wslTests = [
+  'tests/integration/core/process/execution-target/ClaudeWSL.windows.test.ts',
+  'tests/integration/core/process/execution-target/WSLExecution.windows.test.ts',
+  'tests/integration/core/process/execution-target/WSLSessionToolRelay.windows.test.ts',
+  'tests/integration/providers/deepseek/runtime/DeepSeekWSLHost.windows.test.ts',
+  'tests/integration/providers/opencode/runtime/OpencodeWSL.windows.test.ts',
+  'tests/integration/providers/codex/runtime/CodexWSL.windows.test.ts',
+  'tests/integration/providers/grok/runtime/GrokWSL.windows.test.ts',
 ];
-export const wslTests = wslTestGroups.flatMap(group => group.tests);
 const fullSelection = {
   testFiles: null, scriptTests: null, crossPlatformTests: null,
-  crossPlatform: true, piWindows: true, wslWindows: true, wslGroups: wslTestGroups,
+  crossPlatform: true, piWindows: true, wslWindows: true, wslSuites: wslTests,
   build: true, dependencies: true, workflows: true,
 };
 const piTest = 'tests/integration/providers/pi/runtime/PiSubprocess.windows.test.ts';
@@ -99,17 +94,15 @@ export function selectCiTests({ changes, relatedTests, eventName }) {
   const testFiles = [...files];
   const crossPlatformTests = suites.crossPlatformTests.filter(file => files.has(file));
   const piWindows = files.has(piTest);
-  const wslGroups = wslTestGroups
-    .map(group => ({ ...group, tests: wslProvisioning ? group.tests : group.tests.filter(file => files.has(file)) }))
-    .filter(group => group.tests.length > 0);
+  const wslSuites = wslProvisioning ? wslTests : wslTests.filter(file => files.has(file));
   return {
     testFiles, scriptTests: [...scripts], crossPlatformTests,
     crossPlatform: crossPlatformTests.length > 0 || piWindows
       || scripts.has('scripts/ciTestSelection.test.mjs') || scripts.has('scripts/run-tests.test.mjs')
       || changes.some(change => change.path === 'scripts/testDeclarations.test.mjs'),
     piWindows,
-    wslWindows: wslGroups.length > 0,
-    wslGroups,
+    wslWindows: wslSuites.length > 0,
+    wslSuites,
     build: changes.some(change => isBuildInput(change.path)),
     dependencies: changes.some(change => dependencyInputs.has(change.path)),
     workflows: changes.some(change => isWorkflow(change.path)),
@@ -181,7 +174,7 @@ function main() {
     `pi-windows=${selection.piWindows}`,
     `wsl-windows=${selection.wslWindows}`,
     `has-tests=${lanes.length > 0}`,
-    `wsl-groups=${JSON.stringify(selection.wslGroups)}`,
+    `wsl-suites=${JSON.stringify(selection.wslSuites)}`,
     `build=${selection.build}`,
     `dependencies=${selection.dependencies}`,
     `workflows=${selection.workflows}`,

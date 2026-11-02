@@ -7,7 +7,7 @@ import { pathToFileURL } from 'node:url';
 
 import { parse } from 'yaml';
 
-import { ciTestLanes, documentationPaths, selectCiTests, selectRelatedCiTests, wslTestGroups, wslTests } from './ciTestSelection.mjs';
+import { ciTestLanes, documentationPaths, selectCiTests, selectRelatedCiTests, wslTests } from './ciTestSelection.mjs';
 
 const prompt = 'tests/unit/core/prompt/mainAgent.systemPrompt.test.ts';
 const panel = 'tests/integration/features/chat/ClaudianView.test.ts';
@@ -262,7 +262,7 @@ for (const [name, selector] of [
             crossPlatform: true,
             piWindows: false,
             wslWindows: false,
-            wslGroups: [], build: false, dependencies: false, workflows: false,
+            wslSuites: [], build: false, dependencies: false, workflows: false,
           });
         });
       }
@@ -273,7 +273,7 @@ for (const [name, selector] of [
     const full = {
       testFiles: null, scriptTests: null, crossPlatformTests: null,
       crossPlatform: true, piWindows: true, wslWindows: true,
-      wslGroups: wslTestGroups, build: true, dependencies: true, workflows: true,
+      wslSuites: wslTests, build: true, dependencies: true, workflows: true,
     };
     for (const eventName of ['pull_request', 'push']) {
       for (const changes of [
@@ -395,7 +395,7 @@ test('the CI entry point handles real Git ranges, renames, missing bases and rel
     const edited = git('rev-parse', 'HEAD');
     assert.deepEqual(scope(edited)['test-files'], ['tests/unit/value.test.ts']);
     assert.deepEqual(scope(edited)['test-lanes'], ['1/1', 'scripts']);
-    assert.deepEqual([scope(edited).build, scope(edited).dependencies, scope(edited).workflows, scope(edited)['wsl-groups']], [true, false, false, []]);
+    assert.deepEqual([scope(edited).build, scope(edited).dependencies, scope(edited).workflows, scope(edited)['wsl-suites']], [true, false, false, []]);
     assert.deepEqual(scope(edited, { GITHUB_EVENT_NAME: 'pull_request' })['test-files'], ['tests/unit/value.test.ts']);
     renameSync(path.join(root, 'tests/unit/value.test.ts'), path.join(root, 'tests/unit/renamed.test.ts'));
     git('add', '.'); git('commit', '-m', 'Rename test');
@@ -419,7 +419,7 @@ test('the CI entry point handles real Git ranges, renames, missing bases and rel
       const full = scope(deleted, overrides);
       assert.equal(full['test-files'], null);
       assert.deepEqual(full['test-lanes'], ['1/4', '2/4', '3/4', '4/4', 'scripts']);
-      assert.deepEqual([full.build, full.dependencies, full.workflows, full['wsl-groups']], [true, true, true, wslTestGroups]);
+      assert.deepEqual([full.build, full.dependencies, full.workflows, full['wsl-suites']], [true, true, true, wslTests]);
     }
     // Release scope must work before dependency installation, without invoking Vitest.
     writeFileSync(path.join(root, 'scripts/run-vitest.js'), "throw new Error('Vitest is unavailable');");
@@ -667,27 +667,18 @@ test('dependency audit runs for every change that triggers CI and gates the buil
   }
 });
 
-test('WSL groups partition the registered suites and isolate the DeepSeek probe', () => {
-  const grouped = wslTestGroups.flatMap(group => group.tests);
-  assert.equal(grouped.length, new Set(grouped).size, 'each WSL suite runs once');
-  assert.deepEqual(new Set(grouped), new Set(wslTests));
-  const deepseek = wslTestGroups.find(group => group.tests.includes('tests/integration/providers/deepseek/runtime/DeepSeekWSLHost.windows.test.ts'));
-  assert.deepEqual([deepseek.tests.length, deepseek.maxWorkers], [1, 1]);
-});
-
-test('WSL runs only the groups and suites a change affects', () => {
+test('WSL runs only the suites a change affects', () => {
   const codex = 'tests/integration/providers/codex/runtime/CodexWSL.windows.test.ts';
-  const shared = wslTestGroups.find(group => group.tests.includes(codex));
-  const [group, ...others] = select([codex]).wslGroups;
-  assert.deepEqual([group.name, group.maxWorkers, others], [shared.name, shared.maxWorkers, []]);
-  assert.ok(group.tests.includes(codex));
-  assert.ok(group.tests.length < shared.tests.length);
-  assert.deepEqual(select(['.github/wsl/provision-rootfs.sh']).wslGroups, wslTestGroups);
-  assert.deepEqual(select(['package.json']).wslGroups, wslTestGroups);
-  assert.deepEqual(select(['src/features/chat/ClaudianView.ts'], [panel]).wslGroups, []);
+  const affected = select([codex]).wslSuites;
+  assert.ok(affected.includes(codex));
+  assert.equal(affected.includes('tests/integration/providers/deepseek/runtime/DeepSeekWSLHost.windows.test.ts'), false);
+  assert.ok(affected.every(file => wslTests.includes(file)));
+  assert.deepEqual(select(['.github/wsl/provision-rootfs.sh']).wslSuites, wslTests);
+  assert.deepEqual(select(['package.json']).wslSuites, wslTests);
+  assert.deepEqual(select(['src/features/chat/ClaudianView.ts'], [panel]).wslSuites, []);
 });
 
-test('CI starts independent checks immediately and runs affected WSL groups in parallel', () => {
+test('CI starts independent checks immediately and runs affected WSL suites together in one job', () => {
   const workflow = parse(readFileSync(new URL('../.github/workflows/ci.yml', import.meta.url), 'utf8'));
   assert.equal(workflow.jobs.quality, undefined);
   for (const job of ['typecheck', 'lint', 'dependency-audit', 'test-scope', 'diff-hygiene']) {
@@ -696,7 +687,9 @@ test('CI starts independent checks immediately and runs affected WSL groups in p
   assert.ok(workflow.jobs.typecheck.steps.some(step => step.run === 'npm run typecheck'));
   assert.ok(workflow.jobs.lint.steps.some(step => step.run === 'npm run lint'));
   const wsl = workflow.jobs['wsl-native'];
-  assert.equal(wsl.strategy.matrix.include, '${{ fromJSON(needs.test-scope.outputs.wsl-groups) }}');
+  assert.equal(wsl.strategy, undefined);
+  const suites = wsl.steps.find(step => step.env?.WSL_TESTS);
+  assert.equal(suites.env.WSL_TESTS, "${{ join(fromJSON(needs.test-scope.outputs.wsl-suites), ' ') }}");
   assert.equal(wsl.if, "needs.test-scope.outputs.wsl-windows == 'true'");
   for (const job of ['typecheck', 'lint']) assert.ok(workflow.jobs.build.needs.includes(job), job);
 });
