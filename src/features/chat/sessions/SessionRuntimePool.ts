@@ -253,7 +253,8 @@ export class SessionRuntimePool {
     const baseline = record.freshness;
     if (!id || baseline.state !== 'current') return;
     record.ownWorkCheck = this.readNativeRevision(id).then(revision => {
-      if (record.freshness === baseline && revision && revision !== baseline.revision) {
+      // As in any check, a revision that cannot be read after one was known counts as changed.
+      if (record.freshness === baseline && revision !== baseline.revision) {
         record.freshness = { state: 'stale', reloadRevision: null };
       }
     });

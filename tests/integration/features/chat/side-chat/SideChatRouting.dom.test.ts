@@ -360,6 +360,24 @@ it('returns sends held by a failed history refresh in submission order, with the
   expect(routing.mainExecutions).toEqual([]);
 });
 
+it('keeps attached images when a built-in command held by a history refresh runs', async () => {
+  const harness = await createHarness();
+  const routing = createRouting(harness);
+  const refresh = deferred<boolean>();
+  routing.controller.holdForHistoryRefresh(refresh.promise);
+  const image: ImageAttachment = { id: 'kept-image', name: 'kept.png', mediaType: 'image/png', data: 'a2VwdA==', size: 4, source: 'paste' };
+  harness.inputEl.value = '/sessions';
+  harness.imageContextManager.setImages([image]);
+  const sent = routing.controller.sendMessage();
+  expect(harness.imageContextManager.getAttachedImages()).toEqual([]);
+
+  refresh.resolve(true);
+  await sent;
+  expect(harness.imageContextManager.getAttachedImages()).toEqual([image]);
+  expect(harness.inputEl.value).toBe('');
+  expect(routing.mainExecutions).toEqual([]);
+});
+
 it('keeps unsent side attachments out of a text-only queued main message', async () => {
   const harness = await createHarness();
   const routing = createRouting(harness);

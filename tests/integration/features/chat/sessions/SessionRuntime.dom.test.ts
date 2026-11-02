@@ -715,6 +715,30 @@ it('keeps an external change unabsorbed when a send fails before reaching the pr
   await destroyTab(second);
 });
 
+it('keeps an external change unabsorbed when the check at work start cannot read the revision', async () => {
+  const native = { revision: 'before', unreadableReads: 0 };
+  const s = await setupRevisionedSession({ readNativeHistoryRevision: async () => {
+    if (native.unreadableReads === 0) return native.revision;
+    native.unreadableReads--;
+    return null;
+  } });
+  s.continueElsewhere();
+  native.revision = 'after external turn';
+  const readConversation = vi.mocked(s.h.plugin.getConversationById).getMockImplementation()!;
+  vi.mocked(s.h.plugin.getConversationById).mockImplementation(async id => id === 'conv-1-missing' ? null : readConversation(id));
+  // Only the read when the send starts cannot answer; a later read sees the external revision.
+  native.unreadableReads = 1;
+  s.first.controllers.drafts.restore('main', { content: 'Compare with @[Missing](claudian-session:conv-1-missing)' });
+  await s.first.controllers.inputController.sendMessage();
+  await waitFor(() => expect(s.reads.at(-1)).toBeNull());
+  expect(s.provider.requests).toHaveLength(0);
+  await s.detach();
+
+  const second = await s.h.attach();
+  expect(second.dom.messagesEl.textContent).toContain('Reply from the CLI');
+  await destroyTab(second);
+});
+
 it('keeps the known baseline when the read after its own turn cannot answer', async () => {
   const native = { revision: 'before', unreadable: false };
   const s = await setupRevisionedSession({ readNativeHistoryRevision: async () => native.unreadable ? null : native.revision });

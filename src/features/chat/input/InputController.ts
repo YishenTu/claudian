@@ -428,8 +428,11 @@ export class InputController {
       } else {
         this.execution.reportDeferredReview();
       }
+      // A command keeps the composer's attachments; a held one returns those it captured.
       if (shouldUseInput) {
         this.deps.drafts.restore(destination, { content: '', images: composerDraft.images });
+      } else if (options?.heldSubmission && imageOverride?.length) {
+        this.deps.drafts.restore(destination, { content: '', images: imageOverride }, { merge: true });
       }
       await this.deps.builtInCommands.execute(builtInCmd.command, this.#getActiveCapabilities());
       return 'handled';
