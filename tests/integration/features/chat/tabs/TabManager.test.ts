@@ -1190,6 +1190,39 @@ describe('returning to a tab whose native history changed', () => {
     expect(t.one.dom.messagesEl.textContent).toContain('Continue from the CLI turn');
   });
 
+  it('keeps refusing sends after a failed reload until the retry has loaded the history', async () => {
+    let failNext = false;
+    const retry = holdNext();
+    const t = await setupChangedTab({}, { beforeLoad: async () => {
+      if (failNext) { failNext = false; throw new Error('History unavailable'); }
+      await retry.gate();
+    } });
+    t.continueElsewhere();
+    await t.manager.switchToTab('two');
+    failNext = true;
+    const finishRetry = retry.arm();
+    const returning = t.manager.switchToTab('one');
+    await retry.held;
+    t.one.controllers.drafts.restore('main', { content: 'Continue from the CLI turn' });
+    await t.one.controllers.inputController.sendMessage();
+    expect(vi.mocked(Notice)).toHaveBeenCalledWith(translate('chat.reloadingHistory'));
+    expect(t.one.controllers.drafts.capture('main').content).toBe('Continue from the CLI turn');
+    expect(provider.sessions.flatMap(session => session.requests)).toHaveLength(0);
+
+    finishRetry.resolve();
+    await returning;
+    const sending = t.one.controllers.inputController.sendMessage();
+    const session = await vi.waitFor(() => {
+      const candidate = provider.sessions.find(entry => entry.requests.length > 0);
+      if (!candidate) throw new Error('The send has not reached a provider session');
+      return candidate;
+    });
+    (await session.waitForRun()).complete();
+    await sending;
+    expect(t.one.dom.messagesEl.textContent).toContain('Reply from the CLI');
+    expect(t.one.dom.messagesEl.textContent).toContain('Continue from the CLI turn');
+  });
+
   it('ends the check when the revision read does not answer, counting it as changed', async () => {
     const read = holdNext();
     const t = await setupChangedTab({}, { beforeRevisionRead: read.gate });

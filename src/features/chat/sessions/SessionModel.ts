@@ -257,27 +257,32 @@ export class SessionModel {
   }
 
   /**
-   * Checks the shown history and, when `reload` drops it (returning true), loads it again. Until then main
-   * sends are refused and session messages wait: nothing can reach a provider session that predates it.
+   * Checks the shown history and, when `reload` drops it (returning true), loads it again. Until a load has
+   * succeeded, main sends are refused and session messages wait: nothing can reach a provider session that
+   * predates the history, or be replaced by a later load. A failed load stays refused for the presentation
+   * to show and retry.
    */
   async refreshHistory(reload: () => Promise<boolean>): Promise<void> {
-    this.refreshingHistory = true;
+    const previous = this.historyRefresh;
+    this.historyRefresh = 'checking';
     this.publish('work');
     try {
       if (!await reload()) return;
       if (this.hydrationState === 'ready') this.hydrationState = 'idle';
-      // A failed load leaves hydration failed, for the presentation to show and retry.
+      this.historyRefresh = 'reloading';
       await this.hydrate().catch(() => undefined);
     } finally {
-      this.refreshingHistory = false;
+      // An unchanged check keeps a failed reload refused.
+      if (this.historyRefresh === 'checking') this.historyRefresh = previous;
       this.publish('work');
     }
   }
 
-  private refreshingHistory = false;
+  /** `reloading` lasts until a load of the dropped history succeeds. */
+  private historyRefresh: 'checking' | 'reloading' | null = null;
 
   /** Sends are refused while the shown history is checked or reloaded. */
-  get isRefreshingHistory(): boolean { return this.refreshingHistory; }
+  get isRefreshingHistory(): boolean { return this.historyRefresh !== null; }
 
   /** Applies native permission changes through the same owner as toolbar selections. */
   async updatePermissionMode(mode: string): Promise<void> {
@@ -352,6 +357,10 @@ export class SessionModel {
     this.hydration = this.conversationController.loadActive()
       .then(() => {
         this.hydrationState = 'ready';
+        if (this.historyRefresh === 'reloading') {
+          this.historyRefresh = null;
+          this.publish('work');
+        }
         this.session.notifyHydrated();
       })
       .catch(error => { this.hydrationState = 'failed'; throw error; })
