@@ -39,8 +39,10 @@ import * as historyStore from '@/providers/claude/history/ClaudeHistoryStore';
 import { claudeProviderRegistration } from '@/providers/claude/registration';
 import { assertClaudeModelAvailable } from '@/providers/claude/runtime/ClaudeModelAvailability';
 import { getClaudeProviderSettings, updateClaudeProviderSettings } from '@/providers/claude/settings';
+import { codexProviderRegistration } from '@/providers/codex/registration';
 
-registerProviderModules([claudeProviderRegistration]);
+// Codex is registered so another provider can own the active settings.
+registerProviderModules([claudeProviderRegistration, codexProviderRegistration]);
 
 const {
   createFailingPersistentQuery, createIdlePersistentQuery, createInputDrivenQuery,
