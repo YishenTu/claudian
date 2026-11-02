@@ -206,9 +206,16 @@ export class SessionMessagingService {
     const attachment = sessionRuntimes.getAttachment(target.id) ?? undefined;
     const revalidation = sessionRuntimes.revalidate(target.id, attachment);
     if (revalidation) {
-      await revalidation;
-      const model = attachment?.runtime.peekModel;
-      if (model && model.hydrationState !== 'ready') await model.hydrate();
+      // Stop on the recipient withdraws a message waiting here, as it discards one already queued.
+      const waiting = attachment?.runtime.mailbox?.reserve();
+      try {
+        await revalidation;
+        const model = attachment?.runtime.peekModel;
+        if (model && model.hydrationState !== 'ready') await model.hydrate();
+      } finally {
+        waiting?.release();
+      }
+      if (waiting?.stopped()) throw new Error('The target session was stopped before the message was delivered');
     }
     throwIfAborted(signal, 'Session tool call was cancelled');
     return sessionRuntimes.ensure({ conversationId: target.id, providerId: target.providerId, draftModel: null });

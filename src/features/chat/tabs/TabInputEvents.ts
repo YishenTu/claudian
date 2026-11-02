@@ -47,7 +47,7 @@ export function hasCancellableSelectedWork(tab: AssembledTabRuntime): boolean {
   const sideChat = tab.controllers.sideChatController;
   if (sideChat.destination === 'side') return sideChat.runtime?.isWorking ?? false;
   return tab.state.isStreaming || tab.controllers.inputController.hasWithdrawableMainInput || tab.session.hasMainBackgroundWork
-    || !!tab.session.runtime.mailbox?.hasPending;
+    || !!tab.session.runtime.mailbox?.hasPending || !!tab.session.runtime.mailbox?.hasWaiting;
 }
 
 /**

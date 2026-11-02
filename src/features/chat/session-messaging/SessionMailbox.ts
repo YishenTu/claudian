@@ -32,6 +32,7 @@ export class SessionMailbox {
   private generation = 0;
   private admissions = 0;
   private dispatching = false;
+  private waiting = 0;
 
   constructor(private readonly deps: {
     runtime: ChatSessionRuntime;
@@ -40,6 +41,27 @@ export class SessionMailbox {
   }) {}
 
   get hasPending(): boolean { return this.pending.length > 0; }
+
+  /** Deliveries waiting before admission; Stop can withdraw them, but they are not work the session runs. */
+  get hasWaiting(): boolean { return this.waiting > 0; }
+
+  /**
+   * Registers a delivery that must wait before it is admitted. `stopped` tells whether Stop cleared this
+   * mailbox since, which withdraws a waiting message like one already queued; `release` ends the wait.
+   */
+  reserve(): { stopped(): boolean; release(): void } {
+    const generation = this.generation;
+    this.waiting++;
+    let released = false;
+    return {
+      stopped: () => generation !== this.generation,
+      release: () => {
+        if (released) return;
+        released = true;
+        this.waiting--;
+      },
+    };
+  }
 
   async deliver({ message, mode, signal }: SessionMessageDelivery): Promise<SessionToolSendStatus> {
     if (mode === 'steer' && message) {

@@ -21,6 +21,7 @@ import type { ClaudianSettings, Conversation, ConversationMutablePatch } from '@
 import { getChatSettingsSnapshot } from '@/features/chat/ChatSettings';
 import { SessionMessagingService } from '@/features/chat/session-messaging/SessionMessagingService';
 import { getSessionSettingsSnapshot, updateSessionProviderSettings, updateSessionReasoning } from '@/features/chat/sessions/sessionSettings';
+import { cancelSelectedDestinationTurn } from '@/features/chat/tabs/TabInputEvents';
 import { activateTab, destroyTab } from '@/features/chat/tabs/TabLifecycle';
 import { createTabRuntime } from '@/features/chat/tabs/TabRuntimeFactory';
 import { t } from '@/i18n/i18n';
@@ -715,6 +716,27 @@ it('keeps the known baseline when the read after its own turn cannot answer', as
   const second = await s.h.attach();
   expect(second.dom.messagesEl.textContent).toContain('Reply from the CLI');
   await destroyTab(second);
+});
+
+it.each(['', 'Composer input'])('lets Stop withdraw a session message waiting for its recipient\'s history check (held composer input: "%s")', async composerInput => {
+  const native = { revision: 'before' };
+  const gate = holdableRead(native);
+  const s = await setupRevisionedSession({ readNativeHistoryRevision: gate.read });
+  vi.spyOn(s.h.plugin, 'ensureConversationMetadataLoaded').mockResolvedValue(undefined);
+  const finishRead = gate.holdNext();
+  const delivering = s.h.messaging.sendAsUser('conversation', { text: 'Message from another session' });
+  await gate.held;
+  s.first.controllers.drafts.restore('main', { content: composerInput });
+  // Without composer input, the waiting message alone is what Stop withdraws.
+  const sending = composerInput ? s.first.controllers.inputController.sendMessage() : Promise.resolve();
+
+  expect(cancelSelectedDestinationTurn(s.first)).toBe(true);
+  await sending;
+  finishRead.resolve();
+  await expect(delivering).rejects.toThrow('stopped');
+  expect(s.provider.requests).toHaveLength(0);
+  expect(s.first.controllers.drafts.capture('main').content).toBe(composerInput);
+  await destroyTab(s.first);
 });
 
 it('revalidates a recipient open in a tab before delivery and reloads it there', async () => {
