@@ -37,7 +37,7 @@ export class TabHydration {
     try {
       return await this.#hydrateActivatedTab(tab);
     } finally {
-      // Sends held by a history reload never outlive the activation that was to hydrate it.
+      // Sends refused during a history reload never stay refused past the activation that was to hydrate it.
       tab.session.runtime.peekModel?.endHistoryReload();
     }
   }

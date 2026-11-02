@@ -201,6 +201,7 @@ export class SessionModel {
       isClosing: () => session.isDisposed,
       getSideChatController: () => session.sideChat,
       ensureExecutionInitialized: () => this.ensureExecutionInitialized(),
+      isRefreshingHistory: () => this.isRefreshingHistory,
       captureReviewableSettlement: outcome => this.captureReview(outcome),
     });
     this.events = new SessionEvents({
@@ -245,7 +246,7 @@ export class SessionModel {
    * conversation that can be reattached; nothing can acquire a detached draft again.
    */
   get canEvict(): boolean {
-    return !this.presentation && this.canRefreshHistory && !this.inputController.hasHeldSends;
+    return !this.presentation && this.canRefreshHistory;
   }
 
   /** Nothing but the presentation depends on the loaded history, so it can be read again in place. */
@@ -256,50 +257,53 @@ export class SessionModel {
   }
 
   /**
-   * Checks the shown history while main sends wait with their input captured. When `reload` drops the
-   * loaded history it returns true; the sends then wait for the presentation's next hydration to render
-   * it again, and return to the composer if that fails or the presentation detaches first.
+   * Checks the shown history, and reloads it when `reload` drops it (returning true). Until the check ends,
+   * or the presentation's next hydration has loaded the history again, main sends are refused and session
+   * messages wait: nothing can reach a provider session that predates the reloaded history.
    */
   async refreshHistory(reload: () => Promise<boolean>): Promise<void> {
     // A check or reload already pending covers this one: its hydration reads the history as it is then.
     if (this.historyRefresh) return;
-    let settle!: (reloaded: boolean) => void;
-    this.inputController.holdForHistoryRefresh(new Promise<boolean>(resolve => { settle = resolve; }));
-    // Registered before the check, so a detach while checking returns the held sends.
-    const refresh = { settle, reloading: false };
+    let finished!: () => void;
+    const refresh = { reloading: false, finished: new Promise<void>(resolve => { finished = resolve; }), finish: () => finished() };
     this.historyRefresh = refresh;
+    this.publish('work');
     let reloaded: boolean;
     try {
       reloaded = await reload();
     } catch (error) {
-      this.finishHistoryRefresh(refresh, true);
+      this.endHistoryRefresh(refresh);
       throw error;
     }
     if (!reloaded) {
-      this.finishHistoryRefresh(refresh, true);
+      this.endHistoryRefresh(refresh);
       return;
     }
-    // The history was released either way; only a still-pending refresh waits for the hydration.
     if (this.hydrationState === 'ready') this.hydrationState = 'idle';
     refresh.reloading = true;
   }
 
-  /** The pending check, or the reload waiting for the presentation's hydration; it settles the held sends. */
-  private historyRefresh: { readonly settle: (reloaded: boolean) => void; reloading: boolean } | null = null;
+  private historyRefresh: { reloading: boolean; readonly finished: Promise<void>; finish(): void } | null = null;
+
+  /** Sends are refused while the shown history is checked or reloaded. */
+  get isRefreshingHistory(): boolean { return this.historyRefresh !== null; }
+
+  /** Settles when the pending check or reload ends; null when none is pending. */
+  get historyRefreshed(): Promise<void> | null { return this.historyRefresh?.finished ?? null; }
 
   /**
-   * The presentation's activation ended; held sends go only if it left the history loaded. Activation
-   * can stop before hydration runs (workspace setup failed, the tab closed), which would otherwise
-   * leave them waiting.
+   * The presentation's activation ended. Activation can stop before hydration runs (workspace setup
+   * failed, the tab closed), which must not leave sends refused.
    */
   endHistoryReload(): void {
-    if (this.historyRefresh?.reloading) this.finishHistoryRefresh(this.historyRefresh, this.hydrationState === 'ready');
+    if (this.historyRefresh?.reloading) this.endHistoryRefresh(this.historyRefresh);
   }
 
-  private finishHistoryRefresh(refresh: NonNullable<SessionModel['historyRefresh']>, reloaded: boolean): void {
+  private endHistoryRefresh(refresh: NonNullable<SessionModel['historyRefresh']>): void {
     if (this.historyRefresh !== refresh) return;
     this.historyRefresh = null;
-    refresh.settle(reloaded);
+    refresh.finish();
+    this.publish('work');
   }
 
   /** Applies native permission changes through the same owner as toolbar selections. */
@@ -366,7 +370,7 @@ export class SessionModel {
     this.linkedContentController.unmountInfoRow();
     this.transcript.detach();
     this.presentation = null;
-    if (this.historyRefresh) this.finishHistoryRefresh(this.historyRefresh, false);
+    if (this.historyRefresh) this.endHistoryRefresh(this.historyRefresh);
   }
 
   async hydrate(): Promise<void> {
@@ -377,11 +381,11 @@ export class SessionModel {
       .then(() => {
         this.hydrationState = 'ready';
         this.session.notifyHydrated();
-        if (this.historyRefresh?.reloading) this.finishHistoryRefresh(this.historyRefresh, true);
+        if (this.historyRefresh?.reloading) this.endHistoryRefresh(this.historyRefresh);
       })
       .catch(error => {
         this.hydrationState = 'failed';
-        if (this.historyRefresh?.reloading) this.finishHistoryRefresh(this.historyRefresh, false);
+        if (this.historyRefresh?.reloading) this.endHistoryRefresh(this.historyRefresh);
         throw error;
       })
       .finally(() => { this.hydration = null; });

@@ -16,7 +16,6 @@ import { encodeSessionMessage, type MailboxMessage } from '@/core/session-tools/
 import type { AskUserAnswers, ChatMessage, ToolCallInfo } from '@/core/types';
 import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
 import type { ChatSettings } from '@/features/chat/ChatSettings';
-import type { ComposerDraft } from '@/features/chat/composer/ComposerDraftController';
 import { findComposerSessionMentions } from '@/features/chat/composer/composerSessionMentions';
 import type { ConversationController } from '@/features/chat/conversation/ConversationController';
 import { FirstTurnAdmission } from '@/features/chat/conversation/FirstTurnAdmission';
@@ -24,7 +23,7 @@ import type { ChatExecutionCoordinator } from '@/features/chat/execution/ChatExe
 import type { BuiltInCommandController } from '@/features/chat/input/BuiltInCommandController';
 import type { ComposerSelections } from '@/features/chat/input/ComposerSelections';
 import { resolveSessionMentions } from '@/features/chat/input/resolveSessionMentions';
-import { type HeldSubmission, SubmissionPreparations } from '@/features/chat/input/SubmissionPreparations';
+import { SubmissionPreparations } from '@/features/chat/input/SubmissionPreparations';
 import { deliverAsyncQuestion } from '@/features/chat/interactions/asyncQuestionDelivery';
 import type { SessionInteractions } from '@/features/chat/interactions/SessionInteractions';
 import type { LinkedContentController } from '@/features/chat/linked-content';
@@ -69,6 +68,8 @@ export interface InputControllerDeps {
   getTabProviderId: () => ProviderId | null;
   /** Returns true if ready. */
   ensureExecutionInitialized: () => Promise<boolean>;
+  /** The shown history is being checked or reloaded after a change outside Claudian. */
+  isRefreshingHistory: () => boolean;
   builtInCommands: Pick<BuiltInCommandController, 'execute'>;
   /** Captures a review reporter when a terminal provider turn becomes visible. */
   captureReviewableSettlement?: (outcome: TabReviewOutcome) => () => void;
@@ -98,8 +99,6 @@ export interface SendMessageOptions {
   turnRequestOverride?: ChatTurnRequest;
   /** The original composer draft was consumed before asynchronous preparation. */
   draftConsumed?: boolean;
-  /** A submission held for a history refresh; its consumed draft is returned through it, exactly once. */
-  heldSubmission?: HeldSubmission;
 }
 
 /** Admits composer and answer submissions and routes each to its destination. */
@@ -114,10 +113,7 @@ export class InputController {
 
   constructor(deps: InputControllerDeps) {
     this.deps = deps;
-    this.preparations = new SubmissionPreparations({
-      onSettled: deps.onWorkChanged,
-      restoreDraft: draft => this.deps.drafts.restore('main', draft, { merge: true }),
-    });
+    this.preparations = new SubmissionPreparations(deps.onWorkChanged);
     this.turns = deps.session.turns;
     this.steering = new TurnSteering({
       state: deps.state,
@@ -213,47 +209,21 @@ export class InputController {
         new Notice(t('chat.selectAvailableModel'));
         return;
       }
-      const result = this.preparations.isHoldingForHistory && (options?.destination ?? this.deps.drafts.destination) === 'main'
-        ? await this.#dispatchAfterHistoryRefresh(options)
-        : await this.#dispatchMessage(options);
+      // Main input waits for a reload of changed history; the draft stays for the user to send again.
+      if (this.deps.isRefreshingHistory() && (options?.destination ?? this.deps.drafts.destination) === 'main') {
+        new Notice(t('chat.reloadingHistory'));
+        return;
+      }
+      const result = await this.#dispatchMessage(options);
       queued = result === 'queued';
     } finally {
       if (!queued) options?.onDelivery?.(false);
     }
   }
 
-  /**
-   * Holds main submissions while the session's shown history is checked and possibly reloaded. Each keeps
-   * the input captured when it was submitted and is dispatched once `refresh` settles true, or returned to
-   * the composer when it settles false. Later composer edits stay a separate draft.
-   */
-  holdForHistoryRefresh(refresh: Promise<boolean>): void {
-    this.preparations.holdForHistoryRefresh(refresh);
-  }
-
-  async #dispatchAfterHistoryRefresh(options?: SendMessageOptions): Promise<DispatchResult> {
-    const conversationId = this.deps.state.currentConversationId;
-    const { draft, captured } = this.#captureMainSubmission(options);
-    this.deps.getInputEl()?.setAttribute?.('aria-busy', 'true');
-    let held: HeldSubmission | null;
-    try {
-      held = await this.preparations.holdUntilHistoryRefreshed(draft);
-    } finally {
-      if (!this.preparations.hasHeld) this.deps.getInputEl()?.removeAttribute?.('aria-busy');
-    }
-    if (!held) return 'rejected';
-    if (this.deps.state.currentConversationId !== conversationId || !this.deps.canStartTurn()) {
-      held.recover();
-      return 'rejected';
-    }
-    const result = await this.#dispatchMessage({ ...captured, heldSubmission: held });
-    if (result === 'rejected') held.recover();
-    return result;
-  }
-
   /** Mailbox dispatch never reads the composer destination, drafts, or live selections. */
   get canStartSessionMessage(): boolean {
-    return this.deps.canStartTurn() && !this.turns.isActive && !this.queue.message && !this.preparations.isHoldingForHistory
+    return this.deps.canStartTurn() && !this.turns.isActive && !this.queue.message && !this.deps.isRefreshingHistory()
       && !this.preparations.pendingMainAdmission && !this.isPreparingMainTurn
       && !this.deps.conversationController.hasBranchDraft;
   }
@@ -352,19 +322,6 @@ export class InputController {
     return this.preparations.isPreparing('main');
   }
 
-  /**
-   * Main input Stop can withdraw: a preparation, or a send held by a history check. Held sends are not
-   * session work, so the check that holds them still sees the session idle.
-   */
-  /** Main submissions waiting on a history check, holding their captured input. */
-  get hasHeldSends(): boolean {
-    return this.preparations.hasHeld;
-  }
-
-  get hasWithdrawableMainInput(): boolean {
-    return this.isPreparingMainTurn || this.preparations.hasHeld;
-  }
-
   handleExecutionEvent(event: ProviderExecutionEvent): Promise<void> {
     return this.execution.handleEvent(event);
   }
@@ -414,10 +371,9 @@ export class InputController {
       const images = hasImages
         ? [...(imageOverride ?? composerDraft.images)]
         : [];
-      // The side controller owns composer clearing so a rejected command keeps the draft, and restores
-      // a draft consumed before dispatch on any failure.
-      const accepted = await sideChat.handleCommandSubmission(sideCommand.argument, images, this.#captureSideContext(options), options?.heldSubmission);
-      return accepted ? 'handled' : 'rejected';
+      // The side controller owns composer clearing so a rejected command keeps the draft.
+      await sideChat.handleCommandSubmission(sideCommand.argument, images, this.#captureSideContext());
+      return 'handled';
     }
 
     // Check for built-in commands first (e.g., /new, /clear)
@@ -428,11 +384,8 @@ export class InputController {
       } else {
         this.execution.reportDeferredReview();
       }
-      // A command keeps the composer's attachments; a held one returns those it captured.
       if (shouldUseInput) {
         this.deps.drafts.restore(destination, { content: '', images: composerDraft.images });
-      } else if (options?.heldSubmission && imageOverride?.length) {
-        this.deps.drafts.restore(destination, { content: '', images: imageOverride }, { merge: true });
       }
       await this.deps.builtInCommands.execute(builtInCmd.command, this.#getActiveCapabilities());
       return 'handled';
@@ -442,8 +395,15 @@ export class InputController {
     const previousMainAdmission = this.preparations.pendingMainAdmission;
     if (destination === 'main' && previousMainAdmission && !skipPreparationBarrier) {
       const conversationId = state.currentConversationId;
-      const { draft, captured: capturedOptions } = this.#captureMainSubmission({ ...options, content, images: [...(imageOverride ?? composerDraft.images)] }, shouldUseInput);
-      const original = draft ?? { content, images: imageOverride ?? composerDraft.images };
+      const original = shouldUseInput ? this.deps.drafts.consume('main') : { content, images: imageOverride ?? composerDraft.images };
+      const captured = this.#resolveSelections(options);
+      const capturedOptions: SendMessageOptions = {
+        ...options, destination: 'main', content, images: [...(imageOverride ?? composerDraft.images)],
+        editorContextOverride: captured.editorSelection,
+        browserContextOverride: captured.browserSelection,
+        canvasContextOverride: captured.canvasSelection,
+        draftConsumed: shouldUseInput,
+      };
       const controller = new AbortController();
       const releaseAdmission = this.preparations.reserveMainAdmission();
       let queued = false;
@@ -482,7 +442,7 @@ export class InputController {
       const capturedSideRuntime = sideChat?.runtime;
       const images = [...(imageOverride ?? composerDraft.images)];
       const captured = this.#buildTurnSubmission(content, images, options);
-      const sideContext = this.#captureSideContext(options);
+      const sideContext = this.#captureSideContext();
       const original = shouldUseInput ? this.deps.drafts.consume(destination) : { content, images };
       const preparation = new AbortController();
       const ownsMainTurn = destination === 'main' && !this.turns.isActive && !this.queue.message;
@@ -545,7 +505,7 @@ export class InputController {
       const images = hasImages
         ? [...(imageOverride ?? composerDraft.images)]
         : [];
-      const context = this.#captureSideContext(options);
+      const context = this.#captureSideContext();
       const previousDraft = shouldUseInput ? this.deps.drafts.consume('side') : null;
       const accepted = await sideChat.submitToSide(
         content,
@@ -600,34 +560,9 @@ export class InputController {
   }
 
   /** Live selections for a side-chat turn, in capture order. */
-  /** Uses the selections captured at Send when a held submission carries them. */
-  #captureSideContext(options?: SendMessageOptions): ProviderExecutionContext {
-    const selections = captureSelectionSnapshots(this.#resolveSelections(options));
+  #captureSideContext(): ProviderExecutionContext {
+    const selections = captureSelectionSnapshots(this.deps.selections.capture());
     return selections.length ? { selections } : {};
-  }
-
-  /**
-   * Captures a main submission at Send for dispatch after a wait: its draft (consumed from the composer
-   * when the input comes from it) and selections, so later edits and selection changes stay out of it.
-   */
-  #captureMainSubmission(options?: SendMessageOptions, fromComposer = options?.content === undefined): {
-    draft: ComposerDraft | null;
-    captured: SendMessageOptions;
-  } {
-    const draft = fromComposer ? this.deps.drafts.consume('main') : null;
-    const selections = this.#resolveSelections(options);
-    return {
-      draft,
-      captured: {
-        ...options, destination: 'main',
-        content: draft && options?.content === undefined ? draft.content : options?.content,
-        images: draft && options?.images === undefined ? [...draft.images] : options?.images,
-        editorContextOverride: selections.editorSelection,
-        browserContextOverride: selections.browserSelection,
-        canvasContextOverride: selections.canvasSelection,
-        draftConsumed: fromComposer,
-      },
-    };
   }
 
   #resolveSelections(options?: SendMessageOptions): Required<Pick<ChatTurnRequest, 'editorSelection' | 'browserSelection' | 'canvasSelection'>> {
@@ -676,8 +611,7 @@ export class InputController {
   }
 
   cancelStreaming(): void {
-    const withdrawsHeld = this.deps.drafts.destination === 'main' && this.preparations.withdrawHeld();
-    const cancelledPreparation = this.preparations.isPreparing(this.deps.drafts.destination) || withdrawsHeld;
+    const cancelledPreparation = this.preparations.isPreparing(this.deps.drafts.destination);
     this.preparations.abort(this.deps.drafts.destination);
     const sideChat = this.deps.getSideChatController?.() ?? null;
     if (sideChat?.destination === 'side') {

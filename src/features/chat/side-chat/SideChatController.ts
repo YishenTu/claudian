@@ -10,7 +10,6 @@ import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
 import type { ComposerDraftController } from '@/features/chat/composer/ComposerDraftController';
 import type { ForkSourceUnavailableReason } from '@/features/chat/conversation/forkSourceTypes';
 import { resolveSessionInstructions } from '@/features/chat/execution/projectInstructions';
-import type { HeldSubmission } from '@/features/chat/input/SubmissionPreparations';
 import { SideChatCommandSubmission } from '@/features/chat/side-chat/SideChatCommandSubmission';
 import { SideChatPanel } from '@/features/chat/side-chat/SideChatPanel';
 import { SideChatRuntime } from '@/features/chat/side-chat/SideChatRuntime';
@@ -120,33 +119,33 @@ export class SideChatController {
 
   /**
    * Handles a submitted side command. Returns true when the submitted draft was
-   * consumed; a rejected command leaves the composer untouched. A submission held for a
-   * history refresh already consumed its draft: the composer then holds later edits, which
-   * stay, and every failure returns the draft through `held`.
+   * consumed; a rejected command leaves the composer untouched.
    */
   async handleCommandSubmission(
     argument: string,
     images: readonly ImageAttachment[],
     context?: ProviderExecutionContext,
-    held?: HeldSubmission,
   ): Promise<boolean> {
-    const reject = (notice?: string): false => {
-      if (notice) new Notice(notice);
-      held?.recover();
+    if (this.destination === 'side') {
+      new Notice(t('chat.sideChat.nestedUnavailable'));
       return false;
-    };
-    if (this.destination === 'side') return reject(t('chat.sideChat.nestedUnavailable'));
-    if (!argument) return reject(t('chat.sideChat.needsPrompt'));
-    if (this.#disposed) return reject();
-    if (this.#starting && !this.#runtime) return reject(t('chat.sideChat.alreadyExists'));
+    }
+    if (!argument) {
+      new Notice(t('chat.sideChat.needsPrompt'));
+      return false;
+    }
+    if (this.#disposed) return false;
+    if (this.#starting && !this.#runtime) {
+      new Notice(t('chat.sideChat.alreadyExists'));
+      return false;
+    }
 
     // Capture and consume before any await; recovery belongs to the original main draft.
-    const original = held ? null : this.deps.drafts.capture('main');
-    const consumed = !!held || detectSideChatCommand(original?.content ?? '') !== null;
-    if (consumed && original) this.#clearComposer();
+    const original = this.deps.drafts.capture('main');
+    const consumed = detectSideChatCommand(original.content) !== null;
+    if (consumed) this.#clearComposer();
     const command = new SideChatCommandSubmission(this.deps.plugin, { content: argument, images, context }, error => {
-      if (held) held.recover();
-      else if (consumed && original) this.deps.drafts.restore('main', original, { merge: true });
+      if (consumed) this.deps.drafts.restore('main', original, { merge: true });
       if (error) new Notice(error instanceof Error ? error.message : 'Could not prepare the side command.');
     });
     if (this.#runtime) {

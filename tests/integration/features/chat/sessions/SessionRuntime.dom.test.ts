@@ -21,7 +21,6 @@ import type { ClaudianSettings, Conversation, ConversationMutablePatch } from '@
 import { getChatSettingsSnapshot } from '@/features/chat/ChatSettings';
 import { SessionMessagingService } from '@/features/chat/session-messaging/SessionMessagingService';
 import { getSessionSettingsSnapshot, updateSessionProviderSettings, updateSessionReasoning } from '@/features/chat/sessions/sessionSettings';
-import { cancelSelectedDestinationTurn } from '@/features/chat/tabs/TabInputEvents';
 import { activateTab, destroyTab } from '@/features/chat/tabs/TabLifecycle';
 import { createTabRuntime } from '@/features/chat/tabs/TabRuntimeFactory';
 import { t } from '@/i18n/i18n';
@@ -538,70 +537,6 @@ it('replaces the provider session on reopen when a busy session skipped its rele
   await destroyTab(second);
 });
 
-it('returns a rejected side command submitted during the check to the composer with later edits', async () => {
-  const native = { revision: 'before' };
-  const gate = holdableRead(native);
-  const s = await setupRevisionedSession({ readNativeHistoryRevision: gate.read });
-  const finishRead = gate.holdNext();
-  const checking = s.h.pool.revalidate('conversation', s.h.pool.getAttachment('conversation')!);
-  await gate.held;
-  s.first.controllers.drafts.restore('main', { content: '/side' });
-  const sending = s.first.controllers.inputController.sendMessage();
-  s.first.controllers.drafts.restore('main', { content: 'later draft' });
-
-  finishRead.resolve();
-  await checking;
-  await sending;
-  const draft = s.first.controllers.drafts.capture('main').content;
-  expect(draft).toContain('/side');
-  expect(draft).toContain('later draft');
-  expect(s.first.controllers.sideChatController.runtime).toBeNull();
-  await destroyTab(s.first);
-});
-
-/** Submits `command` while a revision check is held, then types a later draft before the check finishes. */
-async function submitSideCommandDuringCheck(command: string) {
-  const native = { revision: 'before' };
-  const gate = holdableRead(native);
-  const s = await setupRevisionedSession({ readNativeHistoryRevision: gate.read });
-  s.first.state.messages = [
-    { id: 'user', role: 'user', content: 'Parent task', timestamp: testDate().getTime() },
-    { id: 'answer', role: 'assistant', content: 'Parent answer', assistantMessageId: 'checkpoint', timestamp: testDate().getTime() },
-  ];
-  vi.spyOn(ProviderRegistry.getConversationHistoryService('claude'), 'buildForkProviderState').mockResolvedValue({});
-  const readConversation = vi.mocked(s.h.plugin.getConversationById).getMockImplementation()!;
-  vi.mocked(s.h.plugin.getConversationById).mockImplementation(async id => id === 'conv-1-missing' ? null : readConversation(id));
-  const finishRead = gate.holdNext();
-  const checking = s.h.pool.revalidate('conversation', s.h.pool.getAttachment('conversation')!);
-  await gate.held;
-  s.first.controllers.drafts.restore('main', { content: command });
-  const sending = s.first.controllers.inputController.sendMessage();
-  s.first.controllers.drafts.restore('main', { content: '/side later unsent note' });
-  const finishCheck = async () => { finishRead.resolve(); await checking; };
-  return { s, sending, finishCheck };
-}
-
-it('runs a side command held by the check and keeps the later draft', async () => {
-  const { s, sending, finishCheck } = await submitSideCommandDuringCheck('/side first question');
-  const requested = s.h.backend.nextRequest(() => true);
-  await finishCheck();
-  expect((await requested).input).toEqual([{ type: 'text', text: 'first question' }]);
-  s.h.backend.latest.complete();
-  await sending;
-  expect(s.first.controllers.drafts.capture('main').content).toBe('/side later unsent note');
-  await destroyTab(s.first);
-});
-
-it('restores a held side command whose reference fails ahead of the later draft', async () => {
-  const command = '/side first question about @[Missing](claudian-session:conv-1-missing)';
-  const { s, sending, finishCheck } = await submitSideCommandDuringCheck(command);
-  await finishCheck();
-  await sending;
-  const draft = s.first.controllers.drafts.capture('main').content;
-  expect(draft).toContain(command);
-  expect(draft).toContain('/side later unsent note');
-  await destroyTab(s.first);
-});
 
 it('does not absorb external main history changes when only a side chat settles', async () => {
   const s = await setupRevisionedSession();
@@ -648,57 +583,6 @@ it.each(['user API', 'session tool'] as const)('revalidates a retained headless 
   expect(provider.requests).toHaveLength(1);
 });
 
-it('keeps a send held by a pending reload when a second refresh of the same model joins it', async () => {
-  const s = await setupRevisionedSession();
-  const model = s.runtime.model;
-  await model.refreshHistory(async () => true);
-  s.first.controllers.drafts.restore('main', { content: 'Held prompt' });
-  const sending = s.first.controllers.inputController.sendMessage();
-  await model.refreshHistory(async () => true);
-
-  const requested = s.h.backend.nextRequest(() => true);
-  await model.hydrate();
-  expect((await requested).input).toEqual([{ type: 'text', text: 'Held prompt' }]);
-  expect(s.first.controllers.drafts.capture('main').content).toBe('');
-  s.h.backend.latest.complete();
-  await sending;
-  await destroyTab(s.first);
-});
-
-it('returns a send held by a check to the session when its tab closes during the check', async () => {
-  const s = await setupRevisionedSession({ retainedDetachedSessions: 0 });
-  const check = deferred<boolean>();
-  const checking = s.model.refreshHistory(() => check.promise);
-  s.first.controllers.drafts.restore('main', { content: 'Held input' });
-  const sending = s.first.controllers.inputController.sendMessage();
-  await destroyTab(s.first);
-
-  check.resolve(false);
-  await checking;
-  await sending;
-  expect(s.provider.requests).toHaveLength(0);
-  const second = await s.h.attach();
-  expect(second.session.runtime.peekModel).toBe(s.model);
-  expect(second.controllers.drafts.capture('main').content).toBe('Held input');
-  await destroyTab(second);
-});
-
-it('returns several sends held by a reload to the session in submission order when its tab closes', async () => {
-  const s = await setupRevisionedSession({ retainedDetachedSessions: 0 });
-  await s.model.refreshHistory(async () => true);
-  s.first.controllers.drafts.restore('main', { content: 'first' });
-  const first = s.first.controllers.inputController.sendMessage();
-  s.first.controllers.drafts.restore('main', { content: 'second' });
-  const second = s.first.controllers.inputController.sendMessage();
-  await destroyTab(s.first);
-  await Promise.all([first, second]);
-
-  expect(s.provider.requests).toHaveLength(0);
-  const reopened = await s.h.attach();
-  expect(reopened.session.runtime.peekModel).toBe(s.model);
-  expect(reopened.controllers.drafts.capture('main').content).toBe('first\n\nsecond');
-  await destroyTab(reopened);
-});
 
 it('keeps an external change unabsorbed when a send fails before reaching the provider', async () => {
   const s = await setupRevisionedSession();
@@ -759,26 +643,6 @@ it('keeps the known baseline when the read after its own turn cannot answer', as
   await destroyTab(second);
 });
 
-it.each(['', 'Composer input'])('lets Stop withdraw a session message waiting for its recipient\'s history check (held composer input: "%s")', async composerInput => {
-  const native = { revision: 'before' };
-  const gate = holdableRead(native);
-  const s = await setupRevisionedSession({ readNativeHistoryRevision: gate.read });
-  vi.spyOn(s.h.plugin, 'ensureConversationMetadataLoaded').mockResolvedValue(undefined);
-  const finishRead = gate.holdNext();
-  const delivering = s.h.messaging.sendAsUser('conversation', { text: 'Message from another session' });
-  await gate.held;
-  s.first.controllers.drafts.restore('main', { content: composerInput });
-  // Without composer input, the waiting message alone is what Stop withdraws.
-  const sending = composerInput ? s.first.controllers.inputController.sendMessage() : Promise.resolve();
-
-  expect(cancelSelectedDestinationTurn(s.first)).toBe(true);
-  await sending;
-  finishRead.resolve();
-  await expect(delivering).rejects.toThrow('stopped');
-  expect(s.provider.requests).toHaveLength(0);
-  expect(s.first.controllers.drafts.capture('main').content).toBe(composerInput);
-  await destroyTab(s.first);
-});
 
 it('keeps session messages in order when a later one arrives while the first waits for the reload', async () => {
   const s = await setupRevisionedSession();

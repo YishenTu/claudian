@@ -94,7 +94,7 @@ function createRouting(
     }),
     drafts: harness.drafts,
     getSettings: () => ({ model: 'claude-model', reasoning: 'high', permissionMode: 'normal', serviceTier: 'default' }),
-    conversationController, ensureExecutionInitialized, getExecutionCoordinator,
+    conversationController, ensureExecutionInitialized, isRefreshingHistory: () => false, getExecutionCoordinator,
     getInputEl: () => harness.inputEl, getSideChatController: () => harness.controller,
     getTabProviderId: () => 'claude', generateId: () => `main-${++nextId}`,
     getMessagesEl: () => messagesEl, getLinkedContentController: () => linkedContent,
@@ -299,83 +299,6 @@ it('forwards captured selection context on initial, expanded, and collapsed side
     await sent;
     expect(harness.backend.latest.requests[index].context).toEqual(expected);
   }
-});
-
-it('sends a side command held by a history refresh with the selection captured at Send', async () => {
-  const harness = await createHarness();
-  const context: ComposerSelectionCapture = { editorSelection: { mode: 'selection', notePath: 'A.md', selectedText: 'Excerpt from A' } };
-  const routing = createRouting(harness, context);
-  const refresh = deferred<boolean>();
-  routing.controller.holdForHistoryRefresh(refresh.promise);
-  harness.inputEl.value = '/side Explain this';
-  const sent = routing.controller.sendMessage();
-  context.editorSelection = { mode: 'selection', notePath: 'B.md', selectedText: 'Excerpt from B' };
-
-  refresh.resolve(true);
-  await waitFor(() => expect(harness.backend.sessions).toHaveLength(1));
-  await waitFor(() => expect(harness.backend.latest.requests).toHaveLength(1));
-  expect(harness.backend.latest.requests[0].context).toEqual({ selections: [
-    { kind: 'editor', selection: { mode: 'selection', notePath: 'A.md', selectedText: 'Excerpt from A' } },
-  ] });
-  harness.backend.latest.establishChild('child-session');
-  harness.backend.latest.complete();
-  await sent;
-});
-
-it('returns sends withdrawn from a history refresh in submission order, ahead of later edits', async () => {
-  const harness = await createHarness();
-  const routing = createRouting(harness);
-  const refresh = deferred<boolean>();
-  routing.controller.holdForHistoryRefresh(refresh.promise);
-  harness.inputEl.value = 'first';
-  const first = routing.controller.sendMessage();
-  harness.inputEl.value = 'second';
-  const second = routing.controller.sendMessage();
-  harness.inputEl.value = 'later draft';
-
-  routing.controller.cancelStreaming();
-  await Promise.all([first, second]);
-  expect(harness.inputEl.value).toBe('first\n\nsecond\n\nlater draft');
-  refresh.resolve(true);
-  expect(routing.mainExecutions).toEqual([]);
-});
-
-it('returns sends held by a failed history refresh in submission order, with their images, ahead of later edits', async () => {
-  const harness = await createHarness();
-  const routing = createRouting(harness);
-  const refresh = deferred<boolean>();
-  routing.controller.holdForHistoryRefresh(refresh.promise);
-  const firstImage: ImageAttachment = { id: 'first-image', name: 'first.png', mediaType: 'image/png', data: 'Zmlyc3Q=', size: 5, source: 'paste' };
-  harness.inputEl.value = 'first';
-  harness.imageContextManager.setImages([firstImage]);
-  const first = routing.controller.sendMessage();
-  harness.inputEl.value = 'second';
-  const second = routing.controller.sendMessage();
-  harness.inputEl.value = 'later draft';
-
-  refresh.resolve(false);
-  await Promise.all([first, second]);
-  expect(harness.inputEl.value).toBe('first\n\nsecond\n\nlater draft');
-  expect(harness.imageContextManager.getAttachedImages()).toEqual([firstImage]);
-  expect(routing.mainExecutions).toEqual([]);
-});
-
-it('keeps attached images when a built-in command held by a history refresh runs', async () => {
-  const harness = await createHarness();
-  const routing = createRouting(harness);
-  const refresh = deferred<boolean>();
-  routing.controller.holdForHistoryRefresh(refresh.promise);
-  const image: ImageAttachment = { id: 'kept-image', name: 'kept.png', mediaType: 'image/png', data: 'a2VwdA==', size: 4, source: 'paste' };
-  harness.inputEl.value = '/sessions';
-  harness.imageContextManager.setImages([image]);
-  const sent = routing.controller.sendMessage();
-  expect(harness.imageContextManager.getAttachedImages()).toEqual([]);
-
-  refresh.resolve(true);
-  await sent;
-  expect(harness.imageContextManager.getAttachedImages()).toEqual([image]);
-  expect(harness.inputEl.value).toBe('');
-  expect(routing.mainExecutions).toEqual([]);
 });
 
 it('keeps unsent side attachments out of a text-only queued main message', async () => {
