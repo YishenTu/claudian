@@ -4962,6 +4962,34 @@ describe('ClaudianPlugin', () => {
       expect(mockApp.workspace.trigger).toHaveBeenCalledTimes(1);
       expect(mockApp.workspace.trigger).toHaveBeenCalledWith('claudian:turn-ended', { sessionId: conversation.id });
     });
+
+    it('publishes session progress and interaction changes as workspace events', async () => {
+      await plugin.onload();
+      const host = chatHostOf();
+      const conversation = await host.createConversation();
+      const runtime = host.sessionRuntimes.ensure({ conversationId: conversation.id, providerId: conversation.providerId, draftModel: null });
+      runtime.signal({ type: 'progress', progress: { kind: 'text', messageId: 'm', blockIndex: 0, text: 'Hi' } });
+      runtime.signal({ type: 'interaction', interactionId: 'ask', pending: true });
+      runtime.signal({ type: 'interaction', interactionId: 'ask', pending: false });
+      expect(mockApp.workspace.trigger.mock.calls).toEqual([
+        ['claudian:turn-progress', { sessionId: conversation.id, kind: 'text', messageId: 'm', blockIndex: 0, text: 'Hi' }],
+        ['claudian:interaction-requested', { sessionId: conversation.id, interactionId: 'ask' }],
+        ['claudian:interaction-settled', { sessionId: conversation.id, interactionId: 'ask' }],
+      ]);
+    });
+
+    it('routes openSession through the workspace chat views, refusing sessions that do not exist', async () => {
+      // A placement leaf whose view never mounts: reaching it proves the API opened through the workspace views.
+      const rightLeaf = { setViewState: vi.fn().mockResolvedValue(undefined) };
+      mockApp.workspace.getLeavesOfType.mockReturnValue([]);
+      mockApp.workspace.getRightLeaf.mockReturnValue(rightLeaf);
+      await plugin.onload();
+      await expect(plugin.api.openSession('missing')).rejects.toThrow('The session does not exist or is archived');
+      expect(rightLeaf.setViewState).not.toHaveBeenCalled();
+      const conversation = await chatHostOf().createConversation();
+      await expect(plugin.api.openSession(conversation.id)).rejects.toThrow('The chat view is not ready');
+      expect(rightLeaf.setViewState).toHaveBeenCalledWith({ type: VIEW_TYPE_CLAUDIAN, active: false });
+    });
   });
 
 });

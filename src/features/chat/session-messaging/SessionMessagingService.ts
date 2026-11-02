@@ -20,9 +20,10 @@ import type {
   SessionToolSessionStatus,
   SessionToolSessionSummary,
 } from '@/core/session-tools/sessionToolSpecs';
-import type { ChatMessage, Conversation, ConversationMeta } from '@/core/types';
+import type { AskUserAnswers, ChatMessage, Conversation, ConversationMeta } from '@/core/types';
 import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
 import { getChatSettingsSnapshot } from '@/features/chat/ChatSettings';
+import type { PendingInteractionSnapshot } from '@/features/chat/interactions/SessionInteractions';
 import { formatLastReply, formatSessionSnapshot } from '@/features/chat/session-messaging/formatSessionSnapshot';
 import { setSessionReasoningSelection } from '@/features/chat/sessions/sessionSettings';
 import { throwIfAborted } from '@/utils/abort';
@@ -39,6 +40,17 @@ export interface ClientSendOptions {
   readonly text?: string;
   readonly mode?: 'queue' | SessionToolSendMode;
 }
+
+/** A listed session for outside clients: the list tool's row without the caller marker. */
+export type ClientSessionSummary = Omit<SessionToolSessionSummary, 'self'>;
+
+export interface ClientSessionList {
+  readonly sessions: readonly ClientSessionSummary[];
+  readonly truncated?: true;
+}
+
+const CLIENT_LIST_LIMIT_DEFAULT = 50;
+const CLIENT_LIST_LIMIT_MAX = 200;
 
 export interface SessionToolBinding {
   readonly port: ProviderSessionToolPort;
@@ -89,6 +101,39 @@ export class SessionMessagingService {
     });
   }
 
+  /** Sessions most recently active first, like the list tool; archived sessions are omitted. */
+  listSessions(options: { limit?: number } = {}): Promise<ClientSessionList> {
+    const limit = options.limit ?? CLIENT_LIST_LIMIT_DEFAULT;
+    if (!Number.isInteger(limit) || limit < 1 || limit > CLIENT_LIST_LIMIT_MAX) {
+      return Promise.reject(new Error(`"limit" must be an integer from 1 to ${CLIENT_LIST_LIMIT_MAX}.`));
+    }
+    return this.track(this.shutdown.signal, async () => {
+      const { records, truncated } = this.recentSessions(this.deps.getHost().getConversationList(), limit);
+      return { sessions: records.map(record => this.summarize(record)), ...(truncated ? { truncated } : {}) };
+    });
+  }
+
+  /** Rejects when the session does not exist or is archived. */
+  requireSession(sessionId: string): Promise<void> {
+    return this.track(this.shutdown.signal, async signal => { await this.resolve(sessionId, signal); });
+  }
+
+  /** Requests awaiting the user in the session's main transcript; empty when none or not loaded. */
+  getPendingInteractions(sessionId: string): PendingInteractionSnapshot[] {
+    return this.liveModel(sessionId)?.inlinePrompts.listPending() ?? [];
+  }
+
+  answerInteraction(sessionId: string, interactionId: string, answers: AskUserAnswers): Promise<void> {
+    const model = this.liveModel(sessionId);
+    if (!model) return Promise.reject(new Error(`Interaction "${interactionId}" is not awaiting an answer`));
+    return model.inlinePrompts.answer(interactionId, answers);
+  }
+
+  private liveModel(sessionId: string) {
+    const runtime = this.deps.getHost().sessionRuntimes.get(sessionId);
+    return runtime?.conversationId === sessionId ? runtime.peekModel : null;
+  }
+
   /** The last finished turn's final reply as Markdown; empty when none has finished. */
   readLastReply(sessionId: string): Promise<string> {
     return this.track(this.shutdown.signal, async signal => {
@@ -131,27 +176,20 @@ export class SessionMessagingService {
   ): Promise<SessionToolDestinations> {
     const caller = await this.resolve(callerId, signal);
     const host = this.deps.getHost();
-    const activeId = this.deps.getActiveConversationId();
-    let records = host.getConversationList().filter(record => !record.isArchived);
+    let candidates = host.getConversationList();
     if (args.project) {
       const project = host.projects.get(caller.projectId);
       if (!project) throw new Error('This session is not in a project.');
-      records = records.filter(record => record.projectId === project.id);
+      candidates = candidates.filter(record => record.projectId === project.id);
     }
-    records.sort((a, b) => b.lastActivityAt - a.lastActivityAt);
-    const sessions = records.slice(0, args.limit).map((record): SessionToolSessionSummary => {
-      return {
-        sessionId: record.id,
-        title: record.title,
-        provider: record.providerId,
-        status: this.status(record.id),
-        active: record.id === activeId,
-        ...(record.id === callerId ? { self: true as const } : {}),
-      };
-    });
+    const { records, truncated } = this.recentSessions(candidates, args.limit);
+    const sessions = records.map((record): SessionToolSessionSummary => ({
+      ...this.summarize(record),
+      ...(record.id === callerId ? { self: true as const } : {}),
+    }));
     return {
       sessions,
-      ...(records.length > args.limit ? { truncated: true as const } : {}),
+      ...(truncated ? { truncated } : {}),
       ...(args.includeProviders ? { providers: listProviderDestinations(host.getCommittedSettings()) } : {}),
     };
   }
@@ -190,6 +228,21 @@ export class SessionMessagingService {
     return end === null
       ? { conversation, messages: live.messages, running: live.isStreaming }
       : { conversation, messages: live.messages.slice(0, end), running: false };
+  }
+
+  private recentSessions(candidates: readonly ConversationMeta[], limit: number): { records: ConversationMeta[]; truncated?: true } {
+    const records = candidates.filter(record => !record.isArchived).sort((a, b) => b.lastActivityAt - a.lastActivityAt);
+    return { records: records.slice(0, limit), ...(records.length > limit ? { truncated: true as const } : {}) };
+  }
+
+  private summarize(record: ConversationMeta): ClientSessionSummary {
+    return {
+      sessionId: record.id,
+      title: record.title,
+      provider: record.providerId,
+      status: this.status(record.id),
+      active: record.id === this.deps.getActiveConversationId(),
+    };
   }
 
   private status(id: string): SessionToolSessionStatus {

@@ -154,6 +154,26 @@ export class ClaudianViews {
     }
   }
 
+  /**
+   * Shows a session in the focused chat view, else the first one, else a new one at the configured
+   * placement. Focus and reveal follow only when asked; a new view then opens as the active leaf.
+   */
+  async openSession(conversationId: string, options: { focus: boolean }): Promise<void> {
+    const leaves = this.workspace.getLeavesOfType(VIEW_TYPE_CLAUDIAN);
+    let leaf: WorkspaceLeaf | null = this.#getActiveView(leaves)?.leaf ?? leaves[0] ?? null;
+    if (leaf) {
+      await leaf.loadIfDeferred();
+    } else {
+      leaf = this.#getLeafForPlacement(this.getPlacement());
+      if (!leaf) throw new Error('No chat view could be opened');
+      await leaf.setViewState({ type: VIEW_TYPE_CLAUDIAN, active: options.focus });
+    }
+    if (!isClaudianView(leaf.view)) throw new Error('The chat view is not ready');
+    await leaf.view.openSession(conversationId);
+    // Navigation may show the session in the view that already holds it rather than this one.
+    if (options.focus) await this.activateView(this.findConversationAcrossViews(conversationId)?.view.leaf ?? leaf);
+  }
+
   #getExpandedSidebar(leaf: WorkspaceLeaf): { collapse(): void } | null {
     const root = leaf.getRoot();
     const { leftSplit, rightSplit } = this.workspace;

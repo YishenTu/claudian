@@ -4,6 +4,7 @@ import { NativePeer } from '@test/helpers/deepseek/NativePeer';
 import { nativeRequest } from '@test/helpers/deepseek/NativeRequest';
 import { createFeatureHostFixture } from '@test/helpers/FeatureHostFixture';
 import { createChatFeatureHost } from '@test/helpers/features/chat/ChatFeatureHostFixture';
+import { unmodeledChatViews } from '@test/helpers/features/chat/ClaudianAPIViews';
 import { createSessionRuntimePool } from '@test/helpers/features/chat/SessionRuntimePoolHarness';
 import { testDate } from '@test/helpers/testClock';
 import { WSLProcessFixture } from '@test/helpers/WSLProcessFixture';
@@ -61,7 +62,7 @@ async function createWSLWorkspace(vaultPath: string, linuxEnvironment: Record<st
   });
   const service = new SessionMessagingService({ getHost: () => host, getActiveConversationId: () => null, refreshModelControls: () => undefined });
   onTestFinished(() => service.dispose());
-  return { wsl, peer, fixture, workspace, lifecycle, repository, api: createClaudianAPI(service) };
+  return { wsl, peer, fixture, workspace, lifecycle, repository, api: createClaudianAPI(service, unmodeledChatViews) };
 }
 
 const state = (home: string) => ({ schemaVersion: 1, home, profile: 'web', preset: 'claudian' });

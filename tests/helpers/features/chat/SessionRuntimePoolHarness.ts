@@ -6,7 +6,7 @@ const pools: SessionRuntimePool[] = [];
 
 export type RuntimePoolFixtureOptions = Partial<Pick<
   ConstructorParameters<typeof SessionRuntimePool>[0],
-  'onChanged' | 'onSessionSettled' | 'releaseHistory' | 'onError' | 'retainedDetachedSessions'
+  'onChanged' | 'onSessionSettled' | 'onSessionSignal' | 'releaseHistory' | 'onError' | 'retainedDetachedSessions'
 >>;
 
 /** Real session ownership for view fixtures; persistence remains their supplied application port. */
@@ -20,6 +20,7 @@ export function createSessionRuntimePool(
     retainedDetachedSessions: options.retainedDetachedSessions,
     onChanged: options.onChanged ?? (() => undefined),
     ...(options.onSessionSettled ? { onSessionSettled: options.onSessionSettled } : {}),
+    ...(options.onSessionSignal ? { onSessionSignal: options.onSessionSignal } : {}),
     onError: options.onError ?? (() => undefined),
   });
   pools.push(pool);

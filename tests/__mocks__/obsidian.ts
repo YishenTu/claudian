@@ -310,6 +310,8 @@ export class App {
     }),
     setActiveLeaf: vi.fn(),
     revealLeaf: vi.fn(),
+    // No view is active until a test selects one.
+    getActiveViewOfType: vi.fn().mockReturnValue(null),
   });
 }
 

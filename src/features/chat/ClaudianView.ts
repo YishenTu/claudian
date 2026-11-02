@@ -495,6 +495,14 @@ export class ClaudianView extends ItemView implements ZenModeSource {
     };
   }
 
+  /** Shows a session the way the session list does: the wide viewer slot, else a compact tab. */
+  async openSession(conversationId: string): Promise<void> {
+    const tabManager = this.tabManager;
+    if (!tabManager) throw new Error('Chat tabs are unavailable');
+    if (this.layout.isWide) await tabManager.viewerSlot.show(conversationId);
+    else await tabManager.openConversation(conversationId);
+  }
+
   /** New from the view (sidebar New, compact New tab) stays in the shown session's project. */
   async startNewConversation(): Promise<void> {
     if (this.layout.isWide) {

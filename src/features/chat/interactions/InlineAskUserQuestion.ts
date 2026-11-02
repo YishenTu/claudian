@@ -1,4 +1,5 @@
 import type { AskUserAnswers, AskUserQuestionItem, AskUserQuestionOption } from '@/core/types/tools';
+import { askOptionValue, parseAskUserQuestions } from '@/features/chat/interactions/askUserQuestions';
 import { QuestionInteractionState } from '@/features/chat/interactions/QuestionInteractionState';
 import { t } from '@/i18n/i18n';
 
@@ -69,7 +70,7 @@ export class InlineAskUserQuestion {
       this.rootEl.appendChild(this.config.headerEl);
     }
 
-    this.questions = this.parseQuestions();
+    this.questions = parseAskUserQuestions(this.input);
 
     if (this.questions.length === 0) {
       this.#handleResolve(null);
@@ -135,83 +136,6 @@ export class InlineAskUserQuestion {
 
   destroy(): void {
     this.#handleResolve(null);
-  }
-
-  private parseQuestions(): AskUserQuestionItem[] {
-    const raw = this.input.questions;
-    if (!Array.isArray(raw)) return [];
-
-    return (raw as unknown[])
-      .filter(
-        (q): q is {
-          question: string;
-          header?: string;
-          options?: unknown[] | null;
-          multiSelect?: boolean;
-          isOther?: boolean;
-          isSecret?: boolean;
-          id?: string;
-        } => {
-          if (!q || typeof q !== 'object' || Array.isArray(q)) {
-            return false;
-          }
-          const record = q as Record<string, unknown>;
-          return typeof record.question === 'string'
-            && ((Array.isArray(record.options) && record.options.length > 0) || record.isOther === true);
-        },
-      )
-      .map((q, idx) => ({
-        question: q.question,
-        id: typeof (q as Record<string, unknown>).id === 'string' ? (q as Record<string, unknown>).id as string : undefined,
-        header: typeof q.header === 'string' ? q.header.slice(0, 12) : `Q${idx + 1}`,
-        options: this.#deduplicateOptions((q.options ?? []).map((o) => this.#coerceOption(o))),
-        multiSelect: q.multiSelect === true,
-        isOther: q.isOther === true,
-        isSecret: q.isSecret === true,
-      }));
-  }
-
-  #coerceOption(opt: unknown): AskUserQuestionOption {
-    if (typeof opt === 'object' && opt !== null) {
-      const obj = opt as Record<string, unknown>;
-      const label = this.#extractLabel(obj);
-      const description = typeof obj.description === 'string' ? obj.description : '';
-      const value = this.#extractValue(obj, label);
-      return { label, description, ...(value !== label ? { value } : {}) };
-    }
-    return { label: this.#stringifyOptionValue(opt), description: '' };
-  }
-
-  #deduplicateOptions(options: AskUserQuestionOption[]): AskUserQuestionOption[] {
-    const seen = new Set<string>();
-    return options.filter((o) => {
-      const value = this.#getOptionValue(o);
-      if (seen.has(value)) return false;
-      seen.add(value);
-      return true;
-    });
-  }
-
-  #extractLabel(obj: Record<string, unknown>): string {
-    if (typeof obj.label === 'string') return obj.label;
-    if (typeof obj.value === 'string') return obj.value;
-    if (typeof obj.text === 'string') return obj.text;
-    if (typeof obj.name === 'string') return obj.name;
-    return 'Option';
-  }
-
-  #stringifyOptionValue(value: unknown): string {
-    if (typeof value === 'string') return value;
-    if (typeof value === 'number' || typeof value === 'boolean' || typeof value === 'bigint') {
-      return `${value}`;
-    }
-    return 'Option';
-  }
-
-  #extractValue(obj: Record<string, unknown>, fallback: string): string {
-    if (typeof obj.value === 'string') return obj.value;
-    if (typeof obj.id === 'string') return obj.id;
-    return fallback;
   }
 
   #renderTabBar(): void {
@@ -294,7 +218,7 @@ export class InlineAskUserQuestion {
     for (let optIdx = 0; optIdx < q.options.length; optIdx++) {
       const option = q.options[optIdx];
       const isFocused = optIdx === this.focusedItemIndex;
-      const optionValue = this.#getOptionValue(option);
+      const optionValue = askOptionValue(option);
       const isSelected = selected.has(optionValue);
 
       const row = listEl.createEl('button', { cls: 'claudian-ask-item', attr: { type: 'button', 'aria-label': option.label, 'aria-pressed': String(isSelected) } });
@@ -443,7 +367,7 @@ export class InlineAskUserQuestion {
     const q = this.questions[qIdx];
     const selected = this.state.answers.get(qIdx)!;
     const isMulti = q.multiSelect;
-    const optionValue = this.#getOptionValue(option);
+    const optionValue = askOptionValue(option);
 
     if (isMulti) {
       if (selected.has(optionValue)) {
@@ -495,7 +419,7 @@ export class InlineAskUserQuestion {
 
     for (let i = 0; i < q.options.length; i++) {
       const item = this.currentItems[i];
-      const isSelected = selected.has(this.#getOptionValue(q.options[i]));
+      const isSelected = selected.has(askOptionValue(q.options[i]));
 
       item.toggleClass('is-selected', isSelected);
       item.setAttribute('aria-pressed', String(isSelected));
@@ -735,15 +659,12 @@ export class InlineAskUserQuestion {
     return this.config.showCustomInput && question.isOther === true;
   }
 
-  #getOptionValue(option: AskUserQuestionOption): string {
-    return option.value ?? option.label;
-  }
 
   #getSelectedLabels(idx: number): string[] {
     const selected = this.state.answers.get(idx)!;
     const question = this.questions[idx];
     return question.options
-      .filter(option => selected.has(this.#getOptionValue(option)))
+      .filter(option => selected.has(askOptionValue(option)))
       .map(option => option.label);
   }
 
