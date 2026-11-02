@@ -73,7 +73,7 @@ export interface ChatViewHost extends ChatViewRefreshHost, TabManagerViewHost {
 }
 
 /** Session attachment and lookup; retirement and shutdown stay with the pool's main-owned callers. */
-export type ChatSessionRuntimes = Pick<SessionRuntimePool, 'awaitConversationCreations' | 'acquire' | 'revalidate' | 'ensure' | 'release' | 'get' | 'getAttachment' | 'holdDraft'>;
+export type ChatSessionRuntimes = Pick<SessionRuntimePool, 'awaitConversationCreations' | 'acquire' | 'revalidate' | 'whenRevalidated' | 'ensure' | 'release' | 'get' | 'getAttachment' | 'holdDraft'>;
 
 /** Live project records, their mutations and memory; membership is written through `ConversationLifecycle`. */
 export type ChatProjects = ProjectReader & ProjectMutations & ProjectMemoryOperations;

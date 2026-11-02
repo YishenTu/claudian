@@ -125,6 +125,8 @@ export interface ChatExecutionCoordinatorDeps {
   readonly workingDirectory: string;
   readonly createId: () => string;
   readonly bindSessionTools?: (conversationId: string) => SessionToolBinding;
+  /** Reads the stored binding, which may have advanced since this coordinator bound it. */
+  readonly loadConversationBinding?: (conversationId: string) => Promise<ChatExecutionConversationBinding | null>;
   readonly onRequestedEvent?: (
     event: ProviderExecutionEvent,
     context: ChatExecutionEventContext,
@@ -355,15 +357,7 @@ export class ChatExecutionCoordinator {
     this.#assertAvailable();
     const conversation = this.#requireConversation();
     const current = this.#sessionBinding;
-    if (current && this.#isBindingCurrent(current)) {
-      if (!current.nativeHistoryChanged) return;
-      if (current.session.blocksIdleRelease?.() || this.hasBackgroundWork) {
-        throw new Error('This chat continued outside Claudian while a background task from its earlier session is still running. Stop the task or wait for it to finish, then send again.');
-      }
-      await this.#persistSnapshot(current, current.session.getSnapshot());
-      if (this.#sessionBinding === current) await this.#releaseSessionBinding();
-      return this.#prepareSession();
-    }
+    if (current && this.#isBindingCurrent(current)) return;
     const backend = this.deps.resolveBackend(conversation.providerId);
     if (backend.providerId !== conversation.providerId) {
       throw new Error(
@@ -437,10 +431,12 @@ export class ChatExecutionCoordinator {
     submission: ChatTurnSubmission,
     requestController: AbortController,
   ): Promise<ChatExecutionResult> {
-    const conversation = this.#requireConversation();
+    let conversation: ChatExecutionConversationBinding;
     let binding: SessionBinding;
     let run: ProviderExecutionRun;
     try {
+      await this.#replaceChangedHistorySession();
+      conversation = this.#requireConversation();
       throwIfAborted(requestController.signal, 'Turn cancelled before provider handoff');
       await this.prepare();
       throwIfAborted(requestController.signal, 'Turn cancelled before provider handoff');
@@ -809,6 +805,29 @@ export class ChatExecutionCoordinator {
       binding.nativeHistoryChanged = true;
       await this.#releaseIdleBinding();
     });
+  }
+
+  /**
+   * A session kept for a native task when its history changed is replaced before the next turn, resuming
+   * from the stored binding: the conversation may have gained its native session after this one bound.
+   */
+  async #replaceChangedHistorySession(): Promise<void> {
+    const stale = this.#sessionBinding;
+    if (!stale?.nativeHistoryChanged || !this.#isBindingCurrent(stale)) return;
+    if (stale.session.blocksIdleRelease?.() || this.hasBackgroundWork) {
+      throw new Error('This chat continued outside Claudian while a background task from its earlier session is still running. Stop the task or wait for it to finish, then send again.');
+    }
+    await this.#enqueuePreparation(async () => {
+      if (this.#sessionBinding !== stale) return;
+      await this.#persistSnapshot(stale, stale.session.getSnapshot());
+      if (this.#sessionBinding === stale) await this.#releaseSessionBinding();
+    });
+    const bound = this.#conversation;
+    if (!bound || !this.deps.loadConversationBinding) return;
+    const stored = await this.deps.loadConversationBinding(bound.conversationId);
+    if (stored && this.#conversation === bound && !this.#sessionBinding && stored.providerId === bound.providerId) {
+      this.#conversation = stored;
+    }
   }
 
   async #releaseIdleBinding(isCurrent: () => boolean = () => true): Promise<void> {

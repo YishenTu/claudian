@@ -68,6 +68,11 @@ export interface InputControllerDeps {
   getTabProviderId: () => ProviderId | null;
   /** Returns true if ready. */
   ensureExecutionInitialized: () => Promise<boolean>;
+  /**
+   * A pending check that the shown history is still current, settling after its reload; false drops the
+   * send. Null, so the send stays synchronous, when nothing is pending.
+   */
+  awaitCurrentHistory: () => Promise<boolean> | null;
   builtInCommands: Pick<BuiltInCommandController, 'execute'>;
   /** Captures a review reporter when a terminal provider turn becomes visible. */
   captureReviewableSettlement?: (outcome: TabReviewOutcome) => () => void;
@@ -207,6 +212,8 @@ export class InputController {
         new Notice(t('chat.selectAvailableModel'));
         return;
       }
+      const historyCheck = this.deps.awaitCurrentHistory();
+      if (historyCheck && (!await historyCheck || !this.deps.canStartTurn())) return;
       const result = await this.#dispatchMessage(options);
       queued = result === 'queued';
     } finally {

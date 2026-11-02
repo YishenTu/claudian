@@ -276,6 +276,60 @@ it('refuses a send through a provider session that cannot release yet and replac
   await destroyTab(second);
 });
 
+it('replaces a delayed stale provider session from the conversation binding current at send', async () => {
+  const s = await setupRevisionedSession();
+  s.provider.liveNativeTask = true;
+  await s.detach();
+  s.continueElsewhere();
+  const second = await s.h.attach();
+  // The conversation acquired its native session id after the stale process was bound.
+  const readHistory = vi.mocked(s.h.plugin.getConversationById).getMockImplementation()!;
+  vi.mocked(s.h.plugin.getConversationById).mockImplementation(async id => {
+    const conversation = await readHistory(id);
+    return conversation && { ...conversation, sessionId: 'acquired-after-first-send' };
+  });
+
+  s.provider.liveNativeTask = false;
+  second.controllers.drafts.restore('main', { content: 'Continue from the CLI turn' });
+  const sending = second.controllers.inputController.sendMessage();
+  await waitFor(() => expect(s.h.backend.sessions).toHaveLength(2));
+  expect(s.h.backend.latest.config.resumeSeed?.providerSessionId).toBe('acquired-after-first-send');
+  await waitFor(() => expect(s.h.backend.latest.requests).toHaveLength(1));
+  s.h.backend.latest.complete();
+  await sending;
+  await destroyTab(second);
+});
+
+it('compares a quick reopen against a baseline read still in flight after hydration', async () => {
+  let hostRunning = false;
+  const retryStarted = deferred<void>();
+  const finishRetry = deferred<void>();
+  const native = { revision: 'before' };
+  const h = await setup({ retainedDetachedSessions: 1, readNativeHistoryRevision: async () => {
+    if (!hostRunning) return null;
+    const revision = native.revision;
+    retryStarted.resolve();
+    await finishRetry.promise;
+    return revision;
+  } });
+  const readHistory = vi.mocked(h.plugin.getConversationById).getMockImplementation()!;
+  vi.spyOn(h.plugin, 'getConversationById').mockImplementation(async id => { hostRunning = true; return readHistory(id); });
+  const first = await h.attach();
+  await first.session.runtime.model.ensureExecutionInitialized();
+  const provider = h.backend.latest;
+  await retryStarted.promise;
+  await destroyTab(first);
+  native.revision = 'external';
+  h.setNativeHistory([{ id: 'external', role: 'assistant', content: 'External during the retry', timestamp: testDate().getTime() }]);
+
+  const reopening = h.attach();
+  finishRetry.resolve();
+  const second = await reopening;
+  expect(second.dom.messagesEl.textContent).toContain('External during the retry');
+  expect(provider.disposeCalls).toBe(1);
+  await destroyTab(second);
+});
+
 it.each(['completed', 'pending'] as const)('keeps its own completed turn when reopening with a %s settlement revision read', async settlementRead => {
   let revision = 'before';
   let holdNextRead = false;

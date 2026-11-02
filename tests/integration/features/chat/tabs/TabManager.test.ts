@@ -1089,3 +1089,104 @@ it('reloads an open tab whose native history changed outside Claudian while anot
   expect(manager.getTab('one')).toBe(one);
   expect(one.dom.messagesEl.textContent).toContain('Reply from the CLI');
 });
+
+it('holds a send on a returning tab until its revision check and reload finish', async () => {
+  const at = testDate().getTime();
+  const native = { revision: 'before', messages: [{ id: 'cached', role: 'assistant' as const, content: 'Cached reply', timestamp: at }] };
+  let holdRead = false;
+  const readStarted = deferred<void>();
+  const finishRead = deferred<void>();
+  const plugin = await createPlugin({
+    getConversationById: async id => conversationRecord(id, id === 'one' ? { messages: structuredClone(native.messages) } : {}),
+  }, { readNativeHistoryRevision: async id => {
+    if (id !== 'one') return null;
+    const revision = native.revision;
+    if (holdRead) { holdRead = false; readStarted.resolve(); await finishRead.promise; }
+    return revision;
+  } });
+  const { manager } = await createManager(plugin);
+  await manager.restoreState({ openTabs: ['one', 'two'].map(id => ({ tabId: id, conversationId: id })), activeTabId: 'one' });
+  const one = manager.getTab('one')!;
+  expect(await one.session.runtime.model.ensureExecutionInitialized()).toBe(true);
+  const stale = provider.sessions[0];
+  await manager.switchToTab('two');
+  native.revision = 'after';
+  native.messages = [...native.messages, { id: 'external', role: 'assistant', content: 'Reply from the CLI', timestamp: at }];
+
+  holdRead = true;
+  const switching = manager.switchToTab('one');
+  await readStarted.promise;
+  one.controllers.drafts.restore('main', { content: 'Continue from the CLI turn' });
+  const sending = one.controllers.inputController.sendMessage();
+  await new Promise<void>(resolve => setImmediate(resolve));
+  expect(stale.requests).toHaveLength(0);
+
+  finishRead.resolve();
+  await switching;
+  const fresh = await vi.waitFor(() => {
+    const session = provider.sessions[1];
+    if (!session?.requests.length) throw new Error('The send has not reached a replacement provider session');
+    return session;
+  });
+  expect(stale.requests).toHaveLength(0);
+  expect(stale.disposeCalls).toBe(1);
+  expect(one.dom.messagesEl.textContent).toContain('Reply from the CLI');
+  expect(one.dom.messagesEl.textContent).toContain('Continue from the CLI turn');
+  (await fresh.waitForRun()).complete();
+  await sending;
+});
+
+describe('returning to a tab whose native history changed', () => {
+  async function setupChangedTab(poolOptions: Parameters<typeof createPlugin>[1] = {}) {
+    const at = testDate().getTime();
+    const native = { revision: 'before', messages: [{ id: 'cached', role: 'assistant' as const, content: 'Cached reply', timestamp: at }] };
+    const plugin = await createPlugin({
+      getConversationById: async id => conversationRecord(id, id === 'one' ? { messages: structuredClone(native.messages) } : {}),
+    }, { readNativeHistoryRevision: async id => id === 'one' ? native.revision : null, ...poolOptions });
+    const { manager } = await createManager(plugin);
+    await manager.restoreState({ openTabs: ['one', 'two'].map(id => ({ tabId: id, conversationId: id })), activeTabId: 'one' });
+    const one = manager.getTab('one')!;
+    const continueElsewhere = () => {
+      native.revision = 'after';
+      native.messages = [...native.messages, { id: 'external', role: 'assistant', content: 'Reply from the CLI', timestamp: at }];
+    };
+    const goAwayAndBack = async () => { await manager.switchToTab('two'); await manager.switchToTab('one'); };
+    return { plugin, manager, one, continueElsewhere, goAwayAndBack };
+  }
+
+  it('retries a declined history release on the next return', async () => {
+    let declineNext = true;
+    const t = await setupChangedTab({ releaseHistory: async (_id, canRelease) => {
+      if (declineNext) { declineNext = false; return false; }
+      return canRelease();
+    } });
+    t.continueElsewhere();
+    await t.goAwayAndBack();
+    expect(t.one.dom.messagesEl.textContent).not.toContain('Reply from the CLI');
+
+    await t.goAwayAndBack();
+    expect(t.one.dom.messagesEl.textContent).toContain('Reply from the CLI');
+  });
+
+  it('keeps an unsaved transcript until its save succeeds, then reloads', async () => {
+    const t = await setupChangedTab();
+    const update = vi.mocked(t.plugin.updateConversation);
+    update.mockRejectedValue(new Error('Vault unavailable'));
+    t.one.state.messages = [...t.one.state.messages, { id: 'local', role: 'assistant', content: 'Unsaved local reply', timestamp: testDate().getTime() }];
+    await expect(t.one.session.runtime.model.conversationController.save()).rejects.toThrow('Vault unavailable');
+    update.mockClear();
+    t.continueElsewhere();
+
+    await t.goAwayAndBack();
+    // The refresh retried the dirty save first; it failed again, so the local change stays.
+    expect(update).toHaveBeenCalledWith('one', expect.objectContaining({ messages: expect.arrayContaining([expect.objectContaining({ id: 'local' })]) }));
+    expect(t.one.state.hasPendingConversationSave).toBe(true);
+    expect(t.one.state.messages.some(message => message.id === 'local')).toBe(true);
+    expect(t.one.dom.messagesEl.textContent).not.toContain('Reply from the CLI');
+
+    update.mockResolvedValue(undefined);
+    await t.goAwayAndBack();
+    expect(t.one.state.hasPendingConversationSave).toBe(false);
+    expect(t.one.dom.messagesEl.textContent).toContain('Reply from the CLI');
+  });
+});

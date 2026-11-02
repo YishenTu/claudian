@@ -201,6 +201,7 @@ export class SessionModel {
       isClosing: () => session.isDisposed,
       getSideChatController: () => session.sideChat,
       ensureExecutionInitialized: () => this.ensureExecutionInitialized(),
+      awaitCurrentHistory: () => this.awaitCurrentHistory(),
       captureReviewableSettlement: outcome => this.captureReview(outcome),
     });
     this.events = new SessionEvents({
@@ -335,6 +336,24 @@ export class SessionModel {
       .catch(error => { this.hydrationState = 'failed'; throw error; })
       .finally(() => { this.hydration = null; });
     return this.hydration;
+  }
+
+  /** A send never reaches a session whose history is being checked or reloaded after an outside change. */
+  private awaitCurrentHistory(): Promise<boolean> | null {
+    const id = this.session.conversationId;
+    const check = id ? this.plugin.sessionRuntimes.whenRevalidated(id) : null;
+    return check && this.reloadAfter(check);
+  }
+
+  private async reloadAfter(check: Promise<void>): Promise<boolean> {
+    await check;
+    if (this.session.isDisposed) return false;
+    try {
+      await this.hydrate();
+    } catch {
+      return false;
+    }
+    return !this.session.isDisposed;
   }
 
   async ensureExecutionInitialized(): Promise<boolean> {
