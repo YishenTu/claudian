@@ -291,62 +291,60 @@ describe.skipIf(!available)('native Windows to WSL execution', { timeout: 60_000
     } finally { await launch('rm', ['-rf', root]); }
   });
 
-  // Each shell owns its Linux root; the cases are bound by WSL launches, not CPU.
-  describe.concurrent('login-shell environment capture', () => {
-    for (const shell of shells) it.skipIf(!installedShells.has(shell))(`preserves the real ${shell} environment, argv and protocol stdout`, async () => {
-      const launch = (command: string, args: string[]) => probe(buildTargetLaunchSpec({ target: resolvedTarget, hostCwd, env, command, args }));
-      const root = (await launch('mktemp', ['-d', '/tmp/claudian-shell-XXXXXX']))!.trim();
-      try {
-        const writeFixture = async (behavior: WSLShellBehavior = 'ordinary') => {
-          const files = Object.entries(wslShellFixtureFiles(behavior)).flatMap(([relative, content]) => [`${root}/${relative}`, content]);
-          expect(await launch('/bin/sh', ['-c', 'while [ "$#" -gt 0 ]; do mkdir -p "$(dirname "$1")" && printf "%s" "$2" > "$1" && chmod +x "$1"; shift 2; done', 'fixture', ...files])).not.toBeNull();
-        };
-        await writeFixture();
-        const specFor = (command: string, args: string[], callerEnv: Record<string, string> = {}) => {
-          const spec = buildTargetLaunchSpec({ target: resolvedTarget, hostCwd, env: { ...env, ...callerEnv }, command, args,
-            forwardEnvironment: Object.keys(callerEnv).map(key => ({ key })),
-          });
-          // Choose isolated startup files without changing the distro account.
-          spec.args.splice(spec.args.indexOf('--exec') + 1, 0, '/usr/bin/env',
-            `SHELL=/bin/${shell}`, `HOME=${root}`, `ZDOTDIR=${root}`, `XDG_CONFIG_HOME=${root}/config`,
-            `CLAUDIAN_WSL_TEST_HOME=${root}`, `CLAUDIAN_WSL_TEST_NOISE=${'x'.repeat(20_000)}`);
-          return spec;
-        };
-        const run = (args: string[]) => probe(specFor('test-cli', args));
-        expect((await run(WSL_LITERAL_ARGS))?.split('\0').slice(0, -1)).toEqual(WSL_LITERAL_ARGS);
-        const first = (await run(['--exports']))?.split('\0');
-        const second = (await run(['--exports']))?.split('\0');
-        expect(first?.slice(0, 2)).toEqual(['linux-shell-key', `${root}/codex-home`]);
-        expect(second?.[2]).not.toBe(first?.[2]);
-        expect(await run(['--version'])).toBe('test-cli 1.2.3\n');
-        expect(await run(['--cwd'])).toBe(createExecutionPathMapper(resolvedTarget).toTargetPath(hostCwd));
-        const excludedPathSpec = specFor('test-cli', ['--version']);
-        excludedPathSpec.env = { ...excludedPathSpec.env, PATH: '/usr/bin:/bin', WSLENV: 'PATH/w' };
-        expect(await probe(excludedPathSpec)).toBe('test-cli 1.2.3\n');
-        const callerEnv = { OPENAI_API_KEY: 'caller-key', CODEX_HOME: '/caller-home' };
-        expect((await probe(specFor('test-cli', ['--exports'], callerEnv)))?.split('\0').slice(0, 2))
-          .toEqual(['caller-key', '/caller-home']);
-        for (const behavior of ['read', 'replace', 'background', 'fail'] as const) {
-          await writeFixture(behavior);
-          const spec = specFor('/bin/sh', ['-c', 'IFS= read -r line; sleep 0.3; printf "%s" "$line"']);
-          // A plain spawn proves the descriptor works for every provider spawner.
-          const child = spawn(spec.command, spec.args, { cwd: spec.spawnCwd, env: spec.env, windowsHide: true, windowsVerbatimArguments: spec.windowsVerbatimArguments });
-          let stdout = '';
-          let stderr = '';
-          child.stdout.on('data', chunk => { stdout += String(chunk); });
-          child.stderr.on('data', chunk => { stderr += String(chunk); });
-          const closed = new Promise<number | null>(resolve => child.on('close', resolve));
-          child.stdin.end('{"method":"initialize"}\n');
-          expect(await closed).toBe(0);
-          expect(stdout).toBe('{"method":"initialize"}');
-          expect(stderr.match(/Unable to capture WSL shell environment/g) ?? [], `${shell} ${behavior}: ${stderr}`)
-            .toHaveLength(behavior === 'replace' || behavior === 'fail' ? 1 : 0);
-        }
-        await writeFixture('temp-file');
-        expect(await probe(specFor('/bin/sh', ['-c', 'file=$(cat "$HOME/capture-path"); test ! -e "$file" && cat "$HOME/capture-mode"'])))
-          .toMatch(/^-rw-------/);
+  for (const shell of shells) it.skipIf(!installedShells.has(shell))(`preserves the real ${shell} environment, argv and protocol stdout`, async () => {
+    const launch = (command: string, args: string[]) => probe(buildTargetLaunchSpec({ target: resolvedTarget, hostCwd, env, command, args }));
+    const root = (await launch('mktemp', ['-d', '/tmp/claudian-shell-XXXXXX']))!.trim();
+    try {
+      const writeFixture = async (behavior: WSLShellBehavior = 'ordinary') => {
+        const files = Object.entries(wslShellFixtureFiles(behavior)).flatMap(([relative, content]) => [`${root}/${relative}`, content]);
+        expect(await launch('/bin/sh', ['-c', 'while [ "$#" -gt 0 ]; do mkdir -p "$(dirname "$1")" && printf "%s" "$2" > "$1" && chmod +x "$1"; shift 2; done', 'fixture', ...files])).not.toBeNull();
+      };
+      await writeFixture();
+      const specFor = (command: string, args: string[], callerEnv: Record<string, string> = {}) => {
+        const spec = buildTargetLaunchSpec({ target: resolvedTarget, hostCwd, env: { ...env, ...callerEnv }, command, args,
+          forwardEnvironment: Object.keys(callerEnv).map(key => ({ key })),
+        });
+        // Choose isolated startup files without changing the distro account.
+        spec.args.splice(spec.args.indexOf('--exec') + 1, 0, '/usr/bin/env',
+          `SHELL=/bin/${shell}`, `HOME=${root}`, `ZDOTDIR=${root}`, `XDG_CONFIG_HOME=${root}/config`,
+          `CLAUDIAN_WSL_TEST_HOME=${root}`, `CLAUDIAN_WSL_TEST_NOISE=${'x'.repeat(20_000)}`);
+        return spec;
+      };
+      const run = (args: string[]) => probe(specFor('test-cli', args));
+      expect((await run(WSL_LITERAL_ARGS))?.split('\0').slice(0, -1)).toEqual(WSL_LITERAL_ARGS);
+      const first = (await run(['--exports']))?.split('\0');
+      const second = (await run(['--exports']))?.split('\0');
+      expect(first?.slice(0, 2)).toEqual(['linux-shell-key', `${root}/codex-home`]);
+      expect(second?.[2]).not.toBe(first?.[2]);
+      expect(await run(['--version'])).toBe('test-cli 1.2.3\n');
+      expect(await run(['--cwd'])).toBe(createExecutionPathMapper(resolvedTarget).toTargetPath(hostCwd));
+      const excludedPathSpec = specFor('test-cli', ['--version']);
+      excludedPathSpec.env = { ...excludedPathSpec.env, PATH: '/usr/bin:/bin', WSLENV: 'PATH/w' };
+      expect(await probe(excludedPathSpec)).toBe('test-cli 1.2.3\n');
+      const callerEnv = { OPENAI_API_KEY: 'caller-key', CODEX_HOME: '/caller-home' };
+      expect((await probe(specFor('test-cli', ['--exports'], callerEnv)))?.split('\0').slice(0, 2))
+        .toEqual(['caller-key', '/caller-home']);
+      for (const behavior of ['read', 'replace', 'background', 'fail'] as const) {
+        await writeFixture(behavior);
+        const spec = specFor('/bin/sh', ['-c', 'IFS= read -r line; sleep 0.3; printf "%s" "$line"']);
+        // A plain spawn proves the descriptor works for every provider spawner.
+        const child = spawn(spec.command, spec.args, { cwd: spec.spawnCwd, env: spec.env, windowsHide: true, windowsVerbatimArguments: spec.windowsVerbatimArguments });
+        let stdout = '';
+        let stderr = '';
+        child.stdout.on('data', chunk => { stdout += String(chunk); });
+        child.stderr.on('data', chunk => { stderr += String(chunk); });
+        const closed = new Promise<number | null>(resolve => child.on('close', resolve));
+        child.stdin.end('{"method":"initialize"}\n');
+        expect(await closed).toBe(0);
+        expect(stdout).toBe('{"method":"initialize"}');
+        expect(stderr.match(/Unable to capture WSL shell environment/g) ?? [], `${shell} ${behavior}: ${stderr}`)
+          .toHaveLength(behavior === 'replace' || behavior === 'fail' ? 1 : 0);
+      }
+      await writeFixture('temp-file');
+      expect(await probe(specFor('/bin/sh', ['-c', 'file=$(cat "$HOME/capture-path"); test ! -e "$file" && cat "$HOME/capture-mode"'])))
+        .toMatch(/^-rw-------/);
 
-      } finally { await launch('rm', ['-rf', root]); }
-    });
+    } finally { await launch('rm', ['-rf', root]); }
   });
+
 });
