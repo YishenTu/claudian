@@ -252,7 +252,11 @@ export class InputController {
       ]);
     } finally {
       this.#heldSends.delete(held);
-      if (this.#heldSends.size === 0) this.deps.getInputEl()?.removeAttribute?.('aria-busy');
+      if (this.#heldSends.size === 0) {
+        this.deps.getInputEl()?.removeAttribute?.('aria-busy');
+        // Retention re-examines a session once its held input has gone or come back.
+        this.deps.onWorkChanged?.();
+      }
     }
     if (!refreshed || this.deps.state.currentConversationId !== conversationId || !this.deps.canStartTurn()) {
       if (shouldUseInput) this.deps.drafts.restore('main', original, { merge: true });
@@ -374,6 +378,11 @@ export class InputController {
    * Main input Stop can withdraw: a preparation, or a send held by a history check. Held sends are not
    * session work, so the check that holds them still sees the session idle.
    */
+  /** Main submissions waiting on a history check, holding their captured input. */
+  get hasHeldSends(): boolean {
+    return this.#heldSends.size > 0;
+  }
+
   get hasWithdrawableMainInput(): boolean {
     return this.isPreparingMainTurn || this.#heldSends.size > 0;
   }

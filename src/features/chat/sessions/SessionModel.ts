@@ -245,7 +245,7 @@ export class SessionModel {
    * conversation that can be reattached; nothing can acquire a detached draft again.
    */
   get canEvict(): boolean {
-    return !this.presentation && this.canRefreshHistory;
+    return !this.presentation && this.canRefreshHistory && !this.inputController.hasHeldSends;
   }
 
   /** Nothing but the presentation depends on the loaded history, so it can be read again in place. */
@@ -261,26 +261,31 @@ export class SessionModel {
    * it again, and return to the composer if that fails or the presentation detaches first.
    */
   async refreshHistory(reload: () => Promise<boolean>): Promise<void> {
-    // A reload still waiting for hydration covers this check: that hydration reads the history as it is
-    // then, and the sends it holds go when it completes.
-    if (this.historyReloads.length) return;
+    // A check or reload already pending covers this one: its hydration reads the history as it is then.
+    if (this.historyRefresh) return;
     let settle!: (reloaded: boolean) => void;
     this.inputController.holdForHistoryRefresh(new Promise<boolean>(resolve => { settle = resolve; }));
+    // Registered before the check, so a detach while checking returns the held sends.
+    const refresh = { settle, reloading: false };
+    this.historyRefresh = refresh;
+    let reloaded: boolean;
     try {
-      if (!await reload()) {
-        settle(true);
-        return;
-      }
+      reloaded = await reload();
     } catch (error) {
-      settle(true);
+      this.finishHistoryRefresh(refresh, true);
       throw error;
     }
+    if (!reloaded) {
+      this.finishHistoryRefresh(refresh, true);
+      return;
+    }
+    // The history was released either way; only a still-pending refresh waits for the hydration.
     if (this.hydrationState === 'ready') this.hydrationState = 'idle';
-    this.historyReloads.push(settle);
+    refresh.reloading = true;
   }
 
-  /** Settles the sends held by a reload once the presentation's hydration has run. */
-  private historyReloads: Array<(reloaded: boolean) => void> = [];
+  /** The pending check, or the reload waiting for the presentation's hydration; it settles the held sends. */
+  private historyRefresh: { readonly settle: (reloaded: boolean) => void; reloading: boolean } | null = null;
 
   /**
    * The presentation's activation ended; held sends go only if it left the history loaded. Activation
@@ -288,13 +293,13 @@ export class SessionModel {
    * leave them waiting.
    */
   endHistoryReload(): void {
-    this.finishHistoryReload(this.hydrationState === 'ready');
+    if (this.historyRefresh?.reloading) this.finishHistoryRefresh(this.historyRefresh, this.hydrationState === 'ready');
   }
 
-  private finishHistoryReload(reloaded: boolean): void {
-    const settles = this.historyReloads;
-    this.historyReloads = [];
-    for (const settle of settles) settle(reloaded);
+  private finishHistoryRefresh(refresh: NonNullable<SessionModel['historyRefresh']>, reloaded: boolean): void {
+    if (this.historyRefresh !== refresh) return;
+    this.historyRefresh = null;
+    refresh.settle(reloaded);
   }
 
   /** Applies native permission changes through the same owner as toolbar selections. */
@@ -361,7 +366,7 @@ export class SessionModel {
     this.linkedContentController.unmountInfoRow();
     this.transcript.detach();
     this.presentation = null;
-    this.finishHistoryReload(false);
+    if (this.historyRefresh) this.finishHistoryRefresh(this.historyRefresh, false);
   }
 
   async hydrate(): Promise<void> {
@@ -369,8 +374,16 @@ export class SessionModel {
     if (this.hydration) return this.hydration;
     this.hydrationState = 'loading';
     this.hydration = this.conversationController.loadActive()
-      .then(() => { this.hydrationState = 'ready'; this.session.notifyHydrated(); this.finishHistoryReload(true); })
-      .catch(error => { this.hydrationState = 'failed'; this.finishHistoryReload(false); throw error; })
+      .then(() => {
+        this.hydrationState = 'ready';
+        this.session.notifyHydrated();
+        if (this.historyRefresh?.reloading) this.finishHistoryRefresh(this.historyRefresh, true);
+      })
+      .catch(error => {
+        this.hydrationState = 'failed';
+        if (this.historyRefresh?.reloading) this.finishHistoryRefresh(this.historyRefresh, false);
+        throw error;
+      })
       .finally(() => { this.hydration = null; });
     return this.hydration;
   }

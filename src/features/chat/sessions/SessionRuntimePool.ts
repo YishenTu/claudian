@@ -61,6 +61,8 @@ interface SessionRecord {
   freshness: NativeHistoryFreshness;
   /** The latest baseline read while it is in flight; only it may set the baseline, and checks join it. */
   revisionRead: Promise<void> | null;
+  /** The check started with the session's own main work, which the read after it waits for. */
+  ownWorkCheck: Promise<void> | null;
   /** Every opener joins the complete check, eviction and provider release. */
   revalidation: Promise<void> | null;
   unsubscribe(): void;
@@ -224,16 +226,37 @@ export class SessionRuntimePool {
     return true;
   }
 
-  private observeNativeRevision(record: SessionRecord): void {
+  /** Reads a new baseline, after `before` (a check of what changed before the session's own work). */
+  private observeNativeRevision(record: SessionRecord, before: Promise<void> | null = null): void {
     const id = record.runtime.conversationId;
     if (!id || !this.deps.readNativeHistoryRevision || record.freshness.state === 'stale') return;
-    const read: Promise<void> = this.readNativeRevision(id).then(revision => {
-      if (record.revisionRead !== read || record.freshness.state === 'stale' || this.records.get(record.runtime) !== record) return;
-      record.freshness = revision ? { state: 'current', revision } : { state: 'unknown' };
-    }).finally(() => {
-      if (record.revisionRead === read) record.revisionRead = null;
-    });
+    const isStale = () => record.freshness.state === 'stale';
+    const read: Promise<void> = Promise.resolve(before)
+      .then(() => isStale() ? null : this.readNativeRevision(id))
+      .then(revision => {
+        if (record.revisionRead !== read || isStale() || this.records.get(record.runtime) !== record) return;
+        // A read that cannot answer keeps a known baseline; the next check compares against it.
+        if (revision) record.freshness = { state: 'current', revision };
+      })
+      .finally(() => {
+        if (record.revisionRead === read) record.revisionRead = null;
+      });
     record.revisionRead = read;
+  }
+
+  /**
+   * The read after the session's own work absorbs what that work wrote. A change already made outside
+   * Claudian before the work started must not be absorbed with it, so it is checked for first.
+   */
+  private checkBeforeOwnWork(record: SessionRecord): void {
+    const id = record.runtime.conversationId;
+    const baseline = record.freshness;
+    if (!id || baseline.state !== 'current') return;
+    record.ownWorkCheck = this.readNativeRevision(id).then(revision => {
+      if (record.freshness === baseline && revision && revision !== baseline.revision) {
+        record.freshness = { state: 'stale', reloadRevision: null };
+      }
+    });
   }
 
   private async observeHydratedRevision(record: SessionRecord): Promise<void> {
@@ -275,7 +298,7 @@ export class SessionRuntimePool {
     const record: SessionRecord = {
       runtime, status: readStatus(runtime),
       attachment: null, eviction: null, retired: false, holds: 0, settledWaiters: [], viewedAt: 0,
-      freshness: { state: 'unknown' }, revisionRead: null, revalidation: null,
+      freshness: { state: 'unknown' }, revisionRead: null, ownWorkCheck: null, revalidation: null,
       unsubscribe: () => undefined,
     };
     this.records.set(runtime, record);
@@ -334,7 +357,11 @@ export class SessionRuntimePool {
     // Streaming, usage and presentation changes leave session lists untouched.
     if (promoted || status.isWorking !== previous.isWorking || status.attention !== previous.attention) this.deps.onChanged();
     // Only main work reconciles the cached main transcript and provider context.
-    if (previous.isMainWorking && !status.isMainWorking && status.conversationId) this.observeNativeRevision(record);
+    if (!previous.isMainWorking && status.isMainWorking && status.conversationId) this.checkBeforeOwnWork(record);
+    if (previous.isMainWorking && !status.isMainWorking && status.conversationId) {
+      this.observeNativeRevision(record, record.ownWorkCheck);
+      record.ownWorkCheck = null;
+    }
     if (previous.isWorking && !status.isWorking && status.conversationId) this.deps.onSessionSettled?.(status.conversationId);
     if (!status.isWorking) this.settleWaiters(record, true);
     if (record.retired) {

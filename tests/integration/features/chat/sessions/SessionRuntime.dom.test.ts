@@ -664,6 +664,59 @@ it('keeps a send held by a pending reload when a second refresh of the same mode
   await destroyTab(s.first);
 });
 
+it('returns a send held by a check to the session when its tab closes during the check', async () => {
+  const s = await setupRevisionedSession({ retainedDetachedSessions: 0 });
+  const check = deferred<boolean>();
+  const checking = s.model.refreshHistory(() => check.promise);
+  s.first.controllers.drafts.restore('main', { content: 'Held input' });
+  const sending = s.first.controllers.inputController.sendMessage();
+  await destroyTab(s.first);
+
+  check.resolve(false);
+  await checking;
+  await sending;
+  expect(s.provider.requests).toHaveLength(0);
+  const second = await s.h.attach();
+  expect(second.session.runtime.peekModel).toBe(s.model);
+  expect(second.controllers.drafts.capture('main').content).toBe('Held input');
+  await destroyTab(second);
+});
+
+it('keeps an external change unabsorbed when a send fails before reaching the provider', async () => {
+  const s = await setupRevisionedSession();
+  s.continueElsewhere();
+  const readConversation = vi.mocked(s.h.plugin.getConversationById).getMockImplementation()!;
+  vi.mocked(s.h.plugin.getConversationById).mockImplementation(async id => id === 'conv-1-missing' ? null : readConversation(id));
+  s.first.controllers.drafts.restore('main', { content: 'Compare with @[Missing](claudian-session:conv-1-missing)' });
+  await s.first.controllers.inputController.sendMessage();
+  expect(s.provider.requests).toHaveLength(0);
+  await s.detach();
+
+  const second = await s.h.attach();
+  expect(second.dom.messagesEl.textContent).toContain('Reply from the CLI');
+  await destroyTab(second);
+});
+
+it('keeps the known baseline when the read after its own turn cannot answer', async () => {
+  const native = { revision: 'before', unreadable: false };
+  const s = await setupRevisionedSession({ readNativeHistoryRevision: async () => native.unreadable ? null : native.revision });
+  s.first.controllers.drafts.restore('main', { content: 'Local turn' });
+  const sending = s.first.controllers.inputController.sendMessage();
+  await waitFor(() => expect(s.provider.requests).toHaveLength(1));
+  native.unreadable = true;
+  s.provider.complete();
+  await sending;
+  await waitFor(() => expect(s.reads.at(-1)).toBeNull());
+  native.unreadable = false;
+  s.continueElsewhere();
+  native.revision = 'after external turn';
+  await s.detach();
+
+  const second = await s.h.attach();
+  expect(second.dom.messagesEl.textContent).toContain('Reply from the CLI');
+  await destroyTab(second);
+});
+
 it('revalidates a recipient open in a tab before delivery and reloads it there', async () => {
   const s = await setupRevisionedSession();
   s.continueElsewhere();

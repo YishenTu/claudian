@@ -56,6 +56,7 @@ import {
   correlatePiUserMessages,
   type createPiForkSessionFile,
   findPiSessionFile,
+  followPiLeafAppends,
   getPiConversationBranches,
   getPiTurnStats,
   parsePiSessionContent,
@@ -214,6 +215,8 @@ implements ProviderExecutionSession, SteerableExecutionSession {
   private processKey: string | null = null;
   private readonly kernelSessionTargets = new Set<string>();
   private kernelResumeValidationTarget: string | null = null;
+  /** A kernel resumed by session target has not yet been aligned with the shown turn leaf. */
+  #alignResumedLeaf = false;
   private lifecycleError: Error | null = null;
   private normalizationState: PiEventNormalizationState =
     createPiEventNormalizationState();
@@ -446,7 +449,9 @@ implements ProviderExecutionSession, SteerableExecutionSession {
 
   async #restoreTreeCursor(signal: AbortSignal): Promise<void> {
     const state = getPiState(this.state.providerState);
-    let cursor = state.treeCursor;
+    const alignLeaf = this.#alignResumedLeaf;
+    this.#alignResumedLeaf = false;
+    let cursor = state.treeCursor ?? (alignLeaf ? await this.#resumedLeafCursor(state) : undefined);
     if (!cursor) return;
     if (state.sessionFile) {
       const parsed = await readPiSessionEntries(state.sessionFile);
@@ -458,6 +463,20 @@ implements ProviderExecutionSession, SteerableExecutionSession {
     this.#setProviderStateValue('treeCursor', cursor);
     this.#setOptionalProviderStateValue('leafEntryId', cursor.leafId ?? undefined);
     this.state.bumpRevision();
+  }
+
+  /**
+   * A resumed Pi process continues the session's latest entry. History shows the saved turn leaf unless
+   * the latest entry continues it, so when another Pi client branched away, the process is brought back.
+   */
+  async #resumedLeafCursor(state: ReturnType<typeof getPiState>): Promise<PiTreeCursor | undefined> {
+    const leafId = state.leafEntryId;
+    if (!leafId || !state.sessionFile) return undefined;
+    // Best effort: a transcript the process can resume but this cannot read leaves Pi's own choice.
+    const entries = (await readPiSessionEntries(state.sessionFile).catch(() => null))?.entries;
+    const latest = entries?.at(-1)?.id;
+    if (!entries || !latest || !entries.some(entry => entry.id === leafId) || followPiLeafAppends(entries, leafId) === latest) return undefined;
+    return { targetId: leafId, leafId, appendId: latest };
   }
 
   cancel(): void {
@@ -900,6 +919,7 @@ implements ProviderExecutionSession, SteerableExecutionSession {
     this.#kernelModel = null;
     this.processKey = launchSpec.processKey;
     this.kernelResumeValidationTarget = launchSpec.sessionTarget;
+    this.#alignResumedLeaf = !!launchSpec.sessionTarget;
     this.#replaceKernelSessionTargets(launchSpec.sessionTarget);
     try {
       kernel.start();

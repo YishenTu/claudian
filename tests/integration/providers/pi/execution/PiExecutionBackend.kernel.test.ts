@@ -450,6 +450,43 @@ describe('PiExecutionBackend', () => {
     }
   });
 
+  it.each([
+    { appended: 'branches from an earlier entry', parent: 'u1', restores: true },
+    { appended: 'continues the saved leaf', parent: 'a1', restores: false },
+  ])('resumes the shown turn leaf after restart when another Pi client $appended', async ({ parent, restores }) => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'pi-leaf-resume-'));
+    const sessionFile = path.join(root, 'session.jsonl');
+    const entry = (id: string, parentId: string | null, role: 'user' | 'assistant', text: string) => `${JSON.stringify({
+      type: 'message', id, parentId, message: role === 'user' ? { role, content: text } : { role, content: [{ type: 'text', text }] },
+    })}\n`;
+    await fs.writeFile(sessionFile, JSON.stringify({ type: 'session', id: 'pi-session-1', cwd: root }) + '\n'
+      + entry('u1', null, 'user', 'Hello') + entry('a1', 'u1', 'assistant', 'Hi')
+      + entry('u2', parent, 'user', 'From the CLI') + entry('a2', 'u2', 'assistant', 'CLI reply'));
+    const harness = (await createHarness(createConfig({
+      workingDirectory: root,
+      resumeSeed: { providerSessionId: 'pi-session-1', providerState: { sessionId: 'pi-session-1', sessionFile, leafEntryId: 'a1' } },
+    })));
+    harness.responses.set('get_state', { sessionId: 'pi-session-1', sessionFile });
+    harness.responses.set('claudian_tree', { cancelled: false, leafId: 'a1', sessionId: 'pi-session-1', sessionFile });
+    try {
+      const events = collect(harness.session.execute(createRequest()).events);
+      await waitFor(() => harness.kernels[0]?.requests.some(r => r.type === 'prompt') ?? false);
+      const requests = harness.kernels[0].requests;
+      const restoreIndex = requests.findIndex(r => r.type === 'claudian_tree');
+      const expected = restores
+        ? { operation: 'restore', targetId: 'a1', leafId: 'a1', appendId: 'a2', sessionFile, sessionId: 'pi-session-1' }
+        : null;
+      expect(restoreIndex === -1 ? null : requests[restoreIndex].payload).toEqual(expected);
+      // Restoration, when needed, happens before the prompt reaches the resumed process.
+      expect(restoreIndex).toBeLessThan(requests.findIndex(r => r.type === 'prompt'));
+      completeTurn(harness.kernels[0]);
+      await events;
+    } finally {
+      await harness.session.dispose();
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
   it('uses an isolated no-session kernel for command metadata probes', async () => {
     const responses = new Map<string, unknown>([
       ['get_commands', {
