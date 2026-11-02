@@ -447,13 +447,14 @@ jobs:
           retention-days: 14
 
   build:
-    needs: [typecheck, lint, test, build-artifacts, test-scope, wsl-native]
+    needs: [dependencies, typecheck, lint, test, build-artifacts, test-scope, wsl-native]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Require typecheck, lint, tests and production artifacts
+      - name: Require dependency checks, typecheck, lint, tests and production artifacts
         env:
+          DEPENDENCIES_RESULT: ${{ needs.dependencies.result }}
           TYPECHECK_RESULT: ${{ needs.typecheck.result }}
           LINT_RESULT: ${{ needs.lint.result }}
           TEST_RESULT: ${{ needs.test.result }}
@@ -461,6 +462,7 @@ jobs:
           WSL_RESULT: ${{ needs.wsl-native.result }}
           WSL_REQUIRED: ${{ needs.test-scope.outputs.wsl-windows }}
         run: |
+          test "$DEPENDENCIES_RESULT" = success
           test "$TYPECHECK_RESULT" = success
           test "$LINT_RESULT" = success
           test "$TEST_RESULT" = success
