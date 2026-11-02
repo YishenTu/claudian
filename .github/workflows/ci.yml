@@ -24,7 +24,7 @@ jobs:
       - name: Lint GitHub Actions workflows
         uses: docker://rhysd/actionlint:1.7.12
 
-  lockfile:
+  dependencies:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -44,29 +44,34 @@ jobs:
       - name: Check npm lockfile
         run: npm install --package-lock-only --ignore-scripts && git diff --exit-code package-lock.json
 
-  quality:
+      # npm audit reads the lockfile and needs no installed dependencies.
+      - name: Audit dependencies
+        run: npm audit --audit-level=moderate
+
+  # Typecheck and lint each take most of a runner's time, so they run on separate runners.
+  typecheck:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version-file: .node-version
-          cache: npm
-
-      - name: Install dependencies
-        run: npm ci
+      - name: Set up Node and dependencies
+        uses: ./.github/actions/setup-dependencies
 
       - name: Typecheck
         run: npm run typecheck
 
+  lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node and dependencies
+        uses: ./.github/actions/setup-dependencies
+
       - name: Lint
         run: npm run lint
-
-      - name: Audit dependencies
-        run: npm audit --audit-level=moderate
 
   diff-hygiene:
     if: github.event_name == 'pull_request'
@@ -101,23 +106,44 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: ${{ fromJSON(needs.test-scope.outputs.test-shards) }}
+        # Vitest shards (`1/4`) plus a `scripts` lane for the Node script checks.
+        lane: ${{ fromJSON(needs.test-scope.outputs.test-lanes) }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
+      # Install libfaketime while Node dependencies are restored; the Test step waits for it.
+      - name: Start libfaketime installation
+        run: |
+          # Detach output so the step finishes without waiting for the installation.
+          {
+            (sudo apt-get install -y --no-install-recommends faketime) > "$RUNNER_TEMP/faketime.log" 2>&1
+            echo "$?" > "$RUNNER_TEMP/faketime.status"
+          } > /dev/null 2>&1 &
+
+      - name: Set up Node and dependencies
+        uses: ./.github/actions/setup-dependencies
+
+      # Vitest orders files with recorded durations longest-first; without them it orders by
+      # file size, so a slow suite can start last. Each lane prefers its own latest snapshot, and
+      # durations merge into each newer one.
+      # Shard membership hashes file paths and does not depend on these results.
+      - name: Restore Vitest file durations
+        if: matrix.lane != 'scripts'
+        uses: actions/cache/restore@v4
         with:
-          node-version-file: .node-version
-          cache: npm
+          path: node_modules/.vite/vitest
+          key: vitest-results-${{ matrix.lane }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            vitest-results-${{ matrix.lane }}-
+            vitest-results-
 
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Install libfaketime
-        run: sudo apt-get install -y --no-install-recommends faketime
+      - name: Wait for libfaketime
+        timeout-minutes: 2
+        run: |
+          until [ -f "$RUNNER_TEMP/faketime.status" ]; do sleep 0.2; done
+          if [ "$(cat "$RUNNER_TEMP/faketime.status")" != 0 ]; then cat "$RUNNER_TEMP/faketime.log"; exit 1; fi
 
       # Run about three years ahead so a test that depends on today's date fails here, not on the day its fixture expires.
       - name: Test
@@ -130,11 +156,22 @@ jobs:
           # A relative offset needs no shared ticking clock.
           FAKETIME_DISABLE_SHM: '1'
           TEST_SELECTION: ${{ needs.test-scope.outputs.test-files }}
-          SCRIPT_SELECTION: ${{ matrix.shard == '2/2' && '[]' || needs.test-scope.outputs.script-tests }}
-          TEST_SHARD: ${{ matrix.shard }}
+          SCRIPT_SELECTION: ${{ needs.test-scope.outputs.script-tests }}
+          TEST_LANE: ${{ matrix.lane }}
         run: |
-          mkdir -p test-results
-          faketime -m -f +1100d npm run test -- --selection "$TEST_SELECTION" --script-selection "$SCRIPT_SELECTION" --shard="$TEST_SHARD" --maxWorkers=3 --reporter=default --reporter=json --outputFile=test-results/vitest.json
+          if [ "$TEST_LANE" = scripts ]; then
+            faketime -m -f +1100d npm run test -- --selection '[]' --script-selection "$SCRIPT_SELECTION"
+          else
+            mkdir -p test-results
+            faketime -m -f +1100d npm run test -- --selection "$TEST_SELECTION" --script-selection '[]' --shard="$TEST_LANE" --maxWorkers=4 --reporter=default --reporter=json --outputFile=test-results/vitest.json
+          fi
+
+      - name: Save Vitest file durations
+        if: always() && matrix.lane != 'scripts' && steps.tests.outcome != 'skipped' && hashFiles('node_modules/.vite/vitest/**/results.json') != ''
+        uses: actions/cache/save@v4
+        with:
+          path: node_modules/.vite/vitest
+          key: vitest-results-${{ matrix.lane }}-${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: Show interrupted test progress
         if: always() && steps.tests.outcome != 'success'
@@ -148,7 +185,7 @@ jobs:
         run: node scripts/summarize-vitest-results.mjs test-results/vitest.json test-results/timings
 
       - name: Upload test timings
-        if: always() && steps.tests.outcome != 'skipped' && needs.test-scope.outputs.test-files != '[]'
+        if: always() && steps.tests.outcome != 'skipped' && matrix.lane != 'scripts'
         uses: actions/upload-artifact@v7
         with:
           name: vitest-timings-${{ strategy.job-index }}
@@ -163,7 +200,7 @@ jobs:
     timeout-minutes: 10
     outputs:
       test-files: ${{ steps.scope.outputs.test-files }}
-      test-shards: ${{ steps.scope.outputs.test-shards }}
+      test-lanes: ${{ steps.scope.outputs.test-lanes }}
       script-tests: ${{ steps.scope.outputs.script-tests }}
       cross-platform-tests: ${{ steps.scope.outputs.cross-platform-tests }}
       pi-windows: ${{ steps.scope.outputs.pi-windows }}
@@ -171,19 +208,22 @@ jobs:
       has-tests: ${{ steps.scope.outputs.has-tests }}
       cross-platform: ${{ steps.scope.outputs.cross-platform }}
     steps:
+      # Selection diffs trees only, so file contents outside HEAD are never fetched.
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          filter: blob:none
 
+      # Release tags select the full suite without the dependency graph.
       - name: Setup Node
+        if: startsWith(github.ref, 'refs/tags/')
         uses: actions/setup-node@v4
         with:
           node-version-file: .node-version
-          cache: npm
 
-      - name: Install dependencies
+      - name: Set up Node and dependencies
         if: ${{ !startsWith(github.ref, 'refs/tags/') }}
-        run: npm ci
+        uses: ./.github/actions/setup-dependencies
 
       - name: Select affected tests and platform checks
         id: scope
@@ -381,14 +421,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version-file: .node-version
-          cache: npm
-
-      - name: Install dependencies
-        run: npm ci
+      - name: Set up Node and dependencies
+        uses: ./.github/actions/setup-dependencies
 
       - name: Validate release version
         if: startsWith(github.ref, 'refs/tags/')
@@ -413,20 +447,24 @@ jobs:
           retention-days: 14
 
   build:
-    needs: [quality, test, build-artifacts, test-scope, wsl-native]
+    needs: [dependencies, typecheck, lint, test, build-artifacts, test-scope, wsl-native]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Require quality, tests and production artifacts
+      - name: Require dependency checks, typecheck, lint, tests and production artifacts
         env:
-          QUALITY_RESULT: ${{ needs.quality.result }}
+          DEPENDENCIES_RESULT: ${{ needs.dependencies.result }}
+          TYPECHECK_RESULT: ${{ needs.typecheck.result }}
+          LINT_RESULT: ${{ needs.lint.result }}
           TEST_RESULT: ${{ needs.test.result }}
           BUILD_RESULT: ${{ needs.build-artifacts.result }}
           WSL_RESULT: ${{ needs.wsl-native.result }}
           WSL_REQUIRED: ${{ needs.test-scope.outputs.wsl-windows }}
         run: |
-          test "$QUALITY_RESULT" = success
+          test "$DEPENDENCIES_RESULT" = success
+          test "$TYPECHECK_RESULT" = success
+          test "$LINT_RESULT" = success
           test "$TEST_RESULT" = success
           test "$BUILD_RESULT" = success
           if [ "$WSL_REQUIRED" = true ]; then
