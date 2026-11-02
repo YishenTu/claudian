@@ -5,24 +5,41 @@ import { fileURLToPath } from 'node:url';
 
 import suites from './testSuites.cjs';
 
+const docsTest = 'tests/unit/docs/Documentation.test.ts';
+// Each group runs as its own wsl-native matrix job.
+export const wslTestGroups = [
+  { name: 'shared', maxWorkers: 3, tests: [
+    'tests/integration/core/process/execution-target/ClaudeWSL.windows.test.ts',
+    'tests/integration/core/process/execution-target/WSLExecution.windows.test.ts',
+    'tests/integration/core/process/execution-target/WSLSessionToolRelay.windows.test.ts',
+    'tests/integration/providers/opencode/runtime/OpencodeWSL.windows.test.ts',
+    'tests/integration/providers/codex/runtime/CodexWSL.windows.test.ts',
+    'tests/integration/providers/grok/runtime/GrokWSL.windows.test.ts',
+  ] },
+  // DeepSeek's launch probes use the production 5s process-probe deadline, which concurrent WSL1 suites can exceed.
+  { name: 'deepseek', maxWorkers: 1, tests: ['tests/integration/providers/deepseek/runtime/DeepSeekWSLHost.windows.test.ts'] },
+];
+export const wslTests = wslTestGroups.flatMap(group => group.tests);
 const fullSelection = {
   testFiles: null, scriptTests: null, crossPlatformTests: null,
-  crossPlatform: true, piWindows: true, wslWindows: true,
+  crossPlatform: true, piWindows: true, wslWindows: true, wslGroups: wslTestGroups,
+  build: true, dependencies: true, workflows: true,
 };
-const docsTest = 'tests/unit/docs/Documentation.test.ts';
-export const wslTests = [
-  'tests/integration/core/process/execution-target/ClaudeWSL.windows.test.ts',
-  'tests/integration/core/process/execution-target/WSLExecution.windows.test.ts',
-  'tests/integration/core/process/execution-target/WSLSessionToolRelay.windows.test.ts',
-  'tests/integration/providers/deepseek/runtime/DeepSeekWSLHost.windows.test.ts',
-  'tests/integration/providers/opencode/runtime/OpencodeWSL.windows.test.ts',
-  'tests/integration/providers/codex/runtime/CodexWSL.windows.test.ts',
-  'tests/integration/providers/grok/runtime/GrokWSL.windows.test.ts',
-];
 const piTest = 'tests/integration/providers/pi/runtime/PiSubprocess.windows.test.ts';
-const isDocumentation = file => file.endsWith('.md') || file.startsWith('docs/');
+// ci.yml mirrors this list as paths-ignore, so changes limited to these paths skip CI entirely.
+// Node's `**` skips dot directories while GitHub's does not, so `.github/*.md` is listed explicitly.
+export const documentationPaths = ['**/*.md', '.github/*.md', '.github/ISSUE_TEMPLATE/**', 'assets/**', 'docs/**', 'LICENSE'];
+const isDocumentation = file => documentationPaths.some(pattern => path.posix.matchesGlob(file, pattern));
 const isVitestTest = file => /^tests\/(?:unit|integration)\/.*\.test\.ts$/.test(file);
 const isGraphInput = file => /^(?:src|tests)\/.*\.(?:[cm]?[jt]sx?|json)$/.test(file);
+// Repository automation (`.github/`) is never bundled; ci.yml itself is a global input.
+const isAutomation = file => file.startsWith('.github/');
+const isWorkflow = file => file.startsWith('.github/workflows/');
+const isBuildInput = file => !isDocumentation(file) && !isAutomation(file) && !file.startsWith('tests/')
+  && !/^scripts\/.*\.test\.mjs$/.test(file) && file !== 'eslint.config.mjs';
+// Inputs to the lockfile parity check; other manifest and lockfile edits already select everything.
+const dependencyInputs = new Set(['scripts/check-lockfile-parity.mjs']);
+const architectureTest = 'scripts/check-architecture-boundaries.test.mjs';
 
 // Runtime imports drive related selection; declarations supply non-import edges.
 const { fileConsumers } = suites;
@@ -31,7 +48,7 @@ const scriptConsumers = new Map(suites.scriptTests.flatMap(file => [
   [file, file], [file.replace('.test.mjs', '.mjs'), file],
 ]));
 const globalInputs = new Set([
-  'src/main.ts', 'tests/setupWindow.ts', 'scripts/ciTestSelection.mjs',
+  'src/main.ts', 'tests/setupWindow.ts', 'scripts/ciTestSelection.mjs', '.github/workflows/ci.yml',
   'scripts/run-tests.js', 'scripts/run-vitest.js', 'scripts/run-cross-platform-tests.js',
   'scripts/testSuites.cjs', 'scripts/testDeclarations.cjs', 'scripts/list-related-tests.mjs', 'scripts/vitestMetadataReporter.mjs',
 ]);
@@ -40,17 +57,27 @@ export function selectCiTests({ changes, relatedTests, eventName }) {
   if (!['pull_request', 'push'].includes(eventName)) return { ...fullSelection };
   const files = new Set(relatedTests);
   const scripts = new Set();
+  let wslProvisioning = false;
   for (const { status, path: file } of changes) {
-    if (status === 'D' && !isVitestTest(file) && !isDocumentation(file)) return { ...fullSelection };
+    if (globalInputs.has(file)) return { ...fullSelection };
+    if (status === 'D' && !isVitestTest(file) && !isDocumentation(file) && !isAutomation(file)) return { ...fullSelection };
     if (file.startsWith('tests/fixtures/') && !isDocumentation(file)
       && !file.endsWith('.json') && !fileConsumers.some(([pattern]) => matchesInput(file, pattern))) return { ...fullSelection };
-    if (globalInputs.has(file)) return { ...fullSelection };
     if (isVitestTest(file)) {
       if (status !== 'D') files.add(file);
     } else if (isDocumentation(file)) {
       files.add(docsTest);
     } else if (scriptConsumers.has(file)) {
       scripts.add(scriptConsumers.get(file));
+    } else if (isWorkflow(file)) {
+      // The architecture check validates npm commands invoked by every workflow.
+      scripts.add(architectureTest);
+    } else if (file.startsWith('.github/wsl/')) {
+      wslProvisioning = true;
+    } else if (file.startsWith('.github/codeql/')) {
+      // Only the scheduled CodeQL workflow reads its configuration.
+    } else if (file === 'eslint.config.mjs') {
+      scripts.add('scripts/check-eslint-config.test.mjs');
     } else if (!isGraphInput(file) && !fileConsumers.some(([pattern]) => matchesInput(file, pattern))) {
       return { ...fullSelection };
     }
@@ -58,7 +85,7 @@ export function selectCiTests({ changes, relatedTests, eventName }) {
       scripts.add('scripts/testDeclarations.test.mjs');
     }
     if (/^(?:src\/.*\.[jt]sx?|tests\/.*\.ts|.*\/(?:AGENTS|CLAUDE)\.md|AGENTS\.md|CLAUDE\.md)$/.test(file)) {
-      scripts.add('scripts/check-architecture-boundaries.test.mjs');
+      scripts.add(architectureTest);
     }
   }
   for (const file of [...changes.map(change => change.path), ...relatedTests]) {
@@ -72,13 +99,20 @@ export function selectCiTests({ changes, relatedTests, eventName }) {
   const testFiles = [...files];
   const crossPlatformTests = suites.crossPlatformTests.filter(file => files.has(file));
   const piWindows = files.has(piTest);
+  const wslGroups = wslTestGroups
+    .map(group => ({ ...group, tests: wslProvisioning ? group.tests : group.tests.filter(file => files.has(file)) }))
+    .filter(group => group.tests.length > 0);
   return {
     testFiles, scriptTests: [...scripts], crossPlatformTests,
     crossPlatform: crossPlatformTests.length > 0 || piWindows
       || scripts.has('scripts/ciTestSelection.test.mjs') || scripts.has('scripts/run-tests.test.mjs')
       || changes.some(change => change.path === 'scripts/testDeclarations.test.mjs'),
     piWindows,
-    wslWindows: wslTests.some(file => files.has(file)),
+    wslWindows: wslGroups.length > 0,
+    wslGroups,
+    build: changes.some(change => isBuildInput(change.path)),
+    dependencies: changes.some(change => dependencyInputs.has(change.path)),
+    workflows: changes.some(change => isWorkflow(change.path)),
   };
 }
 
@@ -147,6 +181,10 @@ function main() {
     `pi-windows=${selection.piWindows}`,
     `wsl-windows=${selection.wslWindows}`,
     `has-tests=${lanes.length > 0}`,
+    `wsl-groups=${JSON.stringify(selection.wslGroups)}`,
+    `build=${selection.build}`,
+    `dependencies=${selection.dependencies}`,
+    `workflows=${selection.workflows}`,
   ].join('\n');
   if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, `${output}\n`);
   console.log(output);
