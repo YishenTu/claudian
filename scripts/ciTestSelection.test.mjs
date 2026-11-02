@@ -5,7 +5,9 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { pathToFileURL } from 'node:url';
 
-import { ciTestLanes, selectCiTests, selectRelatedCiTests, wslTests } from './ciTestSelection.mjs';
+import { parse } from 'yaml';
+
+import { ciTestLanes, documentationPaths, selectCiTests, selectRelatedCiTests, wslTestGroups, wslTests } from './ciTestSelection.mjs';
 
 const prompt = 'tests/unit/core/prompt/mainAgent.systemPrompt.test.ts';
 const panel = 'tests/integration/features/chat/ClaudianView.test.ts';
@@ -260,6 +262,7 @@ for (const [name, selector] of [
             crossPlatform: true,
             piWindows: false,
             wslWindows: false,
+            wslGroups: [], build: false, dependencies: false, workflows: false,
           });
         });
       }
@@ -270,6 +273,7 @@ for (const [name, selector] of [
     const full = {
       testFiles: null, scriptTests: null, crossPlatformTests: null,
       crossPlatform: true, piWindows: true, wslWindows: true,
+      wslGroups: wslTestGroups, build: true, dependencies: true, workflows: true,
     };
     for (const eventName of ['pull_request', 'push']) {
       for (const changes of [
@@ -391,6 +395,7 @@ test('the CI entry point handles real Git ranges, renames, missing bases and rel
     const edited = git('rev-parse', 'HEAD');
     assert.deepEqual(scope(edited)['test-files'], ['tests/unit/value.test.ts']);
     assert.deepEqual(scope(edited)['test-lanes'], ['1/1', 'scripts']);
+    assert.deepEqual([scope(edited).build, scope(edited).dependencies, scope(edited).workflows, scope(edited)['wsl-groups']], [true, false, false, []]);
     assert.deepEqual(scope(edited, { GITHUB_EVENT_NAME: 'pull_request' })['test-files'], ['tests/unit/value.test.ts']);
     renameSync(path.join(root, 'tests/unit/value.test.ts'), path.join(root, 'tests/unit/renamed.test.ts'));
     git('add', '.'); git('commit', '-m', 'Rename test');
@@ -414,6 +419,7 @@ test('the CI entry point handles real Git ranges, renames, missing bases and rel
       const full = scope(deleted, overrides);
       assert.equal(full['test-files'], null);
       assert.deepEqual(full['test-lanes'], ['1/4', '2/4', '3/4', '4/4', 'scripts']);
+      assert.deepEqual([full.build, full.dependencies, full.workflows, full['wsl-groups']], [true, true, true, wslTestGroups]);
     }
     // Release scope must work before dependency installation, without invoking Vitest.
     writeFileSync(path.join(root, 'scripts/run-vitest.js'), "throw new Error('Vitest is unavailable');");
@@ -590,13 +596,107 @@ test('WSL native job follows shared dependencies and provider users but skips un
 });
 
 
-test('registered WSL suites exactly match the wsl-native CI invocation', () => {
-  const workflow = readFileSync(new URL('../.github/workflows/ci.yml', import.meta.url), 'utf8');
-  const job = workflow.split('  wsl-native:')[1]?.split('  build-artifacts:')[0];
-  assert.ok(job, 'wsl-native job must exist');
-  const invocations = job.split('\n').filter(line => line.trim().startsWith('run: npm run test:unit --'));
-  assert.ok(invocations.length > 0, 'native WSL test invocation must exist');
-  const invoked = invocations.flatMap(line => line.match(/tests\/[^\s]+\.test\.ts/g) ?? []);
-  assert.equal(invoked.length, new Set(invoked).size, 'each WSL suite runs once');
-  assert.deepEqual(new Set(wslTests), new Set(invoked));
+test('documentation-only changes skip the CI workflow and select only the documentation test', () => {
+  const workflow = parse(readFileSync(new URL('../.github/workflows/ci.yml', import.meta.url), 'utf8'));
+  for (const event of ['push', 'pull_request']) {
+    assert.deepEqual(workflow.on[event]['paths-ignore'], documentationPaths, event);
+  }
+  for (const file of ['assets/Preview.png', 'LICENSE', '.github/ISSUE_TEMPLATE/bug_report.yml', '.github/PULL_REQUEST_TEMPLATE.md']) {
+    assert.deepEqual(select([file]).testFiles, [docs], file);
+  }
+  assert.equal(select(['.github/workflows/ci.yml']).testFiles, null);
+});
+
+const jobs = result => ({
+  build: result.build, dependencies: result.dependencies, workflows: result.workflows,
+});
+const noJobs = { build: false, dependencies: false, workflows: false };
+
+test('pipeline jobs run only for the changes they verify', () => {
+  assert.deepEqual(jobs(select(['src/core/prompt/mainAgent.ts'], [prompt])), { ...noJobs, build: true });
+  assert.deepEqual(jobs(select([prompt, 'scripts/run-tests.test.mjs'])), noJobs);
+  assert.deepEqual(jobs(select(['README.md'])), noJobs);
+  assert.deepEqual(jobs(select(['scripts/check-lockfile-parity.mjs'])), { ...noJobs, build: true, dependencies: true });
+  for (const full of [select(['package.json']), select([], [], 'workflow_call')]) {
+    assert.deepEqual(jobs(full), { build: true, dependencies: true, workflows: true });
+  }
+});
+
+test('repository automation and lint configuration select only their own checks', () => {
+  const architecture = 'scripts/check-architecture-boundaries.test.mjs';
+  for (const change of [{ status: 'M', path: '.github/workflows/stale.yml' }, { status: 'D', path: '.github/workflows/stale.yml' }]) {
+    const workflow = select([change]);
+    assert.deepEqual(workflow.testFiles, [], change.status);
+    assert.deepEqual(workflow.scriptTests, [architecture], change.status);
+    assert.equal(workflow.crossPlatform, false, change.status);
+    assert.equal(workflow.wslWindows, false, change.status);
+    assert.deepEqual(jobs(workflow), { ...noJobs, workflows: true }, change.status);
+  }
+  const wsl = select(['.github/wsl/provision-rootfs.sh']);
+  assert.deepEqual([wsl.testFiles, wsl.scriptTests, wsl.crossPlatform, wsl.wslWindows], [[], [], false, true]);
+  assert.deepEqual(jobs(wsl), noJobs);
+  const codeql = select(['.github/codeql/codeql-config.yml']);
+  assert.deepEqual([codeql.testFiles, codeql.scriptTests, codeql.wslWindows], [[], [], false]);
+  assert.deepEqual(jobs(codeql), noJobs);
+  const eslint = select(['eslint.config.mjs']);
+  assert.deepEqual([eslint.testFiles, eslint.scriptTests], [[], ['scripts/check-eslint-config.test.mjs']]);
+  assert.deepEqual(jobs(eslint), noJobs);
+});
+
+test('CI jobs are gated by their selection outputs', () => {
+  const workflow = parse(readFileSync(new URL('../.github/workflows/ci.yml', import.meta.url), 'utf8'));
+  for (const [job, output] of [
+    ['workflow-lint', 'workflows'], ['dependencies', 'dependencies'], ['dependency-review', 'dependencies'],
+    ['build-artifacts', 'build'],
+  ]) {
+    assert.ok(workflow.jobs[job].needs.includes('test-scope'), job);
+    assert.match(workflow.jobs[job].if, new RegExp(`needs\\.test-scope\\.outputs\\.${output} == 'true'`), job);
+    assert.equal(workflow.jobs['test-scope'].outputs[output], `\${{ steps.scope.outputs.${output} }}`, output);
+  }
+});
+
+test('dependency audit runs for every change that triggers CI and gates the build', () => {
+  const workflow = parse(readFileSync(new URL('../.github/workflows/ci.yml', import.meta.url), 'utf8'));
+  const audit = workflow.jobs['dependency-audit'];
+  assert.equal(audit.if, undefined);
+  assert.equal(audit.needs, undefined);
+  assert.ok(audit.steps.some(step => step.run === 'npm audit --audit-level=moderate'));
+  assert.ok(workflow.jobs.build.needs.includes('dependency-audit'));
+  for (const job of ['typecheck', 'lint', 'dependencies']) {
+    assert.equal(workflow.jobs[job].steps.some(step => step.run?.startsWith('npm audit')), false, job);
+  }
+});
+
+test('WSL groups partition the registered suites and isolate the DeepSeek probe', () => {
+  const grouped = wslTestGroups.flatMap(group => group.tests);
+  assert.equal(grouped.length, new Set(grouped).size, 'each WSL suite runs once');
+  assert.deepEqual(new Set(grouped), new Set(wslTests));
+  const deepseek = wslTestGroups.find(group => group.tests.includes('tests/integration/providers/deepseek/runtime/DeepSeekWSLHost.windows.test.ts'));
+  assert.deepEqual([deepseek.tests.length, deepseek.maxWorkers], [1, 1]);
+});
+
+test('WSL runs only the groups and suites a change affects', () => {
+  const codex = 'tests/integration/providers/codex/runtime/CodexWSL.windows.test.ts';
+  const shared = wslTestGroups.find(group => group.tests.includes(codex));
+  const [group, ...others] = select([codex]).wslGroups;
+  assert.deepEqual([group.name, group.maxWorkers, others], [shared.name, shared.maxWorkers, []]);
+  assert.ok(group.tests.includes(codex));
+  assert.ok(group.tests.length < shared.tests.length);
+  assert.deepEqual(select(['.github/wsl/provision-rootfs.sh']).wslGroups, wslTestGroups);
+  assert.deepEqual(select(['package.json']).wslGroups, wslTestGroups);
+  assert.deepEqual(select(['src/features/chat/ClaudianView.ts'], [panel]).wslGroups, []);
+});
+
+test('CI starts independent checks immediately and runs affected WSL groups in parallel', () => {
+  const workflow = parse(readFileSync(new URL('../.github/workflows/ci.yml', import.meta.url), 'utf8'));
+  assert.equal(workflow.jobs.quality, undefined);
+  for (const job of ['typecheck', 'lint', 'dependency-audit', 'test-scope', 'diff-hygiene']) {
+    assert.equal(workflow.jobs[job].needs, undefined, job);
+  }
+  assert.ok(workflow.jobs.typecheck.steps.some(step => step.run === 'npm run typecheck'));
+  assert.ok(workflow.jobs.lint.steps.some(step => step.run === 'npm run lint'));
+  const wsl = workflow.jobs['wsl-native'];
+  assert.equal(wsl.strategy.matrix.include, '${{ fromJSON(needs.test-scope.outputs.wsl-groups) }}');
+  assert.equal(wsl.if, "needs.test-scope.outputs.wsl-windows == 'true'");
+  for (const job of ['typecheck', 'lint']) assert.ok(workflow.jobs.build.needs.includes(job), job);
 });
