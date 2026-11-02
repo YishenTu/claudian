@@ -558,6 +558,50 @@ it('returns a rejected side command submitted during the check to the composer w
   await destroyTab(s.first);
 });
 
+/** Submits `command` while a revision check is held, then types a later draft before the check finishes. */
+async function submitSideCommandDuringCheck(command: string) {
+  const native = { revision: 'before' };
+  const gate = holdableRead(native);
+  const s = await setupRevisionedSession({ readNativeHistoryRevision: gate.read });
+  s.first.state.messages = [
+    { id: 'user', role: 'user', content: 'Parent task', timestamp: testDate().getTime() },
+    { id: 'answer', role: 'assistant', content: 'Parent answer', assistantMessageId: 'checkpoint', timestamp: testDate().getTime() },
+  ];
+  vi.spyOn(ProviderRegistry.getConversationHistoryService('claude'), 'buildForkProviderState').mockResolvedValue({});
+  const readConversation = vi.mocked(s.h.plugin.getConversationById).getMockImplementation()!;
+  vi.mocked(s.h.plugin.getConversationById).mockImplementation(async id => id === 'conv-1-missing' ? null : readConversation(id));
+  const finishRead = gate.holdNext();
+  const checking = s.h.pool.revalidate('conversation', s.h.pool.getAttachment('conversation')!);
+  await gate.held;
+  s.first.controllers.drafts.restore('main', { content: command });
+  const sending = s.first.controllers.inputController.sendMessage();
+  s.first.controllers.drafts.restore('main', { content: '/side later unsent note' });
+  const finishCheck = async () => { finishRead.resolve(); await checking; };
+  return { s, sending, finishCheck };
+}
+
+it('runs a side command held by the check and keeps the later draft', async () => {
+  const { s, sending, finishCheck } = await submitSideCommandDuringCheck('/side first question');
+  const requested = s.h.backend.nextRequest(() => true);
+  await finishCheck();
+  expect((await requested).input).toEqual([{ type: 'text', text: 'first question' }]);
+  s.h.backend.latest.complete();
+  await sending;
+  expect(s.first.controllers.drafts.capture('main').content).toBe('/side later unsent note');
+  await destroyTab(s.first);
+});
+
+it('restores a held side command whose reference fails ahead of the later draft', async () => {
+  const command = '/side first question about @[Missing](claudian-session:conv-1-missing)';
+  const { s, sending, finishCheck } = await submitSideCommandDuringCheck(command);
+  await finishCheck();
+  await sending;
+  const draft = s.first.controllers.drafts.capture('main').content;
+  expect(draft).toContain(command);
+  expect(draft).toContain('/side later unsent note');
+  await destroyTab(s.first);
+});
+
 it('does not absorb external main history changes when only a side chat settles', async () => {
   const s = await setupRevisionedSession();
   s.first.state.messages = [
