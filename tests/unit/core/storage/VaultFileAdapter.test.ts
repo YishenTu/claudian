@@ -657,6 +657,38 @@ describe('VaultFileAdapter', () => {
       expect(await fs.readFile(path.join(vaultPath, '.agents/skills/kept/SKILL.md'), 'utf8')).toBe('original');
       expect(await fs.readdir(path.join(vaultPath, '.agents/skills/kept'))).toEqual(['SKILL.md']);
     });
+
+    it('retries a replacement refused while another process briefly holds the target', async () => {
+      const target = path.join(vaultPath, '.agents/skills/kept/SKILL.md');
+      for (const code of ['EPERM', 'EACCES', 'EBUSY']) {
+        vi.mocked(fs.rename).mockRejectedValueOnce(Object.assign(new Error(`${code}: file in use`), { code }));
+        await files.writeManagedFile('.agents/skills/kept/SKILL.md', `after ${code}`);
+        expect(await fs.readFile(target, 'utf8')).toBe(`after ${code}`);
+      }
+      expect(await fs.readdir(path.dirname(target))).toEqual(['SKILL.md']);
+
+      // Other failures are not locks and surface at once.
+      vi.mocked(fs.rename).mockRejectedValueOnce(Object.assign(new Error('ENOSPC: no space left'), { code: 'ENOSPC' }));
+      await expect(files.writeManagedFile('.agents/skills/kept/SKILL.md', 'full disk'))
+        .rejects.toThrow('Could not write managed resource');
+      expect(await fs.readFile(target, 'utf8')).toBe('after EBUSY');
+      expect(await fs.readdir(path.dirname(target))).toEqual(['SKILL.md']);
+    });
+
+    it('leaves a file untouched when its content is unchanged', async () => {
+      // Sync clients treat each replacement as delete + create, so an unchanged save must not replace the file.
+      const target = path.join(vaultPath, '.claudian/claudian-settings.json');
+      await files.write('.claudian/claudian-settings.json', '{"a":1}');
+      const before = await fs.stat(target);
+
+      await files.write('.claudian/claudian-settings.json', '{"a":1}');
+      await files.writeManagedFile('.claudian/claudian-settings.json', '{"a":1}');
+      expect((await fs.stat(target)).ino).toBe(before.ino);
+
+      await files.write('.claudian/claudian-settings.json', '{"a":2}');
+      expect(await fs.readFile(target, 'utf8')).toBe('{"a":2}');
+      expect((await fs.stat(target)).ino).not.toBe(before.ino);
+    });
   });
 
   describe('managed file moves on desktop', () => {
