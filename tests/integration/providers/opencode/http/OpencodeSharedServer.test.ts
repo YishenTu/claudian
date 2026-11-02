@@ -411,3 +411,22 @@ it('loads a module plugin folder once per shared server and forwards the native 
     expect(response.status).toBe(404);
   } finally { await session.dispose(); await run; await control.dispose(); await f.dispose(); }
 });
+
+it('answers a running-server lookup only after a lease has started its server', async () => {
+  const f = await createFixture();
+  try {
+    const launch = async () => ({ cliPath: f.cli, cwd: f.root, environment: f.environment });
+    // A lease that never sent a request leaves a retained entry whose process was never spawned.
+    await (await f.workspace.serverService.acquire(f.cli, f.root, f.environment)).dispose();
+    await expect(f.workspace.serverService.acquireRunning(launch)).resolves.toBeNull();
+    expect(f.processes()).toHaveLength(0);
+
+    const control = await f.workspace.serverService.acquire(f.cli, f.root, f.environment);
+    expect(await control.request('/fixture/sessions')).toMatchObject({ data: { ids: [] } });
+    await control.dispose();
+    const running = await f.workspace.serverService.acquireRunning(launch);
+    expect(running).not.toBeNull();
+    await running?.dispose();
+    expect(f.processes()).toHaveLength(1);
+  } finally { await f.dispose(); }
+});

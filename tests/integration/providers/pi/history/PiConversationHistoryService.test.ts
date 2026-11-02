@@ -938,3 +938,23 @@ it('parses cursor history records only once per hydration', async () => {
     await fs.rm(dir, { recursive: true, force: true });
   }
 });
+
+it.each([
+  { appended: 'continues the saved leaf', parent: 'a1', shows: ['Hello', 'Hi', 'From the CLI', 'CLI reply'], leaf: 'a2' },
+  { appended: 'branches from an earlier entry', parent: 'u1', shows: ['Hello', 'Hi'], leaf: 'a1' },
+])('follows entries appended outside Claudian only when the saved leaf $appended', async ({ parent, shows, leaf }) => {
+  const dir = await createTempDirectory('pi-appended-');
+  const sessionFile = path.join(dir, 'session.jsonl');
+  const entry = (id: string, parentId: string | null, role: 'user' | 'assistant', text: string) => `${JSON.stringify({
+    type: 'message', id, parentId, message: role === 'user' ? { role, content: text } : { role, content: [{ type: 'text', text }] },
+  })}\n`;
+  await fs.writeFile(sessionFile, entry('u1', null, 'user', 'Hello') + entry('a1', 'u1', 'assistant', 'Hi'));
+  const conversation = createConversation(sessionFile);
+  conversation.providerState!.leafEntryId = 'a1';
+  // The Pi CLI continued the session file Claudian last left at `a1`.
+  await fs.appendFile(sessionFile, entry('u2', parent, 'user', 'From the CLI') + entry('a2', 'u2', 'assistant', 'CLI reply'));
+
+  const history = await new PiConversationHistoryService().hydrateConversationHistory(conversation, null);
+  expect(history.messages?.map(message => message.content)).toEqual(shows);
+  expect(history.providerState?.leafEntryId).toBe(leaf);
+});

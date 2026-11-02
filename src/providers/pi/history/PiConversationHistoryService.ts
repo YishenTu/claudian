@@ -31,6 +31,7 @@ import {
   resolvePiSessionFileHint,
 } from './PiHistoryPathResolver';
 import {
+  followPiLeafAppends,
   type ParsedPiSessionEntries,
   parsePiSessionContent,
   parsePiSessionModel,
@@ -88,7 +89,10 @@ export class PiConversationHistoryService implements ProviderConversationHistory
     try {
       const content = await readPiSessionEntries(sessionFile);
       const cursor = state.treeCursor ? resolvePiTreeCursor(content.entries, state.treeCursor) : undefined;
-      return parsePiSessionModel(content, isPendingFork ? state.forkSource!.resumeAt : cursor ? cursor.leafId : state.leafEntryId);
+      // The same leaf hydration shows: a turn leaf follows turns other Pi clients appended to it.
+      const leafEntryId = cursor ? cursor.leafId
+        : state.leafEntryId ? followPiLeafAppends(content.entries, state.leafEntryId) : state.leafEntryId;
+      return parsePiSessionModel(content, isPendingFork ? state.forkSource!.resumeAt : leafEntryId);
     } catch {
       return null;
     }
@@ -227,13 +231,19 @@ export class PiConversationHistoryService implements ProviderConversationHistory
       try {
         const cursor = source.kind === 'current' && state.treeCursor
           ? resolvePiTreeCursor(content.entries, state.treeCursor) : undefined;
+        // An explicit branch selection keeps its cursor rules; a turn leaf follows turns other Pi clients append.
+        const leafEntryId = !cursor && source.kind === 'current' && source.leafEntryId
+          ? followPiLeafAppends(content.entries, source.leafEntryId) : source.leafEntryId;
         const sourceMessages = parsePiSessionContent(content, {
-          leafEntryId: cursor ? cursor.leafId : source.leafEntryId,
+          leafEntryId: cursor ? cursor.leafId : leafEntryId,
           includeBranches: source.kind === 'current',
           requireLeafEntryId: !!source.leafEntryId || !!state.treeCursor,
           syntheticIdNamespace: source.sessionFile,
         });
         if (source.kind === 'current') readCurrent = true;
+        if (leafEntryId !== source.leafEntryId) {
+          conversation.providerState = { ...conversation.providerState, leafEntryId };
+        }
         if (cursor) {
           conversation.providerState = { ...conversation.providerState, treeCursor: cursor };
           if (cursor.leafId === null) delete conversation.providerState.leafEntryId;

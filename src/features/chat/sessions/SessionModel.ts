@@ -245,9 +245,19 @@ export class SessionModel {
    * conversation that can be reattached; nothing can acquire a detached draft again.
    */
   get canEvict(): boolean {
-    return !this.presentation && !this.hydration && this.titleWork.size === 0 && !this.recovery.hasPendingWork
+    return !this.presentation && this.canRefreshHistory;
+  }
+
+  /** Nothing but the presentation depends on the loaded history, so it can be read again in place. */
+  get canRefreshHistory(): boolean {
+    return !this.hydration && this.titleWork.size === 0 && !this.recovery.hasPendingWork
       && !this.conversationController.hasPendingPersistence && !this.conversationController.hasBranchDraft
       && (!this.composer.hasRecovery || !this.session.conversationId);
+  }
+
+  /** Released history must be read again; the presentation's next hydration renders it. */
+  invalidateHydration(): void {
+    if (this.hydrationState === 'ready') this.hydrationState = 'idle';
   }
 
   /** Applies native permission changes through the same owner as toolbar selections. */

@@ -4,6 +4,7 @@ import { useNextTaskAnimationFrames } from '@test/helpers/dom/animationFrames';
 import { createFeatureHostFixture } from '@test/helpers/FeatureHostFixture';
 import { registerChatTestProvider } from '@test/helpers/features/chat/ChatProviderFixture';
 import { conversationRecord, createManager, createPlugin, deferred, forkRequestFrom, holdHistory, navigationOwner } from '@test/helpers/features/chat/TabManagerIntegrationHarness';
+import { testDate } from '@test/helpers/testClock';
 
 import { ProviderWorkspaceRegistry } from '@/core/providers/ProviderWorkspaceRegistry';
 import type { Conversation } from '@/core/types';
@@ -1067,4 +1068,24 @@ it.each(['close', 'delete'] as const)('discards a restored assembly continuation
   expect(root.querySelectorAll('.claudian-tab-content')).toHaveLength(1);
   expect(manager.getActiveTabId()).toBe('one');
   expect(manager.getTabIdentities().find(tab => tab.id === 'two')?.conversationId).toBe(operation === 'close' ? undefined : null);
+});
+
+it('reloads an open tab whose native history changed outside Claudian while another tab was shown', async () => {
+  const at = testDate().getTime();
+  const native = { revision: 'before', messages: [{ id: 'cached', role: 'assistant' as const, content: 'Cached reply', timestamp: at }] };
+  const plugin = await createPlugin({
+    getConversationById: async id => conversationRecord(id, id === 'one' ? { messages: structuredClone(native.messages) } : {}),
+  }, { readNativeHistoryRevision: async id => id === 'one' ? native.revision : null });
+  const { manager } = await createManager(plugin);
+  await manager.restoreState({ openTabs: ['one', 'two'].map(id => ({ tabId: id, conversationId: id })), activeTabId: 'one' });
+  const one = manager.getTab('one')!;
+  expect(one.dom.messagesEl.textContent).toContain('Cached reply');
+  await manager.switchToTab('two');
+  // The hidden tab stays attached; the user continues its conversation in the CLI meanwhile.
+  native.revision = 'after';
+  native.messages = [...native.messages, { id: 'external', role: 'assistant', content: 'Reply from the CLI', timestamp: at }];
+
+  await manager.switchToTab('one');
+  expect(manager.getTab('one')).toBe(one);
+  expect(one.dom.messagesEl.textContent).toContain('Reply from the CLI');
 });

@@ -180,6 +180,8 @@ interface SessionBinding {
   readonly events: SessionEventStream;
   readonly sessionTools?: SessionToolBinding;
   model?: string;
+  /** Native history changed outside this process; it must be replaced before it handles another turn. */
+  nativeHistoryChanged?: boolean;
 }
 
 interface ActiveExecution {
@@ -352,7 +354,16 @@ export class ChatExecutionCoordinator {
     } while (releases !== this.#bindingReleases);
     this.#assertAvailable();
     const conversation = this.#requireConversation();
-    if (this.#sessionBinding && this.#isBindingCurrent(this.#sessionBinding)) return;
+    const current = this.#sessionBinding;
+    if (current && this.#isBindingCurrent(current)) {
+      if (!current.nativeHistoryChanged) return;
+      if (current.session.blocksIdleRelease?.() || this.hasBackgroundWork) {
+        throw new Error('This chat continued outside Claudian while a background task from its earlier session is still running. Stop the task or wait for it to finish, then send again.');
+      }
+      await this.#persistSnapshot(current, current.session.getSnapshot());
+      if (this.#sessionBinding === current) await this.#releaseSessionBinding();
+      return this.#prepareSession();
+    }
     const backend = this.deps.resolveBackend(conversation.providerId);
     if (backend.providerId !== conversation.providerId) {
       throw new Error(
@@ -787,11 +798,17 @@ export class ChatExecutionCoordinator {
   }
 
   /**
-   * Releases the provider session now if it is idle, so the next send resumes from native history
-   * instead of a process whose context predates changes made outside Claudian.
+   * Native history changed outside Claudian, so the provider process's context predates it. Releases it
+   * now when idle; otherwise (a native task still runs in it) it stays bound for that work, and the next
+   * send replaces it once it can be released, or is refused while it cannot.
    */
-  releaseIfIdle(): Promise<void> {
-    return this.#enqueuePreparation(() => this.#releaseIdleBinding());
+  releaseForChangedHistory(): Promise<void> {
+    return this.#enqueuePreparation(async () => {
+      const binding = this.#sessionBinding;
+      if (!binding) return;
+      binding.nativeHistoryChanged = true;
+      await this.#releaseIdleBinding();
+    });
   }
 
   async #releaseIdleBinding(isCurrent: () => boolean = () => true): Promise<void> {

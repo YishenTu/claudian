@@ -86,7 +86,7 @@ export class OpencodeServerService {
     entry.consumers += 1;
     try {
       const server = await entry.promise;
-      if (!generation.aborted && !entry.retired && !server.close && server.client.isReusable()) return this.lease(entry, server);
+      if (!generation.aborted && !entry.retired && !server.close && server.client.isStarted()) return this.lease(entry, server);
     } catch { /* A failed start is not a running server. */ }
     await this.release(entry);
     return null;

@@ -47,6 +47,11 @@ export class OpencodeHTTPClient {
     return !this.controller.signal.aborted && this.process.getExitState() === null;
   }
 
+  /** A request has started the server process; until then a reusable client has spawned nothing. */
+  isStarted(): boolean {
+    return this.endpoint !== null && this.isReusable();
+  }
+
   async request<T = unknown>(route: string, options: {
     method?: 'GET' | 'POST' | 'PATCH' | 'DELETE'; body?: unknown; signal?: AbortSignal; timeoutMs?: number;
   } = {}): Promise<T> {

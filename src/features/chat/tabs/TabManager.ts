@@ -156,6 +156,12 @@ export class TabManager implements TabManagerInterface {
       ensureWorkspaceServices: (tab, providerId, reason) => (
         this.providerPresence.ensureWorkspaceServices(tab, providerId, reason)
       ),
+      revalidateSession: tab => {
+        const { conversationId } = tab;
+        if (!conversationId) return null;
+        const attachment = plugin.sessionRuntimes.getAttachment(conversationId);
+        return attachment?.runtime === tab.session.runtime ? plugin.sessionRuntimes.revalidate(conversationId, attachment) : null;
+      },
     });
     this.navigation = new TabConversationNavigation({
       plugin,

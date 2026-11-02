@@ -122,38 +122,55 @@ export class SessionRuntimePool {
     const attachment = Object.freeze({ runtime: record.runtime, owner });
     record.attachment = attachment;
     // Read before the presentation hydrates, so a change landing during hydration counts as newer.
-    if (record.nativeRevision === undefined) this.observeNativeRevision(record);
+    if (record.nativeRevision === undefined && !record.nativeRevisionRead) this.observeNativeRevision(record);
     return { acquired: true, attachment };
   }
 
   /**
-   * Before a presentation reattaches a conversation's idle session, drops its cached history and
-   * provider session when native history changed outside Claudian since they last matched it, so the
-   * presentation reloads the history and the next send resumes from it. Null, without yielding, when
-   * there is no idle session with a known revision to check.
+   * Before a presentation shows a conversation's idle session, drops its cached history and provider
+   * session when native history changed outside Claudian since they last matched it, so the history is
+   * read again and the next send resumes from it. Detached sessions are evicted; the presentation that
+   * holds `attachment` keeps its model, whose hydration is reset for the caller to run. A revision that
+   * can no longer be read after one was known counts as changed. Null, without yielding, when there is
+   * nothing to check.
    */
-  revalidate(conversationId: string): Promise<void> | null {
+  revalidate(conversationId: string, attachment?: SessionAttachment): Promise<void> | null {
     const record = this.conversations.get(conversationId);
-    if (record?.revalidation) return record.revalidation;
-    if (!record?.nativeRevision || !this.canEvict(record)) return null;
-    record.revalidation = this.revalidateRecord(conversationId, record)
+    if (!record) return null;
+    if (record.revalidation) return record.revalidation;
+    const hasBaseline = !!record.nativeRevision || (record.nativeRevision === undefined && !!record.nativeRevisionRead);
+    if (!hasBaseline || !this.canRevalidate(record, attachment)) return null;
+    record.revalidation = this.revalidateRecord(conversationId, record, attachment)
       .finally(() => { record.revalidation = null; });
     return record.revalidation;
   }
 
-  private async revalidateRecord(conversationId: string, record: SessionRecord): Promise<void> {
+  private canRevalidate(record: SessionRecord, attachment: SessionAttachment | undefined): boolean {
+    if (!attachment) return this.canEvict(record);
+    const model = record.runtime.peekModel;
+    return this.records.get(record.runtime) === record && !this.closing && record.attachment === attachment
+      && record.runtime.isIdle && !!model && model.canRefreshHistory;
+  }
+
+  private async revalidateRecord(conversationId: string, record: SessionRecord, attachment: SessionAttachment | undefined): Promise<void> {
     const { nativeRevisionRead } = record;
-    // A just-settled turn may still be recording its own writes as the baseline.
+    // The baseline may still be landing: a first read, or a just-settled turn recording its own writes.
     await nativeRevisionRead;
-    if (record.nativeRevisionRead !== nativeRevisionRead || !this.canEvict(record)) return;
+    if (record.nativeRevisionRead !== nativeRevisionRead || !this.canRevalidate(record, attachment)) return;
     const { nativeRevision } = record;
     if (nativeRevision == null) return;
     const current = await this.readNativeRevision(conversationId);
-    if (current === null || current === nativeRevision || record.nativeRevisionRead !== nativeRevisionRead) return;
+    if (current === nativeRevision || record.nativeRevisionRead !== nativeRevisionRead) return;
     await record.eviction;
-    if (!this.canEvict(record)) return;
+    if (!this.canRevalidate(record, attachment)) return;
     record.nativeRevision = undefined;
     record.nativeRevisionRead = null;
+    // Opening the presentation must not fail on it; a session that cannot release stays marked stale.
+    await record.runtime.executionCoordinator.releaseForChangedHistory().catch(error => this.deps.onError(error));
+    if (attachment) {
+      await this.reloadAttached(conversationId, record, attachment);
+      return;
+    }
     record.eviction = this.evict(record, { retain: false }).then(interrupted => {
       record.eviction = null;
       if (interrupted) this.changed(record);
@@ -162,8 +179,20 @@ export class SessionRuntimePool {
       this.deps.onError(error);
     });
     await record.eviction;
-    // Opening the presentation must not fail on it; the next send then resumes the old process.
-    if (this.canEvict(record)) await record.runtime.executionCoordinator.releaseIfIdle().catch(error => this.deps.onError(error));
+  }
+
+  /** Drops the cached history under its presentation, which hydrates it again; the new baseline is read first. */
+  private async reloadAttached(conversationId: string, record: SessionRecord, attachment: SessionAttachment): Promise<void> {
+    const model = record.runtime.peekModel;
+    const eligible = () => this.canRevalidate(record, attachment) && record.runtime.peekModel === model;
+    try {
+      if (!model || !await this.deps.releaseHistory(conversationId, eligible) || !eligible()) return;
+    } catch (error) {
+      this.deps.onError(error);
+      return;
+    }
+    this.observeNativeRevision(record);
+    model.invalidateHydration();
   }
 
   private observeNativeRevision(record: SessionRecord): void {

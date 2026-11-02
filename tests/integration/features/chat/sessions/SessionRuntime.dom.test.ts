@@ -214,6 +214,68 @@ it.each([
   await destroyTab(second);
 });
 
+it('reloads a retained session whose revision can no longer be read after it was known', async () => {
+  // DeepSeek's Host exited, releasing its writer lock to dsh web: the revision is unknown, not unchanged.
+  let hostRunning = true;
+  const s = await setupRevisionedSession({ readNativeHistoryRevision: async () => hostRunning ? 'before' : null });
+  await s.detach();
+  hostRunning = false;
+  s.continueElsewhere();
+
+  const second = await s.h.attach();
+  expect(second.dom.messagesEl.textContent).toContain('Reply from the CLI');
+  expect(s.provider.disposeCalls).toBe(1);
+  await destroyTab(second);
+});
+
+it('compares a quick reopen against the first baseline read still in flight', async () => {
+  const firstRead = deferred<void>();
+  let calls = 0;
+  const native = { revision: 'before' };
+  const s = await setupRevisionedSession({ readNativeHistoryRevision: async () => {
+    const revision = native.revision;
+    if (++calls === 1) await firstRead.promise;
+    return revision;
+  } });
+  await s.detach();
+  native.revision = 'after external turn';
+  s.continueElsewhere();
+
+  const reopening = s.h.attach();
+  firstRead.resolve();
+  const second = await reopening;
+  expect(second.dom.messagesEl.textContent).toContain('Reply from the CLI');
+  expect(s.provider.disposeCalls).toBe(1);
+  await destroyTab(second);
+});
+
+it('refuses a send through a provider session that cannot release yet and replaces it once it can', async () => {
+  const s = await setupRevisionedSession();
+  // A background shell task from the earlier turn keeps the provider process from releasing.
+  s.provider.liveNativeTask = true;
+  await s.detach();
+  s.continueElsewhere();
+
+  const second = await s.h.attach();
+  expect(second.dom.messagesEl.textContent).toContain('Reply from the CLI');
+  expect(s.provider.disposeCalls).toBe(0);
+  second.controllers.drafts.restore('main', { content: 'Continue from the CLI turn' });
+  await second.controllers.inputController.sendMessage();
+  expect(s.provider.requests).toHaveLength(0);
+  expect(s.h.backend.sessions).toHaveLength(1);
+
+  s.provider.liveNativeTask = false;
+  second.controllers.drafts.restore('main', { content: 'Continue from the CLI turn' });
+  const sending = second.controllers.inputController.sendMessage();
+  await waitFor(() => expect(s.h.backend.sessions).toHaveLength(2));
+  expect(s.provider.disposeCalls).toBe(1);
+  expect(s.provider.requests).toHaveLength(0);
+  await waitFor(() => expect(s.h.backend.latest.requests).toHaveLength(1));
+  s.h.backend.latest.complete();
+  await sending;
+  await destroyTab(second);
+});
+
 it.each(['completed', 'pending'] as const)('keeps its own completed turn when reopening with a %s settlement revision read', async settlementRead => {
   let revision = 'before';
   let holdNextRead = false;
@@ -359,7 +421,8 @@ it.each(['token read', 'history eviction', 'provider release'] as const)(
     if ('tab' in other) await destroyTab(other.tab);
     expect(attachedBeforeRelease).toBe(false);
     expect(joined !== null).toBe(true);
-    expect(disposedBeforeRelease).toBe(0);
+    // The stale provider session is released before the history is.
+    expect(disposedBeforeRelease).toBe(phase === 'history eviction' ? 1 : 0);
     expect('tab' in first).toBe(true);
     expect('error' in other).toBe(true);
     expect(transcript).toContain('Reply from the CLI');
