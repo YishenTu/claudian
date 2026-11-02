@@ -35,11 +35,11 @@ const isBuildInput = file => !isDocumentation(file) && !isAutomation(file) && !f
 // Inputs to the lockfile parity check; other manifest and lockfile edits already select everything.
 const dependencyInputs = new Set(['scripts/check-lockfile-parity.mjs']);
 const architectureTest = 'scripts/check-architecture-boundaries.test.mjs';
-// Source whose behavior can differ under WSL: launch, execution target, path mapping, the session-tool relay,
+// Source whose behavior can differ under WSL: launch, execution target, path handling, the session-tool relay,
 // and anything that chooses or reads the installation method. Other source is platform-neutral for WSL.
-const wslSourceReference = /core\/process\/execution-target|core\/providers\/settings\/InstallationSettings|ExecutionTarget|['"]wsl['"]|WSL|wslDistro|installationMethod/;
+const wslSourceReference = /core\/process\/execution-target|core\/providers\/settings\/InstallationSettings|ExecutionTarget|['"]wsl['"]|WSL|wslDistro|installationMethod|[Rr]elay/;
 const isWSLSource = file => {
-  if (/^src\/core\/(?:process|session-tools)\//.test(file) || /wsl/i.test(path.posix.basename(file))) return true;
+  if (/^src\/core\/(?:process|session-tools)\//.test(file) || /wsl|path/i.test(path.posix.basename(file))) return true;
   try {
     return wslSourceReference.test(readFileSync(file, 'utf8'));
   } catch {

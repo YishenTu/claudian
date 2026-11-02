@@ -533,6 +533,15 @@ test('WSL suites run only for changes to WSL-related code or WSL test infrastruc
   }
   assert.ok(select(['src/providers/claude/runtime/customSpawn.ts'], [claude]).wslSuites.includes(claude));
   assert.deepEqual(selectRelatedCiTests({ changes: [{ status: 'M', path: 'src/core/process/execution-target/WSLEnvironment.ts' }] }).wslSuites.includes(wsl), true);
+  // Relay launchers and path owners reach WSL suites through the real dependency graph without naming WSL.
+  for (const [file, suite] of [
+    ['src/providers/opencode/runtime/OpencodeSessionToolsPlugin.ts', opencode],
+    ['src/core/storage/pathContainment.ts', null],
+    ['src/utils/path.ts', null],
+  ]) {
+    const { wslSuites } = selectRelatedCiTests({ changes: [{ status: 'M', path: file }] });
+    assert.ok(suite ? wslSuites.includes(suite) : wslSuites.length > 0, `${file} must select its WSL suites`);
+  }
   // WSL suites, helpers and fixtures change what the native job runs.
   for (const [file, suite] of [
     [wsl, wsl], [relay, relay], [deepseek, deepseek], [opencode, opencode], [codex, codex], [grok, grok], [claude, claude],
