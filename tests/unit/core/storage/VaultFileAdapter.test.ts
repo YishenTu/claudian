@@ -673,6 +673,16 @@ describe('VaultFileAdapter', () => {
         .rejects.toThrow('Could not write managed resource');
       expect(await fs.readFile(target, 'utf8')).toBe('after EBUSY');
       expect(await fs.readdir(path.dirname(target))).toEqual(['SKILL.md']);
+
+      // A lock that outlasts the retries surfaces its last refusal instead of stalling the save.
+      const refusals = Array.from({ length: 5 }, (_, index) => Object.assign(new Error(`locked-${index}`), { code: 'EBUSY' }));
+      for (const refusal of refusals) vi.mocked(fs.rename).mockRejectedValueOnce(refusal);
+      vi.mocked(fs.rename).mockClear();
+      await expect(files.writeManagedFile('.agents/skills/kept/SKILL.md', 'still locked'))
+        .rejects.toMatchObject({ cause: refusals[4] });
+      expect(fs.rename).toHaveBeenCalledTimes(5);
+      expect(await fs.readFile(target, 'utf8')).toBe('after EBUSY');
+      expect(await fs.readdir(path.dirname(target))).toEqual(['SKILL.md']);
     });
 
     it('leaves a file untouched when its content is unchanged', async () => {
