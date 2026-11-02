@@ -1234,13 +1234,11 @@ describe('returning to a tab whose native history changed', () => {
     try {
       const returning = t.manager.switchToTab('one');
       await read.held;
-      expect(t.one.session.runtime.model.isRefreshingHistory).toBe(true);
       await vi.advanceTimersByTimeAsync(NATIVE_REVISION_READ_TIMEOUT_MS);
       await returning;
     } finally {
       vi.useRealTimers();
     }
-    expect(t.one.session.runtime.model.isRefreshingHistory).toBe(false);
     expect(t.one.dom.messagesEl.textContent).toContain('Reply from the CLI');
   });
 

@@ -673,6 +673,26 @@ it('keeps session messages in order when a later one arrives while the first wai
   await destroyTab(s.first);
 });
 
+it('delivers session messages whose recipient reload failed once the history loads on retry', async () => {
+  const s = await setupRevisionedSession();
+  s.continueElsewhere();
+  vi.spyOn(s.h.plugin, 'ensureConversationMetadataLoaded').mockResolvedValue(undefined);
+  vi.mocked(s.h.plugin.getConversationById).mockRejectedValueOnce(new Error('History unavailable'));
+  const requested = s.h.backend.nextRequest(() => true);
+  await s.h.messaging.sendAsUser('conversation', { text: 'FIRST message' });
+  await s.h.messaging.sendAsUser('conversation', { text: 'SECOND message' });
+
+  const request = await requested;
+  expect(JSON.stringify(request.input)).toContain('FIRST message');
+  expect(request.conversationHistory?.map(message => message.content)).toContain('Reply from the CLI');
+  s.h.backend.latest.complete();
+  await waitFor(() => expect(s.h.backend.latest.requests).toHaveLength(2));
+  expect(JSON.stringify(s.h.backend.latest.requests[1].input)).toContain('SECOND message');
+  s.h.backend.latest.complete();
+  await s.runtime.turns.drain();
+  await destroyTab(s.first);
+});
+
 it('revalidates a recipient open in a tab before delivery and reloads it there', async () => {
   const s = await setupRevisionedSession();
   s.continueElsewhere();

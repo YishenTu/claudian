@@ -68,8 +68,8 @@ export interface InputControllerDeps {
   getTabProviderId: () => ProviderId | null;
   /** Returns true if ready. */
   ensureExecutionInitialized: () => Promise<boolean>;
-  /** The shown history is being checked or reloaded after a change outside Claudian. */
-  isRefreshingHistory: () => boolean;
+  /** The shown history is being checked, or reloaded after a change outside Claudian. */
+  historyRefresh: () => 'checking' | 'reloading' | null;
   builtInCommands: Pick<BuiltInCommandController, 'execute'>;
   /** Captures a review reporter when a terminal provider turn becomes visible. */
   captureReviewableSettlement?: (outcome: TabReviewOutcome) => () => void;
@@ -210,7 +210,7 @@ export class InputController {
         return;
       }
       // Main input waits for a reload of changed history; the draft stays for the user to send again.
-      if (this.deps.isRefreshingHistory() && (options?.destination ?? this.deps.drafts.destination) === 'main') {
+      if (this.deps.historyRefresh() && (options?.destination ?? this.deps.drafts.destination) === 'main') {
         new Notice(t('chat.reloadingHistory'));
         return;
       }
@@ -221,9 +221,12 @@ export class InputController {
     }
   }
 
-  /** Mailbox dispatch never reads the composer destination, drafts, or live selections. */
+  /**
+   * Mailbox dispatch never reads the composer destination, drafts, or live selections. A reload does not
+   * block it: dispatch loads the history first, which also retries a failed reload.
+   */
   get canStartSessionMessage(): boolean {
-    return this.deps.canStartTurn() && !this.turns.isActive && !this.queue.message && !this.deps.isRefreshingHistory()
+    return this.deps.canStartTurn() && !this.turns.isActive && !this.queue.message && this.deps.historyRefresh() !== 'checking'
       && !this.preparations.pendingMainAdmission && !this.isPreparingMainTurn
       && !this.deps.conversationController.hasBranchDraft;
   }

@@ -201,7 +201,7 @@ export class SessionModel {
       isClosing: () => session.isDisposed,
       getSideChatController: () => session.sideChat,
       ensureExecutionInitialized: () => this.ensureExecutionInitialized(),
-      isRefreshingHistory: () => this.isRefreshingHistory,
+      historyRefresh: () => this.historyRefresh,
       captureReviewableSettlement: outcome => this.captureReview(outcome),
     });
     this.events = new SessionEvents({
@@ -280,9 +280,6 @@ export class SessionModel {
 
   /** `reloading` lasts until a load of the dropped history succeeds. */
   private historyRefresh: 'checking' | 'reloading' | null = null;
-
-  /** Sends are refused while the shown history is checked or reloaded. */
-  get isRefreshingHistory(): boolean { return this.historyRefresh !== null; }
 
   /** Applies native permission changes through the same owner as toolbar selections. */
   async updatePermissionMode(mode: string): Promise<void> {

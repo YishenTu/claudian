@@ -94,7 +94,7 @@ function createRouting(
     }),
     drafts: harness.drafts,
     getSettings: () => ({ model: 'claude-model', reasoning: 'high', permissionMode: 'normal', serviceTier: 'default' }),
-    conversationController, ensureExecutionInitialized, isRefreshingHistory: () => false, getExecutionCoordinator,
+    conversationController, ensureExecutionInitialized, historyRefresh: () => null, getExecutionCoordinator,
     getInputEl: () => harness.inputEl, getSideChatController: () => harness.controller,
     getTabProviderId: () => 'claude', generateId: () => `main-${++nextId}`,
     getMessagesEl: () => messagesEl, getLinkedContentController: () => linkedContent,
