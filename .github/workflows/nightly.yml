@@ -51,7 +51,7 @@ jobs:
           SCRIPT_SELECTION: ${{ startsWith(matrix.shard, '1/') && 'null' || '[]' }}
         run: |
           worker_args=()
-          if [[ "$RUNNER_OS" == "Windows" ]]; then worker_args=(--maxWorkers=3); fi
+          if [[ "$RUNNER_OS" == "Windows" ]]; then worker_args=(--maxWorkers=4); fi
           npm run test -- --script-selection "$SCRIPT_SELECTION" "${worker_args[@]}" --shard="$TEST_SHARD" --reporter=default --reporter=json --outputFile=test-results/vitest.json
 
       - name: Summarize test timings
