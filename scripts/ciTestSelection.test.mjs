@@ -347,8 +347,8 @@ test('Vitest shards scale with the selection and script checks run in their own 
   assert.deepEqual(ciTestLanes({ testFiles: [], scriptTests: ['scripts/run-tests.test.mjs'] }), ['scripts']);
   assert.deepEqual(ciTestLanes({ testFiles: files(200), scriptTests: [] }), ['1/1']);
   assert.deepEqual(ciTestLanes({ testFiles: files(201), scriptTests: [] }), ['1/2', '2/2']);
-  assert.deepEqual(ciTestLanes({ testFiles: files(5000), scriptTests: [] }), ['1/3', '2/3', '3/3']);
-  assert.deepEqual(ciTestLanes({ testFiles: null, scriptTests: null }), ['1/3', '2/3', '3/3', 'scripts']);
+  assert.deepEqual(ciTestLanes({ testFiles: files(5000), scriptTests: [] }), ['1/4', '2/4', '3/4', '4/4']);
+  assert.deepEqual(ciTestLanes({ testFiles: null, scriptTests: null }), ['1/4', '2/4', '3/4', '4/4', 'scripts']);
 });
 
 test('the CI entry point handles real Git ranges, renames, missing bases and release tags', async () => {
@@ -413,7 +413,7 @@ test('the CI entry point handles real Git ranges, renames, missing bases and rel
     ]) {
       const full = scope(deleted, overrides);
       assert.equal(full['test-files'], null);
-      assert.deepEqual(full['test-lanes'], ['1/3', '2/3', '3/3', 'scripts']);
+      assert.deepEqual(full['test-lanes'], ['1/4', '2/4', '3/4', '4/4', 'scripts']);
     }
     // Release scope must work before dependency installation, without invoking Vitest.
     writeFileSync(path.join(root, 'scripts/run-vitest.js'), "throw new Error('Vitest is unavailable');");

@@ -82,9 +82,9 @@ export function selectCiTests({ changes, relatedTests, eventName }) {
   };
 }
 
-// A full run fills three runners; smaller selections stop adding runners once a shard
+// A full run fills four runners; smaller selections stop adding runners once a shard
 // would hold fewer suites than its fixed setup and Vitest startup cost justify.
-const fullVitestShards = 3;
+const fullVitestShards = 4;
 const suitesPerShard = 200;
 
 // Script checks run on their own runner so they overlap the Vitest shards.
