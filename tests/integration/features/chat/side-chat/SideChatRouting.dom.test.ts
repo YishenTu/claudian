@@ -340,6 +340,26 @@ it('returns sends withdrawn from a history refresh in submission order, ahead of
   expect(routing.mainExecutions).toEqual([]);
 });
 
+it('returns sends held by a failed history refresh in submission order, with their images, ahead of later edits', async () => {
+  const harness = await createHarness();
+  const routing = createRouting(harness);
+  const refresh = deferred<boolean>();
+  routing.controller.holdForHistoryRefresh(refresh.promise);
+  const firstImage: ImageAttachment = { id: 'first-image', name: 'first.png', mediaType: 'image/png', data: 'Zmlyc3Q=', size: 5, source: 'paste' };
+  harness.inputEl.value = 'first';
+  harness.imageContextManager.setImages([firstImage]);
+  const first = routing.controller.sendMessage();
+  harness.inputEl.value = 'second';
+  const second = routing.controller.sendMessage();
+  harness.inputEl.value = 'later draft';
+
+  refresh.resolve(false);
+  await Promise.all([first, second]);
+  expect(harness.inputEl.value).toBe('first\n\nsecond\n\nlater draft');
+  expect(harness.imageContextManager.getAttachedImages()).toEqual([firstImage]);
+  expect(routing.mainExecutions).toEqual([]);
+});
+
 it('keeps unsent side attachments out of a text-only queued main message', async () => {
   const harness = await createHarness();
   const routing = createRouting(harness);

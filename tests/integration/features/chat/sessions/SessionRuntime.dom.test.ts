@@ -683,6 +683,23 @@ it('returns a send held by a check to the session when its tab closes during the
   await destroyTab(second);
 });
 
+it('returns several sends held by a reload to the session in submission order when its tab closes', async () => {
+  const s = await setupRevisionedSession({ retainedDetachedSessions: 0 });
+  await s.model.refreshHistory(async () => true);
+  s.first.controllers.drafts.restore('main', { content: 'first' });
+  const first = s.first.controllers.inputController.sendMessage();
+  s.first.controllers.drafts.restore('main', { content: 'second' });
+  const second = s.first.controllers.inputController.sendMessage();
+  await destroyTab(s.first);
+  await Promise.all([first, second]);
+
+  expect(s.provider.requests).toHaveLength(0);
+  const reopened = await s.h.attach();
+  expect(reopened.session.runtime.peekModel).toBe(s.model);
+  expect(reopened.controllers.drafts.capture('main').content).toBe('first\n\nsecond');
+  await destroyTab(reopened);
+});
+
 it('keeps an external change unabsorbed when a send fails before reaching the provider', async () => {
   const s = await setupRevisionedSession();
   s.continueElsewhere();
