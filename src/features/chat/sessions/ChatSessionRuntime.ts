@@ -31,6 +31,7 @@ export class ChatSessionRuntime {
   private childOwner: SideChatController | null = null;
   private lifetime: 'open' | 'closing' | 'disposed' = 'open';
   private readonly listeners = new Set<() => void>();
+  private readonly hydrationListeners = new Set<() => void>();
   private pendingBackgroundWork = 0;
   private readonly modelWork = new Set<Promise<unknown>>();
   private disposal: Promise<void> | null = null;
@@ -110,6 +111,15 @@ export class ChatSessionRuntime {
   subscribe(listener: () => void): () => void {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
+  }
+
+  subscribeHydrated(listener: () => void): () => void {
+    this.hydrationListeners.add(listener);
+    return () => this.hydrationListeners.delete(listener);
+  }
+
+  notifyHydrated(): void {
+    for (const listener of this.hydrationListeners) listener();
   }
 
   notifyChanged(): void {
@@ -194,9 +204,14 @@ export class ChatSessionRuntime {
   /** Main-destination work already published to the user, excluding detached side work. */
   get hasMainBackgroundWork(): boolean { return this.coordinator.publishedBackgroundWork; }
 
+  /** Main transcript work, excluding the independently owned side chat. */
+  get isMainWorking(): boolean {
+    return this.hasActiveTurn || this.hasMainBackgroundWork || !!this.currentModel?.hasPendingWork;
+  }
+
   /** Any foreground or background work a user can see. */
   get isWorking(): boolean {
-    return this.hasActiveTurn || this.hasMainBackgroundWork || !!this.currentModel?.hasPendingWork || !!this.childOwner?.isWorking;
+    return this.isMainWorking || !!this.childOwner?.isWorking;
   }
 
   /**
@@ -308,6 +323,7 @@ export class ChatSessionRuntime {
     this.currentModel = null;
     this.lifetime = 'disposed';
     this.listeners.clear();
+    this.hydrationListeners.clear();
     const failures = results.filter(result => result.status === 'rejected');
     if (failures.length) throw new AggregateError(failures.map(result => result.reason as unknown), 'Failed to drain session');
   }

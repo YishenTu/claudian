@@ -3,6 +3,7 @@ import * as path from 'node:path';
 
 import type { ExecutionTarget } from '@/core/process/execution-target/types';
 import { copyProviderHistoryState } from '@/core/providers/providerHistory';
+import { readFileRevision } from '@/utils/fileRevision';
 
 import { mergePersistedProviderState } from '../../../core/providers/providerState';
 import type {
@@ -30,6 +31,7 @@ import {
   resolvePiSessionFileHint,
 } from './PiHistoryPathResolver';
 import {
+  followPiLeafAppends,
   type ParsedPiSessionEntries,
   parsePiSessionContent,
   parsePiSessionModel,
@@ -87,7 +89,10 @@ export class PiConversationHistoryService implements ProviderConversationHistory
     try {
       const content = await readPiSessionEntries(sessionFile);
       const cursor = state.treeCursor ? resolvePiTreeCursor(content.entries, state.treeCursor) : undefined;
-      return parsePiSessionModel(content, isPendingFork ? state.forkSource!.resumeAt : cursor ? cursor.leafId : state.leafEntryId);
+      // The same leaf hydration shows: a turn leaf follows turns other Pi clients appended to it.
+      const leafEntryId = cursor ? cursor.leafId
+        : state.leafEntryId ? followPiLeafAppends(content.entries, state.leafEntryId) : state.leafEntryId;
+      return parsePiSessionModel(content, isPendingFork ? state.forkSource!.resumeAt : leafEntryId);
     } catch {
       return null;
     }
@@ -226,13 +231,19 @@ export class PiConversationHistoryService implements ProviderConversationHistory
       try {
         const cursor = source.kind === 'current' && state.treeCursor
           ? resolvePiTreeCursor(content.entries, state.treeCursor) : undefined;
+        // An explicit branch selection keeps its cursor rules; a turn leaf follows turns other Pi clients append.
+        const leafEntryId = !cursor && source.kind === 'current' && source.leafEntryId
+          ? followPiLeafAppends(content.entries, source.leafEntryId) : source.leafEntryId;
         const sourceMessages = parsePiSessionContent(content, {
-          leafEntryId: cursor ? cursor.leafId : source.leafEntryId,
+          leafEntryId: cursor ? cursor.leafId : leafEntryId,
           includeBranches: source.kind === 'current',
           requireLeafEntryId: !!source.leafEntryId || !!state.treeCursor,
           syntheticIdNamespace: source.sessionFile,
         });
         if (source.kind === 'current') readCurrent = true;
+        if (leafEntryId !== source.leafEntryId) {
+          conversation.providerState = { ...conversation.providerState, leafEntryId };
+        }
         if (cursor) {
           conversation.providerState = { ...conversation.providerState, treeCursor: cursor };
           if (cursor.leafId === null) delete conversation.providerState.leafEntryId;
@@ -261,6 +272,25 @@ export class PiConversationHistoryService implements ProviderConversationHistory
 
     conversation.messages = dedupeMessages(messages);
     return conversation;
+  }
+
+  /** Revision of the live session file; previous sessions are frozen and pending forks have none. */
+  async readNativeHistoryRevision(
+    conversation: ProviderHistoryInput,
+    vaultPath: string | null,
+    pathContext?: PiHistoryPathContext,
+  ): Promise<string | null> {
+    if (this.isPendingForkConversation(conversation)) return null;
+    const state = getPiState(conversation.providerState);
+    const sessionId = state.sessionId ?? conversation.sessionId;
+    if (!state.sessionFile && !sessionId) return null;
+    try {
+      if (pathContext) pathContext = await this.contextResolver.resolve(vaultPath, pathContext);
+      const sessionFile = resolvePiSessionFileHint(state.sessionFile, sessionId, vaultPath, pathContext);
+      return sessionFile ? await readFileRevision(sessionFile) : null;
+    } catch {
+      return null;
+    }
   }
 
   /**

@@ -74,7 +74,7 @@ async function setup(poolOptions: RuntimePoolFixtureOptions = {}) {
     activateTab(tab);
     return tab;
   };
-  return { attach, pool, plugin, backend, saves, statusChanges, setNativeHistory: (messages: Conversation['messages']) => { nativeHistory = messages; } };
+  return { attach, pool, plugin, backend, messaging, saves, statusChanges, setNativeHistory: (messages: Conversation['messages']) => { nativeHistory = messages; } };
 }
 
 it('reattaches a held blank draft session, with its selections, to the next presentation', async () => {
@@ -161,6 +161,554 @@ it('keeps a model when history release declines and releases unrelated unowned h
   expect(second.dom.messagesEl.textContent).toContain('Keep this transcript');
   expect(readHistory).not.toHaveBeenCalled();
   await destroyTab(second);
+});
+
+// The user continues a conversation in the provider's own client, which changes its native revision.
+async function setupRevisionedSession(options: RuntimePoolFixtureOptions = {}) {
+  const native = { revision: 'before' };
+  // Each read's result, in call order; a read reports the revision current when it was requested.
+  const reads: Array<string | null> = [];
+  const read = options.readNativeHistoryRevision ?? (async () => native.revision);
+  const h = await setup({ retainedDetachedSessions: 1, ...options, readNativeHistoryRevision: async id => {
+    const revision = read(id);
+    reads.push(await revision);
+    return revision;
+  } });
+  const at = testDate().getTime();
+  const cached = { id: 'cached', role: 'assistant' as const, content: 'Cached reply', timestamp: at };
+  h.setNativeHistory([cached]);
+  const first = await h.attach();
+  const runtime = first.session.runtime;
+  const model = runtime.model;
+  await model.ensureExecutionInitialized();
+  const continueElsewhere = () => {
+    native.revision = 'after external turn';
+    h.setNativeHistory([cached, { id: 'external', role: 'assistant', content: 'Reply from the CLI', timestamp: at }]);
+  };
+  const detach = async () => {
+    await destroyTab(first);
+    await new Promise<void>(resolve => setImmediate(resolve));
+    expect(runtime.peekModel === model).toBe(true);
+  };
+  return { h, native, reads, first, runtime, model, provider: h.backend.latest, continueElsewhere, detach };
+}
+
+it.each([
+  { change: 'none', reloads: false },
+  { change: 'while detached', reloads: true },
+  { change: 'while still shown', reloads: true },
+] as const)('returning to a retained session with native history changed $change reloads: $reloads', async ({ change, reloads }) => {
+  const s = await setupRevisionedSession();
+  if (change === 'while still shown') s.continueElsewhere();
+  await s.detach();
+  if (change === 'while detached') s.continueElsewhere();
+
+  const second = await s.h.attach();
+  // The baseline from attach, then the check on return: the outcome is that comparison's, not a missing baseline's.
+  expect(s.reads).toEqual(['before', reloads ? 'after external turn' : 'before', ...reloads ? ['after external turn'] : []]);
+  expect(second.session.runtime).toBe(s.runtime);
+  expect(s.runtime.peekModel === s.model).toBe(!reloads);
+  expect(second.dom.messagesEl.textContent?.includes('Reply from the CLI')).toBe(reloads);
+  // A stale provider process would answer from context that misses the external turn.
+  expect(s.provider.disposeCalls).toBe(reloads ? 1 : 0);
+  await destroyTab(second);
+});
+
+it('reloads a retained session whose revision can no longer be read after it was known', async () => {
+  // DeepSeek's Host exited, releasing its writer lock to dsh web: the revision is unknown, not unchanged.
+  let hostRunning = true;
+  const s = await setupRevisionedSession({ readNativeHistoryRevision: async () => hostRunning ? 'before' : null });
+  await s.detach();
+  hostRunning = false;
+  s.continueElsewhere();
+
+  const second = await s.h.attach();
+  expect(second.dom.messagesEl.textContent).toContain('Reply from the CLI');
+  expect(s.provider.disposeCalls).toBe(1);
+  await destroyTab(second);
+});
+
+it('compares a quick reopen against the first baseline read still in flight', async () => {
+  const firstRead = deferred<void>();
+  let calls = 0;
+  const native = { revision: 'before' };
+  const s = await setupRevisionedSession({ readNativeHistoryRevision: async () => {
+    const revision = native.revision;
+    if (++calls === 1) await firstRead.promise;
+    return revision;
+  } });
+  await s.detach();
+  native.revision = 'after external turn';
+  s.continueElsewhere();
+
+  const reopening = s.h.attach();
+  firstRead.resolve();
+  const second = await reopening;
+  expect(second.dom.messagesEl.textContent).toContain('Reply from the CLI');
+  expect(s.provider.disposeCalls).toBe(1);
+  await destroyTab(second);
+});
+
+it('refuses a send through a provider session that cannot release yet and replaces it once it can', async () => {
+  const s = await setupRevisionedSession();
+  // A background shell task from the earlier turn keeps the provider process from releasing.
+  s.provider.liveNativeTask = true;
+  await s.detach();
+  s.continueElsewhere();
+
+  const second = await s.h.attach();
+  expect(second.dom.messagesEl.textContent).toContain('Reply from the CLI');
+  expect(s.provider.disposeCalls).toBe(0);
+  second.controllers.drafts.restore('main', { content: 'Continue from the CLI turn' });
+  await second.controllers.inputController.sendMessage();
+  expect(s.provider.requests).toHaveLength(0);
+  expect(s.h.backend.sessions).toHaveLength(1);
+
+  s.provider.liveNativeTask = false;
+  second.controllers.drafts.restore('main', { content: 'Continue from the CLI turn' });
+  const sending = second.controllers.inputController.sendMessage();
+  await waitFor(() => expect(s.h.backend.sessions).toHaveLength(2));
+  expect(s.provider.disposeCalls).toBe(1);
+  expect(s.provider.requests).toHaveLength(0);
+  await waitFor(() => expect(s.h.backend.latest.requests).toHaveLength(1));
+  s.h.backend.latest.complete();
+  await sending;
+  await destroyTab(second);
+});
+
+it('replaces a delayed stale provider session from the conversation binding current at send', async () => {
+  const s = await setupRevisionedSession();
+  s.provider.liveNativeTask = true;
+  await s.detach();
+  s.continueElsewhere();
+  const second = await s.h.attach();
+  // The conversation acquired its native session id after the stale process was bound.
+  const readHistory = vi.mocked(s.h.plugin.getConversationById).getMockImplementation()!;
+  vi.mocked(s.h.plugin.getConversationById).mockImplementation(async id => {
+    const conversation = await readHistory(id);
+    return conversation && { ...conversation, sessionId: 'acquired-after-first-send' };
+  });
+
+  s.provider.liveNativeTask = false;
+  second.controllers.drafts.restore('main', { content: 'Continue from the CLI turn' });
+  const sending = second.controllers.inputController.sendMessage();
+  await waitFor(() => expect(s.h.backend.sessions).toHaveLength(2));
+  expect(s.h.backend.latest.config.resumeSeed?.providerSessionId).toBe('acquired-after-first-send');
+  await waitFor(() => expect(s.h.backend.latest.requests).toHaveLength(1));
+  s.h.backend.latest.complete();
+  await sending;
+  await destroyTab(second);
+});
+
+it('compares a quick reopen against a baseline read still in flight after hydration', async () => {
+  let hostRunning = false;
+  const retryStarted = deferred<void>();
+  const finishRetry = deferred<void>();
+  const native = { revision: 'before' };
+  const h = await setup({ retainedDetachedSessions: 1, readNativeHistoryRevision: async () => {
+    if (!hostRunning) return null;
+    const revision = native.revision;
+    retryStarted.resolve();
+    await finishRetry.promise;
+    return revision;
+  } });
+  const readHistory = vi.mocked(h.plugin.getConversationById).getMockImplementation()!;
+  vi.spyOn(h.plugin, 'getConversationById').mockImplementation(async id => { hostRunning = true; return readHistory(id); });
+  const first = await h.attach();
+  await first.session.runtime.model.ensureExecutionInitialized();
+  const provider = h.backend.latest;
+  await retryStarted.promise;
+  await destroyTab(first);
+  native.revision = 'external';
+  h.setNativeHistory([{ id: 'external', role: 'assistant', content: 'External during the retry', timestamp: testDate().getTime() }]);
+
+  const reopening = h.attach();
+  finishRetry.resolve();
+  const second = await reopening;
+  expect(second.dom.messagesEl.textContent).toContain('External during the retry');
+  expect(provider.disposeCalls).toBe(1);
+  await destroyTab(second);
+});
+
+it.each(['completed', 'pending'] as const)('keeps its own completed turn when reopening with a %s settlement revision read', async settlementRead => {
+  let revision = 'before';
+  let holdNextRead = false;
+  const readStarted = deferred<void>();
+  const finishRead = deferred<void>();
+  const s = await setupRevisionedSession({ readNativeHistoryRevision: async () => {
+    const current = revision;
+    if (holdNextRead) {
+      holdNextRead = false;
+      readStarted.resolve();
+      await finishRead.promise;
+    }
+    return current;
+  } });
+  s.first.controllers.drafts.restore('main', { content: 'Continue' });
+  const sending = s.first.controllers.inputController.sendMessage();
+  await waitFor(() => expect(s.provider.requests).toHaveLength(1));
+  // The provider appends this turn to native history before the turn settles.
+  revision = 'after own turn';
+  holdNextRead = settlementRead === 'pending';
+  s.provider.emitText('Own reply');
+  s.provider.complete();
+  await sending;
+  await waitFor(() => expect(s.runtime.isWorking).toBe(false));
+  if (settlementRead === 'pending') await readStarted.promise;
+  await s.detach();
+
+  // Revalidation starts while the settlement read still holds the old baseline.
+  // Both reads see the same post-turn token: there has been no external write.
+  const reopening = s.h.attach();
+  finishRead.resolve();
+  const second = await reopening;
+  const keptModel = s.runtime.peekModel === s.model;
+  const transcript = second.dom.messagesEl.textContent;
+  const disposals = s.provider.disposeCalls;
+  await destroyTab(second);
+  expect(keptModel).toBe(true);
+  expect(transcript).toContain('Own reply');
+  expect(disposals).toBe(0);
+});
+
+it.each(['completed', 'pending'] as const)('learns an initially unknown native revision after hydration with a %s initial read', async initialRead => {
+  let hostRunning = false;
+  const finishInitialRead = deferred<void>();
+  const hydratedRead = deferred<void>();
+  const native = { revision: 'hydrated' };
+  const h = await setup({ retainedDetachedSessions: 1,
+    readNativeHistoryRevision: async () => {
+      const revision = hostRunning ? native.revision : null;
+      if (revision === null && initialRead === 'pending') await finishInitialRead.promise;
+      if (revision !== null) hydratedRead.resolve();
+      return revision;
+    },
+  });
+  const readHistory = vi.mocked(h.plugin.getConversationById).getMockImplementation()!;
+  vi.spyOn(h.plugin, 'getConversationById').mockImplementation(async id => {
+    hostRunning = true;
+    return readHistory(id);
+  });
+  const first = await h.attach();
+  finishInitialRead.resolve();
+  await first.session.runtime.model.ensureExecutionInitialized();
+  const provider = h.backend.latest;
+  await destroyTab(first);
+  // The baseline is the read hydration started; the external write must come after it.
+  await hydratedRead.promise;
+  native.revision = 'external';
+  h.setNativeHistory([{ id: 'external', role: 'assistant', content: 'External after host startup', timestamp: testDate().getTime() }]);
+
+  const second = await h.attach();
+  expect(second.dom.messagesEl.textContent).toContain('External after host startup');
+  expect(provider.disposeCalls).toBe(1);
+  await destroyTab(second);
+});
+
+it('keeps a known baseline when native history changes during hydration', async () => {
+  let revision = 'before';
+  const h = await setup({ retainedDetachedSessions: 1, readNativeHistoryRevision: async () => revision });
+  const entered = deferred<void>();
+  const finish = deferred<void>();
+  const readHistory = vi.mocked(h.plugin.getConversationById).getMockImplementation()!;
+  vi.mocked(h.plugin.getConversationById).mockImplementationOnce(async id => {
+    const snapshot = await readHistory(id);
+    entered.resolve();
+    await finish.promise;
+    return snapshot;
+  });
+  const opening = h.attach();
+  await entered.promise;
+  revision = 'external';
+  h.setNativeHistory([{ id: 'external', role: 'assistant', content: 'Arrived during hydration', timestamp: testDate().getTime() }]);
+  finish.resolve();
+  const first = await opening;
+  expect(first.dom.messagesEl.textContent).not.toContain('Arrived during hydration');
+  await destroyTab(first);
+  const second = await h.attach();
+  expect(second.dom.messagesEl.textContent).toContain('Arrived during hydration');
+  await destroyTab(second);
+});
+
+it.each(['token read', 'history eviction', 'provider release'] as const)(
+  'concurrent openers wait for the same revalidation during %s', async phase => {
+    const entered = deferred<void>();
+    const finish = deferred<void>();
+    let held = false;
+    let revision = 'before';
+    const barrier = async () => { entered.resolve(); await finish.promise; };
+    const s = await setupRevisionedSession({
+      readNativeHistoryRevision: async () => {
+        if (held && phase === 'token read') { held = false; await barrier(); }
+        return revision;
+      },
+      releaseHistory: async (_id, canRelease) => {
+        if (held && phase === 'history eviction') { held = false; await barrier(); }
+        return canRelease();
+      },
+    });
+    await s.detach();
+    s.continueElsewhere();
+    revision = 'external';
+    if (phase === 'provider release') {
+      // A new snapshot forces release to await the persistence boundary.
+      s.provider.establishChild('native');
+      vi.spyOn(s.h.plugin.executionPersistence, 'persistExecutionSnapshot').mockImplementation(async () => {
+        if (held) { held = false; await barrier(); }
+        return true;
+      });
+    }
+    held = true;
+    const opening = s.h.attach().then(tab => ({ tab }), error => ({ error }));
+    await entered.promise;
+    const joined = s.h.pool.revalidate('conversation');
+    const competing = s.h.attach().then(tab => ({ tab }), error => ({ error }));
+    await new Promise<void>(resolve => setImmediate(resolve));
+    const attachedBeforeRelease = s.h.pool.getAttachment('conversation') !== null;
+    const disposedBeforeRelease = s.provider.disposeCalls;
+    finish.resolve();
+    const [first, other] = await Promise.all([opening, competing]);
+    await joined;
+    const shown = 'tab' in first ? first.tab : 'tab' in other ? other.tab : null;
+    const transcript = shown?.dom.messagesEl.textContent;
+    if ('tab' in first) await destroyTab(first.tab);
+    if ('tab' in other) await destroyTab(other.tab);
+    expect(attachedBeforeRelease).toBe(false);
+    expect(joined !== null).toBe(true);
+    // The stale provider session is released before the history is.
+    expect(disposedBeforeRelease).toBe(phase === 'history eviction' ? 1 : 0);
+    expect('tab' in first).toBe(true);
+    expect('error' in other).toBe(true);
+    expect(transcript).toContain('Reply from the CLI');
+    expect(s.provider.disposeCalls).toBe(1);
+  },
+);
+
+/** A revision read that the test holds once, after the fixture's own reads. */
+function holdableRead(native: { revision: string }) {
+  let hold: ReturnType<typeof deferred<void>> | null = null;
+  const held = deferred<void>();
+  return {
+    held: held.promise,
+    holdNext: () => { const release = deferred<void>(); hold = release; return release; },
+    read: async () => {
+      const revision = native.revision;
+      const current = hold;
+      if (current) { hold = null; held.resolve(); await current.promise; }
+      return revision;
+    },
+  };
+}
+
+it('replaces the provider session on reopen when a busy session skipped its release during the check', async () => {
+  const native = { revision: 'before' };
+  const gate = holdableRead(native);
+  const s = await setupRevisionedSession({ readNativeHistoryRevision: gate.read });
+  s.first.state.messages = [
+    { id: 'user', role: 'user', content: 'Parent task', timestamp: testDate().getTime() },
+    { id: 'answer', role: 'assistant', content: 'Parent answer', assistantMessageId: 'checkpoint', timestamp: testDate().getTime() },
+  ];
+  vi.spyOn(ProviderRegistry.getConversationHistoryService('claude'), 'buildForkProviderState').mockResolvedValue({});
+  s.continueElsewhere();
+  native.revision = 'after external turn';
+  const finishRead = gate.holdNext();
+  const checking = s.h.pool.revalidate('conversation', s.h.pool.getAttachment('conversation')!);
+  await gate.held;
+  const requested = s.h.backend.nextRequest(() => true);
+  const sideSending = s.first.controllers.sideChatController.handleCommandSubmission('Explore the answer', []);
+  await requested;
+  expect(s.runtime.isWorking).toBe(true);
+  finishRead.resolve();
+  await checking;
+  s.h.backend.latest.complete();
+  await sideSending;
+  await s.detach();
+
+  const second = await s.h.attach();
+  expect(second.dom.messagesEl.textContent).toContain('Reply from the CLI');
+  second.controllers.drafts.restore('main', { content: 'Continue from the CLI turn' });
+  const mainRequested = s.h.backend.nextRequest(() => true);
+  const sending = second.controllers.inputController.sendMessage();
+  await mainRequested;
+  expect(s.provider.requests).toHaveLength(0);
+  expect(s.provider.disposeCalls).toBe(1);
+  s.h.backend.latest.complete();
+  await sending;
+  await destroyTab(second);
+});
+
+
+it('does not absorb external main history changes when only a side chat settles', async () => {
+  const s = await setupRevisionedSession();
+  s.first.state.messages = [
+    { id: 'user', role: 'user', content: 'Parent task', timestamp: testDate().getTime() },
+    { id: 'answer', role: 'assistant', content: 'Parent answer', assistantMessageId: 'checkpoint', timestamp: testDate().getTime() },
+  ];
+  vi.spyOn(ProviderRegistry.getConversationHistoryService('claude'), 'buildForkProviderState').mockResolvedValue({});
+  const requested = s.h.backend.nextRequest(() => true);
+  const sending = s.first.controllers.sideChatController.handleCommandSubmission('Explore the answer', []);
+  await requested;
+  expect(s.runtime.isWorking).toBe(true);
+  s.continueElsewhere();
+  s.h.backend.latest.complete();
+  await sending;
+  await s.detach();
+
+  const second = await s.h.attach();
+  expect(second.dom.messagesEl.textContent).toContain('Reply from the CLI');
+  expect(s.provider.disposeCalls).toBe(1);
+  await destroyTab(second);
+});
+
+it.each(['user API', 'session tool'] as const)('revalidates a retained headless recipient before delivery from %s', async entry => {
+  const s = await setupRevisionedSession();
+  await s.detach();
+  s.continueElsewhere();
+  vi.spyOn(s.h.plugin, 'ensureConversationMetadataLoaded').mockResolvedValue(undefined);
+  const recipient = s.h.plugin.getConversationList()[0];
+  vi.spyOn(s.h.plugin, 'getConversationList').mockReturnValue([
+    recipient, { ...recipient, id: 'sender', title: 'Sender' },
+  ]);
+  const requested = s.h.backend.nextRequest(() => true);
+  if (entry === 'user API') await s.h.messaging.sendAsUser('conversation', { text: 'Continue after CLI' });
+  else await s.h.messaging.bindSessionTools('sender').port.send({ sessionId: 'conversation', text: 'Continue after CLI' }, new AbortController().signal);
+  await requested;
+  const provider = s.h.backend.latest;
+  const messages = s.runtime.model.state.messages;
+  provider.complete();
+  await s.runtime.turns.drain();
+  expect(s.provider.disposeCalls).toBe(1);
+  expect(provider).not.toBe(s.provider);
+  expect(messages.some(message => message.content === 'Reply from the CLI')).toBe(true);
+  expect(provider.requests).toHaveLength(1);
+});
+
+
+it('keeps an external change unabsorbed when a send fails before reaching the provider', async () => {
+  const s = await setupRevisionedSession();
+  s.continueElsewhere();
+  const readConversation = vi.mocked(s.h.plugin.getConversationById).getMockImplementation()!;
+  vi.mocked(s.h.plugin.getConversationById).mockImplementation(async id => id === 'conv-1-missing' ? null : readConversation(id));
+  s.first.controllers.drafts.restore('main', { content: 'Compare with @[Missing](claudian-session:conv-1-missing)' });
+  await s.first.controllers.inputController.sendMessage();
+  expect(s.provider.requests).toHaveLength(0);
+  await s.detach();
+
+  const second = await s.h.attach();
+  expect(second.dom.messagesEl.textContent).toContain('Reply from the CLI');
+  await destroyTab(second);
+});
+
+it('keeps an external change unabsorbed when the check at work start cannot read the revision', async () => {
+  const native = { revision: 'before', unreadableReads: 0 };
+  const s = await setupRevisionedSession({ readNativeHistoryRevision: async () => {
+    if (native.unreadableReads === 0) return native.revision;
+    native.unreadableReads--;
+    return null;
+  } });
+  s.continueElsewhere();
+  native.revision = 'after external turn';
+  const readConversation = vi.mocked(s.h.plugin.getConversationById).getMockImplementation()!;
+  vi.mocked(s.h.plugin.getConversationById).mockImplementation(async id => id === 'conv-1-missing' ? null : readConversation(id));
+  // Only the read when the send starts cannot answer; a later read sees the external revision.
+  native.unreadableReads = 1;
+  s.first.controllers.drafts.restore('main', { content: 'Compare with @[Missing](claudian-session:conv-1-missing)' });
+  await s.first.controllers.inputController.sendMessage();
+  await waitFor(() => expect(s.reads.at(-1)).toBeNull());
+  expect(s.provider.requests).toHaveLength(0);
+  await s.detach();
+
+  const second = await s.h.attach();
+  expect(second.dom.messagesEl.textContent).toContain('Reply from the CLI');
+  await destroyTab(second);
+});
+
+it('keeps the known baseline when the read after its own turn cannot answer', async () => {
+  const native = { revision: 'before', unreadable: false };
+  const s = await setupRevisionedSession({ readNativeHistoryRevision: async () => native.unreadable ? null : native.revision });
+  s.first.controllers.drafts.restore('main', { content: 'Local turn' });
+  const sending = s.first.controllers.inputController.sendMessage();
+  await waitFor(() => expect(s.provider.requests).toHaveLength(1));
+  native.unreadable = true;
+  s.provider.complete();
+  await sending;
+  await waitFor(() => expect(s.reads.at(-1)).toBeNull());
+  native.unreadable = false;
+  s.continueElsewhere();
+  native.revision = 'after external turn';
+  await s.detach();
+
+  const second = await s.h.attach();
+  expect(second.dom.messagesEl.textContent).toContain('Reply from the CLI');
+  await destroyTab(second);
+});
+
+
+it('keeps session messages in order when a later one arrives while the first waits for the reload', async () => {
+  const s = await setupRevisionedSession();
+  s.continueElsewhere();
+  vi.spyOn(s.h.plugin, 'ensureConversationMetadataLoaded').mockResolvedValue(undefined);
+  const readConversation = vi.mocked(s.h.plugin.getConversationById).getMockImplementation()!;
+  const loadStarted = deferred<void>();
+  const finishLoad = deferred<void>();
+  vi.mocked(s.h.plugin.getConversationById).mockImplementationOnce(async id => {
+    loadStarted.resolve();
+    await finishLoad.promise;
+    return readConversation(id);
+  });
+  const first = s.h.messaging.sendAsUser('conversation', { text: 'FIRST message' });
+  await loadStarted.promise;
+  const second = s.h.messaging.sendAsUser('conversation', { text: 'SECOND message' });
+
+  const requested = s.h.backend.nextRequest(() => true);
+  finishLoad.resolve();
+  const request = await requested;
+  expect(JSON.stringify(request.input)).toContain('FIRST message');
+  await Promise.all([first, second]);
+  s.h.backend.latest.complete();
+  await waitFor(() => expect(s.h.backend.latest.requests).toHaveLength(2));
+  expect(JSON.stringify(s.h.backend.latest.requests[1].input)).toContain('SECOND message');
+  s.h.backend.latest.complete();
+  await s.runtime.turns.drain();
+  await destroyTab(s.first);
+});
+
+it('delivers session messages whose recipient reload failed once the history loads on retry', async () => {
+  const s = await setupRevisionedSession();
+  s.continueElsewhere();
+  vi.spyOn(s.h.plugin, 'ensureConversationMetadataLoaded').mockResolvedValue(undefined);
+  vi.mocked(s.h.plugin.getConversationById).mockRejectedValueOnce(new Error('History unavailable'));
+  const requested = s.h.backend.nextRequest(() => true);
+  await s.h.messaging.sendAsUser('conversation', { text: 'FIRST message' });
+  await s.h.messaging.sendAsUser('conversation', { text: 'SECOND message' });
+
+  const request = await requested;
+  expect(JSON.stringify(request.input)).toContain('FIRST message');
+  expect(request.conversationHistory?.map(message => message.content)).toContain('Reply from the CLI');
+  s.h.backend.latest.complete();
+  await waitFor(() => expect(s.h.backend.latest.requests).toHaveLength(2));
+  expect(JSON.stringify(s.h.backend.latest.requests[1].input)).toContain('SECOND message');
+  s.h.backend.latest.complete();
+  await s.runtime.turns.drain();
+  await destroyTab(s.first);
+});
+
+it('revalidates a recipient open in a tab before delivery and reloads it there', async () => {
+  const s = await setupRevisionedSession();
+  s.continueElsewhere();
+  vi.spyOn(s.h.plugin, 'ensureConversationMetadataLoaded').mockResolvedValue(undefined);
+  const requested = s.h.backend.nextRequest(() => true);
+  await s.h.messaging.sendAsUser('conversation', { text: 'Continue after CLI' });
+  await requested;
+  const provider = s.h.backend.latest;
+  expect(provider).not.toBe(s.provider);
+  expect(s.provider.disposeCalls).toBe(1);
+  expect(s.provider.requests).toHaveLength(0);
+  expect(provider.requests[0].conversationHistory?.map(message => message.content)).toContain('Reply from the CLI');
+  expect(s.first.dom.messagesEl.textContent).toContain('Reply from the CLI');
+  provider.complete();
+  await s.runtime.turns.drain();
+  await destroyTab(s.first);
 });
 
 it.each(['unviewed', 'attached'] as const)('does not retry failed history cleanup on an unrelated %s session change', async kind => {

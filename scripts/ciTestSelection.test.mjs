@@ -117,6 +117,7 @@ test('real dependency discovery retains native launch checks for shared process 
     'tests/integration/providers/opencode/execution/OpencodeHTTPExecution.prompts.test.ts',
     'tests/integration/providers/opencode/execution/OpencodeHTTPExecution.steering.test.ts',
     'tests/integration/providers/opencode/execution/OpencodeHTTPExecution.test.ts',
+    'tests/integration/providers/opencode/history/OpencodeConversationHistoryService.test.ts',
     'tests/integration/providers/opencode/history/OpencodeConversationHistoryService.wsl.test.ts',
     'tests/integration/providers/opencode/http/OpencodeSharedServer.ephemeral.test.ts',
     'tests/integration/providers/opencode/http/OpencodeSharedServer.history.test.ts',

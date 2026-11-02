@@ -185,6 +185,38 @@ describe('GrokConversationHistoryService', () => {
     })).rejects.toMatchObject({ code: 'EISDIR' });
   });
 
+  describe('readNativeHistoryRevision', () => {
+    it('changes only when the live session updates file changes', async () => {
+      const service = new GrokConversationHistoryService();
+      const context = { environment: { HOME: tempRoot } };
+
+      const initial = await service.readNativeHistoryRevision(createConversation(), vaultPath, context);
+      expect(initial).not.toBeNull();
+      await expect(service.readNativeHistoryRevision(createConversation(), vaultPath, context)).resolves.toBe(initial);
+
+      await fs.appendFile(updatesPath, `\n${createSingleTurnHistory('Continued in the CLI')}`, 'utf8');
+      const appended = await service.readNativeHistoryRevision(createConversation(), vaultPath, context);
+      expect(appended).not.toBeNull();
+      expect(appended).not.toBe(initial);
+    });
+
+    it.each([
+      ['no native session', () => ({ ...createConversation(), providerState: undefined, sessionId: null })],
+      ['retired session', () => ({ ...createConversation(), providerState: { historySessionId: 'session-fixture', sessionDirectory }, sessionId: null })],
+      ['pending fork', () => ({
+        ...createConversation(),
+        providerState: { forkSource: { resumeAt: 'prompt-1', sessionId: 'session-fixture' }, forkSourceSessionDirectory: sessionDirectory },
+        sessionId: null,
+      })],
+      ['missing native store', () => ({ ...createConversation(), sessionId: 'missing-session' })],
+    ])('returns null for %s', async (_kind, build) => {
+      const service = new GrokConversationHistoryService();
+      await expect(service.readNativeHistoryRevision(build(), vaultPath, {
+        environment: { HOME: tempRoot },
+      })).resolves.toBeNull();
+    });
+  });
+
   describe('resolveMissingConversationSession', () => {
     it('clears a confirmed stale native binding while preserving unknown state', async () => {
       const conversation = createConversation();

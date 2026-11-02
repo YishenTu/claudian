@@ -14,6 +14,8 @@ export interface TabHydrationDeps {
     providerId: ProviderId | null,
     reason: string,
   ): Promise<boolean>;
+  /** Resets the tab's hydration when its native history changed outside Claudian; null when nothing to check. */
+  revalidateSession(tab: AssembledTabRuntime): Promise<void> | null;
   /** Invoked by the rendered retry control; the caller owns re-activation. */
   readonly onRetry: (tab: AssembledTabRuntime) => void;
 }
@@ -34,6 +36,12 @@ export class TabHydration {
   async hydrateActivatedTab(tab: AssembledTabRuntime): Promise<TabHydrationOutcome> {
     const { deps } = this;
     const providerId = tab.providerId;
+    // A tab kept open while hidden returns with the history it last showed.
+    const revalidation = deps.revalidateSession(tab);
+    if (revalidation) {
+      await revalidation;
+      if (!deps.isTabAlive(tab)) return 'aborted';
+    }
     const needsHydration = !!tab.conversationId && tab.hydrationState !== 'ready';
     if (needsHydration) {
       tab.hydrationState = 'loading';

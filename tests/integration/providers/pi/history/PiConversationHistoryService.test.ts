@@ -835,6 +835,51 @@ describe('PiConversationHistoryService', () => {
   });
 
 
+  describe('readNativeHistoryRevision', () => {
+    const line = (id: string, content: string) => `${JSON.stringify({ type: 'message', id, message: { role: 'user', content } })}\n`;
+
+    it('changes when the live session file is appended or rewritten', async () => {
+      const dir = await createTempDirectory('pi-revision-');
+      const sessionFile = path.join(dir, 'session.jsonl');
+      await fs.writeFile(sessionFile, line('u1', 'Hello'));
+      const service = new PiConversationHistoryService();
+      const conversation = createConversation(sessionFile);
+
+      const initial = await service.readNativeHistoryRevision(conversation, null);
+      expect(initial).not.toBeNull();
+      expect(await service.readNativeHistoryRevision(conversation, null)).toBe(initial);
+
+      await fs.appendFile(sessionFile, line('u2', 'Continued in the Pi CLI'));
+      const appended = await service.readNativeHistoryRevision(conversation, null);
+      expect(appended).not.toBeNull();
+      expect(appended).not.toBe(initial);
+
+      const { mtime, size } = await fs.stat(sessionFile);
+      await fs.writeFile(sessionFile, 'x'.repeat(size));
+      await fs.utimes(sessionFile, mtime, new Date(mtime.getTime() + 5_000));
+      const rewritten = await service.readNativeHistoryRevision(conversation, null);
+      expect(rewritten).toEqual(expect.any(String));
+      expect(rewritten).not.toBe(appended);
+    });
+
+    it('is null without a live native session file', async () => {
+      const dir = await createTempDirectory('pi-revision-');
+      const sourceFile = path.join(dir, 'source.jsonl');
+      await fs.writeFile(sourceFile, line('u1', 'Source'));
+      const service = new PiConversationHistoryService();
+      const unbound = createConversation(sourceFile);
+      unbound.sessionId = null;
+      unbound.providerState = { previousSessions: [{ sessionFile: sourceFile, sessionId: 'old' }] };
+      const pendingFork = createConversation(sourceFile);
+      pendingFork.sessionId = null;
+      pendingFork.providerState = { forkSource: { sessionId: 'source', resumeAt: 'u1' }, forkSourceSessionFile: sourceFile };
+
+      expect(await service.readNativeHistoryRevision(unbound, null)).toBeNull();
+      expect(await service.readNativeHistoryRevision(pendingFork, null)).toBeNull();
+      expect(await service.readNativeHistoryRevision(createConversation(path.join(dir, 'missing.jsonl')), null)).toBeNull();
+    });
+  });
+
   describe('resolveMissingConversationSession', () => {
 
 
@@ -892,4 +937,24 @@ it('parses cursor history records only once per hydration', async () => {
     parse.mockRestore();
     await fs.rm(dir, { recursive: true, force: true });
   }
+});
+
+it.each([
+  { appended: 'continues the saved leaf', parent: 'a1', shows: ['Hello', 'Hi', 'From the CLI', 'CLI reply'], leaf: 'a2' },
+  { appended: 'branches from an earlier entry', parent: 'u1', shows: ['Hello', 'Hi'], leaf: 'a1' },
+])('follows entries appended outside Claudian only when the saved leaf $appended', async ({ parent, shows, leaf }) => {
+  const dir = await createTempDirectory('pi-appended-');
+  const sessionFile = path.join(dir, 'session.jsonl');
+  const entry = (id: string, parentId: string | null, role: 'user' | 'assistant', text: string) => `${JSON.stringify({
+    type: 'message', id, parentId, message: role === 'user' ? { role, content: text } : { role, content: [{ type: 'text', text }] },
+  })}\n`;
+  await fs.writeFile(sessionFile, entry('u1', null, 'user', 'Hello') + entry('a1', 'u1', 'assistant', 'Hi'));
+  const conversation = createConversation(sessionFile);
+  conversation.providerState!.leafEntryId = 'a1';
+  // The Pi CLI continued the session file Claudian last left at `a1`.
+  await fs.appendFile(sessionFile, entry('u2', parent, 'user', 'From the CLI') + entry('a2', 'u2', 'assistant', 'CLI reply'));
+
+  const history = await new PiConversationHistoryService().hydrateConversationHistory(conversation, null);
+  expect(history.messages?.map(message => message.content)).toEqual(shows);
+  expect(history.providerState?.leafEntryId).toBe(leaf);
 });

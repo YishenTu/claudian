@@ -16,6 +16,7 @@
   "chat": {
     "promptSuggestionHint": "Tab para aceitar",
     "selectAvailableModel": "Selecione um modelo disponível antes de enviar.",
+    "reloadingHistory": "Este chat mudou fora do Claudian e está sendo recarregado. Envie novamente quando terminar.",
     "selectAvailableTitleModel": "Selecione um modelo de título disponível nas configurações do Claudian.",
     "rewind": {
       "confirmMessage": "Retroceder até este ponto? As alterações de arquivos após esta mensagem podem ser sobrescritas ou removidas. Esta ação não pode ser desfeita.",

@@ -16,6 +16,7 @@
   "chat": {
     "promptSuggestionHint": "Mit Tab übernehmen",
     "selectAvailableModel": "Wähle vor dem Senden ein verfügbares Modell aus.",
+    "reloadingHistory": "Dieser Chat wurde außerhalb von Claudian geändert und wird neu geladen. Sende erneut, sobald das abgeschlossen ist.",
     "selectAvailableTitleModel": "Wähle in den Claudian-Einstellungen ein verfügbares Titelmodell aus.",
     "rewind": {
       "confirmMessage": "Zu diesem Punkt zurückspulen? Dateiänderungen nach dieser Nachricht können überschrieben oder entfernt werden. Dies kann nicht rückgängig gemacht werden.",

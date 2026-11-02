@@ -4,6 +4,7 @@ import type { ExecutionPathMapper } from '@/core/process/execution-target/types'
 import { decodeSessionMessage } from '@/core/session-tools/sessionMessageEnvelope';
 import { resolveToolDiffData } from '@/core/tools/toolDiff';
 import { extractACPDiffResultDetails } from '@/providers/acp/ACPToolResultNormalization';
+import { readFileRevision } from '@/utils/fileRevision';
 import { forEachJSONLLine } from '@/utils/jsonlFile';
 
 import { isWriteEditTool, TOOL_ASK_USER_QUESTION } from '../../../core/tools/toolNames';
@@ -416,6 +417,15 @@ export async function loadGrokPromptIndexAfterAssistant(
   }
 }
 
+/** Cheap change token for the updates file hydration reads; null when it cannot be observed. */
+export function readGrokHistoryRevision(sessionDirectory: string): Promise<string | null> {
+  return readFileRevision(getGrokUpdatesPath(sessionDirectory));
+}
+
+function getGrokUpdatesPath(sessionDirectory: string): string {
+  return path.join(sessionDirectory, 'updates.jsonl');
+}
+
 /** Streams native updates; resolves null only when the session has no updates file. */
 async function readGrokUpdates<T>(
   sessionDirectory: string,
@@ -423,7 +433,7 @@ async function readGrokUpdates<T>(
 ): Promise<T | null> {
   try {
     await forEachJSONLLine(
-      path.join(sessionDirectory, 'updates.jsonl'),
+      getGrokUpdatesPath(sessionDirectory),
       line => consumer.pushLine(line),
     );
   } catch (error) {

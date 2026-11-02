@@ -16,6 +16,7 @@
   "chat": {
     "promptSuggestionHint": "Tab으로 수락",
     "selectAvailableModel": "전송하기 전에 사용 가능한 모델을 선택하세요.",
+    "reloadingHistory": "이 채팅이 Claudian 외부에서 변경되어 다시 불러오는 중입니다. 완료되면 다시 보내세요.",
     "selectAvailableTitleModel": "Claudian 설정에서 사용 가능한 제목 생성 모델을 선택하세요.",
     "rewind": {
       "confirmMessage": "이 시점으로 되감으시겠습니까? 이 메시지 이후의 파일 변경 사항이 덮어쓰이거나 삭제될 수 있습니다. 이 작업은 실행 취소할 수 없습니다.",

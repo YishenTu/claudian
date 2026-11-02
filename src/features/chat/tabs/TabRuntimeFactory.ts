@@ -170,6 +170,11 @@ function assembleTabRuntime(
 export async function createTabRuntime(
   options: TabRuntimeFactoryOptions,
 ): Promise<AssembledTabRuntime> {
+  const conversationId = options.initialState ? options.initialState.conversationId : options.conversation?.id;
+  // A cached session whose native history changed elsewhere is dropped first, so this tab loads it fresh.
+  // Without one to check, assembly stays synchronous up to its attachment reservation.
+  const revalidation = conversationId ? options.plugin.sessionRuntimes.revalidate(conversationId) : null;
+  if (revalidation) await revalidation;
   const resourceOwner = new RuntimeResourceOwner();
 
   try {

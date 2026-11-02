@@ -7,6 +7,7 @@ import { ChatExecutionCoordinator } from '@/features/chat/execution/ChatExecutio
 import { createInteractionPromptPort } from '@/features/chat/interactions/interactionPromptPort';
 import { SessionMailbox } from '@/features/chat/session-messaging/SessionMailbox';
 import { ChatSessionRuntime, type SessionIdentity } from '@/features/chat/sessions/ChatSessionRuntime';
+import { createConversationExecutionBinding } from '@/features/chat/sessions/sessionExecution';
 import { createSessionMessageId, createSessionSideChat, SessionModel } from '@/features/chat/sessions/SessionModel';
 import { t } from '@/i18n/i18n';
 
@@ -17,6 +18,10 @@ export function createChatSessionRuntime(plugin: ChatFeatureHost, identity: Sess
     resolveBackend: providerId => ProviderRegistry.createExecutionBackend(plugin.providerHost, providerId),
     persistence: plugin.executionPersistence,
     bindSessionTools: id => plugin.bindSessionTools?.(id),
+    loadConversationBinding: async id => {
+      const conversation = await plugin.getConversationById(id);
+      return conversation && createConversationExecutionBinding(conversation);
+    },
     interactionPort: createInteractionPromptPort(() => runtime.model.inlinePrompts),
     workingDirectory: getChatWorkingDirectory(plugin),
     createId: createSessionMessageId,

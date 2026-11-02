@@ -16,6 +16,7 @@
   "chat": {
     "promptSuggestionHint": "Tab で採用",
     "selectAvailableModel": "送信する前に利用可能なモデルを選択してください。",
+    "reloadingHistory": "このチャットは Claudian の外で変更されたため再読み込み中です。完了したら再送信してください。",
     "selectAvailableTitleModel": "Claudianの設定で利用可能なタイトル生成モデルを選択してください。",
     "rewind": {
       "confirmMessage": "この時点に巻き戻しますか？このメッセージ以降のファイル変更は上書きまたは削除される可能性があります。この操作は元に戻せません。",

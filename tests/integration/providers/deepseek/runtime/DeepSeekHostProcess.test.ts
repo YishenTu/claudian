@@ -45,7 +45,8 @@ describe('native Host process', () => {
   afterEach(async () => {
     vi.restoreAllMocks();
     await peer.close();
-    await rm(root, { recursive: true, force: true });
+    // Windows can hold an exited process's executable briefly after exit.
+    await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
 
   const start = (mode: string, extra: NodeJS.ProcessEnv = {}, signal = new AbortController().signal): Promise<DeepSeekHostProcess> => DeepSeekHostProcess.start({

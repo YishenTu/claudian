@@ -201,6 +201,7 @@ export class SessionModel {
       isClosing: () => session.isDisposed,
       getSideChatController: () => session.sideChat,
       ensureExecutionInitialized: () => this.ensureExecutionInitialized(),
+      historyRefresh: () => this.historyRefresh,
       captureReviewableSettlement: outcome => this.captureReview(outcome),
     });
     this.events = new SessionEvents({
@@ -245,10 +246,40 @@ export class SessionModel {
    * conversation that can be reattached; nothing can acquire a detached draft again.
    */
   get canEvict(): boolean {
-    return !this.presentation && !this.hydration && this.titleWork.size === 0 && !this.recovery.hasPendingWork
+    return !this.presentation && this.canRefreshHistory;
+  }
+
+  /** Nothing but the presentation depends on the loaded history, so it can be read again in place. */
+  get canRefreshHistory(): boolean {
+    return !this.hydration && this.titleWork.size === 0 && !this.recovery.hasPendingWork
       && !this.conversationController.hasPendingPersistence && !this.conversationController.hasBranchDraft
       && (!this.composer.hasRecovery || !this.session.conversationId);
   }
+
+  /**
+   * Checks the shown history and, when `reload` drops it (returning true), loads it again. Until a load has
+   * succeeded, main sends are refused and session messages wait: nothing can reach a provider session that
+   * predates the history, or be replaced by a later load. A failed load stays refused for the presentation
+   * to show and retry.
+   */
+  async refreshHistory(reload: () => Promise<boolean>): Promise<void> {
+    const previous = this.historyRefresh;
+    this.historyRefresh = 'checking';
+    this.publish('work');
+    try {
+      if (!await reload()) return;
+      if (this.hydrationState === 'ready') this.hydrationState = 'idle';
+      this.historyRefresh = 'reloading';
+      await this.hydrate().catch(() => undefined);
+    } finally {
+      // An unchanged check keeps a failed reload refused.
+      if (this.historyRefresh === 'checking') this.historyRefresh = previous;
+      this.publish('work');
+    }
+  }
+
+  /** `reloading` lasts until a load of the dropped history succeeds. */
+  private historyRefresh: 'checking' | 'reloading' | null = null;
 
   /** Applies native permission changes through the same owner as toolbar selections. */
   async updatePermissionMode(mode: string): Promise<void> {
@@ -321,7 +352,14 @@ export class SessionModel {
     if (this.hydration) return this.hydration;
     this.hydrationState = 'loading';
     this.hydration = this.conversationController.loadActive()
-      .then(() => { this.hydrationState = 'ready'; })
+      .then(() => {
+        this.hydrationState = 'ready';
+        if (this.historyRefresh === 'reloading') {
+          this.historyRefresh = null;
+          this.publish('work');
+        }
+        this.session.notifyHydrated();
+      })
       .catch(error => { this.hydrationState = 'failed'; throw error; })
       .finally(() => { this.hydration = null; });
     return this.hydration;

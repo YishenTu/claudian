@@ -125,6 +125,8 @@ export interface ChatExecutionCoordinatorDeps {
   readonly workingDirectory: string;
   readonly createId: () => string;
   readonly bindSessionTools?: (conversationId: string) => SessionToolBinding;
+  /** Reads the stored binding, which may have advanced since this coordinator bound it. */
+  readonly loadConversationBinding?: (conversationId: string) => Promise<ChatExecutionConversationBinding | null>;
   readonly onRequestedEvent?: (
     event: ProviderExecutionEvent,
     context: ChatExecutionEventContext,
@@ -180,6 +182,8 @@ interface SessionBinding {
   readonly events: SessionEventStream;
   readonly sessionTools?: SessionToolBinding;
   model?: string;
+  /** Native history changed outside this process; it must be replaced before it handles another turn. */
+  nativeHistoryChanged?: boolean;
 }
 
 interface ActiveExecution {
@@ -352,7 +356,8 @@ export class ChatExecutionCoordinator {
     } while (releases !== this.#bindingReleases);
     this.#assertAvailable();
     const conversation = this.#requireConversation();
-    if (this.#sessionBinding && this.#isBindingCurrent(this.#sessionBinding)) return;
+    const current = this.#sessionBinding;
+    if (current && this.#isBindingCurrent(current)) return;
     const backend = this.deps.resolveBackend(conversation.providerId);
     if (backend.providerId !== conversation.providerId) {
       throw new Error(
@@ -426,10 +431,12 @@ export class ChatExecutionCoordinator {
     submission: ChatTurnSubmission,
     requestController: AbortController,
   ): Promise<ChatExecutionResult> {
-    const conversation = this.#requireConversation();
+    let conversation: ChatExecutionConversationBinding;
     let binding: SessionBinding;
     let run: ProviderExecutionRun;
     try {
+      await this.#replaceChangedHistorySession();
+      conversation = this.#requireConversation();
       throwIfAborted(requestController.signal, 'Turn cancelled before provider handoff');
       await this.prepare();
       throwIfAborted(requestController.signal, 'Turn cancelled before provider handoff');
@@ -786,16 +793,57 @@ export class ChatExecutionCoordinator {
     this.#idleTimer = null;
   }
 
+  /**
+   * Native history changed outside Claudian, so the provider process's context predates it. Releases it
+   * now when idle; otherwise (a native task still runs in it) it stays bound for that work, and the next
+   * send replaces it once it can be released, or is refused while it cannot.
+   */
+  releaseForChangedHistory(): Promise<void> {
+    return this.#enqueuePreparation(async () => {
+      const binding = this.#sessionBinding;
+      if (!binding) return;
+      binding.nativeHistoryChanged = true;
+      await this.#releaseIdleBinding();
+    });
+  }
+
+  /**
+   * A session kept for a native task when its history changed is replaced before the next turn, resuming
+   * from the stored binding: the conversation may have gained its native session after this one bound.
+   */
+  async #replaceChangedHistorySession(): Promise<void> {
+    const stale = this.#sessionBinding;
+    if (!stale?.nativeHistoryChanged || !this.#isBindingCurrent(stale)) return;
+    if (stale.session.blocksIdleRelease?.() || this.hasBackgroundWork) {
+      throw new Error('This chat continued outside Claudian while a background task from its earlier session is still running. Stop the task or wait for it to finish, then send again.');
+    }
+    await this.#enqueuePreparation(async () => {
+      if (this.#sessionBinding !== stale) return;
+      await this.#persistSnapshot(stale, stale.session.getSnapshot());
+      if (this.#sessionBinding === stale) await this.#releaseSessionBinding();
+    });
+    const bound = this.#conversation;
+    if (!bound || !this.deps.loadConversationBinding) return;
+    const stored = await this.deps.loadConversationBinding(bound.conversationId);
+    if (stored && this.#conversation === bound && !this.#sessionBinding && stored.providerId === bound.providerId) {
+      this.#conversation = stored;
+    }
+  }
+
+  async #releaseIdleBinding(isCurrent: () => boolean = () => true): Promise<void> {
+    const binding = this.#sessionBinding;
+    if (!binding || !isCurrent() || !this.#isIdle()) return;
+    await this.#persistSnapshot(binding, binding.session.getSnapshot());
+    if (this.#sessionBinding !== binding || !isCurrent() || !this.#isIdle()) return;
+    await this.#releaseSessionBinding();
+    this.deps.onIdleRelease?.();
+  }
+
   async #releaseIdleSession(generation: number): Promise<void> {
     const binding = this.#sessionBinding;
     if (!binding || generation !== this.#idleTimerGeneration) return;
     try {
-      if (!this.#isIdle()) return;
-      await this.#persistSnapshot(binding, binding.session.getSnapshot());
-      if (this.#sessionBinding === binding && generation === this.#idleTimerGeneration && this.#isIdle()) {
-        await this.#releaseSessionBinding();
-        this.deps.onIdleRelease?.();
-      }
+      await this.#releaseIdleBinding(() => generation === this.#idleTimerGeneration);
     } finally {
       // Retry busy or failed releases without replacing a newer activity timer.
       if (this.#sessionBinding === binding && generation === this.#idleTimerGeneration) {

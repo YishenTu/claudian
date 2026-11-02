@@ -182,6 +182,7 @@ export async function createFixture(overrides: ChatInputFixtureOptions = {}) {
     }),
     canStartTurn: () => true,
     isClosing: () => false,
+    historyRefresh: () => null,
     ...dependencyOverrides,
     ...(typeof onReviewableSettlement === 'function'
       ? {
