@@ -84,9 +84,13 @@ describe('parseEnvironmentVariables', () => {
     expect(parseEnvironmentVariables(input)).toEqual({ FOO: 'bar' });
   });
 
-  it('strips export prefix from shell snippets', () => {
-    const input = 'export FOO=bar\nexport BAZ="hello world"';
+  it.each([' ', '\t', ' \t ', '\t \t'])('strips the export prefix separated by %j', (separator) => {
+    const input = `export${separator}FOO=bar\nexport${separator}BAZ="hello world"`;
     expect(parseEnvironmentVariables(input)).toEqual({ FOO: 'bar', BAZ: 'hello world' });
+  });
+
+  it('preserves a variable name beginning with export', () => {
+    expect(parseEnvironmentVariables('exported=value')).toEqual({ exported: 'value' });
   });
 
   it('handles mixed export and non-export lines', () => {

@@ -1,4 +1,4 @@
-import { parseEnvironmentVariables } from '@/core/process/env';
+import { parseEnvironmentVariables, stripEnvironmentExportPrefix } from '@/core/process/env';
 
 import { getProviderConfig, setProviderConfig } from './providerConfig';
 import { ProviderRegistry } from './ProviderRegistry';
@@ -67,7 +67,7 @@ function extractEnvironmentKey(line: string): string | null {
     return null;
   }
 
-  const normalized = trimmed.startsWith('export ') ? trimmed.slice(7) : trimmed;
+  const normalized = stripEnvironmentExportPrefix(trimmed);
   const eqIndex = normalized.indexOf('=');
   if (eqIndex <= 0) {
     return null;
