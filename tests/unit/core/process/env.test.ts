@@ -292,6 +292,26 @@ describe('getEnhancedPath', () => {
         ]));
       });
 
+      it.each([
+        ['', '/fake/home/.local/share'],
+        ['relative-data', '/fake/home/.local/share'],
+        ['/configured data', '/configured data'],
+      ])('uses the Unix data-home fallback for XDG_DATA_HOME=%o', (xdg, expectedRoot) => {
+        for (const key of [...managerVariables, 'MISE_SHIMS_DIR', 'MISE_DATA_DIR', 'FNM_DIR']) delete process.env[key];
+        process.env.HOME = '/fake/home';
+        process.env.XDG_DATA_HOME = xdg;
+        const entries = parsePathEntries(getEnhancedPath());
+        expect(entries).toEqual(expect.arrayContaining([
+          `${expectedRoot}/pi-node/current/bin`, `${expectedRoot}/pnpm`, `${expectedRoot}/mise/shims`,
+          `${expectedRoot}/fnm/aliases/default/bin`, '/fake/home/.local/share/fnm/aliases/default/bin',
+        ]));
+        expect(entries).not.toContain('relative-data/pi-node/current/bin');
+        expect(entries).not.toContain('relative-data/pnpm');
+        expect(entries).not.toContain('relative-data/mise/shims');
+        expect(entries).not.toContain('relative-data/fnm/aliases/default/bin');
+        expect(process.env.XDG_DATA_HOME).toBe(xdg);
+      });
+
       it('follows manager home variables', () => {
         process.env.HOME = '/fake/home';
         process.env.XDG_DATA_HOME = '/xdg';
@@ -874,6 +894,28 @@ describe('getExtraBinaryPaths (Windows branches)', () => {
     // Dynamic import needed to re-evaluate module with mocked platform
     return await import('@/core/process/env');
   }
+
+  it.each([
+    { xdg: '/configured data', expected: '/configured data/mise/shims' },
+    { xdg: 'relative-data', expected: 'relative-data/mise/shims' },
+    { xdg: '', expected: '/mock/AppData/Local/mise/shims' },
+    { xdg: 'relative-data', data: '/explicit data', expected: '/explicit data/shims' },
+    { xdg: 'relative-data', data: '/explicit data', shims: '/explicit shims', expected: '/explicit shims' },
+  ])('preserves Windows mise precedence for $expected', async ({ xdg, data, shims, expected }) => {
+    delete process.env.MISE_SHIMS_DIR;
+    delete process.env.MISE_DATA_DIR;
+    process.env.HOME = '/mock/home';
+    process.env.LOCALAPPDATA = '/mock/AppData/Local';
+    process.env.XDG_DATA_HOME = xdg;
+    if (data) process.env.MISE_DATA_DIR = data;
+    if (shims) process.env.MISE_SHIMS_DIR = shims;
+    const entries = (await loadWithWindowsPlatform()).getEnhancedPath().split(';');
+    const candidates = [
+      '/configured data/mise/shims', 'relative-data/mise/shims', '/mock/AppData/Local/mise/shims',
+      '/explicit data/shims', '/explicit shims',
+    ].flatMap(entry => [entry, path.normalize(entry)]);
+    expect(entries.filter(entry => candidates.includes(entry))).toEqual([shims ?? path.normalize(expected)]);
+  });
 
   it('includes APPDATA npm path when APPDATA is set', async () => {
     process.env.APPDATA = '/mock/AppData/Roaming';

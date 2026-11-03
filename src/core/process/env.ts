@@ -18,23 +18,30 @@ function getHomeDir(): string {
   return process.env.HOME || process.env.USERPROFILE || '';
 }
 
+function getUnixXdgDataHome(): string | undefined {
+  const configured = process.env.XDG_DATA_HOME;
+  return configured && path.isAbsolute(configured) ? configured : undefined;
+}
+
 function getMiseShimsDir(home: string): string | null {
   if (process.env.MISE_SHIMS_DIR) return process.env.MISE_SHIMS_DIR;
   if (process.env.MISE_DATA_DIR) return path.join(process.env.MISE_DATA_DIR, 'shims');
-  if (process.env.XDG_DATA_HOME) return path.join(process.env.XDG_DATA_HOME, 'mise', 'shims');
-
   if (isWindows) {
+    if (process.env.XDG_DATA_HOME) return path.join(process.env.XDG_DATA_HOME, 'mise', 'shims');
     const localAppData = process.env.LOCALAPPDATA
       || (home ? path.join(home, 'AppData', 'Local') : null);
     return localAppData ? path.join(localAppData, 'mise', 'shims') : null;
   }
 
-  return home ? path.join(home, '.local', 'share', 'mise', 'shims') : null;
+  const dataHome = getUnixXdgDataHome();
+  return dataHome ? path.join(dataHome, 'mise', 'shims')
+    : home ? path.join(home, '.local', 'share', 'mise', 'shims') : null;
 }
 
 /** fnm's default Node.js alias, reachable without the shell or PowerShell profile hook. */
 function getFnmDefaultBinPaths(home: string): string[] {
   const fnmDir = process.env.FNM_DIR;
+  const dataHome = isWindows ? undefined : getUnixXdgDataHome();
   const roots = isWindows
     ? [
       fnmDir,
@@ -43,7 +50,7 @@ function getFnmDefaultBinPaths(home: string): string[] {
     ]
     : [
       fnmDir,
-      process.env.XDG_DATA_HOME && path.join(process.env.XDG_DATA_HOME, 'fnm'),
+      dataHome && path.join(dataHome, 'fnm'),
       home && path.join(home, '.local', 'share', 'fnm'),
       home && process.platform === 'darwin' && path.join(home, 'Library', 'Application Support', 'fnm'),
       home && path.join(home, '.fnm'),
@@ -81,7 +88,7 @@ function getManagerBinPaths(home: string): string[] {
 
 function getUnixManagerBinPaths(home: string): Array<string | null> {
   const env = process.env;
-  const dataHome = env.XDG_DATA_HOME ?? joinIfRoot(home, '.local', 'share') ?? undefined;
+  const dataHome = getUnixXdgDataHome() ?? joinIfRoot(home, '.local', 'share') ?? undefined;
   return [
     // Node.js installed by Pi's managed installer.
     joinIfRoot(dataHome, 'pi-node', 'current', 'bin'),
