@@ -683,11 +683,14 @@ describe('renderStoredSubagent status variants', () => {
     expect(getTextByClass(wrapperEl, 'claudian-subagent-count')).toEqual([]);
   });
 
-  it('truncates long descriptions', () => {
-    const longDesc = 'A'.repeat(50);
+  it.each([
+    ['A'.repeat(50), 'A'.repeat(40) + '...'],
+    ['a'.repeat(39) + '🚀', 'a'.repeat(39) + '...'],
+    ['Task 🚀', 'Task 🚀'],
+  ])('truncates descriptions without splitting code points: %s', async (description, expected) => {
     const subagent: SubagentInfo = {
       id: 'task-1',
-      description: longDesc,
+      description,
       status: 'completed',
       toolCalls: [],
       isExpanded: false,
@@ -696,7 +699,15 @@ describe('renderStoredSubagent status variants', () => {
     const wrapperEl = renderStoredSubagent(parentEl, subagent);
 
     const labelTexts = getTextByClass(wrapperEl, 'claudian-subagent-label');
-    expect(labelTexts[0]).toBe('A'.repeat(40) + '...');
+    expect(labelTexts[0]).toBe(expected);
+    const header = within(wrapperEl).getByRole('button', { name: `Subagent task: ${description} - Status: completed - click to expand` });
+    fireEvent.click(header);
+    expect(await axe(wrapperEl)).toHaveNoViolations();
+
+    const live = createSubagentBlock(parentEl, { ...subagent, description: 'Initial task', status: 'running' });
+    updateSubagentBlock(live, subagent);
+    expect(live.labelEl.textContent).toBe(expected);
+    expect(within(live.wrapperEl).getByRole('button', { name: `Subagent task: ${description} - Status: completed - click to expand` })).toBe(live.headerEl);
   });
 });
 
