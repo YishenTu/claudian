@@ -98,7 +98,7 @@ export class ComposerDropdownView {
 
     dropdown.addClass('is-visible');
     this.#setInputAttribute('aria-controls', this.listboxId);
-    this.updateSelection(selectedIndex);
+    this.updateSelection(selectedIndex, !this.options.fixed);
     if (!wasVisible && this.options.fixed) {
       this.positioningWindow = this.options.inputEl.ownerDocument.defaultView;
       this.positioningWindow?.addEventListener('scroll', this.#positionFixed, true);
@@ -238,10 +238,22 @@ export class ComposerDropdownView {
     const inputRect = this.options.inputEl.getBoundingClientRect();
     const viewportHeight = this.options.inputEl.ownerDocument.defaultView?.innerHeight
       ?? window.innerHeight;
-    this.dropdownEl.setCssProps({
-      '--claudian-fixed-dropdown-bottom': `${viewportHeight - inputRect.top + 4}px`,
+    const dropdown = this.dropdownEl;
+    const previousHeight = dropdown.clientHeight;
+    dropdown.setCssProps({
       '--claudian-fixed-dropdown-left': `${inputRect.left}px`,
       '--claudian-fixed-dropdown-width': `${Math.max(inputRect.width, 280)}px`,
     });
+    const naturalHeight = Math.min(300, dropdown.scrollHeight + dropdown.offsetHeight - dropdown.clientHeight);
+    const above = Math.max(0, inputRect.top - 8);
+    const below = Math.max(0, viewportHeight - inputRect.bottom - 8);
+    const openAbove = naturalHeight <= above || above >= below;
+    dropdown.setCssProps({
+      '--claudian-fixed-dropdown-top': openAbove ? 'auto' : `${inputRect.bottom + 8}px`,
+      '--claudian-fixed-dropdown-bottom': openAbove ? `${viewportHeight - inputRect.top + 8}px` : 'auto',
+      '--claudian-fixed-dropdown-max-height': `${Math.min(300, openAbove ? above : below)}px`,
+    });
+    const selected = this.rows.find(row => row.el.getAttribute('aria-selected') === 'true');
+    if (selected && (!event || dropdown.clientHeight !== previousHeight)) this.#revealInList(selected.el);
   };
 }
