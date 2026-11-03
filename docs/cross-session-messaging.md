@@ -50,7 +50,13 @@ Without a `sessionId`, the message starts a new session. Omitted choices follow 
 
 #### Switching an existing session's model
 
-With an existing session, the message runs on that session's own provider, model and reasoning settings. An agent can pass `model` or `reasoning` to switch them before the message is delivered. The model must belong to the session's provider. The switch stays for the session's later turns and shows in its model controls. A switch cannot be combined with `steer`, and a rejected send changes nothing.
+With an existing session, the message runs on that session's own provider, model and
+reasoning settings. An agent can pass `model` or `reasoning` to switch them before
+the message is delivered. The model must belong to the session's provider. The
+switch stays for the session's later turns and shows in its model controls. A
+switch cannot be combined with `steer`. Invalid model or reasoning choices are
+rejected before switching. Once a model switch commits, later cancellation or
+delivery failure does not undo it.
 
 A reasoning level chosen by an agent applies to that session only and does not change your saved setting, so it resets after Obsidian or the plugin restarts.
 
