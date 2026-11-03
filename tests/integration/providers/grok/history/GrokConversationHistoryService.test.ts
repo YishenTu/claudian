@@ -369,15 +369,20 @@ describe('GrokConversationHistoryService', () => {
     expect(conversation.messages).toEqual([]);
   });
 
-  it('rehydrates native Grok image blocks into persisted message attachments', async () => {
+  it.each([
+    ['image/png', 'image/png', 'png'],
+    ['image/jpeg', 'image/jpeg', 'jpg'],
+    ['IMAGE/PNG', 'image/png', 'png'],
+    ['Image/JPEG', 'image/jpeg', 'jpg'],
+  ])('rehydrates supported Grok image MIME %s without dropping an image-only user', async (mimeType, mediaType, extension) => {
     const imageHistory = [
       {
-        content: { text: 'Inspect this', type: 'text' },
+        content: { data: 'aGVsbG8=', mimeType, type: 'image' },
         messageId: 'user-image',
         sessionUpdate: 'user_message_chunk',
       },
       {
-        content: { data: 'aGVsbG8=', mimeType: 'image/png', type: 'image' },
+        content: { data: 'PHN2Zy8+', mimeType: 'image/svg+xml', type: 'image' },
         messageId: 'user-image',
         sessionUpdate: 'user_message_chunk',
       },
@@ -400,13 +405,13 @@ describe('GrokConversationHistoryService', () => {
       environment: { HOME: tempRoot },
     }));
 
-    expect(conversation.messages[0]).toMatchObject({
-      content: 'Inspect this',
-      images: [{
-        data: 'aGVsbG8=',
-        mediaType: 'image/png',
-        size: 5,
-      }],
-    });
+    expect(conversation.messages.map(message => [message.id, message.role, message.content, message.images])).toEqual([
+      ['user-image', 'user', '', [{
+        data: 'aGVsbG8=', id: 'grok-session-fixture-turn-0-image-0', mediaType,
+        name: `Grok image 1.${extension}`, size: 5, source: 'file',
+      }]],
+      ['assistant-image', 'assistant', 'Visible', undefined],
+    ]);
+    expect(await fs.readFile(updatesPath, 'utf8')).toBe(imageHistory);
   });
 });
