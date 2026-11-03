@@ -12,6 +12,83 @@ import {
 } from '@/providers/pi/history/PiHistoryStore';
 
 describe('PiHistoryStore', () => {
+  it.each([
+    ['OpenRouter quota exceeded', '\n\n**Error:** OpenRouter quota exceeded'],
+    [undefined, '\n\n**Error:** Pi turn failed.'],
+  ])('restores terminal failure text from an empty native response (%s)', (errorMessage, expected) => {
+    const messages = parsePiSessionContent([
+      { type: 'message', id: 'u1', message: { role: 'user', content: 'Hello' } },
+      { type: 'message', id: 'a1', parentId: 'u1', message: {
+        role: 'assistant', content: [], stopReason: 'error', errorMessage,
+      } },
+    ].map(entry => JSON.stringify(entry)).join('\n'));
+
+    expect(messages[1]).toMatchObject({
+      content: expected,
+      contentBlocks: [{ type: 'text', content: expected }],
+    });
+  });
+
+  it.each([false, true])('suppresses a recovered error in the same prompted turn (compaction: %s)', (compacted) => {
+    const messages = parsePiSessionContent([
+      { type: 'message', id: 'u1', message: { role: 'user', content: 'Continue' } },
+      { type: 'message', id: 'a1', parentId: 'u1', message: {
+        role: 'assistant', content: [], stopReason: 'error', errorMessage: 'Context window exceeded',
+      } },
+      ...(compacted ? [{ type: 'compaction', id: 'c1', parentId: 'a1', summary: 'Internal summary' }] : []),
+      { type: 'message', id: 'a2', parentId: compacted ? 'c1' : 'a1', message: {
+        role: 'assistant', content: [{ type: 'text', text: 'Recovered answer' }], stopReason: 'stop',
+      } },
+    ].map(entry => JSON.stringify(entry)).join('\n'));
+
+    expect(messages.at(-1)).toMatchObject({
+      content: 'Recovered answer', contentBlocks: [{ type: 'text', content: 'Recovered answer' }],
+    });
+    expect(messages.flatMap(message => message.contentBlocks ?? [])
+      .filter(block => block.type === 'context_compacted')).toHaveLength(compacted ? 1 : 0);
+    expect(JSON.stringify(messages)).not.toContain('Context window exceeded');
+  });
+
+  it.each([false, true])('keeps a terminal failure before the next user prompt (compaction: %s)', (compacted) => {
+    const messages = parsePiSessionContent([
+      { type: 'message', id: 'u1', message: { role: 'user', content: 'First request' } },
+      { type: 'message', id: 'a1', parentId: 'u1', message: {
+        role: 'assistant', content: [], stopReason: 'error', errorMessage: 'Quota exceeded',
+      } },
+      ...(compacted ? [{ type: 'compaction', id: 'c1', parentId: 'a1' }] : []),
+      { type: 'message', id: 'u2', parentId: compacted ? 'c1' : 'a1', message: { role: 'user', content: 'Second request' } },
+      { type: 'message', id: 'a2', parentId: 'u2', message: { role: 'assistant', content: 'Success', stopReason: 'stop' } },
+    ].map(entry => JSON.stringify(entry)).join('\n'));
+
+    expect(messages[1]).toMatchObject({
+      content: '\n\n**Error:** Quota exceeded',
+      contentBlocks: [{ type: 'text', content: '\n\n**Error:** Quota exceeded' }],
+    });
+    expect(messages.at(-1)?.content).toBe('Success');
+    expect(messages.filter(message => message.content.includes('Quota exceeded'))).toHaveLength(1);
+  });
+
+  it.each([false, true])('keeps a failed request separate from a later automatic turn (display: %s)', (display) => {
+    const messages = parsePiSessionContent([
+      { type: 'message', id: 'u1', message: { role: 'user', content: 'First request' } },
+      { type: 'message', id: 'a1', parentId: 'u1', message: {
+        role: 'assistant', content: [], stopReason: 'error', errorMessage: 'Quota exceeded',
+      } },
+      { type: 'custom_message', id: 'c1', parentId: 'a1', customType: 'context', display, content: 'New automatic task' },
+      { type: 'message', id: 'a2', parentId: 'c1', message: {
+        role: 'assistant', content: 'Automatic success', stopReason: 'stop',
+      } },
+    ].map(entry => JSON.stringify(entry)).join('\n'));
+
+    expect(messages[1]).toMatchObject({
+      content: '\n\n**Error:** Quota exceeded',
+      contentBlocks: [{ type: 'text', content: '\n\n**Error:** Quota exceeded' }],
+    });
+    expect(messages.at(-1)).toMatchObject({ content: 'Automatic success', isAutomaticResponse: true });
+    expect(messages.at(-1)?.turnId).not.toBe(messages[1].turnId);
+    expect(messages.filter(message => message.content.includes('Quota exceeded'))).toHaveLength(1);
+  });
+
   it('decodes session senders while preserving live-to-native input matching', () => {
     const envelope = encodeSessionMessage({ from: 'Planner', sessionId: 'sender', text: 'Check this' });
     const native = parsePiSessionContent(JSON.stringify({ type: 'message', id: 'native-user',
