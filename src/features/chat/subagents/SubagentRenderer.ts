@@ -35,6 +35,7 @@ export interface SubagentState {
   wrapperEl: HTMLElement;
   contentEl: HTMLElement;
   headerEl: HTMLElement;
+  refreshHeaderLabel(): void;
   labelEl: HTMLElement;
   statusEl: HTMLElement;
   promptSectionEl: HTMLElement;
@@ -79,10 +80,7 @@ function setPromptText(promptBodyEl: HTMLElement, prompt: string): void {
 }
 
 function updateSyncHeaderAria(state: SubagentState): void {
-  state.headerEl.setAttribute(
-    'aria-label',
-    `Subagent task: ${state.info.description} - Status: ${state.info.status} - click to expand`
-  );
+  state.refreshHeaderLabel();
   state.statusEl.setAttribute('aria-label', `Status: ${state.info.status}`);
 }
 
@@ -229,6 +227,7 @@ function setResultText(state: SubagentState, text: string): void {
 function createSubagentView(
   parentEl: HTMLElement,
   info: Readonly<SubagentInfo>,
+  background = false,
 ): SubagentState {
   const { id: taskToolId, description, prompt = '' } = info;
 
@@ -260,6 +259,7 @@ function createSubagentView(
     wrapperEl,
     contentEl,
     headerEl,
+    refreshHeaderLabel: () => refreshHeaderLabel(),
     labelEl,
     statusEl,
     promptSectionEl: promptSection.wrapperEl,
@@ -272,7 +272,10 @@ function createSubagentView(
     progressEl: null,
     progress: null,
   };
-  setupCollapsible(wrapperEl, headerEl, contentEl, state, {
+  const refreshHeaderLabel = setupCollapsible(wrapperEl, headerEl, contentEl, state, {
+    baseAriaLabel: () => background
+      ? `Background task: ${state.info.description} - ${getAsyncStatusAriaLabel(state.info.asyncStatus)}`
+      : `Subagent task: ${state.info.description} - Status: ${state.info.status}`,
     onToggle: expanded => { if (expanded) updateSubagentTools(state); },
   });
 
@@ -387,11 +390,7 @@ function updateAsyncLabel(state: AsyncSubagentState): void {
   state.labelEl.setText(truncateDescription(state.info.description));
   state.headerEl.title = state.info.description;
 
-  const statusLabel = getAsyncStatusAriaLabel(state.info.asyncStatus);
-  state.headerEl.setAttribute(
-    'aria-label',
-    `Background task: ${state.info.description} - ${statusLabel} - click to expand`
-  );
+  state.refreshHeaderLabel();
 }
 
 /** Create a background card with the same incremental content view as foreground tasks. */
@@ -399,7 +398,7 @@ export function createAsyncSubagentBlock(
   parentEl: HTMLElement,
   info: Readonly<SubagentInfo>,
 ): AsyncSubagentState {
-  const view = createSubagentView(parentEl, info);
+  const view = createSubagentView(parentEl, info, true);
   delete view.wrapperEl.dataset.subagentId;
   view.wrapperEl.dataset.asyncSubagentId = info.id;
   const statusTextEl = view.headerEl.createDiv({ cls: 'claudian-subagent-status-text' });
