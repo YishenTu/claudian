@@ -9,6 +9,7 @@ import {
   submitInstruction,
   typeInstruction,
 } from '@test/helpers/features/inline-edit/InlineEditDOMHarness';
+import { testDate } from '@test/helpers/testClock';
 import { fireEvent, screen, waitFor, within } from '@testing-library/dom';
 import { Component, type Editor, MarkdownRenderer, Notice, TFile, TFolder, WorkspaceLeaf } from 'obsidian';
 
@@ -269,12 +270,40 @@ it('keeps the provider when a picked model is not uniquely owned by one enabled 
   await expect(result).resolves.toEqual({ decision: 'reject' });
 });
 
-it('suggests Vault folders for @ mentions', async () => {
+it('refreshes file and folder suggestions when the same inline session reopens its popup', async () => {
   const h = await createHarness();
-  h.app.vault.getAllLoadedFiles = () => [Object.assign(new TFolder(), { name: 'src', path: 'src' })];
-  h.createSession().show();
-  typeInstruction('@s');
-  expect(await screen.findByRole('option', { name: /src\// })).toBeDefined();
+  const stat = { ctime: testDate().getTime(), mtime: testDate().getTime(), size: 1 };
+  const oldFile = Object.assign(new TFile(), { path: 'Old.md', name: 'Old.md', stat });
+  const oldFolder = Object.assign(new TFolder(), { path: 'OldFolder', name: 'OldFolder' });
+  let inventory: Array<TFile | TFolder> = [oldFile, oldFolder];
+  h.app.vault.getAllLoadedFiles = () => inventory;
+  const session = h.createSession();
+  session.show();
+  typeInstruction('@OldF');
+  expect(await screen.findByRole('option', { name: '@OldFolder/' })).toBeDefined();
+  typeInstruction('@');
+  const labels = () => within(screen.getByRole('listbox')).getAllByRole('option').map(option => option.textContent).sort();
+  expect(labels()).toEqual(['@OldFolder/', 'Old.md']);
+  typeInstruction('No trigger');
+  expect(screen.getByRole('listbox').hasClass('is-visible')).toBe(false);
+  expect(input().hasAttribute('aria-activedescendant')).toBe(false);
+  const currentInput = input();
+  const newFile = Object.assign(new TFile(), { path: 'New.md', name: 'New.md', stat });
+  const newFolder = Object.assign(new TFolder(), { path: 'NewFolder', name: 'NewFolder' });
+  inventory = [newFile, oldFolder, newFolder];
+  h.app.vault.trigger('delete', oldFile);
+  h.app.vault.trigger('create', newFile);
+  h.app.vault.trigger('create', newFolder);
+  typeInstruction('@');
+  expect(input()).toBe(currentInput);
+  expect(labels()).toEqual(['@NewFolder/', '@OldFolder/', 'New.md']);
+  expect(screen.queryByRole('option', { name: 'Old.md' })).toBeNull();
+  expect(h.settled).not.toHaveBeenCalled();
+  session.close();
+  const later = h.createSession();
+  later.show(); typeInstruction('@');
+  expect(labels()).toEqual(['@NewFolder/', '@OldFolder/', 'New.md']);
+  later.close();
 });
 
 it('keeps open inline suggestions anchored after note scroll and viewport resize', async () => {
