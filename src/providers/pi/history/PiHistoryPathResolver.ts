@@ -98,9 +98,21 @@ function resolveWSLSessionFile(
   return null;
 }
 
-function getConfiguredSessionDir(context: ProviderHistoryEnvironment): string | null {
-  const configured = context.environment.PI_CODING_AGENT_SESSION_DIR?.trim();
-  return configured && path.isAbsolute(configured) ? configured : null;
+function resolveLocalDirectory(value: string | undefined, home: string, cwd: string): string | null {
+  let directory = value?.trim();
+  if (!directory) return null;
+  try {
+    if (directory === '~') directory = home;
+    else if (directory.startsWith('~/') || (process.platform === 'win32' && directory.startsWith('~\\'))) {
+      directory = path.join(home, directory.slice(2));
+    } else if (directory.startsWith('file://')) {
+      directory = fileURLToPath(directory);
+    }
+    return path.resolve(cwd, directory);
+  } catch {
+    // Invalid native file URLs cannot establish a configured history root.
+    return null;
+  }
 }
 
 function getTrustedRoots(
@@ -108,13 +120,18 @@ function getTrustedRoots(
   context: ProviderHistoryEnvironment,
 ): string[] {
   const roots: string[] = [];
-  const configuredSessionDir = getConfiguredSessionDir(context);
+  const windows = (context.hostPlatform ?? process.platform) === 'win32';
+  const home = (windows
+    ? context.environment.USERPROFILE?.trim() || context.environment.HOME?.trim()
+    : context.environment.HOME?.trim() || context.environment.USERPROFILE?.trim()) || os.homedir();
+  const cwd = vaultPath ?? context.vaultPath ?? process.cwd();
+  const configuredSessionDir = resolveLocalDirectory(context.environment.PI_CODING_AGENT_SESSION_DIR, home, cwd);
   if (configuredSessionDir) {
     roots.push(configuredSessionDir);
   }
 
-  const configuredAgentDir = context.environment.PI_CODING_AGENT_DIR?.trim();
-  if (configuredAgentDir && path.isAbsolute(configuredAgentDir)) {
+  const configuredAgentDir = resolveLocalDirectory(context.environment.PI_CODING_AGENT_DIR, home, cwd);
+  if (configuredAgentDir) {
     roots.push(path.join(configuredAgentDir, 'sessions'));
   }
   if (vaultPath) {
@@ -123,10 +140,6 @@ function getTrustedRoots(
       roots.push(vaultSessionRoot);
     }
   }
-  const windows = (context.hostPlatform ?? process.platform) === 'win32';
-  const home = (windows
-    ? context.environment.USERPROFILE?.trim() || context.environment.HOME?.trim()
-    : context.environment.HOME?.trim() || context.environment.USERPROFILE?.trim()) || os.homedir();
   roots.push(path.join(home, '.pi', 'agent', 'sessions'));
   return [...new Set(roots)];
 }
