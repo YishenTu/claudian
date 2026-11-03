@@ -87,6 +87,7 @@ test('real dependency discovery retains native launch checks for shared process 
     changes: [{ status: 'M', path: 'src/core/process/windowsCmdShim.ts' }],
   });
   assert.deepEqual(result.crossPlatformTests.sort(), [
+    'tests/integration/app/projects/ProjectService.test.ts',
     'tests/integration/app/settings/RuntimeSettingsCoordinator.test.ts',
     'tests/integration/core/process/ManagedStdioProcess.test.ts',
     'tests/integration/core/process/ProcessProbe.test.ts',
