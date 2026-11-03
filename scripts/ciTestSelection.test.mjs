@@ -177,7 +177,7 @@ test('filesystem-read documentation, styles, and captured fixtures retain their 
     assert.ok(select(['src/style/components/zen-mode.css']).testFiles.includes(consumer), consumer);
   }
   const fixture = select(['tests/fixtures/providers/grok/history/example.json']);
-  assert.ok(fixture.testFiles.includes('tests/unit/providers/grok/history/GrokHistoryStore.test.ts'));
+  assert.ok(fixture.testFiles.includes('tests/integration/providers/grok/history/GrokHistoryStore.test.ts'));
   assert.ok(fixture.testFiles.includes('tests/integration/providers/grok/history/GrokConversationHistoryService.test.ts'));
   for (const status of ['A', 'M']) {
     for (const event of ['pull_request', 'push']) {
