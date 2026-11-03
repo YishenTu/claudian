@@ -286,10 +286,6 @@ function* findNodeDirectories(additionalPaths?: string, searchPaths = getExtraBi
   }
 }
 
-export function findNodeExecutables(additionalPaths?: string): string[] {
-  return [...findNodeDirectories(additionalPaths)].map(dir => path.join(dir, NODE_EXECUTABLE));
-}
-
 export function findNodeDirectory(additionalPaths?: string): string | null {
   return findNodeDirectories(additionalPaths).next().value ?? null;
 }
