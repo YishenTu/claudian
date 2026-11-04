@@ -11,9 +11,6 @@ import { join } from 'node:path';
 export const name = 'claudian-compatibility';
 export const inject = ['systemPrompt', 'tools', 'sessionProjections', 'agents', 'loader'];
 
-// dsh 0.2.1 declares presentation per agent with tools.presentAs(); 0.2.2 replaced it with scoped executor plugins.
-const scopedPresentation = tools => typeof tools.presentAs === 'function';
-
 export function apply(ctx, config) {
   if (typeof config?.promptDirectory !== 'string' || !config.promptDirectory) {
     throw new TypeError('Claudian compatibility requires a prompt directory.');
@@ -51,16 +48,8 @@ export function apply(ctx, config) {
       interpolate: false, complete: false,
     }), 'claudian.compatibility.section()');
   }
-  if (config.allow !== undefined) {
-    ctx.on('agent/created', ({ agent }) => {
-      // dsh 0.2.2 auxiliary presets select the native executor through their agent-tool-presentation row.
-      if (scopedPresentation(agent.ctx.tools)) agent.ctx.tools.presentAs('native');
-      agent.ctx.tools.restrict({ allow: config.allow });
-    });
-  }
   // Cordis accepts only a disposer or nothing as the resolved result.
-  return Promise.all([config.listAgents === true && mountListAgents(ctx), config.codeModeFile !== undefined && presentCodeMode(ctx, config)])
-    .then(() => undefined);
+  return Promise.all([config.listAgents === true && mountListAgents(ctx), presentTools(ctx, config)]).then(() => undefined);
 }
 
 // dsh 0.2.2 registers list_agents with the subagent control plugin; 0.2.1 ships it as a separate entry.
@@ -72,26 +61,34 @@ async function mountListAgents(ctx) {
   if (listAgents) ctx.plugin(listAgents);
 }
 
-// Chat presentation follows Claudian's live code-mode preference, read only between turns: the model reaches tools
-// directly, or only through run_code programs. dsh 0.2.2 selects that by mounting an executor in the agent's scope.
-async function presentCodeMode(ctx, config) {
-  const executors = scopedPresentation(ctx.tools) ? undefined : Object.fromEntries(await Promise.all(
-    [['native', 'native'], ['both', 'ptc']].map(async ([mode, executor]) => [mode, await ctx.loader.import('@deepseek-ai/dsh-tool-executor-' + executor)]),
-  ));
+// Each agent reaches tools directly ('native') or only through run_code programs ('both'). dsh 0.2.1 declares that with
+// tools.presentAs(); 0.2.2 mounts the matching executor plugin in the agent's scope. Auxiliary agents stay direct with
+// their fixed allow list; chat agents follow Claudian's live code-mode preference, read only between turns.
+async function presentTools(ctx, config) {
+  let executors;
+  if (typeof ctx.tools.presentAs !== 'function') {
+    const [native, ptc] = await Promise.all(['native', 'ptc'].map(name => ctx.loader.import('@deepseek-ai/dsh-tool-executor-' + name)));
+    executors = { native, both: ptc };
+  }
   const declared = new WeakMap();
-  const present = agent => {
-    let mode = 'native';
-    try { if (readFileSync(config.codeModeFile, 'utf8') === 'both') mode = 'both'; } catch {}
+  const present = (agent, mode) => {
     const current = declared.get(agent);
     if (current?.mode === mode) return;
     current?.dispose();
-    if (executors) {
-      const fiber = agent.ctx.plugin(executors[mode]);
-      declared.set(agent, { mode, dispose: () => fiber.dispose() });
-    } else declared.set(agent, { mode, dispose: agent.ctx.tools.presentAs(mode) });
+    declared.set(agent, { mode, dispose: executors ? agent.ctx.plugin(executors[mode]).dispose : agent.ctx.tools.presentAs(mode) });
   };
-  ctx.on('agent/created', ({ agent }) => present(agent));
-  ctx.on('agent/status', ({ agent, status }) => { if (status === 'running') present(agent); });
+  if (config.allow !== undefined) {
+    ctx.on('agent/created', ({ agent }) => {
+      present(agent, 'native');
+      agent.ctx.tools.restrict({ allow: config.allow });
+    });
+    return;
+  }
+  const preference = () => {
+    try { return readFileSync(config.codeModeFile, 'utf8') === 'both' ? 'both' : 'native'; } catch { return 'native'; }
+  };
+  ctx.on('agent/created', ({ agent }) => present(agent, preference()));
+  ctx.on('agent/status', ({ agent, status }) => { if (status === 'running') present(agent, preference()); });
 }
 `;
 
@@ -302,7 +299,7 @@ export function apply(ctx, config) {
   const forking = new AsyncLocalStorage();
   const isEphemeral = (header, inheritedEventCount) => {
     if (header.id.startsWith(PREFIX)) return true;
-    const parent = header.parentSession ?? (header.origin === undefined ? forking.getStore() : undefined);
+    const parent = header.parentSession ?? forking.getStore();
     return parent !== undefined && (memory.has(parent) || (header.origin === undefined && claimFork(parent, inheritedEventCount)));
   };
 

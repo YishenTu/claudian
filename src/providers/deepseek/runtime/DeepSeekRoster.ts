@@ -74,9 +74,9 @@ export class DeepSeekRoster {
         this.baselined = true;
       } else if (value.type === 'projection' && typeof value.sessionId === 'string') {
         // dsh 0.2.2 batches one event's changes as `{ key, val }`; earlier versions send one `key`/`value` per frame.
-        const changes: unknown[] = Array.isArray(value.changes) ? value.changes
-          : typeof value.key === 'string' ? [{ key: value.key, val: value.value }] : [undefined];
-        if (!changes.every(isProjectionChange)) throw new Error('Malformed DeepSeek control frame.');
+        const changes: unknown[] | undefined = Array.isArray(value.changes) ? value.changes
+          : typeof value.key === 'string' ? [{ key: value.key, val: value.value }] : undefined;
+        if (!changes?.every(isProjectionChange)) throw new Error('Malformed DeepSeek control frame.');
         const values = this.projections.get(value.sessionId) ?? {};
         for (const { key, val } of changes) values[key] = val;
         this.projections.set(value.sessionId, values);

@@ -1,4 +1,4 @@
-// @test-ci {"native":true}
+// @test-ci {"native":true,"inputs":["tests/helpers/deepseek/NativePluginHost.mjs"]}
 import { execFile, spawn } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as fsPromises from 'node:fs/promises';
@@ -15,6 +15,8 @@ import { createExecutionPathMapper } from '@/core/process/execution-target/WSLPa
 import { LoopbackSessionToolServer } from '@/core/session-tools/LoopbackSessionToolServer';
 import { SESSION_TOOL_SPECS } from '@/core/session-tools/sessionToolSpecs';
 import { prepareDeepSeekLaunchArtifacts } from '@/providers/deepseek/runtime/DeepSeekLaunchArtifacts';
+
+const NATIVE_PLUGIN_HOST = pathToFileURL(join(__dirname, '../../../../helpers/deepseek/NativePluginHost.mjs')).href;
 
 // The filesystem stays real; individual tests inject the transient lock errors Windows reports for files in use.
 vi.mock('node:fs/promises', async () => {
@@ -41,13 +43,11 @@ it('gives every preset the session prompt directory and its tool policy while ke
     // mode is a live per-agent presentation rather than a preset row. Auxiliary presets keep their fixed native policy.
     const plugins = Object.fromEntries(inserted.slice(1).map((entry) => [entry.config.id, entry.config.plugins]));
     expect(plugins['claudian-code']).toEqual(plugins.claudian);
-    expect(plugins.claudian.some((row) => row.id === 'agent-tool-presentation')).toBe(false);
     expect(presets.claudian.config.codeModeFile).toEqual(expect.any(String));
     expect(presets['claudian-code'].config.codeModeFile).toBe(presets.claudian.config.codeModeFile);
-    for (const auxiliary of ['claudian-passive', 'claudian-read-only']) {
-      expect(presets[auxiliary].config.codeModeFile).toBeUndefined();
-      expect(plugins[auxiliary].find((row) => row.id === 'agent-tool-presentation')!.config).toEqual({ mode: 'native' });
-    }
+    // The compatibility plugin alone selects every agent's presentation; no preset-wide presentation row competes with it.
+    for (const preset of Object.values(plugins)) expect(preset.some((row) => row.id === 'agent-tool-presentation')).toBe(false);
+    for (const auxiliary of ['claudian-passive', 'claudian-read-only']) expect(presets[auxiliary].config.codeModeFile).toBeUndefined();
 
     const first = 'Literal {{title}} ${process.exit(99)} `quotes`\\n Unicode 笔记';
     // Native session ids need not be valid file names.
@@ -58,24 +58,23 @@ it('gives every preset the session prompt directory and its tool policy while ke
     const { stdout } = await promisify(execFile)(process.execPath, ['--input-type=module', '-e', `
       const plugin = await import(process.argv[1]);
       const config = JSON.parse(process.argv[2]);
-      const sections = [];
-      const native = () => ({ effect: fn => fn(), on: () => () => {}, agents: { turnBoundaryOf: () => ({ lastTurn: 1 }) }, systemPrompt: {
-        section: section => { sections.push(section); return () => {}; },
-        getSectionOrder: name => name,
-      }, tools: {}, plugin: () => ({ dispose() {} }), loader: { import: async () => ({}) } });
-      // Cordis accepts only a disposer or nothing as a plugin's (resolved) apply result.
-      for (const applied of [await plugin.apply(native(), config), await plugin.apply(native(), { promptDirectory: config.promptDirectory, allow: [] })]) {
-        if (applied !== undefined && typeof applied !== 'function') throw new Error('Invalid Cordis effect: ' + JSON.stringify(applied));
+      const { createNativePluginHost } = await import(process.argv[4]);
+      // Every preset kind applies cleanly on each supported native version.
+      for (const version of ['0.2.1', '0.2.2']) {
+        for (const presetConfig of [config, { promptDirectory: config.promptDirectory, allow: [] }]) await createNativePluginHost(version).apply(plugin, presetConfig);
       }
       for (const bad of [{}, { promptDirectory: 1 }]) {
         let rejected = false;
-        try { plugin.apply({}, bad); } catch { rejected = true; }
+        try { plugin.apply(createNativePluginHost('0.2.2').ctx, bad); } catch { rejected = true; }
         if (!rejected) throw new Error('Configuration without a prompt directory accepted');
       }
-      const persona = sections[0];
-      const session = { id: process.argv[3], header: { id: process.argv[3] } };
-      process.stdout.write(JSON.stringify({ persona, text: persona.text({ agent: { id: session.id, session } }), agentless: persona.text({}), webSurface: sections.find(section => section.name === 'app:web-surface').text }));
-    `, pluginPath, JSON.stringify(presets.claudian.config), sessionId], { cwd: root });
+      const native = createNativePluginHost('0.2.2');
+      await native.apply(plugin, config);
+      const persona = native.sections[0];
+      const { session } = native.agent(process.argv[3]);
+      native.setTurn(session.id, 1);
+      process.stdout.write(JSON.stringify({ persona, text: persona.text({ agent: { id: session.id, session } }), agentless: persona.text({}), webSurface: native.sections.find(section => section.name === 'app:web-surface').text }));
+    `, pluginPath, JSON.stringify(presets.claudian.config), sessionId, NATIVE_PLUGIN_HOST], { cwd: root });
     const result = JSON.parse(stdout);
     expect(result).toMatchObject({ persona: { interpolate: false, complete: false }, text: first, agentless: '', webSurface: '' });
     expect(await readFile(new URL(pluginPath), 'utf8')).not.toContain(first);
@@ -154,44 +153,35 @@ it('switches each chat agent between direct tools and code mode at its next turn
     const patch: LaunchPatchEntry[] = JSON.parse(await readFile(artifacts.patchPath, 'utf8'));
     const compatibility = patch.find((entry) => entry.insert)!.insert!
       .find((entry) => entry.config?.id === 'claudian')!.config.plugins.find((row) => row.id === 'claudian-compatibility')!;
+    const auxiliary = patch.find((entry) => entry.insert)!.insert!
+      .find((entry) => entry.config?.id === 'claudian-read-only')!.config.plugins.find((row) => row.id === 'claudian-compatibility')!;
     // Drive the bundled plugin as native does: agent creation, then turn status changes, with code mode edited in between.
-    // dsh 0.2.1 declares presentation with tools.presentAs(); 0.2.2 mounts an executor plugin in the agent's scope.
     const script = `
       import { writeFileSync } from 'node:fs';
       const plugin = await import(process.argv[1]);
       const config = JSON.parse(process.argv[2]);
-      const scoped = process.argv[4] === '0.2.1';
-      const listeners = {};
-      const log = [];
-      const mounted = [];
-      // dsh 0.2.1 ships list_agents as a subpath entry; 0.2.2 has executor plugins instead.
-      const imports = scoped ? { '@deepseek-ai/dsh-tool-subagent-control/list-agents': 'list-agents' }
-        : { '@deepseek-ai/dsh-tool-executor-native': 'native', '@deepseek-ai/dsh-tool-executor-ptc': 'ptc' };
-      await plugin.apply({ effect: fn => fn(), systemPrompt: { section: () => () => {}, getSectionOrder: name => name },
-        tools: scoped ? { presentAs() {} } : {}, plugin: entry => { mounted.push(entry.name); return { dispose() {} }; },
-        loader: { import: async name => {
-          if (name in imports) return { name: imports[name] };
-          throw Object.assign(new Error('Package subpath is not defined by exports'), { code: 'ERR_PACKAGE_PATH_NOT_EXPORTED' });
-        } },
-        on: (name, listener) => { (listeners[name] ??= []).push(listener); return () => {}; } }, config);
-      const agent = id => ({ id, ctx: scoped
-        ? { tools: { presentAs: mode => { log.push(id + ' present ' + mode); return () => log.push(id + ' dispose ' + mode); } } }
-        : { tools: {}, plugin: executor => { log.push(id + ' present ' + executor.name); return { dispose: () => log.push(id + ' dispose ' + executor.name) }; } } });
-      const emit = (name, payload) => { for (const listener of listeners[name] ?? []) listener(payload); };
-      const [first, second] = [agent('first'), agent('second')];
+      const { createNativePluginHost } = await import(process.argv[5]);
+      const native = createNativePluginHost(process.argv[4]);
+      await native.apply(plugin, config);
+      const [first, second] = [native.agent('first'), native.agent('second')];
       for (const step of JSON.parse(process.argv[3])) {
         if (step.write !== undefined) writeFileSync(config.codeModeFile, step.write);
-        else if (step.created) emit('agent/created', { agent: step.created === 'first' ? first : second });
-        else emit('agent/status', { agent: step.agent === 'first' ? first : second, status: step.status });
+        else if (step.created) native.emit('agent/created', { agent: step.created === 'first' ? first : second });
+        else native.emit('agent/status', { agent: step.agent === 'first' ? first : second, status: step.status });
       }
-      process.stdout.write(JSON.stringify({ log, mounted }));
+      process.stdout.write(JSON.stringify({ log: native.log, mounted: native.mounted, presentation: native.presentation }));
     `;
-    for (const [version, direct, code] of [['0.2.1', 'native', 'both'], ['0.2.2', 'native', 'ptc']]) {
-      const drive = async (steps: unknown[]): Promise<{ log: string[]; mounted: string[] }> => JSON.parse((await promisify(execFile)(process.execPath,
-        ['--input-type=module', '-e', script, compatibility.name, JSON.stringify(compatibility.config), JSON.stringify(steps), version], { cwd: root })).stdout);
+    for (const version of ['0.2.1', '0.2.2']) {
+      const drive = async (steps: unknown[], row = compatibility): Promise<{ log: string[]; mounted: string[]; presentation: { direct: string; code: string } }> =>
+        JSON.parse((await promisify(execFile)(process.execPath,
+          ['--input-type=module', '-e', script, row.name, JSON.stringify(row.config), JSON.stringify(steps), version, NATIVE_PLUGIN_HOST], { cwd: root })).stdout);
       const run = async (steps: unknown[]): Promise<string[]> => (await drive(steps)).log;
+      const { mounted, presentation: { direct, code } } = await drive([]);
       // The chat preset mounts 0.2.1's separate list_agents entry; 0.2.2 registers it with subagent control.
-      expect((await drive([])).mounted).toEqual(version === '0.2.1' ? ['list-agents'] : []);
+      expect(mounted).toEqual(version === '0.2.1' ? ['list-agents'] : []);
+      // Auxiliary agents always reach their fixed allow list directly, whatever the code-mode preference.
+      await artifacts.writeCodeMode(true);
+      expect((await drive([{ created: 'first' }], auxiliary)).log).toEqual([`first present ${direct}`, 'first allow read,read_image,glob,grep']);
 
       // A fresh Host starts in direct-tool mode until Claudian writes the preference.
       await artifacts.writeCodeMode(false);

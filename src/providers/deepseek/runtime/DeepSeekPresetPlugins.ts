@@ -70,8 +70,6 @@ export function buildDeepSeekPresetPlugins(
       id: 'claudian-compatibility', name: paths.compatibility,
       config: { promptDirectory: paths.promptDirectory, ...(auxiliary ? { allow } : { codeModeFile: paths.codeModeFile, listAgents: true }) },
     },
-    // Chat presets present tools per agent from the live code-mode preference instead.
-    ...(auxiliary ? [plugin('agent-tool-presentation', { mode: 'native' })] : []),
     plugin('agent-instructions', { maxBytes: 65536 }),
     plugin('time-context'),
     plugin('tool-fs'),
