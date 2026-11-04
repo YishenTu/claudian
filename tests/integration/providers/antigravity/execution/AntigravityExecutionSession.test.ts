@@ -469,11 +469,18 @@ describe('AntigravityExecutionSession', () => {
       tool('task-2', 'manage_task', { Action: 'send_input', Input: 'hello\n', TaskId: 'session-new/task-2' }, 'other', 'Run manage_task'),
       tool('task-3', 'manage_task', { Action: 'kill', TaskId: 'session-new/task-2' }, 'other', 'Run manage_task'),
       tool('task-4', 'manage_task', { Action: 'list' }, 'other', 'Run manage_task'),
+      tool('res-1', 'list_resources', { ServerName: 'claudian_sessions' }, 'other', 'Run list_resources'),
     ];
     for (const update of outputlessTools) {
       peer.emit(update, 'session-new');
       peer.emit({ ...update, sessionUpdate: 'tool_call_update', status: 'completed' }, 'session-new');
     }
+    // MCP servers from the user's agy config run through agy's generic dispatcher, which does stream output.
+    const inherited = tool('mcp-1', 'call_mcp_tool', { Arguments: { nonce: 'n-1' }, ServerName: 'notes_server', ToolName: 'search_notes' },
+      'execute', 'MCP Tool search_notes');
+    peer.emit(inherited, 'session-new');
+    peer.emit({ ...inherited, content: [{ content: { text: '{"hits":1}', type: 'text' }, type: 'content' }],
+      rawOutput: '{"hits":1}', sessionUpdate: 'tool_call_update', status: 'completed' }, 'session-new');
     peer.finishPrompt();
     const events = await collect(run.events);
 
@@ -487,7 +494,9 @@ describe('AntigravityExecutionSession', () => {
       expect.objectContaining({ input: expect.objectContaining({ TaskId: 'session-new/task-2' }), name: 'BashOutput', toolCallId: 'task-1' }),
       expect.objectContaining({ input: expect.objectContaining({ chars: 'hello\n', session_id: 'session-new/task-2' }), name: 'write_stdin', toolCallId: 'task-2' }),
       expect.objectContaining({ input: expect.objectContaining({ TaskId: 'session-new/task-2' }), name: 'KillShell', toolCallId: 'task-3' }),
-      expect.objectContaining({ input: { Action: 'list' }, name: 'manage_task', toolCallId: 'task-4' }),
+      expect.objectContaining({ input: expect.objectContaining({ Action: 'list' }), name: 'ManageTasks', toolCallId: 'task-4' }),
+      expect.objectContaining({ input: expect.objectContaining({ server: 'claudian_sessions' }), name: 'ListMcpResources', toolCallId: 'res-1' }),
+      expect.objectContaining({ input: { nonce: 'n-1' }, name: 'mcp__notes_server__search_notes', toolCallId: 'mcp-1' }),
     ]);
     const completed = events.filter(event => event.type === 'tool_completed');
     expect(completed.map(event => [event.toolCallId, event.content ?? '', event.isError ?? false])).toEqual([
@@ -500,6 +509,8 @@ describe('AntigravityExecutionSession', () => {
       ['task-2', '', false],
       ['task-3', '', false],
       ['task-4', '', false],
+      ['res-1', '', false],
+      ['mcp-1', '{"hits":1}', false],
     ]);
   });
 

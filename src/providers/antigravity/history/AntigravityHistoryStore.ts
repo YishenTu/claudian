@@ -37,6 +37,9 @@ interface TurnBuilder {
   readonly blocks: ContentBlock[];
   readonly pending: PendingTool[];
   readonly toolCalls: ToolCallInfo[];
+  /** Request time of a user turn; automatic responses have none. */
+  readonly requestedAt?: number;
+  lastStepAt?: number;
 }
 
 /** agy records no result step for calls a denial aborted; a later step proves they never ran. */
@@ -98,7 +101,11 @@ export function parseAntigravityTranscript(
   const finishTurn = (): void => {
     if (!turn) return;
     // Calls without a result at the end of the transcript may still be running.
-    const { assistant, blocks, toolCalls } = turn;
+    const { assistant, blocks, lastStepAt, requestedAt, toolCalls } = turn;
+    if (requestedAt && lastStepAt && lastStepAt >= requestedAt) {
+      assistant.completedAt = lastStepAt;
+      assistant.durationSeconds = Math.floor((lastStepAt - requestedAt) / 1_000);
+    }
     if (assistant.content || blocks.length > 0 || toolCalls.length > 0) {
       if (blocks.length > 0) assistant.contentBlocks = blocks;
       if (toolCalls.length > 0) assistant.toolCalls = toolCalls;
@@ -122,6 +129,7 @@ export function parseAntigravityTranscript(
       },
       blocks: [],
       pending: [],
+      ...(automatic ? {} : { requestedAt: timestamp }),
       toolCalls: [],
     };
     return turn;
@@ -142,10 +150,15 @@ export function parseAntigravityTranscript(
         startTurn(stepId, timestamp, false);
         break;
       }
-      case 'SYSTEM_MESSAGE':
-        // Background task and subagent reports start a response without a user request.
-        startTurn(stepId, timestamp, true);
+      case 'SYSTEM_MESSAGE': {
+        // Background task and subagent reports start a response without a user request. A notice before the
+        // current turn has produced anything (agy's restart notice follows the next request) is only context.
+        const current = turn as TurnBuilder | null;
+        const answered = current
+          && (current.assistant.content || current.blocks.length > 0 || current.toolCalls.length > 0);
+        if (!current || answered) startTurn(stepId, timestamp, true);
         break;
+      }
       case 'PLANNER_RESPONSE': {
         const current: TurnBuilder = turn ?? startTurn(stepId, timestamp, true);
         if (step.thinking) appendBlock(current.blocks, 'thinking', step.thinking);
@@ -176,6 +189,10 @@ export function parseAntigravityTranscript(
       }
       default:
         break;
+    }
+    const current = turn as TurnBuilder | null;
+    if (current && timestamp > 0 && (step.type === 'PLANNER_RESPONSE' || step.type === 'GENERIC')) {
+      current.lastStepAt = timestamp;
     }
   }
   finishTurn();

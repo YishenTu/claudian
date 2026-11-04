@@ -151,8 +151,45 @@ describe('loadAntigravityHistory', () => {
           },
         ],
       },
+      // agy's restart notice arrives right after the request; the reply still answers the user.
+      { automatic: false, content: 'Are you back?', role: 'user', tools: [] },
+      { automatic: false, content: 'Yes.', role: 'assistant', tools: [] },
+      { automatic: false, content: 'Check tasks, resources and my notes server.', role: 'user', tools: [] },
+      {
+        automatic: false,
+        content: 'One note matches.',
+        role: 'assistant',
+        tools: [
+          {
+            hasDiff: false,
+            input: expect.objectContaining({ Action: 'list' }),
+            name: 'ManageTasks',
+            result: 'No background tasks are currently running.',
+            status: 'completed',
+          },
+          {
+            hasDiff: false,
+            input: expect.objectContaining({ server: 'claudian_sessions' }),
+            name: 'ListMcpResources',
+            result: 'MCP server claudian_sessions does not have any resources',
+            status: 'completed',
+          },
+          { hasDiff: false, input: { query: 'alpha' }, name: 'mcp__notes_server__search_notes', result: '{"hits":1}', status: 'completed' },
+        ],
+      },
     ]);
     expect(messages[1].contentBlocks?.map(block => block.type)).toEqual(['thinking', 'tool_use', 'tool_use', 'tool_use', 'text']);
+    // "Worked for" spans the request to the turn's last step; automatic background responses carry none.
+    const assistants = messages.filter(message => message.role === 'assistant');
+    expect(assistants.map(message => [message.durationSeconds, message.completedAt])).toEqual([
+      [6, Date.parse('2026-01-01T00:00:06Z')],
+      [4, Date.parse('2026-01-01T00:01:04Z')],
+      [undefined, undefined],
+      [4, Date.parse('2026-01-01T00:02:04Z')],
+      [13, Date.parse('2026-01-01T00:03:13Z')],
+      [2, Date.parse('2026-01-01T00:04:02Z')],
+      [4, Date.parse('2026-01-01T00:05:04Z')],
+    ]);
     expect(messages[1].toolCalls?.[0].resultFormat).toBe('plain');
   });
 

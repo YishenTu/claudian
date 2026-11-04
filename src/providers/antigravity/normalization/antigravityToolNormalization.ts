@@ -7,7 +7,10 @@ import {
   TOOL_EDIT,
   TOOL_GENERATE_IMAGE,
   TOOL_KILL_SHELL,
+  TOOL_LIST_MCP_RESOURCES,
+  TOOL_MANAGE_TASKS,
   TOOL_READ,
+  TOOL_READ_MCP_RESOURCE,
   TOOL_WEB_SEARCH,
   TOOL_WRITE,
   TOOL_WRITE_STDIN,
@@ -23,15 +26,18 @@ const ANTIGRAVITY_TOOL_NAME_MAP: Readonly<Record<string, string>> = {
   ask_question: TOOL_ASK_USER_QUESTION,
   edit_file: TOOL_EDIT,
   generate_image: TOOL_GENERATE_IMAGE,
+  list_resources: TOOL_LIST_MCP_RESOURCES,
   read_file: TOOL_READ,
+  read_resource: TOOL_READ_MCP_RESOURCE,
   run_command: TOOL_BASH,
   search_web: TOOL_WEB_SEARCH,
   write_file: TOOL_WRITE,
 };
 
-/** `manage_task` covers background commands; `list` has no shared counterpart and keeps its native name. */
+/** `manage_task` covers background commands. */
 const MANAGE_TASK_ACTION_MAP: Readonly<Record<string, string>> = {
   kill: TOOL_KILL_SHELL,
+  list: TOOL_MANAGE_TASKS,
   send_input: TOOL_WRITE_STDIN,
   status: TOOL_BASH_OUTPUT,
 };
@@ -46,6 +52,13 @@ export function normalizeAntigravityToolName(rawName: string, rawInput?: unknown
   if (name === 'manage_task' && isRecord(rawInput) && typeof rawInput.Action === 'string'
     && Object.hasOwn(MANAGE_TASK_ACTION_MAP, rawInput.Action)) {
     return MANAGE_TASK_ACTION_MAP[rawInput.Action];
+  }
+  // MCP servers from the user's agy config dispatch through `call_mcp_tool`; present the tool it calls.
+  if (name === 'call_mcp_tool' && isRecord(rawInput)) {
+    const server = typeof rawInput.ServerName === 'string' ? rawInput.ServerName.trim() : '';
+    const tool = typeof rawInput.ToolName === 'string' ? rawInput.ToolName.trim() : '';
+    if (server === SESSION_TOOL_MCP_SERVER_NAME && isSessionTool(tool)) return tool;
+    if (server && tool) return `mcp__${server}__${tool}`;
   }
   if (name.startsWith(SESSION_TOOL_PREFIX)) {
     const sessionTool = name.slice(SESSION_TOOL_PREFIX.length);
@@ -69,6 +82,11 @@ export function normalizeAntigravityToolInput(rawName: string, input: Record<str
       return normalizeQuestionInput(input);
     case 'generate_image':
       return withAliases(input, { prompt: input.Prompt });
+    case 'call_mcp_tool':
+      return isRecord(input.Arguments) ? input.Arguments : input;
+    case 'list_resources':
+    case 'read_resource':
+      return withAliases(input, { server: input.ServerName, uri: input.Uri ?? input.URI });
     case 'manage_task':
       return input.Action === 'send_input' ? withAliases(input, { chars: input.Input, session_id: input.TaskId }) : input;
     default: {
