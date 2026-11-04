@@ -435,8 +435,10 @@ describe('AntigravityExecutionSession', () => {
     const events = await collect(run.events);
 
     expect(events.filter(event => event.type === 'text_delta')).toEqual([expect.objectContaining({ text: 'Hi.' })]);
+    // agy reports no context window; Gemini models fall back to the 1,048,576-token workaround.
     expect(events).toContainEqual(expect.objectContaining({
-      type: 'usage_updated', usage: expect.objectContaining({ inputTokens: 10 }),
+      type: 'usage_updated',
+      usage: expect.objectContaining({ contextTokens: 12, contextWindow: 1_048_576, inputTokens: 10, model: 'gemini-4-argon' }),
     }));
     expect(events.at(-1)).toMatchObject({ reason: 'completed', type: 'turn_completed' });
     expect(session.getSnapshot().providerSessionId).toBe('session-new');

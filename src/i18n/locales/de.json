@@ -782,10 +782,6 @@
       "environment": {
         "name": "Antigravity-Umgebungsvariablen",
         "desc": "Umgebungsvariablen, die nur an Antigravity (agy) übergeben werden, z. B. GEMINI_API_KEY."
-      },
-      "signIn": {
-        "name": "Anmeldung",
-        "desc": "Antigravity verwendet das Konto, mit dem agy angemeldet ist. Wenn Anfragen mit einem Authentifizierungsfehler scheitern, führe `agy acp --login` in einem Terminal aus."
       }
     },
     "deepseek": {

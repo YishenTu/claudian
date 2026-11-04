@@ -782,10 +782,6 @@
       "environment": {
         "name": "Antigravity の環境変数",
         "desc": "Antigravity（agy）にのみ渡す環境変数です（例: GEMINI_API_KEY）。"
-      },
-      "signIn": {
-        "name": "サインイン",
-        "desc": "Antigravity は agy がサインインしているアカウントを使用します。認証エラーでリクエストが失敗する場合は、ターミナルで `agy acp --login` を実行してください。"
       }
     },
     "deepseek": {

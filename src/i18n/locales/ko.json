@@ -782,10 +782,6 @@
       "environment": {
         "name": "Antigravity 환경 변수",
         "desc": "Antigravity(agy)에만 전달되는 환경 변수입니다(예: GEMINI_API_KEY)."
-      },
-      "signIn": {
-        "name": "로그인",
-        "desc": "Antigravity는 agy에 로그인된 계정을 사용합니다. 인증 오류로 요청이 실패하면 터미널에서 `agy acp --login`을 실행하세요."
       }
     },
     "deepseek": {

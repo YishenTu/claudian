@@ -110,10 +110,6 @@ export const antigravitySettingsTabRenderer: ProviderSettingsTabRenderer = {
       validate: validateCLIPath,
     });
 
-    new AccessibleSetting(container)
-      .setName(t('settings.antigravity.signIn.name'))
-      .setDesc(t('settings.antigravity.signIn.desc'));
-
     new AccessibleSetting(container).setName('Models').setHeading();
     const modelPicker = renderProviderModelsSection(
       container, ANTIGRAVITY_PROVIDER_ID, DISPLAY_NAME, workspace.modelCatalog!, () => modelWarning.refresh(),

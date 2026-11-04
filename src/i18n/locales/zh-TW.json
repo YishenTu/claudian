@@ -782,10 +782,6 @@
       "environment": {
         "name": "Antigravity 環境變數",
         "desc": "僅傳遞給 Antigravity（agy）的環境變數，例如 GEMINI_API_KEY。"
-      },
-      "signIn": {
-        "name": "登入",
-        "desc": "Antigravity 使用 agy 已登入的帳號。如果請求因驗證錯誤而失敗，請在終端機中執行 `agy acp --login`。"
       }
     },
     "deepseek": {

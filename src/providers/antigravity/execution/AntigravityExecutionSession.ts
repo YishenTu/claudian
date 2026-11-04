@@ -606,11 +606,13 @@ export class AntigravityExecutionSession implements ProviderExecutionSession, St
     // A successful response proves acceptance even when agy streamed no output for it.
     active.turn.accept();
     if (response.usage) {
+      const model = active.request.configuration.model
+        ? decodeAntigravityModelId(active.request.configuration.model) ?? undefined
+        : undefined;
+      const windowSize = getAntigravityContextWindowWorkaround(model);
       const usage = buildACPUsageInfo({
-        contextWindow: null,
-        model: active.request.configuration.model
-          ? decodeAntigravityModelId(active.request.configuration.model) ?? undefined
-          : undefined,
+        contextWindow: windowSize ? { size: windowSize, used: response.usage.totalTokens } : null,
+        model,
         promptUsage: response.usage,
       });
       if (usage) active.run.emit({ type: 'usage_updated', usage });
@@ -753,6 +755,16 @@ class AntigravitySessionPreparationError extends Error {
   constructor(cause: unknown) {
     super(`Could not prepare the new Antigravity session: ${cause instanceof Error ? cause.message : String(cause)}`, { cause });
   }
+}
+
+/**
+ * Workaround: agy 1.5.0 reports no context window over ACP, so Gemini models assume Google's 1,048,576-token
+ * window and other models leave the context meter hidden. Remove this once agy reports the limit.
+ */
+const GEMINI_CONTEXT_WINDOW_WORKAROUND = 1_048_576;
+
+function getAntigravityContextWindowWorkaround(model: string | undefined): number | null {
+  return model?.startsWith('gemini-') ? GEMINI_CONTEXT_WINDOW_WORKAROUND : null;
 }
 
 class AntigravityExecutionCancellationError extends Error {
