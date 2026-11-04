@@ -43,9 +43,13 @@ export function updateInstallationSettings(
     delete stored.wslDistroOverridesByHost[installationKey];
   } else {
     if ('installationMethod' in updates) {
-      Object.defineProperty(stored.installationMethodsByHost, installationKey, {
-        value: normalizeInstallationMethod(updates.installationMethod), enumerable: true, writable: true, configurable: true,
-      });
+      const value = normalizeInstallationMethod(updates.installationMethod);
+      // The default is stored as an absent entry so normalization round-trips canonical settings.
+      if (value === DEFAULT_INSTALLATION_SETTINGS.installationMethod) {
+        delete stored.installationMethodsByHost[installationKey];
+      } else {
+        Object.defineProperty(stored.installationMethodsByHost, installationKey, { value, enumerable: true, writable: true, configurable: true });
+      }
     }
     if ('wslDistroOverride' in updates) {
       const value = typeof updates.wslDistroOverride === 'string' ? updates.wslDistroOverride.trim() : '';

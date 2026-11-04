@@ -413,9 +413,9 @@ describe('codex settings', () => {
       wslDistroOverride: '  ',
     });
 
+    // The default method is stored as the absence of the current host's entry.
     expect(next.installationMethodsByHost).toEqual({
       'host-b': 'wsl',
-      [getInstallationKey()]: 'native-windows',
     });
     expect(next.wslDistroOverridesByHost).toEqual({
       'host-b': 'Debian',
