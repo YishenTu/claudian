@@ -226,7 +226,7 @@ describe('projects section', () => {
       fixture,
       projects: createProjectsFake([
         projectRecord({ id: 'launch', name: 'Launch', createdAt: testDate({ days: -10 }).getTime() }),
-        projectRecord({ id: 'empty', name: 'Empty', createdAt: testDate({ days: -2 }).getTime() }),
+        projectRecord({ id: 'empty', name: 'Empty', icon: 'lucide-rocket', createdAt: testDate({ days: -2 }).getTime() }),
       ]),
     } });
     vi.spyOn(plugin, 'mutateSettings');
@@ -443,17 +443,18 @@ describe('projects section', () => {
     const { host, plugin, region, surface, view } = await createProjectSurface();
 
     const emptyToggle = () => within(region()).getByRole('button', { name: sectionName('Empty', 0) });
-    expect(folderIcon(emptyToggle())).toBe('lucide-folder');
+    // A chosen icon stays in both states; the default folder swaps (Launch, below).
+    expect(folderIcon(emptyToggle())).toBe('lucide-rocket');
     fireEvent.click(emptyToggle());
     await vi.mocked(plugin.mutateSettings).mock.results.at(-1)!.value;
     expect(within(region()).getByText(t('chat.projects.noSessions'))).toBeTruthy();
-    expect(folderIcon(emptyToggle())).toBe('lucide-folder-open');
+    expect(folderIcon(emptyToggle())).toBe('lucide-rocket');
     surface.invalidate();
     expect(emptyToggle().getAttribute('aria-expanded')).toBe('true');
-    expect(folderIcon(emptyToggle())).toBe('lucide-folder-open');
+    expect(folderIcon(emptyToggle())).toBe('lucide-rocket');
     fireEvent.click(emptyToggle());
     await vi.mocked(plugin.mutateSettings).mock.results.at(-1)!.value;
-    expect(folderIcon(emptyToggle())).toBe('lucide-folder');
+    expect(folderIcon(emptyToggle())).toBe('lucide-rocket');
     fireEvent.click(emptyToggle());
     await vi.mocked(plugin.mutateSettings).mock.results.at(-1)!.value;
 

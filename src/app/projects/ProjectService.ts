@@ -70,6 +70,7 @@ export class ProjectService implements ProjectReader, ProjectMutations, ProjectM
       name,
       instructions: input.instructions,
       memoryPath: requireMemoryPath(input.memoryPath),
+      ...(input.icon?.trim() ? { icon: input.icon.trim() } : {}),
       isPinned: false,
       isArchived: false,
       createdAt: Date.now(),
@@ -95,19 +96,24 @@ export class ProjectService implements ProjectReader, ProjectMutations, ProjectM
   async update(id: string, patch: ProjectUpdatePatch): Promise<void> {
     const name = patch.name !== undefined ? requireName(patch.name) : undefined;
     const requestedPath = patch.memoryPath !== undefined ? requireMemoryPath(patch.memoryPath) : undefined;
+    const icon = patch.icon !== undefined ? patch.icon?.trim() ?? '' : undefined;
     return this.#enqueue(async () => {
       const record = this.#records.get(id);
       if (!record) return;
+      const { icon: currentIcon, ...rest } = record;
+      const nextIcon = icon !== undefined ? icon : currentIcon;
       const updated: ProjectRecord = {
-        ...record,
+        ...rest,
         ...(name !== undefined ? { name } : {}),
         ...(patch.instructions !== undefined ? { instructions: patch.instructions } : {}),
         ...(requestedPath !== undefined ? { memoryPath: requestedPath } : {}),
+        ...(nextIcon ? { icon: nextIcon } : {}),
       };
       if (
         updated.name === record.name
         && updated.instructions === record.instructions
         && updated.memoryPath === record.memoryPath
+        && updated.icon === record.icon
       ) {
         return;
       }

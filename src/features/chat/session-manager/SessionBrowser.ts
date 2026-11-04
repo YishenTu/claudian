@@ -4,6 +4,7 @@ import type { TitleGenerationService } from '@/core/providers/types';
 import type { ConversationMeta, SessionManagerOrganization, SessionManagerSort } from '@/core/types';
 import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
 import { ConversationTitleGeneration } from '@/features/chat/conversation/ConversationTitleGeneration';
+import { projectIconId } from '@/features/chat/projects/projectIcon';
 import { moveProject, savedProjectOrder } from '@/features/chat/projects/projectOrder';
 import { renderProjectsHeaderActions } from '@/features/chat/session-manager/ProjectsHeaderActions';
 import {
@@ -682,10 +683,12 @@ export class SessionBrowser {
         'aria-expanded': isCollapsed ? 'false' : 'true',
       },
     });
-    const icon = toggle.createSpan({ cls: 'claudian-session-group-icon' });
+    // A chosen icon does not open with the group, so it dims while collapsed instead.
+    const icon = toggle.createSpan({
+      cls: project.icon ? 'claudian-session-group-icon claudian-session-group-icon--custom' : 'claudian-session-group-icon',
+    });
     icon.setAttribute('aria-hidden', 'true');
-    // Obsidian aliases the legacy `folder` id to an open folder; explicit Lucide ids keep the states distinct.
-    setIcon(icon, isCollapsed ? 'lucide-folder' : 'lucide-folder-open');
+    setIcon(icon, projectIconId(project, !isCollapsed));
     toggle.createSpan({ cls: 'claudian-session-group-label', text: label });
 
     if (groupStatusKind !== null) {
