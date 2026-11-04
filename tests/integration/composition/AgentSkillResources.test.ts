@@ -28,7 +28,7 @@ describe('AgentSkillResources', () => {
 
     expect(resources.getGeneration()).toBe(1);
     expect(invalidateProviderResources).toHaveBeenCalledWith(
-      expect.arrayContaining(['codex', 'grok', 'pi', 'opencode']),
+      expect.arrayContaining(['antigravity', 'codex', 'deepseek', 'grok', 'pi', 'opencode']),
       1,
     );
     expect(invalidateProviderResources.mock.calls[0][0]).not.toContain('claude');

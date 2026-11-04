@@ -28,6 +28,8 @@ const OTHER_FIELD_SUFFIX = '_other';
  */
 export class AntigravityQuestionRouter {
   private sequence = 0;
+  /** Answers by tool call, as the question card displays them, until the tool's result takes them. */
+  private readonly answers = new Map<string, AskUserAnswers>();
   private readonly pending: PendingInteractionLedger;
 
   constructor(
@@ -72,7 +74,10 @@ export class AntigravityQuestionRouter {
         return CANCELLED;
       }
       dismissReason = 'resolved';
-      return response.answers ? buildElicitationResponse(questions, response.answers) : { action: 'decline' };
+      if (!response.answers) return { action: 'decline' };
+      const reply = buildElicitationResponse(questions, response.answers);
+      if (request.toolCallId) this.answers.set(request.toolCallId, buildDisplayAnswers(questions, reply.content));
+      return reply;
     } catch {
       return CANCELLED;
     } finally {
@@ -83,6 +88,16 @@ export class AntigravityQuestionRouter {
 
   dismissAll(reason: ProviderInteractionDismissReason): void {
     this.pending.dismissAll(reason);
+  }
+
+  clearAnswers(): void {
+    this.answers.clear();
+  }
+
+  takeAnswers(toolCallId: string): AskUserAnswers | undefined {
+    const answers = this.answers.get(toolCallId);
+    this.answers.delete(toolCallId);
+    return answers;
   }
 
   /** agy asks one form at a time; a new form supersedes an unanswered one. */
@@ -114,11 +129,29 @@ function parseQuestions(request: ACPCreateElicitationRequest): AntigravityQuesti
   return questions.length > 0 ? questions : null;
 }
 
+/** Answers keyed by question text with option titles, matching the question card agy's tool input renders. */
+function buildDisplayAnswers(
+  questions: readonly AntigravityQuestion[],
+  content: Record<string, string | string[]>,
+): AskUserAnswers {
+  const answers: AskUserAnswers = {};
+  for (const question of questions) {
+    const selected = content[question.fieldId];
+    const values = (Array.isArray(selected) ? selected : selected ? [selected] : [])
+      .map(value => question.options.find(option => option.const === value)?.title || value);
+    const other = question.otherFieldId ? content[question.otherFieldId] : undefined;
+    if (typeof other === 'string') values.push(...other.split('\n'));
+    if (values.length === 0) continue;
+    answers[question.question] = question.multiSelect ? values : values.join(', ');
+  }
+  return answers;
+}
+
 /** Choices map back to their `const` values; anything else is a free-text "Other" answer. */
 function buildElicitationResponse(
   questions: readonly AntigravityQuestion[],
   answers: AskUserAnswers,
-): ACPCreateElicitationResponse {
+): { action: 'accept'; content: Record<string, string | string[]> } {
   const content: Record<string, string | string[]> = {};
   for (const question of questions) {
     const raw = (Object.hasOwn(answers, question.fieldId) ? answers[question.fieldId] : undefined)

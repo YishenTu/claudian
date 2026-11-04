@@ -58,6 +58,7 @@ export async function createAntigravityWorkspaceServices(plugin: ProviderHost): 
 }
 
 export const antigravityWorkspaceRegistration: ProviderWorkspaceRegistration<AntigravityWorkspaceServices> = {
+  consumesAgentSkills: true,
   initialize: async ({ plugin }) => createAntigravityWorkspaceServices(plugin),
 };
 

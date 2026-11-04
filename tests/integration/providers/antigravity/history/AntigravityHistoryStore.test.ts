@@ -24,6 +24,22 @@ async function installTranscripts(...names: string[]): Promise<void> {
   for (const name of names) await fs.copyFile(path.join(FIXTURES, name), path.join(logs, name));
 }
 
+/** Writes a full transcript of steps shaped as agy 1.5.0 records them. */
+async function installSteps(steps: Record<string, unknown>[]): Promise<void> {
+  const logs = path.join(storeRoot, 'brain', SESSION_ID, '.system_generated', 'logs');
+  await fs.mkdir(logs, { recursive: true });
+  await fs.writeFile(path.join(logs, 'transcript_full.jsonl'), steps.map(step => JSON.stringify(step)).join('\n') + '\n');
+}
+
+function userStep(index: number, request: string, extra: Record<string, unknown> = {}): Record<string, unknown> {
+  return { content: `<USER_REQUEST>\n${request}\n</USER_REQUEST>`, created_at: '2026-01-01T00:00:00Z',
+    source: 'USER_EXPLICIT', status: 'DONE', step_index: index, type: 'USER_INPUT', ...extra };
+}
+
+function replyStep(index: number, extra: Record<string, unknown>): Record<string, unknown> {
+  return { created_at: '2026-01-01T00:00:01Z', source: 'MODEL', status: 'DONE', step_index: index, type: 'PLANNER_RESPONSE', ...extra };
+}
+
 function summarize(messages: ChatMessage[]) {
   return messages.map(message => ({
     automatic: message.isAutomaticResponse ?? false,
@@ -201,6 +217,99 @@ describe('loadAntigravityHistory', () => {
     expect(messages[1].toolCalls?.map(tool => tool.input)).toEqual([
       expect.objectContaining({ Path: '/vault/notes.md', file_path: '/vault/notes.md' }),
     ]);
+  });
+
+  it('restores images the user uploaded from the session store', async () => {
+    const uploads = path.join(storeRoot, 'brain', SESSION_ID, '.user_uploaded');
+    await fs.mkdir(uploads, { recursive: true });
+    const png = Buffer.from('89504e470d0a1a0a', 'hex');
+    await fs.writeFile(path.join(uploads, 'uploaded_media_1.png'), png);
+    const outside = path.join(storeRoot, 'outside.png');
+    await fs.writeFile(outside, png);
+    await installSteps([
+      userStep(0, 'What color is this?', { media: [
+        { mime_type: 'image/png', uri: path.join(uploads, 'uploaded_media_1.png') },
+        { mime_type: 'image/png', uri: outside },
+        { mime_type: 'image/png', uri: path.join(uploads, 'missing.png') },
+      ] }),
+      replyStep(1, { content: 'Blue.' }),
+    ]);
+
+    const messages = await loadAntigravityHistory(storeRoot, SESSION_ID);
+
+    expect(messages[0].images).toEqual([{
+      data: png.toString('base64'),
+      id: `${SESSION_ID}:0:image:0`,
+      mediaType: 'image/png',
+      name: 'uploaded_media_1.png',
+      size: png.length,
+      source: 'file',
+    }]);
+  });
+
+  it('marks a completed compaction with a context boundary', async () => {
+    await installSteps([
+      userStep(0, 'Remember ASTRA_COMPACT, reply OK.'),
+      replyStep(1, { content: 'OK' }),
+      userStep(2, '/compact'),
+      { content: '# Resuming from a compaction\n...', created_at: '2026-01-01T00:00:03Z', source: 'SYSTEM', status: 'DONE',
+        step_index: 3, type: 'CHECKPOINT' },
+    ]);
+
+    const messages = await loadAntigravityHistory(storeRoot, SESSION_ID);
+
+    expect(messages.map(message => [message.role, message.content, message.contentBlocks])).toEqual([
+      ['user', 'Remember ASTRA_COMPACT, reply OK.', undefined],
+      ['assistant', 'OK', [{ content: 'OK', type: 'text' }]],
+      ['user', '/compact', undefined],
+      ['assistant', '', [{ type: 'context_compacted' }]],
+    ]);
+  });
+
+  it('shows background task reports, not agy system notices, as task notifications', async () => {
+    const report = 'Task id "s/task-2" finished with result:\nCommand exited with code 0.\n\nCommand output:\nDONE\n'
+      + 'Log: file:///store/tasks/task-2.log';
+    const system = (index: number, body: string) => ({ content: 'The following is a <SYSTEM_MESSAGE> not actually sent by the user.'
+      + `\n\n<SYSTEM_MESSAGE>\n${body}\n</SYSTEM_MESSAGE>`, created_at: '2026-01-01T00:00:05Z', source: 'SYSTEM', status: 'DONE',
+    step_index: index, type: 'SYSTEM_MESSAGE' });
+    await installSteps([
+      userStep(0, 'Run it in the background.'),
+      replyStep(1, { content: 'LAUNCHED' }),
+      system(2, `[Message] timestamp=2026-01-01T00:00:05Z sender=s/task-2 priority=MESSAGE_PRIORITY_HIGH content=${report}`),
+      replyStep(3, { content: 'It finished.' }),
+      userStep(4, 'Continue.'),
+      system(5, '[Message] timestamp=2026-01-01T00:00:06Z sender=system priority=MESSAGE_PRIORITY_LOW content=[Notice] All your '
+        + 'subagents and background tasks have been stopped'),
+      replyStep(6, { content: 'Continuing.' }),
+    ]);
+
+    const messages = await loadAntigravityHistory(storeRoot, SESSION_ID);
+
+    expect(messages.map(message => [message.role, message.isAutomaticResponse ?? false, message.contentBlocks])).toEqual([
+      ['user', false, undefined],
+      ['assistant', false, [{ content: 'LAUNCHED', type: 'text' }]],
+      ['assistant', true, [{ content: report, type: 'task_notification' }, { content: 'It finished.', type: 'text' }]],
+      ['user', false, undefined],
+      ['assistant', false, [{ content: 'Continuing.', type: 'text' }]],
+    ]);
+  });
+
+  it('pairs ask_question answers with their questions', async () => {
+    const args = { questions: [
+      { is_multi_select: false, options: ['Red', 'Green'], question: 'Color?' },
+      { is_multi_select: true, options: ['Apple', 'Cherry'], question: 'Fruit?' },
+      { is_multi_select: false, options: ['Yes', 'No'], question: 'Skip me?' },
+    ] };
+    await installSteps([
+      userStep(0, 'Ask me.'),
+      replyStep(1, { tool_calls: [{ args, name: 'ask_question' }] }),
+      { content: 'Created At: 2026-01-01T00:00:02+00:00\nCompleted At: 2026-01-01T00:00:03+00:00\nA1: Green, my own\nsecond line\nA2: Apple, Cherry',
+        created_at: '2026-01-01T00:00:03Z', source: 'MODEL', status: 'DONE', step_index: 2, type: 'GENERIC' },
+    ]);
+
+    const messages = await loadAntigravityHistory(storeRoot, SESSION_ID);
+
+    expect(messages[1].toolCalls?.[0].resolvedAnswers).toEqual({ 'Color?': 'Green, my own\nsecond line', 'Fruit?': 'Apple, Cherry' });
   });
 
   it('returns no messages for a session without a transcript', async () => {

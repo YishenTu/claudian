@@ -14,4 +14,5 @@
 - agy echoes a prompt that starts a turn and a steer when it injects it, stripping a leading slash-command name; `/compact` and images are not echoed. Steering is confirmed by that echo or by the turn completing.
 - Prefer live `available_commands_update` and config options; the prompt-less discovery probe is unlisted but leaves a native session directory.
 - Live updates for file reads, web search, image generation, `manage_task` and MCP tools carry no output; show none rather than agy's `Tool completed` placeholder. Their transcript steps do carry results.
-- `ask_question` arrives as form `elicitation/create` only when the client advertises elicitation; answer with option `const` values (match them before labels) and free text in `<field>_other`.
+- `ask_question` arrives as form `elicitation/create` only when the client advertises elicitation; answer with option `const` values (match them before labels) and free text in `<field>_other`. Its completed update omits the answers, so the question router supplies them to the tool result by tool call id.
+- agy reports compaction only as a transcript `CHECKPOINT`: live, a `/compact` prompt that completes (not a steer that took over) is the boundary. Transcript `SYSTEM_MESSAGE`s from a task sender are notifications; `sender=system` notices are only context.

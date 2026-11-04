@@ -37,14 +37,14 @@ export class AntigravityModelCatalog {
     if (metadata.models.length === 0) {
       return { changed: false, diagnostics: 'Antigravity reported no available models.' };
     }
-    return this.#persist(metadata.models, metadata.currentModelId, contextKey);
+    return this.#persist(metadata.models, metadata.currentModelId, contextKey, 'probe');
   }
 
   mergeLiveModels(models: AntigravityModel[], defaultModelId: string | null): Promise<ProviderModelCatalogRefreshResult> {
     if (this.disposed || models.length === 0) return Promise.resolve({ changed: false });
     const contextKey = this.#getContextKey();
     this.liveContextKey = contextKey;
-    return this.#persist(models, defaultModelId, contextKey);
+    return this.#persist(models, defaultModelId, contextKey, 'live');
   }
 
   dispose(): void {
@@ -55,6 +55,7 @@ export class AntigravityModelCatalog {
     models: AntigravityModel[],
     defaultModelId: string | null,
     contextKey: string,
+    source: 'live' | 'probe',
   ): Promise<ProviderModelCatalogRefreshResult> {
     let result: ProviderModelCatalogRefreshResult = { changed: false };
     await this.host.updateConfig((config, selection) => {
@@ -63,6 +64,8 @@ export class AntigravityModelCatalog {
       if (this.disposed || computeAntigravityRuntimeInputHash(current, this.host.environmentText) !== contextKey) {
         return false;
       }
+      // A probe started before a live report must not replace it when it finishes later.
+      if (source === 'probe' && this.liveContextKey === contextKey) return false;
       const previous = current.currentCatalog;
       const next: AntigravityCatalogSnapshot = {
         defaultModelId: defaultModelId ?? previous?.defaultModelId ?? null,

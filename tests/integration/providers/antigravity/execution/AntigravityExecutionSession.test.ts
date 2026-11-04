@@ -741,8 +741,45 @@ describe('AntigravityExecutionSession', () => {
       ],
     });
     expect(reply).toEqual({ action: 'accept', content: { q1: '2', q2: ['1'], q2_other: 'Something else' } });
+    // agy completes the tool without reporting the answers; the card shows the ones the user gave.
+    const args = { questions: [
+      { is_multi_select: false, options: ['Red', 'Blue'], question: 'Color?' },
+      { is_multi_select: true, options: ['Cats', 'Dogs'], question: 'Pets?' },
+    ] };
+    const ask = { args, kind: 'other', name: 'ask_question', rawInput: args, title: 'Run ask_question', toolCallId: 'tool-ask' };
+    peer.emit({ ...ask, sessionUpdate: 'tool_call', status: 'in_progress' }, 'session-new');
+    peer.emit({ ...ask, sessionUpdate: 'tool_call_update', status: 'completed' }, 'session-new');
     peer.finishPrompt();
-    await collect(run.events);
+    const events = await collect(run.events);
+
+    expect(events.find(event => event.type === 'tool_completed')).toEqual(expect.objectContaining({
+      resultDetails: expect.objectContaining({ resolvedAnswers: { 'Color?': 'Blue', 'Pets?': ['Cats', 'Something else'] } }),
+      toolCallId: 'tool-ask',
+    }));
+  });
+
+  it('marks a completed /compact with a context boundary', async () => {
+    const session = await createSession();
+    const run = session.execute(request('/compact keep the plan'));
+    const peer = await firstPeer();
+    await peer.waitForPrompts(1);
+    peer.finishPrompt();
+    const events = await collect(run.events);
+
+    expect(peer.prompts[0].request.prompt).toEqual([{ text: '/compact keep the plan', type: 'text' }]);
+    expect(events.map(event => event.type).filter(type => type === 'context_compacted' || type === 'turn_completed'))
+      .toEqual(['context_compacted', 'turn_completed']);
+  });
+
+  it('does not mark a cancelled /compact as compacted', async () => {
+    const session = await createSession();
+    const run = session.execute(request('/compact'));
+    const peer = await firstPeer();
+    await peer.waitForPrompts(1);
+    peer.finishPrompt({ stopReason: 'cancelled' });
+    const events = await collect(run.events);
+
+    expect(events.some(event => event.type === 'context_compacted')).toBe(false);
   });
 
   it('confirms a steer only when agy injects it into the running turn', async () => {
@@ -767,8 +804,9 @@ describe('AntigravityExecutionSession', () => {
       [{ text: 'first', type: 'text' }],
       [{ text: 'also this', type: 'text' }],
     ]);
-    expect(events.filter(event => event.type === 'user_message_started'))
-      .toEqual([expect.objectContaining({ content: 'also this', type: 'user_message_started' })]);
+    // The chat consumer treats the first boundary as the turn's own input, so the steer needs its own second one.
+    expect(events.filter(event => event.type === 'user_message_started').map(event => event.content))
+      .toEqual(['first', 'also this']);
     expect(events.filter(event => event.type === 'turn_completed')).toHaveLength(1);
   });
 
@@ -783,8 +821,8 @@ describe('AntigravityExecutionSession', () => {
     await expect(steer).resolves.toBe(true);
     peer.finishPrompt();
     const events = await collect(run.events);
-    expect(events.filter(event => event.type === 'user_message_started'))
-      .toEqual([expect.objectContaining({ content: '/goal Reply with DONE' })]);
+    expect(events.filter(event => event.type === 'user_message_started').map(event => event.content))
+      .toEqual(['first', '/goal Reply with DONE']);
   });
 
   it('handles two overlapping steers with one terminal', async () => {
@@ -799,8 +837,65 @@ describe('AntigravityExecutionSession', () => {
     await expect(steers).resolves.toEqual([true, true]);
     peer.finishPrompt();
     const events = await collect(run.events);
-    expect(events.filter(event => event.type === 'user_message_started').map(event => event.content)).toEqual(['one', 'two']);
+    expect(events.filter(event => event.type === 'user_message_started').map(event => event.content))
+      .toEqual(['initial', 'one', 'two']);
     expect(events.filter(event => event.type === 'turn_completed')).toHaveLength(1);
+  });
+
+  it('keeps the original turn when agy rejects a steer before taking it over', async () => {
+    const session = await createSession();
+    const run = session.execute(request('first'));
+    const peer = await firstPeer();
+    await peer.waitForPrompts(1);
+    peer.failNextPrompt('Prompt rejected');
+    await expect(session.steer(request('also this'))).resolves.toBe(false);
+    peer.emit({ content: { text: 'Answer.', type: 'text' }, sessionUpdate: 'agent_message_chunk' }, 'session-new');
+    peer.finishPrompt();
+    const events = await collect(run.events);
+
+    expect(events.filter(event => event.type === 'user_message_started').map(event => event.content)).toEqual(['first']);
+    expect(events.at(-1)).toMatchObject({ reason: 'completed', type: 'turn_completed' });
+  });
+
+  it('completes the accepted steer when agy rejects steers before and after it', async () => {
+    const session = await createSession();
+    const run = session.execute(request('first'));
+    const peer = await firstPeer();
+    await peer.waitForPrompts(1);
+    peer.failNextPrompt('Prompt rejected');
+    await expect(session.steer(request('one'))).resolves.toBe(false);
+    const accepted = session.steer(request('two'));
+    await peer.waitForPrompts(2);
+    peer.emit({ content: { text: 'two', type: 'text' }, sessionUpdate: 'user_message_chunk' }, 'session-new');
+    await expect(accepted).resolves.toBe(true);
+    peer.failNextPrompt('Prompt rejected');
+    await expect(session.steer(request('three'))).resolves.toBe(false);
+    peer.finishPrompt();
+    const events = await collect(run.events);
+
+    expect(events.filter(event => event.type === 'user_message_started').map(event => event.content)).toEqual(['first', 'two']);
+    expect(events.at(-1)).toMatchObject({ reason: 'completed', type: 'turn_completed' });
+  });
+
+  it('publishes a steer agy does not echo once the turn it joined completes', async () => {
+    const session = await createSession();
+    const run = session.execute(request('first'));
+    const peer = await firstPeer();
+    await peer.waitForPrompts(1);
+    const image: ProviderExecutionRequest = { ...request(''), input: [{ image: {
+      data: 'iVBORw0KGgo=', id: 'image-1', mediaType: 'image/png', name: 'square.png', size: 8, source: 'paste',
+    }, type: 'image' }] };
+    const steer = session.steer(image);
+    await peer.waitForPrompts(2);
+    // agy does not echo image-only input.
+    peer.emit({ content: { text: 'A blue square.', type: 'text' }, sessionUpdate: 'agent_message_chunk' }, 'session-new');
+    peer.finishPrompt();
+    const events = await collect(run.events);
+
+    await expect(steer).resolves.toBe(true);
+    const types = events.map(event => event.type);
+    expect(events.filter(event => event.type === 'user_message_started')).toHaveLength(2);
+    expect(types.lastIndexOf('user_message_started')).toBeLessThan(types.indexOf('turn_completed'));
   });
 
   it('rejects a steer whose disposition is unknown when the turn is cancelled after handoff', async () => {

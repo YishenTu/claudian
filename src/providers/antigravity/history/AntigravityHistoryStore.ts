@@ -1,8 +1,11 @@
 import * as fs from 'node:fs/promises';
+import * as path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
+import { normalizeImageMediaType } from '@/core/execution/imageAttachment';
 import { resolveToolDiffData } from '@/core/tools/toolDiff';
 import { isWriteEditTool } from '@/core/tools/toolNames';
-import type { ChatMessage, ContentBlock, ToolCallInfo } from '@/core/types';
+import type { AskUserAnswers, ChatMessage, ContentBlock, ImageAttachment, ToolCallInfo } from '@/core/types';
 import { readFileRevision } from '@/utils/fileRevision';
 import { forEachJSONLLine } from '@/utils/jsonlFile';
 
@@ -18,6 +21,7 @@ interface TranscriptStep {
   content?: string;
   created_at?: string;
   error?: string;
+  media?: Array<{ mime_type?: string; uri?: string }>;
   source?: string;
   status?: string;
   step_index?: number;
@@ -47,6 +51,9 @@ const ABORTED_TOOL_RESULT = 'Antigravity did not run this tool.';
 
 const USER_REQUEST_PATTERN = /<USER_REQUEST>\n?([\s\S]*?)\n?<\/USER_REQUEST>/;
 const RESULT_HEADER_PATTERN = /^(?:(?:Created|Completed) At: [^\n]*\n)+/;
+/** A message agy injects into the conversation; `sender=system` marks its own notices, others are task reports. */
+const SYSTEM_REPORT_PATTERN = /<SYSTEM_MESSAGE>\n\[Message\][^\n]*?\bsender=(\S+)[^\n]*?\bcontent=([\s\S]*?)\n?<\/SYSTEM_MESSAGE>/;
+const QUESTION_ANSWER_PATTERN = /^A(\d+): (.*)$/;
 
 /** Reads the first existing transcript; a missing or unreadable store yields no messages. */
 export async function loadAntigravityHistory(storeRoot: string, sessionId: string): Promise<ChatMessage[]> {
@@ -66,7 +73,9 @@ export async function loadAntigravityHistory(storeRoot: string, sessionId: strin
       }
     });
     // Only the short transcript string-encodes tool arguments.
-    return parseAntigravityTranscript(steps, sessionId, index > 0);
+    const messages = parseAntigravityTranscript(steps, sessionId, index > 0);
+    await attachUploadedImages(messages, steps, storeRoot, sessionId);
+    return messages;
   }
   return [];
 }
@@ -156,7 +165,17 @@ export function parseAntigravityTranscript(
         const current = turn as TurnBuilder | null;
         const answered = current
           && (current.assistant.content || current.blocks.length > 0 || current.toolCalls.length > 0);
-        if (!current || answered) startTurn(stepId, timestamp, true);
+        const target = !current || answered ? startTurn(stepId, timestamp, true) : current;
+        const report = SYSTEM_REPORT_PATTERN.exec(step.content ?? '');
+        if (report && report[1] !== 'system' && report[2].trim()) {
+          target.blocks.push({ content: report[2].trim(), type: 'task_notification' });
+        }
+        break;
+      }
+      case 'CHECKPOINT': {
+        if (step.status !== 'DONE') break;
+        const current: TurnBuilder = turn ?? startTurn(stepId, timestamp, true);
+        current.blocks.push({ type: 'context_compacted' });
         break;
       }
       case 'PLANNER_RESPONSE': {
@@ -207,11 +226,77 @@ function completeTool(pending: PendingTool, step: TranscriptStep): void {
     ? normalizeAntigravityToolResult(rawName, body, { output: body })
     : { content: body, isError: false };
   if (result.content) call.result = result.content;
+  if (rawName === 'ask_question') {
+    const answers = decodeQuestionAnswers(pending.rawInput, body);
+    if (answers) call.resolvedAnswers = answers;
+  }
   call.status = step.status === 'ERROR' || result.isError ? 'error' : step.status === 'RUNNING' ? 'running' : 'completed';
   if (call.name === 'Read') call.resultFormat = 'plain';
   if (call.status === 'completed' && isWriteEditTool(call.name)) {
     const diffData = resolveToolDiffData(undefined, call);
     if (diffData) call.diffData = diffData;
+  }
+}
+
+/**
+ * agy records answers as `A<n>: <text>` lines, numbered by question; a multiline answer continues until the next
+ * answer line. Unanswered questions have no line.
+ */
+function decodeQuestionAnswers(input: Record<string, unknown>, result: string): AskUserAnswers | undefined {
+  const questions = Array.isArray(input.questions) ? input.questions as unknown[] : [];
+  const answers: Record<string, string> = {};
+  let current: string | null = null;
+  for (const line of result.split('\n')) {
+    const match = QUESTION_ANSWER_PATTERN.exec(line);
+    if (!match) {
+      if (current !== null) answers[current] += `\n${line}`;
+      continue;
+    }
+    const question = questions[Number(match[1]) - 1];
+    const text = question && typeof question === 'object' ? (question as { question?: unknown }).question : undefined;
+    current = typeof text === 'string' && text ? text : null;
+    if (current !== null) answers[current] = match[2];
+  }
+  return Object.keys(answers).length > 0 ? answers : undefined;
+}
+
+/**
+ * agy stores uploads in the session's `.user_uploaded` directory and references them from the user step. Only
+ * files there are read; a missing or unsupported file is left out.
+ */
+async function attachUploadedImages(
+  messages: ChatMessage[],
+  steps: readonly TranscriptStep[],
+  storeRoot: string,
+  sessionId: string,
+): Promise<void> {
+  const uploads = path.join(storeRoot, 'brain', sessionId, '.user_uploaded') + path.sep;
+  for (const step of steps) {
+    if (step.type !== 'USER_INPUT' || !Array.isArray(step.media)) continue;
+    const message = messages.find(entry => entry.id === `${sessionId}:${String(step.step_index)}:user`);
+    if (!message) continue;
+    const images: ImageAttachment[] = [];
+    for (const [index, media] of step.media.entries()) {
+      const mediaType = normalizeImageMediaType(media?.mime_type);
+      if (!mediaType || typeof media.uri !== 'string') continue;
+      const file = path.resolve(media.uri.startsWith('file:') ? fileURLToPath(media.uri) : media.uri);
+      if (!file.startsWith(uploads)) continue;
+      let data: Buffer;
+      try {
+        data = await fs.readFile(file);
+      } catch {
+        continue;
+      }
+      images.push({
+        data: data.toString('base64'),
+        id: `${sessionId}:${String(step.step_index)}:image:${index}`,
+        mediaType,
+        name: path.basename(file),
+        size: data.length,
+        source: 'file',
+      });
+    }
+    if (images.length > 0) message.images = images;
   }
 }
 

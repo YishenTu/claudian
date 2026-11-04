@@ -94,6 +94,7 @@ interface ActiveExecution {
   /** Prompts sent for this run; only the latest one's response ends it (earlier ones hand off). */
   latestPrompt: number;
   readonly prompts: Map<number, Promise<ACPPromptResponse>>;
+  readonly settledPrompts: Set<number>;
   readonly request: ProviderExecutionRequest;
   readonly run: RequestedRunChannel;
   readonly steers: PendingSteer[];
@@ -181,6 +182,7 @@ export class AntigravityExecutionSession implements ProviderExecutionSession, St
       latestPrompt: 0,
       nativeTouched: false,
       prompts: new Map(),
+      settledPrompts: new Set(),
       request,
       run,
       steers: [],
@@ -192,7 +194,7 @@ export class AntigravityExecutionSession implements ProviderExecutionSession, St
           this.#emitCurrentSnapshot();
         },
         run,
-        toolStreamAdapter: createAntigravityToolStreamAdapter(),
+        toolStreamAdapter: createAntigravityToolStreamAdapter(toolCallId => this.questionRouter.takeAnswers(toolCallId)),
       }),
     };
     this.active = active;
@@ -271,7 +273,8 @@ export class AntigravityExecutionSession implements ProviderExecutionSession, St
     const index = this.#sendPrompt(active, owner.native, sessionId, buildPromptBlocks(request));
     const ownPrompt = active.prompts.get(index)!;
     try {
-      const outcome = await Promise.race([echoed, this.#waitForLatestPrompt(active)]);
+      const ownRejection = ownPrompt.then(() => new Promise<never>(() => {}));
+      const outcome = await Promise.race([echoed, ownRejection, this.#waitForLatestPrompt(active)]);
       if (outcome !== 'echo' && outcome.stopReason === 'cancelled' && !steer.applied) {
         throw new Error('The Antigravity turn was cancelled before the steer was confirmed.');
       }
@@ -311,15 +314,33 @@ export class AntigravityExecutionSession implements ProviderExecutionSession, St
       const blocks = compact
         ? [{ text: `/compact${compact.instructions ? ` ${compact.instructions}` : ''}`, type: 'text' as const }]
         : buildPromptBlocks(active.request, !this.nativeConversationContextEstablished);
-      this.#sendPrompt(active, owner.native, sessionId, blocks);
+      const promptIndex = this.#sendPrompt(active, owner.native, sessionId, blocks);
+      // Consumers treat the first user boundary as the turn's own input; only later ones mark steers. agy's
+      // echo of this prompt is not a reliable boundary (`/compact` and images are not echoed).
+      active.run.emit({ content: getInputText(active.request), type: 'user_message_started' });
       const response = await Promise.race([closed, this.#waitForLatestPrompt(active)]);
       if (this.#isCancellationRequested(active)) return;
+      // agy reports compaction only in its transcript; a completed `/compact` prompt (not a steer that took
+      // over its turn) has compacted the context.
+      if (compact && response.stopReason === 'end_turn' && active.latestPrompt === promptIndex) {
+        active.run.emit({ type: 'context_compacted' });
+      }
+      // Completion confirms steers agy never echoed (image-only input), so they still need their boundary.
+      if (response.stopReason !== 'cancelled') {
+        for (const steer of active.steers) {
+          if (steer.applied) continue;
+          steer.applied = true;
+          active.run.emit({ content: steer.text, type: 'user_message_started' });
+        }
+      }
       this.#finishCompleted(active, response);
     } catch (error) {
       if (this.#isCancellationRequested(active)) return;
       this.#failRecoverable(active, error);
     } finally {
       unsubscribeClose?.();
+      // Answers whose tool result never arrived have no consumer once the run ends.
+      this.questionRouter.clearAnswers();
     }
   }
 
@@ -331,19 +352,33 @@ export class AntigravityExecutionSession implements ProviderExecutionSession, St
   ): number {
     const index = active.latestPrompt + 1;
     active.latestPrompt = index;
+    // A rejected steer's slot is reused; its settlement must not carry over to this prompt.
+    active.settledPrompts.delete(index);
     const response = native.prompt({ prompt, sessionId });
     // Superseded prompts settle when agy hands their turn to the next one.
-    response.catch(() => undefined);
+    const markSettled = () => { active.settledPrompts.add(index); };
+    response.then(markSettled, markSettled);
     active.prompts.set(index, response);
     return index;
   }
 
-  /** Resolves with the response of whichever prompt is latest when it settles. */
+  /**
+   * Resolves with the response of whichever prompt is latest when it settles. A steer prompt rejected while the
+   * prompt it would take over is still running was never handed off, so completion follows that prompt again.
+   */
   async #waitForLatestPrompt(active: ActiveExecution): Promise<ACPPromptResponse> {
     for (;;) {
       const index = active.latestPrompt;
-      const response = await active.prompts.get(index)!;
-      if (index === active.latestPrompt) return response;
+      try {
+        const response = await active.prompts.get(index)!;
+        if (index === active.latestPrompt) return response;
+      } catch (error) {
+        if (index !== active.latestPrompt) continue;
+        const previous = Math.max(0, ...[...active.prompts.keys()].filter(key => key < index));
+        if (previous === 0 || active.settledPrompts.has(previous)) throw error;
+        active.prompts.delete(index);
+        active.latestPrompt = previous;
+      }
     }
   }
 
@@ -572,7 +607,8 @@ export class AntigravityExecutionSession implements ProviderExecutionSession, St
     const update = notification.update as ACPSessionNotification['update'] & { name?: unknown };
     switch (update.sessionUpdate) {
       case 'user_message_chunk':
-        // agy echoes prompts it accepts; only a steer's echo marks a new user message.
+        // agy echoes prompts it accepts; only a steer's echo marks a new user message (the turn's own
+        // boundary is emitted when its prompt is sent).
         if (active.turn.acceptingLiveOutput) active.turn.accept();
         this.#applySteerEcho(active, update.content);
         return;

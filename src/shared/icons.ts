@@ -64,7 +64,7 @@ export const OPENCODE_PROVIDER_ICON: ProviderIconSvg = {
 
 export const PI_PROVIDER_ICON: ProviderIconSvg = {
   kind: 'composite',
-  viewBox: '0 0 800 800',
+  viewBox: '106.61 106.61 586.79 586.79',
   children: [
     {
       tag: 'path',
@@ -85,14 +85,14 @@ export const PI_PROVIDER_ICON: ProviderIconSvg = {
 };
 
 export const GROK_PROVIDER_ICON: ProviderIconSvg = {
-  viewBox: '0 0 24 24',
+  viewBox: '1.85 2.4 19.2 19.2',
   path: 'M3.25 3h4.18l4.8 6.64L17.88 3h3.17l-7.36 8.65L20.44 21h-4.18l-5.16-7.14L5.02 21H1.85l7.79-9.16L3.25 3Zm3.03 1.7 10.85 14.6h1.28L7.56 4.7H6.28Z',
 };
 
 /** Google's full-colour Antigravity mark; its ids are made unique per rendered copy. */
 export const ANTIGRAVITY_PROVIDER_ICON: ProviderIconSvg = {
   kind: 'composite',
-  viewBox: '0 0 180 180',
+  viewBox: '22 22.5 136 136',
   children: [
     { tag: 'path', attributes: { d: "M144.248 149.062C151.748 154.688 162.998 150.938 152.685 140.625C121.748 110.625 128.31 28.125 89.8727 28.125C51.4352 28.125 57.9977 110.625 27.0602 140.625C15.8102 151.875 27.9977 154.688 35.4977 149.062C64.5602 129.375 62.6852 94.6875 89.8727 94.6875C117.06 94.6875 115.185 129.375 144.248 149.062Z", fill: "#3186FF" } },
     {

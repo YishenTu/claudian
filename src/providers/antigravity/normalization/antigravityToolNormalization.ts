@@ -15,7 +15,7 @@ import {
   TOOL_WRITE,
   TOOL_WRITE_STDIN,
 } from '@/core/tools/toolNames';
-import type { ToolProviderPayload } from '@/core/types';
+import type { AskUserAnswers, ToolProviderPayload } from '@/core/types';
 import {
   type ACPResolvedToolRawName,
   ACPToolStreamAdapter,
@@ -140,13 +140,19 @@ export function withAntigravityToolTitle<T extends { name?: unknown; title?: unk
   return typeof update.name === 'string' && update.name.trim() ? { ...update, title: update.name.trim() } : update;
 }
 
-export function createAntigravityToolStreamAdapter(): ACPToolStreamAdapter {
+/** `takeAnswers` returns the answers the user gave to a question tool; agy's result does not report them. */
+export function createAntigravityToolStreamAdapter(
+  takeAnswers: (toolCallId: string) => AskUserAnswers | undefined = () => undefined,
+): ACPToolStreamAdapter {
   return new ACPToolStreamAdapter({
     buildToolProviderPayload: (rawName, rawInput, rawOutput) => buildAntigravityToolProviderPayload(rawName ?? 'tool', rawInput, rawOutput),
     normalizeToolInput: (rawName, input) => normalizeAntigravityToolInput(rawName ?? 'tool', input),
     normalizeToolName: (rawName, rawInput) => normalizeAntigravityToolName(rawName ?? 'tool', rawInput),
     normalizeToolResult: (rawName, content, rawOutput) => normalizeAntigravityToolResult(rawName ?? 'tool', content, rawOutput),
-    normalizeToolResultDetails: () => undefined,
+    normalizeToolResultDetails: (_rawName, _input, _rawOutput, toolCallId) => {
+      const resolvedAnswers = takeAnswers(toolCallId);
+      return resolvedAnswers ? { resolvedAnswers } : undefined;
+    },
     resolveRawToolName: (current, update) => resolveAntigravityRawToolName(current, update),
   });
 }

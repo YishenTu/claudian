@@ -48,7 +48,7 @@ describe('createProviderIconSvg', () => {
       parent: document.body,
     });
 
-    expect(svg.getAttribute('viewBox')).toBe('0 0 800 800');
+    expect(svg.getAttribute('viewBox')).toBe('106.61 106.61 586.79 586.79');
     const paths = Array.from(svg.querySelectorAll('path'));
     expect(paths).toHaveLength(2);
     expect(paths[0].getAttribute('fill-rule')).toBe('evenodd');

@@ -80,4 +80,20 @@ describe('Antigravity workspace metadata discovery', () => {
     expect(spawn).not.toHaveBeenCalled();
     expect(services.modelCatalog!.getSnapshot().models.map(model => model.id)).toEqual(['gemini-4-argon', 'gemini-3.8-flash']);
   });
+
+  it('keeps the live report when a discovery started earlier finishes later', async () => {
+    let release!: () => void;
+    let entered!: () => void;
+    const started = new Promise<void>(resolve => { entered = resolve; });
+    native.newSessionGate = () => { entered(); return new Promise<void>(resolve => { release = resolve; }); };
+    const refresh = services.modelCatalog!.refresh({ force: true });
+    await started;
+    const live = readAntigravitySessionModels(antigravityConfigOptions());
+    await services.modelCatalogOwner.mergeLiveModels(live.models, 'gemini-3.8-flash');
+
+    release();
+    await refresh;
+
+    expect(services.modelCatalog!.getSnapshot().defaultModelId).toBe('gemini-3.8-flash');
+  });
 });

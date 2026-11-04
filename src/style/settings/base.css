@@ -75,7 +75,7 @@
 }
 
 /* Icon tabs: each icon in its provider's logo colour, dimmed until hovered, focused or selected. */
-.claudian-settings button.claudian-settings-provider-tab:has(.claudian-settings-provider-icon) {
+.claudian-settings button.claudian-settings-provider-tab--icon {
   display: inline-flex;
   align-items: center;
   justify-content: center;

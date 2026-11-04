@@ -58,6 +58,8 @@ export class AntigravityNativeProcess {
   readonly knownSessions = new Set<string>(['session-existing']);
   readonly readyMCPServers = new Map<string, ACPMCPServer[]>();
   resumeGate: (request: ACPResumeSessionRequest) => Promise<void> | void = () => {};
+  /** Runs before agy answers session/new; tests hold it to interleave. */
+  newSessionGate: (request: ACPNewSessionRequest) => Promise<void> | void = () => {};
   configOptions = antigravityConfigOptions();
   newSessionId = 'session-new';
   /** Published in `available_commands_update` right after agy answers session/new. */
@@ -68,6 +70,7 @@ export class AntigravityNativeProcess {
   settlePromptsOnCancel = true;
   private readonly peer: NativeRPCPeer;
   private readonly promptWaiters: Array<{ count: number; resolve: () => void }> = [];
+  private readonly promptFaults: string[] = [];
 
   constructor(
     readonly agentName?: string,
@@ -89,6 +92,7 @@ export class AntigravityNativeProcess {
           };
         case 'session/new': {
           this.newRequests.push(params as unknown as ACPNewSessionRequest);
+          await this.newSessionGate(params as unknown as ACPNewSessionRequest);
           const sessionId = this.newSessionId;
           this.knownSessions.add(sessionId);
           let captured: CapturedAntigravityAgent = { kind: 'default' };
@@ -152,7 +156,10 @@ export class AntigravityNativeProcess {
           await this.configGate(request);
           return { configOptions: this.configOptions };
         }
-        case 'session/prompt':
+        case 'session/prompt': {
+          const fault = this.promptFaults.shift();
+          // An injected rejection answers before agy takes over the running turn.
+          if (fault) throw new Error(fault);
           return new Promise<ACPPromptResponse>(resolve => {
             const request = params as unknown as ACPPromptRequest;
             const previous = this.prompts.at(-1);
@@ -184,6 +191,7 @@ export class AntigravityNativeProcess {
               else this.promptWaiters.push(waiter);
             }
           });
+        }
         default:
           throw new Error('Unexpected native method: ' + method);
       }
@@ -226,6 +234,11 @@ export class AntigravityNativeProcess {
   }
 
   /** Resolves once `count` prompts have arrived. */
+  /** Rejects the next `session/prompt` with a JSON-RPC error. */
+  failNextPrompt(message: string): void {
+    this.promptFaults.push(message);
+  }
+
   waitForPrompts(count: number): Promise<void> {
     if (this.prompts.length >= count) return Promise.resolve();
     return new Promise(resolve => { this.promptWaiters.push({ count, resolve }); });

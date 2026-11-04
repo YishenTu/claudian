@@ -215,7 +215,7 @@ export class ClaudianSettingTab extends PluginSettingTab {
       // A tab shows its provider's icon; the name stays its accessible name and hover tooltip.
       const button = providerTabBar.createEl('button', {
         attr: { 'aria-label': providerName, 'data-provider': providerId, type: 'button' },
-        cls: `claudian-settings-provider-tab${providerId === this.activeProviderTab ? ' claudian-settings-provider-tab--active' : ''}`,
+        cls: `claudian-settings-provider-tab${providerIcon ? ' claudian-settings-provider-tab--icon' : ''}${providerId === this.activeProviderTab ? ' claudian-settings-provider-tab--active' : ''}`,
         ...(providerIcon ? {} : { text: providerName }),
       });
       if (providerIcon) {
