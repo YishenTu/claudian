@@ -112,6 +112,7 @@ it('runs a Node-backed Linux CLI with the distro node and forwards Claude enviro
   }
 });
 
+// The fixture's first /usr/bin/python3 call pays macOS's cold xcrun shim lookup (about 1s on a fresh runner) on a loaded CI host.
 it.skipIf(process.platform === 'win32')('exercises the native WSL fixture protocol and SDK MCP control channel with a local Unix process', async () => {
   const directory = await fs.mkdtemp(path.join(tmpdir(), 'claudian-sdk-fixture-'));
   const executable = path.join(directory, 'claude');
@@ -152,4 +153,4 @@ it.skipIf(process.platform === 'win32')('exercises the native WSL fixture protoc
     child?.kill();
     await fs.rm(directory, { recursive: true, force: true });
   }
-});
+}, 30_000);

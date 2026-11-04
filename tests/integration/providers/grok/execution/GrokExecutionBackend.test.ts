@@ -61,6 +61,9 @@ const interactionPort: ProviderInteractionPort = {
   requestApproval: vi.fn(),
 };
 
+// A host-absolute Vault root: native Windows normalizes a bare POSIX path to `\tmp\vault`.
+const vaultRoot = path.resolve('/tmp/vault');
+
 const sessionConfig: ProviderSessionConfig = {
   interactionPort,
   lifecycle: 'persistent',
@@ -69,7 +72,7 @@ const sessionConfig: ProviderSessionConfig = {
     providerSessionId: 'session-existing',
     providerState: { sessionDirectory: '/tmp/grok-session' },
   },
-  workingDirectory: '/tmp/vault',
+  workingDirectory: vaultRoot,
 };
 
 function executionRequest(text = 'hello'): ProviderExecutionRequest {
@@ -337,7 +340,7 @@ it('encodes path-only Linked content without changing the Vault-root session CWD
     context: { ...capturedSelections, sessionReferences: [{ id: 'conv-1-ref', title: 'Review', providerId: 'codex', updatedAt: 'updated' }], linkedContent: { path: 'Projects/Research' } },
   }).events);
 
-  expect(native.loadRequests[0]?.cwd).toBe('/tmp/vault');
+  expect(native.loadRequests[0]?.cwd).toBe(vaultRoot);
   expect(native.promptRequests[0]?.prompt).toEqual([{
     text: 'Inspect linked content\n\n<linked_content path="Projects/Research" />\n\n' + capturedSelectionPrompt + '\n\n<context_sessions>\n<context_session title="Review" id="conv-1-ref" provider="codex" updated="updated" />\n</context_sessions>',
     type: 'text',

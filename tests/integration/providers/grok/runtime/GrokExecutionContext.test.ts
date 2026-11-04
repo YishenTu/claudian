@@ -92,7 +92,8 @@ it('rejects a vault the selected distro cannot address', async () => {
 });
 
 it('keeps native working directories and the resolved native CLI', async () => {
-  Object.defineProperty(process, 'platform', platform);
+  // Pin a non-Windows host: on real win32 the native target is `native-windows`, not `host-native`.
+  Object.defineProperty(process, 'platform', { ...platform, value: 'linux' });
   const { host } = await createProviderHostFixture({ settings: { providerConfigs: { grok: { enabled: true } } } });
   expect(await ProviderRegistry.resolveExecutionWorkingDirectory(host, 'grok', '/vault')).toBe('/vault');
   const context = await resolveGrokExecutionContext(host.getRuntimeHost('grok'), '/vault');
