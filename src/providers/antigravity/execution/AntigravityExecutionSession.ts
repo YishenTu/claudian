@@ -87,14 +87,20 @@ interface PendingSteer {
   readonly text: string;
 }
 
+/** One `session/prompt` request; a rejected steer's slot is reused by a new record. */
+interface PromptRecord {
+  readonly response: Promise<ACPPromptResponse>;
+  /** Superseded prompts settle when agy hands their turn to the next one. */
+  settled: boolean;
+}
+
 interface ActiveExecution {
   readonly abortController: AbortController;
   /** Set once the run starts native work; cancelling before any prompt then retires the process. */
   nativeTouched: boolean;
   /** Prompts sent for this run; only the latest one's response ends it (earlier ones hand off). */
   latestPrompt: number;
-  readonly prompts: Map<number, Promise<ACPPromptResponse>>;
-  readonly settledPrompts: Set<number>;
+  readonly prompts: Map<number, PromptRecord>;
   readonly request: ProviderExecutionRequest;
   readonly run: RequestedRunChannel;
   readonly steers: PendingSteer[];
@@ -182,7 +188,6 @@ export class AntigravityExecutionSession implements ProviderExecutionSession, St
       latestPrompt: 0,
       nativeTouched: false,
       prompts: new Map(),
-      settledPrompts: new Set(),
       request,
       run,
       steers: [],
@@ -262,16 +267,14 @@ export class AntigravityExecutionSession implements ProviderExecutionSession, St
       !active || this.#isCancellationRequested(active) || request.signal.aborted
       || active.latestPrompt === 0 || !owner?.initialized || owner.loadedSessionId !== sessionId || !sessionId
     ) return false;
-    let previousSettled = false;
-    const markSettled = () => { previousSettled = true; };
-    active.prompts.get(active.latestPrompt)!.then(markSettled, markSettled);
+    const previous = active.prompts.get(active.latestPrompt)!;
     const text = getInputText(request);
     let resolveEcho!: () => void;
     const echoed = new Promise<'echo'>(resolve => { resolveEcho = () => resolve('echo'); });
     const steer: PendingSteer = { applied: false, echoPrefixes: buildSteerEchoPrefixes(text), resolveEcho, text };
     active.steers.push(steer);
     const index = this.#sendPrompt(active, owner.native, sessionId, buildPromptBlocks(request));
-    const ownPrompt = active.prompts.get(index)!;
+    const ownPrompt = active.prompts.get(index)!.response;
     try {
       const ownRejection = ownPrompt.then(() => new Promise<never>(() => {}));
       const outcome = await Promise.race([echoed, ownRejection, this.#waitForLatestPrompt(active)]);
@@ -280,7 +283,7 @@ export class AntigravityExecutionSession implements ProviderExecutionSession, St
       }
       return true;
     } catch (error) {
-      const rejectedBeforeHandoff = !steer.applied && !previousSettled
+      const rejectedBeforeHandoff = !steer.applied && !previous.settled
         && await ownPrompt.then(() => false, () => true);
       if (!rejectedBeforeHandoff) throw error;
       active.steers.splice(active.steers.indexOf(steer), 1);
@@ -352,13 +355,11 @@ export class AntigravityExecutionSession implements ProviderExecutionSession, St
   ): number {
     const index = active.latestPrompt + 1;
     active.latestPrompt = index;
-    // A rejected steer's slot is reused; its settlement must not carry over to this prompt.
-    active.settledPrompts.delete(index);
     const response = native.prompt({ prompt, sessionId });
-    // Superseded prompts settle when agy hands their turn to the next one.
-    const markSettled = () => { active.settledPrompts.add(index); };
+    const record: PromptRecord = { response, settled: false };
+    const markSettled = () => { record.settled = true; };
     response.then(markSettled, markSettled);
-    active.prompts.set(index, response);
+    active.prompts.set(index, record);
     return index;
   }
 
@@ -370,12 +371,12 @@ export class AntigravityExecutionSession implements ProviderExecutionSession, St
     for (;;) {
       const index = active.latestPrompt;
       try {
-        const response = await active.prompts.get(index)!;
+        const response = await active.prompts.get(index)!.response;
         if (index === active.latestPrompt) return response;
       } catch (error) {
         if (index !== active.latestPrompt) continue;
         const previous = Math.max(0, ...[...active.prompts.keys()].filter(key => key < index));
-        if (previous === 0 || active.settledPrompts.has(previous)) throw error;
+        if (previous === 0 || active.prompts.get(previous)!.settled) throw error;
         active.prompts.delete(index);
         active.latestPrompt = previous;
       }
@@ -712,7 +713,7 @@ export class AntigravityExecutionSession implements ProviderExecutionSession, St
     const sessionId = this.providerSessionId;
     this.cancellationFlight = (async () => {
       try {
-        const latest = active.prompts.get(active.latestPrompt);
+        const latest = active.prompts.get(active.latestPrompt)?.response;
         if (owner && sessionId && latest) {
           owner.native.cancel(sessionId);
           // agy settles a cancelled prompt at once; a process that does not is replaced.
