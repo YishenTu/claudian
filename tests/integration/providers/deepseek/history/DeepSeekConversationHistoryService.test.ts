@@ -17,13 +17,15 @@ const state = { schemaVersion: 1, home: getDeepSeekHome(process.env, process.cwd
 const input = { sessionId: 'root', providerState: state, messages: [] };
 /** The session projection native serves, cut at its last committed record. */
 const projection = (asOfSeq: number) => ({ asOfSeq, values: { agentPreset: 'claudian-code', modelSelection: { lastUsed: { provider: 'native', model: 'old-model' }, next: { provider: 'native', model: 'new-model' } } } });
+// dsh 0.2.2 reads an image by its full log reference; 0.2.1 by its id.
+const IMAGE_REF = { attachmentId: 'image', mediaType: 'image/png', bytes: 5, width: 1, height: 1, name: 'pixel.png' };
 const wire = (seq: number, type: string, data: unknown, surfaceOp: unknown = 'append') => ({ type: 'event', event: { seq, type, time: time + seq, data, surfaceOp } });
 let records: ReturnType<typeof wire>[];
 
 beforeEach(async () => {
   records = [
     wire(1, 'turn/start', { turn: 1 }),
-    wire(2, 'user/message', { id: 'u', source: { kind: 'user', rpcId: 'r' }, content: [{ type: 'text', text: 'read image' }, { type: 'image', attachment: { attachmentId: 'image' } }] }),
+    wire(2, 'user/message', { id: 'u', source: { kind: 'user', rpcId: 'r' }, content: [{ type: 'text', text: 'read image' }, { type: 'image', attachment: IMAGE_REF }] }),
     wire(3, 'assistant/message', { turn: 1, step: 0, message: { content: [{ type: 'reasoning', text: 'thinking' }, { type: 'text', text: 'checking' }] } }),
     wire(4, 'tool/call', { callId: 'read', name: 'read', arguments: '{"path":"note.md"}' }),
     wire(5, 'tool/result', { message: { toolCallId: 'read', content: [{ type: 'text', text: 'note contents' }, { type: 'image', attachment: { attachmentId: 'tool-image' } }], isError: false } }),
@@ -56,7 +58,7 @@ it('hydrates fixed-cut native messages, images, tools and exact completed-turn c
   expect(result.messages?.[0]).toMatchObject({ role: 'user', content: 'read image', userMessageId: 'u', images: [{ id: 'image', data: 'aW1hZ2U=', mediaType: 'image/png' }] });
   expect(result.messages?.[1]).toMatchObject({ role: 'assistant', content: 'checkingdone', assistantMessageId: 'deepseek:seq:7', contentBlocks: [{ type: 'thinking', content: 'thinking' }, { type: 'text', content: 'checking' }, { type: 'tool_use', toolId: 'read' }, { type: 'text', content: 'done' }], toolCalls: [{ name: 'Read', input: { file_path: 'note.md' }, result: 'note contents', resultImages: [{ kind: 'data', data: 'aW1hZ2U=', mediaType: 'image/png' }] }], turnStats: { outputTokens: 7 } });
   expect(peer.calls.filter(c => c.method === 'session/page').every(c => nativeRequest(c.args).throughSeq === 8)).toBe(true);
-  expect(peer.calls.find(c => c.method === 'session/attachment')?.args).toEqual({ request: { sessionId: 'root', attachmentId: 'image' } });
+  expect(peer.calls.find(c => c.method === 'session/attachment')?.args).toEqual({ request: { sessionId: 'root', attachmentId: 'image', attachment: IMAGE_REF } });
   expect(peer.calls.some(c => c.method === 'session/create' || c.method === 'session/follow')).toBe(false);
   expect(history.buildPersistedProviderState({ ...input, messages: result.messages! })).toEqual(state);
 });
@@ -170,7 +172,7 @@ it.each(['direct', 'subagent', 'subagent_fork'])('hydrates %s child tools throug
     { id: 'failed', status: 'error', result: 'old_string not found' }] });
   // A failed edit changed nothing, so it shows no diff built from its requested input.
   expect(result.messages?.[0].toolCalls?.[0].subagent?.toolCalls[2].diffData).toBeUndefined();
-  expect(peer.calls.find(c => c.method === 'session/attachment')?.args).toEqual({ request: { sessionId: 'child', attachmentId: 'child-image' } });
+  expect(peer.calls.find(c => c.method === 'session/attachment')?.args).toEqual({ request: { sessionId: 'child', attachmentId: 'child-image', attachment: { attachmentId: 'child-image' } } });
   expect(peer.calls.some(c => c.method === 'session/follow' || c.method === 'session/create')).toBe(false);
 });
 

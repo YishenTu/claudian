@@ -40,8 +40,9 @@ await (await import(sessions.name)).apply({
 const sections = [];
 const events = {};
 const presentation = [];
-(await import(compatibility.name)).apply({
-  effect: fn => fn(), on: (name, handler) => { events[name] = handler; },
+await (await import(compatibility.name)).apply({
+  effect: fn => fn(), on: (name, handler) => { events[name] = handler; }, agents: {}, tools: { presentAs: () => () => {} },
+  loader: { import: async () => ({}) }, plugin: () => ({ dispose() {} }),
   sessionProjections: { stateOf: () => ({ lastTurn: 1 }) },
   systemPrompt: { getSectionOrder: name => name, section: spec => { sections.push(spec); return () => {}; } },
 }, compatibility.config);

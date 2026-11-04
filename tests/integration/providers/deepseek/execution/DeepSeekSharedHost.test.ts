@@ -196,8 +196,10 @@ async function nativePersona(artifacts: DeepSeekLaunchArtifacts) {
     import { createInterface } from 'node:readline';
     const plugin = await import(process.argv[1]);
     const sections = [], sessions = new Map(), turns = new Map();
-    plugin.apply({
-      effect: fn => fn(), on: () => () => {},
+    // dsh 0.2.1 services: generic projection reads, per-agent presentAs and a separate list-agents entry.
+    await plugin.apply({
+      effect: fn => fn(), on: () => () => {}, agents: {}, tools: { presentAs: () => () => {} },
+      loader: { import: async () => ({}) }, plugin: () => ({ dispose() {} }),
       systemPrompt: { section: section => { sections.push(section); return () => {}; }, getSectionOrder: name => name },
       sessionProjections: { stateOf: (session, key) => key === 'turnBoundary' ? { lastTurn: turns.get(session) } : undefined },
     }, JSON.parse(process.argv[2]));
@@ -491,8 +493,8 @@ it('routes session tools through one Host route to the claimed root, denying unk
   // One invocation arrives before even the child's roster identity is available.
   const pendingChild = endpoint.call('child', 'claudian_send_message', { sessionId: 'target', text: 'review' });
   peer.send('$events', { type: 'emit', event: 'api-session/added', args: [{ sessionId: 'child', parentSessionId: 'alpha', origin: 'subagent', agentAvailable: true, running: true }] });
-  peer.send('session/control', { type: 'projection', sessionId: 'alpha', key: 'subagentCatalog', value: [{ id: 'child', mode: 'continuable' }] });
-  peer.send('session/control', { type: 'projection', sessionId: 'child', key: 'subagent', value: { parentSessionId: 'alpha', mode: 'continuable' } });
+  peer.send('session/control', { type: 'projection', sessionId: 'alpha', changes: [{ key: 'subagentCatalog', val: [{ id: 'child', mode: 'continuable' }] }] });
+  peer.send('session/control', { type: 'projection', sessionId: 'child', changes: [{ key: 'subagent', val: { parentSessionId: 'alpha', mode: 'continuable' } }] });
   await until(() => [...peer.streams.values()].some(stream => stream.endpoint === 'session/follow' && childFollow('child')(stream.args)));
   emit('alpha', 'subagent/catalog', { childId: 'child', mode: 'continuable' });
   peer.send('session/follow', { type: 'event', event: { seq: 1, type: 'turn/start', data: { turn: 1 } } }, childFollow('child'));
@@ -582,8 +584,8 @@ it('resolves nested child session-tool ownership when the root creation catalog 
   const turn = await startSessionToolTurn(session, 'alpha');
   for (const [id, parent] of [['child', 'alpha'], ['grandchild', 'child']]) {
     peer.send('$events', { type: 'emit', event: 'api-session/added', args: [{ sessionId: id, parentSessionId: parent, origin: 'subagent', agentAvailable: true, running: true }] });
-    peer.send('session/control', { type: 'projection', sessionId: parent, key: 'subagentCatalog', value: [{ id, mode: 'continuable' }] });
-    peer.send('session/control', { type: 'projection', sessionId: id, key: 'subagent', value: { parentSessionId: parent, mode: 'continuable' } });
+    peer.send('session/control', { type: 'projection', sessionId: parent, changes: [{ key: 'subagentCatalog', val: [{ id, mode: 'continuable' }] }] });
+    peer.send('session/control', { type: 'projection', sessionId: id, changes: [{ key: 'subagent', val: { parentSessionId: parent, mode: 'continuable' } }] });
     await until(() => [...peer.streams.values()].some(stream => stream.endpoint === 'session/follow' && childFollow(id)(stream.args)));
   }
   peer.send('session/follow', { type: 'event', event: { seq: 1, type: 'turn/start', data: { turn: 1 } } }, childFollow('child'));
@@ -709,8 +711,8 @@ it.each(['native', 'request', 'timeout'] as const)('denies a pre-announcement ch
   await first.done;
   const next = await startSessionToolTurn(session, 'alpha');
   peer.send('$events', { type: 'emit', event: 'api-session/added', args: [{ sessionId: 'child', parentSessionId: 'alpha', origin: 'subagent', agentAvailable: true, running: true }] });
-  peer.send('session/control', { type: 'projection', sessionId: 'alpha', key: 'subagentCatalog', value: [{ id: 'child', mode: 'continuable' }] });
-  peer.send('session/control', { type: 'projection', sessionId: 'child', key: 'subagent', value: { parentSessionId: 'alpha', mode: 'continuable' } });
+  peer.send('session/control', { type: 'projection', sessionId: 'alpha', changes: [{ key: 'subagentCatalog', val: [{ id: 'child', mode: 'continuable' }] }] });
+  peer.send('session/control', { type: 'projection', sessionId: 'child', changes: [{ key: 'subagent', val: { parentSessionId: 'alpha', mode: 'continuable' } }] });
   emit('alpha', 'subagent/catalog', { childId: 'child', mode: 'continuable' });
   await until(() => [...peer.streams.values()].some(stream => stream.endpoint === 'session/follow' && childFollow('child')(stream.args)));
   peer.send('session/follow', { type: 'event', event: { seq: 1, type: 'turn/start', data: { turn: 1 } } }, childFollow('child'));

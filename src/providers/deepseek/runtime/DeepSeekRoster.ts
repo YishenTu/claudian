@@ -5,7 +5,7 @@ import { type DeepSeekRemoteClient, isRecord } from '../remote/DeepSeekRemoteCli
 
 export interface DeepSeekAgentRow {
   readonly id: string;
-  /** Owning parent of a native subagent. Forks name their source as native parent but are independent roots. */
+  /** Owning parent of a native subagent. Forks are independent roots even where native names their source as parent. */
   readonly parent?: string;
   readonly available: boolean;
   readonly running: boolean;
@@ -23,6 +23,9 @@ export type DeepSeekSessionToolCapture = (call: SessionToolRoutedCallRequest, de
 const SESSION_TOOL_DEADLINE_MS = 10_000;
 
 type Deliver = (event: Record<string, unknown>) => void;
+
+const isProjectionChange = (change: unknown): change is { key: string; val: unknown } =>
+  isRecord(change) && typeof change.key === 'string';
 
 /**
  * The Host's only subscriber to process-global streams: session roster, control projections and
@@ -69,9 +72,14 @@ export class DeepSeekRoster {
           if (isRecord(projection) && isRecord(projection.values)) this.projections.set(id, projection.values);
         }
         this.baselined = true;
-      } else if (value.type === 'projection' && typeof value.sessionId === 'string' && typeof value.key === 'string') {
+      } else if (value.type === 'projection' && typeof value.sessionId === 'string') {
+        // dsh 0.2.2 batches one event's changes as `{ key, val }`; earlier versions send one `key`/`value` per frame.
+        const changes: unknown[] = Array.isArray(value.changes) ? value.changes
+          : typeof value.key === 'string' ? [{ key: value.key, val: value.value }] : [undefined];
+        if (!changes.every(isProjectionChange)) throw new Error('Malformed DeepSeek control frame.');
         const values = this.projections.get(value.sessionId) ?? {};
-        values[value.key] = value.value; this.projections.set(value.sessionId, values);
+        for (const { key, val } of changes) values[key] = val;
+        this.projections.set(value.sessionId, values);
       } else throw new Error('Malformed DeepSeek control frame.');
       this.changed();
     }, fail));

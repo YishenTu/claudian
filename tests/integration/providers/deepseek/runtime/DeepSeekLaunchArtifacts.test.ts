@@ -59,10 +59,14 @@ it('gives every preset the session prompt directory and its tool policy while ke
       const plugin = await import(process.argv[1]);
       const config = JSON.parse(process.argv[2]);
       const sections = [];
-      plugin.apply({ effect: fn => fn(), on: () => () => {}, sessionProjections: { stateOf: () => ({ lastTurn: 1 }) }, systemPrompt: {
+      const native = () => ({ effect: fn => fn(), on: () => () => {}, agents: { turnBoundaryOf: () => ({ lastTurn: 1 }) }, systemPrompt: {
         section: section => { sections.push(section); return () => {}; },
         getSectionOrder: name => name,
-      } }, config);
+      }, tools: {}, plugin: () => ({ dispose() {} }), loader: { import: async () => ({}) } });
+      // Cordis accepts only a disposer or nothing as a plugin's (resolved) apply result.
+      for (const applied of [await plugin.apply(native(), config), await plugin.apply(native(), { promptDirectory: config.promptDirectory, allow: [] })]) {
+        if (applied !== undefined && typeof applied !== 'function') throw new Error('Invalid Cordis effect: ' + JSON.stringify(applied));
+      }
       for (const bad of [{}, { promptDirectory: 1 }]) {
         let rejected = false;
         try { plugin.apply({}, bad); } catch { rejected = true; }
@@ -151,15 +155,28 @@ it('switches each chat agent between direct tools and code mode at its next turn
     const compatibility = patch.find((entry) => entry.insert)!.insert!
       .find((entry) => entry.config?.id === 'claudian')!.config.plugins.find((row) => row.id === 'claudian-compatibility')!;
     // Drive the bundled plugin as native does: agent creation, then turn status changes, with code mode edited in between.
+    // dsh 0.2.1 declares presentation with tools.presentAs(); 0.2.2 mounts an executor plugin in the agent's scope.
     const script = `
       import { writeFileSync } from 'node:fs';
       const plugin = await import(process.argv[1]);
       const config = JSON.parse(process.argv[2]);
+      const scoped = process.argv[4] === '0.2.1';
       const listeners = {};
       const log = [];
-      plugin.apply({ effect: fn => fn(), systemPrompt: { section: () => () => {}, getSectionOrder: name => name },
+      const mounted = [];
+      // dsh 0.2.1 ships list_agents as a subpath entry; 0.2.2 has executor plugins instead.
+      const imports = scoped ? { '@deepseek-ai/dsh-tool-subagent-control/list-agents': 'list-agents' }
+        : { '@deepseek-ai/dsh-tool-executor-native': 'native', '@deepseek-ai/dsh-tool-executor-ptc': 'ptc' };
+      await plugin.apply({ effect: fn => fn(), systemPrompt: { section: () => () => {}, getSectionOrder: name => name },
+        tools: scoped ? { presentAs() {} } : {}, plugin: entry => { mounted.push(entry.name); return { dispose() {} }; },
+        loader: { import: async name => {
+          if (name in imports) return { name: imports[name] };
+          throw Object.assign(new Error('Package subpath is not defined by exports'), { code: 'ERR_PACKAGE_PATH_NOT_EXPORTED' });
+        } },
         on: (name, listener) => { (listeners[name] ??= []).push(listener); return () => {}; } }, config);
-      const agent = id => ({ id, ctx: { tools: { presentAs: mode => { log.push(id + ' present ' + mode); return () => log.push(id + ' dispose ' + mode); } } } });
+      const agent = id => ({ id, ctx: scoped
+        ? { tools: { presentAs: mode => { log.push(id + ' present ' + mode); return () => log.push(id + ' dispose ' + mode); } } }
+        : { tools: {}, plugin: executor => { log.push(id + ' present ' + executor.name); return { dispose: () => log.push(id + ' dispose ' + executor.name) }; } } });
       const emit = (name, payload) => { for (const listener of listeners[name] ?? []) listener(payload); };
       const [first, second] = [agent('first'), agent('second')];
       for (const step of JSON.parse(process.argv[3])) {
@@ -167,26 +184,32 @@ it('switches each chat agent between direct tools and code mode at its next turn
         else if (step.created) emit('agent/created', { agent: step.created === 'first' ? first : second });
         else emit('agent/status', { agent: step.agent === 'first' ? first : second, status: step.status });
       }
-      process.stdout.write(JSON.stringify(log));
+      process.stdout.write(JSON.stringify({ log, mounted }));
     `;
-    const run = async (steps: unknown[]): Promise<string[]> => JSON.parse((await promisify(execFile)(process.execPath,
-      ['--input-type=module', '-e', script, compatibility.name, JSON.stringify(compatibility.config), JSON.stringify(steps)], { cwd: root })).stdout);
+    for (const [version, direct, code] of [['0.2.1', 'native', 'both'], ['0.2.2', 'native', 'ptc']]) {
+      const drive = async (steps: unknown[]): Promise<{ log: string[]; mounted: string[] }> => JSON.parse((await promisify(execFile)(process.execPath,
+        ['--input-type=module', '-e', script, compatibility.name, JSON.stringify(compatibility.config), JSON.stringify(steps), version], { cwd: root })).stdout);
+      const run = async (steps: unknown[]): Promise<string[]> => (await drive(steps)).log;
+      // The chat preset mounts 0.2.1's separate list_agents entry; 0.2.2 registers it with subagent control.
+      expect((await drive([])).mounted).toEqual(version === '0.2.1' ? ['list-agents'] : []);
 
-    // A fresh Host starts in direct-tool mode until Claudian writes the preference.
-    expect(await run([{ created: 'first' }])).toEqual(['first present native']);
-    await artifacts.writeCodeMode(true);
-    expect(await run([
-      { created: 'first' },
-      { agent: 'first', status: 'running' },
-      // Edits during a turn wait for the next one; idle transitions and unchanged turns redeclare nothing.
-      { write: 'native' }, { agent: 'first', status: 'idle' },
-      { write: 'both' }, { agent: 'first', status: 'running' },
-      { created: 'second' },
-    ])).toEqual(['first present both', 'second present both']);
-    expect(await run([
-      { created: 'first' }, { created: 'second' },
-      { write: 'native' }, { agent: 'first', status: 'running' },
-    ])).toEqual(['first present both', 'second present both', 'first dispose both', 'first present native']);
+      // A fresh Host starts in direct-tool mode until Claudian writes the preference.
+      await artifacts.writeCodeMode(false);
+      expect(await run([{ created: 'first' }])).toEqual([`first present ${direct}`]);
+      await artifacts.writeCodeMode(true);
+      expect(await run([
+        { created: 'first' },
+        { agent: 'first', status: 'running' },
+        // Edits during a turn wait for the next one; idle transitions and unchanged turns redeclare nothing.
+        { write: 'native' }, { agent: 'first', status: 'idle' },
+        { write: 'both' }, { agent: 'first', status: 'running' },
+        { created: 'second' },
+      ])).toEqual([`first present ${code}`, `second present ${code}`]);
+      expect(await run([
+        { created: 'first' }, { created: 'second' },
+        { write: 'native' }, { agent: 'first', status: 'running' },
+      ])).toEqual([`first present ${code}`, `second present ${code}`, `first dispose ${code}`, `first present ${direct}`]);
+    }
 
     await artifacts.writeCodeMode(false);
     expect(await readFile(compatibility.config.codeModeFile, 'utf8')).toBe('native');
@@ -218,11 +241,11 @@ it('reports ready only once every durable store an ephemeral session could reach
       const domains = { session_projcache: { table: () => ({ put: async () => {} }) } };
       const ctx = {
         get: () => backend, on: () => () => {}, effect: () => {}, logger: { warn() {} },
-        inject: (deps, apply) => { if (!deps.includes('attachments')) apply({ storageDomain: { get: name => domains[name] }, get: () => ({ saveText: async () => ({}) }), logger: { warn() {} }, effect: () => {} }); },
+        inject: (deps, apply) => { if (!deps.includes('attachments')) apply({ storageDomain: { get: name => domains[name] }, get: () => ({ saveText: async () => ({}) }), sessionController: { fork: async () => ({}) }, logger: { warn() {} }, effect: () => {} }); },
       };
       plugin.apply(ctx, JSON.parse(process.argv[2]));
     `, row.name, JSON.stringify(row.config)], { cwd: root });
-    expect(JSON.parse(await readFile(row.config.readyFile, 'utf8'))).toMatchObject({ persistence: true, projectionGuard: true, spillGuard: true, workspaceGuard: false });
+    expect(JSON.parse(await readFile(row.config.readyFile, 'utf8'))).toMatchObject({ persistence: true, forkGuard: true, projectionGuard: true, spillGuard: true, workspaceGuard: false });
     expect(await artifacts.readEphemeralReady()).toBe(false);
   } finally {
     await artifacts.dispose();
@@ -280,7 +303,8 @@ it('appends user plugin rows to the chat presets after Claudian\'s own rows, nev
   }
 });
 
-it('keeps ephemeral sessions in process memory and out of every durable dsh store, leaving other sessions to native', async () => {
+// dsh 0.2.1 names a fork's source in its header; 0.2.2 omits it for ordinary forks.
+it.each([['0.2.1', true], ['0.2.2', false]])('keeps ephemeral sessions in process memory and out of every durable dsh store, leaving other sessions to native (dsh %s)', async (_version, forkLineage) => {
   const root = await mkdtemp(join(tmpdir(), 'deepseek ephemeral '));
   const artifacts = await prepareDeepSeekLaunchArtifacts(root);
   try {
@@ -352,7 +376,14 @@ it('keeps ephemeral sessions in process memory and out of every durable dsh stor
       const sessionController = {
         async prompt(request) { await Promise.resolve(); return attachments.saveImages(request.images); },
         async attachment(request) { return attachments.readImage(request.ref); },
+        // Native mints the fork's identity and creates it from the inclusive cut.
+        async fork(request) {
+          await Promise.resolve();
+          return backend.create(header(forkIds.shift(), { ...(forkLineage ? { parentSession: request.sessionId } : {}), isSeeded: true }), { inheritedEventCount: request.atSeq + 1 });
+        },
       };
+      const forkLineage = process.argv[4] === 'true';
+      const forkIds = [];
       const loader = { import: async name => name.endsWith('attachment-local') ? { LocalAttachmentStore } : { DeepSeekUploadIndex } };
       const services = { sessionPersistence: backend, attachments, sessionController, agents, loader };
       const projcacheTable = { put: async key => { out.projcache.push(key); } };
@@ -407,7 +438,8 @@ it('keeps ephemeral sessions in process memory and out of every durable dsh stor
       // Claudian's fork token makes exactly one fork of its parent at its checkpoint ephemeral.
       const forks = {};
       for (const [id, parent, inheritedEventCount] of JSON.parse(process.argv[3])) {
-        const handle = forks[id] = await backend.create(header(id, { parentSession: parent, isSeeded: true }), { inheritedEventCount });
+        forkIds.push(id);
+        const handle = forks[id] = await sessionController.fork({ sessionId: parent, atSeq: inheritedEventCount - 1 });
         out[id] = handle.native ? 'native' : 'memory';
       }
       // Native stores a fork's inherited seed as the start of its own log, from seq 0, then its live suffix.
@@ -461,7 +493,7 @@ it('keeps ephemeral sessions in process memory and out of every durable dsh stor
     // Two forks of `saved` at checkpoint 4 race for one token; a fork at another checkpoint never takes it.
     const withdraw = await artifacts.offerEphemeralFork('saved', 4);
     const result = JSON.parse((await promisify(execFile)(process.execPath, ['--input-type=module', '-e', script, row.name, JSON.stringify(row.config),
-      JSON.stringify([['other-cut', 'saved', 3], ['side', 'saved', 5], ['second', 'saved', 5]])], { cwd: root })).stdout);
+      JSON.stringify([['other-cut', 'saved', 3], ['side', 'saved', 5], ['second', 'saved', 5]]), String(forkLineage)], { cwd: root })).stdout);
     await withdraw();
     expect(JSON.parse(await readFile(row.config.stateFile, 'utf8'))).toEqual({ forks: [] });
 
@@ -655,7 +687,7 @@ it.skipIf(sep === '\\')('maps every nested launch path for Linux while retaining
     const preset = rows.find(row => row.config?.id === 'claudian')!;
     const compatibility = preset.config.plugins.find(row => row.id === 'claudian-compatibility')!;
     const sessions = preset.config.plugins.find(row => row.id === 'claudian-sessions')!;
-    for (const path of [rows[0].name, ephemeral.name, ...Object.values(ephemeral.config), ...Object.values(compatibility.config), sessions.config.endpointFile]) {
+    for (const path of [rows[0].name, ephemeral.name, ...Object.values(ephemeral.config), compatibility.config.promptDirectory, compatibility.config.codeModeFile, sessions.config.endpointFile]) {
       expect(path).toMatch(/^\/mnt\/c\/Temp\/claudian-deepseek-/);
     }
     for (const row of [compatibility, sessions]) expect(row.name).toMatch(/^file:\/\/\/mnt\/c\/Temp\//);

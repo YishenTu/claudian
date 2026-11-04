@@ -786,7 +786,7 @@
       "preset": "Preset",
       "codeMode": {
         "name": "Enable code mode",
-        "desc": "Applies from each conversation's next turn, including existing conversations. Adds native run_code alongside direct tools."
+        "desc": "Applies from each conversation's next turn, including existing conversations. The model calls tools from native run_code programs instead of directly."
       },
       "presetPlugins": {
         "name": "Additional preset plugins",

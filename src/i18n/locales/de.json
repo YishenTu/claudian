@@ -786,7 +786,7 @@
       "preset": "Preset",
       "codeMode": {
         "name": "Code-Modus aktivieren",
-        "desc": "Gilt ab dem nächsten Zug jeder Unterhaltung, auch für bestehende Unterhaltungen. Fügt natives run_code neben den direkten Werkzeugen hinzu."
+        "desc": "Gilt ab dem nächsten Zug jeder Unterhaltung, auch für bestehende Unterhaltungen. Das Modell ruft Werkzeuge aus nativen run_code-Programmen statt direkt auf."
       },
       "presetPlugins": {
         "name": "Zusätzliche Preset-Plugins",

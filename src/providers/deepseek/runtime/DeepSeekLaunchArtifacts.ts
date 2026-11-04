@@ -93,7 +93,7 @@ export async function prepareDeepSeekLaunchArtifacts(
   const readEphemeralReady = async (): Promise<boolean> => {
     try {
       const ready = JSON.parse(await readFile(ephemeralReadyPath, 'utf8')) as Record<string, unknown>;
-      return ready.persistence === true && ready.projectionGuard === true && ready.workspaceGuard === true
+      return ready.persistence === true && ready.forkGuard === true && ready.projectionGuard === true && ready.workspaceGuard === true
         && ready.spillGuard === true && ready.attachmentGuard === true;
     } catch { return false; }
   };

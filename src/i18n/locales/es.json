@@ -786,7 +786,7 @@
       "preset": "Preset",
       "codeMode": {
         "name": "Activar modo código",
-        "desc": "Se aplica desde el siguiente turno de cada conversación, incluidas las existentes. Añade run_code nativo junto a las herramientas directas."
+        "desc": "Se aplica desde el siguiente turno de cada conversación, incluidas las existentes. El modelo llama a las herramientas desde programas run_code nativos en lugar de directamente."
       },
       "presetPlugins": {
         "name": "Plugins adicionales del preset",
