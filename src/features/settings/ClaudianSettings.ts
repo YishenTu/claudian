@@ -17,6 +17,7 @@ import type { FeatureHost } from '@/features/FeatureHost';
 import { buildNavMappingText, parseNavMappings } from '@/features/settings/keyboardNavigation';
 import { getAvailableLocales, getLocaleDisplayName, setLocale, t } from '@/i18n/i18n';
 import type { Locale } from '@/i18n/types';
+import { createProviderIconSvg } from '@/shared/icons';
 import { AccessibleSetting } from '@/shared/settings/AccessibleSetting';
 import { formatContextLimit, parseContextLimit } from '@/shared/settings/contextLimit';
 import { DebouncedSettingsWriter } from '@/shared/settings/DebouncedSettingsWriter';
@@ -209,10 +210,17 @@ export class ClaudianSettingTab extends PluginSettingTab {
         cls: `claudian-settings-provider-content${providerId === this.activeProviderTab ? ' claudian-settings-provider-content--active' : ''}`,
       });
       providerContents.set(providerId, content);
+      const providerName = ProviderRegistry.getProviderDisplayName(providerId);
+      const providerIcon = ProviderRegistry.getChatUIConfig(providerId).getProviderIcon?.();
+      // A tab shows its provider's icon; the name stays its accessible name and hover tooltip.
       const button = providerTabBar.createEl('button', {
+        attr: { 'aria-label': providerName, 'data-provider': providerId, type: 'button' },
         cls: `claudian-settings-provider-tab${providerId === this.activeProviderTab ? ' claudian-settings-provider-tab--active' : ''}`,
-        text: ProviderRegistry.getProviderDisplayName(providerId),
+        ...(providerIcon ? {} : { text: providerName }),
       });
+      if (providerIcon) {
+        createProviderIconSvg(providerIcon, { className: 'claudian-settings-provider-icon', dataProvider: providerId, parent: button });
+      }
       button.addEventListener('click', () => {
         this.activeProviderTab = providerId;
         for (const candidate of providerTabs) {

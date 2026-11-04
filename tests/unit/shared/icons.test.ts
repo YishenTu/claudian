@@ -1,6 +1,7 @@
 /** @vitest-environment jsdom */
 
 import {
+  ANTIGRAVITY_PROVIDER_ICON,
   createProviderIconSvg,
   OPENAI_PROVIDER_ICON,
   OPENCODE_PROVIDER_ICON,
@@ -52,5 +53,30 @@ describe('createProviderIconSvg', () => {
     expect(paths).toHaveLength(2);
     expect(paths[0].getAttribute('fill-rule')).toBe('evenodd');
     expect(paths.every(path => path.getAttribute('fill') === 'currentColor')).toBe(true);
+  });
+
+  it('keeps each full-colour Antigravity icon\'s mask and blur references inside its own SVG', () => {
+    const first = createProviderIconSvg(ANTIGRAVITY_PROVIDER_ICON, { parent: document.body });
+    const second = createProviderIconSvg(ANTIGRAVITY_PROVIDER_ICON, { parent: document.body });
+    document.body.append(first, second);
+
+    for (const svg of [first, second]) {
+      expect(svg.querySelectorAll('mask')).toHaveLength(1);
+      expect(svg.querySelectorAll('filter feGaussianBlur')).toHaveLength(11);
+      expect(svg.querySelectorAll('[fill="#FC413D"], [fill="#00B95C"], [fill="#FFE432"]').length).toBeGreaterThan(0);
+      const references = Array.from(svg.querySelectorAll('[mask], [filter]'))
+        .flatMap(element => [element.getAttribute('mask'), element.getAttribute('filter')])
+        .filter((value): value is string => Boolean(value));
+      expect(references).toHaveLength(12);
+      for (const reference of references) {
+        const id = /^url\(#(.+)\)$/.exec(reference)?.[1];
+        expect(id).toBeDefined();
+        // A duplicate id would make the second icon borrow the first icon's mask or blur.
+        expect(document.querySelectorAll(`[id="${id}"]`)).toHaveLength(1);
+        expect(svg.querySelector(`[id="${id}"]`)).not.toBeNull();
+      }
+    }
+    first.remove();
+    second.remove();
   });
 });

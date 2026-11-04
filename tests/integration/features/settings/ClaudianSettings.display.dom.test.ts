@@ -217,6 +217,19 @@ it('lazily initializes provider services once and reuses their settings without 
   expect(h.settings).toEqual(original);
 });
 
+it('titles each provider tab with its own icon, keeping the provider name as its accessible name', async () => {
+  const h = await createSettings();
+  fireEvent.click(within(h.container).getByRole('button', { name: t('settings.tabs.providers') }));
+  for (const [name, providerId] of [['Claude Code', 'claude'], ['Codex', 'codex']] as const) {
+    const tab = within(h.container).getByRole('button', { name });
+    expect(tab.textContent).toBe('');
+    const icon = tab.querySelector('svg.claudian-provider-icon');
+    expect(icon?.getAttribute('data-provider')).toBe(providerId);
+    expect(icon?.getAttribute('viewBox')).toBe(ProviderRegistry.getChatUIConfig(providerId).getProviderIcon?.()?.viewBox);
+  }
+  expect(await axe(h.container.querySelector('.claudian-settings-provider-tabs')!)).toHaveNoViolations();
+});
+
 it('updates a disabled provider surface from its committed enablement notification', async () => {
   const h = await createSettings({
     settingsProvider: 'codex', providerConfigs: { codex: { enabled: false } },

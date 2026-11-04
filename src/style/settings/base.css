@@ -74,6 +74,25 @@
   background: transparent;
 }
 
+/* Icon tabs: each icon in its provider's logo colour, dimmed until hovered, focused or selected. */
+.claudian-settings button.claudian-settings-provider-tab:has(.claudian-settings-provider-icon) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px 10px;
+}
+
+.claudian-settings-provider-icon {
+  width: 16px;
+  height: 16px;
+  color: var(--claudian-provider-logo);
+  opacity: 0.55;
+}
+
+.claudian-settings button.claudian-settings-provider-tab:is(:hover, :focus-visible, .claudian-settings-provider-tab--active) .claudian-settings-provider-icon {
+  opacity: 1;
+}
+
 .claudian-settings-provider-content {
   display: none;
 }
