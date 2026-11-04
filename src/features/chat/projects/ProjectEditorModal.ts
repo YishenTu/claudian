@@ -2,6 +2,7 @@ import { type App, Notice } from 'obsidian';
 
 import { defaultProjectMemoryPath, normalizeProjectMemoryPath } from '@/core/path/ProjectMemoryPath';
 import { type ProjectCreateInput, ProjectMemoryPathTakenError, type ProjectRecord } from '@/core/types';
+import { ProjectIconPicker } from '@/features/chat/projects/ProjectIconPicker';
 import { t } from '@/i18n/i18n';
 import { AccessibleModal } from '@/shared/modals/AccessibleModal';
 import { AccessibleSetting } from '@/shared/settings/AccessibleSetting';
@@ -18,11 +19,12 @@ export interface ProjectEditorOptions {
 }
 
 /**
- * Edits a project's name, instructions and memory file path; instructions have no length limit. A new project's
- * path follows the name until the user edits the path.
+ * Edits a project's name, icon, instructions and memory file path; instructions have no length limit. A new
+ * project's path follows the name until the user edits the path.
  */
 export class ProjectEditorModal extends AccessibleModal {
   private nameInput!: HTMLInputElement;
+  private iconPicker!: ProjectIconPicker;
   private instructionsArea!: HTMLTextAreaElement;
   private memoryPathInput!: HTMLInputElement;
   private memoryPathError!: HTMLElement;
@@ -39,7 +41,7 @@ export class ProjectEditorModal extends AccessibleModal {
     this.setTitle(project ? t('chat.projects.editor.titleEdit') : t('chat.projects.editor.titleNew'));
     this.modalEl.addClass('claudian-project-modal');
 
-    new AccessibleSetting(this.contentEl)
+    const nameSetting = new AccessibleSetting(this.contentEl)
       .setName(t('chat.projects.editor.name'))
       .setDesc(t('chat.projects.editor.nameDesc'))
       .addText((text) => {
@@ -59,6 +61,10 @@ export class ProjectEditorModal extends AccessibleModal {
           void this.save();
         });
       });
+    // The icon sits before the name it marks, as in the session manager.
+    nameSetting.settingEl.addClass('claudian-project-name-setting');
+    this.iconPicker = new ProjectIconPicker(nameSetting.controlEl, { keymap: this.app.keymap, value: project?.icon });
+    nameSetting.controlEl.prepend(this.iconPicker.el);
 
     new AccessibleSetting(this.contentEl)
       .setName(t('chat.projects.editor.instructions'))
@@ -123,6 +129,8 @@ export class ProjectEditorModal extends AccessibleModal {
   }
 
   onClose(): void {
+    // Releases the open icon panel's key scope and document listener.
+    this.iconPicker.close(false);
     this.contentEl.empty();
   }
 
@@ -134,6 +142,7 @@ export class ProjectEditorModal extends AccessibleModal {
       this.nameInput.focus();
       return;
     }
+    const icon = this.iconPicker.value;
     const memoryPath = normalizeProjectMemoryPath(this.memoryPathInput.value);
     if (memoryPath === null) {
       this.showMemoryPathError(t('chat.projects.editor.memoryPathInvalid'));
@@ -143,7 +152,7 @@ export class ProjectEditorModal extends AccessibleModal {
     // The saved input is captured now, so the fields stay locked until the write settles.
     this.setSaving(true);
     try {
-      await this.options.save({ name, instructions: this.instructionsArea.value, memoryPath });
+      await this.options.save({ name, instructions: this.instructionsArea.value, memoryPath, ...(icon ? { icon } : {}) });
       this.close();
     } catch (error) {
       this.setSaving(false);
@@ -174,6 +183,7 @@ export class ProjectEditorModal extends AccessibleModal {
   private setSaving(saving: boolean): void {
     this.saving = saving;
     this.nameInput.disabled = saving;
+    this.iconPicker.setDisabled(saving);
     this.instructionsArea.disabled = saving;
     this.memoryPathInput.disabled = saving;
     this.saveButton.disabled = saving;

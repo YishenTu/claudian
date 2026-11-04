@@ -371,7 +371,7 @@ extends ValueComponent<string> implements ObsidianTextComponent<T> {
   private change: ((value: string) => unknown) | undefined;
   constructor(container: HTMLElement, tag: 'input' | 'textarea' = 'input') {
     super();
-    this.inputEl = container.appendChild(hostDocument().createElement(tag)) as T;
+    this.inputEl = container.appendChild(container.ownerDocument.createElement(tag)) as T;
     if (tag === 'input') this.inputEl.setAttribute('type', 'text');
     this.inputEl.setAttribute('spellcheck', 'false');
     this.inputEl.addEventListener('input', () => this.onChanged());
@@ -390,13 +390,13 @@ export class DropdownComponent extends ValueComponent<string> implements Obsidia
   private readonly measureOption: HTMLOptionElement;
   constructor(container: HTMLElement) {
     super();
-    this.selectEl = container.appendChild(hostDocument().createElement('select'));
+    this.selectEl = container.appendChild(container.ownerDocument.createElement('select'));
     this.selectEl.className = 'dropdown';
-    const measure = container.appendChild(hostDocument().createElement('select'));
+    const measure = container.appendChild(container.ownerDocument.createElement('select'));
     measure.className = 'dropdown is-measuring';
     measure.setAttribute('aria-hidden', 'true');
     measure.tabIndex = -1;
-    this.measureOption = measure.appendChild(hostDocument().createElement('option'));
+    this.measureOption = measure.appendChild(container.ownerDocument.createElement('option'));
     this.selectEl.addEventListener('change', () => {
       this.resizeToFit();
       if (this.change) runControlCallback(this.selectEl, () => this.change!(this.getValue()));
@@ -426,10 +426,10 @@ export class ToggleComponent extends ValueComponent<boolean> implements Obsidian
   private change: ((value: boolean) => unknown) | undefined;
   constructor(container: HTMLElement) {
     super();
-    this.toggleEl = container.appendChild(hostDocument().createElement('label'));
+    this.toggleEl = container.appendChild(container.ownerDocument.createElement('label'));
     this.toggleEl.className = 'checkbox-container';
     this.toggleEl.tabIndex = 0;
-    const input = this.toggleEl.appendChild(hostDocument().createElement('input'));
+    const input = this.toggleEl.appendChild(container.ownerDocument.createElement('input'));
     input.type = 'checkbox';
     input.tabIndex = -1;
     this.toggleEl.addEventListener('change', () => this.onClick());
@@ -463,16 +463,16 @@ export class Setting implements ObsidianSetting {
   readonly descEl: HTMLElement;
   readonly controlEl: HTMLElement;
   constructor(container: HTMLElement) {
-    this.settingEl = container.appendChild(hostDocument().createElement('div'));
+    this.settingEl = container.appendChild(container.ownerDocument.createElement('div'));
     this.settingEl.classList.add('setting-item');
     this.settingEl.tabIndex = -1;
-    this.infoEl = this.settingEl.appendChild(hostDocument().createElement('div'));
+    this.infoEl = this.settingEl.appendChild(this.settingEl.ownerDocument.createElement('div'));
     this.infoEl.className = 'setting-item-info';
-    this.nameEl = this.infoEl.appendChild(hostDocument().createElement('div'));
+    this.nameEl = this.infoEl.appendChild(this.settingEl.ownerDocument.createElement('div'));
     this.nameEl.className = 'setting-item-name';
-    this.descEl = this.infoEl.appendChild(hostDocument().createElement('div'));
+    this.descEl = this.infoEl.appendChild(this.settingEl.ownerDocument.createElement('div'));
     this.descEl.className = 'setting-item-description';
-    this.controlEl = this.settingEl.appendChild(hostDocument().createElement('div'));
+    this.controlEl = this.settingEl.appendChild(this.settingEl.ownerDocument.createElement('div'));
     this.controlEl.className = 'setting-item-control';
   }
   then(callback: (setting: this) => unknown): this { callback(this); return this; }
@@ -486,7 +486,7 @@ export class Setting implements ObsidianSetting {
   setErrorMessage(message: string | null): this {
     this.settingEl.classList.toggle('is-invalid', Boolean(message));
     if (!message) { this.errorEl?.remove(); this.errorEl = null; return this; }
-    this.errorEl ??= this.controlEl.appendChild(hostDocument().createElement('div'));
+    this.errorEl ??= this.controlEl.appendChild(this.settingEl.ownerDocument.createElement('div'));
     this.errorEl.textContent = message;
     return this;
   }
@@ -529,7 +529,7 @@ export class ButtonComponent implements ObsidianButtonComponent {
   readonly buttonEl: HTMLButtonElement;
   disabled = false;
   constructor(container: HTMLElement) {
-    this.buttonEl = container.appendChild(hostDocument().createElement('button'));
+    this.buttonEl = container.appendChild(container.ownerDocument.createElement('button'));
   }
   then(callback: (component: this) => unknown): this { callback(this); return this; }
   setDisabled(value: boolean): this { this.disabled = this.buttonEl.disabled = value; return this; }
@@ -674,6 +674,9 @@ export const loadPrism = vi.fn().mockResolvedValue({
 
 export const setIcon = vi.fn((_element: HTMLElement, _iconId: string) => {});
 
+/** A sample of Obsidian's registered icon ids; real hosts list every Lucide icon with its `lucide-` prefix. */
+export const getIconIds = vi.fn((): string[] => ['lucide-folder', 'lucide-folder-open', 'lucide-rocket', 'lucide-rotate-ccw', 'lucide-star']);
+
 // Notice mock that tracks constructor calls
 export const Notice = vi.fn().mockImplementation(function (_message: string, _timeout?: number) {});
 
@@ -757,7 +760,7 @@ export class Modal {
   // Obsidian 1.13.7 app.js fw: these are plain divs; setTitle adds no ARIA.
   get containerEl(): HTMLDivElement {
     if (!this.container) {
-      this.container = hostDocument().createElement('div');
+      this.container = (activeDocument ?? hostDocument()).createElement('div');
       this.container.className = 'modal-container';
       this.container.createDiv('modal-bg');
       const modal = this.modal = this.container.createDiv('modal');

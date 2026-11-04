@@ -24,6 +24,7 @@ export function editProject(host: ProjectUIHost, project: ProjectRecord): void {
       ...(input.name !== project.name ? { name: input.name } : {}),
       ...(input.instructions !== project.instructions ? { instructions: input.instructions } : {}),
       ...(input.memoryPath !== project.memoryPath ? { memoryPath: input.memoryPath } : {}),
+      ...((input.icon ?? '') !== (project.icon ?? '') ? { icon: input.icon ?? null } : {}),
     }),
     openMemory: () => openProjectMemory(host, project),
   }).open();

@@ -9,6 +9,8 @@ export interface ProjectRecord {
   readonly instructions: string;
   /** Vault-relative path of the project memory file (`.md`); editing the project can move or rename it. */
   readonly memoryPath: string;
+  /** Obsidian icon id (as listed by `getIconIds`) shown for the project; absent shows the default folder. */
+  readonly icon?: string;
   readonly isPinned: boolean;
   /** Hidden from the active session list with its archived members; an archived project is never pinned. */
   readonly isArchived: boolean;
@@ -24,6 +26,8 @@ export interface ProjectCreateInput {
    * another project records the path.
    */
   readonly memoryPath: string;
+  /** Obsidian icon id; omitted or empty keeps the default folder. */
+  readonly icon?: string;
 }
 
 export interface ProjectUpdatePatch {
@@ -35,6 +39,8 @@ export interface ProjectUpdatePatch {
    * already there or another project records the path.
    */
   readonly memoryPath?: string;
+  /** Replaces the icon id; null or empty restores the default folder. */
+  readonly icon?: string | null;
 }
 /**
  * Live project records. A conversation's `projectId` is meaningful only when `get` resolves it; null means no
