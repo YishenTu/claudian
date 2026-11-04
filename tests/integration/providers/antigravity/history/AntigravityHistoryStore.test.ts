@@ -109,7 +109,8 @@ describe('loadAntigravityHistory', () => {
             input: expect.objectContaining({ command: 'sleep 6; echo finished' }),
             name: 'Bash',
             result: 'Tool is running as a background task with task id: session-fixture/task-10',
-            status: 'running',
+            // agy keeps the launch step RUNNING after the task ends; its outcome is the later task report.
+            status: 'completed',
           },
         ],
       },
@@ -292,6 +293,42 @@ describe('loadAntigravityHistory', () => {
       ['user', false, undefined],
       ['assistant', false, [{ content: 'Continuing.', type: 'text' }]],
     ]);
+  });
+
+  it('keeps a turn whole when an earlier task report and the restart notice open it', async () => {
+    const system = (index: number, body: string) => ({ content: `<SYSTEM_MESSAGE>\n${body}\n</SYSTEM_MESSAGE>`,
+      created_at: '2026-01-01T00:00:00Z', source: 'SYSTEM', status: 'DONE', step_index: index, type: 'SYSTEM_MESSAGE' });
+    await installSteps([
+      userStep(0, 'Try again.'),
+      system(1, '[Message] sender=s/task-1 priority=MESSAGE_PRIORITY_LOW content=Task id "s/task-1" was canceled'),
+      system(2, '[Message] sender=system priority=MESSAGE_PRIORITY_LOW content=[Notice] All your subagents and background tasks have been stopped'),
+      replyStep(3, { tool_calls: [{ args: { Action: 'list' }, name: 'manage_task' }] }),
+      { content: 'No tasks.', created_at: '2026-01-01T00:00:04Z', source: 'MODEL', status: 'DONE', step_index: 4, type: 'GENERIC' },
+      { ...replyStep(5, { content: 'Done.' }), created_at: '2026-01-01T00:01:03Z' },
+    ]);
+
+    const messages = await loadAntigravityHistory(storeRoot, SESSION_ID);
+
+    expect(messages.map(message => [message.role, message.isAutomaticResponse ?? false, message.durationSeconds,
+      message.contentBlocks?.map(block => block.type)])).toEqual([
+      ['user', false, undefined, undefined],
+      ['assistant', false, 63, ['task_notification', 'tool_use', 'text']],
+    ]);
+  });
+
+  it('shows a background launch without agy\'s instructions to the model', async () => {
+    const launch = 'Tool is running as a background task with task id: s/task-2\nLog output:\nstarted';
+    await installSteps([
+      userStep(0, 'Start it.'),
+      replyStep(1, { tool_calls: [{ args: { CommandLine: 'sleep 30', IsDaemon: true }, name: 'run_command' }] }),
+      { content: `Created At: 2026-01-01T00:00:02+00:00\n${launch}\n\nYOU MUST TAKE ONE OF THE FOLLOWING TWO ACTIONS: A) either `
+        + 'proceed or, B) end the turn.\n DO NOTHING ELSE.\n When updating the user, always respond in the language of the user.',
+      created_at: '2026-01-01T00:00:02Z', source: 'MODEL', status: 'RUNNING', step_index: 2, type: 'GENERIC' },
+    ]);
+
+    const messages = await loadAntigravityHistory(storeRoot, SESSION_ID);
+
+    expect(messages[1].toolCalls?.[0].result).toBe(launch);
   });
 
   it('pairs ask_question answers with their questions', async () => {

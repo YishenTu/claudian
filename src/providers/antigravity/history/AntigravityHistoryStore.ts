@@ -53,6 +53,8 @@ const USER_REQUEST_PATTERN = /<USER_REQUEST>\n?([\s\S]*?)\n?<\/USER_REQUEST>/;
 const RESULT_HEADER_PATTERN = /^(?:(?:Created|Completed) At: [^\n]*\n)+/;
 /** A message agy injects into the conversation; `sender=system` marks its own notices, others are task reports. */
 const SYSTEM_REPORT_PATTERN = /<SYSTEM_MESSAGE>\n\[Message\][^\n]*?\bsender=(\S+)[^\n]*?\bcontent=([\s\S]*?)\n?<\/SYSTEM_MESSAGE>/;
+/** agy appends instructions for the model to a command it moved to the background. */
+const BACKGROUND_INSTRUCTIONS_PATTERN = /\s*YOU MUST TAKE ONE OF THE FOLLOWING TWO ACTIONS:[\s\S]*$/;
 const QUESTION_ANSWER_PATTERN = /^A(\d+): (.*)$/;
 
 /** Reads the first existing transcript; a missing or unreadable store yields no messages. */
@@ -161,10 +163,11 @@ export function parseAntigravityTranscript(
       }
       case 'SYSTEM_MESSAGE': {
         // Background task and subagent reports start a response without a user request. A notice before the
-        // current turn has produced anything (agy's restart notice follows the next request) is only context.
+        // current turn has produced anything (agy's restart notice follows the next request) is only context, and
+        // a report agy delivers at the start of a turn joins it without counting as its output.
         const current = turn as TurnBuilder | null;
-        const answered = current
-          && (current.assistant.content || current.blocks.length > 0 || current.toolCalls.length > 0);
+        const answered = current && (current.assistant.content || current.toolCalls.length > 0
+          || current.blocks.some(block => block.type !== 'task_notification'));
         const target = !current || answered ? startTurn(stepId, timestamp, true) : current;
         const report = SYSTEM_REPORT_PATTERN.exec(step.content ?? '');
         if (report && report[1] !== 'system' && report[2].trim()) {
@@ -221,7 +224,7 @@ export function parseAntigravityTranscript(
 function completeTool(pending: PendingTool, step: TranscriptStep): void {
   const { call, rawName } = pending;
   const text = (step.status === 'ERROR' ? step.error ?? step.content : step.content) ?? '';
-  const body = text.replace(RESULT_HEADER_PATTERN, '');
+  const body = text.replace(RESULT_HEADER_PATTERN, '').replace(BACKGROUND_INSTRUCTIONS_PATTERN, '');
   const result = rawName === 'run_command'
     ? normalizeAntigravityToolResult(rawName, body, { output: body })
     : { content: body, isError: false };
@@ -230,7 +233,10 @@ function completeTool(pending: PendingTool, step: TranscriptStep): void {
     const answers = decodeQuestionAnswers(pending.rawInput, body);
     if (answers) call.resolvedAnswers = answers;
   }
-  call.status = step.status === 'ERROR' || result.isError ? 'error' : step.status === 'RUNNING' ? 'running' : 'completed';
+  // A RUNNING command step is one agy moved to the background; the step keeps that status after the task ends,
+  // and its outcome arrives as a later task report.
+  const running = step.status === 'RUNNING' && rawName !== 'run_command';
+  call.status = step.status === 'ERROR' || result.isError ? 'error' : running ? 'running' : 'completed';
   if (call.name === 'Read') call.resultFormat = 'plain';
   if (call.status === 'completed' && isWriteEditTool(call.name)) {
     const diffData = resolveToolDiffData(undefined, call);

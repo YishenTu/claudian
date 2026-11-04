@@ -88,6 +88,22 @@ it.each(chunks)('flushes pending tool cards in transcript order before %s', asyn
   expect(toolButtons()).toEqual(cards);
 });
 
+it.each<[string, StreamChunk]>([
+  ['completes', { type: 'tool_result', id: 'grep', content: 'a.md:1: needle' }],
+  ['streams output', { type: 'tool_output', id: 'grep', content: 'a.md:1: needle' }],
+])('keeps an earlier still-running tool card first when a later tool %s', async (_name, later) => {
+  await stream.handleStreamChunk({ type: 'tool_use', id: 'read', name: 'Read', input: { file_path: 'a.md' } }, message);
+  await stream.handleStreamChunk({ type: 'tool_use', id: 'grep', name: 'Grep', input: { pattern: 'needle' } }, message);
+
+  await stream.handleStreamChunk(later, message);
+  await stream.handleStreamChunk({ type: 'tool_result', id: 'read', content: 'alpha' }, message);
+  await vi.advanceTimersByTimeAsync(20);
+
+  expect(within(host).queryAllByRole('button', { name: /^(Read|Grep):/ }).map(button => button.textContent)).toEqual([
+    expect.stringContaining('Read'), expect.stringContaining('Grep'),
+  ]);
+});
+
 it('renders an early result as one completed card with its persisted output', async () => {
   await stream.handleStreamChunk({ type: 'tool_use', id: 'read', name: 'Read', input: { file_path: 'note.md' } }, message);
   expect(within(host).queryByRole('button', { name: /^Read:/ })).toBeNull();
