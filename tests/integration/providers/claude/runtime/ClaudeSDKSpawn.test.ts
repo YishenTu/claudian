@@ -72,6 +72,8 @@ it('passes nonexistent Linux paths to the hook and sends a large system prompt o
     expect(cli?.options).toMatchObject({ cwd: 'C:\\does-not-exist', windowsVerbatimArguments: true });
   } finally {
     query.close();
+    // close() starts the SDK's memoized cleanup, whose exit wait arms a 2s timer; settle it before the test ends.
+    await query.return(undefined);
     restoreEnvironment(previousEnv);
     vi.mocked(spawn).mockReset();
   }
@@ -107,6 +109,7 @@ it('runs a Node-backed Linux CLI with the distro node and forwards Claude enviro
     expect(request.options).not.toHaveProperty('signal');
   } finally {
     query.close();
+    await query.return(undefined);
     restoreEnvironment(previousEnv);
     vi.mocked(spawn).mockReset();
   }
@@ -151,6 +154,7 @@ it.skipIf(process.platform === 'win32')('exercises the native WSL fixture protoc
   } finally {
     query.close();
     child?.kill();
+    await query.return(undefined);
     await fs.rm(directory, { recursive: true, force: true });
   }
 }, 30_000);
