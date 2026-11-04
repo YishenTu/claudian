@@ -62,6 +62,7 @@ export class ProjectEditorModal extends AccessibleModal {
         });
       });
     // The icon sits before the name it marks, as in the session manager.
+    nameSetting.settingEl.addClass('claudian-project-name-setting');
     this.iconPicker = new ProjectIconPicker(nameSetting.controlEl, { keymap: this.app.keymap, value: project?.icon });
     nameSetting.controlEl.prepend(this.iconPicker.el);
 

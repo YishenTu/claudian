@@ -279,9 +279,15 @@
   flex-basis: 100%;
 }
 
-/* The icon button sits before the name; its panel drops below it over the modal. */
-.claudian-project-icon-picker {
+/*
+ * The icon button sits before the name. Its panel drops below the whole Name row and aligns to the row's right
+ * edge, so a narrow modal shrinks the panel instead of pushing it past the modal's left edge.
+ */
+.claudian-project-modal .claudian-project-name-setting {
   position: relative;
+}
+
+.claudian-project-icon-picker {
   flex: 0 0 auto;
 }
 
@@ -300,7 +306,9 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
+  box-sizing: border-box;
   width: 296px;
+  max-width: 100%;
   padding: 8px;
   border: 1px solid var(--background-modifier-border);
   border-radius: var(--radius-m);
