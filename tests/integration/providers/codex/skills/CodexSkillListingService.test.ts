@@ -1,3 +1,5 @@
+import * as path from 'node:path';
+
 import { DesktopVault } from '@test/helpers/core/DesktopVault';
 import { createProviderHostFixture } from '@test/helpers/providerRuntimeHost';
 import { CodexRuntimeHarness } from '@test/helpers/providers/codex/CodexRuntimeHarness';
@@ -9,7 +11,7 @@ import { CodexSkillListingService } from '@/providers/codex/skills/CodexSkillLis
 
 const native = new CodexRuntimeHarness();
 vi.mock('cross-spawn', () => ({ default: vi.fn((command: string) => native.createProcess(
-  command === 'wsl.exe' ? { platformFamily: 'unix', platformOs: 'linux' } : undefined,
+  path.win32.basename(command).toLowerCase() === 'wsl.exe' ? { platformFamily: 'unix', platformOs: 'linux' } : undefined,
 )) }));
 const originalPlatform = Object.getOwnPropertyDescriptor(process, 'platform')!;
 let vault: DesktopVault;
@@ -33,11 +35,13 @@ afterEach(async () => {
   await service.dispose();
   await runtime.dispose();
   Object.defineProperty(process, 'platform', originalPlatform);
+  vi.unstubAllEnvs();
   vi.restoreAllMocks();
 });
 
+// A native Codex peer reports host-native skill paths, which the identity mapper preserves.
 function makeSkill(name: string): SkillMetadata {
-  return { name, description: `${name} description`, path: `/tmp/${name}/SKILL.md`, scope: 'repo', enabled: true };
+  return { name, description: `${name} description`, path: path.join(vault.root, '.codex', 'skills', name, 'SKILL.md'), scope: 'repo', enabled: true };
 }
 
 async function waitForListing(count = 1) {
@@ -141,6 +145,8 @@ it('coalesces a normal request behind an in-flight forced refresh', async () => 
 
 it('uses the WSL target cwd for native listing and maps returned skill paths back to the host', async () => {
   Object.defineProperty(process, 'platform', { ...originalPlatform, value: 'win32' });
+  // Real Windows launches WSL through the absolute System32 path.
+  vi.stubEnv('SystemRoot', 'C:\\Windows');
   Object.defineProperty(fixture.host, 'workingDirectory', { value: 'C:\\repo', configurable: true });
   updateCodexProviderSettings(fixture.settings, { installationMethod: 'wsl', wslDistroOverride: 'Ubuntu' });
   const pending = service.listSkills({ forceReload: true });

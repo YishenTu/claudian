@@ -219,7 +219,9 @@ it('keeps a committed CLI path after recycle failure and allows reverting it', a
 
 it('rejects an existing relative CLI path', async () => {
   const file = await executable();
-  const relative = path.relative(process.cwd(), file);
+  // Relative to the Vault, which shares the file's drive; relative to `process.cwd()` crosses drives on CI Windows and stays absolute.
+  const relative = path.relative(fixture.vault.root, file);
+  expect(path.isAbsolute(relative)).toBe(false);
   await render();
   await setCLIPath(relative);
   expect(persist).not.toHaveBeenCalled();
