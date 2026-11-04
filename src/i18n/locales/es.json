@@ -778,6 +778,16 @@
         "desc": "Variables de entorno que se pasan solo a Grok Build. Los secretos de los modelos personalizados permanecen en el ámbito de este proveedor y se referencian desde la configuración nativa mediante env_key."
       }
     },
+    "antigravity": {
+      "environment": {
+        "name": "Variables de entorno de Antigravity",
+        "desc": "Variables de entorno que solo se pasan a Antigravity (agy), como GEMINI_API_KEY."
+      },
+      "signIn": {
+        "name": "Inicio de sesión",
+        "desc": "Antigravity usa la cuenta con la que agy ha iniciado sesión. Si las solicitudes fallan por un error de autenticación, ejecuta `agy acp --login` en una terminal."
+      }
+    },
     "deepseek": {
       "installation": {
         "desc": "La detección automática prioriza dsh y después busca Desktop en macOS o Windows. Si ambos están instalados, introduce la ruta .app de Desktop o su carpeta de instalación de Windows para seleccionarlo. Abre Desktop primero para completar su configuración.",

@@ -778,6 +778,16 @@
         "desc": "Grok Build にのみ渡す環境変数。カスタムモデルのシークレットはこのプロバイダーのスコープ内に留まり、ネイティブ設定からは env_key で参照されます。"
       }
     },
+    "antigravity": {
+      "environment": {
+        "name": "Antigravity の環境変数",
+        "desc": "Antigravity（agy）にのみ渡す環境変数です（例: GEMINI_API_KEY）。"
+      },
+      "signIn": {
+        "name": "サインイン",
+        "desc": "Antigravity は agy がサインインしているアカウントを使用します。認証エラーでリクエストが失敗する場合は、ターミナルで `agy acp --login` を実行してください。"
+      }
+    },
     "deepseek": {
       "installation": {
         "desc": "自動検出は dsh を優先し、次に macOS または Windows の Desktop を探します。両方がインストールされている場合、Desktop の .app パスまたは Windows のインストールフォルダーを入力すると選択できます。最初に Desktop を開いて初期設定を完了してください。",

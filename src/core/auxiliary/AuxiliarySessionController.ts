@@ -2,6 +2,7 @@ import type {
   ProviderExecutionRequest,
   ProviderExecutionRun,
   ProviderExecutionSessionLease,
+  ProviderExplicitInstructionPurpose,
   ProviderToolPolicy,
 } from '../execution';
 import type { AuxiliaryExecutionContext } from './AuxiliaryExecutionContext';
@@ -13,8 +14,6 @@ export interface AuxiliaryRequest {
   readonly prompt: string;
   readonly systemPrompt: string;
 }
-
-type AuxiliaryExecutionOwner = 'title' | 'inline-edit';
 
 export class AuxiliarySessionController {
   private abortController: AbortController | null = null;
@@ -28,7 +27,7 @@ export class AuxiliarySessionController {
 
   constructor(
     private readonly context: AuxiliaryExecutionContext,
-    private readonly owner: AuxiliaryExecutionOwner,
+    private readonly owner: ProviderExplicitInstructionPurpose,
     private readonly toolPolicy: ProviderToolPolicy,
     private readonly collector = new TextResponseCollector(),
   ) {}
@@ -91,6 +90,7 @@ export class AuxiliarySessionController {
         systemInstructions: {
           instructions: request.systemPrompt,
           kind: 'explicit',
+          purpose: this.owner,
         },
       },
       input: [{ text: request.prompt, type: 'text' }],

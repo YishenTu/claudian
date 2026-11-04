@@ -902,7 +902,7 @@ describe('ClaudeExecutionBackend', () => {
     await collectEvents(resumable.execute(createRequest({
       configuration: {
         systemInstructions: {
-          kind: 'explicit',
+          kind: 'explicit', purpose: 'title',
           instructions: 'Refine the instruction.',
         },
       },
@@ -911,7 +911,7 @@ describe('ClaudeExecutionBackend', () => {
     await collectEvents(resumable.execute(createRequest({
       configuration: {
         systemInstructions: {
-          kind: 'explicit',
+          kind: 'explicit', purpose: 'title',
           instructions: 'Continue refining.',
         },
       },
@@ -931,7 +931,7 @@ describe('ClaudeExecutionBackend', () => {
       configuration: {
         reasoning: null,
         systemInstructions: {
-          kind: 'explicit',
+          kind: 'explicit', purpose: 'title',
           instructions: 'Generate a title.',
         },
       },
@@ -971,7 +971,7 @@ describe('ClaudeExecutionBackend', () => {
         }));
       const request = createRequest({
         configuration: {
-          systemInstructions: { kind: 'explicit', instructions: 'Edit the draft.' },
+          systemInstructions: { kind: 'explicit', purpose: 'title', instructions: 'Edit the draft.' },
         },
         toolPolicy: { kind: 'read-only' },
       });
@@ -991,7 +991,7 @@ describe('ClaudeExecutionBackend', () => {
             ? {
                 configuration: {
                   systemInstructions: {
-                    kind: 'explicit' as const,
+                    kind: 'explicit' as const, purpose: 'title' as const,
                     instructions: 'Edit the draft with new guidance.',
                   },
                 },
@@ -1041,7 +1041,7 @@ describe('ClaudeExecutionBackend', () => {
           ],
           input: [{ type: 'text', text: 'Continue with B' }],
           ...(reason === 'configuration change' ? {
-            configuration: { systemInstructions: { kind: 'explicit', instructions: 'New guidance' } },
+            configuration: { systemInstructions: { kind: 'explicit', purpose: 'title', instructions: 'New guidance' } },
           } : {}),
         });
         const events = await collectEvents(session.execute(request).events);
@@ -2984,7 +2984,7 @@ describe('ClaudeExecutionBackend', () => {
       configuration: {
         systemInstructions: {
           instructions: 'Use a replacement persistent query.',
-          kind: 'explicit',
+          kind: 'explicit', purpose: 'title',
         },
       },
       input: [{ type: 'text', text: 'Retry with a changed restart key' }],

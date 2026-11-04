@@ -25,7 +25,7 @@ const request: ProviderExecutionRequest = {
   input: [{ type: 'text', text: 'hello' }],
   configuration: {
     model: TEST_CODEX_MODEL, reasoning: 'high', serviceTier: 'priority', permissionMode: 'yolo',
-    systemInstructions: { kind: 'explicit', instructions: 'Be concise.' },
+    systemInstructions: { kind: 'explicit', purpose: 'title', instructions: 'Be concise.' },
   },
   toolPolicy: { kind: 'provider-default' }, signal: new AbortController().signal,
 };

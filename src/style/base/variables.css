@@ -19,6 +19,7 @@
   --claudian-brand-grok: #fff;
   --claudian-brand-grok-rgb: 255, 255, 255;
   --claudian-brand-deepseek: #4D6BFE;
+  --claudian-brand-antigravity: #4285F4;
   --claudian-error: #dc3545;
   --claudian-compact: #5bc0de;
 
@@ -90,6 +91,16 @@ body.theme-light .claudian-inline-menu-layer {
   --claudian-brand: var(--claudian-brand-grok);
   --claudian-brand-rgb: var(--claudian-brand-grok-rgb);
   --claudian-provider-logo: var(--claudian-brand-grok);
+}
+
+.claudian-container[data-provider="antigravity"],
+.claudian-inline-input-container[data-provider="antigravity"],
+.claudian-inline-menu-layer[data-provider="antigravity"],
+.claudian-model-provider-tab[data-provider="antigravity"] {
+  /* Antigravity blue marks only its logo; its other accents read as normal text. */
+  --claudian-brand: var(--claudian-brand-neutral);
+  --claudian-brand-rgb: var(--claudian-brand-neutral-rgb);
+  --claudian-provider-logo: var(--claudian-brand-antigravity);
 }
 
 .claudian-container[data-provider="deepseek"],

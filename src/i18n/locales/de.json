@@ -778,6 +778,16 @@
         "desc": "Umgebungsvariablen, die nur an Grok Build übergeben werden. Geheimnisse für benutzerdefinierte Modelle bleiben in diesem Anbieterbereich und werden in der nativen Konfiguration über env_key referenziert."
       }
     },
+    "antigravity": {
+      "environment": {
+        "name": "Antigravity-Umgebungsvariablen",
+        "desc": "Umgebungsvariablen, die nur an Antigravity (agy) übergeben werden, z. B. GEMINI_API_KEY."
+      },
+      "signIn": {
+        "name": "Anmeldung",
+        "desc": "Antigravity verwendet das Konto, mit dem agy angemeldet ist. Wenn Anfragen mit einem Authentifizierungsfehler scheitern, führe `agy acp --login` in einem Terminal aus."
+      }
+    },
     "deepseek": {
       "installation": {
         "desc": "Die automatische Suche bevorzugt dsh und sucht danach unter macOS oder Windows nach Desktop. Sind beide installiert, wähle Desktop durch Angabe des .app-Pfads oder des Windows-Installationsordners. Öffne Desktop zunächst, um die Einrichtung abzuschließen.",

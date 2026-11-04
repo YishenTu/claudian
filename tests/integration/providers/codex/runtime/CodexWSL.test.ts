@@ -89,7 +89,7 @@ describe.skipIf(process.platform === 'win32')('Codex WSL session history wiring'
       ].map(record => JSON.stringify({ timestamp: testTime(), ...record })).join('\n'));
       const events: ProviderExecutionEvent[] = [];
       for await (const event of session.execute({ input: [{ type: 'text', text: 'hello' }],
-        configuration: { model: TEST_CODEX_MODEL, permissionMode: 'yolo', systemInstructions: { kind: 'explicit', instructions: 'Reply.' } },
+        configuration: { model: TEST_CODEX_MODEL, permissionMode: 'yolo', systemInstructions: { kind: 'explicit', purpose: 'title', instructions: 'Reply.' } },
         toolPolicy: { kind: 'provider-default' }, signal: AbortSignal.timeout(5_000),
       }).events) events.push(event);
       expect(events.at(-1)).toMatchObject({ type: 'turn_completed' });

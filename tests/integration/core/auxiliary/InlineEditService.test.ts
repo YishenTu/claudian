@@ -63,6 +63,7 @@ describe('InlineEditService', () => {
         systemInstructions: {
           instructions: expect.stringContaining('Vault absolute path: /vault'),
           kind: 'explicit',
+          purpose: 'inline-edit',
         },
       },
       toolPolicy: { kind: 'read-only' },

@@ -38,6 +38,7 @@ describe('TitleGenerationService', () => {
         systemInstructions: {
           instructions: expect.stringContaining('Write the title in Japanese'),
           kind: 'explicit',
+          purpose: 'title',
         },
       },
       toolPolicy: { kind: 'passive' },

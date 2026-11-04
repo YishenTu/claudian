@@ -123,7 +123,7 @@ it('completes a successful WSL turn when the optional native-history environment
       const events: ProviderExecutionEvent[] = [];
       for await (const event of session.execute({ input: [{ type: 'text', text: 'Hello' }],
         configuration: { model: 'sonnet', reasoning: null, permissionMode: 'manual',
-          systemInstructions: { kind: 'explicit', instructions: 'Reply.' } },
+          systemInstructions: { kind: 'explicit', purpose: 'title', instructions: 'Reply.' } },
         toolPolicy: { kind: 'provider-default' }, signal: new AbortController().signal,
       }).events) events.push(event);
       // Turn statistics reach the Linux store probe, which fails in the distro.
@@ -166,7 +166,7 @@ it.skipIf(process.platform === 'win32')('reports live WSL tool paths and rewind 
     const events: ProviderExecutionEvent[] = [];
     for await (const event of session.execute({ input: [{ type: 'text', text: 'Read note.md' }],
       configuration: { model: 'sonnet', reasoning: null, permissionMode: 'yolo',
-        systemInstructions: { kind: 'explicit', instructions: 'Reply.' } },
+        systemInstructions: { kind: 'explicit', purpose: 'title', instructions: 'Reply.' } },
       toolPolicy: { kind: 'provider-default' }, signal: new AbortController().signal,
     }).events) events.push(event);
     expect(events.find(event => event.type === 'tool_started')).toMatchObject({

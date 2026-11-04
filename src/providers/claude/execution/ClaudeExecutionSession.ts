@@ -1207,7 +1207,7 @@ function createRewindPreparationRequest(): ProviderExecutionRequest {
   return {
     input: [],
     configuration: {
-      systemInstructions: { kind: 'explicit', instructions: '' },
+      systemInstructions: { kind: 'main-agent', instructions: '' },
     },
     toolPolicy: { kind: 'provider-default' },
     signal: new AbortController().signal,

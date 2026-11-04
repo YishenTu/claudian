@@ -47,7 +47,7 @@ describe.skipIf(!hasNativeWSL())('native Grok WSL session and history', () => {
       const events: ProviderExecutionEvent[] = [];
       for await (const event of session.execute({
         input: [{ type: 'text', text }], configuration: { model: 'grok/grok-4', permissionMode: 'normal',
-          systemInstructions: { kind: 'explicit', instructions: 'Reply to the fixture prompt.' } },
+          systemInstructions: { kind: 'explicit', purpose: 'title', instructions: 'Reply to the fixture prompt.' } },
         toolPolicy: { kind: 'provider-default' }, signal: AbortSignal.timeout(40_000),
       }).events) events.push(event);
       expect(events.filter(event => event.type === 'execution_error')).toEqual([]);

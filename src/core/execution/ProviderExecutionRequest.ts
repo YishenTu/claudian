@@ -37,22 +37,23 @@ export interface ProviderExecutionContext {
   readonly linkedContent?: ProviderLinkedContentContext;
 }
 
+export type ProviderExplicitInstructionPurpose = 'title' | 'inline-edit';
+
 /**
- * Resolved per request, so they may differ between sessions and change between turns: a change applies from the
- * session's next turn, never mid-turn. A provider may refuse a change for a non-persistent session (a side chat) whose
- * context a restart would lose; keep such a session's instructions fixed for its lifetime.
- *
- * Both kinds carry literal text resolved by the caller; adapters only deliver it through their native transport and
- * never compose or substitute prompts themselves. The kind tells adapters which transport framing applies.
+ * Literal text resolved by callers; adapters deliver it using native transport and kind/purpose framing.
+ * Changes normally apply from the next turn. Providers with immutable native session prompts retain the
+ * creation-time instructions until a new session. Non-persistent sessions may refuse changes that would lose context.
  */
 export type ProviderSystemInstructions =
   | {
       /** The default Main Agent prompt, built by the shared core prompt builder. */
       readonly kind: 'main-agent';
+      readonly projectId?: string;
       readonly instructions: string;
     }
   | {
       readonly kind: 'explicit';
+      readonly purpose: ProviderExplicitInstructionPurpose;
       readonly instructions: string;
     };
 
@@ -90,7 +91,7 @@ export type ProviderToolPolicy =
  *
  * Provider backends resolve their own settings at execution time and map this
  * desired configuration into their native protocol. This contract deliberately
- * carries no feature-purpose discriminator, provider credentials, environment,
+ * carries resolved instruction purpose, but no provider credentials, environment,
  * or opaque provider settings bag.
  */
 export interface ProviderExecutionRequest {

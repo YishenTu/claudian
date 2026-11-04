@@ -65,7 +65,7 @@ it.each([
 ])('keeps a $kind reply consistent with live completion and fork availability after reopening', async ({ kind, terminal, completed, interrupted }) => {
   const run = session.execute({
     input: [{ type: 'text', text: 'Please continue' }], signal: new AbortController().signal,
-    configuration: { systemInstructions: { kind: 'explicit', instructions: 'Review' }, permissionMode: 'normal' },
+    configuration: { systemInstructions: { kind: 'explicit', purpose: 'title', instructions: 'Review' }, permissionMode: 'normal' },
     toolPolicy: { kind: 'provider-default' },
   });
   const events: ProviderExecutionEvent[] = [];
