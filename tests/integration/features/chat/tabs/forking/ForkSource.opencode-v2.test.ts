@@ -53,6 +53,8 @@ describe('OpenCode v2 checkpoint forks', () => {
     await env.repository.update(conversation.id, { sessionId: 'source', providerState: { sessionId: 'source', databasePath } });
     const source = env.repository.getSync(conversation.id)!;
     const hydrated = await history.hydrateConversationHistory(source, env.root, context());
+    // A failed read yields one diagnostic message; show its reason rather than failing later on a missing reply.
+    expect(hydrated.messages?.map(message => message.content)).toEqual(['Remember apples', 'Apples remembered', 'Remember pears', 'Pears remembered']);
     await env.repository.update(source.id, hydrated);
     return env.open(backend, env.repository.getSync(source.id)!);
   }
