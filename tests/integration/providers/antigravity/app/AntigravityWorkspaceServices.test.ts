@@ -1,5 +1,9 @@
 import { createProviderHostFixture } from '@test/helpers/providerRuntimeHost';
-import { antigravityConfigOptions, AntigravityNativeProcess } from '@test/helpers/providers/antigravity/AntigravityNativeProcess';
+import {
+  antigravityConfigOptions,
+  AntigravityNativeProcess,
+  antigravitySessionModels,
+} from '@test/helpers/providers/antigravity/AntigravityNativeProcess';
 import spawn from 'cross-spawn';
 
 import type { ProviderHost } from '@/core/providers/ProviderHost';
@@ -38,6 +42,10 @@ afterEach(async () => {
   vi.mocked(spawn).mockReset();
 });
 
+function levels(model: string): string[] {
+  return antigravityModelPolicy.getReasoningOptions(`antigravity/${model}`, host.settings).map(option => option.value);
+}
+
 function loaderContext(): ProviderCommandLoaderContext {
   return { allowIsolatedMetadataCreation: true, conversation: null, plugin: host };
 }
@@ -74,16 +82,23 @@ describe('Antigravity workspace metadata discovery', () => {
     expect(antigravityModelPolicy.getDefaultReasoningValue('antigravity/gemini-4-argon', host.settings)).toBe('high');
   });
 
-  it('discovers each model\'s own thinking levels and restores the session\'s model', async () => {
+  it('reads every model\'s thinking levels from the session report without switching models', async () => {
     await services.modelCatalog!.refresh({ force: true });
 
-    const levels = (model: string) => antigravityModelPolicy.getReasoningOptions(`antigravity/${model}`, host.settings)
-      .map(option => option.value);
     expect(levels('gemini-4-argon')).toEqual(['low', 'medium', 'high']);
     expect(levels('claude-opus-5-5')).toEqual(['low', 'medium', 'high']);
     // GPT-OSS runs at a fixed medium effort, so agy offers no thinking level for it.
     expect(levels('gpt-oss-120b-medium')).toEqual([]);
-    expect(native.configRequests.at(-1)).toMatchObject({ configId: 'model', value: 'gemini-4-argon' });
+    expect(native.configRequests).toEqual([]);
+  });
+
+  it('gives a model no borrowed thinking levels when a live session reports before discovery', async () => {
+    const report = readAntigravitySessionModels(antigravityConfigOptions(), antigravitySessionModels());
+
+    await services.modelCatalogOwner.mergeLiveModels(report.models, report.currentModelId);
+
+    expect(levels('claude-sonnet-5-5')).toEqual(['low', 'medium', 'high']);
+    expect(levels('gpt-oss-120b-medium')).toEqual([]);
   });
 
   it('does not start a discovery session once a live session has reported models', async () => {
@@ -112,17 +127,14 @@ describe('Antigravity workspace metadata discovery', () => {
     expect(services.modelCatalog!.getSnapshot().defaultModelId).toBe('gemini-3.8-flash');
   });
 
-  it('keeps each model\'s thinking levels when a live session is on a model without them', async () => {
-    await services.modelCatalog!.refresh({ force: true });
+  it('keeps every model\'s thinking levels when a live session is on a fixed-effort model', async () => {
     const live = antigravityConfigOptions()
       .filter(option => option.id !== 'thought_level')
       .map(option => (option.id === 'model' ? { ...option, currentValue: 'gpt-oss-120b-medium' } : option));
-    const report = readAntigravitySessionModels(live);
+    const report = readAntigravitySessionModels(live, antigravitySessionModels());
 
     await services.modelCatalogOwner.mergeLiveModels(report.models, report.currentModelId);
 
-    const levels = (model: string) => antigravityModelPolicy.getReasoningOptions(`antigravity/${model}`, host.settings)
-      .map(option => option.value);
     expect(levels('gemini-4-argon')).toEqual(['low', 'medium', 'high']);
     expect(levels('claude-sonnet-5-5')).toEqual(['low', 'medium', 'high']);
     expect(levels('gpt-oss-120b-medium')).toEqual([]);

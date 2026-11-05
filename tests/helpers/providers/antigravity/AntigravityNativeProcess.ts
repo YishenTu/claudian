@@ -3,6 +3,7 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 
 import sessionConfigOptions from '@test/fixtures/providers/antigravity/runtime/session-config-options.json';
+import sessionModels from '@test/fixtures/providers/antigravity/runtime/session-models.json';
 import { createNativeRPCPeer, type NativeRPCPeer } from '@test/helpers/providers/NativeRPCTestProcess';
 import { parse } from 'yaml';
 
@@ -18,6 +19,7 @@ import type {
   ACPRequestPermissionResponse,
   ACPResumeSessionRequest,
   ACPSessionConfigOption,
+  ACPSessionModelState,
   ACPSetSessionConfigOptionRequest,
 } from '@/providers/acp';
 
@@ -28,6 +30,11 @@ export function antigravityConfigOptions(): ACPSessionConfigOption[] {
 
 /** Fixed-effort models, which agy 1.5.1 offers without a `thought_level` option. */
 const MODELS_WITHOUT_THINKING = new Set(['gpt-oss-120b-medium']);
+
+/** The legacy ACP model list agy 1.5.1 reports on session/new and resume: every model and effort as one id. */
+export function antigravitySessionModels(): ACPSessionModelState {
+  return structuredClone(sessionModels);
+}
 
 export type CapturedAntigravityAgent = { readonly kind: 'default' } | {
   readonly kind: 'custom';
@@ -118,7 +125,7 @@ export class AntigravityNativeProcess {
             const update = { availableCommands: this.availableCommands, sessionUpdate: 'available_commands_update' };
             setImmediate(() => this.emit(update, sessionId));
           }
-          return { configOptions: this.configOptions, sessionId };
+          return { configOptions: this.configOptions, models: antigravitySessionModels(), sessionId };
         }
         case 'session/resume': {
           const request = params as unknown as ACPResumeSessionRequest;
@@ -131,7 +138,7 @@ export class AntigravityNativeProcess {
           if (this.availableCommands.length > 0) {
             this.emit({ availableCommands: this.availableCommands, sessionUpdate: 'available_commands_update' }, request.sessionId);
           }
-          return { configOptions: this.configOptions };
+          return { configOptions: this.configOptions, models: antigravitySessionModels() };
         }
         case 'session/load':
           // agy opens an empty session under any id it cannot find.

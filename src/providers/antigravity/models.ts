@@ -2,7 +2,7 @@ import {
   DEFAULT_REASONING_VALUE,
   formatReasoningValueLabel,
 } from '../../core/providers/reasoning';
-import type { ACPSessionConfigOption, ACPSessionConfigSelectOption } from '../acp';
+import type { ACPSessionConfigOption, ACPSessionConfigSelectOption, ACPSessionModelState } from '../acp';
 
 export interface AntigravityReasoningEffort {
   label: string;
@@ -57,25 +57,63 @@ export function resolveAntigravityDefaultReasoning(
 }
 
 /**
- * The session's `model` and `thought_level` select options are agy's authoritative catalog:
- * ACP rejects model ids it did not advertise, even ones `agy models` lists.
+ * The session's `model` select option is agy's authoritative list of base model ids, names and the current model;
+ * ACP rejects ids it did not advertise. `thought_level` covers only the current model, so each model's levels come
+ * from the legacy `models` list in the same session/new or resume response, which names every model and effort as
+ * one `<model>-<effort>` id; a model listed only under its own id has a fixed effort. Without that list, only the
+ * current model has levels.
  */
 export function readAntigravitySessionModels(
   configOptions: readonly ACPSessionConfigOption[] | null | undefined,
+  sessionModels?: ACPSessionModelState | null,
 ): { currentModelId: string | null; models: AntigravityModel[] } {
   const modelOption = findSelectOption(configOptions, ANTIGRAVITY_MODEL_CONFIG_ID);
   if (!modelOption) return { currentModelId: null, models: [] };
-  const efforts = flattenSelectOptions(findSelectOption(configOptions, ANTIGRAVITY_REASONING_CONFIG_ID)?.options)
-    .map(option => ({ label: option.name || formatReasoningValueLabel(option.value), value: option.value }));
+  const currentModelId = modelOption.currentValue || null;
+  const sessionLevels = readAntigravityThinkingLevels(configOptions);
+  const baseIds = flattenSelectOptions(modelOption.options).map(option => option.value);
+  const levelsByModel = sessionModels ? groupLevelsByModel(baseIds, sessionModels, sessionLevels) : null;
   return {
-    currentModelId: modelOption.currentValue || null,
+    currentModelId,
     models: normalizeAntigravityModels(flattenSelectOptions(modelOption.options).map(option => ({
       displayName: option.name,
       rawId: option.value,
-      reasoningEfforts: efforts,
+      reasoningEfforts: levelsByModel?.get(option.value) ?? (option.value === currentModelId ? sessionLevels : []),
     }))),
   };
 }
+
+/** Thinking levels the session offers for its current model; none for a fixed-effort model. */
+export function readAntigravityThinkingLevels(
+  configOptions: readonly ACPSessionConfigOption[] | null | undefined,
+): AntigravityReasoningEffort[] {
+  return flattenSelectOptions(findSelectOption(configOptions, ANTIGRAVITY_REASONING_CONFIG_ID)?.options)
+    .map(option => ({ label: option.name || formatReasoningValueLabel(option.value), value: option.value }));
+}
+
+/** Files each `<model>-<effort>` id under the longest base id it extends, ordered as agy orders its levels. */
+function groupLevelsByModel(
+  baseIds: readonly string[],
+  sessionModels: ACPSessionModelState,
+  sessionLevels: readonly AntigravityReasoningEffort[],
+): Map<string, AntigravityReasoningEffort[]> {
+  const byLength = [...baseIds].sort((left, right) => right.length - left.length);
+  const levels = new Map<string, Set<string>>(baseIds.map(id => [id, new Set<string>()]));
+  for (const { modelId } of sessionModels.availableModels ?? []) {
+    if (typeof modelId !== 'string') continue;
+    const base = byLength.find(id => modelId === id || modelId.startsWith(`${id}-`));
+    if (base && modelId !== base) levels.get(base)!.add(modelId.slice(base.length + 1));
+  }
+  const order = [...sessionLevels.map(level => level.value), ...DEFAULT_LEVEL_ORDER];
+  const rank = (value: string) => {
+    const index = order.indexOf(value);
+    return index < 0 ? order.length : index;
+  };
+  return new Map([...levels].map(([id, values]) => [id, [...values].sort((left, right) => rank(left) - rank(right))
+    .map(value => sessionLevels.find(level => level.value === value) ?? { label: formatReasoningValueLabel(value), value })]));
+}
+
+const DEFAULT_LEVEL_ORDER = ['low', 'medium', 'high'];
 
 export function readAntigravityConfigValue(
   configOptions: readonly ACPSessionConfigOption[] | null | undefined,

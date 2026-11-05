@@ -21,6 +21,7 @@ import {
   type ACPRequestPermissionRequest,
   type ACPRequestPermissionResponse,
   type ACPSessionConfigOption,
+  type ACPSessionModelState,
   type ACPSessionNotification,
   buildACPUsageInfo,
   mapACPApprovalDecision,
@@ -51,6 +52,7 @@ import {
   decodeAntigravityModelId,
   readAntigravityConfigValue,
   readAntigravitySessionModels,
+  readAntigravityThinkingLevels,
 } from '../models';
 import {
   createAntigravityToolStreamAdapter,
@@ -480,7 +482,7 @@ export class AntigravityExecutionSession implements ProviderExecutionSession, St
     this.#throwIfCancellationRequested(active);
     this.#captureSessionId(response.sessionId ?? this.providerSessionId!);
     owner.loadedSessionId = this.providerSessionId!;
-    this.#adoptConfigOptions(owner, response.configOptions);
+    this.#adoptConfigOptions(owner, response.configOptions, response.models);
     this.#updateSnapshot(this.active ? 'executing' : 'idle');
     this.#emitCurrentSnapshot();
     return owner;
@@ -504,7 +506,7 @@ export class AntigravityExecutionSession implements ProviderExecutionSession, St
     }
     const reasoning = configuration.reasoning?.trim();
     // agy offers no thinking level for fixed-effort models (GPT-OSS runs at medium).
-    const efforts = readAntigravitySessionModels(owner.configOptions).models[0]?.reasoningEfforts ?? [];
+    const efforts = readAntigravityThinkingLevels(owner.configOptions);
     if (reasoning && efforts.length > 0) {
       if (!efforts.some(effort => effort.value === reasoning)) {
         throw new Error(`Antigravity does not support thinking level "${reasoning}".`);
@@ -529,10 +531,16 @@ export class AntigravityExecutionSession implements ProviderExecutionSession, St
     this.#adoptConfigOptions(owner, response.configOptions);
   }
 
-  #adoptConfigOptions(owner: NativeOwner, configOptions: ACPSessionConfigOption[] | null | undefined): void {
+  /** Only session/new and resume responses carry the full model list (`sessionModels`), so only they report it. */
+  #adoptConfigOptions(
+    owner: NativeOwner,
+    configOptions: ACPSessionConfigOption[] | null | undefined,
+    sessionModels?: ACPSessionModelState | null,
+  ): void {
     if (!configOptions?.length) return;
     owner.configOptions = configOptions;
-    const { currentModelId, models } = readAntigravitySessionModels(configOptions);
+    if (!sessionModels) return;
+    const { currentModelId, models } = readAntigravitySessionModels(configOptions, sessionModels);
     if (models.length > 0) {
       void this.options.modelSink?.mergeLiveModels(models, currentModelId).catch(() => undefined);
     }
