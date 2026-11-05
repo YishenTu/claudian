@@ -10,7 +10,7 @@
   height: 24px;
   padding: 2px 8px 0 12px;
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: calc(12 * var(--claudian-font-px));
 }
 
 .claudian-input-info-linked {
@@ -44,7 +44,7 @@
   box-shadow: none;
   color: var(--text-muted);
   font-family: inherit;
-  font-size: 12px;
+  font-size: calc(12 * var(--claudian-font-px));
   line-height: 1;
   cursor: pointer;
 }
@@ -101,7 +101,7 @@
   box-shadow: none;
   color: var(--text-faint);
   font-family: inherit;
-  font-size: 14px;
+  font-size: calc(14 * var(--claudian-font-px));
   line-height: 1;
   cursor: pointer;
 }

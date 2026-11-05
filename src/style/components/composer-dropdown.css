@@ -80,7 +80,7 @@
 }
 
 .claudian-composer-dropdown-label {
-  font-size: 13px;
+  font-size: calc(13 * var(--claudian-font-px));
 }
 
 .claudian-composer-dropdown-match {
@@ -96,7 +96,7 @@
 .claudian-composer-dropdown-detail {
   margin-top: 2px;
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: calc(11 * var(--claudian-font-px));
 }
 
 .claudian-composer-dropdown-item.is-loading,

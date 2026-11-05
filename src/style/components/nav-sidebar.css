@@ -90,7 +90,7 @@ body.theme-dark .claudian-nav-toc-popover {
 .claudian-nav-toc-title {
     padding: 4px 6px 8px;
     color: var(--text-muted);
-    font-size: var(--font-ui-smaller);
+    font-size: calc(12 * var(--claudian-font-px));
     font-weight: 600;
 }
 
@@ -117,7 +117,7 @@ body.theme-dark .claudian-nav-toc-popover {
     background: transparent;
     box-shadow: none;
     color: var(--text-normal);
-    font-size: var(--font-ui-small);
+    font-size: calc(13 * var(--claudian-font-px));
     font-weight: inherit;
     line-height: 1.35;
     text-align: start;
@@ -142,7 +142,7 @@ body.theme-dark .claudian-nav-toc-popover {
 .claudian-nav-toc-empty {
     padding: 8px;
     color: var(--text-muted);
-    font-size: var(--font-ui-small);
+    font-size: calc(13 * var(--claudian-font-px));
     line-height: 1.35;
 }
 
