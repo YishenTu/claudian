@@ -72,6 +72,8 @@ describe('DeepSeek additional preset plugins', () => {
     expect(text).toContain('disabled: !!js 1 > 2');
     const preview = parse(text.replace('!!js 1 > 2', 'false')) as Array<Record<string, unknown>>;
     expect(preview[0]).toEqual({ id: 'claudian-compatibility', name: '<claudian-compatibility.mjs>', config: { promptDirectory: '<session prompts>', codeModeFile: '<code mode>', listAgents: true } });
+    // dsh-tool-fs registers apply_patch only on request.
+    expect(preview.find(row => row.id === 'tool-fs')).toEqual({ id: 'tool-fs', name: '@deepseek-ai/dsh-tool-fs', config: { applyPatch: true } });
     expect(preview.at(-1)).toEqual({ id: 'tool-todo', name: '@deepseek-ai/dsh-tool-todo', disabled: false });
     const shell = process.platform === 'win32' ? 'tool-pwsh' : 'tool-bash';
     expect(preview.map(row => row.id)).toEqual(expect.arrayContaining([shell, 'tool-ask-user', 'compaction']));
