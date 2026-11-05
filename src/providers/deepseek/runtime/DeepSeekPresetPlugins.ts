@@ -72,7 +72,8 @@ export function buildDeepSeekPresetPlugins(
     },
     plugin('agent-instructions', { maxBytes: 65536 }),
     plugin('time-context'),
-    plugin('tool-fs'),
+    // apply_patch is opt-in; auxiliary presets' `allow` list still hides it.
+    plugin('tool-fs', { applyPatch: true }),
     plugin('tool-fs-search', { sampleOverCapGlobResults: false }),
     // Read-only tasks (Inline Edit) take a user's `/skill` gestures; their `allow` policy still hides the skill tool.
     ...(preset !== 'claudian-passive' ? [plugin('skill-filesystem'), plugin('tool-skill')] : []),
