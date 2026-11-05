@@ -13,7 +13,8 @@ import { computeAntigravityRuntimeInputHash } from './AntigravityRuntimeEnvironm
 
 /**
  * Sole writer of the discovered catalog. Each session's config options are authoritative, so a
- * newer report replaces the catalog instead of merging into it. Live sessions are preferred: the
+ * newer report replaces the model list instead of merging into it; only thinking levels, which a
+ * session reports for its current model alone, carry over for the other models. Live sessions are preferred: the
  * prompt-less discovery probe leaves a native session directory behind, so it runs only while no
  * live session has reported models for the current CLI and environment.
  */
@@ -69,7 +70,8 @@ export class AntigravityModelCatalog {
       const previous = current.currentCatalog;
       const next: AntigravityCatalogSnapshot = {
         defaultModelId: defaultModelId ?? previous?.defaultModelId ?? null,
-        models,
+        // The probe reads every model's own levels; a live session knows only its current model's.
+        models: source === 'live' ? mergeReasoningEfforts(models, defaultModelId, previous?.models ?? []) : models,
         refreshedAt: Date.now(),
       };
       const changed = JSON.stringify([previous?.defaultModelId, previous?.models]) !== JSON.stringify([next.defaultModelId, next.models]);
@@ -90,4 +92,21 @@ export class AntigravityModelCatalog {
       this.host.environmentText,
     );
   }
+}
+
+/**
+ * A session reports thinking levels only for its current model, and none for fixed-effort models. The reported
+ * levels belong to that model; other models keep the levels last seen for them, else assume the reported ones.
+ */
+function mergeReasoningEfforts(
+  models: AntigravityModel[],
+  reportingModelId: string | null,
+  previous: readonly AntigravityModel[],
+): AntigravityModel[] {
+  const reported = models.find(model => model.rawId === reportingModelId)?.reasoningEfforts ?? [];
+  return models.map(model => {
+    if (model.rawId === reportingModelId) return model;
+    const known = previous.find(entry => entry.rawId === model.rawId);
+    return { ...model, reasoningEfforts: known ? known.reasoningEfforts : reported };
+  });
 }

@@ -7,7 +7,10 @@
     "currentValue": "gemini-4-argon",
     "options": [
       { "value": "gemini-4-argon", "name": "Gemini 4 Argon" },
-      { "value": "gemini-3.8-flash", "name": "Gemini 3.8 Flash" }
+      { "value": "gemini-3.8-flash", "name": "Gemini 3.8 Flash" },
+      { "value": "claude-opus-5-5", "name": "Claude Opus 5.5" },
+      { "value": "claude-sonnet-5-5", "name": "Claude Sonnet 5.5" },
+      { "value": "gpt-oss-120b-medium", "name": "GPT-OSS 120B (Medium)" }
     ]
   },
   {

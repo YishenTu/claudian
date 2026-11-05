@@ -46,7 +46,7 @@ Open Claudian interface from the ribbon icon or command palette. Everything work
 ## Requirements
 
 - At least one of the following harnesses:
-  - [Antigravity CLI](https://github.com/google-antigravity/antigravity-cli) 1.5.0+
+  - [Antigravity CLI](https://antigravity.google/product/antigravity-cli)
   - [Claude Code](https://code.claude.com/docs/en/overview)
   - [Codex](https://github.com/openai/codex)
   - [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)

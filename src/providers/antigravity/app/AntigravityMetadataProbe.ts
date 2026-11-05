@@ -5,7 +5,7 @@ import type { SlashCommand } from '@/core/types';
 import { type ACPSessionNotification, normalizeACPAvailableCommands } from '@/providers/acp';
 
 import { ANTIGRAVITY_ACP_ARGS, AntigravityNativeConnection } from '../execution/AntigravityNativeConnection';
-import { type AntigravityModel, readAntigravitySessionModels } from '../models';
+import { ANTIGRAVITY_MODEL_CONFIG_ID, type AntigravityModel, readAntigravitySessionModels } from '../models';
 import { resolveAntigravityLaunchSpec } from '../runtime/AntigravityExecutionContext';
 
 export interface AntigravityMetadata {
@@ -98,9 +98,10 @@ export class AntigravityMetadataProbe {
             new Promise<SlashCommand[]>(resolve => { timer = window.setTimeout(() => resolve([]), COMMANDS_WAIT_MS); }),
           ]).finally(() => window.clearTimeout(timer));
           ownedSignal.throwIfAborted();
-          await native.closeSession(response.sessionId).catch(() => undefined);
           const { currentModelId, models } = readAntigravitySessionModels(response.configOptions);
-          return { commands, currentModelId, models };
+          const discovered = await readThinkingLevels(native, response.sessionId, currentModelId, models, ownedSignal);
+          await native.closeSession(response.sessionId).catch(() => undefined);
+          return { commands, currentModelId, models: discovered };
         } finally {
           unsubscribe();
         }
@@ -126,4 +127,34 @@ export class AntigravityMetadataProbe {
     this.disposeFlight = this.probes.dispose();
     return this.disposeFlight;
   }
+}
+
+/**
+ * agy reports thinking levels only for the session's current model, and none for fixed-effort models, so each
+ * model is selected once on the probe session to read its own levels; the original model is selected again after.
+ */
+async function readThinkingLevels(
+  native: AntigravityNativeConnection,
+  sessionId: string,
+  currentModelId: string | null,
+  models: readonly AntigravityModel[],
+  signal: AbortSignal,
+): Promise<AntigravityModel[]> {
+  const discovered: AntigravityModel[] = [];
+  let changed = false;
+  for (const model of models) {
+    if (model.rawId === currentModelId) {
+      discovered.push(model);
+      continue;
+    }
+    changed = true;
+    const response = await native.setConfigOption({ configId: ANTIGRAVITY_MODEL_CONFIG_ID, sessionId, value: model.rawId });
+    signal.throwIfAborted();
+    const reported = readAntigravitySessionModels(response.configOptions).models.find(entry => entry.rawId === model.rawId);
+    discovered.push({ ...model, reasoningEfforts: reported?.reasoningEfforts ?? [] });
+  }
+  if (changed && currentModelId) {
+    await native.setConfigOption({ configId: ANTIGRAVITY_MODEL_CONFIG_ID, sessionId, value: currentModelId });
+  }
+  return discovered;
 }

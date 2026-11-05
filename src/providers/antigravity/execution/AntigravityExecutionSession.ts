@@ -503,8 +503,9 @@ export class AntigravityExecutionSession implements ProviderExecutionSession, St
       await this.#setConfigOption(owner, active, sessionId, ANTIGRAVITY_MODEL_CONFIG_ID, rawModel);
     }
     const reasoning = configuration.reasoning?.trim();
-    if (reasoning) {
-      const efforts = readAntigravitySessionModels(owner.configOptions).models[0]?.reasoningEfforts ?? [];
+    // agy offers no thinking level for fixed-effort models (GPT-OSS runs at medium).
+    const efforts = readAntigravitySessionModels(owner.configOptions).models[0]?.reasoningEfforts ?? [];
+    if (reasoning && efforts.length > 0) {
       if (!efforts.some(effort => effort.value === reasoning)) {
         throw new Error(`Antigravity does not support thinking level "${reasoning}".`);
       }

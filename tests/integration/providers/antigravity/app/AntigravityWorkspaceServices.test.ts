@@ -58,10 +58,13 @@ describe('Antigravity workspace metadata discovery', () => {
   it('publishes the models and thinking levels the session reports', async () => {
     await services.modelCatalog!.refresh({ force: true });
 
-    expect(services.modelCatalog!.getSnapshot().models.map(model => model.id)).toEqual(['gemini-4-argon', 'gemini-3.8-flash']);
+    expect(services.modelCatalog!.getSnapshot().models.map(model => model.id)).toEqual(['gemini-4-argon', 'gemini-3.8-flash', 'claude-opus-5-5', 'claude-sonnet-5-5', 'gpt-oss-120b-medium']);
     expect(antigravityModelPolicy.getModelOptions(host.settings)).toEqual([
       { label: 'Gemini 4 Argon', value: 'antigravity/gemini-4-argon' },
       { label: 'Gemini 3.8 Flash', value: 'antigravity/gemini-3.8-flash' },
+      { label: 'Claude Opus 5.5', value: 'antigravity/claude-opus-5-5' },
+      { label: 'Claude Sonnet 5.5', value: 'antigravity/claude-sonnet-5-5' },
+      { label: 'GPT-OSS 120B (Medium)', value: 'antigravity/gpt-oss-120b-medium' },
     ]);
     expect(antigravityModelPolicy.getReasoningOptions('antigravity/gemini-4-argon', host.settings)).toEqual([
       { label: 'Low', value: 'low' },
@@ -71,6 +74,18 @@ describe('Antigravity workspace metadata discovery', () => {
     expect(antigravityModelPolicy.getDefaultReasoningValue('antigravity/gemini-4-argon', host.settings)).toBe('high');
   });
 
+  it('discovers each model\'s own thinking levels and restores the session\'s model', async () => {
+    await services.modelCatalog!.refresh({ force: true });
+
+    const levels = (model: string) => antigravityModelPolicy.getReasoningOptions(`antigravity/${model}`, host.settings)
+      .map(option => option.value);
+    expect(levels('gemini-4-argon')).toEqual(['low', 'medium', 'high']);
+    expect(levels('claude-opus-5-5')).toEqual(['low', 'medium', 'high']);
+    // GPT-OSS runs at a fixed medium effort, so agy offers no thinking level for it.
+    expect(levels('gpt-oss-120b-medium')).toEqual([]);
+    expect(native.configRequests.at(-1)).toMatchObject({ configId: 'model', value: 'gemini-4-argon' });
+  });
+
   it('does not start a discovery session once a live session has reported models', async () => {
     const live = readAntigravitySessionModels(antigravityConfigOptions());
     await services.modelCatalogOwner.mergeLiveModels(live.models, live.currentModelId);
@@ -78,7 +93,7 @@ describe('Antigravity workspace metadata discovery', () => {
     await services.modelCatalog!.refresh({ force: true });
 
     expect(spawn).not.toHaveBeenCalled();
-    expect(services.modelCatalog!.getSnapshot().models.map(model => model.id)).toEqual(['gemini-4-argon', 'gemini-3.8-flash']);
+    expect(services.modelCatalog!.getSnapshot().models.map(model => model.id)).toEqual(['gemini-4-argon', 'gemini-3.8-flash', 'claude-opus-5-5', 'claude-sonnet-5-5', 'gpt-oss-120b-medium']);
   });
 
   it('keeps the live report when a discovery started earlier finishes later', async () => {
@@ -95,5 +110,21 @@ describe('Antigravity workspace metadata discovery', () => {
     await refresh;
 
     expect(services.modelCatalog!.getSnapshot().defaultModelId).toBe('gemini-3.8-flash');
+  });
+
+  it('keeps each model\'s thinking levels when a live session is on a model without them', async () => {
+    await services.modelCatalog!.refresh({ force: true });
+    const live = antigravityConfigOptions()
+      .filter(option => option.id !== 'thought_level')
+      .map(option => (option.id === 'model' ? { ...option, currentValue: 'gpt-oss-120b-medium' } : option));
+    const report = readAntigravitySessionModels(live);
+
+    await services.modelCatalogOwner.mergeLiveModels(report.models, report.currentModelId);
+
+    const levels = (model: string) => antigravityModelPolicy.getReasoningOptions(`antigravity/${model}`, host.settings)
+      .map(option => option.value);
+    expect(levels('gemini-4-argon')).toEqual(['low', 'medium', 'high']);
+    expect(levels('claude-sonnet-5-5')).toEqual(['low', 'medium', 'high']);
+    expect(levels('gpt-oss-120b-medium')).toEqual([]);
   });
 });

@@ -21,10 +21,13 @@ import type {
   ACPSetSessionConfigOptionRequest,
 } from '@/providers/acp';
 
-/** Config options as `agy acp` 1.5.0 reports them on session/new, resume and load. */
+/** Config options as `agy acp` 1.5.1 reports them on session/new, resume and load. */
 export function antigravityConfigOptions(): ACPSessionConfigOption[] {
   return structuredClone(sessionConfigOptions) as ACPSessionConfigOption[];
 }
+
+/** Fixed-effort models, which agy 1.5.1 offers without a `thought_level` option. */
+const MODELS_WITHOUT_THINKING = new Set(['gpt-oss-120b-medium']);
 
 export type CapturedAntigravityAgent = { readonly kind: 'default' } | {
   readonly kind: 'custom';
@@ -149,6 +152,12 @@ export class AntigravityNativeProcess {
               ? { ...option, currentValue: String(request.value) }
               : option
           ));
+          if (request.configId === 'model') {
+            // agy offers a thinking level only for models whose effort can change, at its default for a newly selected model.
+            const thinking = antigravityConfigOptions().find(option => option.id === 'thought_level')!;
+            this.configOptions = this.configOptions.filter(option => option.id !== 'thought_level');
+            if (!MODELS_WITHOUT_THINKING.has(String(request.value))) this.configOptions.splice(1, 0, thinking);
+          }
           this.emit({ configOptions: this.configOptions, sessionUpdate: 'config_option_update' }, request.sessionId);
           if (this.availableCommands.length > 0) {
             this.emit({ availableCommands: this.availableCommands, sessionUpdate: 'available_commands_update' }, request.sessionId);

@@ -514,6 +514,18 @@ describe('AntigravityExecutionSession', () => {
     ]);
   });
 
+  it('runs a model that has no thinking level without setting one', async () => {
+    const session = await createSession();
+    const run = session.execute(request('hello', { model: 'antigravity/gpt-oss-120b-medium', reasoning: 'medium' }));
+    const peer = await firstPeer();
+    await peer.waitForPrompts(1);
+    peer.finishPrompt();
+    const events = await collect(run.events);
+
+    expect(peer.configRequests.map(change => [change.configId, change.value])).toEqual([['model', 'gpt-oss-120b-medium']]);
+    expect(events.at(-1)).toMatchObject({ reason: 'completed', type: 'turn_completed' });
+  });
+
   it.each<[string, string]>([
     ['acceptEdits', 'accept-edits'],
     ['yolo', 'default'],
