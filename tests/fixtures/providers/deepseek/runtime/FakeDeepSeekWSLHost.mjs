@@ -6,7 +6,7 @@ import { createHash } from 'node:crypto';
 import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { createRequire } from 'node:module';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 if (process.argv.includes('--version')) { process.stdout.write('dsh 0.0.0-fixture\n'); process.exit(0); }
@@ -37,14 +37,11 @@ const tools = [];
 await (await import(sessions.name)).apply({
   loader: { import: async () => ({ defineTool: spec => spec }) }, tools: { register: tool => tools.push(tool) },
 }, sessions.config);
-const sections = [];
-const events = {};
-const presentation = [];
-(await import(compatibility.name)).apply({
-  effect: fn => fn(), on: (name, handler) => { events[name] = handler; },
-  sessionProjections: { stateOf: () => ({ lastTurn: 1 }) },
-  systemPrompt: { getSectionOrder: name => name, section: spec => { sections.push(spec); return () => {}; } },
-}, compatibility.config);
+// The repository's shared native plugin services, reached through the fixture package's checkout.
+const { createNativePluginHost } = await import(pathToFileURL(join(dirname(process.env.DSH_FIXTURE_PACKAGE), 'tests/helpers/deepseek/NativePluginHost.mjs')).href);
+const native = createNativePluginHost('0.2.1');
+native.setTurn('root', 1);
+await native.apply(await import(compatibility.name), compatibility.config);
 const pending = new Map();
 let httpAuth = 0;
 let websocketAuth = 0;
@@ -89,13 +86,13 @@ async function call(method, args) {
     { sessionId: 'child', cwd: process.cwd(), parentSessionId: 'root', origin: 'subagent', agentAvailable: true, running: false },
   ] };
   if (method === 'fixture/inspect') {
-    const agent = { id: 'root', session: { id: 'root', header: {} }, ctx: { tools: { presentAs: mode => { presentation.push(mode); return () => {}; } } } };
-    events['agent/created']?.({ agent });
+    const agent = native.agent('root');
+    native.emit('agent/created', { agent });
     return {
       platform: process.platform, executable: process.execPath, cwd: process.cwd(), args, patchPath,
       plugins: preset.config.plugins.map(row => row.id), httpAuth, websocketAuth,
       relayHasCredentials: !!JSON.parse(process.env.CLAUDIAN_DEEPSEEK_SESSION_RELAY ?? '{}').env?.CLAUDIAN_SESSION_TOOL_ROUTE,
-      prompt: sections[0].text({ agent }), presentation,
+      prompt: native.sections[0].text({ agent }), presentation: native.log,
       promptFile: join(compatibility.config.promptDirectory, createHash('sha256').update('root').digest('hex') + '.txt'),
       forks: JSON.parse(readFileSync(ephemeral.config.stateFile, 'utf8')).forks,
       spill: readFileSync(join(ephemeral.config.spillRoot, 'fixture'), 'utf8'),

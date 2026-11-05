@@ -1,4 +1,4 @@
-// @test-ci {"native":true,"inputs":["tests/fixtures/providers/deepseek/runtime/**"]}
+// @test-ci {"native":true,"inputs":["tests/fixtures/providers/deepseek/runtime/**","tests/helpers/deepseek/NativePluginHost.mjs"]}
 import * as childProcess from 'node:child_process';
 import { realpathSync } from 'node:fs';
 import { access, chmod, copyFile, link, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
@@ -320,7 +320,7 @@ it('runs the WSL CI fixture locally through real authenticated HTTP/WebSocket an
     }, new AbortController().signal);
     await child.writePrompt('root', 'fixture prompt'); await child.writeCodeMode(true);
     const withdraw = await child.offerEphemeralFork('root', 7);
-    expect(await child.client.call('fixture/inspect')).toMatchObject({ prompt: 'fixture prompt', presentation: ['both'],
+    expect(await child.client.call('fixture/inspect')).toMatchObject({ prompt: 'fixture prompt', presentation: ['root present both'],
       forks: [{ parent: 'root', atSeq: 7 }], spill: 'Linux artifact', attachment: 'Linux artifact' });
     expect(await child.client.call('fixture/tool', { id: 'one', caller: 'root', tool: 'claudian_list_destinations', input: {} }))
       .toEqual({ isError: false, text: 'root' });

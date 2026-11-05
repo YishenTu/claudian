@@ -1,4 +1,4 @@
-// @test-ci {"inputs":["src/providers/deepseek/**","tests/{unit,integration}/providers/deepseek/**","tests/fixtures/providers/deepseek/runtime/**"]}
+// @test-ci {"inputs":["src/providers/deepseek/**","tests/{unit,integration}/providers/deepseek/**","tests/fixtures/providers/deepseek/runtime/**","tests/helpers/deepseek/NativePluginHost.mjs"]}
 import type * as childProcess from 'node:child_process';
 import { copyFile, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -97,7 +97,7 @@ describe.skipIf(!hasNativeWSL())('DeepSeek fixture Host in native WSL', { timeou
       const withdraw = await started!.offerEphemeralFork('root', 7);
       const info = await lease.client.call('fixture/inspect') as FixtureInspection;
       expect(info).toMatchObject({ relayHasCredentials: false, platform: 'linux', cwd: mapper.toTargetPath(hostCwd),
-        prompt: 'literal {{prompt}} $HOME 中文', presentation: ['both'], spill: 'Linux artifact', attachment: 'Linux artifact',
+        prompt: 'literal {{prompt}} $HOME 中文', presentation: ['root present both'], spill: 'Linux artifact', attachment: 'Linux artifact',
         forks: [{ parent: 'root', atSeq: 7 }],
       });
       expect(info.executable).toMatch(/^\//);

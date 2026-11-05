@@ -81,7 +81,7 @@ it('follows a native child only after its durable identity, and keeps it busy un
   expect(rejected).toEqual([]);
   expect(errors).toEqual([]);
   expect(observer.hasWork()).toBe(true);
-  peer.send('session/control', { type: 'projection', sessionId: 'child', key: 'subagent', value: { mode: 'one-shot', label: 'task', seq: 3 }, seq: 3 });
+  peer.send('session/control', { type: 'projection', sessionId: 'child', seq: 3, changes: [{ key: 'subagent', val: { mode: 'one-shot', label: 'task', seq: 3 } }] });
   await ready;
   expect([...peer.streams.values()].filter(s => s.endpoint === 'session/follow').map(s => nativeRequest(s.args).address)).toContainEqual(
     { kind: 'subagent', childSessionId: 'child', parentSessionId: 'root', mode: 'one-shot' });
