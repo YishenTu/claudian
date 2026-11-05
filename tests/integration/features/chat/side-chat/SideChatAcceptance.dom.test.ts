@@ -60,6 +60,7 @@ it.each([true, false])('freezes the side-chat Main Agent prompt and project text
   await second;
 
   const expected = {
+    ...(live ? { projectId: record.id } : {}),
     kind: 'main-agent',
     instructions: buildSystemPrompt({
       vaultPath: harness.plugin.providerHost.workingDirectory!, sessionInstructions: live ? renderProjectMemberInstructions(record) : undefined,

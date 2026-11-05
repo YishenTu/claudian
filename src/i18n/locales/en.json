@@ -778,6 +778,12 @@
         "desc": "Environment variables passed only to Grok Build. Custom-model secrets stay in this provider scope and are referenced from native config by env_key."
       }
     },
+    "antigravity": {
+      "environment": {
+        "name": "Antigravity environment variables",
+        "desc": "Environment variables passed only to Antigravity (agy), such as GEMINI_API_KEY."
+      }
+    },
     "deepseek": {
       "installation": {
         "desc": "Auto prefers dsh, then discovers Desktop on macOS or Windows. To use Desktop when both are installed, enter its .app path or Windows install folder. Open Desktop once to complete setup.",

@@ -305,7 +305,7 @@ function createRequest(
   return {
     input: [{ type: 'text', text: 'hello' }],
     configuration: {
-      systemInstructions: { kind: 'explicit', instructions: 'Be concise.' },
+      systemInstructions: { kind: 'explicit', purpose: 'title', instructions: 'Be concise.' },
       model: TEST_CODEX_MODEL,
       reasoning: 'high',
       serviceTier: 'priority',
@@ -450,7 +450,7 @@ describe('CodexExecutionBackend', () => {
         ...request,
         configuration: {
           ...request.configuration, permissionMode,
-          systemInstructions: { kind: 'explicit', instructions },
+          systemInstructions: { kind: 'explicit', purpose: 'title', instructions },
         },
       }).events);
     }
@@ -689,7 +689,7 @@ describe('CodexExecutionBackend', () => {
     });
     const session = createBackend(plugin).createSession(createSessionConfig());
     await collectEvents(session.execute(createRequest(undefined, {
-      configuration: { systemInstructions: { kind: 'explicit', instructions: 'Be concise.' } },
+      configuration: { systemInstructions: { kind: 'explicit', purpose: 'title', instructions: 'Be concise.' } },
     })).events);
 
     expect(nativeRequest).toHaveBeenCalledWith('turn/start', expect.objectContaining({
@@ -3234,7 +3234,7 @@ describe('CodexExecutionBackend', () => {
       new AbortController().signal,
       {
         configuration: {
-          systemInstructions: { kind: 'explicit', instructions: 'Plan.' },
+          systemInstructions: { kind: 'explicit', purpose: 'title', instructions: 'Plan.' },
           model: TEST_CODEX_MODEL,
           reasoning: 'ultra',
           serviceTier: 'priority',
@@ -3352,7 +3352,7 @@ describe('CodexExecutionBackend', () => {
         configuration: {
           model: qualified ? `openai-codex/${model}` : model,
           permissionMode: 'normal',
-          systemInstructions: { kind: 'explicit', instructions: 'Be concise.' },
+          systemInstructions: { kind: 'explicit', purpose: 'title', instructions: 'Be concise.' },
         },
       },
     );

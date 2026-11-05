@@ -103,7 +103,7 @@ describe('Claude session tools', () => {
       expect(sdk.getLastOptions()?.mcpServers?.claudian_sessions === first).toBe(lifecycle === 'persistent');
       // Different instructions force a new persistent query too.
       const next = request();
-      await drain(bound.execute({ ...next, configuration: { ...next.configuration, systemInstructions: { kind: 'explicit', instructions: 'Changed' } } }).events);
+      await drain(bound.execute({ ...next, configuration: { ...next.configuration, systemInstructions: { kind: 'explicit', purpose: 'title', instructions: 'Changed' } } }).events);
       expect(sdk.getLastOptions()?.mcpServers?.claudian_sessions).not.toBe(first);
     } finally { await bound.dispose(); }
   });

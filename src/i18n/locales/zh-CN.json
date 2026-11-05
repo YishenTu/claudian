@@ -778,6 +778,12 @@
         "desc": "仅传递给 Grok Build 的环境变量。自定义模型的密钥保留在此提供商范围内，并在原生配置中通过 env_key 引用。"
       }
     },
+    "antigravity": {
+      "environment": {
+        "name": "Antigravity 环境变量",
+        "desc": "仅传递给 Antigravity（agy）的环境变量，例如 GEMINI_API_KEY。"
+      }
+    },
     "deepseek": {
       "installation": {
         "desc": "自动模式优先使用 dsh，其次检测 macOS 或 Windows 上的 Desktop。两者都已安装时，输入 Desktop 的 .app 路径或 Windows 安装文件夹即可选择它。请先打开 Desktop 完成初始设置。",

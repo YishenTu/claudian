@@ -263,6 +263,7 @@
  */
 .claudian-toolbar-popover.claudian-model-popover {
   --claudian-model-provider-tab-size: 28px;
+  --claudian-model-provider-tab-min-size: 20px;
   --claudian-model-provider-gap: 2px;
   --claudian-model-heading-height: calc(4px + 13px + 6px);
   --claudian-model-row-height: calc(4px + 16px + 1px + 14px + 4px);
@@ -367,15 +368,19 @@
   line-height: 14px;
 }
 
-/* Provider tabs: a bare icon each with no fill; the browsed provider is at full strength with a bar in its colour. */
+/*
+ * Provider tabs: a bare icon each with no fill; the browsed provider is at full strength with a bar in its colour.
+ * Tabs shrink from their full size so every provider fits the popover's fixed height; only a list too long even at
+ * the minimum scrolls.
+ */
 .claudian-toolbar-popover button.claudian-model-provider-tab,
 .claudian-toolbar-popover button.claudian-model-provider-tab:is(:hover, :focus, :focus-visible, :active) {
   position: relative;
   justify-content: center;
-  flex: 0 0 auto;
+  flex: 0 1 var(--claudian-model-provider-tab-size);
   width: auto;
-  height: var(--claudian-model-provider-tab-size);
-  min-height: var(--claudian-model-provider-tab-size);
+  height: auto;
+  min-height: var(--claudian-model-provider-tab-min-size);
   margin: 0;
   padding: 0;
   background: transparent;

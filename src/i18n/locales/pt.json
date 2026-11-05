@@ -778,6 +778,12 @@
         "desc": "Variáveis de ambiente passadas somente ao Grok Build. Os segredos de modelos personalizados permanecem no escopo deste provedor e são referenciados na configuração nativa por env_key."
       }
     },
+    "antigravity": {
+      "environment": {
+        "name": "Variáveis de ambiente do Antigravity",
+        "desc": "Variáveis de ambiente passadas apenas ao Antigravity (agy), como GEMINI_API_KEY."
+      }
+    },
     "deepseek": {
       "installation": {
         "desc": "A detecção automática prioriza dsh e depois procura Desktop no macOS ou no Windows. Se ambos estiverem instalados, informe o caminho .app do Desktop ou a pasta de instalação no Windows para selecioná-lo. Abra o Desktop primeiro para concluir a configuração.",

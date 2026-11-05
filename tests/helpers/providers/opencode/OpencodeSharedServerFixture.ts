@@ -43,7 +43,7 @@ beforeAll(() => {
 
 const turn = (text: string): ProviderExecutionRequest => ({
   input: [{ type: 'text', text }],
-  configuration: { model: 'opencode:local/chat', permissionMode: 'normal', systemInstructions: { kind: 'explicit', instructions: `Instructions for ${text}` } },
+  configuration: { model: 'opencode:local/chat', permissionMode: 'normal', systemInstructions: { kind: 'explicit', purpose: 'title', instructions: `Instructions for ${text}` } },
   toolPolicy: { kind: 'provider-default' }, signal: new AbortController().signal,
 });
 

@@ -44,7 +44,7 @@ const time = testDate().getTime();
 let host: ProviderHost;
 
 function request(text = 'requested'): ProviderExecutionRequest {
-  return { input: [{ type: 'text', text }], configuration: { systemInstructions: { kind: 'explicit', instructions: 'literal {prompt}' }, permissionMode: 'normal' }, toolPolicy: { kind: 'provider-default' }, signal: new AbortController().signal };
+  return { input: [{ type: 'text', text }], configuration: { systemInstructions: { kind: 'explicit', purpose: 'title', instructions: 'literal {prompt}' }, permissionMode: 'normal' }, toolPolicy: { kind: 'provider-default' }, signal: new AbortController().signal };
 }
 /** Appends one durable event to the claimed root's follow stream; subagent streams are driven separately. */
 function event(type: string, data: unknown): void {

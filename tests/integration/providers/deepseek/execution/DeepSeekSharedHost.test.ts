@@ -110,7 +110,7 @@ function open(interactionPort = port(), resume?: string, lifecycle: ProviderSess
 }
 
 function request(prompt: string, toolPolicy: ProviderExecutionRequest['toolPolicy'] = { kind: 'provider-default' }): ProviderExecutionRequest {
-  return { input: [{ type: 'text', text: 'hello' }], configuration: { systemInstructions: { kind: 'explicit', instructions: prompt }, permissionMode: 'normal' }, toolPolicy, signal: new AbortController().signal };
+  return { input: [{ type: 'text', text: 'hello' }], configuration: { systemInstructions: { kind: 'explicit', purpose: 'title', instructions: prompt }, permissionMode: 'normal' }, toolPolicy, signal: new AbortController().signal };
 }
 
 function emit(sessionId: string, type: string, data: unknown): void {

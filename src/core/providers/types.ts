@@ -189,10 +189,17 @@ export interface ProviderSvgPathChild {
 export interface ProviderSvgGroupChild {
   tag: 'g';
   attributes: Record<string, string>;
-  children: ProviderSvgPathChild[];
+  children: ProviderSvgChild[];
 }
 
-export type ProviderSvgChild = ProviderSvgGroupChild | ProviderSvgPathChild;
+/** Shapes and paint servers for full-colour marks; renderers scope their ids to each rendered copy. */
+export interface ProviderSvgElementChild {
+  tag: 'defs' | 'ellipse' | 'feGaussianBlur' | 'filter' | 'mask';
+  attributes: Record<string, string>;
+  children?: ProviderSvgChild[];
+}
+
+export type ProviderSvgChild = ProviderSvgElementChild | ProviderSvgGroupChild | ProviderSvgPathChild;
 
 export interface ProviderCompositeIconSvg {
   kind: 'composite';

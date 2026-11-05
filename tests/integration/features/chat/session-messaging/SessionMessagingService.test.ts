@@ -15,6 +15,8 @@ import { App } from 'obsidian';
 import { ConversationRepository } from '@/app/conversations/ConversationRepository';
 import type { ConversationPersistence } from '@/app/storage/ConversationPersistenceStore';
 import { type ProviderExecutionRequest } from '@/core/execution';
+import { buildSystemPrompt } from '@/core/prompt/mainAgent';
+import { renderProjectMemberInstructions } from '@/core/prompt/projectPrompt';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { ProviderSettingsCoordinator } from '@/core/providers/ProviderSettingsCoordinator';
 import { ProviderWorkspaceRegistry } from '@/core/providers/ProviderWorkspaceRegistry';
@@ -167,12 +169,17 @@ it('lists enabled providers with available models, new-session defaults and reas
   expect(h.pool.getAll()).toHaveLength(0);
 });
 
-it('delivers to a cold headless recipient with caller provenance and no composer capture', async () => {
-  const h = (await setup());
+it('delivers to a cold headless recipient with its current project and caller provenance', async () => {
+  const record = projectRecord({ id: 'recipient-project', instructions: 'Review the current project.' });
+  const h = (await setup({ members: { recipient: record.id }, projects: createProjectsFake([record]) }));
   expect(await h.binding.port.send({ sessionId: 'recipient', text: 'Review this' }, signal()))
     .toEqual({ sessionId: 'recipient', title: 'recipient', provider: 'claude', status: 'started' });
   await waitFor(() => expect(h.backend.sessions[0]?.requests).toHaveLength(1));
   expect(decodeSessionMessage(requestText(h.backend.latest.requests[0]))).toEqual({ from: 'Research', sessionId: 'sender', text: 'Review this' });
+  expect(h.backend.latest.requests[0].configuration.systemInstructions).toEqual({
+    kind: 'main-agent', projectId: record.id,
+    instructions: buildSystemPrompt({ vaultPath: '/vault', sessionInstructions: renderProjectMemberInstructions(record) }),
+  });
   expect(h.backend.latest.config.sessionTools).toBeDefined();
   expect(h.pool.getAttachment('recipient')).toBeNull();
   h.backend.latest.complete();

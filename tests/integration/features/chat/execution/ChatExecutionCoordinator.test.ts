@@ -439,7 +439,7 @@ describe('ChatExecutionCoordinator', () => {
     };
     const submission = createSubmission({
       configuration: {
-        systemInstructions: { kind: 'explicit', instructions: 'Answer tersely.' },
+        systemInstructions: { kind: 'explicit', purpose: 'title', instructions: 'Answer tersely.' },
       },
       images: [image],
       messages: { user: userMessage, assistant: assistantMessage },

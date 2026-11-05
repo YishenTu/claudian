@@ -35,7 +35,7 @@ let settings: import('@/core/types').ClaudianSettings;
 let host: ProviderHost;
 
 function request(text = 'requested'): ProviderExecutionRequest {
-  return { input: [{ type: 'text', text }], configuration: { systemInstructions: { kind: 'explicit', instructions: 'literal {prompt}' }, permissionMode: 'normal' }, toolPolicy: { kind: 'provider-default' }, signal: new AbortController().signal };
+  return { input: [{ type: 'text', text }], configuration: { systemInstructions: { kind: 'explicit', purpose: 'title', instructions: 'literal {prompt}' }, permissionMode: 'normal' }, toolPolicy: { kind: 'provider-default' }, signal: new AbortController().signal };
 }
 function event(type: string, data: unknown): void {
   peer.send('session/follow', { type: 'event', event: { type, seq: ++seq, time, data } }, rootFollow('root'));

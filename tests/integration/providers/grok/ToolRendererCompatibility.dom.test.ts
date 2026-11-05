@@ -88,7 +88,7 @@ async function restoreLive(updates: NativeToolUpdates): Promise<ToolCallInfo> {
     for await (const event of session.execute({
       configuration: {
         model: 'grok/grok-4', permissionMode: 'normal', reasoning: null,
-        systemInstructions: { kind: 'explicit', instructions: '' },
+        systemInstructions: { kind: 'explicit', purpose: 'title', instructions: '' },
       },
       input: [{ type: 'text', text: 'run the tool' }],
       signal: new AbortController().signal,

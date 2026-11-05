@@ -201,6 +201,7 @@ describe('MainTurnExecution', () => {
       fixture.native.requests[call].configuration.systemInstructions
     );
     const mainAgent = (fixture: Awaited<ReturnType<typeof createFixture>>, sessionInstructions?: string) => ({
+      ...(sessionInstructions ? { projectId: 'project-1' } : {}),
       kind: 'main-agent', instructions: buildSystemPrompt({ vaultPath: fixture.plugin.providerHost.workingDirectory ?? undefined, sessionInstructions }),
     });
 

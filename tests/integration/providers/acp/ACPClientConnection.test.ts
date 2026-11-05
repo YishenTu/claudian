@@ -291,6 +291,89 @@ describe('ACPClientConnection', () => {
     ]);
   });
 
+  it('advertises configured client capabilities during initialize', async () => {
+    const harness = createConnectionHarness(transport => new ACPClientConnection({
+      clientCapabilities: { elicitation: { form: {} } },
+      transport,
+    }));
+    try {
+      const pending = harness.connection.initialize();
+      const outbound = await harness.nextOutbound();
+      expect(outbound.params).toEqual({
+        clientCapabilities: { elicitation: { form: {} } },
+        clientInfo: null,
+        protocolVersion: 1,
+      });
+      harness.sendInbound({ jsonrpc: '2.0', id: outbound.id, result: { protocolVersion: 1 } });
+      await expect(pending).resolves.toEqual({ protocolVersion: 1 });
+    } finally { harness.connection.dispose(); harness.transport.dispose(); harness.close(); }
+  });
+
+  it('resumes, configures, and closes sessions through the standard methods', async () => {
+    const harness = createConnectionHarness(transport => new ACPClientConnection({ transport }));
+    try {
+      const resumed = harness.connection.resumeSession({
+        _meta: { 'vendor.example/session': 'resume' },
+        cwd: '/vault',
+        mcpServers: [],
+        sessionId: 'session-1',
+      });
+      const resumeRequest = await harness.nextOutbound();
+      expect(resumeRequest).toMatchObject({
+        method: 'session/resume',
+        params: { _meta: { 'vendor.example/session': 'resume' }, cwd: '/vault', mcpServers: [], sessionId: 'session-1' },
+      });
+      harness.sendInbound({ jsonrpc: '2.0', id: resumeRequest.id, result: { sessionId: 'session-1' } });
+      await expect(resumed).resolves.toEqual({ sessionId: 'session-1' });
+
+      const configured = harness.connection.setConfigOption({ configId: 'mode', sessionId: 'session-1', value: 'accept-edits' });
+      const configRequest = await harness.nextOutbound();
+      expect(configRequest).toMatchObject({
+        method: 'session/set_config_option',
+        params: { configId: 'mode', sessionId: 'session-1', value: 'accept-edits' },
+      });
+      const configOptions = [{ category: 'mode', currentValue: 'accept-edits', id: 'mode', name: 'Mode', options: [], type: 'select' }];
+      harness.sendInbound({ jsonrpc: '2.0', id: configRequest.id, result: { configOptions } });
+      await expect(configured).resolves.toEqual({ configOptions });
+
+      const closed = harness.connection.closeSession({ sessionId: 'session-1' });
+      const closeRequest = await harness.nextOutbound();
+      expect(closeRequest).toMatchObject({ method: 'session/close', params: { sessionId: 'session-1' } });
+      harness.sendInbound({ jsonrpc: '2.0', id: closeRequest.id, result: {} });
+      await expect(closed).resolves.toEqual({});
+    } finally { harness.connection.dispose(); harness.transport.dispose(); harness.close(); }
+  });
+
+  it('answers agent elicitation requests through the delegate', async () => {
+    const requests: unknown[] = [];
+    const harness = createConnectionHarness(transport => new ACPClientConnection({
+      delegate: {
+        createElicitation: async (request) => {
+          requests.push(request);
+          return { action: 'accept', content: { q1: '2' } };
+        },
+      },
+      transport,
+    }));
+    try {
+      const params = {
+        message: 'The agent has a question.',
+        mode: 'form',
+        requestedSchema: { properties: { q1: { oneOf: [{ const: '1', title: 'A' }, { const: '2', title: 'B' }], title: 'Pick', type: 'string' } }, type: 'object' },
+        sessionId: 'session-1',
+        toolCallId: 'call-1',
+      };
+      harness.transport.start();
+      harness.sendInbound({ id: 'e1', jsonrpc: '2.0', method: 'elicitation/create', params });
+      await expect(harness.nextOutbound()).resolves.toEqual({
+        id: 'e1',
+        jsonrpc: '2.0',
+        result: { action: 'accept', content: { q1: '2' } },
+      });
+      expect(requests).toEqual([params]);
+    } finally { harness.connection.dispose(); harness.transport.dispose(); harness.close(); }
+  });
+
   it('sends one cancel notification using the standard method', async () => {
     const harness = createConnectionHarness(transport => new ACPClientConnection({ transport }));
     const notifySpy = vi.spyOn(harness.transport, 'notify');
