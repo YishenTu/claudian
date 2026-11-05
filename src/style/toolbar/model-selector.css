@@ -50,7 +50,7 @@
   background: transparent;
   box-shadow: none;
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: calc(12 * var(--claudian-font-px));
   font-weight: normal;
   white-space: nowrap;
   cursor: pointer;
@@ -162,7 +162,7 @@
 .claudian-toolbar-popover-heading {
   padding: 6px 8px 3px;
   color: var(--text-faint);
-  font-size: 10px;
+  font-size: calc(10 * var(--claudian-font-px));
   font-weight: 600;
   letter-spacing: 0.05em;
   text-transform: uppercase;
@@ -171,7 +171,7 @@
 .claudian-toolbar-popover-empty {
   padding: 6px 8px;
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: calc(12 * var(--claudian-font-px));
 }
 
 .claudian-toolbar-popover button.claudian-toolbar-popover-option,
@@ -189,7 +189,7 @@
   background: transparent;
   box-shadow: none;
   color: var(--text-normal);
-  font-size: 12px;
+  font-size: calc(12 * var(--claudian-font-px));
   font-weight: normal;
   text-align: start;
   cursor: pointer;
@@ -229,7 +229,7 @@
 
 .claudian-toolbar-popover-option-detail {
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: calc(11 * var(--claudian-font-px));
   line-height: 1.3;
 }
 
@@ -296,7 +296,7 @@
 .claudian-model-column .claudian-toolbar-popover-heading {
   padding-top: 4px;
   padding-bottom: 6px;
-  line-height: 13px;
+  line-height: calc(13 * var(--claudian-font-px));
 }
 
 /* Upstream groups in the model list are set apart by their headings alone, with no divider. */
@@ -355,7 +355,7 @@
 
 .claudian-model-option .claudian-toolbar-popover-option-label {
   font-weight: 500;
-  line-height: 16px;
+  line-height: calc(16 * var(--claudian-font-px));
 }
 
 /* A description wraps to two lines at most; its full text stays in the row's tooltip. */
@@ -365,7 +365,7 @@
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
   line-clamp: 2;
-  line-height: 14px;
+  line-height: calc(14 * var(--claudian-font-px));
 }
 
 /*

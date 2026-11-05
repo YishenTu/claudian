@@ -97,7 +97,7 @@
   margin: 1px 0;
   padding: 8px var(--claudian-session-inline-inset);
   color: var(--text-muted);
-  font-size: 13px;
+  font-size: calc(13 * var(--claudian-font-px));
   font-weight: 500;
   cursor: pointer;
   border-radius: 6px;
@@ -137,7 +137,7 @@
   background: transparent;
   color: var(--text-normal);
   font-family: inherit;
-  font-size: 13px;
+  font-size: calc(13 * var(--claudian-font-px));
   box-shadow: none;
 }
 
@@ -358,7 +358,7 @@
   min-width: 0;
   padding: 8px 12px;
   color: var(--text-faint);
-  font-size: 13px;
+  font-size: calc(13 * var(--claudian-font-px));
   font-weight: 500;
   cursor: pointer;
   border-radius: 6px;
@@ -401,7 +401,7 @@
 
 .claudian-session-group-status {
   flex-shrink: 0;
-  font-size: 10px;
+  font-size: calc(10 * var(--claudian-font-px));
   font-weight: 400;
 }
 
@@ -589,7 +589,7 @@
  */
 .claudian-session-sidebar .claudian-history-item-title,
 :is(.claudian-session-sidebar, .claudian-history-menu) .claudian-session-group-label {
-  line-height: 17px;
+  line-height: calc(17 * var(--claudian-font-px));
 }
 
 .claudian-session-sidebar .claudian-history-item.active,
@@ -610,7 +610,7 @@
   gap: var(--claudian-session-action-gap);
   padding: 8px var(--claudian-session-inline-inset) 2px;
   color: var(--text-faint);
-  font-size: var(--font-ui-smaller);
+  font-size: calc(12 * var(--claudian-font-px));
 }
 
 /* Stays focusable while visually quiet; Obsidian restores native chrome on interaction states. */
@@ -712,7 +712,7 @@ body.theme-dark .claudian-session-metadata-popover {
   gap: 8px;
   min-height: 28px;
   color: var(--text-normal);
-  font-size: var(--font-ui-small);
+  font-size: calc(13 * var(--claudian-font-px));
 }
 
 .claudian-session-metadata-row--provider {
@@ -829,7 +829,7 @@ body.theme-dark .claudian-session-metadata-popover {
   gap: 8px;
   padding: 8px 12px;
   color: var(--text-muted);
-  font-size: 13px;
+  font-size: calc(13 * var(--claudian-font-px));
   font-weight: 500;
   cursor: pointer;
   background: var(--background-secondary);
@@ -899,7 +899,7 @@ body.theme-dark .claudian-nav-dropup-menu {
   border-bottom: 1px solid var(--background-modifier-border);
   border-radius: 0;
   color: var(--text-normal);
-  font-size: 13px;
+  font-size: calc(13 * var(--claudian-font-px));
   font-weight: 500;
 }
 
@@ -933,7 +933,7 @@ body.theme-dark .claudian-nav-dropup-menu {
 
 .claudian-history-header {
   padding: 8px 12px;
-  font-size: 12px;
+  font-size: calc(12 * var(--claudian-font-px));
   font-weight: 600;
   color: var(--text-muted);
   text-transform: uppercase;
@@ -951,7 +951,7 @@ body.theme-dark .claudian-nav-dropup-menu {
   padding: 16px;
   text-align: center;
   color: var(--text-muted);
-  font-size: 13px;
+  font-size: calc(13 * var(--claudian-font-px));
 }
 
 .claudian-history-item {
@@ -1046,7 +1046,7 @@ body.theme-dark .claudian-nav-dropup-menu {
 }
 
 .claudian-history-item-title {
-  font-size: 13px;
+  font-size: calc(13 * var(--claudian-font-px));
   font-weight: 500;
   color: var(--text-normal);
   white-space: nowrap;
@@ -1055,7 +1055,7 @@ body.theme-dark .claudian-nav-dropup-menu {
 }
 
 .claudian-history-item-date {
-  font-size: 11px;
+  font-size: calc(11 * var(--claudian-font-px));
   color: var(--text-faint);
   margin-top: 2px;
 }
@@ -1120,7 +1120,7 @@ body.theme-dark .claudian-nav-dropup-menu {
 .claudian-rename-input {
   width: 100%;
   padding: 2px 4px;
-  font-size: 13px;
+  font-size: calc(13 * var(--claudian-font-px));
   font-weight: 500;
   border: 1px solid var(--interactive-accent);
   border-radius: 4px;

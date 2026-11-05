@@ -17,7 +17,7 @@
 
 .claudian-todo-list-container .claudian-todo-text {
   font-family: var(--font-monospace);
-  font-size: 12px;
+  font-size: calc(12 * var(--claudian-font-px));
   line-height: 1.4;
   flex: 1;
   padding-left: 12px;

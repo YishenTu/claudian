@@ -1,7 +1,7 @@
 .claudian-citations {
   margin: 8px 0;
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: calc(12 * var(--claudian-font-px));
 }
 
 .claudian-citations-header {
