@@ -46,6 +46,13 @@ export class TabSwitchScheduler {
     return this.#requestRevision;
   }
 
+  /** The latest live destination while switching; settled navigation starts from the active tab. */
+  get navigationTabId(): TabId | null {
+    const intent = this.#latestIntent;
+    return this.#isSwitching && intent && this.host.canStart(intent.tabId)
+      ? intent.tabId : this.host.getActiveTabId();
+  }
+
   /** Records the newest activation intent; a superseded in-flight switch re-queues it. */
   reserveIntent(tabId: TabId): number {
     const requestRevision = ++this.#requestRevision;

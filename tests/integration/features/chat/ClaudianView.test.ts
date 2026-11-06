@@ -375,6 +375,72 @@ describe('ClaudianView tab controls and layout', () => {
     expect(contentEl.querySelector('.claudian-tab-bar-container')?.classList.contains('claudian-hidden')).toBe(true);
   });
 
+  it.each([
+    { id: 'next-tab', first: 'third', wrapped: 'first' },
+    { id: 'previous-tab', first: 'first', wrapped: 'third' },
+  ])('navigates and wraps compact tabs through the real $id command', async ({ id, first, wrapped }) => {
+    const { view, manager } = await openView({}, workspaceState(['first', 'second', 'third']));
+    await manager.switchToTab('second');
+    const commands = createChatTabCommands({
+      workspace: { getLeavesOfType: () => [] }, views: { getView: () => view, activateView: vi.fn() },
+    });
+    const command = commands.find(command => command.id === id);
+    expect(command).toBeDefined();
+    expect(command!.checkCallback!(true)).toBe(true);
+    expect(manager.getActiveTabId()).toBe('second');
+    expect(command!.checkCallback!(false)).toBe(true);
+    await manager.waitForTabSwitchIdle();
+    expect(manager.getActiveTabId()).toBe(first);
+    command!.checkCallback!(false);
+    await manager.waitForTabSwitchIdle();
+    expect(manager.getActiveTabId()).toBe(wrapped);
+    expect(manager.getTabCount()).toBe(3);
+    expect(manager.getAllTabs().every(tab => !tab.session.turns.isActive)).toBe(true);
+  });
+
+  it('keeps two Next intents while the first cold tab is assembling', async () => {
+    const entered = deferred<void>();
+    const release = deferred<void>();
+    const { view, manager } = await openView({ host: {
+      getConversationById: async id => {
+        if (id === 'one') { entered.resolve(); await release.promise; }
+        return conversationRecord(id);
+      },
+    } }, { tabWorkspace: { version: 1, activeTabId: 'first', openTabs: [
+      { tabId: 'first', conversationId: null },
+      { tabId: 'second', conversationId: 'one' },
+      { tabId: 'third', conversationId: 'two' },
+    ] } });
+    const command = createChatTabCommands({
+      workspace: { getLeavesOfType: () => [] }, views: { getView: () => view, activateView: vi.fn() },
+    }).find(command => command.id === 'next-tab')!;
+    try {
+      command.checkCallback!(false);
+      expect(manager.getActiveTabId()).toBe('first');
+      command.checkCallback!(false);
+      await entered.promise;
+      expect(manager.getActiveTabId()).toBe('second');
+    } finally {
+      release.resolve();
+    }
+    await manager.waitForTabSwitchIdle();
+    expect(manager.getActiveTabId()).toBe('third');
+    expect(manager.getTabCount()).toBe(3);
+    expect(manager.getAllTabs().every(tab => !tab.session.turns.isActive)).toBe(true);
+  });
+
+  it.each([400, 640])('does not offer adjacent-tab commands without a compact tab choice (%s px)', async width => {
+    const { view } = await openView({ width });
+    const commands = createChatTabCommands({
+      workspace: { getLeavesOfType: () => [] }, views: { getView: () => view, activateView: vi.fn() },
+    });
+    for (const id of ['next-tab', 'previous-tab']) {
+      const command = commands.find(command => command.id === id);
+      expect(command).toBeDefined();
+      expect(command!.checkCallback!(true)).toBe(false);
+    }
+  });
+
   it.each([400, 640])('starts New through the correct owner in a %s px view', async width => {
     const { view, manager } = await openView({ width });
     const draft = vi.spyOn(manager.viewerSlot, 'startDraft');

@@ -459,6 +459,11 @@ export class TabManager implements TabManagerInterface {
     await this.activation.switchTo(tabId);
   }
 
+  /** Navigates in membership order from the current or pending activation destination. */
+  async switchToAdjacentTab(direction: -1 | 1): Promise<void> {
+    await this.activation.switchAdjacent(direction);
+  }
+
   private async revealTab(tabId: TabId, isCurrent: () => boolean = () => true, options: SessionRevealOptions = {}): Promise<void> {
     const identity = this.membership.getIdentity(tabId);
     await revealWorkspaceLeaf(this.plugin.app.workspace, this.view.leaf);
