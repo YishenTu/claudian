@@ -685,6 +685,7 @@ it('orders the Pi prompt toolbar as branches, tree, copy, time through live and 
     new Component(),
     messagesEl, undefined, fork, () => ProviderRegistry.getCapabilities('pi'),
     { navigate: vi.fn(), isBusy: () => busy });
+  onTestFinished(() => renderer.dispose());
   const first: ChatMessage = { ...messages[0], treeBranches: ['native-u1'] };
   const prompt: ChatMessage = { id: 'second', role: 'user', content: 'Try B', timestamp: 2 };
   const reply: ChatMessage = { id: 'reply-b', role: 'assistant', content: 'Answer B', timestamp: 3,
@@ -712,8 +713,14 @@ it('orders the Pi prompt toolbar as branches, tree, copy, time through live and 
     expect(messagesEl.querySelector('[data-message-id="u1"] .claudian-branch-marker')).toBeNull();
   };
   assertOrder();
-  renderer.refreshBranchButtons(history);
-  assertOrder();
+  for (const name of ['Previous branch', 'Branch from this prompt', 'Copy message']) {
+    const action = within(promptEl).getByRole('button', { name });
+    action.focus();
+    expect(document.activeElement).toBe(action);
+    renderer.refreshBranchButtons(history);
+    expect(document.activeElement).toBe(within(promptEl).getByRole('button', { name }));
+    assertOrder();
+  }
   renderer.refreshMessageTimestamps();
   assertOrder();
   settings.showMessageTimestamps = false;
@@ -730,7 +737,6 @@ it('orders the Pi prompt toolbar as branches, tree, copy, time through live and 
   renderer.refreshBranchButtons(history);
   expect(promptEl.querySelector('.claudian-branch-marker')).toBeNull();
   expect(within(promptEl).getByRole('button', { name: 'Branch from this prompt' })).toBeTruthy();
-  renderer.dispose();
 });
 
 it('previews a branch without saving it and restores history when focus leaves the composer', async () => {
