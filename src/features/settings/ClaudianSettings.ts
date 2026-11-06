@@ -201,6 +201,7 @@ export class ClaudianSettingTab extends PluginSettingTab {
         this.app,
         this.host.storage.getAdapter(),
         this.host,
+        this.textEdits,
       );
     };
     if (this.activeTab === 'skills') renderSkillsTab();
