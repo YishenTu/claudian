@@ -455,6 +455,10 @@
       "name": "Wie soll Claudian dich nennen?",
       "desc": "Dein Name für personalisierte Begrüßungen (leer lassen für allgemeine Begrüßungen)"
     },
+    "autoLinkActiveNote": {
+      "name": "Aktive Notiz in neuen Chats automatisch verknüpfen",
+      "desc": "Neue Chats beginnen mit der aktiven Notiz als verknüpftem Inhalt. Deaktivieren Sie dies, um verknüpfte Inhalte im Willkommensbildschirm manuell auszuwählen."
+    },
     "excludedTags": {
       "name": "Ausgeschlossene Tags",
       "desc": "Notizen mit diesen Tags werden nicht automatisch als Kontext geladen (einer pro Zeile, ohne #)"

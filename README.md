@@ -29,6 +29,8 @@ Open Claudian interface from the ribbon icon or command palette. Everything work
 
 **Slash Commands & Skills** — Type `/` or `$` for reusable prompt templates or Skills from user- and vault-level scopes.
 
+**Linked Content** — New chats automatically link the active note. Turn off **Settings → Claudian → General → Automatically link active note in new chats** to start without a link; the welcome-screen selector still lets you choose a note or folder explicitly. This preference does not change existing conversations or their fixed Linked content.
+
 **@mention** — Type `@` to reference vault files, folders and other Claudian sessions.
 
 **Cross-Session Messaging** — Let agents read, message, steer or interrupt other Claudian sessions, or start new ones on any provider. See the [Cross-session messaging guide](docs/cross-session-messaging.md).

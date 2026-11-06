@@ -1,5 +1,6 @@
 /** @vitest-environment jsdom */
 import { axe } from '@test/helpers/accessibility';
+import { deferred } from '@test/helpers/ChatExecutionHarness';
 import { claudeCatalogFixture } from '@test/helpers/claudeModels';
 import { TEST_CODEX_CATALOG } from '@test/helpers/codexModels';
 import { createFeatureHostFixture } from '@test/helpers/FeatureHostFixture';
@@ -31,6 +32,7 @@ async function createSettings(
   overrides: Partial<ClaudianSettings> = {},
   beforePersist = async () => {},
   onCommit = (_settings: Readonly<ClaudianSettings>) => {},
+  afterPublish?: () => void,
 ) {
   const persist = vi.fn(beforePersist);
   const fixture = await createFeatureHostFixture({
@@ -42,6 +44,7 @@ async function createSettings(
       },
     },
     beforePersist: persist,
+    afterPublish,
   });
   const { host, settings, coordinator, vault } = fixture;
   const getAdapter = vi.spyOn(fixture.storage, 'getAdapter');
@@ -94,6 +97,65 @@ it('renders the declarative settings surface and loads real skills only on first
   fireEvent.click(within(h.container).getByRole('button', { name: t('settings.tabs.skills') }));
   expect(within(h.container).getAllByText('local')).toHaveLength(1);
   expect(h.getAdapter).toHaveBeenCalledTimes(1);
+});
+
+it('persists the automatic linked-content preference through the named General toggle', async () => {
+  const h = await createSettings();
+  const toggle = within(h.container).getByRole('switch', { name: 'Automatically link active note in new chats' });
+  expect(toggle.getAttribute('aria-checked')).toBe('true');
+  fireEvent.click(toggle);
+  await controlChangeSettled(toggle);
+  expect(h.settings.autoLinkActiveNote).toBe(false);
+  expect((await h.storage.load()).autoLinkActiveNote).toBe(false);
+  expect(await axe(h.container)).toHaveNoViolations();
+});
+
+it('restores a failed automatic-link preference without writing its projection and can retry', async () => {
+  const h = await createSettings();
+  h.persist.mockRejectedValueOnce(new Error('Disk full'));
+  const toggle = within(h.container).getByRole('switch', { name: 'Automatically link active note in new chats' });
+  fireEvent.click(toggle);
+  await expect(controlChangeSettled(toggle)).rejects.toThrow('Disk full');
+  expect(h.settings.autoLinkActiveNote).toBe(true);
+  expect(toggle.getAttribute('aria-checked')).toBe('true');
+  expect(h.mutations).toHaveBeenCalledTimes(1);
+  expect(h.persist).toHaveBeenCalledTimes(1);
+  fireEvent.click(toggle);
+  await controlChangeSettled(toggle);
+  expect(h.mutations).toHaveBeenCalledTimes(2);
+  expect((await h.storage.load()).autoLinkActiveNote).toBe(false);
+  expect(toggle.getAttribute('aria-checked')).toBe('false');
+});
+
+it('retains the committed automatic-link value when post-commit publication fails', async () => {
+  const h = await createSettings({}, undefined, undefined, () => { throw new Error('Publication failed'); });
+  const toggle = within(h.container).getByRole('switch', { name: 'Automatically link active note in new chats' });
+  fireEvent.click(toggle);
+  await expect(controlChangeSettled(toggle)).rejects.toThrow('Settings were persisted');
+  expect(h.mutations).toHaveBeenCalledTimes(1);
+  expect(h.settings.autoLinkActiveNote).toBe(false);
+  expect((await h.storage.load()).autoLinkActiveNote).toBe(false);
+  expect(toggle.getAttribute('aria-checked')).toBe('false');
+});
+
+it('retains two automatic-link clicks while the first settings write is held', async () => {
+  const entered = deferred<void>();
+  const release = deferred<void>();
+  const h = await createSettings({}, async () => { entered.resolve(); await release.promise; });
+  const toggle = within(h.container).getByRole('switch', { name: 'Automatically link active note in new chats' });
+  fireEvent.click(toggle);
+  const first = controlChangeSettled(toggle);
+  try {
+    await entered.promise;
+    fireEvent.click(toggle);
+    expect(h.mutations).toHaveBeenCalledTimes(2);
+  } finally { release.resolve(); }
+  await Promise.all([first, controlChangeSettled(toggle)]);
+  expect(h.mutations).toHaveBeenCalledTimes(2);
+  expect(h.persist).toHaveBeenCalledTimes(2);
+  expect(h.settings.autoLinkActiveNote).toBe(true);
+  expect((await h.storage.load()).autoLinkActiveNote).toBe(true);
+  expect(toggle.getAttribute('aria-checked')).toBe('true');
 });
 
 it('persists dual-pane changes before rerendering the available display controls', async () => {

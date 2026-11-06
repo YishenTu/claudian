@@ -104,6 +104,7 @@ export class SessionModel {
     };
     this.linkedContentController = new LinkedContentController({
       app: plugin.app,
+      getAutoLinkActiveNote: () => plugin.settings.autoLinkActiveNote,
       getExcludedTags: () => plugin.settings.excludedTags,
       getCachedVaultFiles: () => this.presentation?.vaultIndex.getCachedVaultFiles() ?? [],
       getCachedVaultFolders: () => this.presentation?.vaultIndex.getCachedVaultFolders() ?? [],
