@@ -3,12 +3,15 @@
 import { createHarness as createExecutionHarness, deferred } from '@test/helpers/ChatExecutionHarness';
 import { holdResponse } from '@test/helpers/ConversationPorts';
 import { useNextTaskAnimationFrames } from '@test/helpers/dom/animationFrames';
+import { firePointer } from '@test/helpers/dom/pointer';
 import { triggerResize } from '@test/helpers/dom/ResizeObserver';
 import { createFeatureHostFixture } from '@test/helpers/FeatureHostFixture';
 import { registerChatTestProvider } from '@test/helpers/features/chat/ChatProviderFixture';
 import { createClaudianView } from '@test/helpers/features/chat/ClaudianViewHarness';
 import { conversationRecord } from '@test/helpers/features/chat/ConversationFixture';
+import { createProjectsFake, projectRecord } from '@test/helpers/features/chat/ProjectsFake';
 import { createSessionBrowserHost } from '@test/helpers/features/chat/SessionBrowserTestHarness';
+import { testDate } from '@test/helpers/testClock';
 import { fireEvent, within } from '@testing-library/dom';
 import { Menu, Platform, Scope, TFile } from 'obsidian';
 
@@ -554,6 +557,72 @@ describe('ClaudianView composer and scoped keys', () => {
     expect(tab.session.turns.cancelRequested).toBe(true);
     await release();
     expect(tab.state.isStreaming).toBe(false);
+  });
+
+  it('dismisses the conversation directory through the host keymap before stopping a turn', async () => {
+    const { view, manager } = await openView();
+    const tab = manager.getActiveTab()!;
+    const release = holdResponse(tab.session.runtime.turns);
+    const prompt = { id: 'question', role: 'user' as const, content: 'Plan the note', timestamp: testDate().getTime() };
+    tab.state.messages = [prompt];
+    tab.renderer.renderMessages(tab.state.messages, () => '');
+    Object.defineProperty(tab.dom.messagesEl, 'scrollHeight', { configurable: true, value: 2_000 });
+    Object.defineProperty(tab.dom.messagesEl, 'clientHeight', { configurable: true, value: 400 });
+    tab.ui.navigationSidebar.updateVisibility();
+    await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
+    const toggle = within(tab.dom.contentEl).getByRole('button', { name: 'Conversation directory' });
+    fireEvent.click(toggle);
+    const entry = within(tab.dom.contentEl).getByRole('button', { name: '1. Plan the note' });
+    entry.focus();
+    view.app.keymap.pushScope(view.scope!);
+    try {
+      fireEvent.keyDown(entry, { key: 'Escape' });
+      expect(toggle.getAttribute('aria-expanded')).toBe('false');
+      expect(document.activeElement).toBe(toggle);
+      expect(tab.session.turns.cancelRequested).toBe(false);
+      fireEvent.keyDown(toggle, { key: 'Escape' });
+      expect(tab.session.turns.cancelRequested).toBe(true);
+    } finally {
+      view.app.keymap.popScope(view.scope!);
+      await release();
+    }
+  });
+
+  it('cancels a project drag through the host keymap before stopping a running turn', async () => {
+    const projects = createProjectsFake([
+      projectRecord({ id: 'one', name: 'First project', createdAt: testDate({ days: -2 }).getTime() }),
+      projectRecord({ id: 'two', name: 'Second project', createdAt: testDate({ days: -1 }).getTime() }),
+    ]);
+    const { view, manager, contentEl, plugin } = await openView({ width: 640, host: { projects } });
+    const tab = manager.getActiveTab()!;
+    const release = holdResponse(tab.session.runtime.turns);
+    const mutate = vi.spyOn(plugin, 'mutateSettings');
+    const row = within(contentEl).getByRole('button', { name: 'First project' })
+      .closest<HTMLElement>('.claudian-session-group-header')!;
+    const rows = Array.from(row.parentElement!.querySelectorAll<HTMLElement>(':scope > .claudian-session-group-header'));
+    // Browser-layout boundary: two empty project cards, collapsed bodies occupy no height.
+    rows.forEach((header, index) => {
+      const top = 100 + index * 20;
+      header.getBoundingClientRect = () => new DOMRect(0, top, 200, 20);
+    });
+    const start = row.getBoundingClientRect().top + 5;
+    firePointer('pointerDown', row, start);
+    firePointer('pointerMove', document, start + 8);
+    expect(row.classList.contains('claudian-live-sort-lifted')).toBe(true);
+    view.app.keymap.pushScope(view.scope!);
+    try {
+      fireEvent.keyDown(row, { key: 'Escape' });
+      expect(row.classList.contains('claudian-live-sort-lifted')).toBe(false);
+      expect(tab.session.turns.cancelRequested).toBe(false);
+      firePointer('pointerUp', document, start + 8);
+      expect(mutate).not.toHaveBeenCalled();
+      fireEvent.keyDown(row, { key: 'Escape' });
+      expect(tab.session.turns.cancelRequested).toBe(true);
+    } finally {
+      view.app.keymap.popScope(view.scope!);
+      fireEvent.pointerCancel(document);
+      await release();
+    }
   });
 
   it('dismisses inline session rename before handling the scoped stop action', async () => {
