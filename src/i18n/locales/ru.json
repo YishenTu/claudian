@@ -201,6 +201,27 @@
       "agentCount": "{count} агент",
       "agentCountPlural": "Агенты: {count}"
     },
+    "subagentUI": {
+      "prompt": "Промпт",
+      "result": "Результат",
+      "taskLabel": "Задача субагента: {description} - {status}",
+      "backgroundTaskLabel": "Фоновая задача: {description} - {status}",
+      "statusLabel": "Статус: {status}",
+      "initializing": "Инициализация",
+      "error": "Ошибка",
+      "orphaned": "Не завершено",
+      "completed": "Завершено",
+      "runningInBackground": "Выполняется в фоне",
+      "running": "Выполняется",
+      "orphanedResult": "Разговор завершился до окончания задачи",
+      "lastTool": "Последний инструмент: {name}",
+      "toolUse": "Вызовов инструмента: {count}",
+      "toolUses": "Вызовов инструментов: {count}",
+      "tokens": "{value} токенов",
+      "compactTokens": "{value}k токенов",
+      "previousRuns": "Предыдущие запуски ({count})",
+      "runLabel": "Запуск {number} · {status}"
+    },
     "citations": {
       "memoryUsed": "Использованная память",
       "source": "{count} источник",
