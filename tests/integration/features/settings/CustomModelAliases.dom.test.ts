@@ -5,11 +5,14 @@ import { deserialize, serialize } from 'node:v8';
 
 import { axe } from '@test/helpers/accessibility';
 import { createFeatureHostFixture } from '@test/helpers/FeatureHostFixture';
-import { createObsidianPlugin } from '@test/helpers/ObsidianSettingsHost';
+import { createObsidianPlugin, mountSettingTab } from '@test/helpers/ObsidianSettingsHost';
 import { fireEvent, waitFor, within } from '@testing-library/dom';
 import { Notice } from 'obsidian';
 
+import { ProviderWorkspaceRegistry } from '@/core/providers/ProviderWorkspaceRegistry';
 import { ClaudianSettingTab } from '@/features/settings/ClaudianSettings';
+import { setLocale } from '@/i18n/i18n';
+import { createClaudeWorkspaceServices } from '@/providers/claude/app/ClaudeWorkspaceServices';
 import { getClaudeProviderSettings } from '@/providers/claude/settings';
 
 it.each(['Enter', 'Escape'])('leaves composing %s to the custom model alias editor', async key => {
@@ -154,4 +157,52 @@ it('retains a failed custom alias across rerender and allows retry', async () =>
     expect(field().value).toBe('My custom alias');
     expect(persist).toHaveBeenCalledTimes(2);
   } finally { container.remove(); }
+});
+
+it('uses the committed interface locale through public provider settings and retries an alias draft', async () => {
+  setLocale('en');
+  vi.mocked(Notice).mockClear();
+  let fail = false;
+  const fixture = await createFeatureHostFixture({
+    settings: { locale: 'zh-CN', enableAutoTitleGeneration: false, settingsProvider: 'claude',
+      providerConfigs: { claude: { enabled: true, modelAliases: { Save: 'Archive' }, environmentVariables: 'ANTHROPIC_MODEL=Save' } },
+    },
+    beforePersist: () => { if (fail) throw new Error('storage unavailable'); },
+  });
+  const services = await createClaudeWorkspaceServices(fixture.providerHost, { catalogProbe: async () => ({ models: [], outputStyles: [] }) });
+  ProviderWorkspaceRegistry.setServices('claude', services);
+  const tab = new ClaudianSettingTab(fixture.host.app, createObsidianPlugin(fixture.host.app), fixture.host);
+  const container = document.body.createEl('main');
+  const hide = mountSettingTab(tab, container);
+  const overrides = () => within(container).getByText('自定义模型覆盖').parentElement!.parentElement!;
+  const alias = () => within(overrides()).getByRole<HTMLInputElement>('textbox', { name: 'Save 的别名' });
+  try {
+    fireEvent.click(within(container).getByRole('button', { name: '提供商' }));
+    await waitFor(() => expect(alias().value).toBe('Archive'));
+    const context = within(overrides()).getByRole<HTMLInputElement>('textbox', { name: /^(Context window for Save|Save 的上下文窗口)$/ });
+    expect.soft(context.getAttribute('aria-label')).toBe('Save 的上下文窗口');
+    await fixture.coordinator.persistCurrent();
+    fail = true;
+    fireEvent.input(alias(), { target: { value: '  Context window  ' } });
+    alias().focus();
+    fireEvent.keyDown(alias(), { key: 'Enter' });
+    await waitFor(() => expect(Notice).toHaveBeenCalledWith('无法保存模型别名。请重试。'));
+    expect(getClaudeProviderSettings(fixture.settings).modelAliases).toEqual({ Save: 'Archive' });
+    expect(getClaudeProviderSettings(await fixture.settingsStorage.load()).modelAliases).toEqual({ Save: 'Archive' });
+    tab.update();
+    await waitFor(() => expect(alias().value).toBe('  Context window  '));
+    expect(await axe(alias().parentElement!)).toHaveNoViolations();
+    fail = false;
+    alias().focus();
+    fireEvent.keyDown(alias(), { key: 'Enter' });
+    await waitFor(() => expect(getClaudeProviderSettings(fixture.settings).modelAliases).toEqual({ Save: 'Context window' }));
+    expect(getClaudeProviderSettings(await fixture.settingsStorage.load()).modelAliases).toEqual({ Save: 'Context window' });
+    const currentContext = within(overrides()).getByRole('textbox', { name: 'Save 的上下文窗口' });
+    fireEvent.input(currentContext, { target: { value: '64k' } });
+    await waitFor(() => expect(fixture.settings.customContextLimits).toEqual({ Save: 64000 }));
+    expect((await fixture.settingsStorage.load()).customContextLimits).toEqual({ Save: 64000 });
+  } finally {
+    fail = false; hide(); await ProviderWorkspaceRegistry.disposeInitialized(); ProviderWorkspaceRegistry.clear();
+    await services.dispose(); await fixture.dispose(); container.remove(); setLocale('en'); vi.mocked(Notice).mockClear();
+  }
 });

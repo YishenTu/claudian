@@ -778,7 +778,7 @@ export class ClaudianSettingTab extends PluginSettingTab {
         cls: 'claudian-context-limits-input',
         value: currentValue ? formatContextLimit(currentValue) : '',
       });
-      inputEl.setAttribute('aria-label', `Context window for ${modelId}`);
+      inputEl.setAttribute('aria-label', t('settings.customContextLimits.ariaLabel', { model: modelId }));
 
       const validationEl = inputWrapper.createDiv({ cls: 'claudian-context-limit-validation claudian-hidden' });
 
@@ -800,7 +800,7 @@ export class ClaudianSettingTab extends PluginSettingTab {
           if (this.customAliasDrafts.get(aliasDraftKey) === draft) this.customAliasDrafts.delete(aliasDraftKey);
           this.notifyProviderModelOptionsChanged(providerId);
         } catch {
-          new Notice('Could not save model alias. Try again.');
+          new Notice(t('settings.customModelAliases.saveFailed'));
         }
       };
 

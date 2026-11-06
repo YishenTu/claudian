@@ -500,6 +500,10 @@
       "desc": "대신 승인 및 승인 요청 모드의 파일 접근 권한입니다. 읽기 전용은 편집할 때마다 확인을 요청하며, 전체 액세스에서는 무시됩니다."
     },
     "environment": "환경",
+    "environmentFeedback": {
+      "reviewOwnership": "다음 환경 변수의 관리 주체를 확인하세요: {keys}",
+      "updateFailed": "환경 업데이트를 완료하지 못했습니다."
+    },
     "sharedEnvironment": {
       "name": "공유 환경",
       "desc": "모든 제공자가 함께 사용하는 제공자 중립 런타임 변수입니다. PATH, 프록시, 인증서, 임시 디렉터리 변수에 사용하세요."
@@ -529,7 +533,13 @@
       },
       "insertFailed": "스니펫을 삽입하지 못했습니다",
       "deleteConfirm": "환경 변수 스니펫 \"{name}\"을(를) 삭제할까요?",
-      "deleteFailed": "스니펫을 삭제하지 못했습니다"
+      "deleteFailed": "스니펫을 삭제하지 못했습니다",
+      "savedRefreshFailed": "환경 스니펫은 저장되었지만 설정 새로 고침에 실패했습니다.",
+      "updateFailed": "환경 스니펫 업데이트를 완료하지 못했습니다",
+      "saveFailed": "환경 스니펫 저장을 완료하지 못했습니다",
+      "saved": "환경 스니펫 \"{name}\" 저장됨",
+      "updated": "환경 스니펫 \"{name}\" 업데이트됨",
+      "deleted": "환경 스니펫 \"{name}\" 삭제됨"
     },
     "customModelOverrides": {
       "name": "사용자 정의 모델 재정의",
@@ -538,10 +548,12 @@
     "customModelAliases": {
       "placeholder": "별칭",
       "ariaLabel": "{model}의 별칭",
-      "ariaDescription": "모델 선택기에 표시되는 사용자 지정 레이블입니다. 비워 두면 기본값을 사용합니다."
+      "ariaDescription": "모델 선택기에 표시되는 사용자 지정 레이블입니다. 비워 두면 기본값을 사용합니다.",
+      "saveFailed": "모델 별칭을 저장하지 못했습니다. 다시 시도하세요."
     },
     "customContextLimits": {
-      "invalid": "잘못된 형식입니다. 사용: 256k, 1m 또는 정확한 숫자(1000-10000000)."
+      "invalid": "잘못된 형식입니다. 사용: 256k, 1m 또는 정확한 숫자(1000-10000000).",
+      "ariaLabel": "{model}의 컨텍스트 창"
     },
     "enableChrome": {
       "name": "Chrome 확장 프로그램 활성화",
@@ -660,7 +672,8 @@
       "noMatch": "필터와 일치하는 모델이 없습니다.",
       "emptyCatalog": "보고된 {provider} 모델이 없습니다. 구성을 확인하고 검색을 클릭하세요.",
       "loadingCatalog": "{provider} 모델을 불러오는 중…",
-      "stale": "{provider} 모델 카탈로그가 오래되었습니다. 검색을 클릭하여 새로 고치세요."
+      "stale": "{provider} 모델 카탈로그가 오래되었습니다. 검색을 클릭하여 새로 고치세요.",
+      "saveFailed": "모델 선택을 저장하지 못했습니다. 다시 시도하세요."
     },
     "claude": {
       "promptSuggestions": {

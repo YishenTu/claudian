@@ -14,6 +14,7 @@ import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { ProviderSettingsCoordinator } from '@/core/providers/ProviderSettingsCoordinator';
 import { getChatSettingsSnapshot } from '@/features/chat/ChatSettings';
 import { ChatViewPublisher } from '@/features/chat/workspace/ChatViewPublisher';
+import { setLocale } from '@/i18n/i18n';
 import { getClaudeProviderSettings, updateClaudeProviderSettings } from '@/providers/claude/settings';
 import { claudeChatUIConfig } from '@/providers/claude/ui/ClaudeChatUIConfig';
 import { EnvSnippetManager, EnvSnippetModal } from '@/shared/settings/EnvSnippetManager';
@@ -24,6 +25,7 @@ type ModalTimerJoin = () => Promise<void>;
 const timerSpyCleanups: Array<() => void> = [];
 
 afterEach(() => {
+  setLocale('en');
   for (const cleanup of timerSpyCleanups.splice(0)) cleanup();
   document.body.replaceChildren();
 });
@@ -748,4 +750,85 @@ it('publishes inserted aliases to every mounted model selector', async () => {
   }
   expect(getClaudeProviderSettings(JSON.parse(saved)).modelAliases).toMatchObject({ custom: 'New alias' });
   expect(await axe(manager)).toHaveNoViolations();
+});
+
+it.each([
+  { action: 'Save', phase: 'beforePersist', title: '保存片段', button: '保存', failure: '无法完成环境片段保存', success: '环境片段“Save”已保存' },
+  { action: 'Update', phase: 'beforePersist', title: '编辑片段', button: '更新', failure: '无法完成环境片段更新', success: '环境片段“Save”已更新' },
+  { action: 'Save', phase: 'afterPublish', title: '保存片段', button: '保存', failure: '环境片段已保存，但设置刷新失败。', success: '环境片段“Save”已保存' },
+  { action: 'Update', phase: 'afterPublish', title: '编辑片段', button: '更新', failure: '环境片段已保存，但设置刷新失败。', success: '环境片段“Save”已更新' },
+])('localizes $action $phase feedback and preserves native snippet drafts and commit policy', async ({ action, phase, title, button, failure, success }) => {
+  setLocale('zh-CN');
+  vi.mocked(Notice).mockClear();
+  let armed = false;
+  const envVars = 'ANTHROPIC_MODEL=Save\nANTHROPIC_BASE_URL=https://example.invalid/Environment';
+  const fixture = await createProviderHostFixture({
+    settings: { locale: 'zh-CN', providerConfigs: { claude: { environmentVariables: envVars } },
+      envSnippets: action === 'Save' ? [] : [{ id: 'snippet-Save', name: 'Archive', description: '', envVars, scope: 'provider:claude' }],
+    },
+    beforePersist: () => { if (armed && phase === 'beforePersist') throw new Error('storage unavailable'); },
+    afterPublish: () => { if (armed && phase === 'afterPublish') throw new Error('refresh unavailable'); },
+  });
+  await fixture.coordinator.persistCurrent();
+  const original = structuredClone(fixture.settings.envSnippets);
+  const container = document.body.createEl('main');
+  new EnvSnippetManager(container, fixture.host, 'provider:claude');
+  let closeDialog = () => undefined as void;
+  try {
+    await captureModalFocusTimers(() => {
+      fireEvent.click(within(container).getByRole('button', { name: action === 'Save' ? '将当前环境保存为片段' : '编辑' }));
+    })();
+    const dialog = within(document.body).getByRole('dialog', { name: title });
+    closeDialog = () => { if (dialog.isConnected) fireEvent.click(within(dialog).getByRole('button', { name: '取消' })); };
+    const fields = within(dialog);
+    const name = fields.getByRole<HTMLInputElement>('textbox', { name: '名称' });
+    const description = fields.getByRole<HTMLInputElement>('textbox', { name: '描述' });
+    const environment = fields.getByRole<HTMLTextAreaElement>('textbox', { name: '环境变量' });
+    const alias = fields.getByRole<HTMLInputElement>('textbox', { name: /^(Alias for Save|Save 的别名)$/ });
+    const context = fields.getByRole<HTMLInputElement>('textbox', { name: /^(Context window for Save|Save 的上下文窗口)$/ });
+    expect.soft(alias.getAttribute('aria-label')).toBe('Save 的别名');
+    expect.soft(context.getAttribute('aria-label')).toBe('Save 的上下文窗口');
+    fireEvent.input(name, { target: { value: '  Save  ' } });
+    fireEvent.input(description, { target: { value: '  Environment variables  ' } });
+    fireEvent.input(alias, { target: { value: '  Context window  ' } });
+    fireEvent.input(context, { target: { value: '64k' } });
+    expect(environment.value).toBe(envVars);
+    const save = fields.getByRole<HTMLButtonElement>('button', { name: button });
+    armed = true;
+    fireEvent.click(save);
+    await waitFor(() => expect(Notice).toHaveBeenCalledWith(failure));
+    const retryRetainedDraft = async () => {
+      expect(within(document.body).getByRole('dialog', { name: title })).toBe(dialog);
+      expect(name.value).toBe('  Save  ');
+      expect(description.value).toBe('  Environment variables  ');
+      expect(alias.value).toBe('  Context window  ');
+      expect(context.value).toBe('64k');
+      expect(environment.value).toBe(envVars);
+      expect(save.disabled).toBe(false);
+      expect(fixture.coordinator.getCommittedSettings().envSnippets).toEqual(original);
+      expect((await fixture.settingsStorage.load()).envSnippets).toEqual(original);
+      armed = false;
+      fireEvent.click(save);
+      await waitFor(() => expect(Notice).toHaveBeenCalledWith(success));
+    };
+    if (phase === 'beforePersist') await retryRetainedDraft();
+    expect(within(document.body).queryByRole('dialog', { name: title })).toBeNull();
+    const saved = fixture.settings.envSnippets[0];
+    expect(saved).toMatchObject({ name: 'Save', description: 'Environment variables', envVars, scope: 'provider:claude',
+      modelAliases: { Save: 'Context window' }, contextLimits: { Save: 64000 } });
+    expect(saved.id).toMatch(action === 'Update' ? /^snippet-Save$/ : /^snippet-/);
+    expect((await fixture.settingsStorage.load()).envSnippets).toEqual([saved]);
+    expect(within(container).getByText('Save')).toBeTruthy();
+    expect(await axe(container)).toHaveNoViolations();
+    const deleteSavedSnippet = async () => {
+      fireEvent.click(within(container).getByRole('button', { name: '删除' }));
+      const confirm = within(document.body).getByRole('dialog', { name: '确认' });
+      expect(within(confirm).getByText('删除环境变量片段“Save”？')).toBeTruthy();
+      fireEvent.click(within(confirm).getByRole('button', { name: '删除' }));
+      await waitFor(() => expect(Notice).toHaveBeenCalledWith('环境片段“Save”已删除'));
+      expect(fixture.settings.envSnippets).toEqual([]);
+      expect((await fixture.settingsStorage.load()).envSnippets).toEqual([]);
+    };
+    if (action === 'Save' && phase === 'beforePersist') await deleteSavedSnippet();
+  } finally { armed = false; closeDialog(); await fixture.dispose(); container.remove(); }
 });
