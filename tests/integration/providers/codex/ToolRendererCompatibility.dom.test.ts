@@ -1,5 +1,7 @@
 /** @vitest-environment jsdom */
 
+import { runInNewContext } from 'node:vm';
+
 import { axe } from '@test/helpers/accessibility';
 import { createChatFeatureHost } from '@test/helpers/features/chat/ChatFeatureHostFixture';
 import { parseCodexSessionContent } from '@test/helpers/providers/codex/parseCodexSessionContent';
@@ -648,4 +650,59 @@ it.each([false, true].flatMap(lateNative => ['text', 'thinking'].map(boundary =>
     stream.dispose(); subagents.clear(); renderer.dispose();
     vi.useRealTimers();
   }
+});
+
+it.each(['live', 'history'] as const)('keeps quoted delimiters as command data in %s code-mode tools', mode => {
+  for (const directory of [')', '(', '{', '}']) {
+    const command = 'pwd';
+    const source = `text(await tools.exec_command({cmd:${JSON.stringify(command)},workdir:${JSON.stringify(directory)}}));`;
+    const tools = restoreSession(mode, [
+      { raw: { type: 'custom_tool_call', name: 'exec', call_id: 'script', input: source } },
+      { raw: { type: 'custom_tool_call_output', call_id: 'script', output: 'Script completed\nOutput:\nfinished' } },
+    ]);
+    expect(tools).toMatchObject([{ name: 'Bash', input: { command } }]);
+  }
+});
+
+it.each(['live', 'history'] as const)('retains unsupported JavaScript string escapes as the original script in %s', mode => {
+  for (const argument of [String.raw`'cat caf\u00e9.md'`, String.raw`'printf "\x1b"'`, "'echo a\\\nb'"]) {
+    const source = `text(await tools.exec_command({cmd:${argument}}));`;
+    const tools = restoreSession(mode, [
+      { raw: { type: 'custom_tool_call', name: 'exec', call_id: 'script', input: source } },
+      { raw: { type: 'custom_tool_call_output', call_id: 'script', output: 'Script completed\nOutput:\nfinished' } },
+    ]);
+    expect(tools).toMatchObject([{ name: 'exec', input: { raw: source } }]);
+  }
+  const supported = String.raw`text(await tools.exec_command({cmd:'printf \'ok\'\n'}));`;
+  const tools = restoreSession(mode, [
+    { raw: { type: 'custom_tool_call', name: 'exec', call_id: 'supported', input: supported } },
+    { raw: { type: 'custom_tool_call_output', call_id: 'supported', output: 'Script completed\nOutput:\nfinished' } },
+  ]);
+  expect(tools).toMatchObject([{ name: 'Bash', input: { command: "printf 'ok'\n" } }]);
+});
+
+
+describe.each(['live', 'history'] as const)('code-mode patch bindings in %s', mode => {
+  it.each(['reassigned binding', 'transformed initializer', 'transformed argument', 'shadowed parameter'] as const)('retains the original script for a %s', async kind => {
+    const original = '*** Begin Patch\n*** Add File: old.md\n+note\n*** End Patch';
+    const final = '*** Begin Patch\n*** Add File: new.md\n+note\n*** End Patch';
+    const source = kind === 'reassigned binding'
+      ? `let patch = ${JSON.stringify(original)}; patch = ${JSON.stringify(final)}; text(await tools.apply_patch(patch));`
+      : kind === 'transformed initializer'
+        ? `const patch = ${JSON.stringify(original)}.replace('old.md', 'new.md'); text(await tools.apply_patch(patch));`
+        : kind === 'transformed argument'
+          ? `text(await tools.apply_patch(${JSON.stringify(original)}.replace('old.md', 'new.md')));`
+          : `const patch = ${JSON.stringify(original)}; async function apply(patch) { return tools.apply_patch(patch); } text(await apply(${JSON.stringify(final)}));`;
+    const applied: string[] = [];
+    await runInNewContext(`(async () => { ${source} })()`, {
+      tools: { apply_patch: (patch: string) => { applied.push(patch); return 'Success'; } },
+      text: () => undefined,
+    });
+    expect(applied).toEqual([final]);
+    const tools = restoreSession(mode, [
+      { raw: { type: 'custom_tool_call', name: 'exec', call_id: 'changed-patch', input: source } },
+      { raw: { type: 'custom_tool_call_output', call_id: 'changed-patch', output: 'Script completed\nWall time 0.1 seconds\nOutput:\nSuccess' } },
+    ]);
+    expect(tools).toMatchObject([{ name: 'exec', input: { raw: source } }]);
+  });
 });
