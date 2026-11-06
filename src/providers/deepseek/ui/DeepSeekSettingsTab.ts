@@ -91,7 +91,16 @@ export function createDeepSeekSettingsTabRenderer(workspace: { cliResolver: Deep
       new AccessibleSetting(container).setName(t('settings.deepseek.preset')).setHeading();
       new AccessibleSetting(container).setName(t('settings.deepseek.codeMode.name')).setDesc(t('settings.deepseek.codeMode.desc'))
         .addToggle(toggle => {
-          toggle.setValue(settings().codeMode).onChange(async codeMode => { await host.mutateSettings(settings => { updateDeepSeekProviderSettings(settings, { codeMode }); }); });
+          let synchronizing = false;
+          toggle.setValue(settings().codeMode).onChange(async codeMode => {
+            if (synchronizing) return;
+            try {
+              await host.mutateSettings(settings => { updateDeepSeekProviderSettings(settings, { codeMode }); });
+            } finally {
+              synchronizing = true;
+              try { toggle.setValue(settings().codeMode); } finally { synchronizing = false; }
+            }
+          });
           toggle.toggleEl.setAttribute('aria-label', t('settings.deepseek.codeMode.name'));
         });
       const refreshPreset = renderPresetPlugins(container, host, settings);
