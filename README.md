@@ -19,7 +19,7 @@ An Obsidian plugin that embeds AI coding agents (Claude Code, Codex, Grok Build,
 
 ## Features & Usage
 
-Open Claudian interface from the ribbon icon or command palette. Everything works like your familiar coding agent, Claude Code, Codex, Grok Build, Antigravity CLI, OpenCode, Pi, and DeepSeek Harness — talk to the agent, and it reads, writes, edits, searches and run commands in your vault.
+Open Claudian interface from the ribbon icon or the **Claudian: Open chat view** command. Bind a hotkey to this command to open or reveal the chat and focus its input; running it again keeps the chat open. Everything works like your familiar coding agent, Claude Code, Codex, Grok Build, Antigravity CLI, OpenCode, Pi, and DeepSeek Harness — talk to the agent, and it reads, writes, edits, searches and run commands in your vault.
 
 **Inline Edit** — Select text or start at the cursor position + hotkey to edit directly in notes with word-level diff preview.
 

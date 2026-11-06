@@ -1679,7 +1679,7 @@ describe('ClaudianPlugin', () => {
   });
 
   describe('activateView', () => {
-    it('should reveal existing leaf if view already exists', async () => {
+    it('opens and focuses an existing chat repeatedly through its command', async () => {
       const focusActiveInput = vi.fn();
       const mockLeaf = {
         id: 'existing-leaf',
@@ -1691,10 +1691,12 @@ describe('ClaudianPlugin', () => {
       mockApp.workspace.getLeavesOfType.mockReturnValue([mockLeaf]);
 
       await plugin.onload();
-      await viewsOf(plugin).activateView();
+      const command = getRegisteredCommand('activate-view');
+      await command.callback();
+      await command.callback();
 
       expect(mockApp.workspace.revealLeaf).toHaveBeenCalledWith(mockLeaf);
-      expect(focusActiveInput).toHaveBeenCalledTimes(1);
+      expect(focusActiveInput).toHaveBeenCalledTimes(2);
     });
 
     it('focuses a newly revealed right-sidebar chat even when the root editor stays most recent', async () => {
@@ -1711,7 +1713,7 @@ describe('ClaudianPlugin', () => {
       mockApp.workspace.getMostRecentLeaf.mockReturnValue({ id: 'previous-editor-leaf' });
 
       await plugin.onload();
-      await viewsOf(plugin).activateView();
+      await getRegisteredCommand('activate-view').callback();
 
       expect(mockApp.workspace.getRightLeaf).toHaveBeenCalledWith(false);
       expect(mockRightLeaf.setViewState).toHaveBeenCalledWith({

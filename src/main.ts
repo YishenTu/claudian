@@ -136,6 +136,12 @@ export default class ClaudianPlugin extends Plugin {
         },
       });
 
+      this.addCommand({
+        id: 'activate-view',
+        name: 'Open chat view',
+        callback: () => this.views.activateView(),
+      });
+
       this.addCommand(createInlineEditCommand({
         host: this.featureHost,
         component: this,
