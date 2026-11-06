@@ -21,7 +21,7 @@ An Obsidian plugin that embeds AI coding agents (Claude Code, Codex, Grok Build,
 
 Open Claudian interface from the ribbon icon or command palette. Everything works like your familiar coding agent, Claude Code, Codex, Grok Build, Antigravity CLI, OpenCode, Pi, and DeepSeek Harness — talk to the agent, and it reads, writes, edits, searches and run commands in your vault.
 
-**Inline Edit** — Select text or start at the cursor position + hotkey to edit directly in notes with word-level diff preview.
+**Inline Edit** — Replace selected text or insert at the cursor, review the Markdown diff, and accept or reject the change. Choose a separate model for inline edits. See the [Inline edit guide](docs/inline-edit.md).
 
 **Projects** — Group sessions that work toward a shared goal. Every member shares the project's instructions and a memory file that the agents keep current, and the agents can cooperate by finding, reading and messaging each other. See the [Projects guide](docs/projects.md).
 
