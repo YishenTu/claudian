@@ -91,6 +91,10 @@ export class ComposerDropdownController {
 
   handleKeydown(event: KeyboardEvent): boolean {
     if (!this.view.isVisible() || event.isComposing) return false;
+    if (!this.#hasCurrentMatch()) {
+      this.hide();
+      return false;
+    }
     switch (event.key) {
       case 'ArrowDown':
         if (this.selectedIndex < 0) return false;
@@ -213,7 +217,22 @@ export class ComposerDropdownController {
     return -1;
   }
 
+  #hasCurrentMatch(): boolean {
+    const previous = this.activeMatch;
+    const cursor = this.inputEl.selectionStart;
+    if (!previous || cursor === null || cursor !== this.inputEl.selectionEnd) return false;
+    const current = this.activeSource?.match(this.inputEl.value, cursor);
+    return !!current && current.start === previous.start && current.end === previous.end
+      && current.query === previous.query && current.trigger === previous.trigger
+      && current.atInputStart === previous.atInputStart;
+  }
+
   #selectIndex(index: number): void {
+    // Caret-only moves do not emit input in either the rich editor or a native textarea.
+    if (!this.#hasCurrentMatch()) {
+      this.hide();
+      return;
+    }
     const item = this.items[index];
     const source = this.activeSource;
     const match = this.activeMatch;
