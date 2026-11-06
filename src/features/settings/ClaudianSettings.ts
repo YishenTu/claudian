@@ -26,6 +26,8 @@ import { frameSettingsGroups } from '@/shared/settings/SettingsGroups';
 
 type SettingsTabId = 'general' | 'providers' | 'skills';
 
+let nextContextValidationId = 0;
+
 export class ClaudianSettingTab extends PluginSettingTab {
   private readonly host: FeatureHost;
   private activeTab: SettingsTabId = 'general';
@@ -780,7 +782,12 @@ export class ClaudianSettingTab extends PluginSettingTab {
       });
       inputEl.setAttribute('aria-label', `Context window for ${modelId}`);
 
-      const validationEl = inputWrapper.createDiv({ cls: 'claudian-context-limit-validation claudian-hidden' });
+      const validationEl = inputWrapper.createDiv({
+        cls: 'claudian-context-limit-validation claudian-hidden',
+        attr: { id: `claudian-context-validation-${++nextContextValidationId}`, role: 'alert' },
+      });
+      inputEl.setAttribute('aria-describedby', validationEl.id);
+      inputEl.setAttribute('aria-invalid', 'false');
 
       const saveAlias = async (): Promise<void> => {
         const draft = aliasInputEl.value;
@@ -806,33 +813,32 @@ export class ClaudianSettingTab extends PluginSettingTab {
 
       const saveContextLimit = async (): Promise<void> => {
         const trimmed = inputEl.value.trim();
+        const parsed = trimmed ? parseContextLimit(trimmed) : null;
+        const error = trimmed && parsed === null ? t('settings.customContextLimits.invalid') : '';
+        validationEl.setText(error);
+        validationEl.toggleClass('claudian-hidden', !error);
+        inputEl.classList.toggle('claudian-input-error', Boolean(error));
+        inputEl.setAttribute('aria-invalid', String(Boolean(error)));
+        if (error) return;
 
-        if (!trimmed) {
-          validationEl.toggleClass('claudian-hidden', true);
-          inputEl.classList.remove('claudian-input-error');
-        } else {
-          const parsed = parseContextLimit(trimmed);
-          if (parsed === null) {
-            validationEl.setText(t('settings.customContextLimits.invalid'));
-            validationEl.toggleClass('claudian-hidden', false);
-            inputEl.classList.add('claudian-input-error');
-            return;
-          }
-
-          validationEl.toggleClass('claudian-hidden', true);
-          inputEl.classList.remove('claudian-input-error');
+        try {
+          await this.host.mutateSettings((settings) => {
+            settings.customContextLimits ??= {};
+            if (!trimmed) {
+              delete settings.customContextLimits[modelId];
+            } else {
+              settings.customContextLimits = Object.fromEntries([
+                ...Object.entries(settings.customContextLimits),
+                [modelId, parsed!],
+              ]);
+            }
+          });
+        } catch (error) {
+          const committed = error !== null && typeof error === 'object'
+            && 'committed' in error && error.committed === true;
+          new Notice(committed ? 'Context limit was saved, but settings refresh failed.'
+            : 'Could not save context limit. Try again.');
         }
-        await this.host.mutateSettings((settings) => {
-          settings.customContextLimits ??= {};
-          if (!trimmed) {
-            delete settings.customContextLimits[modelId];
-          } else {
-            settings.customContextLimits = Object.fromEntries([
-              ...Object.entries(settings.customContextLimits),
-              [modelId, parseContextLimit(trimmed)!],
-            ]);
-          }
-        });
       };
 
       inputEl.addEventListener('input', () => {

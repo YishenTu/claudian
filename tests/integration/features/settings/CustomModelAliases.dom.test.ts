@@ -155,3 +155,77 @@ it('retains a failed custom alias across rerender and allows retry', async () =>
     expect(persist).toHaveBeenCalledTimes(2);
   } finally { container.remove(); }
 });
+
+it('announces invalid context limits and clears that feedback after a valid correction', async () => {
+  const { settings, coordinator, host } = await createFeatureHostFixture({
+    settings: { customContextLimits: { 'custom-model': 64000 }, providerConfigs: { claude: {
+      visibleModels: ['custom-model'], environmentVariables: 'ANTHROPIC_MODEL=custom-model',
+    } } },
+  });
+  const tab = new ClaudianSettingTab(host.app, createObsidianPlugin(host.app), host);
+  const container = document.body.createDiv();
+  onTestFinished(() => container.remove());
+  tab['renderCustomContextLimits'](container, 'claude');
+  const input = within(container).getByRole<HTMLInputElement>('textbox', { name: 'Context window for custom-model' });
+  fireEvent.input(input, { target: { value: 'abc' } });
+  await coordinator.mutateConditionally(() => false);
+  expect(input.getAttribute('aria-invalid')).toBe('true');
+  const error = within(container).getByRole('alert');
+  expect(error.textContent).toContain('Invalid format');
+  expect(input.getAttribute('aria-describedby')?.split(' ')).toContain(error.id);
+  expect(settings.customContextLimits['custom-model']).toBe(64000);
+  expect(await axe(container)).toHaveNoViolations();
+  fireEvent.input(input, { target: { value: '128k' } });
+  await coordinator.mutateConditionally(() => false);
+  expect(settings.customContextLimits['custom-model']).toBe(128000);
+  expect(input.getAttribute('aria-invalid')).toBe('false');
+  expect(error.textContent).toBe('');
+});
+
+it('reports rejected context-limit writes and allows correction without an unhandled rejection', async () => {
+  const persist = vi.fn().mockRejectedValueOnce(new Error('Storage unavailable')).mockResolvedValue(undefined);
+  const { settings, coordinator, host, settingsStorage } = await createFeatureHostFixture({
+    settings: { customContextLimits: { 'custom-model': 64000 }, providerConfigs: { claude: {
+      visibleModels: ['custom-model'], environmentVariables: 'ANTHROPIC_MODEL=custom-model',
+    } } },
+    beforePersist: persist,
+  });
+  const tab = new ClaudianSettingTab(host.app, createObsidianPlugin(host.app), host);
+  const container = document.body.createDiv();
+  onTestFinished(() => container.remove());
+  tab['renderCustomContextLimits'](container, 'claude');
+  const input = within(container).getByRole<HTMLInputElement>('textbox', { name: 'Context window for custom-model' });
+  fireEvent.input(input, { target: { value: '128k' } });
+  await waitFor(() => expect(Notice).toHaveBeenCalledWith('Could not save context limit. Try again.'));
+  expect(settings.customContextLimits['custom-model']).toBe(64000);
+  expect(input.value).toBe('128k');
+  fireEvent.input(input, { target: { value: '256k' } });
+  await coordinator.mutateConditionally(() => false);
+  expect(settings.customContextLimits['custom-model']).toBe(256000);
+  expect((await settingsStorage.load()).customContextLimits['custom-model']).toBe(256000);
+  expect(persist).toHaveBeenCalledTimes(2);
+  expect(await axe(container)).toHaveNoViolations();
+});
+
+it('reports a committed context limit separately when settings publication fails', async () => {
+  const persist = vi.fn();
+  const { settings, coordinator, host, settingsStorage } = await createFeatureHostFixture({
+    settings: { customContextLimits: { 'custom-model': 64000 }, providerConfigs: { claude: {
+      visibleModels: ['custom-model'], environmentVariables: 'ANTHROPIC_MODEL=custom-model',
+    } } },
+    beforePersist: persist,
+    afterPublish: () => { throw new Error('Publication unavailable'); },
+  });
+  const tab = new ClaudianSettingTab(host.app, createObsidianPlugin(host.app), host);
+  const container = document.body.createDiv();
+  onTestFinished(() => container.remove());
+  tab['renderCustomContextLimits'](container, 'claude');
+  const input = within(container).getByRole<HTMLInputElement>('textbox', { name: 'Context window for custom-model' });
+  fireEvent.input(input, { target: { value: '128k' } });
+  await coordinator.mutateConditionally(() => false);
+  expect(settings.customContextLimits['custom-model']).toBe(128000);
+  expect((await settingsStorage.load()).customContextLimits['custom-model']).toBe(128000);
+  await waitFor(() => expect(Notice).toHaveBeenCalledWith('Context limit was saved, but settings refresh failed.'));
+  expect(input.value).toBe('128k');
+  expect(persist).toHaveBeenCalledTimes(1);
+});
