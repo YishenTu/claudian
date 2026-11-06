@@ -33,7 +33,7 @@ Open Claudian interface from the ribbon icon or command palette. Everything work
 
 **Cross-Session Messaging** — Let agents read, message, steer or interrupt other Claudian sessions, or start new ones on any provider. See the [Cross-session messaging guide](docs/cross-session-messaging.md).
 
-**Side Chat (`/side` or `/btw`)** — Explore a separate, temporary conversation with follow-ups and tools while keeping the main chat unchanged.
+**Side Chat (`/side` or `/btw`)** — Explore a separate, temporary conversation with follow-ups and tools while keeping the main chat unchanged. See the [Side chat guide](docs/side-chat.md).
 
 **MCP Servers** — Connect external tools through each coding agent's native CLI-managed MCP configuration.
 
