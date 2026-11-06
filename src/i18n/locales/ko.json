@@ -440,6 +440,7 @@
       "providers": "제공자",
       "skills": "스킬"
     },
+    "saveFailed": "설정을 저장하지 못했습니다",
     "providerSettings": {
       "unavailable": "제공자 설정을 사용할 수 없습니다.",
       "loadFailed": "제공자 설정을 불러올 수 없습니다: {message}"

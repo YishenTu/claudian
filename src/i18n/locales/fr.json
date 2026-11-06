@@ -440,6 +440,7 @@
       "providers": "Fournisseurs",
       "skills": "Skills"
     },
+    "saveFailed": "Impossible d’enregistrer les paramètres",
     "providerSettings": {
       "unavailable": "Les réglages du fournisseur ne sont pas disponibles.",
       "loadFailed": "Impossible de charger les réglages du fournisseur : {message}"

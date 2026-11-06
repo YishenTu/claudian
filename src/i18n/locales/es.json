@@ -440,6 +440,7 @@
       "providers": "Proveedores",
       "skills": "Skills"
     },
+    "saveFailed": "No se pudo guardar la configuración",
     "providerSettings": {
       "unavailable": "Los ajustes del proveedor no están disponibles.",
       "loadFailed": "No se pudieron cargar los ajustes del proveedor: {message}"

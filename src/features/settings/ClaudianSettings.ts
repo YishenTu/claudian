@@ -52,7 +52,7 @@ export class ClaudianSettingTab extends PluginSettingTab {
           || settings.mediaFolder !== mediaFolder;
       });
       if (promptChanged) await this.restartServiceForPromptChange();
-    }, () => { new Notice('Failed to save settings'); });
+    }, () => { new Notice(t('settings.saveFailed')); });
   }
 
   getSettingDefinitions(): SettingDefinitionItem[] {

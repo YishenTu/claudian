@@ -440,6 +440,7 @@
       "providers": "Provedores",
       "skills": "Skills"
     },
+    "saveFailed": "Falha ao salvar as configurações",
     "providerSettings": {
       "unavailable": "As configurações do provedor não estão disponíveis.",
       "loadFailed": "Não foi possível carregar as configurações do provedor: {message}"
