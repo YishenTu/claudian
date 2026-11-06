@@ -348,6 +348,25 @@
       "modeSteer": "Steer into running turn",
       "modeInterrupt": "Interrupt current work"
     },
+    "modelPicker": {
+      "options": "Model options",
+      "provider": "Provider",
+      "modelLabel": "Model: {label}",
+      "unavailable": "Model unavailable",
+      "setup": "Set up models",
+      "guidance": "Choose an enabled model in provider settings. If discovery failed, refresh the model list.",
+      "model": "Model",
+      "empty": "No models available. Check provider settings and refresh the model list if discovery failed.",
+      "changeModelFailed": "Failed to change model",
+      "defaultEffort": "Default",
+      "effortLabel": "effort {label}",
+      "thinking": "Thinking",
+      "changeEffortFailed": "Failed to change effort level",
+      "fastActive": "fast mode on",
+      "fast": "Fast",
+      "fastLabel": "Fast mode: {label}",
+      "changeTierFailed": "Failed to change service tier"
+    },
     "navigation": {
       "scrollToTop": "Scroll to top",
       "previousMessage": "Previous message",

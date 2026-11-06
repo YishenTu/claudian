@@ -348,6 +348,25 @@
       "modeSteer": "Orienter le tour en cours",
       "modeInterrupt": "Interrompre le travail en cours"
     },
+    "modelPicker": {
+      "options": "Options du modèle",
+      "provider": "Fournisseur",
+      "modelLabel": "Modèle : {label}",
+      "unavailable": "Modèle indisponible",
+      "setup": "Configurer les modèles",
+      "guidance": "Choisissez un modèle activé dans les paramètres du fournisseur. Si la détection a échoué, actualisez la liste des modèles.",
+      "model": "Modèle",
+      "empty": "Aucun modèle disponible. Vérifiez les paramètres du fournisseur et actualisez la liste des modèles si la détection a échoué.",
+      "changeModelFailed": "Impossible de changer de modèle",
+      "defaultEffort": "Par défaut",
+      "effortLabel": "effort de réflexion {label}",
+      "thinking": "Réflexion",
+      "changeEffortFailed": "Impossible de modifier le niveau de réflexion",
+      "fastActive": "mode rapide activé",
+      "fast": "Rapide",
+      "fastLabel": "Mode rapide : {label}",
+      "changeTierFailed": "Impossible de modifier le niveau de service"
+    },
     "navigation": {
       "scrollToTop": "Défiler vers le haut",
       "previousMessage": "Message précédent",

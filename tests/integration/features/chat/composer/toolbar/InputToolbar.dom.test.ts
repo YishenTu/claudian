@@ -3,13 +3,14 @@
 import '@/providers';
 
 import { axe } from '@test/helpers/accessibility';
-import { fireEvent, within } from '@testing-library/dom';
-import { setIcon } from 'obsidian';
+import { fireEvent, waitFor, within } from '@testing-library/dom';
+import { Notice, setIcon } from 'obsidian';
 import type { Mock } from 'vitest';
 
 import type { ProviderPermissionModeOption } from '@/core/providers/types';
 import { createInputToolbar } from '@/features/chat/composer/toolbar/InputToolbar';
 import type { ToolbarCallbacks } from '@/features/chat/composer/toolbar/types';
+import { setLocale } from '@/i18n/i18n';
 import { claudeChatUIConfig } from '@/providers/claude/ui/ClaudeChatUIConfig';
 import { codexChatUIConfig } from '@/providers/codex/ui/CodexChatUIConfig';
 
@@ -91,13 +92,19 @@ function renderToolbar(fixture: FixtureOptions = {}) {
   const toolbarEl = host.createDiv({ cls: 'claudian-input-toolbar' });
   const outsideEl = host.createEl('button', { text: 'Outside', attr: { type: 'button' } });
   const toolbar = createInputToolbar(toolbarEl, callbacks);
+  mountedToolbars.push(toolbar);
   const ui = within(toolbarEl);
   return { callbacks, host, outsideEl, settings, toolbar, toolbarEl, ui, uiConfig };
 }
 
+const mountedToolbars: ReturnType<typeof createInputToolbar>[] = [];
+
 const flush = () => new Promise<void>(resolve => setTimeout(resolve, 0));
 
 afterEach(() => {
+  for (const toolbar of mountedToolbars.splice(0)) toolbar.menus.destroy();
+  setLocale('en');
+  vi.mocked(Notice).mockClear();
   document.body.replaceChildren();
 });
 
@@ -580,4 +587,82 @@ it('tears down an open menu when the toolbar is destroyed', () => {
   fireEvent.click(button);
   fireEvent.pointerDown(outsideEl);
   expect(ui.queryByRole('dialog')).toBeNull();
+});
+
+
+describe('localized model menu', () => {
+  beforeEach(() => { setLocale('zh-CN'); });
+
+  it('localizes the operated model, thinking and fast sections while preserving native values', async () => {
+    const { callbacks, host, settings, ui } = renderToolbar({ serviceTier: true });
+    const button = ui.getByRole('button', { name: '模型：Sonnet, 思考强度 High' });
+    fireEvent.click(button);
+    expect(ui.getByRole('dialog', { name: '模型选项' })).toBeDefined();
+    const models = within(ui.getByRole('listbox', { name: '模型' }));
+    fireEvent.click(models.getByRole('option', { name: 'Opus' }));
+    await waitFor(() => expect(button.getAttribute('aria-label')).toBe('模型：Opus, 思考强度 High'));
+    expect(callbacks.onModelChange).toHaveBeenCalledWith('opus');
+    expect(settings.model).toBe('opus');
+    fireEvent.click(within(ui.getByRole('listbox', { name: '思考' })).getByRole('option', { name: 'Low' }));
+    await waitFor(() => expect(button.getAttribute('aria-label')).toBe('模型：Opus, 思考强度 Low'));
+    expect(callbacks.onEffortLevelChange).toHaveBeenCalledWith('low');
+    expect(settings.reasoning).toBe('low');
+    fireEvent.click(ui.getByRole('switch', { name: '快速' }));
+    await waitFor(() => expect(ui.getByRole('switch', { name: '快速', checked: true })).toBeDefined());
+    expect(callbacks.onServiceTierChange).toHaveBeenCalledWith('fast');
+    expect(settings.serviceTier).toBe('fast');
+    expect(button.getAttribute('aria-label')).toBe('模型：Opus, 思考强度 Low, 快速模式已开启');
+    expect(ui.getByRole('switch', { name: '快速' }).title).toBe('快速模式：Fast\n1.5x speed, 2x credits');
+    expect(ui.getByRole('dialog', { name: '模型选项' })).toBeDefined();
+    expect((await axe(host)).violations).toEqual([]);
+    fireEvent.click(ui.getByRole('switch', { name: '快速' }));
+    await waitFor(() => expect(ui.getByRole('switch', { name: '快速', checked: false })).toBeDefined());
+    expect(callbacks.onServiceTierChange).toHaveBeenLastCalledWith('default');
+    expect(settings.serviceTier).toBe('default');
+  });
+
+  it('localizes missing-model guidance and missing-reasoning fallback', () => {
+    const unavailable = renderToolbar({ settings: { model: 'retired', reasoning: null } });
+    const button = unavailable.ui.getByRole('button', { name: '模型不可用, 思考强度 默认' });
+    expect(button.title).toBe('请在提供商设置中选择已启用的模型。如果发现失败，请刷新模型列表。');
+    fireEvent.click(button);
+    expect(within(unavailable.ui.getByRole('listbox', { name: '模型' })).queryAllByRole('option', { selected: true })).toEqual([]);
+    const empty = renderToolbar({ settings: { model: '' }, models: [] });
+    fireEvent.click(empty.ui.getByRole('button', { name: '设置模型, 思考强度 High' }));
+    expect(empty.ui.getByRole('status').textContent).toBe('没有可用模型。请检查提供商设置；如果发现失败，请刷新模型列表。');
+  });
+
+  it('preserves same-spelled provider, model, group, reasoning and description data', () => {
+    const { ui } = renderToolbar({
+      models: [{ value: 'sonnet', label: 'Model unavailable', providerId: 'native', providerLabel: 'Default', group: 'Fast', description: 'Model unavailable' }],
+      reasoningOptions: [{ value: 'low', label: 'Fast' }, { value: 'high', label: 'Default', description: 'Fast' }],
+    });
+    fireEvent.click(ui.getByRole('button', { name: '模型：Model unavailable, 思考强度 Default' }));
+    expect(within(ui.getByRole('tablist', { name: '提供商' })).getByRole('tab', { name: 'Default' })).toBeDefined();
+    const option = within(ui.getByRole('group', { name: 'Fast' })).getByRole('option', { name: 'Model unavailable' });
+    expect(option.title).toBe('Model unavailable');
+    const levels = within(ui.getByRole('listbox', { name: '思考' }));
+    expect(levels.getByRole('option', { name: 'Default' }).getAttribute('aria-description')).toBe('Fast');
+    expect(levels.getByRole('option', { name: 'Fast' })).toBeDefined();
+  });
+
+  it.each([
+    ['model', 'onModelChange', 'option', 'Opus', '无法切换模型'],
+    ['effort', 'onEffortLevelChange', 'option', 'Low', '无法更改思考强度'],
+    ['tier', 'onServiceTierChange', 'switch', '快速', '无法更改服务层级'],
+  ] as const)('reports a rejected %s action without changing the current choice', async (_case, callback, role, name, message) => {
+    const { callbacks, settings, ui } = renderToolbar({ serviceTier: true });
+    vi.mocked(callbacks[callback]).mockRejectedValueOnce(new Error('external settings rejected'));
+    const button = ui.getByRole('button', { name: '模型：Sonnet, 思考强度 High' });
+    fireEvent.click(button);
+    fireEvent.click(ui.getByRole(role, { name }));
+    await waitFor(() => expect(Notice).toHaveBeenCalledWith(message));
+    expect(callbacks[callback]).toHaveBeenCalledTimes(1);
+    expect([settings.model, settings.reasoning, settings.serviceTier]).toEqual(['sonnet', 'high', 'default']);
+    expect(button.getAttribute('aria-label')).toBe('模型：Sonnet, 思考强度 High');
+    expect(ui.getByRole('option', { name: 'Sonnet', selected: true })).toBeDefined();
+    expect(ui.getByRole('option', { name: 'High', selected: true })).toBeDefined();
+    expect(ui.getByRole('switch', { name: '快速', checked: false })).toBeDefined();
+    expect(ui.getByRole('dialog', { name: '模型选项' })).toBeDefined();
+  });
 });
