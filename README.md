@@ -35,6 +35,8 @@ Open Claudian interface from the ribbon icon or command palette. Everything work
 
 **Side Chat (`/side` or `/btw`)** — Explore a separate, temporary conversation with follow-ups and tools while keeping the main chat unchanged.
 
+**Environment Snippets** — Save reusable runtime configurations and insert them into shared or provider-specific environment settings. See the [Environment snippets guide](docs/environment-snippets.md).
+
 **MCP Servers** — Connect external tools through each coding agent's native CLI-managed MCP configuration.
 
 **Tabs & Session Management** — Use multiple tabs in [single-pane mode](assets/main-chat-single-pane.png) or a persistent session manager beside the chat in [dual-pane mode](assets/main-chat-dual-pane.png).
