@@ -252,6 +252,11 @@
       "completed": "{seconds}秒間思考しました",
       "label": "思考"
     },
+    "contextUsage": {
+      "label": "コンテキスト使用量",
+      "details": "コンテキスト使用量: {details}",
+      "nearLimit": "（上限に近づいています。続行するには {command} を実行してください）"
+    },
     "suggestions": {
       "loading": "読み込み中…",
       "noMatches": "一致する項目なし",
