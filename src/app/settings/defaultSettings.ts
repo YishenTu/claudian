@@ -22,6 +22,7 @@ export const DEFAULT_CLAUDIAN_SETTINGS: ClaudianSettings = {
   titleGenerationLocale: '',
   titleGenerationModel: '',
 
+  autoLinkActiveNote: true,
   excludedTags: [],
   mediaFolder: '',
   systemPrompt: '',
