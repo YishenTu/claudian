@@ -348,6 +348,25 @@
       "modeSteer": "In laufende Runde einsteuern",
       "modeInterrupt": "Aktuelle Arbeit unterbrechen"
     },
+    "modelPicker": {
+      "options": "Modelloptionen",
+      "provider": "Anbieter",
+      "modelLabel": "Modell: {label}",
+      "unavailable": "Modell nicht verfügbar",
+      "setup": "Modelle einrichten",
+      "guidance": "Wähle in den Anbietereinstellungen ein aktiviertes Modell aus. Falls die Erkennung fehlgeschlagen ist, aktualisiere die Modellliste.",
+      "model": "Modell",
+      "empty": "Keine Modelle verfügbar. Prüfe die Anbietereinstellungen und aktualisiere die Modellliste, falls die Erkennung fehlgeschlagen ist.",
+      "changeModelFailed": "Modell konnte nicht geändert werden",
+      "defaultEffort": "Standard",
+      "effortLabel": "Denkaufwand {label}",
+      "thinking": "Denken",
+      "changeEffortFailed": "Denkaufwand konnte nicht geändert werden",
+      "fastActive": "Schnellmodus aktiviert",
+      "fast": "Schnell",
+      "fastLabel": "Schnellmodus: {label}",
+      "changeTierFailed": "Servicestufe konnte nicht geändert werden"
+    },
     "navigation": {
       "scrollToTop": "Nach oben scrollen",
       "previousMessage": "Vorherige Nachricht",
