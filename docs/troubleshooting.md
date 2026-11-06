@@ -64,6 +64,12 @@ Use `ANTHROPIC_AUTH_TOKEN=` instead when that is the inherited credential. Overr
 
 When asking for help, share the variable names involved rather than their secret values.
 
+## Antigravity setup and session behavior
+
+For native sign-in, model discovery, instructions that stay fixed in an existing
+session, and results that appear only after reopening, see the
+[Antigravity guide](antigravity.md).
+
 ## More help
 
 For provider-specific installation and configuration guidance, refer to the provider documentation linked in the [Requirements](../README.md#requirements) section. If you have a feature request or run into a bug, please [submit a GitHub issue](https://github.com/YishenTu/claudian/issues).
