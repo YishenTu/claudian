@@ -57,6 +57,10 @@
       "copyAriaLabel": "Копировать код {language}",
       "copied": "Скопировано!"
     },
+    "mermaid": {
+      "diagramAlt": "Диаграмма Mermaid",
+      "showSource": "Показать исходный код диаграммы"
+    },
     "sideChat": {
       "title": "Побочный чат",
       "collapse": "Свернуть",

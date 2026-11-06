@@ -57,6 +57,10 @@
       "copyAriaLabel": "复制 {language} 代码",
       "copied": "已复制！"
     },
+    "mermaid": {
+      "diagramAlt": "Mermaid 图表",
+      "showSource": "显示图表源码"
+    },
     "sideChat": {
       "title": "侧边对话",
       "collapse": "收起",

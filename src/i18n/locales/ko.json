@@ -57,6 +57,10 @@
       "copyAriaLabel": "{language} 코드 복사",
       "copied": "복사됨!"
     },
+    "mermaid": {
+      "diagramAlt": "Mermaid 다이어그램",
+      "showSource": "다이어그램 소스 보기"
+    },
     "sideChat": {
       "title": "사이드 채팅",
       "collapse": "접기",

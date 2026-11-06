@@ -5,14 +5,16 @@ import { fireEvent, within } from '@testing-library/dom';
 import { Component, loadMermaid, MarkdownRenderer } from 'obsidian';
 
 import { MessageRenderer } from '@/features/chat/rendering/MessageRenderer';
+import { setLocale } from '@/i18n/i18n';
 
 const source = 'graph TD\nA --> B\n';
-const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 50"><path d="M0 0L100 50"/></svg>';
+const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 50"><text>Show diagram source</text><path d="M0 0L100 50"/></svg>';
 const render = vi.fn();
 let renderer: MessageRenderer;
 let host: HTMLElement;
 
 beforeEach(async () => {
+  setLocale('en');
   document.body.replaceChildren();
   host = document.body.createDiv();
   renderer = new MessageRenderer(await createChatFeatureHost({ settings: { mediaFolder: '' } }),
@@ -27,30 +29,94 @@ beforeEach(async () => {
     pre.createEl('button', { text: 'Copy', cls: 'copy-code-button', attr: { type: 'button' } });
   });
 });
-afterEach(() => renderer.dispose());
+afterEach(() => {
+  renderer.dispose();
+  document.getSelection()?.removeAllRanges();
+  document.body.replaceChildren();
+  setLocale('en');
+});
 
-it.each(['mermaid', 'Mermaid', 'MERMAID'])('renders %s directly and retains accessible source', async language => {
-  await renderer.renderContent(host, `\`\`\`${language}\n${source}\`\`\``);
-  expect(within(host).getByRole('img', { name: 'Mermaid diagram' }).getAttribute('src')).toContain('data:image/svg+xml');
-  expect(render).toHaveBeenCalledWith(expect.any(String), source, expect.any(HTMLElement));
-  const toggle = within(host).getByRole('button', { name: 'Show diagram source' });
-  expect(toggle.getAttribute('type')).toBe('button');
-  expect(toggle.hasAttribute('title')).toBe(false);
-  expect(within(host).queryByRole('button', { name: 'Copy' })).toBeNull();
-  toggle.focus();
-  expect(document.activeElement).toBe(toggle);
-  fireEvent.click(toggle);
-  expect(within(host).queryByRole('img')).toBeNull();
-  expect(within(host).queryByRole('button', { name: 'Show diagram' })).toBeNull();
-  expect(document.getSelection()?.toString()).toBe(source);
-  expect(within(host).getByRole('button', { name: 'Copy' })).toBeDefined();
-  expect((await axe(host)).violations).toEqual([]);
-  const outside = document.body.createEl('button', { text: 'Outside' });
-  outside.focus();
-  expect(within(host).getByRole('img', { name: 'Mermaid diagram' })).toBeDefined();
-  expect(within(host).queryByRole('button', { name: 'Copy' })).toBeNull();
-  expect((await axe(host)).violations).toEqual([]);
-  expect(vi.mocked(MarkdownRenderer.render).mock.calls.at(-1)?.[1]).not.toMatch(/```mermaid/i);
+it('renders diagrams and retains accessible source in the selected interface language', async () => {
+  const originalClipboard = Object.getOwnPropertyDescriptor(navigator, 'clipboard');
+  let clipboardWrite = Promise.resolve();
+  const writeText = vi.fn((_text: string) => {
+    clipboardWrite = Promise.resolve();
+    return clipboardWrite;
+  });
+  Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
+  try {
+    // Fresh renders on the same imported modules catch a cached first-locale label.
+    for (const { locale, language, diagramName, sourceName, copyName, copied } of [
+      { locale: 'en', language: 'mermaid', diagramName: 'Mermaid diagram', sourceName: 'Show diagram source', copyName: 'Copy mermaid code', copied: 'Copied!' },
+      { locale: 'zh-CN', language: 'mermaid', diagramName: 'Mermaid 图表', sourceName: '显示图表源码', copyName: '复制 mermaid 代码', copied: '已复制！' },
+      { locale: 'en', language: 'mermaid', diagramName: 'Mermaid diagram', sourceName: 'Show diagram source', copyName: 'Copy mermaid code', copied: 'Copied!' },
+      { locale: 'en', language: 'Mermaid', diagramName: 'Mermaid diagram', sourceName: 'Show diagram source', copyName: 'Copy Mermaid code', copied: 'Copied!' },
+      { locale: 'en', language: 'MERMAID', diagramName: 'Mermaid diagram', sourceName: 'Show diagram source', copyName: 'Copy MERMAID code', copied: 'Copied!' },
+    ] as const) {
+      setLocale(locale);
+      await renderer.renderContent(host, `\`\`\`${language}\n${source}\`\`\``);
+      const image = within(host).getByRole('img', { name: diagramName });
+      const src = image.getAttribute('src')!;
+      expect(src).toContain('data:image/svg+xml');
+      expect(decodeURIComponent(src.slice(src.indexOf(',') + 1))).toBe(svg);
+      expect(render).toHaveBeenLastCalledWith(expect.stringMatching(/^claudian-mermaid-\d+$/), source, expect.any(HTMLElement));
+      const toggle = within(host).getByRole('button', { name: sourceName });
+      expect(toggle.getAttribute('type')).toBe('button');
+      expect(toggle.hasAttribute('title')).toBe(false);
+      expect(within(host).queryByRole('button', { name: 'Copy' })).toBeNull();
+      toggle.focus();
+      expect(document.activeElement).toBe(toggle);
+      fireEvent.click(toggle);
+      expect(within(host).queryByRole('img')).toBeNull();
+      expect(within(host).queryByRole('button', { name: 'Show diagram' })).toBeNull();
+      const code = host.querySelector('code')!;
+      expect(code.textContent).toBe(source);
+      expect(code.classList.contains(`language-${language}`)).toBe(true);
+      expect(document.activeElement?.contains(code)).toBe(true);
+      expect(document.getSelection()?.toString()).toBe(source);
+      // The host's native Copy fixture is labelled/focusable, with no clipboard handler.
+      const hostCopy = within(host).getByRole('button', { name: 'Copy' });
+      hostCopy.focus();
+      expect(document.activeElement).toBe(hostCopy);
+      expect(within(host).queryByRole('img')).toBeNull();
+      const copy = within(host).getByRole('button', { name: copyName });
+      expect(copy.textContent).toBe(language);
+      copy.focus();
+      vi.useFakeTimers();
+      try {
+        fireEvent.click(copy);
+        await clipboardWrite;
+        expect(writeText).toHaveBeenLastCalledWith(source);
+        expect(within(host).getByRole('button', { name: copied })).toBe(copy);
+        expect(within(host).getByRole('status').textContent).toBe(copied);
+        vi.advanceTimersByTime(1_499);
+        expect(within(host).getByRole('button', { name: copied })).toBe(copy);
+        vi.advanceTimersByTime(1);
+        expect(within(host).getByRole('button', { name: copyName })).toBe(copy);
+        expect(copy.textContent).toBe(language);
+        expect(within(host).getByRole('status').textContent).toBe('');
+      } finally {
+        await clipboardWrite;
+        vi.runOnlyPendingTimers();
+        vi.useRealTimers();
+      }
+      expect((await axe(host)).violations).toEqual([]);
+      const outside = document.body.createEl('button', { text: 'Outside', attr: { type: 'button' } });
+      outside.focus();
+      expect(within(host).getByRole('img', { name: diagramName })).toBe(image);
+      expect(within(host).getByRole('button', { name: sourceName })).toBe(toggle);
+      expect(within(host).queryByRole('button', { name: 'Copy' })).toBeNull();
+      expect(within(host).queryByRole('button', { name: copyName })).toBeNull();
+      expect(document.getSelection()?.toString()).toBe('');
+      expect((await axe(host)).violations).toEqual([]);
+      expect(vi.mocked(MarkdownRenderer.render).mock.calls.at(-1)?.[1]).not.toMatch(/```mermaid/i);
+      outside.remove();
+    }
+  } finally {
+    await clipboardWrite;
+    if (originalClipboard) Object.defineProperty(navigator, 'clipboard', originalClipboard);
+    else Reflect.deleteProperty(navigator, 'clipboard');
+  }
 });
 
 it('renders HTML-serialized label markup as a well-formed SVG image', async () => {
