@@ -18,6 +18,7 @@ let linkedContentSelectorSequence = 0;
 
 export class LinkedContentSelector {
   private readonly prefixId = `claudian-linked-content-prefix-${++linkedContentSelectorSequence}`;
+  private readonly listId = `${this.prefixId}-list`;
   private selectorRow: HTMLElement | null = null;
   private selectorButton: HTMLButtonElement | null = null;
   private pickerEl: HTMLElement | null = null;
@@ -98,6 +99,8 @@ export class LinkedContentSelector {
         type: 'text',
         'aria-labelledby': this.prefixId,
         autocomplete: 'off',
+        'aria-autocomplete': 'list',
+        'aria-haspopup': 'listbox',
       },
     });
     this.searchInput.addEventListener('input', this.handleSearchInput);
@@ -189,7 +192,9 @@ export class LinkedContentSelector {
     this.#clearPickerResults();
     this.#showPickerResults();
     const listEl = this.pickerEl.createDiv({ cls: 'claudian-linked-content-picker-list' });
+    listEl.setAttribute('id', this.listId);
     listEl.setAttribute('role', 'listbox');
+    this.searchInput?.setAttribute('aria-controls', this.listId);
     listEl.setAttribute('aria-label', t('chat.linkedContent.choices'));
 
     if (this.filteredItems.length === 0) {
@@ -206,11 +211,13 @@ export class LinkedContentSelector {
         attr: {
           type: 'button',
           role: 'option',
+          id: `${this.listId}-option-${index}`,
           'aria-selected': String(index === this.activeIndex),
           'aria-label': `${item.label}. ${item.detail}`,
         },
       });
       optionEl.toggleClass('is-selected', index === this.activeIndex);
+      if (index === this.activeIndex) this.searchInput?.setAttribute('aria-activedescendant', optionEl.id);
       const iconEl = optionEl.createSpan({
         cls: 'claudian-composer-dropdown-icon claudian-linked-content-picker-option-icon',
       });
@@ -274,6 +281,8 @@ export class LinkedContentSelector {
   }
 
   #clearPickerResults(): void {
+    this.searchInput?.removeAttribute('aria-activedescendant');
+    this.searchInput?.removeAttribute('aria-controls');
     if (!this.pickerEl) return;
     this.#clearOptionListeners();
     this.pickerEl.querySelector('.claudian-linked-content-picker-list')?.remove();
