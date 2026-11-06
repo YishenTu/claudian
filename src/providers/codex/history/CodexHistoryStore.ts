@@ -287,26 +287,26 @@ function appendUniqueChunk(chunks: string[], value: string): void {
   chunks.push(trimmed);
 }
 
+/** Native Markdown whitespace carries code indentation and hard line breaks. */
 function appendOrderedTextChunk(
   bubble: CodexAssistantBubble,
   type: 'text' | 'thinking',
   value: string,
 ): void {
-  const trimmed = value.trim();
-  if (!trimmed) return;
+  if (!value.trim()) return;
 
   const chunks = type === 'text' ? bubble.contentChunks : bubble.thinkingChunks;
   const lastBlock = bubble.contentBlocks[bubble.contentBlocks.length - 1];
   if (lastBlock?.type === type) {
-    if (chunks[chunks.length - 1] === trimmed) return;
+    if (chunks[chunks.length - 1] === value) return;
 
-    chunks.push(trimmed);
-    lastBlock.content = `${lastBlock.content}\n\n${trimmed}`;
+    chunks.push(value);
+    lastBlock.content = `${lastBlock.content}\n\n${value}`;
     return;
   }
 
-  chunks.push(trimmed);
-  bubble.contentBlocks.push({ type, content: trimmed });
+  chunks.push(value);
+  bubble.contentBlocks.push({ type, content: value });
 }
 
 function appendCitationBlock(bubble: CodexAssistantBubble, value: unknown): void {
@@ -338,20 +338,18 @@ function areCitationGroupsEqual(left: CitationGroup, right: CitationGroup): bool
 function appendPersistedAssistantText(
   bubble: CodexAssistantBubble,
   value: string,
+  hasCitations = false,
 ): void {
-  const trimmed = value.trim();
-  if (!trimmed) return;
+  if (!value.trim()) return;
 
   const lastBlock = bubble.contentBlocks[bubble.contentBlocks.length - 1];
   const previousBlock = bubble.contentBlocks[bubble.contentBlocks.length - 2];
-  if (
-    lastBlock?.type === 'citations'
-    && previousBlock?.type === 'text'
-    && previousBlock.content.trim() === trimmed
-  ) {
+  const citationText = hasCitations && lastBlock?.type === 'text' ? lastBlock
+    : lastBlock?.type === 'citations' && previousBlock?.type === 'text' ? previousBlock : undefined;
+  if (citationText?.content.trimEnd() === value.trimEnd()) {
     return;
   }
-  appendOrderedTextChunk(bubble, 'text', trimmed);
+  appendOrderedTextChunk(bubble, 'text', value);
 }
 
 function appendUserChunk(turn: CodexTurnState, value: string, timestamp: number): void {
@@ -1217,15 +1215,17 @@ function processEventMsg(
       const turn = ensureTurn(ctx.turns, ctx.turnOrder, nextTurnId(ctx), ctx.currentTurnId, timestamp);
       const bubble = ensureAssistantBubble(turn, timestamp);
       const msg = payload.message;
+      const citation = payload.memory_citation ?? payload.memoryCitation;
       if (typeof msg === 'string') {
         appendPersistedAssistantText(
           bubble,
           stripCodexMemoryCitationMarkup(msg),
+          normalizeCodexMemoryCitation(citation) !== null,
         );
       }
       appendCitationBlock(
         bubble,
-        payload.memory_citation ?? payload.memoryCitation,
+        citation,
       );
       break;
     }
@@ -1329,7 +1329,7 @@ function flushBubbleTurnMessages(
     const msg: ChatMessage = {
       id: `codex-msg-${msgIndex}`,
       role: 'assistant',
-      content: contentText.trim(),
+      content: contentText,
       timestamp: bubble.startedAt || turn.startedAt || Date.now(),
       toolCalls: hasToolCalls ? bubble.toolCalls : undefined,
       contentBlocks: contentBlocks.length > 0 ? contentBlocks : undefined,
