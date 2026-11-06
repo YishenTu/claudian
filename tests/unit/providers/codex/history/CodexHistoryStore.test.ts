@@ -281,7 +281,7 @@ describe('CodexHistoryStore', () => {
       ]);
     });
 
-    it('replays memory citations without exposing raw markup or duplicating assistant text', () => {
+    it.each([false, true])('replays memory citations without exposing raw markup or duplicating assistant text (raw first: %s)', rawFirst => {
       const baseEntries = [
         { path: 'MEMORY.md', lineStart: 10, lineEnd: 12, note: 'Used project conventions' },
         { path: 'notes/build.md', lineStart: 30, lineEnd: 35, note: 'Build instructions' },
@@ -343,13 +343,15 @@ describe('CodexHistoryStore', () => {
         }),
       ].join('\n');
 
-      const messages = parseCodexSessionContent(content);
+      const records = content.split('\n');
+      if (rawFirst) [records[1], records[2]] = [records[2], records[1]];
+      const messages = parseCodexSessionContent(records.join('\n'));
       const assistantMessage = messages.find(message => message.role === 'assistant');
 
-      expect(assistantMessage?.content).toBe('Answer');
+      expect(assistantMessage?.content).toBe(rawFirst ? 'Answer\n' : 'Answer');
       expect(assistantMessage?.content).not.toContain('oai-mem-citation');
       expect(assistantMessage?.contentBlocks).toEqual([
-        { type: 'text', content: 'Answer' },
+        { type: 'text', content: rawFirst ? 'Answer\n' : 'Answer' },
         ...[baseEntries, ...differentGroups.flatMap(entries => [entries, baseEntries])]
           .map(entries => ({ type: 'citations', citations: { kind: 'memory', entries } })),
       ]);
