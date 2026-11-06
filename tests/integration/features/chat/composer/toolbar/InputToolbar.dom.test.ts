@@ -3,15 +3,20 @@
 import '@/providers';
 
 import { axe } from '@test/helpers/accessibility';
-import { fireEvent, within } from '@testing-library/dom';
+import { fireEvent, waitFor, within } from '@testing-library/dom';
 import { setIcon } from 'obsidian';
 import type { Mock } from 'vitest';
 
-import type { ProviderPermissionModeOption } from '@/core/providers/types';
+import type { ProviderChatUIConfig, ProviderPermissionModeOption } from '@/core/providers/types';
 import { createInputToolbar } from '@/features/chat/composer/toolbar/InputToolbar';
 import type { ToolbarCallbacks } from '@/features/chat/composer/toolbar/types';
+import { setLocale } from '@/i18n/i18n';
+import { antigravityChatUIConfig } from '@/providers/antigravity/ui/AntigravityChatUIConfig';
 import { claudeChatUIConfig } from '@/providers/claude/ui/ClaudeChatUIConfig';
 import { codexChatUIConfig } from '@/providers/codex/ui/CodexChatUIConfig';
+import { deepseekChatUIConfig } from '@/providers/deepseek/ui/DeepSeekChatUIConfig';
+import { grokChatUIConfig } from '@/providers/grok/ui/GrokChatUIConfig';
+import { opencodeChatUIConfig } from '@/providers/opencode/ui/OpencodeChatUIConfig';
 
 // The visibility utility from styles, so role queries skip controls the toolbar hides.
 const hiddenStyle = document.head.appendChild(document.createElement('style'));
@@ -31,10 +36,13 @@ interface FixtureOptions {
   reasoningControl?: string;
   permissionToggle?: boolean;
   permissionModes?: readonly ProviderPermissionModeOption[];
+  getPermissionModeOptions?: NonNullable<ProviderChatUIConfig['getPermissionModeOptions']>;
   serviceTier?: boolean;
   modeSelector?: boolean;
   providerIcon?: Record<string, unknown>;
 }
+
+const mountedToolbars: ReturnType<typeof createInputToolbar>[] = [];
 
 function renderToolbar(fixture: FixtureOptions = {}) {
   const settings: Record<string, unknown> = {
@@ -54,7 +62,9 @@ function renderToolbar(fixture: FixtureOptions = {}) {
     ]),
     getReasoningOptions: () => fixture.reasoningOptions ?? EFFORT_OPTIONS,
     getDefaultReasoningValue: () => 'high',
-    getPermissionModeOptions: () => (fixture.permissionToggle === false ? null : fixture.permissionModes ?? [
+    getPermissionModeOptions: (current = settings) => fixture.getPermissionModeOptions
+      ? fixture.getPermissionModeOptions(current)
+      : (fixture.permissionToggle === false ? null : fixture.permissionModes ?? [
       { value: 'normal', label: 'Safe' },
       { value: 'yolo', label: 'YOLO', bypassesApprovals: true },
     ]),
@@ -91,6 +101,7 @@ function renderToolbar(fixture: FixtureOptions = {}) {
   const toolbarEl = host.createDiv({ cls: 'claudian-input-toolbar' });
   const outsideEl = host.createEl('button', { text: 'Outside', attr: { type: 'button' } });
   const toolbar = createInputToolbar(toolbarEl, callbacks);
+  mountedToolbars.push(toolbar);
   const ui = within(toolbarEl);
   return { callbacks, host, outsideEl, settings, toolbar, toolbarEl, ui, uiConfig };
 }
@@ -98,6 +109,9 @@ function renderToolbar(fixture: FixtureOptions = {}) {
 const flush = () => new Promise<void>(resolve => setTimeout(resolve, 0));
 
 afterEach(() => {
+  for (const toolbar of mountedToolbars.splice(0)) toolbar.menus.destroy();
+  setLocale('en');
+  vi.restoreAllMocks();
   document.body.replaceChildren();
 });
 
@@ -427,6 +441,136 @@ describe('model button', () => {
 });
 
 describe('permission button', () => {
+  it.each([
+    {
+      provider: 'grok',
+      uiConfig: grokChatUIConfig,
+      initialMode: 'auto',
+      englishOptions: [
+        { value: 'auto', label: 'Auto', description: 'Grok reviews actions and blocks risky ones' },
+        { value: 'normal', label: 'Ask', description: 'Ask before edits and commands' },
+        { value: 'acceptEdits', label: 'Accept edits', description: 'Automatically accept file edits' },
+        { value: 'yolo', label: 'YOLO', description: 'Accept all permissions without asking', bypassesApprovals: true },
+      ],
+      chineseOptions: [
+        { value: 'auto', label: '自动', description: 'Grok 审查操作并阻止高风险操作' },
+        { value: 'normal', label: '询问', description: '编辑文件和执行命令前询问' },
+        { value: 'acceptEdits', label: '接受编辑', description: '自动接受文件编辑' },
+        { value: 'yolo', label: 'YOLO', description: '无需询问便接受所有权限' },
+      ],
+      actions: ['acceptEdits', 'yolo', 'auto'],
+    },
+    {
+      provider: 'antigravity',
+      uiConfig: antigravityChatUIConfig,
+      initialMode: 'normal',
+      englishOptions: [
+        { value: 'normal', label: 'Ask', description: 'Ask before edits and commands' },
+        { value: 'acceptEdits', label: 'Accept edits', description: 'Approve file edits in the workspace without asking' },
+        { value: 'yolo', label: 'YOLO', description: 'Accept all permissions without asking', bypassesApprovals: true },
+      ],
+      chineseOptions: [
+        { value: 'normal', label: '询问', description: '编辑文件和执行命令前询问' },
+        { value: 'acceptEdits', label: '接受编辑', description: '无需询问便批准工作区内的文件编辑' },
+        { value: 'yolo', label: 'YOLO', description: '无需询问便接受所有权限' },
+      ],
+      actions: ['acceptEdits', 'yolo', 'normal'],
+    },
+    {
+      provider: 'opencode',
+      uiConfig: opencodeChatUIConfig,
+      initialMode: 'normal',
+      englishOptions: [
+        { value: 'normal', label: 'Ask', description: 'Ask when OpenCode permission rules require it' },
+        { value: 'yolo', label: 'YOLO', description: 'Accept all permissions not explicitly denied', bypassesApprovals: true },
+      ],
+      chineseOptions: [
+        { value: 'normal', label: '询问', description: '在 OpenCode 权限规则要求时询问' },
+        { value: 'yolo', label: 'YOLO', description: '接受未被明确拒绝的所有权限' },
+      ],
+      actions: ['yolo', 'normal'],
+    },
+    {
+      provider: 'deepseek',
+      uiConfig: deepseekChatUIConfig,
+      initialMode: 'normal',
+      englishOptions: [
+        { value: 'normal', label: 'Workspace write', description: 'Ask before extra access.' },
+        { value: 'yolo', label: 'Full access', description: 'Unrestricted files and internet.', bypassesApprovals: true },
+      ],
+      chineseOptions: [
+        { value: 'normal', label: '工作区写入', description: '额外访问前询问。' },
+        { value: 'yolo', label: '完全访问', description: '不受限制的文件和网络访问。' },
+      ],
+      actions: ['yolo', 'normal'],
+    },
+  ])('localizes $provider permission choices at render time and preserves saved IDs', async ({
+    uiConfig, initialMode, englishOptions, chineseOptions, actions,
+  }) => {
+    setLocale('en');
+    const english = uiConfig.getPermissionModeOptions!({});
+    expect(english).toStrictEqual(englishOptions);
+    expect(Object.isFrozen(english)).toBe(true);
+
+    setLocale('zh-CN');
+    const { callbacks, settings, toolbar, ui } = renderToolbar({
+      settings: { permissionMode: initialMode },
+      getPermissionModeOptions: current => uiConfig.getPermissionModeOptions!(current),
+    });
+    try {
+      const initial = chineseOptions.find(option => option.value === initialMode)!;
+      const button = ui.getByRole('button', { name: `权限模式：${initial.label}` });
+      const icon = button.querySelector<HTMLElement>('.claudian-toolbar-chip-icon')!;
+      expect(button.classList.contains('claudian-toolbar-chip--alert')).toBe(false);
+      expect(getComputedStyle(icon).display).toBe('none');
+
+      const openMenu = (mode: string) => {
+        fireEvent.click(button);
+        const menu = ui.getByRole('menu', { name: '权限模式' });
+        const items = within(menu).getAllByRole('menuitemradio');
+        expect(items).toHaveLength(chineseOptions.length);
+        for (const [index, option] of chineseOptions.entries()) {
+          const item = within(menu).getByRole('menuitemradio', {
+            name: new RegExp(`^${option.label}`),
+            checked: option.value === mode,
+          });
+          expect(items[index]).toBe(item);
+          expect(within(item).getByText(option.label, { exact: true })).toBeDefined();
+          expect(within(item).getByText(option.description, { exact: true })).toBeDefined();
+        }
+        return menu;
+      };
+      const menu = openMenu(initialMode);
+      expect((await axe(menu)).violations).toEqual([]);
+      fireEvent.click(button);
+
+      for (const value of actions) {
+        const option = chineseOptions.find(candidate => candidate.value === value)!;
+        const currentMenu = openMenu(settings.permissionMode as string);
+        fireEvent.click(within(currentMenu).getByRole('menuitemradio', {
+          name: new RegExp(`^${option.label}`),
+        }));
+        // Selection closes the menu before the async settings callback settles.
+        await waitFor(() => {
+          expect(ui.getByRole('button', { name: `权限模式：${option.label}` })).toBe(button);
+        });
+        expect(callbacks.onPermissionModeChange).toHaveBeenLastCalledWith(value);
+        expect(settings.permissionMode).toBe(value);
+        expect(ui.queryByRole('menu', { name: '权限模式' })).toBeNull();
+        expect(button.classList.contains('claudian-toolbar-chip--alert')).toBe(value === 'yolo');
+        expect(getComputedStyle(icon).display === 'none').toBe(value !== 'yolo');
+        openMenu(value);
+        fireEvent.click(button);
+      }
+    } finally {
+      toolbar.menus.destroy();
+      setLocale('en');
+    }
+    const restored = uiConfig.getPermissionModeOptions!({});
+    expect(restored).toStrictEqual(englishOptions);
+    expect(Object.isFrozen(restored)).toBe(true);
+  });
+
   it('shows all Codex permissions and allows keyboard selection with accessible descriptions', async () => {
     const { callbacks, host, toolbar, ui, uiConfig } = renderToolbar({
       settings: { permissionMode: 'auto-review' },

@@ -245,6 +245,36 @@
         "readOnlyDesc": "Vor Änderungen oder Internetzugriff fragen.",
         "normalDesc": "Vor zusätzlichem Zugriff fragen.",
         "yoloDesc": "Uneingeschränkter Datei- und Internetzugriff."
+      },
+      "grok": {
+        "auto": "Automatisch",
+        "normal": "Nachfragen",
+        "acceptEdits": "Änderungen akzeptieren",
+        "yolo": "YOLO",
+        "autoDesc": "Grok prüft Aktionen und blockiert riskante Aktionen",
+        "normalDesc": "Vor Dateiänderungen und Befehlen nachfragen",
+        "acceptEditsDesc": "Dateiänderungen automatisch akzeptieren",
+        "yoloDesc": "Alle Berechtigungen ohne Nachfrage akzeptieren"
+      },
+      "antigravity": {
+        "normal": "Nachfragen",
+        "acceptEdits": "Änderungen akzeptieren",
+        "yolo": "YOLO",
+        "normalDesc": "Vor Dateiänderungen und Befehlen nachfragen",
+        "acceptEditsDesc": "Dateiänderungen im Arbeitsbereich ohne Nachfrage genehmigen",
+        "yoloDesc": "Alle Berechtigungen ohne Nachfrage akzeptieren"
+      },
+      "opencode": {
+        "normal": "Nachfragen",
+        "yolo": "YOLO",
+        "normalDesc": "Nachfragen, wenn die OpenCode-Berechtigungsregeln es erfordern",
+        "yoloDesc": "Alle nicht ausdrücklich verweigerten Berechtigungen akzeptieren"
+      },
+      "deepseek": {
+        "normal": "Schreibzugriff im Arbeitsbereich",
+        "yolo": "Vollzugriff",
+        "normalDesc": "Vor zusätzlichem Zugriff nachfragen.",
+        "yoloDesc": "Uneingeschränkter Zugriff auf Dateien und Internet."
       }
     },
     "thinking": {

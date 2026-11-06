@@ -245,6 +245,36 @@
         "readOnlyDesc": "編輯或連網前詢問。",
         "normalDesc": "額外存取前詢問。",
         "yoloDesc": "不限制檔案和網路存取。"
+      },
+      "grok": {
+        "auto": "自動",
+        "normal": "詢問",
+        "acceptEdits": "接受編輯",
+        "yolo": "YOLO",
+        "autoDesc": "Grok 審查操作並阻止高風險操作",
+        "normalDesc": "編輯檔案和執行命令前詢問",
+        "acceptEditsDesc": "自動接受檔案編輯",
+        "yoloDesc": "無需詢問便接受所有權限"
+      },
+      "antigravity": {
+        "normal": "詢問",
+        "acceptEdits": "接受編輯",
+        "yolo": "YOLO",
+        "normalDesc": "編輯檔案和執行命令前詢問",
+        "acceptEditsDesc": "無需詢問便批准工作區內的檔案編輯",
+        "yoloDesc": "無需詢問便接受所有權限"
+      },
+      "opencode": {
+        "normal": "詢問",
+        "yolo": "YOLO",
+        "normalDesc": "在 OpenCode 權限規則要求時詢問",
+        "yoloDesc": "接受未被明確拒絕的所有權限"
+      },
+      "deepseek": {
+        "normal": "工作區寫入",
+        "yolo": "完整存取",
+        "normalDesc": "額外存取前詢問。",
+        "yoloDesc": "不受限制的檔案和網際網路存取。"
       }
     },
     "thinking": {
