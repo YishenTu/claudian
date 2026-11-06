@@ -16,6 +16,7 @@ import {
   setControlAvailability,
   showMenuAt,
 } from '@/features/chat/session-manager/SessionSurfaceShared';
+import { t } from '@/i18n/i18n';
 
 type SessionSearchScrollState = {
   pinnedScrollTop: number;
@@ -249,7 +250,7 @@ export class SessionSidebar {
     newControl.setAttribute('tabindex', '0');
     const newIcon = newControl.createSpan({ cls: 'claudian-session-new-icon' });
     setIcon(newIcon, 'square-pen');
-    newControl.createSpan({ cls: 'claudian-session-new-label', text: 'New' });
+    newControl.createSpan({ cls: 'claudian-session-new-label', text: t('chat.sessionManager.new') });
     const requestNew = (): void => {
       shared.setArchiveView(false);
       this.deps.requestNew();
@@ -271,7 +272,7 @@ export class SessionSidebar {
       searchControl.setAttribute('tabindex', '0');
       const searchIcon = searchControl.createSpan({ cls: 'claudian-session-nav-icon' });
       setIcon(searchIcon, 'search');
-      searchControl.createSpan({ cls: 'claudian-session-nav-label', text: 'Search' });
+      searchControl.createSpan({ cls: 'claudian-session-nav-label', text: t('chat.sessionManager.search') });
       const activateSearch = (): void => this.activateSearch();
       searchControl.addEventListener('click', activateSearch);
       searchControl.addEventListener('keydown', (event) => {
@@ -289,7 +290,7 @@ export class SessionSidebar {
     setIcon(archiveIcon, isArchiveView ? 'arrow-left' : 'archive');
     archiveControl.createSpan({
       cls: 'claudian-session-nav-label',
-      text: isArchiveView ? 'Sessions' : 'Archive',
+      text: isArchiveView ? t('chat.sessionManager.sessions') : t('chat.sessionManager.archive'),
     });
     const toggleArchiveView = (): void => shared.setArchiveView(!shared.isArchiveView());
     archiveControl.addEventListener('click', toggleArchiveView);
@@ -305,7 +306,7 @@ export class SessionSidebar {
     createSessionHeaderMenuAction(
       actions,
       'ellipsis',
-      'Session options',
+      t('chat.sessionManager.sessionOptions'),
       (anchor, event) => this.showOptionsMenu(anchor, event),
     );
     if (this.getOrganization() === 'linked-content' && this.groupKeys.size > 0) {
@@ -313,7 +314,7 @@ export class SessionSidebar {
       this.groupToggleButtonEl = createSessionHeaderAction(
         actions,
         icon => renderSessionGroupToggleIcon(icon, allCollapsed ? 'expand' : 'collapse'),
-        allCollapsed ? 'Expand all groups' : 'Collapse all groups',
+        allCollapsed ? t('chat.sessionManager.expandAllGroups') : t('chat.sessionManager.collapseAllGroups'),
         () => this.toggleAllGroups(),
       );
     }
@@ -325,7 +326,7 @@ export class SessionSidebar {
     const searchField = container.createDiv({ cls: 'claudian-session-search-field' });
     const searchIcon = searchField.createSpan({ cls: 'claudian-session-nav-icon' });
     setIcon(searchIcon, 'search');
-    const label = this.deps.shared.isArchiveView() ? 'Search archived sessions' : 'Search sessions';
+    const label = this.deps.shared.isArchiveView() ? t('chat.sessionManager.searchArchivedSessions') : t('chat.sessionManager.searchSessions');
     const searchInput = searchField.createEl('input', {
       cls: 'claudian-session-search-input',
       attr: {
@@ -566,7 +567,7 @@ export class SessionSidebar {
     if (!button) return;
 
     const allCollapsed = this.areAllGroupsCollapsed();
-    button.setAttribute('aria-label', allCollapsed ? 'Expand all groups' : 'Collapse all groups');
+    button.setAttribute('aria-label', allCollapsed ? t('chat.sessionManager.expandAllGroups') : t('chat.sessionManager.collapseAllGroups'));
     const icon = button.querySelector<HTMLElement>('.claudian-session-header-icon');
     if (icon) {
       renderSessionGroupToggleIcon(icon, allCollapsed ? 'expand' : 'collapse');
@@ -590,26 +591,26 @@ export class SessionSidebar {
     const sort = this.getSort();
 
     menu.addItem(item => item
-      .setTitle('Organize sessions')
+      .setTitle(t('chat.sessionManager.organizeSessions'))
       .setIsLabel(true));
     menu.addItem(item => item
-      .setTitle('In one list')
+      .setTitle(t('chat.sessionManager.inOneList'))
       .setChecked(organization === 'list')
       .onClick(() => this.setOrganization('list')));
     menu.addItem(item => item
-      .setTitle('By linked content')
+      .setTitle(t('chat.sessionManager.byLinkedContent'))
       .setChecked(organization === 'linked-content')
       .onClick(() => this.setOrganization('linked-content')));
     menu.addSeparator();
     menu.addItem(item => item
-      .setTitle('Sort sessions by')
+      .setTitle(t('chat.sessionManager.sortSessionsBy'))
       .setIsLabel(true));
     menu.addItem(item => item
-      .setTitle('Last activity')
+      .setTitle(t('chat.sessionManager.lastActivity'))
       .setChecked(sort === 'last-updated')
       .onClick(() => this.setSort('last-updated')));
     menu.addItem(item => item
-      .setTitle('Created')
+      .setTitle(t('chat.sessionManager.created'))
       .setChecked(sort === 'created')
       .onClick(() => this.setSort('created')));
 
@@ -621,14 +622,14 @@ export class SessionSidebar {
     void this.deps.plugin.mutateSettings((settings) => {
       settings.sessionManagerOrganization = organization;
     })
-      .catch(() => new Notice('Failed to update session organization'));
+      .catch(() => new Notice(t('chat.sessionManager.failedToUpdateSessionOrganization')));
   }
 
   private setSort(sort: SessionManagerSort): void {
     void this.deps.plugin.mutateSettings((settings) => {
       settings.sessionManagerSort = sort;
     })
-      .catch(() => new Notice('Failed to update session sorting'));
+      .catch(() => new Notice(t('chat.sessionManager.failedToUpdateSessionSorting')));
   }
 
   private refreshPresentation(): void {

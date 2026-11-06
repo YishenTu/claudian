@@ -8,6 +8,7 @@ import {
   type SessionSurfaceNavigation,
   type SessionSurfaceShared,
 } from '@/features/chat/session-manager/SessionSurfaceShared';
+import { t } from '@/i18n/i18n';
 
 const VIEW_HEIGHT_SHARE = 0.6;
 
@@ -44,7 +45,7 @@ export class HistoryDropdown {
       attr: { type: 'button' },
     });
     setIcon(historyBtn, 'history');
-    historyBtn.setAttribute('aria-label', 'Chat history');
+    historyBtn.setAttribute('aria-label', t('chat.sessionManager.chatHistory'));
 
     this.menuEl = historyContainer.createDiv({
       cls: 'claudian-history-menu claudian-nav-dropup-menu',
@@ -173,7 +174,7 @@ export class HistoryDropdown {
 
     const { shared } = this.deps;
     const isArchiveView = shared.isArchiveView();
-    const label = isArchiveView ? 'Sessions' : 'Archive';
+    const label = isArchiveView ? t('chat.sessionManager.sessions') : t('chat.sessionManager.archive');
     const control = list.createDiv({ cls: 'claudian-history-archive-control' });
     control.setAttribute('role', 'button');
     control.setAttribute('tabindex', '0');

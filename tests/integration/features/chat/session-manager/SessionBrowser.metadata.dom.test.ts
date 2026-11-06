@@ -13,6 +13,7 @@ import {
   formatSessionLastActive,
 } from '@/features/chat/session-manager/SessionMetadataPopover';
 import { ChatState } from '@/features/chat/state/ChatState';
+import { setLocale } from '@/i18n/i18n';
 import { OPENAI_PROVIDER_ICON } from '@/shared/icons';
 
 
@@ -33,6 +34,7 @@ async function createController(conversations?: ConversationMeta[]) {
 
 describe('SessionBrowser session metadata popover', () => {
   afterEach(() => {
+    setLocale('en');
     vi.restoreAllMocks();
     document.body.replaceChildren();
   });
@@ -206,4 +208,47 @@ describe('SessionBrowser session metadata popover', () => {
     container.dispatchEvent(new Event('scroll'));
     expect(popover.isConnected).toBe(false);
   });
+});
+
+
+it('localizes fresh metadata labels after imports and preserves host dates, native fields and tooltip cleanup', async () => {
+  onTestFinished(() => { setLocale('en'); });
+  const createdAt = testDate({ days: -2 }).getTime();
+  const lastActivityAt = testDate({ hours: -1 }).getTime();
+  const expectedDates = [formatSessionCreatedDate(createdAt), formatSessionLastActive(lastActivityAt)];
+  for (const [locale, labels] of [
+    ['en', ['Created', 'Last active']],
+    ['zh-CN', ['创建时间', '上次活跃']],
+    ['en', ['Created', 'Last active']],
+  ] as const) {
+    setLocale(locale);
+    const browser = await createController([{
+      id: 'native:Archive/Created', providerId: 'codex', selectedModel: 'native-model', title: 'Archive',
+      createdAt, lastActivityAt, linkedContentPath: 'Projects/Archive.md', messageCount: 1, preview: '',
+    }]);
+    const host = document.body.createDiv();
+    browser.renderHistoryDropdown(host, {
+      onSelectConversation: vi.fn(), showMetadataPopover: true,
+      getProviderIcon: () => OPENAI_PROVIDER_ICON, getModelLabel: () => 'Created',
+    });
+    const button = within(host).getByRole('button', { name: /Archive/ });
+    expect(button.closest<HTMLElement>('[data-conversation-id]')?.dataset.conversationId).toBe('native:Archive/Created');
+    fireEvent.mouseEnter(button.closest<HTMLElement>('.claudian-history-item')!);
+    const tooltip = within(document.body).getByRole('tooltip');
+    expect([...tooltip.querySelectorAll('.claudian-session-metadata-label')].map(label => label.textContent)).toEqual(labels);
+    const values = [...tooltip.querySelectorAll('.claudian-session-metadata-value')].map(value => value.textContent);
+    expect(values).toEqual(['Archive', 'Created', ...expectedDates]);
+    expect(tooltip.querySelector('[data-provider="codex"]')).toBeTruthy();
+    expect(tooltip.querySelector('.claudian-session-metadata-value--content')?.getAttribute('title')).toBe('Projects/Archive.md');
+    fireEvent.keyDown(button, { key: 'Escape' });
+    expect(tooltip.isConnected).toBe(false);
+    fireEvent.focusIn(button);
+    expect(button.getAttribute('aria-describedby')).toBe(tooltip.id);
+    expect(within(document.body).getByRole('tooltip')).toBe(tooltip);
+    expect(await axe(tooltip)).toHaveNoViolations();
+    browser.dispose();
+    expect(tooltip.isConnected).toBe(false);
+    expect(button.hasAttribute('aria-describedby')).toBe(false);
+    host.remove();
+  }
 });

@@ -4,13 +4,14 @@ import { axe } from '@test/helpers/accessibility';
 import { createSessionBrowserHost } from '@test/helpers/features/chat/SessionBrowserTestHarness';
 import { testDate } from '@test/helpers/testClock';
 import { fireEvent, waitFor, within } from '@testing-library/dom';
-import { Menu } from 'obsidian';
+import { Menu, Notice } from 'obsidian';
 import type { Mock } from 'vitest';
 
 import type { ConversationMeta } from '@/core/types';
 import { SessionActions } from '@/features/chat/session-manager/SessionActions';
 import { SessionBrowser } from '@/features/chat/session-manager/SessionBrowser';
 import type { HistoryConversationStatus } from '@/features/chat/session-manager/SessionStatusPresentation';
+import { setLocale } from '@/i18n/i18n';
 
 
 
@@ -395,5 +396,173 @@ describe('SessionActions archived bulk actions', () => {
     await waitFor(() => expect(deleteConversation).toHaveBeenCalled());
 
     expect(deleteConversation.mock.calls).toEqual([[['stale', 'ancient']]]);
+  });
+});
+
+
+describe('localized session actions through the history UI', () => {
+  afterEach(() => {
+    setLocale('en');
+    vi.restoreAllMocks();
+    document.body.replaceChildren();
+    (Menu as unknown as { instances: MockMenu[] }).instances.length = 0;
+  });
+
+  async function renderLocalized(records: ConversationMeta[], options: Partial<Parameters<SessionBrowser['renderHistoryDropdown']>[1]> = {}, store?: NonNullable<Parameters<typeof createSessionBrowserHost>[0]>['store']) {
+    setLocale('zh-CN');
+    const { plugin, lifecycle } = await createSessionBrowserHost({ conversations: records, store });
+    const container = document.body.createDiv();
+    const browser = new SessionBrowser({ plugin, getCurrentConversationId: () => null, getTitleGenerationService: () => null, onListChanged: () => undefined });
+    onTestFinished(() => browser.dispose());
+    const onSelectConversation = vi.fn().mockResolvedValue(undefined);
+    const onOpenConversationInNewTab = vi.fn().mockResolvedValue(undefined);
+    const onAssignConversationToDevice = vi.fn().mockResolvedValue(undefined);
+    const render = () => browser.renderHistoryDropdown(container, {
+      onSelectConversation, onOpenConversationInNewTab, onAssignConversationToDevice,
+      sessionActionMode: 'active', onRerender: render, ...options,
+    });
+    render();
+    const row = (title: string) => within(container).getByText(title);
+    const choose = (title: string) => {
+      const item = lastMenu().items.find(item => item.title === title);
+      expect(lastMenu().items.map(item => item.title)).toContain(title);
+      item!.clickHandler?.();
+    };
+    return { container, browser, plugin, lifecycle, row, render, choose, onSelectConversation, onOpenConversationInNewTab, onAssignConversationToDevice };
+  }
+
+  it('localizes closed, open, current, legacy and archived menus while preserving native routing and copied IDs', async () => {
+    const clipboard = Object.getOwnPropertyDescriptor(navigator, 'clipboard');
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
+    onTestFinished(() => { if (clipboard) Object.defineProperty(navigator, 'clipboard', clipboard); else Reflect.deleteProperty(navigator, 'clipboard'); });
+    const records = [session('native:Archive/Created', 'Archive', { isLegacySession: true })];
+    let status: HistoryConversationStatus = { openState: 'closed', isRunning: false };
+    const ui = await renderLocalized(records, { getConversationStatus: () => status, showAttentionState: true });
+    const openMenu = () => fireEvent.contextMenu(ui.row('Archive'));
+    openMenu();
+    expect(lastMenu().items.map(item => item.title)).toEqual([
+      '在新标签页中打开', '在后台标签页中打开', '置顶', '标为未读', '重命名', '复制会话 ID', '移动到项目…', '归档',
+    ]);
+    ui.choose('在新标签页中打开');
+    expect(ui.onOpenConversationInNewTab).toHaveBeenLastCalledWith('native:Archive/Created', true);
+    openMenu(); ui.choose('在后台标签页中打开');
+    expect(ui.onOpenConversationInNewTab).toHaveBeenLastCalledWith('native:Archive/Created', false);
+    openMenu(); ui.choose('复制会话 ID');
+    await waitFor(() => expect(Notice).toHaveBeenCalledWith('已复制会话 ID'));
+    expect(writeText).toHaveBeenCalledWith('native:Archive/Created');
+    status = { openState: 'open', isRunning: false }; ui.render(); openMenu();
+    expect(lastMenu().items[0].title).toBe('切换到已打开的会话');
+    ui.choose('切换到已打开的会话');
+    expect(ui.onSelectConversation).toHaveBeenCalledWith('native:Archive/Created');
+    status = { openState: 'current', isRunning: false }; ui.render(); openMenu();
+    expect(lastMenu().items.map(item => item.title)).toEqual(['置顶', '标为未读', '重命名', '复制会话 ID', '移动到项目…', '归档']);
+    // Legacy assignment is an inline action, with the native ID passed to its public port.
+    fireEvent.click(within(ui.container).getByRole('button', { name: '分配给此设备' }));
+    expect(ui.onAssignConversationToDevice).toHaveBeenCalledWith('native:Archive/Created');
+    status = { openState: 'closed', isRunning: true }; ui.render();
+    expect((within(ui.container).getByRole('button', { name: '无法归档正在运行的会话' }) as HTMLButtonElement).disabled).toBe(true);
+    openMenu(); expect(lastMenu().items.at(-1)?.disabled).toBe(true);
+    status = { openState: 'closed', isRunning: false, attention: { kind: 'review', outcome: 'completed', since: testDate().getTime() } }; ui.render(); openMenu();
+    expect(lastMenu().items.map(item => item.title)).toContain('标为已读');
+    const archived = await renderLocalized([session('native-archived', 'Created', { isArchived: true })], {
+      sessionScope: 'archived', sessionActionMode: 'archived', allowConversationSelection: false,
+    });
+    fireEvent.contextMenu(archived.row('Created'));
+    expect(lastMenu().items.map(item => item.title)).toEqual(['在新标签页中打开', '在后台标签页中打开', '恢复', '删除']);
+    expect(await axe(ui.container)).toHaveNoViolations();
+  });
+
+  it('localizes filtered singular and plural bulk actions without changing pin/archive membership', async () => {
+    const records = [session('native:a', 'Archive'), session('native:b', 'Created', { isPinned: true }), session('native:running', 'Native running')];
+    const ui = await renderLocalized(records, { getConversationStatus: id => ({ openState: 'closed', isRunning: id === 'native:running' }) });
+    fireEvent.click(ui.row('Archive'), { altKey: true });
+    fireEvent.click(ui.row('Created'), { altKey: true });
+    expect(within(ui.container).getAllByText('已选择')).toHaveLength(2);
+    fireEvent.contextMenu(ui.row('Archive'));
+    expect(lastMenu().items[0].title).toBe('置顶 1 个会话');
+    ui.choose('置顶 1 个会话');
+    await waitFor(() => expect(records[0].isPinned).toBe(true));
+    fireEvent.click(ui.row('Archive'), { altKey: true }); fireEvent.click(ui.row('Created'), { altKey: true });
+    fireEvent.contextMenu(ui.row('Archive'));
+    expect(lastMenu().items[0].title).toBe('取消置顶 2 个会话');
+    ui.choose('取消置顶 2 个会话');
+    await waitFor(() => expect(records.filter(record => record.isPinned)).toHaveLength(0));
+    fireEvent.click(ui.row('Archive'), { altKey: true }); fireEvent.click(ui.row('Native running'), { altKey: true });
+    fireEvent.contextMenu(ui.row('Archive'));
+    expect(lastMenu().items.map(item => item.title)).toEqual(['置顶 2 个会话', '将 2 个会话移动到项目…', '归档 1 个会话']);
+    ui.choose('归档 1 个会话');
+    await waitFor(() => expect(records[0].isArchived).toBe(true));
+    expect(records.filter(record => record.isArchived).map(record => record.id)).toEqual(['native:a']);
+  });
+
+  it.each([true, false])('uses a localized plural confirmation and preserves native deletion/cancellation (%s)', async confirmed => {
+    const records = [session('native:one', 'Archive', { isArchived: true }), session('native:two', 'Created', { isArchived: true }), session('native:keep', 'Keep', { isArchived: true })];
+    const ui = await renderLocalized(records, { sessionScope: 'archived', sessionActionMode: 'archived', allowConversationSelection: false });
+    fireEvent.click(ui.row('Archive'), { altKey: true }); fireEvent.click(ui.row('Created'), { altKey: true });
+    fireEvent.contextMenu(ui.row('Archive'));
+    expect(lastMenu().items.map(item => item.title)).toEqual(['恢复 2 个会话', '删除 2 个会话']);
+    ui.choose('删除 2 个会话');
+    const dialog = within(document.body).getByRole('dialog', { name: '确认' });
+    expect(dialog.textContent).toContain('永久删除 2 个会话？');
+    expect(await axe(dialog)).toHaveNoViolations();
+    fireEvent.click(within(dialog).getByRole('button', { name: confirmed ? '删除' : '取消' }));
+    await waitFor(() => expect(dialog.isConnected).toBe(false));
+    await waitFor(() => expect(records.map(record => record.id)).toEqual(confirmed ? ['native:keep'] : ['native:one', 'native:two', 'native:keep']));
+    if (!confirmed) {
+      fireEvent.contextMenu(ui.row('Archive'));
+      // A single row uses row actions; reopen an actual two-row selection for bulk restore.
+      fireEvent.click(ui.row('Archive'), { altKey: true }); fireEvent.click(ui.row('Created'), { altKey: true });
+      fireEvent.contextMenu(ui.row('Archive')); ui.choose('恢复 2 个会话');
+    }
+    await waitFor(() => expect(records.filter(record => !record.isArchived).map(record => record.id)).toEqual(confirmed ? [] : ['native:one', 'native:two']));
+  });
+
+  it('localizes linked-content group actions and singular confirmation without changing raw path/title', async () => {
+    const records = [session('native:Archive', 'Created', { linkedContentPath: 'Projects/Archive.md' })];
+    const onSetLinkedContentPinned = vi.fn().mockResolvedValue(undefined);
+    const pinnedLinkedContentPaths = new Set<string>();
+    const ui = await renderLocalized(records, {
+      organization: 'linked-content', contentExists: () => true, contentIsNote: () => false,
+      onSetLinkedContentPinned, pinnedLinkedContentPaths,
+    });
+    fireEvent.contextMenu(within(ui.container).getByText('Archive'));
+    expect(lastMenu().items.map(item => item.title)).toEqual(['置顶关联内容', '归档所有会话']);
+    ui.choose('置顶关联内容');
+    expect(onSetLinkedContentPinned).toHaveBeenCalledWith('Projects/Archive.md', true);
+    // A fresh presentation reads the existing pinned-content boundary independently of its title.
+    pinnedLinkedContentPaths.add('Projects/Archive.md'); ui.render();
+    fireEvent.contextMenu(within(ui.container).getByText('Archive'));
+    expect(lastMenu().items.map(item => item.title)).toEqual(['取消置顶关联内容', '归档所有会话']);
+    ui.choose('取消置顶关联内容');
+    expect(onSetLinkedContentPinned).toHaveBeenLastCalledWith('Projects/Archive.md', false);
+    const archived = await renderLocalized(records.map(record => ({ ...record, isArchived: true })), {
+      organization: 'linked-content', contentExists: () => true, contentIsNote: () => false,
+      sessionScope: 'archived', sessionActionMode: 'archived', allowConversationSelection: false,
+    });
+    fireEvent.contextMenu(within(archived.container).getByText('Archive'));
+    expect(lastMenu().items.map(item => item.title)).toEqual(['恢复所有会话', '删除所有会话']);
+    archived.choose('删除所有会话');
+    const dialog = within(document.body).getByRole('dialog', { name: '确认' });
+    expect(dialog.textContent).toContain('永久删除 1 个会话？');
+    fireEvent.click(within(dialog).getByRole('button', { name: '取消' }));
+    await waitFor(() => expect(dialog.isConnected).toBe(false));
+    expect(within(archived.container).getByText('Created')).toBeTruthy();
+  });
+
+  it('reports fixed localized failures instead of raw navigation, clipboard or storage errors', async () => {
+    const records = [session('native:Archive', 'Archive')];
+    const ui = await renderLocalized(records, {}, { setConversationsPlacement: async () => { throw new Error('raw storage diagnostic'); } });
+    ui.onOpenConversationInNewTab.mockRejectedValueOnce(new Error('raw navigation diagnostic'));
+    fireEvent.contextMenu(ui.row('Archive')); ui.choose('在新标签页中打开');
+    await waitFor(() => expect(Notice).toHaveBeenCalledWith('无法加载会话'));
+    fireEvent.contextMenu(ui.row('Archive')); ui.choose('置顶');
+    await waitFor(() => expect(Notice).toHaveBeenCalledWith('无法置顶会话'));
+    const original = Object.getOwnPropertyDescriptor(navigator, 'clipboard');
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: vi.fn().mockRejectedValue(new Error('raw clipboard diagnostic')) } });
+    onTestFinished(() => { if (original) Object.defineProperty(navigator, 'clipboard', original); else Reflect.deleteProperty(navigator, 'clipboard'); });
+    fireEvent.contextMenu(ui.row('Archive')); ui.choose('复制会话 ID');
+    await waitFor(() => expect(Notice).toHaveBeenCalledWith('无法复制会话 ID'));
+    expect(records[0].isPinned).not.toBe(true);
   });
 });
