@@ -159,6 +159,10 @@ export class SessionBrowser {
     return this.projectSorter.deferRender(render);
   }
 
+  cancelProjectSort(): boolean {
+    return this.projectSorter.cancel();
+  }
+
   cancelInlineRename(): boolean {
     return this.inlineRename.cancel();
   }
