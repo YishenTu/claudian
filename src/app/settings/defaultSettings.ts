@@ -52,6 +52,7 @@ export const DEFAULT_CLAUDIAN_SETTINGS: ClaudianSettings = {
 
   enableAutoScroll: true,
   showMessageTimestamps: false,
+  showConversationTitleInWorkspace: false,
   deferMathRenderingDuringStreaming: true,
   pluginRenderedFenceLanguages: [],
   expandFileEditsByDefault: false,

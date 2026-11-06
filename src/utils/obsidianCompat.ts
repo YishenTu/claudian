@@ -1,5 +1,6 @@
 import type { EditorView } from '@codemirror/view';
 import type { App, Editor, TFile, Workspace, WorkspaceLeaf } from 'obsidian';
+import { View } from 'obsidian';
 
 /**
  * Gets the CodeMirror EditorView from an Obsidian Editor.
@@ -29,4 +30,13 @@ function isVaultFile(value: unknown): value is TFile {
   const candidate = value as Partial<TFile>;
   return typeof candidate.path === 'string'
     && typeof candidate.basename === 'string';
+}
+
+/** These desktop chrome refresh hooks are not part of Obsidian's published typings. */
+export function refreshWorkspaceViewChrome(workspace: Workspace, leaf: WorkspaceLeaf): void {
+  const hostLeaf = leaf as WorkspaceLeaf & { updateHeader?: () => void };
+  if (typeof hostLeaf.updateHeader === 'function') hostLeaf.updateHeader();
+  if (workspace.getActiveViewOfType(View)?.leaf !== leaf) return;
+  const hostWorkspace = workspace as Workspace & { updateTitle?: () => void };
+  if (typeof hostWorkspace.updateTitle === 'function') hostWorkspace.updateTitle();
 }

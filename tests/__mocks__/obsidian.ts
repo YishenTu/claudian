@@ -204,7 +204,15 @@ export class TextFileView extends FileView {
   }
 }
 
-export class WorkspaceLeaf {}
+export class WorkspaceLeaf {
+  view?: import('obsidian').View;
+  /** Host chrome projection; updateHeader re-reads the mounted view's getters. */
+  header = { title: '', icon: '' };
+
+  updateHeader(): void {
+    this.header = { title: this.view?.getDisplayText() ?? '', icon: this.view?.getIcon() ?? '' };
+  }
+}
 
 export class Scope {
   static instances: Scope[] = [];

@@ -8,35 +8,56 @@ import { createFeatureHostFixture } from '@test/helpers/FeatureHostFixture';
 import { registerChatTestProvider } from '@test/helpers/features/chat/ChatProviderFixture';
 import { createClaudianView } from '@test/helpers/features/chat/ClaudianViewHarness';
 import { conversationRecord } from '@test/helpers/features/chat/ConversationFixture';
+import { createProjectsFake, projectRecord } from '@test/helpers/features/chat/ProjectsFake';
 import { createSessionBrowserHost } from '@test/helpers/features/chat/SessionBrowserTestHarness';
 import { fireEvent, within } from '@testing-library/dom';
 import { Menu, Platform, Scope, TFile } from 'obsidian';
 
+import { ConversationRepository } from '@/app/conversations/ConversationRepository';
+import { ConversationService } from '@/app/conversations/ConversationService';
 import { ChatModelSelectionCoordinator } from '@/app/settings/ChatModelSelectionCoordinator';
+import { PinnedLinkedContentPathCoordinator } from '@/app/settings/PinnedLinkedContentPathCoordinator';
+import { ConversationPersistenceStore } from '@/app/storage/ConversationPersistenceStore';
 import { BUILT_IN_COMMANDS } from '@/core/commands/builtInCommands';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
+import { ProviderSettingsCoordinator } from '@/core/providers/ProviderSettingsCoordinator';
 import { SessionMessagingService } from '@/features/chat/session-messaging/SessionMessagingService';
 import { TabManager } from '@/features/chat/tabs/TabManager';
 import type { TabLayoutPolicy } from '@/features/chat/tabs/types';
 import { ViewerSlot } from '@/features/chat/tabs/ViewerSlot';
 import { createChatTabCommands } from '@/features/chat/workspace/ChatTabCommands';
+import { ChatViewPublisher } from '@/features/chat/workspace/ChatViewPublisher';
 
 beforeEach(() => {
   useNextTaskAnimationFrames();
   registerChatTestProvider('claude');
 });
 
-const { Scope: HostScope } = await vi.importActual<typeof import('@test/__mocks__/obsidian')>('obsidian');
+const { Scope: HostScope, WorkspaceLeaf: HostLeaf, App: HostApp } = await vi.importActual<typeof import('@test/__mocks__/obsidian')>('obsidian');
 
 const openedViews: Awaited<ReturnType<typeof createClaudianView>>[] = [];
 
 async function createView(options: {
   width?: number;
+  realConversationStorage?: boolean;
   host?: Omit<NonNullable<NonNullable<Parameters<typeof createSessionBrowserHost>[0]>['host']>, 'fixture' | 'app'>;
 } = {}) {
   const records = ['one', 'two'].map(id => conversationRecord(id));
+  if (options.realConversationStorage) {
+    for (const record of records) record.messages.push({ id: `${record.id}-prompt`, role: 'user', content: 'Saved prompt', timestamp: record.createdAt });
+  }
   const { settings, ...overrides } = options.host ?? {};
-  const fixture = await createFeatureHostFixture({ settings: { restoreTabsOnStartup: true, enableAutoTitleGeneration: false, ...settings } });
+  const fixture = await createFeatureHostFixture({
+    settings: { restoreTabsOnStartup: true, enableAutoTitleGeneration: false, ...settings },
+    afterPublish: (current, previous) => publisher.publishSettings(current, previous),
+  });
+  const repository = options.realConversationStorage ? new ConversationRepository({
+    providers: ProviderRegistry, providerSettings: ProviderSettingsCoordinator,
+    getSettings: () => fixture.settings, getVaultPath: () => fixture.vault.root,
+    persistence: new ConversationPersistenceStore(fixture.vault.files, fixture.storage.installationKey),
+    onConversationDeleted: async () => undefined,
+  }) : null;
+  repository?.replaceAll(records);
   const { plugin, pool } = await createSessionBrowserHost({ conversations: records.map(record => ({ ...record, messageCount: 0, preview: '' })), host: {
     fixture,
     chatModelSelection: new ChatModelSelectionCoordinator(fixture.coordinator),
@@ -48,6 +69,13 @@ async function createView(options: {
     ensureConversationMetadataLoaded: async () => undefined,
     updateConversation: async (id, updates) => { Object.assign(records.find(record => record.id === id)!, updates); },
     registerZenModeSource: vi.fn(() => vi.fn()),
+    ...(repository ? {
+      getConversationList: repository.list.bind(repository),
+      getConversationById: repository.getById.bind(repository),
+      getConversationSync: repository.getSync.bind(repository),
+      getCachedConversation: repository.getCachedConversation.bind(repository),
+      getConversationSummary: repository.getSummary.bind(repository),
+    } : {}),
     ...overrides,
   } });
   const messaging = new SessionMessagingService({ getHost: () => plugin, getActiveConversationId: () => null, refreshModelControls: () => undefined });
@@ -60,11 +88,25 @@ async function createView(options: {
     triggerResize(contentEl, { contentRect, borderBoxSize: [], contentBoxSize: [], devicePixelContentBoxSize: [] });
   };
   contentEl.getBoundingClientRect = () => new DOMRect(0, 0, options.width ?? 400, 0);
-  const view = await createClaudianView({ host: plugin, contentEl });
+  const leaf = new HostLeaf();
+  const view = await createClaudianView({ host: plugin, contentEl, leaf });
+  leaf.view = view;
+  leaf.updateHeader();
+  plugin.getAllViews = () => [view];
+  const publisher = new ChatViewPublisher({
+    views: plugin, zenMode: { reconcile() {} },
+    inactiveSessions: { request() {} }, hasLoadedAllSessionMetadata: () => true,
+  });
+  const conversations = repository ? new ConversationService({
+    repository, sessionMetadata: { ensureLoaded: async () => undefined, ensureAllLoaded: async () => undefined },
+    pinnedLinkedContentPaths: new PinnedLinkedContentPathCoordinator(fixture.coordinator),
+    nativeSessionArchives: { sync: async () => undefined },
+    onConversationListChanged: () => publisher!.notifyConversationListChanged(),
+  }) : null;
+  if (conversations) plugin.renameConversation = conversations.renameConversation.bind(conversations);
   view.load();
   openedViews.push(view);
   const saved: unknown[] = [];
-  const { App: HostApp } = await vi.importActual<typeof import('../../../__mocks__/obsidian')>('obsidian');
   const app = plugin.app;
   if (!(app instanceof HostApp)) throw new Error('Expected the shared Obsidian App');
   const saveLayout = vi.spyOn(app.workspace, 'saveLayout');
@@ -72,7 +114,7 @@ async function createView(options: {
   await view.onOpen();
   const manager = view.getTabManager() as TabManager;
   expect(manager).toBeInstanceOf(TabManager);
-  return { view, manager, plugin, pool, contentEl, resize, saveLayout, saved, records };
+  return { view, manager, plugin, pool, contentEl, resize, saveLayout, saved, records, leaf, publisher, workspace: app.workspace, conversations };
 }
 
 async function openView(options: Parameters<typeof createView>[0] = {}, state: unknown = {}) {
@@ -607,4 +649,108 @@ describe('ClaudianView composer and scoped keys', () => {
     expect(session.cancelCalls).toBe(1);
   });
 
+});
+
+
+describe('ClaudianView workspace chrome', () => {
+  const nextFrame = () => new Promise<void>(resolve => window.requestAnimationFrame(() => resolve()));
+  it('opts in after commit, refreshes per-leaf titles on selection and metadata changes, and restores fixed chrome', async () => {
+    const h = await openView({ realConversationStorage: true }, { tabWorkspace: { version: 1, activeTabId: 'bound', openTabs: [{ tabId: 'bound', conversationId: 'one' }] } });
+    expect(h.view.getDisplayText()).toBe('Claudian');
+    const refreshHeader = vi.spyOn(h.leaf, 'updateHeader');
+    await nextFrame();
+    expect(refreshHeader).not.toHaveBeenCalled();
+    expect(h.leaf.header).toEqual({ title: 'Claudian', icon: 'bot' });
+    const otherLeaf = new HostLeaf();
+    const other = await createClaudianView({ host: h.plugin, leaf: otherLeaf });
+    otherLeaf.view = other;
+    otherLeaf.updateHeader();
+    other.load();
+    openedViews.push(other);
+    h.plugin.getAllViews = () => [h.view, other];
+    await other.onOpen();
+    await other.setState({ tabWorkspace: { version: 1, activeTabId: 'other', openTabs: [{ tabId: 'other', conversationId: 'two' }] } }, { history: false });
+    h.workspace.activeLeaf = h.leaf as never;
+    await h.plugin.mutateSettings(settings => { Object.assign(settings, { showConversationTitleInWorkspace: true }); });
+    await nextFrame();
+    expect(h.leaf.header).toEqual({ title: h.records[0].title, icon: 'bot' });
+    expect(h.workspace.activeViewTitle).toBe(h.records[0].title);
+    await h.plugin.renameConversation('one', 'Renamed conversation');
+    await nextFrame();
+    expect(h.leaf.header.title).toBe('Renamed conversation');
+    expect(h.workspace.activeViewTitle).toBe('Renamed conversation');
+    expect(otherLeaf.header).toEqual({ title: 'two', icon: 'bot' });
+    // A background view must not overwrite the active window title.
+    h.workspace.activeLeaf = otherLeaf as never;
+    h.workspace.updateTitle();
+    await h.plugin.renameConversation('one', 'Background rename');
+    await nextFrame();
+    expect(h.leaf.header.title).toBe('Background rename');
+    expect(h.workspace.activeViewTitle).toBe('two');
+    await h.manager.createTab(null);
+    await nextFrame();
+    expect(h.leaf.header.title).toBe('New Chat');
+    await h.manager.switchToTab('bound');
+    await nextFrame();
+    expect(h.leaf.header.title).toBe('Background rename');
+    expect(otherLeaf.header.title).toBe('two');
+    await h.conversations!.deleteConversation('one');
+    await nextFrame();
+    expect(h.leaf.header.title).toBe('New Chat');
+    expect(otherLeaf.header.title).toBe('two');
+    await h.plugin.mutateSettings(settings => { Object.assign(settings, { showConversationTitleInWorkspace: false }); });
+    await nextFrame();
+    expect(h.leaf.header).toEqual({ title: 'Claudian', icon: 'bot' });
+    expect(otherLeaf.header).toEqual({ title: 'Claudian', icon: 'bot' });
+    expect(h.workspace.activeViewTitle).toBe('Claudian');
+  });
+
+  it.each([400, 800])('derives project draft and conversation chrome in a %ipx view without executing', async width => {
+    const native = registerChatTestProvider('claude');
+    const projects = createProjectsFake([projectRecord({ id: 'p', name: 'Research', icon: 'lucide-flask-conical' })]);
+    const h = await openView({ width, host: { projects, settings: Object.assign({}, { showConversationTitleInWorkspace: true }) } });
+    await nextFrame();
+    expect(h.leaf.header).toEqual({ title: 'New Chat', icon: 'bot' });
+    const tab = h.manager.getActiveTab()!;
+    tab.controllers.conversationController.selectProject('p');
+    await nextFrame();
+    expect(h.leaf.header).toEqual({ title: 'Research', icon: 'lucide-flask-conical' });
+    projects.put(projectRecord({ id: 'p', name: 'Renamed project', icon: 'lucide-book-open' }));
+    h.publisher!.notifyConversationListChanged();
+    await nextFrame();
+    expect(h.leaf.header).toEqual({ title: 'Renamed project', icon: 'lucide-book-open' });
+    Object.assign(h.records[0], { projectId: 'p' });
+    h.records[0].title = 'Project conversation';
+    if (width > 700) await h.manager.viewerSlot.show('one');
+    else await h.manager.openConversation('one');
+    await nextFrame();
+    expect(h.leaf.header).toEqual({ title: 'Project conversation', icon: 'lucide-book-open' });
+    h.records[0].title = '';
+    h.publisher!.notifyConversationListChanged();
+    await nextFrame();
+    expect(h.leaf.header.title).toBe('Renamed project');
+    projects.remove('p');
+    h.publisher!.notifyConversationListChanged();
+    await nextFrame();
+    expect(h.leaf.header).toEqual({ title: 'New Chat', icon: 'bot' });
+    expect(native.sessions).toHaveLength(0);
+    await h.view.onClose();
+    expect(h.view.getDisplayText()).toBe('Claudian');
+    expect(h.view.getIcon()).toBe('bot');
+  });
+});
+
+
+it('keeps a readable view when desktop chrome refresh hooks are absent', async () => {
+  const h = await createView({ host: { settings: { showConversationTitleInWorkspace: true } } });
+  expect(h.view.getDisplayText()).toBe('Claudian');
+  Object.defineProperty(h.leaf, 'updateHeader', { value: undefined, configurable: true });
+  Object.defineProperty(h.workspace, 'updateTitle', { value: undefined, configurable: true });
+  await h.view.setState(workspaceState(['compat']), { history: false });
+  await new Promise<void>(resolve => window.requestAnimationFrame(() => resolve()));
+  expect(h.view.getDisplayText()).toBe('New Chat');
+  expect(h.view.getIcon()).toBe('bot');
+  expect(within(h.contentEl).getByRole('textbox', { name: 'Message' })).toBeDefined();
+  await h.view.onClose();
+  expect(h.view.getDisplayText()).toBe('Claudian');
 });
