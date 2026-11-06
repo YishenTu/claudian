@@ -141,6 +141,33 @@ it.each([false, true])('resolves current titles once and carries snapshots throu
   } finally { await fixture.native.coordinator.dispose(); await fixture.native.registry.dispose(); }
 });
 
+it('preserves both original reference drafts when their queued messages are edited', async () => {
+  const fixture = await setup();
+  await fixture.native.coordinator.bindConversation({ conversationId: 'conversation-1', providerId: 'claude' });
+  const release = await fixture.holdResponse();
+  const first = `    firstIndented()\n\nUse ${token}  \n`;
+  const second = `    secondIndented()\n\nUse ${token}  \n`;
+  try {
+    fixture.input.value = first;
+    await fixture.controller.sendMessage();
+    expect(fixture.state.queuedMessage?.turnRequest.draftContent).toBe(first);
+    fixture.input.value = second;
+    await fixture.controller.sendMessage();
+    expect(fixture.plugin.getConversationById).toHaveBeenCalledTimes(2);
+    expect(fixture.state.queuedMessage?.turnRequest.text).toBe(
+      'firstIndented()\n\nUse @"Current title"\n\nsecondIndented()\n\nUse @"Current title"',
+    );
+    fixture.controller.queue.withdrawToComposer();
+    expect(fixture.input.value).toBe(`${first}\n${second}`);
+    expect(fixture.state.queuedMessage).toBeNull();
+    expect(fixture.native.backends.get('claude')!.sessions).toHaveLength(0);
+  } finally {
+    await release();
+    await fixture.native.coordinator.dispose();
+    await fixture.native.registry.dispose();
+  }
+});
+
 it('preserves the original token draft when the session cannot be loaded', async () => {
   const fixture = (await setup());
   try {
