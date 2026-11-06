@@ -68,7 +68,7 @@ export class ResumeSessionDropdown {
   }
 
   handleKeydown(e: KeyboardEvent): boolean {
-    if (!this.isVisible()) return false;
+    if (!this.isVisible() || e.isComposing) return false;
 
     switch (e.key) {
       case 'ArrowDown':
