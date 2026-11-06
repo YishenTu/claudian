@@ -91,6 +91,7 @@ export class ComposerDropdownController {
 
   handleKeydown(event: KeyboardEvent): boolean {
     if (!this.view.isVisible() || event.isComposing) return false;
+    if (event.key === 'Tab' && (event.shiftKey || event.ctrlKey || event.metaKey || event.altKey)) return false;
     switch (event.key) {
       case 'ArrowDown':
         if (this.selectedIndex < 0) return false;
