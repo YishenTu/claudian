@@ -9,7 +9,7 @@ function getPathModule(value: string): typeof path.posix {
   ) {
     return path.posix;
   }
-  return value.includes('\\') || /^[A-Za-z]:/.test(value)
+  return value.startsWith('//') || value.includes('\\') || /^[A-Za-z]:/.test(value)
     ? path.win32
     : path.posix;
 }

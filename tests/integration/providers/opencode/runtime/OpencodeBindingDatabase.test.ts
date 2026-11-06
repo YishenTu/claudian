@@ -33,6 +33,25 @@ describe.skipIf(path.sep === '\\')('WSL bindings', () => {
   beforeEach(() => { host = createWindowsHostFS({ fs, fsPromises }); });
   const linuxFile = async (linux: string) => { await host.write(host.fromLinux(linux), ''); return host.fromLinux(linux); };
 
+  it.each([
+    { name: 'forward-slash UNC', configured: '//wsl$/Ubuntu/custom/session.db', exists: true, accessible: true },
+    { name: 'mixed UNC separators', configured: String.raw`//wsl$/Ubuntu/custom\session.db`, exists: true, accessible: true },
+    { name: 'different host', configured: '//other-host/Ubuntu/custom/session.db', exists: true, accessible: false },
+    { name: 'different share', configured: '//wsl$/Ubuntu-other/custom/session.db', exists: true, accessible: false },
+    { name: 'different distro', configured: '//wsl$/Other/custom/session.db', exists: true, accessible: false },
+    { name: 'sibling database', configured: '//wsl$/Ubuntu/custom/session-other.db', exists: true, accessible: false },
+    { name: 'missing recorded file', configured: '//wsl$/Ubuntu/custom/session.db', exists: false, accessible: false },
+  ])('checks a native configured database with $name without rewriting its locator', async ({ configured, exists, accessible }) => {
+    const recorded = await linuxFile('/custom/session.db');
+    const environment = { HOME: '/unrelated-home', XDG_DATA_HOME: '/unrelated-data', OPENCODE_DB: configured };
+    if (!exists) await host.remove(recorded);
+    expect(fs.existsSync(recorded)).toBe(exists);
+    expect(resolveOpencodeDatabasePath(environment)).toBe(configured);
+    expect(resolveOpencodeBindingDatabase(recorded, environment)).toEqual({
+      recorded, accessible: accessible ? recorded : null,
+    });
+  });
+
   it('keeps Linux store identity as a host locator and refuses a different distro', async () => {
     expect(resolveOpencodeDatabasePath(env, target)).toBe('\\\\wsl$\\Ubuntu\\home\\test\\data\\opencode\\opencode.db');
     const recorded = host.fromLinux('/home/test/data/opencode/opencode.db', 'Other');
