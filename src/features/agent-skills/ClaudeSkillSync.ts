@@ -327,9 +327,9 @@ export class ClaudeSkillSync {
   /** Trashes every shared package matching `name` case-insensitively, as conflicts are detected. */
   async #trashShared(name: string): Promise<void> {
     const key = name.toLowerCase();
-    const listing = await this.files.listManagedFolder(AGENT_SKILLS_ROOT);
-    for (const folder of listing.folders) {
-      if (path.posix.dirname(folder) === AGENT_SKILLS_ROOT && path.posix.basename(folder).toLowerCase() === key) {
+    const entries = await this.files.listManagedFolderEntries(AGENT_SKILLS_ROOT);
+    for (const { path: folder, type } of entries) {
+      if (type === 'folder' && path.posix.dirname(folder) === AGENT_SKILLS_ROOT && path.posix.basename(folder).toLowerCase() === key) {
         await this.files.trash(folder);
       }
     }
@@ -346,10 +346,10 @@ export class ClaudeSkillSync {
       allowMissing: true,
     });
     if (!exists) return [];
-    const listing = await this.files.listManagedFolder(AGENT_SKILLS_ROOT);
-    return listing.folders
-      .filter(folder => path.posix.dirname(folder) === AGENT_SKILLS_ROOT)
-      .map(folder => path.posix.basename(folder).toLowerCase());
+    const entries = await this.files.listManagedFolderEntries(AGENT_SKILLS_ROOT);
+    return entries
+      .filter(entry => entry.type === 'folder' && path.posix.dirname(entry.path) === AGENT_SKILLS_ROOT)
+      .map(entry => path.posix.basename(entry.path).toLowerCase());
   }
 
   async #planClaudeSkills(): Promise<SkillSyncItem[]> {
