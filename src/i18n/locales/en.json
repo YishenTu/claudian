@@ -57,6 +57,10 @@
       "copyAriaLabel": "Copy {language} code",
       "copied": "Copied!"
     },
+    "mermaid": {
+      "diagramAlt": "Mermaid diagram",
+      "showSource": "Show diagram source"
+    },
     "sideChat": {
       "title": "Side chat",
       "collapse": "Collapse",
