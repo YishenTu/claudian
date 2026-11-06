@@ -1,6 +1,5 @@
-import { parser } from '@lezer/markdown';
-
 import { stripCodexQuestionReplies } from './codexQuestionNormalization';
+import { type CodeRange, getCodexUserCodeRanges } from './codexUserCode';
 
 const CODEX_IMAGE_OPEN_TAG_PATTERN = /^<image\b[^>]*>$/i;
 const CODEX_IMAGE_CLOSE_TAG_PATTERN = /^<\/image>$/i;
@@ -79,35 +78,17 @@ function stripLeadingCodexControlMetadata(text: string): string {
   return remaining;
 }
 
-interface CodeRange {
-  from: number;
-  to: number;
-  lineStart?: number;
-}
-
 function getCodeRanges(text: string): CodeRange[] {
-  if (!/<image\b|<\/image>/i.test(text)) return [];
-  const ranges: CodeRange[] = [];
-  parser.parse(text).iterate({
-    enter(node) {
-      if (node.name === 'CodeBlock'
-        || ((node.name === 'InlineCode' || node.name === 'FencedCode')
-          && node.node.getChildren('CodeMark').length === 2)) {
-        ranges.push({ from: node.from, to: node.to,
-          ...(node.name === 'CodeBlock' ? { lineStart: text.lastIndexOf('\n', node.from - 1) + 1 } : {}),
-        });
-        return false;
-      }
-    },
-  });
-  return ranges;
+  return /<image\b|<\/image>/i.test(text) ? getCodexUserCodeRanges(text) : [];
 }
 
-/** Trim user chunks without removing indentation that makes literal image markup code. */
+/** Preserve indentation that makes native user-input wrappers literal code. */
 export function trimCodexUserText(text: string): string {
   const firstContent = text.search(/\S/);
-  const leadingCode = getCodeRanges(text).find(range => range.lineStart !== undefined
-    && range.from === firstContent && /<image\b|<\/image>/i.test(text.slice(range.from, range.to)));
+  const controlPattern = /<image\b|<\/image>|<send_user_message_question_reply>/i;
+  const leadingCode = (controlPattern.test(text) ? getCodexUserCodeRanges(text) : [])
+    .find(range => range.lineStart !== undefined
+      && range.from === firstContent && controlPattern.test(text.slice(range.from, range.to)));
   return leadingCode ? text.slice(leadingCode.lineStart).trimEnd() : text.trim();
 }
 

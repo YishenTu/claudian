@@ -1,5 +1,6 @@
 import type { ProviderQuestionReply } from '../../../core/providers/types';
 import type { AskUserAnswers, ToolCallInfo } from '../../../core/types';
+import { getCodexUserCodeRanges } from './codexUserCode';
 
 interface CodexQuestionReply {
   callId: string;
@@ -34,11 +35,18 @@ export function formatCodexQuestionReply(tool: ToolCallInfo, answers: AskUserAns
 const QUESTION_REPLY_PATTERN = /<send_user_message_question_reply>\s*([\s\S]*?)\s*<\/send_user_message_question_reply>/g;
 
 export function parseCodexQuestionReply(text: string): CodexQuestionReply[] {
-  return [...text.matchAll(QUESTION_REPLY_PATTERN)].flatMap(match => decodeQuestionReplies(match[1]));
+  if (!text.includes('<send_user_message_question_reply>')) return [];
+  const codeRanges = getCodexUserCodeRanges(text);
+  return [...text.matchAll(QUESTION_REPLY_PATTERN)].flatMap(match =>
+    codeRanges.some(range => match.index >= range.from && match.index < range.to)
+      ? [] : decodeQuestionReplies(match[1]));
 }
 
 export function stripCodexQuestionReplies(text: string): string {
-  return text.replace(QUESTION_REPLY_PATTERN, (original, body: string) => {
+  if (!text.includes('<send_user_message_question_reply>')) return text;
+  const codeRanges = getCodexUserCodeRanges(text);
+  return text.replace(QUESTION_REPLY_PATTERN, (original, body: string, index: number) => {
+    if (codeRanges.some(range => index >= range.from && index < range.to)) return original;
     const replies = decodeQuestionReplies(body);
     return replies.length > 0 ? '' : original;
   });
