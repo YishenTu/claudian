@@ -1,8 +1,11 @@
 import '@/providers';
 
+import * as fs from 'node:fs/promises';
+import * as path from 'node:path';
+
 import { DesktopVault } from '@test/helpers/core/DesktopVault';
 import { clearWriteFaults, failWritesUnder } from '@test/helpers/core/fsWriteFaults';
-import { testDate } from '@test/helpers/testClock';
+import { testDate, testTime } from '@test/helpers/testClock';
 
 import { ConversationRepository } from '@/app/conversations/ConversationRepository';
 import { ProjectService } from '@/app/projects/ProjectService';
@@ -12,6 +15,7 @@ import { getDeviceSessionsPath, SESSIONS_PATH } from '@/core/bootstrap/storagePa
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { ProviderSettingsCoordinator } from '@/core/providers/ProviderSettingsCoordinator';
 import type { SessionMetadata } from '@/core/types';
+import { encodeVaultPathForSDK, getSDKProjectsPath } from '@/providers/claude/history/ClaudeHistoryStore';
 
 vi.mock('node:fs/promises', async () => {
   const { createFsPromisesWithWriteFaults } = await vi.importActual<typeof import('@test/helpers/core/fsWriteFaults')>('@test/helpers/core/fsWriteFaults');
@@ -24,11 +28,11 @@ let store: ConversationPersistenceStore;
 let projects: ProjectService;
 let repository: ConversationRepository;
 
-function createRepository(): ConversationRepository {
+function createRepository(settings: Record<string, unknown> = {}): ConversationRepository {
   return new ConversationRepository({
     providers: ProviderRegistry,
     providerSettings: ProviderSettingsCoordinator,
-    getSettings: () => ({}),
+    getSettings: () => settings,
     getVaultPath: () => vault.root,
     persistence: store,
     onConversationDeleted: async () => undefined,
@@ -258,4 +262,88 @@ test('commits placement atomically, preserves omitted fields and rejects invalid
   await repository.setPlacement(id, { projectId: first.id, isPinned: false });
   await repository.setPlacement(id, {});
   expect(write).not.toHaveBeenCalled();
+});
+
+test('preserves subagent history through pending-write release veto, eviction, rename and native replay', async () => {
+  const configDir = vault.resolve('claude-home');
+  const sessionDir = path.join(getSDKProjectsPath({ environment: { CLAUDE_CONFIG_DIR: configDir } }), encodeVaultPathForSDK(vault.root));
+  await fs.mkdir(sessionDir, { recursive: true });
+  await fs.writeFile(path.join(sessionDir, 'eviction-session.jsonl'), [
+    { type: 'user', uuid: 'native-user', timestamp: testTime(), message: { content: 'Delegate a task' } },
+    { type: 'assistant', uuid: 'native-assistant', parentUuid: 'native-user', timestamp: testTime({ seconds: 1 }),
+      message: { model: 'claude-sonnet-4-6', content: [
+        { type: 'text', text: 'Native parent answer' },
+        { type: 'tool_use', id: 'task-1', name: 'Agent', input: { description: 'Helper', prompt: 'Investigate' } },
+      ] } },
+  ].map(entry => JSON.stringify(entry)).join('\n'));
+  repository = createRepository({ providerConfigs: { claude: { environmentVariables: `CLAUDE_CONFIG_DIR=${configDir}` } } });
+  const { id } = await repository.create({ sessionId: 'eviction-session', selectedModel: 'sonnet' });
+  await repository.update(id, { messages: [{
+    id: 'live-assistant', role: 'assistant', content: 'Live parent answer', timestamp: testDate().getTime(),
+    toolCalls: [{
+      id: 'task-1', name: 'Agent', input: { description: 'Helper' }, status: 'completed',
+      subagent: {
+        id: 'task-1', description: 'Helper', status: 'completed', result: 'Helper finished',
+        isExpanded: false, toolCalls: [],
+      },
+    }],
+  }] });
+
+  let entered!: () => void;
+  const writeEntered = new Promise<void>(resolve => { entered = resolve; });
+  let release!: () => void;
+  const writeReleased = new Promise<void>(resolve => { release = resolve; });
+  let writeCompleted = false;
+  const writeFile = fs.writeFile;
+  const gatedWrite: typeof fs.writeFile = async (file, data, options) => {
+    const target = String(file);
+    const isMetadataWrite = path.dirname(target) === vault.resolve(devicePath)
+      && /^\.claudian-.*\.tmp$/.test(path.basename(target));
+    if (isMetadataWrite) {
+      entered();
+      await writeReleased;
+    }
+    await writeFile(file, data, options);
+    if (isMetadataWrite) writeCompleted = true;
+  };
+  const write = vi.spyOn(fs, 'writeFile').mockImplementation(gatedWrite);
+  const pending: Promise<unknown>[] = [];
+  try {
+    const saving = repository.rename(id, 'Saved title');
+    pending.push(saving);
+    await writeEntered;
+    let mayRelease = true;
+    const completionAtRelease: boolean[] = [];
+    const evicting = repository.releaseHistory(id, () => {
+      completionAtRelease.push(writeCompleted);
+      return mayRelease;
+    });
+    pending.push(evicting);
+    mayRelease = false;
+    release();
+    await saving;
+    await expect(evicting).resolves.toBe(false);
+    expect(completionAtRelease).toEqual([true]);
+    expect(repository.getCachedConversation(id)?.messages[0].toolCalls?.[0].subagent)
+      .toMatchObject({ id: 'task-1', status: 'completed', result: 'Helper finished' });
+
+    mayRelease = true;
+    await expect(repository.releaseHistory(id, () => mayRelease)).resolves.toBe(true);
+    expect(repository.getCachedConversation(id)?.messages).toEqual([]);
+    await repository.rename(id, 'After eviction');
+    expect(await readMetadata(id)).toMatchObject({
+      id, sessionId: 'eviction-session', title: 'After eviction',
+      providerState: { subagentData: { 'task-1': { id: 'task-1', status: 'completed', result: 'Helper finished' } } },
+    });
+    const replayed = await repository.getById(id);
+    expect(replayed).toMatchObject({ sessionId: 'eviction-session', title: 'After eviction' });
+    const assistant = replayed?.messages.find(message => message.role === 'assistant');
+    expect(assistant?.content).toBe('Native parent answer');
+    expect(assistant?.toolCalls?.find(tool => tool.id === 'task-1')?.subagent)
+      .toMatchObject({ id: 'task-1', status: 'completed', result: 'Helper finished' });
+  } finally {
+    release();
+    await Promise.allSettled(pending);
+    write.mockRestore();
+  }
 });
