@@ -12,6 +12,10 @@ From its next turn, each member session gets a Project section in its system pro
 - the vault path of the project's memory file, and how to keep it;
 - how to work with the other sessions in the project.
 
+Antigravity sessions keep the instructions from native session creation. Changes
+to project instructions or project membership require a new conversation to take
+effect; see [Antigravity instructions](antigravity.md#instructions-belong-to-the-new-conversation).
+
 A side chat opened from a member gets the same section, taken from its parent when the side chat starts.
 
 ## The memory file
@@ -55,7 +59,7 @@ Create a project with the `+` in the session list's **Projects** header, or with
 |---|---|
 | Name | Shown in the session list and in member sessions. Required. |
 | Icon | Click the icon before the name to pick one of Obsidian's icons; search narrows the list. Shown on the project's header in the session list and on the project chip under the composer. Without one, the project shows a folder that opens with its group; a chosen icon stays the same and dims while its group is collapsed. |
-| Instructions | Added to every member's system prompt from its next turn. No length limit. |
+| Instructions | Added to member system prompts from the next turn, except Antigravity sessions, which keep their creation-time instructions. No length limit. |
 | Memory file | Vault path of the memory file. Defaults to `.claudian/projects/<project-name>/MEMORY.md`, based on the name; a missing `.md` extension is added. The path must be inside the vault and must not already be used by a file or another project. |
 
 Project records are stored one per project in `.claudian/projects/<id>.json`.
