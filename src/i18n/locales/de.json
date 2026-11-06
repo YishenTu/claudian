@@ -252,6 +252,11 @@
       "completed": "{seconds}s nachgedacht",
       "label": "Gedanken"
     },
+    "contextUsage": {
+      "label": "Kontextnutzung",
+      "details": "Kontextnutzung: {details}",
+      "nearLimit": " (Limit fast erreicht, zum Fortfahren {command} ausführen)"
+    },
     "suggestions": {
       "loading": "Wird geladen…",
       "noMatches": "Keine Treffer",

@@ -252,6 +252,11 @@
       "completed": "{seconds}초 동안 생각함",
       "label": "생각"
     },
+    "contextUsage": {
+      "label": "컨텍스트 사용량",
+      "details": "컨텍스트 사용량: {details}",
+      "nearLimit": " (한도에 가까워지고 있습니다. 계속하려면 {command}를 실행하세요)"
+    },
     "suggestions": {
       "loading": "불러오는 중…",
       "noMatches": "일치하는 항목 없음",

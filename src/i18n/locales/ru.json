@@ -252,6 +252,11 @@
       "completed": "Размышлял {seconds}с",
       "label": "Размышления"
     },
+    "contextUsage": {
+      "label": "Использование контекста",
+      "details": "Использование контекста: {details}",
+      "nearLimit": " (Приближение к лимиту, выполните {command}, чтобы продолжить)"
+    },
     "suggestions": {
       "loading": "Загрузка…",
       "noMatches": "Нет совпадений",

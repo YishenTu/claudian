@@ -252,6 +252,11 @@
       "completed": "Pensou por {seconds}s",
       "label": "Raciocínio"
     },
+    "contextUsage": {
+      "label": "Uso do contexto",
+      "details": "Uso do contexto: {details}",
+      "nearLimit": " (Próximo do limite, execute {command} para continuar)"
+    },
     "suggestions": {
       "loading": "Carregando…",
       "noMatches": "Sem correspondências",
