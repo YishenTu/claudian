@@ -6,11 +6,12 @@ import { getHiddenCommandSet } from '@/core/providers/commands/hiddenCommands';
 import { DEFAULT_CHAT_PROVIDER_ID, type ProviderId } from '@/core/providers/types';
 import { VIEW_TYPE_CLAUDIAN } from '@/core/types';
 import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
+import { projectIconId } from '@/features/chat/projects/projectIcon';
 import { SessionManagerSurface, setControlAvailability } from '@/features/chat/session-manager/SessionManagerSurface';
 import { SessionNavigation } from '@/features/chat/session-manager/SessionNavigation';
 import { getSessionProviderId } from '@/features/chat/sessions/sessionProvider';
 import type { ChatTab, TabId } from '@/features/chat/tabs/ChatTab';
-import { inheritedDraftSeed } from '@/features/chat/tabs/draftSeed';
+import { inheritedDraftSeed, sessionProjectId } from '@/features/chat/tabs/draftSeed';
 import { TabWorkspaceLifecycle } from '@/features/chat/tabs/persistence/TabWorkspaceLifecycle';
 import { TabBar } from '@/features/chat/tabs/TabBar';
 import {
@@ -29,6 +30,7 @@ import { ChatPresentationPlacement } from '@/features/chat/view/ChatPresentation
 import { DualPaneLayout, type DualPaneLayoutElements } from '@/features/chat/view/DualPaneLayout';
 import type { ZenModeSlots, ZenModeSource, ZenPresentationPort } from '@/features/chat/zen/types';
 import { VaultMentionDataProvider } from '@/shared/mention/VaultMentionDataProvider';
+import { refreshWorkspaceViewChrome } from '@/utils/obsidianCompat';
 
 type LoadableView = {
   containerEl?: HTMLElement;
@@ -153,11 +155,18 @@ export class ClaudianView extends ItemView implements ZenModeSource {
   }
 
   getDisplayText(): string {
-    return 'Claudian';
+    if (this.plugin?.settings.showConversationTitleInWorkspace !== true) return 'Claudian';
+    const tab = this.tabManager?.getActiveTab();
+    if (!tab) return 'Claudian';
+    const title = tab.conversationId ? this.plugin.getConversationSummary(tab.conversationId)?.title : null;
+    return title?.trim() || this.plugin.projects.get(sessionProjectId(tab.session.runtime))?.name || 'New Chat';
   }
 
   getIcon(): string {
-    return 'bot';
+    if (this.plugin?.settings.showConversationTitleInWorkspace !== true) return 'bot';
+    const tab = this.tabManager?.getActiveTab();
+    const project = tab ? this.plugin.projects.get(sessionProjectId(tab.session.runtime)) : null;
+    return project ? projectIconId(project) : 'bot';
   }
 
   getState(): Record<string, unknown> {
@@ -329,6 +338,9 @@ export class ClaudianView extends ItemView implements ZenModeSource {
             this.syncProviderBrandColor();
           }
           persist();
+        },
+        onTabProjectChanged: () => {
+          if (isTabWorkspaceInitialized()) this.updateTabBar();
         },
         onTabDraftChanged: () => {
           persist();
@@ -532,6 +544,7 @@ export class ClaudianView extends ItemView implements ZenModeSource {
   /** Refreshes tab controls after settings that affect tab availability change. */
   refreshTabControls(): void {
     this.updateTabBarVisibility();
+    refreshWorkspaceViewChrome(this.app.workspace, this.leaf);
   }
 
   // ============================================
@@ -577,6 +590,9 @@ export class ClaudianView extends ItemView implements ZenModeSource {
       const items = this.tabManager.getTabBarItems();
       this.tabBar.update(items);
       this.updateTabBarVisibility();
+      if (this.plugin.settings.showConversationTitleInWorkspace === true) {
+        refreshWorkspaceViewChrome(this.app.workspace, this.leaf);
+      }
     }, this.containerEl.ownerDocument.defaultView ?? null);
   }
 

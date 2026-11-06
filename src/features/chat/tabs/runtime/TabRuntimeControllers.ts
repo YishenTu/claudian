@@ -172,7 +172,10 @@ export function buildTabRuntimeControllers(
         applyProviderUIGating(tab, plugin);
         syncComposerDropdownForProvider(tab, plugin, core.providerCatalogResolver);
         break;
-      case 'project': ui.projectChip.refresh(); break;
+      case 'project':
+        ui.projectChip.refresh();
+        options.onProjectChanged?.(tab);
+        break;
       case 'destination':
         promptHistoryNavigation.reset();
         ui.composerDropdown.setBuiltInsEnabled(sideChatController.destination === 'main');

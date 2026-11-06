@@ -574,6 +574,10 @@
       "name": "Desplazamiento automático durante streaming",
       "desc": "Desplazarse automáticamente hacia abajo mientras Claude transmite respuestas. Desactivar para quedarse arriba y leer desde el principio."
     },
+    "showConversationTitleInWorkspace": {
+      "name": "Mostrar el título de la conversación en las pestañas de Obsidian",
+      "desc": "Usa el título de la conversación activa y el icono del proyecto en la pestaña de Obsidian y el encabezado del panel. Desactivado, conserva el nombre y el icono fijos de Claudian."
+    },
     "showMessageTimestamps": {
       "name": "Mostrar marcas de tiempo de mensajes",
       "desc": "Mostrar la hora local de envío o llegada de cada mensaje en el chat."

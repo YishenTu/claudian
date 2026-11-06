@@ -42,6 +42,7 @@ export interface TabRuntimeFactoryOptions {
   startNewConversation: () => Promise<void>;
   onStreamingChanged?: (tab: AssembledTabRuntime, isStreaming: boolean) => void;
   onWorkChanged?: (tab: AssembledTabRuntime) => void;
+  onProjectChanged?: (tab: AssembledTabRuntime) => void;
   onRewindingChanged?: (tab: AssembledTabRuntime, isRewinding: boolean) => void;
   onAttentionChanged?: (tab: AssembledTabRuntime, attention: TabAttention) => void;
   onConversationIdChanged?: (tab: AssembledTabRuntime, conversationId: string | null) => void;

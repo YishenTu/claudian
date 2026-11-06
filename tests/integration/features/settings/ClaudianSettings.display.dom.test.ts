@@ -251,3 +251,23 @@ it('updates a disabled provider surface from its committed enablement notificati
   expect(within(titleModels).getByRole('option', { name: 'Codex: GPT-5.5' })).toBeDefined();
   expect(within(h.container).queryByRole('status')).toBeNull();
 });
+
+
+it.each([false, true])('offers workspace conversation titles as an accessible opt-in and restores the committed value on save failure=%s', async fail => {
+  let rejectSave = fail;
+  const h = await createSettings({}, async () => { if (rejectSave) throw new Error('Settings write failed'); });
+  try {
+    const control = within(h.container).getByRole('switch', { name: 'Show conversation title in Obsidian tabs' });
+    expect(control.getAttribute('aria-checked')).toBe('false');
+    expect(await axe(control.closest<HTMLElement>('.setting-item')!)).toHaveNoViolations();
+    fireEvent.click(control);
+    const outcome = await controlChangeSettled(control).then(() => 'saved', (error: Error) => error.message);
+    expect(outcome).toBe(fail ? 'Settings write failed' : 'saved');
+    expect(h.mutations).toHaveBeenCalledTimes(1);
+    expect(h.persist).toHaveBeenCalledTimes(1);
+    expect(control.getAttribute('aria-checked')).toBe(String(!fail));
+    expect((await h.storage.load()).showConversationTitleInWorkspace).toBe(!fail);
+  } finally {
+    rejectSave = false;
+  }
+});

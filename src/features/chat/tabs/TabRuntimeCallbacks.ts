@@ -69,6 +69,9 @@ export function createTabRuntimeCallbacks(
     onStreamingChanged: (runtime, isStreaming) => {
       if (membership.isTabStateMutable(runtime)) callbacks.onTabStreamingChanged?.(runtime.id, isStreaming);
     },
+    onProjectChanged: (runtime) => {
+      if (membership.isTabStateMutable(runtime)) callbacks.onTabProjectChanged?.(runtime.id);
+    },
     onWorkChanged: (runtime) => {
       if (membership.isTabStateMutable(runtime)) callbacks.onTabWorkChanged?.(runtime.id);
     },
