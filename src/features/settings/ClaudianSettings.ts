@@ -26,6 +26,32 @@ import { frameSettingsGroups } from '@/shared/settings/SettingsGroups';
 
 type SettingsTabId = 'general' | 'providers' | 'skills';
 
+/** Keep native controls aligned with the serialized settings owner's committed snapshot. */
+function bindCommittedControl<T>(
+  control: { setValue(value: T): unknown; onChange(callback: (value: T) => Promise<void>): unknown },
+  getValue: () => T,
+  save: (value: T) => Promise<void>,
+  onChanged?: () => void,
+): void {
+  let synchronizing = false;
+  control.setValue(getValue());
+  control.onChange(async value => {
+    if (synchronizing) return;
+    const previous = getValue();
+    try {
+      await save(value);
+    } finally {
+      synchronizing = true;
+      try {
+        control.setValue(getValue());
+      } finally {
+        synchronizing = false;
+      }
+      if (getValue() !== previous) onChanged?.();
+    }
+  });
+}
+
 export class ClaudianSettingTab extends PluginSettingTab {
   private readonly host: FeatureHost;
   private activeTab: SettingsTabId = 'general';
@@ -296,41 +322,29 @@ export class ClaudianSettingTab extends PluginSettingTab {
         dropdown
           .addOption('right-sidebar', t('settings.chatViewPlacement.rightSidebar'))
           .addOption('left-sidebar', t('settings.chatViewPlacement.leftSidebar'))
-          .addOption('main-tab', t('settings.chatViewPlacement.mainTab'))
-          .setValue(this.host.settings.chatViewPlacement)
-          .onChange(async (value) => {
-            await this.host.mutateSettings((settings) => {
-              settings.chatViewPlacement = value as ChatViewPlacement;
-            });
+          .addOption('main-tab', t('settings.chatViewPlacement.mainTab'));
+        bindCommittedControl(dropdown, () => this.host.settings.chatViewPlacement, async value => {
+            await this.host.mutateSettings(settings => { settings.chatViewPlacement = value as ChatViewPlacement; });
           });
       });
 
     new AccessibleSetting(container)
       .setName(t('settings.enableZenMode.name'))
       .setDesc(t('settings.enableZenMode.desc'))
-      .addToggle((toggle) =>
-        toggle
-          .setValue(this.host.settings.enableZenMode)
-          .onChange(async (value) => {
-            await this.host.mutateSettings((settings) => {
-              settings.enableZenMode = value;
-            });
-          })
-      );
+      .addToggle((toggle) => {
+        bindCommittedControl(toggle, () => this.host.settings.enableZenMode, async value => {
+          await this.host.mutateSettings(settings => { settings.enableZenMode = value; });
+        });
+      });
 
     new AccessibleSetting(container)
       .setName(t('settings.enableDualPane.name'))
       .setDesc(t('settings.enableDualPane.desc'))
-      .addToggle((toggle) =>
-        toggle
-          .setValue(this.host.settings.enableDualPane ?? true)
-          .onChange(async (value) => {
-            await this.host.mutateSettings((settings) => {
-              settings.enableDualPane = value;
-            });
-            this.update();
-          })
-      );
+      .addToggle((toggle) => {
+        bindCommittedControl(toggle, () => this.host.settings.enableDualPane ?? true, async value => {
+          await this.host.mutateSettings(settings => { settings.enableDualPane = value; });
+        }, () => this.update());
+      });
 
     if (this.host.settings.enableDualPane ?? true) {
       new AccessibleSetting(container)
@@ -339,13 +353,10 @@ export class ClaudianSettingTab extends PluginSettingTab {
         .addDropdown((dropdown) => {
           dropdown
             .addOption('left', t('settings.dualPaneSide.left'))
-            .addOption('right', t('settings.dualPaneSide.right'))
-            .setValue(this.host.settings.dualPaneSide ?? 'right')
-            .onChange(async (value) => {
-              await this.host.mutateSettings((settings) => {
-                settings.dualPaneSide = value as DualPaneSide;
-              });
-              });
+            .addOption('right', t('settings.dualPaneSide.right'));
+          bindCommittedControl(dropdown, () => this.host.settings.dualPaneSide ?? 'right', async value => {
+            await this.host.mutateSettings(settings => { settings.dualPaneSide = value as DualPaneSide; });
+          });
         });
 
     }
@@ -354,66 +365,46 @@ export class ClaudianSettingTab extends PluginSettingTab {
       .setName(t('settings.restoreTabsOnStartup.name'))
       .setDesc(t('settings.restoreTabsOnStartup.desc'))
       .addToggle((toggle) => {
-        toggle
-          .setValue(this.host.settings.restoreTabsOnStartup)
-          .onChange(async (value) => {
-            await this.host.mutateSettings((settings) => {
-              settings.restoreTabsOnStartup = value;
-            });
-          });
+        bindCommittedControl(toggle, () => this.host.settings.restoreTabsOnStartup, async value => {
+          await this.host.mutateSettings(settings => { settings.restoreTabsOnStartup = value; });
+        });
       });
 
     new AccessibleSetting(container)
       .setName(t('settings.enableAutoScroll.name'))
       .setDesc(t('settings.enableAutoScroll.desc'))
-      .addToggle((toggle) =>
-        toggle
-          .setValue(this.host.settings.enableAutoScroll ?? true)
-          .onChange(async (value) => {
-            await this.host.mutateSettings((settings) => {
-              settings.enableAutoScroll = value;
-            });
-          })
-      );
+      .addToggle((toggle) => {
+        bindCommittedControl(toggle, () => this.host.settings.enableAutoScroll ?? true, async value => {
+          await this.host.mutateSettings(settings => { settings.enableAutoScroll = value; });
+        });
+      });
 
     new AccessibleSetting(container)
       .setName(t('settings.showMessageTimestamps.name'))
       .setDesc(t('settings.showMessageTimestamps.desc'))
-      .addToggle((toggle) =>
-        toggle
-          .setValue(this.host.settings.showMessageTimestamps === true)
-          .onChange(async (value) => {
-            await this.host.mutateSettings((settings) => {
-              settings.showMessageTimestamps = value;
-            });
-          })
-      );
+      .addToggle((toggle) => {
+        bindCommittedControl(toggle, () => this.host.settings.showMessageTimestamps === true, async value => {
+          await this.host.mutateSettings(settings => { settings.showMessageTimestamps = value; });
+        });
+      });
 
     new AccessibleSetting(container)
       .setName(t('settings.deferMathRenderingDuringStreaming.name'))
       .setDesc(t('settings.deferMathRenderingDuringStreaming.desc'))
-      .addToggle((toggle) =>
-        toggle
-          .setValue(this.host.settings.deferMathRenderingDuringStreaming ?? true)
-          .onChange(async (value) => {
-            await this.host.mutateSettings((settings) => {
-              settings.deferMathRenderingDuringStreaming = value;
-            });
-          })
-      );
+      .addToggle((toggle) => {
+        bindCommittedControl(toggle, () => this.host.settings.deferMathRenderingDuringStreaming ?? true, async value => {
+          await this.host.mutateSettings(settings => { settings.deferMathRenderingDuringStreaming = value; });
+        });
+      });
 
     new AccessibleSetting(container)
       .setName(t('settings.expandFileEditsByDefault.name'))
       .setDesc(t('settings.expandFileEditsByDefault.desc'))
-      .addToggle((toggle) =>
-        toggle
-          .setValue(this.host.settings.expandFileEditsByDefault ?? false)
-          .onChange(async (value) => {
-            await this.host.mutateSettings((settings) => {
-              settings.expandFileEditsByDefault = value;
-            });
-          })
-      );
+      .addToggle((toggle) => {
+        bindCommittedControl(toggle, () => this.host.settings.expandFileEditsByDefault ?? false, async value => {
+          await this.host.mutateSettings(settings => { settings.expandFileEditsByDefault = value; });
+        });
+      });
 
     new AccessibleSetting(container)
       .setName(t('settings.pluginRenderedFenceLanguages.name'))
@@ -442,16 +433,11 @@ export class ClaudianSettingTab extends PluginSettingTab {
     new AccessibleSetting(container)
       .setName(t('settings.autoTitle.name'))
       .setDesc(t('settings.autoTitle.desc'))
-      .addToggle((toggle) =>
-        toggle
-          .setValue(this.host.settings.enableAutoTitleGeneration)
-          .onChange(async (value) => {
-            await this.host.mutateSettings((settings) => {
-              settings.enableAutoTitleGeneration = value;
-            });
-            this.update();
-          })
-      );
+      .addToggle((toggle) => {
+        bindCommittedControl(toggle, () => this.host.settings.enableAutoTitleGeneration, async value => {
+          await this.host.mutateSettings(settings => { settings.enableAutoTitleGeneration = value; });
+        }, () => this.update());
+      });
 
     if (this.host.settings.enableAutoTitleGeneration) {
       new AccessibleSetting(container)
@@ -462,13 +448,9 @@ export class ClaudianSettingTab extends PluginSettingTab {
           for (const locale of getAvailableLocales()) {
             dropdown.addOption(locale, getLocaleDisplayName(locale));
           }
-          dropdown
-            .setValue(this.host.settings.titleGenerationLocale || '')
-            .onChange(async (value) => {
-              await this.host.mutateSettings((settings) => {
-                settings.titleGenerationLocale = value;
-              });
-            });
+          bindCommittedControl(dropdown, () => this.host.settings.titleGenerationLocale || '', async value => {
+            await this.host.mutateSettings(settings => { settings.titleGenerationLocale = value; });
+          });
         });
 
       new AccessibleSetting(container)
@@ -503,12 +485,11 @@ export class ClaudianSettingTab extends PluginSettingTab {
 
           this.refreshTitleModelOptions = refreshOptions;
           refreshOptions();
-          dropdown.onChange(async (value) => {
-            await this.host.mutateSettings((settings) => {
+          bindCommittedControl(dropdown, () => this.host.settings.titleGenerationModel || '', async value => {
+            await this.host.mutateSettings(settings => {
               ProviderSettingsCoordinator.applyTitleGenerationModelSelection(settings, value);
             });
-            refreshOptions();
-          });
+          }, refreshOptions);
         });
     }
 
@@ -526,12 +507,9 @@ export class ClaudianSettingTab extends PluginSettingTab {
           .addOption('off', t('settings.sessionAutoArchiveAfter.off'))
           .addOption('7d', t('settings.sessionAutoArchiveAfter.days7'))
           .addOption('14d', t('settings.sessionAutoArchiveAfter.days14'))
-          .addOption('30d', t('settings.sessionAutoArchiveAfter.days30'))
-          .setValue(this.host.settings.sessionAutoArchiveAfter ?? 'off')
-          .onChange(async (value) => {
-            await this.host.mutateSettings((settings) => {
-              settings.sessionAutoArchiveAfter = value as SessionAutoArchiveAfter;
-            });
+          .addOption('30d', t('settings.sessionAutoArchiveAfter.days30'));
+          bindCommittedControl(dropdown, () => this.host.settings.sessionAutoArchiveAfter ?? 'off', async value => {
+            await this.host.mutateSettings(settings => { settings.sessionAutoArchiveAfter = value as SessionAutoArchiveAfter; });
           });
       });
 
@@ -623,13 +601,9 @@ export class ClaudianSettingTab extends PluginSettingTab {
       .setName(t('settings.requireCommandOrControlEnterToSend.name'))
       .setDesc(t('settings.requireCommandOrControlEnterToSend.desc'))
       .addToggle((toggle) => {
-        toggle
-          .setValue(this.host.settings.requireCommandOrControlEnterToSend ?? false)
-          .onChange(async (value) => {
-            await this.host.mutateSettings((settings) => {
-              settings.requireCommandOrControlEnterToSend = value;
-            });
-          });
+        bindCommittedControl(toggle, () => this.host.settings.requireCommandOrControlEnterToSend ?? false, async value => {
+          await this.host.mutateSettings(settings => { settings.requireCommandOrControlEnterToSend = value; });
+        });
       });
 
     new AccessibleSetting(container)
