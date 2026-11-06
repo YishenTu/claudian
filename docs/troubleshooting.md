@@ -24,6 +24,8 @@ For Codex on macOS, auto-detection also checks ChatGPT.app in `/Applications` an
 
 **Alternative**: Add your Node.js bin directory to PATH in Settings → Claudian → General → Environment → Shared environment.
 
+On Windows, see [Windows and WSL execution](windows-wsl.md) for choosing an installation method, a distro and paths that match that execution environment.
+
 ## A newly released model is missing
 
 Claudian discovers models from each configured provider rather than keeping its own hard-coded model list. A model can therefore be available through a provider API or announced publicly before it appears in the catalog returned for your provider installation, configuration, and account.
