@@ -38,7 +38,10 @@ it('navigates linked-content choices with arrows, selects, and returns focus on 
     expect(document.activeElement).toBe(search);
     fireEvent.input(search, { target: { value: 'p' } });
 
-    expect(view.getByRole('listbox', { name: 'Linked content choices' })).toBeTruthy();
+    const list = view.getByRole('listbox', { name: 'Linked content choices' });
+    expect(search.getAttribute('aria-controls')).toBe(list.id);
+    const activeChoice = () => document.getElementById(search.getAttribute('aria-activedescendant') ?? '');
+    expect(activeChoice()).toBe(view.getByRole('option', { name: 'Plans. Plans' }));
     expect(view.getAllByRole('option')).toHaveLength(2);
     expect(view.getByRole('option', { name: 'Plans. Plans' }).getAttribute('aria-selected')).toBe('true');
     expect(view.getByRole('option', { name: 'Projects. Projects' }).getAttribute('aria-selected')).toBe('false');
@@ -47,10 +50,21 @@ it('navigates linked-content choices with arrows, selects, and returns focus on 
     })).toHaveNoViolations();
 
     fireEvent.keyDown(search, { key: 'ArrowDown' });
+    expect(activeChoice()).toBe(view.getByRole('option', { name: 'Projects. Projects' }));
+    expect(document.activeElement).toBe(search);
     expect(view.getByRole('option', { name: 'Projects. Projects' }).getAttribute('aria-selected')).toBe('true');
     expect(view.getByRole('option', { name: 'Plans. Plans' }).getAttribute('aria-selected')).toBe('false');
     fireEvent.keyDown(search, { key: 'ArrowUp' });
+    expect(activeChoice()).toBe(view.getByRole('option', { name: 'Plans. Plans' }));
     expect(view.getByRole('option', { name: 'Plans. Plans' }).getAttribute('aria-selected')).toBe('true');
+    fireEvent.input(search, { target: { value: 'No matching content' } });
+    expect(view.getByRole('listbox', { name: 'Linked content choices' })).toBeTruthy();
+    expect(activeChoice()).toBeNull();
+    fireEvent.input(search, { target: { value: '' } });
+    expect(search.hasAttribute('aria-controls')).toBe(false);
+    expect(search.hasAttribute('aria-activedescendant')).toBe(false);
+    fireEvent.input(search, { target: { value: 'p' } });
+    expect(activeChoice()).toBe(view.getByRole('option', { name: 'Plans. Plans' }));
     fireEvent.keyDown(search, { key: 'ArrowDown' });
     fireEvent.keyDown(search, { key: 'Enter' });
 
