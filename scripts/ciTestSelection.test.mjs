@@ -95,6 +95,7 @@ test('real dependency discovery retains native launch checks for shared process 
     'tests/integration/core/process/execution-target/WSLCaptureCancellation.test.ts',
     'tests/integration/core/process/execution-target/WSLShellLaunch.test.ts',
     'tests/integration/core/process/loginShellPath.test.ts',
+    'tests/integration/core/providers/cli/CLIInstallationProbe.test.ts',
     'tests/integration/features/chat/tabs/forking/ForkSource.opencode-v2.test.ts',
     'tests/integration/features/chat/tabs/forking/ForkSource.opencode.test.ts',
     'tests/integration/helpers/WSLProcessFixture.test.ts',
