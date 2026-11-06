@@ -649,3 +649,47 @@ it.each([false, true].flatMap(lateNative => ['text', 'thinking'].map(boundary =>
     vi.useRealTimers();
   }
 });
+
+
+it.each(['inline', 'fenced', 'indented', 'leading indented'] as const)('keeps %s question-reply code visible without answering a native question', form => {
+  const tool = restoreTool('history', 'request_user_input_async', { questions: [{ title: 'Which check?', options: ['History'] }] });
+  const reply = formatCodexQuestionReply(tool, { '0': 'History' })!.content;
+  const text = form === 'inline' ? `Explain \`${reply.replace(/\n/g, ' ')}\`.`
+    : form === 'fenced' ? `Explain this example:\n\`\`\`xml\n${reply}\n\`\`\``
+      : `${form === 'indented' ? 'Explain this example:\n\n' : ''}${reply.split('\n').map(line => `    ${line}`).join('\n')}`;
+  const chunks: StreamChunk[] = [];
+  const router = new CodexNotificationRouter(chunk => chunks.push(chunk), '/workspace');
+  router.beginTurn();
+  router.handleNotification('item/started', { item: { type: 'userMessage', id: 'literal-example', content: [{ type: 'text', text }] } });
+  expect.soft(chunks.filter(chunk => chunk.type === 'user_message_start')).toEqual([
+    { type: 'user_message_start', itemId: 'literal-example', content: text },
+  ]);
+  const messages = parseCodexSessionContent([
+    { type: 'function_call', name: 'request_user_input_async', call_id: 'tool', arguments: JSON.stringify({ questions: [{ title: 'Which check?', options: ['History'] }] }) },
+    { type: 'function_call_output', call_id: 'tool', output: '{"accepted":true}' },
+    { type: 'message', role: 'user', content: [{ type: 'input_text', text }] },
+  ].map((payload, seconds) => JSON.stringify({ type: 'response_item', timestamp: testTime({ seconds }), payload })).join('\n'));
+  expect.soft(messages.find(message => message.role === 'user')?.content).toBe(text);
+  expect.soft(messages.flatMap(message => message.toolCalls ?? [])[0].resolvedAnswers).toBeUndefined();
+});
+
+
+it('distinguishes question-reply code from an actual reply merged after the example', () => {
+  const tool = restoreTool('history', 'request_user_input_async', { questions: [{ title: 'Which check?', options: ['History', 'CLI'] }] });
+  const example = `Explain this example:\n\`\`\`xml\n${formatCodexQuestionReply(tool, { '0': 'History' })!.content}\n\`\`\``;
+  const text = `${example}\n\n${formatCodexQuestionReply(tool, { '0': 'CLI' })!.content}`;
+  const chunks: StreamChunk[] = [];
+  const router = new CodexNotificationRouter(chunk => chunks.push(chunk), '/workspace');
+  router.beginTurn();
+  router.handleNotification('item/started', { item: { type: 'userMessage', id: 'mixed-example', content: [{ type: 'text', text }] } });
+  expect(chunks.filter(chunk => chunk.type === 'user_message_start')).toEqual([
+    { type: 'user_message_start', itemId: 'mixed-example', content: example },
+  ]);
+  const messages = parseCodexSessionContent([
+    { type: 'function_call', name: 'request_user_input_async', call_id: 'tool', arguments: JSON.stringify({ questions: [{ title: 'Which check?', options: ['History', 'CLI'] }] }) },
+    { type: 'function_call_output', call_id: 'tool', output: '{"accepted":true}' },
+    { type: 'message', role: 'user', content: [{ type: 'input_text', text }] },
+  ].map((payload, seconds) => JSON.stringify({ type: 'response_item', timestamp: testTime({ seconds }), payload })).join('\n'));
+  expect(messages.find(message => message.role === 'user')?.displayContent).toBe(example);
+  expect(messages.flatMap(message => message.toolCalls ?? [])[0].resolvedAnswers).toEqual({ '0': 'CLI' });
+});
