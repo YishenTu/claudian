@@ -105,7 +105,7 @@ async function setup(options: {
   const host = (options.doc ?? document).body.createDiv();
   onTestFinished(() => {
     // End held pointers, including Escape's pending release, before the next test can deliver one.
-    fireEvent.pointerCancel(host.ownerDocument);
+    firePointer('pointerCancel', host.ownerDocument, 0);
     surface.dispose();
   });
   surface.mountSidebar(host);
@@ -256,7 +256,7 @@ it('leaves the row actions to their own clicks in a popout window', async () => 
   fireEvent.keyDown(popout, { key: 'Escape' });
 });
 
-it('cancels with Escape, restoring every project in place', async () => {
+it.each([['pointerUp', 'true'], ['pointerCancel', 'false']] as const)('cancels with Escape and ignores a foreign %s while waiting for the owner release', async (foreignEnd, websiteExpanded) => {
   const { moveTo, offsetOf, plugin, press, projectRow, release, settle, toggle } = await setup();
   press('Empty');
   moveTo(150);
@@ -265,16 +265,45 @@ it('cancels with Escape, restoring every project in place', async () => {
   fireEvent.keyDown(document, { key: 'Escape' });
   expect(projectRow('Empty').classList.contains('claudian-live-sort-lifted')).toBe(false);
   expect([projectRow('Empty'), projectRow('Website')].map(offsetOf)).toEqual(['', '']);
+  expect(plugin.mutateSettings).not.toHaveBeenCalled();
+  if (foreignEnd === 'pointerUp') {
+    // A second pointer may still click another project without consuming the cancelled pointer's release.
+    firePointer('pointerDown', toggle('Website'), 130, 2);
+    firePointer('pointerUp', document, 130, 2);
+    fireEvent.click(toggle('Website'));
+    await settle();
+  } else {
+    firePointer('pointerDown', document.body, 130, 2);
+    firePointer('pointerCancel', document, 130, 2);
+  }
+  expect(toggle('Website').getAttribute('aria-expanded')).toBe(websiteExpanded);
   // The button is still held; its release ends the cancelled drag rather than toggling the project.
   release(110);
   fireEvent.click(toggle('Empty'));
   await settle();
   expect(toggle('Empty').getAttribute('aria-expanded')).toBe('false');
-  expect(plugin.mutateSettings).not.toHaveBeenCalled();
+  expect(plugin.settings.projectOrder).toBeUndefined();
   // The next press is an ordinary click again.
-  fireEvent.click(toggle('Website'));
+  fireEvent.click(toggle('Launch'));
   await settle();
-  expect(toggle('Website').getAttribute('aria-expanded')).toBe('true');
+  expect(toggle('Launch').getAttribute('aria-expanded')).toBe('true');
+});
+
+it.each(['pointerCancel', 'blur'] as const)('stops waiting for an escaped drag after its owner %s', async (end) => {
+  const { moveTo, press, projectRow, release, settle, toggle } = await setup();
+  press('Empty');
+  moveTo(150);
+  fireEvent.keyDown(document, { key: 'Escape' });
+  expect(projectRow('Empty').classList.contains('claudian-live-sort-lifted')).toBe(false);
+
+  if (end === 'blur') fireEvent.blur(window);
+  else firePointer('pointerCancel', document, 150);
+  // A fresh contact after cancellation or losing the window is an ordinary click.
+  const startY = press('Empty');
+  release(startY);
+  fireEvent.click(toggle('Empty'));
+  await settle();
+  expect(toggle('Empty').getAttribute('aria-expanded')).toBe('true');
 });
 
 it('folds a dragged expanded project and moves expanded neighbours as a whole', async () => {

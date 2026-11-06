@@ -63,6 +63,7 @@ interface SortGesture {
   readonly entry: SortEntry;
   readonly doc: Document;
   readonly startY: number;
+  readonly pointerId: number;
   /** The latest pointer position, which a scroll re-applies with the pointer held still. */
   lastY: number;
   /** Set once the press travels past the threshold and the row lifts. */
@@ -134,8 +135,13 @@ export class LiveListSorter {
     const doc = entry.block[0].ownerDocument;
     const win = doc.defaultView;
     const onMove = (moveEvent: PointerEvent): void => this.#move(moveEvent);
-    const onUp = (): void => this.#drop();
-    const onCancel = (): void => this.#cancel();
+    const onUp = (upEvent: PointerEvent): void => {
+      if (upEvent.pointerId === this.#gesture?.pointerId) this.#drop();
+    };
+    const onCancel = (cancelEvent: PointerEvent): void => {
+      if (cancelEvent.pointerId === this.#gesture?.pointerId) this.#cancel();
+    };
+    const onBlur = (): void => this.#cancel();
     const onScroll = (): void => {
       const gesture = this.#gesture;
       if (gesture?.lift) this.#follow(gesture, gesture.lift);
@@ -144,20 +150,22 @@ export class LiveListSorter {
       if (keyEvent.key !== 'Escape' || !this.#gesture?.lift) return;
       keyEvent.preventDefault();
       keyEvent.stopPropagation();
+      const pointerId = this.#gesture.pointerId;
       this.#cancel();
       // The button is still held; its release ends the cancelled drag, not a click on the row.
-      swallowClickAfterRelease(doc);
+      swallowClickAfterRelease(doc, pointerId);
     };
     doc.addEventListener('pointermove', onMove, true);
     doc.addEventListener('pointerup', onUp, true);
     doc.addEventListener('pointercancel', onCancel, true);
     doc.addEventListener('keydown', onKey, true);
     doc.addEventListener('scroll', onScroll, true);
-    win?.addEventListener('blur', onCancel);
+    win?.addEventListener('blur', onBlur);
     this.#gesture = {
       entry,
       doc,
       startY: event.clientY,
+      pointerId: event.pointerId,
       lastY: event.clientY,
       lift: null,
       cleanup: () => {
@@ -166,14 +174,14 @@ export class LiveListSorter {
         doc.removeEventListener('pointercancel', onCancel, true);
         doc.removeEventListener('keydown', onKey, true);
         doc.removeEventListener('scroll', onScroll, true);
-        win?.removeEventListener('blur', onCancel);
+        win?.removeEventListener('blur', onBlur);
       },
     };
   }
 
   #move(event: PointerEvent): void {
     const gesture = this.#gesture;
-    if (!gesture) return;
+    if (!gesture || event.pointerId !== gesture.pointerId) return;
     gesture.lastY = event.clientY;
     let lift = gesture.lift;
     if (!lift) {
@@ -321,18 +329,24 @@ function swallowNextClick(doc: Document): void {
   doc.defaultView?.setTimeout(() => doc.removeEventListener('click', swallow, true), 0);
 }
 
-/** Swallows the click of the next pointer release; a cancelled pointer fires no click, so it stops waiting. */
-function swallowClickAfterRelease(doc: Document): void {
-  const onUp = (): void => {
+/** Swallows the cancelled drag's release click; cancellation or window blur ends the wait without a click. */
+function swallowClickAfterRelease(doc: Document, pointerId: number): void {
+  const onUp = (event: PointerEvent): void => {
+    if (event.pointerId !== pointerId) return;
     stop();
     swallowNextClick(doc);
   };
+  const onCancel = (event: PointerEvent): void => {
+    if (event.pointerId === pointerId) stop();
+  };
   const stop = (): void => {
     doc.removeEventListener('pointerup', onUp, true);
-    doc.removeEventListener('pointercancel', stop, true);
+    doc.removeEventListener('pointercancel', onCancel, true);
+    doc.defaultView?.removeEventListener('blur', stop);
   };
   doc.addEventListener('pointerup', onUp, true);
-  doc.addEventListener('pointercancel', stop, true);
+  doc.addEventListener('pointercancel', onCancel, true);
+  doc.defaultView?.addEventListener('blur', stop);
 }
 
 function measure(entry: SortEntry): SortItem {

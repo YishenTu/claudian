@@ -79,6 +79,7 @@ beforeEach(() => {
   restoreLayout = installRowLayout();
 });
 afterEach(() => {
+  firePointer('pointerCancel', document, 0);
   restoreLayout();
   document.body.replaceChildren();
 });
@@ -108,6 +109,74 @@ it('lifts a selected model and slides the others aside, saving its slot on relea
     await waitFor(() => expect(h.rowOrder()).toEqual(['beta', 'alpha', 'gamma']));
     expect(lifted.isConnected).toBe(false);
     expect(h.row('alpha').style.transform).toBe('');
+  } finally {
+    await h.dispose();
+  }
+});
+
+it('ignores another pointer moving before and during a selected model drag', async () => {
+  const h = await setup();
+  try {
+    const startY = h.press('alpha');
+    firePointer('pointerDown', document.body, startY, 2);
+    firePointer('pointerMove', document, startY + 100, 2);
+    expect(h.row('alpha').classList.contains('claudian-live-sort-lifted')).toBe(false);
+
+    h.moveTo(startY + 40);
+    firePointer('pointerMove', document, startY + 100, 2);
+    expect(h.row('alpha').style.transform).toBe('translateY(40px)');
+    expect(h.row('beta').style.transform).toBe(`translateY(-${ROW_HEIGHT + ROW_GAP}px)`);
+    expect(h.row('gamma').style.transform).toBe('');
+    firePointer('pointerUp', document, startY + 100, 2);
+    h.release(startY + 40);
+    await waitFor(() => expect(h.visibleModels()).toEqual(['beta', 'alpha', 'gamma']));
+    await waitFor(() => expect(h.rowOrder()).toEqual(['beta', 'alpha', 'gamma']));
+  } finally {
+    await h.dispose();
+  }
+});
+
+it.each(['pointerUp', 'pointerCancel'] as const)('keeps the model drag owned by its initiating pointer after a foreign %s', async (foreignEnd) => {
+  const h = await setup();
+  try {
+    const startY = h.press('alpha');
+    h.moveTo(startY + 40);
+    firePointer('pointerDown', document.body, startY, 2);
+    firePointer(foreignEnd, document, startY + 40, 2);
+    expect(h.row('alpha').classList.contains('claudian-live-sort-lifted')).toBe(true);
+    expect(h.row('alpha').style.transform).toBe('translateY(40px)');
+    expect(h.visibleModels()).toEqual(['alpha', 'beta', 'gamma']);
+    expect(h.rowOrder()).toEqual(['alpha', 'beta', 'gamma']);
+
+    // Only the owner can continue to the last slot and commit that final destination.
+    h.moveTo(startY + 100);
+    h.release(startY + 100);
+    await waitFor(() => expect(h.visibleModels()).toEqual(['beta', 'gamma', 'alpha']));
+    await waitFor(() => expect(h.rowOrder()).toEqual(['beta', 'gamma', 'alpha']));
+    expect(h.row('alpha').classList.contains('claudian-live-sort-lifted')).toBe(false);
+  } finally {
+    await h.dispose();
+  }
+});
+
+it.each(['pointerCancel', 'blur'] as const)('cancels a lifted model on its owner %s without saving its order', async (end) => {
+  const h = await setup();
+  try {
+    const startY = h.press('alpha');
+    h.moveTo(startY + 40);
+    expect(h.row('alpha').classList.contains('claudian-live-sort-lifted')).toBe(true);
+    if (end === 'blur') fireEvent.blur(window);
+    else firePointer('pointerCancel', document, startY + 40);
+    expect(h.row('alpha').classList.contains('claudian-live-sort-lifted')).toBe(false);
+    expect(h.row('alpha').style.transform).toBe('');
+    expect(h.visibleModels()).toEqual(['alpha', 'beta', 'gamma']);
+    expect(h.rowOrder()).toEqual(['alpha', 'beta', 'gamma']);
+
+    h.press('alpha');
+    h.moveTo(startY + 40);
+    h.release(startY + 40);
+    await waitFor(() => expect(h.visibleModels()).toEqual(['beta', 'alpha', 'gamma']));
+    await waitFor(() => expect(h.rowOrder()).toEqual(['beta', 'alpha', 'gamma']));
   } finally {
     await h.dispose();
   }
