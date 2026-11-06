@@ -174,6 +174,64 @@ describe('AgentSkillSettings', () => {
     expect(screen.getByRole('dialog')).toBe(dialog);
   });
 
+  it('confirms a skill deletion once while its trash operation is pending', async () => {
+    const { vault, repository, settings, coordinator } = await setup();
+    await repository.create({ name: 'shared-skill', description: 'Shared', instructions: 'Instructions' });
+    await settings.refresh();
+    const trash = vi.spyOn(coordinator, 'trash');
+    const adapter = vault.app.vault.adapter;
+    const actualTrash = adapter.trashSystem.bind(adapter);
+    let release!: () => void;
+    const pending = new Promise<void>(resolve => { release = resolve; });
+    const trashSystem = vi.spyOn(adapter, 'trashSystem').mockImplementation(async path => {
+      await pending;
+      return actualTrash(path);
+    });
+    fireEvent.click(screen.getByRole('button', { name: t('common.delete') }));
+    const dialog = screen.getByRole('dialog');
+    const button = within(dialog).getByRole<HTMLButtonElement>('button', {
+      name: t('settings.agentSkills.delete.confirm'),
+    });
+    try {
+      button.click();
+      await waitFor(() => expect(trashSystem).toHaveBeenCalledTimes(1));
+      expect(button.disabled).toBe(true);
+      button.click();
+    } finally {
+      release();
+    }
+    await Promise.allSettled(trash.mock.results.map(result => result.value));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(vault.trashed).toEqual(['.agents/skills/shared-skill']);
+    expect((await repository.list()).skills).toEqual([]);
+    expect((Notice as Mock).mock.calls.map(args => args[0])).toEqual([
+      t('settings.agentSkills.deleted', { name: 'shared-skill' }),
+    ]);
+    expect(trash).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the deletion confirmation retryable after trash fails', async () => {
+    const { vault, repository, settings } = await setup();
+    await repository.create({ name: 'shared-skill', description: 'Shared', instructions: 'Instructions' });
+    await settings.refresh();
+    vi.spyOn(vault.app.vault.adapter, 'trashSystem').mockRejectedValueOnce(new Error('Trash unavailable'));
+    vi.spyOn(vault.app.vault.adapter, 'trashLocal').mockRejectedValueOnce(new Error('Trash unavailable'));
+    fireEvent.click(screen.getByRole('button', { name: t('common.delete') }));
+    const dialog = screen.getByRole('dialog');
+    const button = within(dialog).getByRole<HTMLButtonElement>('button', {
+      name: t('settings.agentSkills.delete.confirm'),
+    });
+    button.click();
+    await waitFor(() => expect(Notice).toHaveBeenCalledWith(expect.stringContaining('Failed to move shared skill to trash:')));
+    expect(button.disabled).toBe(false);
+    expect(screen.getByRole('dialog')).toBe(dialog);
+    expect((await repository.list()).skills).toHaveLength(1);
+    expect((await axe(dialog)).violations).toEqual([]);
+    button.click();
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect((await repository.list()).skills).toEqual([]);
+  });
+
   it('shows diagnostics and confirms deletion of the entire package', async () => {
     const { vault, repository, settings } = await setup();
     await repository.create({ name: 'shared-skill', description: 'Shared', instructions: 'Instructions' });

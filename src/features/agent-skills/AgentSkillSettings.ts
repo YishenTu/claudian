@@ -201,7 +201,11 @@ class AgentSkillDeleteModal extends AccessibleModal {
     });
     this.contentEl.createEl('code', { text: this.options.path });
 
+    let removing = false;
     const remove = async (): Promise<void> => {
+      if (removing) return;
+      removing = true;
+      deleteButton.disabled = true;
       try {
         const result = await this.options.remove();
         new Notice(result.refreshFailed
@@ -217,6 +221,9 @@ class AgentSkillDeleteModal extends AccessibleModal {
           return;
         }
         new Notice(t('settings.agentSkills.deleteFailed', { message: errorMessage(error) }));
+      } finally {
+        removing = false;
+        deleteButton.disabled = false;
       }
     };
 
