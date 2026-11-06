@@ -318,8 +318,29 @@ export function cliPathRequiresNode(cliPath: string): boolean {
       const bytesRead = fs.readSync(fd, buffer, 0, buffer.length, 0);
       const header = buffer.subarray(0, bytesRead).toString('utf8');
       if (!header.startsWith('#!')) return false;
-      const shebangLine = header.split(/\r?\n/)[0].toLowerCase();
-      return shebangLine.includes('node');
+      const [interpreter, ...args] = header.split(/\r?\n/)[0].slice(2).trim().split(/\s+/);
+      let command = interpreter;
+      if (path.basename(interpreter).toLowerCase() === 'env') {
+        let index = 0;
+        for (; index < args.length; index++) {
+          const arg = args[index];
+          if (arg === '--') {
+            index++;
+            break;
+          }
+          if (arg === '-S' || arg === '-i' || arg === '--ignore-environment' || /^--unset=.+/.test(arg)) {
+            continue;
+          }
+          if (arg === '-u' || arg === '--unset') {
+            index++;
+            continue;
+          }
+          break;
+        }
+        while (/^[A-Za-z_][A-Za-z0-9_]*=/.test(args[index] ?? '')) index++;
+        command = args[index];
+      }
+      return /^(?:node|nodejs)(?:\.exe)?$/i.test(path.basename(command ?? ''));
     } finally {
       if (fd !== null) {
         try {
