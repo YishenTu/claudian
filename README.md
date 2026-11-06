@@ -76,9 +76,16 @@ Or install directly from the [community plugin page](https://community.obsidian.
    cd realclaudian
    ```
 
-2. Install dependencies and build:
+2. Use the Node.js version declared in [.node-version](.node-version), then install dependencies:
    ```bash
    npm install
+   ```
+
+   Outside CI, the postinstall script copies `.env.local.example` to `.env.local` when `.env.local` is missing. Review this file before building.
+
+   Leave `OBSIDIAN_VAULT` unset in both the environment and `.env.local` to build in this checkout. Optionally set it to an existing vault directory to copy `main.js`, `manifest.json` and `styles.css` into that vault's `.obsidian/plugins/claudian` directory after a successful build. Existing copies of these files are replaced.
+
+   ```bash
    npm run build
    ```
 
@@ -86,6 +93,8 @@ Or install directly from the [community plugin page](https://community.obsidian.
    - Settings → Community plugins → Enable "Claudian"
 
 ### Development
+
+The same copy setting applies to `npm run dev`.
 
 ```bash
 # Watch mode
