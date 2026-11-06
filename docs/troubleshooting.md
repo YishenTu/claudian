@@ -64,6 +64,33 @@ Use `ANTHROPIC_AUTH_TOKEN=` instead when that is the inherited credential. Overr
 
 When asking for help, share the variable names involved rather than their secret values.
 
+## Existing chats after changing provider environments
+
+Environment settings apply across conversations in this vault. **Shared
+environment** supplies variables to all providers; a provider's **Custom
+variables** apply to every conversation using that provider. Inserting an
+environment snippet updates those settings. It does not bind the selected
+conversation to a separate account or environment profile.
+
+Changing a native history location can rebuild existing sessions. For example,
+changing Claude's `CLAUDE_CONFIG_DIR`, or Codex's `CODEX_HOME`, retires native
+session bindings for that provider. The next message uses the current
+environment and may replay the conversation's already loaded history into a new
+native session. Changing the setting back later does not establish a permanent
+account choice for each conversation.
+
+If you use separate work and personal accounts, choose the intended environment
+before sending any input. Opening an older chat does not select its original
+account for you. Per-conversation environment selection is not currently
+available.
+
+Transcripts remain in their native provider stores. Claudian does not copy them
+between stores or delete them when the environment changes. History under the
+previous location may be unavailable while another store is selected; restore
+the original environment to read that history. Changing only the CLI path or
+`PATH` preserves native bindings when the store and session identity inputs stay
+the same.
+
 ## More help
 
 For provider-specific installation and configuration guidance, refer to the provider documentation linked in the [Requirements](../README.md#requirements) section. If you have a feature request or run into a bug, please [submit a GitHub issue](https://github.com/YishenTu/claudian/issues).
