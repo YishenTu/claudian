@@ -29,7 +29,7 @@ Open Claudian interface from the ribbon icon or command palette. Everything work
 
 **Slash Commands & Skills** — Type `/` or `$` for reusable prompt templates or Skills from user- and vault-level scopes.
 
-**@mention** — Type `@` to reference vault files, folders and other Claudian sessions.
+**@mention** — Type `@` to reference vault files, folders and other Claudian sessions. For the conversation's primary file or folder, see the [Linked content guide](docs/linked-content.md).
 
 **Cross-Session Messaging** — Let agents read, message, steer or interrupt other Claudian sessions, or start new ones on any provider. See the [Cross-session messaging guide](docs/cross-session-messaging.md).
 
