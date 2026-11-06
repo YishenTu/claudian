@@ -440,6 +440,7 @@
       "providers": "Anbieter",
       "skills": "Skills"
     },
+    "saveFailed": "Einstellungen konnten nicht gespeichert werden",
     "providerSettings": {
       "unavailable": "Anbietereinstellungen sind nicht verfügbar.",
       "loadFailed": "Anbietereinstellungen konnten nicht geladen werden: {message}"

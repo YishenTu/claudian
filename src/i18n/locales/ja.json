@@ -440,6 +440,7 @@
       "providers": "プロバイダー",
       "skills": "スキル"
     },
+    "saveFailed": "設定の保存に失敗しました",
     "providerSettings": {
       "unavailable": "プロバイダー設定を利用できません。",
       "loadFailed": "プロバイダー設定を読み込めませんでした: {message}"

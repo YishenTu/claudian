@@ -43,7 +43,7 @@ export class SkillsSettingsTab {
     private readonly host: SkillsSettingsHost,
   ) {
     this.textEdits = new DebouncedSettingsWriter(mutation => host.mutateSettings(mutation),
-      () => { new Notice('Failed to save settings'); });
+      () => { new Notice(t('settings.saveFailed')); });
     this.sync = new ClaudeSkillSync(files);
     this.bodyEl = containerEl.createDiv({ cls: 'claudian-skills-tab' });
     this.#renderHiddenCommands(containerEl);
