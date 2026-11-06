@@ -130,6 +130,12 @@
       "missingNotice": "Linked content is missing: {path}",
       "openFailed": "Failed to open Linked content: {error}"
     },
+    "selectedContext": {
+      "line": "{count} line selected",
+      "lines": "{count} lines selected",
+      "node": "{count} node selected",
+      "nodes": "{count} nodes selected"
+    },
     "questions": {
       "title": "Question",
       "submit": "Submit",

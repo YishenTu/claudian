@@ -1,10 +1,12 @@
 // @vitest-environment jsdom
+import { axe } from '@test/helpers/accessibility';
 import { fireEvent, within } from '@testing-library/dom';
 import { App, ItemView, WorkspaceLeaf } from 'obsidian';
 
 import { ComposerContextTray } from '@/features/chat/composer/ComposerContextTray';
 import { CanvasSelectionController } from '@/features/chat/input/CanvasSelectionController';
 import { ComposerSelections } from '@/features/chat/input/ComposerSelections';
+import { setLocale } from '@/i18n/i18n';
 
 class CanvasView extends ItemView {
   canvas: { selection: Set<{ id: string }> };
@@ -32,6 +34,7 @@ function stopPolling(): void {
 }
 
 describe('CanvasSelectionController', () => {
+  let visibility: HTMLStyleElement;
   let controller: CanvasSelectionController;
   let app: App;
   let contextTray: ComposerContextTray;
@@ -41,6 +44,9 @@ describe('CanvasSelectionController', () => {
 
   beforeEach(() => {
     vi.useFakeTimers();
+    // Supply the host visibility rule; jsdom does not load plugin CSS.
+    visibility = document.head.appendChild(document.createElement('style'));
+    visibility.textContent = '.claudian-hidden { display: none; }';
 
     trayEl = document.body.createDiv();
     contextTray = new ComposerContextTray(trayEl);
@@ -55,11 +61,42 @@ describe('CanvasSelectionController', () => {
   });
 
   afterEach(() => {
+    visibility.remove();
+    setLocale('en');
     stopPolling();
+    controller.clear();
     vi.useRealTimers();
     contextTray.destroy();
     document.body.replaceChildren();
     vi.restoreAllMocks();
+  });
+
+  it.each([
+    [['2 nodes selected'], '已选择 1 个节点', '移除已选择 1 个节点'],
+    [['2 nodes selected', 'native-node'], '已选择 2 个节点', '移除已选择 2 个节点'],
+  ])('localizes fresh Canvas selection %j without changing source data', async (nodeIds, label, removeName) => {
+    setLocale('zh-CN');
+    const sourceSelection = new Set(nodeIds.map(id => ({ id })));
+    canvasView.canvas.selection = sourceSelection;
+    controller.poll();
+
+    expect(controller.getContext()).toEqual({ canvasPath: 'my-canvas.canvas', nodeIds });
+    expect(canvasView.canvas.selection).toBe(sourceSelection);
+    expect([...sourceSelection].map(node => node.id)).toEqual(nodeIds);
+    expect(canvasView.file.path).toBe('my-canvas.canvas');
+    expect(within(trayEl).getByText(label)).toBeDefined();
+    const remove = within(trayEl).getByRole('button', { name: removeName });
+    vi.useRealTimers();
+    expect(await axe(trayEl)).toHaveNoViolations();
+    fireEvent.click(remove);
+
+    expect(controller.getContext()).toBeNull();
+    expect(controller.hasSelection()).toBe(false);
+    expect(within(trayEl).queryByText(label)).toBeNull();
+    expect(within(trayEl).queryByRole('button', { name: removeName })).toBeNull();
+    expect(canvasView.canvas.selection).toBe(sourceSelection);
+    expect([...sourceSelection].map(node => node.id)).toEqual(nodeIds);
+    expect(canvasView.file.path).toBe('my-canvas.canvas');
   });
 
   it('captures canvas selection and updates indicator', () => {

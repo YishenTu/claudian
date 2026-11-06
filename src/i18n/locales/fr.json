@@ -130,6 +130,12 @@
       "missingNotice": "Contenu lié manquant : {path}",
       "openFailed": "Impossible d’ouvrir le contenu lié : {error}"
     },
+    "selectedContext": {
+      "line": "{count} ligne sélectionnée",
+      "lines": "{count} lignes sélectionnées",
+      "node": "{count} nœud sélectionné",
+      "nodes": "{count} nœuds sélectionnés"
+    },
     "questions": {
       "title": "Question",
       "submit": "Envoyer",

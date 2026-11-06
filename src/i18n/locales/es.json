@@ -130,6 +130,12 @@
       "missingNotice": "Falta el contenido vinculado: {path}",
       "openFailed": "No se pudo abrir el contenido vinculado: {error}"
     },
+    "selectedContext": {
+      "line": "{count} línea seleccionada",
+      "lines": "{count} líneas seleccionadas",
+      "node": "{count} nodo seleccionado",
+      "nodes": "{count} nodos seleccionados"
+    },
     "questions": {
       "title": "Pregunta",
       "submit": "Enviar",

@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { EditorState } from '@codemirror/state';
 import { EditorView } from '@codemirror/view';
+import { axe } from '@test/helpers/accessibility';
 import { installBrowserHighlights } from '@test/helpers/BrowserHighlights';
 import { createObsidianEditor } from '@test/helpers/ObsidianEditor';
 import { fireEvent, within } from '@testing-library/dom';
@@ -9,6 +10,7 @@ import { App, MarkdownView, TFile, WorkspaceLeaf } from 'obsidian';
 import { ComposerContextTray } from '@/features/chat/composer/ComposerContextTray';
 import { ComposerSelections } from '@/features/chat/input/ComposerSelections';
 import { SelectionController } from '@/features/chat/input/SelectionController';
+import { setLocale } from '@/i18n/i18n';
 import * as highlighting from '@/shared/components/SelectionHighlight';
 
 /** The selection runs under the tab's shared poll cadence; the other sources stay idle. */
@@ -25,6 +27,7 @@ function stopPolling(): void {
 }
 
 describe('SelectionController', () => {
+  let visibility: HTMLStyleElement;
   let controller: SelectionController;
   let app: App;
   let contextTray: ComposerContextTray;
@@ -36,6 +39,9 @@ describe('SelectionController', () => {
 
   beforeEach(() => {
     vi.useFakeTimers();
+    // Supply the host visibility rule; jsdom does not load plugin CSS.
+    visibility = document.head.appendChild(document.createElement('style'));
+    visibility.textContent = '.claudian-hidden { display: none; }';
     vi.spyOn(highlighting, 'showSelectionHighlight');
     vi.spyOn(highlighting, 'hideSelectionHighlight');
     trayEl = document.body.createDiv();
@@ -58,6 +64,8 @@ describe('SelectionController', () => {
   });
 
   afterEach(() => {
+    visibility.remove();
+    setLocale('en');
     stopPolling();
     controller.dispose();
     contextTray.destroy();
@@ -65,6 +73,40 @@ describe('SelectionController', () => {
     document.body.replaceChildren();
     vi.useRealTimers();
     vi.restoreAllMocks();
+  });
+
+  it.each([
+    ['2 lines selected', 1, '已选择 1 行', '移除已选择 1 行'],
+    ['2 lines selected\nNative second line', 2, '已选择 2 行', '移除已选择 2 行'],
+  ])('localizes fresh editor selection %j without changing source data', async (text, lineCount, label, removeName) => {
+    setLocale('zh-CN');
+    editorView.dispatch({
+      changes: { from: 0, to: editorView.state.doc.length, insert: text },
+      selection: { anchor: 0, head: text.length },
+    });
+    controller.poll();
+
+    expect(controller.getContext()).toEqual({
+      notePath: 'notes/test.md', mode: 'selection', selectedText: text, lineCount, startLine: 1,
+    });
+    expect(app.workspace.getActiveViewOfType(MarkdownView)?.file?.path).toBe('notes/test.md');
+    expect(editorView.state.doc.toString()).toBe(text);
+    expect(editorView.state.selection.main.from).toBe(0);
+    expect(editorView.state.selection.main.to).toBe(text.length);
+    expect(within(trayEl).getByText(label)).toBeDefined();
+    const remove = within(trayEl).getByRole('button', { name: removeName });
+    vi.useRealTimers();
+    expect(await axe(trayEl)).toHaveNoViolations();
+    fireEvent.click(remove);
+
+    expect(controller.getContext()).toBeNull();
+    expect(controller.hasSelection()).toBe(false);
+    expect(within(trayEl).queryByText(label)).toBeNull();
+    expect(within(trayEl).queryByRole('button', { name: removeName })).toBeNull();
+    expect(app.workspace.getActiveViewOfType(MarkdownView)?.file?.path).toBe('notes/test.md');
+    expect(editorView.state.doc.toString()).toBe(text);
+    expect(editorView.state.selection.main.from).toBe(0);
+    expect(editorView.state.selection.main.to).toBe(text.length);
   });
 
   it('captures selection and updates indicator', () => {

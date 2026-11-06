@@ -130,6 +130,12 @@
       "missingNotice": "Связанное содержимое отсутствует: {path}",
       "openFailed": "Не удалось открыть связанное содержимое: {error}"
     },
+    "selectedContext": {
+      "line": "Выбрано строк: {count}",
+      "lines": "Выбрано строк: {count}",
+      "node": "Выбрано узлов: {count}",
+      "nodes": "Выбрано узлов: {count}"
+    },
     "questions": {
       "title": "Вопрос",
       "submit": "Отправить",
