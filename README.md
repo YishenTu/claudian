@@ -37,6 +37,8 @@ Open Claudian interface from the ribbon icon or command palette. Everything work
 
 **MCP Servers** — Connect external tools through each coding agent's native CLI-managed MCP configuration.
 
+**Code Blocks & Diagrams** — Copy code, view Mermaid diagrams, and choose which fence languages installed plugins render in chat. See the [Code blocks guide](docs/chat-code-blocks.md).
+
 **Tabs & Session Management** — Use multiple tabs in [single-pane mode](assets/main-chat-single-pane.png) or a persistent session manager beside the chat in [dual-pane mode](assets/main-chat-dual-pane.png).
 
 **Plugin API (experimental)** — Let other Obsidian plugins send prompts to sessions, stop them and read their replies. See the [Plugin API guide](docs/plugin-api.md).
