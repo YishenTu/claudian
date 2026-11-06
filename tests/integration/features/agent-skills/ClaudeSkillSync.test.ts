@@ -199,6 +199,29 @@ describe('ClaudeSkillSync', () => {
       expect(await vault.read(`${AGENT_SKILLS_ROOT}/real/SKILL.md`)).toContain('Instructions');
     });
 
+    it('syncs a replacement package beside an untouched dangling shared link', async () => {
+      await vault.write(`${AGENT_SKILLS_ROOT}/shared/SKILL.md`, skill('shared', 'Old description', 'Old instructions'));
+      await vault.write(`${CLAUDE_SKILLS_ROOT}/shared/SKILL.md`, skill('shared', 'New description', 'New instructions'));
+      const dangling = `${AGENT_SKILLS_ROOT}/dangling`;
+      const destination = vault.resolve('missing');
+      await vault.symlink(dangling, destination);
+
+      const plan = await sync.plan();
+      expect(plan.sharedNames).toContain('shared');
+      expect(sync.getBlockingReasons(plan, resolutions()).get(`${CLAUDE_SKILLS_ROOT}/shared`)).toEqual([
+        { code: 'name-conflict', with: 'shared', name: 'shared' },
+      ]);
+      const result = await sync.execute(plan, resolutions([[
+        `${CLAUDE_SKILLS_ROOT}/shared`, { action: 'apply', replaceExisting: true },
+      ]]));
+
+      expect(result).toMatchObject({ linked: true, moved: [`${CLAUDE_SKILLS_ROOT}/shared`], failed: [] });
+      expect(await vault.read(`${AGENT_SKILLS_ROOT}/shared/SKILL.md`)).toContain('New instructions');
+      expect(await vault.readlink(dangling)).toBe(destination);
+      expect(vault.trashed).toEqual([`${AGENT_SKILLS_ROOT}/shared`]);
+      await expect(sync.readState()).resolves.toBe('linked');
+    });
+
     it('asks before discarding a package whose frontmatter cannot be parsed', async () => {
       const raw = '---\nname: broken\ndescription: Use when: reviewing\n---\nBody\n';
       await vault.write(`${CLAUDE_SKILLS_ROOT}/broken/SKILL.md`, raw);
