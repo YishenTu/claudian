@@ -16,6 +16,11 @@ import { t } from '../../i18n/i18n';
 import { confirmDelete } from '../modals/ConfirmModal';
 import { formatContextLimit, parseContextLimit } from './contextLimit';
 
+function wasCommitted(error: unknown): boolean {
+  return error !== null && typeof error === 'object'
+    && 'committed' in error && error.committed === true;
+}
+
 export class EnvSnippetModal extends AccessibleModal {
   plugin: ProviderHost;
   snippet: EnvSnippet | null;
@@ -109,8 +114,7 @@ export class EnvSnippetModal extends AccessibleModal {
         await this.onSave(snippet);
         this.close();
       } catch (error) {
-        const committed = error !== null && typeof error === 'object'
-          && 'committed' in error && error.committed === true;
+        const committed = wasCommitted(error);
         new Notice(committed ? 'Environment snippet was saved, but settings refresh failed.'
           : this.snippet ? 'Could not complete environment snippet update' : 'Could not complete environment snippet save');
         if (committed) this.close();
@@ -343,8 +347,10 @@ export class EnvSnippetManager {
           if (await confirmDelete(this.plugin.app, t('settings.envSnippets.deleteConfirm', { name: snippet.name }))) {
             await this.#deleteSnippet(snippet);
           }
-        } catch {
-          new Notice(t('settings.envSnippets.deleteFailed'));
+        } catch (error) {
+          const committed = wasCommitted(error);
+          new Notice(committed ? 'Environment snippet was deleted, but settings refresh failed.'
+            : t('settings.envSnippets.deleteFailed'));
         }
         })();
       });
@@ -447,9 +453,14 @@ export class EnvSnippetManager {
   }
 
   async #deleteSnippet(snippet: EnvSnippet) {
-    await this.plugin.mutateSettings((settings) => {
-      settings.envSnippets = settings.envSnippets.filter(s => s.id !== snippet.id);
-    });
+    try {
+      await this.plugin.mutateSettings((settings) => {
+        settings.envSnippets = settings.envSnippets.filter(s => s.id !== snippet.id);
+      });
+    } catch (error) {
+      if (wasCommitted(error)) this.render();
+      throw error;
+    }
     this.render();
     new Notice(`Environment snippet "${snippet.name}" deleted`);
   }
