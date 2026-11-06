@@ -27,7 +27,7 @@ Open Claudian interface from the ribbon icon or command palette. Everything work
 
 **Zen Mode** — Collapse the sidebar holding Claudian and the chat moves to a [compact composer](assets/zen-mode-collapsed.png) at the bottom of your notes, with a one-line activity preview and [the conversation one click away](assets/zen-mode-expanded.png).
 
-**Slash Commands & Skills** — Type `/` or `$` for reusable prompt templates or Skills from user- and vault-level scopes.
+**Slash Commands & Skills** — Type `/` or `$` for reusable prompt templates or Skills from user- and vault-level scopes. See the [Skills management guide](docs/skills.md).
 
 **@mention** — Type `@` to reference vault files, folders and other Claudian sessions.
 
