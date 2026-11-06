@@ -33,6 +33,8 @@ Open Claudian interface from the ribbon icon or command palette. Everything work
 
 **Cross-Session Messaging** — Let agents read, message, steer or interrupt other Claudian sessions, or start new ones on any provider. See the [Cross-session messaging guide](docs/cross-session-messaging.md).
 
+**Images** — Paste or drop supported images into the composer, inspect their previews and remove draft attachments before sending. See the [Image attachments guide](docs/images.md).
+
 **Side Chat (`/side` or `/btw`)** — Explore a separate, temporary conversation with follow-ups and tools while keeping the main chat unchanged.
 
 **MCP Servers** — Connect external tools through each coding agent's native CLI-managed MCP configuration.
