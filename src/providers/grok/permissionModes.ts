@@ -1,7 +1,4 @@
-import type {
-  ProviderPermissionModeOption,
-  ProviderPermissionModePolicy,
-} from '../../core/providers/types';
+import type { ProviderPermissionModePolicy } from '../../core/providers/types';
 
 /** Stored values; `normal` (ask) and `yolo` (always-approve) predate the full native set. */
 export const GROK_PERMISSION_MODES = ['auto', 'normal', 'acceptEdits', 'yolo'] as const;
@@ -11,18 +8,6 @@ export const GROK_PERMISSION_MODE_POLICY: ProviderPermissionModePolicy = Object.
   fallbackValue: 'normal',
   defaultValue: 'auto',
 });
-
-export const GROK_PERMISSION_MODE_OPTIONS: readonly ProviderPermissionModeOption[] = Object.freeze([
-  { value: 'auto', label: 'Auto', description: 'Grok reviews actions and blocks risky ones' },
-  { value: 'normal', label: 'Ask', description: 'Ask before edits and commands' },
-  { value: 'acceptEdits', label: 'Accept edits', description: 'Automatically accept file edits' },
-  {
-    value: 'yolo',
-    label: 'YOLO',
-    description: 'Accept all permissions without asking',
-    bypassesApprovals: true,
-  },
-]);
 
 /**
  * ACP session metadata reaches only Grok's auto and always-approve modes, so

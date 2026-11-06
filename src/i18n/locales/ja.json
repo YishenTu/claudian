@@ -245,6 +245,36 @@
         "readOnlyDesc": "編集やインターネット利用前に確認。",
         "normalDesc": "追加アクセス前に確認。",
         "yoloDesc": "ファイルとインターネットへの無制限アクセス。"
+      },
+      "grok": {
+        "auto": "自動",
+        "normal": "確認",
+        "acceptEdits": "編集を許可",
+        "yolo": "YOLO",
+        "autoDesc": "Grok が操作を確認し、危険な操作をブロックします",
+        "normalDesc": "ファイルの編集やコマンドの実行前に確認します",
+        "acceptEditsDesc": "ファイルの編集を自動的に許可します",
+        "yoloDesc": "確認せずにすべての権限を許可します"
+      },
+      "antigravity": {
+        "normal": "確認",
+        "acceptEdits": "編集を許可",
+        "yolo": "YOLO",
+        "normalDesc": "ファイルの編集やコマンドの実行前に確認します",
+        "acceptEditsDesc": "ワークスペース内のファイルの編集を確認せずに許可します",
+        "yoloDesc": "確認せずにすべての権限を許可します"
+      },
+      "opencode": {
+        "normal": "確認",
+        "yolo": "YOLO",
+        "normalDesc": "OpenCode の権限ルールで必要な場合に確認します",
+        "yoloDesc": "明示的に拒否されていないすべての権限を許可します"
+      },
+      "deepseek": {
+        "normal": "ワークスペースへの書き込み",
+        "yolo": "フルアクセス",
+        "normalDesc": "追加のアクセスの前に確認します。",
+        "yoloDesc": "ファイルとインターネットへの無制限のアクセス。"
       }
     },
     "thinking": {
