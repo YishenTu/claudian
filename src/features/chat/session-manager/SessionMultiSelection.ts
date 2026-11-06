@@ -2,6 +2,8 @@
  * Multi-selection of session rows within one rendered list. Option/Alt toggles rows; the
  * selection never outlives its container or search query.
  */
+import { t } from '@/i18n/i18n';
+
 export class SessionMultiSelection {
   readonly #selectedIds = new Set<string>();
   #searchQuery = '';
@@ -99,7 +101,7 @@ export class SessionMultiSelection {
       label?.remove();
     } else if (!label) {
       item.querySelector<HTMLElement>('.claudian-history-item-content')
-        ?.createSpan({ cls: 'claudian-history-item-selected-label', text: 'Selected' });
+        ?.createSpan({ cls: 'claudian-history-item-selected-label', text: t('chat.sessionManager.selected') });
     }
   }
 

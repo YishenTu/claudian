@@ -1,4 +1,6 @@
 import type { TabAttention } from '@/features/chat/state/types';
+import { t } from '@/i18n/i18n';
+import type { TranslationKey } from '@/i18n/types';
 
 export type HistoryConversationOpenState = 'closed' | 'open' | 'current';
 
@@ -22,12 +24,12 @@ export interface SessionStatusDisplay {
 /** A null icon is drawn by the indicator's own styles. */
 const INDICATOR_PRESENTATION: Readonly<Record<SessionStatusIndicatorKind, {
   icon: string | null;
-  label: string;
+  label: TranslationKey;
 }>> = {
-  'action-required': { icon: 'alert-circle', label: 'Needs your input' },
-  error: { icon: 'x-circle', label: 'Stopped with an error' },
-  running: { icon: 'loader-2', label: 'Running' },
-  unread: { icon: null, label: 'Unread' },
+  'action-required': { icon: 'alert-circle', label: 'chat.sessionManager.needsYourInput' },
+  error: { icon: 'x-circle', label: 'chat.sessionManager.stoppedWithAnError' },
+  running: { icon: 'loader-2', label: 'chat.sessionManager.running' },
+  unread: { icon: null, label: 'chat.sessionManager.unread' },
 };
 
 /** Archived rows never present attention, even when their tab still carries it. */
@@ -77,7 +79,8 @@ export function indicatorPresentation(kind: SessionStatusIndicatorKind): {
   icon: string | null;
   label: string;
 } {
-  return INDICATOR_PRESENTATION[kind];
+  const { icon, label } = INDICATOR_PRESENTATION[kind];
+  return { icon, label: t(label) };
 }
 
 export function sessionItemIcon(
@@ -89,12 +92,6 @@ export function sessionItemIcon(
   return 'message-square';
 }
 
-function tabLabel(status: HistoryConversationStatus): string {
-  if (typeof status.tabIndex === 'number') return `tab ${status.tabIndex}`;
-  if (status.openState === 'current') return 'current tab';
-  return 'tab';
-}
-
 export function sessionStatusText(
   status: HistoryConversationStatus,
   timestamp: number,
@@ -104,24 +101,31 @@ export function sessionStatusText(
   const location = status.location ?? 'current-view';
 
   if (!showOpenStateLabels) return formatSessionDate(timestamp);
-  if (status.attention?.kind === 'action-required') return 'Needs input';
+  if (status.attention?.kind === 'action-required') return t('chat.sessionManager.needsInput');
 
   if (openState !== 'closed' && location === 'other-view') {
-    return isRunning ? 'Running in another pane' : 'Open in another pane';
+    return isRunning ? t('chat.sessionManager.runningInAnotherPane') : t('chat.sessionManager.openInAnotherPane');
   }
 
   if (isRunning) {
-    if (openState === 'closed') return 'Running';
-    return `Running in ${tabLabel(status)}`;
+    if (openState === 'closed') return t('chat.sessionManager.running');
+    if (typeof status.tabIndex === 'number') {
+      return t('chat.sessionManager.runningInTabIndex', { index: status.tabIndex });
+    }
+    return status.openState === 'current'
+      ? t('chat.sessionManager.runningInCurrentTab')
+      : t('chat.sessionManager.runningInTab');
   }
 
   switch (openState) {
     case 'current':
       return typeof status.tabIndex === 'number'
-        ? `Current tab ${status.tabIndex}`
-        : 'Current session';
+        ? t('chat.sessionManager.currentTabIndex', { index: status.tabIndex })
+        : t('chat.sessionManager.currentSession');
     case 'open':
-      return `Open in ${tabLabel(status)}`;
+      return typeof status.tabIndex === 'number'
+        ? t('chat.sessionManager.openInTabIndex', { index: status.tabIndex })
+        : t('chat.sessionManager.openInTab');
     case 'closed':
       return formatSessionDate(timestamp);
   }

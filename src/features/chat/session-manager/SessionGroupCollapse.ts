@@ -2,6 +2,7 @@ import { Notice } from 'obsidian';
 
 import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
 import { isProjectSectionKey } from '@/features/chat/session-manager/SessionListOrganizer';
+import { t } from '@/i18n/i18n';
 
 /**
  * Which groups and sections one session list shows collapsed, by key. Linked content groups and whole sections
@@ -31,7 +32,7 @@ export class SessionGroupCollapse {
         const ids = new Set(expandedProjectIds(settings.expandedProjectIds));
         if (collapsed) ids.delete(projectId); else ids.add(projectId);
         settings.expandedProjectIds = [...ids];
-      }).catch(() => new Notice('Failed to save project folder expansion'));
+      }).catch(() => new Notice(t('chat.sessionManager.failedToSaveProjectFolderExpansion')));
       return;
     }
     if (collapsed !== this.#startsCollapsed(groupKey)) {

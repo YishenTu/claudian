@@ -241,7 +241,7 @@ export class SessionBrowser {
         });
         labelSectionBy(pinnedSection, pinnedHeader.createSpan({
           cls: 'claudian-history-section-label',
-          text: 'Pinned',
+          text: t('chat.sessionManager.pinned'),
         }));
         if (hasPinned) {
           pinnedList = pinnedSection.createDiv({
@@ -260,7 +260,7 @@ export class SessionBrowser {
         projectsList = this.#renderProjectsSection(list, model.projectSections, options, model.conversationsByProject);
       }
 
-      const sessionsLabel = options.showArchivedSection ? 'Archived' : 'Sessions';
+      const sessionsLabel = options.showArchivedSection ? t('chat.sessionManager.archived') : t('chat.sessionManager.sessions');
       const sessionsSection = list.createDiv({
         cls: [
           'claudian-history-section',
@@ -291,7 +291,7 @@ export class SessionBrowser {
       );
     } else {
       const dropdownHeader = container.createDiv({ cls: 'claudian-history-header' });
-      dropdownHeader.createSpan({ text: options.historyHeaderLabel ?? 'Sessions' });
+      dropdownHeader.createSpan({ text: options.historyHeaderLabel ?? t('chat.sessionManager.sessions') });
       list = container.createDiv({ cls: 'claudian-history-list' });
       sessionList = list;
     }
@@ -390,7 +390,7 @@ export class SessionBrowser {
     if (renderedConversationCount < visibleConversationTotal && !options.signal?.aborted) {
       const loadMoreButton = sessionList.createEl('button', {
         cls: 'claudian-history-load-more',
-        text: `Load more (${visibleConversationTotal - renderedConversationCount} remaining)`,
+        text: t('chat.sessionManager.loadMoreCountRemaining', { count: visibleConversationTotal - renderedConversationCount }),
       });
       loadMoreButton.addEventListener('click', () => {
         if (options.signal?.aborted) return;
@@ -448,7 +448,7 @@ export class SessionBrowser {
     if (section.kind === 'missing') {
       groupHeader.createSpan({
         cls: 'claudian-session-group-status',
-        text: 'Missing',
+        text: t('chat.sessionManager.missing'),
       });
     }
     const groupStatusIndicator = groupStatusKind === null
@@ -475,12 +475,12 @@ export class SessionBrowser {
       setIcon(newConversationButton, 'square-pen');
       newConversationButton.setAttribute(
         'aria-label',
-        `New chat for ${section.label ?? contentPath}`,
+        t('chat.sessionManager.newChatForContent', { content: section.label ?? contentPath }),
       );
       const startConversation = (): void => {
         runSessionAction(
           () => startLinkedContentConversation(contentPath),
-          'Failed to start a chat for this Linked content',
+          t('chat.sessionManager.failedToStartAChatForThisLinkedContent'),
         );
       };
       newConversationButton.addEventListener('click', (event) => {
@@ -886,7 +886,7 @@ export class SessionBrowser {
     conversationId: string,
     options: HistoryRenderOptions,
   ): void {
-    const failureMessage = 'Failed to load conversation';
+    const failureMessage = t('chat.sessionManager.failedToLoadConversation');
     const selectConversation = (): void => {
       runSessionAction(() => options.onSelectConversation(conversationId), failureMessage);
     };
@@ -934,7 +934,7 @@ export class SessionBrowser {
         cls: 'claudian-action-btn claudian-action-loading',
       });
       setIcon(loadingEl, 'loader-2');
-      loadingEl.setAttribute('aria-label', 'Generating title...');
+      loadingEl.setAttribute('aria-label', t('chat.sessionManager.generatingTitle'));
       return;
     }
     if (
@@ -949,12 +949,12 @@ export class SessionBrowser {
     });
     setIcon(regenerateBtn, 'refresh-cw');
     regenerateBtn.setAttribute('aria-label', conversation.titleGenerationStatus === 'failed'
-      ? 'Regenerate title' : 'Generate title');
+      ? t('chat.sessionManager.regenerateTitle') : t('chat.sessionManager.generateTitle'));
     regenerateBtn.addEventListener('click', (event) => {
       event.stopPropagation();
       runSessionAction(
         () => this.titles.regenerate(conversation.id),
-        'Failed to generate title',
+        t('chat.sessionManager.failedToGenerateTitle'),
       );
     });
   }
@@ -1030,7 +1030,7 @@ export class SessionBrowser {
     // A native button keeps the group actions reachable by keyboard; right-click stays a shortcut.
     const actionsButton = divider.createEl('button', {
       cls: 'claudian-session-recency-divider-action',
-      attr: { type: 'button', 'aria-label': `Actions for ${section.label}`, 'aria-haspopup': 'menu' },
+      attr: { type: 'button', 'aria-label': t('chat.sessionManager.actionsForGroup', { group: section.label ?? '' }), 'aria-haspopup': 'menu' },
     });
     setIcon(actionsButton, 'more-horizontal');
     actionsButton.addEventListener('click', event => event.stopPropagation());

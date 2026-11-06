@@ -2,6 +2,7 @@
 import '@/providers';
 
 import { axe } from '@test/helpers/accessibility';
+import { claudeCatalogFixture } from '@test/helpers/claudeModels';
 import { DesktopVault } from '@test/helpers/core/DesktopVault';
 import { DEFAULT_CLAUDIAN_SETTINGS } from '@test/helpers/defaultSettings';
 import { createFeatureHostFixture } from '@test/helpers/FeatureHostFixture';
@@ -10,13 +11,16 @@ import { createSessionBrowserHost } from '@test/helpers/features/chat/SessionBro
 import { createObsidianWorkspace } from '@test/helpers/ObsidianWorkspace';
 import { testDate } from '@test/helpers/testClock';
 import { fireEvent, waitFor, within } from '@testing-library/dom';
-import { App, Menu, setIcon } from 'obsidian';
+import { App, Menu, Notice, setIcon } from 'obsidian';
 
 import { ClaudianSettingsStorage } from '@/app/settings/ClaudianSettingsStorage';
-import type { ConversationMeta } from '@/core/types';
+import type { TitleGenerationService } from '@/core/providers/types';
+import type { Conversation, ConversationMeta, SessionManagerSort } from '@/core/types';
 import { SessionBrowser } from '@/features/chat/session-manager/SessionBrowser';
 import { SessionManagerSurface } from '@/features/chat/session-manager/SessionManagerSurface';
-import { t } from '@/i18n/i18n';
+import type { HistoryConversationStatus } from '@/features/chat/session-manager/SessionStatusPresentation';
+import { setLocale, t } from '@/i18n/i18n';
+import type { Locale } from '@/i18n/types';
 
 
 
@@ -34,14 +38,29 @@ function conversation(id: string, overrides: Partial<ConversationMeta> = {}): Co
   };
 }
 
-async function createSurface() {
+async function createSurface(options: {
+  conversations?: ConversationMeta[];
+  wide?: boolean;
+  locale?: Locale;
+  projects?: ReturnType<typeof projectRecord>[];
+  beforePersist?: NonNullable<Parameters<typeof createFeatureHostFixture>[0]>['beforePersist'];
+} = {}) {
   // Active rows carry their own Archive action; an archived-only list keeps navigation names unique.
-  const conversations = [conversation('archived', { isArchived: true })];
+  const conversations = options.conversations ?? [conversation('archived', { isArchived: true })];
   const workspace = createObsidianWorkspace(document.body);
   const app = new App();
   Object.assign(app.workspace, workspace);
+  const fixture = await createFeatureHostFixture({
+    app, settings: { enableAutoTitleGeneration: false, locale: options.locale ?? 'en' },
+    beforePersist: options.beforePersist, afterPublish: () => surface.invalidate(),
+  });
+  const renameConversation = vi.fn(async (id: string, title: string) => {
+    const record = conversations.find(record => record.id === id);
+    if (record) record.title = title;
+  });
   const { plugin } = await createSessionBrowserHost({ conversations, host: {
-    app, settings: { enableAutoTitleGeneration: false },
+    fixture, renameConversation,
+    projects: createProjectsFake(options.projects),
   } });
   const requestNew = vi.fn();
   const surface = new SessionManagerSurface({
@@ -55,7 +74,7 @@ async function createSurface() {
       startProjectConversation: vi.fn().mockResolvedValue(undefined),
     },
     getActiveTab: () => null,
-    isWide: () => true,
+    isWide: () => options.wide ?? true,
     canCreateTab: () => true,
     requestNew,
     notifyOtherViews: vi.fn(),
@@ -64,10 +83,12 @@ async function createSurface() {
   onTestFinished(() => surface.dispose());
   surface.mountSidebar(host);
   surface.renderSidebar();
-  return { host, requestNew, surface, workspace };
+  return { host, requestNew, surface, workspace, plugin, renameConversation, fixture };
 }
 
 afterEach(() => {
+  setLocale('en');
+  vi.restoreAllMocks();
   document.body.replaceChildren();
 });
 
@@ -552,5 +573,284 @@ describe('projects section', () => {
     expect(within(region()).getByRole('button', { name: t('chat.projects.header') }).getAttribute('aria-expanded'))
       .toBe('false');
     expect(within(region()).queryByRole('button', { name: sectionName('Launch', 1) })).toBeNull();
+  });
+});
+
+
+describe('selected interface language in the session manager', () => {
+  type MenuEntry = { title: string; checked: boolean | null; clickHandler: (() => void) | null };
+  const menu = () => (Menu as unknown as { instances: Array<{ items: MenuEntry[] }> }).instances.at(-1)!;
+  const titles = () => menu().items.map(item => item.title);
+  const choose = (title: string) => {
+    const entry = menu().items.find(item => item.title === title);
+    expect(titles()).toContain(title);
+    entry!.clickHandler?.();
+  };
+
+  it('uses the current locale for fresh wide and compact navigation without translating data', async () => {
+    for (const [locale, labels] of [
+      ['en', ['New', 'Search', 'Archive', 'Sessions', 'Archived', 'Search sessions', 'Search archived sessions', 'Chat history']],
+      ['zh-CN', ['新建', '搜索', '归档', '会话', '已归档', '搜索会话', '搜索已归档会话', '聊天记录']],
+      ['en', ['New', 'Search', 'Archive', 'Sessions', 'Archived', 'Search sessions', 'Search archived sessions', 'Chat history']],
+    ] as const) {
+      setLocale(locale);
+      const [newLabel, search, archive, sessions, archived, activeSearch, archiveSearch, history] = labels;
+      const ui = await createSurface({ locale, projects: [projectRecord({ id: 'native-project', name: 'Unlinked' })], conversations: [
+        conversation('native:Archive/Created', { title: 'Archive' }),
+        conversation('native-archived', { title: 'Created', isArchived: true }),
+      ] });
+      const view = within(ui.host);
+      expect(view.getByRole('region', { name: sessions })).toBeTruthy();
+      expect(view.getByText('Archive', { selector: '.claudian-history-item-title' })).toBeTruthy();
+      expect(view.getByRole('button', { name: 'Unlinked' })).toBeTruthy();
+      fireEvent.click(view.getByRole('button', { name: search }));
+      const query = view.getByRole('searchbox', { name: activeSearch }) as HTMLInputElement;
+      expect(query.placeholder).toBe(activeSearch);
+      fireEvent.input(query, { target: { value: 'Archive' } });
+      expect((view.getByRole('searchbox') as HTMLInputElement).value).toBe('Archive');
+      expect(view.getByText('Archive', { selector: '.claudian-history-item-title' })).toBeTruthy();
+      fireEvent.keyDown(view.getByRole('searchbox'), { key: 'Escape' });
+      fireEvent.click(view.getAllByRole('button', { name: archive }).find(button => button.classList.contains('claudian-session-archive-control'))!);
+      expect(view.getByRole('region', { name: archived })).toBeTruthy();
+      expect(view.getByText('Created')).toBeTruthy();
+      fireEvent.click(view.getByRole('button', { name: search }));
+      expect((view.getByRole('searchbox', { name: archiveSearch }) as HTMLInputElement).placeholder).toBe(archiveSearch);
+      fireEvent.click(view.getByRole('button', { name: sessions }));
+      fireEvent.click(view.getByRole('button', { name: newLabel }));
+      expect(ui.requestNew).toHaveBeenCalledTimes(1);
+      expect(await axe(ui.host)).toHaveNoViolations();
+      ui.surface.dispose();
+      ui.host.remove();
+
+      const compact = await createSurface({ wide: false, conversations: [conversation('native-archived', { title: 'Created', isArchived: true })] });
+      compact.surface.mountHistoryControl(compact.host);
+      fireEvent.click(within(compact.host).getByRole('button', { name: history }));
+      fireEvent.click(within(compact.host).getByRole('button', { name: archive }));
+      expect(within(compact.host).getByText(archived)).toBeTruthy();
+      expect(within(compact.host).getByText('Created')).toBeTruthy();
+      fireEvent.click(within(compact.host).getByRole('button', { name: sessions }));
+      expect(within(compact.host).getByRole('button', { name: archive })).toBeTruthy();
+      compact.surface.dispose();
+      compact.host.remove();
+    }
+  });
+
+  it('localizes options and collapse controls while persisting the original enum values', async () => {
+    setLocale('zh-CN');
+    const { host, plugin } = await createSurface({ conversations: [conversation('native-id', { title: 'Created' })] });
+    const view = within(host);
+    const openOptions = () => fireEvent.click(view.getByRole('button', { name: '会话选项' }));
+    openOptions();
+    expect(titles()).toEqual(['组织会话', '单一列表', '按关联内容', '会话排序依据', '最近活动', '创建时间']);
+    expect(menu().items.filter(item => item.checked).map(item => item.title)).toEqual(['单一列表', '最近活动']);
+    choose('按关联内容');
+    await waitFor(() => expect(view.getByRole('button', { name: '折叠所有分组' })).toBeTruthy());
+    expect(plugin.getCommittedSettings().sessionManagerOrganization).toBe('linked-content');
+    expect(view.getByRole('button', { name: '未关联' })).toBeTruthy();
+    fireEvent.click(view.getByRole('button', { name: '折叠所有分组' }));
+    expect(view.queryByText('Created')).toBeNull();
+    fireEvent.click(view.getByRole('button', { name: '展开所有分组' }));
+    expect(view.getByText('Created')).toBeTruthy();
+    openOptions();
+    choose('创建时间');
+    await waitFor(() => expect(plugin.getCommittedSettings().sessionManagerSort).toBe('created'));
+    openOptions();
+    expect(menu().items.filter(item => item.checked).map(item => item.title)).toEqual(['按关联内容', '创建时间']);
+    choose('最近活动');
+    await waitFor(() => expect(plugin.getCommittedSettings().sessionManagerSort).toBe('last-updated'));
+    openOptions();
+    choose('单一列表');
+    await waitFor(() => expect(view.getByText('过去一周')).toBeTruthy());
+    expect(plugin.getCommittedSettings().sessionManagerOrganization).toBe('list');
+  });
+
+  it.each([
+    ['organization', '按关联内容', '无法更新会话组织方式'],
+    ['sort', '创建时间', '无法更新会话排序'],
+    ['expansion', 'Unlinked', '无法保存项目文件夹展开状态'],
+  ])('reports the localized %s persistence failure through the real settings coordinator', async (kind, choice, message) => {
+    setLocale('zh-CN');
+    const { host, plugin } = await createSurface({ locale: 'zh-CN', projects: [projectRecord({ id: 'native-project', name: 'Unlinked' })], beforePersist: () => { throw new Error('raw storage diagnostic'); } });
+    const view = within(host);
+    if (kind === 'expansion') fireEvent.click(view.getByRole('button', { name: choice }));
+    else {
+      fireEvent.click(view.getByRole('button', { name: '会话选项' }));
+      choose(choice);
+    }
+    await waitFor(() => expect(Notice).toHaveBeenCalledWith(message));
+    expect(plugin.getCommittedSettings().sessionManagerOrganization).toBe('list');
+    expect(plugin.getCommittedSettings().sessionManagerSort).toBe('last-updated');
+    expect(view.getByRole('button', { name: 'Unlinked' }).getAttribute('aria-expanded')).toBe('false');
+  });
+
+  it('keeps native titles in the real inline editor and preserves cancel, trim and rename failures', async () => {
+    setLocale('zh-CN');
+    const id = 'native:Archive/Created';
+    const { host, renameConversation } = await createSurface({ conversations: [conversation(id, { title: 'Archive' })] });
+    const view = within(host);
+    const begin = async () => {
+      fireEvent.contextMenu(view.getByText('Archive', { selector: '.claudian-history-item-title' }));
+      choose('重命名');
+      return await waitFor(() => view.getByRole('textbox', { name: '会话标题' }) as HTMLInputElement);
+    };
+    let input = await begin();
+    expect(input.value).toBe('Archive');
+    fireEvent.input(input, { target: { value: 'Do not save' } });
+    fireEvent.keyDown(input, { key: 'Escape' });
+    await waitFor(() => expect(view.queryByRole('textbox')).toBeNull());
+    expect(renameConversation).not.toHaveBeenCalled();
+    input = await begin();
+    fireEvent.input(input, { target: { value: '  Created  ' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    await waitFor(() => expect(view.getByText('Created')).toBeTruthy());
+    expect(renameConversation.mock.calls).toEqual([[id, 'Created']]);
+    renameConversation.mockRejectedValueOnce(new Error('raw rename diagnostic'));
+    fireEvent.contextMenu(view.getByText('Created'));
+    choose('重命名');
+    input = await waitFor(() => view.getByRole('textbox', { name: '会话标题' }) as HTMLInputElement);
+    fireEvent.input(input, { target: { value: 'Rejected' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    await waitFor(() => expect(Notice).toHaveBeenCalledWith('无法重命名会话'));
+    expect(input.isConnected).toBe(true);
+  });
+
+  async function renderBrowser(records: ConversationMeta[], options: Parameters<SessionBrowser['renderHistoryDropdown']>[1]) {
+    const { plugin } = await createSessionBrowserHost({ conversations: records });
+    const browser = new SessionBrowser({ plugin, getCurrentConversationId: () => null, getTitleGenerationService: () => null, onListChanged: () => undefined });
+    onTestFinished(() => browser.dispose());
+    const host = document.body.createDiv();
+    browser.renderHistoryDropdown(host, options);
+    return { host, browser };
+  }
+
+  it.each(['created', 'last-updated'] as const)('localizes categories after %s ordering and keeps raw linked-title ties and membership', async (sort: SessionManagerSort) => {
+    const records = ['Archive', 'Created', 'Unlinked', 'zzzz'].map(title => conversation(`native:${title}`, { title: `Session ${title}`, linkedContentPath: `Projects/${title}.md` }));
+    records.push(conversation('native:ungrouped', { title: 'Native ungrouped' }));
+    const render = async (locale: Locale) => {
+      setLocale(locale);
+      const { host, browser } = await renderBrowser(records, {
+        onSelectConversation: vi.fn(), organization: 'linked-content', sort,
+        contentExists: () => true, contentIsNote: () => false,
+      });
+      const sequence = [...host.querySelectorAll<HTMLElement>('[data-group-key]')].map(group => ({
+        key: group.dataset.groupKey,
+        ids: [...group.querySelectorAll<HTMLElement>('[data-conversation-id]')].map(row => row.dataset.conversationId),
+      }));
+      return { host, browser, sequence };
+    };
+    const english = await render('en');
+    const original = english.sequence;
+    expect(original.filter(group => group.ids.length).flatMap(group => group.ids)).toHaveLength(5);
+    english.browser.dispose(); english.host.remove();
+    const chinese = await render('zh-CN');
+    expect(chinese.sequence).toEqual(original);
+    expect(within(chinese.host).getByRole('button', { name: '未关联' })).toBeTruthy();
+    for (const title of ['Archive', 'Created', 'Unlinked', 'zzzz']) expect(within(chinese.host).getByRole('button', { name: title })).toBeTruthy();
+  });
+
+  it('localizes recency, pinned, missing and paging chrome while routing the native linked path', async () => {
+    setLocale('zh-CN');
+    const onSelectConversation = vi.fn().mockResolvedValue(undefined);
+    const records = [1, 10, 20, 60].map(days => conversation(`native:${days}`, { lastActivityAt: testDate({ days: -days }).getTime() }));
+    records.push(conversation('native:pinned', { isPinned: true }));
+    const recency = await renderBrowser(records, { onSelectConversation, showPinnedSection: true, groupByRecency: true, sessionActionMode: 'active' });
+    for (const label of ['已置顶', '过去一周', '过去两周', '过去一个月', '更早']) expect(within(recency.host).getByText(label)).toBeTruthy();
+    fireEvent.click(within(recency.host).getByRole('button', { name: '过去一周 的操作' }));
+    expect(titles()).toEqual(['归档所有会话']);
+    const onStartLinkedContentConversation = vi.fn().mockResolvedValue(undefined);
+    const linked = await renderBrowser([
+      conversation('native:Archive', { title: 'Created', linkedContentPath: 'Projects/Archive.md' }),
+      conversation('native:missing', { linkedContentPath: 'Projects/Gone.md' }),
+    ], {
+      onSelectConversation, onStartLinkedContentConversation,
+      organization: 'linked-content', contentExists: path => path !== 'Projects/Gone.md', contentIsNote: () => false,
+    });
+    expect(within(linked.host).getByText('缺失')).toBeTruthy();
+    fireEvent.click(within(linked.host).getByRole('button', { name: '为 Archive 新建聊天' }));
+    await waitFor(() => expect(onStartLinkedContentConversation).toHaveBeenCalledWith('Projects/Archive.md'));
+    onStartLinkedContentConversation.mockRejectedValueOnce(new Error('raw linked diagnostic'));
+    fireEvent.click(within(linked.host).getByRole('button', { name: '为 Archive 新建聊天' }));
+    await waitFor(() => expect(Notice).toHaveBeenCalledWith('无法为此关联内容开始聊天'));
+    const paging = await renderBrowser(records.slice(0, 2), { onSelectConversation, pageSize: 1 });
+    const more = within(paging.host).getByRole('button', { name: '加载更多（剩余 1 个）' });
+    fireEvent.click(more);
+    expect(paging.host.querySelectorAll('[data-conversation-id]')).toHaveLength(2);
+  });
+
+  it('translates real status sentences and badge alternatives from native status data', async () => {
+    setLocale('zh-CN');
+    const since = testDate().getTime();
+    const cases: Array<[HistoryConversationStatus, string]> = [
+      [{ openState: 'closed', isRunning: false, attention: { kind: 'action-required', since } }, '需要输入'],
+      [{ openState: 'open', isRunning: true, location: 'other-view' }, '正在另一个窗格中运行'],
+      [{ openState: 'open', isRunning: false, location: 'other-view' }, '已在另一个窗格中打开'],
+      [{ openState: 'open', isRunning: true, tabIndex: 3 }, '正在标签页 3 中运行'],
+      [{ openState: 'current', isRunning: true }, '正在当前标签页中运行'],
+      [{ openState: 'open', isRunning: true }, '正在标签页中运行'],
+      [{ openState: 'closed', isRunning: true }, '运行中'],
+      [{ openState: 'current', isRunning: false, tabIndex: 3 }, '当前标签页 3'],
+      [{ openState: 'current', isRunning: false }, '当前会话'],
+      [{ openState: 'open', isRunning: false, tabIndex: 3 }, '已在标签页 3 中打开'],
+      [{ openState: 'open', isRunning: false }, '已在标签页中打开'],
+    ];
+    for (const [status, label] of cases) {
+      const { host, browser } = await renderBrowser([conversation('native-id', { title: 'Archive' })], {
+        onSelectConversation: vi.fn(), showMetadataPopover: false, getConversationStatus: () => status,
+      });
+      expect(within(host).getByText(label)).toBeTruthy();
+      expect(within(host).getByText('Archive')).toBeTruthy();
+      browser.dispose(); host.remove();
+    }
+    for (const [status, label] of [
+      [{ openState: 'closed', isRunning: false, attention: { kind: 'action-required', since } }, '需要您输入'],
+      [{ openState: 'closed', isRunning: false, attention: { kind: 'review', outcome: 'error', since } }, '因错误而停止'],
+      [{ openState: 'closed', isRunning: true }, '运行中'],
+      [{ openState: 'closed', isRunning: false, attention: { kind: 'review', outcome: 'completed', since } }, '未读'],
+    ] satisfies Array<[HistoryConversationStatus, string]>) {
+      const { host, browser } = await renderBrowser([conversation('native-id')], {
+        onSelectConversation: vi.fn(), showAttentionState: true, showOpenStateLabels: false, getConversationStatus: () => status,
+      });
+      expect(within(host).getByLabelText(label)).toBeTruthy();
+      browser.dispose(); host.remove();
+    }
+  });
+
+  it('localizes title generation controls without changing the real owner request or native result', async () => {
+    setLocale('zh-CN');
+    const record: Conversation = {
+      id: 'native:Archive/Created', providerId: 'claude', sessionId: null, title: 'Archive',
+      createdAt: testDate({ days: -1 }).getTime(), lastActivityAt: testDate().getTime(),
+      messages: [{ id: 'native-message', role: 'user', content: 'Explain Created', timestamp: testDate().getTime() }],
+    };
+    const generateTitle = vi.fn<TitleGenerationService['generateTitle']>(async (id, _text, callback) => callback(id, { success: true, title: 'Native Created' }));
+    const completeConversationTitleGeneration = vi.fn(async (_id, _expectedTitle, title) => {
+      if (title !== null) record.title = title;
+      record.titleGenerationStatus = title === null ? 'failed' : 'success';
+    });
+    const { plugin } = await createSessionBrowserHost({ host: {
+      settings: { enableAutoTitleGeneration: true, titleGenerationModel: 'haiku', providerConfigs: { claude: claudeCatalogFixture(['haiku']) } },
+      getConversationList: () => [{ ...record, messageCount: 1, preview: '' }],
+      getConversationById: async () => record,
+      updateConversation: async (_id, patch) => { Object.assign(record, patch); },
+      completeConversationTitleGeneration,
+    } });
+    const host = document.body.createDiv();
+    const render = () => browser.renderHistoryDropdown(host, { onSelectConversation: vi.fn() });
+    const browser = new SessionBrowser({ plugin, getCurrentConversationId: () => null, getTitleGenerationService: () => ({ generateTitle, cancel: vi.fn() }), onListChanged: render });
+    onTestFinished(() => browser.dispose());
+    record.titleGenerationStatus = 'pending'; render();
+    expect(within(host).getByLabelText('正在生成标题…')).toBeTruthy();
+    record.titleGenerationStatus = 'failed'; render();
+    expect(within(host).getByRole('button', { name: '重新生成标题' })).toBeTruthy();
+    record.titleGenerationStatus = undefined; render();
+    fireEvent.click(within(host).getByRole('button', { name: '生成标题' }));
+    await waitFor(() => expect(record.title).toBe('Native Created'));
+    expect(generateTitle).toHaveBeenCalledWith(record.id, 'Explain Created', expect.any(Function));
+    expect(completeConversationTitleGeneration).toHaveBeenCalledWith(record.id, 'Archive', 'Native Created');
+    expect(within(host).getByText('Native Created')).toBeTruthy();
+    generateTitle.mockRejectedValueOnce(new Error('raw title diagnostic'));
+    record.titleGenerationStatus = 'failed'; render();
+    fireEvent.click(within(host).getByRole('button', { name: '重新生成标题' }));
+    await waitFor(() => expect(Notice).toHaveBeenCalledWith('无法生成标题'));
   });
 });

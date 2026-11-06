@@ -3,6 +3,7 @@ import { setIcon } from 'obsidian';
 import type { ProviderIconSvg } from '@/core/providers/types';
 import type { ConversationMeta } from '@/core/types';
 import { getLinkedContentTitle, isLegacyProvisionalLinkedContent } from '@/features/chat/session-manager/SessionListOrganizer';
+import { t } from '@/i18n/i18n';
 import { createProviderIconSvg } from '@/shared/icons';
 
 /** Presentation inputs the popover reads from the current list render. */
@@ -279,8 +280,8 @@ export class SessionMetadataPopover {
     const provider = providerRow.createSpan({ cls: 'claudian-session-metadata-value claudian-session-metadata-value--provider' });
     this.view = {
       el, linkedContent, provider,
-      created: this.#renderRow(el, 'calendar-days', 'Created', ''),
-      lastActive: this.#renderRow(el, 'clock-3', 'Last active', ''),
+      created: this.#renderRow(el, 'calendar-days', t('chat.sessionManager.created'), ''),
+      lastActive: this.#renderRow(el, 'clock-3', t('chat.sessionManager.lastActive'), ''),
       providerIcon: null, providerIconKey: '',
     };
     return this.view;
