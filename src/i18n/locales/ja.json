@@ -500,6 +500,10 @@
       "desc": "承認を任せる と 承認を求める モードでのファイルアクセスです。読み取り専用では編集のたびに確認します。フルアクセス では無視されます。"
     },
     "environment": "環境",
+    "environmentFeedback": {
+      "reviewOwnership": "環境変数の管理元を確認してください: {keys}",
+      "updateFailed": "環境の更新を完了できませんでした。"
+    },
     "sharedEnvironment": {
       "name": "共有環境",
       "desc": "すべてのプロバイダーで共有される、プロバイダー非依存のランタイム変数。PATH、プロキシ、証明書、一時ディレクトリの変数に使用します。"
@@ -529,7 +533,13 @@
       },
       "insertFailed": "スニペットの挿入に失敗しました",
       "deleteConfirm": "環境変数スニペット「{name}」を削除しますか?",
-      "deleteFailed": "スニペットの削除に失敗しました"
+      "deleteFailed": "スニペットの削除に失敗しました",
+      "savedRefreshFailed": "環境スニペットは保存されましたが、設定の更新に失敗しました。",
+      "updateFailed": "環境スニペットの更新を完了できませんでした",
+      "saveFailed": "環境スニペットの保存を完了できませんでした",
+      "saved": "環境スニペット「{name}」を保存しました",
+      "updated": "環境スニペット「{name}」を更新しました",
+      "deleted": "環境スニペット「{name}」を削除しました"
     },
     "customModelOverrides": {
       "name": "カスタムモデルの上書き",
@@ -538,10 +548,12 @@
     "customModelAliases": {
       "placeholder": "エイリアス",
       "ariaLabel": "{model} のエイリアス",
-      "ariaDescription": "モデルセレクターに表示されるカスタムラベル。空欄の場合はデフォルトを使用します。"
+      "ariaDescription": "モデルセレクターに表示されるカスタムラベル。空欄の場合はデフォルトを使用します。",
+      "saveFailed": "モデルのエイリアスを保存できませんでした。もう一度お試しください。"
     },
     "customContextLimits": {
-      "invalid": "無効な形式です。使用：256k、1m、または正確な数値（1000-10000000）。"
+      "invalid": "無効な形式です。使用：256k、1m、または正確な数値（1000-10000000）。",
+      "ariaLabel": "{model} のコンテキストウィンドウ"
     },
     "enableChrome": {
       "name": "Chrome拡張機能を有効化",
@@ -660,7 +672,8 @@
       "noMatch": "フィルターに一致するモデルはありません。",
       "emptyCatalog": "{provider} からモデルが報告されていません。設定を確認して「検出」をクリックしてください。",
       "loadingCatalog": "{provider} モデルを読み込んでいます…",
-      "stale": "{provider} のモデルカタログが古くなっています。「検出」をクリックして更新してください。"
+      "stale": "{provider} のモデルカタログが古くなっています。「検出」をクリックして更新してください。",
+      "saveFailed": "モデルの選択を保存できませんでした。もう一度お試しください。"
     },
     "claude": {
       "promptSuggestions": {

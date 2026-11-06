@@ -500,6 +500,10 @@
       "desc": "代我审批 和 请求审批 模式下的文件访问权限。只读模式会在每次编辑前请求确认；完全访问 会忽略此设置。"
     },
     "environment": "环境",
+    "environmentFeedback": {
+      "reviewOwnership": "请检查以下环境变量的归属：{keys}",
+      "updateFailed": "无法完成环境更新。"
+    },
     "sharedEnvironment": {
       "name": "共享环境",
       "desc": "与提供商无关、所有提供商共享的运行时变量。用于 PATH、代理、证书和临时目录变量。"
@@ -529,7 +533,13 @@
       },
       "insertFailed": "插入片段失败",
       "deleteConfirm": "删除环境变量片段“{name}”？",
-      "deleteFailed": "删除片段失败"
+      "deleteFailed": "删除片段失败",
+      "savedRefreshFailed": "环境片段已保存，但设置刷新失败。",
+      "updateFailed": "无法完成环境片段更新",
+      "saveFailed": "无法完成环境片段保存",
+      "saved": "环境片段“{name}”已保存",
+      "updated": "环境片段“{name}”已更新",
+      "deleted": "环境片段“{name}”已删除"
     },
     "customModelOverrides": {
       "name": "自定义模型覆盖",
@@ -538,10 +548,12 @@
     "customModelAliases": {
       "placeholder": "别名",
       "ariaLabel": "{model} 的别名",
-      "ariaDescription": "显示在模型选择器中的自定义标签。留空则使用默认值。"
+      "ariaDescription": "显示在模型选择器中的自定义标签。留空则使用默认值。",
+      "saveFailed": "无法保存模型别名。请重试。"
     },
     "customContextLimits": {
-      "invalid": "格式无效。使用：256k、1m 或精确数量（1000-10000000）。"
+      "invalid": "格式无效。使用：256k、1m 或精确数量（1000-10000000）。",
+      "ariaLabel": "{model} 的上下文窗口"
     },
     "enableChrome": {
       "name": "启用 Chrome 扩展",
@@ -660,7 +672,8 @@
       "noMatch": "没有与筛选条件匹配的模型。",
       "emptyCatalog": "{provider} 未报告任何模型。请检查配置并点击“发现”。",
       "loadingCatalog": "正在加载 {provider} 模型…",
-      "stale": "{provider} 模型目录已过期。点击“发现”以刷新。"
+      "stale": "{provider} 模型目录已过期。点击“发现”以刷新。",
+      "saveFailed": "无法保存模型选择。请重试。"
     },
     "claude": {
       "promptSuggestions": {

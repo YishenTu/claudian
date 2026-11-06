@@ -500,6 +500,10 @@
       "desc": "Accès aux fichiers dans les modes Approuver pour moi et Demander l’approbation. Lecture seule demande avant chaque modification ; Accès complet l'ignore."
     },
     "environment": "Environnement",
+    "environmentFeedback": {
+      "reviewOwnership": "Vérifiez qui gère ces variables d’environnement : {keys}",
+      "updateFailed": "Impossible de terminer la mise à jour de l’environnement."
+    },
     "sharedEnvironment": {
       "name": "Environnement partagé",
       "desc": "Variables d'exécution indépendantes du fournisseur, partagées entre tous les fournisseurs. Utilisez ceci pour les variables PATH, de proxy, de certificats et de fichiers temporaires."
@@ -529,7 +533,13 @@
       },
       "insertFailed": "Impossible d'insérer le snippet",
       "deleteConfirm": "Supprimer le snippet d'environnement « {name} » ?",
-      "deleteFailed": "Impossible de supprimer le snippet"
+      "deleteFailed": "Impossible de supprimer le snippet",
+      "savedRefreshFailed": "L’extrait d’environnement a été enregistré, mais l’actualisation des paramètres a échoué.",
+      "updateFailed": "Impossible de terminer la mise à jour de l’extrait d’environnement",
+      "saveFailed": "Impossible de terminer l’enregistrement de l’extrait d’environnement",
+      "saved": "Extrait d’environnement « {name} » enregistré",
+      "updated": "Extrait d’environnement « {name} » mis à jour",
+      "deleted": "Extrait d’environnement « {name} » supprimé"
     },
     "customModelOverrides": {
       "name": "Remplacements de modèles personnalisés",
@@ -538,10 +548,12 @@
     "customModelAliases": {
       "placeholder": "Alias",
       "ariaLabel": "Alias pour {model}",
-      "ariaDescription": "Libellé personnalisé affiché dans le sélecteur de modèle. Laissez vide pour utiliser la valeur par défaut."
+      "ariaDescription": "Libellé personnalisé affiché dans le sélecteur de modèle. Laissez vide pour utiliser la valeur par défaut.",
+      "saveFailed": "Impossible d’enregistrer l’alias du modèle. Réessayez."
     },
     "customContextLimits": {
-      "invalid": "Format invalide. Utilisez : 256k, 1m ou nombre exact (1000-10000000)."
+      "invalid": "Format invalide. Utilisez : 256k, 1m ou nombre exact (1000-10000000).",
+      "ariaLabel": "Fenêtre de contexte pour {model}"
     },
     "enableChrome": {
       "name": "Activer l'extension Chrome",
@@ -660,7 +672,8 @@
       "noMatch": "Aucun modèle ne correspond à votre filtre.",
       "emptyCatalog": "Aucun modèle {provider} signalé. Vérifiez votre configuration et cliquez sur Découvrir.",
       "loadingCatalog": "Chargement des modèles {provider}…",
-      "stale": "Le catalogue de modèles {provider} est obsolète. Cliquez sur Découvrir pour l'actualiser."
+      "stale": "Le catalogue de modèles {provider} est obsolète. Cliquez sur Découvrir pour l'actualiser.",
+      "saveFailed": "Impossible d’enregistrer la sélection de modèles. Réessayez."
     },
     "claude": {
       "promptSuggestions": {

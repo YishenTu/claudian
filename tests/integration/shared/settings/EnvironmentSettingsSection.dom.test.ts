@@ -11,10 +11,12 @@ import type { Mock } from 'vitest';
 
 import type { CLIInstallation } from '@/core/providers/cli/CLIInstallationProbe';
 import { getEnvironmentVariablesForScope } from '@/core/providers/providerEnvironment';
+import { setLocale } from '@/i18n/i18n';
 import { renderCLIInstallationSetting } from '@/shared/settings/CLIInstallationSetting';
 import { renderEnvironmentSettingsSection } from '@/shared/settings/EnvironmentSettingsSection';
 
 afterEach(() => {
+  setLocale('en');
   (Notice as unknown as Mock).mockClear();
   document.body.replaceChildren();
 });
@@ -261,4 +263,40 @@ it.each(applyFailureCases)('shows only generic feedback without leakage for a $l
   expect(renderedText).not.toContain('fake-secret-value');
   expect(renderedText).not.toContain('fake-token-value');
   expect(renderedText).not.toContain('/fake/private/path');
+});
+
+it('localizes ownership and apply feedback while preserving scoped environment data', async () => {
+  setLocale('zh-CN');
+  let fail = false;
+  const fixture = await createProviderHostFixture({
+    settings: { locale: 'zh-CN', sharedEnvironmentVariables: 'PATH=/before',
+      providerConfigs: { claude: { environmentVariables: 'ANTHROPIC_MODEL=Save' } },
+      envSnippets: [{ id: 'native-id', name: 'Save', description: 'Environment variables', scope: 'shared', envVars: 'MY_TOOL_SETTING=Save' }],
+    },
+    beforePersist: () => { if (fail) throw new Error('private storage failure'); },
+  });
+  const root = document.body.createDiv({ cls: 'claudian-settings' });
+  try {
+    renderEnvironmentSettingsSection({ container: root, plugin: fixture.host, scope: 'shared', name: 'Shared environment', desc: '', placeholder: 'PATH=...' });
+    fireEvent.click(within(root).getByRole('button', { name: '插入' }));
+    await waitFor(() => expect(fixture.settings.sharedEnvironmentVariables).toBe('MY_TOOL_SETTING=Save'));
+    const field = within(root).getByRole<HTMLTextAreaElement>('textbox', { name: 'Shared environment' });
+    expect.soft(within(root).queryByText('请检查以下环境变量的归属：MY_TOOL_SETTING')).not.toBeNull();
+    expect(field.value).toBe('MY_TOOL_SETTING=Save');
+    const value = 'MY_TOOL_SETTING=Save\nSave=Update';
+    fireEvent.input(field, { target: { value } });
+    expect.soft(within(root).queryByText('请检查以下环境变量的归属：MY_TOOL_SETTING, Save')).not.toBeNull();
+    fireEvent.blur(field);
+    await waitFor(() => expect(fixture.coordinator.getCommittedSettings().sharedEnvironmentVariables).toBe(value));
+    expect((await fixture.settingsStorage.load()).sharedEnvironmentVariables).toBe(value);
+    fail = true;
+    fireEvent.input(field, { target: { value: 'MY_TOOL_SETTING=Archive' } });
+    fireEvent.blur(field);
+    await waitFor(() => expect(Notice).toHaveBeenCalledWith('无法完成环境更新。'));
+    expect(fixture.coordinator.getCommittedSettings().sharedEnvironmentVariables).toBe(value);
+    expect((await fixture.settingsStorage.load()).sharedEnvironmentVariables).toBe(value);
+    expect(getEnvironmentVariablesForScope(fixture.settings, 'provider:claude')).toBe('ANTHROPIC_MODEL=Save');
+    expect(field.value).toBe('MY_TOOL_SETTING=Archive');
+    expect(await axe(root)).toHaveNoViolations();
+  } finally { fail = false; await fixture.dispose(); root.remove(); }
 });

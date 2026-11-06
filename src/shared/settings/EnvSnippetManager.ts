@@ -111,8 +111,8 @@ export class EnvSnippetModal extends AccessibleModal {
       } catch (error) {
         const committed = error !== null && typeof error === 'object'
           && 'committed' in error && error.committed === true;
-        new Notice(committed ? 'Environment snippet was saved, but settings refresh failed.'
-          : this.snippet ? 'Could not complete environment snippet update' : 'Could not complete environment snippet save');
+        new Notice(committed ? t('settings.envSnippets.savedRefreshFailed')
+          : this.snippet ? t('settings.envSnippets.updateFailed') : t('settings.envSnippets.saveFailed'));
         if (committed) this.close();
       } finally {
         saving = false;
@@ -162,7 +162,7 @@ export class EnvSnippetModal extends AccessibleModal {
         });
         aliasInput.value = draftAliases.get(modelId)
           ?? (Object.prototype.hasOwnProperty.call(existingAliases, modelId) ? existingAliases[modelId] : '');
-        aliasInput.setAttribute('aria-label', `Alias for ${modelId}`);
+        aliasInput.setAttribute('aria-label', t('settings.customModelAliases.ariaLabel', { model: modelId }));
         aliasInput.setAttribute('aria-description', t('settings.customModelAliases.ariaDescription'));
         modelAliasInputs.set(modelId, aliasInput);
 
@@ -173,7 +173,7 @@ export class EnvSnippetModal extends AccessibleModal {
         });
         input.value = draftLimits.get(modelId)
           ?? (Object.prototype.hasOwnProperty.call(existingLimits, modelId) ? formatContextLimit(existingLimits[modelId]) : '');
-        input.setAttribute('aria-label', `Context window for ${modelId}`);
+        input.setAttribute('aria-label', t('settings.customContextLimits.ariaLabel', { model: modelId }));
         contextLimitInputs.set(modelId, input);
       }
     };
@@ -366,7 +366,7 @@ export class EnvSnippetManager {
           // The committed snapshot may have advanced even when publication failed.
           this.render();
         }
-        new Notice(`Environment snippet "${snippet.name}" saved`);
+        new Notice(t('settings.envSnippets.saved', { name: snippet.name }));
       }
     );
     modal.open();
@@ -439,7 +439,7 @@ export class EnvSnippetManager {
           } finally {
             this.render();
           }
-          new Notice(`Environment snippet "${updatedSnippet.name}" updated`);
+          new Notice(t('settings.envSnippets.updated', { name: updatedSnippet.name }));
         }
       }
     );
@@ -451,7 +451,7 @@ export class EnvSnippetManager {
       settings.envSnippets = settings.envSnippets.filter(s => s.id !== snippet.id);
     });
     this.render();
-    new Notice(`Environment snippet "${snippet.name}" deleted`);
+    new Notice(t('settings.envSnippets.deleted', { name: snippet.name }));
   }
 
   public refresh() {

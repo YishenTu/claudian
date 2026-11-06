@@ -500,6 +500,10 @@
       "desc": "代我審批 和 請求審批 模式下的檔案存取權限。唯讀模式會在每次編輯前請求確認；完整存取 會忽略此設定。"
     },
     "environment": "環境",
+    "environmentFeedback": {
+      "reviewOwnership": "請檢查以下環境變數的歸屬：{keys}",
+      "updateFailed": "無法完成環境更新。"
+    },
     "sharedEnvironment": {
       "name": "共用環境",
       "desc": "與提供者無關、所有提供者共用的執行階段變數。用於 PATH、Proxy、憑證和暫存目錄變數。"
@@ -529,7 +533,13 @@
       },
       "insertFailed": "無法插入片段",
       "deleteConfirm": "要刪除環境變數片段「{name}」嗎？",
-      "deleteFailed": "無法刪除片段"
+      "deleteFailed": "無法刪除片段",
+      "savedRefreshFailed": "環境片段已儲存，但設定重新整理失敗。",
+      "updateFailed": "無法完成環境片段更新",
+      "saveFailed": "無法完成環境片段儲存",
+      "saved": "環境片段「{name}」已儲存",
+      "updated": "環境片段「{name}」已更新",
+      "deleted": "環境片段「{name}」已刪除"
     },
     "customModelOverrides": {
       "name": "自訂模型覆寫",
@@ -538,10 +548,12 @@
     "customModelAliases": {
       "placeholder": "別名",
       "ariaLabel": "{model} 的別名",
-      "ariaDescription": "顯示在模型選擇器中的自訂標籤。留空則使用預設值。"
+      "ariaDescription": "顯示在模型選擇器中的自訂標籤。留空則使用預設值。",
+      "saveFailed": "無法儲存模型別名。請重試。"
     },
     "customContextLimits": {
-      "invalid": "格式無效。使用：256k、1m 或精確數量（1000-10000000）。"
+      "invalid": "格式無效。使用：256k、1m 或精確數量（1000-10000000）。",
+      "ariaLabel": "{model} 的上下文視窗"
     },
     "enableChrome": {
       "name": "啟用 Chrome 擴充功能",
@@ -660,7 +672,8 @@
       "noMatch": "沒有符合篩選條件的模型。",
       "emptyCatalog": "{provider} 未回報任何模型。請檢查設定並點擊「探索」。",
       "loadingCatalog": "正在載入 {provider} 模型…",
-      "stale": "{provider} 模型目錄已過時。點擊「探索」以重新整理。"
+      "stale": "{provider} 模型目錄已過時。點擊「探索」以重新整理。",
+      "saveFailed": "無法儲存模型選擇。請重試。"
     },
     "claude": {
       "promptSuggestions": {

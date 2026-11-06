@@ -500,6 +500,10 @@
       "desc": "Acceso a archivos en los modos Aprobar por mí y Pedir aprobación. Solo lectura pide aprobación antes de cada edición; Acceso completo lo ignora."
     },
     "environment": "Entorno",
+    "environmentFeedback": {
+      "reviewOwnership": "Revisa quién gestiona estas variables de entorno: {keys}",
+      "updateFailed": "No se pudo completar la actualización del entorno."
+    },
     "sharedEnvironment": {
       "name": "Entorno compartido",
       "desc": "Variables de ejecución independientes del proveedor, compartidas entre todos los proveedores. Úsalo para variables de PATH, proxy, certificados y archivos temporales."
@@ -529,7 +533,13 @@
       },
       "insertFailed": "No se pudo insertar el snippet",
       "deleteConfirm": "¿Eliminar el snippet de entorno \"{name}\"?",
-      "deleteFailed": "No se pudo eliminar el snippet"
+      "deleteFailed": "No se pudo eliminar el snippet",
+      "savedRefreshFailed": "El fragmento de entorno se guardó, pero no se pudo actualizar la configuración.",
+      "updateFailed": "No se pudo completar la actualización del fragmento de entorno",
+      "saveFailed": "No se pudo completar el guardado del fragmento de entorno",
+      "saved": "Fragmento de entorno «{name}» guardado",
+      "updated": "Fragmento de entorno «{name}» actualizado",
+      "deleted": "Fragmento de entorno «{name}» eliminado"
     },
     "customModelOverrides": {
       "name": "Anulaciones de modelos personalizados",
@@ -538,10 +548,12 @@
     "customModelAliases": {
       "placeholder": "Alias",
       "ariaLabel": "Alias de {model}",
-      "ariaDescription": "Etiqueta personalizada que se muestra en el selector de modelos. Déjalo vacío para usar la predeterminada."
+      "ariaDescription": "Etiqueta personalizada que se muestra en el selector de modelos. Déjalo vacío para usar la predeterminada.",
+      "saveFailed": "No se pudo guardar el alias del modelo. Inténtalo de nuevo."
     },
     "customContextLimits": {
-      "invalid": "Formato inválido. Use: 256k, 1m o número exacto (1000-10000000)."
+      "invalid": "Formato inválido. Use: 256k, 1m o número exacto (1000-10000000).",
+      "ariaLabel": "Ventana de contexto para {model}"
     },
     "enableChrome": {
       "name": "Habilitar extensión de Chrome",
@@ -660,7 +672,8 @@
       "noMatch": "Ningún modelo coincide con tu filtro.",
       "emptyCatalog": "{provider} no ha informado de ningún modelo. Revisa tu configuración y haz clic en Descubrir.",
       "loadingCatalog": "Cargando modelos de {provider}…",
-      "stale": "El catálogo de modelos de {provider} está desactualizado. Haz clic en Descubrir para actualizarlo."
+      "stale": "El catálogo de modelos de {provider} está desactualizado. Haz clic en Descubrir para actualizarlo.",
+      "saveFailed": "No se pudo guardar la selección de modelos. Inténtalo de nuevo."
     },
     "claude": {
       "promptSuggestions": {

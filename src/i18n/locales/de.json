@@ -500,6 +500,10 @@
       "desc": "Dateizugriff in den Modi „Für mich genehmigen“ und „Genehmigung anfragen“. „Nur lesen“ fragt vor jeder Änderung; „Vollzugriff“ ignoriert diese Einstellung."
     },
     "environment": "Umgebung",
+    "environmentFeedback": {
+      "reviewOwnership": "Zuständigkeit für Umgebungsvariablen prüfen: {keys}",
+      "updateFailed": "Die Aktualisierung der Umgebung konnte nicht abgeschlossen werden."
+    },
     "sharedEnvironment": {
       "name": "Gemeinsame Umgebung",
       "desc": "Anbieterunabhängige Laufzeitvariablen, die mit allen Anbietern geteilt werden. Verwenden Sie dies für PATH-, Proxy-, Zertifikats- und Temp-Variablen."
@@ -529,7 +533,13 @@
       },
       "insertFailed": "Snippet konnte nicht eingefügt werden",
       "deleteConfirm": "Umgebungs-Snippet \"{name}\" löschen?",
-      "deleteFailed": "Snippet konnte nicht gelöscht werden"
+      "deleteFailed": "Snippet konnte nicht gelöscht werden",
+      "savedRefreshFailed": "Das Umgebungs-Snippet wurde gespeichert, aber die Einstellungen konnten nicht aktualisiert werden.",
+      "updateFailed": "Das Umgebungs-Snippet konnte nicht aktualisiert werden",
+      "saveFailed": "Das Umgebungs-Snippet konnte nicht gespeichert werden",
+      "saved": "Umgebungs-Snippet „{name}“ gespeichert",
+      "updated": "Umgebungs-Snippet „{name}“ aktualisiert",
+      "deleted": "Umgebungs-Snippet „{name}“ gelöscht"
     },
     "customModelOverrides": {
       "name": "Benutzerdefinierte Modellüberschreibungen",
@@ -538,10 +548,12 @@
     "customModelAliases": {
       "placeholder": "Aliasname",
       "ariaLabel": "Alias für {model}",
-      "ariaDescription": "Benutzerdefinierte Bezeichnung in der Modellauswahl. Leer lassen, um die Standardbezeichnung zu verwenden."
+      "ariaDescription": "Benutzerdefinierte Bezeichnung in der Modellauswahl. Leer lassen, um die Standardbezeichnung zu verwenden.",
+      "saveFailed": "Der Modellalias konnte nicht gespeichert werden. Bitte erneut versuchen."
     },
     "customContextLimits": {
-      "invalid": "Ungültiges Format. Verwenden Sie: 256k, 1m oder exakte Anzahl (1000-10000000)."
+      "invalid": "Ungültiges Format. Verwenden Sie: 256k, 1m oder exakte Anzahl (1000-10000000).",
+      "ariaLabel": "Kontextfenster für {model}"
     },
     "enableChrome": {
       "name": "Chrome-Erweiterung aktivieren",
@@ -660,7 +672,8 @@
       "noMatch": "Keine Modelle entsprechen Ihrem Filter.",
       "emptyCatalog": "Keine {provider}-Modelle gemeldet. Prüfen Sie Ihre Konfiguration und klicken Sie auf Erkennen.",
       "loadingCatalog": "{provider}-Modelle werden geladen…",
-      "stale": "Der {provider}-Modellkatalog ist veraltet. Klicken Sie auf Erkennen, um ihn zu aktualisieren."
+      "stale": "Der {provider}-Modellkatalog ist veraltet. Klicken Sie auf Erkennen, um ihn zu aktualisieren.",
+      "saveFailed": "Die Modellauswahl konnte nicht gespeichert werden. Bitte erneut versuchen."
     },
     "claude": {
       "promptSuggestions": {

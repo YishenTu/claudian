@@ -500,6 +500,10 @@
       "desc": "File access in Approve for me and Ask for approval modes. Read only asks before every edit; Full access ignores this."
     },
     "environment": "Environment",
+    "environmentFeedback": {
+      "reviewOwnership": "Review environment ownership for: {keys}",
+      "updateFailed": "Could not complete environment update."
+    },
     "sharedEnvironment": {
       "name": "Shared environment",
       "desc": "Provider-neutral runtime variables shared across all providers. Use this for PATH, proxy, cert, and temp variables."
@@ -529,7 +533,13 @@
       },
       "insertFailed": "Failed to insert snippet",
       "deleteConfirm": "Delete environment snippet \"{name}\"?",
-      "deleteFailed": "Failed to delete snippet"
+      "deleteFailed": "Failed to delete snippet",
+      "savedRefreshFailed": "Environment snippet was saved, but settings refresh failed.",
+      "updateFailed": "Could not complete environment snippet update",
+      "saveFailed": "Could not complete environment snippet save",
+      "saved": "Environment snippet \"{name}\" saved",
+      "updated": "Environment snippet \"{name}\" updated",
+      "deleted": "Environment snippet \"{name}\" deleted"
     },
     "customModelOverrides": {
       "name": "Custom model overrides",
@@ -538,10 +548,12 @@
     "customModelAliases": {
       "placeholder": "Alias",
       "ariaLabel": "Alias for {model}",
-      "ariaDescription": "Custom label shown in the model selector. Leave empty to use the default."
+      "ariaDescription": "Custom label shown in the model selector. Leave empty to use the default.",
+      "saveFailed": "Could not save model alias. Try again."
     },
     "customContextLimits": {
-      "invalid": "Invalid format. Use: 256k, 1m, or exact count (1000-10000000)."
+      "invalid": "Invalid format. Use: 256k, 1m, or exact count (1000-10000000).",
+      "ariaLabel": "Context window for {model}"
     },
     "enableChrome": {
       "name": "Enable Chrome extension",
@@ -660,7 +672,8 @@
       "noMatch": "No models match your filter.",
       "emptyCatalog": "No {provider} models reported. Check your configuration and click Discover.",
       "loadingCatalog": "Loading {provider} models…",
-      "stale": "{provider} model catalog is stale. Click Discover to refresh it."
+      "stale": "{provider} model catalog is stale. Click Discover to refresh it.",
+      "saveFailed": "Could not save model selection. Try again."
     },
     "claude": {
       "promptSuggestions": {
