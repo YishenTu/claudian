@@ -33,7 +33,22 @@ export function createChatTabCommands(deps: ChatTabCommandsDeps): Command[] {
 
   const getCompactTabManager = () => views.getView()?.getCompactTabManager() ?? null;
 
+  const adjacentTabCommand = (direction: -1 | 1, id: string, name: string): Command => ({
+    id,
+    name,
+    checkCallback: checking => {
+      const manager = getCompactTabManager();
+      const tabs = manager?.getTabIdentities() ?? [];
+      const index = tabs.findIndex(tab => tab.id === manager?.getActiveTabId());
+      if (!manager || tabs.length < 2 || index < 0) return false;
+      if (!checking) void manager.switchToAdjacentTab(direction);
+      return true;
+    },
+  });
+
   return [
+    adjacentTabCommand(1, 'next-tab', 'Next conversation tab'),
+    adjacentTabCommand(-1, 'previous-tab', 'Previous conversation tab'),
     {
       id: 'new-tab',
       name: 'New',
