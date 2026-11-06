@@ -1028,7 +1028,7 @@ export function stableValueKey(value: unknown): string {
 
 export function isCodexToolOutputError(output: string): boolean {
   if (/^Script failed(?:\r?\n|$)/.test(output.trimStart())) return true;
-  const exitCodeMatch = output.match(/(?:Exit code:|Process exited with code)\s*(\d+)/i);
+  const exitCodeMatch = output.match(/(?:Exit code:|Process exited with code)\s*(-?\d+)/i);
   if (exitCodeMatch) {
     return Number(exitCodeMatch[1]) !== 0;
   }

@@ -649,3 +649,12 @@ it.each([false, true].flatMap(lateNative => ['text', 'thinking'].map(boundary =>
     vi.useRealTimers();
   }
 });
+
+it.each(['live', 'history'] as const)('shows signed native command exits as failures in %s', mode => {
+  for (const exitCode of [-1, 0, 7]) {
+    const tool = restoreTool(mode, 'exec_command', { cmd: 'sleep 30' },
+      `Process exited with code ${exitCode}\nOutput:\n${exitCode < 0 ? 'command aborted by user' : 'note output'}`);
+    expect(tool.status).toBe(exitCode === 0 ? 'completed' : 'error');
+    expect(tool.result).toBe(exitCode < 0 ? 'command aborted by user' : 'note output');
+  }
+});
