@@ -33,6 +33,8 @@ Claudian discovers models from each configured provider rather than keeping its 
 3. Under **Models**, open **Browse models**, then click **Refresh** if models are already listed, or **Discover** otherwise, to request the current catalog.
 4. Enable the new model and start a new chat if you want to use it. Existing chats keep their selected model.
 
+For choosing, ordering and naming visible models, see the [Models guide](models.md).
+
 If the model is still absent, the active provider runtime or account has not reported it to Claudian. Public or API availability alone does not guarantee catalog availability for every provider integration or account. Avoid editing Claudian's installed bundle to add the model manually; those changes are unsupported and will be overwritten by updates.
 
 For OpenCode, discovery failures show the request error, including a server error reference when supplied. A successful catalog with no enabled models instead shows configuration guidance. Check the vault's `.opencode/opencode.json`, compare `opencode models --standalone` from that vault using the same CLI and environment, and use `opencode debug paths` to locate OpenCode logs. Configured plugins may be incompatible with the installed OpenCode version; an empty catalog alone does not establish a plugin failure.
