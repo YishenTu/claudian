@@ -31,6 +31,8 @@ Open Claudian interface from the ribbon icon or command palette. Everything work
 
 **@mention** — Type `@` to reference vault files, folders and other Claudian sessions.
 
+**File edit results** — Inspect file-changing tool cards and understand their diff summaries and display limits. See the [File edit results guide](docs/file-edit-results.md).
+
 **Cross-Session Messaging** — Let agents read, message, steer or interrupt other Claudian sessions, or start new ones on any provider. See the [Cross-session messaging guide](docs/cross-session-messaging.md).
 
 **Side Chat (`/side` or `/btw`)** — Explore a separate, temporary conversation with follow-ups and tools while keeping the main chat unchanged.
