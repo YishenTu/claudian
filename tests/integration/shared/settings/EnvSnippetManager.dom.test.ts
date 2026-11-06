@@ -749,3 +749,33 @@ it('publishes inserted aliases to every mounted model selector', async () => {
   expect(getClaudeProviderSettings(JSON.parse(saved)).modelAliases).toMatchObject({ custom: 'New alias' });
   expect(await axe(manager)).toHaveNoViolations();
 });
+
+it.each(['persist-failure', 'publish-failure', 'success'] as const)('refreshes snippet deletion from committed settings after %s', async phase => {
+  (Notice as unknown as Mock).mockClear();
+  const snippet = { id: 'snippet', name: 'Removed endpoint', description: '', scope: 'shared' as const, envVars: 'PATH=/saved/bin' };
+  const persist = vi.fn(async () => { if (phase === 'persist-failure') throw new Error('Storage unavailable'); });
+  const { host, settings, settingsStorage } = await createProviderHostFixture({
+    settings: { envSnippets: [snippet] }, beforePersist: persist,
+    afterPublish: () => { if (phase === 'publish-failure') throw new Error('Publication unavailable'); },
+  });
+  await settingsStorage.save(settings);
+  const container = document.body.createEl('main');
+  new EnvSnippetManager(container, host, 'shared');
+  const deleteButton = within(container).getByRole('button', { name: 'Delete' });
+  fireEvent.click(deleteButton);
+  const dialog = within(document.body).getByRole('dialog', { name: 'Confirm' });
+  expect(within(dialog).getByText(/Removed endpoint/)).toBeTruthy();
+  expect(await axe(dialog)).toHaveNoViolations();
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Delete' }));
+  const notice = phase === 'success' ? 'Environment snippet "Removed endpoint" deleted'
+    : phase === 'publish-failure' ? 'Environment snippet was deleted, but settings refresh failed.' : 'Failed to delete snippet';
+  await waitFor(() => expect(Notice).toHaveBeenCalledWith(notice));
+  expect(persist).toHaveBeenCalledTimes(1);
+  const expected = phase === 'persist-failure' ? [snippet] : [];
+  expect(settings.envSnippets).toEqual(expected);
+  expect((await settingsStorage.load()).envSnippets).toEqual(expected);
+  expect(within(container).queryByText('Removed endpoint') === null).toBe(phase !== 'persist-failure');
+  expect(within(container).queryByRole('button', { name: 'Delete' }) === deleteButton).toBe(phase === 'persist-failure');
+  expect(within(container).getAllByRole('button').map(button => button.getAttribute('aria-label') || button.textContent))
+    .toEqual(phase === 'persist-failure' ? ['Add snippet', 'Insert', 'Edit', 'Delete'] : ['Save current environment as a snippet']);
+});
