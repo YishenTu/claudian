@@ -37,7 +37,7 @@ Open Claudian interface from the ribbon icon or command palette. Everything work
 
 **MCP Servers** — Connect external tools through each coding agent's native CLI-managed MCP configuration.
 
-**Tabs & Session Management** — Use multiple tabs in [single-pane mode](assets/main-chat-single-pane.png) or a persistent session manager beside the chat in [dual-pane mode](assets/main-chat-dual-pane.png).
+**Tabs & Session Management** — Use multiple tabs in [single-pane mode](assets/main-chat-single-pane.png) or a persistent session manager beside the chat in [dual-pane mode](assets/main-chat-dual-pane.png). See the [Session history guide](docs/session-history.md) for session actions, forks, rewind and Pi branches.
 
 **Plugin API (experimental)** — Let other Obsidian plugins send prompts to sessions, stop them and read their replies. See the [Plugin API guide](docs/plugin-api.md).
 
