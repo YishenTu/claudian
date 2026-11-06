@@ -322,6 +322,28 @@ describe.each(['live', 'history'] as const)('%s Codex tool presentation', mode =
     })]);
   });
 
+  it('keeps native secret question answers masked in completed cards', async () => {
+    const answer = 'sample-sensitive-token-123';
+    const output = JSON.stringify({ answers: { token: { answers: [answer] } } });
+    const tool = restoreTool(mode, 'request_user_input', {
+      questions: [{ id: 'token', header: 'Token', question: 'Enter API token',
+        isSecret: true, isOther: true, options: [{ label: 'Use a token', description: 'Authenticate' }] }],
+    }, output);
+    const parent = document.body.createDiv();
+    try {
+      const card = mode === 'live'
+        ? renderToolCall(parent, { ...tool, status: 'running', result: undefined }, { initiallyExpanded: true })
+        : renderStoredToolCall(parent, tool, { initiallyExpanded: true });
+      if (mode === 'live') updateToolCallResult(card, tool);
+      expect(within(card).getByText('Enter API token')).toBeDefined();
+      expect(within(card).getByText('••••••••')).toBeDefined();
+      expect(card.textContent).not.toContain(answer);
+      expect(tool.result).toBe(output);
+      expect(tool.resolvedAnswers?.token).toBe(answer);
+      expect(await axe(parent)).toHaveNoViolations();
+    } finally { parent.remove(); }
+  });
+
   it('renders async question acknowledgement with the original question and options', async () => {
     const tool = restoreTool(mode, 'request_user_input_async', {
       questions: [{ title: 'Which check should run?', options: ['Rendering', 'History'] }],

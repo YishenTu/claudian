@@ -152,20 +152,30 @@ describe('ToolCallRenderer', () => {
       expect(answerEls[0].textContent).toBe('Blue');
     });
 
-    it('renders AskUserQuestion answers by stable question id', () => {
-      const parentEl = document.createElement('div');
+    it.each([false, true])('renders completed secret=%s answers without changing their stored values', async isSecret => {
+      const parentEl = document.body.createDiv();
+      const answer = 'sample-sensitive-token-123';
       const toolCall = createToolCall({
         name: 'AskUserQuestion',
         status: 'completed',
-        input: { questions: [{ id: 'q1', question: 'Color?' }] },
-        result: '{"answers":{"q1":{"answers":["Blue"]}}}',
+        input: { questions: [
+          { id: 'token', question: 'Enter API token', isSecret },
+          { id: 'ordinary', question: 'Color?' },
+          { id: 'unanswered', question: 'Unanswered secret?', isSecret: true },
+        ] },
+        result: JSON.stringify({ answers: { token: { answers: [answer] }, ordinary: { answers: ['Blue'] } } }),
       });
 
-      const toolEl = renderStoredToolCall(parentEl, toolCall);
-      const answerEls = toolEl.querySelectorAll('.claudian-ask-review-a-text');
-
-      expect(answerEls).toHaveLength(1);
-      expect(answerEls[0].textContent).toBe('Blue');
+      try {
+        const toolEl = renderStoredToolCall(parentEl, toolCall, { initiallyExpanded: true });
+        expect(within(toolEl).getByText(isSecret ? '••••••••' : answer)).toBeDefined();
+        expect(toolEl.textContent?.includes(answer)).toBe(!isSecret);
+        expect(within(toolEl).getByText('Blue')).toBeDefined();
+        expect(within(toolEl).getByText('Not answered')).toBeDefined();
+        expect(toolCall.result).toContain(answer);
+        expect(toolCall.resolvedAnswers?.token).toBe(answer);
+        expect(await axe(parentEl)).toHaveNoViolations();
+      } finally { parentEl.remove(); }
     });
 
     it.each(['toString', 'constructor'])('falls back to the own question-text answer when id %s has no own entry', id => {
