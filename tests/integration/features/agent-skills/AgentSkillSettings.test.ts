@@ -23,7 +23,7 @@ import { t } from '@/i18n/i18n';
 
 vi.mock('node:fs/promises', async () => {
   const actual = (await vi.importActual<typeof fs>('node:fs/promises'));
-  return { ...actual, writeFile: vi.fn(actual.writeFile) };
+  return { ...actual, writeFile: vi.fn(actual.writeFile), readFile: vi.fn(actual.readFile) };
 });
 
 const vaults: DesktopVault[] = [];
@@ -63,6 +63,7 @@ function save(dialog: HTMLElement) {
 beforeEach(() => { document.body.replaceChildren(); vi.clearAllMocks(); });
 afterEach(async () => {
   vi.mocked(fs.writeFile).mockImplementation(actualModule0.writeFile);
+  vi.mocked(fs.readFile).mockImplementation(actualModule0.readFile);
   await Promise.all(vaults.splice(0).map(vault => vault.dispose()));
 });
 
@@ -215,6 +216,41 @@ describe('AgentSkillSettings repair of flagged packages', () => {
     expect(result.diagnostics).toEqual([]);
     expect(result.skills).toEqual([expect.objectContaining({ name: 'no-description', description: 'Now described' })]);
     await waitFor(() => expect(screen.queryByText('.agents/skills/no-description')).toBeNull());
+  });
+
+  it.each([false, true])('only opens a loaded repair editor while its settings panel is active (disposed: %s)', async disposed => {
+    const { vault, settings, coordinator } = await setup();
+    await vault.write('.agents/skills/no-description/SKILL.md', '---\nname: no-description\n---\nExisting instructions\n');
+    await settings.refresh();
+    let entered!: () => void;
+    const reading = new Promise<void>(resolve => { entered = resolve; });
+    let release!: () => void;
+    const pending = new Promise<void>(resolve => { release = resolve; });
+    vi.mocked(fs.readFile).mockImplementationOnce(async (...args) => {
+      entered();
+      await pending;
+      return actualModule0.readFile(...args);
+    });
+    const load = vi.spyOn(coordinator, 'readForRepair');
+    const row = screen.getByText('.agents/skills/no-description').closest<HTMLElement>('.claudian-agent-skills-diagnostic')!;
+    fireEvent.click(within(row).getByRole('button', { name: t('settings.agentSkills.fix') }));
+    try {
+      await reading;
+      if (disposed) settings.dispose();
+    } finally {
+      release();
+    }
+    await load.mock.results[0].value;
+    const dialog = screen.queryByRole('dialog', { name: t('settings.agentSkills.modal.titleFix') });
+    try {
+      expect(dialog === null).toBe(disposed);
+      const descriptions = dialog ? within(dialog).getAllByRole<HTMLInputElement>('textbox').map(input => input.value) : [];
+      expect(descriptions).toEqual(disposed ? [] : ['no-description', '', 'Existing instructions']);
+      expect((await axe(dialog ?? row)).violations).toEqual([]);
+    } finally {
+      // Obsidian's existing window-capture Escape closes a modal opened by the live control.
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+    }
   });
 
   it('lists only flagged packages the user can fix or delete', async () => {
