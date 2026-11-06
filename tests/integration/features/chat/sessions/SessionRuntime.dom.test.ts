@@ -1677,16 +1677,59 @@ it('keeps archived sessions out of the composer resume picker', async () => {
   Object.assign(h.plugin, { getConversationList: () => [archived, active] });
   const openConversation = vi.fn(async () => undefined);
   const tab = await h.attach({ openConversation });
-  tab.dom.inputEl.value = '/sessions';
-  await tab.controllers.inputController.sendMessage();
-  const list = within(tab.dom.inputContainerEl).getByRole('listbox', { name: 'Resume conversation' });
-  expect(within(list).getByRole('option', { name: /Active task/ })).toBeDefined();
-  expect(within(list).queryByRole('option', { name: /Archived task/ })).toBeNull();
-  fireEvent.keyDown(tab.dom.inputEl, { key: 'Enter' });
-  expect(openConversation).toHaveBeenCalledWith('active-session');
-  expect(h.backend.sessions).toHaveLength(0);
-  expect(within(tab.dom.inputContainerEl).queryByRole('listbox', { name: 'Resume conversation' })).toBeNull();
-  await destroyTab(tab);
+  try {
+    tab.dom.inputEl.focus();
+    tab.dom.inputEl.value = '/sessions';
+    await tab.controllers.inputController.sendMessage();
+    const textbox = within(tab.dom.inputContainerEl).getByRole('textbox', { name: 'Message' });
+    textbox.focus();
+    const list = within(tab.dom.inputContainerEl).getByRole('listbox', { name: 'Resume conversation' });
+    const option = within(list).getByRole('option', { name: /Active task/, selected: true });
+    expect(within(list).queryByRole('option', { name: /Archived task/ })).toBeNull();
+    expect(textbox.getAttribute('aria-haspopup')).toBe('listbox');
+    expect(textbox.getAttribute('aria-controls')).toBe(list.id);
+    expect(textbox.getAttribute('aria-activedescendant')).toBe(option.id);
+    expect(await axe(tab.dom.inputContainerEl, { runOnly: ['label', 'aria-valid-attr-value'] })).toHaveNoViolations();
+
+    fireEvent.compositionStart(textbox);
+    fireEvent(textbox, new textbox.ownerDocument.defaultView!.KeyboardEvent('keydown', {
+      key: 'Enter', isComposing: true, bubbles: true, cancelable: true,
+    }));
+    expect(openConversation).not.toHaveBeenCalled();
+    expect(list.isConnected).toBe(true);
+    expect(within(tab.dom.inputContainerEl).getByRole('listbox', { name: 'Resume conversation' })).toBe(list);
+    expect(within(list).getByRole('option', { selected: true })).toBe(option);
+    expect(textbox.getAttribute('aria-controls')).toBe(list.id);
+    expect(textbox.getAttribute('aria-activedescendant')).toBe(option.id);
+    expect(h.backend.sessions).toHaveLength(0);
+    expect(await axe(tab.dom.inputContainerEl, { runOnly: ['label', 'aria-valid-attr-value'] })).toHaveNoViolations();
+
+    expect(openConversation).not.toHaveBeenCalled();
+    expect(h.backend.sessions).toHaveLength(0);
+    fireEvent.compositionEnd(textbox);
+    tab.dom.inputEl.value = '/sessions';
+    await tab.controllers.inputController.sendMessage();
+    const resumedTextbox = within(tab.dom.inputContainerEl).getByRole('textbox', { name: 'Message' });
+    const resumedList = within(tab.dom.inputContainerEl).getByRole('listbox', { name: 'Resume conversation' });
+    const resumedOption = within(resumedList).getByRole('option', { name: /Active task/, selected: true });
+    expect(resumedTextbox.isConnected).toBe(true);
+    expect(resumedList.isConnected).toBe(true);
+    expect(within(resumedList).queryByRole('option', { name: /Archived task/ })).toBeNull();
+    expect(resumedTextbox.getAttribute('aria-haspopup')).toBe('listbox');
+    expect(resumedTextbox.getAttribute('aria-controls')).toBe(resumedList.id);
+    expect(resumedTextbox.getAttribute('aria-activedescendant')).toBe(resumedOption.id);
+    fireEvent.keyDown(resumedTextbox, { key: 'Enter' });
+    expect(openConversation).toHaveBeenCalledTimes(1);
+    expect(openConversation).toHaveBeenCalledWith('active-session');
+    expect(h.backend.sessions).toHaveLength(0);
+    expect(within(tab.dom.inputContainerEl).queryByRole('listbox', { name: 'Resume conversation' })).toBeNull();
+    expect(resumedList.isConnected).toBe(false);
+    for (const attribute of ['aria-haspopup', 'aria-controls', 'aria-expanded', 'aria-activedescendant']) {
+      expect(resumedTextbox.getAttribute(attribute)).toBeNull();
+    }
+  } finally {
+    await destroyTab(tab);
+  }
 });
 
 it('does not open an empty resume picker when only archived sessions exist', async () => {
