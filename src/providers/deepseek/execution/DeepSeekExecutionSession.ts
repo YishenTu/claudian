@@ -18,7 +18,7 @@ import { getActionDescription } from '@/core/security/approvalRules';
 import { invokeSessionTool } from '@/core/session-tools/invokeSessionTool';
 import type { SessionToolRoutedCallRequest } from '@/core/session-tools/SessionToolEndpoint';
 import type { SessionToolResult } from '@/core/session-tools/sessionToolSpecs';
-import type { SlashCommand } from '@/core/types';
+import { createTurnStats, type SlashCommand } from '@/core/types';
 import { t } from '@/i18n/i18n';
 
 import { readDeepSeekCommands } from '../commands/DeepSeekCommandCatalog';
@@ -609,7 +609,7 @@ export class DeepSeekExecutionSession implements ProviderExecutionSession {
         turn.owner.finish(turn.owner.isCancellationRequested || stopped ? { type: 'cancelled' } : {
           type: 'turn_completed', reason: completion, nativeUserMessageId: turn.nativeUserId,
           nativeAssistantId: checkpoint, nativeCheckpointId: checkpoint,
-          turnStats: { outputTokens: turn.output.outputTokens, durationMs: Math.max(0, (typeof event.time === 'number' ? event.time : Date.now()) - turn.startedAt) },
+          turnStats: createTurnStats(turn.output.outputTokens, (typeof event.time === 'number' ? event.time : Date.now()) - turn.startedAt),
         });
       } else this.background(turn, { type: 'background_turn_completed', reason: stopped ? 'interrupted' : completion, nativeAssistantId: checkpoint, nativeCheckpointId: checkpoint, providerSessionId: this.nativeId, snapshotRevision: this.snapshots.revision });
       this.turn = undefined; this.publish();

@@ -60,9 +60,10 @@ it.each([
   { kind: 'error', terminal: 'execution_error', completed: false, interrupted: false },
   { kind: 'blocked', terminal: 'execution_error', completed: false, interrupted: false },
   { kind: 'completed', terminal: 'turn_completed', completed: true, interrupted: false },
+  { kind: 'completed', terminal: 'turn_completed', completed: true, interrupted: false, durationMs: 0 },
   { kind: 'max-tokens', terminal: 'turn_completed', completed: true, interrupted: false },
   { kind: 'aborted', terminal: 'cancelled', completed: false, interrupted: true },
-])('keeps a $kind reply consistent with live completion and fork availability after reopening', async ({ kind, terminal, completed, interrupted }) => {
+])('keeps a $kind reply consistent with live completion and fork availability after reopening', async ({ kind, terminal, completed, interrupted, durationMs = 9_000 }) => {
   const run = session.execute({
     input: [{ type: 'text', text: 'Please continue' }], signal: new AbortController().signal,
     configuration: { systemInstructions: { kind: 'explicit', purpose: 'title', instructions: 'Review' }, permissionMode: 'normal' },
@@ -76,8 +77,8 @@ it.each([
   const records = [
     { seq: 4, time, type: 'turn/start', data: { turn: 1 } },
     { seq: 5, time, type: 'user/message', data: { id: 'user', source: { kind: 'user', rpcId: run.executionId }, content: [{ type: 'text', text: 'Please continue' }] } },
-    { seq: 6, time: time + 1_000, type: 'assistant/message', data: { turn: 1, step: 0, message: { content: [{ type: 'text', text: 'Committed partial reply' }] }, usage: { outputTokens: 7 } } },
-    { seq: 7, time: time + 9_000, type: 'turn/end', data: { turn: 1, reason } },
+    { seq: 6, time: time + Math.min(durationMs, 1_000), type: 'assistant/message', data: { turn: 1, step: 0, message: { content: [{ type: 'text', text: 'Committed partial reply' }] }, usage: { outputTokens: 7 } } },
+    { seq: 7, time: time + durationMs, type: 'turn/end', data: { turn: 1, reason } },
   ].map(event => ({ type: 'event', event: { ...event, surfaceOp: 'append' } }));
   for (const record of records) peer.send('session/follow', record, rootFollow('root'));
   await done;
@@ -85,8 +86,6 @@ it.each([
   expect(events.filter(event => event.type === 'text_delta')).toEqual([
     expect.objectContaining({ type: 'text_delta', text: 'Committed partial reply' }),
   ]);
-  expect(events.filter(event => event.type === 'turn_completed').map(event => ({ checkpoint: event.nativeCheckpointId, tokens: event.turnStats?.outputTokens })))
-    .toEqual(completed ? [{ checkpoint: 'deepseek:seq:7', tokens: 7 }] : []);
 
   const ordinary = peer.onCall;
   peer.onCall = (method, args) => {
@@ -107,7 +106,7 @@ it.each([
   renderer.renderMessages(messages, () => 'Hello');
   await waitFor(() => expect(within(messagesEl).getByText('Committed partial reply')).toBeDefined());
   const view = within(messagesEl);
-  expect(view.queryByRole('button', { name: /^Worked/ })?.textContent ?? null).toBe(completed ? 'Worked for 00:09' : null);
+  expect(view.queryByRole('button', { name: /^Worked/ })?.textContent ?? null).toBe(completed ? durationMs > 0 ? 'Worked for 00:09' : 'Worked for 00:00' : null);
   const forkButton = view.queryByRole('button', { name: 'Fork conversation' });
   expect(forkButton !== null).toBe(completed);
   if (forkButton) fireEvent.click(forkButton);
@@ -117,7 +116,10 @@ it.each([
   // Stop retains its native history checkpoint, but offers no final answer to fork.
   expect(messages[1].assistantMessageId ?? null)
     .toBe(completed || interrupted ? 'deepseek:seq:7' : null);
-  expect(messages[1].completedAt).toBe(completed ? time + 9_000 : undefined);
-  expect(messages[1].turnStats).toEqual(completed ? { outputTokens: 7, durationMs: 9_000 } : undefined);
+  expect(messages[1].completedAt).toBe(completed ? time + durationMs : undefined);
+  expect(messagesEl.textContent).not.toMatch(/(?:Infinity|NaN) tok\/s/);
+  expect(events.filter(event => event.type === 'turn_completed').map(event => ({ checkpoint: event.nativeCheckpointId, tokens: event.turnStats?.outputTokens })))
+    .toEqual(completed ? [{ checkpoint: 'deepseek:seq:7', tokens: durationMs > 0 ? 7 : undefined }] : []);
+  expect(messages[1].turnStats).toEqual(completed && durationMs > 0 ? { outputTokens: 7, durationMs } : undefined);
   expect((await axe(messagesEl)).violations).toEqual([]);
 });

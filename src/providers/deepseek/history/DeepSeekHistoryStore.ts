@@ -2,7 +2,7 @@ import { decodeSessionMessage } from '@/core/session-tools/sessionMessageEnvelop
 import { resolveToolDiffData } from '@/core/tools/toolDiff';
 import { isWriteEditTool } from '@/core/tools/toolNames';
 import { applyToolResultPresentation } from '@/core/tools/toolResultDetails';
-import type { ChatMessage, SubagentInfo, ToolCallInfo } from '@/core/types';
+import { type ChatMessage, createTurnStats, type SubagentInfo, type ToolCallInfo } from '@/core/types';
 
 import { DeepSeekOutput, type DeepSeekOutputEvent, deepseekText } from '../normalization/DeepSeekOutput';
 import { DeepSeekSubagents } from '../normalization/DeepSeekSubagents';
@@ -83,7 +83,7 @@ export async function loadDeepSeekHistory(client: DeepSeekReader, sessionId: str
           assistant.completedAt = record.time;
           const durationMs = Math.max(0, record.time - turnStart);
           assistant.durationSeconds = Math.floor(durationMs / 1000);
-          assistant.turnStats = { outputTokens: output?.outputTokens ?? 0, durationMs };
+          assistant.turnStats = createTurnStats(output?.outputTokens, durationMs);
         }
       }
       if (stopped) {
