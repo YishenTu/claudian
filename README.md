@@ -41,6 +41,8 @@ Open Claudian interface from the ribbon icon or command palette. Everything work
 
 **Plugin API (experimental)** — Let other Obsidian plugins send prompts to sessions, stop them and read their replies. See the [Plugin API guide](docs/plugin-api.md).
 
+**Response work** — Expand completed work, thinking and interrupted output in the conversation. See the [Response guide](docs/responses.md).
+
 **Collaboration** — Collab is now a standalone plugin. See [Claudian Collab](https://github.com/YishenTu/claudian-collab).
 
 ## Requirements
