@@ -200,7 +200,8 @@ export class SessionBrowser {
     const organization = options.organization ?? 'list';
     const isGrouped = organization === 'linked-content';
 
-    this.inlineRename.releaseWithin(container);
+    const restoreRename = options.preserveListState ? this.inlineRename.preserveWithin(container) : undefined;
+    if (!restoreRename) this.inlineRename.releaseWithin(container);
     container.empty();
 
     const model = deriveSessionListModel(plugin.getConversationList(), {
@@ -304,6 +305,7 @@ export class SessionBrowser {
     recordVisibleCount(list, visibleCount);
     const restorePosition = (): void => {
       options.onBeforeRestoreListState?.(container);
+      restoreRename?.();
       restoreSessionListPosition(
         previousPosition,
         sectionScrolling ? sessionList : list,
