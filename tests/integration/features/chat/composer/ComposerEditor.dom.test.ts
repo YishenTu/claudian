@@ -1,5 +1,7 @@
 /** @vitest-environment jsdom */
 
+import { crc32 } from 'node:zlib';
+
 import { EditorView } from '@codemirror/view';
 import { axe } from '@test/helpers/accessibility';
 import { startNodeInsertAnimations } from '@test/helpers/dom/nodeInsertion';
@@ -449,11 +451,52 @@ describe('image batch admission through the composer', () => {
           files, getData: () => 'image fallback',
         },
       })
-      : createEvent.drop(fixture.wrapper, { dataTransfer: { types: ['Files'], files } });
+      : createEvent.drop(fixture.textbox, { dataTransfer: { types: ['Files'], files } });
     const preventDefault = vi.spyOn(event, 'preventDefault');
-    fireEvent(operation === 'paste' ? fixture.textbox : fixture.wrapper, event);
+    fireEvent(fixture.textbox, event);
     return { event, preventDefault };
   }
+
+  it('rejects an oversized PNG dropped on the editor before either byte reader starts', async () => {
+    const fixture = createFixture();
+    // A valid tiny PNG with a large ancillary comment: a real oversized image File, not a forged size.
+    const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+j3xoAAAAASUVORK5CYII=', 'base64');
+    const comment = Buffer.concat([Buffer.from('Comment\0'), Buffer.alloc(6 * 1024 * 1024, 0x61)]);
+    const type = Buffer.from('tEXt');
+    const length = Buffer.alloc(4);
+    length.writeUInt32BE(comment.length);
+    const crc = Buffer.alloc(4);
+    crc.writeUInt32BE(crc32(Buffer.concat([type, comment])));
+    const file = new File([Buffer.concat([png.subarray(0, -12), length, type, comment, crc, png.subarray(-12)])], 'camera.png', { type: 'image/png' });
+    const bytes = vi.fn(async () => new ArrayBuffer(0));
+    Object.defineProperty(file, 'arrayBuffer', { value: bytes });
+    // FileReader is CodeMirror's independent browser read boundary; keep an unwanted large read held.
+    const textRead = vi.spyOn(FileReader.prototype, 'readAsText').mockImplementation(() => {});
+    try {
+      fireEvent.drop(fixture.textbox, { dataTransfer: { types: ['Files'], files: [file] } });
+      expect(Notice).toHaveBeenCalledWith('Image exceeds 5.0 MB limit.');
+      expect(textRead).not.toHaveBeenCalled();
+      expect(bytes).not.toHaveBeenCalled();
+      expect(fixture.images.getAttachedImages()).toEqual([]);
+      expect(fixture.editor.element.value).toBe('Keep this draft');
+      expect(fixture.changed).not.toHaveBeenCalled();
+      expect(await axe(fixture.parent)).toHaveNoViolations();
+    } finally { textRead.mockRestore(); fixture.destroy(); }
+  });
+
+  it('leaves ordinary text drops to the real editor', () => {
+    const fixture = createFixture();
+    // jsdom cannot locate a drop by coordinates; only its geometry lookup is supplied.
+    const position = vi.spyOn(EditorView.prototype, 'posAtCoords').mockReturnValue(0);
+    try {
+      fireEvent.drop(fixture.textbox, { dataTransfer: {
+        types: ['text/plain'], files: [], getData: () => 'Dropped text ',
+      } });
+      expect(fixture.editor.element.value).toBe('Dropped text Keep this draft');
+      expect(fixture.images.getAttachedImages()).toEqual([]);
+      expect(fixture.changed).not.toHaveBeenCalled();
+    } finally { position.mockRestore(); fixture.destroy(); }
+  });
 
   it.each(['paste', 'drop'] as const)('reports one unsupported Notice for a disabled two-image %s batch', async operation => {
     const fixture = createFixture();
@@ -551,7 +594,7 @@ describe('image batch admission through the composer', () => {
         expect(fixture.images.getAttachedImages()).toEqual([]);
         expect(fixture.changed).not.toHaveBeenCalled();
         expect(fixture.editor.element.value).toBe(kind === 'text' ? 'Keep this draft plain text' : 'Keep this draft');
-        expect(event.defaultPrevented).toBe(kind !== 'null-clipboard');
+        expect(event.defaultPrevented).toBe(kind !== 'null-clipboard' && kind !== 'empty-drop');
       } finally { fixture.destroy(); }
     },
   );
