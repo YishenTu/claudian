@@ -1,12 +1,14 @@
 import { createEvent, fireEvent } from '@testing-library/dom';
 
-/** jsdom has no PointerEvent, so the pointer position and primary button are set on the dispatched event. */
+/** jsdom has no PointerEvent, so the pointer identity, position and primary button are set on the dispatched event. */
 export function firePointer(
-  type: 'pointerDown' | 'pointerMove' | 'pointerUp',
+  type: 'pointerDown' | 'pointerMove' | 'pointerUp' | 'pointerCancel',
   el: Element | Document,
   clientY: number,
+  pointerId = 1,
 ): void {
   const event = createEvent[type](el, {});
+  Object.defineProperty(event, 'pointerId', { value: pointerId });
   Object.defineProperty(event, 'clientY', { value: clientY });
   Object.defineProperty(event, 'button', { value: 0 });
   fireEvent(el, event);
