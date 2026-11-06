@@ -14,6 +14,14 @@
     "none": "None"
   },
   "chat": {
+    "queue": {
+      "queued": "Queued",
+      "steering": "Steering",
+      "steerNow": "Steer Now",
+      "edit": "Edit queued message",
+      "discard": "Discard queued message",
+      "images": "[images]"
+    },
     "promptSuggestionHint": "Tab to accept",
     "selectAvailableModel": "Select an available model before sending.",
     "reloadingHistory": "This chat changed outside Claudian and is reloading. Send again when it finishes.",

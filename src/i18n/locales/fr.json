@@ -14,6 +14,14 @@
     "none": "Aucun"
   },
   "chat": {
+    "queue": {
+      "queued": "En file d’attente",
+      "steering": "Réorientation en cours",
+      "steerNow": "Réorienter maintenant",
+      "edit": "Modifier le message en file d’attente",
+      "discard": "Supprimer le message en file d’attente",
+      "images": "[images]"
+    },
     "promptSuggestionHint": "Tab pour accepter",
     "selectAvailableModel": "Sélectionnez un modèle disponible avant d’envoyer.",
     "reloadingHistory": "Cette conversation a changé en dehors de Claudian et se recharge. Renvoyez une fois le rechargement terminé.",

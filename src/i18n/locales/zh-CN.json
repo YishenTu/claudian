@@ -14,6 +14,14 @@
     "none": "无"
   },
   "chat": {
+    "queue": {
+      "queued": "排队中",
+      "steering": "引导中",
+      "steerNow": "立即引导",
+      "edit": "编辑排队消息",
+      "discard": "丢弃排队消息",
+      "images": "[图片]"
+    },
     "promptSuggestionHint": "按 Tab 接受",
     "selectAvailableModel": "请先选择可用的模型再发送。",
     "reloadingHistory": "此对话在 Claudian 之外发生了变化，正在重新加载。加载完成后请重新发送。",
