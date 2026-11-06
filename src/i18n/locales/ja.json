@@ -130,6 +130,12 @@
       "missingNotice": "リンクされたコンテンツが見つかりません：{path}",
       "openFailed": "リンクされたコンテンツを開けませんでした：{error}"
     },
+    "selectedContext": {
+      "line": "{count} 行を選択",
+      "lines": "{count} 行を選択",
+      "node": "{count} 個のノードを選択",
+      "nodes": "{count} 個のノードを選択"
+    },
     "questions": {
       "title": "質問",
       "submit": "送信",

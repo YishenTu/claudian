@@ -130,6 +130,12 @@
       "missingNotice": "Verknüpfter Inhalt fehlt: {path}",
       "openFailed": "Verknüpfter Inhalt konnte nicht geöffnet werden: {error}"
     },
+    "selectedContext": {
+      "line": "{count} Zeile ausgewählt",
+      "lines": "{count} Zeilen ausgewählt",
+      "node": "{count} Knoten ausgewählt",
+      "nodes": "{count} Knoten ausgewählt"
+    },
     "questions": {
       "title": "Frage",
       "submit": "Absenden",

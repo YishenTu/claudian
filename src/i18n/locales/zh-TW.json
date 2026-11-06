@@ -130,6 +130,12 @@
       "missingNotice": "關聯內容遺失：{path}",
       "openFailed": "開啟關聯內容失敗：{error}"
     },
+    "selectedContext": {
+      "line": "已選取 {count} 行",
+      "lines": "已選取 {count} 行",
+      "node": "已選取 {count} 個節點",
+      "nodes": "已選取 {count} 個節點"
+    },
     "questions": {
       "title": "問題",
       "submit": "提交",

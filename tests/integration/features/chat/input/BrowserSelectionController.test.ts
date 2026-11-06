@@ -1,13 +1,16 @@
+// @vitest-environment jsdom
+import { axe } from '@test/helpers/accessibility';
+import { fireEvent, within } from '@testing-library/dom';
 import { App, MarkdownView, WorkspaceLeaf } from 'obsidian';
-/** @vitest-environment jsdom */
 import type { Mock, MockInstance } from 'vitest';
 
 import { ComposerContextTray } from '@/features/chat/composer/ComposerContextTray';
 import { BrowserSelectionController } from '@/features/chat/input/BrowserSelectionController';
 import { ComposerSelections } from '@/features/chat/input/ComposerSelections';
+import { setLocale } from '@/i18n/i18n';
 
-function createMockContextTray() {
-  const tray = new ComposerContextTray(document.createElement('div'));
+function createMockContextTray(trayEl: HTMLElement) {
+  const tray = new ComposerContextTray(trayEl);
   return Object.assign(tray, { setItems: vi.spyOn(tray, 'setItems'), clearItems: vi.spyOn(tray, 'clearItems') });
 
 }
@@ -32,10 +35,12 @@ function stopPolling(): void {
 }
 
 describe('BrowserSelectionController', () => {
+  let visibility: HTMLStyleElement;
   let controller: BrowserSelectionController;
   let app: App;
   let browserView: MarkdownView & { currentUrl: string };
   let contextTray: ReturnType<typeof createMockContextTray>;
+  let trayEl: HTMLElement;
   let inputEl: HTMLTextAreaElement;
   let containerEl: HTMLElement;
   let selectionText = 'selected web snippet';
@@ -43,9 +48,13 @@ describe('BrowserSelectionController', () => {
 
   beforeEach(() => {
     vi.useFakeTimers();
+    // Supply the host visibility rule; jsdom does not load plugin CSS.
+    visibility = document.head.appendChild(document.createElement('style'));
+    visibility.textContent = '.claudian-hidden { display: none; }';
     selectionText = 'selected web snippet';
 
-    contextTray = createMockContextTray();
+    trayEl = document.body.createDiv();
+    contextTray = createMockContextTray(trayEl);
     inputEl = document.createElement('textarea');
     document.body.appendChild(inputEl);
     containerEl = document.createElement('div');
@@ -75,10 +84,15 @@ describe('BrowserSelectionController', () => {
   });
 
   afterEach(() => {
+    visibility.remove();
+    setLocale('en');
     stopPolling();
+    controller.clear();
     inputEl.remove();
+    trayEl.remove();
     contextTray.destroy();
     getSelectionSpy.mockRestore();
+    vi.restoreAllMocks();
     vi.useRealTimers();
   });
 
@@ -104,6 +118,36 @@ describe('BrowserSelectionController', () => {
     await vi.advanceTimersByTimeAsync(0);
     expect(controller.getContext()?.selectedText ?? null).toBe(action === 'restart' ? 'current selection' : null);
     expect(contextTray.setItems).toHaveBeenCalledTimes(publications);
+  });
+
+  it.each([
+    ['2 lines selected', '已选择 1 行', '移除已选择 1 行'],
+    ['2 lines selected\nNative second line', '已选择 2 行', '移除已选择 2 行'],
+  ])('localizes fresh browser selection %j without changing source data', async (text, label, removeName) => {
+    setLocale('zh-CN');
+    selectionText = text;
+    await controller.poll();
+
+    expect(controller.getContext()).toEqual({
+      source: 'browser:https://example.com', selectedText: text,
+      title: 'Surfing', url: 'https://example.com',
+    });
+    expect(document.getSelection()?.toString()).toBe(text);
+    expect(browserView.currentUrl).toBe('https://example.com');
+    expect(browserView.getDisplayText()).toBe('Surfing');
+    expect(within(trayEl).getByText(label)).toBeDefined();
+    const remove = within(trayEl).getByRole('button', { name: removeName });
+    vi.useRealTimers();
+    expect(await axe(trayEl)).toHaveNoViolations();
+    fireEvent.click(remove);
+
+    expect(controller.getContext()).toBeNull();
+    expect(controller.hasSelection()).toBe(false);
+    expect(within(trayEl).queryByText(label)).toBeNull();
+    expect(within(trayEl).queryByRole('button', { name: removeName })).toBeNull();
+    expect(document.getSelection()?.toString()).toBe(text);
+    expect(browserView.currentUrl).toBe('https://example.com');
+    expect(browserView.getDisplayText()).toBe('Surfing');
   });
 
   it('captures browser selection and updates indicator', async () => {

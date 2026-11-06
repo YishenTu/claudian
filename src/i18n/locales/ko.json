@@ -130,6 +130,12 @@
       "missingNotice": "연결된 콘텐츠 없음: {path}",
       "openFailed": "연결된 콘텐츠를 열지 못했습니다: {error}"
     },
+    "selectedContext": {
+      "line": "{count}줄 선택됨",
+      "lines": "{count}줄 선택됨",
+      "node": "{count}개 노드 선택됨",
+      "nodes": "{count}개 노드 선택됨"
+    },
     "questions": {
       "title": "질문",
       "submit": "제출",
