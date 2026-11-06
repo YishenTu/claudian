@@ -72,6 +72,8 @@ A reasoning level chosen by an agent applies to that session only and does not c
 
 Each session has its own mailbox. A queued message waits until the recipient is free: no running turn, no queued input from you, no background work, and no question or approval waiting for your answer. Your queued input always goes first.
 
+For follow-ups you type yourself while a conversation is working, see [Queued composer input](queued-input.md). Those controls are separate from the agent-to-agent mailbox described here.
+
 - Messages are delivered one per turn, in arrival order, and are never merged with each other or put into the composer. Interrupts go ahead of ordinary messages, the newest first.
 - A recipient that isn't open in a tab is loaded in the background without opening one.
 - Stopping a session, or archiving or deleting it, drops its pending messages. Claudian shows a notice naming the senders whose messages could not be delivered.
