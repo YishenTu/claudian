@@ -249,7 +249,7 @@ it('handles drag entry, over, leave and an empty drop without claiming a text pa
   expect(overlay.classList.contains('visible')).toBe(false);
   const emptyDrop = createEvent.drop(wrapper, { dataTransfer: { files: undefined } });
   fireEvent(wrapper, emptyDrop);
-  expect(emptyDrop.defaultPrevented).toBe(true);
+  expect(emptyDrop.defaultPrevented).toBe(false);
   for (const clipboardData of [null, { items: [{ type: 'text/plain', getAsFile: () => null }] }]) {
     const paste = createEvent.paste(input, { clipboardData });
     fireEvent(input, paste);

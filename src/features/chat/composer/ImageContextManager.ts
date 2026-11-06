@@ -112,7 +112,7 @@ export class ImageContextManager {
       this.dropZoneEl.removeEventListener('dragenter', this.dragEnterHandler);
       this.dropZoneEl.removeEventListener('dragover', this.dragOverHandler);
       this.dropZoneEl.removeEventListener('dragleave', this.dragLeaveHandler);
-      this.dropZoneEl.removeEventListener('drop', this.dropHandler);
+      this.dropZoneEl.removeEventListener('drop', this.dropHandler, true);
       this.dropZoneEl = null;
     }
     this.dropOverlay?.remove();
@@ -152,7 +152,7 @@ export class ImageContextManager {
     inputWrapper.addEventListener('dragenter', this.dragEnterHandler);
     inputWrapper.addEventListener('dragover', this.dragOverHandler);
     inputWrapper.addEventListener('dragleave', this.dragLeaveHandler);
-    inputWrapper.addEventListener('drop', this.dropHandler);
+    inputWrapper.addEventListener('drop', this.dropHandler, true);
   }
 
   private handleDragEnter(e: DragEvent) {
@@ -195,12 +195,12 @@ export class ImageContextManager {
 
   private async handleDrop(e: DragEvent) {
     if (this.destroyed) return;
+    this.dropOverlay?.removeClass('visible');
+    const files = e.dataTransfer?.files;
+    // Claim file drops before CodeMirror can read them as text; ordinary text keeps its editor path.
+    if (!files?.length) return;
     e.preventDefault();
     e.stopPropagation();
-    this.dropOverlay?.removeClass('visible');
-
-    const files = e.dataTransfer?.files;
-    if (!files) return;
     if (!this.enabled && Array.from(files).some(file => this.isImageFile(file))) {
       new Notice(t('chat.images.unsupportedProvider'));
       return;
