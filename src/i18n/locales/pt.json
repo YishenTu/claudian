@@ -50,6 +50,19 @@
       "errorNoSession": "Nenhum ID de sessão disponível",
       "errorNoActiveTab": "Nenhuma aba ativa"
     },
+    "branching": {
+      "previous": "Ramo anterior",
+      "next": "Próximo ramo",
+      "fromPrompt": "Criar um ramo a partir desta mensagem",
+      "position": "Ramo {index} de {count}",
+      "busy": "Aguarde a conclusão da resposta atual.",
+      "noPrevious": "Não há um ramo anterior.",
+      "noNext": "Não há um próximo ramo.",
+      "savedRequired": "Você poderá criar um ramo depois que esta mensagem for salva.",
+      "collapseSide": "Recolha o chat lateral antes de mudar de ramo.",
+      "clearDraft": "Salve ou limpe o rascunho antes de mudar de ramo.",
+      "reconcileFailed": "Não foi possível sincronizar o ramo da conversa: {error}"
+    },
     "quote": {
       "buttonLabel": "Citar"
     },

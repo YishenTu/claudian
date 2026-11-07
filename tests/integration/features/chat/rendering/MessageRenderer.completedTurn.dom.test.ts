@@ -10,10 +10,11 @@ import { createProjectsFake } from '@test/helpers/features/chat/ProjectsFake';
 import { createSessionRuntimePool } from '@test/helpers/features/chat/SessionRuntimePoolHarness';
 import { testDate } from '@test/helpers/testClock';
 import { fireEvent, waitFor, within } from '@testing-library/dom';
-import { Component, MarkdownRenderer } from 'obsidian';
+import { Component, MarkdownRenderer, Notice } from 'obsidian';
 
+import type { ConversationBranchResult } from '@/core/execution';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
-import type { ChatMessage, ToolCallInfo } from '@/core/types';
+import type { ChatMessage, ImageAttachment, ToolCallInfo } from '@/core/types';
 import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
 import { ConversationController } from '@/features/chat/conversation/ConversationController';
 import { LinkedContentController } from '@/features/chat/linked-content';
@@ -542,7 +543,14 @@ it('keeps time after throughput when timestamps are refreshed or toggled', () =>
   renderer.dispose();
 });
 
-it('renders accessible Pi branch controls at the prompt and disables them while busy', async () => {
+it.each(['en', 'zh-CN', 'en'] as const)('renders accessible Pi branch controls at the prompt while busy (%s)', async locale => {
+  setLocale(locale);
+  onTestFinished(() => { setLocale('en'); });
+  const labels = locale === 'zh-CN'
+    ? { edit: '从此提示创建分支', previous: '上一个分支', next: '下一个分支', position: '第 2 个分支，共 2 个',
+      busy: '请等待当前回复完成。', noPrevious: '没有上一个分支。', noNext: '没有下一个分支。' }
+    : { edit: 'Branch from this prompt', previous: 'Previous branch', next: 'Next branch', position: 'Branch 2 of 2',
+      busy: 'Wait for the current response to finish.', noPrevious: 'No previous branch.', noNext: 'No next branch.' };
   const messagesEl = document.body.createDiv();
   const navigate = vi.fn().mockResolvedValue(undefined);
   let busy = false;
@@ -552,25 +560,33 @@ it('renders accessible Pi branch controls at the prompt and disables them while 
     messagesEl, undefined, undefined, () => ProviderRegistry.getCapabilities('pi'),
     { navigate, isBusy: () => busy },
   );
+  onTestFinished(() => { renderer.dispose(); messagesEl.remove(); });
   const prompt: ChatMessage = { id: 'user', role: 'user', content: 'Try B', timestamp: 1,
     userMessageId: 'b', treeBranches: ['a', 'b'] };
   const previousSessionPrompt: ChatMessage = { id: 'previous-session', role: 'user', content: 'Earlier session',
     timestamp: 1, userMessageId: 'old-native-id' };
   renderer.renderMessages([messages[0], previousSessionPrompt, prompt], () => 'Hello');
   expect(within(messagesEl.querySelector('[data-message-id="previous-session"]') as HTMLElement)
-    .queryByRole('button', { name: 'Branch from this prompt' })).toBeNull();
+    .queryByRole('button', { name: labels.edit })).toBeNull();
   expect(within(messagesEl.querySelector('[data-message-id="u1"]') as HTMLElement)
-    .queryByRole('button', { name: 'Branch from this prompt' })).toBeNull();
-  const edit = within(messagesEl).getByRole('button', { name: 'Branch from this prompt' }) as HTMLButtonElement;
-  const previous = within(messagesEl).getByRole('button', { name: 'Previous branch' }) as HTMLButtonElement;
-  const next = within(messagesEl).getByRole('button', { name: 'Next branch' }) as HTMLButtonElement;
+    .queryByRole('button', { name: labels.edit })).toBeNull();
+  const edit = within(messagesEl).getByRole('button', { name: labels.edit }) as HTMLButtonElement;
+  const previous = within(messagesEl).getByRole('button', { name: labels.previous }) as HTMLButtonElement;
+  const next = within(messagesEl).getByRole('button', { name: labels.next }) as HTMLButtonElement;
   const assertNativeTooltipsOnly = () => {
     for (const button of [edit, previous, next]) expect(button.hasAttribute('title')).toBe(false);
   };
   assertNativeTooltipsOnly();
-  expect(edit.type).toBe('button');
+  for (const button of [edit, previous, next]) {
+    expect(button.type).toBe('button');
+    expect(button.dataset.branchAction).toBe('true');
+  }
   expect(next.disabled).toBe(true);
-  expect(within(messagesEl).getByText('2/2')).toBeDefined();
+  expect(next.getAttribute('aria-description')).toBe(labels.noNext);
+  expect(previous.getAttribute('aria-description')).toBe('');
+  const position = within(messagesEl).getByText('2/2');
+  expect(position.getAttribute('aria-label')).toBe(labels.position);
+  expect([previous.nextElementSibling, position.nextElementSibling, next.nextElementSibling]).toEqual([position, next, edit]);
   previous.focus();
   expect(document.activeElement).toBe(previous);
   fireEvent.click(previous);
@@ -581,6 +597,7 @@ it('renders accessible Pi branch controls at the prompt and disables them while 
   renderer.refreshBranchButtonState();
   expect(edit.disabled).toBe(true);
   expect(previous.disabled).toBe(true);
+  for (const button of [edit, previous, next]) expect(button.getAttribute('aria-description')).toBe(labels.busy);
   assertNativeTooltipsOnly();
   fireEvent.click(previous);
   expect(navigate).toHaveBeenCalledTimes(2);
@@ -589,11 +606,26 @@ it('renders accessible Pi branch controls at the prompt and disables them while 
   expect(previous.disabled).toBe(false);
   expect(next.disabled).toBe(true);
   assertNativeTooltipsOnly();
+  expect(next.getAttribute('aria-description')).toBe(labels.noNext);
+  expect(previous.getAttribute('aria-description')).toBe('');
   expect(await axe(messagesEl)).toHaveNoViolations();
-  renderer.dispose();
+  prompt.userMessageId = 'a';
+  renderer.refreshBranchButtons([prompt]);
+  const atFirst = within(messagesEl).getByRole('button', { name: labels.previous }) as HTMLButtonElement;
+  const forward = within(messagesEl).getByRole('button', { name: labels.next }) as HTMLButtonElement;
+  expect(atFirst.disabled).toBe(true);
+  expect(atFirst.getAttribute('aria-description')).toBe(labels.noPrevious);
+  expect(forward.disabled).toBe(false);
+  fireEvent.click(forward);
+  expect(navigate).toHaveBeenLastCalledWith('user', 'b');
 });
 
-it('shows the tree action from the second live prompt before native IDs arrive and enables it without reloading', async () => {
+it.each([
+  ['en', 'Branch from this prompt', 'Wait for the current response to finish.', 'Branching is available after this prompt is saved.'],
+  ['zh-CN', '从此提示创建分支', '请等待当前回复完成。', '保存此提示后才能创建分支。'],
+] as const)('enables a live prompt after its native identity arrives (%s)', async (locale, label, busyDescription, pendingDescription) => {
+  setLocale(locale);
+  onTestFinished(() => { setLocale('en'); });
   const messagesEl = document.body.createDiv();
   const navigate = vi.fn().mockResolvedValue(undefined);
   let busy = true;
@@ -603,77 +635,187 @@ it('shows the tree action from the second live prompt before native IDs arrive a
     messagesEl, undefined, undefined, () => ProviderRegistry.getCapabilities('pi'),
     { navigate, isBusy: () => busy },
   );
+  onTestFinished(() => { renderer.dispose(); messagesEl.remove(); });
   const first: ChatMessage = { ...messages[0], treeBranches: ['native-u1'] };
   renderer.addMessage(first);
   renderer.refreshBranchButtons([first]);
-  expect(within(messagesEl).queryByRole('button', { name: 'Branch from this prompt' })).toBeNull();
+  expect(within(messagesEl).queryByRole('button', { name: label })).toBeNull();
   const second: ChatMessage = { id: 'u2', role: 'user', content: 'Second prompt', timestamp: 2 };
   renderer.addMessage(second);
-  let edit = within(messagesEl).getByRole('button', { name: 'Branch from this prompt' }) as HTMLButtonElement;
+  let edit = within(messagesEl).getByRole('button', { name: label }) as HTMLButtonElement;
   expect(edit.disabled).toBe(true);
-  expect(edit.getAttribute('aria-description')).toContain('response');
+  expect(edit.getAttribute('aria-description')).toBe(busyDescription);
   expect(edit.hasAttribute('title')).toBe(false);
   busy = false;
+  renderer.refreshBranchButtonState();
+  expect(edit.disabled).toBe(true);
+  expect(edit.getAttribute('aria-description')).toBe(pendingDescription);
   second.userMessageId = 'native-u2';
   renderer.refreshActionButtons(second, [first, second], 1);
-  edit = within(messagesEl).getByRole('button', { name: 'Branch from this prompt' }) as HTMLButtonElement;
+  edit = within(messagesEl).getByRole('button', { name: label }) as HTMLButtonElement;
   expect(edit.disabled).toBe(false);
+  expect(edit.getAttribute('aria-description')).toBe('');
   fireEvent.click(edit);
   expect(navigate).toHaveBeenCalledWith('u2', undefined);
   second.treeBranches = ['native-u2'];
   renderer.renderMessages([first, second], () => 'Hello');
-  expect(within(messagesEl).getAllByRole('button', { name: 'Branch from this prompt' })).toHaveLength(1);
+  expect(within(messagesEl).getAllByRole('button', { name: label })).toHaveLength(1);
   expect(await axe(messagesEl)).toHaveNoViolations();
-  renderer.dispose();
 });
 
-it.each([true, false])('enables branches after switching and native history correlation (initial ID: %s)', async hasNativeId => {
+async function setupPiBranchFlow(locale: 'en' | 'zh-CN', hasNativeId = true, hasSibling = false) {
+  setLocale(locale);
+  onTestFinished(() => { setLocale('en'); vi.mocked(Notice).mockClear(); });
   const messagesEl = document.body.createDiv();
   const inputEl = document.body.createEl('textarea');
   const state = new ChatState();
   const first: ChatMessage = { ...messages[0], treeBranches: ['native-u1'] };
+  const branches = hasSibling ? ['native-a', 'native-u2'] : ['native-u2'];
   const second: ChatMessage = { id: 'u2', role: 'user', content: 'Second prompt', timestamp: 2,
-    treeBranches: ['native-u2'], ...(hasNativeId ? { userMessageId: 'native-u2' } : {}) };
-  const plugin = await createChatFeatureHost({ settings: { mediaFolder: '' }, updateConversation: vi.fn(),
+    treeBranches: branches, ...(hasNativeId ? { userMessageId: 'native-u2' } : {}) };
+  const updateConversation = vi.fn<ChatFeatureHost['updateConversation']>().mockResolvedValue(undefined);
+  const getConversationSummary = vi.fn<ChatFeatureHost['getConversationSummary']>(() => conversationRecord('pi-chat', { providerId: 'pi' }));
+  const plugin = await createChatFeatureHost({ settings: { mediaFolder: '' }, updateConversation,
     getConversationById: vi.fn().mockResolvedValue(conversationRecord('pi-chat', { providerId: 'pi', messages: [first, second] })),
-    getConversationSummary: () => conversationRecord('pi-chat', { providerId: 'pi' }), projects: createProjectsFake() });
+    getConversationSummary, projects: createProjectsFake() });
   const native = new FakeBranchSession('pi', 'pi-session-1');
-  native.branchState = { branches: { 'native-u1': ['native-u1'], 'native-u2': ['native-u2'] }, userMessageIds: { u1: 'native-u1', u2: 'native-u2' } };
-  native.navigateConversationBranch.mockResolvedValue({ status: 'committed', messages: [first] });
+  native.branchState = { branches: { 'native-u1': ['native-u1'], 'native-u2': branches }, userMessageIds: { u1: 'native-u1', u2: 'native-u2' } };
+  const usage = { contextTokens: 20, inputTokens: 20, contextWindow: 200, percentage: 10 };
+  const committed: ConversationBranchResult = { status: 'committed', messages: [first], usage };
+  native.navigateConversationBranch.mockResolvedValue(committed);
+  native.reconcileConversationBranch.mockResolvedValue(committed);
   const { coordinator, registry } = createExecutionHarness({
     resolveBackend: () => ({ providerId: 'pi', createSession: () => native }),
   });
+  onTestFinished(async () => {
+    await coordinator.dispose();
+    await registry.dispose();
+    await plugin.providerHost.executionLifecycleRegistry.dispose();
+  });
   await coordinator.bindConversation({ conversationId: 'pi-chat', providerId: 'pi' });
   await coordinator.prepare();
-  onTestFinished(async () => { await coordinator.dispose(); await registry.dispose(); });
+  const component = new Component();
   const renderer: MessageRenderer = new MessageRenderer(plugin,
-    new Component(),
+    component,
     messagesEl, undefined, undefined, () => ProviderRegistry.getCapabilities('pi'), {
       navigate: (id, target) => controller.navigateBranch(id, target),
       isBusy: () => state.isRewinding,
     });
+  const linkedContent = new LinkedContentController({ app: plugin.app, getExcludedTags: () => [], getCachedVaultFiles: () => [], getCachedVaultFolders: () => [] });
   let welcomeEl: HTMLElement | null = null;
   const controller = new ConversationController({ plugin, state, renderer,
     ...createConversationPorts({ state, getInputEl: () => inputEl, getImageContextManager: () => null }),
     subagentManager: new SubagentManager(() => undefined),
     getMessagesEl: () => messagesEl,
     getWelcomeEl: () => welcomeEl, setWelcomeEl: (el: HTMLElement | null) => { welcomeEl = el; },
-    getLinkedContentController: () => new LinkedContentController({ app: plugin.app, getExcludedTags: () => [], getCachedVaultFiles: () => [], getCachedVaultFolders: () => [] }),
+    getLinkedContentController: () => linkedContent,
     getExecutionCoordinator: () => coordinator,
+  });
+  onTestFinished(() => {
+    controller.cancelBranchDraft({ render: false });
+    linkedContent.destroy();
+    renderer.dispose();
+    component.unload();
+    messagesEl.remove();
+    inputEl.remove();
   });
   state.currentConversationId = 'pi-chat';
   await controller.loadActive();
-  expect((within(messagesEl).getByRole('button', { name: 'Branch from this prompt' }) as HTMLButtonElement).disabled).toBe(!hasNativeId);
+  return { controller, state, native, inputEl, messagesEl, first, second, usage, committed, updateConversation, getConversationSummary };
+}
+
+it.each([true, false])('enables branches after switching and native history correlation (initial ID: %s)', async hasNativeId => {
+  const { controller, state, native, inputEl, messagesEl, first, usage, committed, updateConversation } = await setupPiBranchFlow('en', hasNativeId);
+  expect(within(messagesEl).getByRole('button', { name: 'Branch from this prompt' })).toHaveProperty('disabled', !hasNativeId);
   await controller.save();
+  updateConversation.mockClear();
   const edit = within(messagesEl).getByRole('button', { name: 'Branch from this prompt' }) as HTMLButtonElement;
   expect(edit.disabled).toBe(false);
   edit.click();
   await waitFor(() => expect(inputEl.value).toBe('Second prompt'));
   expect(native.navigateConversationBranch).not.toHaveBeenCalled();
-  expect(await controller.commitBranchDraft()).toMatchObject({ status: 'committed' });
-  expect(native.navigateConversationBranch).toHaveBeenCalledWith(expect.objectContaining({ userMessageId: 'native-u2' }));
+  expect(updateConversation).not.toHaveBeenCalled();
+  expect(await controller.commitBranchDraft()).toEqual(committed);
+  expect(native.navigateConversationBranch).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
+    userMessageId: 'native-u2', branchMessageId: undefined,
+  }));
   expect(state.messages).toEqual([first]);
-  renderer.dispose();
+  expect(state.usage).toEqual(usage);
+  expect(updateConversation).toHaveBeenCalledExactlyOnceWith('pi-chat', expect.objectContaining({ messages: [first], usage }));
+  expect(state.isRewinding).toBe(false);
+});
+
+it('navigates to the original native target through the localized previous branch control', async () => {
+  const { controller, state, native, inputEl, messagesEl, first, usage, updateConversation } = await setupPiBranchFlow('zh-CN', true, true);
+  const navigate = vi.spyOn(controller, 'navigateBranch');
+  onTestFinished(async () => {
+    await navigate.mock.results[0]?.value;
+    navigate.mockRestore();
+  });
+  fireEvent.click(within(messagesEl).getByRole('button', { name: '上一个分支' }));
+  expect(navigate).toHaveBeenCalledExactlyOnceWith('u2', 'native-a');
+  await navigate.mock.results[0].value;
+  expect(updateConversation).toHaveBeenCalledExactlyOnceWith('pi-chat', expect.objectContaining({ messages: [first], usage }));
+  expect(native.navigateConversationBranch).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
+    userMessageId: 'native-u2', branchMessageId: 'native-a',
+  }));
+  expect(inputEl.value).toBe('');
+  expect(state.messages).toEqual([first]);
+  expect(state.usage).toEqual(usage);
+  expect(state.isRewinding).toBe(false);
+});
+
+it('preserves the raw Pi error when a branch request fails', async () => {
+  const { controller, state, native, inputEl, first, second, updateConversation } = await setupPiBranchFlow('zh-CN');
+  await controller.navigateBranch('u2');
+  expect(inputEl.value).toBe('Second prompt');
+  const message = 'Save or clear your draft before changing conversation branches.';
+  vi.mocked(Notice).mockClear();
+  native.navigateConversationBranch.mockRejectedValueOnce(new Error(message));
+  expect(await controller.commitBranchDraft()).toEqual({ status: 'failed', error: `Error: ${message}` });
+  expect(native.navigateConversationBranch).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ userMessageId: 'native-u2' }));
+  expect(Notice).toHaveBeenCalledExactlyOnceWith(`Error: ${message}`);
+  expect(state.messages).toEqual([first, second]);
+  expect(updateConversation).not.toHaveBeenCalled();
+  expect(state.isRewinding).toBe(false);
+});
+
+it('localizes the outer branch error when the host cannot supply the conversation summary', async () => {
+  const { controller, state, native, messagesEl, first, second, updateConversation, getConversationSummary } = await setupPiBranchFlow('zh-CN');
+  await controller.save();
+  updateConversation.mockClear();
+  vi.mocked(Notice).mockClear();
+  const lookupCount = getConversationSummary.mock.calls.length;
+  getConversationSummary.mockReturnValueOnce(null);
+  await controller.navigateBranch('u2', 'native-a');
+  expect(getConversationSummary.mock.calls.slice(lookupCount)).toEqual([['pi-chat']]);
+  expect(native.navigateConversationBranch).not.toHaveBeenCalled();
+  expect(updateConversation).not.toHaveBeenCalled();
+  expect(state.messages).toEqual([first, second]);
+  expect(state.isRewinding).toBe(false);
+  expect(messagesEl.querySelector<HTMLButtonElement>('button[data-branch-action="true"]')).toHaveProperty('disabled', false);
+  expect(Notice).toHaveBeenCalledExactlyOnceWith('无法同步对话分支：Error: Conversation is missing.');
+});
+
+it('reconciles the Pi branch and retains the edited draft when the host save fails', async () => {
+  const { controller, state, native, inputEl, first, usage, committed, updateConversation } = await setupPiBranchFlow('zh-CN');
+  await controller.navigateBranch('u2');
+  expect(inputEl.value).toBe('Second prompt');
+  expect(updateConversation).not.toHaveBeenCalled();
+  inputEl.value = 'Edited raw draft';
+  vi.mocked(Notice).mockClear();
+  updateConversation.mockRejectedValueOnce(new Error('Save unavailable'));
+  expect(await controller.commitBranchDraft()).toMatchObject({ status: 'recovery-required' });
+  expect(Notice).toHaveBeenCalledExactlyOnceWith('Error: Save unavailable');
+  controller.cancelBranchDraft();
+  expect(inputEl.value).toBe('Edited raw draft');
+  expect(await controller.commitBranchDraft()).toEqual(committed);
+  expect(native.navigateConversationBranch).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ userMessageId: 'native-u2' }));
+  expect(native.reconcileConversationBranch).toHaveBeenCalledTimes(1);
+  expect(state.messages).toEqual([first]);
+  expect(state.usage).toEqual(usage);
+  expect(updateConversation).toHaveBeenLastCalledWith('pi-chat', expect.objectContaining({ messages: [first], usage }));
+  expect(state.isRewinding).toBe(false);
 });
 
 it('orders the Pi prompt toolbar as branches, tree, copy, time through live and replay refreshes', async () => {
@@ -733,8 +875,14 @@ it('orders the Pi prompt toolbar as branches, tree, copy, time through live and 
   renderer.dispose();
 });
 
-it('previews a branch without saving it and restores history when focus leaves the composer', async () => {
-  const prompt: ChatMessage = { id: 'second', role: 'user', content: 'Try B', timestamp: 2,
+it.each([
+  ['en', 'Branch from this prompt'],
+  ['zh-CN', '从此提示创建分支'],
+] as const)('previews a branch and restores history when focus leaves the composer (%s)', async (locale, label) => {
+  setLocale(locale);
+  onTestFinished(() => { setLocale('en'); });
+  const image: ImageAttachment = { id: 'branch-image', name: 'branch.png', data: 'YWJj', mediaType: 'image/png', size: 3, source: 'file' };
+  const prompt: ChatMessage = { id: 'second', role: 'user', content: 'Raw native prompt', displayContent: 'Visible prompt', images: [image], timestamp: 2,
     userMessageId: 'native-b', treeBranches: ['native-b'] };
   const history = [{ ...messages[0], treeBranches: ['native-u1'] }, prompt, messages[2]];
   const native = new FakeBranchSession('pi', 'preview-session');
@@ -762,7 +910,14 @@ it('previews a branch without saving it and restores history when focus leaves t
     mentionDataProvider: new VaultMentionDataProvider(plugin.app), getProviderCatalogConfig: () => null,
     isRuntimeLive: () => true, openConversation: async () => undefined, startNewConversation: async () => undefined,
   });
-  onTestFinished(async () => { await destroyTab(tab); await pool.dispose(); await messaging.dispose(); component.unload(); });
+  onTestFinished(async () => {
+    tab.controllers.conversationController.cancelBranchDraft({ render: false });
+    await destroyTab(tab);
+    await pool.dispose();
+    await messaging.dispose();
+    await plugin.providerHost.executionLifecycleRegistry.dispose();
+    component.unload();
+  });
   const { state, renderer } = tab;
   const { messagesEl, inputComposerEl, inputEl } = tab.dom;
   const controller = tab.controllers.conversationController;
@@ -773,19 +928,24 @@ it('previews a branch without saving it and restores history when focus leaves t
   const send = inputComposerEl.createEl('button', { text: 'Send', attr: { type: 'button' } });
   const outside = document.body.createEl('button', { text: 'Outside', attr: { type: 'button' } });
   renderer.renderMessages(history, () => 'Hello');
-  fireEvent.click(within(messagesEl).getByRole('button', { name: 'Branch from this prompt' }));
-  await waitFor(() => expect(inputEl.value).toBe('Try B'));
+  expect(messagesEl.textContent).toContain('Visible prompt');
+  expect(messagesEl.textContent).toContain('Fixed the bug.');
+  vi.mocked(plugin.updateConversation).mockClear();
+  fireEvent.click(within(messagesEl).getByRole('button', { name: label }));
+  await waitFor(() => expect(inputEl.value).toBe('Visible prompt'));
+  expect(tab.controllers.drafts.capture('main')).toEqual({ content: 'Visible prompt', images: [image] });
+  expect(plugin.updateConversation).not.toHaveBeenCalled();
   expect(messagesEl.querySelector('[data-message-id="second"]')).toBeNull();
   expect(state.messages).toEqual(history);
   expect(native.navigateConversationBranch).not.toHaveBeenCalled();
   await controller.save();
   expect(plugin.updateConversation).toHaveBeenLastCalledWith('pi-chat', expect.objectContaining({ messages: history }));
   send.focus();
-  expect(inputEl.value).toBe('Try B');
+  expect(inputEl.value).toBe('Visible prompt');
   inputEl.focus();
   inputEl.value = 'Edited draft';
   outside.focus();
-  expect(inputEl.value).toBe('');
+  expect(tab.controllers.drafts.capture('main')).toEqual({ content: '', images: [] });
   expect(messagesEl.querySelector('[data-message-id="second"]')).not.toBeNull();
   expect(messagesEl.querySelector('[data-message-id="a2"]')).not.toBeNull();
   expect(native.navigateConversationBranch).not.toHaveBeenCalled();
