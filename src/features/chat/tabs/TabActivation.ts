@@ -90,6 +90,14 @@ export class TabActivation {
     }
   }
 
+  /** Moves relative to the latest activation intent, including a cold tab still assembling. */
+  async switchAdjacent(direction: -1 | 1): Promise<void> {
+    const tabs = this.host.membership.getTabIdentities();
+    const index = tabs.findIndex(tab => tab.id === this.#scheduler.navigationTabId);
+    if (tabs.length < 2 || index < 0) return;
+    await this.switchTo(tabs[(index + direction + tabs.length) % tabs.length].id);
+  }
+
   async waitForIdle(): Promise<void> {
     await this.#scheduler.waitForIdle();
   }
