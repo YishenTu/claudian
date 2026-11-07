@@ -325,6 +325,19 @@
       "undelivered": "Nachrichten von {senders} konnten nicht zugestellt werden.",
       "fromLabel": "Von Sitzung:"
     },
+    "lifecycleFeedback": {
+      "runningArchive": "Laufende Sitzungen können nicht archiviert werden",
+      "archiveSkippedOne": "{count} geöffnete oder laufende Sitzung übersprungen",
+      "archiveSkippedOther": "{count} geöffnete oder laufende Sitzungen übersprungen",
+      "runningDelete": "Laufende Sitzungen können nicht gelöscht werden",
+      "deleteSkippedOne": "{count} laufende Sitzung übersprungen",
+      "deleteSkippedOther": "{count} laufende Sitzungen übersprungen",
+      "deletedCloseFallback": "Die gelöschte Sitzung konnte nicht geschlossen werden",
+      "autoFailed": "Inaktive Sitzungen konnten nicht automatisch archiviert werden",
+      "autoOne": "{count} inaktive Sitzung automatisch archiviert",
+      "autoOther": "{count} inaktive Sitzungen automatisch archiviert",
+      "nativeFailure": "{provider} konnte seine Sitzungen nicht archivieren oder wiederherstellen: {reason}"
+    },
     "sessionTools": {
       "noSessions": "Keine Sitzungen",
       "thisSession": "Diese Sitzung",

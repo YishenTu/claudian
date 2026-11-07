@@ -325,6 +325,19 @@
       "undelivered": "No se pudieron entregar los mensajes de {senders}.",
       "fromLabel": "De la sesión:"
     },
+    "lifecycleFeedback": {
+      "runningArchive": "No se pueden archivar sesiones en ejecución",
+      "archiveSkippedOne": "Se omitió {count} sesión abierta o en ejecución",
+      "archiveSkippedOther": "Se omitieron {count} sesiones abiertas o en ejecución",
+      "runningDelete": "No se pueden eliminar sesiones en ejecución",
+      "deleteSkippedOne": "Se omitió {count} sesión en ejecución",
+      "deleteSkippedOther": "Se omitieron {count} sesiones en ejecución",
+      "deletedCloseFallback": "No se pudo cerrar la sesión eliminada",
+      "autoFailed": "No se pudieron archivar automáticamente las sesiones inactivas",
+      "autoOne": "Se archivó automáticamente {count} sesión inactiva",
+      "autoOther": "Se archivaron automáticamente {count} sesiones inactivas",
+      "nativeFailure": "{provider} no pudo archivar ni restaurar sus sesiones: {reason}"
+    },
     "sessionTools": {
       "noSessions": "No hay sesiones",
       "thisSession": "Esta sesión",

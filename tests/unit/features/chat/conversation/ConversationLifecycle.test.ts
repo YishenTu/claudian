@@ -4,6 +4,7 @@ import type { Mock, Mocked } from 'vitest';
 
 import type { ProjectRecord } from '@/core/types';
 import { ConversationLifecycle, type ConversationLifecycleStore } from '@/features/chat/conversation/ConversationLifecycle';
+import { setLocale } from '@/i18n/i18n';
 
 interface FakeTab {
   id: string;
@@ -74,6 +75,8 @@ describe('ConversationLifecycle', () => {
     (Notice as unknown as Mock).mockClear();
   });
 
+  afterEach(() => setLocale('en'));
+
   describe('project archive', () => {
     function setupProject(running: string[] = [], launchArchived = false) {
       const manager = createManager([
@@ -129,7 +132,11 @@ describe('ConversationLifecycle', () => {
   });
 
   describe('delete', () => {
-    it('judges running by the tabs bound to the target session, not the active tab', async () => {
+    it.each([
+      ['en', 'Skipped 1 session that is running'],
+      ['zh-CN', '已跳过 1 个正在运行的会话'],
+    ] as const)('judges running by the target session and reports a single skip in %s', async (locale, notice) => {
+      setLocale(locale);
       const local = createManager([
         { id: 'streaming', conversationId: 'active', isWorking: true },
         { id: 'idle', conversationId: 'idle-session' },
@@ -140,10 +147,14 @@ describe('ConversationLifecycle', () => {
       await lifecycle.delete(['idle-session', 'background-session', 'closed-session']);
 
       expect(conversations.deleteConversation.mock.calls).toEqual([['idle-session'], ['closed-session']]);
-      expect(Notice).toHaveBeenCalledWith('Skipped 1 session that is running');
+      expect(Notice).toHaveBeenCalledExactlyOnceWith(notice);
     });
 
-    it('refuses a single running session without touching its tabs', async () => {
+    it.each([
+      ['en', 'Running sessions cannot be deleted'],
+      ['zh-CN', '无法删除正在运行的会话'],
+    ] as const)('refuses a single running session without touching its tabs in %s', async (locale, notice) => {
+      setLocale(locale);
       const manager = createManager([{ id: 'tab', conversationId: 'running', isWorking: true }]);
       const { lifecycle, conversations } = createLifecycle(manager);
 
@@ -151,7 +162,24 @@ describe('ConversationLifecycle', () => {
 
       expect(conversations.deleteConversation).not.toHaveBeenCalled();
       expect(manager.resetConversationTabs).not.toHaveBeenCalled();
-      expect(Notice).toHaveBeenCalledWith('Running sessions cannot be deleted');
+      expect(Notice).toHaveBeenCalledExactlyOnceWith(notice);
+    });
+
+    it.each([
+      { locale: 'en', ids: ['busy-1', 'idle', 'busy-2'], deleted: ['idle'], notices: [['Skipped 2 sessions that are running']] },
+      { locale: 'zh-CN', ids: ['busy-1', 'idle', 'busy-2'], deleted: ['idle'], notices: [['已跳过 2 个正在运行的会话']] },
+      { locale: 'zh-CN', ids: ['idle'], deleted: ['idle'], notices: [] },
+      { locale: 'zh-CN', ids: [], deleted: [], notices: [] },
+    ] as const)('reports delete skips for $ids in $locale', async ({ locale, ids, deleted, notices }) => {
+      setLocale(locale);
+      const manager = createManager(['busy-1', 'busy-2'].map(id => ({ id, conversationId: id, isWorking: true })));
+      const { lifecycle, conversations } = createLifecycle(manager);
+
+      await lifecycle.delete(ids);
+
+      expect(conversations.deleteConversation.mock.calls).toEqual(deleted.map(id => [id]));
+      expect(manager.resetConversationTabs).not.toHaveBeenCalled();
+      expect((Notice as unknown as Mock).mock.calls).toEqual(notices);
     });
 
     it('resets every view through its tab owner and reports the first failure', async () => {
@@ -197,7 +225,11 @@ describe('ConversationLifecycle', () => {
         .toBeLessThan(conversations.archiveConversationsIf.mock.invocationCallOrder[0]);
     });
 
-    it('does not archive or close anything while any bound tab is working', async () => {
+    it.each([
+      ['en', 'Running sessions cannot be archived'],
+      ['zh-CN', '无法归档正在运行的会话'],
+    ] as const)('does not archive or close anything while a bound tab is working in %s', async (locale, notice) => {
+      setLocale(locale);
       const idle = createManager([{ id: 'idle-tab', conversationId: 'conversation-1' }]);
       const running = createManager([{ id: 'running-tab', conversationId: 'conversation-1', isWorking: true }]);
       const { lifecycle, conversations } = createLifecycle(idle, running);
@@ -207,7 +239,8 @@ describe('ConversationLifecycle', () => {
       expect(idle.closeTab).not.toHaveBeenCalled();
       expect(running.closeTab).not.toHaveBeenCalled();
       expect(conversations.setConversationArchived).not.toHaveBeenCalled();
-      expect(Notice).toHaveBeenCalledWith('Running sessions cannot be archived');
+      expect(conversations.archiveConversationsIf).not.toHaveBeenCalled();
+      expect(Notice).toHaveBeenCalledExactlyOnceWith(notice);
     });
 
     it('restores an archived session without opening or closing a tab', async () => {
@@ -220,7 +253,11 @@ describe('ConversationLifecycle', () => {
       expect(manager.closeTab).not.toHaveBeenCalled();
     });
 
-    it('archives a batch after closing idle tabs and skips running sessions', async () => {
+    it.each([
+      ['en', 'Skipped 1 session that is open or running'],
+      ['zh-CN', '已跳过 1 个已打开或正在运行的会话'],
+    ] as const)('archives a batch after closing idle tabs and reports a single skip in %s', async (locale, notice) => {
+      setLocale(locale);
       const manager = createManager([
         { id: 'open-tab', conversationId: 'conversation-1' },
         { id: 'running-tab', conversationId: 'conversation-3', isWorking: true },
@@ -234,7 +271,23 @@ describe('ConversationLifecycle', () => {
       expect(conversations.archiveConversationsIf).toHaveBeenCalledTimes(1);
       expect(conversations.archiveConversationsIf)
         .toHaveBeenCalledWith(['conversation-1', 'conversation-2'], expect.any(Function));
-      expect(Notice).toHaveBeenCalledWith('Skipped 1 session that is open or running');
+      expect(Notice).toHaveBeenCalledExactlyOnceWith(notice);
+    });
+
+    it.each([
+      { locale: 'en', ids: ['a', 'b', 'c'], archived: 1, notices: [['Skipped 2 sessions that are open or running']] },
+      { locale: 'zh-CN', ids: ['a', 'b', 'c'], archived: 1, notices: [['已跳过 2 个已打开或正在运行的会话']] },
+      { locale: 'zh-CN', ids: ['a', 'b'], archived: 2, notices: [] },
+      { locale: 'zh-CN', ids: [], archived: 0, notices: [] },
+    ] as const)('reports archive outcomes for $ids with $archived archived in $locale', async ({ locale, ids, archived, notices }) => {
+      setLocale(locale);
+      const { lifecycle, conversations } = createLifecycle();
+      conversations.archiveConversationsIf.mockResolvedValueOnce(archived);
+
+      await lifecycle.archive(ids);
+
+      expect(conversations.archiveConversationsIf.mock.calls.map(([requested]) => requested)).toEqual(ids.length ? [ids] : []);
+      expect((Notice as unknown as Mock).mock.calls).toEqual(notices);
     });
 
     it('does not archive a session reopened while a later session in the batch is still closing', async () => {

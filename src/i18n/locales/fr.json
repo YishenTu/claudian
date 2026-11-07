@@ -325,6 +325,19 @@
       "undelivered": "Les messages de {senders} n’ont pas pu être remis.",
       "fromLabel": "De la session :"
     },
+    "lifecycleFeedback": {
+      "runningArchive": "Impossible d’archiver les sessions en cours",
+      "archiveSkippedOne": "{count} session ouverte ou en cours ignorée",
+      "archiveSkippedOther": "{count} sessions ouvertes ou en cours ignorées",
+      "runningDelete": "Impossible de supprimer les sessions en cours",
+      "deleteSkippedOne": "{count} session en cours ignorée",
+      "deleteSkippedOther": "{count} sessions en cours ignorées",
+      "deletedCloseFallback": "Impossible de fermer la session supprimée",
+      "autoFailed": "Impossible d’archiver automatiquement les sessions inactives",
+      "autoOne": "{count} session inactive archivée automatiquement",
+      "autoOther": "{count} sessions inactives archivées automatiquement",
+      "nativeFailure": "{provider} n’a pas pu archiver ou restaurer ses sessions : {reason}"
+    },
     "sessionTools": {
       "noSessions": "Aucune session",
       "thisSession": "Cette session",

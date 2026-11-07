@@ -325,6 +325,19 @@
       "undelivered": "Не удалось доставить сообщения от {senders}.",
       "fromLabel": "Из сеанса:"
     },
+    "lifecycleFeedback": {
+      "runningArchive": "Нельзя архивировать выполняющиеся сеансы",
+      "archiveSkippedOne": "Открытый или выполняющийся сеанс пропущен ({count})",
+      "archiveSkippedOther": "Открытые или выполняющиеся сеансы пропущены ({count})",
+      "runningDelete": "Нельзя удалять выполняющиеся сеансы",
+      "deleteSkippedOne": "Выполняющийся сеанс пропущен ({count})",
+      "deleteSkippedOther": "Выполняющиеся сеансы пропущены ({count})",
+      "deletedCloseFallback": "Не удалось закрыть удалённый сеанс",
+      "autoFailed": "Не удалось автоматически архивировать неактивные сеансы",
+      "autoOne": "Неактивный сеанс архивирован автоматически ({count})",
+      "autoOther": "Неактивные сеансы архивированы автоматически ({count})",
+      "nativeFailure": "{provider} не удалось архивировать или восстановить свои сеансы: {reason}"
+    },
     "sessionTools": {
       "noSessions": "Нет сеансов",
       "thisSession": "Этот сеанс",
