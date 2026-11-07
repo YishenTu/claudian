@@ -348,6 +348,10 @@
       "modeSteer": "Steer into running turn",
       "modeInterrupt": "Interrupt current work"
     },
+    "vaultContentEvents": {
+      "renameFailed": "Failed to update linked content paths",
+      "deleteFailed": "Failed to update pinned linked content"
+    },
     "navigation": {
       "scrollToTop": "Scroll to top",
       "previousMessage": "Previous message",

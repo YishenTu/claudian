@@ -348,6 +348,10 @@
       "modeSteer": "実行中のターンに追加",
       "modeInterrupt": "現在の作業を中断"
     },
+    "vaultContentEvents": {
+      "renameFailed": "リンクされたコンテンツのパスを更新できませんでした",
+      "deleteFailed": "ピン留めされたリンク済みコンテンツを更新できませんでした"
+    },
     "navigation": {
       "scrollToTop": "最上部へスクロール",
       "previousMessage": "前のメッセージ",

@@ -348,6 +348,10 @@
       "modeSteer": "In laufende Runde einsteuern",
       "modeInterrupt": "Aktuelle Arbeit unterbrechen"
     },
+    "vaultContentEvents": {
+      "renameFailed": "Pfade verknüpfter Inhalte konnten nicht aktualisiert werden",
+      "deleteFailed": "Angeheftete verknüpfte Inhalte konnten nicht aktualisiert werden"
+    },
     "navigation": {
       "scrollToTop": "Nach oben scrollen",
       "previousMessage": "Vorherige Nachricht",

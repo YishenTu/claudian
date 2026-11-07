@@ -348,6 +348,10 @@
       "modeSteer": "Orienter le tour en cours",
       "modeInterrupt": "Interrompre le travail en cours"
     },
+    "vaultContentEvents": {
+      "renameFailed": "Impossible de mettre à jour les chemins des contenus liés",
+      "deleteFailed": "Impossible de mettre à jour les contenus liés épinglés"
+    },
     "navigation": {
       "scrollToTop": "Défiler vers le haut",
       "previousMessage": "Message précédent",

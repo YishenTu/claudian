@@ -348,6 +348,10 @@
       "modeSteer": "실행 중인 턴에 추가",
       "modeInterrupt": "현재 작업 중단"
     },
+    "vaultContentEvents": {
+      "renameFailed": "연결된 콘텐츠의 경로를 업데이트하지 못했습니다",
+      "deleteFailed": "고정된 연결 콘텐츠를 업데이트하지 못했습니다"
+    },
     "navigation": {
       "scrollToTop": "맨 위로 스크롤",
       "previousMessage": "이전 메시지",
