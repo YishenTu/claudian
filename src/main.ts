@@ -53,6 +53,7 @@ import { ZenModeController } from './features/chat/zen/ZenModeController';
 import { createInlineEditCommand } from './features/inline-edit/inlineEditCommand';
 import { InlineEditSessionOwner } from './features/inline-edit/InlineEditSessionOwner';
 import { ClaudianSettingTab } from './features/settings/ClaudianSettings';
+import { t } from './i18n/i18n';
 import { getBuiltInProviderDefaultConfigs } from './providers/defaultProviderConfigs';
 
 export default class ClaudianPlugin extends Plugin {
@@ -286,7 +287,7 @@ export default class ClaudianPlugin extends Plugin {
       onSessionSettled: sessionId => {
         this.app.workspace.trigger(CLAUDIAN_TURN_ENDED_EVENT, { sessionId } satisfies ClaudianTurnEndedEvent);
       },
-      onError: () => { new Notice('Session state could not be saved. It remains in memory.'); },
+      onError: () => { new Notice(t('chat.sessionRuntime.stateNotSaved')); },
     });
     this.sessionMessaging = new SessionMessagingService({
       getHost: () => this.chatHost,

@@ -111,6 +111,9 @@
     "showEarlierMessages": "Frühere Nachrichten anzeigen",
     "renderFailed": "Nachrichteninhalt konnte nicht angezeigt werden.",
     "interruptedHint": "· Was soll Claudian stattdessen tun?",
+    "sessionRuntime": {
+      "stateNotSaved": "Der Sitzungszustand konnte nicht gespeichert werden. Er bleibt im Arbeitsspeicher."
+    },
     "sessions": {
       "empty": "Keine Unterhaltungen",
       "noMatch": "Keine passenden Sitzungen",

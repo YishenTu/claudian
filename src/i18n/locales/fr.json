@@ -111,6 +111,9 @@
     "showEarlierMessages": "Afficher les messages précédents",
     "renderFailed": "Impossible d’afficher le contenu du message.",
     "interruptedHint": "· Que doit faire Claudian à la place ?",
+    "sessionRuntime": {
+      "stateNotSaved": "L’état de la session n’a pas pu être enregistré. Il reste en mémoire."
+    },
     "sessions": {
       "empty": "Aucune conversation",
       "noMatch": "Aucune session correspondante",

@@ -111,6 +111,9 @@
     "showEarlierMessages": "显示更早的消息",
     "renderFailed": "消息内容渲染失败。",
     "interruptedHint": "· 你希望 Claudian 改做什么？",
+    "sessionRuntime": {
+      "stateNotSaved": "无法保存会话状态。状态仍保留在内存中。"
+    },
     "sessions": {
       "empty": "暂无对话",
       "noMatch": "没有匹配的会话",

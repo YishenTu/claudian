@@ -111,6 +111,9 @@
     "showEarlierMessages": "Mostrar mensajes anteriores",
     "renderFailed": "No se pudo mostrar el contenido del mensaje.",
     "interruptedHint": "· ¿Qué debería hacer Claudian en su lugar?",
+    "sessionRuntime": {
+      "stateNotSaved": "No se pudo guardar el estado de la sesión. Permanece en la memoria."
+    },
     "sessions": {
       "empty": "No hay conversaciones",
       "noMatch": "No hay sesiones coincidentes",

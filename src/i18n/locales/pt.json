@@ -111,6 +111,9 @@
     "showEarlierMessages": "Mostrar mensagens anteriores",
     "renderFailed": "Não foi possível exibir o conteúdo da mensagem.",
     "interruptedHint": "· O que Claudian deve fazer em vez disso?",
+    "sessionRuntime": {
+      "stateNotSaved": "Não foi possível salvar o estado da sessão. Ele permanece na memória."
+    },
     "sessions": {
       "empty": "Nenhuma conversa",
       "noMatch": "Nenhuma sessão correspondente",

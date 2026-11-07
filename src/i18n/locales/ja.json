@@ -111,6 +111,9 @@
     "showEarlierMessages": "以前のメッセージを表示",
     "renderFailed": "メッセージの表示に失敗しました。",
     "interruptedHint": "· Claudian は代わりに何をすべきですか？",
+    "sessionRuntime": {
+      "stateNotSaved": "セッションの状態を保存できませんでした。状態はメモリに残っています。"
+    },
     "sessions": {
       "empty": "会話がありません",
       "noMatch": "一致するセッションがありません",

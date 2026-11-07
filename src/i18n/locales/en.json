@@ -111,6 +111,9 @@
     "showEarlierMessages": "Show earlier messages",
     "renderFailed": "Failed to render message content.",
     "interruptedHint": "· What should Claudian do instead?",
+    "sessionRuntime": {
+      "stateNotSaved": "Session state could not be saved. It remains in memory."
+    },
     "sessions": {
       "empty": "No conversations",
       "noMatch": "No matching sessions",

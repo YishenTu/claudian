@@ -111,6 +111,9 @@
     "showEarlierMessages": "顯示較早的訊息",
     "renderFailed": "訊息內容呈現失敗。",
     "interruptedHint": "· 你希望 Claudian 改做什麼？",
+    "sessionRuntime": {
+      "stateNotSaved": "無法儲存工作階段狀態。狀態仍保留在記憶體中。"
+    },
     "sessions": {
       "empty": "尚無對話",
       "noMatch": "沒有符合的工作階段",

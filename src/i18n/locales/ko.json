@@ -111,6 +111,9 @@
     "showEarlierMessages": "이전 메시지 표시",
     "renderFailed": "메시지 내용을 표시하지 못했습니다.",
     "interruptedHint": "· Claudian이 대신 무엇을 해야 하나요?",
+    "sessionRuntime": {
+      "stateNotSaved": "세션 상태를 저장하지 못했습니다. 상태는 메모리에 남아 있습니다."
+    },
     "sessions": {
       "empty": "대화 없음",
       "noMatch": "일치하는 세션 없음",

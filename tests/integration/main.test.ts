@@ -2,6 +2,7 @@ import '@/providers';
 
 import { deferred } from '@test/helpers/ChatInputHarness';
 import { DEFAULT_CLAUDIAN_SETTINGS as DEFAULT_SETTINGS } from '@test/helpers/defaultSettings';
+import { registerChatTestProvider } from '@test/helpers/features/chat/ChatProviderFixture';
 import { grokEnvironmentHash, writeGrokCatalog } from '@test/helpers/providers/grokSettings';
 import { testClock } from '@test/helpers/testClock';
 import { App, Notice, type PluginManifest, TFile, TFolder, WorkspaceLeaf } from 'obsidian';
@@ -30,6 +31,7 @@ import { resolveSessionMentions } from '@/features/chat/input/resolveSessionMent
 import { SessionMessagingService } from '@/features/chat/session-messaging/SessionMessagingService';
 import { SessionRuntimePool } from '@/features/chat/sessions/SessionRuntimePool';
 import { ZenModeController } from '@/features/chat/zen/ZenModeController';
+import { setLocale } from '@/i18n/i18n';
 import * as sdkSession from '@/providers/claude/history/ClaudeHistoryStore';
 import { createCodexModelCatalogCommit } from '@/providers/codex/app/CodexWorkspaceServices';
 import { CodexModelCatalogCoordinator } from '@/providers/codex/runtime/CodexModelCatalogCoordinator';
@@ -1471,6 +1473,124 @@ describe('ClaudianPlugin', () => {
       expect(repository.getSync(ids[0])?.messages).toEqual(messages);
       await model.hydrate();
       expect(repository.getSync(ids[0])?.messages).toEqual(messages);
+    });
+
+    it.each([
+      ['English at startup', 'en', 'Session state could not be saved. It remains in memory.'],
+      ['Chinese at startup', 'zh-CN', '无法保存会话状态。状态仍保留在内存中。'],
+      ['English after Chinese', 'en', 'Session state could not be saved. It remains in memory.'],
+    ] as const)('reports a failed session save and retries on the same runtime (%s)', async (_description, locale, expectedNotice) => {
+      onTestFinished(() => { setLocale('en'); });
+      const { sessions } = registerChatTestProvider('claude', {
+        models: [{ label: 'Test model', value: 'test-model' }],
+      });
+      const files = installVaultFiles({
+        '.claudian/claudian-settings.json': JSON.stringify({ locale }),
+      });
+      await plugin.onload();
+      const host = chatHostOf(plugin);
+      const conversation = await host.createConversation({ providerId: 'claude', selectedModel: 'test-model' });
+      const pool = host.sessionRuntimes;
+      const identity = { conversationId: conversation.id, providerId: 'claude', draftModel: null } as const;
+      let acquired = pool.acquire(identity, { reveal() {} });
+      const runtime = acquired.attachment.runtime;
+      const write = mockApp.vault.adapter.write;
+      const originalWrite = write.getMockImplementation()!;
+      const notice = vi.mocked(Notice);
+      const originalNotice = notice.getMockImplementation()!;
+      const target = `${getDeviceSessionsPath(getHostnameKey())}/${conversation.id}.meta.json`;
+      let unsubscribe: (() => void) | undefined;
+      let watchdogTimer: ReturnType<typeof setTimeout> | undefined;
+      let cleaned = false;
+      const cleanup = () => {
+        if (cleaned) return;
+        cleaned = true;
+        clearTimeout(watchdogTimer);
+        notice.mockImplementation(originalNotice);
+        write.mockImplementation(originalWrite);
+        unsubscribe?.();
+        pool.release(acquired.attachment);
+      };
+      onTestFinished(cleanup);
+      try {
+        expect(acquired.acquired).toBe(true);
+        const model = await runtime.ensureModel();
+        expect(await model.ensureExecutionInitialized()).toBe(true);
+        expect(sessions).toHaveLength(1);
+        const native = sessions[0];
+        const metadata = { id: conversation.id, providerId: 'claude', selectedModel: 'test-model' };
+        const baseline = files.get(target);
+        expect(baseline).toEqual(expect.any(String));
+        expect(JSON.parse(baseline!)).toMatchObject(metadata);
+        expect(model.state.messages).toEqual([]);
+        expect(host.getConversationList().find(entry => entry.id === conversation.id)?.messageCount).toBe(0);
+
+        const failure = new Error('Model metadata write failed');
+        const firstWrite = deferred<void>();
+        const watchdog = deferred<never>();
+        let awaiting = 'the first metadata write';
+        // The events order the test. Bound a missing event so cleanup runs before runner teardown.
+        watchdogTimer = setTimeout(() => watchdog.reject(new Error(`Did not observe ${awaiting}`)), 2_000);
+        let failedWrites = 0;
+        write.mockImplementation(async (...args) => {
+          if (args[0] !== target) return originalWrite(...args);
+          failedWrites += 1;
+          firstWrite.resolve();
+          throw failure;
+        });
+        native.emit({
+          type: 'task_notification', content: 'Unsaved result',
+          scope: { kind: 'session', sessionInstanceId: native.sessionInstanceId, sequence: 1 },
+        });
+        await Promise.race([firstWrite.promise, watchdog.promise]);
+        await runtime.awaitBackgroundWork();
+        const task = [{ role: 'assistant', contentBlocks: [{ type: 'task_notification', content: 'Unsaved result' }] }];
+        expect(failedWrites).toBe(1);
+        expect(model.state.messages).toMatchObject(task);
+        expect(model.state.hasPendingConversationSave).toBe(true);
+        expect(files.get(target)).toBe(baseline);
+
+        const reported = deferred<string | DocumentFragment>();
+        notice.mockImplementation(function (message) {
+          if (failedWrites === 2 && message !== failure.message) reported.resolve(message);
+        });
+        awaiting = 'the session save notice';
+        pool.release(acquired.attachment);
+        const displayedNotice = await Promise.race([reported.promise, watchdog.promise]);
+        expect(failedWrites).toBe(2);
+        expect(pool.get(conversation.id)).toBe(runtime);
+        expect(runtime.peekModel).toBe(model);
+        expect(model.state.messages).toMatchObject(task);
+        expect(model.state.hasPendingConversationSave).toBe(true);
+        expect(files.get(target)).toBe(baseline);
+
+        let successfulWrites = 0;
+        write.mockImplementation(async (...args) => {
+          await originalWrite(...args);
+          if (args[0] === target) successfulWrites += 1;
+        });
+        acquired = pool.acquire(identity, { reveal() {} });
+        expect(acquired.acquired).toBe(true);
+        expect(acquired.attachment.runtime).toBe(runtime);
+        const saved = deferred<void>();
+        unsubscribe = runtime.subscribe(() => {
+          if (successfulWrites > 0 && !model.state.hasPendingConversationSave) saved.resolve();
+        });
+        awaiting = 'the successful metadata retry';
+        pool.release(acquired.attachment);
+        await Promise.race([saved.promise, watchdog.promise]);
+
+        expect(successfulWrites).toBe(1);
+        expect(model.state.hasPendingConversationSave).toBe(false);
+        expect(runtime.peekModel).toBe(model);
+        expect(model.state.messages).toMatchObject(task);
+        expect(host.getConversationList().find(entry => entry.id === conversation.id)?.messageCount).toBe(1);
+        expect(JSON.parse(files.get(target)!)).toMatchObject(metadata);
+        expect(displayedNotice).toBe(expectedNotice);
+      } finally {
+        cleanup();
+        await runtime.awaitBackgroundWork();
+      }
     });
 
     it("releases a detached model after another reader's hydration fails without reporting its error again", async () => {
