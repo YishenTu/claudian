@@ -375,7 +375,8 @@
         "moveTo": "Move to project…",
         "moveSelectionTo": "Move {count} sessions to project…",
         "removeFrom": "Remove from project",
-        "removeSelectionFrom": "Remove {count} sessions from project",
+        "removeSelectionFrom": "Remove {count} session from project",
+        "removeSelectionFromPlural": "Remove {count} sessions from project",
         "newProject": "New project…"
       },
       "deleteConfirm": "Delete project “{name}” and move its memory file to the trash? Its sessions stay, outside any project.",

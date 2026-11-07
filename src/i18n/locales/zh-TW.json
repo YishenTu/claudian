@@ -376,6 +376,7 @@
         "moveSelectionTo": "將 {count} 個工作階段移動到專案…",
         "removeFrom": "從專案中移除",
         "removeSelectionFrom": "從專案中移除 {count} 個工作階段",
+        "removeSelectionFromPlural": "從專案中移除 {count} 個工作階段",
         "newProject": "新增專案…"
       },
       "deleteConfirm": "刪除專案「{name}」並將其記憶檔案移到垃圾桶？工作階段會保留，但不再屬於任何專案。",

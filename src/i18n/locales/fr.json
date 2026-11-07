@@ -375,7 +375,8 @@
         "moveTo": "Déplacer vers un projet…",
         "moveSelectionTo": "Déplacer {count} sessions vers un projet…",
         "removeFrom": "Retirer du projet",
-        "removeSelectionFrom": "Retirer {count} sessions du projet",
+        "removeSelectionFrom": "Retirer {count} session du projet",
+        "removeSelectionFromPlural": "Retirer {count} sessions du projet",
         "newProject": "Nouveau projet…"
       },
       "deleteConfirm": "Supprimer le projet « {name} » et placer son fichier de mémoire dans la corbeille ? Les sessions sont conservées, hors de tout projet.",

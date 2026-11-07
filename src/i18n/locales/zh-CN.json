@@ -376,6 +376,7 @@
         "moveSelectionTo": "将 {count} 个会话移动到项目…",
         "removeFrom": "从项目中移除",
         "removeSelectionFrom": "从项目中移除 {count} 个会话",
+        "removeSelectionFromPlural": "从项目中移除 {count} 个会话",
         "newProject": "新建项目…"
       },
       "deleteConfirm": "删除项目“{name}”并将其记忆文件移到废纸篓？会话会保留，但不再属于任何项目。",

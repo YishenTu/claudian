@@ -375,7 +375,8 @@
         "moveTo": "Mover para um projeto…",
         "moveSelectionTo": "Mover {count} sessões para um projeto…",
         "removeFrom": "Remover do projeto",
-        "removeSelectionFrom": "Remover {count} sessões do projeto",
+        "removeSelectionFrom": "Remover {count} sessão do projeto",
+        "removeSelectionFromPlural": "Remover {count} sessões do projeto",
         "newProject": "Novo projeto…"
       },
       "deleteConfirm": "Excluir o projeto “{name}” e mover o arquivo de memória para a lixeira? As sessões permanecem, fora de qualquer projeto.",

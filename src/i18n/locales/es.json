@@ -375,7 +375,8 @@
         "moveTo": "Mover a un proyecto…",
         "moveSelectionTo": "Mover {count} sesiones a un proyecto…",
         "removeFrom": "Quitar del proyecto",
-        "removeSelectionFrom": "Quitar {count} sesiones del proyecto",
+        "removeSelectionFrom": "Quitar {count} sesión del proyecto",
+        "removeSelectionFromPlural": "Quitar {count} sesiones del proyecto",
         "newProject": "Nuevo proyecto…"
       },
       "deleteConfirm": "¿Eliminar el proyecto «{name}» y mover su archivo de memoria a la papelera? Las sesiones se mantienen, fuera de cualquier proyecto.",
