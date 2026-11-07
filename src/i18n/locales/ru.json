@@ -375,7 +375,8 @@
         "moveTo": "Переместить в проект…",
         "moveSelectionTo": "Переместить сеансы ({count}) в проект…",
         "removeFrom": "Убрать из проекта",
-        "removeSelectionFrom": "Убрать сеансы ({count}) из проекта",
+        "removeSelectionFrom": "Убрать сеанс ({count}) из проекта",
+        "removeSelectionFromPlural": "Убрать сеансы ({count}) из проекта",
         "newProject": "Новый проект…"
       },
       "deleteConfirm": "Удалить проект «{name}» и переместить его файл памяти в корзину? Сеансы останутся, вне какого-либо проекта.",

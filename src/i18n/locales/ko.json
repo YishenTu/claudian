@@ -376,6 +376,7 @@
         "moveSelectionTo": "세션 {count}개를 프로젝트로 이동…",
         "removeFrom": "프로젝트에서 제거",
         "removeSelectionFrom": "세션 {count}개를 프로젝트에서 제거",
+        "removeSelectionFromPlural": "세션 {count}개를 프로젝트에서 제거",
         "newProject": "새 프로젝트…"
       },
       "deleteConfirm": "“{name}” 프로젝트를 삭제하고 메모리 파일을 휴지통으로 옮길까요? 세션은 프로젝트 없이 유지됩니다.",

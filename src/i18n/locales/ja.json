@@ -376,6 +376,7 @@
         "moveSelectionTo": "{count} 件のセッションをプロジェクトへ移動…",
         "removeFrom": "プロジェクトから外す",
         "removeSelectionFrom": "{count} 件のセッションをプロジェクトから外す",
+        "removeSelectionFromPlural": "{count} 件のセッションをプロジェクトから外す",
         "newProject": "新規プロジェクト…"
       },
       "deleteConfirm": "プロジェクト「{name}」を削除し、メモリファイルをゴミ箱に移動しますか？セッションはプロジェクトなしで残ります。",

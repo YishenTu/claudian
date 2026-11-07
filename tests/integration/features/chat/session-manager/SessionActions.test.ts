@@ -3,10 +3,11 @@ import { createHarness } from '@test/helpers/ChatExecutionHarness';
 import { createProjectsFake } from '@test/helpers/features/chat/ProjectsFake';
 import { createSessionBrowserHost } from '@test/helpers/features/chat/SessionBrowserTestHarness';
 import { fireEvent } from '@testing-library/dom';
-import { Menu } from 'obsidian';
+import { Menu, setIcon } from 'obsidian';
 import type { Mock } from 'vitest';
 
 import { SessionBrowser } from '@/features/chat/session-manager/SessionBrowser';
+import type { HistoryConversationStatus } from '@/features/chat/session-manager/SessionStatusPresentation';
 
 async function createFixture(options: { host?: Pick<import('@/features/chat/ChatFeatureHost').ChatFeatureHost, 'executionPersistence'>; onSessionChanged?: () => void } = {}) {
   const projects = createProjectsFake();
@@ -73,9 +74,10 @@ describe('SessionActions', () => {
     ))!;
     fireEvent.contextMenu(pinnedHeader, {preventDefault: vi.fn(), stopPropagation: vi.fn()});
     let menu = (Menu as typeof Menu & {
-      instances: Array<{ items: Array<{ title: string; clickHandler: (() => void) | null }> }>;
+      instances: Array<{ items: Array<{ title: string; icon: string; clickHandler: (() => void) | null }> }>;
     }).instances.at(-1)!;
     expect(menu.items.map(item => item.title)).toEqual(['Unpin Linked content']);
+    expect(menu.items[0].icon).toBe('pin-off');
     menu.items[0].clickHandler?.();
     await Promise.resolve();
     expect(onSetLinkedContentPinned).toHaveBeenCalledWith('Projects/Plan.md', false);
@@ -85,9 +87,10 @@ describe('SessionActions', () => {
     ))!;
     fireEvent.contextMenu(regularHeader, {preventDefault: vi.fn(), stopPropagation: vi.fn()});
     menu = (Menu as typeof Menu & {
-      instances: Array<{ items: Array<{ title: string; clickHandler: (() => void) | null }> }>;
+      instances: Array<{ items: Array<{ title: string; icon: string; clickHandler: (() => void) | null }> }>;
     }).instances.at(-1)!;
     expect(menu.items.map(item => item.title)).toEqual(['Pin Linked content']);
+    expect(menu.items[0].icon).toBe('pin');
     menu.items[0].clickHandler?.();
     await Promise.resolve();
     expect(onSetLinkedContentPinned).toHaveBeenCalledWith('Projects/Other.md', true);
@@ -145,6 +148,7 @@ describe('SessionActions', () => {
       instances: Array<{
         items: Array<{
           title: string;
+          icon: string;
           disabled: boolean;
           clickHandler: (() => void) | null;
         }>;
@@ -156,6 +160,7 @@ describe('SessionActions', () => {
       'Pin Linked content',
       'Archive all sessions',
     ]);
+    expect(menu.items[1].icon).toBe('archive');
     expect(menu.items[1].disabled).toBe(false);
     menu.items[1].clickHandler?.();
     await Promise.resolve();
@@ -180,6 +185,7 @@ describe('SessionActions', () => {
       instances: Array<{
         items: Array<{
           title: string;
+          icon: string;
           disabled: boolean;
           clickHandler: (() => void) | null;
         }>;
@@ -254,7 +260,7 @@ describe('SessionActions', () => {
     const openMenu = (item: HTMLElement) => {
       fireEvent.contextMenu(item, {stopPropagation: vi.fn(), preventDefault: vi.fn()});
       return (Menu as typeof Menu & {
-        instances: Array<{ items: Array<{ title: string; clickHandler: (() => void) | null }> }>;
+        instances: Array<{ items: Array<{ title: string; icon: string; clickHandler: (() => void) | null }> }>;
       }).instances.at(-1)!;
     };
 
@@ -272,6 +278,7 @@ describe('SessionActions', () => {
     expect(findItem('seen').hasClass('claudian-history-item--attention')).toBe(true);
     menu = openMenu(findItem('seen'));
     expect(menu.items.map(item => item.title)).toEqual(['Pin', 'Mark as read', 'Rename', 'Copy session ID', 'Move to project…', 'Archive']);
+    expect(menu.items[1].icon).toBe('mail-open');
     menu.items[1].clickHandler?.();
 
     findItem = render();
@@ -588,7 +595,7 @@ describe('SessionActions', () => {
       .querySelector<HTMLElement>('.claudian-history-item')!;
     fireEvent.contextMenu(normalItem, {stopPropagation: vi.fn(), preventDefault: vi.fn()});
     let menu = (Menu as typeof Menu & {
-      instances: Array<{ items: Array<{ title: string; clickHandler: (() => void) | null }> }>;
+      instances: Array<{ items: Array<{ title: string; icon: string; clickHandler: (() => void) | null }> }>;
     }).instances.at(-1)!;
     expect(menu.items.map(item => item.title)).toEqual(['Pin', 'Rename', 'Copy session ID', 'Move to project…', 'Archive']);
     menu.items[0].clickHandler?.();
@@ -599,7 +606,7 @@ describe('SessionActions', () => {
       .querySelector<HTMLElement>('.claudian-history-item')!;
     fireEvent.contextMenu(pinnedItem, {stopPropagation: vi.fn(), preventDefault: vi.fn()});
     menu = (Menu as typeof Menu & {
-      instances: Array<{ items: Array<{ title: string; clickHandler: (() => void) | null }> }>;
+      instances: Array<{ items: Array<{ title: string; icon: string; clickHandler: (() => void) | null }> }>;
     }).instances.at(-1)!;
     expect(menu.items.map(item => item.title)).toEqual(['Unpin', 'Rename', 'Copy session ID', 'Move to project…', 'Archive']);
     menu.items[0].clickHandler?.();
@@ -636,6 +643,77 @@ describe('SessionActions', () => {
       'Move to project…',
       'Archive',
     ]);
+  });
+
+  it('shows an icon on every row menu action, shared with its row button', () => {
+    type IconMenu = { items: Array<{ title: string; icon: string }> };
+    const menuIcons = (row: Element): Array<[string, string]> => {
+      fireEvent.contextMenu(row, {stopPropagation: vi.fn(), preventDefault: vi.fn()});
+      const menu = (Menu as typeof Menu & { instances: IconMenu[] }).instances.at(-1)!;
+      return menu.items.map(item => [item.title, item.icon]);
+    };
+    const buttonIcon = (button: Element | null): string | undefined => (
+      vi.mocked(setIcon).mock.calls.find(([element]) => element === button)?.[1]
+    );
+    const statuses: Record<string, HistoryConversationStatus> = {
+      closed: { openState: 'closed', isRunning: false },
+      open: { openState: 'open', isRunning: false },
+    };
+    (deps.plugin.getConversationList as Mock).mockReturnValue([
+      { id: 'closed', title: 'Closed', createdAt: 2 },
+      { id: 'open', title: 'Open', createdAt: 1, isPinned: true },
+    ]);
+    const container = document.body.createDiv();
+    controller.renderHistoryDropdown(container, {
+      onSelectConversation: vi.fn(),
+      onOpenConversationInNewTab: vi.fn().mockResolvedValue(undefined),
+      showPinnedSection: true,
+      sessionScope: 'active',
+      sessionActionMode: 'active',
+      showAttentionState: true,
+      getConversationStatus: id => statuses[id],
+    });
+    const row = (id: string) => container.querySelector(`.claudian-history-item[data-conversation-id="${id}"]`)!;
+
+    expect(menuIcons(row('closed'))).toEqual([
+      ['Open in new tab', 'square-plus'],
+      ['Open in background tab', 'app-window'],
+      ['Pin', 'pin'],
+      ['Mark as unread', 'mail'],
+      ['Rename', 'pencil'],
+      ['Copy session ID', 'copy'],
+      ['Move to project…', 'folder-input'],
+      ['Archive', 'archive'],
+    ]);
+    expect(buttonIcon(row('closed').querySelector('.claudian-open-new-tab-btn'))).toBe('square-plus');
+    expect(buttonIcon(row('closed').querySelector('.claudian-pin-btn'))).toBe('pin');
+    expect(buttonIcon(row('closed').querySelector('.claudian-archive-btn'))).toBe('archive');
+    expect(menuIcons(row('open'))).toEqual([
+      ['Switch to open session', 'arrow-right-left'],
+      ['Unpin', 'pin-off'],
+      ['Mark as unread', 'mail'],
+      ['Rename', 'pencil'],
+      ['Copy session ID', 'copy'],
+      ['Move to project…', 'folder-input'],
+      ['Archive', 'archive'],
+    ]);
+    expect(buttonIcon(row('open').querySelector('.claudian-pin-btn'))).toBe('pin-off');
+
+    (deps.plugin.getConversationList as Mock).mockReturnValue([
+      { id: 'archived', title: 'Archived', createdAt: 1, isArchived: true },
+    ]);
+    const archived = document.body.createDiv();
+    controller.renderHistoryDropdown(archived, {
+      onSelectConversation: vi.fn(),
+      showArchivedSection: true,
+      sessionScope: 'archived',
+      sessionActionMode: 'archived',
+      showOpenStateActions: false,
+    });
+    const archivedRow = archived.querySelector('.claudian-history-item')!;
+    expect(menuIcons(archivedRow)).toEqual([['Restore', 'undo-2'], ['Delete', 'trash-2']]);
+    expect(buttonIcon(archivedRow.querySelector('.claudian-restore-btn'))).toBe('undo-2');
+    expect(buttonIcon(archivedRow.querySelector('.claudian-delete-btn'))).toBe('trash-2');
   });
 
   it('keeps rename in the active context menu and delete in Archived only', () => {
@@ -700,7 +778,7 @@ describe('SessionActions', () => {
       });
       fireEvent.contextMenu(container.querySelector<HTMLElement>('.claudian-history-item')!, {stopPropagation: vi.fn(), preventDefault: vi.fn()});
       return (Menu as typeof Menu & {
-        instances: Array<{ items: Array<{ title: string; clickHandler?: () => void }> }>;
+        instances: Array<{ items: Array<{ title: string; icon: string; clickHandler?: () => void }> }>;
       }).instances.at(-1)!;
     };
 

@@ -375,7 +375,8 @@
         "moveTo": "In Projekt verschieben…",
         "moveSelectionTo": "{count} Sitzungen in Projekt verschieben…",
         "removeFrom": "Aus Projekt entfernen",
-        "removeSelectionFrom": "{count} Sitzungen aus Projekt entfernen",
+        "removeSelectionFrom": "{count} Sitzung aus Projekt entfernen",
+        "removeSelectionFromPlural": "{count} Sitzungen aus Projekt entfernen",
         "newProject": "Neues Projekt…"
       },
       "deleteConfirm": "Projekt „{name}“ löschen und seine Gedächtnisdatei in den Papierkorb verschieben? Die Sitzungen bleiben erhalten, ohne Projekt.",
