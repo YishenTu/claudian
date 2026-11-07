@@ -258,7 +258,14 @@
       "loadFailed": "Impossible de charger les suggestions",
       "retryHint": "Saisissez à nouveau pour réessayer",
       "providerLoading": "Chargement des commandes du fournisseur…",
-      "providerRetry": "Réessayer la découverte des commandes du fournisseur"
+      "providerRetry": "Réessayer la découverte des commandes du fournisseur",
+      "builtInDescriptions": {
+        "new": "Démarrer une nouvelle conversation",
+        "compact": "Compacter l’historique de la conversation",
+        "sessions": "Reprendre une conversation précédente",
+        "fast": "Basculer le mode rapide",
+        "side": "Poser une question temporaire à partir de la dernière réponse"
+      }
     },
     "approval": {
       "title": "Autorisation requise",

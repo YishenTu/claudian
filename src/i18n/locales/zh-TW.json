@@ -258,7 +258,14 @@
       "loadFailed": "無法載入建議",
       "retryHint": "再次輸入以重試",
       "providerLoading": "正在載入供應商命令…",
-      "providerRetry": "重新尋找供應商命令"
+      "providerRetry": "重新尋找供應商命令",
+      "builtInDescriptions": {
+        "new": "開始新對話",
+        "compact": "壓縮對話歷史",
+        "sessions": "繼續先前的對話",
+        "fast": "切換快速模式",
+        "side": "根據最新回覆提出臨時問題"
+      }
     },
     "approval": {
       "title": "需要授權",

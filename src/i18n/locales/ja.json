@@ -258,7 +258,14 @@
       "loadFailed": "候補を読み込めませんでした",
       "retryHint": "再入力して再試行",
       "providerLoading": "プロバイダーのコマンドを読み込み中…",
-      "providerRetry": "プロバイダーのコマンド検出を再試行"
+      "providerRetry": "プロバイダーのコマンド検出を再試行",
+      "builtInDescriptions": {
+        "new": "新しい会話を始める",
+        "compact": "会話履歴を圧縮する",
+        "sessions": "以前の会話を再開する",
+        "fast": "高速モードを切り替える",
+        "side": "最新の返信をもとに一時的な追加質問をする"
+      }
     },
     "approval": {
       "title": "権限が必要です",

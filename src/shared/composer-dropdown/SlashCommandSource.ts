@@ -5,6 +5,7 @@ import type { ProviderCommandDiscoverySource } from '@/core/providers/commands/P
 import type { ProviderCommandEntry, ProviderCommandKind } from '@/core/providers/commands/ProviderCommandEntry';
 import type { ProviderId } from '@/core/providers/types';
 import { t } from '@/i18n/i18n';
+import type { TranslationKey } from '@/i18n/types';
 
 import type {
   ComposerDropdownItem,
@@ -13,6 +14,14 @@ import type {
   ComposerSelectionAction,
   ComposerTriggerMatch,
 } from './types';
+
+const BUILT_IN_DESCRIPTION_KEYS: Readonly<Partial<Record<string, TranslationKey>>> = {
+  'builtin:new': 'chat.suggestions.builtInDescriptions.new',
+  'builtin:compact': 'chat.suggestions.builtInDescriptions.compact',
+  'builtin:sessions': 'chat.suggestions.builtInDescriptions.sessions',
+  'builtin:fast': 'chat.suggestions.builtInDescriptions.fast',
+  'builtin:side': 'chat.suggestions.builtInDescriptions.side',
+};
 
 type SlashValue = { readonly kind: 'command' | 'retry' };
 
@@ -305,11 +314,13 @@ export class SlashCommandSource implements ComposerDropdownSource {
         const key = command.name.toLocaleLowerCase();
         if (seen.has(key)) continue;
         for (const name of [command.name, ...(command.aliases ?? [])]) seen.add(name.toLocaleLowerCase());
+        const descriptionKey = BUILT_IN_DESCRIPTION_KEYS[command.id];
+        const description = descriptionKey ? t(descriptionKey) : command.description;
         items.push({
           aliases: command.aliases,
           detail: command.argumentHint
-            ? `${command.description} · ${normalizeArgumentHint(command.argumentHint)}`
-            : command.description,
+            ? `${description} · ${normalizeArgumentHint(command.argumentHint)}`
+            : description,
           id: command.id,
           kind: 'value',
           label: `/${command.name}`,
