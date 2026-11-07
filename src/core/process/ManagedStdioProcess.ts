@@ -28,6 +28,8 @@ export interface ManagedStdioProcessOptions {
   finalShutdownTimeoutMs?: number;
   killProcessTree?: boolean;
   sigkillTimeoutMs?: number;
+  /** Shutdown first closes stdin and waits this long for a stdin-leased child to exit before signalling it. */
+  stdinCloseGraceMs?: number;
   stderrBufferLimit?: number;
   windowsVerbatimArguments?: boolean;
   stdio?: 'pipe' | ['pipe', 'pipe', 'pipe'];
@@ -169,18 +171,34 @@ export class ManagedStdioProcess {
   }
 
   shutdown(): Promise<void> {
-    if (this.shutdownPromise) {
-      return this.shutdownPromise;
+    if (!this.shutdownPromise) {
+      const graceMs = this.options.stdinCloseGraceMs;
+      this.shutdownPromise = graceMs !== undefined && this.proc && this.alive
+        ? this.#closeStdin(this.proc.stdin, graceMs).then(() => this.#terminate())
+        : this.#terminate();
     }
+    return this.shutdownPromise;
+  }
 
+  /** A signal skips the child's own cleanup; on Windows it also stops only a WSL launcher, not its Linux command. */
+  #closeStdin(stdin: Writable, graceMs: number): Promise<void> {
+    return new Promise((resolve) => {
+      const done = (): void => { window.clearTimeout(timer); offExit(); resolve(); };
+      const timer = window.setTimeout(done, graceMs);
+      const offExit = this.onExit(done);
+      // A pipe the child already closed fails asynchronously; the deadline still bounds the wait.
+      stdin.on('error', () => {}).end();
+    });
+  }
+
+  #terminate(): Promise<void> {
     const proc = this.proc;
     if (!proc || !this.alive) {
       if (proc) this.#killOwnedProcessGroup(proc, 'SIGKILL');
-      this.shutdownPromise = Promise.resolve();
-      return this.shutdownPromise;
+      return Promise.resolve();
     }
 
-    this.shutdownPromise = new Promise<void>((resolve) => {
+    return new Promise<void>((resolve) => {
       let settled = false;
       let killTimer: number | null = null;
       let finalTimer: number | null = null;
@@ -217,8 +235,6 @@ export class ManagedStdioProcess {
 
       this.#killProcess(proc, 'SIGTERM');
     });
-
-    return this.shutdownPromise;
   }
 
   private readonly handleError = (error: Error): void => {
