@@ -245,6 +245,36 @@
         "readOnlyDesc": "Ask before edits or internet.",
         "normalDesc": "Ask before extra access.",
         "yoloDesc": "Unrestricted files and internet."
+      },
+      "grok": {
+        "auto": "Auto",
+        "normal": "Ask",
+        "acceptEdits": "Accept edits",
+        "yolo": "YOLO",
+        "autoDesc": "Grok reviews actions and blocks risky ones",
+        "normalDesc": "Ask before edits and commands",
+        "acceptEditsDesc": "Automatically accept file edits",
+        "yoloDesc": "Accept all permissions without asking"
+      },
+      "antigravity": {
+        "normal": "Ask",
+        "acceptEdits": "Accept edits",
+        "yolo": "YOLO",
+        "normalDesc": "Ask before edits and commands",
+        "acceptEditsDesc": "Approve file edits in the workspace without asking",
+        "yoloDesc": "Accept all permissions without asking"
+      },
+      "opencode": {
+        "normal": "Ask",
+        "yolo": "YOLO",
+        "normalDesc": "Ask when OpenCode permission rules require it",
+        "yoloDesc": "Accept all permissions not explicitly denied"
+      },
+      "deepseek": {
+        "normal": "Workspace write",
+        "yolo": "Full access",
+        "normalDesc": "Ask before extra access.",
+        "yoloDesc": "Unrestricted files and internet."
       }
     },
     "thinking": {

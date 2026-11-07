@@ -245,6 +245,36 @@
         "readOnlyDesc": "Preguntar antes de editar o usar internet.",
         "normalDesc": "Preguntar antes del acceso adicional.",
         "yoloDesc": "Acceso sin restricciones a archivos e internet."
+      },
+      "grok": {
+        "auto": "Automático",
+        "normal": "Preguntar",
+        "acceptEdits": "Aceptar ediciones",
+        "yolo": "YOLO",
+        "autoDesc": "Grok revisa las acciones y bloquea las que son arriesgadas",
+        "normalDesc": "Preguntar antes de editar archivos y ejecutar comandos",
+        "acceptEditsDesc": "Aceptar automáticamente las ediciones de archivos",
+        "yoloDesc": "Aceptar todos los permisos sin preguntar"
+      },
+      "antigravity": {
+        "normal": "Preguntar",
+        "acceptEdits": "Aceptar ediciones",
+        "yolo": "YOLO",
+        "normalDesc": "Preguntar antes de editar archivos y ejecutar comandos",
+        "acceptEditsDesc": "Aprobar las ediciones de archivos en el espacio de trabajo sin preguntar",
+        "yoloDesc": "Aceptar todos los permisos sin preguntar"
+      },
+      "opencode": {
+        "normal": "Preguntar",
+        "yolo": "YOLO",
+        "normalDesc": "Preguntar cuando las reglas de permisos de OpenCode lo requieran",
+        "yoloDesc": "Aceptar todos los permisos que no se hayan denegado explícitamente"
+      },
+      "deepseek": {
+        "normal": "Escritura en el espacio de trabajo",
+        "yolo": "Acceso completo",
+        "normalDesc": "Preguntar antes de obtener acceso adicional.",
+        "yoloDesc": "Acceso sin restricciones a archivos e Internet."
       }
     },
     "thinking": {

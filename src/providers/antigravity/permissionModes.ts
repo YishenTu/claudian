@@ -1,7 +1,4 @@
-import type {
-  ProviderPermissionModeOption,
-  ProviderPermissionModePolicy,
-} from '../../core/providers/types';
+import type { ProviderPermissionModePolicy } from '../../core/providers/types';
 
 export const ANTIGRAVITY_PERMISSION_MODES = ['normal', 'acceptEdits', 'yolo'] as const;
 
@@ -10,17 +7,6 @@ export const ANTIGRAVITY_PERMISSION_MODE_POLICY: ProviderPermissionModePolicy = 
   fallbackValue: 'normal',
   defaultValue: 'normal',
 });
-
-export const ANTIGRAVITY_PERMISSION_MODE_OPTIONS: readonly ProviderPermissionModeOption[] = Object.freeze([
-  { value: 'normal', label: 'Ask', description: 'Ask before edits and commands' },
-  { value: 'acceptEdits', label: 'Accept edits', description: 'Approve file edits in the workspace without asking' },
-  {
-    value: 'yolo',
-    label: 'YOLO',
-    description: 'Accept all permissions without asking',
-    bypassesApprovals: true,
-  },
-]);
 
 /**
  * agy's native `mode` option for a Claudian permission mode. Native `plan` is never selected.

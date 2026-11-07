@@ -245,6 +245,36 @@
         "readOnlyDesc": "编辑或联网前询问。",
         "normalDesc": "额外访问前询问。",
         "yoloDesc": "不限制文件和网络访问。"
+      },
+      "grok": {
+        "auto": "自动",
+        "normal": "询问",
+        "acceptEdits": "接受编辑",
+        "yolo": "YOLO",
+        "autoDesc": "Grok 审查操作并阻止高风险操作",
+        "normalDesc": "编辑文件和执行命令前询问",
+        "acceptEditsDesc": "自动接受文件编辑",
+        "yoloDesc": "无需询问便接受所有权限"
+      },
+      "antigravity": {
+        "normal": "询问",
+        "acceptEdits": "接受编辑",
+        "yolo": "YOLO",
+        "normalDesc": "编辑文件和执行命令前询问",
+        "acceptEditsDesc": "无需询问便批准工作区内的文件编辑",
+        "yoloDesc": "无需询问便接受所有权限"
+      },
+      "opencode": {
+        "normal": "询问",
+        "yolo": "YOLO",
+        "normalDesc": "在 OpenCode 权限规则要求时询问",
+        "yoloDesc": "接受未被明确拒绝的所有权限"
+      },
+      "deepseek": {
+        "normal": "工作区写入",
+        "yolo": "完全访问",
+        "normalDesc": "额外访问前询问。",
+        "yoloDesc": "不受限制的文件和网络访问。"
       }
     },
     "thinking": {
