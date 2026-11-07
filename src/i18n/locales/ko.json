@@ -304,6 +304,15 @@
     },
     "removeItem": "{item} 제거",
     "agent": "에이전트: {agent}",
+    "executionNotices": {
+      "initializeFailed": "에이전트 실행을 초기화하지 못했습니다. 다시 시도해 주세요.",
+      "unavailable": "에이전트 실행을 사용할 수 없습니다. 플러그인을 다시 불러와 주세요.",
+      "missingDeleted": "공급자 세션이 더 이상 존재하지 않습니다. Claudian 기록이 삭제되었습니다. 새 세션을 시작하려면 메시지를 다시 보내 주세요.",
+      "missingReset": "공급자 세션이 더 이상 존재하지 않습니다. Claudian이 복구할 수 있는 기록을 보존했습니다. 세션을 다시 구성하려면 메시지를 다시 보내 주세요.",
+      "missingPreserved": "공급자 세션이 더 이상 존재하지 않습니다. 남은 대화 기록을 확인할 수 없어 Claudian이 세션 기록을 보존했습니다.",
+      "missingNotFound": "공급자 세션이 더 이상 존재하지 않습니다. 새 세션을 시작하려면 메시지를 다시 보내 주세요.",
+      "unsentFallback": "메시지가 전송되지 않았습니다. 다시 시도해 주세요."
+    },
     "images": {
       "unsupportedProvider": "이 제공업체는 이미지 첨부를 지원하지 않습니다.",
       "tooLarge": "이미지가 {size} 제한을 초과합니다.",

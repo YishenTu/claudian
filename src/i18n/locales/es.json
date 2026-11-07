@@ -304,6 +304,15 @@
     },
     "removeItem": "Quitar {item}",
     "agent": "Agente: {agent}",
+    "executionNotices": {
+      "initializeFailed": "No se pudo inicializar la ejecución del agente. Inténtalo de nuevo.",
+      "unavailable": "La ejecución del agente no está disponible. Vuelve a cargar el complemento.",
+      "missingDeleted": "La sesión del proveedor ya no existe. Se eliminó su registro de Claudian. Vuelve a enviar el mensaje para iniciar una sesión nueva.",
+      "missingReset": "La sesión del proveedor ya no existe. Claudian conservó el historial recuperable. Vuelve a enviar el mensaje para reconstruir la sesión.",
+      "missingPreserved": "La sesión del proveedor ya no existe. Claudian conservó su registro porque no se pudo verificar el historial restante.",
+      "missingNotFound": "La sesión del proveedor ya no existe. Vuelve a enviar el mensaje para iniciar una sesión nueva.",
+      "unsentFallback": "No se envió el mensaje. Inténtalo de nuevo."
+    },
     "images": {
       "unsupportedProvider": "Este proveedor no admite imágenes adjuntas.",
       "tooLarge": "La imagen supera el límite de {size}.",

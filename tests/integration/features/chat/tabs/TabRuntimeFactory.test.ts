@@ -7,14 +7,14 @@ import { createClaudianView } from '@test/helpers/features/chat/ClaudianViewHarn
 import { createProjectsFake, projectRecord } from '@test/helpers/features/chat/ProjectsFake';
 import { createSessionBrowserHost } from '@test/helpers/features/chat/SessionBrowserTestHarness';
 import { fireEvent } from '@testing-library/dom';
-import { App, Component, MarkdownRenderer, WorkspaceLeaf } from 'obsidian';
+import { App, Component, MarkdownRenderer, Notice, WorkspaceLeaf } from 'obsidian';
 import type { Mock, MockInstance } from 'vitest';
 
 import { RoutedTitleGenerationService } from '@/core/auxiliary/RoutedTitleGenerationService';
 import type { ProviderSessionEvent } from '@/core/execution';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { ProviderWorkspaceRegistry } from '@/core/providers/ProviderWorkspaceRegistry';
-import type { Conversation, ToolCallInfo } from '@/core/types';
+import type { Conversation, ImageAttachment, ToolCallInfo } from '@/core/types';
 import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
 import { ConversationLifecycle } from '@/features/chat/conversation/ConversationLifecycle';
 import type { ChatExecutionCoordinator } from '@/features/chat/execution/ChatExecutionCoordinator';
@@ -41,6 +41,7 @@ import {
   type TabRuntimeFactoryOptions,
 } from '@/features/chat/tabs/TabRuntimeFactory';
 import type { AssembledTabRuntime } from '@/features/chat/tabs/types';
+import { setLocale } from '@/i18n/i18n';
 import { VaultMentionDataProvider } from '@/shared/mention/VaultMentionDataProvider';
 
 const coordinatorInstances: ChatExecutionCoordinator[] = [];
@@ -1783,6 +1784,43 @@ describe('Tab provider execution ownership', () => {
     expect(activated).toHaveBeenCalledTimes(1);
     expect(onCommandContextChanged.mock.invocationCallOrder[0]).toBeLessThan(vi.mocked(coordinatorInstances[0].bindConversation).mock.invocationCallOrder[0]);
     expect(tab.state.currentConversationId).toBe(conversation.id);
+  });
+
+  it('reports an initialization failure in the selected language and restores the unsent draft', async () => {
+    setLocale('zh-CN');
+    onTestFinished(() => { setLocale('en'); });
+    const conversation = createConversation();
+    const cause = new Error('Message was not sent. Please try again.');
+    claude.createSession.mockImplementationOnce(() => { throw cause; });
+    const plugin = await createPlugin({
+      getConversationById: vi.fn(async id => id === conversation.id ? conversation : null),
+      renameConversation: vi.fn(async () => undefined),
+    });
+    const tab = await createTestTab({ plugin, containerEl: document.createElement('div'), conversation });
+    expect(claude.createSession).not.toHaveBeenCalled();
+    expect(tab.executionCoordinator.prepare).not.toHaveBeenCalled();
+    const image: ImageAttachment = {
+      id: 'retry-image', name: 'retry.png', mediaType: 'image/png', data: 'aGVsbG8=', size: 5, source: 'paste',
+    };
+    tab.ui.imageContextManager.setImages([image]);
+    tab.dom.inputEl.value = 'retry after initialization';
+    vi.mocked(Notice).mockClear();
+
+    await tab.controllers.inputController.sendMessage();
+
+    expect(claude.createSession).toHaveBeenCalledTimes(1);
+    expect(claude.createSession.mock.results[0]).toMatchObject({ type: 'throw', value: cause });
+    expect(FakeSession.prototype.execute).not.toHaveBeenCalled();
+    expect(tab.dom.inputEl.value).toBe('retry after initialization');
+    expect(tab.ui.imageContextManager.getAttachedImages()).toEqual([image]);
+    expect(tab.state.messages).toEqual([]);
+    expect(tab.dom.messagesEl.querySelectorAll('.claudian-message')).toHaveLength(0);
+    expect(tab.session.turns.isActive).toBe(false);
+    expect(tab.state.isStreaming).toBe(false);
+    expect(vi.mocked(Notice).mock.calls).toEqual([
+      ['Message was not sent. Please try again.'],
+      ['无法初始化代理执行。请重试。'],
+    ]);
   });
 
   it('routes requested events through the current input controller', async () => {

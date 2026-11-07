@@ -304,6 +304,15 @@
     },
     "removeItem": "{item} entfernen",
     "agent": "Agent: {agent}",
+    "executionNotices": {
+      "initializeFailed": "Agentenausführung konnte nicht initialisiert werden. Bitte versuche es erneut.",
+      "unavailable": "Agentenausführung ist nicht verfügbar. Bitte lade das Plugin neu.",
+      "missingDeleted": "Die Sitzung des Anbieters existiert nicht mehr. Der zugehörige Claudian-Eintrag wurde entfernt. Sende die Nachricht erneut, um eine neue Sitzung zu starten.",
+      "missingReset": "Die Sitzung des Anbieters existiert nicht mehr. Claudian hat den wiederherstellbaren Verlauf behalten. Sende die Nachricht erneut, um die Sitzung wiederherzustellen.",
+      "missingPreserved": "Die Sitzung des Anbieters existiert nicht mehr. Claudian hat den Eintrag behalten, da der verbleibende Verlauf nicht überprüft werden konnte.",
+      "missingNotFound": "Die Sitzung des Anbieters existiert nicht mehr. Sende die Nachricht erneut, um eine neue Sitzung zu starten.",
+      "unsentFallback": "Die Nachricht wurde nicht gesendet. Bitte versuche es erneut."
+    },
     "images": {
       "unsupportedProvider": "Dieser Anbieter unterstützt keine Bildanhänge.",
       "tooLarge": "Bild überschreitet das Limit von {size}.",

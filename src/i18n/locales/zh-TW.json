@@ -304,6 +304,15 @@
     },
     "removeItem": "移除{item}",
     "agent": "代理：{agent}",
+    "executionNotices": {
+      "initializeFailed": "無法初始化代理程式執行。請重試。",
+      "unavailable": "代理程式執行無法使用。請重新載入外掛。",
+      "missingDeleted": "供應商工作階段已不存在。其 Claudian 記錄已移除；請重新傳送以開始新的工作階段。",
+      "missingReset": "供應商工作階段已不存在。Claudian 已保留可復原的歷程記錄；請重新傳送以重建工作階段。",
+      "missingPreserved": "供應商工作階段已不存在。由於無法驗證剩餘的歷程記錄，Claudian 保留了其記錄。",
+      "missingNotFound": "供應商工作階段已不存在。請重新傳送以開始新的工作階段。",
+      "unsentFallback": "訊息未傳送。請重試。"
+    },
     "images": {
       "unsupportedProvider": "此供應商不支援圖片附件。",
       "tooLarge": "圖片超過 {size} 的大小限制。",

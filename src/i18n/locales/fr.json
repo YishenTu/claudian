@@ -304,6 +304,15 @@
     },
     "removeItem": "Retirer {item}",
     "agent": "Agent : {agent}",
+    "executionNotices": {
+      "initializeFailed": "Impossible d’initialiser l’exécution de l’agent. Réessayez.",
+      "unavailable": "L’exécution de l’agent n’est pas disponible. Rechargez le plugin.",
+      "missingDeleted": "La session du fournisseur n’existe plus. Son enregistrement dans Claudian a été supprimé. Renvoyez le message pour démarrer une nouvelle session.",
+      "missingReset": "La session du fournisseur n’existe plus. Claudian a conservé l’historique récupérable. Renvoyez le message pour reconstruire la session.",
+      "missingPreserved": "La session du fournisseur n’existe plus. Claudian a conservé son enregistrement, car l’historique restant n’a pas pu être vérifié.",
+      "missingNotFound": "La session du fournisseur n’existe plus. Renvoyez le message pour démarrer une nouvelle session.",
+      "unsentFallback": "Le message n’a pas été envoyé. Réessayez."
+    },
     "images": {
       "unsupportedProvider": "Ce fournisseur ne prend pas en charge les images jointes.",
       "tooLarge": "L’image dépasse la limite de {size}.",

@@ -15,6 +15,7 @@ import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import type { ChatMessage, Conversation } from '@/core/types';
 import type { ImageAttachment } from '@/core/types';
 import { createQueuedMessage } from '@/features/chat/state/chatTurnRequest';
+import { setLocale } from '@/i18n/i18n';
 
 const nativeCapabilities = ProviderRegistry.getCapabilities('claude');
 beforeEach(() => {
@@ -350,20 +351,37 @@ describe('MainTurnExecution', () => {
       size: 5,
       source: 'paste',
     };
-    const fixture = await createFixture();
-    fixture.images.setImages([image]);
-    fixture.input.value = 'retry this';
-    fixture.execution.repository.assertConversationExecutionAuthority.mockRejectedValueOnce(new Error('ledger unavailable'));
+    const notices = [];
+    try {
+      for (const locale of ['en', 'zh-CN', 'en'] as const) {
+        setLocale(locale);
+        const fixture = await createFixture();
+        fixture.images.setImages([image]);
+        fixture.input.value = 'retry this';
+        const authority = fixture.execution.repository.assertConversationExecutionAuthority;
+        authority.mockRejectedValueOnce(new Error('ledger unavailable'));
+        vi.mocked(Notice).mockClear();
 
-    await fixture.controller.sendMessage();
+        await fixture.controller.sendMessage();
 
-    expect(fixture.input.value).toBe('retry this');
-    expect(fixture.images.getAttachedImages()).toEqual([image]);
-    expect(fixture.state.messages).toEqual([]);
-    expect(fixture.deps.getMessagesEl()?.textContent).toBe('');
-    expect(fixture.plugin.updateConversation).not.toHaveBeenCalled();
-    expect(fixture.state.activity?.kind).not.toBe('error');
-    expect(Notice).toHaveBeenCalledWith('Message was not sent. Please try again.');
+        expect(authority).toHaveBeenCalledTimes(1);
+        expect(fixture.native.requests).toEqual([]);
+        expect(fixture.input.value).toBe('retry this');
+        expect(fixture.images.getAttachedImages()).toEqual([image]);
+        expect(fixture.state.messages).toEqual([]);
+        expect(fixture.deps.getMessagesEl()?.textContent).toBe('');
+        expect(fixture.plugin.updateConversation).not.toHaveBeenCalled();
+        expect(fixture.state.activity?.kind).not.toBe('error');
+        notices.push(vi.mocked(Notice).mock.calls.map(([message]) => message));
+      }
+    } finally {
+      setLocale('en');
+    }
+    expect(notices).toEqual([
+      ['Message was not sent. Please try again.'],
+      ['消息未发送。请重试。'],
+      ['Message was not sent. Please try again.'],
+    ]);
   });
 
   it('keeps unsent input in the closing transcript when preparation fails before handoff', async () => {
@@ -381,14 +399,20 @@ describe('MainTurnExecution', () => {
     expect(fixture.input.value).toBe('');
   });
 
-  it('restores the unsent turn after an asynchronous unaccepted configuration rejection', async () => {
+  it.each([
+    'No enabled model is available.',
+    'Message was not sent. Please try again.',
+    '',
+  ])('keeps the provider explanation %j after an unaccepted configuration rejection', async (message) => {
+    setLocale('zh-CN');
+    onTestFinished(() => { setLocale('en'); });
     const image: ImageAttachment = { id: 'retry-image', name: 'retry.png', mediaType: 'image/png', data: 'aGVsbG8=', size: 5, source: 'paste' };
     const fixture = await createFixture();
     fixture.images.setImages([image]);
     const rejection: ProviderExecutionEvent = {
       type: 'execution_error',
       category: 'configuration',
-      message: 'No enabled model is available.',
+      message,
       recoverable: false,
       scope: {
         kind: 'requested',
@@ -404,7 +428,7 @@ describe('MainTurnExecution', () => {
     await fixture.controller.sendMessage();
 
     expect(fixture.input.value).toBe('retry after configuration');
-    expect(Notice).toHaveBeenCalledWith(rejection.message);
+    expect(Notice).toHaveBeenCalledExactlyOnceWith(message);
     expect(fixture.images.getAttachedImages()).toEqual([image]);
     expect(fixture.state.messages).toEqual([]);
     expect(fixture.deps.getMessagesEl()?.textContent).toBe('');
@@ -564,20 +588,41 @@ describe('MainTurnExecution', () => {
     ]);
   });
 
-  it('restores pending input when the coordinator reports a missing session', async () => {
-    const fixture = (await createFixture());
+  it.each([
+    ['deleted', '提供商会话已不存在。其 Claudian 记录已移除；请重新发送以开始新会话。'],
+    ['reset', '提供商会话已不存在。Claudian 已保留可恢复的历史；请重新发送以重建会话。'],
+    ['preserved', '提供商会话已不存在。由于无法验证剩余历史，Claudian 保留了其记录。'],
+    ['not_found', '提供商会话已不存在。请重新发送以开始新会话。'],
+  ] as const)('restores unsent input and reports the %s missing-session outcome', async (resolution, notice) => {
+    setLocale('zh-CN');
+    onTestFinished(() => { setLocale('en'); });
+    const fixture = await createFixture();
     fixture.input.value = 'retry me';
-    fixture.execution.missingSession.mockResolvedValueOnce('reset');
+    fixture.execution.missingSession.mockResolvedValueOnce(resolution);
     fixture.native.respond.mockImplementationOnce(run => {
       run.emit({ type: 'turn_started', accepted: false });
-      run.emit({ type: 'execution_error', category: 'provider-session-missing', message: 'Session missing', recoverable: true });
+      run.emit({
+        type: 'execution_error',
+        category: 'provider-session-missing',
+        message: 'Failed to initialize agent execution. Please try again.',
+        missingProviderSessionId: 'native-missing-session',
+        recoverable: true,
+      });
     });
 
     await fixture.controller.sendMessage();
 
+    expect(fixture.execution.missingSession).toHaveBeenCalledExactlyOnceWith('conversation-1', 'native-missing-session');
+    expect(fixture.native.requests).toHaveLength(1);
     expect(fixture.input.value).toBe('retry me');
-    expect(fixture.state.messages).toEqual([]);
+    // Deleted sessions keep the projection until the separate retirement step.
+    const messages = resolution === 'deleted'
+      ? [{ role: 'user', content: 'retry me' }, { role: 'assistant', content: '' }]
+      : [];
+    expect(fixture.state.messages).toMatchObject(messages);
+    expect(fixture.session.turns.isActive).toBe(false);
     expect(fixture.plugin.updateConversation).not.toHaveBeenCalled();
+    expect(Notice).toHaveBeenCalledExactlyOnceWith(notice);
   });
 
   it('keeps an accepted missing-session turn non-retryable while resetting recovery state', async () => {

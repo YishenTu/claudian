@@ -304,6 +304,15 @@
     },
     "removeItem": "移除{item}",
     "agent": "代理：{agent}",
+    "executionNotices": {
+      "initializeFailed": "无法初始化代理执行。请重试。",
+      "unavailable": "代理执行不可用。请重新加载插件。",
+      "missingDeleted": "提供商会话已不存在。其 Claudian 记录已移除；请重新发送以开始新会话。",
+      "missingReset": "提供商会话已不存在。Claudian 已保留可恢复的历史；请重新发送以重建会话。",
+      "missingPreserved": "提供商会话已不存在。由于无法验证剩余历史，Claudian 保留了其记录。",
+      "missingNotFound": "提供商会话已不存在。请重新发送以开始新会话。",
+      "unsentFallback": "消息未发送。请重试。"
+    },
     "images": {
       "unsupportedProvider": "此提供商不支持图片附件。",
       "tooLarge": "图片超过 {size} 的大小限制。",

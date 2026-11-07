@@ -32,6 +32,7 @@ import type { StreamController } from '@/features/chat/turns/StreamController';
 import type { TurnCoordinator } from '@/features/chat/turns/TurnCoordinator';
 import type { TurnQueue } from '@/features/chat/turns/TurnQueue';
 import type { TurnSteering } from '@/features/chat/turns/TurnSteering';
+import { t } from '@/i18n/i18n';
 import { toError } from '@/utils/error';
 
 /** A main turn admitted for execution, with everything captured when it was admitted. */
@@ -277,14 +278,14 @@ export class MainTurnExecution {
     if ((turn.origin === 'user' && this.#retainUnsentTurnOnClose(signal, assistantMsg.id)) || restoreCancelledInput(assistantMsg)) return;
     if (!ready) {
       if ((turn.origin === 'user' && this.#retainUnsentTurnOnClose(signal, assistantMsg.id))) return;
-      new Notice('Failed to initialize agent execution. Please try again.');
+      new Notice(t('chat.executionNotices.initializeFailed'));
       rollbackUnstartedTurn();
       return;
     }
 
     const coordinator = this.deps.getExecutionCoordinator();
     if (!coordinator) {
-      new Notice('Agent execution is not available. Please reload the plugin.');
+      new Notice(t('chat.executionNotices.unavailable'));
       rollbackUnstartedTurn();
       return;
     }
@@ -358,12 +359,12 @@ export class MainTurnExecution {
           this.#finishAcceptedMissingSession(streamGeneration);
         }
         const notice = resolution === 'deleted'
-            ? 'The provider session no longer exists. Its Claudian record was removed; send again to start a new session.'
+            ? t('chat.executionNotices.missingDeleted')
             : resolution === 'reset'
-              ? 'The provider session no longer exists. Claudian preserved the recoverable history; send again to rebuild the session.'
+              ? t('chat.executionNotices.missingReset')
               : resolution === 'preserved'
-                ? 'The provider session no longer exists. Claudian preserved its record because the remaining history could not be verified.'
-                : 'The provider session no longer exists. Send again to start a new session.';
+                ? t('chat.executionNotices.missingPreserved')
+                : t('chat.executionNotices.missingNotFound');
         new Notice(notice);
         wasInvalidated = true;
       } else if (result.status === 'error' && result.error) {
@@ -378,7 +379,7 @@ export class MainTurnExecution {
         rollbackFailedTurn(assistantMsg);
         didRollbackUnsentTurn = true;
         if (deferred) scheduledContinuation = this.deps.queue.scheduleContinuation();
-        if (!signal.aborted && !deferred) new Notice(error.userMessage ?? 'Message was not sent. Please try again.');
+        if (!signal.aborted && !deferred) new Notice(error.userMessage ?? t('chat.executionNotices.unsentFallback'));
         this.reportDeferredReview();
       } else {
         hadExecutionError = true;
