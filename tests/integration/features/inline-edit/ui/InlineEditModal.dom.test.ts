@@ -548,8 +548,8 @@ it.each([false, true].flatMap(alreadyOpen => [
   const sourcePath = 'Section/note.md';
   const file = Object.assign(new TFile(), { path: samePage ? sourcePath : 'Section/target.md', basename: samePage ? 'note' : 'target' });
   h.app.vault.getAbstractFileByPath = vi.fn((path: string) => path === sourcePath ? file : null);
-  const leaf = Object.assign(new WorkspaceLeaf(), { getViewState: () => ({ type: 'markdown', state: { file: file.path } }), setEphemeralState: vi.fn() });
-  const unrelated = Object.assign(new WorkspaceLeaf(), { getViewState: () => ({ type: 'markdown', state: { file: 'Elsewhere/target.md' } }), setEphemeralState: vi.fn() });
+  const leaf = Object.assign(new WorkspaceLeaf(), { getRoot: () => ({}), getViewState: () => ({ type: 'markdown', state: { file: file.path } }), setEphemeralState: vi.fn() });
+  const unrelated = Object.assign(new WorkspaceLeaf(), { getRoot: () => ({}), getViewState: () => ({ type: 'markdown', state: { file: 'Elsewhere/target.md' } }), setEphemeralState: vi.fn() });
   h.app.metadataCache.getFirstLinkpathDest = vi.fn((_path: string, source: string) => source === sourcePath ? file : Object.assign(new TFile(), { path: 'Elsewhere/target.md' }));
   Object.assign(h.app.workspace, {
     iterateAllLeaves: (visit: (entry: typeof leaf) => void) => [unrelated, ...(alreadyOpen ? [leaf] : [])].forEach(visit),
