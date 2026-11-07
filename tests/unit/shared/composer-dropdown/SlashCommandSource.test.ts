@@ -3,6 +3,7 @@ import type { Mocked } from 'vitest';
 import type { ProviderCommandDiscoveryResult } from '@/core/providers/commands/ProviderCommandDiscoveryResult';
 import type { ProviderCommandDiscoverySource } from '@/core/providers/commands/ProviderCommandDiscoveryStore';
 import type { ProviderCommandEntry } from '@/core/providers/commands/ProviderCommandEntry';
+import { setLocale } from '@/i18n/i18n';
 import { SlashCommandSource } from '@/shared/composer-dropdown/SlashCommandSource';
 
 
@@ -75,6 +76,56 @@ describe('SlashCommandSource', () => {
     }
   });
 
+  it('uses the active locale for built-in details and description search', () => {
+    const source = new SlashCommandSource();
+    const signal = new AbortController().signal;
+    const english = [
+      'Compact conversation history',
+      'Toggle fast mode',
+      'Start a new conversation',
+      'Resume a previous conversation',
+      'Ask a temporary side question from the latest reply · [prompt]',
+    ];
+    const chinese = [
+      '压缩对话历史',
+      '切换快速模式',
+      '开始新对话',
+      '恢复之前的对话',
+      '基于最新回复临时提问 · [prompt]',
+    ];
+    const commands = [
+      { id: 'builtin:compact', label: '/compact', replacement: '/compact ', aliases: undefined },
+      { id: 'builtin:fast', label: '/fast', replacement: '/fast ', aliases: undefined },
+      { id: 'builtin:new', label: '/new', replacement: '/new ', aliases: ['clear'] },
+      { id: 'builtin:sessions', label: '/sessions', replacement: '/sessions ', aliases: ['resume'] },
+      { id: 'builtin:side', label: '/side', replacement: '/side ', aliases: ['btw'] },
+    ];
+    const searches = [
+      ['压缩', 'builtin:compact'],
+      ['快速', 'builtin:fast'],
+      ['开始', 'builtin:new'],
+      ['恢复', 'builtin:sessions'],
+      ['临时', 'builtin:side'],
+    ] as const;
+    try {
+      for (const [locale, details, queries] of [
+        ['en', english, []],
+        ['zh-CN', chinese, searches],
+        ['en', english, []],
+      ] as const) {
+        setLocale(locale);
+        expect(source.load(match('/'), signal)).toEqual(commands.map((command, index) =>
+          expect.objectContaining({ ...command, kind: 'value', detail: details[index] })));
+        for (const [query, id] of queries) {
+          expect(source.load(match('/', query), signal)).toEqual([expect.objectContaining({ id })]);
+        }
+      }
+    } finally {
+      source.destroy();
+      setLocale('en');
+    }
+  });
+
   it.each(['bt', 'btw', 'BTW'])('finds the side command through alias query %s', query => {
     const source = new SlashCommandSource();
     const trigger = match('/', query);
@@ -140,25 +191,40 @@ describe('SlashCommandSource', () => {
     source.destroy();
   });
 
-  it('offers built-ins only for a leading slash and lets built-in names and aliases win collisions', async () => {
-    const newEntry = { ...ENTRY, displayPrefix: '/', id: 'provider:new', insertPrefix: '/', name: 'new' };
+  it('offers built-ins only for a leading slash and lets built-in names and aliases win collisions', () => {
+    const newEntry = { ...ENTRY, displayPrefix: '/', id: 'builtin:new', insertPrefix: '/', name: 'new', description: 'Start a new conversation' };
     const clearEntry = { ...ENTRY, displayPrefix: '/', id: 'provider:clear', insertPrefix: '/', name: 'clear' };
     const compactEntry = { ...ENTRY, displayPrefix: '/', id: 'provider:compact', insertPrefix: '/', name: 'compact' };
+    const freshEntry = { ...newEntry, id: 'provider:fresh', name: 'fresh' };
     const source = new SlashCommandSource({
-      providerDiscovery: discovery({ status: 'ready', items: [newEntry, clearEntry, compactEntry] }),
+      providerDiscovery: discovery({ status: 'ready', items: [newEntry, clearEntry, compactEntry, freshEntry] }),
       providerId: 'claude',
     });
-    const leading = await source.load(match('/'), new AbortController().signal);
-    expect(leading.filter(item => item.kind === 'value' && item.label === '/new')).toEqual([
-      expect.objectContaining({ id: 'builtin:new' }),
-    ]);
-    expect(leading.some(item => item.kind === 'value' && item.label === '/clear')).toBe(false);
-    expect(leading.filter(item => item.kind === 'value' && item.label === '/compact')).toEqual([
-      expect.objectContaining({ id: 'builtin:compact' }),
-    ]);
-    const embedded = await source.load(match('/', '', false), new AbortController().signal);
-    expect(embedded.map(item => item.id).sort()).toEqual(['provider:clear', 'provider:compact', 'provider:new']);
-    source.destroy();
+    const signal = new AbortController().signal;
+    try {
+      setLocale('zh-CN');
+      const leading = source.load(match('/'), signal);
+      expect(leading.filter(item => item.kind === 'value' && item.label === '/new')).toEqual([
+        expect.objectContaining({ id: 'builtin:new' }),
+      ]);
+      expect(leading.some(item => item.kind === 'value' && item.label === '/clear')).toBe(false);
+      expect(leading.filter(item => item.kind === 'value' && item.label === '/compact')).toEqual([
+        expect.objectContaining({ id: 'builtin:compact' }),
+      ]);
+      expect(source.load(match('/', 'start a new conversation'), signal)).toEqual([
+        expect.objectContaining({ id: 'provider:fresh', detail: 'Start a new conversation' }),
+      ]);
+      const embedded = source.load(match('/', '', false), signal);
+      expect(embedded.map(item => item.id).sort()).toEqual(['builtin:new', 'provider:clear', 'provider:compact', 'provider:fresh']);
+      source.setBuiltInsEnabled(false);
+      expect(source.load(match('/', 'new'), signal)).toEqual([
+        expect.objectContaining({ id: 'builtin:new', detail: 'Start a new conversation', label: '/new', replacement: '/new ' }),
+        expect.objectContaining({ id: 'provider:fresh', detail: 'Start a new conversation', label: '/fresh', replacement: '/fresh ' }),
+      ]);
+    } finally {
+      source.destroy();
+      setLocale('en');
+    }
   });
 
   it('filters hidden provider commands and retries discovery only after explicit selection', async () => {

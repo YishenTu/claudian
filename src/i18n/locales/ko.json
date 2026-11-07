@@ -258,7 +258,14 @@
       "loadFailed": "추천을 불러오지 못했습니다",
       "retryHint": "다시 입력하여 재시도",
       "providerLoading": "제공업체 명령 불러오는 중…",
-      "providerRetry": "제공업체 명령 검색 다시 시도"
+      "providerRetry": "제공업체 명령 검색 다시 시도",
+      "builtInDescriptions": {
+        "new": "새 대화 시작하기",
+        "compact": "대화 기록 압축하기",
+        "sessions": "이전 대화 이어서 하기",
+        "fast": "빠른 모드 전환하기",
+        "side": "최신 답변을 바탕으로 임시 후속 질문하기"
+      }
     },
     "approval": {
       "title": "권한 필요",

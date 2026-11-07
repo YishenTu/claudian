@@ -258,7 +258,14 @@
       "loadFailed": "Vorschläge konnten nicht geladen werden",
       "retryHint": "Erneut eingeben, um es noch einmal zu versuchen",
       "providerLoading": "Anbieterbefehle werden geladen…",
-      "providerRetry": "Anbieterbefehle erneut suchen"
+      "providerRetry": "Anbieterbefehle erneut suchen",
+      "builtInDescriptions": {
+        "new": "Eine neue Unterhaltung beginnen",
+        "compact": "Den Unterhaltungsverlauf komprimieren",
+        "sessions": "Eine frühere Unterhaltung fortsetzen",
+        "fast": "Den Schnellmodus umschalten",
+        "side": "Eine temporäre Nebenfrage zur letzten Antwort stellen"
+      }
     },
     "approval": {
       "title": "Berechtigung erforderlich",

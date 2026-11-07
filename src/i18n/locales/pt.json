@@ -258,7 +258,14 @@
       "loadFailed": "Não foi possível carregar as sugestões",
       "retryHint": "Digite novamente para tentar de novo",
       "providerLoading": "Carregando comandos do provedor…",
-      "providerRetry": "Tentar novamente a descoberta de comandos do provedor"
+      "providerRetry": "Tentar novamente a descoberta de comandos do provedor",
+      "builtInDescriptions": {
+        "new": "Iniciar uma nova conversa",
+        "compact": "Compactar o histórico da conversa",
+        "sessions": "Retomar uma conversa anterior",
+        "fast": "Alternar o modo rápido",
+        "side": "Fazer uma pergunta temporária a partir da última resposta"
+      }
     },
     "approval": {
       "title": "Permissão necessária",

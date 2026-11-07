@@ -7,6 +7,8 @@ import { Notice } from 'obsidian';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { decodeSessionMessage } from '@/core/session-tools/sessionMessageEnvelope';
 import type { ToolCallInfo } from '@/core/types';
+import { setLocale } from '@/i18n/i18n';
+import { SlashCommandSource } from '@/shared/composer-dropdown/SlashCommandSource';
 
 const nativeCapabilities = ProviderRegistry.getCapabilities('claude');
 beforeEach(() => {
@@ -172,6 +174,30 @@ describe('InputController admission', () => {
 
     expect(fixture.native.runs[0].cancelCalls).toBe(1);
     expect(fixture.state.cancelRequested).toBe(true);
+  });
+
+  it('dispatches a built-in command selected through its localized description', async () => {
+    const fixture = await createFixture();
+    setLocale('zh-CN');
+    const source = new SlashCommandSource();
+    try {
+      const trigger = source.match('/开始', 3);
+      if (!trigger) throw new Error('Expected a leading slash trigger');
+      const [item] = source.load(trigger, new AbortController().signal);
+      expect(item).toMatchObject({ id: 'builtin:new', detail: '开始新对话' });
+      if (item.kind !== 'value') throw new Error('Expected a selectable built-in command');
+      const action = source.select(item, trigger);
+      if (action.kind !== 'replace') throw new Error('Expected a command replacement');
+      expect(action.text).toBe('/new ');
+      fixture.input.value = action.text;
+      await fixture.controller.sendMessage();
+      expect(fixture.startNewConversation).toHaveBeenCalledTimes(1);
+      expect(fixture.native.requests).toHaveLength(0);
+      expect(fixture.input.value).toBe('');
+    } finally {
+      source.destroy();
+      setLocale('en');
+    }
   });
 
   it.each([

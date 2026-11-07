@@ -258,7 +258,14 @@
       "loadFailed": "Could not load suggestions",
       "retryHint": "Type again to retry",
       "providerLoading": "Loading provider commands…",
-      "providerRetry": "Try provider command discovery again"
+      "providerRetry": "Try provider command discovery again",
+      "builtInDescriptions": {
+        "new": "Start a new conversation",
+        "compact": "Compact conversation history",
+        "sessions": "Resume a previous conversation",
+        "fast": "Toggle fast mode",
+        "side": "Ask a temporary side question from the latest reply"
+      }
     },
     "approval": {
       "title": "Permission required",

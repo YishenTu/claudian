@@ -258,7 +258,14 @@
       "loadFailed": "无法加载建议",
       "retryHint": "再次输入以重试",
       "providerLoading": "正在加载提供商命令…",
-      "providerRetry": "重新查找提供商命令"
+      "providerRetry": "重新查找提供商命令",
+      "builtInDescriptions": {
+        "new": "开始新对话",
+        "compact": "压缩对话历史",
+        "sessions": "恢复之前的对话",
+        "fast": "切换快速模式",
+        "side": "基于最新回复临时提问"
+      }
     },
     "approval": {
       "title": "需要授权",

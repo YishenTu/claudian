@@ -11,6 +11,7 @@ import type { TFile } from 'obsidian';
 import { setIcon } from 'obsidian';
 
 import { ProviderCommandDiscoveryStore } from '@/core/providers/commands/ProviderCommandDiscoveryStore';
+import { setLocale } from '@/i18n/i18n';
 import { GrokCommandCatalog } from '@/providers/grok/commands/GrokCommandCatalog';
 import { normalizeGrokCommands } from '@/providers/grok/normalization/grokCommandNormalization';
 import { ComposerDropdownController } from '@/shared/composer-dropdown/ComposerDropdownController';
@@ -369,6 +370,59 @@ it('marks the typed text in slash command names and shows the alias a query matc
     controller.destroy();
     slash.destroy();
     container.remove();
+  }
+});
+
+it('searches localized built-in descriptions and inserts the original command on Enter', async () => {
+  const catalog = new GrokCommandCatalog();
+  const discovery = new ProviderCommandDiscoveryStore(async () => {
+    const items = await catalog.listDropdownEntries({
+      includeBuiltIns: false,
+      commandSnapshot: normalizeGrokCommands([{ name: 'fresh', description: 'Start a new conversation' }]),
+    });
+    if (!items.length) throw new Error('Expected a native command');
+    return { status: 'ready', items: [items[0], ...items.slice(1)] };
+  });
+  const slash = new SlashCommandSource({
+    providerConfig: catalog.getDropdownConfig(),
+    providerDiscovery: discovery,
+  });
+  const container = document.body.createDiv();
+  const input = container.createEl('textarea', { attr: { 'aria-label': 'Message' } });
+  setLocale('zh-CN');
+  const controller = new ComposerDropdownController(container, input, [slash]);
+  const onKeydown = (event: KeyboardEvent) => controller.handleKeydown(event);
+  input.addEventListener('keydown', onKeydown);
+  const ui = within(container);
+  const type = (value: string) => {
+    input.value = value;
+    input.setSelectionRange(value.length, value.length);
+    controller.handleInputChange();
+  };
+  try {
+    await discovery.load();
+    type('/');
+    expect(ui.getByRole('option', { name: '/fresh Start a new conversation' })).toBeDefined();
+    type('/开始');
+    const list = ui.getByRole('listbox', { name: '输入建议' });
+    const option = within(list).getByRole('option', { name: '/new 开始新对话' });
+    expect(within(list).getAllByRole('option')).toEqual([option]);
+    expect(input.getAttribute('aria-activedescendant')).toBe(option.id);
+    expect(option.getAttribute('aria-selected')).toBe('true');
+    expect(await axe(container)).toHaveNoViolations();
+    expect(fireEvent.keyDown(input, { key: 'Enter', cancelable: true })).toBe(false);
+    expect(input.value).toBe('/new ');
+    expect([input.selectionStart, input.selectionEnd]).toEqual([5, 5]);
+    expect(controller.isVisible()).toBe(false);
+    expect(input.hasAttribute('aria-activedescendant')).toBe(false);
+    expect(input.hasAttribute('aria-controls')).toBe(false);
+  } finally {
+    input.removeEventListener('keydown', onKeydown);
+    controller.destroy();
+    slash.destroy();
+    discovery.dispose();
+    container.remove();
+    setLocale('en');
   }
 });
 
