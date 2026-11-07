@@ -44,6 +44,8 @@ import {
 import type { ProviderRuntimeHost } from '../../../core/providers/ProviderRuntimeHost';
 import type { ChatMessage, SlashCommand } from '../../../core/types';
 import { filterAntigravityCommands } from '../commands/AntigravityCommandCatalog';
+import { resolveAntigravityStoreRoot } from '../history/AntigravityHistoryPaths';
+import { readAntigravityContextTokens } from '../history/AntigravityHistoryStore';
 import {
   ANTIGRAVITY_MODE_CONFIG_ID,
   ANTIGRAVITY_MODEL_CONFIG_ID,
@@ -268,6 +270,8 @@ export class AntigravityExecutionSession implements ProviderExecutionSession, St
     if (
       !active || this.#isCancellationRequested(active) || request.signal.aborted
       || active.latestPrompt === 0 || !owner?.initialized || owner.loadedSessionId !== sessionId || !sessionId
+      // A settled latest prompt has ended the native turn; the run is only finishing its usage read.
+      || active.prompts.get(active.latestPrompt)!.settled
     ) return false;
     const previous = active.prompts.get(active.latestPrompt)!;
     const text = getInputText(request);
@@ -338,14 +342,16 @@ export class AntigravityExecutionSession implements ProviderExecutionSession, St
           active.run.emit({ content: steer.text, type: 'user_message_started' });
         }
       }
-      this.#finishCompleted(active, response);
+      const contextTokens = await this.#readContextTokens(owner, response);
+      if (this.#isCancellationRequested(active)) return;
+      this.#finishCompleted(active, response, contextTokens);
     } catch (error) {
       if (this.#isCancellationRequested(active)) return;
       this.#failRecoverable(active, error);
     } finally {
       unsubscribeClose?.();
-      // Answers whose tool result never arrived have no consumer once the run ends.
-      this.questionRouter.clearAnswers();
+      // Answers whose tool result never arrived have no consumer once the run ends; a later run owns its own.
+      if (!this.active || this.active === active) this.questionRouter.clearAnswers();
     }
   }
 
@@ -648,7 +654,14 @@ export class AntigravityExecutionSession implements ProviderExecutionSession, St
     active.run.emit({ content: steer.text, type: 'user_message_started' });
   }
 
-  #finishCompleted(active: ActiveExecution, response: ACPPromptResponse): void {
+  /** The response's usage sums every model call in the turn; the transcript's latest call measures the context. */
+  async #readContextTokens(owner: NativeOwner, response: ACPPromptResponse): Promise<number | null> {
+    if (!response.usage) return null;
+    const storeRoot = resolveAntigravityStoreRoot(owner.native.launch.env, process.platform);
+    return storeRoot ? readAntigravityContextTokens(storeRoot, this.providerSessionId!) : null;
+  }
+
+  #finishCompleted(active: ActiveExecution, response: ACPPromptResponse, contextTokens: number | null): void {
     // A successful response proves acceptance even when agy streamed no output for it.
     active.turn.accept();
     if (response.usage) {
@@ -657,7 +670,8 @@ export class AntigravityExecutionSession implements ProviderExecutionSession, St
         : undefined;
       const windowSize = getAntigravityContextWindowWorkaround(model);
       const usage = buildACPUsageInfo({
-        contextWindow: windowSize ? { size: windowSize, used: response.usage.totalTokens } : null,
+        // An unmeasured context reports none, which hides the meter rather than showing the turn's summed usage.
+        contextWindow: { size: windowSize ?? 0, used: contextTokens ?? 0 },
         model,
         promptUsage: response.usage,
       });
@@ -804,10 +818,11 @@ class AntigravitySessionPreparationError extends Error {
 }
 
 /**
- * Workaround: agy 1.5.0 reports no context window over ACP, so Gemini models assume Google's 1,048,576-token
- * window and other models leave the context meter hidden. Remove this once agy reports the limit.
+ * Workaround: agy 1.5.1 reports no context window over ACP and auto-compacts Gemini's 1,048,576-token models at a
+ * fixed 256,000 tokens (google-antigravity/antigravity-cli#1432), so Gemini models measure against that point
+ * and other models leave the context meter hidden. Remove this once agy reports the limit.
  */
-const GEMINI_CONTEXT_WINDOW_WORKAROUND = 1_048_576;
+const GEMINI_CONTEXT_WINDOW_WORKAROUND = 256_000;
 
 function getAntigravityContextWindowWorkaround(model: string | undefined): number | null {
   return model?.startsWith('gemini-') ? GEMINI_CONTEXT_WINDOW_WORKAROUND : null;
