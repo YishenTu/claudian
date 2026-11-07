@@ -227,7 +227,7 @@ export class MessageActions {
     const unavailable = button.dataset.branchUnavailable === 'true';
     button.disabled = busy || unavailable;
     // Obsidian uses aria-label for its tooltip; title would add a second one.
-    button.setAttribute('aria-description', busy ? 'Wait for the current response to finish.'
+    button.setAttribute('aria-description', busy ? t('chat.branching.busy')
       : unavailable ? button.dataset.branchUnavailableReason ?? '' : '');
   }
 
@@ -261,14 +261,14 @@ export class MessageActions {
         cls: 'claudian-branch-marker', attr: { 'aria-hidden': 'true' },
       });
       if (marker) setIcon(marker, 'git-branch');
-      addButton('Previous branch', 'chevron-left', branches[index - 1], index === 0, 'No previous branch.');
+      addButton(t('chat.branching.previous'), 'chevron-left', branches[index - 1], index === 0, t('chat.branching.noPrevious'));
       const position = toolbar.createSpan({ cls: 'claudian-branch-position', text: `${index + 1}/${branches.length}`,
-        attr: { 'aria-label': `Branch ${index + 1} of ${branches.length}` } });
+        attr: { 'aria-label': t('chat.branching.position', { index: index + 1, count: branches.length }) } });
       toolbar.insertBefore(position, anchor);
-      addButton('Next branch', 'chevron-right', branches[index + 1], index === branches.length - 1, 'No next branch.');
+      addButton(t('chat.branching.next'), 'chevron-right', branches[index + 1], index === branches.length - 1, t('chat.branching.noNext'));
     }
-    addButton('Branch from this prompt', 'git-branch', undefined, !message.userMessageId,
-      'Branching is available after this prompt is saved.');
+    addButton(t('chat.branching.fromPrompt'), 'git-branch', undefined, !message.userMessageId,
+      t('chat.branching.savedRequired'));
   }
 
   #getOrCreateToolbar(msgEl: HTMLElement): HTMLElement {

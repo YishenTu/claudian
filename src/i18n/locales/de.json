@@ -50,6 +50,19 @@
       "errorNoSession": "Keine Sitzungs-ID verfügbar",
       "errorNoActiveTab": "Kein aktiver Tab"
     },
+    "branching": {
+      "previous": "Vorheriger Zweig",
+      "next": "Nächster Zweig",
+      "fromPrompt": "Von dieser Eingabe abzweigen",
+      "position": "Zweig {index} von {count}",
+      "busy": "Warte, bis die aktuelle Antwort abgeschlossen ist.",
+      "noPrevious": "Kein vorheriger Zweig.",
+      "noNext": "Kein nächster Zweig.",
+      "savedRequired": "Ein neuer Zweig ist verfügbar, sobald diese Eingabe gespeichert ist.",
+      "collapseSide": "Klappe den Seitenchat ein, bevor du den Konversationszweig wechselst.",
+      "clearDraft": "Speichere oder verwerfe deinen Entwurf, bevor du den Konversationszweig wechselst.",
+      "reconcileFailed": "Konversationszweig konnte nicht abgeglichen werden: {error}"
+    },
     "quote": {
       "buttonLabel": "Zitieren"
     },

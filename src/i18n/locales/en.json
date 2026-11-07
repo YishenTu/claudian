@@ -50,6 +50,19 @@
       "errorNoSession": "No session ID available",
       "errorNoActiveTab": "No active tab"
     },
+    "branching": {
+      "previous": "Previous branch",
+      "next": "Next branch",
+      "fromPrompt": "Branch from this prompt",
+      "position": "Branch {index} of {count}",
+      "busy": "Wait for the current response to finish.",
+      "noPrevious": "No previous branch.",
+      "noNext": "No next branch.",
+      "savedRequired": "Branching is available after this prompt is saved.",
+      "collapseSide": "Collapse side chat before changing conversation branches.",
+      "clearDraft": "Save or clear your draft before changing conversation branches.",
+      "reconcileFailed": "Could not reconcile conversation branch: {error}"
+    },
     "quote": {
       "buttonLabel": "Quote"
     },

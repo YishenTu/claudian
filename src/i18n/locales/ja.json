@@ -50,6 +50,19 @@
       "errorNoSession": "セッション ID がありません",
       "errorNoActiveTab": "アクティブなタブがありません"
     },
+    "branching": {
+      "previous": "前の分岐",
+      "next": "次の分岐",
+      "fromPrompt": "このプロンプトから分岐",
+      "position": "全 {count} 件中 {index} 番目の分岐",
+      "busy": "現在の応答が完了するまでお待ちください。",
+      "noPrevious": "前の分岐はありません。",
+      "noNext": "次の分岐はありません。",
+      "savedRequired": "このプロンプトを保存すると分岐できます。",
+      "collapseSide": "会話の分岐を切り替える前に、サイドチャットを折りたたんでください。",
+      "clearDraft": "会話の分岐を切り替える前に、下書きを保存または消去してください。",
+      "reconcileFailed": "会話の分岐を同期できませんでした：{error}"
+    },
     "quote": {
       "buttonLabel": "引用"
     },

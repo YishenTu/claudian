@@ -1,19 +1,83 @@
 // @vitest-environment jsdom
+import { createHarness as createExecutionHarness, FakeBranchSession } from '@test/helpers/ChatExecutionHarness';
 import { createConversationControllerDeps as createBaseDeps } from '@test/helpers/features/chat/ConversationControllerFixture';
 import { conversationRecord } from '@test/helpers/features/chat/ConversationFixture';
 import { createProjectsFake, projectRecord } from '@test/helpers/features/chat/ProjectsFake';
+import { createHarness as createSideChatHarness, releaseSideChatHarnesses, startSideChat } from '@test/helpers/features/chat/SideChatDOMHarness';
 import { testDate } from '@test/helpers/testClock';
+import { Notice } from 'obsidian';
 
 import { buildSystemPrompt } from '@/core/prompt/mainAgent';
 import { renderProjectMemberInstructions } from '@/core/prompt/projectPrompt';
-import type { ImageAttachment } from '@/core/types';
+import type { ChatMessage, ImageAttachment } from '@/core/types';
 import { ConversationController } from '@/features/chat/conversation/ConversationController';
+import { setLocale } from '@/i18n/i18n';
 
 async function createConversationControllerDeps(...args: Parameters<typeof createBaseDeps>) {
   const deps = await createBaseDeps(...args);
   vi.mocked(deps.plugin.getConversationSummary).mockImplementation(id => conversationRecord(id));
   return deps;
 }
+
+it.each([
+  ['unsaved prompt', '保存此提示后才能创建分支。'],
+  ['text draft', '更改对话分支前，请保存或清空草稿。'],
+  ['image draft', '更改对话分支前，请保存或清空草稿。'],
+  ['side draft', '更改对话分支前，请先收起侧边聊天。'],
+] as const)('preserves the conversation when a branch is blocked by %s', async (guard, notice) => {
+  setLocale('zh-CN');
+  onTestFinished(() => { setLocale('en'); vi.mocked(Notice).mockClear(); });
+  const native = new FakeBranchSession('pi', 'branch-guard-session');
+  const { coordinator, registry } = createExecutionHarness({
+    resolveBackend: () => ({ providerId: 'pi', createSession: () => native }),
+  });
+  onTestFinished(async () => { await coordinator.dispose(); await registry.dispose(); });
+  await coordinator.bindConversation({ conversationId: 'conversation', providerId: 'pi' });
+  await coordinator.prepare();
+
+  const deps = await createConversationControllerDeps({ getExecutionCoordinator: () => coordinator });
+  const history: ChatMessage[] = [
+    { id: 'first', role: 'user', content: 'First', timestamp: testDate().getTime(), userMessageId: 'native-first' },
+    { id: 'second', role: 'user', content: 'Raw prompt', timestamp: testDate({ seconds: 1 }).getTime(),
+      ...(guard === 'unsaved prompt' ? {} : { userMessageId: 'native-second' }) },
+  ];
+  deps.state.currentConversationId = 'conversation';
+  deps.state.messages = history;
+  const mainImage: ImageAttachment = { id: 'main-image', name: 'main.png', data: 'YWJj', mediaType: 'image/png', size: 3, source: 'paste' };
+  const sideImage: ImageAttachment = { id: 'side-image', name: 'side.png', data: 'ZGVm', mediaType: 'image/png', size: 3, source: 'paste' };
+
+  let sideStarted: boolean | undefined;
+  if (guard === 'side draft') {
+    onTestFinished(releaseSideChatHarnesses);
+    const side = await createSideChatHarness();
+    const { started } = await startSideChat(side);
+    side.backend.latest.establishChild('child-session');
+    side.backend.latest.complete();
+    sideStarted = await started;
+    side.drafts.restore('side', { content: 'Unsent side draft', images: [sideImage] });
+    side.controller.collapse();
+    side.drafts.restore('main', { content: 'Unsent main draft', images: [mainImage] });
+    side.controller.expand();
+    deps.drafts = side.drafts;
+  }
+  expect(sideStarted).toBe(guard === 'side draft' ? true : undefined);
+  expect(deps.drafts.destination).toBe(guard === 'side draft' ? 'side' : 'main');
+  const controller = new ConversationController(deps);
+  onTestFinished(() => { controller.cancelBranchDraft({ render: false }); });
+  const mainDraft = guard === 'side draft' ? { content: 'Unsent main draft', images: [mainImage] }
+    : { content: guard === 'text draft' ? 'Unsent main draft' : '', images: guard === 'image draft' ? [mainImage] : [] };
+  if (guard !== 'side draft') deps.drafts.restore('main', mainDraft);
+  const sideDraft = guard === 'side draft' ? { content: 'Unsent side draft', images: [sideImage] } : { content: '', images: [] };
+  vi.mocked(Notice).mockClear();
+  await controller.navigateBranch('second', 'native-target');
+  expect(deps.drafts.capture('main')).toEqual(mainDraft);
+  expect(deps.drafts.capture('side')).toEqual(sideDraft);
+  expect(deps.state.messages).toEqual(history);
+  expect(deps.state.isRewinding).toBe(false);
+  expect(native.navigateConversationBranch).not.toHaveBeenCalled();
+  expect(deps.plugin.updateConversation).not.toHaveBeenCalled();
+  expect(Notice).toHaveBeenCalledExactlyOnceWith(notice);
+});
 
 describe('ConversationBranching', () => {
   it.each([undefined, 'other-user'])('restores only the selected history and restores the edited prompt with images (target %s)', async target => {

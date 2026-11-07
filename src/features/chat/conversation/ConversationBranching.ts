@@ -9,6 +9,7 @@ import type { ChatExecutionCoordinator } from '@/features/chat/execution/ChatExe
 import type { MessageRenderer, ReadingAnchor } from '@/features/chat/rendering/MessageRenderer';
 import type { ChatSessionRuntime } from '@/features/chat/sessions/ChatSessionRuntime';
 import type { ChatState } from '@/features/chat/state/ChatState';
+import { t } from '@/i18n/i18n';
 
 export interface ConversationBranchingDeps {
   state: ChatState;
@@ -66,7 +67,7 @@ export class ConversationBranching {
   async navigate(messageId: string, branchMessageId?: string): Promise<void> {
     const { state, drafts, session: navigation } = this.deps;
     if (drafts.destination !== 'main') {
-      new Notice('Collapse side chat before changing conversation branches.');
+      new Notice(t('chat.branching.collapseSide'));
       return;
     }
     if (!navigation.canNavigateConversation) return;
@@ -80,12 +81,12 @@ export class ConversationBranching {
     if (!conversationId || !message || message.role !== 'user' || message.isInterrupt || message.isRebuiltContext) return;
     if (messages.find(item => item.role === 'user' && !item.isInterrupt && !item.isRebuiltContext) === message) return;
     if (!message.userMessageId) {
-      new Notice('Branching is available after this prompt is saved.');
+      new Notice(t('chat.branching.savedRequired'));
       return;
     }
     const previousDraft = drafts.capture('main');
     if (previousDraft.content.trim() || previousDraft.images.length) {
-      new Notice('Save or clear your draft before changing conversation branches.');
+      new Notice(t('chat.branching.clearDraft'));
       return;
     }
     if (!branchMessageId) {
@@ -194,7 +195,7 @@ export class ConversationBranching {
       return result;
     } catch (error) {
       result = { status: 'recovery-required', error: String(error) };
-      new Notice(`Could not reconcile conversation branch: ${result.error}`);
+      new Notice(t('chat.branching.reconcileFailed', { error: result.error }));
       return result;
     } finally {
       if (!isCurrent()) this.#state = { kind: 'idle' };

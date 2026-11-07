@@ -50,6 +50,19 @@
       "errorNoSession": "没有可用的会话 ID",
       "errorNoActiveTab": "没有活动标签页"
     },
+    "branching": {
+      "previous": "上一个分支",
+      "next": "下一个分支",
+      "fromPrompt": "从此提示创建分支",
+      "position": "第 {index} 个分支，共 {count} 个",
+      "busy": "请等待当前回复完成。",
+      "noPrevious": "没有上一个分支。",
+      "noNext": "没有下一个分支。",
+      "savedRequired": "保存此提示后才能创建分支。",
+      "collapseSide": "更改对话分支前，请先收起侧边聊天。",
+      "clearDraft": "更改对话分支前，请保存或清空草稿。",
+      "reconcileFailed": "无法同步对话分支：{error}"
+    },
     "quote": {
       "buttonLabel": "引用"
     },

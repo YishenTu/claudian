@@ -50,6 +50,19 @@
       "errorNoSession": "Aucun ID de session disponible",
       "errorNoActiveTab": "Aucun onglet actif"
     },
+    "branching": {
+      "previous": "Branche précédente",
+      "next": "Branche suivante",
+      "fromPrompt": "Créer une branche à partir de ce message",
+      "position": "Branche {index} sur {count}",
+      "busy": "Attendez la fin de la réponse en cours.",
+      "noPrevious": "Il n’y a pas de branche précédente.",
+      "noNext": "Il n’y a pas de branche suivante.",
+      "savedRequired": "Vous pourrez créer une branche une fois ce message enregistré.",
+      "collapseSide": "Repliez le chat latéral avant de changer de branche.",
+      "clearDraft": "Enregistrez ou effacez votre brouillon avant de changer de branche.",
+      "reconcileFailed": "Impossible de synchroniser la branche de la conversation : {error}"
+    },
     "quote": {
       "buttonLabel": "Citer"
     },
