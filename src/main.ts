@@ -145,9 +145,11 @@ export default class ClaudianPlugin extends Plugin {
       for (const command of createChatTabCommands({ workspace: this.app.workspace, views: this.views })) {
         this.addCommand(command);
       }
-      this.addCommand(createChatFocusCommand(
-        () => this.views.getInputFocusView(this.zenMode.getActiveLeaf())?.getActiveTab()?.composer ?? null,
-      ));
+      this.addCommand(createChatFocusCommand({
+        getComposer: () => this.views.getInputFocusView(this.zenMode.getActiveLeaf())?.getActiveTab()?.composer ?? null,
+        getBackgroundChat: () => this.views.getBackgroundSidebarLeaf(),
+        revealChat: (leaf, focus) => this.views.activateView(leaf, focus),
+      }));
       this.addCommand(this.zenMode.createToggleHistoryCommand());
 
       this.addCommand({

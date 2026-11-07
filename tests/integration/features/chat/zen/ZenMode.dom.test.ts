@@ -69,7 +69,7 @@ async function waitFor<T>(callback: () => T | Promise<T>, options?: Parameters<t
 }
 
 type Split = { collapsed: boolean; containerEl: HTMLElement; collapse: () => void };
-type Tabs = { selected: Leaf | null };
+type Tabs = { selected: Leaf | null; readonly contents: Map<Leaf, HTMLElement> };
 type Leaf = {
   view: unknown;
   getRoot: () => unknown;
@@ -193,8 +193,21 @@ async function createZenFixture(options: { enabled?: boolean; ready?: boolean } 
     registerZenModeSource: (source: Parameters<ZenModeController['register']>[0]) => zen.register(source),
   });
 
+  // Obsidian hides the contents of every unselected tab in a group.
+  const createTabs = (): Tabs => {
+    let selected: Leaf | null = null;
+    const contents = new Map<Leaf, HTMLElement>();
+    return {
+      contents,
+      get selected() { return selected; },
+      set selected(leaf) {
+        selected = leaf;
+        for (const [member, el] of contents) el.hidden = member !== leaf;
+      },
+    };
+  };
   const tabGroups: Record<'left' | 'right' | 'main', Tabs> = {
-    left: { selected: null }, right: { selected: null }, main: { selected: null },
+    left: createTabs(), right: createTabs(), main: createTabs(),
   };
   const addSiblingLeaf = (placement: 'left' | 'right') => {
     const split = placement === 'left' ? layout.leftSplit : layout.rightSplit;
@@ -217,8 +230,9 @@ async function createZenFixture(options: { enabled?: boolean; ready?: boolean } 
     const viewContainerEl = (split?.containerEl ?? layout.rootEl).createDiv({ cls: 'claudian-container' });
     const parent = tabGroups[placement];
     const leaf: Leaf = { getRoot: () => split ?? layout.rootSplit, parent, view: null };
+    parent.contents.set(leaf, viewContainerEl);
     parent.selected ??= leaf;
-    // Obsidian hides unselected tabs of a group.
+    viewContainerEl.hidden = parent.selected !== leaf;
     viewContainerEl.isShown = () => parent.selected === leaf;
     const view = await createClaudianView({
       host: plugin,
@@ -277,9 +291,11 @@ async function createZenFixture(options: { enabled?: boolean; ready?: boolean } 
   cleanups.push(() => zen.dispose());
   const primary = await addView('right', options.ready ?? true);
   const views = new ClaudianViews(app.workspace, () => 'right-sidebar');
-  const focusCommand = createChatFocusCommand(
-    () => views.getInputFocusView(zen.getActiveLeaf())?.getActiveTab()?.composer ?? null,
-  );
+  const focusCommand = createChatFocusCommand({
+    getComposer: () => views.getInputFocusView(zen.getActiveLeaf())?.getActiveTab()?.composer ?? null,
+    getBackgroundChat: () => views.getBackgroundSidebarLeaf(),
+    revealChat: (leaf, focus) => views.activateView(leaf, focus),
+  });
   return {
     ...layout, ...primary, app, scopes, zen, views, focusCommand, sessions, settingsCoordinator, addView, addSiblingLeaf,
     toggleChat: () => views.toggleView(zen),
@@ -894,6 +910,27 @@ it('leaves focus alone when there is no existing composer or its sidebar is coll
   leaves.splice(0);
   expect(focusCommand.checkCallback!(false)).toBe(false);
   expect(document.activeElement).toBe(noteEditor);
+});
+
+it.each([true, false])('brings a sidebar chat behind a sibling tab to the front and toggles focus with the note with zen enabled=%s', async (enabled) => {
+  const { focusCommand, addSiblingLeaf, leaf, tab, noteEditor, rightSplit } = await createZenFixture({ enabled });
+  const backlinks = addSiblingLeaf('right');
+  leaf.parent!.selected = backlinks;
+  noteEditor.focus();
+
+  expect(focusCommand.checkCallback!(true)).toBe(true);
+  expect(leaf.parent!.selected).toBe(backlinks);
+  expect(focusCommand.checkCallback!(false)).toBe(true);
+
+  // The command reveals asynchronously and exposes no completion signal.
+  await waitFor(() => expect(document.activeElement)
+    .toBe(within(tab.dom.inputComposerEl).getByRole('textbox', { name: 'Message' })));
+  expect(leaf.parent!.selected).toBe(leaf);
+  expect(rightSplit.collapsed).toBe(false);
+  expect(zenPanel()).toBeNull();
+  expect(focusCommand.checkCallback!(false)).toBe(true);
+  expect(document.activeElement).toBe(noteEditor);
+  expect(leaf.parent!.selected).toBe(leaf);
 });
 
 it.each(['display', 'visibility', 'opacity', 'detached'])('skips a composer hidden by %s and rejects the command if none remain visible', async (reason) => {
