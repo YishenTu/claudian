@@ -22,6 +22,7 @@ export class ChatViewPublisher {
     const publish = (refresh: () => void): void => {
       try { refresh(); } catch (error) { errors.push(error); }
     };
+    const workspaceTitleChanged = settings.showConversationTitleInWorkspace !== previous.showConversationTitleInWorkspace;
     const timestampsChanged = settings.showMessageTimestamps !== previous.showMessageTimestamps;
     const layoutChanged = settings.enableDualPane !== previous.enableDualPane || settings.dualPaneSide !== previous.dualPaneSide;
     const commandsChanged = JSON.stringify(settings.hiddenCommands) !== JSON.stringify(previous.hiddenCommands);
@@ -31,8 +32,9 @@ export class ChatViewPublisher {
       || settings.sessionManagerSort !== previous.sessionManagerSort
       || JSON.stringify(settings.projectOrder) !== JSON.stringify(previous.projectOrder)
       || JSON.stringify(settings.expandedProjectIds) !== JSON.stringify(previous.expandedProjectIds);
-    if (timestampsChanged || layoutChanged || commandsChanged || contextChanged || sessionsChanged) {
+    if (workspaceTitleChanged || timestampsChanged || layoutChanged || commandsChanged || contextChanged || sessionsChanged) {
       for (const view of this.deps.views.getAllViews()) {
+        if (workspaceTitleChanged) publish(() => view.refreshTabControls());
         if (timestampsChanged) publish(() => view.refreshMessageTimestamps());
         if (layoutChanged) publish(() => view.refreshDualPaneLayout());
         if (commandsChanged) publish(() => view.updateHiddenCommands());

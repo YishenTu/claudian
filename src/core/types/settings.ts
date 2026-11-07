@@ -157,6 +157,8 @@ export interface ClaudianSettings {
   // UI preferences
   enableAutoScroll: boolean;
   showMessageTimestamps?: boolean;
+  /** Use the active conversation/project in Obsidian workspace chrome; off by default. */
+  showConversationTitleInWorkspace?: boolean;
   deferMathRenderingDuringStreaming: boolean;
   /** Fence languages dispatched to registered plugin code block processors in chat. */
   pluginRenderedFenceLanguages: string[];

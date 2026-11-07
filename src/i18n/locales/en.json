@@ -575,6 +575,10 @@
       "name": "Auto-scroll during streaming",
       "desc": "Automatically scroll to the bottom as Claude streams responses. Disable to stay at the top and read from the beginning."
     },
+    "showConversationTitleInWorkspace": {
+      "name": "Show conversation title in Obsidian tabs",
+      "desc": "Use the active conversation's title and project icon in the Obsidian tab and pane header. Off keeps the fixed Claudian name and icon."
+    },
     "showMessageTimestamps": {
       "name": "Show message timestamps",
       "desc": "Display each message's local send or arrival time in the chat thread."

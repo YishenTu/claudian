@@ -1,5 +1,5 @@
 import { Events } from '@test/helpers/ObsidianEvents';
-import type { Debouncer } from 'obsidian';
+import type { Constructor, Debouncer, View, WorkspaceLeaf } from 'obsidian';
 
 const pendingWork = new Set<() => void>();
 
@@ -31,6 +31,16 @@ export function createObsidianWorkspace(containerEl?: HTMLElement, options: { la
   });
   const workspace = {
     containerEl,
+    activeLeaf: null as WorkspaceLeaf | null,
+    /** Only the active view's contribution, not Obsidian's vault/application title formatting. */
+    activeViewTitle: '',
+    getActiveViewOfType<T extends View>(type: Constructor<T>): T | null {
+      const view = workspace.activeLeaf?.view;
+      return view instanceof type ? view : null;
+    },
+    updateTitle(): void {
+      workspace.activeViewTitle = workspace.activeLeaf?.view.getDisplayText() ?? '';
+    },
     layoutReady: options.layoutReady !== false,
     onLayoutReady: vi.fn((callback: () => void) => {
       if (readyCallbacks === null) callback();

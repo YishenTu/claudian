@@ -575,6 +575,10 @@
       "name": "串流傳輸時自動捲動",
       "desc": "在 Claude 串流傳輸回應時自動捲動到底部。停用後將停留在頂部，從頭開始閱讀。"
     },
+    "showConversationTitleInWorkspace": {
+      "name": "在 Obsidian 分頁中顯示對話標題",
+      "desc": "在 Obsidian 分頁和窗格標題中使用目前對話標題及專案圖示。關閉後保留固定的 Claudian 名稱和圖示。"
+    },
     "showMessageTimestamps": {
       "name": "顯示訊息時間戳",
       "desc": "在聊天串中顯示每則訊息的本機傳送或到達時間。"

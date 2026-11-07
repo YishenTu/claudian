@@ -575,6 +575,10 @@
       "name": "Automatisches Scrollen während Streaming",
       "desc": "Automatisch nach unten scrollen, während Claude Antworten streamt. Deaktivieren, um oben zu bleiben und von Anfang an zu lesen."
     },
+    "showConversationTitleInWorkspace": {
+      "name": "Gesprächstitel in Obsidian-Tabs anzeigen",
+      "desc": "Zeigt den Titel des aktiven Gesprächs und das Projektsymbol im Obsidian-Tab und im Bereichskopf. Ausgeschaltet bleiben der feste Name Claudian und sein Symbol erhalten."
+    },
     "showMessageTimestamps": {
       "name": "Nachrichtenzeitstempel anzeigen",
       "desc": "Die lokale Sende- oder Empfangszeit jeder Nachricht im Chatverlauf anzeigen."

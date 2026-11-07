@@ -575,6 +575,10 @@
       "name": "Rolagem automática durante streaming",
       "desc": "Rolar automaticamente para baixo enquanto o Claude transmite respostas. Desativar para ficar no topo e ler desde o início."
     },
+    "showConversationTitleInWorkspace": {
+      "name": "Mostrar título da conversa nas abas do Obsidian",
+      "desc": "Usa o título da conversa ativa e o ícone do projeto na aba do Obsidian e no cabeçalho do painel. Desativado, mantém o nome e o ícone fixos do Claudian."
+    },
     "showMessageTimestamps": {
       "name": "Mostrar horários das mensagens",
       "desc": "Exibir o horário local de envio ou chegada de cada mensagem na conversa."

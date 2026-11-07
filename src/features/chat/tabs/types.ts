@@ -234,6 +234,9 @@ export interface TabManagerCallbacks {
   /** Called when a tab's conversation changes (loaded different conversation in same tab). */
   onTabConversationChanged?: (tabId: TabId, conversationId: string | null) => void;
 
+  /** Called when a blank draft changes its project seed. */
+  onTabProjectChanged?: (tabId: TabId) => void;
+
   /** Called when the selected model for a blank retained tab changes. */
   onTabDraftChanged?: (tabId: TabId, draftModel: string | null) => void;
 

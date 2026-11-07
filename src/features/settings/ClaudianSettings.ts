@@ -377,6 +377,30 @@ export class ClaudianSettingTab extends PluginSettingTab {
       );
 
     new AccessibleSetting(container)
+      .setName(t('settings.showConversationTitleInWorkspace.name'))
+      .setDesc(t('settings.showConversationTitleInWorkspace.desc'))
+      .addToggle((toggle) => {
+        let synchronizing = false;
+        toggle
+          .setValue(this.host.settings.showConversationTitleInWorkspace === true)
+          .onChange(async (value) => {
+            if (synchronizing) return;
+            try {
+              await this.host.mutateSettings((settings) => {
+                settings.showConversationTitleInWorkspace = value;
+              });
+            } finally {
+              synchronizing = true;
+              try {
+                toggle.setValue(this.host.settings.showConversationTitleInWorkspace === true);
+              } finally {
+                synchronizing = false;
+              }
+            }
+          });
+      });
+
+    new AccessibleSetting(container)
       .setName(t('settings.showMessageTimestamps.name'))
       .setDesc(t('settings.showMessageTimestamps.desc'))
       .addToggle((toggle) =>
