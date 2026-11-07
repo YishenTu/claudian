@@ -434,6 +434,32 @@
       }
     }
   },
+  "inlineEdit": {
+    "commandName": "Modification en ligne",
+    "viewUnavailable": "Modification en ligne indisponible : impossible d’accéder à la vue Markdown active.",
+    "inserted": "Insertion effectuée",
+    "applied": "Modification appliquée",
+    "editorUnavailable": "Modification en ligne indisponible : impossible d’accéder à l’éditeur actif. Essayez de rouvrir la note.",
+    "stale": "La modification en ligne n’a pas été appliquée, car le document source ou la sélection a changé.",
+    "initialProviderFailed": "Modification en ligne indisponible : impossible de démarrer le fournisseur {provider}.",
+    "vaultFailed": "Impossible de charger les fichiers du coffre. Les mentions @ du coffre peuvent être indisponibles.",
+    "editLabel": "Instructions de modification",
+    "insertLabel": "Instructions d’insertion",
+    "editPlaceholder": "Instructions de modification…",
+    "insertPlaceholder": "Instructions d’insertion…",
+    "modelUnavailable": "Sélectionnez un modèle disponible dans les paramètres de Claudian.",
+    "providerFailed": "Impossible de démarrer le fournisseur {provider}.",
+    "actionsLabel": "Actions de modification en ligne",
+    "lineOne": "ligne",
+    "lineOther": "lignes",
+    "reject": "Refuser",
+    "accept": "Accepter",
+    "rejectLabel": "Refuser la modification en ligne",
+    "acceptLabel": "Accepter la modification en ligne",
+    "retryFallback": "Une erreur est survenue. Réessayez",
+    "replyPlaceholder": "Répondez pour continuer…",
+    "noResponseFallback": "Aucune réponse de l’agent"
+  },
   "settings": {
     "tabs": {
       "general": "Général",

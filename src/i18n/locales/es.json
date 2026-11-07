@@ -434,6 +434,32 @@
       }
     }
   },
+  "inlineEdit": {
+    "commandName": "Edición en línea",
+    "viewUnavailable": "Edición en línea no disponible: no se pudo acceder a la vista Markdown activa.",
+    "inserted": "Inserción realizada",
+    "applied": "Edición aplicada",
+    "editorUnavailable": "Edición en línea no disponible: no se pudo acceder al editor activo. Intenta volver a abrir la nota.",
+    "stale": "No se aplicó la edición en línea porque cambió el documento de origen o la selección.",
+    "initialProviderFailed": "Edición en línea no disponible: no se pudo iniciar el proveedor {provider}.",
+    "vaultFailed": "No se pudieron cargar los archivos de la bóveda. Las menciones con @ de la bóveda podrían no estar disponibles.",
+    "editLabel": "Instrucciones de edición",
+    "insertLabel": "Instrucciones de inserción",
+    "editPlaceholder": "Instrucciones de edición…",
+    "insertPlaceholder": "Instrucciones de inserción…",
+    "modelUnavailable": "Selecciona un modelo disponible en los ajustes de Claudian.",
+    "providerFailed": "No se pudo iniciar el proveedor {provider}.",
+    "actionsLabel": "Acciones de edición en línea",
+    "lineOne": "línea",
+    "lineOther": "líneas",
+    "reject": "Rechazar",
+    "accept": "Aceptar",
+    "rejectLabel": "Rechazar edición en línea",
+    "acceptLabel": "Aceptar edición en línea",
+    "retryFallback": "Ha ocurrido un error. Inténtalo de nuevo",
+    "replyPlaceholder": "Responde para continuar…",
+    "noResponseFallback": "El agente no respondió"
+  },
   "settings": {
     "tabs": {
       "general": "General",

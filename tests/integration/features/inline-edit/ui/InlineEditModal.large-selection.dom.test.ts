@@ -21,19 +21,10 @@ it('previews and applies a one-line change to a 10,000-line selected note', asyn
   const before = lines.join('');
   lines[5_000] = 'Paragraph 5000: clarified note text.\n';
   const after = lines.join('');
-  h.editorView.dispatch({ changes: { from: 0, to: h.editorView.state.doc.length, insert: before } });
-  const lastLine = h.editorView.state.doc.line(h.editorView.state.doc.lines);
-  h.editor.getSelection = () => before;
-  h.editor.getCursor = (which = 'head') => which === 'from'
-    ? { line: 0, ch: 0 } : { line: lastLine.number - 1, ch: lastLine.length };
-  h.editor.replaceRange = (text, from, to = from) => {
-    const doc = h.editorView.state.doc;
-    h.editorView.dispatch({ changes: {
-      from: doc.line(from.line + 1).from + from.ch,
-      to: doc.line(to.line + 1).from + to.ch,
-      insert: text,
-    } });
-  };
+  h.editorView.dispatch({
+    changes: { from: 0, to: h.editorView.state.doc.length, insert: before },
+    selection: { anchor: 0, head: before.length },
+  });
   // Only Obsidian rendering is adapted; actual selection, provider response,
   // line diff, Markdown document reconstruction and acceptance run unchanged.
   vi.mocked(MarkdownRenderer.render).mockImplementation(async (_app, markdown, target) => {

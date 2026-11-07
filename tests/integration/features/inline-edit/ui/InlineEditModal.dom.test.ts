@@ -11,17 +11,124 @@ import {
 } from '@test/helpers/features/inline-edit/InlineEditDOMHarness';
 import { testDate } from '@test/helpers/testClock';
 import { fireEvent, screen, waitFor, within } from '@testing-library/dom';
-import { Component, type Editor, MarkdownRenderer, Notice, TFile, TFolder, WorkspaceLeaf } from 'obsidian';
+import { Component, type Editor, type MarkdownFileInfo, MarkdownRenderer, MarkdownView, Notice, TFile, TFolder, WorkspaceLeaf } from 'obsidian';
 
 import { ProviderWorkspaceRegistry } from '@/core/providers/ProviderWorkspaceRegistry';
+import { createInlineEditCommand } from '@/features/inline-edit/inlineEditCommand';
 import { InlineEditSession } from '@/features/inline-edit/ui/InlineEditModal';
+import { setLocale } from '@/i18n/i18n';
 
 afterEach(async () => {
   await disposeInlineEditHarnesses();
+  setLocale('en');
   vi.mocked(MarkdownRenderer.render).mockReset();
   vi.clearAllMocks();
   // Held provider starts must not outlive their test.
   vi.restoreAllMocks();
+});
+
+const englishControls = {
+  locale: 'en', command: 'Inline edit', toolbar: 'Inline edit actions',
+  accept: 'Accept', reject: 'Reject', acceptLabel: 'Accept inline edit', rejectLabel: 'Reject inline edit',
+  insertion: { field: 'Insert instructions', placeholder: 'Insert instructions...', notice: 'Inserted', stats: '+1line' },
+  selection: { field: 'Edit instructions', placeholder: 'Edit instructions...', notice: 'Edit applied', stats: '−1+1lines' },
+} as const;
+
+const chineseControls = {
+  locale: 'zh-CN', command: '行内编辑', toolbar: '行内编辑操作',
+  accept: '接受', reject: '拒绝', acceptLabel: '接受行内编辑', rejectLabel: '拒绝行内编辑',
+  insertion: { field: '插入指令', placeholder: '插入指令…', notice: '已插入', stats: '+1行' },
+  selection: { field: '编辑指令', placeholder: '编辑指令…', notice: '已应用编辑', stats: '−1+1行' },
+} as const;
+
+it.each([
+  { mode: 'insertion', anchor: 5, response: '<insertion>X</insertion>', document: 'helloX world' },
+  { mode: 'selection', anchor: 0, response: '<replacement>Hi</replacement>', document: 'Hi world' },
+] as const)('applies $mode through the command callback across locale changes', async ({ mode, anchor, response, document }) => {
+  for (const controls of [englishControls, chineseControls, englishControls]) {
+    setLocale(controls.locale);
+    const h = await createHarness();
+    h.editorView.dispatch({ selection: { anchor, head: 5 } });
+    const view = new MarkdownView(new WorkspaceLeaf());
+    view.editor = h.editor;
+    view.file = Object.assign(new TFile(), { path: h.notePath });
+    const command = createInlineEditCommand({ host: h.plugin, component: h.component, sessions: h.owner });
+    const completion = command.editorCallback!(h.editor, view);
+    try {
+      expect(command).toMatchObject({ id: 'inline-edit', name: controls.command });
+      const expected = controls[mode];
+      const instruction = await screen.findByRole<HTMLInputElement>('textbox', { name: expected.field });
+      expect(instruction.placeholder).toBe(expected.placeholder);
+      expect(await axe(instruction.parentElement!)).toHaveNoViolations();
+      fireEvent.input(instruction, { target: { value: 'Make this clearer' } });
+      fireEvent.keyDown(instruction, { key: 'Enter' });
+      await waitFor(() => expect(h.backend.sessions[0]?.getStatus()).toBe('executing'));
+      const [request] = h.backend.sessions[0].requests;
+      expect(request.configuration).toMatchObject({ model: 'sonnet', reasoning: 'high' });
+      expect(request.input[0]).toMatchObject({ text: expect.stringContaining('Make this clearer') });
+      h.backend.sessions[0].emitText(response);
+      h.backend.sessions[0].complete();
+      const toolbar = await screen.findByRole('toolbar', { name: controls.toolbar });
+      expect(toolbar.querySelector('.claudian-inline-diff-stats')?.textContent).toBe(expected.stats);
+      const accept = within(toolbar).getByRole('button', { name: controls.acceptLabel });
+      const reject = within(toolbar).getByRole('button', { name: controls.rejectLabel });
+      expect(within(accept).getByText(controls.accept)).toBe(accept);
+      expect(within(reject).getByText(controls.reject)).toBe(reject);
+      expect(await axe(toolbar)).toHaveNoViolations();
+      expect(h.editor.getValue()).toBe('hello world');
+      fireEvent.click(accept);
+      await completion;
+      expect(h.editor.getValue()).toBe(document);
+      expect(Notice).toHaveBeenLastCalledWith(expected.notice);
+    } finally {
+      h.owner.dispose();
+      await completion;
+      await disposeInlineEditHarnesses();
+    }
+  }
+});
+
+it('shows the localized zero-change preview and keeps the note on rejection', async () => {
+  setLocale('zh-CN');
+  const h = await createHarness();
+  const session = h.createSession();
+  try {
+    session.show();
+    const field = screen.getByRole('textbox', { name: '编辑指令' });
+    fireEvent.input(field, { target: { value: 'Leave the selection as it is' } });
+    fireEvent.keyDown(field, { key: 'Enter' });
+    await waitFor(() => expect(h.backend.sessions[0]?.getStatus()).toBe('executing'));
+    h.backend.sessions[0].emitText('<replacement>hello</replacement>');
+    h.backend.sessions[0].complete();
+    const toolbar = await screen.findByRole('toolbar', { name: '行内编辑操作' });
+    expect(toolbar.querySelector('.claudian-inline-diff-stats')?.textContent).toBe('行');
+    fireEvent.click(within(toolbar).getByRole('button', { name: '拒绝行内编辑' }));
+    expect(h.settled).toHaveBeenCalledWith({ decision: 'reject' });
+    expect(h.editor.getValue()).toBe('hello world');
+  } finally {
+    session.close();
+  }
+});
+
+it('reports a missing active Markdown view in the selected language', async () => {
+  setLocale('zh-CN');
+  const h = await createHarness();
+  h.plugin.app.workspace.getActiveViewOfType = () => null;
+  const context: MarkdownFileInfo = { app: h.plugin.app, editor: h.editor, file: null, hoverPopover: null };
+  const command = createInlineEditCommand({ host: h.plugin, component: h.component, sessions: h.owner });
+  await command.editorCallback!(h.editor, context);
+  expect(Notice).toHaveBeenCalledWith('行内编辑不可用：无法访问当前 Markdown 视图。');
+  expect(h.backend.sessions).toHaveLength(0);
+  expect(h.editor.getValue()).toBe('hello world');
+});
+
+it('replaces a nonzero-line editor range and inserts when the end is omitted', async () => {
+  const h = await createHarness();
+  h.editorView.dispatch({ changes: { from: 0, to: 11, insert: 'top\nhello world\nend' } });
+  h.editor.replaceRange('Hi', { line: 1, ch: 0 }, { line: 1, ch: 5 });
+  expect(h.editor.getValue()).toBe('top\nHi world\nend');
+  h.editor.replaceRange('!', { line: 1, ch: 2 });
+  expect(h.editor.getValue()).toBe('top\nHi! world\nend');
 });
 
 describe('editor resolution', () => {
@@ -33,13 +140,17 @@ describe('editor resolution', () => {
     await expect(result).resolves.toEqual({ decision: 'reject' });
   });
 
-  it('rejects with a notice when neither editor exposes a CodeMirror view', async () => {
+  it.each([
+    ['en', 'Inline edit unavailable: could not access the active editor. Try reopening the note.'],
+    ['zh-CN', '行内编辑不可用：无法访问当前编辑器。请尝试重新打开笔记。'],
+  ] as const)('rejects with a %s notice when neither editor exposes a CodeMirror view', async (locale, notice) => {
+    setLocale(locale);
     const h = await createHarness();
     await expect(h.createModal({} as Editor, {} as Editor).openAndWait()).resolves.toEqual({ decision: 'reject' });
-    expect(Notice).toHaveBeenCalledWith(
-      'Inline edit unavailable: could not access the active editor. Try reopening the note.',
-    );
-    expect(screen.queryByRole('textbox', { name: 'Edit instructions' })).toBeNull();
+    expect(Notice).toHaveBeenCalledWith(notice);
+    expect(screen.queryByRole('textbox', { name: /Edit instructions|编辑指令/ })).toBeNull();
+    expect(h.backend.sessions).toHaveLength(0);
+    expect(h.editor.getValue()).toBe('hello world');
   });
 });
 
@@ -232,6 +343,57 @@ describe('a submit waiting for a picked provider to start', () => {
   });
 });
 
+it('reports initial provider startup failure in Chinese', async () => {
+  setLocale('zh-CN');
+  const h = await createHarness();
+  ProviderWorkspaceRegistry.setServices('claude', undefined);
+  ProviderWorkspaceRegistry.register('claude', {
+    async initialize() { throw new Error('no CLI'); },
+  });
+  await expect(h.createModal().openAndWait()).resolves.toEqual({ decision: 'reject' });
+  expect(Notice).toHaveBeenCalledWith('行内编辑不可用：无法启动 claude 提供商。');
+  expect(h.backend.sessions).toHaveLength(0);
+  expect(h.editor.getValue()).toBe('hello world');
+});
+
+it('reports a picked provider startup failure in Chinese without sending the instruction', async () => {
+  setLocale('zh-CN');
+  const h = await createHarness();
+  const codex = registerFakeInlineEditProvider('codex', [{ value: 'gpt', label: 'GPT' }]);
+  let initialization: Promise<never> | undefined;
+  let release!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  ProviderWorkspaceRegistry.setServices('codex', undefined);
+  ProviderWorkspaceRegistry.register('codex', {
+    initialize() {
+      initialization = gate.then(() => { throw new Error('no CLI'); });
+      return initialization;
+    },
+  });
+  const result = h.createModal().openAndWait();
+  try {
+    const field = await screen.findByRole<HTMLInputElement>('textbox', { name: '编辑指令' });
+    fireEvent.input(field, { target: { value: 'Make it formal' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Model: Sonnet, effort High' }));
+    fireEvent.click(within(screen.getByRole('tablist', { name: 'Provider' })).getByRole('tab', { name: 'codex' }));
+    fireEvent.click(screen.getByRole('option', { name: 'GPT' }));
+    await waitFor(() => expect(initialization).toBeDefined());
+    fireEvent.keyDown(field, { key: 'Enter' });
+    expect(field.disabled).toBe(true);
+    release();
+    await waitFor(() => expect(Notice).toHaveBeenCalledWith('无法启动 codex 提供商。'));
+    await waitFor(() => expect(field.disabled).toBe(false));
+    expect(field.value).toBe('Make it formal');
+    expect([h.backend.sessions, codex.sessions]).toEqual([[], []]);
+    expect(h.editor.getValue()).toBe('hello world');
+  } finally {
+    release();
+    h.owner.dispose();
+    await result;
+    await initialization?.catch(() => {});
+  }
+});
+
 it('shows a model or effort pick on the chip without waiting for it to save as the default', async () => {
   const h = await createHarness();
   const saves: Array<() => void> = [];
@@ -250,19 +412,24 @@ it('shows a model or effort pick on the chip without waiting for it to save as t
   await waitFor(() => expect(h.plugin.settings.inlineEditModel).toEqual({ providerId: 'claude', model: 'opus', reasoning: 'low' }));
 });
 
-it('keeps the provider when a picked model is not uniquely owned by one enabled provider', async () => {
+it.each([
+  ['en', 'Edit instructions', 'Select an available model in Claudian settings.'],
+  ['zh-CN', '编辑指令', '请在 Claudian 设置中选择可用模型。'],
+] as const)('keeps the provider for an ambiguous model pick in %s', async (locale, label, notice) => {
+  setLocale(locale);
   const h = await createHarness();
   const codex = registerFakeInlineEditProvider('codex', [{ value: 'opus', label: 'Opus' }]);
   const result = h.createModal().openAndWait();
-  await screen.findByRole('textbox', { name: 'Edit instructions' });
+  const field = await screen.findByRole('textbox', { name: label });
   fireEvent.click(screen.getByRole('button', { name: 'Model: Sonnet, effort High' }));
   fireEvent.click(within(screen.getByRole('tablist', { name: 'Provider' })).getByRole('tab', { name: 'codex' }));
   fireEvent.click(screen.getByRole('option', { name: 'Opus' }));
   // Like a new chat, a model both providers own resolves to neither.
-  await waitFor(() => expect(Notice).toHaveBeenCalledWith('Select an available model in Claudian settings.'));
+  await waitFor(() => expect(Notice).toHaveBeenCalledWith(notice));
   expect(screen.getByRole('button', { name: 'Model: Sonnet, effort High' })).toBeDefined();
   expect(h.plugin.settings.inlineEditModel).toBeNull();
-  submitInstruction();
+  fireEvent.input(field, { target: { value: 'Make this clearer' } });
+  fireEvent.keyDown(field, { key: 'Enter' });
   await waitFor(() => expect(h.backend.sessions[0]?.requests).toHaveLength(1));
   expect(codex.sessions).toHaveLength(0);
   expect(h.backend.sessions[0].requests[0].configuration).toMatchObject({ model: 'sonnet' });

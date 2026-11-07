@@ -434,6 +434,32 @@
       }
     }
   },
+  "inlineEdit": {
+    "commandName": "行内编辑",
+    "viewUnavailable": "行内编辑不可用：无法访问当前 Markdown 视图。",
+    "inserted": "已插入",
+    "applied": "已应用编辑",
+    "editorUnavailable": "行内编辑不可用：无法访问当前编辑器。请尝试重新打开笔记。",
+    "stale": "源文档或选区已更改，未应用行内编辑。",
+    "initialProviderFailed": "行内编辑不可用：无法启动 {provider} 提供商。",
+    "vaultFailed": "无法加载仓库文件。仓库 @ 提及可能不可用。",
+    "editLabel": "编辑指令",
+    "insertLabel": "插入指令",
+    "editPlaceholder": "编辑指令…",
+    "insertPlaceholder": "插入指令…",
+    "modelUnavailable": "请在 Claudian 设置中选择可用模型。",
+    "providerFailed": "无法启动 {provider} 提供商。",
+    "actionsLabel": "行内编辑操作",
+    "lineOne": "行",
+    "lineOther": "行",
+    "reject": "拒绝",
+    "accept": "接受",
+    "rejectLabel": "拒绝行内编辑",
+    "acceptLabel": "接受行内编辑",
+    "retryFallback": "出错了，请重试",
+    "replyPlaceholder": "回复以继续…",
+    "noResponseFallback": "代理未返回响应"
+  },
   "settings": {
     "tabs": {
       "general": "通用",

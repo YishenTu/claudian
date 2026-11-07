@@ -434,6 +434,32 @@
       }
     }
   },
+  "inlineEdit": {
+    "commandName": "Inline-Bearbeitung",
+    "viewUnavailable": "Inline-Bearbeitung nicht verfügbar: Auf die aktive Markdown-Ansicht konnte nicht zugegriffen werden.",
+    "inserted": "Eingefügt",
+    "applied": "Änderung übernommen",
+    "editorUnavailable": "Inline-Bearbeitung nicht verfügbar: Auf den aktiven Editor konnte nicht zugegriffen werden. Öffne die Notiz erneut.",
+    "stale": "Die Inline-Bearbeitung wurde nicht übernommen, da sich das Quelldokument oder die Auswahl geändert hat.",
+    "initialProviderFailed": "Inline-Bearbeitung nicht verfügbar: Der Anbieter {provider} konnte nicht gestartet werden.",
+    "vaultFailed": "Vault-Dateien konnten nicht geladen werden. @-Erwähnungen im Vault sind möglicherweise nicht verfügbar.",
+    "editLabel": "Bearbeitungsanweisungen",
+    "insertLabel": "Einfügeanweisungen",
+    "editPlaceholder": "Bearbeitungsanweisungen…",
+    "insertPlaceholder": "Einfügeanweisungen…",
+    "modelUnavailable": "Wähle in den Claudian-Einstellungen ein verfügbares Modell aus.",
+    "providerFailed": "Der Anbieter {provider} konnte nicht gestartet werden.",
+    "actionsLabel": "Aktionen für die Inline-Bearbeitung",
+    "lineOne": "Zeile",
+    "lineOther": "Zeilen",
+    "reject": "Ablehnen",
+    "accept": "Übernehmen",
+    "rejectLabel": "Inline-Bearbeitung ablehnen",
+    "acceptLabel": "Inline-Bearbeitung übernehmen",
+    "retryFallback": "Fehler. Versuche es erneut",
+    "replyPlaceholder": "Antworten, um fortzufahren…",
+    "noResponseFallback": "Keine Antwort vom Agenten"
+  },
   "settings": {
     "tabs": {
       "general": "Allgemein",

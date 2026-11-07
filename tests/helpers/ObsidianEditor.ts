@@ -27,7 +27,9 @@ export function createObsidianEditor(cm: EditorView): Editor & { cm: EditorView 
     setLine: unsupported,
     getRange: unsupported,
     replaceSelection: unsupported,
-    replaceRange: unsupported,
+    replaceRange: (text, from, to = from) => {
+      cm.dispatch({ changes: { from: editor.posToOffset(from), to: editor.posToOffset(to), insert: text } });
+    },
     listSelections: unsupported,
     setCursor: unsupported,
     setSelection: unsupported,

@@ -21,9 +21,13 @@ import type { ProviderCommandEntry } from '@/core/providers/commands/ProviderCom
 import { RuntimeCommandCatalog } from '@/core/providers/commands/RuntimeCommandCatalog';
 import { ProviderWorkspaceRegistry } from '@/core/providers/ProviderWorkspaceRegistry';
 import { InlineEditModal } from '@/features/inline-edit/ui/InlineEditModal';
+import { setLocale } from '@/i18n/i18n';
+
+const STALE_SOURCE_NOTICE = 'Inline edit was not applied because the source document or selection changed.';
 
 afterEach(async () => {
   await disposeInlineEditHarnesses();
+  setLocale('en');
   vi.clearAllMocks();
 });
 
@@ -126,6 +130,44 @@ it('retains clarification when CodeMirror releases and later recreates the input
   await waitFor(() => expect(h.backend.sessions[0].requests).toHaveLength(2));
 });
 
+it.each([
+  ['', '出错了，请重试'],
+  ['Error - try again', 'Error - try again'],
+  ['Unknown error', 'Unknown error'],
+  [null, 'Empty response'],
+] as const)('preserves clarification and native feedback with Chinese controls (%s)', async (error, placeholder) => {
+  setLocale('zh-CN');
+  const h = await createHarness();
+  const session = h.createSession();
+  vi.mocked(MarkdownRenderer.render).mockImplementation(async (_app, markdown, element) => {
+    element.textContent = markdown;
+  });
+  try {
+    session.show();
+    const field = screen.getByRole<HTMLInputElement>('textbox', { name: '编辑指令' });
+    fireEvent.input(field, { target: { value: 'Improve' } });
+    fireEvent.keyDown(field, { key: 'Enter' });
+    await waitFor(() => expect(h.backend.sessions[0]?.getStatus()).toBe('executing'));
+    const peer = h.backend.sessions[0];
+    peer.emitText('Which tone?');
+    peer.complete();
+    expect(await screen.findByText('Which tone?')).toBeDefined();
+    expect(field.placeholder).toBe('回复以继续…');
+    fireEvent.input(field, { target: { value: 'Formal' } });
+    fireEvent.keyDown(field, { key: 'Enter' });
+    await waitFor(() => expect(peer.requests).toHaveLength(2));
+    expect(peer.requests[1].input[0]).toMatchObject({ type: 'text', text: 'Formal' });
+    if (error === null) peer.complete();
+    else peer.fail(error);
+    await waitFor(() => expect(field.placeholder).toBe(placeholder));
+    expect(field.disabled).toBe(false);
+    expect(h.editor.getValue()).toBe('hello world');
+  } finally {
+    session.close();
+    vi.mocked(MarkdownRenderer.render).mockReset();
+  }
+});
+
 it('restarts from the editor context after a clarification reply fails', async () => {
   const h = await createHarness();
   h.createSession().show();
@@ -170,7 +212,12 @@ it.each(['plugin unload', 'editor destruction', 'second invocation'] as const)(
   },
 );
 
-it.each(['cursor', 'selection'] as const)('rejects changed %s context during provider startup', async mode => {
+it.each([
+  ['cursor', 'en', 'Edit instructions', STALE_SOURCE_NOTICE],
+  ['selection', 'en', 'Edit instructions', STALE_SOURCE_NOTICE],
+  ['selection', 'zh-CN', '编辑指令', '源文档或选区已更改，未应用行内编辑。'],
+] as const)('rejects changed %s context during provider startup in %s', async (mode, locale, label, notice) => {
+  setLocale(locale);
   const h = await createHarness();
   const sourceDoc = h.editorView.state.doc;
   const context = mode === 'cursor'
@@ -188,20 +235,30 @@ it.each(['cursor', 'selection'] as const)('rejects changed %s context during pro
   );
   const settled = vi.fn();
   const result = modal.openAndWait().then(settled);
-  await waitFor(() => expect(initialized).toBe(true));
-  h.editorView.dispatch({ changes: { from: 0, insert: 'PREFIX ' } });
-  release();
-  await waitFor(() => expect(settled).toHaveBeenCalledWith({ decision: 'reject' }));
-  await result;
-  expect(Notice).toHaveBeenCalledWith(STALE_SOURCE_NOTICE);
-  expect(h.backend.sessions).toHaveLength(0);
-  expect(h.editorView.state.doc.toString()).toBe('PREFIX hello world');
-  // Establish the same modal still opens a usable editor when its source stays unchanged.
-  const retry = h.createModal().openAndWait();
-  const field = await screen.findByRole('textbox', { name: 'Edit instructions' });
-  expect(await axe(field.closest('.claudian-inline-input-container')!)).toHaveNoViolations();
-  h.owner.dispose();
-  await expect(retry).resolves.toEqual({ decision: 'reject' });
+  try {
+    await waitFor(() => expect(initialized).toBe(true));
+    h.editorView.dispatch({ changes: { from: 0, insert: 'PREFIX ' } });
+    release();
+    await waitFor(() => expect(settled).toHaveBeenCalledWith({ decision: 'reject' }));
+    await result;
+    expect(Notice).toHaveBeenCalledWith(notice);
+    expect(h.backend.sessions).toHaveLength(0);
+    expect(h.editorView.state.doc.toString()).toBe('PREFIX hello world');
+    // Establish the same modal still opens a usable editor when its source stays unchanged.
+    const retry = h.createModal().openAndWait();
+    try {
+      const field = await screen.findByRole('textbox', { name: label });
+      expect(await axe(field.closest('.claudian-inline-input-container')!)).toHaveNoViolations();
+    } finally {
+      h.owner.dispose();
+      await expect(retry).resolves.toEqual({ decision: 'reject' });
+    }
+  } finally {
+    release();
+    h.owner.dispose();
+    await result;
+    await ProviderWorkspaceRegistry.ensureInitialized(h.plugin.providerHost, 'claude', 'test-settlement');
+  }
 });
 
 it('closes a visible edit on plugin unload without refocusing its editor', async () => {
@@ -367,15 +424,25 @@ it.each([
   expect(h.editorView.state.doc.toString()).toBe(key === 'Enter' ? 'Hi world' : 'hello world');
 });
 
-it('continues provider execution when vault mentions cannot load and reports one notice', async () => {
+it.each([
+  ['en', 'Edit instructions', 'Failed to load vault files. Vault @-mentions may be unavailable.'],
+  ['zh-CN', '编辑指令', '无法加载仓库文件。仓库 @ 提及可能不可用。'],
+] as const)('continues provider execution and reports a %s notice when vault mentions cannot load', async (locale, label, notice) => {
+  setLocale(locale);
   const h = await createHarness();
   h.app.vault.getFiles = () => { throw new Error('vault unavailable'); };
-  h.createSession().show();
-  submitInstruction('Improve @missing');
-  await waitFor(() => expect(h.backend.sessions[0]?.getStatus()).toBe('executing'));
-  expect((Notice as unknown as Mock).mock.calls).toEqual([
-    ['Failed to load vault files. Vault @-mentions may be unavailable.'],
-  ]);
+  const session = h.createSession();
+  try {
+    session.show();
+    const field = screen.getByRole('textbox', { name: label });
+    fireEvent.input(field, { target: { value: 'Improve @missing' } });
+    fireEvent.keyDown(field, { key: 'Enter' });
+    await waitFor(() => expect(h.backend.sessions[0]?.getStatus()).toBe('executing'));
+    expect((Notice as unknown as Mock).mock.calls).toEqual([[notice]]);
+    expect(h.editor.getValue()).toBe('hello world');
+  } finally {
+    session.close();
+  }
 });
 
 describe('Vault paths that resemble environment variables', () => {
@@ -587,27 +654,38 @@ it('rejects changed source before clarification reply without continuing stale e
   expect(h.editorView.state.doc.toString()).toBe('XXXXXhello world');
 });
 
-const STALE_SOURCE_NOTICE = 'Inline edit was not applied because the source document or selection changed.';
 
-it.each(['while the provider runs', 'before the preview is accepted'] as const)(
-  'refuses a replacement when the source changes %s', async timing => {
+it.each([
+  ['while the provider runs', 'en', 'Edit instructions', 'Accept inline edit', 'Inline edit actions', STALE_SOURCE_NOTICE],
+  ['before the preview is accepted', 'en', 'Edit instructions', 'Accept inline edit', 'Inline edit actions', STALE_SOURCE_NOTICE],
+  ['before the preview is accepted', 'zh-CN', '编辑指令', '接受行内编辑', '行内编辑操作', '源文档或选区已更改，未应用行内编辑。'],
+] as const)(
+  'refuses a replacement when the source changes %s in %s', async (timing, locale, label, acceptLabel, toolbarLabel, notice) => {
+    setLocale(locale);
     const h = await createHarness();
-    h.createSession().show();
-    submitInstruction();
-    await waitFor(() => expect(h.backend.sessions[0]?.getStatus()).toBe('executing'));
-    const changeSource = () => h.editorView.dispatch({ changes: { from: h.editorView.state.doc.length, insert: '!' } });
-    if (timing === 'while the provider runs') changeSource();
-    h.backend.sessions[0].emitText('<replacement>Hi</replacement>');
-    h.backend.sessions[0].complete();
-    if (timing === 'before the preview is accepted') {
-      const accept = await screen.findByRole('button', { name: 'Accept inline edit' });
-      changeSource();
-      fireEvent.click(accept);
+    const session = h.createSession();
+    try {
+      session.show();
+      const field = screen.getByRole('textbox', { name: label });
+      fireEvent.input(field, { target: { value: 'Make this clearer' } });
+      fireEvent.keyDown(field, { key: 'Enter' });
+      await waitFor(() => expect(h.backend.sessions[0]?.getStatus()).toBe('executing'));
+      const changeSource = () => h.editorView.dispatch({ changes: { from: h.editorView.state.doc.length, insert: '!' } });
+      if (timing === 'while the provider runs') changeSource();
+      h.backend.sessions[0].emitText('<replacement>Hi</replacement>');
+      h.backend.sessions[0].complete();
+      if (timing === 'before the preview is accepted') {
+        const accept = await screen.findByRole('button', { name: acceptLabel });
+        changeSource();
+        fireEvent.click(accept);
+      }
+      await waitFor(() => expect(h.settled.mock.calls).toEqual([[{ decision: 'reject' }]]));
+      expect(Notice).toHaveBeenCalledWith(notice);
+      expect(h.editorView.state.doc.toString()).toBe('hello world!');
+      expect(screen.queryByRole('toolbar', { name: toolbarLabel })).toBeNull();
+    } finally {
+      session.close();
     }
-    await waitFor(() => expect(h.settled.mock.calls).toEqual([[{ decision: 'reject' }]]));
-    expect(Notice).toHaveBeenCalledWith(STALE_SOURCE_NOTICE);
-    expect(h.editorView.state.doc.toString()).toBe('hello world!');
-    expect(screen.queryByRole('toolbar', { name: 'Inline edit actions' })).toBeNull();
   },
 );
 

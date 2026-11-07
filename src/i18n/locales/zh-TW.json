@@ -434,6 +434,32 @@
       }
     }
   },
+  "inlineEdit": {
+    "commandName": "行內編輯",
+    "viewUnavailable": "行內編輯無法使用：無法存取目前的 Markdown 檢視。",
+    "inserted": "已插入",
+    "applied": "已套用編輯",
+    "editorUnavailable": "行內編輯無法使用：無法存取目前的編輯器。請試著重新開啟筆記。",
+    "stale": "來源文件或選取範圍已變更，未套用行內編輯。",
+    "initialProviderFailed": "行內編輯無法使用：無法啟動 {provider} 供應商。",
+    "vaultFailed": "無法載入儲存庫檔案。儲存庫的 @ 提及功能可能無法使用。",
+    "editLabel": "編輯指令",
+    "insertLabel": "插入指令",
+    "editPlaceholder": "編輯指令…",
+    "insertPlaceholder": "插入指令…",
+    "modelUnavailable": "請在 Claudian 設定中選取可用的模型。",
+    "providerFailed": "無法啟動 {provider} 供應商。",
+    "actionsLabel": "行內編輯操作",
+    "lineOne": "行",
+    "lineOther": "行",
+    "reject": "拒絕",
+    "accept": "接受",
+    "rejectLabel": "拒絕行內編輯",
+    "acceptLabel": "接受行內編輯",
+    "retryFallback": "發生錯誤，請重試",
+    "replyPlaceholder": "回覆以繼續…",
+    "noResponseFallback": "代理未傳回回應"
+  },
   "settings": {
     "tabs": {
       "general": "一般",

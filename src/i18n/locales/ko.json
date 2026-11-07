@@ -434,6 +434,32 @@
       }
     }
   },
+  "inlineEdit": {
+    "commandName": "인라인 편집",
+    "viewUnavailable": "인라인 편집을 사용할 수 없습니다. 활성 Markdown 보기에 접근할 수 없습니다.",
+    "inserted": "삽입됨",
+    "applied": "편집 적용됨",
+    "editorUnavailable": "인라인 편집을 사용할 수 없습니다. 활성 편집기에 접근할 수 없습니다. 노트를 다시 열어 보세요.",
+    "stale": "원본 문서 또는 선택 영역이 변경되어 인라인 편집을 적용하지 못했습니다.",
+    "initialProviderFailed": "인라인 편집을 사용할 수 없습니다. {provider} 제공업체를 시작하지 못했습니다.",
+    "vaultFailed": "보관함 파일을 불러오지 못했습니다. 보관함의 @ 멘션을 사용하지 못할 수 있습니다.",
+    "editLabel": "편집 지시",
+    "insertLabel": "삽입 지시",
+    "editPlaceholder": "편집 지시…",
+    "insertPlaceholder": "삽입 지시…",
+    "modelUnavailable": "Claudian 설정에서 사용 가능한 모델을 선택하세요.",
+    "providerFailed": "{provider} 제공업체를 시작하지 못했습니다.",
+    "actionsLabel": "인라인 편집 작업",
+    "lineOne": "줄",
+    "lineOther": "줄",
+    "reject": "거부",
+    "accept": "수락",
+    "rejectLabel": "인라인 편집 거부",
+    "acceptLabel": "인라인 편집 수락",
+    "retryFallback": "오류가 발생했습니다. 다시 시도하세요",
+    "replyPlaceholder": "계속하려면 답장하세요…",
+    "noResponseFallback": "에이전트가 응답하지 않았습니다"
+  },
   "settings": {
     "tabs": {
       "general": "일반",
