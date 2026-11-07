@@ -4,6 +4,7 @@ import '@/providers';
 import { deserialize, serialize } from 'node:v8';
 
 import { axe } from '@test/helpers/accessibility';
+import { deferred } from '@test/helpers/ChatInputHarness';
 import { ControlledResizeObserver, triggerResize } from '@test/helpers/dom/ResizeObserver';
 import { createFeatureHostFixture } from '@test/helpers/FeatureHostFixture';
 import { createChatFeatureHost } from '@test/helpers/features/chat/ChatFeatureHostFixture';
@@ -21,6 +22,7 @@ import { ChatModelSelectionCoordinator } from '@/app/settings/ChatModelSelection
 import { DEFAULT_CLAUDIAN_SETTINGS } from '@/app/settings/defaultSettings';
 import { ClaudianViews } from '@/composition/ClaudianViews';
 import { BUILT_IN_COMMANDS } from '@/core/commands/builtInCommands';
+import type { ProviderExecutionRequest } from '@/core/execution';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { ProviderWorkspaceRegistry } from '@/core/providers/ProviderWorkspaceRegistry';
 import type { ProviderCapabilities } from '@/core/providers/types';
@@ -32,11 +34,11 @@ import { destroyTab } from '@/features/chat/tabs/TabLifecycle';
 import { TabManager } from '@/features/chat/tabs/TabManager';
 import { createTabRuntime } from '@/features/chat/tabs/TabRuntimeFactory';
 import type { AssembledTabRuntime } from '@/features/chat/tabs/types';
-import { FLAVOR_TEXTS } from '@/features/chat/turns/flavorTexts';
 import { createChatFocusCommand } from '@/features/chat/workspace/ChatFocusCommand';
 import type { ZenPresentationPort } from '@/features/chat/zen/types';
 import { ZenModeController } from '@/features/chat/zen/ZenModeController';
 import { ZenModePanel } from '@/features/chat/zen/ZenModePanel';
+import { setLocale } from '@/i18n/i18n';
 import { adaptCodexStreamChunk } from '@/providers/codex/execution/CodexExecutionEventNormalizer';
 import { CodexNotificationRouter } from '@/providers/codex/runtime/CodexNotificationRouter';
 import { VaultMentionDataProvider } from '@/shared/mention/VaultMentionDataProvider';
@@ -44,6 +46,8 @@ import { VaultMentionDataProvider } from '@/shared/mention/VaultMentionDataProvi
 const { Scope: HostScope } = await vi.importActual<typeof import('@test/__mocks__/obsidian')>('obsidian');
 
 const originalStructuredClone = globalThis.structuredClone;
+const realSetTimeout = globalThis.setTimeout;
+const realClearTimeout = globalThis.clearTimeout;
 const cleanups: Array<() => Promise<void> | void> = [];
 
 beforeEach(() => {
@@ -129,7 +133,11 @@ function createSettings(enabled: boolean): ClaudianSettings {
   return settings;
 }
 
-async function createZenFixture(options: { enabled?: boolean; ready?: boolean } = {}) {
+async function createZenFixture(options: {
+  enabled?: boolean;
+  ready?: boolean;
+  onExecute?: (request: ProviderExecutionRequest) => void;
+} = {}) {
   const settings = createSettings(options.enabled ?? true);
   ProviderWorkspaceRegistry.setServices('claude', {});
   const { App: HostApp } = await vi.importActual<typeof import('../../../../__mocks__/obsidian')>('obsidian');
@@ -152,7 +160,7 @@ async function createZenFixture(options: { enabled?: boolean; ready?: boolean } 
   vi.spyOn(ProviderRegistry, 'createExecutionBackend').mockImplementation((_host, providerId = 'claude') => ({
     providerId,
     createSession: config => {
-      const session = new FakeSideSession(config);
+      const session = new FakeSideSession(config, options.onExecute);
       sessions.push(session);
       return session;
     },
@@ -301,9 +309,13 @@ function seedHistory(tab: AssembledTabRuntime): void {
   ];
 }
 
-async function sendFromZen(tab: AssembledTabRuntime, sessions: FakeSideSession[], text: string) {
+function submitFromZen(tab: AssembledTabRuntime, text: string): void {
   tab.dom.inputEl.value = text;
   fireEvent.keyDown(tab.dom.inputEl as unknown as HTMLElement, { key: 'Enter' });
+}
+
+async function sendFromZen(tab: AssembledTabRuntime, sessions: FakeSideSession[], text: string) {
+  submitFromZen(tab, text);
   await waitFor(() => expect(sessions.at(-1)?.requests.at(-1)?.input).toEqual([{ text, type: 'text' }]));
   return sessions.at(-1)!;
 }
@@ -505,43 +517,95 @@ function waitingIndicatorText(tab: AssembledTabRuntime): string | null {
 }
 
 async function waitForFlavor(tab: AssembledTabRuntime, timeout?: number): Promise<string> {
-  await waitFor(() => expect(FLAVOR_TEXTS).toContain(waitingIndicatorText(tab)), { timeout });
-  return waitingIndicatorText(tab)!;
+  // These English cases reach an ordinary wait after handoff or a stream transition.
+  expect(waitingIndicatorText(tab)).toBeNull();
+  expect(tab.state.waitingStatus).toBeNull();
+  const random = vi.spyOn(Math, 'random').mockReturnValue(0);
+  try {
+    await waitFor(() => expect(waitingIndicatorText(tab)).toBe('Thinking...'), { timeout });
+    expect(tab.state.waitingStatus).toBe('Thinking...');
+    expect(random).toHaveBeenCalledTimes(1);
+    return 'Thinking...';
+  } finally {
+    random.mockRestore();
+  }
 }
 
-function expectZenPreview(text: string): void {
-  expect(within(zenPanel()!).getByRole('button', { name: 'Show conversation', description: text })).toBeDefined();
+function expectZenPreview(text: string, name = 'Show conversation'): void {
+  expect(within(zenPanel()!).getByRole('button', { name, description: text })).toBeDefined();
 }
 
 it.each([
-  'item/agentMessage/delta',
-  'item/reasoning/summaryTextDelta',
-  'item/reasoning/textDelta',
-])('retains waiting flavor in the transcript and Zen across empty Codex %s after a notification', async method => {
+  ['item/agentMessage/delta', 'en', 'Thinking...', 'Show conversation'],
+  ['item/reasoning/summaryTextDelta', 'zh-CN', '思考中…', '显示对话'],
+  ['item/reasoning/textDelta', 'en', 'Thinking...', 'Show conversation'],
+] as const)('shares the localized waiting flavor across the transcript and Zen before empty Codex %s', async (method, locale, flavor, previewName) => {
+  setLocale(locale);
+  onTestFinished(() => { setLocale('en'); });
   vi.useFakeTimers({ now: testDate() });
-  const { tab, sessions, rightSplit, setCollapsed } = await createZenFixture();
+  const hit = deferred<ProviderExecutionRequest>();
+  const { tab, sessions, rightSplit, setCollapsed } = await createZenFixture({ onExecute: hit.resolve });
   setCollapsed(rightSplit, true);
-  const session = await sendFromZen(tab, sessions, 'Explain this note');
-  const flavor = await waitForFlavor(tab);
-  session.emitSessionEvent({ type: 'task_notification', content: 'A background task finished' });
-  await waitFor(() => expect(tab.state.messages.some(message => (
-    message.contentBlocks?.some(block => block.type === 'task_notification')
-  ))).toBe(true));
+  const watchdog = realSetTimeout(() => hit.reject(new Error('Zen did not hand off the request')), 2_000);
+  try {
+    submitFromZen(tab, 'Explain this note');
+    const request = await hit.promise;
+    realClearTimeout(watchdog);
 
-  const chunks: StreamChunk[] = [];
-  const router = new CodexNotificationRouter(chunk => chunks.push(chunk));
-  router.handleNotification(method, { threadId: 'thread', turnId: 'turn', itemId: 'item', delta: '' });
-  const events = chunks.flatMap(chunk => adaptCodexStreamChunk(chunk) ?? []);
-  expect(events).not.toHaveLength(0);
-  for (const event of events) session.emitOutput(event);
-  await vi.advanceTimersByTimeAsync(600);
+    expect(request.input).toEqual([{ text: 'Explain this note', type: 'text' }]);
+    const session = sessions.at(-1)!;
+    expect(session.requests).toEqual([request]);
+    expect(session.cancelCalls).toBe(0);
+    expect(waitingIndicatorText(tab)).toBeNull();
+    expect(tab.state.waitingStatus).toBeNull();
 
-  // Empty provider output must not replace the visible waiting surface or create empty reasoning.
-  expect(waitingIndicatorText(tab)).toBe(flavor);
-  expect(tab.dom.messagesEl.querySelector('.claudian-thinking-block')).toBeNull();
-  await waitFor(() => expectZenPreview(flavor));
-  session.complete();
-  await waitFor(() => expect(tab.state.isStreaming).toBe(false));
+    const random = vi.spyOn(Math, 'random').mockReturnValue(0);
+    try {
+      vi.advanceTimersByTime(399);
+      expect(waitingIndicatorText(tab)).toBeNull();
+      expect(random).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(1);
+      expect(random).toHaveBeenCalledTimes(1);
+    } finally {
+      random.mockRestore();
+    }
+
+    expect(waitingIndicatorText(tab)).toBe(flavor);
+    expect(tab.state.waitingStatus).toBe(flavor);
+    await waitFor(() => expectZenPreview(flavor, previewName));
+
+    session.emitSessionEvent({ type: 'task_notification', content: 'A background task finished' });
+    await waitFor(() => expect(tab.state.messages.some(message => (
+      message.contentBlocks?.some(block => block.type === 'task_notification')
+    ))).toBe(true));
+
+    const chunks: StreamChunk[] = [];
+    const router = new CodexNotificationRouter(chunk => chunks.push(chunk));
+    router.handleNotification(method, { threadId: 'thread', turnId: 'turn', itemId: 'item', delta: '' });
+    const events = chunks.flatMap(chunk => adaptCodexStreamChunk(chunk) ?? []);
+    expect(events).not.toHaveLength(0);
+    for (const event of events) session.emitOutput(event);
+    await vi.advanceTimersByTimeAsync(600);
+
+    // Empty provider output must not replace the visible waiting surface or create empty reasoning.
+    expect(waitingIndicatorText(tab)).toBe(flavor);
+    expect(tab.dom.messagesEl.querySelector('.claudian-thinking-block')).toBeNull();
+    await waitFor(() => expectZenPreview(flavor, previewName));
+
+    session.emitText('Here is the answer.');
+    session.complete();
+    await tab.session.turns.drain();
+    expect(tab.state.isStreaming).toBe(false);
+    expect(tab.state.waitingStatus).toBeNull();
+    expect(waitingIndicatorText(tab)).toBeNull();
+    expect(tab.dom.messagesEl.textContent).toContain('Here is the answer.');
+  } finally {
+    realClearTimeout(watchdog);
+    const session = sessions.at(-1);
+    if (session) session.complete();
+    else tab.session.turns.cancel('shutdown');
+    await tab.session.turns.drain();
+  }
 });
 
 it('shares one status across waiting, thinking, tools, text and silent pauses, then clears it', async () => {
