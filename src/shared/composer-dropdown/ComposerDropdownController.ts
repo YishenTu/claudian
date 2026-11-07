@@ -21,6 +21,8 @@ export class ComposerDropdownController {
   private activeMatch: ComposerTriggerMatch | null = null;
   private activeSource: ComposerDropdownSource | null = null;
   private destroyed = false;
+  /** Trigger closed with Escape; it stays closed until the input no longer matches it. */
+  private dismissed: { readonly sourceId: string; readonly start: number } | null = null;
   private items: readonly ComposerDropdownItem[] = [];
   private selectedIndex = -1;
 
@@ -67,16 +69,8 @@ export class ComposerDropdownController {
       this.hide();
       return;
     }
-    const cursor = this.inputEl.selectionStart ?? 0;
-    let sourceMatch: { match: ComposerTriggerMatch; source: ComposerDropdownSource } | undefined;
-    for (const source of this.sources) {
-      const match = source.match(this.inputEl.value, cursor);
-      if (match && !this.inputEl.isChipRange?.(match.start, match.end)
-        && (!sourceMatch || match.start > sourceMatch.match.start)) {
-        sourceMatch = { match, source };
-      }
-    }
-    if (!sourceMatch) {
+    const sourceMatch = this.#findSourceMatch();
+    if (!sourceMatch || this.dismissed) {
       this.hide();
       return;
     }
@@ -89,7 +83,26 @@ export class ComposerDropdownController {
     this.#requestActiveLoad(preserveSelection);
   }
 
+  #findSourceMatch(): { match: ComposerTriggerMatch; source: ComposerDropdownSource } | undefined {
+    const cursor = this.inputEl.selectionStart ?? 0;
+    let sourceMatch: { match: ComposerTriggerMatch; source: ComposerDropdownSource } | undefined;
+    for (const source of this.sources) {
+      const match = source.match(this.inputEl.value, cursor);
+      if (match && !this.inputEl.isChipRange?.(match.start, match.end)
+        && (!sourceMatch || match.start > sourceMatch.match.start)) {
+        sourceMatch = { match, source };
+      }
+    }
+    // A dismissal lasts only while the same trigger keeps matching.
+    if (sourceMatch?.source.id !== this.dismissed?.sourceId || sourceMatch?.match.start !== this.dismissed?.start) {
+      this.dismissed = null;
+    }
+    return sourceMatch;
+  }
+
   handleKeydown(event: KeyboardEvent): boolean {
+    // Sends and caret moves change the input without an input event; each key observes them before it applies.
+    if (this.dismissed) this.#findSourceMatch();
     if (!this.view.isVisible() || event.isComposing) return false;
     switch (event.key) {
       case 'ArrowDown':
@@ -110,6 +123,9 @@ export class ComposerDropdownController {
         return true;
       case 'Escape':
         event.preventDefault();
+        if (this.activeSource && this.activeMatch) {
+          this.dismissed = { sourceId: this.activeSource.id, start: this.activeMatch.start };
+        }
         this.hide();
         return true;
       default:
