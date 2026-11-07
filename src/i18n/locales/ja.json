@@ -106,6 +106,10 @@
       "moreItems": "他 {count} 件"
     },
     "worked": "作業完了",
+    "compaction": {
+      "progress": "圧縮中…",
+      "completed": "会話を圧縮しました"
+    },
     "taskNotification": "タスク通知",
     "copyMessage": "メッセージをコピー",
     "showEarlierMessages": "以前のメッセージを表示",

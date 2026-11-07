@@ -596,7 +596,7 @@ export class MessageRenderer {
           this.#finalizer.renderTaskNotification(contentEl, block.content);
         } else if (block.type === 'context_compacted') {
           const boundaryEl = contentEl.createDiv({ cls: 'claudian-compact-boundary' });
-          boundaryEl.createSpan({ cls: 'claudian-compact-boundary-label', text: 'Conversation compacted' });
+          boundaryEl.createSpan({ cls: 'claudian-compact-boundary-label', text: t('chat.compaction.completed') });
         } else if (block.type === 'subagent') {
           const taskToolCall = msg.toolCalls?.find((toolCall) => {
             if (toolCall.id !== block.subagentId) return false;

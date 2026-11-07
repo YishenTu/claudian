@@ -106,6 +106,10 @@
       "moreItems": "+{count} 项"
     },
     "worked": "已完成工作",
+    "compaction": {
+      "progress": "正在压缩…",
+      "completed": "对话已压缩"
+    },
     "taskNotification": "任务通知",
     "copyMessage": "复制消息",
     "showEarlierMessages": "显示更早的消息",
