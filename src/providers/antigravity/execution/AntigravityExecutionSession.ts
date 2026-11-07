@@ -350,8 +350,8 @@ export class AntigravityExecutionSession implements ProviderExecutionSession, St
       this.#failRecoverable(active, error);
     } finally {
       unsubscribeClose?.();
-      // Answers whose tool result never arrived have no consumer once the run ends.
-      this.questionRouter.clearAnswers();
+      // Answers whose tool result never arrived have no consumer once the run ends; a later run owns its own.
+      if (!this.active || this.active === active) this.questionRouter.clearAnswers();
     }
   }
 
