@@ -348,6 +348,10 @@
       "modeSteer": "插入進行中的輪次",
       "modeInterrupt": "中斷目前工作"
     },
+    "vaultContentEvents": {
+      "renameFailed": "無法更新關聯內容路徑",
+      "deleteFailed": "無法更新已釘選的關聯內容"
+    },
     "navigation": {
       "scrollToTop": "捲動至頂端",
       "previousMessage": "上一則訊息",

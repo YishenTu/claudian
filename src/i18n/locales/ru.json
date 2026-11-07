@@ -348,6 +348,10 @@
       "modeSteer": "Добавить в текущий ход",
       "modeInterrupt": "Прервать текущую работу"
     },
+    "vaultContentEvents": {
+      "renameFailed": "Не удалось обновить пути к связанному содержимому",
+      "deleteFailed": "Не удалось обновить закреплённое связанное содержимое"
+    },
     "navigation": {
       "scrollToTop": "Прокрутить вверх",
       "previousMessage": "Предыдущее сообщение",

@@ -7,7 +7,6 @@ import { testClock } from '@test/helpers/testClock';
 import { App, Notice, type PluginManifest, TFile, TFolder, WorkspaceLeaf } from 'obsidian';
 
 import type { ConversationRepository } from '@/app/conversations/ConversationRepository';
-import { PinnedLinkedContentPathCoordinator } from '@/app/settings/PinnedLinkedContentPathCoordinator';
 import { ConversationPersistenceStore } from '@/app/storage/ConversationPersistenceStore';
 import type { SessionMetadataReadResult } from '@/app/storage/SessionStorage';
 import { SessionStorage } from '@/app/storage/SessionStorage';
@@ -30,6 +29,7 @@ import { resolveSessionMentions } from '@/features/chat/input/resolveSessionMent
 import { SessionMessagingService } from '@/features/chat/session-messaging/SessionMessagingService';
 import { SessionRuntimePool } from '@/features/chat/sessions/SessionRuntimePool';
 import { ZenModeController } from '@/features/chat/zen/ZenModeController';
+import { setLocale } from '@/i18n/i18n';
 import * as sdkSession from '@/providers/claude/history/ClaudeHistoryStore';
 import { createCodexModelCatalogCommit } from '@/providers/codex/app/CodexWorkspaceServices';
 import { CodexModelCatalogCoordinator } from '@/providers/codex/runtime/CodexModelCatalogCoordinator';
@@ -3766,19 +3766,30 @@ describe('ClaudianPlugin', () => {
       return linked;
     }
 
-    it('coalesces vault refreshes while delivering every path event immediately', async () => {
+    it('coalesces vault refreshes, delivers every path event, and cancels refresh on unload', async () => {
       await plugin.onload();
       const linked = await detachedLinkedContentSession();
       const second = await detachedLinkedContentSession();
       const view = { notifyConversationListChanged: vi.fn() };
       vi.spyOn(viewsOf(plugin), 'getAllViews').mockReturnValue([createUnopenedView(view)]);
       const listener = mockApp.vault.on.mock.calls.find((call: unknown[]) => call[0] === 'create')![1];
-      for (let index = 0; index < 20; index++) listener(Object.assign(new TFile(), { path: `note-${index}.md` }));
-      expect(linked.handleCreated).toHaveBeenCalledTimes(20);
-      expect(second.handleCreated).toHaveBeenCalledTimes(20);
-      expect(view.notifyConversationListChanged).not.toHaveBeenCalled();
-      await new Promise(resolve => window.setTimeout(resolve, 75));
-      expect(view.notifyConversationListChanged).toHaveBeenCalledTimes(1);
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+      try {
+        for (let index = 0; index < 20; index++) listener(Object.assign(new TFile(), { path: `note-${index}.md` }));
+        expect(linked.handleCreated).toHaveBeenCalledTimes(20);
+        expect(second.handleCreated).toHaveBeenCalledTimes(20);
+        vi.advanceTimersByTime(49);
+        expect(view.notifyConversationListChanged).not.toHaveBeenCalled();
+        vi.advanceTimersByTime(1);
+        expect(view.notifyConversationListChanged).toHaveBeenCalledTimes(1);
+
+        listener(Object.assign(new TFile(), { path: 'last-note.md' }));
+        plugin.onunload();
+        vi.advanceTimersByTime(50);
+        expect(view.notifyConversationListChanged).toHaveBeenCalledTimes(1);
+      } finally {
+        vi.useRealTimers();
+      }
     });
 
     it('registers Vault create, rename, and delete listeners', async () => {
@@ -3916,40 +3927,131 @@ describe('ClaudianPlugin', () => {
       expect(view.notifyConversationListChanged).toHaveBeenCalledTimes(2);
     });
 
-    it('refreshes a committed rename even when pinned-settings cleanup fails', async () => {
-      await plugin.onload();
-      const conversation = await chatHostOf(plugin).createConversation({ linkedContentPath: 'Notes/Old.md' });
-      const view = { handleLinkedContentRenamed: vi.fn(), notifyConversationListChanged: vi.fn() };
-      vi.spyOn(viewsOf(plugin), 'getAllViews').mockReturnValue([createUnopenedView(view)]);
-      vi.spyOn(PinnedLinkedContentPathCoordinator.prototype, 'rewritePaths')
-        .mockRejectedValueOnce(new Error('settings unavailable'));
-      await expect(plugin['vaultContentEvents'].handleRename(Object.assign(new TFile(), { path: 'Notes/New.md' }), 'Notes/Old.md'))
-        .rejects.toThrow('settings unavailable');
-      expect(chatHostOf(plugin).getConversationSync(conversation.id)?.linkedContentPath).toBe('Notes/New.md');
-      await new Promise(resolve => window.setTimeout(resolve, 75));
-      expect(view.notifyConversationListChanged).toHaveBeenCalledTimes(1);
-    });
+    it.each([
+      { operation: 'rename', stage: 'baseline', locale: 'en', notice: 'Failed to update linked content paths' },
+      { operation: 'rename', stage: 'Chinese', locale: 'zh-CN', notice: '无法更新关联内容路径' },
+      { operation: 'rename', stage: 'after Chinese', locale: 'en', notice: 'Failed to update linked content paths' },
+      { operation: 'delete', stage: 'baseline', locale: 'en', notice: 'Failed to update pinned linked content' },
+      { operation: 'delete', stage: 'Chinese', locale: 'zh-CN', notice: '无法更新已置顶的关联内容' },
+      { operation: 'delete', stage: 'after Chinese', locale: 'en', notice: 'Failed to update pinned linked content' },
+    ] as const)('reports a failed $operation pin write in $locale ($stage)', async ({ operation, locale, notice }) => {
+      const settingsPath = '.claudian/claudian-settings.json';
+      const oldPath = operation === 'rename'
+        ? 'Projects/Failed to update linked content paths/Plan.md'
+        : 'Notes/Failed to update pinned linked content.md';
+      const linkedPath = operation === 'rename' ? 'Projects/Archive/Plan.md' : oldPath;
+      const file = Object.assign(new TFile(), { path: oldPath });
+      const loadedFiles = [file];
+      vi.spyOn(mockApp.vault, 'getAllLoadedFiles').mockReturnValue(loadedFiles);
+      const files = installVaultFiles({ [settingsPath]: JSON.stringify({ locale }) });
+      try {
+        await plugin.onload();
+        expect(plugin.settings.locale).toBe(locale);
+        expect(mockApp.vault.getAbstractFileByPath(oldPath)).toBe(file);
+        const host = chatHostOf();
+        const conversation = await host.createConversation({ linkedContentPath: oldPath });
+        const { attachment } = host.sessionRuntimes.acquire(
+          { conversationId: conversation.id, providerId: conversation.providerId, draftModel: null },
+          { reveal: () => undefined },
+        );
+        try {
+          const model = attachment.runtime.model;
+          await model.hydrate();
+          const linked = model.linkedContentController;
+          const renamed = vi.spyOn(linked, 'handleRenamed');
+          const deleted = vi.spyOn(linked, 'handleDeleted');
+          await host.setLinkedContentPinned(oldPath, true);
+          const before = files.get(settingsPath)!;
+          const sessions = storageOf(plugin).sessions;
+          const beforeMetadata = { id: conversation.id, linkedContentPath: oldPath };
+          expect(await sessions.load(conversation.id)).toMatchObject({ metadata: beforeMetadata });
+          expect(JSON.parse(before)).toMatchObject({ pinnedLinkedContentPaths: [oldPath] });
+          expect(host.getCommittedSettings().pinnedLinkedContentPaths).toEqual([oldPath]);
+          expect(linked.getSnapshot()).toEqual({ mode: 'locked', path: oldPath });
 
-    it('invalidates deleted targets even when pinned-settings cleanup fails', async () => {
-      await plugin.onload();
-      const linked = await detachedLinkedContentSession();
-      const view = {
-        notifyConversationListChanged: vi.fn(),
-      };
-      vi.spyOn(viewsOf(plugin), 'getAllViews').mockReturnValue([createUnopenedView(view)]);
-      vi.spyOn(PinnedLinkedContentPathCoordinator.prototype, 'removePaths')
-        .mockRejectedValueOnce(new Error('settings unavailable'));
+          const listener = mockApp.vault.on.mock.calls.find(([name]) => name === operation)?.[1];
+          const createListener = mockApp.vault.on.mock.calls.find(([name]) => name === 'create')?.[1];
+          expect(listener).toEqual(expect.any(Function));
+          expect(createListener).toEqual(expect.any(Function));
 
-      await expect(plugin['vaultContentEvents'].handleDelete(
-        Object.assign(new TFile(), { path: 'Notes/Unpinned.md' }),
-      )).rejects.toThrow('settings unavailable');
+          const view = { notifyConversationListChanged: vi.fn() };
+          vi.spyOn(viewsOf(plugin), 'getAllViews').mockReturnValue([createUnopenedView(view)]);
+          const adapter = mockApp.vault.adapter;
+          expect(adapter).toHaveProperty('basePath');
+          expect('getBasePath' in adapter).toBe(false);
+          const write = adapter.write.getMockImplementation()!;
+          const writesBefore = adapter.write.mock.calls.length;
+          const writeStarted = deferred<string>();
+          const releaseWrite = deferred<void>();
+          const noticeObserved = deferred<string | DocumentFragment>();
+          const writeError = new Error('settings unavailable');
+          const observedNotice = vi.mocked(Notice);
+          const originalNotice = observedNotice.getMockImplementation()!;
+          const clearWatchdog = clearTimeout;
+          const watchdog = deferred<never>();
+          const watchdogTimer = setTimeout(() => watchdog.reject(new Error('Vault failure was not observed')), 2_000);
+          vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+          adapter.write.mockImplementation(async (path, content) => {
+            if (path !== settingsPath) return write(path, content);
+            writeStarted.resolve(content);
+            await releaseWrite.promise;
+            throw writeError;
+          });
+          observedNotice.mockImplementation(function (this: Notice, message) {
+            noticeObserved.resolve(message);
+            return this;
+          });
+          try {
+            if (operation === 'rename') {
+              file.path = linkedPath;
+              listener(file, oldPath);
+            } else {
+              loadedFiles.pop();
+              listener(file);
+            }
+            const attempted = await Promise.race([writeStarted.promise, watchdog.promise]);
+            releaseWrite.resolve(undefined);
+            const actualNotice = await Promise.race([noticeObserved.promise, watchdog.promise]);
 
-      expect(linked.handleDeleted).toHaveBeenCalledWith(
-        'Notes/Unpinned.md',
-        false,
-      );
-      await new Promise(resolve => window.setTimeout(resolve, 75));
-      expect(view.notifyConversationListChanged).toHaveBeenCalledTimes(1);
+            expect(adapter.write.mock.calls.slice(writesBefore).filter(([path]) => path === settingsPath))
+              .toEqual([[settingsPath, attempted]]);
+            expect(JSON.parse(attempted)).toMatchObject({
+              pinnedLinkedContentPaths: operation === 'rename' ? [linkedPath] : [],
+            });
+            expect(mockApp.vault.getAbstractFileByPath(oldPath)).toBeNull();
+            expect(mockApp.vault.getAbstractFileByPath(linkedPath)).toBe(operation === 'rename' ? file : null);
+            expect(renamed.mock.calls).toEqual(operation === 'rename' ? [[oldPath, linkedPath, false]] : []);
+            expect(deleted.mock.calls).toEqual(operation === 'delete' ? [[oldPath, false]] : []);
+            expect(linked.getSnapshot()).toEqual({ mode: 'locked', path: linkedPath });
+            expect(await sessions.load(conversation.id)).toMatchObject({
+              metadata: { id: conversation.id, linkedContentPath: linkedPath },
+            });
+            expect(host.getCommittedSettings().pinnedLinkedContentPaths).toEqual([oldPath]);
+            expect(files.get(settingsPath)).toBe(before);
+
+            vi.advanceTimersByTime(49);
+            expect(view.notifyConversationListChanged).not.toHaveBeenCalled();
+            const created = Object.assign(new TFile(), { path: 'Notes/Unrelated.md' });
+            loadedFiles.push(created);
+            createListener(created);
+            vi.advanceTimersByTime(1);
+            expect(view.notifyConversationListChanged).toHaveBeenCalledTimes(1);
+            vi.advanceTimersByTime(49);
+            expect(view.notifyConversationListChanged).toHaveBeenCalledTimes(1);
+            expect(actualNotice).toBe(notice);
+          } finally {
+            releaseWrite.resolve(undefined);
+            observedNotice.mockImplementation(originalNotice);
+            adapter.write.mockImplementation(write);
+            clearWatchdog(watchdogTimer);
+            vi.useRealTimers();
+          }
+        } finally {
+          host.sessionRuntimes.release(attachment);
+        }
+      } finally {
+        setLocale('en');
+      }
     });
   });
 

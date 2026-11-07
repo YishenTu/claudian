@@ -348,6 +348,10 @@
       "modeSteer": "Dirigir el turno en curso",
       "modeInterrupt": "Interrumpir el trabajo actual"
     },
+    "vaultContentEvents": {
+      "renameFailed": "No se pudieron actualizar las rutas del contenido vinculado",
+      "deleteFailed": "No se pudo actualizar el contenido vinculado fijado"
+    },
     "navigation": {
       "scrollToTop": "Desplazarse al principio",
       "previousMessage": "Mensaje anterior",

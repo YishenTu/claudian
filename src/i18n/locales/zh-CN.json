@@ -348,6 +348,10 @@
       "modeSteer": "插入正在进行的轮次",
       "modeInterrupt": "中断当前工作"
     },
+    "vaultContentEvents": {
+      "renameFailed": "无法更新关联内容路径",
+      "deleteFailed": "无法更新已置顶的关联内容"
+    },
     "navigation": {
       "scrollToTop": "滚动到顶部",
       "previousMessage": "上一条消息",

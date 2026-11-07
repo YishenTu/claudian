@@ -2,6 +2,7 @@ import type { EventRef, TAbstractFile, Vault } from 'obsidian';
 import { Notice, TFolder } from 'obsidian';
 
 import type { SessionRuntimePool } from '@/features/chat/sessions/SessionRuntimePool';
+import { t } from '@/i18n/i18n';
 
 const VAULT_REFRESH_DELAY_MS = 50;
 
@@ -30,12 +31,12 @@ export class VaultContentEvents {
     const { vault } = this.deps;
     registerEvent(vault.on('rename', (file, oldPath) => {
       void this.handleRename(file, oldPath).catch(() => {
-        new Notice('Failed to update linked content paths');
+        new Notice(t('chat.vaultContentEvents.renameFailed'));
       });
     }));
     registerEvent(vault.on('delete', (file) => {
       void this.handleDelete(file).catch(() => {
-        new Notice('Failed to update pinned linked content');
+        new Notice(t('chat.vaultContentEvents.deleteFailed'));
       });
     }));
     registerEvent(vault.on('create', file => this.handleCreate(file)));
