@@ -94,23 +94,30 @@ export async function readAntigravityHistoryRevision(storeRoot: string, sessionI
 
 /**
  * Context held by the session's latest model call: its input plus cached input. agy's prompt usage sums every
- * call in a turn, so only the transcript's per-call counts measure the current context. Null when no planner
- * step with token counts can be read.
+ * call in a turn, so only the transcript's per-call counts measure the current context. Null when the transcript
+ * is unreadable or its latest model call is unmeasured or followed by a compaction.
  */
 export async function readAntigravityContextTokens(storeRoot: string, sessionId: string): Promise<number | null> {
   for (const transcriptPath of resolveAntigravityTranscriptPaths(storeRoot, sessionId)) {
     let latest: number | null = null;
     try {
       await forEachJSONLLine(transcriptPath, line => {
-        if (!line.includes('"PLANNER_RESPONSE"')) return;
+        if (!line.includes('"PLANNER_RESPONSE"') && !line.includes('"CHECKPOINT"')) return;
         let step: TranscriptStep;
         try {
           step = JSON.parse(line) as TranscriptStep;
         } catch {
           return;
         }
-        if (step?.type !== 'PLANNER_RESPONSE' || typeof step.input_tokens !== 'number') return;
-        latest = step.input_tokens + (typeof step.cache_read_tokens === 'number' ? step.cache_read_tokens : 0);
+        // A compaction or an unmeasured call leaves the context unknown until a later measured call.
+        if (step?.type === 'CHECKPOINT') {
+          if (step.status === 'DONE') latest = null;
+          return;
+        }
+        if (step?.type !== 'PLANNER_RESPONSE') return;
+        latest = typeof step.input_tokens === 'number'
+          ? step.input_tokens + (typeof step.cache_read_tokens === 'number' ? step.cache_read_tokens : 0)
+          : null;
       });
     } catch {
       continue;

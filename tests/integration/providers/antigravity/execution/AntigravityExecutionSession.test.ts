@@ -1,3 +1,4 @@
+import { spawnSync } from 'node:child_process';
 import * as fs from 'node:fs/promises';
 import { mkdir, readdir, readFile, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
@@ -861,6 +862,30 @@ describe('AntigravityExecutionSession', () => {
     expect(events.filter(event => event.type === 'user_message_started').map(event => event.content))
       .toEqual(['first', 'also this']);
     expect(events.filter(event => event.type === 'turn_completed')).toHaveLength(1);
+  });
+
+  // A FIFO holds the transcript read open until the test writes it; Windows has no named pipes.
+  it.skipIf(process.platform === 'win32')('refuses a steer once the turn\'s final response has arrived', async () => {
+    const session = await createSession();
+    const run = session.execute(request('first'));
+    const peer = await firstPeer();
+    await peer.waitForPrompts(1);
+    const [transcriptPath] = resolveAntigravityTranscriptPaths(path.join(vault, '.gemini', 'antigravity-cli'), 'session-new');
+    await mkdir(path.dirname(transcriptPath), { recursive: true });
+    expect(spawnSync('mkfifo', [transcriptPath]).status).toBe(0);
+    peer.finishPrompt({ stopReason: 'end_turn', usage: { inputTokens: 10, outputTokens: 2, totalTokens: 12 } });
+    // Opening a FIFO for writing completes only once the session has opened it to read the turn's usage.
+    const writer = await fs.open(transcriptPath, 'w');
+
+    const steer = session.steer(request('also this'));
+    await writer.writeFile(`${JSON.stringify({ input_tokens: 10, step_index: 1, type: 'PLANNER_RESPONSE' })}\n`);
+    await writer.close();
+    const events = await collect(run.events);
+
+    await expect(steer).resolves.toBe(false);
+    expect(peer.prompts).toHaveLength(1);
+    expect(events.filter(event => event.type === 'user_message_started').map(event => event.content)).toEqual(['first']);
+    expect(events.at(-1)).toMatchObject({ reason: 'completed', type: 'turn_completed' });
   });
 
   it('recognizes a slash-command steer whose echo omits the command name', async () => {

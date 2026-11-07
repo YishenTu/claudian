@@ -270,6 +270,8 @@ export class AntigravityExecutionSession implements ProviderExecutionSession, St
     if (
       !active || this.#isCancellationRequested(active) || request.signal.aborted
       || active.latestPrompt === 0 || !owner?.initialized || owner.loadedSessionId !== sessionId || !sessionId
+      // A settled latest prompt has ended the native turn; the run is only finishing its usage read.
+      || active.prompts.get(active.latestPrompt)!.settled
     ) return false;
     const previous = active.prompts.get(active.latestPrompt)!;
     const text = getInputText(request);
