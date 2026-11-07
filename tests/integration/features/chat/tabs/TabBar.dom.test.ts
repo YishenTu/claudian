@@ -1,11 +1,13 @@
 /** @vitest-environment jsdom */
 import { axe } from '@test/helpers/accessibility';
+import { testDate } from '@test/helpers/testClock';
 import { createEvent, fireEvent, within } from '@testing-library/dom';
 import { Menu } from 'obsidian';
 import type { Mock } from 'vitest';
 
 import type { TabBarItem } from '@/features/chat/tabs/ChatTab';
 import { TabBar } from '@/features/chat/tabs/TabBar';
+import { setLocale } from '@/i18n/i18n';
 
 
 
@@ -59,12 +61,9 @@ function menuTitles(menu: MockMenu): string[] {
   return menu.items.map(menuItem => menuItem.title);
 }
 
-beforeAll(() => {
-
-});
-
 afterEach(() => {
   document.body.replaceChildren();
+  setLocale('en');
 });
 
 describe('TabBar tab labels', () => {
@@ -87,6 +86,93 @@ describe('TabBar tab labels', () => {
 
     const pinned = ui.getByRole('button', { name: 'Pinned session, idle' });
     expect(menuTitles(openMenu(pinned))).toEqual(['Rename tab…', 'Show title']);
+  });
+
+  it('renders whole localized badge names for every status without translating titles or labels', () => {
+    const since = testDate().getTime();
+    const rows = [
+      item({ title: 'working', isActive: true, isWorking: true, attention: { kind: 'action-required', since } }),
+      item({ title: 'Archive', isWorking: true, attention: { kind: 'action-required', since } }),
+      item({ title: 'working', isWorking: true, attention: { kind: 'review', outcome: 'error', since } }),
+      item({ title: 'Archive', attention: { kind: 'review', outcome: 'error', since } }),
+      item({ title: 'New Chat', attention: { kind: 'review', outcome: 'completed', since } }),
+      item({ title: 'Archive' }),
+      item({ title: 'Archive', label: '新建 · working', isActive: true }),
+    ];
+    const english = [
+      'working, active',
+      'Archive, needs your input',
+      'working, working',
+      'Archive, stopped with an error, ready to review',
+      'New Chat, finished, ready to review',
+      'Archive, idle',
+      '新建 · working (Archive), active',
+    ];
+    const chinese = [
+      'working，当前',
+      'Archive，需要您输入',
+      'working，工作中',
+      'Archive，因错误而停止，可供查看',
+      'New Chat，已完成，可供查看',
+      'Archive，空闲',
+      '新建 · working（Archive），当前',
+    ];
+    for (const [locale, names] of [['en', english], ['zh-CN', chinese], ['en', english]] as const) {
+      setLocale(locale);
+      const { tabBar, container, ui } = setup([]);
+      try {
+        for (const [index, row] of rows.entries()) {
+          tabBar.update([row]);
+          const badge = ui.getByRole('button', { name: names[index] });
+          expect(badge.textContent).toBe('1');
+          expect(badge.getAttribute('title')).toBeNull();
+        }
+      } finally {
+        tabBar.destroy();
+        container.remove();
+      }
+    }
+  });
+
+  it('renames, resets, toggles and closes through the localized menu', async () => {
+    setLocale('zh-CN');
+    const { container, callbacks, tabBar, ui } = setup([item({ title: 'New Chat' })]);
+    try {
+      const badge = ui.getByRole('button', { name: 'New Chat，空闲' });
+      expect(badge.getAttribute('type')).toBe('button');
+      const menu = openMenu(badge);
+      expect(menuTitles(menu)).toEqual(['重命名标签页…', '显示标题', '关闭标签页']);
+      chooseMenuItem(menu, '显示标题');
+      expect(badge.textContent).toBe('New Chat');
+      chooseMenuItem(openMenu(badge), '显示编号');
+      expect(badge.textContent).toBe('1');
+      chooseMenuItem(openMenu(badge), '重命名标签页…');
+      const input = ui.getByRole<HTMLInputElement>('textbox', { name: '标签页名称' });
+      expect(input.value).toBe('');
+      expect(input.placeholder).toBe('New Chat');
+      expect(document.activeElement).toBe(input);
+      expect(await axe(container)).toHaveNoViolations();
+
+      fireEvent.input(input, { target: { value: '  Archive / 研究  ' } });
+      fireEvent.keyDown(input, { key: 'Enter' });
+      expect(callbacks.onTabLabelChange).toHaveBeenCalledWith('tab-1', 'Archive / 研究');
+      const named = ui.getByRole('button', { name: 'Archive / 研究（New Chat），空闲' });
+      expect(document.activeElement).toBe(named);
+      expect(named.textContent).toBe('Archive / 研究');
+      expect(named.getAttribute('data-title-expanded')).toBe('true');
+      chooseMenuItem(openMenu(named), '显示编号');
+      const namedMenu = openMenu(named);
+      expect(menuTitles(namedMenu)).toEqual(['重命名标签页…', '重置标签页名称', '显示名称', '关闭标签页']);
+      chooseMenuItem(namedMenu, '显示名称');
+      expect(named.textContent).toBe('Archive / 研究');
+      chooseMenuItem(openMenu(named), '重置标签页名称');
+      expect(callbacks.onTabLabelChange).toHaveBeenLastCalledWith('tab-1', null);
+      chooseMenuItem(openMenu(named), '关闭标签页');
+      expect(callbacks.onTabClose).toHaveBeenCalledExactlyOnceWith('tab-1');
+    } finally {
+      tabBar.destroy();
+      (Menu as unknown as { instances: Menu[] }).instances.length = 0;
+    }
   });
 
   it('closes closeable tabs on middle click only', () => {

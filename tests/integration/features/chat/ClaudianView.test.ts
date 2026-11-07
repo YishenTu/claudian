@@ -9,8 +9,8 @@ import { registerChatTestProvider } from '@test/helpers/features/chat/ChatProvid
 import { createClaudianView } from '@test/helpers/features/chat/ClaudianViewHarness';
 import { conversationRecord } from '@test/helpers/features/chat/ConversationFixture';
 import { createSessionBrowserHost } from '@test/helpers/features/chat/SessionBrowserTestHarness';
-import { fireEvent, within } from '@testing-library/dom';
-import { Menu, Platform, Scope, TFile } from 'obsidian';
+import { fireEvent, waitFor, within } from '@testing-library/dom';
+import { Menu, Notice, Platform, Scope, TFile } from 'obsidian';
 
 import { ChatModelSelectionCoordinator } from '@/app/settings/ChatModelSelectionCoordinator';
 import { BUILT_IN_COMMANDS } from '@/core/commands/builtInCommands';
@@ -20,6 +20,7 @@ import { TabManager } from '@/features/chat/tabs/TabManager';
 import type { TabLayoutPolicy } from '@/features/chat/tabs/types';
 import { ViewerSlot } from '@/features/chat/tabs/ViewerSlot';
 import { createChatTabCommands } from '@/features/chat/workspace/ChatTabCommands';
+import { setLocale } from '@/i18n/i18n';
 
 beforeEach(() => {
   useNextTaskAnimationFrames();
@@ -89,6 +90,7 @@ afterEach(async () => {
   for (const view of openedViews.splice(0)) { await view.onClose(); view.unload(); }
   document.body.replaceChildren();
   vi.restoreAllMocks();
+  setLocale('en');
 });
 
 describe('ClaudianView real tab lifecycle', () => {
@@ -335,11 +337,18 @@ describe('ClaudianView provider and presentation wiring', () => {
 });
 
 describe('ClaudianView tab controls and layout', () => {
-  it('uses native navigation buttons, creates and focuses a real tab, and opens history', async () => {
-    const { view, manager, contentEl } = await openView();
+  it.each([
+    ['en', 'New tab', 'New conversation'],
+    ['zh-CN', '新建标签页', '新建对话'],
+  ] as const)('uses native %s navigation buttons, creates and focuses a real tab, and opens history', async (locale, newTabName, newConversationName) => {
+    setLocale(locale);
+    const { view, manager, contentEl } = await openView({ host: { settings: { locale } } });
+    await manager.openConversation('one');
+    const first = manager.getActiveTab()!;
+    expect(first.conversationId).toBe('one');
     const controls = within(contentEl);
-    const newTab = controls.getByRole('button', { name: 'New tab' });
-    const newConversation = controls.getByRole('button', { name: 'New conversation' });
+    const newTab = controls.getByRole('button', { name: newTabName });
+    const newConversation = controls.getByRole('button', { name: newConversationName });
     const history = controls.getByRole('button', { name: 'Chat history' });
     for (const button of [newTab, newConversation, history]) expect(button.getAttribute('type')).toBe('button');
     const created = vi.spyOn(manager, 'createTab');
@@ -348,10 +357,14 @@ describe('ClaudianView tab controls and layout', () => {
     expect(manager.getTabCount()).toBe(2);
     expect(manager.getActiveTab()).toBe(tab);
     expect(tab.dom.inputEl.contains(document.activeElement) || document.activeElement === tab.dom.inputEl).toBe(true);
+    expect(manager.getTab(first.id)?.conversationId).toBe('one');
+    await manager.openConversation('two');
+    expect(manager.getActiveTab()).toMatchObject({ id: tab.id, conversationId: 'two' });
     const replacement = vi.spyOn(manager, 'createNewConversation');
     fireEvent.click(newConversation);
     await replacement.mock.results[0].value;
-    expect(manager.getActiveTab()!.conversationId).toBeNull();
+    expect(manager.getActiveTab()).toMatchObject({ id: tab.id, conversationId: null });
+    expect(manager.getTab(first.id)?.conversationId).toBe('one');
     fireEvent.click(history);
     expect(contentEl.querySelector('.claudian-history-menu')?.classList.contains('visible')).toBe(true);
     const navRow = contentEl.querySelector('.claudian-view-input-nav-row');
@@ -359,31 +372,147 @@ describe('ClaudianView tab controls and layout', () => {
     expect(view.getSharedSelectionFocusScopeEls!()).toEqual([navRow]);
   });
 
-  it('restores inactive shells for rename availability and persists a label through the real manager', async () => {
-    const { view, manager, contentEl } = await openView({}, workspaceState());
-    const rename = createChatTabCommands({
+  it.each([
+    ['en', 'Tab name', 'New', 'Replace current conversation', 'Close current tab', 'Rename current tab'],
+    ['zh-CN', '标签页名称', '新建', '替换当前对话', '关闭当前标签页', '重命名当前标签页'],
+  ] as const)('runs the %s palette commands through the real compact navigation and persists a rename', async (locale, inputName, newName, replaceName, closeName, renameName) => {
+    setLocale(locale);
+    const { view, manager, contentEl, records } = await openView({ host: { settings: { locale } } }, workspaceState());
+    records[0].title = 'Archive';
+    await manager.openConversation('one');
+    expect(manager.getTabCount()).toBe(2);
+    const active = manager.getActiveTab()!;
+    expect(active).toMatchObject({ id: 'restored-2', conversationId: 'one' });
+    const commands = () => createChatTabCommands({
       workspace: { getLeavesOfType: () => [] },
       views: { getView: () => view, activateView: vi.fn() },
-    }).find(command => command.id === 'rename-current-tab')!;
-    expect(manager.getTabCount()).toBe(2);
-    expect(rename.checkCallback!(true)).toBe(true);
-    view['tabBar']!['callbacks'].onTabLabelChange('restored-2', 'Research');
-    expect(manager.getTabBarItems().find(tab => tab.id === 'restored-2')).toMatchObject({ label: 'Research' });
+    });
+    const [create, replace, close, rename] = commands();
+    expect([create.id, replace.id, close.id, rename.id]).toEqual([
+      'new-tab', 'new-session', 'close-current-tab', 'rename-current-tab',
+    ]);
+    expect([create.name, replace.name, close.name, rename.name]).toEqual([newName, replaceName, closeName, renameName]);
+    const before = structuredClone(view.getState());
+    const start = vi.spyOn(view, 'startNewConversation');
+    const replacement = vi.spyOn(manager, 'createNewConversation');
+    const closed = vi.spyOn(manager, 'closeTab');
+    const controls = within(contentEl);
+    await controls.findByRole('button', { name: /^Archive/ });
+    for (const command of [create, replace, close, rename]) expect(command.checkCallback!(true)).toBe(true);
+    expect(view.getState()).toEqual(before);
+    expect(start).not.toHaveBeenCalled();
+    expect(replacement).not.toHaveBeenCalled();
+    expect(closed).not.toHaveBeenCalled();
+    expect(controls.queryByRole('textbox', { name: inputName })).toBeNull();
+
+    expect(rename.checkCallback!(false)).toBe(true);
+    const input = controls.getByRole<HTMLInputElement>('textbox', { name: inputName });
+    expect(input.placeholder).toBe('Archive');
+    expect(input.value).toBe('');
+    fireEvent.input(input, { target: { value: '  Archive / 研究  ' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(controls.queryByRole('textbox', { name: inputName })).toBeNull();
+    expect(manager.getTabBarItems().find(tab => tab.id === active.id)).toMatchObject({ title: 'Archive', label: 'Archive / 研究' });
+    expect(view.getState()).toMatchObject({ tabWorkspace: {
+      activeTabId: active.id,
+      openTabs: expect.arrayContaining([{ tabId: active.id, conversationId: 'one', label: 'Archive / 研究' }]),
+    } });
+
+    expect(replace.checkCallback!(false)).toBe(true);
+    await replacement.mock.results[0].value;
+    expect(manager.getActiveTab()).toMatchObject({ id: active.id, conversationId: null });
+    expect(manager.getTabIdentities().map(tab => tab.id)).toEqual(['restored-1', active.id]);
+
+    await manager.openConversation('two');
+    expect(manager.getActiveTab()).toMatchObject({ id: active.id, conversationId: 'two' });
+    expect(create.checkCallback!(false)).toBe(true);
+    await start.mock.results[0].value;
+    const created = manager.getActiveTab()!;
+    expect(created.id).not.toBe(active.id);
+    expect(created.conversationId).toBeNull();
+    expect(manager.getTabCount()).toBe(3);
+    expect(manager.getTab(active.id)?.conversationId).toBe('two');
+    expect(created.dom.inputEl.contains(document.activeElement) || document.activeElement === created.dom.inputEl).toBe(true);
+    expect(close.checkCallback!(false)).toBe(true);
+    await closed.mock.results[0].value;
+    expect(manager.getTabIdentities().map(tab => tab.id)).toEqual(['restored-1', active.id]);
+    expect(manager.getActiveTabId()).toBe(active.id);
+
     await manager.closeTab('restored-1');
     view.refreshTabControls();
     expect(rename.checkCallback!(true)).toBe(false);
     expect(contentEl.querySelector('.claudian-tab-bar-container')?.classList.contains('claudian-hidden')).toBe(true);
+    setLocale('en');
+    expect(commands().map(command => command.name)).toEqual([
+      'New', 'Replace current conversation', 'Close current tab', 'Rename current tab',
+    ]);
   });
 
-  it.each([400, 640])('starts New through the correct owner in a %s px view', async width => {
-    const { view, manager } = await openView({ width });
+  it.each([
+    [400, 'en', 'New'],
+    [640, 'en', 'New'],
+    [640, 'zh-CN', '新建'],
+  ] as const)('starts %s px %s New through the correct owner', async (width, locale, name) => {
+    setLocale(locale);
+    const { view, manager, contentEl } = await openView({ width, host: { settings: { locale } } });
+    if (width === 640) await manager.viewerSlot.show('two');
+    else await manager.openConversation('two');
+    expect(manager.getActiveTab()?.conversationId).toBe('two');
+    const compactIds = () => manager.getTabIdentities().filter(tab => tab.lifecycleState === 'open').map(tab => tab.id);
+    const before = compactIds();
     const draft = vi.spyOn(manager.viewerSlot, 'startDraft');
     const createTab = vi.spyOn(manager, 'createTab');
-    await view.startNewConversation();
+    const start = vi.spyOn(view, 'startNewConversation');
+    const [create, ...otherCommands] = createChatTabCommands({
+      workspace: { getLeavesOfType: () => [] },
+      views: { getView: () => view, activateView: vi.fn() },
+    });
+    expect(create.name).toBe(name);
+    expect(create.checkCallback!(true)).toBe(true);
+    expect(otherCommands.map(command => command.checkCallback!(true))).toEqual(width === 640 ? [false, false, false] : [true, true, false]);
+    expect(start).not.toHaveBeenCalled();
+    expect(create.checkCallback!(false)).toBe(true);
+    await start.mock.results[0].value;
     expect(draft).toHaveBeenCalledTimes(width === 640 ? 1 : 0);
     expect(createTab).toHaveBeenCalledTimes(width === 640 ? 0 : 1);
-    expect(manager.getActiveTab()!.conversationId).toBeNull();
+    const active = manager.getActiveTab()!;
+    expect(active.conversationId).toBeNull();
+    expect(contentEl.contains(active.dom.inputEl)).toBe(true);
     expect(view.getCompactTabManager()).toBe(width === 640 ? null : manager);
+    expect(compactIds()).toEqual(width === 640 ? before : [...before, active.id]);
+  });
+
+  it('reports the localized switch failure and keeps the previous tab when its restored peer cannot be loaded', async () => {
+    setLocale('zh-CN');
+    const record = conversationRecord('one');
+    let lookupFailed = false;
+    const getCachedConversation = vi.fn((id: string) => {
+      if (lookupFailed && id === 'one') throw new Error('Conversation cache unavailable');
+      return id === 'one' ? record : null;
+    });
+    const { tabWorkspace } = workspaceState();
+    const { view, manager, contentEl } = await openView({ host: {
+      settings: { locale: 'zh-CN' }, getCachedConversation,
+    } }, { tabWorkspace: { ...tabWorkspace, openTabs: [
+      { tabId: 'restored-1', conversationId: 'one' },
+      { tabId: 'restored-2', conversationId: null },
+    ] } });
+    const previous = manager.getActiveTab()!;
+    const before = structuredClone(view.getState());
+    expect(previous.id).toBe('restored-2');
+    expect(manager.getTab('restored-1')).toBeNull();
+    const target = await within(contentEl).findByRole('button', { name: /^one[,，]/ });
+    getCachedConversation.mockClear();
+    vi.mocked(Notice).mockClear();
+    lookupFailed = true;
+    fireEvent.click(target);
+    await waitFor(() => expect(Notice).toHaveBeenCalledExactlyOnceWith('无法切换标签页'));
+    expect(getCachedConversation).toHaveBeenCalledWith('one');
+    expect(manager.getActiveTab()).toBe(previous);
+    expect(view.getState()).toEqual(before);
+    lookupFailed = false;
+    fireEvent.click(target);
+    await waitFor(() => expect(manager.getActiveTab()).toMatchObject({ id: 'restored-1', conversationId: 'one' }));
   });
 
   it('keeps compact controls hidden until real viewer cleanup completes, and closes search immediately', async () => {
