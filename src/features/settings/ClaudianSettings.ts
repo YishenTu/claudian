@@ -577,6 +577,27 @@ export class ClaudianSettingTab extends PluginSettingTab {
       });
 
     new AccessibleSetting(container)
+      .setName(t('settings.autoLinkActiveNote.name'))
+      .setDesc(t('settings.autoLinkActiveNote.desc'))
+      .addToggle(toggle => {
+        let synchronizing = false;
+        toggle.setValue(this.host.settings.autoLinkActiveNote !== false)
+          .onChange(async value => {
+            if (synchronizing) return;
+            try {
+              await this.host.mutateSettings(settings => { settings.autoLinkActiveNote = value; });
+            } finally {
+              synchronizing = true;
+              try {
+                toggle.setValue(this.host.settings.autoLinkActiveNote !== false);
+              } finally {
+                synchronizing = false;
+              }
+            }
+          });
+      });
+
+    new AccessibleSetting(container)
       .setName(t('settings.excludedTags.name'))
       .setDesc(t('settings.excludedTags.desc'))
       .setClass('claudian-settings-textarea')

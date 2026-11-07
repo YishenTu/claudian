@@ -77,6 +77,32 @@ async function setup(poolOptions: RuntimePoolFixtureOptions = {}) {
   return { attach, pool, plugin, backend, messaging, saves, statusChanges, setNativeHistory: (messages: Conversation['messages']) => { nativeHistory = messages; } };
 }
 
+it.each([false, true])('starts a draft with automatic linked content enabled=%s and retains explicit choices', async enabled => {
+  const h = await setup();
+  h.plugin.settings.autoLinkActiveNote = enabled;
+  const note = Object.assign(new TFile(), { path: 'Notes/Plan.md', name: 'Plan.md', basename: 'Plan', extension: 'md' });
+  const next = Object.assign(new TFile(), { path: 'Notes/Next.md', name: 'Next.md', basename: 'Next', extension: 'md' });
+  vi.spyOn(h.plugin.app.workspace, 'getActiveFile').mockReturnValue(note);
+  const tab = await h.attach({ blank: true });
+  try {
+    const linked = tab.session.runtime.model.linkedContentController;
+    expect(linked.getSnapshot().path).toBe(enabled ? note.path : null);
+    linked.handleActiveFileChanged(next, true);
+    expect(linked.getSnapshot().path).toBe(enabled ? next.path : null);
+    linked.selectExplicit(note.path);
+    linked.handleActiveFileChanged(next, true);
+    expect(linked.getSnapshot().path).toBe(note.path);
+    const submission = linked.beginSubmission();
+    expect(submission.path).toBe(note.path);
+    linked.commitSubmission(submission);
+    h.plugin.settings.autoLinkActiveNote = !enabled;
+    linked.handleActiveFileChanged(next, true);
+    expect(linked.getSnapshot()).toEqual({ mode: 'locked', path: note.path });
+  } finally {
+    await destroyTab(tab);
+  }
+});
+
 it('reattaches a held blank draft session, with its selections, to the next presentation', async () => {
   const h = (await setup());
   const first = await h.attach({ blank: true });

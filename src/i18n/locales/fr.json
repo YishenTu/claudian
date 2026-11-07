@@ -456,6 +456,10 @@
       "name": "Comment Claudian doit-il vous appeler ?",
       "desc": "Votre nom pour les salutations personnalisées (laisser vide pour les salutations génériques)"
     },
+    "autoLinkActiveNote": {
+      "name": "Lier automatiquement la note active aux nouvelles conversations",
+      "desc": "Les nouvelles conversations utilisent la note active comme contenu lié. Désactivez cette option pour choisir le contenu manuellement sur l’écran d’accueil."
+    },
     "excludedTags": {
       "name": "Tags exclus",
       "desc": "Les notes avec ces tags ne seront pas chargées automatiquement comme contexte (un par ligne, sans #)"

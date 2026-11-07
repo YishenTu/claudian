@@ -44,6 +44,7 @@ export type LinkedContentPathEvent =
 
 export interface LinkedContentControllerOptions {
   readonly app: App;
+  readonly getAutoLinkActiveNote?: () => boolean;
   readonly getExcludedTags: () => readonly string[];
   readonly getCachedVaultFiles: () => readonly TFile[];
   readonly getCachedVaultFolders: () => readonly { readonly name: string; readonly path: string }[];
@@ -108,8 +109,9 @@ export class LinkedContentController {
   resetAutoDraft(): void {
     this.#assertLive();
     this.activeSubmission = null;
-    this.mode = 'auto-draft';
-    this.path = this.#eligibleActiveFilePath(this.app.workspace.getActiveFile());
+    const automatic = this.options.getAutoLinkActiveNote?.() !== false;
+    this.mode = automatic ? 'auto-draft' : 'explicit-draft';
+    this.path = automatic ? this.#eligibleActiveFilePath(this.app.workspace.getActiveFile()) : null;
     this.publish();
   }
 

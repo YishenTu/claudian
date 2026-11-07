@@ -122,6 +122,8 @@ export interface ClaudianSettings {
   titleGenerationModel: string;
 
   // Content settings
+  /** New drafts automatically link the active note; explicit selection remains available. */
+  autoLinkActiveNote: boolean;
   excludedTags: string[];
   mediaFolder: string;
   systemPrompt: string;

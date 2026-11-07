@@ -456,6 +456,10 @@
       "name": "What should Claudian call you?",
       "desc": "Your name for personalized greetings (leave empty for generic greetings)"
     },
+    "autoLinkActiveNote": {
+      "name": "Automatically link active note in new chats",
+      "desc": "New chats start with the active note as Linked content. Turn this off to select Linked content manually on the welcome screen."
+    },
     "excludedTags": {
       "name": "Excluded tags",
       "desc": "Notes with these tags will not auto-load as context (one per line, without #)"

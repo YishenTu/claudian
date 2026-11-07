@@ -456,6 +456,10 @@
       "name": "¿Cómo debería Claudian llamarte?",
       "desc": "Tu nombre para saludos personalizados (dejar vacío para saludos genéricos)"
     },
+    "autoLinkActiveNote": {
+      "name": "Vincular la nota activa automáticamente en chats nuevos",
+      "desc": "Los chats nuevos empiezan con la nota activa como contenido vinculado. Desactiva esta opción para seleccionar el contenido manualmente en la pantalla de bienvenida."
+    },
     "excludedTags": {
       "name": "Etiquetas excluidas",
       "desc": "Las notas con estas etiquetas no se cargarán automáticamente como contexto (una por línea, sin #)"
