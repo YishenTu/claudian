@@ -18,9 +18,11 @@ import {
 import { resolveAntigravityTranscriptPaths } from './AntigravityHistoryPaths';
 
 interface TranscriptStep {
+  cache_read_tokens?: number;
   content?: string;
   created_at?: string;
   error?: string;
+  input_tokens?: number;
   media?: Array<{ mime_type?: string; uri?: string }>;
   source?: string;
   status?: string;
@@ -86,6 +88,34 @@ export async function readAntigravityHistoryRevision(storeRoot: string, sessionI
   for (const transcriptPath of resolveAntigravityTranscriptPaths(storeRoot, sessionId)) {
     const revision = await readFileRevision(transcriptPath);
     if (revision) return revision;
+  }
+  return null;
+}
+
+/**
+ * Context held by the session's latest model call: its input plus cached input. agy's prompt usage sums every
+ * call in a turn, so only the transcript's per-call counts measure the current context. Null when no planner
+ * step with token counts can be read.
+ */
+export async function readAntigravityContextTokens(storeRoot: string, sessionId: string): Promise<number | null> {
+  for (const transcriptPath of resolveAntigravityTranscriptPaths(storeRoot, sessionId)) {
+    let latest: number | null = null;
+    try {
+      await forEachJSONLLine(transcriptPath, line => {
+        if (!line.includes('"PLANNER_RESPONSE"')) return;
+        let step: TranscriptStep;
+        try {
+          step = JSON.parse(line) as TranscriptStep;
+        } catch {
+          return;
+        }
+        if (step?.type !== 'PLANNER_RESPONSE' || typeof step.input_tokens !== 'number') return;
+        latest = step.input_tokens + (typeof step.cache_read_tokens === 'number' ? step.cache_read_tokens : 0);
+      });
+    } catch {
+      continue;
+    }
+    return latest;
   }
   return null;
 }

@@ -44,6 +44,8 @@ import {
 import type { ProviderRuntimeHost } from '../../../core/providers/ProviderRuntimeHost';
 import type { ChatMessage, SlashCommand } from '../../../core/types';
 import { filterAntigravityCommands } from '../commands/AntigravityCommandCatalog';
+import { resolveAntigravityStoreRoot } from '../history/AntigravityHistoryPaths';
+import { readAntigravityContextTokens } from '../history/AntigravityHistoryStore';
 import {
   ANTIGRAVITY_MODE_CONFIG_ID,
   ANTIGRAVITY_MODEL_CONFIG_ID,
@@ -338,7 +340,9 @@ export class AntigravityExecutionSession implements ProviderExecutionSession, St
           active.run.emit({ content: steer.text, type: 'user_message_started' });
         }
       }
-      this.#finishCompleted(active, response);
+      const contextTokens = await this.#readContextTokens(owner, response);
+      if (this.#isCancellationRequested(active)) return;
+      this.#finishCompleted(active, response, contextTokens);
     } catch (error) {
       if (this.#isCancellationRequested(active)) return;
       this.#failRecoverable(active, error);
@@ -648,7 +652,14 @@ export class AntigravityExecutionSession implements ProviderExecutionSession, St
     active.run.emit({ content: steer.text, type: 'user_message_started' });
   }
 
-  #finishCompleted(active: ActiveExecution, response: ACPPromptResponse): void {
+  /** The response's usage sums every model call in the turn; the transcript's latest call measures the context. */
+  async #readContextTokens(owner: NativeOwner, response: ACPPromptResponse): Promise<number | null> {
+    if (!response.usage) return null;
+    const storeRoot = resolveAntigravityStoreRoot(owner.native.launch.env, process.platform);
+    return storeRoot ? readAntigravityContextTokens(storeRoot, this.providerSessionId!) : null;
+  }
+
+  #finishCompleted(active: ActiveExecution, response: ACPPromptResponse, contextTokens: number | null): void {
     // A successful response proves acceptance even when agy streamed no output for it.
     active.turn.accept();
     if (response.usage) {
@@ -657,7 +668,8 @@ export class AntigravityExecutionSession implements ProviderExecutionSession, St
         : undefined;
       const windowSize = getAntigravityContextWindowWorkaround(model);
       const usage = buildACPUsageInfo({
-        contextWindow: windowSize ? { size: windowSize, used: response.usage.totalTokens } : null,
+        // An unmeasured context reports none, which hides the meter rather than showing the turn's summed usage.
+        contextWindow: { size: windowSize ?? 0, used: contextTokens ?? 0 },
         model,
         promptUsage: response.usage,
       });
