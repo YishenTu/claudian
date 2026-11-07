@@ -106,6 +106,10 @@
       "moreItems": "+{count} mais"
     },
     "worked": "Trabalho realizado",
+    "compaction": {
+      "progress": "Compactando...",
+      "completed": "Conversa compactada"
+    },
     "taskNotification": "Notificação de tarefa",
     "copyMessage": "Copiar mensagem",
     "showEarlierMessages": "Mostrar mensagens anteriores",

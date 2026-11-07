@@ -32,6 +32,7 @@ import type { StreamController } from '@/features/chat/turns/StreamController';
 import type { TurnCoordinator } from '@/features/chat/turns/TurnCoordinator';
 import type { TurnQueue } from '@/features/chat/turns/TurnQueue';
 import type { TurnSteering } from '@/features/chat/turns/TurnSteering';
+import { t } from '@/i18n/i18n';
 import { toError } from '@/utils/error';
 
 /** A main turn admitted for execution, with everything captured when it was admitted. */
@@ -248,7 +249,7 @@ export class MainTurnExecution {
     this.awaitingProviderAssistantStart = true;
 
     streamController.thinkingIndicator.show(
-      isCompact ? 'Compacting...' : undefined,
+      isCompact ? t('chat.compaction.progress') : undefined,
       isCompact ? 'claudian-thinking--compact' : undefined,
     );
     state.responseStartTime = performance.now();

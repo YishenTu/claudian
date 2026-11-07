@@ -37,6 +37,7 @@ import { createChatFocusCommand } from '@/features/chat/workspace/ChatFocusComma
 import type { ZenPresentationPort } from '@/features/chat/zen/types';
 import { ZenModeController } from '@/features/chat/zen/ZenModeController';
 import { ZenModePanel } from '@/features/chat/zen/ZenModePanel';
+import { setLocale } from '@/i18n/i18n';
 import { adaptCodexStreamChunk } from '@/providers/codex/execution/CodexExecutionEventNormalizer';
 import { CodexNotificationRouter } from '@/providers/codex/runtime/CodexNotificationRouter';
 import { VaultMentionDataProvider } from '@/shared/mention/VaultMentionDataProvider';
@@ -56,6 +57,7 @@ afterEach(async () => {
   ProviderWorkspaceRegistry.clear();
   vi.restoreAllMocks();
   vi.useRealTimers();
+  setLocale('en');
 });
 
 // Drive the same DOM assertions and their timeout with virtual time in clock-only cases.
@@ -129,8 +131,9 @@ function createSettings(enabled: boolean): ClaudianSettings {
   return settings;
 }
 
-async function createZenFixture(options: { enabled?: boolean; ready?: boolean } = {}) {
+async function createZenFixture(options: { enabled?: boolean; ready?: boolean; locale?: 'en' | 'zh-CN' } = {}) {
   const settings = createSettings(options.enabled ?? true);
+  settings.locale = options.locale ?? 'en';
   ProviderWorkspaceRegistry.setServices('claude', {});
   const { App: HostApp } = await vi.importActual<typeof import('../../../../__mocks__/obsidian')>('obsidian');
   const app = new App();
@@ -509,8 +512,8 @@ async function waitForFlavor(tab: AssembledTabRuntime, timeout?: number): Promis
   return waitingIndicatorText(tab)!;
 }
 
-function expectZenPreview(text: string): void {
-  expect(within(zenPanel()!).getByRole('button', { name: 'Show conversation', description: text })).toBeDefined();
+function expectZenPreview(text: string, name = 'Show conversation'): void {
+  expect(within(zenPanel()!).getByRole('button', { name, description: text })).toBeDefined();
 }
 
 it.each([
@@ -619,26 +622,47 @@ it('gives a pending approval priority over the waiting status and resumes it aft
   expect(waitingIndicatorText(tab)).toBeNull();
 });
 
-it('keeps explicit compaction status across a prompt', async () => {
+it.each([
+  { locale: 'en', progress: 'Compacting...', needsInput: 'Needs your input', allow: 'Allow once', show: 'Show conversation' },
+  { locale: 'zh-CN', progress: '正在压缩…', needsInput: '需要你的输入', allow: '允许一次', show: '显示对话' },
+] as const)('keeps explicit compaction status across a prompt ($locale)', async ({ locale, progress, needsInput, allow, show }) => {
+  setLocale(locale);
   vi.useFakeTimers({ now: testDate() });
-  const { tab, sessions, rightSplit, setCollapsed } = await createZenFixture();
+  const { tab, sessions, rightSplit, setCollapsed } = await createZenFixture({ locale });
   setCollapsed(rightSplit, true);
   const session = await sendFromZen(tab, sessions, '/compact');
-  await waitFor(() => expect(waitingIndicatorText(tab)).toBe('Compacting...'));
-  await waitFor(() => expectZenPreview('Compacting...'));
+  const abort = new AbortController();
+  let approval: Promise<unknown> | undefined;
+  try {
+    await waitFor(() => expect(waitingIndicatorText(tab)).toBe(progress));
+    expect(tab.state.waitingStatus).toBe(progress);
+    await waitFor(() => expectZenPreview(progress, show));
+    expect(session.requests.at(-1)?.input).toEqual([{ text: '/compact', type: 'text' }]);
 
-  const approval = session.config.interactionPort.requestApproval({
-    description: 'Approve action', input: {}, interactionId: 'approval-compact',
-    kind: 'approval', sessionInstanceId: session.sessionInstanceId,
-    toolName: 'Write', turnId: session.activeTurnId,
-  }, new AbortController().signal);
-  await waitFor(() => expect(preview()).toBe('Needs your input'));
-  fireEvent.click(await within(zenPanel()!).findByText('Allow once'));
-  await approval;
-  await waitFor(() => expect(waitingIndicatorText(tab)).toBe('Compacting...'));
-  await waitFor(() => expectZenPreview('Compacting...'));
-  session.complete();
-  await waitFor(() => expect(tab.state.isStreaming).toBe(false));
+    approval = session.config.interactionPort.requestApproval({
+      description: 'Approve action', input: {}, interactionId: 'approval-compact',
+      kind: 'approval', sessionInstanceId: session.sessionInstanceId,
+      toolName: 'Write', turnId: session.activeTurnId,
+    }, abort.signal);
+    await waitFor(() => expect(preview()).toBe(needsInput));
+    expect(waitingIndicatorText(tab)).toBeNull();
+    fireEvent.click(within(zenPanel()!).getByRole('button', { name: allow }));
+    await expect(approval).resolves.toMatchObject({ decision: 'allow' });
+    await waitFor(() => expect(waitingIndicatorText(tab)).toBe(progress));
+    expect(tab.state.waitingStatus).toBe(progress);
+    await waitFor(() => expectZenPreview(progress, show));
+    session.complete();
+    await waitFor(() => expect(tab.state.isStreaming).toBe(false));
+    expect(waitingIndicatorText(tab)).toBeNull();
+    expect(tab.state.waitingStatus).toBeNull();
+    vi.useRealTimers();
+    expect(await axe(zenPanel()!.querySelector<HTMLElement>('.claudian-zen-drawer')!)).toHaveNoViolations();
+  } finally {
+    abort.abort();
+    await approval?.catch(() => undefined);
+    session.complete();
+    await tab.session.turns.drain();
+  }
 });
 
 it('clears a pending waiting status when provider invalidation ends the turn', async () => {

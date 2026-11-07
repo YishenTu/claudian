@@ -106,6 +106,10 @@
       "moreItems": "+{count}개 더"
     },
     "worked": "작업 완료",
+    "compaction": {
+      "progress": "압축 중…",
+      "completed": "대화가 압축되었습니다"
+    },
     "taskNotification": "작업 알림",
     "copyMessage": "메시지 복사",
     "showEarlierMessages": "이전 메시지 표시",

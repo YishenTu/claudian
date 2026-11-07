@@ -106,6 +106,10 @@
       "moreItems": "Ещё {count}"
     },
     "worked": "Работа выполнена",
+    "compaction": {
+      "progress": "Сжатие…",
+      "completed": "Диалог сжат"
+    },
     "taskNotification": "Уведомление о задаче",
     "copyMessage": "Копировать сообщение",
     "showEarlierMessages": "Показать предыдущие сообщения",

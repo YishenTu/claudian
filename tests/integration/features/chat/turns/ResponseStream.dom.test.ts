@@ -21,6 +21,7 @@ import { continueResponseAfterNotification } from '@/features/chat/turns/Respons
 import { ResponseStream } from '@/features/chat/turns/ResponseStream';
 import { StreamController } from '@/features/chat/turns/StreamController';
 import { TurnCoordinator } from '@/features/chat/turns/TurnCoordinator';
+import { setLocale } from '@/i18n/i18n';
 import { loadSDKSessionMessages } from '@/providers/claude/history/ClaudeHistoryStore';
 import { parseCodexSessionTurns } from '@/providers/codex/history/CodexHistoryStore';
 import { mapOpencodeNativeMessages } from '@/providers/opencode/history/OpencodeHistoryStore';
@@ -38,11 +39,12 @@ beforeEach(() => {
 afterEach(() => {
   cleanups.splice(0).forEach(cleanup => cleanup());
   document.body.replaceChildren();
+  setLocale('en');
 });
 
-async function createSession(providerId?: ProviderId, promptText = 'Read the note') {
+async function createSession(providerId?: ProviderId, promptText = 'Read the note', locale: 'en' | 'zh-CN' = 'en') {
   const messagesEl = document.body.createDiv();
-  const plugin = await createChatFeatureHost({ settings: { mediaFolder: '', showMessageTimestamps: false } });
+  const plugin = await createChatFeatureHost({ settings: { mediaFolder: '', showMessageTimestamps: false, locale } });
   const renderer = new MessageRenderer(plugin, new Component(), messagesEl, undefined, undefined,
     providerId ? () => ProviderRegistry.getCapabilities(providerId) : undefined);
   const turns = new TurnCoordinator();
@@ -73,14 +75,14 @@ function visibleText(element: HTMLElement): string {
 const INTERRUPTED = 'Interrupted · What should Claudian do instead?';
 
 /** The interrupted turn as a reader sees it, collapsed and then expanded. */
-function inspectInterruptedTurn(root: HTMLElement, folded: RegExp[]) {
-  const header = within(root).getByRole('button', { name: INTERRUPTED });
+function inspectInterruptedTurn(root: HTMLElement, folded: RegExp[], name = INTERRUPTED) {
+  const header = within(root).getByRole('button', { name });
   const history = document.getElementById(header.getAttribute('aria-controls')!)!;
   const turn = Array.from(root.querySelectorAll<HTMLElement>('.claudian-message-assistant'))
     .filter(message => visibleText(message.querySelector<HTMLElement>('.claudian-message-content')!));
   const collapsed = { expanded: header.getAttribute('aria-expanded'), visible: turn.map(message =>
     visibleText(message.querySelector<HTMLElement>('.claudian-message-content')!)),
-  actions: turn.flatMap(message => within(message).queryAllByRole('button', { name: /^(Copy message|Fork conversation)$/ })).length,
+  actions: turn.flatMap(message => within(message).queryAllByRole('button', { name: /^(Copy message|Fork conversation|复制消息|分叉对话)$/ })).length,
   header: [header.querySelector('.claudian-interrupted')?.textContent, header.querySelector('.claudian-interrupted-hint')?.textContent] };
   fireEvent.click(header);
   const items = folded.map(pattern => within(history).getByText(pattern));
@@ -89,7 +91,7 @@ function inspectInterruptedTurn(root: HTMLElement, folded: RegExp[]) {
   const expanded = { expanded: header.getAttribute('aria-expanded'), ordered, hidden: history.hidden,
     // The header carries the indicator; the body never repeats it.
     indicatorInBody: history.querySelector('.claudian-interrupted, .claudian-interrupted-hint') !== null,
-    worked: within(root).queryAllByRole('button', { name: /^Worked/ }).length };
+    worked: within(root).queryAllByRole('button', { name: /^(Worked|已完成工作|工作了)/ }).length };
   fireEvent.click(header);
   return { collapsed, expanded };
 }
@@ -174,48 +176,81 @@ it('collapses a stopped turn under Interrupted and renders it identically on rer
 });
 
 it.each([true, false])('folds a turn stopped across compaction live and on Claude and OpenCode v2 reload (output after compaction: %s)', async after => {
-  const { response, stream, messagesEl, renderer } = (await createSession());
-  const live = response.start();
-  await stream.handleStreamChunk({ type: 'text', content: 'Before compaction.' }, live);
-  await stream.handleStreamChunk({ type: 'tool_use', id: 'read', name: 'Read', input: { file_path: 'note.md' } }, live);
-  await stream.handleStreamChunk({ type: 'tool_result', id: 'read', content: 'The note.' }, live);
-  await stream.handleStreamChunk({ type: 'context_compacted' }, live);
-  if (after) await stream.handleStreamChunk({ type: 'text', content: 'After compaction.' }, live);
-  await response.finish(live, { interrupted: true, failed: false });
-  await Promise.resolve();
-  const folded = [/^Before compaction\.$/, /^Conversation compacted$/, ...(after ? [/^After compaction\.$/] : [])];
-  const liveResult = inspectInterruptedTurn(messagesEl, folded);
-  expect(liveResult).toEqual(expectedTurn);
+  for (const { locale, completed, interrupted, header } of [
+    { locale: 'en', completed: 'Conversation compacted', interrupted: INTERRUPTED, header: ['Interrupted', '· What should Claudian do instead?'] },
+    { locale: 'zh-CN', completed: '对话已压缩', interrupted: '已中断 · 你希望 Claudian 改做什么？', header: ['已中断', '· 你希望 Claudian 改做什么？'] },
+    { locale: 'en', completed: 'Conversation compacted', interrupted: INTERRUPTED, header: ['Interrupted', '· What should Claudian do instead?'] },
+  ] as const) {
+    setLocale(locale);
+    const start = cleanups.length;
+    const { response, stream, messagesEl, renderer, state } = await createSession(undefined, 'Read the note', locale);
+    try {
+      const live = response.start();
+      await stream.handleStreamChunk({ type: 'text', content: 'Before compaction.' }, live);
+      await stream.handleStreamChunk({ type: 'tool_use', id: 'read', name: 'Read', input: { file_path: 'note.md' } }, live);
+      await stream.handleStreamChunk({ type: 'tool_result', id: 'read', content: 'The note.' }, live);
+      if (locale === 'zh-CN') await stream.handleStreamChunk({ type: 'text', content: 'Conversation compacted' }, live);
+      await stream.handleStreamChunk({ type: 'context_compacted' }, live);
+      expect(within(messagesEl).getByText(completed, { selector: '.claudian-compact-boundary-label' })).toBeDefined();
+      const ordinaryText = locale === 'zh-CN' ? 'Conversation compacted' : 'Before compaction.';
+      expect(state.messages.flatMap(message => message.contentBlocks ?? []))
+        .toContainEqual({ type: 'text', content: ordinaryText });
+      await waitFor(() => expect(within(messagesEl).getByText(ordinaryText, { selector: 'p' })).toBeDefined());
+      if (after) await stream.handleStreamChunk({ type: 'text', content: 'After compaction.' }, live);
+      await response.finish(live, { interrupted: true, failed: false });
+      await waitFor(() => expect(within(messagesEl).getByRole('button', { name: interrupted })).toBeDefined());
+      await waitFor(() => expect(within(messagesEl).getByText(completed, { selector: '.claudian-compact-boundary-label' })).toBeDefined());
+      const folded = [/^Before compaction\.$/, ...(locale === 'zh-CN' ? [/^Conversation compacted$/] : []), new RegExp(`^${completed}$`), ...(after ? [/^After compaction\.$/] : [])];
+      const liveResult = inspectInterruptedTurn(messagesEl, folded, interrupted);
+      expect(liveResult).toEqual({
+        ...expectedTurn, collapsed: { ...expectedTurn.collapsed, visible: [interrupted], header: [...header] },
+      });
+      expect((await axe(messagesEl)).violations).toEqual([]);
+      const stored = structuredClone(state.messages);
+      renderer.renderMessages(state.messages, () => 'Welcome');
+      await waitFor(() => expect(within(messagesEl).getByRole('button', { name: interrupted })).toBeDefined());
+      await waitFor(() => expect(within(messagesEl).getByText(completed, { selector: '.claudian-compact-boundary-label' })).toBeDefined());
+      expect(inspectInterruptedTurn(messagesEl, folded, interrupted)).toEqual(liveResult);
+      expect(state.messages).toEqual(stored);
 
-  const created = testDate().getTime();
-  renderer.renderMessages(mapOpencodeNativeMessages([
-    { id: 'u', type: 'user', time: { created }, text: 'Read the note' },
-    { id: 'a1', type: 'assistant', time: { created: created + 1_000, completed: created + 2_000 }, content: [{ type: 'text', text: 'Before compaction.' }] },
-    { id: 'compact', type: 'compaction', time: { created: created + 3_000 }, status: 'completed', summary: 'Internal summary' },
-    ...(after ? [{ id: 'a2', type: 'assistant', time: { created: created + 4_000, completed: created + 5_000 }, content: [{ type: 'text', text: 'After compaction.' }] }] : []),
-    { id: 'idle', type: 'idle', time: { created: created + 6_000 }, outcome: 'interrupted' },
-  ]), () => 'Welcome');
-  await Promise.resolve();
-  expect(inspectInterruptedTurn(messagesEl, folded)).toEqual(liveResult);
+      const created = testDate().getTime();
+      renderer.renderMessages(mapOpencodeNativeMessages([
+        { id: 'u', type: 'user', time: { created }, text: 'Read the note' },
+        { id: 'a1', type: 'assistant', time: { created: created + 1_000, completed: created + 2_000 }, content: [{ type: 'text', text: 'Before compaction.' }] },
+        ...(locale === 'zh-CN' ? [{ id: 'raw', type: 'assistant', time: { created: created + 2_100, completed: created + 2_500 }, content: [{ type: 'text', text: 'Conversation compacted' }] }] : []),
+        { id: 'compact', type: 'compaction', time: { created: created + 3_000 }, status: 'completed', summary: 'Internal summary' },
+        ...(after ? [{ id: 'a2', type: 'assistant', time: { created: created + 4_000, completed: created + 5_000 }, content: [{ type: 'text', text: 'After compaction.' }] }] : []),
+        { id: 'idle', type: 'idle', time: { created: created + 6_000 }, outcome: 'interrupted' },
+      ]), () => 'Welcome');
+      await waitFor(() => expect(within(messagesEl).getByRole('button', { name: interrupted })).toBeDefined());
+      await waitFor(() => expect(within(messagesEl).getByText(completed, { selector: '.claudian-compact-boundary-label' })).toBeDefined());
+      expect(inspectInterruptedTurn(messagesEl, folded, interrupted)).toEqual(liveResult);
 
-  // Claude auto-compacts between a tool result and the next model call.
-  const claude = await loadSDKSessionMessages('/vault', 'session', undefined, writeSession([
-    { type: 'user', uuid: 'u', timestamp: testTime({ seconds: 0 }), message: { content: 'Read the note' } },
-    { type: 'assistant', uuid: 'tool', parentUuid: 'u', timestamp: testTime({ seconds: 1 }), message: { stop_reason: 'tool_use',
-      content: [{ type: 'text', text: 'Before compaction.' }, { type: 'tool_use', id: 'read', name: 'Read', input: { file_path: 'note.md' } }] } },
-    { type: 'user', uuid: 'result', parentUuid: 'tool', timestamp: testTime({ seconds: 2 }), toolUseResult: { content: 'The note.' },
-      message: { content: [{ type: 'tool_result', tool_use_id: 'read', content: 'The note.' }] } },
-    { type: 'system', subtype: 'compact_boundary', uuid: 'compact', parentUuid: 'result', timestamp: testTime({ seconds: 3 }),
-      content: 'Conversation compacted', compactMetadata: { trigger: 'auto' } },
-    ...(after ? [{ type: 'assistant', uuid: 'after', parentUuid: 'compact', timestamp: testTime({ seconds: 4 }),
-      message: { content: [{ type: 'text', text: 'After compaction.' }] } }] : []),
-    { type: 'user', uuid: 'interrupt', parentUuid: after ? 'after' : 'compact', timestamp: testTime({ seconds: 5 }),
-      message: { content: [{ type: 'text', text: '[Request interrupted by user]' }] } },
-  ]));
-  expect(claude.error).toBeUndefined();
-  renderer.renderMessages(claude.messages, () => 'Welcome');
-  await Promise.resolve();
-  expect(inspectInterruptedTurn(messagesEl, folded)).toEqual(liveResult);
+      // Claude auto-compacts between a tool result and the next model call.
+      const claude = await loadSDKSessionMessages('/vault', 'session', undefined, writeSession([
+        { type: 'user', uuid: 'u', timestamp: testTime({ seconds: 0 }), message: { content: 'Read the note' } },
+        { type: 'assistant', uuid: 'tool', parentUuid: 'u', timestamp: testTime({ seconds: 1 }), message: { stop_reason: 'tool_use',
+          content: [{ type: 'text', text: 'Before compaction.' }, { type: 'tool_use', id: 'read', name: 'Read', input: { file_path: 'note.md' } }] } },
+        { type: 'user', uuid: 'result', parentUuid: 'tool', timestamp: testTime({ seconds: 2 }), toolUseResult: { content: 'The note.' },
+          message: { content: [{ type: 'tool_result', tool_use_id: 'read', content: 'The note.' }] } },
+        ...(locale === 'zh-CN' ? [{ type: 'assistant', uuid: 'raw', parentUuid: 'result', timestamp: testTime({ seconds: 2, milliseconds: 500 }), message: { content: [{ type: 'text', text: 'Conversation compacted' }] } }] : []),
+        { type: 'system', subtype: 'compact_boundary', uuid: 'compact', parentUuid: locale === 'zh-CN' ? 'raw' : 'result', timestamp: testTime({ seconds: 3 }),
+          content: 'Conversation compacted', compactMetadata: { trigger: 'auto' } },
+        ...(after ? [{ type: 'assistant', uuid: 'after', parentUuid: 'compact', timestamp: testTime({ seconds: 4 }),
+          message: { content: [{ type: 'text', text: 'After compaction.' }] } }] : []),
+        { type: 'user', uuid: 'interrupt', parentUuid: after ? 'after' : 'compact', timestamp: testTime({ seconds: 5 }),
+          message: { content: [{ type: 'text', text: '[Request interrupted by user]' }] } },
+      ]));
+      expect(claude.error).toBeUndefined();
+      renderer.renderMessages(claude.messages, () => 'Welcome');
+      await waitFor(() => expect(within(messagesEl).getByRole('button', { name: interrupted })).toBeDefined());
+      await waitFor(() => expect(within(messagesEl).getByText(completed, { selector: '.claudian-compact-boundary-label' })).toBeDefined());
+      expect(inspectInterruptedTurn(messagesEl, folded, interrupted)).toEqual(liveResult);
+    } finally {
+      cleanups.splice(start).forEach(cleanup => cleanup());
+      messagesEl.remove();
+    }
+  }
 });
 
 it('folds every segment of a stopped turn continued after a notification, live and on rerender', async () => {

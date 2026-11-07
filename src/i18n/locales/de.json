@@ -106,6 +106,10 @@
       "moreItems": "+{count} weitere"
     },
     "worked": "Gearbeitet",
+    "compaction": {
+      "progress": "Wird komprimiert…",
+      "completed": "Unterhaltung komprimiert"
+    },
     "taskNotification": "Aufgabenbenachrichtigung",
     "copyMessage": "Nachricht kopieren",
     "showEarlierMessages": "Frühere Nachrichten anzeigen",
