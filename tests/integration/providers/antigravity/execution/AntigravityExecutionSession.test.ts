@@ -457,11 +457,11 @@ describe('AntigravityExecutionSession', () => {
     const events = await collect(run.events);
 
     expect(events.filter(event => event.type === 'text_delta')).toEqual([expect.objectContaining({ text: 'Hi.' })]);
-    // The meter shows the last model call's context; agy reports no window, so Gemini models assume 1,048,576.
+    // The meter shows the last model call's context against agy's 256,000-token auto-compaction point.
     expect(events).toContainEqual(expect.objectContaining({
       type: 'usage_updated',
       usage: expect.objectContaining({
-        contextTokens: 7_251, contextWindow: 1_048_576, inputTokens: 9_155, model: 'gemini-4-argon', percentage: 1,
+        contextTokens: 7_251, contextWindow: 256_000, inputTokens: 9_155, model: 'gemini-4-argon', percentage: 3,
       }),
     }));
     expect(events.at(-1)).toMatchObject({ reason: 'completed', type: 'turn_completed' });

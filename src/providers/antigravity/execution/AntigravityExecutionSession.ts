@@ -816,10 +816,11 @@ class AntigravitySessionPreparationError extends Error {
 }
 
 /**
- * Workaround: agy 1.5.0 reports no context window over ACP, so Gemini models assume Google's 1,048,576-token
- * window and other models leave the context meter hidden. Remove this once agy reports the limit.
+ * Workaround: agy 1.5.1 reports no context window over ACP and auto-compacts Gemini's 1,048,576-token models at a
+ * fixed 256,000 tokens (google-antigravity/antigravity-cli#1432), so Gemini models measure against that point
+ * and other models leave the context meter hidden. Remove this once agy reports the limit.
  */
-const GEMINI_CONTEXT_WINDOW_WORKAROUND = 1_048_576;
+const GEMINI_CONTEXT_WINDOW_WORKAROUND = 256_000;
 
 function getAntigravityContextWindowWorkaround(model: string | undefined): number | null {
   return model?.startsWith('gemini-') ? GEMINI_CONTEXT_WINDOW_WORKAROUND : null;
