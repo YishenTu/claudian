@@ -6,7 +6,7 @@ import type { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import type { ProviderSettingsCoordinator } from '@/core/providers/ProviderSettingsCoordinator';
 import type { ProviderId, ProviderSessionArchive } from '@/core/providers/types';
 import type { ClaudianSettings } from '@/core/types';
-import { setLocale } from '@/i18n/i18n';
+import { setLocale, t } from '@/i18n/i18n';
 import type { Locale } from '@/i18n/types';
 import { getVaultPath } from '@/utils/path';
 
@@ -149,7 +149,10 @@ export async function startApplication(options: ApplicationStartupOptions): Prom
     getSessionArchive: providerId => options.getSessionArchive(providerId),
     onFailure: (providerId, error) => {
       const reason = error instanceof Error ? error.message : String(error);
-      new Notice(`${providers.getProviderDisplayName(providerId)} could not archive or restore its sessions: ${reason}`);
+      new Notice(t('chat.lifecycleFeedback.nativeFailure', {
+        provider: providers.getProviderDisplayName(providerId),
+        reason,
+      }));
     },
   });
   const conversations = new ConversationService({

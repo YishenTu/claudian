@@ -2,6 +2,7 @@ import { Notice } from 'obsidian';
 
 import type { ConversationMeta, SessionAutoArchiveAfter } from '@/core/types';
 import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
+import { t } from '@/i18n/i18n';
 
 const DAY_MS = 86_400_000;
 const AUTO_ARCHIVE_AFTER_DAYS: Record<SessionAutoArchiveAfter, number | null> = {
@@ -32,7 +33,7 @@ export class InactiveSessionArchiver {
   request(): void {
     if (this.disposed) return;
     void this.run().catch(() => {
-      new Notice('Failed to auto-archive inactive sessions');
+      new Notice(t('chat.lifecycleFeedback.autoFailed'));
     });
   }
 
@@ -74,6 +75,8 @@ export class InactiveSessionArchiver {
       conversation => isEligible(conversation, this.host.getWorkspaceConversationIds()),
     );
     if (archivedCount === 0) return;
-    new Notice(`Auto-archived ${archivedCount} inactive ${archivedCount === 1 ? 'session' : 'sessions'}`);
+    new Notice(t(archivedCount === 1
+      ? 'chat.lifecycleFeedback.autoOne'
+      : 'chat.lifecycleFeedback.autoOther', { count: archivedCount }));
   }
 }

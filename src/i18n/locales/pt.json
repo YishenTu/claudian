@@ -325,6 +325,19 @@
       "undelivered": "Não foi possível entregar as mensagens de {senders}.",
       "fromLabel": "Da sessão:"
     },
+    "lifecycleFeedback": {
+      "runningArchive": "Não é possível arquivar sessões em execução",
+      "archiveSkippedOne": "{count} sessão aberta ou em execução foi ignorada",
+      "archiveSkippedOther": "{count} sessões abertas ou em execução foram ignoradas",
+      "runningDelete": "Não é possível excluir sessões em execução",
+      "deleteSkippedOne": "{count} sessão em execução foi ignorada",
+      "deleteSkippedOther": "{count} sessões em execução foram ignoradas",
+      "deletedCloseFallback": "Não foi possível fechar a sessão excluída",
+      "autoFailed": "Não foi possível arquivar automaticamente as sessões inativas",
+      "autoOne": "{count} sessão inativa foi arquivada automaticamente",
+      "autoOther": "{count} sessões inativas foram arquivadas automaticamente",
+      "nativeFailure": "{provider} não conseguiu arquivar ou restaurar suas sessões: {reason}"
+    },
     "sessionTools": {
       "noSessions": "Nenhuma sessão",
       "thisSession": "Esta sessão",

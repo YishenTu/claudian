@@ -325,6 +325,19 @@
       "undelivered": "無法傳遞來自 {senders} 的訊息。",
       "fromLabel": "來自工作階段："
     },
+    "lifecycleFeedback": {
+      "runningArchive": "無法封存執行中的工作階段",
+      "archiveSkippedOne": "已跳過 {count} 個已開啟或執行中的工作階段",
+      "archiveSkippedOther": "已跳過 {count} 個已開啟或執行中的工作階段",
+      "runningDelete": "無法刪除執行中的工作階段",
+      "deleteSkippedOne": "已跳過 {count} 個執行中的工作階段",
+      "deleteSkippedOther": "已跳過 {count} 個執行中的工作階段",
+      "deletedCloseFallback": "無法關閉已刪除的工作階段",
+      "autoFailed": "無法自動封存閒置的工作階段",
+      "autoOne": "已自動封存 {count} 個閒置的工作階段",
+      "autoOther": "已自動封存 {count} 個閒置的工作階段",
+      "nativeFailure": "{provider} 無法封存或還原其工作階段：{reason}"
+    },
     "sessionTools": {
       "noSessions": "沒有工作階段",
       "thisSession": "此工作階段",

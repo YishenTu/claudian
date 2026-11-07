@@ -325,6 +325,19 @@
       "undelivered": "{senders} からのメッセージを配信できませんでした。",
       "fromLabel": "送信元セッション:"
     },
+    "lifecycleFeedback": {
+      "runningArchive": "実行中のセッションはアーカイブできません",
+      "archiveSkippedOne": "開いているか実行中のセッションを {count} 件スキップしました",
+      "archiveSkippedOther": "開いているか実行中のセッションを {count} 件スキップしました",
+      "runningDelete": "実行中のセッションは削除できません",
+      "deleteSkippedOne": "実行中のセッションを {count} 件スキップしました",
+      "deleteSkippedOther": "実行中のセッションを {count} 件スキップしました",
+      "deletedCloseFallback": "削除したセッションを閉じられませんでした",
+      "autoFailed": "非アクティブなセッションを自動でアーカイブできませんでした",
+      "autoOne": "非アクティブなセッションを {count} 件自動でアーカイブしました",
+      "autoOther": "非アクティブなセッションを {count} 件自動でアーカイブしました",
+      "nativeFailure": "{provider} のセッションをアーカイブまたは復元できませんでした：{reason}"
+    },
     "sessionTools": {
       "noSessions": "セッションはありません",
       "thisSession": "このセッション",

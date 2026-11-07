@@ -325,6 +325,19 @@
       "undelivered": "Messages from {senders} could not be delivered.",
       "fromLabel": "From session:"
     },
+    "lifecycleFeedback": {
+      "runningArchive": "Running sessions cannot be archived",
+      "archiveSkippedOne": "Skipped {count} session that is open or running",
+      "archiveSkippedOther": "Skipped {count} sessions that are open or running",
+      "runningDelete": "Running sessions cannot be deleted",
+      "deleteSkippedOne": "Skipped {count} session that is running",
+      "deleteSkippedOther": "Skipped {count} sessions that are running",
+      "deletedCloseFallback": "Failed to close the deleted session",
+      "autoFailed": "Failed to auto-archive inactive sessions",
+      "autoOne": "Auto-archived {count} inactive session",
+      "autoOther": "Auto-archived {count} inactive sessions",
+      "nativeFailure": "{provider} could not archive or restore its sessions: {reason}"
+    },
     "sessionTools": {
       "noSessions": "No sessions",
       "thisSession": "This session",

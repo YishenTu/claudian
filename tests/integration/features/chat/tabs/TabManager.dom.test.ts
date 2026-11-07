@@ -9,7 +9,7 @@ import { createSessionRuntimePool } from '@test/helpers/features/chat/SessionRun
 import { FakeSideBackend } from '@test/helpers/features/chat/SideChatSessionHarness';
 import { testDate } from '@test/helpers/testClock';
 import { fireEvent, waitFor, within } from '@testing-library/dom';
-import { App, Component } from 'obsidian';
+import { App, Component, Notice } from 'obsidian';
 
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { ProviderWorkspaceRegistry } from '@/core/providers/ProviderWorkspaceRegistry';
@@ -20,12 +20,14 @@ import { SessionManagerSurface } from '@/features/chat/session-manager/SessionMa
 import { SessionNavigation } from '@/features/chat/session-manager/SessionNavigation';
 import { SessionMessagingService } from '@/features/chat/session-messaging/SessionMessagingService';
 import { TabManager } from '@/features/chat/tabs/TabManager';
+import { setLocale } from '@/i18n/i18n';
 import { VaultMentionDataProvider } from '@/shared/mention/VaultMentionDataProvider';
 
 afterEach(() => {
   ProviderWorkspaceRegistry.clear();
   vi.restoreAllMocks();
   document.body.replaceChildren();
+  setLocale('en');
 });
 
 async function setup() {
@@ -328,7 +330,12 @@ it('keeps an unread result during background work and acknowledges it only when 
 });
 
 
-it.each(['running', 'idle'] as const)('uses the target session runtime to guard %s deletion from history', async target => {
+it.each([
+  ['running', 'en', 'Running sessions cannot be deleted'],
+  ['running', 'zh-CN', '无法删除正在运行的会话'],
+  ['idle', 'zh-CN', null],
+] as const)('uses the target session runtime to guard %s deletion from history in %s', async (target, locale, notice) => {
+  setLocale(locale);
   const { backend, manager, plugin, pool, conversations, view } = await setup();
   const deleteConversation = vi.fn(async () => undefined);
   const lifecycle = new ConversationLifecycle({
@@ -370,10 +377,10 @@ it.each(['running', 'idle'] as const)('uses the target session runtime to guard 
   const sending = first.controllers.inputController.sendMessage();
   await request;
   const native = backend.latest;
-  const host = document.body.createDiv();
-  surface.mountHistoryControl(host);
-  const ui = within(host);
   try {
+    const host = document.body.createDiv();
+    surface.mountHistoryControl(host);
+    const ui = within(host);
     // The active-mode archive action consumes real session status, not a supplied running flag.
     // Archive controls belong to the persistent sidebar; history's default action is Delete.
     const sidebar = document.body.createDiv();
@@ -394,11 +401,13 @@ it.each(['running', 'idle'] as const)('uses the target session runtime to guard 
     const rowTitle = target === 'running' ? 'Conversation' : 'third';
     const row = ui.getByText(rowTitle, { exact: true }).closest<HTMLElement>('.claudian-history-item')!;
     const deleting = vi.spyOn(lifecycle, 'delete');
+    vi.mocked(Notice).mockClear();
     fireEvent.click(within(row).getByRole('button', { name: 'Delete' }));
     expect(deleting).toHaveBeenCalledWith([target === 'running' ? 'conversation' : 'third']);
     await deleting.mock.results[0].value;
     expect(deleteConversation.mock.calls).toEqual(target === 'idle' ? [['third']] : []);
     expect(native.cancelCalls).toBe(0);
+    expect(vi.mocked(Notice).mock.calls).toEqual(notice === null ? [] : [[notice]]);
   } finally {
     surface.dispose();
     native.complete();

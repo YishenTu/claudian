@@ -325,6 +325,19 @@
       "undelivered": "无法投递来自 {senders} 的消息。",
       "fromLabel": "来自会话："
     },
+    "lifecycleFeedback": {
+      "runningArchive": "无法归档正在运行的会话",
+      "archiveSkippedOne": "已跳过 {count} 个已打开或正在运行的会话",
+      "archiveSkippedOther": "已跳过 {count} 个已打开或正在运行的会话",
+      "runningDelete": "无法删除正在运行的会话",
+      "deleteSkippedOne": "已跳过 {count} 个正在运行的会话",
+      "deleteSkippedOther": "已跳过 {count} 个正在运行的会话",
+      "deletedCloseFallback": "无法关闭已删除的会话",
+      "autoFailed": "无法自动归档不活跃会话",
+      "autoOne": "已自动归档 {count} 个不活跃会话",
+      "autoOther": "已自动归档 {count} 个不活跃会话",
+      "nativeFailure": "{provider} 无法归档或恢复其会话：{reason}"
+    },
     "sessionTools": {
       "noSessions": "没有会话",
       "thisSession": "本会话",
