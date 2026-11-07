@@ -434,6 +434,32 @@
       }
     }
   },
+  "inlineEdit": {
+    "commandName": "インライン編集",
+    "viewUnavailable": "インライン編集を利用できません。アクティブな Markdown ビューにアクセスできませんでした。",
+    "inserted": "挿入しました",
+    "applied": "編集を適用しました",
+    "editorUnavailable": "インライン編集を利用できません。アクティブなエディターにアクセスできませんでした。ノートを開き直してください。",
+    "stale": "元の文書または選択範囲が変更されたため、インライン編集を適用できませんでした。",
+    "initialProviderFailed": "インライン編集を利用できません。プロバイダー {provider} を起動できませんでした。",
+    "vaultFailed": "保管庫のファイルを読み込めませんでした。保管庫内の @ メンションを利用できない場合があります。",
+    "editLabel": "編集の指示",
+    "insertLabel": "挿入の指示",
+    "editPlaceholder": "編集の指示…",
+    "insertPlaceholder": "挿入の指示…",
+    "modelUnavailable": "Claudian の設定で利用可能なモデルを選択してください。",
+    "providerFailed": "プロバイダー {provider} を起動できませんでした。",
+    "actionsLabel": "インライン編集の操作",
+    "lineOne": "行",
+    "lineOther": "行",
+    "reject": "却下",
+    "accept": "承認",
+    "rejectLabel": "インライン編集を却下",
+    "acceptLabel": "インライン編集を承認",
+    "retryFallback": "エラーが発生しました。もう一度お試しください",
+    "replyPlaceholder": "返信して続行…",
+    "noResponseFallback": "エージェントから応答がありません"
+  },
   "settings": {
     "tabs": {
       "general": "一般",

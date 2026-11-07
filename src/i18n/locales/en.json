@@ -434,6 +434,32 @@
       }
     }
   },
+  "inlineEdit": {
+    "commandName": "Inline edit",
+    "viewUnavailable": "Inline edit unavailable: could not access the active Markdown view.",
+    "inserted": "Inserted",
+    "applied": "Edit applied",
+    "editorUnavailable": "Inline edit unavailable: could not access the active editor. Try reopening the note.",
+    "stale": "Inline edit was not applied because the source document or selection changed.",
+    "initialProviderFailed": "Inline edit unavailable: failed to start the {provider} provider.",
+    "vaultFailed": "Failed to load vault files. Vault @-mentions may be unavailable.",
+    "editLabel": "Edit instructions",
+    "insertLabel": "Insert instructions",
+    "editPlaceholder": "Edit instructions...",
+    "insertPlaceholder": "Insert instructions...",
+    "modelUnavailable": "Select an available model in Claudian settings.",
+    "providerFailed": "Failed to start the {provider} provider.",
+    "actionsLabel": "Inline edit actions",
+    "lineOne": "line",
+    "lineOther": "lines",
+    "reject": "Reject",
+    "accept": "Accept",
+    "rejectLabel": "Reject inline edit",
+    "acceptLabel": "Accept inline edit",
+    "retryFallback": "Error - try again",
+    "replyPlaceholder": "Reply to continue...",
+    "noResponseFallback": "No response from agent"
+  },
   "settings": {
     "tabs": {
       "general": "General",
