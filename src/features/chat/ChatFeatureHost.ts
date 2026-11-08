@@ -3,6 +3,7 @@ import type {
   Conversation,
   ConversationMeta,
   ConversationMutablePatch,
+  ConversationOrigin,
   ConversationSummary,
   ProjectMemoryOperations,
   ProjectMutations,
@@ -90,6 +91,7 @@ export interface ChatFeatureHost extends FeatureHost {
     linkedContentPath?: string;
     /** Kept only when it names a live project at creation. */
     projectId?: string;
+    origin?: ConversationOrigin;
   }): Promise<Conversation>;
   switchConversation(id: string): Promise<Conversation | null>;
   assignConversationToCurrentDevice(id: string): Promise<boolean>;

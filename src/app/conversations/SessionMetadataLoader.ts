@@ -298,6 +298,7 @@ export class SessionMetadataLoader {
       messages: [],
       linkedContentPath: meta.linkedContentPath,
       projectId: meta.projectId,
+      ...(meta.origin ? { origin: meta.origin } : {}),
       isPinned: meta.isPinned,
       isArchived: meta.isArchived,
       usage: meta.usage,

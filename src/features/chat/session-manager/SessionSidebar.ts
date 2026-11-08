@@ -200,11 +200,14 @@ export class SessionSidebar {
       contentIsNote: (contentPath: string) => this.contentIsNote(contentPath),
       searchQuery: this.isSearchActive ? this.searchQuery : undefined,
       showMetadataPopover: true,
+      showLineageFolds: true,
       showAttentionState: !isArchiveView,
       showPinnedSection: !isArchiveView,
       pinnedLinkedContentPaths: new Set(plugin.settings.pinnedLinkedContentPaths ?? []),
       showArchivedSection: isArchiveView,
-      isGroupCollapsed: (groupKey: string) => this.getDisplayedCollapse().isCollapsed(groupKey),
+      isGroupCollapsed: (groupKey: string, defaultCollapsed?: boolean) => (
+        this.getDisplayedCollapse().isCollapsed(groupKey, defaultCollapsed)
+      ),
       onGroupCollapseChange: (groupKey: string, collapsed: boolean) => {
         this.getDisplayedCollapse().setCollapsed(groupKey, collapsed);
         this.updateGroupToggleButton();

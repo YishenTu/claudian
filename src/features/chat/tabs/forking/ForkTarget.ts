@@ -192,6 +192,9 @@ async function createForkConversation(
     ...(context.linkedContentPath ? { linkedContentPath: context.linkedContentPath } : {}),
     // Creation keeps it only while the project is live.
     ...(context.projectId ? { projectId: context.projectId } : {}),
+    ...(context.sourceConversationId
+      ? { origin: { kind: 'fork', conversationId: context.sourceConversationId } as const }
+      : {}),
   });
 
   if (!isForkRequestCurrent(host, sourceLease)) {
