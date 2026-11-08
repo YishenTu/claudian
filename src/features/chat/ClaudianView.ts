@@ -28,6 +28,7 @@ import {
 import { ChatPresentationPlacement } from '@/features/chat/view/ChatPresentationPlacement';
 import { DualPaneLayout, type DualPaneLayoutElements } from '@/features/chat/view/DualPaneLayout';
 import type { ZenModeSlots, ZenModeSource, ZenPresentationPort } from '@/features/chat/zen/types';
+import { t } from '@/i18n/i18n';
 import { VaultMentionDataProvider } from '@/shared/mention/VaultMentionDataProvider';
 
 type LoadableView = {
@@ -113,7 +114,7 @@ export class ClaudianView extends ItemView implements ZenModeSource {
         // Restore enters wide itself; afterwards entering wide unloads the narrow tabs.
         if (!this.tabWorkspace.isReady) return;
         void this.tabManager?.viewerSlot.enter()
-          .catch(() => new Notice('Failed to show the session in the wide layout'));
+          .catch(() => new Notice(t('chat.tabNavigation.showWideFailed')));
       },
       renderSidebar: () => this.sessions.renderSidebar(),
       onLeaveWideRequested: () => this.sessions.leaveWide(),
@@ -439,7 +440,7 @@ export class ClaudianView extends ItemView implements ZenModeSource {
       attr: { type: 'button' },
     });
     setIcon(this.newTabButtonEl, 'square-plus');
-    this.newTabButtonEl.setAttribute('aria-label', 'New tab');
+    this.newTabButtonEl.setAttribute('aria-label', t('chat.tabNavigation.newTab'));
     this.newTabButtonEl.addEventListener('click', () => this.requestNewTab());
 
     const newBtn = navActionsEl.createEl('button', {
@@ -447,7 +448,7 @@ export class ClaudianView extends ItemView implements ZenModeSource {
       attr: { type: 'button' },
     });
     setIcon(newBtn, 'square-pen');
-    newBtn.setAttribute('aria-label', 'New conversation');
+    newBtn.setAttribute('aria-label', t('chat.tabNavigation.newConversation'));
     newBtn.addEventListener('click', () => this.requestNewConversation());
 
     this.sessions.mountHistoryControl(navActionsEl);
@@ -462,19 +463,19 @@ export class ClaudianView extends ItemView implements ZenModeSource {
   }
 
   private requestNewTab(): void {
-    void this.createNewTab().catch(() => new Notice('Failed to create tab'));
+    void this.createNewTab().catch(() => new Notice(t('chat.tabNavigation.createTabFailed')));
   }
 
   private requestNewConversation(): void {
     void (async () => {
       await this.tabManager?.createNewConversation();
       this.sessions.invalidate();
-    })().catch(() => new Notice('Failed to create conversation'));
+    })().catch(() => new Notice(t('chat.tabNavigation.createConversationFailed')));
   }
 
   private requestDualNew(): void {
     void this.startNewConversation()
-      .catch(() => new Notice('Failed to start a new conversation'));
+      .catch(() => new Notice(t('chat.tabNavigation.startConversationFailed')));
   }
 
   /** Wide: tab commands open sessions and start drafts in the viewer slot; compact: in the tab. */
@@ -541,7 +542,7 @@ export class ClaudianView extends ItemView implements ZenModeSource {
   private handleTabClick(tabId: TabId): void {
     const switched = this.tabManager?.switchToTab(tabId);
     if (switched) {
-      void switched.catch(() => new Notice('Failed to switch tab'));
+      void switched.catch(() => new Notice(t('chat.tabNavigation.switchFailed')));
     }
   }
 
@@ -550,7 +551,7 @@ export class ClaudianView extends ItemView implements ZenModeSource {
       await this.tabManager?.closeTab(tabId);
       this.updateTabBarVisibility();
     } catch {
-      new Notice('Failed to close tab');
+      new Notice(t('chat.tabNavigation.closeFailed'));
     }
   }
 
