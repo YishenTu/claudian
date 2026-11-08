@@ -572,6 +572,7 @@
       "providers": "提供者",
       "skills": "技能"
     },
+    "saveFailed": "儲存設定失敗",
     "providerSettings": {
       "unavailable": "無法使用提供者設定。",
       "loadFailed": "無法載入提供者設定：{message}"

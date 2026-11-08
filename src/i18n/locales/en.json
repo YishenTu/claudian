@@ -572,6 +572,7 @@
       "providers": "Providers",
       "skills": "Skills"
     },
+    "saveFailed": "Failed to save settings",
     "providerSettings": {
       "unavailable": "Provider settings are unavailable.",
       "loadFailed": "Could not load provider settings: {message}"

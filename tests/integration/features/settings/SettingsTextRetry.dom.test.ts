@@ -6,51 +6,60 @@ import { deserialize, serialize } from 'node:v8';
 import { axe } from '@test/helpers/accessibility';
 import { beginExecution, createHarness, createSubmission, requestedScope } from '@test/helpers/ChatExecutionHarness';
 import { createFeatureHostFixture } from '@test/helpers/FeatureHostFixture';
-import { createObsidianPlugin } from '@test/helpers/ObsidianSettingsHost';
+import { createObsidianPlugin, mountSettingTab } from '@test/helpers/ObsidianSettingsHost';
 import { testDate } from '@test/helpers/testClock';
 import { fireEvent, waitFor, within } from '@testing-library/dom';
 import { Notice } from 'obsidian';
 
 import type { ClaudianSettings } from '@/core/types';
 import { ClaudianSettingTab } from '@/features/settings/ClaudianSettings';
-import { t } from '@/i18n/i18n';
+import { setLocale, t } from '@/i18n/i18n';
 
-afterEach(() => { document.body.replaceChildren(); vi.clearAllMocks(); });
+afterEach(() => { setLocale('en'); document.body.replaceChildren(); vi.restoreAllMocks(); vi.clearAllMocks(); });
 
-it('retries an unchanged user-name draft on the next blur after a rejected save', async () => {
+it.each([
+  { locale: 'en' as const, label: 'What should Claudian call you?', notice: 'Failed to save settings' },
+  { locale: 'zh-CN' as const, label: 'Claudian 应该如何称呼你？', notice: '保存设置失败' },
+])('retries an unchanged user-name draft after a rejected save in $locale', async ({ locale, label, notice }) => {
   globalThis.structuredClone ??= value => deserialize(serialize(value));
-  let saved = JSON.stringify({ userName: 'Before' });
-  const persist = vi.fn().mockRejectedValueOnce(new Error('Disk unavailable')).mockImplementation(async draft => {
-    saved = JSON.stringify(draft);
-  });
-  const { settings, host } = await createFeatureHostFixture({
-    settings: { userName: 'Before', enableAutoTitleGeneration: false },
+  const persist = vi.fn<(draft: ClaudianSettings) => Promise<void>>().mockResolvedValue(undefined);
+  const fixture = await createFeatureHostFixture({
+    settings: { locale, userName: 'Before', enableAutoTitleGeneration: false },
     beforePersist: persist,
   });
+  const { settings, host, coordinator, settingsStorage: storage } = fixture;
+  await storage.save(settings);
   const runProviderExecutionTransition = vi.spyOn(host.providerHost, 'runProviderExecutionTransition');
   const tab = new ClaudianSettingTab(host.app, createObsidianPlugin(host.app), host);
   const container = document.body.createDiv();
-  tab['renderGeneralTab'](container);
-  const row = within(container).getByRole('textbox', { name: t('settings.userName.name') }).closest<HTMLElement>('.setting-item')!;
-  const input = within(row).getByRole('textbox') as HTMLInputElement;
-  fireEvent.input(input, { target: { value: 'After' } });
-  fireEvent.blur(input);
-  await waitFor(() => expect(Notice).toHaveBeenCalledWith('Failed to save settings'));
-  expect(settings.userName).toBe('Before');
-  expect(JSON.parse(saved).userName).toBe('Before');
-  expect(input.value).toBe('After');
-  expect(runProviderExecutionTransition).not.toHaveBeenCalled();
+  const cleanup = mountSettingTab(tab, container);
+  try {
+    const input = within(container).getByRole<HTMLInputElement>('textbox', { name: label });
+    const row = input.closest<HTMLElement>('.setting-item')!;
+    persist.mockRejectedValueOnce(new Error('Disk unavailable'));
+    fireEvent.input(input, { target: { value: 'After' } });
+    fireEvent.blur(input);
+    await waitFor(() => expect(Notice).toHaveBeenCalledWith(notice));
+    expect(settings.userName).toBe('Before');
+    expect((await storage.load()).userName).toBe('Before');
+    expect(input.value).toBe('After');
+    expect(runProviderExecutionTransition).not.toHaveBeenCalled();
 
-  fireEvent.focus(input);
-  fireEvent.blur(input);
-
-  await waitFor(() => expect(settings.userName).toBe('After'));
-  expect(JSON.parse(saved).userName).toBe('After');
-  expect(settings.userName).toBe('After');
-  expect(input.value).toBe('After');
-  expect(persist).toHaveBeenCalledTimes(2);
-  await waitFor(() => expect(runProviderExecutionTransition).toHaveBeenCalledTimes(1));
-  expect((await axe(row, { runOnly: ['aria-valid-attr', 'aria-valid-attr-value'] })).violations).toEqual([]);
+    fireEvent.focus(input);
+    fireEvent.blur(input);
+    await waitFor(() => expect(settings.userName).toBe('After'));
+    await coordinator.mutateConditionally(() => false);
+    expect((await storage.load()).userName).toBe('After');
+    expect(input.value).toBe('After');
+    expect(persist).toHaveBeenCalledTimes(2);
+    await waitFor(() => expect(runProviderExecutionTransition).toHaveBeenCalledTimes(1));
+    expect((await axe(row, { runOnly: ['aria-valid-attr', 'aria-valid-attr-value'] })).violations).toEqual([]);
+  } finally {
+    persist.mockResolvedValue(undefined);
+    cleanup();
+    await coordinator.mutateConditionally(() => false);
+    await fixture.dispose();
+  }
 });
 
 it.each([false, true])('shows the newest text draft when settings reopen before a successful save finishes (newer edit: %s)', async newerEdit => {

@@ -572,6 +572,7 @@
       "providers": "提供商",
       "skills": "技能"
     },
+    "saveFailed": "保存设置失败",
     "providerSettings": {
       "unavailable": "提供商设置不可用。",
       "loadFailed": "无法加载提供商设置：{message}"

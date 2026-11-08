@@ -3,12 +3,13 @@ import { axe } from '@test/helpers/accessibility';
 import type { DesktopVault } from '@test/helpers/core/DesktopVault';
 import { createFeatureHostFixture } from '@test/helpers/FeatureHostFixture';
 import { fireEvent, screen, waitFor, within } from '@testing-library/dom';
+import { Notice } from 'obsidian';
 
 import type { ClaudianSettings } from '@/core/types';
 import { AGENT_SKILLS_ROOT, CLAUDE_COMMANDS_ROOT, CLAUDE_SKILLS_ROOT } from '@/features/agent-skills/AgentSkillRepository';
 import { ClaudeSkillSync } from '@/features/agent-skills/ClaudeSkillSync';
 import { SkillsSettingsTab } from '@/features/agent-skills/SkillsSettingsTab';
-import { t } from '@/i18n/i18n';
+import { setLocale, t } from '@/i18n/i18n';
 
 function skill(name: string, description = 'Description'): string {
   return `---\nname: ${name}\ndescription: ${description}\n---\nInstructions\n`;
@@ -18,20 +19,26 @@ describe('SkillsSettingsTab', () => {
   let vault: DesktopVault;
   let settings: ClaudianSettings;
   let tab: SkillsSettingsTab | null;
+  let persist: ReturnType<typeof vi.fn<(draft: ClaudianSettings) => Promise<void>>>;
   let fixture: Awaited<ReturnType<typeof createFeatureHostFixture>>;
 
   beforeEach(async () => {
     document.body.replaceChildren();
-    fixture = await createFeatureHostFixture({ settings: { hiddenCommands: ['compact'] } });
+    persist = vi.fn<(draft: ClaudianSettings) => Promise<void>>().mockResolvedValue(undefined);
+    fixture = await createFeatureHostFixture({ settings: { hiddenCommands: ['compact'] }, beforePersist: persist });
     vault = fixture.vault;
     settings = fixture.settings;
     tab = null;
   });
 
   afterEach(async () => {
+    persist.mockResolvedValue(undefined);
     tab?.dispose();
+    await fixture.coordinator.mutateConditionally(() => false);
     await fixture.dispose();
+    setLocale('en');
     vi.useRealTimers();
+    vi.restoreAllMocks(); vi.clearAllMocks();
   });
 
   function render(): HTMLElement {
@@ -159,6 +166,32 @@ describe('SkillsSettingsTab', () => {
 
     expect(await screen.findByRole('button', { name: t('settings.skills.actions.resync') })).toBeTruthy();
     expect(screen.queryByRole('img', { name: t('settings.skills.synced') })).toBeNull();
+  });
+
+  it('localizes a rejected hidden-command save and retries the retained draft on blur', async () => {
+    await fixture.coordinator.mutate(draft => { draft.locale = 'zh-CN'; });
+    setLocale('zh-CN');
+    render();
+    const textarea = screen.getByRole<HTMLTextAreaElement>('textbox', { name: '隐藏的命令和技能' });
+    const row = textarea.closest<HTMLElement>('.setting-item')!;
+    const raw = '/review\nskill:review\n\nreview';
+    persist.mockClear().mockRejectedValueOnce(new Error('Disk unavailable'));
+
+    fireEvent.input(textarea, { target: { value: raw } });
+    fireEvent.blur(textarea);
+    await waitFor(() => expect(Notice).toHaveBeenCalledWith('保存设置失败'));
+    expect(settings.hiddenCommands).toEqual(['compact']);
+    expect((await fixture.settingsStorage.load()).hiddenCommands).toEqual(['compact']);
+    expect(textarea.value).toBe(raw);
+
+    fireEvent.focus(textarea);
+    fireEvent.blur(textarea);
+    await waitFor(() => expect(settings.hiddenCommands).toEqual(['review', 'skill:review']));
+    await fixture.coordinator.mutateConditionally(() => false);
+    expect((await fixture.settingsStorage.load()).hiddenCommands).toEqual(['review', 'skill:review']);
+    expect(textarea.value).toBe(raw);
+    expect(persist).toHaveBeenCalledTimes(2);
+    expect((await axe(row, { runOnly: ['aria-valid-attr', 'aria-valid-attr-value'] })).violations).toEqual([]);
   });
 
   it('edits the global hidden-command list', async () => {
