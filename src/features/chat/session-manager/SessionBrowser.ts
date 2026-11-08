@@ -927,7 +927,9 @@ export class SessionBrowser {
       cls: 'claudian-session-children-toggle',
       attr: { type: 'button' },
     });
-    const chevron = toggle.createSpan({ cls: 'claudian-session-children-chevron', attr: { 'aria-hidden': 'true' } });
+    // The corner arrow reads as "started from the row above"; the revealed rows show the open state.
+    const sign = toggle.createSpan({ cls: 'claudian-session-children-sign', attr: { 'aria-hidden': 'true' } });
+    setIcon(sign, 'corner-down-right');
     toggle.createSpan({ cls: 'claudian-session-children-label', text: lineageChildrenLabel(children) });
     const statusKind = groupIndicatorKind(statuses, options);
     const statusIndicator = statusKind === null
@@ -937,8 +939,6 @@ export class SessionBrowser {
 
     const present = (): void => {
       toggle.setAttribute('aria-expanded', isCollapsed ? 'false' : 'true');
-      chevron.empty();
-      setIcon(chevron, isCollapsed ? 'chevron-right' : 'chevron-down');
       statusIndicator?.toggleClass(
         statusKind === 'running'
           ? 'claudian-session-group-running-indicator--visible'

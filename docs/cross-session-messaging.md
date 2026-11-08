@@ -48,7 +48,7 @@ For other Obsidian plugins that want to send prompts to sessions, see the [Plugi
 
 Without a `sessionId`, the message starts a new session. Omitted choices follow your new-tab defaults. An agent can pick a `provider` (which then needs a `model`), a `model`, and a `reasoning` level. Invalid choices are rejected with the valid options listed. A session started from a project member joins that project.
 
-The new session records the session that started it, and the session list shows the two together. In the sidebar, sessions an agent started, and forks, fold under the session they came from, behind a collapsed row such as **2 agent sessions · 1 fork**:
+The new session records the session that started it, and the session list shows the two together. In the sidebar, sessions an agent started, and forks, fold under the session they came from, behind a collapsed row such as **2 Agent Sessions · 1 Fork**:
 
 - A fold sits where its most recently active session would, and opens on its own while it holds the session you are in.
 - A collapsed fold shows its sessions' combined status, such as running or waiting for input.

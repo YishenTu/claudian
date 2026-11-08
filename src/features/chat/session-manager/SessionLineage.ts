@@ -24,13 +24,13 @@ function plural(count: number, singular: string, pluralForm: string): string {
   return `${count} ${count === 1 ? singular : pluralForm}`;
 }
 
-/** Counts sessions by how they were started, such as "2 agent sessions · 1 fork". */
+/** Counts sessions by how they were started, such as "2 Agent Sessions · 1 Fork". */
 export function lineageChildrenLabel(children: readonly ConversationMeta[]): string {
   const started = children.filter(child => child.origin?.kind === 'session-tool').length;
   const forked = children.filter(child => child.origin?.kind === 'fork').length;
   return [
-    started > 0 ? plural(started, 'agent session', 'agent sessions') : '',
-    forked > 0 ? plural(forked, 'fork', 'forks') : '',
+    started > 0 ? plural(started, 'Agent Session', 'Agent Sessions') : '',
+    forked > 0 ? plural(forked, 'Fork', 'Forks') : '',
   ].filter(Boolean).join(' · ');
 }
 

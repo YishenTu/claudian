@@ -78,7 +78,7 @@ afterEach(() => {
 
 it('folds sessions a session started under it, collapsed behind a toggle that carries their status', async () => {
   const { container, view } = await setup();
-  const toggle = view.getByRole('button', { name: /^1 agent session · 1 fork/ });
+  const toggle = view.getByRole('button', { name: /^1 Agent Session · 1 Fork/ });
 
   expect(toggle.getAttribute('aria-expanded')).toBe('false');
   const running = within(toggle).getByLabelText('Running');
@@ -91,7 +91,7 @@ it('folds sessions a session started under it, collapsed behind a toggle that ca
   expect(row(view, 'parent session').compareDocumentPosition(toggle) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 
   fireEvent.click(toggle);
-  const expanded = view.getByRole('button', { name: /^1 agent session · 1 fork/ });
+  const expanded = view.getByRole('button', { name: /^1 Agent Session · 1 Fork/ });
   expect(expanded.getAttribute('aria-expanded')).toBe('true');
   // The rows show their own status once open.
   expect(running.hasClass('claudian-session-group-running-indicator--visible')).toBe(false);
@@ -108,7 +108,7 @@ it('folds sessions a session started under it, collapsed behind a toggle that ca
 
 it('keeps keyboard focus on the disclosure while it opens and closes in place', async () => {
   const { view } = await setup();
-  const toggle = view.getByRole('button', { name: /^1 agent session · 1 fork/ });
+  const toggle = view.getByRole('button', { name: /^1 Agent Session · 1 Fork/ });
   toggle.focus();
 
   fireEvent.click(toggle);
@@ -135,7 +135,7 @@ it('shows the folded running child on its collapsed Linked content group', async
 
 it('describes lineage in the row popover', async () => {
   const { view } = await setup();
-  fireEvent.click(view.getByRole('button', { name: /^1 agent session · 1 fork/ }));
+  fireEvent.click(view.getByRole('button', { name: /^1 Agent Session · 1 Fork/ }));
   // The popover is reused across rows, so only its shown rows describe the focused one.
   const popoverText = (title: string): string => {
     fireEvent.focusIn(row(view, title));
@@ -155,7 +155,7 @@ it('describes lineage in the row popover', async () => {
 
 it('opens the parent session from a child row menu, and offers it only while the parent exists', async () => {
   const { onSelectConversation, view } = await setup();
-  fireEvent.click(view.getByRole('button', { name: /^1 agent session · 1 fork/ }));
+  fireEvent.click(view.getByRole('button', { name: /^1 Agent Session · 1 Fork/ }));
 
   fireEvent.contextMenu(row(view, 'agent session'));
   const menu = menus().at(-1)!;
@@ -218,7 +218,7 @@ it('restores an archived parent with the archived sessions folded under it', asy
 
 it('opens a fold that holds the current session until the user collapses it', async () => {
   const { render, view } = await setup(lineage(), {}, 'fork');
-  const toggle = () => view.getByRole('button', { name: /^1 agent session · 1 fork/ });
+  const toggle = () => view.getByRole('button', { name: /^1 Agent Session · 1 Fork/ });
 
   expect(toggle().getAttribute('aria-expanded')).toBe('true');
   // The current session's row is not a selectable button.
@@ -233,7 +233,7 @@ it('opens a fold that holds the current session until the user collapses it', as
 it('lists every session as its own row on a surface that does not fold lineage', async () => {
   const { view } = await setup(lineage(), { showLineageFolds: false });
 
-  expect(view.queryByRole('button', { name: /^1 agent session · 1 fork/ })).toBeNull();
+  expect(view.queryByRole('button', { name: /^1 Agent Session · 1 Fork/ })).toBeNull();
   for (const title of ['parent session', 'agent session', 'fork session', 'orphan session']) {
     expect(row(view, title)).toBeTruthy();
   }
@@ -265,7 +265,7 @@ it('offers the parent only while it is active, and never in the archive', async 
   const archive = await setup(lineage().map(conversation => ({ ...conversation, isArchived: true })), {
     sessionScope: 'archived', sessionActionMode: 'archived', showArchivedSection: true, showPinnedSection: false,
   });
-  fireEvent.click(archive.view.getByRole('button', { name: /^1 agent session · 1 fork/ }));
+  fireEvent.click(archive.view.getByRole('button', { name: /^1 Agent Session · 1 Fork/ }));
   fireEvent.contextMenu(row(archive.view, 'agent session'));
   expect(titles(menus().at(-1)!)).toEqual(expect.arrayContaining(['Restore']));
   expect(titles(menus().at(-1)!)).not.toContain('Open parent session');

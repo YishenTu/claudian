@@ -740,12 +740,12 @@
   outline-offset: -2px;
 }
 
-.claudian-session-children-chevron {
+.claudian-session-children-sign {
   display: flex;
   flex: 0 0 auto;
 }
 
-.claudian-session-children-chevron svg {
+.claudian-session-children-sign svg {
   width: 12px;
   height: 12px;
 }
