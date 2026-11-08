@@ -321,6 +321,15 @@ it('keeps open inline suggestions anchored after note scroll and viewport resize
   const list = screen.getByRole('listbox', { name: 'Input suggestions' });
   expect(list.style.getPropertyValue('--claudian-fixed-dropdown-bottom')).toBe(`${window.innerHeight - top + 8}px`);
   const active = input().getAttribute('aria-activedescendant');
+  for (const modifier of ['shiftKey', 'ctrlKey', 'metaKey', 'altKey']) {
+    const event = new KeyboardEvent('keydown', { key: 'Tab', [modifier]: true, bubbles: true, cancelable: true });
+    input().dispatchEvent(event);
+    expect(event.defaultPrevented).toBe(false);
+    expect(input().value).toBe('@s');
+    expect(screen.getByRole('listbox', { name: 'Input suggestions' })).toBe(list);
+    expect(input().getAttribute('aria-activedescendant')).toBe(active);
+  }
+
   measure.mockClear();
   list.scrollTop = 25;
   fireEvent.scroll(list);
@@ -343,6 +352,9 @@ it('keeps open inline suggestions anchored after note scroll and viewport resize
   expect(measure).not.toHaveBeenCalled();
   typeInstruction('@s');
   await screen.findByRole('option', { name: /src\// });
+  fireEvent.keyDown(input(), { key: 'Tab' });
+  expect(input().value).toBe('@src/ ');
+  expect(list.hasClass('is-visible')).toBe(false);
   session.close();
   measure.mockClear();
   fireEvent.scroll(h.editorView.scrollDOM);

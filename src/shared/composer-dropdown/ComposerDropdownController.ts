@@ -113,6 +113,7 @@ export class ComposerDropdownController {
     // Sends and caret moves change the input without an input event; each key observes them before it applies.
     if (this.dismissed) this.#findSourceMatch();
     if (!this.view.isVisible() || event.isComposing) return false;
+    if (event.key === 'Tab' && (event.shiftKey || event.ctrlKey || event.metaKey || event.altKey)) return false;
     switch (event.key) {
       case 'ArrowDown':
         if (this.selectedIndex < 0) return false;

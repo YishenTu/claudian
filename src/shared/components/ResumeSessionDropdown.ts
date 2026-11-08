@@ -69,6 +69,7 @@ export class ResumeSessionDropdown {
 
   handleKeydown(e: KeyboardEvent): boolean {
     if (!this.isVisible()) return false;
+    if (e.key === 'Tab' && (e.shiftKey || e.ctrlKey || e.metaKey || e.altKey)) return false;
 
     switch (e.key) {
       case 'ArrowDown':
