@@ -115,7 +115,6 @@ export class TabManager implements TabManagerInterface {
   readonly viewerSlot: ViewerSlot;
   private destructionPromise: Promise<void> | null = null;
   private shutdownDrainPromise: Promise<void> | null = null;
-  private shutdownSnapshotOpen = false;
 
   constructor(
     plugin: ChatFeatureHost,
@@ -195,7 +194,6 @@ export class TabManager implements TabManagerInterface {
       navigation: this.navigation,
       layoutPolicy,
       forkTargetHost,
-      isShutdownSnapshotOpen: () => this.shutdownSnapshotOpen,
       inheritedSeed: tab => inheritedDraftSeed(this.plugin.projects, tab),
       startNew: (tab, seed) => this.navigation.enqueue(tab, async (isCurrent) => {
         await this.rebindTab(tab, null, isCurrent, { seed });
@@ -876,14 +874,11 @@ export class TabManager implements TabManagerInterface {
 
   /** Synchronously fences new work while preserving state for the shutdown snapshot. */
   beginShutdown(): void {
-    if (this.membership.isDestroyed()) return;
-    this.membership.markDestroyed();
-    this.shutdownSnapshotOpen = true;
+    this.membership.beginShutdown();
   }
 
   /** Seals the final identity snapshot so late runtime callbacks cannot mutate tab state. */
   sealShutdownSnapshot(): void {
-    this.shutdownSnapshotOpen = false;
     this.membership.sealIdentities();
   }
 

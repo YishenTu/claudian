@@ -425,7 +425,7 @@ it('leaves no waiting indicator behind when plugin shutdown dismisses a pending 
   await approval;
 
   expect(tab.state.isStreaming).toBe(false);
-  expect(tab.state.thinkingEl).toBeNull();
+  expect(tab.dom.messagesEl.querySelector('.claudian-thinking')).toBeNull();
   expect(tab.state.waitingStatus).toBeNull();
 });
 

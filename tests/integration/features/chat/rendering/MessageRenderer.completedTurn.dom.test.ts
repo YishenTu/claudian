@@ -13,7 +13,7 @@ import { fireEvent, waitFor, within } from '@testing-library/dom';
 import { Component, MarkdownRenderer } from 'obsidian';
 
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
-import type { ChatMessage, ToolCallInfo } from '@/core/types';
+import type { ChatMessage, Conversation, ToolCallInfo } from '@/core/types';
 import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
 import { ConversationController } from '@/features/chat/conversation/ConversationController';
 import { LinkedContentController } from '@/features/chat/linked-content';
@@ -742,12 +742,15 @@ it('previews a branch without saving it and restores history when focus leaves t
     createExecutionBackend: () => ({ providerId: 'pi', createSession: () => native }),
   });
   onTestFinished(() => ProviderRegistry.register('pi', piProviderRegistration));
+  const conversation: Conversation = { id: 'pi-chat', providerId: 'pi', title: 'History', messages: history,
+    sessionId: null, createdAt: testDate().getTime(), lastActivityAt: testDate().getTime() };
   const pool = createSessionRuntimePool(() => plugin);
   const messaging = new SessionMessagingService({
     getHost: () => plugin, getActiveConversationId: () => 'pi-chat', refreshModelControls: () => undefined,
   });
   const plugin: ChatFeatureHost = await createChatFeatureHost({
     sessionRuntimes: pool, bindSessionTools: id => messaging.bindSessionTools(id), updateConversation: vi.fn(), projects: createProjectsFake(),
+    getConversationById: async id => (id === conversation.id ? conversation : null),
     executionPersistence: {
       registerExecutionBinding: vi.fn(), releaseExecutionBinding: vi.fn(),
       assertConversationExecutionAuthority: vi.fn(), recordConversationActivity: vi.fn(),
@@ -756,9 +759,7 @@ it('previews a branch without saving it and restores history when focus leaves t
   });
   const component = new Component();
   const tab = await createTabRuntime({
-    plugin, component, containerEl: document.body.createDiv(),
-    conversation: { id: 'pi-chat', providerId: 'pi', title: 'History', messages: history,
-      sessionId: null, createdAt: testDate().getTime(), lastActivityAt: testDate().getTime() },
+    plugin, component, containerEl: document.body.createDiv(), conversation,
     mentionDataProvider: new VaultMentionDataProvider(plugin.app), getProviderCatalogConfig: () => null,
     isRuntimeLive: () => true, openConversation: async () => undefined, startNewConversation: async () => undefined,
   });
@@ -768,8 +769,7 @@ it('previews a branch without saving it and restores history when focus leaves t
   const controller = tab.controllers.conversationController;
   await tab.executionCoordinator.bindConversation({ conversationId: 'pi-chat', providerId: 'pi' });
   await tab.executionCoordinator.prepare();
-  state.messages = history;
-  tab.hydrationState = 'ready';
+  await tab.session.runtime.model.hydrate();
   const send = inputComposerEl.createEl('button', { text: 'Send', attr: { type: 'button' } });
   const outside = document.body.createEl('button', { text: 'Outside', attr: { type: 'button' } });
   renderer.renderMessages(history, () => 'Hello');

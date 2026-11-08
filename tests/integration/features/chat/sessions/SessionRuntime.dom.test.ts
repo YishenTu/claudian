@@ -163,6 +163,38 @@ it('keeps a model when history release declines and releases unrelated unowned h
   await destroyTab(second);
 });
 
+it('keeps a detached model whose eviction save was overtaken by a newer change', async () => {
+  const releases: string[] = [];
+  const h = await setup({ releaseHistory: async (id, canRelease) => {
+    if (!canRelease()) return false;
+    releases.push(id);
+    return true;
+  } });
+  const at = testDate().getTime();
+  const tab = await h.attach();
+  const runtime = tab.session.runtime;
+  const model = runtime.model;
+  const state = model.state;
+  state.messages = [...state.messages, { id: 'local', role: 'assistant', content: 'Unsaved reply', timestamp: at }];
+  state.markConversationDirty();
+  const write = vi.spyOn(h.plugin, 'updateConversation');
+  let finishWrite!: () => void;
+  write.mockImplementationOnce(() => new Promise<void>(resolve => { finishWrite = resolve; }));
+
+  await destroyTab(tab);
+  await vi.waitFor(() => expect(write).toHaveBeenCalledTimes(1));
+  // Output that lands while eviction's save is writing is not in that save.
+  state.messages = [...state.messages, { id: 'later', role: 'assistant', content: 'Later reply', timestamp: at }];
+  state.markConversationDirty();
+  finishWrite();
+  await vi.waitFor(() => expect(state.hasPendingConversationSave).toBe(true));
+  await new Promise<void>(resolve => setImmediate(resolve));
+
+  expect(releases).toEqual([]);
+  expect(runtime.peekModel === model).toBe(true);
+  expect(model.state.messages.map(message => message.id)).toContain('later');
+});
+
 // The user continues a conversation in the provider's own client, which changes its native revision.
 async function setupRevisionedSession(options: RuntimePoolFixtureOptions = {}) {
   const native = { revision: 'before' };

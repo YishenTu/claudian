@@ -26,9 +26,10 @@ export interface SessionMetadataLoaderOptions {
  * conversations.
  */
 export class SessionMetadataLoader {
-  private stopped = false;
+  /** Set once disposal stops admission. */
   private disposal: Promise<void> | null = null;
   private readonly requestedLoads = new Set<Promise<void>>();
+  /** The background scan has not started; disposal also cancels it. */
   private pendingScan = true;
   private loadedAll = false;
   private scheduledLoadTimer: number | null = null;
@@ -61,7 +62,6 @@ export class SessionMetadataLoader {
   /** Stop admission synchronously and join already-admitted repository operations. */
   dispose(): Promise<void> {
     if (this.disposal) return this.disposal;
-    this.stopped = true;
     this.pendingScan = false;
     if (this.scheduledLoadTimer !== null) {
       window.clearTimeout(this.scheduledLoadTimer);
@@ -75,7 +75,7 @@ export class SessionMetadataLoader {
   }
 
   private isStopped(): boolean {
-    return this.stopped || this.options.isUnloading();
+    return this.disposal !== null || this.options.isUnloading();
   }
 
   private async loadRemaining(): Promise<void> {

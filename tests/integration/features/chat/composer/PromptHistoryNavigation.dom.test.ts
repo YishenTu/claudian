@@ -103,7 +103,7 @@ async function createView(provisional = false, options: { managed?: boolean; dra
     isRuntimeLive: () => true, lifecycleState: provisional ? 'provisional' : 'open',
     openConversation: async () => {}, startNewConversation: async () => {},
   });
-  tab.hydrationState = 'ready';
+  await tab.session.runtime.model.hydrate();
   if (!options.draft) {
     await tab.executionCoordinator.bindConversation({ conversationId: conversation.id, providerId: 'claude' });
     await tab.executionCoordinator.prepare();

@@ -288,7 +288,7 @@ export class ConversationController {
     try { await this.persist(updateLastActivity, options); }
     catch (error) {
       // The unsaved state stays dirty so a later save, such as before release, retries it.
-      this.deps.state.hasPendingConversationSave = true;
+      this.deps.state.markConversationDirty();
       throw error;
     } finally { this.pendingSaves--; this.deps.onPersistenceChanged?.(); }
   }
@@ -311,6 +311,8 @@ export class ConversationController {
       throw new Error('Cannot save messages before the Conversation shell is created');
     }
 
+    // Changes made while the write is pending are not in this snapshot and stay pending.
+    const revision = state.conversationRevision;
     const updates: ConversationMutablePatch = {
       messages: state.messages,
       usage: state.usage ?? undefined,
@@ -329,7 +331,7 @@ export class ConversationController {
     }
 
     await plugin.updateConversation(state.currentConversationId!, updates);
-    state.hasPendingConversationSave = false;
+    state.markConversationSaved(revision);
     await this.#branching.refreshMetadata();
   }
 
@@ -369,7 +371,7 @@ export class ConversationController {
     state.messages = [...conversation.messages];
     state.usage = conversation.usage ?? null;
     state.autoScrollEnabled = plugin.settings.enableAutoScroll ?? true;
-    state.hasPendingConversationSave = false;
+    state.discardPendingConversationSave();
 
     this.deps.getLinkedContentController().lock(conversation.linkedContentPath);
 
@@ -385,7 +387,7 @@ export class ConversationController {
     state.clearMessages();
     state.usage = null;
     state.autoScrollEnabled = plugin.settings.enableAutoScroll ?? true;
-    state.hasPendingConversationSave = false;
+    state.discardPendingConversationSave();
 
     await this.#getExecutionCoordinator()?.bindConversation(null);
     this.deps.onConversationHydrated?.();

@@ -150,8 +150,8 @@ export interface TabDOMElements {
  */
 export interface AssembledTabRuntime extends ChatTab {
   readonly session: TabSession;
-  /** State of loading the provider-owned conversation into the tab UI. */
-  hydrationState: TabHydrationState;
+  /** State of loading the provider-owned conversation into the tab UI; owned by the session model. */
+  readonly hydrationState: TabHydrationState;
 
   /** The attached session's provider execution; it outlives this tab presentation. */
   readonly executionCoordinator: ChatExecutionCoordinator;

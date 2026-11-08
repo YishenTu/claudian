@@ -99,11 +99,17 @@ async function createCodexChildTab() {
 
   await coordinator.bindConversation({ conversationId: 'conversation', providerId: 'claude' });
   await coordinator.prepare();
+  // The provider reports background work while a published child is still running.
+  const running = new Set<string>();
   const tracker = new CodexSubagentTracker(
-    subagent => backend.latest.emitSessionEvent({ type: 'subagent_updated', subagent }),
+    subagent => {
+      if (subagent.status === 'running') running.add(subagent.id);
+      else running.delete(subagent.id);
+      backend.latest.emitSessionEvent({ type: 'subagent_updated', subagent });
+    },
     async () => { throw new Error('Child read unavailable'); },
   );
-  Object.assign(backend.latest, { hasBackgroundWork: () => tracker.hasBackgroundWork() });
+  Object.assign(backend.latest, { hasBackgroundWork: () => running.size > 0 });
 
   state.currentConversationId = 'conversation';
   const message: ChatMessage = {

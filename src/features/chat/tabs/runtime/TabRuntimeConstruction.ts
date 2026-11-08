@@ -66,7 +66,7 @@ export interface PublishedTabRuntimeRef {
 export interface TabRuntimeCore extends Readonly<TabIdentity> {
   readonly session: TabSession;
   readonly id: TabId;
-  hydrationState: AssembledTabRuntime['hydrationState'];
+  readonly hydrationState: AssembledTabRuntime['hydrationState'];
   readonly executionCoordinator: ChatExecutionCoordinator;
   readonly providerCatalogResolver: ProviderCatalogResolver;
   readonly captureReviewableSettlement: ((outcome: TabReviewOutcome) => () => void) | null;

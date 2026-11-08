@@ -44,18 +44,28 @@ export interface ManagedStdioProcessExitState {
 
 type ErrorListener = (error: Error) => void;
 type LifecycleListener = (state: ManagedStdioProcessExitState) => void;
+/** The first error or exit, whichever ends the process for its owner; `error` is set unless it exited cleanly. */
+type TerminationListener = (error?: Error) => void;
+type TerminationDescriber = (code: number | null, signal: NodeJS.Signals | null) => Error;
+
+/**
+ * `running` holds a child that may still exit; `ended` is terminal for liveness, while exit and
+ * close events keep refining its exit state.
+ */
+type ProcessState =
+  | { readonly kind: 'unstarted' }
+  | { readonly kind: 'running'; readonly proc: ChildProcessWithoutNullStreams; spawnConfirmed: boolean; error?: Error }
+  | { readonly kind: 'ended'; readonly proc: ChildProcessWithoutNullStreams | null; exit: ManagedStdioProcessExitState };
 
 export class ManagedStdioProcess {
-  private alive = false;
+  private state: ProcessState = { kind: 'unstarted' };
   private readonly closeListeners = new Set<LifecycleListener>();
   private readonly errorListeners = new Set<ErrorListener>();
-  private exitState: ManagedStdioProcessExitState | null = null;
   private readonly exitListeners = new Set<LifecycleListener>();
-  private proc: ChildProcessWithoutNullStreams | null = null;
+  private readonly terminationListeners = new Set<{ listener: TerminationListener; describe: TerminationDescriber }>();
+  private terminationNotified = false;
   private resolvedSpawnSpec: WindowsCmdShimSpawnSpec | null = null;
   private shutdownPromise: Promise<void> | null = null;
-  private spawnConfirmed = false;
-  private startAttempted = false;
   private stderrBuffer = '';
   private readonly stderrDecoder = new StringDecoder('utf8');
   private stderrDataListener: ((chunk: Buffer | string) => void) | null = null;
@@ -64,6 +74,14 @@ export class ManagedStdioProcess {
 
   constructor(private readonly options: ManagedStdioProcessOptions) {
     this.#ownsProcessGroup = options.killProcessTree === true && process.platform !== 'win32';
+  }
+
+  private get proc(): ChildProcessWithoutNullStreams | null {
+    return this.state.kind === 'unstarted' ? null : this.state.proc;
+  }
+
+  private get alive(): boolean {
+    return this.state.kind === 'running';
   }
 
   get stdin(): Writable {
@@ -79,10 +97,9 @@ export class ManagedStdioProcess {
   }
 
   start(): void {
-    if (this.startAttempted || this.shutdownPromise) {
+    if (this.state.kind !== 'unstarted' || this.shutdownPromise) {
       return;
     }
-    this.startAttempted = true;
 
     const resolvedSpawnSpec = resolveWindowsCmdShimSpawnSpec(this.options);
     this.resolvedSpawnSpec = resolvedSpawnSpec;
@@ -100,24 +117,20 @@ export class ManagedStdioProcess {
       });
     } catch (error) {
       const spawnError = toError(error);
-      this.exitState = {
-        closed: true,
-        code: null,
-        error: spawnError,
-        signal: null,
-      };
+      this.state = { kind: 'ended', proc: null, exit: { closed: true, code: null, error: spawnError, signal: null } };
       this.#notifyError(spawnError);
       this.#clearLifecycleListeners();
       throw spawnError;
     }
 
-    this.proc = proc;
-    this.spawnConfirmed = typeof proc.pid === 'number';
-    this.alive = (
+    const alive = (
       (proc.exitCode === null || proc.exitCode === undefined)
       && (proc.signalCode === null || proc.signalCode === undefined)
       && !proc.killed
     );
+    this.state = alive
+      ? { kind: 'running', proc, spawnConfirmed: typeof proc.pid === 'number' }
+      : { kind: 'ended', proc, exit: { closed: false, code: proc.exitCode ?? null, signal: proc.signalCode ?? null } };
     this.stderrDataListener = (chunk: Buffer | string) => {
       if (Buffer.isBuffer(chunk)) {
         this.#appendStderr(this.stderrDecoder.write(chunk));
@@ -142,7 +155,23 @@ export class ManagedStdioProcess {
   }
 
   getExitState(): ManagedStdioProcessExitState | null {
-    return this.exitState ? { ...this.exitState } : null;
+    if (this.state.kind === 'ended') return { ...this.state.exit };
+    if (this.state.kind === 'running' && this.state.error) {
+      return { closed: false, code: null, error: this.state.error, signal: null };
+    }
+    return null;
+  }
+
+  /**
+   * Notifies once, on the first error or exit. A non-clean exit is reported with `describe`, unless an
+   * earlier error already explains it.
+   */
+  onTerminated(listener: TerminationListener, describe: TerminationDescriber): () => void {
+    const entry = { listener, describe };
+    this.terminationListeners.add(entry);
+    return () => {
+      this.terminationListeners.delete(entry);
+    };
   }
 
   getStderrSnapshot(): string {
@@ -225,7 +254,9 @@ export class ManagedStdioProcess {
           this.#killProcess(proc, 'SIGKILL');
         }
         finalTimer = window.setTimeout(() => {
-          this.alive = false;
+          // The child never reported its exit; it is abandoned with its stdio destroyed.
+          const error = this.state.kind === 'running' ? this.state.error : undefined;
+          this.state = { kind: 'ended', proc, exit: { closed: false, code: null, ...(error ? { error } : {}), signal: null } };
           this.#cleanupProcessListeners(proc);
           destroyStdio(proc);
           this.#clearLifecycleListeners();
@@ -238,36 +269,31 @@ export class ManagedStdioProcess {
   }
 
   private readonly handleError = (error: Error): void => {
-    if (!this.spawnConfirmed) {
-      this.alive = false;
+    const state = this.state;
+    if (state.kind === 'running') {
+      // An error before the spawn is confirmed means the child never ran.
+      if (state.spawnConfirmed) state.error = error;
+      else this.state = { kind: 'ended', proc: state.proc, exit: { closed: false, code: null, error, signal: null } };
+    } else if (state.kind === 'ended') {
+      state.exit = { ...state.exit, closed: false, error };
     }
-    this.exitState = {
-      closed: false,
-      code: this.exitState?.code ?? null,
-      error,
-      signal: this.exitState?.signal ?? null,
-    };
     this.#notifyError(error);
   };
 
   private readonly handleSpawn = (): void => {
-    this.spawnConfirmed = true;
+    if (this.state.kind === 'running') this.state.spawnConfirmed = true;
   };
 
   private readonly handleExit = (
     code: number | null,
     signal: NodeJS.Signals | null,
   ): void => {
-    this.alive = false;
-    this.exitState = {
-      closed: false,
-      code,
-      ...(this.exitState?.error ? { error: this.exitState.error } : {}),
-      signal,
-    };
+    const error = this.#recordedError();
+    this.state = { kind: 'ended', proc: this.proc, exit: { closed: false, code, ...(error ? { error } : {}), signal } };
     for (const listener of [...this.exitListeners]) {
       safelyNotify(() => listener(this.getExitState()!));
     }
+    this.#notifyTerminated(code, signal);
   };
 
   private readonly handleClose = (
@@ -275,13 +301,8 @@ export class ManagedStdioProcess {
     signal: NodeJS.Signals | null,
   ): void => {
     this.#finalizeStderr();
-    this.alive = false;
-    this.exitState = {
-      closed: true,
-      code,
-      ...(this.exitState?.error ? { error: this.exitState.error } : {}),
-      signal,
-    };
+    const error = this.#recordedError();
+    this.state = { kind: 'ended', proc: this.proc, exit: { closed: true, code, ...(error ? { error } : {}), signal } };
     for (const listener of [...this.closeListeners]) {
       safelyNotify(() => listener(this.getExitState()!));
     }
@@ -317,9 +338,26 @@ export class ManagedStdioProcess {
     }
   }
 
+  #recordedError(): Error | undefined {
+    if (this.state.kind === 'running') return this.state.error;
+    return this.state.kind === 'ended' ? this.state.exit.error : undefined;
+  }
+
   #notifyError(error: Error): void {
     for (const listener of [...this.errorListeners]) {
       safelyNotify(() => listener(error));
+    }
+    this.#notifyTerminated(null, null, error);
+  }
+
+  #notifyTerminated(code: number | null, signal: NodeJS.Signals | null, error = this.#recordedError()): void {
+    if (this.terminationNotified) return;
+    this.terminationNotified = true;
+    const entries = [...this.terminationListeners];
+    this.terminationListeners.clear();
+    for (const { listener, describe } of entries) {
+      const reported = error ?? (code === 0 && signal === null ? undefined : describe(code, signal));
+      safelyNotify(() => listener(reported));
     }
   }
 
@@ -353,6 +391,7 @@ export class ManagedStdioProcess {
     this.errorListeners.clear();
     this.exitListeners.clear();
     this.closeListeners.clear();
+    this.terminationListeners.clear();
   }
 }
 

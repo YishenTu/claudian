@@ -82,8 +82,6 @@ export interface ChatStateData {
 
   /** Guards the destructive rewind transaction from overlapping tab actions. */
   isRewinding: boolean;
-  /** Local tab state is ahead of persisted conversation metadata. */
-  hasPendingConversationSave: boolean;
 
   // Conversation identity
   currentConversationId: string | null;
@@ -95,10 +93,7 @@ export interface ChatStateData {
   currentContentEl: HTMLElement | null;
   currentTextEl: HTMLElement | null;
   currentThinkingState: ThinkingBlockState | null;
-  thinkingEl: HTMLElement | null;
   queueIndicatorEl: HTMLElement | null;
-  /** Debounce timeout for showing thinking indicator after inactivity. */
-  thinkingIndicatorTimeout: number | null;
 
   // Tool tracking maps
   toolCallElements: Map<string, HTMLElement>;
@@ -113,9 +108,6 @@ export interface ChatStateData {
 
   // Auto-scroll control during streaming
   autoScrollEnabled: boolean;
-
-  // Response timer state
-  flavorTimerInterval: number | null;
 }
 
 /**

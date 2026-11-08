@@ -40,25 +40,31 @@ export interface SessionSidebarDeps {
  * and expansion, session organization, sorting, section and group collapse, pinned
  * Linked content, inline pins, session drag and drop, and the metadata popover.
  */
+interface SearchSession {
+  query: string;
+  /** IME composition in progress; Escape and rendering wait for it. */
+  composing: boolean;
+  /** List scroll positions to restore when filtering ends. */
+  readonly restoreState: SessionSearchScrollState;
+  /** Search starts every group and section expanded, matching projects included. */
+  readonly collapse: SessionGroupCollapse;
+  fieldEl: HTMLElement | null;
+  inputEl: HTMLInputElement | null;
+}
+
 export class SessionSidebar {
   private sidebarEl: HTMLElement | null = null;
   private surfaceEl: HTMLElement | null = null;
   private newButtonEl: HTMLElement | null = null;
-  private searchFieldEl: HTMLElement | null = null;
-  private searchInputEl: HTMLInputElement | null = null;
   private groupToggleButtonEl: HTMLElement | null = null;
   private themeEvent: EventRef | null = null;
 
   private renderAbortController: AbortController | null = null;
   private dirty = true;
 
-  private isSearchActive = false;
-  private isSearchComposing = false;
-  private searchQuery = '';
-  private searchRestoreState: SessionSearchScrollState | null = null;
+  /** The active search; null while the sidebar lists sessions normally. */
+  #search: SearchSession | null = null;
   private searchDismissCleanup: (() => void) | null = null;
-  /** Search starts every group and section expanded, matching projects included. */
-  private searchCollapse = new SessionGroupCollapse({ projectsStartExpanded: true });
   private readonly collapse: SessionGroupCollapse;
   private groupKeys = new Set<string>();
 
@@ -68,7 +74,7 @@ export class SessionSidebar {
 
   /** True while search is composing IME input; Escape belongs to the composition. */
   get isComposing(): boolean {
-    return this.isSearchComposing;
+    return this.#search?.composing ?? false;
   }
 
   /** Builds the sidebar surface inside `sidebarEl`. */
@@ -87,11 +93,11 @@ export class SessionSidebar {
   render(): void {
     const surfaceEl = this.surfaceEl ?? this.sidebarEl;
     if (!surfaceEl || !this.dirty || !this.deps.isWide()) return;
-    if (this.isSearchComposing) return;
+    if (this.#search?.composing) return;
     // The whole surface waits, since its list render clears the controls built around it.
     if (this.deps.shared.browser.deferWhileSortingProjects(() => this.render())) return;
 
-    const previousSearchInput = this.searchInputEl;
+    const previousSearchInput = this.#search?.inputEl ?? null;
     const shouldRestoreSearchFocus = previousSearchInput?.ownerDocument.activeElement
       === previousSearchInput;
     const searchSelection = previousSearchInput && shouldRestoreSearchFocus ? {
@@ -106,8 +112,10 @@ export class SessionSidebar {
 
     this.deps.shared.profileListRender(() => {
       this.newButtonEl = null;
-      this.searchFieldEl = null;
-      this.searchInputEl = null;
+      if (this.#search) {
+        this.#search.fieldEl = null;
+        this.#search.inputEl = null;
+      }
       this.groupToggleButtonEl = null;
       this.renderList(surfaceEl, abortController.signal);
       this.buildHeaderActions(surfaceEl);
@@ -126,7 +134,7 @@ export class SessionSidebar {
 
   /** Closes an active search for Escape; returns whether there was one. */
   dismissSearch(): boolean {
-    if (!this.isSearchActive) return false;
+    if (!this.#search) return false;
     this.closeSearch();
     return true;
   }
@@ -134,13 +142,7 @@ export class SessionSidebar {
   /** Drops search without rendering or restoring scroll, for a switch to another list. */
   discardSearch(): void {
     this.clearSearchDismissHandlers();
-    this.isSearchActive = false;
-    this.isSearchComposing = false;
-    this.searchQuery = '';
-    this.searchFieldEl = null;
-    this.searchInputEl = null;
-    this.searchRestoreState = null;
-    this.searchCollapse = new SessionGroupCollapse({ projectsStartExpanded: true });
+    this.#search = null;
   }
 
   refreshNewAvailability(): void {
@@ -183,7 +185,7 @@ export class SessionSidebar {
       scrollLayout: 'sections',
       showInlinePinAction: true,
       onRequestInlineRename: (request) => {
-        if (this.isSearchActive) {
+        if (this.#search) {
           this.closeSearch();
         }
         beginInlineRenameNextFrame(container, request);
@@ -198,7 +200,7 @@ export class SessionSidebar {
       language: getObsidianLanguage(plugin.settings.locale),
       contentExists: (contentPath: string) => navigation.contentExists(contentPath),
       contentIsNote: (contentPath: string) => this.contentIsNote(contentPath),
-      searchQuery: this.isSearchActive ? this.searchQuery : undefined,
+      searchQuery: this.#search?.query,
       showMetadataPopover: true,
       showLineageFolds: true,
       showAttentionState: !isArchiveView,
@@ -266,8 +268,8 @@ export class SessionSidebar {
     container.insertBefore(newControl, list);
     this.newButtonEl = newControl;
 
-    if (this.isSearchActive) {
-      this.buildSearchField(container, list);
+    if (this.#search) {
+      this.buildSearchField(container, list, this.#search);
     } else {
       const searchControl = container.createDiv({ cls: 'claudian-session-search-control' });
       searchControl.setAttribute('role', 'button');
@@ -324,7 +326,7 @@ export class SessionSidebar {
     this.refreshNewAvailability();
   }
 
-  private buildSearchField(container: HTMLElement, list: HTMLElement): void {
+  private buildSearchField(container: HTMLElement, list: HTMLElement, search: SearchSession): void {
     const searchField = container.createDiv({ cls: 'claudian-session-search-field' });
     const searchIcon = searchField.createSpan({ cls: 'claudian-session-nav-icon' });
     setIcon(searchIcon, 'search');
@@ -338,14 +340,14 @@ export class SessionSidebar {
         'aria-label': label,
       },
     });
-    searchInput.value = this.searchQuery;
+    searchInput.value = search.query;
     let committedCompositionValue: string | null = null;
     searchInput.addEventListener('compositionstart', () => {
-      this.isSearchComposing = true;
+      search.composing = true;
       committedCompositionValue = null;
     });
     searchInput.addEventListener('compositionend', () => {
-      this.isSearchComposing = false;
+      search.composing = false;
       committedCompositionValue = searchInput.value;
       this.updateSearchQuery(searchInput.value);
       queueMicrotask(() => {
@@ -354,7 +356,7 @@ export class SessionSidebar {
     });
     searchInput.addEventListener('input', (event) => {
       if (
-        this.isSearchComposing
+        search.composing
         || (event as InputEvent | undefined)?.isComposing
       ) return;
       if (committedCompositionValue === searchInput.value) {
@@ -366,7 +368,7 @@ export class SessionSidebar {
     });
     searchInput.addEventListener('keydown', (event) => {
       if (event.key !== 'Escape') return;
-      if (this.isSearchComposing || event.isComposing) {
+      if (search.composing || event.isComposing) {
         event.stopPropagation();
         return;
       }
@@ -374,21 +376,24 @@ export class SessionSidebar {
       this.closeSearch();
     });
     container.insertBefore(searchField, list);
-    this.searchFieldEl = searchField;
-    this.searchInputEl = searchInput;
+    search.fieldEl = searchField;
+    search.inputEl = searchInput;
   }
 
   private activateSearch(): void {
-    if (this.isSearchActive) {
+    if (this.#search) {
       this.focusSearchInput();
       return;
     }
 
-    this.searchRestoreState = this.captureSearchScrollState();
-    this.isSearchActive = true;
-    this.isSearchComposing = false;
-    this.searchQuery = '';
-    this.searchCollapse = new SessionGroupCollapse({ projectsStartExpanded: true });
+    this.#search = {
+      collapse: new SessionGroupCollapse({ projectsStartExpanded: true }),
+      composing: false,
+      fieldEl: null,
+      inputEl: null,
+      query: '',
+      restoreState: this.captureSearchScrollState(),
+    };
     this.dirty = true;
     this.render();
     this.focusSearchInput();
@@ -396,8 +401,10 @@ export class SessionSidebar {
   }
 
   private updateSearchQuery(query: string): void {
+    const search = this.#search;
+    if (!search) return;
     const wasFiltering = this.isSearchFiltering();
-    this.searchQuery = query;
+    search.query = query;
     this.dirty = true;
     this.render();
     if (wasFiltering && !this.isSearchFiltering()) {
@@ -406,23 +413,18 @@ export class SessionSidebar {
   }
 
   private closeSearch(): void {
-    if (!this.isSearchActive) return;
+    const search = this.#search;
+    if (!search) return;
 
     this.clearSearchDismissHandlers();
-    this.isSearchActive = false;
-    this.isSearchComposing = false;
-    this.searchQuery = '';
-    this.searchFieldEl = null;
-    this.searchInputEl = null;
-    this.searchCollapse = new SessionGroupCollapse({ projectsStartExpanded: true });
+    this.#search = null;
     this.dirty = true;
     this.render();
-    this.restoreSearchScrollState();
-    this.searchRestoreState = null;
+    this.restoreSearchScrollState(search.restoreState);
   }
 
   private focusSearchInput(selection?: Pick<HTMLInputElement, 'selectionStart' | 'selectionEnd' | 'selectionDirection'>): void {
-    const input = this.searchInputEl;
+    const input = this.#search?.inputEl;
     if (!input) return;
     input.focus();
     input.setSelectionRange?.(
@@ -434,14 +436,15 @@ export class SessionSidebar {
 
   private scheduleSearchDismissHandlers(): void {
     queueMicrotask(() => {
-      if (!this.isSearchActive || !this.searchInputEl) return;
+      const search = this.#search;
+      if (!search?.inputEl) return;
 
       this.clearSearchDismissHandlers();
-      const ownerDocument = this.searchInputEl.ownerDocument;
+      const ownerDocument = search.inputEl.ownerDocument;
       const ownerWindow = ownerDocument.defaultView;
       let pointerDownOutsideSearch = false;
       const isOutsideSearch = (event: Event): boolean => {
-        const searchField = this.searchFieldEl;
+        const searchField = this.#search?.fieldEl;
         const target = event.target;
         return !searchField || !target || !searchField.contains(target as Node);
       };
@@ -508,8 +511,7 @@ export class SessionSidebar {
     };
   }
 
-  private restoreSearchScrollState(): void {
-    const state = this.searchRestoreState;
+  private restoreSearchScrollState(state = this.#search?.restoreState): void {
     if (!state) return;
 
     const { pinnedList, sessionList } = this.findScrollLists();
@@ -518,7 +520,7 @@ export class SessionSidebar {
   }
 
   private isSearchFiltering(): boolean {
-    return this.isSearchActive && this.searchQuery.trim().length > 0;
+    return (this.#search?.query.trim().length ?? 0) > 0;
   }
 
   private getModelLabel(conversation: ConversationMeta): string {
@@ -555,7 +557,8 @@ export class SessionSidebar {
   }
 
   private getDisplayedCollapse(): SessionGroupCollapse {
-    return this.isSearchFiltering() ? this.searchCollapse : this.collapse;
+    const search = this.#search;
+    return search && this.isSearchFiltering() ? search.collapse : this.collapse;
   }
 
   private areAllGroupsCollapsed(): boolean {

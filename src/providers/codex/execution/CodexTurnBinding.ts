@@ -1,4 +1,3 @@
-import type { ProviderToolPolicy } from '@/core/execution';
 import { isTokenCount } from '@/core/types';
 import type {
   ThreadStatusChangedNotification,
@@ -9,7 +8,6 @@ import type { CodexNotificationRouter } from '@/providers/codex/runtime/CodexNot
 
 import type { CodexActiveRun, TurnCompletion } from './CodexActiveRun';
 import type { CodexCompletionRecovery } from './CodexCompletionRecovery';
-import type { CodexExecutionServerRequestRouter } from './CodexExecutionServerRequestRouter';
 
 export interface CodexTurnBindingHost {
   activeRun(): CodexActiveRun | null;
@@ -27,18 +25,11 @@ export interface CodexTurnBindingHost {
 export class CodexTurnBinding {
   #router: CodexNotificationRouter | null = null;
   #pendingNotifications: Array<{ method: string; params: unknown }> = [];
-  #toolPolicy: ProviderToolPolicy | null = null;
 
   constructor(
     private readonly host: CodexTurnBindingHost,
-    private readonly serverRequests: CodexExecutionServerRequestRouter,
     private readonly recovery: CodexCompletionRecovery,
   ) {}
-
-  /** The tool policy native server requests of the next bound turn are checked against. */
-  setToolPolicy(toolPolicy: ProviderToolPolicy): void {
-    this.#toolPolicy = toolPolicy;
-  }
 
   /** Starts projecting the run's turn; earlier buffered notifications belong to no turn. */
   begin(router: CodexNotificationRouter): void {
@@ -51,7 +42,6 @@ export class CodexTurnBinding {
     this.#router?.endTurn();
     this.#router = null;
     this.#pendingNotifications = [];
-    this.#toolPolicy = null;
   }
 
   /** Returns whether the native turn belongs to the active run, binding it on first sight. */
@@ -71,13 +61,6 @@ export class CodexTurnBinding {
     this.host.markNativeContextEstablished(active);
     if (!active.nativeTurnId) {
       active.nativeTurnId = nativeTurnId;
-      this.serverRequests.setActiveTurn({
-        localTurnId: active.run.turnId,
-        nativeThreadId: threadId,
-        nativeTurnId,
-        cancellation: active.cancellation,
-        toolPolicy: this.#toolPolicy ?? { kind: 'provider-default' },
-      });
       active.run.emit({
         type: 'turn_started',
         accepted: true,

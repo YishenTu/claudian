@@ -18,13 +18,18 @@ export interface TurnActivity {
   subscribe(listener: () => void): () => void;
 }
 
+interface AdmittedTurn {
+  readonly settled: Promise<void>;
+  readonly controller: AbortController;
+  /** A navigation has no response phases. */
+  readonly kind: 'response' | 'navigation';
+  phase: TurnPhase | null;
+  cancelRequested: boolean;
+}
+
 /** Owns one admitted response or navigation through final rendering and persistence. */
 export class TurnCoordinator implements TurnActivity {
-  #activeTurn: Promise<void> | null = null;
-  #controller: AbortController | null = null;
-  #kind: 'response' | 'navigation' | null = null;
-  #phase: TurnPhase | null = null;
-  #cancelRequested = false;
+  #turn: AdmittedTurn | null = null;
   #streamGeneration = 0;
   readonly #listeners = new Set<() => void>();
 
@@ -32,29 +37,30 @@ export class TurnCoordinator implements TurnActivity {
 
   /** Any admitted response or navigation, from admission through settlement. */
   get isActive(): boolean {
-    return this.#activeTurn !== null;
+    return this.#turn !== null;
   }
 
   /** An admitted response, from admission through settlement. */
   get isResponseActive(): boolean {
-    return this.#kind === 'response';
+    return this.#turn?.kind === 'response';
   }
 
   get isPreparing(): boolean {
-    return this.#phase === 'preparing';
+    return this.#turn?.phase === 'preparing';
   }
 
   /** The provider-facing response is running, so follow-up input may steer it. */
   get isResponding(): boolean {
-    return this.#phase === 'responding';
+    return this.#turn?.phase === 'responding';
   }
 
   get isInFlight(): boolean {
-    return this.#phase === 'preparing' || this.#phase === 'responding';
+    const phase = this.#turn?.phase;
+    return phase === 'preparing' || phase === 'responding';
   }
 
   get cancelRequested(): boolean {
-    return this.#cancelRequested;
+    return this.#turn?.cancelRequested ?? false;
   }
 
   get streamGeneration(): number {
@@ -69,22 +75,23 @@ export class TurnCoordinator implements TurnActivity {
   }
 
   drain(): Promise<void> {
-    return this.#activeTurn ?? Promise.resolve();
+    return this.#turn?.settled ?? Promise.resolve();
   }
 
   /** Records the request for the rest of the turn and aborts its signal; returns false when idle. */
   cancel(reason: TurnCancelReason = 'user'): boolean {
-    if (!this.#activeTurn) return false;
-    this.#cancelRequested = true;
+    const turn = this.#turn;
+    if (!turn) return false;
+    turn.cancelRequested = true;
     // Replacement and teardown discard the turn's remaining presentation work.
     if (reason !== 'user') this.#streamGeneration += 1;
-    this.#controller?.abort(reason);
+    turn.controller.abort(reason);
     return true;
   }
 
   /** Starts the provider-facing response and returns the generation that owns its presentation. */
   beginResponse(): number {
-    if (this.#kind !== 'response') throw new Error('No admitted response can begin');
+    if (this.#turn?.kind !== 'response') throw new Error('No admitted response can begin');
     this.#streamGeneration += 1;
     this.#setPhase('responding');
     return this.#streamGeneration;
@@ -92,20 +99,23 @@ export class TurnCoordinator implements TurnActivity {
 
   /** Ends streaming presentation; the turn stays admitted until rendering and persistence finish. */
   settle(): void {
-    if (this.#kind === 'response') this.#setPhase('settling');
+    if (this.#turn?.kind === 'response') this.#setPhase('settling');
   }
 
   async run(execute: (signal: AbortSignal) => Promise<void>, kind: 'response' | 'navigation' = 'response'): Promise<void> {
-    if (this.#activeTurn) throw new Error('A main turn is already active');
+    if (this.#turn) throw new Error('A main turn is already active');
     if (!this.canAdmit()) throw new Error('Conversation operation admission is closed.');
     let settle!: () => void;
-    this.#activeTurn = new Promise<void>(resolve => { settle = resolve; });
-    this.#kind = kind;
-    this.#phase = kind === 'response' ? 'preparing' : null;
-    this.#cancelRequested = false;
-    this.#controller = new AbortController();
+    const turn: AdmittedTurn = {
+      cancelRequested: false,
+      controller: new AbortController(),
+      kind,
+      phase: kind === 'response' ? 'preparing' : null,
+      settled: new Promise<void>(resolve => { settle = resolve; }),
+    };
+    this.#turn = turn;
     try {
-      const execution = execute(this.#controller.signal);
+      const execution = execute(turn.controller.signal);
       try {
         this.#notify();
       } finally {
@@ -113,19 +123,16 @@ export class TurnCoordinator implements TurnActivity {
         await execution;
       }
     } finally {
-      this.#controller = null;
-      this.#activeTurn = null;
-      this.#kind = null;
-      this.#phase = null;
-      this.#cancelRequested = false;
+      this.#turn = null;
       settle();
       this.#notify();
     }
   }
 
   #setPhase(phase: TurnPhase): void {
-    if (this.#phase === phase) return;
-    this.#phase = phase;
+    const turn = this.#turn;
+    if (!turn || turn.phase === phase) return;
+    turn.phase = phase;
     this.#notify();
   }
 

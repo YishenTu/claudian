@@ -36,15 +36,23 @@ export class TabMembership implements TabMembershipView {
   readonly #records = new Map<TabId, TabRecord>();
   #activeTabId: TabId | null = null;
   #activationClock = 0;
-  #destroyed = false;
-  #identitiesSealed = false;
+  /**
+   * `live` admits work; `draining` fences new work while identity reports still reach the shutdown
+   * snapshot; `sealed` freezes identities once that snapshot is final.
+   */
+  #shutdown: 'live' | 'draining' | 'sealed' = 'live';
 
   // ============================================
   // Reads
   // ============================================
 
   isDestroyed(): boolean {
-    return this.#destroyed;
+    return this.#shutdown !== 'live';
+  }
+
+  /** Shutdown has begun but the final identity snapshot is not sealed yet. */
+  isShutdownSnapshotOpen(): boolean {
+    return this.#shutdown === 'draining';
   }
 
   /** The optimistic active tab; committed activation history is recorded separately. */
@@ -84,11 +92,11 @@ export class TabMembership implements TabMembershipView {
   }
 
   isTabAlive(tab: Readonly<TabIdentity>): boolean {
-    return !this.#destroyed && this.isAvailableToAdmittedClose(tab);
+    return !this.isDestroyed() && this.isAvailableToAdmittedClose(tab);
   }
 
   isTabStateMutable(tab: Readonly<TabIdentity>): boolean {
-    return !this.#destroyed && this.isOwned(tab);
+    return !this.isDestroyed() && this.isOwned(tab);
   }
 
   isCloseClaimed(tabId: TabId): boolean {
@@ -116,8 +124,9 @@ export class TabMembership implements TabMembershipView {
   // Membership transitions
   // ============================================
 
-  markDestroyed(): void {
-    this.#destroyed = true;
+  /** Fences new work; a later call leaves an already-begun shutdown unchanged. */
+  beginShutdown(): void {
+    if (this.#shutdown === 'live') this.#shutdown = 'draining';
   }
 
   setActiveTabId(tabId: TabId | null): void {
@@ -214,7 +223,7 @@ export class TabMembership implements TabMembershipView {
     const member = this.getMember(tabId);
     if (member?.kind === 'assembled') {
       member.runtime.session.selectDraft(selection.providerId, selection.draftModel);
-    } else if (member && !this.#identitiesSealed) {
+    } else if (member && this.#shutdown !== 'sealed') {
       member.identity.providerId = selection.providerId;
       member.identity.draftModel = selection.draftModel;
     }
@@ -233,7 +242,7 @@ export class TabMembership implements TabMembershipView {
 
   /** Seals every identity for the final shutdown snapshot. */
   sealIdentities(): void {
-    this.#identitiesSealed = true;
+    this.#shutdown = 'sealed';
     for (const tab of this.getAllTabs()) tab.session.sealIdentity();
   }
 

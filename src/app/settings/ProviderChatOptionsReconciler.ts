@@ -4,6 +4,7 @@ import type { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import type { ProviderSettingsCoordinator } from '@/core/providers/ProviderSettingsCoordinator';
 import type { ProviderId } from '@/core/providers/types';
 import type { ClaudianSettings, Conversation } from '@/core/types';
+import { SerialQueue } from '@/utils/SerialQueue';
 
 import type { SettingsCoordinator } from './SettingsCoordinator';
 
@@ -25,14 +26,12 @@ export interface ProviderChatOptionsReconcilerDeps {
  * catalog never publishes before an earlier one has been reconciled.
  */
 export class ProviderChatOptionsReconciler {
-  private tail: Promise<void> = Promise.resolve();
+  private readonly queue = new SerialQueue();
 
   constructor(private readonly deps: ProviderChatOptionsReconcilerDeps) {}
 
   notifyChanged(providerId: ProviderId): Promise<void> {
-    const reconcile = (): Promise<void> => this.#reconcile(providerId);
-    this.tail = this.tail.then(reconcile, reconcile);
-    return this.tail;
+    return this.queue.run(() => this.#reconcile(providerId));
   }
 
   async #reconcile(providerId: ProviderId): Promise<void> {
