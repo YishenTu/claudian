@@ -3,6 +3,8 @@ import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
+import { testDate, testTime } from '@test/helpers/testClock';
+
 import type { ChatMessage } from '@/core/types';
 import { loadAntigravityHistory, readAntigravityContextTokens } from '@/providers/antigravity/history/AntigravityHistoryStore';
 
@@ -331,22 +333,26 @@ describe('loadAntigravityHistory', () => {
     expect(messages[1].toolCalls?.[0].result).toBe(launch);
   });
 
-  it('pairs ask_question answers with their questions', async () => {
+  it('pairs ask_question answers with their questions and finishes at Completed At', async () => {
     const args = { questions: [
       { is_multi_select: false, options: ['Red', 'Green'], question: 'Color?' },
       { is_multi_select: true, options: ['Apple', 'Cherry'], question: 'Fruit?' },
       { is_multi_select: false, options: ['Yes', 'No'], question: 'Skip me?' },
     ] };
     await installSteps([
-      userStep(0, 'Ask me.'),
-      replyStep(1, { tool_calls: [{ args, name: 'ask_question' }] }),
-      { content: 'Created At: 2026-01-01T00:00:02+00:00\nCompleted At: 2026-01-01T00:00:03+00:00\nA1: Green, my own\nsecond line\nA2: Apple, Cherry',
-        created_at: '2026-01-01T00:00:03Z', source: 'MODEL', status: 'DONE', step_index: 2, type: 'GENERIC' },
+      userStep(0, 'Ask me.', { created_at: testTime() }),
+      replyStep(1, { created_at: testTime({ seconds: 1 }), tool_calls: [{ args, name: 'ask_question' }] }),
+      { content: `Created At: ${testTime({ seconds: 2 })}\nCompleted At: ${testTime({ seconds: 9 })}\nA1: Green, my own\nsecond line\nA2: Apple, Cherry`,
+        created_at: testTime({ seconds: 2 }), source: 'MODEL', status: 'DONE', step_index: 2, type: 'GENERIC' },
     ]);
 
     const messages = await loadAntigravityHistory(storeRoot, SESSION_ID);
 
     expect(messages[1].toolCalls?.[0].resolvedAnswers).toEqual({ 'Color?': 'Green, my own\nsecond line', 'Fruit?': 'Apple, Cherry' });
+    expect(messages[1]).toMatchObject({
+      completedAt: testDate({ seconds: 9 }).getTime(),
+      durationSeconds: 9,
+    });
   });
 
   it('returns no messages for a session without a transcript', async () => {

@@ -53,6 +53,7 @@ const ABORTED_TOOL_RESULT = 'Antigravity did not run this tool.';
 
 const USER_REQUEST_PATTERN = /<USER_REQUEST>\n?([\s\S]*?)\n?<\/USER_REQUEST>/;
 const RESULT_HEADER_PATTERN = /^(?:(?:Created|Completed) At: [^\n]*\n)+/;
+const RESULT_COMPLETED_AT_PATTERN = /^(?:Created At: [^\n]*\n)*Completed At: ([^\n]+)/;
 /** A message agy injects into the conversation; `sender=system` marks its own notices, others are task reports. */
 const SYSTEM_REPORT_PATTERN = /<SYSTEM_MESSAGE>\n\[Message\][^\n]*?\bsender=(\S+)[^\n]*?\bcontent=([\s\S]*?)\n?<\/SYSTEM_MESSAGE>/;
 /** agy appends instructions for the model to a command it moved to the background. */
@@ -250,8 +251,12 @@ export function parseAntigravityTranscript(
         break;
     }
     const current = turn as TurnBuilder | null;
-    if (current && timestamp > 0 && (step.type === 'PLANNER_RESPONSE' || step.type === 'GENERIC')) {
-      current.lastStepAt = timestamp;
+    if (current && (step.type === 'PLANNER_RESPONSE' || step.type === 'GENERIC')) {
+      const completedAt = step.type === 'GENERIC'
+        ? parseTimestamp(RESULT_COMPLETED_AT_PATTERN.exec(step.content ?? '')?.[1])
+        : 0;
+      const stepAt = Math.max(timestamp, completedAt);
+      if (stepAt > 0) current.lastStepAt = Math.max(current.lastStepAt ?? 0, stepAt);
     }
   }
   finishTurn();
