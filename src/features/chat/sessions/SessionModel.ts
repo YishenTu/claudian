@@ -71,11 +71,11 @@ export class SessionModel {
   private hydration: Promise<void> | null = null;
   private readonly titleWork = new Set<Promise<void>>();
   private readonly recovery: AsyncSubagentHistoryRecovery;
-  hydrationState: 'idle' | 'loading' | 'ready' | 'failed';
+  #hydrationState: 'idle' | 'loading' | 'ready' | 'failed';
 
   constructor(readonly session: ChatSessionRuntime, private readonly plugin: ChatFeatureHost) {
     const getRenderer = () => this.transcript?.renderer ?? null;
-    this.hydrationState = session.conversationId ? 'idle' : 'ready';
+    this.#hydrationState = session.conversationId ? 'idle' : 'ready';
     this.state = new ChatState({
       onStreamingStateChanged: streaming => {
         if (streaming) this.presentation?.suggestions.beginTurn();
@@ -162,7 +162,7 @@ export class SessionModel {
       getSelectedModel: () => getSessionSelectedModel(session, plugin),
       isClosing: () => session.isDisposed,
       isConversationHydrated: () => this.hydrationState === 'ready',
-      onConversationHydrated: () => { this.hydrationState = 'ready'; },
+      onConversationHydrated: () => { this.#hydrationState = 'ready'; },
       onPersistenceChanged: () => session.notifyChanged(),
       onBranchPreviewCancelled: () => this.publish('work'),
       // Presentation-only: the seed is no session status, so only the attached composer hears it.
@@ -228,7 +228,7 @@ export class SessionModel {
 
   /** Admitted input and async subagents keep the session working without a foreground turn. */
   get hasPendingWork(): boolean {
-    return this.subagentManager.hasActiveAsyncSubagents() || this.inputController.isPreparingMainTurn || !!this.state.queuedMessage;
+    return this.subagentManager.hasActiveAsyncSubagents() || this.inputController.hasUnsettledMainWork || !!this.state.queuedMessage;
   }
 
   get hasPendingInteraction(): boolean {
@@ -268,7 +268,7 @@ export class SessionModel {
     this.publish('work');
     try {
       if (!await reload()) return;
-      if (this.hydrationState === 'ready') this.hydrationState = 'idle';
+      if (this.#hydrationState === 'ready') this.#hydrationState = 'idle';
       this.historyRefresh = 'reloading';
       await this.hydrate().catch(() => undefined);
     } finally {
@@ -347,20 +347,25 @@ export class SessionModel {
     this.presentation = null;
   }
 
+  /** Whether the shown transcript is loaded; only this model's loads and conversation changes move it. */
+  get hydrationState(): 'idle' | 'loading' | 'ready' | 'failed' {
+    return this.#hydrationState;
+  }
+
   async hydrate(): Promise<void> {
-    if (this.hydrationState === 'ready') return;
+    if (this.#hydrationState === 'ready') return;
     if (this.hydration) return this.hydration;
-    this.hydrationState = 'loading';
+    this.#hydrationState = 'loading';
     this.hydration = this.conversationController.loadActive()
       .then(() => {
-        this.hydrationState = 'ready';
+        this.#hydrationState = 'ready';
         if (this.historyRefresh === 'reloading') {
           this.historyRefresh = null;
           this.publish('work');
         }
         this.session.notifyHydrated();
       })
-      .catch(error => { this.hydrationState = 'failed'; throw error; })
+      .catch(error => { this.#hydrationState = 'failed'; throw error; })
       .finally(() => { this.hydration = null; });
     return this.hydration;
   }

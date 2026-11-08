@@ -72,6 +72,16 @@ export class SessionSnapshotState {
     this.#revision += 1;
   }
 
+  /**
+   * Reports whether work remains after some of it settled: `executing` while any does, otherwise
+   * `idle`. An invalidation stands once work settles; only new work (`setStatus`) clears it.
+   */
+  settleActivity(hasWork: boolean): void {
+    if (hasWork) this.setStatus('executing');
+    else if (this.#status === 'invalidated') this.#revision += 1;
+    else this.setStatus('idle');
+  }
+
   invalidate(invalidation: ProviderSessionInvalidation): void {
     this.#status = 'invalidated';
     this.#invalidation = Object.freeze({ ...invalidation });

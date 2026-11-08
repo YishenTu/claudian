@@ -26,6 +26,12 @@ interface AsyncSubagentRecord {
   nativeCompletion?: Pick<AsyncSubagentCompletion, 'taskId' | 'status' | 'result'>;
 }
 
+/** A task tool's subagent: buffered until its mode is known, then sync until finalized, or async. */
+type TaskEntry =
+  | { readonly phase: 'pending'; readonly toolCall: ToolCallInfo }
+  | { readonly phase: 'sync'; readonly info: SubagentInfo }
+  | { readonly phase: 'async'; readonly record: AsyncSubagentRecord };
+
 export type HandleTaskResult =
   | { action: 'buffered' }
   | { action: 'created_sync'; info: SubagentInfo }
@@ -39,14 +45,12 @@ export type ResolvedTask =
 export class SubagentManager {
   private static readonly MAX_DEFERRED_ASYNC_COMPLETIONS = 128;
 
-  private syncSubagents: Map<string, SubagentInfo> = new Map();
+  private readonly tasks = new Map<string, TaskEntry>();
   private lifecycleSubagents = new Map<string, SubagentInfo>();
   private lifecycleAgentIds = new Map<string, string>();
   private sessionSubagentUpdates = new Map<string, SubagentInfo>();
-  private pendingTasks: Map<string, ToolCallInfo> = new Map();
   private _spawnedThisStream = 0;
 
-  private asyncSubagents: Map<string, AsyncSubagentRecord> = new Map();
   private providerIdentifierToToolUseIds: Map<string, Set<string>> = new Map();
   private deferredAsyncCompletions: Map<string, AsyncSubagentCompletion> = new Map();
   private outputToolToTaskToolUseId: Map<string, string> = new Map();
@@ -83,7 +87,7 @@ export class SubagentManager {
   ): HandleTaskResult {
     this.cards.reserve(taskToolId, currentContentEl);
     // Existing records are independent of card placement.
-    const existingSyncState = this.syncSubagents.get(taskToolId);
+    const existingSyncState = this.#sync(taskToolId);
     if (existingSyncState) {
       this.#updateSubagentLabel(existingSyncState, taskInput);
       this.cards.render(existingSyncState, currentContentEl);
@@ -91,7 +95,7 @@ export class SubagentManager {
     }
 
     // Async records also accept label updates with no card.
-    const existingAsyncState = this.asyncSubagents.get(taskToolId);
+    const existingAsyncState = this.#async(taskToolId);
     if (existingAsyncState) {
       const canonical = this.getByTaskId(taskToolId)!;
       this.#updateSubagentLabel(canonical, taskInput);
@@ -100,7 +104,7 @@ export class SubagentManager {
     }
 
     // Merge partial inputs until the provider resolves the task mode.
-    const pending = this.pendingTasks.get(taskToolId);
+    const pending = this.#pending(taskToolId);
     if (pending) {
       const newInput = taskInput || {};
       if (Object.keys(newInput).length > 0) {
@@ -129,7 +133,7 @@ export class SubagentManager {
         status: 'running',
         isExpanded: false,
       };
-      this.pendingTasks.set(taskToolId, toolCall);
+      this.tasks.set(taskToolId, { phase: 'pending', toolCall });
       return { action: 'buffered' };
     }
 
@@ -145,7 +149,7 @@ export class SubagentManager {
   // ============================================
 
   public hasPendingTask(toolId: string): boolean {
-    return this.pendingTasks.has(toolId);
+    return this.#pending(toolId) !== undefined;
   }
 
   /**
@@ -157,7 +161,7 @@ export class SubagentManager {
     toolId: string,
     parentElOverride?: HTMLElement | null
   ): ResolvedTask | null {
-    const pending = this.pendingTasks.get(toolId);
+    const pending = this.#pending(toolId);
     if (!pending) return null;
 
     return this.#resolvePending(pending, this.taskResultInterpreter.describeTask(pending.input).mode, parentElOverride);
@@ -175,7 +179,7 @@ export class SubagentManager {
     parentElOverride?: HTMLElement | null,
     providerPayload?: ToolProviderPayload
   ): ResolvedTask | null {
-    const pending = this.pendingTasks.get(toolId);
+    const pending = this.#pending(toolId);
     if (!pending) return null;
 
     const mode = this.taskResultInterpreter.describeTask(pending.input).mode
@@ -184,7 +188,7 @@ export class SubagentManager {
   }
 
   #resolvePending(pending: ToolCallInfo, mode: 'sync' | 'async' | null | undefined, parent?: HTMLElement | null): ResolvedTask {
-    this.pendingTasks.delete(pending.id);
+    this.#deleteTask(pending.id, 'pending');
     this._spawnedThisStream++;
     const result = mode === 'async'
       ? this.#createAsyncTask(pending.id, pending.input, parent)
@@ -197,11 +201,11 @@ export class SubagentManager {
   // ============================================
 
   public getSyncSubagent(toolId: string): SubagentInfo | undefined {
-    return this.syncSubagents.get(toolId);
+    return this.#sync(toolId);
   }
 
   public addSyncToolCall(parentToolUseId: string, toolCall: ToolCallInfo): void {
-    const subagentState = this.syncSubagents.get(parentToolUseId);
+    const subagentState = this.#sync(parentToolUseId);
     if (!subagentState) return;
     const tools = subagentState.toolCalls;
     const index = tools.findIndex(tool => tool.id === toolCall.id);
@@ -223,7 +227,7 @@ export class SubagentManager {
     toolId: string,
     toolCall: ToolCallInfo
   ): void {
-    const subagentState = this.syncSubagents.get(parentToolUseId);
+    const subagentState = this.#sync(parentToolUseId);
     if (!subagentState) return;
     const index = subagentState.toolCalls.findIndex(tool => tool.id === toolId);
     if (index < 0) return;
@@ -238,7 +242,7 @@ export class SubagentManager {
     providerPayload?: ToolProviderPayload,
     fallbackInfo?: SubagentInfo,
   ): SubagentInfo | null {
-    const record = this.syncSubagents.get(toolId);
+    const record = this.#sync(toolId);
     const info = record ?? fallbackInfo;
     if (!info) return null;
     const outcome = this.taskResultInterpreter.interpretResult(result, isError, { mode: 'sync' }, providerPayload);
@@ -247,7 +251,7 @@ export class SubagentManager {
     // A reusable native agent identity links this run to its later follow-ups.
     info.agentId ??= this.taskResultInterpreter.interpretLaunch(result, isError, providerPayload).agentId ?? undefined;
     this.cards.render(info);
-    this.syncSubagents.delete(toolId);
+    this.#deleteTask(toolId, 'sync');
     return info;
   }
 
@@ -268,7 +272,7 @@ export class SubagentManager {
     isError?: boolean,
     providerPayload?: ToolProviderPayload
   ): void {
-    const record = this.asyncSubagents.get(taskToolId);
+    const record = this.#async(taskToolId);
     if (!record) return;
     const launch = this.taskResultInterpreter.interpretLaunch(result, isError === true, providerPayload);
     const resultText = launch.result;
@@ -322,7 +326,7 @@ export class SubagentManager {
     providerPayload?: ToolProviderPayload
   ): SubagentInfo | undefined {
     const taskToolUseId = this.outputToolToTaskToolUseId.get(toolId);
-    let record = taskToolUseId ? this.asyncSubagents.get(taskToolUseId) : undefined;
+    let record = taskToolUseId ? this.#async(taskToolUseId) : undefined;
     let agentId = record?.info.agentId;
 
     if (!record) {
@@ -412,15 +416,15 @@ export class SubagentManager {
   /** Shows live progress on a running subagent's card; finished or unknown subagents ignore it. */
   public applyProgress(progress: SubagentProgress): void {
     const info = this.lifecycleSubagents.get(progress.toolCallId)
-      ?? this.syncSubagents.get(progress.toolCallId)
-      ?? this.asyncSubagents.get(progress.toolCallId)?.info;
+      ?? this.#sync(progress.toolCallId)
+      ?? this.#async(progress.toolCallId)?.info;
     if (!info || info.status !== 'running') return;
     this.progress.set(progress.toolCallId, { ...progress });
     this.cards.progress(progress);
   }
 
   public isPendingAsyncTask(taskToolId: string): boolean {
-    return this.asyncSubagents.get(taskToolId)?.info.asyncStatus === 'pending';
+    return this.#async(taskToolId)?.info.asyncStatus === 'pending';
   }
 
   public isLinkedAgentOutputTool(toolId: string): boolean {
@@ -428,7 +432,7 @@ export class SubagentManager {
   }
 
   public getByTaskId(taskToolId: string): SubagentInfo | undefined {
-    return this.asyncSubagents.get(taskToolId)?.info;
+    return this.#async(taskToolId)?.info;
   }
 
   /**
@@ -449,8 +453,8 @@ export class SubagentManager {
   }
 
   public hasActiveAsyncSubagents(): boolean {
-    return Array.from(this.asyncSubagents.values()).some(({ info }) => (
-      info.asyncStatus === 'pending' || info.asyncStatus === 'running'
+    return [...this.tasks.values()].some(task => task.phase === 'async' && (
+      task.record.info.asyncStatus === 'pending' || task.record.info.asyncStatus === 'running'
     ));
   }
 
@@ -459,14 +463,8 @@ export class SubagentManager {
   }
 
   public resetStreamingState(toolIds?: Iterable<string>): void {
-    if (toolIds) {
-      for (const id of toolIds) {
-        this.syncSubagents.delete(id);
-        this.pendingTasks.delete(id);
-      }
-    } else {
-      this.syncSubagents.clear();
-      this.pendingTasks.clear();
+    for (const id of toolIds ?? [...this.tasks.keys()]) {
+      if (this.tasks.get(id)?.phase !== 'async') this.tasks.delete(id);
     }
   }
 
@@ -489,15 +487,16 @@ export class SubagentManager {
 
   /** Whether provider events can still change this task after its response settles. */
   public isTracking(toolId: string): boolean {
-    if (this.syncSubagents.has(toolId) || this.pendingTasks.has(toolId)) return true;
-    const asyncStatus = this.asyncSubagents.get(toolId)?.info.asyncStatus;
+    const phase = this.tasks.get(toolId)?.phase;
+    if (phase === 'sync' || phase === 'pending') return true;
+    const asyncStatus = this.#async(toolId)?.info.asyncStatus;
     if (asyncStatus === 'pending' || asyncStatus === 'running') return true;
     return this.lifecycleSubagents.get(toolId)?.status === 'running';
   }
 
   /** Pending task mode stays provider-owned; reserve its new view without inferring a card. */
   public attachPendingTaskView(toolId: string, parent: HTMLElement): boolean {
-    if (!this.pendingTasks.has(toolId)) return false;
+    if (!this.#pending(toolId)) return false;
     this.cards.reserve(toolId, parent);
     return true;
   }
@@ -510,14 +509,31 @@ export class SubagentManager {
 
   public clear(): void {
     this.resetLifecycleState();
-    this.syncSubagents.clear();
-    this.pendingTasks.clear();
-    this.asyncSubagents.clear();
+    this.tasks.clear();
     this.providerIdentifierToToolUseIds.clear();
     this.deferredAsyncCompletions.clear();
     this.outputToolToTaskToolUseId.clear();
     this.cards.clear();
     this.progress.clear();
+  }
+
+  #pending(toolId: string): ToolCallInfo | undefined {
+    const task = this.tasks.get(toolId);
+    return task?.phase === 'pending' ? task.toolCall : undefined;
+  }
+
+  #sync(toolId: string): SubagentInfo | undefined {
+    const task = this.tasks.get(toolId);
+    return task?.phase === 'sync' ? task.info : undefined;
+  }
+
+  #async(toolId: string): AsyncSubagentRecord | undefined {
+    const task = this.tasks.get(toolId);
+    return task?.phase === 'async' ? task.record : undefined;
+  }
+
+  #deleteTask(toolId: string, phase: TaskEntry['phase']): void {
+    if (this.tasks.get(toolId)?.phase === phase) this.tasks.delete(toolId);
   }
 
   #transitionToError(record: AsyncSubagentRecord, errorResult: string): void {
@@ -539,14 +555,14 @@ export class SubagentManager {
     const taskToolUseIds = this.providerIdentifierToToolUseIds.get(identifier);
     if (!taskToolUseIds) return undefined;
     if (taskToolUseIds.size !== 1) return undefined;
-    return this.asyncSubagents.get(taskToolUseIds.values().next().value!);
+    return this.#async(taskToolUseIds.values().next().value!);
   }
 
   #resolveAsyncSubagentCompletion(
     completion: AsyncSubagentCompletion,
   ): AsyncSubagentRecord | undefined {
     if (completion.toolUseId) {
-      return this.asyncSubagents.get(completion.toolUseId);
+      return this.#async(completion.toolUseId);
     }
     return this.#resolveByProviderIdentifier(completion.taskId);
   }
@@ -606,7 +622,7 @@ export class SubagentManager {
       id: taskToolId, description: task.description || 'Subagent task', prompt: task.prompt || '',
       mode: 'sync', status: 'running', toolCalls: [], isExpanded: false,
     };
-    this.syncSubagents.set(taskToolId, info);
+    this.tasks.set(taskToolId, { info, phase: 'sync' });
     this.cards.render(info, parentEl);
     return { action: 'created_sync', info };
   }
@@ -632,7 +648,7 @@ export class SubagentManager {
     };
 
     const record: AsyncSubagentRecord = { info };
-    this.asyncSubagents.set(taskToolId, record);
+    this.tasks.set(taskToolId, { phase: 'async', record });
 
     this.cards.render(info, parentEl);
 

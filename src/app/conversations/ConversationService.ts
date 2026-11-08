@@ -8,6 +8,7 @@ import type {
   ProjectMutations,
   ProjectReader,
 } from '@/core/types';
+import { SerialQueue } from '@/utils/SerialQueue';
 
 import type { PinnedLinkedContentPathCoordinator } from '../settings/PinnedLinkedContentPathCoordinator';
 import type { ConversationRepository } from './ConversationRepository';
@@ -33,7 +34,7 @@ export interface ConversationServiceDeps {
 export class ConversationService {
   // Creation, Vault renames, placement, restore and final project archive share this ordering point.
   // Tab closure and provider callbacks stay outside it.
-  #mutationQueue: Promise<unknown> = Promise.resolve();
+  readonly #mutationQueue = new SerialQueue();
 
   constructor(private readonly deps: ConversationServiceDeps) {}
 
@@ -150,9 +151,7 @@ export class ConversationService {
   }
 
   #orderMutation<T>(mutate: () => Promise<T>): Promise<T> {
-    const result = this.#mutationQueue.then(mutate);
-    this.#mutationQueue = result.catch(() => undefined);
-    return result;
+    return this.#mutationQueue.run(mutate);
   }
 
   async archiveConversationsIf(

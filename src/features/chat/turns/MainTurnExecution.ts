@@ -83,6 +83,15 @@ export interface MainTurnExecutionDeps {
  * rollback, the response stream with its provider message boundaries, delivery, and the
  * review a continuation defers until it settles.
  */
+/**
+ * How a handed-off turn ended, decided from its result or error. `unsent` was rolled back and its input
+ * returned; `invalidated` no longer owns its stream; only `response` finalizes its reply.
+ */
+type MainTurnEnd =
+  | { readonly kind: 'unsent'; readonly invalidated: boolean }
+  | { readonly kind: 'invalidated' }
+  | { readonly kind: 'response'; readonly outcome: 'completed' | 'cancelled' | 'failed' | 'ended' };
+
 export class MainTurnExecution {
   private readonly responseStream: ResponseStream;
   private sawInitialProviderUserMessage = false;
@@ -198,7 +207,7 @@ export class MainTurnExecution {
     };
     state.addMessage(userMsg);
     this.#activeTurnStart = userMsg;
-    state.hasPendingConversationSave = true;
+    state.markConversationDirty();
     this.deps.renderer?.addMessage(userMsg);
 
     const rollbackFailedTurn = (assistantMsg?: ChatMessage): void => {
@@ -210,8 +219,9 @@ export class MainTurnExecution {
         return false;
       });
       state.messages = retained;
-      state.hasPendingConversationSave = hadPendingConversationSave
-        || retained.some(message => !messagesBeforeTurn.includes(message));
+      if (!hadPendingConversationSave && !retained.some(message => !messagesBeforeTurn.includes(message))) {
+        state.discardPendingConversationSave();
+      }
       this.#resetTurnStreamingState();
       if (retained.length === 0) this.deps.getWelcomeEl()?.removeClass('claudian-hidden');
     };
@@ -253,15 +263,10 @@ export class MainTurnExecution {
     );
     state.responseStartTime = performance.now();
 
-    let wasInterrupted = false;
-    let wasInvalidated = false;
-    let didEnqueueToSdk = false;
-    let didRollbackUnsentTurn = false;
-    let shouldReportReviewableSettlement = false;
-    let currentReviewableSettlementReporter: (() => void) | null = null;
-    let didCancelThisTurn = false;
-    let completed = false;
-    let hadExecutionError = false;
+    let end: MainTurnEnd = { kind: 'response', outcome: 'ended' };
+    let accepted = false;
+    /** Reports this turn's reviewable settlement; null when it has none. */
+    let reviewReporter: (() => void) | null = null;
     let scheduledContinuation = false;
 
     const rollbackUnstartedTurn = (): void => {
@@ -302,7 +307,7 @@ export class MainTurnExecution {
       if (turn.assertBeforeHandoff) submission.assertBeforeHandoff = turn.assertBeforeHandoff;
       const result = await coordinator.execute(submission, signal);
       if (result.status === 'completed') {
-        completed = true;
+        end = { kind: 'response', outcome: 'completed' };
         const checkpoint = result.nativeAssistantMessageId ?? result.nativeCheckpointId;
         const finalAssistant = this.responseStream.active ?? assistantMsg;
         finalAssistant.completedAt = Date.now();
@@ -314,25 +319,25 @@ export class MainTurnExecution {
           finalAssistant.assistantMessageId = checkpoint;
         }
       }
-      if (!result.accepted && turn.origin === 'session-message' && result.status !== 'missing-session') {
+      const rolledBack = !result.accepted && turn.origin === 'session-message' && result.status !== 'missing-session';
+      if (rolledBack) {
         restoreUnsentInput(admittedTurnRequest);
         rollbackFailedTurn(assistantMsg);
-        didRollbackUnsentTurn = true;
       }
-      didEnqueueToSdk = result.accepted;
+      accepted = result.accepted;
       if (result.accepted) turn.onDelivery?.(true);
-      shouldReportReviewableSettlement = result.status === 'completed'
-        || (result.status === 'error' && result.accepted);
-      if (shouldReportReviewableSettlement) {
-        currentReviewableSettlementReporter = this.deps.captureReviewableSettlement?.(
+      if (result.status === 'completed' || (result.status === 'error' && result.accepted)) {
+        reviewReporter = this.deps.captureReviewableSettlement?.(
           result.status === 'error' ? 'error' : 'completed',
         ) ?? null;
       }
-      if (result.status === 'cancelled') {
-        wasInterrupted = true;
+      if (result.status === 'invalidated') this.deps.onInvalidated();
+      if (rolledBack) {
+        end = { kind: 'unsent', invalidated: result.status === 'invalidated' };
+      } else if (result.status === 'cancelled') {
+        end = { kind: 'response', outcome: 'cancelled' };
       } else if (result.status === 'invalidated') {
-        this.deps.onInvalidated();
-        wasInvalidated = true;
+        end = { kind: 'invalidated' };
       } else if (result.status === 'missing-session') {
         const retryMessage = result.accepted || turn.assertBeforeHandoff || turn.origin === 'session-message'
           ? null
@@ -365,9 +370,10 @@ export class MainTurnExecution {
                 ? 'The provider session no longer exists. Claudian preserved its record because the remaining history could not be verified.'
                 : 'The provider session no longer exists. Send again to start a new session.';
         new Notice(notice);
-        wasInvalidated = true;
+        end = { kind: 'invalidated' };
       } else if (result.status === 'error' && result.error) {
-        hadExecutionError = true;
+        // A rolled-back unsent turn has no reply left to carry the error; its input returns for retry.
+        end = { kind: 'response', outcome: 'failed' };
         await streamController.appendError(result.error.message);
       }
     } catch (error) {
@@ -376,17 +382,15 @@ export class MainTurnExecution {
         const deferred = error.cause instanceof SessionMessageDeferredError;
         restoreUnsentInput(admittedTurnRequest, true, deferred ? 'deferred' : 'failed');
         rollbackFailedTurn(assistantMsg);
-        didRollbackUnsentTurn = true;
+        end = { kind: 'unsent', invalidated: end.kind === 'invalidated' };
         if (deferred) scheduledContinuation = this.deps.queue.scheduleContinuation();
         if (!signal.aborted && !deferred) new Notice(error.userMessage ?? 'Message was not sent. Please try again.');
         this.reportDeferredReview();
       } else {
-        hadExecutionError = true;
-        shouldReportReviewableSettlement = true;
+        if (end.kind === 'response') end = { kind: 'response', outcome: 'failed' };
         const errorMsg = error instanceof Error ? error.message : 'Unknown error';
         await streamController.appendError(errorMsg);
-        currentReviewableSettlementReporter =
-          this.deps.captureReviewableSettlement?.('error') ?? null;
+        reviewReporter = this.deps.captureReviewableSettlement?.('error') ?? null;
       }
     } finally {
       this.activeDelivery = undefined;
@@ -395,21 +399,18 @@ export class MainTurnExecution {
       // ALWAYS clear the timer interval, even on stream invalidation (prevents memory leaks).
       // An invalidated turn that still owns the stream also withdraws its pending indicator.
       if (state.streamGeneration === streamGeneration) streamController.thinkingIndicator.hide();
-      else state.clearFlavorTimerInterval();
+      else streamController.thinkingIndicator.stopElapsedTimer();
 
+      let interrupted = false;
       try {
         // Only the response generation that still owns the stream may finalize it.
-        if (
-          !wasInvalidated
-          && !didRollbackUnsentTurn
-          && state.streamGeneration === streamGeneration
-        ) {
+        if (end.kind === 'response' && state.streamGeneration === streamGeneration) {
           // Native completion wins over a cancel that reached the provider too late.
-          didCancelThisTurn = wasInterrupted || (state.cancelRequested && !completed);
-          await this.responseStream.finish(finalAssistantMsg, { interrupted: didCancelThisTurn, failed: hadExecutionError });
+          interrupted = end.outcome === 'cancelled' || (state.cancelRequested && end.outcome !== 'completed');
+          await this.responseStream.finish(finalAssistantMsg, { interrupted, failed: end.outcome === 'failed' });
           this.#syncScrollToBottomAfterRenderUpdates();
 
-          const saveExtras = didEnqueueToSdk ? { resumeAtMessageId: undefined } : undefined;
+          const saveExtras = accepted ? { resumeAtMessageId: undefined } : undefined;
           await conversationController.save(true, saveExtras).catch(error => {
             // No continuation was admitted: leave its unsent input available for an explicit retry.
             this.deps.queue.restoreToComposer();
@@ -420,24 +421,17 @@ export class MainTurnExecution {
           scheduledContinuation = this.deps.queue.scheduleContinuation();
         }
 
-        if (wasInvalidated) {
+        if (end.kind === 'invalidated' || (end.kind === 'unsent' && end.invalidated)) {
           this.deps.steering.clearCurrentUi();
           this.deps.queue.updateIndicator();
         }
       } finally {
-        const currentSettlementIsReviewable = shouldReportReviewableSettlement
-          && !didCancelThisTurn
-          && state.streamGeneration === streamGeneration;
+        const currentReporter = !interrupted && state.streamGeneration === streamGeneration
+          ? reviewReporter : null;
         if (scheduledContinuation) {
-          if (currentSettlementIsReviewable && currentReviewableSettlementReporter) {
-            this.#deferReviewableSettlement(currentReviewableSettlementReporter);
-          }
-        } else if (currentSettlementIsReviewable) {
-          this.#reportCurrentOrDeferredReviewableSettlement(
-            currentReviewableSettlementReporter,
-          );
+          this.#deferReviewableSettlement(currentReporter);
         } else {
-          this.reportDeferredReview();
+          this.#reportCurrentOrDeferredReviewableSettlement(currentReporter);
         }
 
         this.deps.steering.finishTurn(turnConversationId);

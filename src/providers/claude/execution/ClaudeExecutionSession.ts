@@ -121,15 +121,23 @@ ClaudeExecutionStrategySink {
   private lastBackgroundEventScope: ProviderBackgroundEventScope | undefined;
   private backgroundTurn: BackgroundTurn | null = null;
   private nativeQueryToken = 0;
-  private cancelledBackgroundQueryToken: number | null = null;
+  /** A cancelled background turn until native reports its interruption; the next turn is sent only after it. */
+  private backgroundCancellation: {
+    readonly queryToken: number;
+    readonly settled: Promise<void>;
+    readonly resolve: () => void;
+  } | null = null;
   private backgroundCounter = 0;
   private queryToken = 0;
   private commandPublication = 0;
   private commandSnapshot: SlashCommand[] | undefined;
   private skillNames: readonly string[] = [];
   private disposed = false;
-  private readonly suppressedPersistentQueryTokens = new Set<number>();
-  private readonly suppressedEphemeralQueryTokens = new Set<number>();
+  /**
+   * Native turns of cancelled requested runs whose output is dropped until their result. A persistent
+   * query's failure or end under such a token still fails the run that replaced it.
+   */
+  private readonly cancelledQueryTokens = new Set<number>();
   private lastEncodedRequest: ClaudeEncodedExecutionRequest | null = null;
   private lastAllowedTools: ReadonlySet<string> | null = null;
   private readonly eventNormalizer = new ClaudeExecutionEventNormalizer();
@@ -231,9 +239,11 @@ ClaudeExecutionStrategySink {
     const active = this.activeRun;
     if (active?.nativeCompleted) return;
     if (!active || active.run.isTerminal) {
-      if (!this.backgroundTurn || this.cancelledBackgroundQueryToken !== null) return;
+      if (!this.backgroundTurn || this.backgroundCancellation) return;
       this.backgroundTurn.abortController.abort();
-      this.cancelledBackgroundQueryToken = this.backgroundTurn.queryToken;
+      let resolve!: () => void;
+      const settled = new Promise<void>((settle) => { resolve = settle; });
+      this.backgroundCancellation = { queryToken: this.backgroundTurn.queryToken, settled, resolve };
       this.state.setStatus('cancelling');
       this.#emitBackground(this.backgroundTurn, {
         type: 'session_state_changed',
@@ -247,16 +257,10 @@ ClaudeExecutionStrategySink {
     this.#emitRequestedState(active);
     active.abortController.abort();
     this.interactionHandler.dismissAll('cancelled');
-    if (active.nativeHandedOff) {
-      if (this.usesPersistentQuery) {
-        this.suppressedPersistentQueryTokens.add(active.queryToken);
-      } else {
-        this.suppressedEphemeralQueryTokens.add(active.queryToken);
-      }
-    }
+    if (active.nativeHandedOff) this.cancelledQueryTokens.add(active.queryToken);
     this.strategy.cancel(active.queryToken, active.nativeHandedOff);
     if (active.nativeHandedOff) this.#finishBackgroundTurn('provider-ended');
-    this.state.setStatus(this.backgroundTurn ? 'executing' : 'idle');
+    this.state.settleActivity(this.backgroundTurn !== null);
     this.#emitRequestedState(active);
     this.#endActiveRun(active, {
       type: 'cancelled',
@@ -322,6 +326,7 @@ ClaudeExecutionStrategySink {
       this.cancel();
     }
     this.#finishBackgroundTurn('provider-ended');
+    this.#releaseBackgroundCancellation();
     this.disposed = true;
     this.interactionHandler.dismissAll('session-disposed');
     await this.strategy.dispose();
@@ -333,8 +338,7 @@ ClaudeExecutionStrategySink {
     this.state.clearListeners();
     this.taskNotifications.reset();
     this.backgroundTurn = null;
-    this.suppressedPersistentQueryTokens.clear();
-    this.suppressedEphemeralQueryTokens.clear();
+    this.cancelledQueryTokens.clear();
   }
 
   async previewRewind(
@@ -460,20 +464,12 @@ ClaudeExecutionStrategySink {
       this.taskNotifications.observe(message);
       return;
     }
-    if (this.cancelledBackgroundQueryToken === queryToken) {
+    if (this.backgroundCancellation?.queryToken === queryToken) {
       if (message.type === 'result') this.#finishCancelledBackground(queryToken);
       return;
     }
-    if (this.suppressedEphemeralQueryTokens.has(queryToken)) {
-      if (message.type === 'result') {
-        this.suppressedEphemeralQueryTokens.delete(queryToken);
-      }
-      return;
-    }
-    if (this.suppressedPersistentQueryTokens.has(queryToken)) {
-      if (message.type === 'result') {
-        this.suppressedPersistentQueryTokens.delete(queryToken);
-      }
+    if (this.cancelledQueryTokens.has(queryToken)) {
+      if (message.type === 'result') this.cancelledQueryTokens.delete(queryToken);
       return;
     }
 
@@ -692,10 +688,9 @@ ClaudeExecutionStrategySink {
     this.suggestionTurnId = null;
     if (this.disposed) return;
     if (this.#finishCancelledBackground(queryToken)) return;
-    if (this.suppressedEphemeralQueryTokens.delete(queryToken)) return;
-    if (this.suppressedPersistentQueryTokens.delete(queryToken)) {
+    if (this.cancelledQueryTokens.delete(queryToken)) {
       const replacement = this.activeRun;
-      if (replacement && replacement.queryToken !== queryToken) {
+      if (this.usesPersistentQuery && replacement && replacement.queryToken !== queryToken) {
         this.#finishError(replacement, error);
       }
       return;
@@ -728,10 +723,9 @@ ClaudeExecutionStrategySink {
   handleNativeEnd(queryToken: number): void {
     if (this.disposed) return;
     if (this.#finishCancelledBackground(queryToken)) return;
-    if (this.suppressedEphemeralQueryTokens.delete(queryToken)) return;
-    if (this.suppressedPersistentQueryTokens.delete(queryToken)) {
+    if (this.cancelledQueryTokens.delete(queryToken)) {
       const replacement = this.activeRun;
-      if (replacement && replacement.queryToken !== queryToken) {
+      if (this.usesPersistentQuery && replacement && replacement.queryToken !== queryToken) {
         this.#finishError(
           replacement,
           new Error('Claude Code persistent query ended unexpectedly.'),
@@ -808,7 +802,7 @@ ClaudeExecutionStrategySink {
   }
 
   releaseNativeTurnFence(queryToken: number): void {
-    this.suppressedEphemeralQueryTokens.delete(queryToken);
+    this.cancelledQueryTokens.delete(queryToken);
   }
 
   getSessionToolHandler(querySignal: AbortSignal): SessionToolCallHandler | undefined {
@@ -888,6 +882,12 @@ ClaudeExecutionStrategySink {
       this.lastEncodedRequest = encoded;
       this.lastAllowedTools = encoded.allowedTools;
       assertClaudeModelAvailable(this.host, request.configuration.model);
+      const cancellation = this.backgroundCancellation;
+      if (cancellation) {
+        // Input sent before native reports the interruption would be attributed to the interrupted turn.
+        await cancellation.settled;
+        if (this.activeRun !== active || active.run.isTerminal) return;
+      }
       await this.strategy.startTurn(encoded, active.queryToken);
     } catch (error) {
       if (this.activeRun === active && !active.run.isTerminal) {
@@ -1120,11 +1120,22 @@ ClaudeExecutionStrategySink {
   }
 
   #finishCancelledBackground(queryToken: number): boolean {
-    if (this.cancelledBackgroundQueryToken !== queryToken) return false;
-    this.cancelledBackgroundQueryToken = null;
+    const cancellation = this.backgroundCancellation;
+    if (cancellation?.queryToken !== queryToken) {
+      // A query that ended under another token will not report the interruption.
+      this.#releaseBackgroundCancellation();
+      return false;
+    }
+    this.#releaseBackgroundCancellation();
     // Native interrupt records `[Request interrupted by user]` after the reply, which history replays.
     this.#finishBackgroundTurn('interrupted');
     return true;
+  }
+
+  #releaseBackgroundCancellation(): void {
+    const cancellation = this.backgroundCancellation;
+    this.backgroundCancellation = null;
+    cancellation?.resolve();
   }
 
   #finishBackgroundTurn(
@@ -1133,7 +1144,7 @@ ClaudeExecutionStrategySink {
     const background = this.backgroundTurn;
     if (!background) return;
     background.abortController.abort();
-    this.state.setStatus(this.activeRun ? 'executing' : 'idle');
+    this.state.settleActivity(this.activeRun !== null);
     this.#emitBackground(background, {
       type: 'session_state_changed',
       snapshot: this.getSnapshot(),

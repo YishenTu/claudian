@@ -89,7 +89,6 @@ export class SideChatRuntime {
   readonly #responseStream: ResponseStream;
   /** Owns the requested side turn; presentation state derives from it. */
   readonly #turns = new TurnCoordinator();
-  #status: SideChatStatus = 'preparing';
   #lastError: string | null = null;
   #disposed = false;
   #disposal: Promise<void> | null = null;
@@ -273,7 +272,10 @@ export class SideChatRuntime {
   }
 
   get status(): SideChatStatus {
-    return this.#status;
+    if (this.state.requiresAction) return 'action-required';
+    if (this.isWorking) return 'working';
+    if (this.#lastError) return 'error';
+    return this.state.messages.length === 0 ? 'preparing' : 'idle';
   }
 
   get title(): string | null {
@@ -528,8 +530,6 @@ export class SideChatRuntime {
     this.#prompts.expireAsyncQuestions();
     this.#prompts.dismissAll();
     await this.#session.dispose();
-    this.state.clearFlavorTimerInterval();
-    this.state.clearThinkingIndicatorTimeout();
     this.#stream.dispose();
     this.detachPresentation();
     this.#subagents.resetStreamingState();
@@ -693,16 +693,8 @@ export class SideChatRuntime {
     this.#refreshStatus();
   }
 
+  /** Publishes a change to anything `status` derives from. */
   #refreshStatus(): void {
-    this.#status = this.state.requiresAction
-      ? 'action-required'
-      : this.isWorking
-        ? 'working'
-        : this.#lastError
-          ? 'error'
-          : this.state.messages.length === 0
-            ? 'preparing'
-            : 'idle';
     this.deps.onStatusChanged();
   }
 }

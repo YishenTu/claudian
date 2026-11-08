@@ -117,6 +117,7 @@ export class DeepSeekExecutionSession implements ProviderExecutionSession {
   private stopTask?: Promise<void>;
   private disposal?: Promise<void>;
   private detaching?: Promise<void>;
+  private detachingMode?: 'stop' | 'retain' | 'release';
   /** A failed binding kept only so a Stop or closing can still end the native work the live process keeps. */
   private retained = false;
   // Only transcript divergence prevents rebinding after a failure.
@@ -1013,7 +1014,18 @@ export class DeepSeekExecutionSession implements ProviderExecutionSession {
    * closing can; `release` lets go of a binding with nothing left to stop.
    */
   private detach(mode: 'stop' | 'retain' | 'release'): Promise<void> {
-    if (this.detaching) return this.detaching;
+    if (this.detaching) {
+      // Closing during a failure's retain or release still stops what that detach leaves behind.
+      if (mode !== 'stop' || this.detachingMode === 'stop') return this.detaching;
+      const escalated = this.detaching.then(() => {
+        this.detaching = undefined;
+        this.detachingMode = undefined;
+        return this.detach('stop');
+      });
+      this.detaching = escalated;
+      this.detachingMode = 'stop';
+      return escalated;
+    }
     const observer = this.observer;
     const task = (async () => {
       if (mode !== 'stop' || !observer) return;
@@ -1025,10 +1037,11 @@ export class DeepSeekExecutionSession implements ProviderExecutionSession {
         // Unconfirmed native work ends with the shared Host; the session is already retired.
       }
     })().finally(() => {
-      if (this.detaching === task) this.detaching = undefined;
+      if (this.detaching === task) { this.detaching = undefined; this.detachingMode = undefined; }
       if (mode === 'retain' && this.lease) { this.endBinding(); this.retained = true; } else this.unbind();
     });
     this.detaching = task;
+    this.detachingMode = mode;
     this.publish();
     return task;
   }

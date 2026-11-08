@@ -16,6 +16,7 @@ import {
   type ACPCreateElicitationResponse,
   ACPInteractionController,
   type ACPMCPServer,
+  ACPNativeOwnerSlot,
   type ACPPromptResponse,
   ACPRequestedTurn,
   type ACPRequestPermissionRequest,
@@ -139,8 +140,10 @@ export class AntigravityExecutionSession implements ProviderExecutionSession, St
   private disposalFlight: Promise<void> | null = null;
   private disposed = false;
   private nativeConversationContextEstablished: boolean;
-  private nativeOwner: NativeOwner | null = null;
-  private nativeStartupFlight: Promise<NativeOwner> | null = null;
+  private readonly nativeSlot = new ACPNativeOwnerSlot<NativeOwner>(async (owner, wasCurrent) => {
+    if (wasCurrent) owner.unsubscribe();
+    await owner.native.shutdown();
+  });
   private providerSessionId: string | undefined;
   private sessionToolRoute: Promise<SessionToolRoute> | null = null;
   private readonly interactionController: ACPInteractionController;
@@ -220,7 +223,7 @@ export class AntigravityExecutionSession implements ProviderExecutionSession, St
 
   getCommandSnapshot(): readonly SlashCommand[] | undefined {
     const sessionId = this.providerSessionId;
-    const commands = sessionId ? this.nativeOwner?.commandsBySession.get(sessionId) : undefined;
+    const commands = sessionId ? this.nativeSlot.current?.commandsBySession.get(sessionId) : undefined;
     return commands?.map(command => ({ ...command }));
   }
 
@@ -244,7 +247,7 @@ export class AntigravityExecutionSession implements ProviderExecutionSession, St
         const active = this.active;
         if (active) await this.#cancelRun(active.run, 'session-disposed');
         if (this.cancellationFlight) await this.cancellationFlight;
-        await this.#shutdownNative();
+        await this.nativeSlot.shutdown();
       } finally {
         const route = await this.sessionToolRoute?.catch(() => null);
         route?.dispose();
@@ -265,7 +268,7 @@ export class AntigravityExecutionSession implements ProviderExecutionSession, St
    */
   async steer(request: ProviderExecutionRequest): Promise<boolean> {
     const active = this.active;
-    const owner = this.nativeOwner;
+    const owner = this.nativeSlot.current;
     const sessionId = this.providerSessionId;
     if (
       !active || this.#isCancellationRequested(active) || request.signal.aborted
@@ -392,24 +395,18 @@ export class AntigravityExecutionSession implements ProviderExecutionSession, St
   }
 
   async #ensureNative(active: ActiveExecution, creationAgentName?: string): Promise<NativeOwner> {
-    const owner = this.nativeOwner;
-    if (!this.nativeStartupFlight && owner?.initialized && owner.native.isAlive()
-      && (creationAgentName === undefined || owner.creationAgentName === creationAgentName)) return owner;
-    let flight = this.nativeStartupFlight;
-    if (!flight) {
-      flight = this.#startNative(active, creationAgentName);
-      this.nativeStartupFlight = flight;
-      const clear = () => { if (this.nativeStartupFlight === flight) this.nativeStartupFlight = null; };
-      flight.then(clear, clear);
-    }
-    const started = await flight;
+    const started = await this.nativeSlot.ensure(
+      owner => owner.initialized && owner.native.isAlive()
+        && (creationAgentName === undefined || owner.creationAgentName === creationAgentName),
+      () => this.#startNative(active, creationAgentName),
+    );
     this.#throwIfCancellationRequested(active);
     return started;
   }
 
   async #startNative(active: ActiveExecution, creationAgentName?: string): Promise<NativeOwner> {
-    const previous = this.nativeOwner;
-    if (previous) await this.#shutdownNativeOwner(previous);
+    const previous = this.nativeSlot.current;
+    if (previous) await this.nativeSlot.detach(previous);
     const args = creationAgentName ? [...ANTIGRAVITY_ACP_ARGS, '--agent', creationAgentName] : ANTIGRAVITY_ACP_ARGS;
     const launch = await resolveAntigravityLaunchSpec(this.host, args, this.config.workingDirectory);
     // A run cancelled during CLI lookup must not spawn a process that cancellation then waits on.
@@ -429,7 +426,7 @@ export class AntigravityExecutionSession implements ProviderExecutionSession, St
       native,
       unsubscribe: () => {},
     };
-    this.nativeOwner = owner;
+    this.nativeSlot.install(owner);
     try {
       owner.unsubscribe = native.onNotification(notification => {
         if (this.#isCurrentOwner(owner)) this.#handleNotification(owner, notification);
@@ -439,7 +436,7 @@ export class AntigravityExecutionSession implements ProviderExecutionSession, St
       owner.initialized = true;
       return owner;
     } catch (error) {
-      await this.#shutdownNativeOwner(owner).catch(() => undefined);
+      await this.nativeSlot.detach(owner).catch(() => undefined);
       throw error;
     }
   }
@@ -680,22 +677,18 @@ export class AntigravityExecutionSession implements ProviderExecutionSession, St
     this.#updateSnapshot('idle');
     this.#emitCurrentSnapshot();
     active.abortController.abort();
-    active.run.finish({
+    this.#endRun(active, {
       providerPayload: response,
       reason: response.stopReason === 'max_tokens' ? 'max-tokens' : response.stopReason === 'end_turn' ? 'completed' : 'provider-ended',
       type: 'turn_completed',
     });
-    active.turn.dispose();
-    this.active = null;
   }
 
   #failUnrecoverable(active: ActiveExecution, message: string): void {
     this.#updateSnapshot('invalidated', { message, reason: 'configuration-changed', recoverable: false });
     this.#emitCurrentSnapshot();
     active.abortController.abort();
-    active.run.finish({ category: 'configuration', message, recoverable: false, type: 'execution_error' });
-    active.turn.dispose();
-    if (this.active === active) this.active = null;
+    this.#endRun(active, { category: 'configuration', message, recoverable: false, type: 'execution_error' });
   }
 
   #failRecoverable(active: ActiveExecution, error: unknown): void {
@@ -710,7 +703,7 @@ export class AntigravityExecutionSession implements ProviderExecutionSession, St
     });
     this.#emitCurrentSnapshot();
     active.abortController.abort();
-    active.run.finish({
+    this.#endRun(active, {
       category,
       message,
       ...(category === 'provider-session-missing' && this.providerSessionId
@@ -719,8 +712,6 @@ export class AntigravityExecutionSession implements ProviderExecutionSession, St
       recoverable: true,
       type: 'execution_error',
     });
-    active.turn.dispose();
-    if (this.active === active) this.active = null;
   }
 
   async #cancelRun(run: RequestedRunChannel, reason: string): Promise<void> {
@@ -732,7 +723,7 @@ export class AntigravityExecutionSession implements ProviderExecutionSession, St
     active.abortController.abort();
     this.interactionController.dismissAll('cancelled');
     this.questionRouter.dismissAll('cancelled');
-    const owner = this.nativeOwner;
+    const owner = this.nativeSlot.current;
     const sessionId = this.providerSessionId;
     this.cancellationFlight = (async () => {
       try {
@@ -741,10 +732,10 @@ export class AntigravityExecutionSession implements ProviderExecutionSession, St
           owner.native.cancel(sessionId);
           // agy settles a cancelled prompt at once; a process that does not is replaced.
           const settled = await settleWithin(latest, CANCEL_SETTLE_TIMEOUT_MS);
-          if (!settled) await this.#shutdownNative();
+          if (!settled) await this.nativeSlot.shutdown();
         } else if (active.nativeTouched) {
           // Startup, resume or configuration was interrupted; its native outcome is unknown.
-          await this.#shutdownNative();
+          await this.nativeSlot.shutdown();
         }
       } catch {
         // Teardown failure cannot replace the already-requested cancellation terminal.
@@ -753,12 +744,17 @@ export class AntigravityExecutionSession implements ProviderExecutionSession, St
           this.#updateSnapshot('idle');
           this.#emitCurrentSnapshot();
         }
-        active.run.finish({ reason, type: 'cancelled' });
-        active.turn.dispose();
-        if (this.active === active) this.active = null;
+        this.#endRun(active, { reason, type: 'cancelled' });
       }
     })().finally(() => { this.cancellationFlight = null; });
     return this.cancellationFlight;
+  }
+
+  /** The one way a run ends: its terminal event, its turn's disposal, and release of the session slot. */
+  #endRun(active: ActiveExecution, terminal: Parameters<RequestedRunChannel['finish']>[0]): void {
+    active.run.finish(terminal);
+    active.turn.dispose();
+    if (this.active === active) this.active = null;
   }
 
   #isCancellationRequested(active: ActiveExecution): boolean {
@@ -769,25 +765,8 @@ export class AntigravityExecutionSession implements ProviderExecutionSession, St
     if (this.#isCancellationRequested(active)) throw new AntigravityExecutionCancellationError();
   }
 
-  async #shutdownNative(): Promise<void> {
-    const flight = this.nativeStartupFlight;
-    const owner = this.nativeOwner;
-    if (owner) await this.#shutdownNativeOwner(owner);
-    if (flight) await flight.catch(() => undefined);
-    const remaining = this.nativeOwner;
-    if (remaining) await this.#shutdownNativeOwner(remaining);
-  }
-
-  async #shutdownNativeOwner(owner: NativeOwner): Promise<void> {
-    if (this.nativeOwner === owner) {
-      this.nativeOwner = null;
-      owner.unsubscribe();
-    }
-    await owner.native.shutdown();
-  }
-
   #isCurrentOwner(owner: NativeOwner): boolean {
-    return !this.disposed && this.nativeOwner === owner;
+    return !this.disposed && this.nativeSlot.isCurrent(owner);
   }
 
   #setNativeConversationContextEstablished(established: boolean): void {

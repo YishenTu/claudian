@@ -84,7 +84,7 @@ async function createView() {
     isRuntimeLive: () => true, lifecycleState: 'open',
     openConversation: async () => {}, startNewConversation: async () => {},
   });
-  tab.hydrationState = 'ready';
+  await tab.session.runtime.model.hydrate();
   await tab.executionCoordinator.bindConversation({ conversationId: conversation.id, providerId: 'claude' });
   await tab.executionCoordinator.prepare();
   vi.spyOn(tab.dom.messagesEl, 'getClientRects').mockImplementation(() =>

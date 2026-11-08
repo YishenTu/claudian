@@ -260,12 +260,7 @@ export class InputController {
     const request: ChatTurnRequest = {
       text: encodeSessionMessage(message), images: [], editorSelection: null, browserSelection: null, canvasSelection: null,
     };
-    const pending = await this.steering.steer(createQueuedMessage(message.text, request), () => undefined, signal);
-    if (pending.providerDisposition === 'definitely-unsent') {
-      this.steering.release(pending);
-      return 'not-sent';
-    }
-    return pending.providerDisposition === 'accepted-awaiting-correlation' ? 'accepted' : 'uncertain';
+    return this.steering.steerMessage(createQueuedMessage(message.text, request), 'drop', () => undefined, signal);
   }
 
   /** Another session's interrupt: the user's Stop for main work, keeping pending session messages. */
@@ -299,14 +294,9 @@ export class InputController {
         return {
           steer: async onDelivery => {
             if (!this.steering.canSteer) return 'not-sent';
-            const pending = await this.steering.steer(
-              { ...createQueuedMessage(reply.displayContent, turnRequest), onDelivery }, () => undefined, signal,
+            return this.steering.steerMessage(
+              { ...createQueuedMessage(reply.displayContent, turnRequest), onDelivery }, 'drop', () => undefined, signal,
             );
-            if (pending.providerDisposition === 'definitely-unsent') {
-              this.steering.release(pending);
-              return 'not-sent';
-            }
-            return pending.providerDisposition === 'accepted-awaiting-correlation' ? 'accepted' : 'uncertain';
           },
           submit: (onDelivery, assertBeforeHandoff) => this.sendMessage({
             destination: 'main', content: reply.displayContent, images: [], turnRequestOverride: turnRequest,
@@ -321,8 +311,14 @@ export class InputController {
     return this.execution.settledTranscriptEnd(messages);
   }
 
+  /** A main submission Stop can still withdraw; drives the busy UI and Stop. */
   get isPreparingMainTurn(): boolean {
     return this.preparations.isPreparing('main');
+  }
+
+  /** Any main preparation that has not settled, including stopped ones still unwinding into the composer. */
+  get hasUnsettledMainWork(): boolean {
+    return this.preparations.hasUnsettled('main');
   }
 
   handleExecutionEvent(event: ProviderExecutionEvent): Promise<void> {

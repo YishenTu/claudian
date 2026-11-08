@@ -168,7 +168,7 @@ export class SessionRuntimePool {
   private canRevalidate(record: SessionRecord, attachment: SessionAttachment | undefined): boolean {
     if (!attachment) return this.canEvict(record);
     const model = record.runtime.peekModel;
-    return this.records.get(record.runtime) === record && !this.closing && record.attachment === attachment
+    return this.#isLive(record) && record.attachment === attachment
       && record.runtime.isIdle && !!model && model.canRefreshHistory;
   }
 
@@ -234,7 +234,7 @@ export class SessionRuntimePool {
     const read: Promise<void> = Promise.resolve(before)
       .then(() => isStale() ? null : this.readNativeRevision(id))
       .then(revision => {
-        if (record.revisionRead !== read || isStale() || this.records.get(record.runtime) !== record) return;
+        if (record.revisionRead !== read || isStale() || !this.#isCurrent(record)) return;
         // A read that cannot answer keeps a known baseline; the next check compares against it.
         if (revision) record.freshness = { state: 'current', revision };
       })
@@ -265,12 +265,12 @@ export class SessionRuntimePool {
     if (freshness.state === 'stale') {
       if (!freshness.reloadRevision) return;
       const revision = await freshness.reloadRevision;
-      if (record.freshness !== freshness || this.records.get(record.runtime) !== record) return;
+      if (record.freshness !== freshness || !this.#isCurrent(record)) return;
       record.freshness = revision ? { state: 'current', revision } : { state: 'unknown' };
       if (revision) return;
     }
     while (record.revisionRead) await record.revisionRead;
-    if (this.records.get(record.runtime) === record && record.freshness.state === 'unknown') this.observeNativeRevision(record);
+    if (this.#isCurrent(record) && record.freshness.state === 'unknown') this.observeNativeRevision(record);
   }
 
   private async readNativeRevision(id: string): Promise<string | null> {
@@ -330,7 +330,7 @@ export class SessionRuntimePool {
         if (!held) return;
         held = false;
         record.holds -= 1;
-        if (this.records.get(runtime) === record) this.changed(record);
+        if (this.#isCurrent(record)) this.changed(record);
       },
     };
   }
@@ -399,7 +399,7 @@ export class SessionRuntimePool {
 
   private canEvict(record: SessionRecord): boolean {
     const { runtime } = record;
-    return this.records.get(runtime) === record && !this.closing && !record.attachment
+    return this.#isCurrent(record) && !this.closing && !record.attachment
       && runtime.isIdle && (!runtime.peekModel || runtime.peekModel.canEvict);
   }
 
@@ -431,6 +431,8 @@ export class SessionRuntimePool {
     if (model.state.hasPendingConversationSave) {
       await model.conversationController.save(false);
       if (!eligible()) return true;
+      // Releasing would drop changes the save did not persist; the next eviction retries them first.
+      if (model.state.hasPendingConversationSave) return false;
     }
     const retained = () => options.retain && this.isRetained(record);
     if (retained()) return false;
@@ -477,7 +479,7 @@ export class SessionRuntimePool {
   }
 
   private isReleasable(record: SessionRecord): boolean {
-    return this.records.get(record.runtime) === record && !this.closing && !record.attachment && !record.runtime.isWorking;
+    return this.#isLive(record) && !record.attachment && !record.runtime.isWorking;
   }
 
   private disposeRecord(record: SessionRecord): Promise<void> {
@@ -510,5 +512,15 @@ export class SessionRuntimePool {
       const failures = results.filter(result => result.status === 'rejected');
       if (failures.length) throw new AggregateError(failures.map(result => result.reason as unknown), 'Failed to drain session runtimes');
     })();
+  }
+
+  /** The pool still owns this record; disposal or replacement ends it. */
+  #isCurrent(record: SessionRecord): boolean {
+    return this.records.get(record.runtime) === record;
+  }
+
+  /** Current and not fenced by plugin shutdown. */
+  #isLive(record: SessionRecord): boolean {
+    return this.#isCurrent(record) && !this.closing;
   }
 }

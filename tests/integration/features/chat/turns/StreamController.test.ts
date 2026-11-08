@@ -150,8 +150,6 @@ describe('StreamController - Text Content', () => {
   });
 
   afterEach(() => {
-    deps.state.clearThinkingIndicatorTimeout();
-    deps.state.clearFlavorTimerInterval();
     controller.dispose();
     realRenderers.splice(0).forEach(renderer => renderer.dispose());
     components.splice(0).forEach(component => component.unload());
@@ -840,7 +838,7 @@ describe('StreamController - Text Content', () => {
       controller.thinkingIndicator.show();
       vi.advanceTimersByTime(416);
 
-      expect(deps.state.thinkingEl).not.toBeNull();
+      expect(document.querySelector('.claudian-thinking')).not.toBeNull();
       expect(messagesEl.scrollTop).toBe(1_000);
     });
 
@@ -853,7 +851,7 @@ describe('StreamController - Text Content', () => {
       controller.thinkingIndicator.show();
       vi.advanceTimersByTime(416);
 
-      expect(deps.state.thinkingEl).not.toBeNull();
+      expect(document.querySelector('.claudian-thinking')).not.toBeNull();
       expect(messagesEl.scrollTop).toBe(0);
     });
 
@@ -862,11 +860,13 @@ describe('StreamController - Text Content', () => {
 
       controller.thinkingIndicator.show();
       vi.advanceTimersByTime(500);
-      expect(deps.state.flavorTimerInterval).not.toBeNull();
+      expect(document.querySelector('.claudian-thinking')).not.toBeNull();
+      expect(vi.getTimerCount()).toBe(1);
 
       controller.resetStreamingState();
 
-      expect(deps.state.flavorTimerInterval).toBeNull();
+      expect(document.querySelector('.claudian-thinking')).toBeNull();
+      expect(vi.getTimerCount()).toBe(0);
     });
   });
 
@@ -940,7 +940,7 @@ describe('StreamController - Text Content', () => {
       controller.thinkingIndicator.show();
       controller.dispose();
       vi.advanceTimersByTime(500);
-      expect(deps.state.thinkingEl).toBeNull();
+      expect(document.querySelector('.claudian-thinking')).toBeNull();
       expect(deps.state.waitingStatus).toBeNull();
 
       const visible = new StreamController(deps);
@@ -948,9 +948,9 @@ describe('StreamController - Text Content', () => {
       vi.advanceTimersByTime(500);
       expect(deps.state.waitingStatus).not.toBeNull();
       visible.dispose();
-      expect(deps.state.thinkingEl).toBeNull();
+      expect(document.querySelector('.claudian-thinking')).toBeNull();
       expect(deps.state.waitingStatus).toBeNull();
-      expect(deps.state.flavorTimerInterval).toBeNull();
+      expect(vi.getTimerCount()).toBe(0);
     });
 
   });
@@ -2760,8 +2760,6 @@ describe('StreamController - Tool completion', () => {
   });
 
   afterEach(() => {
-    deps.state.clearThinkingIndicatorTimeout();
-    deps.state.clearFlavorTimerInterval();
     controller.dispose();
     realRenderers.splice(0).forEach(renderer => renderer.dispose());
     components.splice(0).forEach(component => component.unload());

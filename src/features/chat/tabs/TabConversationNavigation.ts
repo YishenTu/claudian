@@ -3,6 +3,7 @@ import type { TabId, TabManagerViewHost } from '@/features/chat/tabs/ChatTab';
 import { commitProvisionalTab } from '@/features/chat/tabs/TabLifecycle';
 import type { AssembledTabRuntime, TabMembershipView } from '@/features/chat/tabs/types';
 import { revealWorkspaceLeaf } from '@/utils/obsidianCompat';
+import { SerialQueue } from '@/utils/SerialQueue';
 
 export type OpenConversationOptions = {
   preferNewTab?: boolean;
@@ -32,7 +33,7 @@ export interface TabConversationNavigationHost {
  */
 export class TabConversationNavigation {
   #requestRevision = 0;
-  #tail: Promise<void> = Promise.resolve();
+  readonly #queue = new SerialQueue();
   #fence: Promise<void> | null = null;
 
   constructor(private readonly host: TabConversationNavigationHost) {}
@@ -70,17 +71,10 @@ export class TabConversationNavigation {
     ) return;
     const requestRevision = ++this.#requestRevision;
     const isCurrent = (): boolean => this.#isCurrent(requestRevision, sourceTab);
-    const pending = this.#tail
-      .catch(() => undefined)
-      .then(async () => {
-        if (!isCurrent()) return;
-        await operation(isCurrent);
-      });
-    this.#tail = pending.then(
-      () => undefined,
-      () => undefined,
-    );
-    await pending;
+    await this.#queue.run(async () => {
+      if (!isCurrent()) return;
+      await operation(isCurrent);
+    });
   }
 
   /**
@@ -112,7 +106,7 @@ export class TabConversationNavigation {
   /** Supersedes every queued request and waits for the in-flight one to settle. */
   async invalidateAndDrain(): Promise<void> {
     this.#requestRevision += 1;
-    await this.#tail;
+    await this.#queue.settled();
   }
 
   /**

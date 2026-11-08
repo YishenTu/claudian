@@ -687,7 +687,7 @@ describe('Tab provider execution ownership', () => {
       tab.controllers.streamController.thinkingIndicator.show();
       await vi.advanceTimersByTimeAsync(500);
       expect(tab.state.requiresAction).toBe(true);
-      expect(tab.state.thinkingEl).toBeNull();
+      expect(tab.state.waitingStatus).toBeNull();
       const settleQuestion = async () => {
         tab.controllers.inputController.updateAsyncQuestion({ ...question, resolvedAnswers: { '0': 'History' } });
         await vi.advanceTimersByTimeAsync(0);
@@ -705,7 +705,7 @@ describe('Tab provider execution ownership', () => {
       await settleQuestion();
       await vi.advanceTimersByTimeAsync(500);
 
-      expect(tab.state.thinkingEl).not.toBeNull();
+      expect(tab.state.waitingStatus).not.toBeNull();
       await finishLater();
     });
 
@@ -719,7 +719,7 @@ describe('Tab provider execution ownership', () => {
       await settleQuestion();
       await vi.advanceTimersByTimeAsync(500);
 
-      expect(tab.state.thinkingEl).toBeNull();
+      expect(tab.state.waitingStatus).toBeNull();
       await finishLater();
     });
   });

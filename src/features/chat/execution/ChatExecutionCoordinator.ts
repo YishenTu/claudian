@@ -194,6 +194,15 @@ interface ActiveExecution {
   terminationOverride: 'cancelled' | 'invalidated' | null;
 }
 
+/** The one foreground operation: a turn, holding its execution once handed off, or a branch change. */
+interface ForegroundTurn {
+  readonly kind: 'turn';
+  readonly controller: AbortController;
+  execution: ActiveExecution | null;
+}
+
+type ForegroundOperation = ForegroundTurn | { readonly kind: 'branch'; readonly controller: AbortController };
+
 interface PendingSteerAttempt {
   readonly conversationId: string;
   acceptedByProviderEvent: boolean;
@@ -224,8 +233,7 @@ export class ChatExecutionCoordinator {
   readonly #interactions: ExecutionInteractions;
   #conversation: ChatExecutionConversationBinding | null = null;
   #sessionBinding: SessionBinding | null = null;
-  #activeExecution: ActiveExecution | null = null;
-  #requestController: AbortController | null = null;
+  #foreground: ForegroundOperation | null = null;
   #branchRecoveryRequired = false;
   readonly #pendingSteerAttempts = new Map<string, PendingSteerAttempt>();
   #disposed = false;
@@ -413,24 +421,30 @@ export class ChatExecutionCoordinator {
   async execute(submission: ChatTurnSubmission, signal?: AbortSignal): Promise<ChatExecutionResult> {
     this.#assertAvailable();
     if (this.#branchRecoveryRequired) throw new ChatExecutionPreHandoffError('Conversation branch recovery must finish before sending.');
-    if (this.#requestController) throw new Error('A chat execution is already active');
-    const controller = new AbortController();
-    this.#requestController = controller;
+    if (this.#foreground) throw new Error('A chat execution is already active');
+    const turn: ForegroundTurn = { controller: new AbortController(), execution: null, kind: 'turn' };
+    this.#foreground = turn;
     const cancel = () => this.cancel();
     signal?.addEventListener('abort', cancel, { once: true });
-    if (signal?.aborted) controller.abort();
+    if (signal?.aborted) turn.controller.abort();
     try {
-      return await this.#runProtectedOperation(() => this.#executeProtected(submission, controller));
+      return await this.#runProtectedOperation(() => this.#executeProtected(submission, turn));
     } finally {
       signal?.removeEventListener('abort', cancel);
-      this.#requestController = null;
+      if (this.#foreground === turn) this.#foreground = null;
     }
+  }
+
+  get #activeExecution(): ActiveExecution | null {
+    const foreground = this.#foreground;
+    return foreground?.kind === 'turn' ? foreground.execution : null;
   }
 
   async #executeProtected(
     submission: ChatTurnSubmission,
-    requestController: AbortController,
+    turn: ForegroundTurn,
   ): Promise<ChatExecutionResult> {
+    const requestController = turn.controller;
     let conversation: ChatExecutionConversationBinding;
     let binding: SessionBinding;
     let run: ProviderExecutionRun;
@@ -470,25 +484,23 @@ export class ChatExecutionCoordinator {
       submission,
       terminationOverride: null,
     };
-    this.#activeExecution = active;
+    turn.execution = active;
 
     try {
       return await this.#consumeRequestedEvents(active);
     } finally {
       this.#interactions.dismissTurn(active.run.turnId, 'native-rejected');
-      if (this.#activeExecution === active) {
-        this.#activeExecution = null;
-      }
+      if (turn.execution === active) turn.execution = null;
     }
   }
 
   cancel(): void {
-    if (this.#requestController?.signal.aborted) return;
-    this.#requestController?.abort();
-    const active = this.#activeExecution;
+    const foreground = this.#foreground;
+    if (!foreground || foreground.controller.signal.aborted) return;
+    foreground.controller.abort();
+    const active = foreground.kind === 'turn' ? foreground.execution : null;
     if (!active) return;
     active.terminationOverride = 'cancelled';
-    active.requestController.abort();
     this.#interactions.dismissTurn(active.run.turnId, 'cancelled');
     active.run.cancel();
   }
@@ -501,7 +513,7 @@ export class ChatExecutionCoordinator {
 
   async steer(submission: ChatTurnSubmission, signal?: AbortSignal): Promise<ChatSteerOutcome> {
     const controller = new AbortController();
-    const sources = [signal, this.#requestController?.signal];
+    const sources = [signal, this.#foreground?.controller.signal];
     const cancel = () => controller.abort();
     for (const source of sources) {
       source?.addEventListener('abort', cancel, { once: true });
@@ -640,11 +652,12 @@ export class ChatExecutionCoordinator {
     if (this.#branchRecoveryRequired && 'userMessageId' in request) {
       return { status: 'recovery-required', error: 'Reconcile the current branch before navigating again.' };
     }
-    if (this.#requestController || this.#protectedOperationCount > 0 || this.hasBackgroundWork || this.#interactions.hasPending) {
+    if (this.#foreground || this.#protectedOperationCount > 0 || this.hasBackgroundWork || this.#interactions.hasPending) {
       return { status: 'failed', error: 'Conversation is busy.' };
     }
     const controller = new AbortController();
-    this.#requestController = controller;
+    const operation: ForegroundOperation = { controller, kind: 'branch' };
+    this.#foreground = operation;
     const conversation = this.#conversation;
     const abort = () => controller.abort(request.signal?.reason);
     request.signal?.addEventListener('abort', abort, { once: true });
@@ -678,7 +691,7 @@ export class ChatExecutionCoordinator {
       return { status: 'failed', error: String(error) };
     } finally {
       request.signal?.removeEventListener('abort', abort);
-      this.#requestController = null;
+      if (this.#foreground === operation) this.#foreground = null;
     }
   }
 

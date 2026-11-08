@@ -260,7 +260,7 @@ it.each([
     }
     native.complete();
     await first;
-    state.hasPendingConversationSave = false;
+    state.discardPendingConversationSave();
     const savedMessages: ChatMessage[][] = [];
     input!.plugin.updateConversation.mockImplementation(async (_id, updates) => {
       if (updates.messages) savedMessages.push(structuredClone(updates.messages));
