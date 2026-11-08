@@ -301,6 +301,8 @@ describe.each(['live', 'history'] as const)('%s Codex tool presentation', mode =
     it.each([
       ['string arguments', { id: 'mcp-args', status: 'completed', arguments: '{"query":"vault notes"}', result: { content: [{ type: 'text', text: 'hit' }] } },
         { input: { query: 'vault notes' }, status: 'completed', result: 'hit' }],
+      ['structured-only content', { id: 'mcp-structured', status: 'completed', arguments: {}, result: { content: [], structuredContent: { matches: ['vault note'], count: 1 } } },
+        { input: {}, status: 'completed', result: '{\n  "matches": [\n    "vault note"\n  ],\n  "count": 1\n}' }],
       ['cancellation', { id: 'mcp-cancelled', status: 'cancelled', arguments: { query: 'vault notes' } },
         { input: { query: 'vault notes' }, status: 'error', result: 'Failed' }],
       ['error text', { id: 'mcp-error', status: 'completed', arguments: {}, error: 'Server disconnected' },
@@ -669,5 +671,23 @@ it.each([false, true].flatMap(lateNative => ['text', 'thinking'].map(boundary =>
   } finally {
     stream.dispose(); subagents.clear(); renderer.dispose();
     vi.useRealTimers();
+  }
+});
+
+
+it('shows structured-only native MCP output and preserves text/error precedence', async () => {
+  const data = { matches: ['vault note'], count: 1 };
+  const structured = restoreNativeMcpTool({ id: 'structured', status: 'completed', result: { content: [], structuredContent: data } })[0];
+  const block = renderStoredToolCall(document.body.createDiv(), structured, { initiallyExpanded: true });
+  expect(within(block).getByText(/vault note/).textContent).toContain('vault note');
+  expect((await axe(block)).violations).toEqual([]);
+  for (const [content, error, expected] of [
+    [[{ type: 'text', text: 'Human-readable result' }], undefined, 'Human-readable result'],
+    [[], 'Server disconnected', 'Server disconnected'],
+  ] as const) {
+    const tool = restoreNativeMcpTool({ id: 'precedence', status: 'completed', error,
+      result: { content, structuredContent: data } })[0];
+    expect(tool.result).toBe(expected);
+    expect(tool.status).toBe(error ? 'error' : 'completed');
   }
 });

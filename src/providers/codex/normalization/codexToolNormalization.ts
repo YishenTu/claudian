@@ -1,4 +1,5 @@
 import { isSessionTool } from '@/core/tools/toolNames';
+import { extractToolResultContent } from '@/core/tools/toolResultContent';
 import type { ToolProviderPayload } from '@/core/types';
 import { stringifyUnknown } from '@/utils/stringify';
 
@@ -758,6 +759,7 @@ interface CodexMCPResultPart {
 
 interface CodexMCPResultPayload {
   content?: CodexMCPResultPart[] | null;
+  structuredContent?: unknown;
 }
 
 export interface NormalizedCodexMCPToolState {
@@ -818,13 +820,12 @@ export function normalizeCodexMCPToolState(
 function extractCodexMCPResultText(resultPayload?: unknown): string {
   if (!resultPayload || typeof resultPayload !== 'object') return '';
 
-  const content = (resultPayload as CodexMCPResultPayload).content;
-  if (!Array.isArray(content)) return '';
-
-  return content
+  const { content, structuredContent } = resultPayload as CodexMCPResultPayload;
+  const text = Array.isArray(content) ? content
     .map(item => (typeof item?.text === 'string' ? item.text : ''))
     .filter(Boolean)
-    .join('\n');
+    .join('\n') : '';
+  return text || extractToolResultContent(structuredContent, { fallbackIndent: 2 });
 }
 
 // ---------------------------------------------------------------------------
