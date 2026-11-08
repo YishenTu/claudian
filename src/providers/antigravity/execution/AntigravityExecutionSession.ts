@@ -46,7 +46,10 @@ import type { ProviderRuntimeHost } from '../../../core/providers/ProviderRuntim
 import type { ChatMessage, SlashCommand } from '../../../core/types';
 import { filterAntigravityCommands } from '../commands/AntigravityCommandCatalog';
 import { resolveAntigravityStoreRoot } from '../history/AntigravityHistoryPaths';
-import { readAntigravityContextTokens } from '../history/AntigravityHistoryStore';
+import {
+  type AntigravityTranscriptTurnState,
+  readAntigravityTranscriptTurnState,
+} from '../history/AntigravityHistoryStore';
 import {
   ANTIGRAVITY_MODE_CONFIG_ID,
   ANTIGRAVITY_MODEL_CONFIG_ID,
@@ -332,11 +335,6 @@ export class AntigravityExecutionSession implements ProviderExecutionSession, St
       active.run.emit({ content: getInputText(active.request), type: 'user_message_started' });
       const response = await Promise.race([closed, this.#waitForLatestPrompt(active)]);
       if (this.#isCancellationRequested(active)) return;
-      // agy reports compaction only in its transcript; a completed `/compact` prompt (not a steer that took
-      // over its turn) has compacted the context.
-      if (compact && response.stopReason === 'end_turn' && active.latestPrompt === promptIndex) {
-        active.run.emit({ type: 'context_compacted' });
-      }
       // Completion confirms steers agy never echoed (image-only input), so they still need their boundary.
       if (response.stopReason !== 'cancelled') {
         for (const steer of active.steers) {
@@ -345,9 +343,15 @@ export class AntigravityExecutionSession implements ProviderExecutionSession, St
           active.run.emit({ content: steer.text, type: 'user_message_started' });
         }
       }
-      const contextTokens = await this.#readContextTokens(owner, response);
+      const compactCompleted = Boolean(compact) && response.stopReason === 'end_turn' && active.latestPrompt === promptIndex;
+      const transcript = await this.#readTranscriptTurnState(owner, response, compactCompleted);
       if (this.#isCancellationRequested(active)) return;
-      this.#finishCompleted(active, response, contextTokens);
+      // agy reports compaction only as a transcript CHECKPOINT; custom agents on 1.5.2+ send `/compact` to the
+      // model as plain text without compacting.
+      if (compactCompleted && transcript.compacted) {
+        active.run.emit({ type: 'context_compacted' });
+      }
+      this.#finishCompleted(active, response, transcript.contextTokens);
     } catch (error) {
       if (this.#isCancellationRequested(active)) return;
       this.#failRecoverable(active, error);
@@ -651,11 +655,20 @@ export class AntigravityExecutionSession implements ProviderExecutionSession, St
     active.run.emit({ content: steer.text, type: 'user_message_started' });
   }
 
-  /** The response's usage sums every model call in the turn; the transcript's latest call measures the context. */
-  async #readContextTokens(owner: NativeOwner, response: ACPPromptResponse): Promise<number | null> {
-    if (!response.usage) return null;
+  /**
+   * The response's usage sums every model call in the turn, and agy reports compaction only in its transcript;
+   * one transcript pass reads both.
+   */
+  async #readTranscriptTurnState(
+    owner: NativeOwner,
+    response: ACPPromptResponse,
+    checkCompaction: boolean,
+  ): Promise<AntigravityTranscriptTurnState> {
+    if (!checkCompaction && !response.usage) return { compacted: false, contextTokens: null };
     const storeRoot = resolveAntigravityStoreRoot(owner.native.launch.env, process.platform);
-    return storeRoot ? readAntigravityContextTokens(storeRoot, this.providerSessionId!) : null;
+    return storeRoot
+      ? readAntigravityTranscriptTurnState(storeRoot, this.providerSessionId!)
+      : { compacted: false, contextTokens: null };
   }
 
   #finishCompleted(active: ActiveExecution, response: ACPPromptResponse, contextTokens: number | null): void {

@@ -4,7 +4,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 
 import type { ChatMessage } from '@/core/types';
-import { loadAntigravityHistory, readAntigravityContextTokens } from '@/providers/antigravity/history/AntigravityHistoryStore';
+import { loadAntigravityHistory, readAntigravityTranscriptTurnState } from '@/providers/antigravity/history/AntigravityHistoryStore';
 
 const FIXTURES = path.resolve('tests/fixtures/providers/antigravity/history');
 const SESSION_ID = 'session-fixture';
@@ -354,18 +354,23 @@ describe('loadAntigravityHistory', () => {
   });
 });
 
-describe('readAntigravityContextTokens', () => {
+describe('readAntigravityTranscriptTurnState', () => {
   const measured = replyStep(1, { cache_read_tokens: 200_000, input_tokens: 40_000, output_tokens: 10 });
   const checkpoint = { source: 'SYSTEM', status: 'DONE', step_index: 2, type: 'CHECKPOINT' };
 
   it.each([
-    ['a compaction after the last measured call', [measured, checkpoint], null],
-    ['a model call without token counts after the last measured call', [measured, replyStep(2, {})], null],
-    ['a measured call after a compaction', [measured, checkpoint,
-      replyStep(3, { cache_read_tokens: 6_000, input_tokens: 2_000, output_tokens: 10 })], 8_000],
+    ['a compaction after the last measured call', [measured, checkpoint], { compacted: true, contextTokens: null }],
+    ['a model call without token counts after the last measured call', [measured, replyStep(2, {})],
+      { compacted: false, contextTokens: null }],
+    ['a measured call after a compaction in the same turn', [measured, checkpoint,
+      replyStep(3, { cache_read_tokens: 6_000, input_tokens: 2_000, output_tokens: 10 })],
+    { compacted: true, contextTokens: 8_000 }],
+    ['a later turn after a compaction', [measured, checkpoint, userStep(3, 'next'),
+      replyStep(4, { cache_read_tokens: 6_000, input_tokens: 2_000, output_tokens: 10 })],
+    { compacted: false, contextTokens: 8_000 }],
   ])('measures %s', async (_name, steps, expected) => {
     await installSteps([userStep(0, 'go'), ...steps]);
 
-    await expect(readAntigravityContextTokens(storeRoot, SESSION_ID)).resolves.toBe(expected);
+    await expect(readAntigravityTranscriptTurnState(storeRoot, SESSION_ID)).resolves.toEqual(expected);
   });
 });

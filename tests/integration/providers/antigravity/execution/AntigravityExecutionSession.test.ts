@@ -812,17 +812,44 @@ describe('AntigravityExecutionSession', () => {
     }));
   });
 
-  it('marks a completed /compact with a context boundary', async () => {
+  it('marks a completed /compact with a context boundary only when the turn records a checkpoint', async () => {
     const session = await createSession();
     const run = session.execute(request('/compact keep the plan'));
     const peer = await firstPeer();
     await peer.waitForPrompts(1);
+    await writeTranscript('session-new', [
+      { source: 'USER_EXPLICIT', status: 'DONE', step_index: 0, type: 'USER_INPUT' },
+      { source: 'SYSTEM', status: 'DONE', step_index: 1, type: 'CHECKPOINT' },
+    ]);
     peer.finishPrompt();
     const events = await collect(run.events);
 
     expect(peer.prompts[0].request.prompt).toEqual([{ text: '/compact keep the plan', type: 'text' }]);
     expect(events.map(event => event.type).filter(type => type === 'context_compacted' || type === 'turn_completed'))
       .toEqual(['context_compacted', 'turn_completed']);
+
+    // Custom agents on agy 1.5.2+ send `/compact` to the model as plain text without writing a CHECKPOINT.
+    const uncompacted = session.execute(request('/compact'));
+    await peer.waitForPrompts(2);
+    peer.emit({ content: { text: 'Plain text reply.', type: 'text' }, sessionUpdate: 'agent_message_chunk' }, 'session-new');
+    await writeTranscript('session-new', [
+      { source: 'USER_EXPLICIT', status: 'DONE', step_index: 0, type: 'USER_INPUT' },
+      { source: 'SYSTEM', status: 'DONE', step_index: 1, type: 'CHECKPOINT' },
+      { source: 'USER_EXPLICIT', status: 'DONE', step_index: 2, type: 'USER_INPUT' },
+      { cache_read_tokens: 0, input_tokens: 21_042, output_tokens: 10, source: 'MODEL', status: 'DONE', step_index: 3, type: 'PLANNER_RESPONSE' },
+    ]);
+    peer.finishPrompt({ stopReason: 'end_turn', usage: { inputTokens: 21_042, outputTokens: 10, totalTokens: 21_052 } });
+    const uncompactedEvents = await collect(uncompacted.events);
+
+    expect(uncompactedEvents.some(event => event.type === 'context_compacted')).toBe(false);
+    expect(uncompactedEvents.filter(event => event.type === 'text_delta')).toEqual([
+      expect.objectContaining({ text: 'Plain text reply.' }),
+    ]);
+    expect(uncompactedEvents).toContainEqual(expect.objectContaining({
+      type: 'usage_updated',
+      usage: expect.objectContaining({ contextTokens: 21_042 }),
+    }));
+    expect(uncompactedEvents.at(-1)).toMatchObject({ reason: 'completed', type: 'turn_completed' });
   });
 
   it('does not mark a cancelled /compact as compacted', async () => {
@@ -830,6 +857,10 @@ describe('AntigravityExecutionSession', () => {
     const run = session.execute(request('/compact'));
     const peer = await firstPeer();
     await peer.waitForPrompts(1);
+    await writeTranscript('session-new', [
+      { source: 'USER_EXPLICIT', status: 'DONE', step_index: 0, type: 'USER_INPUT' },
+      { source: 'SYSTEM', status: 'DONE', step_index: 1, type: 'CHECKPOINT' },
+    ]);
     peer.finishPrompt({ stopReason: 'cancelled' });
     const events = await collect(run.events);
 
