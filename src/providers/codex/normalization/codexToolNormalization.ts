@@ -589,6 +589,7 @@ function normalizeQuestions(input: Record<string, unknown>): Array<Record<string
         : `Q${index + 1}`,
       options,
       multiSelect: Boolean(item.multiSelect ?? item.multi_select),
+      ...(item.isSecret === true ? { isSecret: true } : {}),
     };
   });
 }
