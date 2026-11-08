@@ -209,6 +209,27 @@
       "agentCount": "{count} 個代理",
       "agentCountPlural": "{count} 個代理"
     },
+    "subagentUI": {
+      "prompt": "提示詞",
+      "result": "結果",
+      "taskLabel": "子代理任務：{description} - {status}",
+      "backgroundTaskLabel": "背景任務：{description} - {status}",
+      "statusLabel": "狀態：{status}",
+      "initializing": "初始化中",
+      "error": "錯誤",
+      "orphaned": "未完成",
+      "completed": "已完成",
+      "runningInBackground": "背景執行中",
+      "running": "執行中",
+      "orphanedResult": "對話在任務完成前已結束",
+      "lastTool": "最近工具：{name}",
+      "toolUse": "{count} 次工具呼叫",
+      "toolUses": "{count} 次工具呼叫",
+      "tokens": "{value} 個 token",
+      "compactTokens": "{value}k 個 token",
+      "previousRuns": "先前的執行（{count}）",
+      "runLabel": "第 {number} 次執行 · {status}"
+    },
     "citations": {
       "memoryUsed": "引用的記憶",
       "source": "{count} 個來源",

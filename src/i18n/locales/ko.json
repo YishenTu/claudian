@@ -209,6 +209,27 @@
       "agentCount": "에이전트 {count}개",
       "agentCountPlural": "에이전트 {count}개"
     },
+    "subagentUI": {
+      "prompt": "프롬프트",
+      "result": "결과",
+      "taskLabel": "하위 에이전트 작업: {description} - {status}",
+      "backgroundTaskLabel": "백그라운드 작업: {description} - {status}",
+      "statusLabel": "상태: {status}",
+      "initializing": "초기화 중",
+      "error": "오류",
+      "orphaned": "미완료",
+      "completed": "완료",
+      "runningInBackground": "백그라운드에서 실행 중",
+      "running": "실행 중",
+      "orphanedResult": "작업이 완료되기 전에 대화가 종료되었습니다",
+      "lastTool": "마지막 도구: {name}",
+      "toolUse": "도구 사용 {count}회",
+      "toolUses": "도구 사용 {count}회",
+      "tokens": "{value} 토큰",
+      "compactTokens": "{value}k 토큰",
+      "previousRuns": "이전 실행 ({count})",
+      "runLabel": "실행 {number} · {status}"
+    },
     "citations": {
       "memoryUsed": "사용된 메모리",
       "source": "출처 {count}개",

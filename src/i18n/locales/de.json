@@ -209,6 +209,27 @@
       "agentCount": "{count} Agent",
       "agentCountPlural": "{count} Agenten"
     },
+    "subagentUI": {
+      "prompt": "Prompt",
+      "result": "Ergebnis",
+      "taskLabel": "Unteragentenaufgabe: {description} - {status}",
+      "backgroundTaskLabel": "Hintergrundaufgabe: {description} - {status}",
+      "statusLabel": "Status: {status}",
+      "initializing": "Initialisierung",
+      "error": "Fehler",
+      "orphaned": "Unvollständig",
+      "completed": "Abgeschlossen",
+      "runningInBackground": "Läuft im Hintergrund",
+      "running": "Läuft",
+      "orphanedResult": "Die Unterhaltung endete vor Abschluss der Aufgabe",
+      "lastTool": "Letztes Werkzeug: {name}",
+      "toolUse": "{count} Werkzeugaufruf",
+      "toolUses": "{count} Werkzeugaufrufe",
+      "tokens": "{value} Tokens",
+      "compactTokens": "{value}k Tokens",
+      "previousRuns": "Vorherige Durchläufe ({count})",
+      "runLabel": "Durchlauf {number} · {status}"
+    },
     "citations": {
       "memoryUsed": "Verwendete Erinnerungen",
       "source": "{count} Quelle",

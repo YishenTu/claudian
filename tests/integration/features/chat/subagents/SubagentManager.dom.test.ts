@@ -21,6 +21,7 @@ import { ChatState } from '@/features/chat/state/ChatState';
 import { SubagentManager } from '@/features/chat/subagents/SubagentManager';
 import { createAsyncSubagentBlock, createSubagentBlock, updateAsyncSubagentBlock, updateSubagentBlock } from '@/features/chat/subagents/SubagentRenderer';
 import { StreamController } from '@/features/chat/turns/StreamController';
+import { setLocale } from '@/i18n/i18n';
 import { ClaudeTaskResultInterpreter } from '@/providers/claude/runtime/ClaudeTaskResultInterpreter';
 import { CodexSubagentTracker } from '@/providers/codex/execution/CodexSubagentTracker';
 import { codexSubagentLifecycleAdapter } from '@/providers/codex/normalization/codexSubagentNormalization';
@@ -34,6 +35,7 @@ import { CodexNotificationRouter } from '@/providers/codex/runtime/CodexNotifica
 const cleanups: Array<() => void> = [];
 afterEach(() => {
   cleanups.splice(0).forEach(cleanup => cleanup());
+  setLocale('en');
   document.body.replaceChildren();
 });
 
@@ -863,4 +865,125 @@ it.each(['sync', 'async'] as const)('opens and closes managed %s task details by
     expectExpanded(false);
   }
   expect(await axe(parent)).toHaveNoViolations();
+});
+
+
+it('localizes managed task controls and progress while preserving native content', async () => {
+  setLocale('zh-CN');
+  const parent = document.body.createDiv();
+  const manager = new SubagentManager(() => undefined, new ClaudeTaskResultInterpreter());
+  cleanups.push(() => manager.clear());
+  manager.handleTaskToolUse('localized', { description: 'Native task', prompt: 'Native prompt', run_in_background: false }, parent);
+  const ui = within(parent);
+  const header = ui.getByRole('button', { name: '子代理任务：Native task - 状态：运行中 - 点击展开' });
+  fireEvent.click(header);
+  fireEvent.keyDown(ui.getByRole('button', { name: '提示词 - 点击展开' }), { key: 'Enter' });
+  expect(ui.getByText('Native prompt')).toBeDefined();
+  const child: ToolCallInfo = { id: 'native-read', name: 'Read', input: { file_path: 'native.md' }, status: 'running' };
+  manager.addSyncToolCall('localized', child);
+  const read = ui.getByRole('button', { name: /^Read.*native.md/ });
+  fireEvent.click(read);
+  expect(ui.getByText('运行中…')).toBeDefined();
+  manager.updateSyncToolResult('localized', child.id, { ...child, status: 'completed', result: 'Native child output' });
+  expect(ui.getByText('Native child output')).toBeDefined();
+  manager.applyProgress({ toolCallId: 'localized', lastToolName: 'Read', toolUses: 1, totalTokens: 999, durationMs: 1500 });
+  expect(ui.getByText('最近工具：Read')).toBeDefined();
+  expect(ui.getByText('1 次工具调用 · 999 个 token · 2s')).toBeDefined();
+  manager.applyProgress({ toolCallId: 'localized', toolUses: 2, totalTokens: 1000 });
+  expect(ui.getByText('2 次工具调用 · 1k 个 token · 2s')).toBeDefined();
+  manager.applyProgress({ toolCallId: 'localized', totalTokens: 100000, summary: 'Native summary' });
+  expect(ui.getByText('Native summary')).toBeDefined();
+  expect(ui.getByText('2 次工具调用 · 100k 个 token · 2s')).toBeDefined();
+  const info = manager.finalizeSyncSubagent('localized', 'Native result', false);
+  expect(info).toMatchObject({ description: 'Native task', prompt: 'Native prompt', result: 'Native result' });
+  expect(header.getAttribute('aria-label')).toBe('子代理任务：Native task - 状态：已完成 - 点击折叠');
+  fireEvent.keyDown(ui.getByRole('button', { name: '结果 - 点击展开' }), { key: ' ' });
+  expect(ui.getByText('Native result')).toBeDefined();
+  expect(await axe(parent)).toHaveNoViolations();
+});
+
+it.each([
+  ['completed', undefined, '已完成'], ['completed', 'DONE', 'DONE'],
+  ['error', undefined, '错误'], ['error', 'ERROR', 'ERROR'],
+] as const)('localizes only absent sync %s results (%s)', async (status, result, expected) => {
+  setLocale('zh-CN');
+  const parent = document.body.createDiv();
+  const info: SubagentInfo = { id: 'localized-sync', description: 'Native task', status, result, isExpanded: false, toolCalls: [] };
+  createSubagentBlock(parent, info);
+  fireEvent.click(within(parent).getByRole('button', { name: status === 'completed'
+    ? '子代理任务：Native task - 状态：已完成 - 点击展开' : '子代理任务：Native task - 状态：错误 - 点击展开' }));
+  fireEvent.click(within(parent).getByRole('button', { name: '结果 - 点击展开' }));
+  expect(within(parent).getByText(expected)).toBeDefined();
+  expect(info.result).toBe(result);
+  expect(await axe(parent)).toHaveNoViolations();
+});
+
+it('localizes background status updates and keeps supplied results as native data', async () => {
+  setLocale('zh-CN');
+  const parent = document.body.createDiv();
+  const info: SubagentInfo = { id: 'localized-async', description: 'Native task', mode: 'async',
+    status: 'running', asyncStatus: 'pending', isExpanded: false, toolCalls: [] };
+  const state = createAsyncSubagentBlock(parent, info);
+  const ui = within(parent);
+  fireEvent.click(ui.getByRole('button', { name: '后台任务：Native task - 初始化中 - 点击展开' }));
+  expect(state.statusTextEl.textContent).toBe('初始化中');
+  expect(state.statusEl.getAttribute('aria-label')).toBe('状态：初始化中');
+  for (const [asyncStatus, label] of [['running', '后台运行中'], ['completed', '已完成']] as const) {
+    updateAsyncSubagentBlock(state, { ...info, asyncStatus, status: asyncStatus });
+    expect(state.statusTextEl.textContent).toBe('');
+    expect(ui.getByRole('button', { name: `后台任务：Native task - ${label} - 点击折叠` })).toBeDefined();
+    expect(state.statusEl.getAttribute('aria-label')).toBe(`状态：${label}`);
+  }
+  expect(state.resultBodyEl!.textContent).toBe('已完成');
+  updateAsyncSubagentBlock(state, { ...info, asyncStatus: 'error', status: 'error' });
+  expect(ui.getByRole('button', { name: '后台任务：Native task - 错误 - 点击折叠' })).toBeDefined();
+  expect(state.statusTextEl.textContent).toBe('错误');
+  expect(state.statusEl.getAttribute('aria-label')).toBe('状态：错误');
+  fireEvent.click(ui.getByRole('button', { name: '结果 - 点击展开' }));
+  expect(within(state.resultBodyEl!).getByText('错误')).toBeDefined();
+  for (const result of [undefined, 'Conversation ended before task completed', '   ']) {
+    updateAsyncSubagentBlock(state, { ...info, asyncStatus: 'orphaned', status: 'error', result });
+    expect(ui.getByRole('button', { name: '后台任务：Native task - 未完成 - 点击折叠' })).toBeDefined();
+    expect(state.statusTextEl.textContent).toBe('未完成');
+    expect(state.statusEl.getAttribute('aria-label')).toBe('状态：未完成');
+    expect(state.resultBodyEl!.textContent).toBe(result || '对话在任务完成前已结束');
+  }
+  for (const [asyncStatus, result] of [['completed', 'DONE'], ['error', 'ERROR']] as const) {
+    updateAsyncSubagentBlock(state, { ...info, asyncStatus, status: asyncStatus, result });
+    expect(state.resultBodyEl!.textContent).toBe(result);
+  }
+  expect(await axe(parent)).toHaveNoViolations();
+});
+
+it('localizes lazy previous runs without copying current or unrelated results', async () => {
+  setLocale('zh-CN');
+  const view = await createCodexLifecycleView();
+  const tool = (id: string, agentId: string): ToolCallInfo => ({
+    id, name: 'spawn_agent', input: {}, status: 'completed',
+    subagent: { id, agentId, lifecycleSource: 'session', description: 'Native task', status: 'completed',
+      prompt: `${id} prompt`, result: `${id} result`, isExpanded: false, toolCalls: [] },
+  });
+  const messages: ChatMessage[] = [
+    { id: 'original', role: 'assistant', content: '', timestamp: testDate().getTime(), toolCalls: [tool('other', 'other-child'), tool('first', 'child')] },
+    { id: 'rebuilt', role: 'assistant', content: '', timestamp: testDate().getTime(), isRebuiltContext: true, toolCalls: [tool('rebuilt', 'child')] },
+    { id: 'current', role: 'assistant', content: '', timestamp: testDate().getTime(), toolCalls: [tool('second', 'child')] },
+  ];
+  const saved = JSON.stringify(messages);
+  view.renderer.renderMessages(messages, () => 'Hello');
+  const current = view.parent.querySelector<HTMLElement>('[data-message-id="current"]')!;
+  expandButton(current, /^子代理任务：/);
+  const history = within(current).getByRole('button', { name: '之前的运行（1）' });
+  expect(within(current).queryByText('first result')).toBeNull();
+  fireEvent.click(history);
+  const run = within(current).getByRole('button', { name: '第 1 次运行 · 已完成' });
+  expect(within(current).queryByText('first result')).toBeNull();
+  fireEvent.click(run);
+  const body = document.getElementById(run.getAttribute('aria-controls')!)!;
+  expect(within(body).getByText('first prompt')).toBeDefined();
+  expect(within(body).getByText('first result')).toBeDefined();
+  expect(body.textContent).not.toContain('second result');
+  expect(body.textContent).not.toContain('other result');
+  expect(body.textContent).not.toContain('rebuilt result');
+  expect(JSON.stringify(messages)).toBe(saved);
+  expect(await axe(view.parent)).toHaveNoViolations();
 });

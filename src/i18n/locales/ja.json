@@ -209,6 +209,27 @@
       "agentCount": "エージェント {count} 件",
       "agentCountPlural": "エージェント {count} 件"
     },
+    "subagentUI": {
+      "prompt": "プロンプト",
+      "result": "結果",
+      "taskLabel": "サブエージェントタスク：{description} - {status}",
+      "backgroundTaskLabel": "バックグラウンドタスク：{description} - {status}",
+      "statusLabel": "状態：{status}",
+      "initializing": "初期化中",
+      "error": "エラー",
+      "orphaned": "未完了",
+      "completed": "完了",
+      "runningInBackground": "バックグラウンドで実行中",
+      "running": "実行中",
+      "orphanedResult": "タスクの完了前に会話が終了しました",
+      "lastTool": "最後のツール：{name}",
+      "toolUse": "ツール使用 {count} 回",
+      "toolUses": "ツール使用 {count} 回",
+      "tokens": "{value} トークン",
+      "compactTokens": "{value}k トークン",
+      "previousRuns": "過去の実行（{count}）",
+      "runLabel": "実行 {number} · {status}"
+    },
     "citations": {
       "memoryUsed": "使用したメモリ",
       "source": "{count} 件のソース",

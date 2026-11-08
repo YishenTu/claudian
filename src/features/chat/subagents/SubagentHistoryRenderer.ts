@@ -1,6 +1,7 @@
 import type { ChatMessage, SubagentInfo, ToolCallInfo } from '@/core/types';
 import { setupDisclosureButton } from '@/features/chat/rendering/collapsible';
 import { createSubagentBlock } from '@/features/chat/subagents/SubagentRenderer';
+import { t } from '@/i18n/i18n';
 
 let nextHistoryId = 0;
 
@@ -43,11 +44,11 @@ export function renderSubagentHistory(
   const runs = previousRuns(messages, info);
   if (!runs.length) return;
   const history = content.createDiv({ cls: 'claudian-subagent-history' });
-  createDisclosure(history, `Previous runs (${runs.length})`, body => {
+  createDisclosure(history, t('chat.subagentUI.previousRuns', { count: runs.length }), body => {
     runs.forEach((run, index) => {
       const status = run.subagent!.status;
-      const label = status === 'completed' ? 'Completed' : status === 'error' ? 'Error' : 'Running';
-      createDisclosure(body, `Run ${index + 1} · ${label}`, runBody => {
+      const label = t(`chat.subagentUI.${status}`);
+      createDisclosure(body, t('chat.subagentUI.runLabel', { number: index + 1, status: label }), runBody => {
         const view = createSubagentBlock(runBody, run.subagent!);
         // These are passive details, not another live card.
         delete view.wrapperEl.dataset.subagentId;

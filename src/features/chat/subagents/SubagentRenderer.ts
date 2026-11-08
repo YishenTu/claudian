@@ -12,6 +12,7 @@ import {
   renderExpandedContent,
 } from '@/features/chat/rendering/tools/toolPresentation';
 import { setToolStatus } from '@/features/chat/rendering/tools/toolStatus';
+import { t } from '@/i18n/i18n';
 import { formatDurationMmSs } from '@/utils/date';
 
 interface SubagentToolView {
@@ -80,7 +81,7 @@ function setPromptText(promptBodyEl: HTMLElement, prompt: string): void {
 
 function updateSyncHeaderAria(state: SubagentState): void {
   state.refreshHeaderLabel();
-  state.statusEl.setAttribute('aria-label', `Status: ${state.info.status}`);
+  state.statusEl.setAttribute('aria-label', t(`chat.tools.status.${state.info.status}`));
 }
 
 function renderSubagentToolContent(contentEl: HTMLElement, toolCall: ToolCallInfo): void {
@@ -88,7 +89,7 @@ function renderSubagentToolContent(contentEl: HTMLElement, toolCall: ToolCallInf
 
   if (!toolCall.result && toolCall.status === 'running') {
     const emptyEl = contentEl.createDiv({ cls: 'claudian-subagent-tool-empty' });
-    emptyEl.setText('Running...');
+    emptyEl.setText(t('chat.tools.running'));
     return;
   }
 
@@ -151,16 +152,16 @@ function createSubagentToolView(parentEl: HTMLElement, toolCall: ToolCallInfo): 
 type SubagentProgressView = Pick<SubagentState, 'wrapperEl' | 'headerEl' | 'progressEl' | 'progress'>;
 
 function formatTokenCount(tokens: number): string {
-  if (tokens < 1000) return `${tokens} tokens`;
+  if (tokens < 1000) return t('chat.subagentUI.tokens', { value: tokens });
   const thousands = tokens / 1000;
   const value = thousands >= 100 ? String(Math.round(thousands)) : thousands.toFixed(1).replace(/\.0$/, '');
-  return `${value}k tokens`;
+  return t('chat.subagentUI.compactTokens', { value });
 }
 
 function formatProgressMeta(progress: SubagentProgress): string {
   const parts: string[] = [];
   if (progress.toolUses !== undefined) {
-    parts.push(`${progress.toolUses} ${progress.toolUses === 1 ? 'tool use' : 'tool uses'}`);
+    parts.push(t(progress.toolUses === 1 ? 'chat.subagentUI.toolUse' : 'chat.subagentUI.toolUses', { count: progress.toolUses }));
   }
   if (progress.totalTokens) parts.push(formatTokenCount(progress.totalTokens));
   if (progress.durationMs) parts.push(formatDurationMmSs(Math.round(progress.durationMs / 1000)));
@@ -177,7 +178,7 @@ export function updateSubagentProgress(state: SubagentProgressView, update: Suba
   state.progress = progress;
 
   const activity = progress.summary
-    ?? (progress.lastToolName ? `Last tool: ${progress.lastToolName}` : '');
+    ?? (progress.lastToolName ? t('chat.subagentUI.lastTool', { name: progress.lastToolName }) : '');
   const meta = formatProgressMeta(progress);
   if (!activity && !meta) return;
 
@@ -205,7 +206,7 @@ function ensureResultSection(state: SubagentState): SubagentSection {
     return { wrapperEl: state.resultSectionEl, bodyEl: state.resultBodyEl };
   }
 
-  const section = createSection(state.contentEl, 'Result', 'claudian-subagent-result-body');
+  const section = createSection(state.contentEl, t('chat.subagentUI.result'), 'claudian-subagent-result-body');
   section.wrapperEl.addClass('claudian-subagent-section-result');
   // Earlier runs stay below the current run's result.
   const history = state.contentEl.querySelector(':scope > .claudian-subagent-history');
@@ -243,11 +244,11 @@ function createSubagentView(
   labelEl.setText(truncateDescription(description));
 
   const statusEl = headerEl.createDiv({ cls: 'claudian-subagent-status status-running' });
-  statusEl.setAttribute('aria-label', 'Status: running');
+  statusEl.setAttribute('aria-label', t('chat.tools.status.running'));
 
   const contentEl = wrapperEl.createDiv({ cls: 'claudian-subagent-content' });
 
-  const promptSection = createSection(contentEl, 'Prompt', 'claudian-subagent-prompt-body');
+  const promptSection = createSection(contentEl, t('chat.subagentUI.prompt'), 'claudian-subagent-prompt-body');
   promptSection.wrapperEl.addClass('claudian-subagent-section-prompt');
   setPromptText(promptSection.bodyEl, prompt);
 
@@ -273,8 +274,8 @@ function createSubagentView(
   };
   const refreshHeaderLabel = setupCollapsible(wrapperEl, headerEl, contentEl, state, {
     baseAriaLabel: () => background
-      ? `Background task: ${state.info.description} - ${getAsyncStatusAriaLabel(state.info.asyncStatus)}`
-      : `Subagent task: ${state.info.description} - Status: ${state.info.status}`,
+      ? t('chat.subagentUI.backgroundTaskLabel', { description: state.info.description, status: getAsyncStatusAriaLabel(state.info.asyncStatus) })
+      : t('chat.subagentUI.taskLabel', { description: state.info.description, status: t(`chat.tools.status.${state.info.status}`) }),
     onToggle: expanded => { if (expanded) updateSubagentTools(state); },
   });
 
@@ -326,7 +327,7 @@ export function updateSubagentBlock(state: SubagentState, info: Readonly<Subagen
   state.labelEl.setText(truncateDescription(info.description));
   state.headerEl.title = info.description;
   updateSubagentContent(state, info, info.status === 'running' ? undefined
-    : info.result?.trim() ? info.result : (info.status === 'error' ? 'ERROR' : 'DONE'));
+    : info.result?.trim() ? info.result : t(info.status === 'error' ? 'chat.tools.errorResult' : 'chat.tools.done'));
   state.statusEl.className = `claudian-subagent-status status-${info.status}`;
   state.statusEl.empty();
   state.wrapperEl.removeClass('done', 'error');
@@ -367,9 +368,9 @@ function getAsyncDisplayStatus(asyncStatus: string | undefined): 'running' | 'co
 
 function getAsyncStatusText(asyncStatus: string | undefined): string {
   switch (asyncStatus) {
-    case 'pending': return 'Initializing';
-    case 'error': return 'Error';
-    case 'orphaned': return 'Orphaned';
+    case 'pending': return t('chat.subagentUI.initializing');
+    case 'error': return t('chat.subagentUI.error');
+    case 'orphaned': return t('chat.subagentUI.orphaned');
     // Running and completed cards show only their status icon.
     default: return '';
   }
@@ -377,11 +378,11 @@ function getAsyncStatusText(asyncStatus: string | undefined): string {
 
 function getAsyncStatusAriaLabel(asyncStatus: string | undefined): string {
   switch (asyncStatus) {
-    case 'pending': return 'Initializing';
-    case 'completed': return 'Completed';
-    case 'error': return 'Error';
-    case 'orphaned': return 'Orphaned';
-    default: return 'Running in background';
+    case 'pending': return t('chat.subagentUI.initializing');
+    case 'completed': return t('chat.subagentUI.completed');
+    case 'error': return t('chat.subagentUI.error');
+    case 'orphaned': return t('chat.subagentUI.orphaned');
+    default: return t('chat.subagentUI.runningInBackground');
   }
 }
 
@@ -417,7 +418,7 @@ export function updateAsyncSubagentBlock(state: AsyncSubagentState, info: Readon
   state.statusTextEl.setText(getAsyncStatusText(info.asyncStatus));
   const status = displayStatus === 'orphaned' ? 'error' : displayStatus;
   state.statusEl.className = `claudian-subagent-status status-${status}`;
-  state.statusEl.setAttribute('aria-label', `Status: ${getAsyncStatusAriaLabel(info.asyncStatus)}`);
+  state.statusEl.setAttribute('aria-label', t('chat.subagentUI.statusLabel', { status: getAsyncStatusAriaLabel(info.asyncStatus) }));
   state.statusEl.empty();
   if (displayStatus !== 'running') {
     setIcon(state.statusEl, displayStatus === 'orphaned' ? 'alert-circle' : displayStatus === 'error' ? 'x' : 'check');
@@ -425,8 +426,8 @@ export function updateAsyncSubagentBlock(state: AsyncSubagentState, info: Readon
     clearSubagentProgress(state);
   }
   updateSubagentContent(state, info, displayStatus === 'running' ? undefined
-    : displayStatus === 'orphaned' ? (info.result || 'Conversation ended before task completed')
-      : info.result?.trim() ? info.result : (displayStatus === 'error' ? 'ERROR' : 'DONE'));
+    : displayStatus === 'orphaned' ? (info.result || t('chat.subagentUI.orphanedResult'))
+      : info.result?.trim() ? info.result : t(displayStatus === 'error' ? 'chat.tools.errorResult' : 'chat.tools.done'));
 }
 
 export function renderStoredAsyncSubagent(parentEl: HTMLElement, subagent: Readonly<SubagentInfo>): HTMLElement {
