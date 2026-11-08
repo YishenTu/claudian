@@ -2,6 +2,8 @@
 
 Issues and pull requests are welcome. Issues are the preferred way to contribute: if you describe the problem and your environment clearly, I will review it and make a best effort to address it.
 
+These rules apply to outside contributions. The maintainer may change any part of the project directly, including `README.md`, documentation and design, and may waive a rule for a specific pull request.
+
 ## Before You Start
 
 - Search existing issues and pull requests to avoid duplicates.
