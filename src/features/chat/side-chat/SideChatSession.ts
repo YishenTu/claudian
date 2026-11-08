@@ -95,11 +95,11 @@ export class SideChatSession {
   #childResumeStatePromise: Promise<Readonly<Record<string, unknown>>> | null = null;
   #seed: ProviderNativeResumeSeed | null = null;
   #providerSessionId: string | undefined;
-  #active: ActiveSideExecution | null = null;
-  #executionController: AbortController | null = null;
+  /** The foreground execution, holding its handed-off run once the provider accepts it. */
+  #execution: { readonly controller: AbortController; active: ActiveSideExecution | null } | null = null;
   #pendingWorkCount = 0;
-  #disposed = false;
-  #invalidated = false;
+  /** `ended` once an ephemeral child's native session is invalidated; disposal supersedes it. */
+  #availability: 'available' | 'ended' | 'disposed' = 'available';
   #disposePromise: Promise<void> | null = null;
   #lastSnapshotRevision = -1;
 
@@ -121,6 +121,14 @@ export class SideChatSession {
     return this.#providerSessionId;
   }
 
+  get #active(): ActiveSideExecution | null {
+    return this.#execution?.active ?? null;
+  }
+
+  get #disposed(): boolean {
+    return this.#availability === 'disposed';
+  }
+
   get hasBackgroundWork(): boolean {
     return this.#events?.hasBackgroundWork || this.#pendingWorkCount > 0
       || (this.#supervisor.current?.session.hasBackgroundWork?.() ?? false);
@@ -128,22 +136,23 @@ export class SideChatSession {
 
   async execute(request: SideChatTurnRequest): Promise<SideChatTurnResult> {
     this.#assertAvailable();
-    if (this.#executionController) {
+    if (this.#execution) {
       throw new Error('A side chat execution is already active');
     }
-    const controller = new AbortController();
-    this.#executionController = controller;
+    const execution = { active: null, controller: new AbortController() };
+    this.#execution = execution;
     try {
-      return await this.#executeRequest(request, controller);
+      return await this.#executeRequest(request, execution);
     } finally {
-      if (this.#executionController === controller) this.#executionController = null;
+      if (this.#execution === execution) this.#execution = null;
     }
   }
 
   async #executeRequest(
     request: SideChatTurnRequest,
-    controller: AbortController,
+    execution: { readonly controller: AbortController; active: ActiveSideExecution | null },
   ): Promise<SideChatTurnResult> {
+    const { controller } = execution;
     let session: ProviderExecutionSession;
     try {
       session = await this.#prepare(controller.signal);
@@ -183,12 +192,12 @@ export class SideChatSession {
       session,
       terminationOverride: null,
     };
-    this.#active = active;
+    execution.active = active;
     try {
       return await this.#consumeRun(active);
     } finally {
       this.#interactions.dismissTurn(active.run.turnId, 'native-rejected');
-      if (this.#active === active) this.#active = null;
+      if (execution.active === active) execution.active = null;
       this.#captureSnapshot();
     }
   }
@@ -196,7 +205,7 @@ export class SideChatSession {
   /** Deliver an answer to the current child turn without preparing or replacing its session. */
   async steer(text: string): Promise<boolean> {
     const active = this.#active;
-    if (this.#disposed || this.#invalidated || !active || active.controller.signal.aborted
+    if (this.#availability !== 'available' || !active || active.controller.signal.aborted
       || !this.#supervisor.isCurrent(active.session, active.generation)
       || !isSteerableExecutionSession(active.session)) return false;
     return active.session.steer({
@@ -208,7 +217,7 @@ export class SideChatSession {
   }
 
   cancel(): void {
-    this.#executionController?.abort();
+    this.#execution?.controller.abort();
     const active = this.#active;
     if (!active) {
       if (this.#events?.hasBackgroundWork || this.#supervisor.current?.session.hasBackgroundWork?.()) this.#supervisor.current?.session.cancel();
@@ -222,8 +231,8 @@ export class SideChatSession {
 
   dispose(): Promise<void> {
     if (this.#disposePromise) return this.#disposePromise;
-    this.#disposed = true;
-    this.#executionController?.abort();
+    this.#availability = 'disposed';
+    this.#execution?.controller.abort();
     const active = this.#active;
     if (active) {
       active.terminationOverride = 'invalidated';
@@ -377,7 +386,7 @@ export class SideChatSession {
 
   #handleInvalidation(reason: ProviderExecutionInvalidationReason): void {
     this.#releaseSessionTools();
-    this.#invalidated = this.deps.ephemeral;
+    if (this.deps.ephemeral && this.#availability === 'available') this.#availability = 'ended';
     this.#events = null;
     this.#model = undefined;
     const active = this.#active;
@@ -461,7 +470,7 @@ export class SideChatSession {
     if (this.#disposed) {
       throw new Error('Side chat session is disposed');
     }
-    if (this.#invalidated) {
+    if (this.#availability === 'ended') {
       throw new Error('This side chat has ended. Discard it and start a new side chat.');
     }
   }

@@ -139,7 +139,6 @@ ClaudeExecutionStrategySink {
    */
   private readonly cancelledQueryTokens = new Set<number>();
   private lastEncodedRequest: ClaudeEncodedExecutionRequest | null = null;
-  private lastAllowedTools: ReadonlySet<string> | null = null;
   private readonly eventNormalizer = new ClaudeExecutionEventNormalizer();
   private readonly responseOwnership = new ClaudeResponseOwnership();
   private readonly taskNotifications = new ClaudeTaskNotificationQueue();
@@ -182,10 +181,10 @@ ClaudeExecutionStrategySink {
       interactionPort: config.interactionPort,
       sessionInstanceId: this.sessionInstanceId,
       getTurnId: toolId => this.#getInteractionTurnId(toolId),
-      isToolAllowed: (toolName) => (
-        this.lastAllowedTools === null
-        || this.lastAllowedTools.has(toolName)
-      ),
+      isToolAllowed: (toolName) => {
+        const allowedTools = this.lastEncodedRequest?.allowedTools ?? null;
+        return allowedTools === null || allowedTools.has(toolName);
+      },
       onToolBlocked: (toolUseId) => {
         this.eventNormalizer.markToolBlocked(
           toolUseId,
@@ -880,7 +879,6 @@ ClaudeExecutionStrategySink {
       );
       if (this.activeRun !== active || active.run.isTerminal) return;
       this.lastEncodedRequest = encoded;
-      this.lastAllowedTools = encoded.allowedTools;
       assertClaudeModelAvailable(this.host, request.configuration.model);
       const cancellation = this.backgroundCancellation;
       if (cancellation) {
@@ -1200,7 +1198,6 @@ ClaudeExecutionStrategySink {
       false,
     );
     this.lastEncodedRequest = encoded;
-    this.lastAllowedTools = encoded.allowedTools;
     return await this.strategy.ensureReadyForRewind(encoded, queryToken);
   }
 }
