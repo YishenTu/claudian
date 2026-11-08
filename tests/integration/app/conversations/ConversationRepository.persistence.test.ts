@@ -122,7 +122,10 @@ test('keeps Linked content immutable through patches and detached snapshots', as
   const { id, lastActivityAt } = await repository.create({ linkedContentPath: 'Projects/Authoritative' });
   const write = vi.spyOn(vault.files, 'write');
   const update = repository.update.bind(repository) as (id: string, patch: Record<string, unknown>) => Promise<void>;
-  for (const patch of [{ linkedContentPath: 'Other' }, { linkedContentPath: undefined }, { projectId: 'project-a' }, { projectId: undefined }]) {
+  for (const patch of [
+    { linkedContentPath: 'Other' }, { linkedContentPath: undefined }, { projectId: 'project-a' }, { projectId: undefined },
+    { origin: { kind: 'fork', conversationId: 'other' } }, { origin: undefined },
+  ]) {
     await expect(update(id, patch)).rejects.toThrow('immutable');
   }
   expect(write).not.toHaveBeenCalled();
@@ -215,6 +218,23 @@ test('migrates timestamps and Linked content without losing unhydrated provider 
   expect(written).toMatchObject({ lastActivityAt, linkedContentPath: 'Notes/Architecture.md', providerState });
   for (const field of ['updatedAt', 'lastResponseAt', 'currentNote']) expect(written).not.toHaveProperty(field);
   expect((await store.metadataReader.load('legacy'))!.needsMigration).toBe(false);
+});
+
+test('persists the creation origin through save and reload, and keeps it out of patches', async () => {
+  const parent = await repository.create();
+  const child = await repository.create({ origin: { kind: 'session-tool', conversationId: parent.id } });
+  const plain = await repository.create();
+  const origin = { kind: 'session-tool', conversationId: parent.id };
+  expect((await readMetadata(child.id)).origin).toEqual(origin);
+  expect(await readMetadata(plain.id)).not.toHaveProperty('origin');
+  const update = repository.update.bind(repository) as (id: string, patch: Record<string, unknown>) => Promise<void>;
+  await expect(update(child.id, { origin: { kind: 'fork', conversationId: plain.id } })).rejects.toThrow('immutable');
+  await repository.update(child.id, { title: 'Renamed' });
+  expect((await readMetadata(child.id)).origin).toEqual(origin);
+  const reloaded = createRepository();
+  await adoptStored(reloaded);
+  expect(reloaded.list().find(({ id }) => id === child.id)!.origin).toEqual(origin);
+  expect(reloaded.list().find(({ id }) => id === plain.id)).not.toHaveProperty('origin');
 });
 
 test('persists live project membership across create, join, move and leave', async () => {

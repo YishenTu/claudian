@@ -228,6 +228,7 @@ export class SessionMessagingService {
         providerId: choice.providerId,
         selectedModel: choice.model,
         ...(caller.projectId ? { projectId: caller.projectId } : {}),
+        origin: { kind: 'session-tool', conversationId: caller.id },
       });
       throwIfAborted(signal, 'Session tool call was cancelled');
       target = await this.resolve(created.id, signal);

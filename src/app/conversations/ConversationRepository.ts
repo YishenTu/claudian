@@ -20,6 +20,7 @@ import {
   type Conversation,
   type ConversationMeta,
   type ConversationMutablePatch,
+  type ConversationOrigin,
   type ConversationPlacement,
   type ConversationSummary,
   type ProjectReader,
@@ -76,6 +77,7 @@ const IMMUTABLE_CONVERSATION_PATCH_FIELDS = [
   'createdAt',
   'linkedContentPath',
   'projectId',
+  'origin',
 ] as const;
 
 /** Mutable fields plus repository-owned membership, which only dedicated methods write. */
@@ -323,6 +325,7 @@ export class ConversationRepository {
     selectedModel?: string;
     linkedContentPath?: string;
     projectId?: string;
+    origin?: ConversationOrigin;
   }): Promise<Conversation> {
     const settings = this.deps.getSettings();
     const providerId = options?.providerId ?? DEFAULT_CHAT_PROVIDER_ID;
@@ -356,6 +359,7 @@ export class ConversationRepository {
       ...(options?.projectId !== undefined && this.#isLiveProject(options.projectId)
         ? { projectId: options.projectId }
         : {}),
+      ...(options?.origin ? { origin: { kind: options.origin.kind, conversationId: options.origin.conversationId } } : {}),
     };
 
     this.metadataTargets.set(conversation.id, 'device');
@@ -1012,6 +1016,7 @@ export class ConversationRepository {
       preview: this.#getPreview(conversation),
       linkedContentPath: conversation.linkedContentPath,
       projectId: conversation.projectId,
+      ...(conversation.origin ? { origin: { ...conversation.origin } } : {}),
       isPinned: conversation.isPinned,
       isArchived: conversation.isArchived,
       titleGenerationStatus: conversation.titleGenerationStatus,
@@ -1282,6 +1287,7 @@ export class ConversationRepository {
       ...(modelRecoverySource ? { modelRecoverySource } : {}),
       linkedContentPath,
       projectId: conversation.projectId,
+      ...(conversation.origin ? { origin: { ...conversation.origin } } : {}),
       isPinned: conversation.isPinned,
       isArchived: conversation.isArchived,
       usage: conversation.usage,

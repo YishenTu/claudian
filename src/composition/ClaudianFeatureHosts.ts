@@ -15,6 +15,7 @@ import type {
   Conversation,
   ConversationMeta,
   ConversationMutablePatch,
+  ConversationOrigin,
   ConversationSummary,
   StoredChatModelSelection,
 } from '@/core/types';
@@ -135,6 +136,7 @@ export class ClaudianChatFeatureHost extends ClaudianFeatureHost implements Chat
     selectedModel?: string;
     linkedContentPath?: string;
     projectId?: string;
+    origin?: ConversationOrigin;
   }): Promise<Conversation> {
     return this.domains.conversations.createConversation(options);
   }

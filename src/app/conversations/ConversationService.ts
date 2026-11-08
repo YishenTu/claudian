@@ -3,6 +3,7 @@ import type {
   Conversation,
   ConversationMeta,
   ConversationMutablePatch,
+  ConversationOrigin,
   ConversationPlacement,
   ConversationSummary,
   ProjectMutations,
@@ -48,6 +49,7 @@ export class ConversationService {
     linkedContentPath?: string;
     /** Kept only when it names a live project at creation. */
     projectId?: string;
+    origin?: ConversationOrigin;
   }): Promise<Conversation> {
     const conversation = await this.#orderMutation(() => this.deps.repository.create(options));
     this.notifyConversationListChanged();

@@ -47,6 +47,7 @@ export type SessionRowActionKind =
   | 'open-in-new-tab'
   | 'open-in-background-tab'
   | 'switch-to-open'
+  | 'open-parent'
   | 'assign-device'
   | 'pin'
   | 'unpin'
@@ -78,11 +79,15 @@ export interface SessionRowActionInput {
   tracksAttention?: boolean;
   /** The session's live project; a stale `projectId` resolves to none. */
   project?: ProjectRecord | null;
+  /** The active session that started this one, if it still exists. */
+  parentId?: string | null;
 }
 
 /** A rendered row; its surface decides where the rename editor appears. */
 export interface SessionRow extends SessionRowActionInput {
   beginRename: () => void;
+  /** Sessions folded under this row, which archive and restore with it. */
+  folded?: readonly { readonly id: string; readonly isRunning: boolean }[];
 }
 
 /** Project texts are localized when shown; session texts are not localized yet. */
@@ -96,6 +101,7 @@ const ROW_ACTION_TITLES: Readonly<Record<SessionRowActionKind, ActionText>> = {
   'open-in-new-tab': 'Open in new tab',
   'open-in-background-tab': 'Open in background tab',
   'switch-to-open': 'Switch to open session',
+  'open-parent': 'Open parent session',
   'assign-device': 'Assign to this device',
   pin: 'Pin',
   unpin: 'Unpin',
@@ -115,6 +121,7 @@ const ROW_ACTION_ICONS: Readonly<Record<SessionRowActionKind, string>> = {
   'open-in-new-tab': 'square-plus',
   'open-in-background-tab': 'app-window',
   'switch-to-open': 'arrow-right-left',
+  'open-parent': 'corner-left-up',
   'assign-device': 'monitor-down',
   pin: 'pin',
   unpin: 'pin-off',
@@ -147,6 +154,7 @@ const ROW_ACTION_FAILURES: Readonly<Record<Exclude<SessionRowActionKind, Synchro
   'open-in-new-tab': 'Failed to load conversation',
   'open-in-background-tab': 'Failed to load conversation',
   'switch-to-open': 'Failed to load conversation',
+  'open-parent': 'Failed to load conversation',
   'copy-session-id': 'Failed to copy session ID',
   'assign-device': 'Failed to assign session to this device',
   pin: 'Failed to pin session',
@@ -159,6 +167,21 @@ const ROW_ACTION_FAILURES: Readonly<Record<Exclude<SessionRowActionKind, Synchro
 
 function action(kind: SessionRowActionKind, disabled = false): SessionRowAction {
   return { kind, disabled };
+}
+
+/** The folded sessions archiving (idle ones) or restoring (all) a row also moves. */
+function foldedIdsFor(row: Pick<SessionRow, 'folded'>, isArchiving: boolean): string[] {
+  return (row.folded ?? [])
+    .filter(child => !isArchiving || !child.isRunning)
+    .map(child => child.id);
+}
+
+/** Names what an action moves besides its own row, so archiving a collapsed parent is never silent. */
+function rowActionTitle(kind: SessionRowActionKind, row: Pick<SessionRow, 'folded'>): string {
+  const title = actionText(ROW_ACTION_TITLES[kind]);
+  if (kind !== 'archive' && kind !== 'restore') return title;
+  const count = foldedIdsFor(row, kind === 'archive').length;
+  return count === 0 ? title : `${title} with ${count} folded ${count === 1 ? 'session' : 'sessions'}`;
 }
 
 /** Only the unread dot or no badge can be toggled; every other badge keeps its own state. */
@@ -210,6 +233,7 @@ export function resolveRowActions(
       actions.push(action('switch-to-open'));
     }
   }
+  if (input.parentId && mode === 'active') actions.push(action('open-parent'));
   if (mode === 'archived') {
     actions.push(action('restore'), action('delete'));
     return actions;
@@ -274,7 +298,7 @@ export class SessionActions {
         'aria-label',
         rowAction.kind === 'archive' && rowAction.disabled
           ? 'Cannot archive a running session'
-          : actionText(ROW_ACTION_TITLES[rowAction.kind]),
+          : rowActionTitle(rowAction.kind, row),
       );
       if (rowAction.disabled) {
         button.setAttribute('disabled', '');
@@ -292,10 +316,15 @@ export class SessionActions {
     const menu = new Menu().setUseNativeMenu(false);
     const tracksAttention = canShowAttention(options);
     const project = this.deps.plugin.projects.get(row.conversation.projectId);
-    for (const rowAction of resolveRowActions('menu', { ...row, tracksAttention, project }, options)) {
+    // Archived sessions are not opened; the archive offers only restore and delete.
+    const parentId = row.conversation.origin?.conversationId;
+    const parent = parentId
+      ? this.deps.plugin.getConversationList().find(candidate => candidate.id === parentId && !candidate.isArchived)
+      : undefined;
+    for (const rowAction of resolveRowActions('menu', { ...row, tracksAttention, project, parentId: parent?.id }, options)) {
       menu.addItem((menuItem) => {
         menuItem
-          .setTitle(actionText(ROW_ACTION_TITLES[rowAction.kind]))
+          .setTitle(rowActionTitle(rowAction.kind, row))
           .setIcon(ROW_ACTION_ICONS[rowAction.kind]);
         if (rowAction.disabled) {
           menuItem.setDisabled(true);
@@ -673,7 +702,20 @@ export class SessionActions {
       }));
   }
 
+  /**
+   * A row archives and restores the sessions folded under it, so what it shows moves as one; running ones stay,
+   * as group archiving leaves them.
+   */
+  #setArchivedWithFolded(row: SessionRow, isArchived: boolean): Promise<void> {
+    const lifecycle = this.deps.plugin.conversationLifecycle;
+    const { id } = row.conversation;
+    const foldedIds = foldedIdsFor(row, isArchived);
+    if (foldedIds.length === 0) return lifecycle.setArchived(id, isArchived);
+    return isArchived ? lifecycle.archive([id, ...foldedIds]) : lifecycle.restore([id, ...foldedIds]);
+  }
+
   /** `anchorEl` is where a follow-up menu opens for keyboard use. */
+
   #runRowAction(
     kind: SessionRowActionKind,
     row: SessionRow,
@@ -711,6 +753,8 @@ export class SessionActions {
           return options.onOpenConversationInNewTab?.(id, false);
         case 'switch-to-open':
           return options.onSelectConversation(id);
+        case 'open-parent':
+          return row.conversation.origin ? options.onSelectConversation(row.conversation.origin.conversationId) : undefined;
         case 'assign-device':
           return options.onAssignConversationToDevice?.(id);
         case 'copy-session-id':
@@ -720,7 +764,7 @@ export class SessionActions {
           return this.deps.plugin.conversationLifecycle.setPinned([id], kind === 'pin');
         case 'archive':
         case 'restore':
-          return this.deps.plugin.conversationLifecycle.setArchived(id, kind === 'archive');
+          return this.#setArchivedWithFolded(row, kind === 'archive');
         case 'delete':
           return this.deleteSessions([id], { confirm: false, rerender: options.onRerender });
         case 'remove-from-project':

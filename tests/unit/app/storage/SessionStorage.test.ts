@@ -189,6 +189,31 @@ describe('SessionStorage', () => {
       expect(result?.needsMigration).toBe(needsMigration);
     });
 
+    it.each([
+      [{ kind: 'fork', conversationId: 'parent-a' }, { kind: 'fork', conversationId: 'parent-a' }, false],
+      [{ kind: 'session-tool', conversationId: 'parent-a' }, { kind: 'session-tool', conversationId: 'parent-a' }, false],
+      [{ kind: 'subagent', conversationId: 'parent-a' }, undefined, true],
+      [{ kind: 'fork', conversationId: '../outside' }, undefined, true],
+      [{ kind: 'fork' }, undefined, true],
+      ['parent-a', undefined, true],
+    ])('keeps only a well-formed origin %o and migrates malformed ones', async (stored, expected, needsMigration) => {
+      mockAdapter.exists.mockImplementation(async (path: string) => (
+        path === `${SESSIONS_PATH}/session-origin.meta.json`
+      ));
+      mockAdapter.read.mockResolvedValue(JSON.stringify({
+        id: 'session-origin',
+        title: 'Started elsewhere',
+        createdAt: 100,
+        lastActivityAt: 200,
+        origin: stored,
+      }));
+
+      const result = await storage.load('session-origin');
+
+      expect('origin' in result!.metadata ? result!.metadata.origin : 'absent').toEqual(expected ?? 'absent');
+      expect(result?.needsMigration).toBe(needsMigration);
+    });
+
     it('loads a durable model recovery locator without making it active session state', async () => {
       mockAdapter.exists.mockImplementation(async (path: string) => (
         path === `${SESSIONS_PATH}/session-model-retry.meta.json`
