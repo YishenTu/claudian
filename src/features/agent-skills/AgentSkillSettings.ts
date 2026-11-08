@@ -480,6 +480,7 @@ export class AgentSkillSettings {
       new Notice(t('settings.agentSkills.saveFailed', { message: errorMessage(error) }));
       return;
     }
+    if (this.disposed) return;
     this.#openEditor({
       title: t('settings.agentSkills.modal.titleFix'),
       initial: draft.input,
