@@ -2022,8 +2022,8 @@ function encodePrompt(
 } {
   const inputText = getInputText(request);
   let text = appendExecutionContext(inputText, request.context);
-  // Pi splits a leading skill name at a literal space, not the context's newline separator.
-  if (text !== inputText && /^\/skill:\S+$/.test(inputText)) {
+  // Pi splits skill and extension command names at a literal space, not the context separator.
+  if (text !== inputText && /^\/\S+$/.test(inputText)) {
     text = `${inputText} ${text.slice(inputText.length)}`;
   }
   if (replayConversationHistory && request.conversationHistory?.length) {
