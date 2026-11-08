@@ -281,6 +281,11 @@
       "completed": "Thought for {seconds}s",
       "label": "Thought"
     },
+    "contextUsage": {
+      "label": "Context usage",
+      "details": "Context usage: {details}",
+      "nearLimit": " (Approaching limit, run {command} to continue)"
+    },
     "suggestions": {
       "loading": "Loading…",
       "noMatches": "No matches",

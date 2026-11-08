@@ -281,6 +281,11 @@
       "completed": "思考了 {seconds} 秒",
       "label": "思考過程"
     },
+    "contextUsage": {
+      "label": "上下文用量",
+      "details": "上下文用量：{details}",
+      "nearLimit": "（接近上限，執行 {command} 以繼續）"
+    },
     "suggestions": {
       "loading": "正在載入…",
       "noMatches": "無符合項目",

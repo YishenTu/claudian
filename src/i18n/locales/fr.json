@@ -281,6 +281,11 @@
       "completed": "Réflexion pendant {seconds}s",
       "label": "Réflexion"
     },
+    "contextUsage": {
+      "label": "Utilisation du contexte",
+      "details": "Utilisation du contexte : {details}",
+      "nearLimit": " (Limite presque atteinte, exécutez {command} pour continuer)"
+    },
     "suggestions": {
       "loading": "Chargement…",
       "noMatches": "Aucune correspondance",
