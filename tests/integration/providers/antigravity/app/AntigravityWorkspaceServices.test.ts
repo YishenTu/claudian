@@ -171,11 +171,17 @@ describe('Antigravity workspace metadata discovery', () => {
     const live = antigravityConfigOptions()
       .filter(option => option.id !== 'thought_level')
       .map(option => (option.id === 'model' ? { ...option, currentValue: 'gpt-oss-120b-medium' } : option));
-    const report = readAntigravitySessionModels(live, antigravitySessionModels());
+    const sessionModels = antigravitySessionModels();
+    sessionModels.availableModels.push(
+      { modelId: 'claude-opus-5-5-max', name: 'Claude Opus 5.5 (Max)' },
+      { modelId: 'claude-opus-5-5-extra', name: 'Claude Opus 5.5 (Extra)' },
+    );
+    const report = readAntigravitySessionModels(live, sessionModels);
 
     await services.modelCatalogOwner.mergeLiveModels(report.models, report.currentModelId);
 
     expect(levels('gemini-4-argon')).toEqual(['low', 'medium', 'high']);
+    expect(levels('claude-opus-5-5')).toEqual(['low', 'medium', 'high', 'extra', 'max']);
     expect(levels('claude-sonnet-5-5')).toEqual(['low', 'medium', 'high']);
     expect(levels('gpt-oss-120b-medium')).toEqual([]);
   });

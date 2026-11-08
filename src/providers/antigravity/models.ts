@@ -113,7 +113,7 @@ function groupLevelsByModel(
     .map(value => sessionLevels.find(level => level.value === value) ?? { label: formatReasoningValueLabel(value), value })]));
 }
 
-const DEFAULT_LEVEL_ORDER = ['low', 'medium', 'high'];
+const DEFAULT_LEVEL_ORDER = ['low', 'medium', 'high', 'extra', 'max'];
 
 export function readAntigravityConfigValue(
   configOptions: readonly ACPSessionConfigOption[] | null | undefined,
