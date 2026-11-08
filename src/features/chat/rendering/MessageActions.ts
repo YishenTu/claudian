@@ -212,11 +212,13 @@ export class MessageActions {
       () => {
         copyBtn.empty();
         copyBtn.setText(t('chat.codeBlock.copied'));
+        copyBtn.setAttribute('aria-label', t('chat.codeBlock.copied'));
         copyBtn.classList.add('copied');
       },
       () => {
         copyBtn.empty();
         setIcon(copyBtn, 'copy');
+        copyBtn.setAttribute('aria-label', t('chat.copyMessage'));
         copyBtn.classList.remove('copied');
       },
     );
