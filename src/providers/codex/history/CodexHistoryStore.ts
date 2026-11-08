@@ -1271,11 +1271,37 @@ function processEventMsg(
 // Flush multi-bubble turns to ChatMessage[]
 // ---------------------------------------------------------------------------
 
+const COMPACTION_ACKNOWLEDGMENT = 'Compacted';
+
+/**
+ * The engine's bare acknowledgment bubbles of an unprompted, completed turn that only
+ * compacted. They are not an answer; the turn's boundary represents the compaction.
+ */
+function getCompactionAcknowledgments(turn: CodexTurnState): Set<CodexAssistantBubble> {
+  const acknowledgments = new Set<CodexAssistantBubble>();
+  if (!turn.completed || turn.userChunks.length > 0 || turn.userImages.length > 0) return acknowledgments;
+  let hasBoundary = false;
+  for (const bubble of turn.assistantBubbles) {
+    if (bubble.interrupted || bubble.toolCalls.length > 0 || bubble.thinkingChunks.length > 0) return new Set();
+    if (bubble.contentBlocks.length === 0) continue;
+    if (bubble.contentBlocks.every(block => block.type === 'context_compacted')) {
+      hasBoundary = true;
+    } else if (bubble.contentBlocks.every(block => block.type === 'text')
+      && bubble.contentChunks.every(chunk => chunk === COMPACTION_ACKNOWLEDGMENT)) {
+      acknowledgments.add(bubble);
+    } else {
+      return new Set();
+    }
+  }
+  return hasBoundary ? acknowledgments : new Set();
+}
+
 function flushBubbleTurnMessages(
   turn: CodexTurnState,
   msgIndex: number,
 ): { messages: ChatMessage[]; nextMsgIndex: number } {
   const messages: ChatMessage[] = [];
+  const compactionAcknowledgments = getCompactionAcknowledgments(turn);
 
   const rawUserText = turn.userChunks.join('\n');
   const isQuestionReply = parseCodexQuestionReply(rawUserText).length > 0;
@@ -1302,6 +1328,7 @@ function flushBubbleTurnMessages(
   const assistantMessages: ChatMessage[] = [];
 
   for (const bubble of turn.assistantBubbles) {
+    if (compactionAcknowledgments.has(bubble)) continue;
     const contentText = bubble.contentChunks.join('\n\n');
     const thinkingText = bubble.thinkingChunks.join('\n\n');
     const hasContent = contentText.trim().length > 0;

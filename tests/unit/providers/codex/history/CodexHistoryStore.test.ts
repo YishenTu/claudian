@@ -2897,6 +2897,52 @@ describe('CodexHistoryStore', () => {
       ]);
     });
 
+    const acknowledgmentRecords = {
+      event: [{ type: 'event_msg', payload: { type: 'agent_message', message: 'Compacted' } }],
+      response: [{ type: 'response_item', payload: { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'Compacted' }] } }],
+    };
+
+    it.each([
+      { source: 'event', acknowledgment: acknowledgmentRecords.event },
+      { source: 'response item', acknowledgment: acknowledgmentRecords.response },
+      { source: 'event and response item', acknowledgment: [...acknowledgmentRecords.event, ...acknowledgmentRecords.response] },
+    ])('keeps only the boundary of an unprompted compaction turn acknowledged by its $source', ({ acknowledgment }) => {
+      const records = [
+        { type: 'event_msg', payload: { type: 'task_started', turn_id: 'compaction-turn' } },
+        { type: 'compacted', payload: { message: 'Hidden summary' } },
+        { type: 'event_msg', payload: { type: 'context_compacted' } },
+        ...acknowledgment,
+        { type: 'event_msg', payload: { type: 'task_complete', turn_id: 'compaction-turn' } },
+      ];
+      const content = records.map((record, seconds) => JSON.stringify({ timestamp: testTime({ seconds }), ...record })).join('\n');
+
+      const turns = parseCodexSessionTurns(content);
+      expect(turns).toHaveLength(1);
+      expect(turns[0].messages).toEqual([expect.objectContaining({
+        role: 'assistant', content: '', contentBlocks: [{ type: 'context_compacted' }],
+        completedAt: testDate({ seconds: records.length - 1 }).getTime(),
+        assistantMessageId: 'compaction-turn', turnId: expect.any(String),
+      })]);
+    });
+
+    it.each([
+      { kind: 'a prompted answer', prefix: [{ type: 'event_msg', payload: { type: 'user_message', message: 'Reply in one word.' } }], text: 'Compacted', boundary: true, incomplete: false },
+      { kind: 'a longer answer', prefix: [], text: 'Compacted the notes.', boundary: true, incomplete: false },
+      { kind: 'an answer without a boundary', prefix: [], text: 'Compacted', boundary: false, incomplete: false },
+      { kind: 'a turn with reasoning', prefix: [{ type: 'event_msg', payload: { type: 'agent_reasoning', text: 'Summarize.' } }], text: 'Compacted', boundary: true, incomplete: false },
+      { kind: 'an incomplete turn', prefix: [], text: 'Compacted', boundary: true, incomplete: true },
+    ])('preserves $kind', ({ prefix, text, boundary, incomplete }) => {
+      const records = [
+        { type: 'event_msg', payload: { type: 'task_started', turn_id: 'turn' } },
+        ...prefix,
+        ...(boundary ? [{ type: 'event_msg', payload: { type: 'context_compacted' } }] : []),
+        { type: 'event_msg', payload: { type: 'agent_message', message: text } },
+        ...(incomplete ? [] : [{ type: 'event_msg', payload: { type: 'task_complete', turn_id: 'turn' } }]),
+      ];
+      const content = records.map((record, seconds) => JSON.stringify({ timestamp: testTime({ seconds }), ...record })).join('\n');
+      expect(parseCodexSessionContent(content).filter(message => message.content === text)).toHaveLength(1);
+    });
+
     it('keeps repeated record-only and event-only compactions distinct', () => {
       const records = [
         { type: 'compacted', payload: { message: 'Hidden first summary' } },

@@ -40,6 +40,10 @@ Please also:
 - Avoid new production dependencies unless the need and tradeoff are explicit.
 - Update documentation when behavior or user-facing configuration changes.
 
+## Codex History Replay
+
+Reopening a Codex session keeps earlier completed answers visible, even when their recorded duration is absent. A completed, unprompted compaction-only turn displays the compaction boundary without the engine's bare `Compacted` acknowledgment. Prompted answers, incomplete turns, and turns with other content, tools, or reasoning retain their text. Compaction within a response stays grouped with that response's intermediate work, while its final answer remains visible.
+
 ## New Provider Policy
 
 Pull requests that add a new provider are not accepted.

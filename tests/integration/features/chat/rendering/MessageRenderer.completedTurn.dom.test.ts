@@ -8,7 +8,8 @@ import { createChatFeatureHost } from '@test/helpers/features/chat/ChatFeatureHo
 import { conversationRecord } from '@test/helpers/features/chat/ConversationFixture';
 import { createProjectsFake } from '@test/helpers/features/chat/ProjectsFake';
 import { createSessionRuntimePool } from '@test/helpers/features/chat/SessionRuntimePoolHarness';
-import { testDate } from '@test/helpers/testClock';
+import { parseCodexSessionContent } from '@test/helpers/providers/codex/parseCodexSessionContent';
+import { testDate, testTime } from '@test/helpers/testClock';
 import { fireEvent, waitFor, within } from '@testing-library/dom';
 import { Component, MarkdownRenderer } from 'obsidian';
 
@@ -226,6 +227,49 @@ it('keeps separate completed turns and refreshes timestamps in their own action 
   const times = messagesEl.querySelectorAll('.claudian-message-timestamp');
   expect(times).toHaveLength(4);
   for (const time of times) expect(time.parentElement!.lastElementChild).toBe(time);
+  renderer.dispose();
+});
+
+it('keeps a completed Codex answer visible after an unprompted compaction turn on replay', async () => {
+  const { renderer, messagesEl } = setup('codex');
+  // The answer's records share one timestamp, so the parser records no duration for it.
+  const records = [
+    { timestamp: testTime(), type: 'event_msg', payload: { type: 'task_started', turn_id: 'answer-turn' } },
+    { timestamp: testTime(), type: 'event_msg', payload: { type: 'user_message', message: 'Summarize the notes.' } },
+    { timestamp: testTime(), type: 'event_msg', payload: { type: 'agent_message', message: 'Here is the summary.' } },
+    { timestamp: testTime(), type: 'event_msg', payload: { type: 'task_complete', turn_id: 'answer-turn' } },
+    { timestamp: testTime({ seconds: 1 }), type: 'event_msg', payload: { type: 'task_started', turn_id: 'compaction-turn' } },
+    { timestamp: testTime({ seconds: 2 }), type: 'event_msg', payload: { type: 'context_compacted' } },
+    { timestamp: testTime({ seconds: 3 }), type: 'event_msg', payload: { type: 'agent_message', message: 'Compacted' } },
+    { timestamp: testTime({ seconds: 4 }), type: 'event_msg', payload: { type: 'task_complete', turn_id: 'compaction-turn' } },
+  ];
+  renderer.renderMessages(parseCodexSessionContent(records.map(record => JSON.stringify(record)).join('\n')), () => 'Hello');
+  await Promise.resolve();
+  expect(within(messagesEl).getByText('Conversation compacted').closest('[hidden]')).toBeNull();
+  expect(within(messagesEl).getByText('Here is the summary.').closest('[hidden]')).toBeNull();
+  expect(within(messagesEl).queryByText('Compacted')).toBeNull();
+  expect((await axe(messagesEl)).violations).toEqual([]);
+  renderer.dispose();
+});
+
+it('keeps an earlier completed answer outside a later response without durations', async () => {
+  const { renderer, messagesEl } = setup();
+  renderer.renderMessages([
+    messages[0],
+    { id: 'first', role: 'assistant', content: 'First answer.',
+      timestamp: testDate({ seconds: 2 }).getTime(), completedAt: testDate({ seconds: 2 }).getTime(),
+      contentBlocks: [{ type: 'text', content: 'First answer.' }] },
+    { id: 'second', role: 'assistant', content: 'Second answer.',
+      timestamp: testDate({ seconds: 3 }).getTime(), completedAt: testDate({ seconds: 4 }).getTime(),
+      contentBlocks: [{ type: 'thinking', content: 'Second work.' }, { type: 'text', content: 'Second answer.' }] },
+  ], () => 'Hello');
+  await Promise.resolve();
+  const header = within(messagesEl).getByRole('button', { name: 'Worked' });
+  const history = document.getElementById(header.getAttribute('aria-controls')!)!;
+  expect(history.textContent).toContain('Second work.');
+  expect(within(messagesEl).getByText('First answer.').closest('[hidden]')).toBeNull();
+  expect(within(messagesEl).getByText('Second answer.').closest('[hidden]')).toBeNull();
+  expect((await axe(messagesEl)).violations).toEqual([]);
   renderer.dispose();
 });
 

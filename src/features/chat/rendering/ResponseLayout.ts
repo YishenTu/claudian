@@ -155,8 +155,10 @@ export function getResponseLayout(message: ChatMessage, messages: ChatMessage[],
     && (hasNotification || notificationPredecessor !== undefined);
   const segments = getResponseSegments(message, messages);
   let start = end;
+  // A completed earlier response keeps its answer even when it recorded no duration.
   while (start > 0 && messages[start - 1].role === 'assistant'
     && messages[start - 1].durationSeconds === undefined
+    && messages[start - 1].completedAt === undefined
     && !messages[start - 1].isInterrupt
     && !messages[start - 1].contentBlocks?.some(block => block.type === 'task_notification')) start--;
   const hasContinuation = segments.length > 1;
