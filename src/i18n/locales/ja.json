@@ -377,6 +377,25 @@
       "modeSteer": "実行中のターンに追加",
       "modeInterrupt": "現在の作業を中断"
     },
+    "modelPicker": {
+      "options": "モデルのオプション",
+      "provider": "プロバイダー",
+      "modelLabel": "モデル：{label}",
+      "unavailable": "モデルを利用できません",
+      "setup": "モデルを設定",
+      "guidance": "プロバイダー設定で有効なモデルを選択してください。検出に失敗した場合は、モデル一覧を更新してください。",
+      "model": "モデル",
+      "empty": "利用可能なモデルがありません。プロバイダー設定を確認し、検出に失敗した場合はモデル一覧を更新してください。",
+      "changeModelFailed": "モデルを変更できませんでした",
+      "defaultEffort": "デフォルト",
+      "effortLabel": "思考レベル {label}",
+      "thinking": "思考",
+      "changeEffortFailed": "思考レベルを変更できませんでした",
+      "fastActive": "高速モード有効",
+      "fast": "高速",
+      "fastLabel": "高速モード：{label}",
+      "changeTierFailed": "サービス階層を変更できませんでした"
+    },
     "navigation": {
       "scrollToTop": "最上部へスクロール",
       "previousMessage": "前のメッセージ",

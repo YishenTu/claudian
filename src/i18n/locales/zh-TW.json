@@ -377,6 +377,25 @@
       "modeSteer": "插入進行中的輪次",
       "modeInterrupt": "中斷目前工作"
     },
+    "modelPicker": {
+      "options": "模型選項",
+      "provider": "提供商",
+      "modelLabel": "模型：{label}",
+      "unavailable": "模型無法使用",
+      "setup": "設定模型",
+      "guidance": "請在提供商設定中選擇已啟用的模型。如果探索失敗，請重新整理模型清單。",
+      "model": "模型",
+      "empty": "沒有可用模型。請檢查提供商設定；如果探索失敗，請重新整理模型清單。",
+      "changeModelFailed": "無法切換模型",
+      "defaultEffort": "預設",
+      "effortLabel": "思考強度 {label}",
+      "thinking": "思考",
+      "changeEffortFailed": "無法變更思考強度",
+      "fastActive": "快速模式已開啟",
+      "fast": "快速",
+      "fastLabel": "快速模式：{label}",
+      "changeTierFailed": "無法變更服務層級"
+    },
     "navigation": {
       "scrollToTop": "捲動至頂端",
       "previousMessage": "上一則訊息",
