@@ -14,6 +14,14 @@
     "none": "Nenhum"
   },
   "chat": {
+    "queue": {
+      "queued": "Na fila",
+      "steering": "Redirecionando",
+      "steerNow": "Redirecionar agora",
+      "edit": "Editar mensagem na fila",
+      "discard": "Descartar mensagem na fila",
+      "images": "[imagens]"
+    },
     "promptSuggestionHint": "Tab para aceitar",
     "selectAvailableModel": "Selecione um modelo disponível antes de enviar.",
     "reloadingHistory": "Este chat mudou fora do Claudian e está sendo recarregado. Envie novamente quando terminar.",

@@ -14,6 +14,14 @@
     "none": "Keine"
   },
   "chat": {
+    "queue": {
+      "queued": "In der Warteschlange",
+      "steering": "Wird eingesteuert",
+      "steerNow": "Jetzt einsteuern",
+      "edit": "Nachricht in der Warteschlange bearbeiten",
+      "discard": "Nachricht in der Warteschlange verwerfen",
+      "images": "[Bilder]"
+    },
     "promptSuggestionHint": "Mit Tab übernehmen",
     "selectAvailableModel": "Wähle vor dem Senden ein verfügbares Modell aus.",
     "reloadingHistory": "Dieser Chat wurde außerhalb von Claudian geändert und wird neu geladen. Sende erneut, sobald das abgeschlossen ist.",

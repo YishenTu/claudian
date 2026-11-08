@@ -14,6 +14,14 @@
     "none": "なし"
   },
   "chat": {
+    "queue": {
+      "queued": "待機中",
+      "steering": "指示を送信中",
+      "steerNow": "今すぐ指示を送信",
+      "edit": "待機中のメッセージを編集",
+      "discard": "待機中のメッセージを破棄",
+      "images": "[画像]"
+    },
     "promptSuggestionHint": "Tab で採用",
     "selectAvailableModel": "送信する前に利用可能なモデルを選択してください。",
     "reloadingHistory": "このチャットは Claudian の外で変更されたため再読み込み中です。完了したら再送信してください。",

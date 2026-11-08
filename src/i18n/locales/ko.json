@@ -14,6 +14,14 @@
     "none": "없음"
   },
   "chat": {
+    "queue": {
+      "queued": "대기 중",
+      "steering": "방향 조정 중",
+      "steerNow": "지금 방향 조정",
+      "edit": "대기 중인 메시지 편집",
+      "discard": "대기 중인 메시지 삭제",
+      "images": "[이미지]"
+    },
     "promptSuggestionHint": "Tab으로 수락",
     "selectAvailableModel": "전송하기 전에 사용 가능한 모델을 선택하세요.",
     "reloadingHistory": "이 채팅이 Claudian 외부에서 변경되어 다시 불러오는 중입니다. 완료되면 다시 보내세요.",

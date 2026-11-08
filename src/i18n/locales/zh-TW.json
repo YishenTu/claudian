@@ -14,6 +14,14 @@
     "none": "無"
   },
   "chat": {
+    "queue": {
+      "queued": "排隊中",
+      "steering": "引導中",
+      "steerNow": "立即引導",
+      "edit": "編輯排隊訊息",
+      "discard": "捨棄排隊訊息",
+      "images": "[圖片]"
+    },
     "promptSuggestionHint": "按 Tab 接受",
     "selectAvailableModel": "請先選擇可用的模型再傳送。",
     "reloadingHistory": "此對話在 Claudian 之外有所變更，正在重新載入。載入完成後請重新傳送。",
