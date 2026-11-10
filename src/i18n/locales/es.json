@@ -304,6 +304,10 @@
       "label": "Modo de permisos",
       "current": "Modo de permisos: {mode}",
       "changeFailed": "No se pudo cambiar el modo de permisos",
+      "antigravity": {
+        "auto": "Automático",
+        "autoDesc": "Aprobar ediciones del espacio de trabajo y comandos aislados; revisar accesos adicionales"
+      },
       "claude": {
         "auto": "Automático",
         "manual": "Manual",

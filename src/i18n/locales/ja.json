@@ -304,6 +304,10 @@
       "label": "権限モード",
       "current": "権限モード：{mode}",
       "changeFailed": "権限モードの変更に失敗しました",
+      "antigravity": {
+        "auto": "自動",
+        "autoDesc": "ワークスペース内の編集とサンドボックス内のコマンドを許可し、追加アクセスを審査"
+      },
       "claude": {
         "auto": "自動",
         "manual": "手動",

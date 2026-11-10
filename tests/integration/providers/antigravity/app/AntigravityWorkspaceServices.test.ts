@@ -63,7 +63,7 @@ describe('Antigravity workspace metadata discovery', () => {
 
     if (result.status !== 'ready') throw new Error(`Expected ready commands, got ${result.status}`);
     expect(result.items.map(command => command.name)).toEqual([
-      'goal', 'compact', 'grill-me', 'learn', 'agy-customizations', 'antigravity-guide',
+      'goal', 'grill-me', 'learn', 'agy-customizations', 'antigravity-guide',
     ]);
     // The discovery session is closed without a prompt, so agy does not list it.
     expect(native.closeRequests).toEqual(['session-probe']);
