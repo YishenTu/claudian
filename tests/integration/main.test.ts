@@ -1,3 +1,5 @@
+import '@/providers';
+
 import { deferred } from '@test/helpers/ChatInputHarness';
 import { DEFAULT_CLAUDIAN_SETTINGS as DEFAULT_SETTINGS } from '@test/helpers/defaultSettings';
 import { grokEnvironmentHash, writeGrokCatalog } from '@test/helpers/providers/grokSettings';
@@ -9,7 +11,7 @@ import { PinnedLinkedContentPathCoordinator } from '@/app/settings/PinnedLinkedC
 import { ConversationPersistenceStore } from '@/app/storage/ConversationPersistenceStore';
 import type { SessionMetadataReadResult } from '@/app/storage/SessionStorage';
 import { SessionStorage } from '@/app/storage/SessionStorage';
-import type { SharedStorageService } from '@/app/storage/SharedStorageService';
+import { SharedStorageService } from '@/app/storage/SharedStorageService';
 import type { ClaudianChatFeatureHost } from '@/composition/ClaudianFeatureHosts';
 import type { ClaudianViews } from '@/composition/ClaudianViews';
 import { getDeviceSessionsPath } from '@/core/bootstrap/storagePaths';
@@ -23,8 +25,8 @@ import { LoopbackSessionToolServer } from '@/core/session-tools/LoopbackSessionT
 import { TOOL_SUBAGENT } from '@/core/tools/toolNames';
 import { type ClaudianSettings, type Conversation, type SessionMetadata, VIEW_TYPE_CLAUDIAN } from '@/core/types';
 import { ClaudianView } from '@/features/chat/ClaudianView';
+import { resolveSessionMentions } from '@/features/chat/composer/resolveSessionMentions';
 import { ConversationTitleGeneration } from '@/features/chat/conversation/ConversationTitleGeneration';
-import { resolveSessionMentions } from '@/features/chat/input/resolveSessionMentions';
 import { SessionMessagingService } from '@/features/chat/session-messaging/SessionMessagingService';
 import { SessionRuntimePool } from '@/features/chat/sessions/SessionRuntimePool';
 import { ZenModeController } from '@/features/chat/zen/ZenModeController';
@@ -473,6 +475,31 @@ describe('ClaudianPlugin', () => {
       );
     });
 
+    it('registers nothing and shuts down the late domains when unloaded while loading', async () => {
+      const storageReady = deferred<void>();
+      const initialize = SharedStorageService.prototype.initialize;
+      const held = vi.spyOn(SharedStorageService.prototype, 'initialize').mockImplementation(async function (this: SharedStorageService) {
+        await storageReady.promise;
+        return initialize.call(this);
+      });
+      try {
+        const loading = plugin.onload();
+        await vi.waitFor(() => expect(held).toHaveBeenCalled());
+        plugin.onunload();
+        storageReady.resolve();
+        await loading;
+        await plugin['applicationShutdownPromise'];
+
+        expect(plugin.registerView as Mock).not.toHaveBeenCalled();
+        expect(plugin.addCommand as Mock).not.toHaveBeenCalled();
+        expect(plugin.addSettingTab as Mock).not.toHaveBeenCalled();
+        expect(() => chatHostOf(plugin).sessionRuntimes.ensure({ conversationId: 'late', providerId: 'claude', draftModel: null }))
+          .toThrow('Session runtime pool is shutting down');
+      } finally {
+        held.mockRestore();
+      }
+    });
+
     it('registers the file explorer context menu', async () => {
       await plugin.onload();
 
@@ -666,7 +693,7 @@ describe('ClaudianPlugin', () => {
         providerState: { threadId: 'thread-before-invalidation' },
       };
       await plugin.onload();
-      runtimeSettingsOf(plugin)['pendingEnvironmentInvalidationGenerations'].set('codex', 1);
+      plugin.settings.pendingProviderSessionInvalidations.codex = 1;
       const scanSpy = vi.spyOn(SessionStorage.prototype, 'scan')
         .mockResolvedValue({
           records: deviceMetadataRecords(metadata),
@@ -1250,6 +1277,7 @@ describe('ClaudianPlugin', () => {
       const hydrate = vi.fn(async () => ({ messages: structuredClone(messages) }));
       vi.spyOn(ProviderRegistry, 'getConversationHistoryService').mockReturnValue({
         hydrateConversationHistory: hydrate,
+        readNativeHistoryRevision: async () => null,
         resolveSessionIdForConversation: conversation => conversation?.sessionId ?? null,
         isPendingForkConversation: () => false,
         buildForkProviderState: () => ({}),
@@ -1304,6 +1332,33 @@ describe('ClaudianPlugin', () => {
       expect(host.sessionRuntimes.get(ids[0])).toBe(runtime);
       expect((await host.getConversationById(ids[0]))?.messages).toEqual(messages);
       expect(repository.getSync(ids[0])?.messages).toEqual([]);
+    });
+
+    it('reloads a retained session whose native history revision changed before it is shown again', async () => {
+      const { host, repository, ids, hydrate, messages } = await setupHistoryReads();
+      let revision = 'before';
+      const service = ProviderRegistry.getConversationHistoryService('codex');
+      vi.spyOn(service, 'readNativeHistoryRevision').mockImplementation(async () => revision);
+      const pool = host.sessionRuntimes;
+      const identity = { conversationId: ids[0], providerId: 'codex', draftModel: null } as const;
+      const first = pool.acquire(identity, { reveal() {} }).attachment;
+      const model = await first.runtime.ensureModel();
+      pool.release(first);
+      await new Promise<void>(resolve => setImmediate(resolve));
+      expect(first.runtime.peekModel === model).toBe(true);
+
+      const external = { id: 'external', role: 'assistant' as const, content: 'Reply from the CLI', timestamp: messages[0].timestamp };
+      hydrate.mockImplementation(async () => ({ messages: [...structuredClone(messages), external] }));
+      revision = 'after';
+      // A recorded baseline is what makes the return checkable at all.
+      const revalidation = pool.revalidate(ids[0]);
+      expect(revalidation).not.toBeNull();
+      await revalidation;
+      expect(first.runtime.peekModel).toBeNull();
+      expect(repository.getSync(ids[0])?.messages).toEqual([]);
+      const second = pool.acquire(identity, { reveal() {} }).attachment;
+      expect((await second.runtime.ensureModel()).state.messages.at(-1)).toEqual(external);
+      pool.release(second);
     });
 
     async function prepareHeldHistoryRelease() {
@@ -1537,7 +1592,7 @@ describe('ClaudianPlugin', () => {
         expect(disposeWorkspaces).not.toHaveBeenCalled();
       } finally {
         release();
-        await (plugin as unknown as { applicationShutdownPromise: Promise<void> }).applicationShutdownPromise;
+        await plugin['applicationShutdownPromise'];
         dispose.mockRestore();
         disposeWorkspaces.mockRestore();
       }
@@ -1836,7 +1891,7 @@ describe('ClaudianPlugin', () => {
       })]);
 
       chatHostOf(plugin).notifyProviderChatOptionsChanged('claude');
-      await plugin['providerChatOptions']['tail'];
+      await plugin['providerChatOptions']['queue'].settled();
 
       expect(events).toEqual(['reconcile', 'refresh']);
     });
@@ -1852,7 +1907,7 @@ describe('ClaudianPlugin', () => {
       })]);
 
       chatHostOf(plugin).notifyProviderChatOptionsChanged('claude');
-      await plugin['providerChatOptions']['tail'];
+      await plugin['providerChatOptions']['queue'].settled();
 
       expect(refreshModelSelector).not.toHaveBeenCalled();
     });
@@ -2179,8 +2234,6 @@ describe('ClaudianPlugin', () => {
 
         const generation = plugin.settings.pendingProviderSessionInvalidations.claude;
         expect(generation).toEqual(expect.any(Number));
-        expect(runtimeSettingsOf(plugin)['pendingEnvironmentInvalidationGenerations'].get('claude'))
-          .toBe(generation);
         expect(chatHostOf(plugin).getConversationSync(conversation.id)!.sessionId).toBe('pre-invalidation-session');
         const persistedFailureSettings = JSON.parse(
           [...mockApp.vault.adapter.write.mock.calls]
@@ -2200,7 +2253,6 @@ describe('ClaudianPlugin', () => {
 
         expect(chatHostOf(plugin).getConversationSync(conversation.id)!.sessionId).toBeNull();
         expect(plugin.settings.pendingProviderSessionInvalidations.claude).toBeUndefined();
-        expect(runtimeSettingsOf(plugin)['pendingEnvironmentInvalidationGenerations'].has('claude')).toBe(false);
         expect(invalidateSpy).toHaveBeenCalledTimes(2);
         expect(plugin.executionLifecycleRegistry.getProviderGeneration('claude'))
           .toBe(initialGeneration + 2);
@@ -2235,8 +2287,6 @@ describe('ClaudianPlugin', () => {
         expect(chatHostOf(plugin).getConversationSync(first.id)!.sessionId).toBeNull();
         expect(chatHostOf(plugin).getConversationSync(second.id)!.sessionId).toBeNull();
         expect(generation).toEqual(expect.any(Number));
-        expect(runtimeSettingsOf(plugin)['pendingEnvironmentInvalidationGenerations'].get('claude'))
-          .toBe(generation);
         const persistedFailureSettings = JSON.parse(
           [...mockApp.vault.adapter.write.mock.calls]
             .reverse()
@@ -2257,7 +2307,6 @@ describe('ClaudianPlugin', () => {
           expect.objectContaining({ id: second.id, sessionId: null }),
         ]));
         expect(plugin.settings.pendingProviderSessionInvalidations.claude).toBeUndefined();
-        expect(runtimeSettingsOf(plugin)['pendingEnvironmentInvalidationGenerations'].has('claude')).toBe(false);
       } finally {
         saveMetadataSpy.mockRestore();
       }
@@ -2422,7 +2471,6 @@ describe('ClaudianPlugin', () => {
         resumeAtMessageId: 'deferred-resume-message',
       }));
       expect(plugin.settings.pendingProviderSessionInvalidations.claude).toBeUndefined();
-      expect(runtimeSettingsOf(plugin)['pendingEnvironmentInvalidationGenerations'].has('claude')).toBe(false);
       expect(saveMetadataSpy).not.toHaveBeenCalledWith(expect.objectContaining({
         id: deferredMetadata.id,
         sessionId: null,

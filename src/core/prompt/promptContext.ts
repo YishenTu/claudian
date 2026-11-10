@@ -4,6 +4,8 @@
  * Note and context file formatting for prompts.
  */
 
+import { parser } from '@lezer/markdown';
+
 import type { ProviderExecutionContext, ProviderSessionReference } from '@/core/execution/ProviderExecutionRequest';
 import { decodeSessionMessage } from '@/core/session-tools/sessionMessageEnvelope';
 
@@ -23,13 +25,56 @@ const LINKED_CONTENT_TAG = 'linked_content';
 const XML_CONTEXT_PATTERN = /\n\n<(?:linked_content|linked_note|current_note|editor_selection|editor_cursor|context_files|context_sessions|canvas_selection|browser_selection)[\s>]/;
 const BRACKET_CONTEXT_PATTERN = /\n\[(?:Current note|Editor selection from|Browser selection from|Canvas selection from)\b/;
 
+/** Indented code and closed inline/fenced literals protect examples; unclosed fences stay unchanged. */
+function getCodeLiteralRanges(text: string): Array<{ from: number; to: number }> {
+  const ranges: Array<{ from: number; to: number }> = [];
+  parser.parse(text).iterate({
+    enter(node) {
+      if (node.name !== 'InlineCode' && node.name !== 'FencedCode' && node.name !== 'CodeBlock') return;
+      if (node.name === 'CodeBlock' || node.node.getChildren('CodeMark').length === 2) ranges.push({ from: node.from, to: node.to });
+      return false;
+    },
+  });
+  return ranges;
+}
+
+function findContextBoundary(text: string, pattern: RegExp): number {
+  let ranges: ReturnType<typeof getCodeLiteralRanges> | undefined;
+  for (const match of text.matchAll(new RegExp(pattern.source, 'g'))) {
+    ranges ??= getCodeLiteralRanges(text);
+    if (!ranges.some(range => match.index < range.to && match.index + match[0].length > range.from)) return match.index;
+  }
+  return -1;
+}
+
+/** Keep literal openers searchable without hiding a later real context match. */
+function stripContextOutsideCode(text: string, pattern: RegExp): string {
+  let match = pattern.exec(text);
+  if (!match) return text;
+  const ranges = getCodeLiteralRanges(text);
+  let result = '';
+  let cursor = 0;
+  while (match) {
+    const index = match.index;
+    if (ranges.some(range => index >= range.from && index < range.to)) {
+      // A literal opener's match may include a real outside closer; retry from the next character.
+      pattern.lastIndex = match.index + 1;
+    } else {
+      result += text.slice(cursor, match.index);
+      cursor = pattern.lastIndex;
+    }
+    match = pattern.exec(text);
+  }
+  return result + text.slice(cursor);
+}
+
 export function formatLinkedContent(contentPath: string): string {
   return `<${LINKED_CONTENT_TAG} path="${escapePromptXMLAttribute(contentPath)}" />`;
 }
 
 /** Captured context suffix of a native prompt, using the same boundary as its user text. */
 export function extractUserPromptContext(text: string): string {
-  const boundary = text.search(XML_CONTEXT_PATTERN);
+  const boundary = findContextBoundary(text, XML_CONTEXT_PATTERN);
   return boundary < 0 ? '' : text.slice(boundary).trim();
 }
 
@@ -42,10 +87,8 @@ function extractContentBeforeXMLContext(text: string): string | undefined {
 
   // Current format: user content before any XML context tags
   // Context tags are always appended with \n\n separator
-  const xmlMatch = text.match(XML_CONTEXT_PATTERN);
-  if (xmlMatch?.index !== undefined) {
-    return text.substring(0, xmlMatch.index).trim();
-  }
+  const boundary = findContextBoundary(text, XML_CONTEXT_PATTERN);
+  if (boundary >= 0) return text.substring(0, boundary).trim();
 
   return undefined;
 }
@@ -66,10 +109,8 @@ export function extractUserDisplayContent(text: string): string | undefined {
     return xmlDisplayContent;
   }
 
-  const bracketMatch = text.match(BRACKET_CONTEXT_PATTERN);
-  if (bracketMatch?.index !== undefined) {
-    return text.substring(0, bracketMatch.index).trim();
-  }
+  const boundary = findContextBoundary(text, BRACKET_CONTEXT_PATTERN);
+  if (boundary >= 0) return text.substring(0, boundary).trim();
 
   return undefined;
 }
@@ -95,16 +136,18 @@ export function extractUserQuery(prompt: string): string {
   }
 
   // No XML context - return the whole prompt stripped of any remaining tags
-  return prompt
-    .replace(/<(?:linked_content|linked_note|current_note)(?:\s[^>]*)?\s*\/>\s*/g, '')
-    .replace(/<(linked_content|linked_note|current_note)(?:\s[^>]*)?>[\s\S]*?<\/\1>\s*/g, '')
-    .replace(/<editor_selection[\s\S]*?<\/editor_selection>\s*/g, '')
-    .replace(/<editor_cursor[\s\S]*?<\/editor_cursor>\s*/g, '')
-    .replace(/<context_sessions>[\s\S]*?<\/context_sessions>\s*/g, '')
-    .replace(/<context_files>[\s\S]*?<\/context_files>\s*/g, '')
-    .replace(/<canvas_selection[\s\S]*?<\/canvas_selection>\s*/g, '')
-    .replace(/<browser_selection[\s\S]*?<\/browser_selection>\s*/g, '')
-    .trim();
+  let query = prompt;
+  for (const pattern of [
+    /<(?:linked_content|linked_note|current_note)(?:\s[^>]*)?\s*\/>\s*/g,
+    /<(linked_content|linked_note|current_note)(?:\s[^>]*)?>[\s\S]*?<\/\1>\s*/g,
+    /<editor_selection[\s\S]*?<\/editor_selection>\s*/g,
+    /<editor_cursor[\s\S]*?<\/editor_cursor>\s*/g,
+    /<context_sessions>[\s\S]*?<\/context_sessions>\s*/g,
+    /<context_files>[\s\S]*?<\/context_files>\s*/g,
+    /<canvas_selection[\s\S]*?<\/canvas_selection>\s*/g,
+    /<browser_selection[\s\S]*?<\/browser_selection>\s*/g,
+  ]) query = stripContextOutsideCode(query, pattern);
+  return query.trim();
 }
 
 function formatContextFilesLine(files: string[]): string {

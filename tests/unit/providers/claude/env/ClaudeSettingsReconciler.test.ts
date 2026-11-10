@@ -1,13 +1,15 @@
-import '@/providers';
-
 import { conversationRecord } from '@test/helpers/features/chat/ConversationFixture';
 
 import { getInstallationKey } from '@/core/device/InstallationKey';
 import { getProviderConfig, setProviderConfig } from '@/core/providers/providerConfig';
 import { ProviderSettingsCoordinator } from '@/core/providers/ProviderSettingsCoordinator';
+import { registerProviderModules } from '@/core/providers/registerProviderModules';
 import { isVersionedRuntimeInputFingerprint } from '@/core/providers/settings/RuntimeInputFingerprint';
 import { claudeSettingsReconciler } from '@/providers/claude/env/ClaudeSettingsReconciler';
+import { claudeProviderRegistration } from '@/providers/claude/registration';
 import { getClaudeProviderSettings } from '@/providers/claude/settings';
+
+registerProviderModules([claudeProviderRegistration]);
 
 describe('claudeSettingsReconciler', () => {
   it('invalidates on WSL target and distro changes but reloads for a CLI-only change', () => {

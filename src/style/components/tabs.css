@@ -42,7 +42,7 @@ button.claudian-tab-badge {
   border-radius: 4px;
   border: 2px solid var(--background-modifier-border);
   font-family: inherit;
-  font-size: 12px;
+  font-size: calc(12 * var(--claudian-font-px));
   font-weight: 500;
   line-height: 1;
   cursor: pointer;
@@ -129,7 +129,7 @@ button.claudian-tab-badge-action-required {
   padding: 0 6px;
   border: 0;
   border-radius: 0;
-  font-size: 12px;
+  font-size: calc(12 * var(--claudian-font-px));
   font-weight: 500;
   color: var(--text-normal);
   background: transparent;

@@ -167,9 +167,21 @@ export function resolvePiTreeCursor(entries: PiSessionEntry[], cursor: PiTreeCur
   const latest = entries.at(-1)?.id;
   if (!cursor.appendId || !latest || latest === cursor.appendId) return cursor;
   if (!entries.some(entry => entry.id === cursor.appendId)) throw new Error('Pi branch history changed since navigation.');
-  const path = resolvePiActivePath(entries, latest);
-  if (cursor.leafId !== null && !path.some(entry => entry.id === cursor.leafId)) return cursor;
+  if (cursor.leafId !== null && !descendsFrom(entries, latest, cursor.leafId)) return cursor;
   return { targetId: latest, leafId: latest, appendId: latest };
+}
+
+/**
+ * The leaf a saved turn leaf has moved to: the latest entry when it continues that leaf, as a turn appended
+ * by another Pi client does; otherwise the saved leaf, whose branch the latest entry left.
+ */
+export function followPiLeafAppends(entries: PiSessionEntry[], leafId: string): string {
+  const latest = entries.at(-1)?.id;
+  return latest && latest !== leafId && descendsFrom(entries, latest, leafId) ? latest : leafId;
+}
+
+function descendsFrom(entries: PiSessionEntry[], descendantId: string, ancestorId: string): boolean {
+  return resolvePiActivePath(entries, descendantId).some(entry => entry.id === ancestorId);
 }
 
 export function parsePiSessionModel(

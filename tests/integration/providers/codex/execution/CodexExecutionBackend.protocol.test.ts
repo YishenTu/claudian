@@ -53,9 +53,13 @@ vi.mock('cross-spawn', () => ({ default: vi.fn(() => native.createProcess()) }))
 
 import type { MockInstance } from 'vitest';
 
+import { registerProviderModules } from '@/core/providers/registerProviderModules';
+import { claudeProviderRegistration } from '@/providers/claude/registration';
 import { CodexExecutionBackend } from '@/providers/codex/execution/CodexExecutionBackend';
 import { CodexAppServerRuntime } from '@/providers/codex/runtime/CodexAppServerRuntime';
 import { CodexRPCTransport } from '@/providers/codex/runtime/CodexRPCTransport';
+
+registerProviderModules([claudeProviderRegistration, codexProviderRegistration]);
 
 
 const runtimes: CodexAppServerRuntime[] = [];
@@ -301,7 +305,7 @@ function createRequest(
   return {
     input: [{ type: 'text', text: 'hello' }],
     configuration: {
-      systemInstructions: { kind: 'explicit', instructions: 'Be concise.' },
+      systemInstructions: { kind: 'explicit', purpose: 'title', instructions: 'Be concise.' },
       model: TEST_CODEX_MODEL,
       reasoning: 'high',
       serviceTier: 'priority',
@@ -446,7 +450,7 @@ describe('CodexExecutionBackend', () => {
         ...request,
         configuration: {
           ...request.configuration, permissionMode,
-          systemInstructions: { kind: 'explicit', instructions },
+          systemInstructions: { kind: 'explicit', purpose: 'title', instructions },
         },
       }).events);
     }
@@ -685,7 +689,7 @@ describe('CodexExecutionBackend', () => {
     });
     const session = createBackend(plugin).createSession(createSessionConfig());
     await collectEvents(session.execute(createRequest(undefined, {
-      configuration: { systemInstructions: { kind: 'explicit', instructions: 'Be concise.' } },
+      configuration: { systemInstructions: { kind: 'explicit', purpose: 'title', instructions: 'Be concise.' } },
     })).events);
 
     expect(nativeRequest).toHaveBeenCalledWith('turn/start', expect.objectContaining({
@@ -2588,6 +2592,41 @@ describe('CodexExecutionBackend', () => {
     },
   );
 
+  it('keeps a process exit reported while cancellation joins fork setup', async () => {
+    const firstResume = createDeferred<ReturnType<typeof createThreadResult>>();
+    nativeRequest.mockImplementation(async (method: string) => {
+      if (method === 'initialize') {
+        return {
+          userAgent: 'test',
+          codexHome: '/tmp/.codex',
+          platformFamily: 'unix',
+          platformOs: wslTarget ? 'linux' : 'macos',
+        };
+      }
+      if (method === 'thread/fork') {
+        return createThreadResult('thread-fork-target', [{ id: 'checkpoint' }, { id: 'later-turn' }]);
+      }
+      if (method === 'thread/resume') return firstResume.promise;
+      if (method === 'thread/revert') return createThreadResult('thread-fork-target', [{ id: 'checkpoint' }]);
+      throw new Error(`Unexpected method: ${method}`);
+    });
+    const session = createBackend(await createPlugin()).createSession(createForkSessionConfig());
+    const run = session.execute(createRequest());
+    const eventsPromise = collectEvents(run.events);
+    await native.waitForRequest('thread/resume');
+
+    run.cancel();
+    native.processes.at(-1)!.exit();
+    await nativeRoundTrip();
+    firstResume.resolve(createThreadResult('thread-fork-target', [{ id: 'checkpoint' }, { id: 'later-turn' }]));
+    const cancelledEvents = await eventsPromise;
+
+    expect(cancelledEvents.at(-1)).toMatchObject({ type: 'cancelled' });
+    // The cancelled run's settlement cannot hide that its process is gone.
+    expect(session.getSnapshot()).toMatchObject({ status: 'invalidated', invalidation: { reason: 'process-exited' } });
+    await session.dispose();
+  });
+
   it('joins fork setup through cancellation and retries the adopted child immediately', async () => {
     const firstResume = createDeferred<ReturnType<typeof createThreadResult>>();
     let resumeCount = 0;
@@ -3230,7 +3269,7 @@ describe('CodexExecutionBackend', () => {
       new AbortController().signal,
       {
         configuration: {
-          systemInstructions: { kind: 'explicit', instructions: 'Plan.' },
+          systemInstructions: { kind: 'explicit', purpose: 'title', instructions: 'Plan.' },
           model: TEST_CODEX_MODEL,
           reasoning: 'ultra',
           serviceTier: 'priority',
@@ -3348,7 +3387,7 @@ describe('CodexExecutionBackend', () => {
         configuration: {
           model: qualified ? `openai-codex/${model}` : model,
           permissionMode: 'normal',
-          systemInstructions: { kind: 'explicit', instructions: 'Be concise.' },
+          systemInstructions: { kind: 'explicit', purpose: 'title', instructions: 'Be concise.' },
         },
       },
     );

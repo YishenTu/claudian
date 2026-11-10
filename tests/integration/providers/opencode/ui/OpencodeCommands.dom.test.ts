@@ -1,6 +1,5 @@
 // @test-ci {"inputs":["tests/helpers/providers/opencode/OpencodeNativePeer.cjs"]}
 /** @vitest-environment jsdom */
-import '@/providers';
 
 import { writeFileSync } from 'node:fs';
 
@@ -11,6 +10,7 @@ import { ProviderChatOptionsReconciler } from '@/app/settings/ProviderChatOption
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { ProviderSettingsCoordinator } from '@/core/providers/ProviderSettingsCoordinator';
 import { ProviderWorkspaceRegistry } from '@/core/providers/ProviderWorkspaceRegistry';
+import { registerProviderModules } from '@/core/providers/registerProviderModules';
 import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
 import type { FileContextManager } from '@/features/chat/composer/FileContextManager';
 import { MainChatComposerDropdown } from '@/features/chat/composer/MainChatComposerDropdown';
@@ -18,12 +18,16 @@ import { TabCommandDiscovery } from '@/features/chat/tabs/TabCommandDiscovery';
 import { deactivateTab } from '@/features/chat/tabs/TabLifecycle';
 import { onProviderAvailabilityChanged } from '@/features/chat/tabs/tabProviderLifecycle';
 import type { AssembledTabRuntime, TabMembershipView } from '@/features/chat/tabs/types';
+import { claudeProviderRegistration } from '@/providers/claude/registration';
 import { OpencodeCommandLoader } from '@/providers/opencode/app/OpencodeCommandLoader';
 import { OpencodeCommandCatalog } from '@/providers/opencode/commands/OpencodeCommandCatalog';
 import { OpencodeMetadataService } from '@/providers/opencode/metadata/OpencodeMetadataService';
+import { opencodeProviderRegistration } from '@/providers/opencode/registration';
 import { getOpencodeProviderSettings } from '@/providers/opencode/settings';
 
 import { createOpencodeHTTPMetadataFixture } from '../metadata/OpencodeHTTPMetadataFixture';
+
+registerProviderModules([claudeProviderRegistration, opencodeProviderRegistration]);
 
 it.each([false, true])('updates an open command menu while preserving focus and its active command (eventless: %s)', async eventless => {
   const fixture = createOpencodeHTTPMetadataFixture();

@@ -18,7 +18,65 @@ type SlashValue = { readonly kind: 'command' | 'retry' };
 
 type SlashCommandDropdownItem = ComposerDropdownValueItem & {
   readonly aliases?: readonly string[];
+  readonly name: string;
 };
+
+interface RankedCommand {
+  readonly item: SlashCommandDropdownItem;
+  /** Lower ranks list first: exact name, name prefix, name substring, then description-only. */
+  readonly rank: number;
+}
+
+function nameRank(name: string, query: string): number {
+  const key = name.toLocaleLowerCase();
+  if (key === query) return 0;
+  if (key.startsWith(query)) return 1;
+  return key.includes(query) ? 2 : Number.POSITIVE_INFINITY;
+}
+
+/** Maps search-key offsets to enclosing boundaries in the unchanged command name. */
+function originalMatchRange(name: string, key: string, start: number, end: number) {
+  if (key.length === name.length) return { start, end };
+  let originalStart = 0;
+  let originalEnd = name.length;
+  let boundary = 0;
+  for (const character of name) {
+    boundary += character.length;
+    const foldedBoundary = name.slice(0, boundary).toLocaleLowerCase().length;
+    if (foldedBoundary <= start) originalStart = boundary;
+    if (foldedBoundary >= end) {
+      originalEnd = boundary;
+      break;
+    }
+  }
+  return { start: originalStart, end: originalEnd };
+}
+
+/** Ranks by the best-matching name and marks it; an alias is shown only when it beats the primary name. */
+function rankCommand(item: SlashCommandDropdownItem, query: string): RankedCommand | null {
+  const prefix = item.label.slice(0, item.label.length - item.name.length);
+  const primary = nameRank(item.name, query);
+  const alias = (item.aliases ?? [])
+    .map(name => ({ name, rank: nameRank(name, query) }))
+    .reduce<{ name: string; rank: number } | null>((best, next) => (!best || next.rank < best.rank ? next : best), null);
+  const matchIn = (name: string, offset: number) => {
+    if (!query) return undefined;
+    const key = name.toLocaleLowerCase();
+    const start = key.indexOf(query);
+    const range = originalMatchRange(name, key, start, start + query.length);
+    return { start: offset + range.start, end: offset + range.end };
+  };
+  if (alias && alias.rank < primary) {
+    return {
+      item: { ...item, labelNote: { text: alias.name, match: matchIn(alias.name, 0) } },
+      rank: alias.rank,
+    };
+  }
+  if (Number.isFinite(primary)) {
+    return { item: { ...item, labelMatch: matchIn(item.name, prefix.length) }, rank: primary };
+  }
+  return item.detail?.toLocaleLowerCase().includes(query) ? { item, rank: 3 } : null;
+}
 
 export interface SlashCommandSourceOptions {
   readonly hiddenCommands?: ReadonlySet<string>;
@@ -98,14 +156,12 @@ export class SlashCommandSource implements ComposerDropdownSource {
     const includeBuiltIns = this.includeBuiltIns
       && match.atInputStart
       && match.trigger === '/';
+    const query = match.query.toLocaleLowerCase();
     const items = this.#buildItems(providerEntries, includeBuiltIns)
-      .filter(item => {
-        const query = match.query.toLocaleLowerCase();
-        return item.label.toLocaleLowerCase().includes(query)
-          || item.detail?.toLocaleLowerCase().includes(query)
-          || item.aliases?.some(alias => alias.toLocaleLowerCase().includes(query));
-      })
-      .sort((left, right) => left.label.localeCompare(right.label));
+      .map(item => rankCommand(item, query))
+      .filter((ranked): ranked is RankedCommand => ranked !== null)
+      .sort((left, right) => left.rank - right.rank || left.item.label.localeCompare(right.item.label))
+      .map(ranked => ranked.item);
 
     if (result && result.status !== 'ready' && result.status !== 'empty') {
       const label = result.status === 'requires-session' || result.status === 'error'
@@ -257,6 +313,7 @@ export class SlashCommandSource implements ComposerDropdownSource {
           id: command.id,
           kind: 'value',
           label: `/${command.name}`,
+          name: command.name,
           replacement: `/${command.name} `,
           value: { kind: 'command' } satisfies SlashValue,
         });
@@ -274,6 +331,7 @@ export class SlashCommandSource implements ComposerDropdownSource {
         id: entry.id,
         kind: 'value',
         label: `${entry.displayPrefix}${entry.name}`,
+        name: entry.name,
         replacement: `${entry.insertPrefix}${entry.name} `,
         value: { kind: 'command' } satisfies SlashValue,
       });

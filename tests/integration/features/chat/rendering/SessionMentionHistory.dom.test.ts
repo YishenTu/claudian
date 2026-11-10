@@ -6,9 +6,10 @@ import { useClaudeSessionFiles } from '@test/helpers/providers/claudeHistory';
 import { parseCodexSessionContent } from '@test/helpers/providers/codex/parseCodexSessionContent';
 import { parseGrokHistoryContent } from '@test/helpers/providers/grokHistory';
 import { testDate, testTime } from '@test/helpers/testClock';
-import { within } from '@testing-library/dom';
+import { waitFor, within } from '@testing-library/dom';
 import { Component, MarkdownRenderer } from 'obsidian';
 
+import { appendExecutionContext } from '@/core/prompt/promptContext';
 import type { ChatMessage } from '@/core/types';
 import { MessageRenderer } from '@/features/chat/rendering/MessageRenderer';
 import { loadSDKSessionMessages } from '@/providers/claude/history/ClaudeHistoryStore';
@@ -55,5 +56,48 @@ it.each(['claude', 'codex', 'opencode', 'pi', 'grok'] as const)('hides snapshot 
     expect(within(parent).getByText('ref @"Review"')).toBeTruthy();
     expect(parent.textContent).not.toContain('context_sessions');
     expect(parent.textContent).not.toContain('private.md');
+  } finally { renderer.dispose(); parent.remove(); }
+});
+
+
+it.each([
+  {
+    label: 'context-free indented XML example',
+    body: 'Explain this XML:\n\n    <editor_selection path="note.md">hello</editor_selection>\n\nKeep the example.',
+    appendContext: false,
+    visibleExample: '<editor_selection path="note.md">hello</editor_selection>',
+    finalInstruction: 'Keep the example.',
+  },
+  {
+    label: 'XML example with actual appended context',
+    body: 'Explain this XML:\n\n```xml\n\n<editor_selection path="note.md">hello</editor_selection>\n```\nKeep the example.',
+    appendContext: true,
+    visibleExample: '<editor_selection path="note.md">hello</editor_selection>',
+    finalInstruction: 'Keep the example.',
+  },
+  {
+    label: 'context-free legacy bracket example',
+    body: 'Explain legacy:\n\n```text\n[Current note: Notes/example.md]\n```\nKeep the final instruction.',
+    appendContext: false,
+    visibleExample: '[Current note: Notes/example.md]',
+    finalInstruction: 'Keep the final instruction.',
+  },
+])('preserves $label through cold OpenCode history and the user bubble', async ({ body, appendContext, visibleExample, finalInstruction }) => {
+  const nativePrompt = appendContext ? appendExecutionContext(body, { linkedContent: { path: 'Real.md' } }) : body;
+  const rows = [{ id: 'u-code', type: 'user', time: { created: testDate().getTime() }, text: nativePrompt }];
+  const messages = mapOpencodeNativeMessages(rows);
+  expect(messages).toHaveLength(1);
+  expect(messages[0].content).toBe(body);
+  expect(rows[0].text).toBe(nativePrompt);
+  const parent = document.body.createDiv();
+  const renderer = new MessageRenderer(await createChatFeatureHost({ settings: { mediaFolder: '', showMessageTimestamps: false } }), new Component(), parent);
+  try {
+    renderer.renderStoredMessage(messages[0], messages, 0);
+    await waitFor(() => {
+      const visible = parent.querySelector('.claudian-text-block')?.textContent ?? '';
+      expect(visible).toContain(visibleExample);
+      expect(visible.endsWith(finalInstruction)).toBe(true);
+      expect(visible).not.toContain('Real.md');
+    });
   } finally { renderer.dispose(); parent.remove(); }
 });

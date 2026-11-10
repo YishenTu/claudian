@@ -13,7 +13,7 @@
 .claudian-subagent-label {
   flex: 1;
   font-family: var(--font-monospace);
-  font-size: 13px;
+  font-size: calc(13 * var(--claudian-font-px));
   font-weight: 400;
   color: var(--text-normal);
 }
@@ -53,7 +53,7 @@
   padding: 0 0 4px;
   padding-inline-start: 24px;
   font-family: var(--font-monospace);
-  font-size: 11px;
+  font-size: calc(11 * var(--claudian-font-px));
   min-width: 0;
 }
 
@@ -82,7 +82,7 @@
   cursor: pointer;
   user-select: none;
   font-family: var(--font-monospace);
-  font-size: 12px;
+  font-size: calc(12 * var(--claudian-font-px));
   color: var(--text-muted);
   padding: 2px 0;
 }
@@ -113,7 +113,7 @@
   height: auto;
   color: var(--text-muted);
   font-family: var(--font-monospace);
-  font-size: 12px;
+  font-size: calc(12 * var(--claudian-font-px));
   cursor: pointer;
 }
 
@@ -129,7 +129,7 @@
 .claudian-subagent-prompt-text,
 .claudian-subagent-result-output {
   font-family: var(--font-monospace);
-  font-size: 12px;
+  font-size: calc(12 * var(--claudian-font-px));
   line-height: 1.4;
   color: var(--text-muted);
   white-space: pre-wrap;
@@ -174,7 +174,7 @@
 
 .claudian-subagent-tool-name {
   font-family: var(--font-monospace);
-  font-size: 12px;
+  font-size: calc(12 * var(--claudian-font-px));
   color: var(--text-normal);
   white-space: nowrap;
   flex-shrink: 0;
@@ -182,7 +182,7 @@
 
 .claudian-subagent-tool-summary {
   font-family: var(--font-monospace);
-  font-size: 12px;
+  font-size: calc(12 * var(--claudian-font-px));
   color: var(--text-muted);
   white-space: nowrap;
   overflow: hidden;
@@ -210,12 +210,12 @@
   color: var(--text-faint);
   font-style: italic;
   font-family: var(--font-monospace);
-  font-size: 12px;
+  font-size: calc(12 * var(--claudian-font-px));
   padding: 2px 0;
 }
 
 .claudian-subagent-status-text {
-  font-size: 11px;
+  font-size: calc(11 * var(--claudian-font-px));
   font-family: var(--font-monospace);
   color: var(--text-muted);
   margin-inline-start: auto;

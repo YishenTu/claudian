@@ -28,7 +28,7 @@
 /* Two-part header: name (fixed) + summary (flexible) */
 .claudian-write-edit-name {
   font-family: var(--font-monospace);
-  font-size: 13px;
+  font-size: calc(13 * var(--claudian-font-px));
   font-weight: 400;
   color: var(--text-normal);
   white-space: nowrap;
@@ -37,7 +37,7 @@
 
 .claudian-write-edit-summary {
   font-family: var(--font-monospace);
-  font-size: 13px;
+  font-size: calc(13 * var(--claudian-font-px));
   color: var(--text-muted);
   white-space: nowrap;
   overflow: hidden;
@@ -48,7 +48,7 @@
 
 .claudian-write-edit-stats {
   font-family: var(--font-monospace);
-  font-size: 11px;
+  font-size: calc(11 * var(--claudian-font-px));
   flex-shrink: 0;
 }
 
@@ -92,7 +92,7 @@
 .claudian-write-edit-diff {
   flex: 1;
   font-family: var(--font-monospace);
-  font-size: 12px;
+  font-size: calc(12 * var(--claudian-font-px));
   line-height: 1.5;
   max-height: 300px;
   overflow: auto;
@@ -102,7 +102,7 @@
 .claudian-write-edit-error,
 .claudian-write-edit-done-text {
   font-family: var(--font-monospace);
-  font-size: 12px;
+  font-size: calc(12 * var(--claudian-font-px));
   color: var(--text-muted);
 }
 
@@ -166,7 +166,7 @@
   border-top: 1px dashed var(--background-modifier-border);
   border-bottom: 1px dashed var(--background-modifier-border);
   margin: 8px 0;
-  font-size: 11px;
+  font-size: calc(11 * var(--claudian-font-px));
 }
 
 .claudian-diff-no-changes {

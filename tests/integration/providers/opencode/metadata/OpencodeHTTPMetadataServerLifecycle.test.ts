@@ -2,7 +2,9 @@
 import { readFileSync, rmSync, writeFileSync } from 'node:fs';
 import * as path from 'node:path';
 
+import { OpencodeServerService } from '@/providers/opencode/http/OpencodeServerService';
 import { OpencodeMetadataService } from '@/providers/opencode/metadata/OpencodeMetadataService';
+import { resolveOpencodeTarget } from '@/providers/opencode/runtime/OpencodeExecutionTarget';
 import { getOpencodeProviderSettings, updateOpencodeProviderSettings } from '@/providers/opencode/settings';
 
 import { createOpencodeHTTPMetadataFixture, type OpencodeHTTPMetadataFixture, waitUntil } from './OpencodeHTTPMetadataFixture';
@@ -39,18 +41,32 @@ it('closes the retained server across environment transitions and reads the new 
 
 it('replaces a crashed idle server on the next discovery', async () => {
   const { host: plugin } = await fixture.createHostFixture();
-  const service = new OpencodeMetadataService(plugin.getRuntimeHost('opencode'), plugin.executionLifecycleRegistry);
+  const runtimeHost = plugin.getRuntimeHost('opencode');
+  const serverService = new OpencodeServerService();
+  const service = new OpencodeMetadataService(runtimeHost, plugin.executionLifecycleRegistry, { serverService });
+  // The same launch the metadata probe acquires, so the lookup addresses its retained server.
+  const launch = async () => {
+    const cliPath = await runtimeHost.resolveCliPath() ?? 'opencode';
+    const cwd = runtimeHost.workingDirectory || process.cwd();
+    const target = await resolveOpencodeTarget(runtimeHost.config, cwd);
+    return { cliPath, cwd, target, environment: await serverService.targetEnvironment.resolve(target, cwd, runtimeHost.environmentText, cliPath) };
+  };
+  const running = async () => {
+    const lease = await serverService.acquireRunning(launch);
+    await lease?.dispose();
+    return lease !== null;
+  };
   try {
     await expect(service.loadCatalog()).resolves.toBe(true);
+    await expect(running()).resolves.toBe(true);
     const endpoint = readFileSync(fixture.environment.ENDPOINT_FILE!, 'utf8');
     const pid = Number(readFileSync(fixture.environment.ENDPOINT_FILE! + '.pid', 'utf8'));
     process.kill(pid, 'SIGTERM');
-    await waitUntil(() => {
-      try { process.kill(pid, 0); return false; } catch { return true; }
-    });
+    // Reuse follows the client's observed exit, which Windows delivers after the pid already reads as gone.
+    await waitUntil(async () => !await running());
     await expect(service.loadCatalog()).resolves.toBe(true);
     expect(readFileSync(fixture.environment.ENDPOINT_FILE!, 'utf8')).not.toBe(endpoint);
-  } finally { await service.dispose(); }
+  } finally { await service.dispose(); await serverService.dispose(); }
 });
 
 it('keeps the shared server alive after an invalid catalog and permits retry after repair', async () => {

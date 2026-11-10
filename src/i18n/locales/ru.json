@@ -14,8 +14,18 @@
     "none": "Нет"
   },
   "chat": {
+    "queue": {
+      "queued": "В очереди",
+      "steering": "Корректировка хода",
+      "steerNow": "Скорректировать сейчас",
+      "edit": "Изменить сообщение в очереди",
+      "discard": "Удалить сообщение из очереди",
+      "images": "[изображения]"
+    },
     "promptSuggestionHint": "Tab для принятия",
     "selectAvailableModel": "Перед отправкой выберите доступную модель.",
+    "reloadingHistory": "Этот чат изменился вне Claudian и перезагружается. Отправьте снова, когда загрузка завершится.",
+    "changedOutsideWithBackgroundTask": "Этот чат был продолжен вне Claudian, пока фоновая задача из его прежнего сеанса ещё выполняется. Остановите задачу или дождитесь её завершения, затем отправьте снова.",
     "selectAvailableTitleModel": "Выберите доступную модель для заголовков в настройках Claudian.",
     "rewind": {
       "confirmMessage": "Откатить до этой точки? Изменения файлов после этого сообщения могут быть перезаписаны или удалены. Это действие нельзя отменить.",
@@ -103,6 +113,53 @@
       "moreContext": "Показать ещё элементов контекста: {count}",
       "showLess": "Показать меньше",
       "moreItems": "Ещё {count}"
+    },
+    "welcome": {
+      "sunday": "Хорошего воскресенья",
+      "sundayNamed": "Хорошего воскресенья, {name}",
+      "monday": "Хорошего понедельника",
+      "mondayNamed": "Хорошего понедельника, {name}",
+      "tuesday": "Хорошего вторника",
+      "tuesdayNamed": "Хорошего вторника, {name}",
+      "wednesday": "Хорошей среды",
+      "wednesdayNamed": "Хорошей среды, {name}",
+      "thursday": "Хорошего четверга",
+      "thursdayNamed": "Хорошего четверга, {name}",
+      "friday": "Хорошей пятницы",
+      "fridayNamed": "Хорошей пятницы, {name}",
+      "saturday": "Хорошей субботы!",
+      "saturdayNamed": "Хорошей субботы, {name}",
+      "backAtIt": "Снова за дело!",
+      "backAtItNamed": "Снова за дело, {name}",
+      "fridayFeeling": "Это пятничное настроение",
+      "fridayFeelingNamed": "Это пятничное настроение, {name}",
+      "weekend": "Добро пожаловать в выходные",
+      "weekendNamed": "Добро пожаловать в выходные, {name}",
+      "sundaySession": "Воскресная сессия?",
+      "morning": "Доброе утро",
+      "morningNamed": "Доброе утро, {name}",
+      "coffee": "Время для кофе и {brand}?",
+      "afternoon": "Добрый день",
+      "afternoonNamed": "Добрый день, {name}",
+      "hey": "Привет",
+      "heyNamed": "Привет, {name}",
+      "howGoing": "Как дела?",
+      "howGoingNamed": "Как дела, {name}?",
+      "evening": "Добрый вечер",
+      "eveningNamed": "Добрый вечер, {name}",
+      "eveningShort": "Вечер добрый",
+      "eveningShortNamed": "Вечер добрый, {name}",
+      "howDay": "Как прошёл день?",
+      "howDayNamed": "Как прошёл день, {name}?",
+      "nightOwl": "Привет, полуночник",
+      "hiHow": "Привет, как ты?",
+      "hiHowNamed": "Привет, {name}, как ты?",
+      "welcomeBack": "С возвращением!",
+      "welcomeBackNamed": "С возвращением, {name}!",
+      "whatsNew": "Что нового?",
+      "whatsNewNamed": "Что нового, {name}?",
+      "returnsNamed": "{name} снова здесь!",
+      "right": "Ты совершенно прав!"
     },
     "worked": "Работа выполнена",
     "taskNotification": "Уведомление о задаче",
@@ -200,6 +257,27 @@
       "agentCount": "{count} агент",
       "agentCountPlural": "Агенты: {count}"
     },
+    "subagentUI": {
+      "prompt": "Промпт",
+      "result": "Результат",
+      "taskLabel": "Задача субагента: {description} - {status}",
+      "backgroundTaskLabel": "Фоновая задача: {description} - {status}",
+      "statusLabel": "Статус: {status}",
+      "initializing": "Инициализация",
+      "error": "Ошибка",
+      "orphaned": "Не завершено",
+      "completed": "Завершено",
+      "runningInBackground": "Выполняется в фоне",
+      "running": "Выполняется",
+      "orphanedResult": "Разговор завершился до окончания задачи",
+      "lastTool": "Последний инструмент: {name}",
+      "toolUse": "Вызовов инструмента: {count}",
+      "toolUses": "Вызовов инструментов: {count}",
+      "tokens": "{value} токенов",
+      "compactTokens": "{value}k токенов",
+      "previousRuns": "Предыдущие запуски ({count})",
+      "runLabel": "Запуск {number} · {status}"
+    },
     "citations": {
       "memoryUsed": "Использованная память",
       "source": "{count} источник",
@@ -226,6 +304,10 @@
       "label": "Режим разрешений",
       "current": "Режим разрешений: {mode}",
       "changeFailed": "Не удалось изменить режим разрешений",
+      "antigravity": {
+        "auto": "Авто",
+        "autoDesc": "Разрешать изменения в рабочей области и команды в песочнице; проверять дополнительный доступ"
+      },
       "claude": {
         "auto": "Автоматически",
         "manual": "Вручную",
@@ -250,6 +332,11 @@
       "active": "Размышление: {seconds}с…",
       "completed": "Размышлял {seconds}с",
       "label": "Размышления"
+    },
+    "contextUsage": {
+      "label": "Использование контекста",
+      "details": "Использование контекста: {details}",
+      "nearLimit": " (Приближение к лимиту, выполните {command}, чтобы продолжить)"
     },
     "suggestions": {
       "loading": "Загрузка…",
@@ -347,6 +434,25 @@
       "modeSteer": "Добавить в текущий ход",
       "modeInterrupt": "Прервать текущую работу"
     },
+    "modelPicker": {
+      "options": "Параметры модели",
+      "provider": "Провайдер",
+      "modelLabel": "Модель: {label}",
+      "unavailable": "Модель недоступна",
+      "setup": "Настроить модели",
+      "guidance": "Выберите включённую модель в настройках провайдера. Если обнаружение не удалось, обновите список моделей.",
+      "model": "Модель",
+      "empty": "Нет доступных моделей. Проверьте настройки провайдера и обновите список моделей, если обнаружение не удалось.",
+      "changeModelFailed": "Не удалось сменить модель",
+      "defaultEffort": "По умолчанию",
+      "effortLabel": "уровень рассуждений {label}",
+      "thinking": "Рассуждение",
+      "changeEffortFailed": "Не удалось изменить уровень рассуждений",
+      "fastActive": "быстрый режим включён",
+      "fast": "Быстрый",
+      "fastLabel": "Быстрый режим: {label}",
+      "changeTierFailed": "Не удалось изменить уровень обслуживания"
+    },
     "navigation": {
       "scrollToTop": "Прокрутить вверх",
       "previousMessage": "Предыдущее сообщение",
@@ -354,6 +460,37 @@
       "nextMessage": "Следующее сообщение",
       "scrollToBottom": "Прокрутить вниз",
       "emptyDirectory": "В этом разговоре нет пользовательских запросов"
+    },
+    "tabNavigation": {
+      "tabName": "Имя вкладки",
+      "renameTab": "Переименовать вкладку…",
+      "resetName": "Сбросить имя вкладки",
+      "showNumber": "Показать номер",
+      "showName": "Показать имя",
+      "showTitle": "Показать заголовок",
+      "closeTab": "Закрыть вкладку",
+      "active": "активна",
+      "needsInput": "требуется ваш ввод",
+      "working": "в работе",
+      "errorReview": "остановлено из-за ошибки, готово к проверке",
+      "finishedReview": "завершено, готово к проверке",
+      "idle": "ожидание",
+      "badge": "{title}, {status}",
+      "namedBadge": "{label} ({title}), {status}",
+      "newTab": "Новая вкладка",
+      "newConversation": "Новый разговор",
+      "showWideFailed": "Не удалось показать сеанс в широком режиме",
+      "createTabFailed": "Не удалось создать вкладку",
+      "createConversationFailed": "Не удалось создать разговор",
+      "startConversationFailed": "Не удалось начать новый разговор",
+      "switchFailed": "Не удалось переключить вкладку",
+      "closeFailed": "Не удалось закрыть вкладку",
+      "resize": "Изменить ширину панелей разговора",
+      "previewCloseFailed": "Не удалось закрыть временный предпросмотр сеанса",
+      "commandNew": "Создать",
+      "commandReplace": "Заменить текущий разговор",
+      "commandClose": "Закрыть текущую вкладку",
+      "commandRename": "Переименовать текущую вкладку"
     },
     "projects": {
       "header": "Проекты",
@@ -374,7 +511,8 @@
         "moveTo": "Переместить в проект…",
         "moveSelectionTo": "Переместить сеансы ({count}) в проект…",
         "removeFrom": "Убрать из проекта",
-        "removeSelectionFrom": "Убрать сеансы ({count}) из проекта",
+        "removeSelectionFrom": "Убрать сеанс ({count}) из проекта",
+        "removeSelectionFromPlural": "Убрать сеансы ({count}) из проекта",
         "newProject": "Новый проект…"
       },
       "deleteConfirm": "Удалить проект «{name}» и переместить его файл памяти в корзину? Сеансы останутся, вне какого-либо проекта.",
@@ -396,6 +534,11 @@
         "name": "Название",
         "nameDesc": "Отображается в менеджере сеансов и в сеансах участников.",
         "namePlaceholder": "Название проекта",
+        "iconButton": "Значок проекта: {icon}",
+        "iconDefault": "Папка по умолчанию",
+        "iconPicker": "Выбрать значок проекта",
+        "iconSearch": "Поиск значков",
+        "iconNoMatches": "Подходящих значков нет.",
         "instructions": "Инструкции",
         "instructionsDesc": "Добавляются в системный промпт каждого сеанса-участника начиная со следующего хода.",
         "memoryPath": "Файл памяти",
@@ -772,6 +915,12 @@
         "desc": "Переменные окружения, передаваемые только в Grok Build. Секреты пользовательских моделей остаются в области этого провайдера, а нативная конфигурация ссылается на них через env_key."
       }
     },
+    "antigravity": {
+      "environment": {
+        "name": "Переменные окружения Antigravity",
+        "desc": "Переменные окружения, передаваемые только Antigravity (agy), например GEMINI_API_KEY."
+      }
+    },
     "deepseek": {
       "installation": {
         "desc": "Автопоиск предпочитает dsh, затем ищет Desktop в macOS или Windows. Если установлены оба варианта, укажите путь к .app или папку установки в Windows для выбора Desktop. Сначала откройте Desktop и завершите настройку.",
@@ -780,7 +929,7 @@
       "preset": "Пресет",
       "codeMode": {
         "name": "Включить режим кода",
-        "desc": "Применяется со следующего хода каждого разговора, включая существующие. Добавляет нативный run_code к прямым инструментам."
+        "desc": "Применяется со следующего хода каждого разговора, включая существующие. Модель вызывает инструменты из нативных программ run_code, а не напрямую."
       },
       "presetPlugins": {
         "name": "Дополнительные плагины пресета",

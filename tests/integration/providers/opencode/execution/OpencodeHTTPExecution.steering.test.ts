@@ -6,10 +6,15 @@ import { createFixture, releaseSteeringEventsOnAdmission, request } from '@test/
 import { writeOpencodeNativePeer } from '@test/helpers/providers/opencode/OpencodeNativePeer';
 
 import { isSteerableExecutionSession, type ProviderExecutionEvent, ProviderExecutionLifecycleRegistry, type ProviderSessionEvent } from '@/core/execution';
+import { registerProviderModules } from '@/core/providers/registerProviderModules';
 import type { ChatMessage } from '@/core/types';
 import { ChatExecutionCoordinator, type ChatSteerOutcome } from '@/features/chat/execution/ChatExecutionCoordinator';
+import { claudeProviderRegistration } from '@/providers/claude/registration';
 import { OpencodeExecutionBackend } from '@/providers/opencode/execution/OpencodeExecutionBackend';
 import { OpencodeServerService } from '@/providers/opencode/http/OpencodeServerService';
+import { opencodeProviderRegistration } from '@/providers/opencode/registration';
+
+registerProviderModules([claudeProviderRegistration, opencodeProviderRegistration]);
 
 describe('native steering', () => {
   beforeEach(releaseSteeringEventsOnAdmission);

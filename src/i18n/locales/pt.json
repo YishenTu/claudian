@@ -14,8 +14,18 @@
     "none": "Nenhum"
   },
   "chat": {
+    "queue": {
+      "queued": "Na fila",
+      "steering": "Redirecionando",
+      "steerNow": "Redirecionar agora",
+      "edit": "Editar mensagem na fila",
+      "discard": "Descartar mensagem na fila",
+      "images": "[imagens]"
+    },
     "promptSuggestionHint": "Tab para aceitar",
     "selectAvailableModel": "Selecione um modelo disponível antes de enviar.",
+    "reloadingHistory": "Este chat mudou fora do Claudian e está sendo recarregado. Envie novamente quando terminar.",
+    "changedOutsideWithBackgroundTask": "Este chat continuou fora do Claudian enquanto uma tarefa em segundo plano da sessão anterior ainda está em execução. Pare a tarefa ou aguarde até que termine e envie novamente.",
     "selectAvailableTitleModel": "Selecione um modelo de título disponível nas configurações do Claudian.",
     "rewind": {
       "confirmMessage": "Retroceder até este ponto? As alterações de arquivos após esta mensagem podem ser sobrescritas ou removidas. Esta ação não pode ser desfeita.",
@@ -103,6 +113,53 @@
       "moreContext": "Mostrar mais {count} itens de contexto",
       "showLess": "Mostrar menos",
       "moreItems": "+{count} mais"
+    },
+    "welcome": {
+      "sunday": "Bom domingo",
+      "sundayNamed": "Bom domingo, {name}",
+      "monday": "Boa segunda-feira",
+      "mondayNamed": "Boa segunda-feira, {name}",
+      "tuesday": "Boa terça-feira",
+      "tuesdayNamed": "Boa terça-feira, {name}",
+      "wednesday": "Boa quarta-feira",
+      "wednesdayNamed": "Boa quarta-feira, {name}",
+      "thursday": "Boa quinta-feira",
+      "thursdayNamed": "Boa quinta-feira, {name}",
+      "friday": "Boa sexta-feira",
+      "fridayNamed": "Boa sexta-feira, {name}",
+      "saturday": "Bom sábado!",
+      "saturdayNamed": "Bom sábado, {name}",
+      "backAtIt": "De volta à ação!",
+      "backAtItNamed": "De volta à ação, {name}",
+      "fridayFeeling": "Aquele clima de sexta-feira",
+      "fridayFeelingNamed": "Aquele clima de sexta-feira, {name}",
+      "weekend": "Chegou o fim de semana",
+      "weekendNamed": "{name}, chegou o fim de semana",
+      "sundaySession": "Uma sessão de domingo?",
+      "morning": "Bom dia",
+      "morningNamed": "Bom dia, {name}",
+      "coffee": "Hora de um café e de {brand}?",
+      "afternoon": "Boa tarde",
+      "afternoonNamed": "Boa tarde, {name}",
+      "hey": "Olá",
+      "heyNamed": "Olá, {name}",
+      "howGoing": "Como vão as coisas?",
+      "howGoingNamed": "Como vão as coisas, {name}?",
+      "evening": "Boa noite",
+      "eveningNamed": "Boa noite, {name}",
+      "eveningShort": "Já é noite",
+      "eveningShortNamed": "{name}, já é noite",
+      "howDay": "Como foi o seu dia?",
+      "howDayNamed": "Como foi o seu dia, {name}?",
+      "nightOwl": "Olá, coruja noturna",
+      "hiHow": "Oi, como vai?",
+      "hiHowNamed": "Oi {name}, como vai?",
+      "welcomeBack": "Que bom ter você de volta!",
+      "welcomeBackNamed": "Que bom ter você de volta, {name}!",
+      "whatsNew": "Quais são as novidades?",
+      "whatsNewNamed": "Quais são as novidades, {name}?",
+      "returnsNamed": "{name} voltou!",
+      "right": "Você tem toda a razão!"
     },
     "worked": "Trabalho realizado",
     "taskNotification": "Notificação de tarefa",
@@ -200,6 +257,27 @@
       "agentCount": "{count} agente",
       "agentCountPlural": "{count} agentes"
     },
+    "subagentUI": {
+      "prompt": "Instrução",
+      "result": "Resultado",
+      "taskLabel": "Tarefa do subagente: {description} - {status}",
+      "backgroundTaskLabel": "Tarefa em segundo plano: {description} - {status}",
+      "statusLabel": "Estado: {status}",
+      "initializing": "Inicializando",
+      "error": "Erro",
+      "orphaned": "Incompleto",
+      "completed": "Concluído",
+      "runningInBackground": "Em execução em segundo plano",
+      "running": "Em execução",
+      "orphanedResult": "A conversa terminou antes da conclusão da tarefa",
+      "lastTool": "Última ferramenta: {name}",
+      "toolUse": "{count} uso de ferramenta",
+      "toolUses": "{count} usos de ferramentas",
+      "tokens": "{value} tokens",
+      "compactTokens": "{value}k tokens",
+      "previousRuns": "Execuções anteriores ({count})",
+      "runLabel": "Execução {number} · {status}"
+    },
     "citations": {
       "memoryUsed": "Memória utilizada",
       "source": "{count} fonte",
@@ -226,6 +304,10 @@
       "label": "Modo de permissões",
       "current": "Modo de permissões: {mode}",
       "changeFailed": "Não foi possível alterar o modo de permissões",
+      "antigravity": {
+        "auto": "Automático",
+        "autoDesc": "Aprovar edições no espaço de trabalho e comandos isolados; revisar acessos adicionais"
+      },
       "claude": {
         "auto": "Automático",
         "manual": "Manual",
@@ -250,6 +332,11 @@
       "active": "Pensando há {seconds}s…",
       "completed": "Pensou por {seconds}s",
       "label": "Raciocínio"
+    },
+    "contextUsage": {
+      "label": "Uso do contexto",
+      "details": "Uso do contexto: {details}",
+      "nearLimit": " (Próximo do limite, execute {command} para continuar)"
     },
     "suggestions": {
       "loading": "Carregando…",
@@ -347,6 +434,25 @@
       "modeSteer": "Direcionar o turno em andamento",
       "modeInterrupt": "Interromper o trabalho atual"
     },
+    "modelPicker": {
+      "options": "Opções do modelo",
+      "provider": "Provedor",
+      "modelLabel": "Modelo: {label}",
+      "unavailable": "Modelo indisponível",
+      "setup": "Configurar modelos",
+      "guidance": "Escolha um modelo ativado nas configurações do provedor. Se a descoberta falhou, atualize a lista de modelos.",
+      "model": "Modelo",
+      "empty": "Nenhum modelo disponível. Verifique as configurações do provedor e atualize a lista de modelos se a descoberta falhou.",
+      "changeModelFailed": "Não foi possível alterar o modelo",
+      "defaultEffort": "Padrão",
+      "effortLabel": "esforço de raciocínio {label}",
+      "thinking": "Raciocínio",
+      "changeEffortFailed": "Não foi possível alterar o nível de raciocínio",
+      "fastActive": "modo rápido ativado",
+      "fast": "Rápido",
+      "fastLabel": "Modo rápido: {label}",
+      "changeTierFailed": "Não foi possível alterar o nível de serviço"
+    },
     "navigation": {
       "scrollToTop": "Rolar até o topo",
       "previousMessage": "Mensagem anterior",
@@ -354,6 +460,37 @@
       "nextMessage": "Próxima mensagem",
       "scrollToBottom": "Rolar até o fim",
       "emptyDirectory": "Não há prompts do usuário nesta conversa"
+    },
+    "tabNavigation": {
+      "tabName": "Nome da aba",
+      "renameTab": "Renomear aba…",
+      "resetName": "Redefinir nome da aba",
+      "showNumber": "Mostrar número",
+      "showName": "Mostrar nome",
+      "showTitle": "Mostrar título",
+      "closeTab": "Fechar aba",
+      "active": "ativa",
+      "needsInput": "precisa da sua resposta",
+      "working": "em andamento",
+      "errorReview": "interrompida por um erro, pronta para revisão",
+      "finishedReview": "concluída, pronta para revisão",
+      "idle": "ociosa",
+      "badge": "{title}, {status}",
+      "namedBadge": "{label} ({title}), {status}",
+      "newTab": "Nova aba",
+      "newConversation": "Nova conversa",
+      "showWideFailed": "Não foi possível exibir a sessão no layout amplo",
+      "createTabFailed": "Não foi possível criar a aba",
+      "createConversationFailed": "Não foi possível criar a conversa",
+      "startConversationFailed": "Não foi possível iniciar uma nova conversa",
+      "switchFailed": "Não foi possível alternar a aba",
+      "closeFailed": "Não foi possível fechar a aba",
+      "resize": "Ajustar a largura dos painéis de conversa",
+      "previewCloseFailed": "Não foi possível fechar a prévia provisória da sessão",
+      "commandNew": "Nova",
+      "commandReplace": "Substituir conversa atual",
+      "commandClose": "Fechar aba atual",
+      "commandRename": "Renomear aba atual"
     },
     "projects": {
       "header": "Projetos",
@@ -374,7 +511,8 @@
         "moveTo": "Mover para um projeto…",
         "moveSelectionTo": "Mover {count} sessões para um projeto…",
         "removeFrom": "Remover do projeto",
-        "removeSelectionFrom": "Remover {count} sessões do projeto",
+        "removeSelectionFrom": "Remover {count} sessão do projeto",
+        "removeSelectionFromPlural": "Remover {count} sessões do projeto",
         "newProject": "Novo projeto…"
       },
       "deleteConfirm": "Excluir o projeto “{name}” e mover o arquivo de memória para a lixeira? As sessões permanecem, fora de qualquer projeto.",
@@ -396,6 +534,11 @@
         "name": "Nome",
         "nameDesc": "Exibido no gerenciador de sessões e nas sessões membros.",
         "namePlaceholder": "Nome do projeto",
+        "iconButton": "Ícone do projeto: {icon}",
+        "iconDefault": "Pasta padrão",
+        "iconPicker": "Escolher ícone do projeto",
+        "iconSearch": "Pesquisar ícones",
+        "iconNoMatches": "Nenhum ícone corresponde.",
         "instructions": "Instruções",
         "instructionsDesc": "Adicionadas ao prompt do sistema de cada sessão membro a partir do próximo turno.",
         "memoryPath": "Arquivo de memória",
@@ -772,6 +915,12 @@
         "desc": "Variáveis de ambiente passadas somente ao Grok Build. Os segredos de modelos personalizados permanecem no escopo deste provedor e são referenciados na configuração nativa por env_key."
       }
     },
+    "antigravity": {
+      "environment": {
+        "name": "Variáveis de ambiente do Antigravity",
+        "desc": "Variáveis de ambiente passadas apenas ao Antigravity (agy), como GEMINI_API_KEY."
+      }
+    },
     "deepseek": {
       "installation": {
         "desc": "A detecção automática prioriza dsh e depois procura Desktop no macOS ou no Windows. Se ambos estiverem instalados, informe o caminho .app do Desktop ou a pasta de instalação no Windows para selecioná-lo. Abra o Desktop primeiro para concluir a configuração.",
@@ -780,7 +929,7 @@
       "preset": "Preset",
       "codeMode": {
         "name": "Ativar modo código",
-        "desc": "Aplica-se a partir do próximo turno de cada conversa, incluindo as existentes. Adiciona run_code nativo junto às ferramentas diretas."
+        "desc": "Aplica-se a partir do próximo turno de cada conversa, incluindo as existentes. O modelo chama as ferramentas a partir de programas run_code nativos em vez de diretamente."
       },
       "presetPlugins": {
         "name": "Plugins adicionais do preset",

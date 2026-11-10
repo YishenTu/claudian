@@ -2,7 +2,7 @@ import { setIcon } from 'obsidian';
 
 import { t } from '@/i18n/i18n';
 
-import type { ComposerDropdownItem, ComposerInputElement } from './types';
+import type { ComposerDropdownItem, ComposerInputElement, ComposerTextMatch } from './types';
 
 export interface ComposerDropdownViewOptions {
   readonly fixed?: boolean;
@@ -13,6 +13,17 @@ export interface ComposerDropdownViewOptions {
 }
 
 let nextListboxId = 0;
+
+/** Builds through the parent so rows in a pop-out window own their nodes. */
+function appendMarkedText(parent: HTMLElement, text: string, match: ComposerTextMatch | undefined): void {
+  if (!match || match.end <= match.start) {
+    parent.appendText(text);
+    return;
+  }
+  parent.appendText(text.slice(0, match.start));
+  parent.createSpan({ cls: 'claudian-composer-dropdown-match', text: text.slice(match.start, match.end) });
+  parent.appendText(text.slice(match.end));
+}
 
 interface ItemRow {
   readonly el: HTMLElement;
@@ -25,6 +36,7 @@ interface ItemRow {
 
 export class ComposerDropdownView {
   private dropdownEl: HTMLElement | null = null;
+  private labelEl: HTMLElement | null = null;
   private rows: ItemRow[] = [];
   private positioningWindow: Window | null = null;
   private readonly listboxId = `claudian-composer-listbox-${++nextListboxId}`;
@@ -46,6 +58,8 @@ export class ComposerDropdownView {
     for (const attribute of [...this.writtenAttributes.keys()]) this.#releaseInputAttribute(attribute);
     this.dropdownEl?.remove();
     this.dropdownEl = null;
+    this.labelEl?.remove();
+    this.labelEl = null;
     this.rows = [];
     if (wasVisible) this.options.onVisibilityChange?.();
   }
@@ -84,7 +98,7 @@ export class ComposerDropdownView {
 
     dropdown.addClass('is-visible');
     this.#setInputAttribute('aria-controls', this.listboxId);
-    this.updateSelection(selectedIndex);
+    this.updateSelection(selectedIndex, !this.options.fixed);
     if (!wasVisible && this.options.fixed) {
       this.positioningWindow = this.options.inputEl.ownerDocument.defaultView;
       this.positioningWindow?.addEventListener('scroll', this.#positionFixed, true);
@@ -136,7 +150,19 @@ export class ComposerDropdownView {
       setIcon(row.iconEl, icon);
       row.icon = icon;
     }
-    row.labelEl.textContent = item.label;
+    if (item.kind === 'value' && (item.labelMatch || item.labelNote)) {
+      row.labelEl.empty();
+      appendMarkedText(row.labelEl, item.label, item.labelMatch);
+      if (item.labelNote) {
+        row.labelEl.appendText(' ');
+        const noteEl = row.labelEl.createSpan({ cls: 'claudian-composer-dropdown-label-note' });
+        noteEl.appendText('(');
+        appendMarkedText(noteEl, item.labelNote.text, item.labelNote.match);
+        noteEl.appendText(')');
+      }
+    } else {
+      row.labelEl.textContent = item.label;
+    }
     if (row.detailEl) row.detailEl.textContent = item.detail ?? '';
   }
 
@@ -166,12 +192,17 @@ export class ComposerDropdownView {
 
   #ensureDropdown(): HTMLElement {
     if (this.dropdownEl) return this.dropdownEl;
+    // Named through a hidden sibling: Obsidian shows an aria-label as a hover tooltip over the whole menu.
+    this.labelEl = this.containerEl.createSpan({
+      attr: { hidden: '', id: `${this.listboxId}-label` },
+      text: t('common.inputSuggestions'),
+    });
     this.dropdownEl = this.containerEl.createDiv({
       cls: [
         'claudian-composer-dropdown',
         this.options.fixed ? 'claudian-composer-dropdown--fixed' : '',
       ].filter(Boolean).join(' '),
-      attr: { id: this.listboxId, role: 'listbox', 'aria-label': t('common.inputSuggestions') },
+      attr: { id: this.listboxId, role: 'listbox', 'aria-labelledby': this.labelEl.id },
     });
     this.#setInputAttribute('aria-autocomplete', 'list');
     return this.dropdownEl;
@@ -207,10 +238,22 @@ export class ComposerDropdownView {
     const inputRect = this.options.inputEl.getBoundingClientRect();
     const viewportHeight = this.options.inputEl.ownerDocument.defaultView?.innerHeight
       ?? window.innerHeight;
-    this.dropdownEl.setCssProps({
-      '--claudian-fixed-dropdown-bottom': `${viewportHeight - inputRect.top + 4}px`,
+    const dropdown = this.dropdownEl;
+    const previousHeight = dropdown.clientHeight;
+    dropdown.setCssProps({
       '--claudian-fixed-dropdown-left': `${inputRect.left}px`,
       '--claudian-fixed-dropdown-width': `${Math.max(inputRect.width, 280)}px`,
     });
+    const naturalHeight = Math.min(300, dropdown.scrollHeight + dropdown.offsetHeight - dropdown.clientHeight);
+    const above = Math.max(0, inputRect.top - 8);
+    const below = Math.max(0, viewportHeight - inputRect.bottom - 8);
+    const openAbove = naturalHeight <= above || above >= below;
+    dropdown.setCssProps({
+      '--claudian-fixed-dropdown-top': openAbove ? 'auto' : `${inputRect.bottom + 8}px`,
+      '--claudian-fixed-dropdown-bottom': openAbove ? `${viewportHeight - inputRect.top + 8}px` : 'auto',
+      '--claudian-fixed-dropdown-max-height': `${Math.min(300, openAbove ? above : below)}px`,
+    });
+    const selected = this.rows.find(row => row.el.getAttribute('aria-selected') === 'true');
+    if (selected && (!event || dropdown.clientHeight !== previousHeight)) this.#revealInList(selected.el);
   };
 }

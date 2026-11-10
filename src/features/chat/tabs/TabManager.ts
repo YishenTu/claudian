@@ -2,10 +2,10 @@ import { type App, Notice } from 'obsidian';
 
 import { type AppTabManagerState, normalizeTabLabel } from '@/core/bootstrap/tabManagerState';
 import type { ProviderId } from '@/core/providers/types';
-import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
+import type { ChatFeatureHost, TabId } from '@/features/chat/ChatFeatureHost';
 import type { ChatSessionRuntime } from '@/features/chat/sessions/ChatSessionRuntime';
 import { type DraftSessionHold, SessionAlreadyAttached, type SessionRevealOptions } from '@/features/chat/sessions/SessionRuntimePool';
-import type { TabBarItem, TabId, TabManagerInterface, TabManagerViewHost } from '@/features/chat/tabs/ChatTab';
+import type { TabBarItem, TabManagerInterface, TabManagerViewHost } from '@/features/chat/tabs/ChatTab';
 import { inheritedDraftSeed } from '@/features/chat/tabs/draftSeed';
 import type { ForkTargetHost } from '@/features/chat/tabs/forking/ForkTarget';
 import { ParkedDrafts } from '@/features/chat/tabs/ParkedDrafts';
@@ -115,7 +115,6 @@ export class TabManager implements TabManagerInterface {
   readonly viewerSlot: ViewerSlot;
   private destructionPromise: Promise<void> | null = null;
   private shutdownDrainPromise: Promise<void> | null = null;
-  private shutdownSnapshotOpen = false;
 
   constructor(
     plugin: ChatFeatureHost,
@@ -156,6 +155,12 @@ export class TabManager implements TabManagerInterface {
       ensureWorkspaceServices: (tab, providerId, reason) => (
         this.providerPresence.ensureWorkspaceServices(tab, providerId, reason)
       ),
+      revalidateSession: tab => {
+        const { conversationId } = tab;
+        if (!conversationId) return null;
+        const attachment = plugin.sessionRuntimes.getAttachment(conversationId);
+        return attachment?.runtime === tab.session.runtime ? plugin.sessionRuntimes.revalidate(conversationId, attachment) : null;
+      },
     });
     this.navigation = new TabConversationNavigation({
       plugin,
@@ -189,7 +194,6 @@ export class TabManager implements TabManagerInterface {
       navigation: this.navigation,
       layoutPolicy,
       forkTargetHost,
-      isShutdownSnapshotOpen: () => this.shutdownSnapshotOpen,
       inheritedSeed: tab => inheritedDraftSeed(this.plugin.projects, tab),
       startNew: (tab, seed) => this.navigation.enqueue(tab, async (isCurrent) => {
         await this.rebindTab(tab, null, isCurrent, { seed });
@@ -870,14 +874,11 @@ export class TabManager implements TabManagerInterface {
 
   /** Synchronously fences new work while preserving state for the shutdown snapshot. */
   beginShutdown(): void {
-    if (this.membership.isDestroyed()) return;
-    this.membership.markDestroyed();
-    this.shutdownSnapshotOpen = true;
+    this.membership.beginShutdown();
   }
 
   /** Seals the final identity snapshot so late runtime callbacks cannot mutate tab state. */
   sealShutdownSnapshot(): void {
-    this.shutdownSnapshotOpen = false;
     this.membership.sealIdentities();
   }
 

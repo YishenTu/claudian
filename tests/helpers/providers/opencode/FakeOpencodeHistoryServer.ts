@@ -7,6 +7,8 @@ export type FakeOpencodeNativeMessage = Record<string, unknown> & { id: string; 
 
 interface FakeOpencodeSession {
   model?: { providerID: string; id: string };
+  /** Native session times; `updated` and `idle` move as the session changes. */
+  time?: { created?: number; updated?: number; idle?: number };
   messages: FakeOpencodeNativeMessage[];
 }
 

@@ -1,6 +1,10 @@
+// @test-ci {"native":true}
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { pathToFileURL } from 'node:url';
+
+import { testTime } from '@test/helpers/testClock';
 
 import type { Conversation } from '@/core/types';
 import { PiConversationHistoryService } from '@/providers/pi/history/PiConversationHistoryService';
@@ -30,6 +34,19 @@ afterEach(async () => {
   await Promise.all(temporaryDirectories.splice(0).map(directory =>
     fs.rm(directory, { recursive: true, force: true })));
 });
+
+async function writeConfiguredHistory(sessionFile: string, cwd: string): Promise<string> {
+  const nativeContent = [
+    { type: 'session', version: 3, id: 's1', cwd, timestamp: testTime() },
+    { type: 'message', id: 'configured-user', parentId: null, timestamp: testTime(),
+      message: { role: 'user', content: [{ type: 'text', text: 'Read the configured history' }] } },
+    { type: 'message', id: 'configured-assistant', parentId: 'configured-user', timestamp: testTime({ seconds: 1 }),
+      message: { role: 'assistant', content: [{ type: 'text', text: 'Configured history is intact' }], stopReason: 'stop' } },
+  ].map(entry => JSON.stringify(entry)).join('\n');
+  await fs.mkdir(path.dirname(sessionFile), { recursive: true });
+  await fs.writeFile(sessionFile, nativeContent);
+  return nativeContent;
+}
 
 const describePosix = process.platform === 'win32' ? describe.skip : describe;
 
@@ -625,7 +642,120 @@ describe('PiConversationHistoryService', () => {
     expect(conversation.messages.map(message => message.content)).toEqual(['Configured']);
   });
 
+  it.each([
+    ['PI_CODING_AGENT_SESSION_DIR', '~'],
+    ['PI_CODING_AGENT_SESSION_DIR', 'home-relative'],
+    ['PI_CODING_AGENT_SESSION_DIR', 'file URI'],
+    ['PI_CODING_AGENT_SESSION_DIR', 'relative'],
+    ['PI_CODING_AGENT_DIR', '~'],
+    ['PI_CODING_AGENT_DIR', 'home-relative'],
+    ['PI_CODING_AGENT_DIR', 'file URI'],
+    ['PI_CODING_AGENT_DIR', 'relative'],
+  ] as const)('hydrates native %s using %s syntax without rewriting history', async (key, syntax) => {
+    const root = await createTempDirectory('pi-local-syntax-');
+    const home = path.join(root, 'home');
+    const vault = path.join(root, 'launch-vault');
+    const metadataCwd = path.join(root, 'header-vault');
+    const directory = syntax === '~' ? home
+      : syntax === 'home-relative' ? path.join(home, 'custom directory')
+        : syntax === 'file URI' ? path.join(root, 'Pi Sessions % # 日本語')
+          : path.join(vault, 'custom-sessions');
+    const value = syntax === 'file URI' ? pathToFileURL(directory).href
+      : syntax === 'home-relative' ? (process.platform === 'win32' ? '~\\custom directory' : '~/custom directory')
+        : syntax === 'relative' ? './custom-sessions' : syntax;
+    const sessionFile = key === 'PI_CODING_AGENT_DIR'
+      ? path.join(directory, 'sessions', `--${vault.replace(/^[/\\]/, '').replace(/[/\\:]/g, '-')}--`, 's1.jsonl')
+      : path.join(directory, 's1.jsonl');
+    const nativeContent = await writeConfiguredHistory(sessionFile, metadataCwd);
+    const result = await new PiConversationHistoryService().hydrateConversationHistory(
+      createConversation(sessionFile), vault,
+      { environment: { HOME: home, USERPROFILE: home, [key]: value } },
+    );
+
+    expect(result.messages?.map(({ id, role, content }) => ({ id, role, content }))).toEqual([
+      { id: 'configured-user', role: 'user', content: 'Read the configured history' },
+      { id: 'configured-assistant', role: 'assistant', content: 'Configured history is intact' },
+    ]);
+    expect(result.providerState?.sessionFile).toBe(sessionFile);
+    expect(result.providerState?.sessionId).toBe('s1');
+    expect(await fs.readFile(sessionFile, 'utf8')).toBe(nativeContent);
+  });
+
+  it('anchors relative configured roots to the context launch vault when no explicit vault is supplied', async () => {
+    const root = await createTempDirectory('pi-context-syntax-');
+    const vault = path.join(root, 'context-launch-vault');
+    const sessionFile = path.join(vault, 'custom-sessions', 's1.jsonl');
+    const nativeContent = await writeConfiguredHistory(sessionFile, path.join(root, 'different-header-vault'));
+    const result = await new PiConversationHistoryService().hydrateConversationHistory(
+      createConversation(sessionFile), null,
+      { vaultPath: vault, environment: { HOME: path.join(root, 'home'), PI_CODING_AGENT_SESSION_DIR: './custom-sessions' } },
+    );
+
+    expect(result.messages?.map(message => message.content)).toEqual([
+      'Read the configured history', 'Configured history is intact',
+    ]);
+    expect(result.providerState?.sessionFile).toBe(sessionFile);
+    expect(await fs.readFile(sessionFile, 'utf8')).toBe(nativeContent);
+  });
+
+  it('finds a logical session in the normalized agent sessions tree', async () => {
+    const root = await createTempDirectory('pi-logical-syntax-');
+    const vault = path.join(root, 'vault');
+    const home = path.join(root, 'home');
+    const sessionFile = path.join(home, 'custom agent', 'sessions', `--${vault.replace(/^[/\\]/, '').replace(/[/\\:]/g, '-')}--`, 's1.jsonl');
+    const nativeContent = await writeConfiguredHistory(sessionFile, vault);
+    const conversation = createConversation(sessionFile);
+    conversation.providerState = { sessionId: 's1' };
+    const result = await new PiConversationHistoryService().hydrateConversationHistory(
+      conversation, vault,
+      { environment: { HOME: home, USERPROFILE: home, PI_CODING_AGENT_DIR: '~/custom agent' } },
+    );
+
+    expect(result.messages?.map(message => message.content)).toEqual([
+      'Read the configured history', 'Configured history is intact',
+    ]);
+    expect(result.providerState).toEqual({ sessionId: 's1' });
+    expect(await fs.readFile(sessionFile, 'utf8')).toBe(nativeContent);
+  });
+
+  it.each(['outside sibling', 'agent outside sessions', 'malformed file URI'] as const)(
+    'does not add trust for %s', async scenario => {
+      const root = await createTempDirectory('pi-syntax-trust-');
+      const home = path.join(root, 'home');
+      const configured = path.join(root, 'configured');
+      const sessionFile = scenario === 'agent outside sessions'
+        ? path.join(configured, 's1.jsonl') : path.join(root, 'configured-sibling', 's1.jsonl');
+      const nativeContent = await writeConfiguredHistory(sessionFile, root);
+      const key = scenario === 'agent outside sessions' ? 'PI_CODING_AGENT_DIR' : 'PI_CODING_AGENT_SESSION_DIR';
+      const value = scenario === 'malformed file URI' ? 'file:///%ZZ' : pathToFileURL(configured).href;
+      const result = await new PiConversationHistoryService().hydrateConversationHistory(
+        createConversation(sessionFile), null,
+        { environment: { HOME: home, USERPROFILE: home, [key]: value } },
+      );
+
+      expect(result.messages).toEqual([]);
+      expect(await fs.readFile(sessionFile, 'utf8')).toBe(nativeContent);
+    },
+  );
+
   describePosix('literal POSIX filenames', () => {
+    it('keeps tilde-backslash and dollar syntax literal in relative POSIX directories', async () => {
+      const vault = await createTempDirectory('pi-literal-directory-');
+      const home = path.join(vault, 'home');
+      const sessionFile = path.join(vault, '~\\$PI_LITERAL', 's1.jsonl');
+      const nativeContent = await writeConfiguredHistory(sessionFile, vault);
+      const result = await new PiConversationHistoryService().hydrateConversationHistory(
+        createConversation(sessionFile), vault,
+        { environment: { HOME: home, PI_LITERAL: 'expanded', PI_CODING_AGENT_SESSION_DIR: '~\\$PI_LITERAL' } },
+      );
+
+      expect(result.messages?.map(message => message.content)).toEqual([
+        'Read the configured history', 'Configured history is intact',
+      ]);
+      expect(result.providerState?.sessionFile).toBe(sessionFile);
+      expect(await fs.readFile(sessionFile, 'utf8')).toBe(nativeContent);
+    });
+
     it.each(['sessions', 'sessions\\literal'])('hydrates a literal backslash filename under configured %s', async rootName => {
       const tempDir = await createTempDirectory('pi-history-posix-');
       try {
@@ -863,6 +993,51 @@ describe('PiConversationHistoryService', () => {
   });
 
 
+  describe('readNativeHistoryRevision', () => {
+    const line = (id: string, content: string) => `${JSON.stringify({ type: 'message', id, message: { role: 'user', content } })}\n`;
+
+    it('changes when the live session file is appended or rewritten', async () => {
+      const dir = await createTempDirectory('pi-revision-');
+      const sessionFile = path.join(dir, 'session.jsonl');
+      await fs.writeFile(sessionFile, line('u1', 'Hello'));
+      const service = new PiConversationHistoryService();
+      const conversation = createConversation(sessionFile);
+
+      const initial = await service.readNativeHistoryRevision(conversation, null);
+      expect(initial).not.toBeNull();
+      expect(await service.readNativeHistoryRevision(conversation, null)).toBe(initial);
+
+      await fs.appendFile(sessionFile, line('u2', 'Continued in the Pi CLI'));
+      const appended = await service.readNativeHistoryRevision(conversation, null);
+      expect(appended).not.toBeNull();
+      expect(appended).not.toBe(initial);
+
+      const { mtime, size } = await fs.stat(sessionFile);
+      await fs.writeFile(sessionFile, 'x'.repeat(size));
+      await fs.utimes(sessionFile, mtime, new Date(mtime.getTime() + 5_000));
+      const rewritten = await service.readNativeHistoryRevision(conversation, null);
+      expect(rewritten).toEqual(expect.any(String));
+      expect(rewritten).not.toBe(appended);
+    });
+
+    it('is null without a live native session file', async () => {
+      const dir = await createTempDirectory('pi-revision-');
+      const sourceFile = path.join(dir, 'source.jsonl');
+      await fs.writeFile(sourceFile, line('u1', 'Source'));
+      const service = new PiConversationHistoryService();
+      const unbound = createConversation(sourceFile);
+      unbound.sessionId = null;
+      unbound.providerState = { previousSessions: [{ sessionFile: sourceFile, sessionId: 'old' }] };
+      const pendingFork = createConversation(sourceFile);
+      pendingFork.sessionId = null;
+      pendingFork.providerState = { forkSource: { sessionId: 'source', resumeAt: 'u1' }, forkSourceSessionFile: sourceFile };
+
+      expect(await service.readNativeHistoryRevision(unbound, null)).toBeNull();
+      expect(await service.readNativeHistoryRevision(pendingFork, null)).toBeNull();
+      expect(await service.readNativeHistoryRevision(createConversation(path.join(dir, 'missing.jsonl')), null)).toBeNull();
+    });
+  });
+
   describe('resolveMissingConversationSession', () => {
 
 
@@ -920,4 +1095,24 @@ it('parses cursor history records only once per hydration', async () => {
     parse.mockRestore();
     await fs.rm(dir, { recursive: true, force: true });
   }
+});
+
+it.each([
+  { appended: 'continues the saved leaf', parent: 'a1', shows: ['Hello', 'Hi', 'From the CLI', 'CLI reply'], leaf: 'a2' },
+  { appended: 'branches from an earlier entry', parent: 'u1', shows: ['Hello', 'Hi'], leaf: 'a1' },
+])('follows entries appended outside Claudian only when the saved leaf $appended', async ({ parent, shows, leaf }) => {
+  const dir = await createTempDirectory('pi-appended-');
+  const sessionFile = path.join(dir, 'session.jsonl');
+  const entry = (id: string, parentId: string | null, role: 'user' | 'assistant', text: string) => `${JSON.stringify({
+    type: 'message', id, parentId, message: role === 'user' ? { role, content: text } : { role, content: [{ type: 'text', text }] },
+  })}\n`;
+  await fs.writeFile(sessionFile, entry('u1', null, 'user', 'Hello') + entry('a1', 'u1', 'assistant', 'Hi'));
+  const conversation = createConversation(sessionFile);
+  conversation.providerState!.leafEntryId = 'a1';
+  // The Pi CLI continued the session file Claudian last left at `a1`.
+  await fs.appendFile(sessionFile, entry('u2', parent, 'user', 'From the CLI') + entry('a2', 'u2', 'assistant', 'CLI reply'));
+
+  const history = await new PiConversationHistoryService().hydrateConversationHistory(conversation, null);
+  expect(history.messages?.map(message => message.content)).toEqual(shows);
+  expect(history.providerState?.leafEntryId).toBe(leaf);
 });

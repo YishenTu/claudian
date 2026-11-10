@@ -1,15 +1,17 @@
-import '@/providers';
-
 import { testDate } from '@test/helpers/testClock';
 
 import { getInstallationKey } from '@/core/device/InstallationKey';
 import { getProviderConfig } from '@/core/providers/providerConfig';
 import { ProviderSettingsCoordinator } from '@/core/providers/ProviderSettingsCoordinator';
+import { registerProviderModules } from '@/core/providers/registerProviderModules';
 import { isVersionedRuntimeInputFingerprint } from '@/core/providers/settings/RuntimeInputFingerprint';
 import type { Conversation } from '@/core/types';
+import { claudeProviderRegistration } from '@/providers/claude/registration';
 import { getOpencodeDiscoveryState, updateOpencodeDiscoveryState } from '@/providers/opencode/discoveryState';
 import { opencodeSettingsReconciler } from '@/providers/opencode/env/OpencodeSettingsReconciler';
 import { opencodeProviderRegistration } from '@/providers/opencode/registration';
+
+registerProviderModules([claudeProviderRegistration, opencodeProviderRegistration]);
 
 describe('coordinated OpenCode environment changes', () => {
   it('retains provider-owned discovery state when environment changes', () => {

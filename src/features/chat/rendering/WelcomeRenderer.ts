@@ -1,3 +1,6 @@
+import { t } from '@/i18n/i18n';
+import type { TranslationKey } from '@/i18n/types';
+
 const WELCOME_BRAND_NAME = 'Claudian';
 
 export function renderWelcomeContent(
@@ -37,38 +40,62 @@ export function pickWelcomeGreeting(name: string | undefined, now: Date, random:
   const hour = now.getHours();
   const day = now.getDay(); // 0 = Sunday, 6 = Saturday
 
-  const personalize = (base: string, noNameFallback?: string): string =>
-    name ? `${base}, ${name}` : (noNameFallback ?? base);
+  const personalize = (unnamed: TranslationKey, named: TranslationKey): string =>
+    name ? t(named, { name }) : t(unnamed);
 
   const dayGreetings: Record<number, string[]> = {
-    0: [personalize('Happy Sunday'), 'Sunday session?', 'Welcome to the weekend'],
-    1: [personalize('Happy Monday'), personalize('Back at it', 'Back at it!')],
-    2: [personalize('Happy Tuesday')],
-    3: [personalize('Happy Wednesday')],
-    4: [personalize('Happy Thursday')],
-    5: [personalize('Happy Friday'), personalize('That Friday feeling')],
-    6: [personalize('Happy Saturday', 'Happy Saturday!'), personalize('Welcome to the weekend')],
+    0: [
+      personalize('chat.welcome.sunday', 'chat.welcome.sundayNamed'),
+      t('chat.welcome.sundaySession'),
+      t('chat.welcome.weekend'),
+    ],
+    1: [
+      personalize('chat.welcome.monday', 'chat.welcome.mondayNamed'),
+      personalize('chat.welcome.backAtIt', 'chat.welcome.backAtItNamed'),
+    ],
+    2: [personalize('chat.welcome.tuesday', 'chat.welcome.tuesdayNamed')],
+    3: [personalize('chat.welcome.wednesday', 'chat.welcome.wednesdayNamed')],
+    4: [personalize('chat.welcome.thursday', 'chat.welcome.thursdayNamed')],
+    5: [
+      personalize('chat.welcome.friday', 'chat.welcome.fridayNamed'),
+      personalize('chat.welcome.fridayFeeling', 'chat.welcome.fridayFeelingNamed'),
+    ],
+    6: [
+      personalize('chat.welcome.saturday', 'chat.welcome.saturdayNamed'),
+      personalize('chat.welcome.weekend', 'chat.welcome.weekendNamed'),
+    ],
   };
 
   const timeGreetings = (): string[] => {
     if (hour >= 5 && hour < 12) {
-      return [personalize('Good morning'), 'Coffee and Claudian time?'];
+      return [
+        personalize('chat.welcome.morning', 'chat.welcome.morningNamed'),
+        t('chat.welcome.coffee', { brand: WELCOME_BRAND_NAME }),
+      ];
     } else if (hour >= 12 && hour < 18) {
-      return [personalize('Good afternoon'), personalize('Hey there'), personalize("How's it going") + '?'];
+      return [
+        personalize('chat.welcome.afternoon', 'chat.welcome.afternoonNamed'),
+        personalize('chat.welcome.hey', 'chat.welcome.heyNamed'),
+        personalize('chat.welcome.howGoing', 'chat.welcome.howGoingNamed'),
+      ];
     } else if (hour >= 18 && hour < 22) {
-      return [personalize('Good evening'), personalize('Evening'), personalize('How was your day') + '?'];
+      return [
+        personalize('chat.welcome.evening', 'chat.welcome.eveningNamed'),
+        personalize('chat.welcome.eveningShort', 'chat.welcome.eveningShortNamed'),
+        personalize('chat.welcome.howDay', 'chat.welcome.howDayNamed'),
+      ];
     }
-    return ['Hello, night owl', personalize('Evening')];
+    return [t('chat.welcome.nightOwl'), personalize('chat.welcome.eveningShort', 'chat.welcome.eveningShortNamed')];
   };
 
   const generalGreetings = [
-    personalize('Hey there'),
-    name ? `Hi ${name}, how are you?` : 'Hi, how are you?',
-    personalize("How's it going") + '?',
-    personalize('Welcome back') + '!',
-    personalize("What's new") + '?',
-    ...(name ? [`${name} returns!`] : []),
-    'You are absolutely right!',
+    personalize('chat.welcome.hey', 'chat.welcome.heyNamed'),
+    personalize('chat.welcome.hiHow', 'chat.welcome.hiHowNamed'),
+    personalize('chat.welcome.howGoing', 'chat.welcome.howGoingNamed'),
+    personalize('chat.welcome.welcomeBack', 'chat.welcome.welcomeBackNamed'),
+    personalize('chat.welcome.whatsNew', 'chat.welcome.whatsNewNamed'),
+    ...(name ? [t('chat.welcome.returnsNamed', { name })] : []),
+    t('chat.welcome.right'),
   ];
 
   const greetings = [

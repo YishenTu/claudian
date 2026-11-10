@@ -14,8 +14,18 @@
     "none": "Aucun"
   },
   "chat": {
+    "queue": {
+      "queued": "En file d’attente",
+      "steering": "Réorientation en cours",
+      "steerNow": "Réorienter maintenant",
+      "edit": "Modifier le message en file d’attente",
+      "discard": "Supprimer le message en file d’attente",
+      "images": "[images]"
+    },
     "promptSuggestionHint": "Tab pour accepter",
     "selectAvailableModel": "Sélectionnez un modèle disponible avant d’envoyer.",
+    "reloadingHistory": "Cette conversation a changé en dehors de Claudian et se recharge. Renvoyez une fois le rechargement terminé.",
+    "changedOutsideWithBackgroundTask": "Cette conversation s'est poursuivie en dehors de Claudian alors qu'une tâche en arrière-plan de sa session précédente est toujours en cours. Arrêtez la tâche ou attendez qu'elle se termine, puis renvoyez.",
     "selectAvailableTitleModel": "Sélectionnez un modèle de titre disponible dans les paramètres de Claudian.",
     "rewind": {
       "confirmMessage": "Rembobiner jusqu'à ce point ? Les modifications de fichiers postérieures à ce message peuvent être écrasées ou supprimées. Cette action est irréversible.",
@@ -103,6 +113,53 @@
       "moreContext": "Afficher {count} autres éléments de contexte",
       "showLess": "Afficher moins",
       "moreItems": "+{count} de plus"
+    },
+    "welcome": {
+      "sunday": "Bon dimanche",
+      "sundayNamed": "Bon dimanche, {name}",
+      "monday": "Bon lundi",
+      "mondayNamed": "Bon lundi, {name}",
+      "tuesday": "Bon mardi",
+      "tuesdayNamed": "Bon mardi, {name}",
+      "wednesday": "Bon mercredi",
+      "wednesdayNamed": "Bon mercredi, {name}",
+      "thursday": "Bon jeudi",
+      "thursdayNamed": "Bon jeudi, {name}",
+      "friday": "Bon vendredi",
+      "fridayNamed": "Bon vendredi, {name}",
+      "saturday": "Bon samedi !",
+      "saturdayNamed": "Bon samedi, {name}",
+      "backAtIt": "On s’y remet !",
+      "backAtItNamed": "On s’y remet, {name}",
+      "fridayFeeling": "Ça sent le vendredi",
+      "fridayFeelingNamed": "Ça sent le vendredi, {name}",
+      "weekend": "Bienvenue dans le week-end",
+      "weekendNamed": "Bienvenue dans le week-end, {name}",
+      "sundaySession": "Une session du dimanche ?",
+      "morning": "Bonjour",
+      "morningNamed": "Bonjour, {name}",
+      "coffee": "Un café et un peu de {brand} ?",
+      "afternoon": "Bon après-midi",
+      "afternoonNamed": "Bon après-midi, {name}",
+      "hey": "Salut",
+      "heyNamed": "Salut, {name}",
+      "howGoing": "Comment ça se passe ?",
+      "howGoingNamed": "Comment ça se passe, {name} ?",
+      "evening": "Bonsoir",
+      "eveningNamed": "Bonsoir, {name}",
+      "eveningShort": "Bonne soirée",
+      "eveningShortNamed": "Bonne soirée, {name}",
+      "howDay": "Comment s’est passée ta journée ?",
+      "howDayNamed": "Comment s’est passée ta journée, {name} ?",
+      "nightOwl": "Salut, oiseau de nuit",
+      "hiHow": "Salut, comment vas-tu ?",
+      "hiHowNamed": "Salut {name}, comment vas-tu ?",
+      "welcomeBack": "Bon retour !",
+      "welcomeBackNamed": "Bon retour, {name} !",
+      "whatsNew": "Quoi de neuf ?",
+      "whatsNewNamed": "Quoi de neuf, {name} ?",
+      "returnsNamed": "{name} est de retour !",
+      "right": "Tu as tout à fait raison !"
     },
     "worked": "Travail effectué",
     "taskNotification": "Notification de tâche",
@@ -200,6 +257,27 @@
       "agentCount": "{count} agent",
       "agentCountPlural": "{count} agents"
     },
+    "subagentUI": {
+      "prompt": "Instruction",
+      "result": "Résultat",
+      "taskLabel": "Tâche du sous-agent : {description} - {status}",
+      "backgroundTaskLabel": "Tâche en arrière-plan : {description} - {status}",
+      "statusLabel": "Statut : {status}",
+      "initializing": "Initialisation",
+      "error": "Erreur",
+      "orphaned": "Inachevé",
+      "completed": "Terminé",
+      "runningInBackground": "En cours en arrière-plan",
+      "running": "En cours",
+      "orphanedResult": "La conversation a pris fin avant la fin de la tâche",
+      "lastTool": "Dernier outil : {name}",
+      "toolUse": "{count} appel d’outil",
+      "toolUses": "{count} appels d’outil",
+      "tokens": "{value} tokens",
+      "compactTokens": "{value}k tokens",
+      "previousRuns": "Exécutions précédentes ({count})",
+      "runLabel": "Exécution {number} · {status}"
+    },
     "citations": {
       "memoryUsed": "Mémoire utilisée",
       "source": "{count} source",
@@ -226,6 +304,10 @@
       "label": "Mode d’autorisation",
       "current": "Mode d’autorisation : {mode}",
       "changeFailed": "Impossible de modifier le mode d’autorisation",
+      "antigravity": {
+        "auto": "Auto",
+        "autoDesc": "Autoriser les modifications de l’espace de travail et les commandes isolées ; examiner les accès supplémentaires"
+      },
       "claude": {
         "auto": "Automatique",
         "manual": "Manuel",
@@ -250,6 +332,11 @@
       "active": "Réflexion depuis {seconds}s…",
       "completed": "Réflexion pendant {seconds}s",
       "label": "Réflexion"
+    },
+    "contextUsage": {
+      "label": "Utilisation du contexte",
+      "details": "Utilisation du contexte : {details}",
+      "nearLimit": " (Limite presque atteinte, exécutez {command} pour continuer)"
     },
     "suggestions": {
       "loading": "Chargement…",
@@ -347,6 +434,25 @@
       "modeSteer": "Orienter le tour en cours",
       "modeInterrupt": "Interrompre le travail en cours"
     },
+    "modelPicker": {
+      "options": "Options du modèle",
+      "provider": "Fournisseur",
+      "modelLabel": "Modèle : {label}",
+      "unavailable": "Modèle indisponible",
+      "setup": "Configurer les modèles",
+      "guidance": "Choisissez un modèle activé dans les paramètres du fournisseur. Si la détection a échoué, actualisez la liste des modèles.",
+      "model": "Modèle",
+      "empty": "Aucun modèle disponible. Vérifiez les paramètres du fournisseur et actualisez la liste des modèles si la détection a échoué.",
+      "changeModelFailed": "Impossible de changer de modèle",
+      "defaultEffort": "Par défaut",
+      "effortLabel": "effort de réflexion {label}",
+      "thinking": "Réflexion",
+      "changeEffortFailed": "Impossible de modifier le niveau de réflexion",
+      "fastActive": "mode rapide activé",
+      "fast": "Rapide",
+      "fastLabel": "Mode rapide : {label}",
+      "changeTierFailed": "Impossible de modifier le niveau de service"
+    },
     "navigation": {
       "scrollToTop": "Défiler vers le haut",
       "previousMessage": "Message précédent",
@@ -354,6 +460,37 @@
       "nextMessage": "Message suivant",
       "scrollToBottom": "Défiler vers le bas",
       "emptyDirectory": "Aucun prompt utilisateur dans cette conversation"
+    },
+    "tabNavigation": {
+      "tabName": "Nom de l’onglet",
+      "renameTab": "Renommer l’onglet…",
+      "resetName": "Réinitialiser le nom de l’onglet",
+      "showNumber": "Afficher le numéro",
+      "showName": "Afficher le nom",
+      "showTitle": "Afficher le titre",
+      "closeTab": "Fermer l’onglet",
+      "active": "actif",
+      "needsInput": "nécessite votre intervention",
+      "working": "en cours",
+      "errorReview": "arrêté à la suite d’une erreur, prêt à être examiné",
+      "finishedReview": "terminé, prêt à être examiné",
+      "idle": "inactif",
+      "badge": "{title}, {status}",
+      "namedBadge": "{label} ({title}), {status}",
+      "newTab": "Nouvel onglet",
+      "newConversation": "Nouvelle conversation",
+      "showWideFailed": "Impossible d’afficher la session dans la disposition large",
+      "createTabFailed": "Impossible de créer l’onglet",
+      "createConversationFailed": "Impossible de créer la conversation",
+      "startConversationFailed": "Impossible de démarrer une nouvelle conversation",
+      "switchFailed": "Impossible de changer d’onglet",
+      "closeFailed": "Impossible de fermer l’onglet",
+      "resize": "Redimensionner les panneaux de conversation",
+      "previewCloseFailed": "Impossible de fermer l’aperçu provisoire de la session",
+      "commandNew": "Nouveau",
+      "commandReplace": "Remplacer la conversation actuelle",
+      "commandClose": "Fermer l’onglet actuel",
+      "commandRename": "Renommer l’onglet actuel"
     },
     "projects": {
       "header": "Projets",
@@ -374,7 +511,8 @@
         "moveTo": "Déplacer vers un projet…",
         "moveSelectionTo": "Déplacer {count} sessions vers un projet…",
         "removeFrom": "Retirer du projet",
-        "removeSelectionFrom": "Retirer {count} sessions du projet",
+        "removeSelectionFrom": "Retirer {count} session du projet",
+        "removeSelectionFromPlural": "Retirer {count} sessions du projet",
         "newProject": "Nouveau projet…"
       },
       "deleteConfirm": "Supprimer le projet « {name} » et placer son fichier de mémoire dans la corbeille ? Les sessions sont conservées, hors de tout projet.",
@@ -396,6 +534,11 @@
         "name": "Nom",
         "nameDesc": "Affiché dans le gestionnaire de sessions et dans les sessions membres.",
         "namePlaceholder": "Nom du projet",
+        "iconButton": "Icône du projet : {icon}",
+        "iconDefault": "Dossier par défaut",
+        "iconPicker": "Choisir l’icône du projet",
+        "iconSearch": "Rechercher des icônes",
+        "iconNoMatches": "Aucune icône ne correspond.",
         "instructions": "Instructions",
         "instructionsDesc": "Ajoutées au prompt système de chaque session membre à partir de son prochain tour.",
         "memoryPath": "Fichier de mémoire",
@@ -772,6 +915,12 @@
         "desc": "Variables d'environnement transmises uniquement à Grok Build. Les secrets des modèles personnalisés restent dans la portée de ce fournisseur et sont référencés depuis la configuration native par env_key."
       }
     },
+    "antigravity": {
+      "environment": {
+        "name": "Variables d’environnement d’Antigravity",
+        "desc": "Variables d’environnement transmises uniquement à Antigravity (agy), comme GEMINI_API_KEY."
+      }
+    },
     "deepseek": {
       "installation": {
         "desc": "La détection automatique privilégie dsh, puis cherche Desktop sur macOS ou Windows. Si les deux sont installés, saisissez le chemin .app de Desktop ou son dossier d’installation Windows pour le choisir. Ouvrez d’abord Desktop pour terminer sa configuration.",
@@ -780,7 +929,7 @@
       "preset": "Preset",
       "codeMode": {
         "name": "Activer le mode code",
-        "desc": "S'applique à partir du prochain tour de chaque conversation, y compris les conversations existantes. Ajoute run_code natif aux outils directs."
+        "desc": "S'applique à partir du prochain tour de chaque conversation, y compris les conversations existantes. Le modèle appelle les outils depuis des programmes run_code natifs plutôt que directement."
       },
       "presetPlugins": {
         "name": "Plugins de preset supplémentaires",

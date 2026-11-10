@@ -199,7 +199,7 @@ it.each([false, true])('terminates on native exit after prompt settled: %s', asy
     interactionPort: { askUserQuestion: vi.fn(), dismissInteraction: vi.fn(), requestApproval: vi.fn() },
   });
   const request: ProviderExecutionRequest = {
-    configuration: { permissionMode: 'normal', systemInstructions: { kind: 'explicit', instructions: 'Answer.' } },
+    configuration: { permissionMode: 'normal', systemInstructions: { kind: 'explicit', purpose: 'title', instructions: 'Answer.' } },
     input: [{ type: 'text', text: 'hello' }], signal: new AbortController().signal,
     toolPolicy: { kind: 'provider-default' },
   };

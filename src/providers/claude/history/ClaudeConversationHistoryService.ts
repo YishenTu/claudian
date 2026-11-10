@@ -1,5 +1,6 @@
 import { copyProviderHistoryState } from '@/core/providers/providerHistory';
 import { mapWithConcurrency } from '@/utils/concurrency';
+import { readFileRevision } from '@/utils/fileRevision';
 
 import { encodeProviderModelSelectionId } from '../../../core/providers/modelSelection';
 import type {
@@ -906,6 +907,24 @@ export class ClaudeConversationHistoryService implements ProviderConversationHis
     pathContext?: ClaudeConfigDirContext,
   ): Promise<ProviderHistoryUpdate> {
     return (await this.#readHistory(input, vaultPath, pathContext)).changes;
+  }
+
+  /** The live segment's transcript file; earlier segments are retired and never appended to. */
+  async readNativeHistoryRevision(
+    input: ProviderHistoryInput,
+    vaultPath: string | null,
+    pathContext?: ClaudeConfigDirContext,
+  ): Promise<string | null> {
+    if (!vaultPath || this.isPendingForkConversation(input)) return null;
+    const sessionId = getClaudeState(input.providerState).providerSessionId ?? input.sessionId;
+    if (!sessionId) return null;
+    try {
+      const context = await resolveClaudeHistoryContext(pathContext, vaultPath);
+      const { sessionPath } = await locateSDKSession(vaultPath, sessionId, context);
+      return sessionPath ? await readFileRevision(sessionPath) : null;
+    } catch {
+      return null;
+    }
   }
 
   async #readHistory(

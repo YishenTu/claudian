@@ -1,4 +1,4 @@
-import { runProcessProbe } from '@/core/process/ProcessProbe';
+import { runProcessProbe, WSL_PROCESS_PROBE_TIMEOUT_MS } from '@/core/process/ProcessProbe';
 
 import { buildTargetLaunchSpec, type BuildTargetLaunchSpecOptions } from './TargetLaunchSpec';
 
@@ -18,7 +18,7 @@ export async function probeTargetEnvironment(options: TargetEnvironmentProbeOpti
     return Object.fromEntries(options.variables.map(key => [key, options.env[key]]));
   }
   const spec = buildTargetLaunchSpec({ ...options, command: '/usr/bin/awk', args: [READ_ENVIRONMENT, ...options.variables] });
-  const output = await runProcessProbe({ ...spec, cwd: spec.spawnCwd }, 20_000);
+  const output = await runProcessProbe({ ...spec, cwd: spec.spawnCwd }, WSL_PROCESS_PROBE_TIMEOUT_MS);
   if (output === null) return null;
   const fields = output.split('\0');
   if (fields.pop() !== '' || fields.length !== options.variables.length * 2) return null;

@@ -16,14 +16,29 @@ export interface ACPImplementation {
   title?: string | null;
 }
 
+/** Optional client features a provider chooses to advertise. */
+export interface ACPClientCapabilities {
+  /** Form-mode `elicitation/create` requests answered by the client. */
+  elicitation?: { form?: Record<string, never> } | null;
+}
+
 export interface ACPInitializeRequest {
+  clientCapabilities?: ACPClientCapabilities;
   clientInfo?: ACPImplementation | null;
   protocolVersion: ACPProtocolVersion;
 }
 
-/** Only provider extension metadata is read from agent capabilities. */
+/** Each listed capability object marks support; omitted entries are unsupported. */
+export interface ACPSessionCapabilities {
+  close?: Record<string, unknown> | null;
+  list?: Record<string, unknown> | null;
+  resume?: Record<string, unknown> | null;
+}
+
 export interface ACPAgentCapabilities {
   _meta?: ACPMetadata | null;
+  loadSession?: boolean;
+  sessionCapabilities?: ACPSessionCapabilities | null;
 }
 
 export interface ACPInitializeResponse {
@@ -149,6 +164,61 @@ export interface ACPLoadSessionResponse {
   modes?: ACPSessionModeState | null;
   sessionId?: ACPSessionId | null;
 }
+
+export type ACPResumeSessionRequest = ACPLoadSessionRequest;
+
+export type ACPResumeSessionResponse = ACPLoadSessionResponse;
+
+export interface ACPCloseSessionRequest {
+  sessionId: ACPSessionId;
+}
+
+export type ACPCloseSessionResponse = Record<string, never>;
+
+export interface ACPSetSessionConfigOptionRequest {
+  configId: ACPSessionConfigId;
+  sessionId: ACPSessionId;
+  value: ACPSessionConfigValueId;
+}
+
+export interface ACPSetSessionConfigOptionResponse {
+  configOptions?: ACPSessionConfigOption[] | null;
+}
+
+export interface ACPElicitationEnumOption {
+  const: string;
+  title?: string | null;
+}
+
+/** Form field schema: a single choice, a multi-choice array, or free text. */
+export interface ACPElicitationProperty {
+  description?: string | null;
+  items?: {
+    anyOf?: ACPElicitationEnumOption[] | null;
+    enum?: string[] | null;
+    oneOf?: ACPElicitationEnumOption[] | null;
+  } | null;
+  oneOf?: ACPElicitationEnumOption[] | null;
+  enum?: string[] | null;
+  title?: string | null;
+  type: 'array' | 'boolean' | 'integer' | 'number' | 'string';
+}
+
+export interface ACPCreateElicitationRequest {
+  message: string;
+  mode: 'form';
+  requestedSchema: {
+    properties: Record<string, ACPElicitationProperty>;
+    required?: string[] | null;
+    type: 'object';
+  };
+  sessionId: ACPSessionId;
+  toolCallId?: ACPToolCallId | null;
+}
+
+export type ACPCreateElicitationResponse =
+  | { action: 'accept'; content: Record<string, string | string[] | number | boolean> }
+  | { action: 'cancel' | 'decline' };
 
 export interface ACPTextContent {
   type: 'text';

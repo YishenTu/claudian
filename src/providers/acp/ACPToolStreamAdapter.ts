@@ -29,11 +29,15 @@ export interface ACPToolStreamPresentationAdapter {
     content: string,
     rawOutput: unknown,
   ): { content: string; isError: boolean };
-  /** Provider-specific result fields; they override the shared ACP diff field by field. */
+  /**
+   * Provider-specific result fields; they override the shared ACP diff field by field. The tool call id
+   * correlates results with data the provider received outside the tool stream.
+   */
   normalizeToolResultDetails(
     rawName: string | undefined,
     input: Record<string, unknown>,
     rawOutput: unknown,
+    toolCallId: string,
   ): ToolResultDetails | undefined;
   /** Lossless native fields attached to the tool's start and result. */
   buildToolProviderPayload?(
@@ -157,6 +161,7 @@ export class ACPToolStreamAdapter {
           state.rawName,
           state.input,
           state.rawOutput,
+          chunk.id,
         ));
         return {
           ...chunk,

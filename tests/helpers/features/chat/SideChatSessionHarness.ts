@@ -22,6 +22,8 @@ export class FakeSideSession implements ProviderExecutionSession {
   readonly requests: ProviderExecutionRequest[] = [];
   disposeCalls = 0;
   cancelCalls = 0;
+  /** A native task that outlives its turn (Claude background shell), which the provider keeps the process for. */
+  liveNativeTask = false;
   private active: FakeRun | null = null;
   private lastBackgroundScope?: ProviderBackgroundEventScope;
   private latestRun: FakeRun | null = null;
@@ -37,6 +39,8 @@ export class FakeSideSession implements ProviderExecutionSession {
     readonly config: ProviderSessionConfig,
     private readonly onExecute: (request: ProviderExecutionRequest) => void = () => undefined,
   ) {}
+
+  blocksIdleRelease(): boolean { return this.liveNativeTask; }
 
   execute(request: ProviderExecutionRequest): ProviderExecutionRun {
     if (this.active) throw new Error('A side execution is already active');

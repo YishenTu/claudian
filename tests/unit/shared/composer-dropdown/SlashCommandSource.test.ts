@@ -88,6 +88,26 @@ describe('SlashCommandSource', () => {
     source.destroy();
   });
 
+  it('ranks exact, then prefix, then substring name matches above description-only matches', () => {
+    const command = (name: string, description: string): ProviderCommandEntry => ({
+      ...ENTRY, description, displayPrefix: '/', id: `provider:${name}`, insertPrefix: '/', name,
+    });
+    const source = new SlashCommandSource({
+      includeBuiltIns: false,
+      providerDiscovery: discovery({ status: 'ready', items: [
+        command('aws-compute', 'Inspect the session environment'),
+        command('my-session-tool', 'Tool'),
+        command('sessions-export', 'Export'),
+        command('session', 'Exact'),
+        command('unrelated', 'Nothing'),
+      ] }),
+    });
+    expect(source.load(match('/', 'Session'), new AbortController().signal).map(item => item.label)).toEqual([
+      '/session', '/sessions-export', '/my-session-tool', '/aws-compute',
+    ]);
+    source.destroy();
+  });
+
   it('keeps alias matches unavailable when built-ins are disabled or the slash is embedded', () => {
     const source = new SlashCommandSource();
     expect(source.load(match('/', 'btw', false), new AbortController().signal)).toEqual([]);

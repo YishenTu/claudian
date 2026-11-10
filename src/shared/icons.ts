@@ -64,7 +64,7 @@ export const OPENCODE_PROVIDER_ICON: ProviderIconSvg = {
 
 export const PI_PROVIDER_ICON: ProviderIconSvg = {
   kind: 'composite',
-  viewBox: '0 0 800 800',
+  viewBox: '106.61 106.61 586.79 586.79',
   children: [
     {
       tag: 'path',
@@ -85,8 +85,190 @@ export const PI_PROVIDER_ICON: ProviderIconSvg = {
 };
 
 export const GROK_PROVIDER_ICON: ProviderIconSvg = {
-  viewBox: '0 0 24 24',
+  viewBox: '1.85 2.4 19.2 19.2',
   path: 'M3.25 3h4.18l4.8 6.64L17.88 3h3.17l-7.36 8.65L20.44 21h-4.18l-5.16-7.14L5.02 21H1.85l7.79-9.16L3.25 3Zm3.03 1.7 10.85 14.6h1.28L7.56 4.7H6.28Z',
+};
+
+/** Google's full-colour Antigravity mark; its ids are made unique per rendered copy. */
+export const ANTIGRAVITY_PROVIDER_ICON: ProviderIconSvg = {
+  kind: 'composite',
+  viewBox: '22 22.5 136 136',
+  children: [
+    { tag: 'path', attributes: { d: "M144.248 149.062C151.748 154.688 162.998 150.938 152.685 140.625C121.748 110.625 128.31 28.125 89.8727 28.125C51.4352 28.125 57.9977 110.625 27.0602 140.625C15.8102 151.875 27.9977 154.688 35.4977 149.062C64.5602 129.375 62.6852 94.6875 89.8727 94.6875C117.06 94.6875 115.185 129.375 144.248 149.062Z", fill: "#3186FF" } },
+    {
+      tag: 'mask',
+      attributes: { height: "125", id: "mask0_6001_409", "mask-type": "alpha", maskUnits: "userSpaceOnUse", width: "136", x: "22", y: "28" },
+      children: [
+        { tag: 'path', attributes: { d: "M144.248 149.062C151.748 154.688 162.998 150.938 152.685 140.625C121.748 110.625 128.31 28.125 89.8727 28.125C51.4352 28.125 57.9977 110.625 27.0602 140.625C15.8102 151.875 27.9977 154.688 35.4977 149.062C64.5602 129.375 62.6852 94.6875 89.8727 94.6875C117.06 94.6875 115.185 129.375 144.248 149.062Z", fill: "white" } },
+      ],
+    },
+    {
+      tag: 'g',
+      attributes: { mask: "url(#mask0_6001_409)" },
+      children: [
+        {
+          tag: 'g',
+          attributes: { filter: "url(#filter0_f_6001_409)" },
+          children: [
+            { tag: 'ellipse', attributes: { cx: "36.6225", cy: "43.0872", fill: "#FFE432", rx: "36.6225", ry: "43.0872", transform: "matrix(-0.112784 0.99362 -0.99362 -0.112781 106.557 -26.4847)" } },
+          ],
+        },
+        {
+          tag: 'g',
+          attributes: { filter: "url(#filter1_f_6001_409)" },
+          children: [
+            { tag: 'ellipse', attributes: { cx: "155.163", cy: "54.9292", fill: "#FC413D", rx: "47.4118", ry: "48.4541", transform: "rotate(76.9243 155.163 54.9292)" } },
+          ],
+        },
+        {
+          tag: 'g',
+          attributes: { filter: "url(#filter2_f_6001_409)" },
+          children: [
+            { tag: 'ellipse', attributes: { cx: "14.6006", cy: "65.4425", fill: "#00B95C", rx: "49.5515", ry: "64.192", transform: "rotate(74.1257 14.6006 65.4425)" } },
+          ],
+        },
+        {
+          tag: 'g',
+          attributes: { filter: "url(#filter3_f_6001_409)" },
+          children: [
+            { tag: 'ellipse', attributes: { cx: "14.6006", cy: "65.4425", fill: "#00B95C", rx: "49.5515", ry: "64.192", transform: "rotate(74.1257 14.6006 65.4425)" } },
+          ],
+        },
+        {
+          tag: 'g',
+          attributes: { filter: "url(#filter4_f_6001_409)" },
+          children: [
+            { tag: 'ellipse', attributes: { cx: "18.1226", cy: "67.414", fill: "#00B95C", rx: "48.5679", ry: "53.4688", transform: "rotate(45.6065 18.1226 67.414)" } },
+          ],
+        },
+        {
+          tag: 'g',
+          attributes: { filter: "url(#filter5_f_6001_409)" },
+          children: [
+            { tag: 'ellipse', attributes: { cx: "121.837", cy: "166.945", fill: "#3186FF", rx: "46.6356", ry: "44.9084", transform: "rotate(76.9243 121.837 166.945)" } },
+          ],
+        },
+        {
+          tag: 'g',
+          attributes: { filter: "url(#filter6_f_6001_409)" },
+          children: [
+            { tag: 'ellipse', attributes: { cx: "53.9456", cy: "56.8997", fill: "#FBBC04", rx: "53.9456", ry: "56.8997", transform: "matrix(-0.409539 0.912293 -0.912294 -0.409537 162.811 -25.895)" } },
+          ],
+        },
+        {
+          tag: 'g',
+          attributes: { filter: "url(#filter7_f_6001_409)" },
+          children: [
+            { tag: 'path', attributes: { d: "M4.21557 239.063C-25.3231 227.467 25.1577 132.061 37.7105 100.085C50.2634 68.1097 84.3853 51.5888 113.924 63.1848C143.463 74.7809 178.474 138.65 165.921 170.626C153.368 202.601 33.7543 250.659 4.21557 239.063Z", fill: "#3186FF" } },
+          ],
+        },
+        {
+          tag: 'g',
+          attributes: { filter: "url(#filter8_f_6001_409)" },
+          children: [
+            { tag: 'path', attributes: { d: "M183.197 120.315C175.289 129.545 154.652 124.839 137.102 109.803C119.553 94.7668 111.738 75.0955 119.646 65.8656C127.554 56.6357 148.191 61.3423 165.74 76.3782C183.289 91.414 191.105 111.085 183.197 120.315Z", fill: "#749BFF" } },
+          ],
+        },
+        {
+          tag: 'g',
+          attributes: { filter: "url(#filter9_f_6001_409)" },
+          children: [
+            { tag: 'ellipse', attributes: { cx: "148.928", cy: "36.7252", fill: "#FC413D", rx: "71.1018", ry: "44.199", transform: "rotate(34.0763 148.928 36.7252)" } },
+          ],
+        },
+        {
+          tag: 'g',
+          attributes: { filter: "url(#filter10_f_6001_409)" },
+          children: [
+            { tag: 'ellipse', attributes: { cx: "37.848", cy: "46.0346", fill: "#FFEE48", rx: "38.1008", ry: "22.1575", transform: "rotate(112.516 37.848 46.0346)" } },
+          ],
+        },
+      ],
+    },
+    {
+      tag: 'defs',
+      attributes: {  },
+      children: [
+        {
+          tag: 'filter',
+          attributes: { "color-interpolation-filters": "sRGB", filterUnits: "userSpaceOnUse", height: "98.4416", id: "filter0_f_6001_409", width: "111.037", x: "4.09591", y: "-44.1761" },
+          children: [
+            { tag: 'feGaussianBlur', attributes: { stdDeviation: "6.25234" } },
+          ],
+        },
+        {
+          tag: 'filter',
+          attributes: { "color-interpolation-filters": "sRGB", filterUnits: "userSpaceOnUse", height: "215.86", id: "filter1_f_6001_409", width: "217.731", x: "46.2974", y: "-53.0009" },
+          children: [
+            { tag: 'feGaussianBlur', attributes: { stdDeviation: "30.2268" } },
+          ],
+        },
+        {
+          tag: 'filter',
+          attributes: { "color-interpolation-filters": "sRGB", filterUnits: "userSpaceOnUse", height: "204.397", id: "filter2_f_6001_409", width: "229.238", x: "-100.018", y: "-36.7558" },
+          children: [
+            { tag: 'feGaussianBlur', attributes: { stdDeviation: "25.6957" } },
+          ],
+        },
+        {
+          tag: 'filter',
+          attributes: { "color-interpolation-filters": "sRGB", filterUnits: "userSpaceOnUse", height: "204.397", id: "filter3_f_6001_409", width: "229.238", x: "-100.018", y: "-36.7558" },
+          children: [
+            { tag: 'feGaussianBlur', attributes: { stdDeviation: "25.6957" } },
+          ],
+        },
+        {
+          tag: 'filter',
+          attributes: { "color-interpolation-filters": "sRGB", filterUnits: "userSpaceOnUse", height: "204.834", id: "filter4_f_6001_409", width: "205.042", x: "-84.3985", y: "-35.003" },
+          children: [
+            { tag: 'feGaussianBlur', attributes: { stdDeviation: "25.6957" } },
+          ],
+        },
+        {
+          tag: 'filter',
+          attributes: { "color-interpolation-filters": "sRGB", filterUnits: "userSpaceOnUse", height: "190.791", id: "filter5_f_6001_409", width: "187.691", x: "27.9915", y: "71.5493" },
+          children: [
+            { tag: 'feGaussianBlur', attributes: { stdDeviation: "24.4184" } },
+          ],
+        },
+        {
+          tag: 'filter',
+          attributes: { "color-interpolation-filters": "sRGB", filterUnits: "userSpaceOnUse", height: "197.45", id: "filter6_f_6001_409", width: "201.38", x: "-11.8808", y: "-98.7085" },
+          children: [
+            { tag: 'feGaussianBlur', attributes: { stdDeviation: "22.1301" } },
+          ],
+        },
+        {
+          tag: 'filter',
+          attributes: { "color-interpolation-filters": "sRGB", filterUnits: "userSpaceOnUse", height: "260.404", id: "filter7_f_6001_409", width: "252.513", x: "-44.4432", y: "19.9522" },
+          children: [
+            { tag: 'feGaussianBlur', attributes: { stdDeviation: "19.7631" } },
+          ],
+        },
+        {
+          tag: 'filter',
+          attributes: { "color-interpolation-filters": "sRGB", filterUnits: "userSpaceOnUse", height: "134.637", id: "filter8_f_6001_409", width: "140.46", x: "81.1915", y: "25.7722" },
+          children: [
+            { tag: 'feGaussianBlur', attributes: { stdDeviation: "17.6843" } },
+          ],
+        },
+        {
+          tag: 'filter',
+          attributes: { "color-interpolation-filters": "sRGB", filterUnits: "userSpaceOnUse", height: "167.957", id: "filter9_f_6001_409", width: "187.555", x: "55.1499", y: "-47.2531" },
+          children: [
+            { tag: 'feGaussianBlur', attributes: { stdDeviation: "14.9365" } },
+          ],
+        },
+        {
+          tag: 'filter',
+          attributes: { "color-interpolation-filters": "sRGB", filterUnits: "userSpaceOnUse", height: "146.372", id: "filter10_f_6001_409", width: "124.223", x: "-24.2633", y: "-27.1515" },
+          children: [
+            { tag: 'feGaussianBlur', attributes: { stdDeviation: "18.4865" } },
+          ],
+        },
+      ],
+    },
+  ],
 };
 
 export const DEEPSEEK_PROVIDER_ICON: ProviderIconSvg = {
@@ -127,8 +309,9 @@ export function createProviderIconSvg(
   }
 
   if (icon.kind === 'composite') {
+    const idSuffix = `-${++providerIconInstance}`;
     for (const child of icon.children) {
-      svg.appendChild(createProviderSvgChild(child, svg));
+      svg.appendChild(createProviderSvgChild(child, svg, idSuffix));
     }
     return svg;
   }
@@ -139,16 +322,19 @@ export function createProviderIconSvg(
   return svg;
 }
 
-function createProviderSvgChild(child: ProviderSvgChild, parent: SVGElement): SVGElement {
+let providerIconInstance = 0;
+
+/** Suffixes ids and `url(#id)` references so several copies of one icon never share a mask or filter. */
+function createProviderSvgChild(child: ProviderSvgChild, parent: SVGElement, idSuffix: string): SVGElement {
   const element = parent.createSvg(child.tag);
   for (const [name, value] of Object.entries(child.attributes)) {
-    element.setAttribute(name, value);
+    element.setAttribute(name, name === 'id'
+      ? `${value}${idSuffix}`
+      : value.replace(/url\(#([^)]+)\)/g, (_match, id: string) => `url(#${id}${idSuffix})`));
   }
 
-  if (child.tag === 'g') {
-    for (const nestedChild of child.children) {
-      element.appendChild(createProviderSvgChild(nestedChild, element));
-    }
+  for (const nestedChild of child.tag === 'path' ? [] : child.children ?? []) {
+    element.appendChild(createProviderSvgChild(nestedChild, element, idSuffix));
   }
 
   return element;

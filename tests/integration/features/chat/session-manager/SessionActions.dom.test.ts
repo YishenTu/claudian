@@ -17,7 +17,7 @@ import type { HistoryConversationStatus } from '@/features/chat/session-manager/
 
 
 type MockMenu = {
-  items: Array<{ title: string; disabled: boolean; clickHandler: (() => void) | null }>;
+  items: Array<{ title: string; icon: string; disabled: boolean; clickHandler: (() => void) | null }>;
 };
 
 function lastMenu(): MockMenu {
@@ -282,6 +282,7 @@ describe('SessionActions archived bulk actions', () => {
     fireEvent.contextMenu(item('Third archived'));
     const menu = lastMenu();
     expect(menu.items.map(menuItem => menuItem.title)).toEqual(['Restore 2 sessions', 'Delete 2 sessions']);
+    expect(menu.items.map(menuItem => menuItem.icon)).toEqual(['undo-2', 'trash-2']);
     menu.items[0].clickHandler?.();
 
     expect(onRestoreConversations).toHaveBeenCalledWith(['one', 'three']);
@@ -346,6 +347,7 @@ describe('SessionActions archived bulk actions', () => {
     fireEvent.contextMenu(within(container).getByText('Plan'));
     const menu = lastMenu();
     expect(menu.items.map(item => item.title)).toEqual(['Restore all sessions', 'Delete all sessions']);
+    expect(menu.items.map(item => item.icon)).toEqual(['undo-2', 'trash-2']);
     menu.items[0].clickHandler?.();
     expect(onRestoreConversations).toHaveBeenCalledWith(['plan-a', 'plan-b']);
     menu.items[1].clickHandler?.();

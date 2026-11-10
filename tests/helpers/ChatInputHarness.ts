@@ -1,5 +1,3 @@
-import '@/providers';
-
 import { createHarness as createExecutionHarness, createSubmission, type FakeRun, FakeSession, type UnscopedExecutionEvent } from '@test/helpers/ChatExecutionHarness';
 import { createConversationPorts, createTestSession } from '@test/helpers/ConversationPorts';
 import { createChatFeatureHost } from '@test/helpers/features/chat/ChatFeatureHostFixture';
@@ -17,9 +15,9 @@ import { InputController, type InputControllerDeps } from '@/features/chat/input
 import { SessionInteractions } from '@/features/chat/interactions/SessionInteractions';
 import { LinkedContentController } from '@/features/chat/linked-content';
 import { MessageRenderer } from '@/features/chat/rendering/MessageRenderer';
+import { SubagentManager } from '@/features/chat/rendering/subagents/SubagentManager';
 import type { ChatSessionRuntime } from '@/features/chat/sessions/ChatSessionRuntime';
 import { ChatState } from '@/features/chat/state/ChatState';
-import { SubagentManager } from '@/features/chat/subagents/SubagentManager';
 import { StreamController } from '@/features/chat/turns/StreamController';
 import type { ComposerInputElement } from '@/shared/composer-dropdown/types';
 
@@ -182,6 +180,7 @@ export async function createFixture(overrides: ChatInputFixtureOptions = {}) {
     }),
     canStartTurn: () => true,
     isClosing: () => false,
+    historyRefresh: () => null,
     ...dependencyOverrides,
     ...(typeof onReviewableSettlement === 'function'
       ? {

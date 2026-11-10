@@ -1,5 +1,4 @@
 /** @vitest-environment jsdom */
-import '@/providers';
 
 import { axe } from '@test/helpers/accessibility';
 import { createChatFeatureHost } from '@test/helpers/features/chat/ChatFeatureHostFixture';
@@ -8,15 +7,20 @@ import { fireEvent, within } from '@testing-library/dom';
 import { Component } from 'obsidian';
 
 import type { ProviderExecutionEvent } from '@/core/execution';
+import { registerProviderModules } from '@/core/providers/registerProviderModules';
 import type { ChatMessage } from '@/core/types';
 import { MessageRenderer } from '@/features/chat/rendering/MessageRenderer';
 import { providerOutputEventToStreamChunk } from '@/features/chat/rendering/providerOutputChunks';
+import { SubagentManager } from '@/features/chat/rendering/subagents/SubagentManager';
 import { renderStoredWriteEdit } from '@/features/chat/rendering/tools/WriteEditRenderer';
 import { ChatState } from '@/features/chat/state/ChatState';
-import { SubagentManager } from '@/features/chat/subagents/SubagentManager';
 import { StreamController } from '@/features/chat/turns/StreamController';
+import { claudeProviderRegistration } from '@/providers/claude/registration';
 import { loadDeepSeekHistory } from '@/providers/deepseek/history/DeepSeekHistoryStore';
 import { DeepSeekOutput, type DeepSeekOutputEvent } from '@/providers/deepseek/normalization/DeepSeekOutput';
+import { deepseekProviderRegistration } from '@/providers/deepseek/registration';
+
+registerProviderModules([claudeProviderRegistration, deepseekProviderRegistration]);
 
 beforeEach(() => document.body.replaceChildren());
 

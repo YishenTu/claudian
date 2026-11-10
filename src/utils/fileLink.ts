@@ -158,8 +158,13 @@ async function openFileLink(app: App, linkTarget: string, sourcePath: string, ne
     : sourcePath ? getVaultFileByPath(app, sourcePath) : null;
   let existingLeaf: WorkspaceLeaf | undefined;
   if (file) {
+    const { leftSplit, rightSplit } = app.workspace;
     app.workspace.iterateAllLeaves(leaf => {
-      if (!existingLeaf && leaf.getViewState().state?.file === file.path) {
+      if (existingLeaf) return;
+      // Sidebar views such as Outline and Backlinks also keep the path of the note they track.
+      const root = leaf.getRoot();
+      if (root === leftSplit || root === rightSplit) return;
+      if (leaf.getViewState().state?.file === file.path) {
         existingLeaf = leaf;
       }
     });

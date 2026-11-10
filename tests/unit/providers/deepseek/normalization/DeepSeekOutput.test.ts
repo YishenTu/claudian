@@ -184,13 +184,19 @@ it('presents native tool inputs, read windows and applied hunks in the neutral t
   call(7, 'write', 'write', { file_path: '/vault/new.md', content: 'x\n' });
   // Windows composes native pwsh in place of bash; both are shell commands.
   call(7.5, 'pwsh', 'pwsh', { command: 'Get-ChildItem', description: 'List files' });
+  // Native names the Codex patch text `input`; the neutral apply_patch contract reads `patch`, directly and in code mode.
+  const patch = '*** Begin Patch\n*** Update File: note.md\n@@\n-b\n+B\n*** End Patch';
+  call(7.6, 'patch', 'apply_patch', { input: patch });
+  output.record({ type: 'tool/ptc-dispatch-start', seq: 7.7, data: { rootCallId: 'code', subCallId: 'patch-in-code', name: 'apply_patch', arguments: { input: patch } } });
   result(8, 'write', '<path>/vault/new.md</path>\n<type>file</type>\n<content>\nCreated file\n</content>', { operation: 'create', diffs: [] });
   expect(events.filter(e => e.type === 'tool_started')).toMatchObject([
     { name: 'Skill', input: { skill: 'obsidian-cli' } },
     { name: 'send_message', input: { target: 'session-root', message: 'Findings' } },
     { name: 'Read' }, { name: 'Edit' }, { name: 'Write' },
     { name: 'Bash', input: { command: 'Get-ChildItem', description: 'List files' } },
+    { name: 'apply_patch', input: { patch } },
   ]);
+  expect(events.find(e => e.type === 'tool_output')).toMatchObject({ resultDetails: { scriptToolCalls: [{ name: 'apply_patch', input: { patch } }] } });
   const completed = events.filter(e => e.type === 'tool_completed');
   expect(completed[0]).toMatchObject({ toolCallId: 'skill', content: '# Obsidian CLI\n\nUse `<path>` tags verbatim.' });
   expect(completed[1]).toMatchObject({ toolCallId: 'read', content: '---\ntitle: x', resultDetails: { resultFormat: 'plain' } });

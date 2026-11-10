@@ -1,4 +1,5 @@
 import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
+import type { TranscriptFollow } from '@/features/chat/rendering/TranscriptFollow';
 import type { ChatState } from '@/features/chat/state/ChatState';
 import type { TabComposerPort, TabLinkedContentPort, TabPlacementPort, TabTranscriptPlacement } from '@/features/chat/tabs/ChatTab';
 import type { TabRuntimeControllerBundle } from '@/features/chat/tabs/runtime/TabRuntimeConstruction';
@@ -25,7 +26,7 @@ export function buildTabRuntimePorts(
 ): TabRuntimePorts {
   const { controllers, renderer } = controllerBundle;
   return {
-    zenPresentation: createTabZenPresentation(() => getRuntime().state, dom.messagesEl),
+    zenPresentation: createTabZenPresentation(() => getRuntime().state, dom.messagesEl, renderer.follow),
     composer: createTabComposerPort(dom.inputEl, ui),
     linkedContent: ui.linkedContentController,
     placement: createTabPlacementPort(
@@ -130,23 +131,17 @@ export function createTabPlacementPort(
   };
 }
 
-/** Keeps scroll mutation with the tab while zen can relocate its transcript. */
+/** Keeps scroll mutation with the tab's follow owner while zen can relocate its transcript. */
 function createTabZenPresentation(
   getState: () => ChatState,
   messagesEl: HTMLElement,
+  follow: TranscriptFollow,
 ): ZenPresentationPort {
-  const captureScroll = () => ({ top: getState().readingScrollTop, follow: getState().autoScrollEnabled });
   return {
     get state() { return getState(); },
     get window() { return messagesEl.ownerDocument.defaultView; },
     subscribeActivity: listener => getState().subscribeActivity(listener),
-    captureScroll,
-    restoreScroll: (snapshot = captureScroll()) => {
-      const state = getState();
-      messagesEl.scrollTop = snapshot.follow ? messagesEl.scrollHeight : snapshot.top;
-      state.readingScrollTop = snapshot.top;
-      // Relocation can emit geometry-only events; retain the reader's captured intent.
-      if (state.autoScrollEnabled !== snapshot.follow) state.autoScrollEnabled = snapshot.follow;
-    },
+    captureScroll: () => follow.capture(),
+    restoreScroll: snapshot => follow.restore(snapshot),
   };
 }

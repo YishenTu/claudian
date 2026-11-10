@@ -32,6 +32,12 @@ export interface ComposerTriggerMatch {
   readonly trigger: string;
 }
 
+/** Half-open character range of the typed query within a displayed text. */
+export interface ComposerTextMatch {
+  readonly start: number;
+  readonly end: number;
+}
+
 export interface ComposerDropdownValueItem {
   readonly className?: string;
   readonly detail?: string;
@@ -40,6 +46,9 @@ export interface ComposerDropdownValueItem {
   readonly id: string;
   readonly kind: 'value';
   readonly label: string;
+  readonly labelMatch?: ComposerTextMatch;
+  /** Secondary name shown in parentheses after the label, such as the alias the query matched. */
+  readonly labelNote?: { readonly text: string; readonly match?: ComposerTextMatch };
   readonly replacement: string;
   readonly value?: unknown;
 }
