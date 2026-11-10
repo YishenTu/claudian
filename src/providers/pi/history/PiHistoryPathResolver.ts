@@ -115,7 +115,7 @@ function resolveLocalDirectory(value: string | undefined, home: string, cwd: str
 }
 
 function readPackageConfigDirectory(packageFile: string): string {
-  const pkg = JSON.parse(fs.readFileSync(packageFile, 'utf8').replace(/^\uFEFF/, '')) as { piConfig?: { configDir?: unknown } };
+  const pkg = JSON.parse(fs.readFileSync(packageFile, 'utf8')) as { piConfig?: { configDir?: unknown } };
   return typeof pkg.piConfig?.configDir === 'string' && pkg.piConfig.configDir ? pkg.piConfig.configDir : '.pi';
 }
 
