@@ -20,6 +20,9 @@ describe('ClaudeCLIResolver', () => {
     for (const key of ['MISE_SHIMS_DIR', 'MISE_DATA_DIR', 'XDG_DATA_HOME', 'LOCALAPPDATA', 'npm_config_prefix']) {
       delete process.env[key];
     }
+    for (const key of Object.keys(process.env)) {
+      if (key.toLowerCase() === 'npm_config_prefix') delete process.env[key];
+    }
     vi.spyOn(os, 'homedir').mockReturnValue(tempDir);
     // Keep discovery independent of CLIs installed on the machine running the test.
     const statSync = fs.statSync;
@@ -64,6 +67,22 @@ describe('ClaudeCLIResolver', () => {
       expect(resolveClaudeCLIPath('', '', '')).toBe(cliPath);
     },
   );
+
+  it.each(['npm_config_prefix', 'NPM_CONFIG_PREFIX', 'Npm_Config_Prefix'])(
+    'resolves the native npm package entrypoint from %s', configuration => {
+      process.env[configuration] = path.join(tempDir, 'npm prefix');
+      const cliPath = createExecutable('npm prefix', ...(isWindows ? [] : ['lib']), 'node_modules', '@anthropic-ai', 'claude-code', 'cli-wrapper.cjs');
+      expect(resolveClaudeCLIPath('', '', '')).toBe(cliPath);
+    },
+  );
+
+  it.skipIf(isWindows)('keeps npm script lowercase prefix ahead of an inherited uppercase prefix', () => {
+    process.env.NPM_CONFIG_PREFIX = path.join(tempDir, 'inherited prefix');
+    process.env.npm_config_prefix = path.join(tempDir, 'script prefix');
+    createExecutable('inherited prefix', 'lib', 'node_modules', '@anthropic-ai', 'claude-code', 'cli-wrapper.cjs');
+    const expected = createExecutable('script prefix', 'lib', 'node_modules', '@anthropic-ai', 'claude-code', 'cli-wrapper.cjs');
+    expect(resolveClaudeCLIPath('', '', '')).toBe(expected);
+  });
 
   it('selects a Linux reference without host filesystem lookup for WSL', () => {
     const resolver = new ClaudeCLIResolver();

@@ -1,9 +1,7 @@
 import { setIcon } from 'obsidian';
 
 import type { QueuedMessage } from '@/features/chat/state/types';
-
-/** Keeps the shipped capitalized label; the UI sentence-case rule only inspects literal `text` values. */
-const STEER_NOW_LABEL = 'Steer Now';
+import { t } from '@/i18n/i18n';
 
 export type QueueStripView =
   | { kind: 'queued'; message: QueuedMessage; canSteer: boolean }
@@ -28,7 +26,7 @@ export function renderQueueStrip(el: HTMLElement, view: QueueStripView | null, a
 
   el.createSpan({
     cls: 'claudian-input-queue-strip-tag',
-    text: view.kind === 'steering' ? 'Steering' : 'Queued',
+    text: view.kind === 'steering' ? t('chat.queue.steering') : t('chat.queue.queued'),
   });
   el.createSpan({
     cls: 'claudian-queue-indicator-text',
@@ -41,7 +39,7 @@ export function renderQueueStrip(el: HTMLElement, view: QueueStripView | null, a
     if (view.canSteer) {
       const steerButton = actionsEl.createEl('button', {
         cls: 'claudian-queue-indicator-action',
-        text: STEER_NOW_LABEL,
+        text: t('chat.queue.steerNow'),
       });
       steerButton.setAttribute('type', 'button');
       steerButton.dataset.queueAction = 'steer';
@@ -51,11 +49,11 @@ export function renderQueueStrip(el: HTMLElement, view: QueueStripView | null, a
       });
     }
 
-    createIconButton(actionsEl, 'pencil', 'Edit queued message', 'edit').addEventListener('click', (event) => {
+    createIconButton(actionsEl, 'pencil', t('chat.queue.edit'), 'edit').addEventListener('click', (event) => {
       event.stopPropagation();
       actions.edit();
     });
-    createIconButton(actionsEl, 'trash-2', 'Discard queued message', 'discard').addEventListener('click', (event) => {
+    createIconButton(actionsEl, 'trash-2', t('chat.queue.discard'), 'discard').addEventListener('click', (event) => {
       event.stopPropagation();
       actions.discard();
     });
@@ -75,7 +73,7 @@ function formatQueuedMessagePreview(message: QueuedMessage): string {
     ? rawContent.slice(0, 40) + '...'
     : rawContent;
   if ((message.turnRequest.images?.length ?? 0) > 0) {
-    return preview ? `${preview} [images]` : '[images]';
+    return preview ? `${preview} ${t('chat.queue.images')}` : t('chat.queue.images');
   }
   return preview;
 }

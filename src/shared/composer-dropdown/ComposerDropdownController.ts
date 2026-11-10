@@ -14,13 +14,20 @@ export interface ComposerDropdownControllerOptions {
   readonly onVisibilityChange?: () => void;
 }
 
+/** The trigger the menu is open for, and the load answering it while one is pending. */
+interface OpenTrigger {
+  readonly source: ComposerDropdownSource;
+  match: ComposerTriggerMatch;
+  load: AbortController | null;
+}
+
 export class ComposerDropdownController {
   private readonly sourceUnsubscribers: Array<() => void> = [];
   private readonly view: ComposerDropdownView;
-  private activeController: AbortController | null = null;
-  private activeMatch: ComposerTriggerMatch | null = null;
-  private activeSource: ComposerDropdownSource | null = null;
+  #open: OpenTrigger | null = null;
   private destroyed = false;
+  /** Trigger closed with Escape; it stays closed until the input no longer matches it. */
+  private dismissed: { readonly sourceId: string; readonly start: number } | null = null;
   private items: readonly ComposerDropdownItem[] = [];
   private selectedIndex = -1;
 
@@ -39,7 +46,7 @@ export class ComposerDropdownController {
     });
     for (const source of sources) {
       const unsubscribe = source.subscribeInvalidation?.(() => {
-        if (this.activeSource?.id === source.id) this.#rematchInput();
+        if (this.#open?.source.id === source.id) this.#rematchInput();
       });
       if (unsubscribe) this.sourceUnsubscribers.push(unsubscribe);
     }
@@ -52,7 +59,7 @@ export class ComposerDropdownController {
   destroy(): void {
     if (this.destroyed) return;
     this.destroyed = true;
-    this.activeSource?.onClose?.();
+    this.#open?.source.onClose?.();
     this.#invalidateActiveLoad();
     for (const unsubscribe of this.sourceUnsubscribers.splice(0)) unsubscribe();
     this.view.destroy();
@@ -67,6 +74,25 @@ export class ComposerDropdownController {
       this.hide();
       return;
     }
+    const sourceMatch = this.#findSourceMatch();
+    if (!sourceMatch || this.dismissed) {
+      this.hide();
+      return;
+    }
+    const { match, source } = sourceMatch;
+    const previous = this.#open;
+    const opening = previous?.source.id !== source.id;
+    if (opening) {
+      previous?.source.onClose?.();
+      this.#open = { load: previous?.load ?? null, match, source };
+      source.onOpen?.();
+    } else {
+      previous.match = match;
+    }
+    this.#requestActiveLoad(preserveSelection);
+  }
+
+  #findSourceMatch(): { match: ComposerTriggerMatch; source: ComposerDropdownSource } | undefined {
     const cursor = this.inputEl.selectionStart ?? 0;
     let sourceMatch: { match: ComposerTriggerMatch; source: ComposerDropdownSource } | undefined;
     for (const source of this.sources) {
@@ -76,21 +102,18 @@ export class ComposerDropdownController {
         sourceMatch = { match, source };
       }
     }
-    if (!sourceMatch) {
-      this.hide();
-      return;
+    // A dismissal lasts only while the same trigger keeps matching.
+    if (sourceMatch?.source.id !== this.dismissed?.sourceId || sourceMatch?.match.start !== this.dismissed?.start) {
+      this.dismissed = null;
     }
-    const { match, source } = sourceMatch;
-    const opening = this.activeSource?.id !== source.id;
-    if (opening) this.activeSource?.onClose?.();
-    this.activeSource = source;
-    this.activeMatch = match;
-    if (opening) source.onOpen?.();
-    this.#requestActiveLoad(preserveSelection);
+    return sourceMatch;
   }
 
   handleKeydown(event: KeyboardEvent): boolean {
+    // Sends and caret moves change the input without an input event; each key observes them before it applies.
+    if (this.dismissed) this.#findSourceMatch();
     if (!this.view.isVisible() || event.isComposing) return false;
+    if (event.key === 'Tab' && (event.shiftKey || event.ctrlKey || event.metaKey || event.altKey)) return false;
     switch (event.key) {
       case 'ArrowDown':
         if (this.selectedIndex < 0) return false;
@@ -110,6 +133,9 @@ export class ComposerDropdownController {
         return true;
       case 'Escape':
         event.preventDefault();
+        if (this.#open) {
+          this.dismissed = { sourceId: this.#open.source.id, start: this.#open.match.start };
+        }
         this.hide();
         return true;
       default:
@@ -118,10 +144,9 @@ export class ComposerDropdownController {
   }
 
   hide(): void {
-    this.activeSource?.onClose?.();
+    this.#open?.source.onClose?.();
     this.#invalidateActiveLoad();
-    this.activeMatch = null;
-    this.activeSource = null;
+    this.#open = null;
     this.items = [];
     this.selectedIndex = -1;
     this.view.hide();
@@ -132,19 +157,19 @@ export class ComposerDropdownController {
   }
 
   #rematchInput(): void {
-    if (!this.activeSource || !this.activeMatch || this.destroyed) return;
+    if (!this.#open || this.destroyed) return;
     this.#rematchAndLoad(true);
   }
 
   #requestActiveLoad(preserveSelection: boolean): void {
-    const source = this.activeSource;
-    const match = this.activeMatch;
-    if (!source || !match || this.destroyed) return;
+    const open = this.#open;
+    if (!open || this.destroyed) return;
+    const { source, match } = open;
     const selectedId = preserveSelection ? this.items[this.selectedIndex]?.id : undefined;
 
     this.#invalidateActiveLoad();
     const controller = new AbortController();
-    this.activeController = controller;
+    open.load = controller;
     let result: ReturnType<ComposerDropdownSource['load']>;
     try {
       result = source.load(match, controller.signal);
@@ -189,8 +214,9 @@ export class ComposerDropdownController {
   }
 
   #invalidateActiveLoad(): void {
-    this.activeController?.abort();
-    this.activeController = null;
+    const open = this.#open;
+    open?.load?.abort();
+    if (open) open.load = null;
   }
 
   #moveSelection(delta: number): void {
@@ -215,9 +241,9 @@ export class ComposerDropdownController {
 
   #selectIndex(index: number): void {
     const item = this.items[index];
-    const source = this.activeSource;
-    const match = this.activeMatch;
-    if (!item || item.kind === 'status' || item.disabled || !source || !match) return;
+    const open = this.#open;
+    if (!item || item.kind === 'status' || item.disabled || !open) return;
+    const { source, match } = open;
     const action = source.select(item, match);
     if (action.kind === 'invoke') {
       action.onApplied();

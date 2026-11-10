@@ -10,11 +10,13 @@ import { fireEvent, within } from '@testing-library/dom';
 import { App, Component, TFile } from 'obsidian';
 
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
-import type { Conversation, UsageInfo } from '@/core/types';
+import type { Conversation, ImageAttachment, UsageInfo } from '@/core/types';
 import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
+import { renderQueueStrip } from '@/features/chat/composer/QueueStrip';
 import { destroyTab } from '@/features/chat/tabs/TabLifecycle';
 import { createTabRuntime } from '@/features/chat/tabs/TabRuntimeFactory';
 import type { AssembledTabRuntime } from '@/features/chat/tabs/types';
+import { setLocale } from '@/i18n/i18n';
 import { VaultMentionDataProvider } from '@/shared/mention/VaultMentionDataProvider';
 
 afterEach(async () => {
@@ -90,8 +92,9 @@ const usage = (percentage: number): UsageInfo => ({
   contextTokens: percentage * 2000, contextWindow: 200000, percentage,
 });
 
-it('attaches a queued follow-up to the top of the input box, under the tab bar', async () => {
+it('attaches localized queued follow-ups above the input and preserves composer actions', async () => {
   const tab = await createTab();
+  let sending: Promise<void> | undefined;
   try {
     const box = within(tab.dom.inputWrapper);
     expect(box.queryByRole('button', { name: 'Discard queued message' })).toBeNull();
@@ -101,7 +104,7 @@ it('attaches a queued follow-up to the top of the input box, under the tab bar',
     });
     // A real provider handoff gives the coordinator the active execution that admits steering.
     const handoff = backend.nextRequest(() => true);
-    const sending = tab.controllers.inputController.sendMessage({ content: 'draft the plan' });
+    sending = tab.controllers.inputController.sendMessage({ content: 'draft the plan' });
     await handoff;
     tab.controllers.inputController.queue.enqueue({
       content: 'also add a created date', turnRequest: { text: 'also add a created date' },
@@ -123,10 +126,68 @@ it('attaches a queued follow-up to the top of the input box, under the tab bar',
     expect(strip.classList.contains('claudian-hidden')).toBe(true);
     expect(box.queryByRole('button', { name: 'Edit queued message' })).toBeNull();
     expect(tab.dom.inputEl.value).toBe('also add a created date');
-    backend.latest.complete();
-    await sending;
+
+    tab.controllers.drafts.consume('main');
+    setLocale('zh-CN');
+    const image: ImageAttachment = {
+      id: 'image', name: 'image.png', mediaType: 'image/png', data: 'aGVsbG8=', size: 5, source: 'paste',
+    };
+    const content = 'User [images] stays literal';
+    tab.controllers.inputController.queue.enqueue({
+      content, turnRequest: { text: content, images: [image] },
+    });
+    const queue = within(strip);
+    expect(queue.getByText('排队中')).toBeDefined();
+    expect(queue.getByText('User [images] stays literal [图片]')).toBeDefined();
+    expect(queue.getByRole('button', { name: '立即引导' })).toBeDefined();
+    expect(queue.getByRole('button', { name: '丢弃排队消息' })).toBeDefined();
+    expect(await axe(strip)).toHaveNoViolations();
+
+    fireEvent.click(queue.getByRole('button', { name: '编辑排队消息' }));
+    expect(tab.state.queuedMessage).toBeNull();
+    expect(strip.classList.contains('claudian-hidden')).toBe(true);
+    expect(queue.queryByRole('button', { name: '编辑排队消息' })).toBeNull();
+    expect(tab.dom.inputEl.value).toBe(content);
+    expect(tab.controllers.drafts.capture('main').images).toEqual([image]);
+
+    const longContent = '[images] 1234567890123456789012345678901234567890';
+    tab.controllers.inputController.queue.enqueue({
+      content: longContent, turnRequest: { text: longContent, images: [image] },
+    });
+    expect(queue.getByText('[images] 1234567890123456789012345678901... [图片]')).toBeDefined();
+    fireEvent.click(queue.getByRole('button', { name: '丢弃排队消息' }));
+    expect(tab.state.queuedMessage).toBeNull();
+    expect(strip.classList.contains('claudian-hidden')).toBe(true);
+    expect(backend.latest.getStatus()).toBe('executing');
+    expect(backend.latest.cancelCalls).toBe(0);
   } finally {
-    await destroyTab(tab);
+    setLocale('en');
+    try {
+      tab.controllers.inputController.queue.clear();
+      backend.latest.complete();
+      await sending;
+    } finally {
+      await destroyTab(tab);
+    }
+  }
+});
+
+it.each([
+  ['zh-CN', '引导中'],
+  ['en', 'Steering'],
+] as const)('renders the %s steering label without queued actions', (locale, label) => {
+  const strip = document.body.appendChild(document.createElement('div'));
+  try {
+    setLocale(locale);
+    renderQueueStrip(strip, {
+      kind: 'steering', message: { content: 'User [images] stays literal', turnRequest: { text: 'follow-up' } },
+    }, { steer() {}, edit() {}, discard() {} });
+    expect(within(strip).getByText(label)).toBeDefined();
+    expect(within(strip).getByText('User [images] stays literal')).toBeDefined();
+    expect(within(strip).queryAllByRole('button')).toHaveLength(0);
+  } finally {
+    setLocale('en');
+    strip.remove();
   }
 });
 

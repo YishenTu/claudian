@@ -95,14 +95,23 @@ const WRITER_HANDOFF_MS = 5_000;
 const EPHEMERAL_ENDED = 'This temporary DeepSeek session ended when DeepSeek restarted. Start a new one to continue.';
 
 /** One claimed native session in the shared Host, one requested channel, and independently scoped automatic work. */
+type DeepSeekHostLink =
+  | { readonly phase: 'attaching'; readonly lease: DeepSeekHostLease; readonly observer?: undefined }
+  | { readonly phase: 'bound'; readonly lease: DeepSeekHostLease; readonly observer: DeepSeekSessionObserver }
+  | { readonly phase: 'retained'; readonly lease: DeepSeekHostLease; readonly observer?: DeepSeekSessionObserver };
+
 export class DeepSeekExecutionSession implements ProviderExecutionSession {
   readonly providerId = 'deepseek';
   readonly sessionInstanceId = randomUUID();
   private readonly snapshots: SessionSnapshotState;
   private readonly interactions: PendingInteractionLedger;
   private readonly lifetime = new AbortController();
-  private lease?: DeepSeekHostLease;
-  private observer?: DeepSeekSessionObserver;
+  /**
+   * The link to the shared Host: `attaching` holds a lease before the native session is observed,
+   * `bound` serves the conversation, and `retained` keeps a failed binding only so Stop or closing
+   * can still end the native work the live process keeps (detaching mid-attach retains no observer).
+   */
+  #link: DeepSeekHostLink | null = null;
   private nativeId?: string;
   private binding?: DeepSeekProviderState;
   private requested?: Request;
@@ -117,8 +126,7 @@ export class DeepSeekExecutionSession implements ProviderExecutionSession {
   private stopTask?: Promise<void>;
   private disposal?: Promise<void>;
   private detaching?: Promise<void>;
-  /** A failed binding kept only so a Stop or closing can still end the native work the live process keeps. */
-  private retained = false;
+  private detachingMode?: 'stop' | 'retain' | 'release';
   // Only transcript divergence prevents rebinding after a failure.
   private reloadError?: DeepSeekReplayError;
   private publishedWork = false;
@@ -143,6 +151,9 @@ export class DeepSeekExecutionSession implements ProviderExecutionSession {
     });
     this.interactions = new PendingInteractionLedger(config.interactionPort);
   }
+
+  private get lease(): DeepSeekHostLease | undefined { return this.#link?.lease; }
+  private get observer(): DeepSeekSessionObserver | undefined { return this.#link?.observer; }
 
   getCommandSnapshot(): readonly SlashCommand[] | undefined { return this.commands?.map(command => ({ ...command })); }
   getSnapshot() { return this.snapshots.getSnapshot(); }
@@ -329,7 +340,7 @@ export class DeepSeekExecutionSession implements ProviderExecutionSession {
     const prompt = input.configuration.systemInstructions.instructions;
     // A retained binding only serves Stop and closing; sending rebinds with fresh native baselines. Its conversation
     // state already ended with the failure, so releasing it leaves this request alone.
-    if (this.retained) this.release();
+    if (this.#link?.phase === 'retained') this.release();
     if (!this.lease) await this.attach(requested, policy);
     const preset = this.binding!.preset;
     if ((policy && preset !== policy) || (!policy && isDeepSeekAuxiliaryPreset(preset))) {
@@ -344,7 +355,7 @@ export class DeepSeekExecutionSession implements ProviderExecutionSession {
     // Nothing is bound yet: a failed startup ends this request only, and the next send starts again.
     try { lease = await this.deepseek.attach(signal); } catch (error) { throw new AdmissionError(error instanceof Error ? error.message : 'DeepSeek could not start.'); }
     const generation = ++this.generation;
-    this.lease = lease;
+    this.#link = { lease, phase: 'attaching' };
     try {
       this.assertRequest(requested);
       const saved = this.binding ?? decodeDeepSeekState(this.config.resumeSeed?.providerState);
@@ -354,7 +365,7 @@ export class DeepSeekExecutionSession implements ProviderExecutionSession {
       // The Host retires a lost process, which ends all of its native work; a retained binding has nothing left to stop.
       this.offLease.push(lease.onLost((loss, error) => {
         if (generation === this.generation) void this.fail(error, loss, true);
-        else if (this.retained && this.lease === lease) this.release();
+        else if (this.#link?.phase === 'retained' && this.#link.lease === lease) this.release();
       }));
       this.offLease.push(lease.roster.onReset(() => { if (generation === this.generation) this.voidInteractions('superseded'); }));
       const deliver = (event: Record<string, unknown>): void => { if (generation === this.generation) this.remoteEvent(event); };
@@ -393,7 +404,11 @@ export class DeepSeekExecutionSession implements ProviderExecutionSession {
         if (ephemeral) this.ephemeralGeneration = lease.generation;
       }
       this.saveBinding();
-      this.observer = new DeepSeekSessionObserver(lease.client, lease.roster, this.nativeId, (id, frame) => {
+      // Read past the narrowing of the assignment above: awaits may have retained or released it.
+      const link = this.#link as DeepSeekHostLink | null;
+      // Unbinding releases the lease, whose claim above then rejects; reaching here means the lease is still this attach's.
+      if (link?.lease !== lease) throw new Error('DeepSeek connection ended before the session was ready.');
+      const observer = new DeepSeekSessionObserver(lease.client, lease.roster, this.nativeId, (id, frame) => {
         // Detaching ends this generation, so its frames are never applied; the observer then notifies at once for its own state.
         if (generation !== this.generation || this.detaching) return;
         return this.followQueue = this.followQueue.then(async () => {
@@ -418,8 +433,9 @@ export class DeepSeekExecutionSession implements ProviderExecutionSession {
           if (id === this.nativeId) this.follow(materialized); else this.childFollow(id, materialized);
         }).catch(error => { if (generation === this.generation) return this.fail(error, 'transport'); });
       }, error => { if (generation === this.generation) void this.fail(error, 'transport'); });
-      this.offLease.push(this.observer.onChange(() => { this.publish(); this.drainInteractions(); }));
-      await this.observer.start(signal);
+      this.#link = link.phase === 'retained' ? { ...link, observer } : { lease, observer, phase: 'bound' };
+      this.offLease.push(observer.onChange(() => { this.publish(); this.drainInteractions(); }));
+      await observer.start(signal);
       await this.followQueue;
       this.commands = await readDeepSeekCommands(lease.client, this.nativeId);
       this.snapshots.emit({ type: 'commands_changed' });
@@ -1013,7 +1029,18 @@ export class DeepSeekExecutionSession implements ProviderExecutionSession {
    * closing can; `release` lets go of a binding with nothing left to stop.
    */
   private detach(mode: 'stop' | 'retain' | 'release'): Promise<void> {
-    if (this.detaching) return this.detaching;
+    if (this.detaching) {
+      // Closing during a failure's retain or release still stops what that detach leaves behind.
+      if (mode !== 'stop' || this.detachingMode === 'stop') return this.detaching;
+      const escalated = this.detaching.then(() => {
+        this.detaching = undefined;
+        this.detachingMode = undefined;
+        return this.detach('stop');
+      });
+      this.detaching = escalated;
+      this.detachingMode = 'stop';
+      return escalated;
+    }
     const observer = this.observer;
     const task = (async () => {
       if (mode !== 'stop' || !observer) return;
@@ -1025,10 +1052,12 @@ export class DeepSeekExecutionSession implements ProviderExecutionSession {
         // Unconfirmed native work ends with the shared Host; the session is already retired.
       }
     })().finally(() => {
-      if (this.detaching === task) this.detaching = undefined;
-      if (mode === 'retain' && this.lease) { this.endBinding(); this.retained = true; } else this.unbind();
+      if (this.detaching === task) { this.detaching = undefined; this.detachingMode = undefined; }
+      const link = this.#link;
+      if (mode === 'retain' && link) { this.endBinding(); this.#link = { ...link, phase: 'retained' }; } else this.unbind();
     });
     this.detaching = task;
+    this.detachingMode = mode;
     this.publish();
     return task;
   }
@@ -1040,10 +1069,11 @@ export class DeepSeekExecutionSession implements ProviderExecutionSession {
 
   /** Lets go of the lease, claim and observer. */
   private release(): void {
-    this.retained = false;
+    const link = this.#link;
+    this.#link = null;
     for (const off of this.offLease.splice(0)) off();
-    this.observer?.dispose(); this.observer = undefined;
-    this.lease?.release(); this.lease = undefined;
+    link?.observer?.dispose();
+    link?.lease.release();
     if (this.commands) { this.commands = undefined; this.snapshots.emit({ type: 'commands_changed' }); }
     this.publish();
   }

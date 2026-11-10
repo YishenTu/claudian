@@ -1,4 +1,3 @@
-import type { ProviderSessionToolPort } from '@/core/execution';
 import {
   findProviderModelOption,
   resolveConversationModel,
@@ -23,6 +22,7 @@ import type {
 import type { ChatMessage, Conversation, ConversationMeta } from '@/core/types';
 import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
 import { getChatSettingsSnapshot } from '@/features/chat/ChatSettings';
+import type { SessionToolBinding } from '@/features/chat/execution/ChatExecutionCoordinator';
 import { formatLastReply, formatSessionSnapshot } from '@/features/chat/session-messaging/formatSessionSnapshot';
 import type { ChatSessionRuntime } from '@/features/chat/sessions/ChatSessionRuntime';
 import { setSessionReasoningSelection } from '@/features/chat/sessions/sessionSettings';
@@ -39,11 +39,6 @@ export interface ClientSendOptions {
   /** Required unless `mode` is `interrupt`, which without text only stops the session. */
   readonly text?: string;
   readonly mode?: 'queue' | SessionToolSendMode;
-}
-
-export interface SessionToolBinding {
-  readonly port: ProviderSessionToolPort;
-  dispose(): void;
 }
 
 /** Owns caller-bound tool and outside-client operations; recipient execution belongs to its session runtime. */
@@ -228,6 +223,7 @@ export class SessionMessagingService {
         providerId: choice.providerId,
         selectedModel: choice.model,
         ...(caller.projectId ? { projectId: caller.projectId } : {}),
+        origin: { kind: 'session-tool', conversationId: caller.id },
       });
       throwIfAborted(signal, 'Session tool call was cancelled');
       target = await this.resolve(created.id, signal);

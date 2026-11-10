@@ -3445,6 +3445,41 @@ describe('ClaudeExecutionSession steering', () => {
     return createRequest({ input: [{ type: 'text', text }] });
   }
 
+  it('sends the next turn only after a cancelled background turn reports its interruption', async () => {
+    const interruptRequested = createDeferred<null>();
+    const { session, done, sessionEvents, getQuery } = await startSteerableSession(async function* (nextInput, keepOpen) {
+      const prompt = await nextInput();
+      yield { type: 'system', subtype: 'init', session_id: 'session-1' };
+      yield replayOf(prompt);
+      yield assistantText('assistant-1', 'First reply');
+      yield { type: 'result', subtype: 'success', user_message_uuids: [prompt.uuid], queued_turn_count: 0 };
+      yield assistantText('background-1', 'Background started');
+      const next = nextInput();
+      // Native reports the interrupt asynchronously; input sent before it would be tagged as the interrupted turn.
+      // The bound only limits waiting for input that a correct session holds back.
+      await Promise.race([next, interruptRequested.promise.then(() => new Promise(resolve => setTimeout(resolve, 50)))]);
+      yield { type: 'result', subtype: 'success', queued_turn_count: 0 };
+      const second = await next;
+      yield replayOf(second);
+      yield assistantText('assistant-2', 'Second reply');
+      yield { type: 'result', subtype: 'success', user_message_uuids: [second.uuid], queued_turn_count: 0 };
+      await keepOpen;
+    });
+    await done;
+    await waitFor(() => sessionEvents.some(event => event.type === 'background_turn_started'));
+    getQuery()!.interrupt.mockImplementation(async () => { interruptRequested.resolve(null); });
+    session.cancel();
+
+    const secondEvents: ProviderExecutionEvent[] = [];
+    for await (const event of session.execute(steerRequest('Second')).events) secondEvents.push(event);
+
+    expect(secondEvents).toContainEqual(expect.objectContaining({ type: 'text_delta', text: 'Second reply' }));
+    expect(sessionEvents.filter(event => event.type === 'background_turn_completed')).toEqual([
+      expect.objectContaining({ reason: 'interrupted' }),
+    ]);
+    await session.dispose();
+  });
+
   it('folds a steer into the running native turn at its replay acknowledgement', async () => {
     const steerReceived = createDeferred<sdkModule.SDKUserMessage>();
     const { session, events, done, sessionEvents } = await startSteerableSession(async function* (nextInput, keepOpen) {

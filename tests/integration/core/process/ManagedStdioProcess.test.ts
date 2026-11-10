@@ -173,6 +173,23 @@ it('terminates a running child when shutdown is requested repeatedly', async () 
   expect(managed.isAlive()).toBe(false);
 });
 
+it.each([
+  { behavior: 'exits when stdin closes', onEnd: 'process.exit(0);', graceMs: 20_000, code: 0, signal: null },
+  { behavior: 'outlives its stdin grace', onEnd: '', graceMs: 200, code: null, signal: 'SIGTERM' },
+])('closes stdin before signalling a child that $behavior', async ({ onEnd, graceMs, code, signal }) => {
+  const { managed, closed, readRecord } = await launch(`
+    process.stdin.resume();
+    process.stdin.on('end', () => { process.stderr.write('stdin closed'); ${onEnd} });
+    setInterval(() => {}, 1000);
+    process.stdout.write(JSON.stringify({ pid: process.pid }) + '\\n');
+  `, [], { stdinCloseGraceMs: graceMs });
+  const { pid } = await readRecord();
+  await managed.shutdown();
+  expect(await withinDeadline(closed, managed)).toMatchObject({ code, signal });
+  expect(managed.getStderrSnapshot()).toBe('stdin closed');
+  await expectProcessGone(pid);
+});
+
 const describeOnPOSIX = process.platform === 'win32' ? describe.skip : describe;
 describeOnPOSIX('POSIX signals', () => {
   it('reaps owned descendants even when they ignore SIGTERM and the parent exits first', async () => {
