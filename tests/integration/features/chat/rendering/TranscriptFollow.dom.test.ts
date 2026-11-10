@@ -36,9 +36,12 @@ async function createTranscript(autoScroll: boolean, { viewportHeight = 400 } = 
   return { messagesEl, renderer, geometry, grow };
 }
 
+/** An opened transcript after the browser's first layout of it. */
 async function openTranscript(autoScroll: boolean) {
   const opened = await createTranscript(autoScroll);
   opened.renderer.renderMessages(transcript(), () => 'Welcome');
+  await Promise.resolve();
+  opened.geometry.layout();
   expect(opened.messagesEl.scrollTop).toBe(opened.geometry.bottom());
   return { ...opened, growLastReply: () => opened.grow('a5') };
 }
@@ -51,14 +54,14 @@ const liveResponse = (id: string): LiveTranscriptOptions => ({
   reservePendingSubagent: () => false,
 });
 
-it.each([true, false])('keeps an opened transcript at its end when late content grows (auto-scroll %s)', async autoScroll => {
+it.each([true, false])('follows late content growth after opening only as the setting allows (auto-scroll %s)', async autoScroll => {
   const { messagesEl, geometry, growLastReply } = await openTranscript(autoScroll);
   const before = messagesEl.scrollTop;
 
   growLastReply();
 
   expect(geometry.bottom()).toBe(before + 300);
-  expect(messagesEl.scrollTop).toBe(geometry.bottom());
+  expect(messagesEl.scrollTop).toBe(autoScroll ? geometry.bottom() : before);
 });
 
 it('leaves a reader who scrolled up in place when late content grows', async () => {

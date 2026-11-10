@@ -5,15 +5,13 @@ const AT_BOTTOM_THRESHOLD = 20;
 
 /**
  * Where the reader wants the transcript, as their actions last expressed it.
- * - `landing`: a settled transcript just opened; late content keeps its end in view until the
- *   reader acts or the first arrival.
- * - `landing-until-layout`: a hidden transcript lands once laid out, then follows as `following`;
- *   used when live growth must not keep landing (a streaming reply, an arrival while hidden).
+ * - `landing`: a transcript just opened; it lands at its end once laid out (a hidden one when
+ *   shown), then follows as `following`.
  * - `following`: at the bottom; content growth is followed when "Auto-scroll during streaming" allows.
  * - `paused`: the reader moved away.
  * - `navigating-*`: a navigation scroll is in flight; geometry-only scroll events cannot change it.
  */
-type FollowPhase = 'landing' | 'landing-until-layout' | 'following' | 'paused' | 'navigating-bottom' | 'navigating-away';
+type FollowPhase = 'landing' | 'following' | 'paused' | 'navigating-bottom' | 'navigating-away';
 
 export type NavigationScrollIntent = 'away' | 'bottom';
 
@@ -85,13 +83,9 @@ export class TranscriptFollow {
     messagesEl.addEventListener('scroll', this.#onScroll, { passive: true });
   }
 
-  /**
-   * A transcript was rendered for opening: show its end. A settled transcript keeps it in view
-   * while late content lays out; one with a reply still streaming then follows as the setting allows.
-   */
-  land({ streaming = false } = {}): void {
-    const laidOut = this.messagesEl.clientHeight > 0;
-    this.#setPhase(!streaming ? 'landing' : laidOut ? 'following' : 'landing-until-layout');
+  /** A transcript was rendered for opening: show its end once it is laid out. */
+  land(): void {
+    this.#setPhase('landing');
     this.#pin();
   }
 
@@ -113,9 +107,6 @@ export class TranscriptFollow {
    * the reader to the bottom.
    */
   holdArrival(): () => void {
-    // An arrival ends landing, so a reply streamed after it follows only as the setting allows;
-    // one rendered while hidden still lands when the transcript is shown.
-    if (this.#phase === 'landing') this.#setPhase(this.messagesEl.clientHeight > 0 ? 'following' : 'landing-until-layout');
     if (!this.#isAtBottom()) return () => undefined;
     const revision = this.#awayRevision;
     return () => {
@@ -163,8 +154,7 @@ export class TranscriptFollow {
 
   #isFollowing(): boolean {
     switch (this.#phase) {
-      case 'landing':
-      case 'landing-until-layout': return true;
+      case 'landing': return true;
       case 'following':
       case 'navigating-bottom': return this.getSettings().enableAutoScroll ?? true;
       default: return false;
@@ -191,15 +181,11 @@ export class TranscriptFollow {
     // A shrinking viewport (a growing composer) keeps a reader who was at the bottom there.
     const keepsBottom = height < previous && scrollHeight - scrollTop - previous <= AT_BOTTOM_THRESHOLD;
     if (keepsBottom || this.#isFollowing()) this.#pin();
-    if (this.#phase === 'landing-until-layout') this.#setPhase('following');
+    if (this.#phase === 'landing') this.#setPhase('following');
   }
 
   #onScroll = (): void => {
-    const height = this.messagesEl.clientHeight;
-    if (height > 0) {
-      this.#readingTop = this.messagesEl.scrollTop;
-      this.#viewportHeight = height;
-    }
+    if (this.messagesEl.clientHeight > 0) this.#readingTop = this.messagesEl.scrollTop;
     if (this.#phase === 'navigating-bottom') return;
     if (!this.#isAtBottom()) {
       // Layout changes also emit scroll events; only the reader's intent pauses following.

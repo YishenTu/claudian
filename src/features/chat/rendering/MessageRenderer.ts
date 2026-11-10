@@ -309,7 +309,7 @@ export class MessageRenderer {
     }
     this.#renderRange(messages, start, messages.length, live);
 
-    this.follow.land({ streaming: live !== undefined && messages.some(message => live.isResponseOpen(message.id)) });
+    this.follow.land();
     return newWelcomeEl;
   }
 
