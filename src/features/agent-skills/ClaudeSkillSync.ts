@@ -328,9 +328,9 @@ export class ClaudeSkillSync {
   async #trashShared(name: string): Promise<void> {
     const key = name.toLowerCase();
     const entries = await this.files.listManagedFolderEntries(AGENT_SKILLS_ROOT);
-    for (const { path: folder, type } of entries) {
-      if (type === 'folder' && path.posix.dirname(folder) === AGENT_SKILLS_ROOT && path.posix.basename(folder).toLowerCase() === key) {
-        await this.files.trash(folder);
+    for (const entry of entries) {
+      if (path.posix.basename(entry.path).toLowerCase() === key && await this.#isSharedPackage(entry)) {
+        await this.files.trash(entry.path);
       }
     }
   }
@@ -347,9 +347,18 @@ export class ClaudeSkillSync {
     });
     if (!exists) return [];
     const entries = await this.files.listManagedFolderEntries(AGENT_SKILLS_ROOT);
-    return entries
-      .filter(entry => entry.type === 'folder' && path.posix.dirname(entry.path) === AGENT_SKILLS_ROOT)
-      .map(entry => path.posix.basename(entry.path).toLowerCase());
+    const names: string[] = [];
+    for (const entry of entries) {
+      if (await this.#isSharedPackage(entry)) names.push(path.posix.basename(entry.path).toLowerCase());
+    }
+    return names;
+  }
+
+  /** A real package folder, or a link whose target is a folder. Dangling and file links are not packages. */
+  async #isSharedPackage(entry: { path: string; type: string }): Promise<boolean> {
+    if (path.posix.dirname(entry.path) !== AGENT_SKILLS_ROOT) return false;
+    if (entry.type === 'folder') return true;
+    return entry.type === 'link' && await this.files.isManagedDirectory(entry.path);
   }
 
   async #planClaudeSkills(): Promise<SkillSyncItem[]> {

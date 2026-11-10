@@ -199,6 +199,20 @@ describe('ClaudeSkillSync', () => {
       expect(await vault.read(`${AGENT_SKILLS_ROOT}/real/SKILL.md`)).toContain('Instructions');
     });
 
+    it('counts a valid symlinked shared package as a name conflict', async () => {
+      await vault.write('outside/shared/SKILL.md', skill('shared', 'Linked description', 'Linked instructions'));
+      await vault.symlink(`${AGENT_SKILLS_ROOT}/shared`, vault.resolve('outside/shared'));
+      await vault.write(`${CLAUDE_SKILLS_ROOT}/shared/SKILL.md`, skill('shared', 'New description', 'New instructions'));
+
+      const plan = await sync.plan();
+
+      expect(plan.sharedNames).toContain('shared');
+      expect(sync.getBlockingReasons(plan, resolutions()).get(`${CLAUDE_SKILLS_ROOT}/shared`)).toEqual([
+        { code: 'name-conflict', with: 'shared', name: 'shared' },
+      ]);
+      expect(await vault.readlink(`${AGENT_SKILLS_ROOT}/shared`)).toBe(vault.resolve('outside/shared'));
+    });
+
     it('syncs a replacement package beside an untouched dangling shared link', async () => {
       await vault.write(`${AGENT_SKILLS_ROOT}/shared/SKILL.md`, skill('shared', 'Old description', 'Old instructions'));
       await vault.write(`${CLAUDE_SKILLS_ROOT}/shared/SKILL.md`, skill('shared', 'New description', 'New instructions'));
