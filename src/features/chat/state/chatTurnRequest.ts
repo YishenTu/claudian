@@ -1,5 +1,5 @@
 import type { ProviderSelectionSnapshot } from '@/core/execution/ProviderExecutionRequest';
-import { appendRawDraftSuffix } from '@/features/chat/composer/ComposerDraftController';
+import { appendRawDraftSuffix } from '@/features/chat/utils/draftText';
 import type { ChatTurnRequest, QueuedMessage } from '@/features/chat/state/types';
 
 /**
