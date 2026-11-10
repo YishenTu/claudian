@@ -14,6 +14,13 @@ export function setLoginShellPathEntries(entries: readonly string[]): void {
   loginShellPathEntries = entries;
 }
 
+export function getNpmConfigPrefix(): string | undefined {
+  // npm's script-provided lowercase value takes precedence over inherited variants.
+  if (process.env.npm_config_prefix !== undefined) return process.env.npm_config_prefix || undefined;
+  const key = Object.keys(process.env).find(name => name.toLowerCase() === 'npm_config_prefix');
+  return key ? process.env[key] || undefined : undefined;
+}
+
 function getHomeDir(): string {
   return process.env.HOME || process.env.USERPROFILE || '';
 }
@@ -247,7 +254,7 @@ function getExtraBinaryPaths(): string[] {
 
   paths.push(...getManagerBinPaths(home));
 
-  const npmPrefix = process.env.npm_config_prefix;
+  const npmPrefix = getNpmConfigPrefix();
   if (npmPrefix) {
     paths.push(isWindows ? npmPrefix : path.join(npmPrefix, 'bin'));
   }

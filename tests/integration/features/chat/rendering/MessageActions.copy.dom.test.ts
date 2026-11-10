@@ -1,5 +1,6 @@
 /** @vitest-environment jsdom */
 
+import { axe } from '@test/helpers/accessibility';
 import { testDate } from '@test/helpers/testClock';
 import { fireEvent, within } from '@testing-library/dom';
 import { setIcon } from 'obsidian';
@@ -70,6 +71,7 @@ describe.each(copyButtonSources)('%s copy button', (_name, copiedText, render) =
 
     expect(writeText).toHaveBeenCalledWith(copiedText);
     expect(button.textContent).toBe('Copied!');
+    expect(within(button.parentElement!).getByRole('button', { name: 'Copied!' })).toBe(button);
     expect(button.classList.contains('copied')).toBe(true);
 
     await vi.advanceTimersByTimeAsync(COPY_FEEDBACK_MS - 1);
@@ -79,6 +81,9 @@ describe.each(copyButtonSources)('%s copy button', (_name, copiedText, render) =
     expect(button.textContent).toBe('');
     expect(button.classList.contains('copied')).toBe(false);
     expect(button.querySelector('[data-icon="copy"]')).not.toBeNull();
+    expect(within(button.parentElement!).getByRole('button', { name: 'Copy message' })).toBe(button);
+    vi.useRealTimers();
+    expect(await axe(button)).toHaveNoViolations();
   });
 
   it('localizes copy feedback and the accessible name', async () => {
@@ -91,6 +96,9 @@ describe.each(copyButtonSources)('%s copy button', (_name, copiedText, render) =
     await vi.advanceTimersByTimeAsync(0);
     expect(writeText).toHaveBeenCalledWith(copiedText);
     expect(button.textContent).toBe('已复制！');
+    expect(within(messagesEl).getByRole('button', { name: '已复制！' })).toBe(button);
+    await vi.advanceTimersByTimeAsync(COPY_FEEDBACK_MS);
+    expect(within(messagesEl).getByRole('button', { name: '复制消息' })).toBe(button);
   });
 
   it('shows no success feedback and arms no timer when the clipboard write is rejected', async () => {

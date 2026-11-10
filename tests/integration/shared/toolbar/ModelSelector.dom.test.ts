@@ -7,12 +7,14 @@ import { TEST_CODEX_CATALOG } from '@test/helpers/codexModels';
 import { fireEvent, waitFor, within } from '@testing-library/dom';
 
 import type { ToolbarCallbacks } from '@/features/chat/composer/toolbar/types';
+import { setLocale } from '@/i18n/i18n';
 import { claudeChatUIConfig } from '@/providers/claude/ui/ClaudeChatUIConfig';
 import { updateCodexProviderSettings } from '@/providers/codex/settings';
 import { codexChatUIConfig } from '@/providers/codex/ui/CodexChatUIConfig';
 import { EffortSelector } from '@/shared/toolbar/EffortSelector';
 import { ModelSelector } from '@/shared/toolbar/ModelSelector';
 import { getProviderPickerModelOptions } from '@/shared/toolbar/providerPickerModelOptions';
+import { ToolbarMenuGroup } from '@/shared/toolbar/ToolbarMenu';
 
 HTMLElement.prototype.empty = function () { this.replaceChildren(); };
 HTMLElement.prototype.addClass = function (...classes) { this.classList.add(...classes); };
@@ -22,7 +24,11 @@ HTMLElement.prototype.toggleClass = function (classes, value) {
   for (const name of typeof classes === 'string' ? [classes] : classes) this.classList.toggle(name, value);
 };
 
+const mountedMenus: ToolbarMenuGroup[] = [];
+
 afterEach(() => {
+  for (const menus of mountedMenus.splice(0)) menus.destroy();
+  setLocale('en');
   document.body.replaceChildren();
 });
 
@@ -37,7 +43,16 @@ it.each([
     aliases: '{"toString":"Custom String","__proto__":"Custom Proto","constructor":"Custom Constructor"}',
     labels: ['Custom String', 'Custom Proto', 'Custom Constructor'],
   },
-])('renders persisted Codex $name in the named toolbar and options', async ({ aliases, labels }) => {
+  {
+    name: 'same-spelled aliases under Chinese chrome',
+    aliases: '{"toString":"Default","__proto__":"Model unavailable","constructor":"Fast"}',
+    labels: ['Default', 'Model unavailable', 'Fast'],
+    locale: 'zh-CN' as const,
+  },
+])('renders persisted Codex $name in the named toolbar and options', async ({ aliases, labels, ...fixture }) => {
+  const chinese = 'locale' in fixture;
+  if (chinese) setLocale('zh-CN');
+  const prefix = chinese ? '模型：' : 'Model: ';
   let settings: Record<string, unknown> = { model: 'openai-codex/__proto__' };
   updateCodexProviderSettings(settings, {
     discoveredModels: [
@@ -56,13 +71,15 @@ it.each([
   settings = JSON.parse(JSON.stringify(settings));
 
   const host = document.body.createDiv();
+  const menus = new ToolbarMenuGroup();
+  mountedMenus.push(menus);
   new ModelSelector(host, {
     getSettings: () => settings,
     getUIConfig: () => codexChatUIConfig,
     onModelChange: async (model: string) => { settings.model = model; },
-  } as unknown as ToolbarCallbacks);
+  } as unknown as ToolbarCallbacks, menus);
 
-  fireEvent.click(within(host).getByRole('button', { name: `Model: ${labels[1]}` }));
+  fireEvent.click(within(host).getByRole('button', { name: `${prefix}${labels[1]}` }));
   expect(within(host).getAllByRole('option').map(node => node.textContent)).toEqual(labels);
   expect(within(host).getByRole('option', { name: labels[1] }).getAttribute('aria-selected')).toBe('true');
   expect((await axe(host)).violations).toEqual([]);
@@ -72,7 +89,7 @@ it.each([
     fireEvent.click(within(host).getByRole('option', { name: label }));
     await waitFor(() => {
       expect(settings.model).toBe(values[index]);
-      expect(within(host).getByRole('button', { name: `Model: ${label}` }).textContent).toBe(label);
+      expect(within(host).getByRole('button', { name: `${prefix}${label}` }).textContent).toBe(label);
     });
   }
 });

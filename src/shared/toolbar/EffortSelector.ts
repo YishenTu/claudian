@@ -1,5 +1,6 @@
 import { formatReasoningValueLabel } from '@/core/providers/reasoning';
 import type { ProviderUIOption } from '@/core/providers/types';
+import { t } from '@/i18n/i18n';
 import type { ModelMenuPart, ModelSelector } from '@/shared/toolbar/ModelSelector';
 import { nextToolbarId, runToolbarAction } from '@/shared/toolbar/ToolbarMenu';
 import type { ModelPickerCallbacks } from '@/shared/toolbar/types';
@@ -51,11 +52,11 @@ export class EffortSelector {
 
     const current = settings.reasoning;
     const currentLabel = options.find(option => option.value === current)?.label
-      ?? (current ? formatReasoningValueLabel(current) : 'Default');
+      ?? (current ? formatReasoningValueLabel(current) : t('chat.modelPicker.defaultEffort'));
 
     this.part.chipEl.removeClass('claudian-hidden');
     this.part.chipEl.setText(currentLabel);
-    this.part.describe(`effort ${currentLabel}`);
+    this.part.describe(t('chat.modelPicker.effortLabel', { label: currentLabel }));
     this.part.showSection(true);
     this.#renderLevels(options, defaultValue, current);
     this.part.menu.restoreFocus();
@@ -66,7 +67,7 @@ export class EffortSelector {
     const sectionEl = this.part.sectionEl;
     sectionEl.empty();
     const headingId = nextToolbarId('heading');
-    sectionEl.createDiv({ cls: 'claudian-toolbar-popover-heading', text: 'Thinking', attr: { id: headingId } });
+    sectionEl.createDiv({ cls: 'claudian-toolbar-popover-heading', text: t('chat.modelPicker.thinking'), attr: { id: headingId } });
     const listEl = sectionEl.createDiv({
       cls: 'claudian-thinking-levels',
       attr: { role: 'listbox', 'aria-labelledby': headingId },
@@ -90,7 +91,7 @@ export class EffortSelector {
           runToolbarAction(async () => {
             await this.callbacks.onEffortLevelChange(option.value);
             this.updateDisplay();
-          }, 'Failed to change effort level');
+          }, t('chat.modelPicker.changeEffortFailed'));
         },
       });
       // The level's description is announced, not shown: no text under the level and no hover tooltip.

@@ -1,9 +1,9 @@
 import type { TargetLaunchSpec } from '@/core/process/execution-target/types';
 import {
-  ACPClientConnection,
+  type ACPClientConnection,
   type ACPCreateElicitationRequest,
   type ACPCreateElicitationResponse,
-  ACPJSONRPCTransport,
+  ACPNativeProcess,
   type ACPNewSessionRequest,
   type ACPNewSessionResponse,
   type ACPPromptRequest,
@@ -15,7 +15,6 @@ import {
   type ACPSessionNotification,
   type ACPSetSessionConfigOptionRequest,
   type ACPSetSessionConfigOptionResponse,
-  ACPSubprocess,
 } from '@/providers/acp';
 
 export const ANTIGRAVITY_ACP_ARGS = ['acp'] as const;
@@ -31,30 +30,21 @@ export interface AntigravityNativeConnectionOptions {
 /** One `agy acp` process and its ACP client. */
 export class AntigravityNativeConnection {
   readonly launch: TargetLaunchSpec;
-  private readonly client: ACPClientConnection;
   private readonly listeners = new Set<(notification: ACPSessionNotification) => void>();
-  private readonly process: ACPSubprocess;
-  private readonly transport: ACPJSONRPCTransport;
-  private shutdownFlight: Promise<void> | null = null;
+  private readonly native: ACPNativeProcess;
 
   constructor(options: AntigravityNativeConnectionOptions) {
     this.launch = options.launch;
-    this.process = new ACPSubprocess({
-      args: options.launch.args,
-      command: options.launch.command,
-      cwd: options.launch.spawnCwd,
-      env: options.launch.env,
-      windowsVerbatimArguments: options.launch.windowsVerbatimArguments,
-    });
-    this.process.start();
-    this.transport = new ACPJSONRPCTransport({
-      input: this.process.stdout,
-      onClose: listener => this.process.onClose(listener),
-      output: this.process.stdin,
-    });
-    this.client = new ACPClientConnection({
+    this.native = new ACPNativeProcess({
+      launch: {
+        args: options.launch.args,
+        command: options.launch.command,
+        cwd: options.launch.spawnCwd,
+        env: options.launch.env,
+        windowsVerbatimArguments: options.launch.windowsVerbatimArguments,
+      },
+      version: options.version,
       ...(options.createElicitation ? { clientCapabilities: { elicitation: { form: {} } } } : {}),
-      clientInfo: { name: 'claudian', version: options.version },
       delegate: {
         ...(options.createElicitation ? { createElicitation: options.createElicitation } : {}),
         onSessionNotification: notification => {
@@ -62,8 +52,11 @@ export class AntigravityNativeConnection {
         },
         requestPermission: options.requestPermission,
       },
-      transport: this.transport,
     });
+  }
+
+  private get client(): ACPClientConnection {
+    return this.native.client;
   }
 
   async initialize(): Promise<void> {
@@ -95,15 +88,15 @@ export class AntigravityNativeConnection {
   }
 
   flush(): Promise<void> {
-    return this.transport.flush();
+    return this.native.flush();
   }
 
   isAlive(): boolean {
-    return this.process.isAlive();
+    return this.native.isAlive();
   }
 
   onClose(listener: (error?: Error) => void): () => void {
-    return this.process.onClose(listener);
+    return this.native.onClose(listener);
   }
 
   onNotification(listener: (notification: ACPSessionNotification) => void): () => void {
@@ -112,12 +105,6 @@ export class AntigravityNativeConnection {
   }
 
   shutdown(): Promise<void> {
-    this.shutdownFlight ??= (async () => {
-      this.listeners.clear();
-      this.client.dispose();
-      this.transport.dispose();
-      await this.process.shutdown();
-    })();
-    return this.shutdownFlight;
+    return this.native.shutdown(() => this.listeners.clear());
   }
 }

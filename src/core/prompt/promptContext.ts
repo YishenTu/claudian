@@ -25,13 +25,13 @@ const LINKED_CONTENT_TAG = 'linked_content';
 const XML_CONTEXT_PATTERN = /\n\n<(?:linked_content|linked_note|current_note|editor_selection|editor_cursor|context_files|context_sessions|canvas_selection|browser_selection)[\s>]/;
 const BRACKET_CONTEXT_PATTERN = /\n\[(?:Current note|Editor selection from|Browser selection from|Canvas selection from)\b/;
 
-/** Only closed Markdown literals protect examples; unclosed fence behavior stays unchanged. */
-function getClosedCodeRanges(text: string): Array<{ from: number; to: number }> {
+/** Indented code and closed inline/fenced literals protect examples; unclosed fences stay unchanged. */
+function getCodeLiteralRanges(text: string): Array<{ from: number; to: number }> {
   const ranges: Array<{ from: number; to: number }> = [];
   parser.parse(text).iterate({
     enter(node) {
-      if (node.name !== 'InlineCode' && node.name !== 'FencedCode') return;
-      if (node.node.getChildren('CodeMark').length === 2) ranges.push({ from: node.from, to: node.to });
+      if (node.name !== 'InlineCode' && node.name !== 'FencedCode' && node.name !== 'CodeBlock') return;
+      if (node.name === 'CodeBlock' || node.node.getChildren('CodeMark').length === 2) ranges.push({ from: node.from, to: node.to });
       return false;
     },
   });
@@ -39,9 +39,9 @@ function getClosedCodeRanges(text: string): Array<{ from: number; to: number }> 
 }
 
 function findContextBoundary(text: string, pattern: RegExp): number {
-  let ranges: ReturnType<typeof getClosedCodeRanges> | undefined;
+  let ranges: ReturnType<typeof getCodeLiteralRanges> | undefined;
   for (const match of text.matchAll(new RegExp(pattern.source, 'g'))) {
-    ranges ??= getClosedCodeRanges(text);
+    ranges ??= getCodeLiteralRanges(text);
     if (!ranges.some(range => match.index < range.to && match.index + match[0].length > range.from)) return match.index;
   }
   return -1;
@@ -51,7 +51,7 @@ function findContextBoundary(text: string, pattern: RegExp): number {
 function stripContextOutsideCode(text: string, pattern: RegExp): string {
   let match = pattern.exec(text);
   if (!match) return text;
-  const ranges = getClosedCodeRanges(text);
+  const ranges = getCodeLiteralRanges(text);
   let result = '';
   let cursor = 0;
   while (match) {

@@ -2,7 +2,7 @@
 const mockedTools = vi.mocked(await import('@/features/chat/rendering/tools/ToolCallRenderer'));
 const mockedEdits = vi.mocked(await import('@/features/chat/rendering/tools/WriteEditRenderer'));
 const mockedThinking = vi.mocked(await import('@/features/chat/rendering/ThinkingBlockRenderer'));
-const mockedSubagents = vi.mocked(await import('@/features/chat/subagents/SubagentRenderer'));
+const mockedSubagents = vi.mocked(await import('@/features/chat/rendering/subagents/SubagentRenderer'));
 import '@/providers';
 
 import { TEST_CODEX_MODEL } from '@test/helpers/codexModels';
@@ -23,12 +23,12 @@ import type { ChatMessage, StreamChunk,ToolCallInfo, UsageInfo } from '@/core/ty
 import * as displayOnlyCodeFences from '@/features/chat/rendering/markdown/DisplayOnlyCodeFences';
 import { MessageRenderer } from '@/features/chat/rendering/MessageRenderer';
 import { providerOutputEventToStreamChunk } from '@/features/chat/rendering/providerOutputChunks';
-import { ChatState } from '@/features/chat/state/ChatState';
 import {
   AsyncSubagentHistoryRecovery,
   type AsyncSubagentHistoryRecoveryDeps,
-} from '@/features/chat/subagents/AsyncSubagentHistoryRecovery';
-import { SubagentManager } from '@/features/chat/subagents/SubagentManager';
+} from '@/features/chat/rendering/subagents/AsyncSubagentHistoryRecovery';
+import { SubagentManager } from '@/features/chat/rendering/subagents/SubagentManager';
+import { ChatState } from '@/features/chat/state/ChatState';
 import { StreamController, type StreamControllerDeps } from '@/features/chat/turns/StreamController';
 import { TurnCoordinator } from '@/features/chat/turns/TurnCoordinator';
 import * as markdownMath from '@/utils/markdownMath';
@@ -150,8 +150,6 @@ describe('StreamController - Text Content', () => {
   });
 
   afterEach(() => {
-    deps.state.clearThinkingIndicatorTimeout();
-    deps.state.clearFlavorTimerInterval();
     controller.dispose();
     realRenderers.splice(0).forEach(renderer => renderer.dispose());
     components.splice(0).forEach(component => component.unload());
@@ -832,41 +830,18 @@ describe('StreamController - Text Content', () => {
   });
 
   describe('Timer lifecycle', () => {
-    it('should scroll to a newly shown thinking indicator when auto-scroll is enabled', () => {
-      const messagesEl = deps.getMessagesEl();
-      Object.defineProperty(messagesEl, 'scrollHeight', { value: 1_000, configurable: true });
-      messagesEl.scrollTop = 0;
-
-      controller.thinkingIndicator.show();
-      vi.advanceTimersByTime(416);
-
-      expect(deps.state.thinkingEl).not.toBeNull();
-      expect(messagesEl.scrollTop).toBe(1_000);
-    });
-
-    it('should not scroll to a newly shown thinking indicator when auto-scroll is paused', () => {
-      const messagesEl = deps.getMessagesEl();
-      Object.defineProperty(messagesEl, 'scrollHeight', { value: 1_000, configurable: true });
-      messagesEl.scrollTop = 0;
-      deps.state.autoScrollEnabled = false;
-
-      controller.thinkingIndicator.show();
-      vi.advanceTimersByTime(416);
-
-      expect(deps.state.thinkingEl).not.toBeNull();
-      expect(messagesEl.scrollTop).toBe(0);
-    });
-
     it('should clear timer interval in resetStreamingState', () => {
       deps.state.responseStartTime = performance.now();
 
       controller.thinkingIndicator.show();
       vi.advanceTimersByTime(500);
-      expect(deps.state.flavorTimerInterval).not.toBeNull();
+      expect(document.querySelector('.claudian-thinking')).not.toBeNull();
+      expect(vi.getTimerCount()).toBe(1);
 
       controller.resetStreamingState();
 
-      expect(deps.state.flavorTimerInterval).toBeNull();
+      expect(document.querySelector('.claudian-thinking')).toBeNull();
+      expect(vi.getTimerCount()).toBe(0);
     });
   });
 
@@ -940,7 +915,7 @@ describe('StreamController - Text Content', () => {
       controller.thinkingIndicator.show();
       controller.dispose();
       vi.advanceTimersByTime(500);
-      expect(deps.state.thinkingEl).toBeNull();
+      expect(document.querySelector('.claudian-thinking')).toBeNull();
       expect(deps.state.waitingStatus).toBeNull();
 
       const visible = new StreamController(deps);
@@ -948,15 +923,16 @@ describe('StreamController - Text Content', () => {
       vi.advanceTimersByTime(500);
       expect(deps.state.waitingStatus).not.toBeNull();
       visible.dispose();
-      expect(deps.state.thinkingEl).toBeNull();
+      expect(document.querySelector('.claudian-thinking')).toBeNull();
       expect(deps.state.waitingStatus).toBeNull();
-      expect(deps.state.flavorTimerInterval).toBeNull();
+      expect(vi.getTimerCount()).toBe(0);
     });
 
   });
 
-  describe('scrollToBottom - settings', () => {
-    it('scrolls after rendered snapshots instead of every text chunk', async () => {
+  describe('transcript layout', () => {
+    // Following belongs to the transcript's resize observation, so streaming never forces layout.
+    it('streams text without reading transcript layout', async () => {
       const messagesEl = deps.getMessagesEl();
       const readHeight = vi.fn(() => 1000);
       Object.defineProperty(messagesEl, 'scrollHeight', { get: readHeight, configurable: true });
@@ -972,48 +948,7 @@ describe('StreamController - Text Content', () => {
       await vi.advanceTimersByTimeAsync(20);
 
       expect(deps.renderer.renderContent).toHaveBeenCalledWith(expect.anything(), 'chunk '.repeat(60), { deferMath: true, deferDiagrams: true });
-      expect(messagesEl.scrollTop).toBe(1000);
-      expect(readHeight.mock.calls.length).toBeLessThanOrEqual(vi.mocked(deps.renderer.renderContent).mock.calls.length);
-    });
-
-    it('should not scroll when enableAutoScroll setting is false', async () => {
-      Object.assign(deps.plugin.settings, { enableAutoScroll: false });
-      const messagesEl = deps.getMessagesEl();
-      Object.defineProperty(messagesEl, 'scrollHeight', { value: 1000, configurable: true });
-      messagesEl.scrollTop = 0;
-
-      const msg = createTestMessage();
-      deps.state.currentTextEl = document.body.createDiv();
-      await controller.handleStreamChunk({ type: 'text', content: 'Hello' }, msg);
-
-      vi.advanceTimersByTime(16);
-      await Promise.resolve();
-      expect(messagesEl.scrollTop).toBe(0);
-
-      Object.assign(deps.plugin.settings, { enableAutoScroll: true });
-      await controller.handleStreamChunk({ type: 'text', content: ' again' }, msg);
-      await vi.advanceTimersByTimeAsync(200);
-      expect(messagesEl.scrollTop).toBe(1000);
-    });
-
-    it('should not scroll when autoScrollEnabled state is false', async () => {
-      deps.state.autoScrollEnabled = false;
-      const messagesEl = deps.getMessagesEl();
-      Object.defineProperty(messagesEl, 'scrollHeight', { value: 1000, configurable: true });
-      messagesEl.scrollTop = 0;
-
-      const msg = createTestMessage();
-      deps.state.currentTextEl = document.body.createDiv();
-      await controller.handleStreamChunk({ type: 'text', content: 'Hello' }, msg);
-
-      vi.advanceTimersByTime(16);
-      await Promise.resolve();
-      expect(messagesEl.scrollTop).toBe(0);
-
-      deps.state.autoScrollEnabled = true;
-      await controller.handleStreamChunk({ type: 'text', content: ' again' }, msg);
-      await vi.advanceTimersByTimeAsync(200);
-      expect(messagesEl.scrollTop).toBe(1000);
+      expect(readHeight).not.toHaveBeenCalled();
     });
   });
 
@@ -2760,8 +2695,6 @@ describe('StreamController - Tool completion', () => {
   });
 
   afterEach(() => {
-    deps.state.clearThinkingIndicatorTimeout();
-    deps.state.clearFlavorTimerInterval();
     controller.dispose();
     realRenderers.splice(0).forEach(renderer => renderer.dispose());
     components.splice(0).forEach(component => component.unload());

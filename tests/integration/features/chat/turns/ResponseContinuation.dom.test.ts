@@ -12,8 +12,8 @@ import { Component, MarkdownRenderer } from 'obsidian';
 
 import type { ChatMessage } from '@/core/types';
 import { MessageRenderer } from '@/features/chat/rendering/MessageRenderer';
+import { SubagentManager } from '@/features/chat/rendering/subagents/SubagentManager';
 import { ChatState } from '@/features/chat/state/ChatState';
-import { SubagentManager } from '@/features/chat/subagents/SubagentManager';
 import { continueResponseAfterNotification } from '@/features/chat/turns/ResponseContinuation';
 import { StreamController } from '@/features/chat/turns/StreamController';
 import { ClaudeConversationHistoryService } from '@/providers/claude/history/ClaudeConversationHistoryService';

@@ -25,7 +25,8 @@ export class SessionInlineRename {
       attr: { type: 'text', value: currentTitle, 'aria-label': 'Conversation title' },
     });
 
-    titleEl.replaceWith(input);
+    this.#mountInput(titleEl, input);
+    input.addEventListener('click', event => event.stopPropagation());
     input.focus();
     input.select();
 
@@ -62,6 +63,8 @@ export class SessionInlineRename {
     input.addEventListener('keydown', (e) => {
       // Check !e.isComposing for IME support (Chinese, Japanese, Korean, etc.)
       if (e.key === 'Enter' && !e.isComposing) {
+        e.preventDefault();
+        e.stopPropagation();
         input.blur();
       } else if (e.key === 'Escape' && !e.isComposing) {
         e.preventDefault();
@@ -81,6 +84,40 @@ export class SessionInlineRename {
     }
 
     return active.cancel();
+  }
+
+  /** Keeps the current editor while a list refresh rebuilds the row around it. */
+  preserveWithin(container: HTMLElement): (() => void) | undefined {
+    const active = this.#active;
+    if (!active || !container.contains(active.input)) return undefined;
+    const conversationId = active.input.closest('[data-conversation-id]')?.getAttribute('data-conversation-id');
+    if (!conversationId) return undefined;
+    const { input } = active;
+    const focused = input.ownerDocument.activeElement === input;
+    const selection = [input.selectionStart, input.selectionEnd, input.selectionDirection] as const;
+    input.remove();
+    return () => {
+      if (this.#active !== active) return;
+      const row = Array.from(container.querySelectorAll<HTMLElement>('[data-conversation-id]'))
+        .find(item => item.getAttribute('data-conversation-id') === conversationId);
+      const title = row?.querySelector('.claudian-history-item-title');
+      if (!title) {
+        this.#active = null;
+        return;
+      }
+      this.#mountInput(title, input);
+      if (focused) {
+        input.focus({ preventScroll: true });
+        input.setSelectionRange(selection[0], selection[1], selection[2] ?? undefined);
+      }
+    };
+  }
+
+  #mountInput(title: Element, input: HTMLInputElement): void {
+    const content = title.closest('.claudian-history-item-content');
+    content?.removeAttribute('role');
+    content?.removeAttribute('tabindex');
+    title.replaceWith(input);
   }
 
   /** Forgets an editor inside `container` that a rerender is about to discard without blur. */

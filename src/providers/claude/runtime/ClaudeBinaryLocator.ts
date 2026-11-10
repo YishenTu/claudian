@@ -4,7 +4,7 @@ import * as path from 'path';
 
 import { findBinaryInDirectories, isExistingFile } from '@/core/process/cliBinaryLocator';
 import { parsePathEntries } from '@/core/process/cliPath';
-import { getEnhancedPath } from '@/core/process/env';
+import { getEnhancedPath, getNpmConfigPrefix } from '@/core/process/env';
 
 const CLAUDE_CODE_PACKAGE_SEGMENTS = ['node_modules', '@anthropic-ai', 'claude-code'];
 const CLAUDE_CODE_NODE_ENTRYPOINTS = ['cli-wrapper.cjs', 'cli.js'];
@@ -83,9 +83,8 @@ function resolveClaudeFromPathEntries(
 }
 
 function getNpmGlobalPrefix(): string | null {
-  if (process.env.npm_config_prefix) {
-    return process.env.npm_config_prefix;
-  }
+  const configured = getNpmConfigPrefix();
+  if (configured) return configured;
 
   if (process.platform === 'win32') {
     const appDataNpm = process.env.APPDATA
@@ -130,8 +129,9 @@ function getNpmClaudeCodeEntrypointPaths(): string[] {
     addClaudeCodeEntrypointPaths(entrypointPaths, '/usr/local/lib');
     addClaudeCodeEntrypointPaths(entrypointPaths, '/usr/lib');
 
-    if (process.env.npm_config_prefix) {
-      addClaudeCodeEntrypointPaths(entrypointPaths, path.join(process.env.npm_config_prefix, 'lib'));
+    const npmPrefix = getNpmConfigPrefix();
+    if (npmPrefix) {
+      addClaudeCodeEntrypointPaths(entrypointPaths, path.join(npmPrefix, 'lib'));
     }
   }
 

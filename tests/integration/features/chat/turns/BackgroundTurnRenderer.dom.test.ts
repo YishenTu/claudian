@@ -4,6 +4,7 @@ import '@/providers';
 import { axe } from '@test/helpers/accessibility';
 import { createFixture, deferred } from '@test/helpers/ChatInputHarness';
 import { createTabSession } from '@test/helpers/ConversationPorts';
+import { useTranscriptGeometry } from '@test/helpers/dom/transcriptGeometry';
 import { createChatFeatureHost } from '@test/helpers/features/chat/ChatFeatureHostFixture';
 import { createTabMessageId } from '@test/helpers/features/chat/SessionEventsHarness';
 import { FakeSideBackend } from '@test/helpers/features/chat/SideChatSessionHarness';
@@ -16,9 +17,9 @@ import { ProviderExecutionLifecycleRegistry, type ProviderExecutionRequest } fro
 import type { ChatMessage, ImageAttachment } from '@/core/types';
 import { ChatExecutionCoordinator } from '@/features/chat/execution/ChatExecutionCoordinator';
 import { MessageRenderer } from '@/features/chat/rendering/MessageRenderer';
+import { SubagentManager } from '@/features/chat/rendering/subagents/SubagentManager';
 import { SessionEvents } from '@/features/chat/sessions/SessionEvents';
 import { ChatState } from '@/features/chat/state/ChatState';
-import { SubagentManager } from '@/features/chat/subagents/SubagentManager';
 import { BackgroundResponses } from '@/features/chat/turns/BackgroundResponses';
 import { renderSessionTaskNotification } from '@/features/chat/turns/BackgroundTurnRenderer';
 import { ResponseStream } from '@/features/chat/turns/ResponseStream';
@@ -260,7 +261,7 @@ it.each([
     }
     native.complete();
     await first;
-    state.hasPendingConversationSave = false;
+    state.discardPendingConversationSave();
     const savedMessages: ChatMessage[][] = [];
     input!.plugin.updateConversation.mockImplementation(async (_id, updates) => {
       if (updates.messages) savedMessages.push(structuredClone(updates.messages));
@@ -558,7 +559,7 @@ async function createBackgroundSession() {
   const next = () => ({ ...scope, sequence: ++scope.sequence });
   const text = (value: string) => background.handle('binding', { type: 'text_delta', text: value, scope: next() }, () => true);
   const stop = () => background.handle('binding', { type: 'background_turn_completed', reason: 'interrupted', scope: next() }, () => true);
-  return { messagesEl, renderer, state, host, background, next, text, stop,
+  return { messagesEl, plugin, renderer, state, host, background, next, text, stop,
     dispose: () => { stream.dispose(); manager.clear(); renderer.dispose(); } };
 }
 
@@ -921,5 +922,83 @@ it.each([true, false])('folds a stopped automatic turn across compaction once, l
     renderer.renderMessages(claude.messages, () => 'Welcome');
     await Promise.resolve();
     expect(inspect()).toEqual(expected);
+  } finally { session.dispose(); }
+});
+
+// Issue #2189: an arrival keeps a scrolled-up reader's place, and still comes into view at the bottom.
+it.each([
+  { reader: 'far up', autoScroll: true },
+  { reader: 'far up', autoScroll: false },
+  { reader: 'at the bottom', autoScroll: true },
+  { reader: 'at the bottom', autoScroll: false },
+])('follows a notification and background turn only for a reader $reader (auto-scroll $autoScroll)', async ({ reader, autoScroll }) => {
+  const session = (await createBackgroundSession());
+  const { messagesEl, plugin, renderer, state, background } = session;
+  plugin.settings.enableAutoScroll = autoScroll;
+  const geometry = useTranscriptGeometry(messagesEl);
+  try {
+    for (let index = 0; index < 6; index++) {
+      state.addMessage({ id: `u${index}`, role: 'user', content: `Prompt ${index}`, timestamp: testDate().getTime() });
+      state.addMessage({ id: `a${index}`, role: 'assistant', content: `Answer ${index}`, timestamp: testDate().getTime(),
+        completedAt: testDate().getTime(), contentBlocks: [{ type: 'text', content: `Answer ${index}` }] });
+    }
+    renderer.renderMessages(state.messages, () => 'Welcome');
+    expect(messagesEl.scrollTop).toBe(geometry.bottom());
+    if (reader === 'far up') {
+      fireEvent.wheel(messagesEl, { deltaY: -100 });
+      messagesEl.scrollTop = 200;
+      fireEvent.scroll(messagesEl);
+    }
+    const expected = () => reader === 'far up' ? 200 : geometry.bottom();
+
+    renderSessionTaskNotification(session.host, 'Job finished.', undefined, session.next());
+    expect(messagesEl.scrollTop).toBe(expected());
+    background.reserve('binding', 'automatic');
+    expect(messagesEl.scrollTop).toBe(expected());
+    await session.text('Background reply.');
+    await background.handle('binding', { type: 'background_turn_completed', reason: 'completed', scope: session.next() }, () => true);
+    await Promise.resolve();
+    expect(within(messagesEl).getByText('Background reply.')).toBeTruthy();
+    expect(messagesEl.scrollTop).toBe(expected());
+  } finally { session.dispose(); }
+});
+
+// A reader who scrolls up while a settled turn is still rendering keeps that place when it finishes.
+it.each([true, false])('keeps the place of a reader who scrolls up during background rendering (auto-scroll %s)', async autoScroll => {
+  const session = (await createBackgroundSession());
+  const { messagesEl, plugin, renderer, state, background } = session;
+  plugin.settings.enableAutoScroll = autoScroll;
+  const geometry = useTranscriptGeometry(messagesEl);
+  const rendering = deferred<void>();
+  const renderStarted = deferred<void>();
+  vi.mocked(MarkdownRenderer.render).mockImplementation(async (_app, markdown, el) => {
+    if (markdown === 'Background reply.') {
+      renderStarted.resolve();
+      await rendering.promise;
+    }
+    (el as HTMLElement).createEl('p', { text: markdown });
+  });
+  try {
+    for (let index = 0; index < 6; index++) {
+      state.addMessage({ id: `u${index}`, role: 'user', content: `Prompt ${index}`, timestamp: testDate().getTime() });
+      state.addMessage({ id: `a${index}`, role: 'assistant', content: `Answer ${index}`, timestamp: testDate().getTime(),
+        completedAt: testDate().getTime(), contentBlocks: [{ type: 'text', content: `Answer ${index}` }] });
+    }
+    renderer.renderMessages(state.messages, () => 'Welcome');
+    expect(messagesEl.scrollTop).toBe(geometry.bottom());
+
+    background.reserve('binding', 'automatic');
+    await session.text('Background reply.');
+    const completing = background.handle('binding', { type: 'background_turn_completed', reason: 'completed', scope: session.next() }, () => true);
+    await renderStarted.promise;
+    fireEvent.wheel(messagesEl, { deltaY: -100 });
+    messagesEl.scrollTop = 200;
+    fireEvent.scroll(messagesEl);
+    rendering.resolve();
+    await completing;
+    await Promise.resolve();
+
+    expect(within(messagesEl).getByText('Background reply.')).toBeTruthy();
+    expect(messagesEl.scrollTop).toBe(200);
   } finally { session.dispose(); }
 });

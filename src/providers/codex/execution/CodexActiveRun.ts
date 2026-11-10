@@ -1,4 +1,5 @@
 import type { RequestedRunChannel } from '@/core/execution';
+import type { ProviderToolPolicy } from '@/core/execution';
 
 export interface TurnCompletion {
   readonly status: 'completed' | 'failed' | 'interrupted';
@@ -12,6 +13,8 @@ export interface CodexActiveRun {
   readonly run: RequestedRunChannel;
   /** Aborts on cancellation or settlement; owns startup waits and dynamic tool calls. */
   readonly cancellation: AbortController;
+  /** The policy native server requests of this run's turn are checked against. */
+  readonly toolPolicy: ProviderToolPolicy;
   nativeThreadId: string | null;
   nativeTurnId: string | null;
   /** A turn start was submitted, so native work may exist without its acknowledgement. */
