@@ -2,10 +2,9 @@ import { Notice } from 'obsidian';
 
 import { createProviderHistoryPathContext } from '@/core/providers/historyPathContext';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
-import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
+import type { ChatFeatureHost, TabId } from '@/features/chat/ChatFeatureHost';
 import type { ForkContext } from '@/features/chat/conversation/forkSourceTypes';
 import type { ChatSessionRuntime } from '@/features/chat/sessions/ChatSessionRuntime';
-import type { TabId } from '@/features/chat/tabs/ChatTab';
 import { chooseForkTarget } from '@/features/chat/tabs/forking/ForkTargetModal';
 import type { AssembledTabRuntime, TabMembershipView } from '@/features/chat/tabs/types';
 import { t } from '@/i18n/i18n';
@@ -192,6 +191,9 @@ async function createForkConversation(
     ...(context.linkedContentPath ? { linkedContentPath: context.linkedContentPath } : {}),
     // Creation keeps it only while the project is live.
     ...(context.projectId ? { projectId: context.projectId } : {}),
+    ...(context.sourceConversationId
+      ? { origin: { kind: 'fork', conversationId: context.sourceConversationId } as const }
+      : {}),
   });
 
   if (!isForkRequestCurrent(host, sourceLease)) {

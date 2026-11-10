@@ -172,7 +172,7 @@ test('filesystem-read documentation, styles, and captured fixtures retain their 
   assert.deepEqual(select(['src/features/chat/AGENTS.md']).testFiles, [docs]);
   assert.ok(select(['src/style/components/code.css']).testFiles.includes('tests/unit/style/components/code.test.ts'));
   for (const consumer of [
-    'tests/unit/style/components/zen-mode.test.ts',
+    'tests/integration/style/components/zen-mode.test.ts',
     'tests/unit/style/settings/base.test.ts',
     'tests/integration/features/chat/navigation/NavigationSidebar.dom.test.ts',
   ]) {

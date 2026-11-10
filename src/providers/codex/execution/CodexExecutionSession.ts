@@ -168,7 +168,8 @@ export class CodexExecutionSession
           for (const key of CODEX_CONSUMED_FORK_STATE_KEYS) {
             this.state.deleteProviderStateValue(key);
           }
-          this.state.setStatus('idle');
+          // Publishes the new provider state mid-run; the run keeps executing.
+          this.state.bumpRevision();
           this.#emitSnapshot(active);
         },
       },
@@ -195,6 +196,17 @@ export class CodexExecutionSession
       this.sessionInstanceId,
       config.interactionPort,
       (threadId, turnId) => this.turn.observe(threadId, turnId),
+      () => {
+        const active = this.activeRun;
+        if (!active?.nativeThreadId || !active.nativeTurnId || active.run.isTerminal) return null;
+        return {
+          localTurnId: active.run.turnId,
+          nativeThreadId: active.nativeThreadId,
+          nativeTurnId: active.nativeTurnId,
+          cancellation: active.cancellation,
+          toolPolicy: active.toolPolicy,
+        };
+      },
     );
     this.completionRecovery = new CodexCompletionRecovery({
       transport: () => this.connection.transport,
@@ -206,7 +218,6 @@ export class CodexExecutionSession
         activeRun: () => this.activeRun,
         markNativeContextEstablished: active => this.#markNativeConversationContextEstablished(active),
       },
-      this.serverRequestRouter,
       this.completionRecovery,
     );
   }
@@ -228,6 +239,7 @@ export class CodexExecutionSession
         },
       }),
       cancellation: new AbortController(),
+      toolPolicy: request.toolPolicy,
       nativeThreadId: null,
       nativeTurnId: null,
       nativeStartSubmitted: false,
@@ -395,7 +407,6 @@ export class CodexExecutionSession
       const policy = resolveCodexTurnPolicy(request, settings);
       const serviceTier = resolveCodexServiceTier(request, model, settings);
       const replayConversationHistory = !this.nativeConversationContextEstablished;
-      this.turn.setToolPolicy(request.toolPolicy);
       const thread = await this.threads.ensureThread(
         active,
         {
@@ -508,6 +519,7 @@ export class CodexExecutionSession
         this.threads.confirmSandboxOverride(sandboxRevision, policy.sandbox);
       }
       this.#markNativeConversationContextEstablished(active);
+      // A deferred cancellation still releases this native turn when it settles.
       if (active.run.isCancellationRequested) {
         active.nativeTurnId = result.turn.id;
       }
@@ -652,7 +664,8 @@ export class CodexExecutionSession
   ): void {
     this.threadId = target.threadId;
     this.sessionFilePath = target.sessionFilePath ?? null;
-    this.state.setStatus('idle');
+    // Publishes the adopted target mid-run; the run keeps executing.
+    this.state.bumpRevision();
     this.#emitSnapshot(active);
   }
 
@@ -699,6 +712,7 @@ export class CodexExecutionSession
 
   #finishCancelled(active: CodexActiveRun): void {
     if (this.activeRun !== active || active.run.isTerminal) return;
+    // A deferred cancellation may settle after the process exited; its invalidation stands.
     this.#finishRunState(active);
     active.run.finish({
       type: 'cancelled',
@@ -740,7 +754,7 @@ export class CodexExecutionSession
   }
 
   #finishRunState(active: CodexActiveRun): void {
-    this.state.setStatus('idle');
+    this.state.settleActivity(false);
     this.#emitSnapshot(active);
   }
 

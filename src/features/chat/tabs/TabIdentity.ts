@@ -7,8 +7,8 @@ import { getProviderForModel } from '@/core/providers/modelRouting';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { DEFAULT_CHAT_PROVIDER_ID, type ProviderId } from '@/core/providers/types';
 import type { ClaudianSettings, Conversation } from '@/core/types';
-import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
-import type { TabId, TabLifecycleState } from '@/features/chat/tabs/ChatTab';
+import type { ChatFeatureHost, TabId } from '@/features/chat/ChatFeatureHost';
+import type { TabLifecycleState } from '@/features/chat/tabs/ChatTab';
 
 /**
  * A tab's persisted identity: what a view restores before any runtime exists. A restored tab

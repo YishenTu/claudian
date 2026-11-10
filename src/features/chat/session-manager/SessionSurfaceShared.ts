@@ -1,4 +1,4 @@
-import { type Menu, Notice, setIcon } from 'obsidian';
+import { type Menu, setIcon } from 'obsidian';
 
 import type { SessionBrowser } from '@/features/chat/session-manager/SessionBrowser';
 import type { HistoryConversationStatus } from '@/features/chat/session-manager/SessionStatusPresentation';
@@ -37,17 +37,6 @@ export interface SessionSurfaceShared {
 export interface InlineRenameRequest {
   beginRename: (item: HTMLElement) => void;
   conversationId: string;
-}
-
-/** Runs a session or project action, reporting any failure once as a notice. */
-export function runSessionAction(action: () => unknown, failureMessage: string): void {
-  void (async () => {
-    try {
-      await action();
-    } catch {
-      new Notice(failureMessage);
-    }
-  })();
 }
 
 /**

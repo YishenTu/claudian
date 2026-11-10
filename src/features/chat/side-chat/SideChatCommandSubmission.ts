@@ -1,5 +1,5 @@
 import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
-import { resolveSessionMentions } from '@/features/chat/input/resolveSessionMentions';
+import { resolveSessionMentions } from '@/features/chat/composer/resolveSessionMentions';
 import type { SideChatSubmission } from '@/features/chat/side-chat/SideChatRuntime';
 
 /** A command reserves its queue position while its detached input is prepared. */
