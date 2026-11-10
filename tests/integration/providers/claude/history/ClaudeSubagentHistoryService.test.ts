@@ -1,5 +1,3 @@
-import '@/providers';
-
 import * as fs from 'node:fs';
 import * as fsPromises from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -14,7 +12,11 @@ import spawn from 'cross-spawn';
 
 import { getInstallationKey } from '@/core/device/InstallationKey';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
+import { registerProviderModules } from '@/core/providers/registerProviderModules';
 import { encodeVaultPathForSDK } from '@/providers/claude/history/ClaudeHistoryPathResolver';
+import { claudeProviderRegistration } from '@/providers/claude/registration';
+
+registerProviderModules([claudeProviderRegistration]);
 
 vi.mock('fs', async () => ({ ...await vi.importActual<typeof import('fs')>('fs') }));
 vi.mock('fs/promises', async () => ({ ...await vi.importActual<typeof import('fs/promises')>('fs/promises') }));

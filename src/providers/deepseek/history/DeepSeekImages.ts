@@ -11,7 +11,8 @@ export async function readDeepSeekImages(client: DeepSeekReader, sessionId: stri
     if (!isRecord(block.attachment) || typeof block.attachment.attachmentId !== 'string' || !block.attachment.attachmentId) {
       throw new Error('Malformed DeepSeek image reference.');
     }
-    const response = await client.call('session/attachment', { request: { sessionId, attachmentId: block.attachment.attachmentId } });
+    // dsh 0.2.2 reads the full image reference; 0.2.1 reads its id. Each ignores the other's field.
+    const response = await client.call('session/attachment', { request: { sessionId, attachmentId: block.attachment.attachmentId, attachment: block.attachment } });
     if (!isRecord(response) || !isRecord(response.attachment) || response.attachment.attachmentId !== block.attachment.attachmentId || typeof response.data !== 'string') throw new Error('Malformed DeepSeek image attachment.');
     const attachment = response.attachment;
     const mediaType = normalizeImageMediaType(attachment.mediaType);

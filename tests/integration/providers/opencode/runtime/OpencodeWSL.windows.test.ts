@@ -1,5 +1,4 @@
 // @test-ci {"inputs":["src/providers/opencode/**","tests/{unit,integration}/providers/opencode/**"]}
-import '@/providers';
 
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -23,13 +22,18 @@ import { ManagedStdioProcess } from '@/core/process/ManagedStdioProcess';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { ProviderSettingsCoordinator } from '@/core/providers/ProviderSettingsCoordinator';
 import { ProviderWorkspaceRegistry } from '@/core/providers/ProviderWorkspaceRegistry';
+import { registerProviderModules } from '@/core/providers/registerProviderModules';
 import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
 import { createClaudianAPI } from '@/features/chat/session-messaging/ClaudianAPI';
 import { SessionMessagingService } from '@/features/chat/session-messaging/SessionMessagingService';
+import { claudeProviderRegistration } from '@/providers/claude/registration';
 import { createOpencodeWorkspaceServices } from '@/providers/opencode/app/OpencodeWorkspaceServices';
 import { OpencodeHTTPSessionKernel } from '@/providers/opencode/execution/OpencodeHTTPSessionKernel';
 import { OpencodeSessionPersistence } from '@/providers/opencode/execution/OpencodeSessionPersistence';
+import { opencodeProviderRegistration } from '@/providers/opencode/registration';
 import { opencodeEnvironment, opencodeHostPath, opencodeTargetPath } from '@/providers/opencode/runtime/OpencodeExecutionTarget';
+
+registerProviderModules([claudeProviderRegistration, opencodeProviderRegistration]);
 
 // Observe the real wsl.exe children; the OS process boundary is not replaced.
 vi.mock('cross-spawn', async importOriginal => ({ default: vi.fn((await importOriginal<{ default: typeof spawn }>()).default) }));

@@ -1,5 +1,4 @@
 /** @vitest-environment jsdom */
-import '@/providers';
 
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
@@ -17,10 +16,15 @@ import spawn from 'cross-spawn';
 
 import type { ProviderExecutionLifecycleRegistry } from '@/core/execution';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
+import { registerProviderModules } from '@/core/providers/registerProviderModules';
 import type { ClaudianSettings } from '@/core/types';
 import { t } from '@/i18n/i18n';
+import { claudeProviderRegistration } from '@/providers/claude/registration';
 import { createPiWorkspaceServices, type PiWorkspaceServices } from '@/providers/pi/app/PiWorkspaceServices';
+import { piProviderRegistration } from '@/providers/pi/registration';
 import { getPiProviderSettings, updatePiProviderSettings } from '@/providers/pi/settings';
+
+registerProviderModules([claudeProviderRegistration, piProviderRegistration]);
 
 vi.mock('cross-spawn', () => ({ default: vi.fn() }));
 

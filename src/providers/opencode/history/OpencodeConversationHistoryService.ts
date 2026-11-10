@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 import { copyProviderHistoryState } from '@/core/providers/providerHistory';
 
 import { mergePersistedProviderState } from '../../../core/providers/providerState';
@@ -108,6 +110,39 @@ export class OpencodeConversationHistoryService implements ProviderConversationH
 
     this.#markNativeConversationContextEstablished(conversation);
     return conversation;
+  }
+
+  /**
+   * Observed only through a server already running on the binding's database. Session `updated`
+   * and `idle` cover turn boundaries; native rows also change in place (streamed content without
+   * a completion time), so the newest row contributes its whole serialized form.
+   */
+  async readNativeHistoryRevision(
+    conversation: ProviderHistoryInput,
+    vaultPath: string | null,
+    pathContext?: ProviderHistoryPathContext,
+  ): Promise<string | null> {
+    try {
+      const sessionId = this.resolveSessionIdForConversation(conversation);
+      const cwd = vaultPath ?? pathContext?.vaultPath;
+      const servers = sessionId && cwd ? await this.options.getServerService?.(pathContext) : null;
+      if (!sessionId || !cwd || !servers) return null;
+      const lease = await servers.acquireRunning(async () => {
+        const { cliPath, target, environment } = await this.resolveLaunch(cwd, pathContext);
+        const { accessible } = resolveOpencodeBindingDatabase(getOpencodeState(conversation.providerState).databasePath, environment, target);
+        if (!accessible || accessible === ':memory:') return null;
+        return { cliPath, cwd, environment: { ...environment, OPENCODE_DB: accessible }, target };
+      });
+      if (!lease) return null;
+      try {
+        const route = `/api/session/${encodeURIComponent(sessionId)}`;
+        const [session, page] = await Promise.all([lease.request(route), lease.request(`${route}/message?order=desc&limit=1`)]);
+        const time = isRecord(session) && isRecord(session.data) && isRecord(session.data.time) ? session.data.time : null;
+        if (!time || !isRecord(page) || !Array.isArray(page.data)) return null;
+        const newest = page.data[0] === undefined ? '' : createHash('sha256').update(JSON.stringify(page.data[0])).digest('base64url');
+        return JSON.stringify([time.updated ?? null, time.idle ?? null, newest]);
+      } finally { await lease.dispose(); }
+    } catch { return null; }
   }
 
   async #readSessionMessages(

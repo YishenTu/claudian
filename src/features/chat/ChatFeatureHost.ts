@@ -3,6 +3,7 @@ import type {
   Conversation,
   ConversationMeta,
   ConversationMutablePatch,
+  ConversationOrigin,
   ConversationSummary,
   ProjectMemoryOperations,
   ProjectMutations,
@@ -11,12 +12,15 @@ import type {
 } from '@/core/types';
 import type { ConversationLifecycle } from '@/features/chat/conversation/ConversationLifecycle';
 import type { ChatExecutionPersistence } from '@/features/chat/execution/ChatExecutionCoordinator';
-import type { SessionToolBinding } from '@/features/chat/session-messaging/SessionMessagingService';
+import type { SessionToolBinding } from '@/features/chat/execution/ChatExecutionCoordinator';
 import type { SessionRuntimePool } from '@/features/chat/sessions/SessionRuntimePool';
-import type { ChatTab, TabId, TabManagerViewHost } from '@/features/chat/tabs/ChatTab';
+import type { ChatTab, TabManagerViewHost } from '@/features/chat/tabs/ChatTab';
 import type { TabIdentity } from '@/features/chat/tabs/TabIdentity';
 import type { ZenModeSource } from '@/features/chat/zen/types';
 import type { FeatureHost } from '@/features/FeatureHost';
+
+/** Tab identifier type. */
+export type TabId = string;
 
 export interface ChatModelSelectionPort {
   beginIntent(): number;
@@ -73,13 +77,15 @@ export interface ChatViewHost extends ChatViewRefreshHost, TabManagerViewHost {
 }
 
 /** Session attachment and lookup; retirement and shutdown stay with the pool's main-owned callers. */
-export type ChatSessionRuntimes = Pick<SessionRuntimePool, 'awaitConversationCreations' | 'acquire' | 'ensure' | 'release' | 'get' | 'getAttachment' | 'holdDraft'>;
+export type ChatSessionRuntimes = Pick<SessionRuntimePool, 'awaitConversationCreations' | 'acquire' | 'revalidate' | 'ensure' | 'release' | 'get' | 'getAttachment' | 'holdDraft'>;
 
 /** Live project records, their mutations and memory; membership is written through `ConversationLifecycle`. */
 export type ChatProjects = ProjectReader & ProjectMutations & ProjectMemoryOperations;
 
 /** Application capabilities chat needs on top of the feature-neutral `FeatureHost`. */
 export interface ChatFeatureHost extends FeatureHost {
+  /** Advances when vault skills change, invalidating provider command caches. */
+  getAgentSkillResourceGeneration(): number;
   readonly sessionRuntimes: ChatSessionRuntimes;
   bindSessionTools(conversationId: string): SessionToolBinding;
   readonly chatModelSelection: ChatModelSelectionPort;
@@ -90,6 +96,7 @@ export interface ChatFeatureHost extends FeatureHost {
     linkedContentPath?: string;
     /** Kept only when it names a live project at creation. */
     projectId?: string;
+    origin?: ConversationOrigin;
   }): Promise<Conversation>;
   switchConversation(id: string): Promise<Conversation | null>;
   assignConversationToCurrentDevice(id: string): Promise<boolean>;

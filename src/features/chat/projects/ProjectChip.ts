@@ -3,6 +3,7 @@ import { Menu } from 'obsidian';
 import type { ProjectReader } from '@/core/types';
 import type { ComposerInfoRow } from '@/features/chat/composer/ComposerInfoRow';
 import type { ConversationController } from '@/features/chat/conversation/ConversationController';
+import { projectIconId } from '@/features/chat/projects/projectIcon';
 import { projectsForPicker } from '@/features/chat/projects/projectOrder';
 import { t } from '@/i18n/i18n';
 
@@ -34,8 +35,7 @@ export class ProjectChip {
     const label = project.name;
     this.infoRow.setProject({
       label,
-      // Obsidian aliases the legacy `folder` id to an open folder.
-      icon: 'lucide-folder',
+      icon: projectIconId(project),
       ariaLabel: t('chat.projects.chipLabel', { name: label }),
       ...(isDraft ? { hasPopup: 'menu' as const } : {}),
       // A started session's chip is fixed; a draft's is fixed only while its first turn creates the session.

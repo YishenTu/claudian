@@ -1,4 +1,6 @@
 // @test-ci {"native":true,"inputs":["tests/fixtures/providers/pi/**"]}
+import type { ChildProcess } from 'node:child_process';
+import { subscribe, unsubscribe } from 'node:diagnostics_channel';
 import * as fs from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import * as path from 'node:path';
@@ -17,8 +19,11 @@ describe('Pi execution kernel with an external protocol process', () => {
   let kernel: PiRPCSessionKernel;
   let events: PiRPCRecord[];
   let closed: Promise<Error | undefined>;
+  let nativeClosed: Promise<void>;
+  let removeNativeCloseListener: () => void = () => undefined;
 
   beforeEach(async () => {
+    removeNativeCloseListener = () => undefined;
     root = await fs.mkdtemp(path.join(tmpdir(), 'claudian-pi-kernel-'));
     await fs.writeFile(path.join(root, 'source.jsonl'), JSON.stringify({ type: 'session', version: 3, id: 'pi-source', cwd: root }) + '\n');
     events = [];
@@ -36,12 +41,37 @@ describe('Pi execution kernel with an external protocol process', () => {
       onExtensionChunk: () => undefined,
       onExtensionRequest: () => true,
     }, null);
-    kernel.start();
+    const children: ChildProcess[] = [];
+    const captureChild = (message: unknown) => {
+      children.push((message as { process: ChildProcess }).process);
+    };
+    subscribe('child_process', captureChild);
+    try {
+      kernel.start();
+    } finally {
+      unsubscribe('child_process', captureChild);
+    }
+    if (children.length !== 1) throw new Error('Expected kernel.start to spawn exactly one native child');
+    const child = children[0];
+    if (child.spawnfile !== process.execPath) throw new Error('Expected the kernel child to use the fixture Node executable');
+    if (child.spawnargs.length !== 2 || child.spawnargs[0] !== process.execPath
+      || child.spawnargs[1] !== path.resolve('tests/fixtures/providers/pi/PiSessionProcess.mjs')) {
+      throw new Error('Expected the kernel child to run the absolute PiSessionProcess fixture');
+    }
+    nativeClosed = new Promise(resolve => {
+      const onNativeClose = () => resolve();
+      child.once('close', onNativeClose);
+      removeNativeCloseListener = () => { child.off('close', onNativeClose); };
+    });
   });
 
   afterEach(async () => {
-    await kernel.shutdown();
-    await fs.rm(root, { recursive: true, force: true });
+    try {
+      await kernel.shutdown();
+    } finally {
+      removeNativeCloseListener();
+      await fs.rm(root, { recursive: true, force: true });
+    }
   });
 
   it('routes response payloads and streamed events through the real transport', async () => {
@@ -81,6 +111,8 @@ describe('Pi execution kernel with an external protocol process', () => {
   it('surfaces unexpected process exit to both pending work and the lifecycle observer', async () => {
     await expect(kernel.request('fixture_exit', {}, 3_000)).rejects.toThrow(/17|closed/i);
     await expect(closed).resolves.toEqual(expect.objectContaining({ message: expect.stringMatching(/17|closed/i) }));
+    // Process exit settles work before the independent stderr stream necessarily drains.
+    await nativeClosed;
     expect(kernel.getStderrSnapshot()).toContain('fixture requested exit');
   });
 });

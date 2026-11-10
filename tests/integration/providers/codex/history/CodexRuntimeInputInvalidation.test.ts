@@ -1,5 +1,3 @@
-import '@/providers';
-
 import { TEST_CODEX_CATALOG, TEST_CODEX_MODEL } from '@test/helpers/codexModels';
 import { createProviderHostFixture } from '@test/helpers/providerRuntimeHost';
 import { testDate } from '@test/helpers/testClock';
@@ -14,9 +12,14 @@ import type { ProviderSessionEvent } from '@/core/execution';
 import { SessionSnapshotState } from '@/core/execution/SessionSnapshotState';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { ProviderSettingsCoordinator } from '@/core/providers/ProviderSettingsCoordinator';
+import { registerProviderModules } from '@/core/providers/registerProviderModules';
 import type { Conversation } from '@/core/types';
 import { ExecutionSessionSupervisor } from '@/features/chat/execution/ExecutionSessionSupervisor';
+import { claudeProviderRegistration } from '@/providers/claude/registration';
 import { createCodexWorkspaceServices } from '@/providers/codex/app/CodexWorkspaceServices';
+import { codexProviderRegistration } from '@/providers/codex/registration';
+
+registerProviderModules([claudeProviderRegistration, codexProviderRegistration]);
 
 let codexHome: string;
 

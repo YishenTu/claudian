@@ -285,3 +285,21 @@ it('cleans context overrides by provider identity while preserving resolved alia
   expect(JSON.parse(content).customContextLimits).toEqual(expected);
   expect(restored.envSnippets).toEqual(settings.envSnippets);
 });
+
+it('keeps a prefixed Antigravity selection and its projections on save', async () => {
+  const settings = structuredClone(DEFAULT_CLAUDIAN_SETTINGS);
+  settings.providerConfigs.antigravity = { enabled: true, visibleModels: ['gemini-4-argon'] };
+  settings.savedProviderModel = { antigravity: 'antigravity/gemini-4-argon' };
+  settings.savedProviderEffort = { antigravity: 'high' };
+  settings.customContextLimits = { 'antigravity/gemini-4-argon': 128_000, 'antigravity/removed': 64_000 };
+  let content = '';
+  const storage = new ClaudianSettingsStorage({
+    exists: async () => Boolean(content), read: async () => content,
+    write: async (_path: string, value: string) => { content = value; }, delete: async () => undefined,
+  } as unknown as VaultFileAdapter, DEFAULT_CLAUDIAN_SETTINGS);
+  await storage.save(settings);
+  const saved = JSON.parse(content);
+  expect(saved.savedProviderModel.antigravity).toBe('antigravity/gemini-4-argon');
+  expect(saved.savedProviderEffort.antigravity).toBe('high');
+  expect(saved.customContextLimits).toEqual({ 'antigravity/gemini-4-argon': 128_000 });
+});

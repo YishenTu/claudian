@@ -1,5 +1,4 @@
 // @test-ci {"native":true,"inputs":["tests/helpers/providers/opencode/OpencodeNativePeer.cjs"]}
-import '@/providers';
 
 import { capturedSelectionPrompt, capturedSelections } from '@test/helpers/capturedSelections';
 import { createFixture, request, writingSkill } from '@test/helpers/providers/opencode/OpencodeHTTPExecutionFixture';
@@ -7,7 +6,12 @@ import { testDate } from '@test/helpers/testClock';
 
 import { type ProviderExecutionEvent } from '@/core/execution';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
+import { registerProviderModules } from '@/core/providers/registerProviderModules';
+import { claudeProviderRegistration } from '@/providers/claude/registration';
+import { opencodeProviderRegistration } from '@/providers/opencode/registration';
 import { getOpencodeProviderSettings } from '@/providers/opencode/settings';
+
+registerProviderModules([claudeProviderRegistration, opencodeProviderRegistration]);
 
 it.each([
   ['', 'prompt', '', {}],

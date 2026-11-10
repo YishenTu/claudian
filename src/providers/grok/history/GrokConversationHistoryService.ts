@@ -16,7 +16,7 @@ import {
 } from '../types';
 import { resolveGrokHistoryEnvironment } from './GrokHistoryEnvironment';
 import { resolveGrokSessionDirectory } from './GrokHistoryPathResolver';
-import { loadGrokHistory } from './GrokHistoryStore';
+import { loadGrokHistory, readGrokHistoryRevision } from './GrokHistoryStore';
 
 const GROK_PROVIDER_STATE_KEYS = [
   'sessionStoreKey',
@@ -119,6 +119,26 @@ export class GrokConversationHistoryService implements ProviderConversationHisto
       );
     }
     return conversation;
+  }
+
+  async readNativeHistoryRevision(
+    conversation: ProviderHistoryInput,
+    vaultPath: string | null,
+    pathContext?: ProviderHistoryEnvironment & Partial<ProviderHistoryPathContext>,
+  ): Promise<string | null> {
+    // Only the live session is observed; retired locators and pending forks have frozen history.
+    if (!conversation.sessionId || !pathContext) return null;
+    try {
+      const sessionDirectory = resolveGrokSessionDirectory(
+        parseGrokProviderState(conversation.providerState).sessionDirectory,
+        conversation.sessionId,
+        vaultPath,
+        await resolveGrokHistoryEnvironment({ ...pathContext, vaultPath }),
+      );
+      return sessionDirectory ? await readGrokHistoryRevision(sessionDirectory) : null;
+    } catch {
+      return null;
+    }
   }
 
   resolveSessionIdForConversation(conversation: ProviderHistoryInput | null): string | null {

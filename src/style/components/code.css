@@ -34,7 +34,7 @@ body.theme-light .claudian-message-content pre {
 
 .claudian-message-content code {
   font-family: var(--font-monospace);
-  font-size: 13px;
+  font-size: calc(13 * var(--claudian-font-px));
 }
 
 .claudian-container .claudian-message-content :not(pre) > code {
@@ -62,7 +62,7 @@ body.theme-light .claudian-message-content pre {
   top: 6px;
   inset-inline-end: 6px;
   padding: 2px 8px;
-  font-size: 12px;
+  font-size: calc(12 * var(--claudian-font-px));
   font-family: var(--font-monospace);
   color: var(--text-faint);
   background: var(--background-primary);
@@ -108,7 +108,7 @@ body.theme-light .claudian-message-content pre {
   top: 6px;
   inset-inline-end: 6px;
   padding: 4px 8px;
-  font-size: 11px;
+  font-size: calc(11 * var(--claudian-font-px));
   background: var(--background-primary);
   border: none;
   color: var(--text-muted);

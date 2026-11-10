@@ -22,7 +22,7 @@
   padding: 4px var(--claudian-session-inline-inset) 6px
     calc(var(--claudian-session-inline-inset) + var(--claudian-session-icon-size) + var(--claudian-session-icon-gap));
   color: var(--text-faint);
-  font-size: var(--font-ui-smaller);
+  font-size: calc(12 * var(--claudian-font-px));
 }
 
 /*

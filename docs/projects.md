@@ -2,7 +2,7 @@
 
 A project groups sessions that work toward one goal. Every session in a project shares the project's instructions and a memory file that the agents keep current, and the agents can find, read and message each other.
 
-A project has a name, instructions and a memory file. Sessions on any provider can be members, and a session belongs to at most one project.
+A project has a name, an optional icon, instructions and a memory file. Sessions on any provider can be members, and a session belongs to at most one project.
 
 ## What members get
 
@@ -54,6 +54,7 @@ Create a project with the `+` in the session list's **Projects** header, or with
 | Field | Notes |
 |---|---|
 | Name | Shown in the session list and in member sessions. Required. |
+| Icon | Click the icon before the name to pick one of Obsidian's icons; search narrows the list. Shown on the project's header in the session list and on the project chip under the composer. Without one, the project shows a folder that opens with its group; a chosen icon stays the same and dims while its group is collapsed. |
 | Instructions | Added to every member's system prompt from its next turn. No length limit. |
 | Memory file | Vault path of the memory file. Defaults to `.claudian/projects/<project-name>/MEMORY.md`, based on the name; a missing `.md` extension is added. The path must be inside the vault and must not already be used by a file or another project. |
 
@@ -75,8 +76,14 @@ Each project in the **Projects** section has a collapse toggle, a New button and
 | Pin project / Unpin project | Moves the project, with all its members, into Pinned. |
 | Edit project | Opens the editor for the name, instructions and memory file. |
 | Open project memory | Opens the memory window. |
-| Archive all sessions | Archives the project's sessions, skipping running ones. The project stays listed until you delete it. |
+| Archive project | Archives the project and its member sessions. Disabled while any member is running. |
 | Delete project | Deletes the project after confirmation. See below. |
+
+After a successful archive, the project and its sessions appear in the archive
+view instead of the active list. There, the project's menu offers **Restore
+project** and **Delete project**. Choose **Restore project** to restore the project
+and its archived sessions. If a member cannot be archived, the project stays
+active.
 
 Drag a project row up or down in the sidebar to reorder projects. Pinned projects stay above the others, and each group reorders on its own. New projects appear at the top until you move them. In single-pane mode, the history drop-up shows the same Projects section and actions in the same order.
 

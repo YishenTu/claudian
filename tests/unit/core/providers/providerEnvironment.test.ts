@@ -38,15 +38,22 @@ describe('providerEnvironment', () => {
 
     it('keeps comments attached to the next owned variable when migrating', () => {
       const result = classifyEnvironmentVariablesByOwnership([
+        '# first Claude comment',
+        'ANTHROPIC_MODEL=first',
         '# shared comment',
         'PATH=/usr/local/bin',
         '',
         '# claude comment',
-        'ANTHROPIC_MODEL=claude-custom',
+        'ANTHROPIC_DEFAULT_SONNET_MODEL=claude-custom',
+        '# trailing Claude comment',
+        '',
       ].join('\n'));
 
       expect(result.shared).toBe(['# shared comment', 'PATH=/usr/local/bin'].join('\n'));
-      expect(result.providers.claude).toBe(['', '# claude comment', 'ANTHROPIC_MODEL=claude-custom'].join('\n'));
+      expect(result.providers.claude).toBe([
+        '# first Claude comment', 'ANTHROPIC_MODEL=first', '', '# claude comment',
+        'ANTHROPIC_DEFAULT_SONNET_MODEL=claude-custom', '# trailing Claude comment', '',
+      ].join('\n'));
     });
   });
 
@@ -172,10 +179,14 @@ describe('providerEnvironment', () => {
       ]);
     });
 
-    it('uses the fallback scope only when there is no inferable content', () => {
-      expect(getEnvironmentScopeUpdates('', 'provider:claude')).toEqual([
-        { scope: 'provider:claude', envText: '' },
+    it.each(['', ' \n# Claude only\n\n'])('preserves exact fallback text when there is no inferable content (%o)', envText => {
+      expect(getEnvironmentScopeUpdates(envText, 'provider:claude')).toEqual([
+        { scope: 'provider:claude', envText },
       ]);
+    });
+
+    it('does not invent shared updates for comments without a fallback', () => {
+      expect(getEnvironmentScopeUpdates(' \n# Unscoped comment\n\n')).toEqual([]);
     });
   });
 });

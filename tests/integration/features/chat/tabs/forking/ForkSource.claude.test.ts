@@ -1,3 +1,5 @@
+import '@/providers';
+
 import * as sdk from '@anthropic-ai/claude-agent-sdk';
 import { createForkTestEnvironment, type ForkTestEnvironment } from '@test/helpers/features/chat/ProviderForkTestHarness';
 

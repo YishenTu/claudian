@@ -1,5 +1,3 @@
-import '@/providers';
-
 import { NativePeer } from '@test/helpers/deepseek/NativePeer';
 import { nativeRequest } from '@test/helpers/deepseek/NativeRequest';
 import { createFeatureHostFixture } from '@test/helpers/FeatureHostFixture';
@@ -15,11 +13,16 @@ import { getInstallationKey } from '@/core/device/InstallationKey';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { ProviderSettingsCoordinator } from '@/core/providers/ProviderSettingsCoordinator';
 import { ProviderWorkspaceRegistry } from '@/core/providers/ProviderWorkspaceRegistry';
+import { registerProviderModules } from '@/core/providers/registerProviderModules';
 import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
 import { createClaudianAPI } from '@/features/chat/session-messaging/ClaudianAPI';
 import { SessionMessagingService } from '@/features/chat/session-messaging/SessionMessagingService';
+import { claudeProviderRegistration } from '@/providers/claude/registration';
 import { createDeepSeekWorkspaceServices } from '@/providers/deepseek/app/DeepSeekWorkspaceServices';
+import { deepseekProviderRegistration } from '@/providers/deepseek/registration';
 import { updateDeepSeekProviderSettings } from '@/providers/deepseek/settings';
+
+registerProviderModules([claudeProviderRegistration, deepseekProviderRegistration]);
 
 vi.mock('cross-spawn', () => ({ default: vi.fn() }));
 

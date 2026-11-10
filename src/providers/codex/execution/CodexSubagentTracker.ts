@@ -25,10 +25,6 @@ export class CodexSubagentTracker {
     private readonly workingDirectory?: () => string,
   ) {}
 
-  hasBackgroundWork(): boolean {
-    return [...this.agents.values()].some(agent => agent.info.status === 'running');
-  }
-
   threadClosed(threadId: string): void {
     const agent = this.agents.get(threadId);
     if (!agent) return;
@@ -42,7 +38,8 @@ export class CodexSubagentTracker {
   seed(thread: Thread): void {
     for (const turn of thread.turns) {
       for (const item of turn.items) {
-        if (item.type === 'subAgentActivity') this.activity(item, turn.id, false);
+        // A child's message back to this thread targets the parent, not a new child.
+        if (item.type === 'subAgentActivity' && item.agentThreadId !== thread.id) this.activity(item, turn.id, false);
       }
     }
   }

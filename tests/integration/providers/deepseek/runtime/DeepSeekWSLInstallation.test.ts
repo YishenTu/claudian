@@ -58,6 +58,32 @@ describe.skipIf(process.platform === 'win32')('DeepSeek Linux npm entry discover
     for (const request of wsl.requests) expect(request.args).toEqual(expect.arrayContaining(['--distribution', 'Ubuntu', '--cd', '/mnt/c/Vault']));
   });
 
+  it('resolves the installation when every WSL launch outlasts a native probe deadline', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      wsl.launchDelayMs = 6_000;
+      let launched!: () => void;
+      let launch = new Promise<void>(resolve => { launched = resolve; });
+      vi.mocked(spawn).mockImplementation((...args: Parameters<typeof wsl.spawn>) => {
+        const child = wsl.spawn(...args);
+        launched();
+        return child;
+      });
+      const result = probe();
+      // Advance each launch's latency only once it has started, so no probe deadline elapses early.
+      while (await Promise.race([launch.then(() => true), result.then(() => false)])) {
+        launch = new Promise<void>(resolve => { launched = resolve; });
+        await vi.advanceTimersByTimeAsync(6_000);
+      }
+      expect(await result).toEqual({
+        installation: { path: join(root, 'bin/dsh'), version: '1.2.3', source: 'auto' }, nodePath: '/usr/bin/node', entryPath: entry,
+      });
+      expect(wsl.requests).toHaveLength(5);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it.each([
     ['an unrelated package', { name: 'desktop-wrapper', bin: { dsh: 'lib/bin.js' } }],
     ['a package without a dsh bin', { name: '@deepseek-ai/dsh', bin: { other: 'lib/bin.js' } }],

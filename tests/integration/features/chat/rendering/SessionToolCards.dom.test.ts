@@ -123,7 +123,7 @@ it('streams a live send card whose recipient, requested model and message come f
   const state = new ChatState();
   const stream = new ToolCallStream({
     state, plugin: { app: {}, settings: {} } as never,
-    indicator: { show: () => undefined }, getMessagesEl: () => h.messagesEl, scrollToBottom: () => undefined,
+    indicator: { show: () => undefined }, getMessagesEl: () => h.messagesEl,
   });
   const message = assistant([]);
   const contentEl = h.renderer.addMessage(message).createDiv();

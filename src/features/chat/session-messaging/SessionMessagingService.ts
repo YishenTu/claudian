@@ -1,4 +1,3 @@
-import type { ProviderSessionToolPort } from '@/core/execution';
 import {
   findProviderModelOption,
   resolveConversationModel,
@@ -23,7 +22,9 @@ import type {
 import type { ChatMessage, Conversation, ConversationMeta } from '@/core/types';
 import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
 import { getChatSettingsSnapshot } from '@/features/chat/ChatSettings';
+import type { SessionToolBinding } from '@/features/chat/execution/ChatExecutionCoordinator';
 import { formatLastReply, formatSessionSnapshot } from '@/features/chat/session-messaging/formatSessionSnapshot';
+import type { ChatSessionRuntime } from '@/features/chat/sessions/ChatSessionRuntime';
 import { setSessionReasoningSelection } from '@/features/chat/sessions/sessionSettings';
 import { throwIfAborted } from '@/utils/abort';
 
@@ -38,11 +39,6 @@ export interface ClientSendOptions {
   /** Required unless `mode` is `interrupt`, which without text only stops the session. */
   readonly text?: string;
   readonly mode?: 'queue' | SessionToolSendMode;
-}
-
-export interface SessionToolBinding {
-  readonly port: ProviderSessionToolPort;
-  dispose(): void;
 }
 
 /** Owns caller-bound tool and outside-client operations; recipient execution belongs to its session runtime. */
@@ -83,7 +79,7 @@ export class SessionMessagingService {
       const host = this.deps.getHost();
       if (!host.sessionRuntimes.get(sessionId)) await host.sessionRuntimes.awaitConversationCreations();
       const target = await this.resolve(sessionId, signal);
-      const mailbox = host.sessionRuntimes.ensure({ conversationId: target.id, providerId: target.providerId, draftModel: null }).mailbox;
+      const mailbox = (await this.ensureRecipient(target, signal)).mailbox;
       if (!mailbox) throw new Error('The target session cannot receive messages');
       return mailbox.deliver({ message: text === undefined ? null : { text }, ...(mode === 'queue' ? {} : { mode }), signal });
     });
@@ -198,6 +194,17 @@ export class SessionMessagingService {
       : runtime?.isWorking ? 'running' : 'idle';
   }
 
+  private async ensureRecipient(target: ConversationMeta, signal: AbortSignal): Promise<ChatSessionRuntime> {
+    const { sessionRuntimes } = this.deps.getHost();
+    // Check while the recipient is still idle, before the mailbox admits pending work. A recipient open in a
+    // tab, even a hidden one, keeps its model: a changed history is loaded again in place before delivery,
+    // and messages arriving meanwhile join that refresh.
+    const revalidation = sessionRuntimes.revalidate(target.id, sessionRuntimes.getAttachment(target.id) ?? undefined);
+    if (revalidation) await revalidation;
+    throwIfAborted(signal, 'Session tool call was cancelled');
+    return sessionRuntimes.ensure({ conversationId: target.id, providerId: target.providerId, draftModel: null });
+  }
+
   private async send(callerId: string, args: SessionToolSendMessageArgs, signal: AbortSignal): Promise<SessionToolSendMessageResult> {
     const caller = await this.resolve(callerId, signal);
     const host = this.deps.getHost();
@@ -216,6 +223,7 @@ export class SessionMessagingService {
         providerId: choice.providerId,
         selectedModel: choice.model,
         ...(caller.projectId ? { projectId: caller.projectId } : {}),
+        origin: { kind: 'session-tool', conversationId: caller.id },
       });
       throwIfAborted(signal, 'Session tool call was cancelled');
       target = await this.resolve(created.id, signal);
@@ -228,7 +236,7 @@ export class SessionMessagingService {
     let model: string | undefined;
     if (args.sessionId) ({ model, reasoning } = resolveSessionSwitch(args, target, host));
     throwIfAborted(signal, 'Session tool call was cancelled');
-    const runtime = host.sessionRuntimes.ensure({ conversationId: target.id, providerId: target.providerId, draftModel: null });
+    const runtime = await this.ensureRecipient(target, signal);
     const mailbox = runtime.mailbox;
     if (!mailbox) throw new Error('The target session cannot receive messages');
     const recipient = { sessionId: target.id, title: target.title, provider: target.providerId };

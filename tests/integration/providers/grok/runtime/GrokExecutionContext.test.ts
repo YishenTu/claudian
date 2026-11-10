@@ -1,12 +1,15 @@
-import '@/providers';
-
 import { createProviderHostFixture } from '@test/helpers/providerRuntimeHost';
 import { readWSLExec } from '@test/helpers/WSLLaunch';
 
 import { getInstallationKey } from '@/core/device/InstallationKey';
 import { buildTargetLaunchSpec } from '@/core/process/execution-target/TargetLaunchSpec';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
+import { registerProviderModules } from '@/core/providers/registerProviderModules';
+import { claudeProviderRegistration } from '@/providers/claude/registration';
+import { grokProviderRegistration } from '@/providers/grok/registration';
 import { resolveGrokExecutionContext } from '@/providers/grok/runtime/GrokExecutionContext';
+
+registerProviderModules([claudeProviderRegistration, grokProviderRegistration]);
 
 const platform = Object.getOwnPropertyDescriptor(process, 'platform')!;
 beforeEach(() => { Object.defineProperty(process, 'platform', { ...platform, value: 'win32' }); });
@@ -89,7 +92,8 @@ it('rejects a vault the selected distro cannot address', async () => {
 });
 
 it('keeps native working directories and the resolved native CLI', async () => {
-  Object.defineProperty(process, 'platform', platform);
+  // Pin a non-Windows host: on real win32 the native target is `native-windows`, not `host-native`.
+  Object.defineProperty(process, 'platform', { ...platform, value: 'linux' });
   const { host } = await createProviderHostFixture({ settings: { providerConfigs: { grok: { enabled: true } } } });
   expect(await ProviderRegistry.resolveExecutionWorkingDirectory(host, 'grok', '/vault')).toBe('/vault');
   const context = await resolveGrokExecutionContext(host.getRuntimeHost('grok'), '/vault');

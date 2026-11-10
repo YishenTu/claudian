@@ -61,6 +61,20 @@ export class DeepSeekConversationHistoryService implements ProviderConversationH
     });
   }
 
+  /** The committed sequence of a live session, read cold and only from a Host that is already running. */
+  async readNativeHistoryRevision(input: ProviderHistoryInput, _vaultPath: string | null, context?: ProviderHistoryPathContext): Promise<string | null> {
+    if (!input.sessionId || this.isPendingForkConversation(input)) return null;
+    const id = input.sessionId;
+    try {
+      const host = await this.resolveHost(context);
+      const asOfSeq = await host.readIfRunning((reader, home, execution) => {
+        this.assertSameHome(input, home, execution);
+        return readDeepSeekProjection(reader, id).then(projection => projection.asOfSeq);
+      });
+      return asOfSeq === undefined ? null : `seq:${asOfSeq}`;
+    } catch { return null; }
+  }
+
   buildForkProviderState(sourceSessionId: string, resumeAt: string, sourceProviderState?: Record<string, unknown>): Record<string, unknown> {
     const source = decodeDeepSeekState(sourceProviderState);
     if (!source) throw new Error('DeepSeek native storage and preset identity are required for a fork.');
@@ -74,10 +88,14 @@ export class DeepSeekConversationHistoryService implements ProviderConversationH
 
   private async read<T>(input: ProviderHistoryInput, context: ProviderHistoryPathContext | undefined, operation: (client: DeepSeekReader, execution?: DeepSeekExecutionContext) => Promise<T>): Promise<T> {
     const host = await this.resolveHost(context);
-    const state = decodeDeepSeekState(input.providerState);
     return host.read((reader, home, execution) => {
-      if (state && !isSameDeepSeekHome(state.home, home, execution?.target.platformOs === 'linux' ? 'linux' : undefined)) throw new Error('DeepSeek history belongs to a different native store. Restore the original store binding before continuing.');
+      this.assertSameHome(input, home, execution);
       return operation(reader, execution);
     });
+  }
+
+  private assertSameHome(input: ProviderHistoryInput, home: string, execution?: DeepSeekExecutionContext): void {
+    const state = decodeDeepSeekState(input.providerState);
+    if (state && !isSameDeepSeekHome(state.home, home, execution?.target.platformOs === 'linux' ? 'linux' : undefined)) throw new Error('DeepSeek history belongs to a different native store. Restore the original store binding before continuing.');
   }
 }

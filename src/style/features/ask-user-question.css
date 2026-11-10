@@ -8,7 +8,7 @@
   display: flex;
   flex-direction: column;
   font-family: var(--font-interface);
-  font-size: var(--font-ui-small);
+  font-size: calc(13 * var(--claudian-font-px));
   line-height: 1.45;
   color: var(--text-normal);
   border: 1px solid var(--background-modifier-border);
@@ -23,7 +23,7 @@
 
 .claudian-ask-inline-title {
   padding: 10px 12px 0;
-  font-size: var(--font-ui-smaller);
+  font-size: calc(12 * var(--claudian-font-px));
   color: var(--text-faint);
 }
 
@@ -90,7 +90,7 @@ button.claudian-ask-tab--submit.is-ready {
 }
 
 .claudian-ask-tab-step {
-  font-size: 10px;
+  font-size: calc(10 * var(--claudian-font-px));
   color: var(--color-green);
 }
 
@@ -138,7 +138,7 @@ button.claudian-ask-tab--submit.is-ready {
   width: 100%;
   padding: 6px 8px;
   border-radius: 6px;
-  line-height: 20px;
+  line-height: calc(20 * var(--claudian-font-px));
   white-space: normal;
   cursor: pointer;
   color: var(--text-normal);
@@ -181,7 +181,7 @@ button.claudian-ask-item:is(:hover, .is-focused) {
 
 .claudian-ask-item-desc {
   color: var(--text-muted);
-  font-size: var(--font-ui-smaller);
+  font-size: calc(12 * var(--claudian-font-px));
   overflow-wrap: anywhere;
 }
 
@@ -296,7 +296,7 @@ button.claudian-ask-item:is(:hover, .is-focused) {
 }
 
 .claudian-tool-content .claudian-ask-review {
-  font-size: var(--font-ui-small);
+  font-size: calc(13 * var(--claudian-font-px));
 }
 
 .claudian-ask-review:last-child {
@@ -425,13 +425,13 @@ button.claudian-ask-action.claudian-ask-action--primary .claudian-ask-item-label
 
 .claudian-ask-approval-reason {
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: calc(12 * var(--claudian-font-px));
   margin-bottom: 6px;
 }
 
 .claudian-ask-approval-blocked-path {
   font-family: var(--font-monospace);
-  font-size: 11px;
+  font-size: calc(11 * var(--claudian-font-px));
   color: var(--text-muted);
   padding: 3px 6px;
   background: var(--background-primary-alt);
@@ -442,7 +442,7 @@ button.claudian-ask-action.claudian-ask-action--primary .claudian-ask-item-label
 
 .claudian-ask-approval-agent {
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: calc(12 * var(--claudian-font-px));
   margin-bottom: 6px;
 }
 
@@ -454,7 +454,7 @@ button.claudian-ask-action.claudian-ask-action--primary .claudian-ask-item-label
   background: var(--background-primary-alt);
   border-radius: 6px;
   font-family: var(--font-monospace);
-  font-size: 12px;
+  font-size: calc(12 * var(--claudian-font-px));
   word-break: break-all;
 }
 

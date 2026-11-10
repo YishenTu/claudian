@@ -1,4 +1,4 @@
-// @test-ci {"native":true,"inputs":["tests/fixtures/providers/deepseek/runtime/**"]}
+// @test-ci {"native":true,"inputs":["tests/fixtures/providers/deepseek/runtime/**","tests/helpers/deepseek/NativePluginHost.mjs"]}
 import * as childProcess from 'node:child_process';
 import { realpathSync } from 'node:fs';
 import { access, chmod, copyFile, link, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
@@ -45,7 +45,8 @@ describe('native Host process', () => {
   afterEach(async () => {
     vi.restoreAllMocks();
     await peer.close();
-    await rm(root, { recursive: true, force: true });
+    // Windows can hold an exited process's executable briefly after exit.
+    await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
 
   const start = (mode: string, extra: NodeJS.ProcessEnv = {}, signal = new AbortController().signal): Promise<DeepSeekHostProcess> => DeepSeekHostProcess.start({
@@ -251,10 +252,12 @@ describe('native Host process', () => {
 
   it('stops a Host that never becomes ready when startup is cancelled or times out', async () => {
     const cancel = new AbortController();
-    const cancelled = start('hang', {}, cancel.signal);
+    const cancelled = start('hang', { FAKE_DSH_INTERRUPTS: join(root, 'interrupts.log') }, cancel.signal);
     const first = await launched();
     cancel.abort();
     await expect(cancelled).rejects.toThrow('DeepSeek startup cancelled.');
+    // An abandoned startup still releases native's locks through its own interrupt rather than a kill.
+    expect(await readFile(join(root, 'interrupts.log'), 'utf8')).toBe(`${JSON.stringify({ pid: first.pid, by: 'owner' })}\n`);
     await expectGone(first);
 
     await rm(log);
@@ -319,7 +322,7 @@ it('runs the WSL CI fixture locally through real authenticated HTTP/WebSocket an
     }, new AbortController().signal);
     await child.writePrompt('root', 'fixture prompt'); await child.writeCodeMode(true);
     const withdraw = await child.offerEphemeralFork('root', 7);
-    expect(await child.client.call('fixture/inspect')).toMatchObject({ prompt: 'fixture prompt', presentation: ['both'],
+    expect(await child.client.call('fixture/inspect')).toMatchObject({ prompt: 'fixture prompt', presentation: ['root present both'],
       forks: [{ parent: 'root', atSeq: 7 }], spill: 'Linux artifact', attachment: 'Linux artifact' });
     expect(await child.client.call('fixture/tool', { id: 'one', caller: 'root', tool: 'claudian_list_destinations', input: {} }))
       .toEqual({ isError: false, text: 'root' });

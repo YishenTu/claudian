@@ -14,11 +14,10 @@ const nativeCapabilities = ProviderRegistry.getCapabilities('claude');
 beforeEach(() => {
   vi.spyOn(ProviderRegistry, 'getCapabilities').mockReturnValue({ ...nativeCapabilities, supportsTurnSteer: true });
 });
-afterEach(() => vi.restoreAllMocks());
-
+// Restore timers for top-level tests too: leaked fake timers stall Vitest's async-leak teardown.
+afterEach(() => { vi.restoreAllMocks(); vi.useRealTimers(); });
 
 describe('TurnQueue', () => {
-  afterEach(() => { vi.restoreAllMocks(); vi.useRealTimers(); });
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(ProviderRegistry.getCapabilities).mockReturnValue({

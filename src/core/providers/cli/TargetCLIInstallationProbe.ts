@@ -2,7 +2,7 @@ import * as path from 'node:path';
 
 import { stripSurroundingQuotes } from '@/core/process/cliPath';
 import { buildTargetLaunchSpec, type BuildTargetLaunchSpecOptions } from '@/core/process/execution-target/TargetLaunchSpec';
-import { runProcessProbe } from '@/core/process/ProcessProbe';
+import { runProcessProbe, WSL_PROCESS_PROBE_TIMEOUT_MS } from '@/core/process/ProcessProbe';
 import { type CLIInstallation, parseCLIVersion, probeCLIInstallation } from '@/core/providers/cli/CLIInstallationProbe';
 
 export interface TargetCLIInstallationProbeOptions extends Omit<BuildTargetLaunchSpecOptions, 'command'> {
@@ -20,7 +20,7 @@ export async function probeTargetCLIInstallation(options: TargetCLIInstallationP
   const probe = (spec: ReturnType<typeof launch>) => runProcessProbe({
     command: spec.command, args: spec.args, cwd: spec.spawnCwd, env: spec.env,
     windowsVerbatimArguments: spec.windowsVerbatimArguments,
-  });
+  }, WSL_PROCESS_PROBE_TIMEOUT_MS);
   const lookup = launch('/bin/sh', [
     '-c', 'candidate=$1; case "$candidate" in \'~/\'*) candidate=$HOME/${candidate#??};; esac; resolved=$(command -v -- "$candidate") || exit 1; test -f "$resolved" && test -x "$resolved" || exit 1; printf "%s\\n" "$resolved"',
     'claudian-cli-probe', options.command,

@@ -1,5 +1,4 @@
 /** @vitest-environment jsdom */
-import '@/providers';
 
 import { axe } from '@test/helpers/accessibility';
 import { createProviderHostFixture } from '@test/helpers/providerRuntimeHost';
@@ -9,9 +8,13 @@ import { fireEvent, waitFor, within } from '@testing-library/dom';
 import spawn from 'cross-spawn';
 
 import { getInstallationKey } from '@/core/device/InstallationKey';
+import { registerProviderModules } from '@/core/providers/registerProviderModules';
 import type { ProviderCLIResolutionContext } from '@/core/providers/types';
 import { createClaudeWorkspaceServices } from '@/providers/claude/app/ClaudeWorkspaceServices';
+import { claudeProviderRegistration } from '@/providers/claude/registration';
 import { getClaudeProviderSettings } from '@/providers/claude/settings';
+
+registerProviderModules([claudeProviderRegistration]);
 
 vi.mock('cross-spawn', () => ({ default: vi.fn() }));
 

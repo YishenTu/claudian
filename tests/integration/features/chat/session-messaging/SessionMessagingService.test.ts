@@ -15,6 +15,8 @@ import { App } from 'obsidian';
 import { ConversationRepository } from '@/app/conversations/ConversationRepository';
 import type { ConversationPersistence } from '@/app/storage/ConversationPersistenceStore';
 import { type ProviderExecutionRequest } from '@/core/execution';
+import { buildSystemPrompt } from '@/core/prompt/mainAgent';
+import { renderProjectMemberInstructions } from '@/core/prompt/projectPrompt';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { ProviderSettingsCoordinator } from '@/core/providers/ProviderSettingsCoordinator';
 import { ProviderWorkspaceRegistry } from '@/core/providers/ProviderWorkspaceRegistry';
@@ -167,12 +169,17 @@ it('lists enabled providers with available models, new-session defaults and reas
   expect(h.pool.getAll()).toHaveLength(0);
 });
 
-it('delivers to a cold headless recipient with caller provenance and no composer capture', async () => {
-  const h = (await setup());
+it('delivers to a cold headless recipient with its current project and caller provenance', async () => {
+  const record = projectRecord({ id: 'recipient-project', instructions: 'Review the current project.' });
+  const h = (await setup({ members: { recipient: record.id }, projects: createProjectsFake([record]) }));
   expect(await h.binding.port.send({ sessionId: 'recipient', text: 'Review this' }, signal()))
     .toEqual({ sessionId: 'recipient', title: 'recipient', provider: 'claude', status: 'started' });
   await waitFor(() => expect(h.backend.sessions[0]?.requests).toHaveLength(1));
   expect(decodeSessionMessage(requestText(h.backend.latest.requests[0]))).toEqual({ from: 'Research', sessionId: 'sender', text: 'Review this' });
+  expect(h.backend.latest.requests[0].configuration.systemInstructions).toEqual({
+    kind: 'main-agent', projectId: record.id,
+    instructions: buildSystemPrompt({ vaultPath: '/vault', sessionInstructions: renderProjectMemberInstructions(record) }),
+  });
   expect(h.backend.latest.config.sessionTools).toBeDefined();
   expect(h.pool.getAttachment('recipient')).toBeNull();
   h.backend.latest.complete();
@@ -363,7 +370,9 @@ it('applies an explicit model and reasoning to the new session before its first 
   const h = (await setup());
   expect(await h.binding.port.send({ text: 'New task', provider: 'claude', model: 'claude-sonnet-4-5', reasoning: 'low' }, signal()))
     .toEqual({ sessionId: 'created', title: 'created', provider: 'claude', status: 'started' });
-  expect(h.host.createConversation).toHaveBeenCalledWith({ providerId: 'claude', selectedModel: 'claude-code/claude-sonnet-4-5' });
+  expect(h.host.createConversation).toHaveBeenCalledWith({
+    providerId: 'claude', selectedModel: 'claude-code/claude-sonnet-4-5', origin: { kind: 'session-tool', conversationId: 'sender' },
+  });
   await waitFor(() => expect(h.backend.sessions[0]?.requests).toHaveLength(1));
   expect(modelChoice(h.backend.latest.requests[0])).toEqual({ model: 'claude-code/claude-sonnet-4-5', reasoning: 'low' });
   // The session-owned choice does not rewrite the user's saved effort.
@@ -433,7 +442,9 @@ it('creates a headless session using the selected default without mutating the f
   const h = (await setup());
   const seed = structuredClone(h.host.settings.lastSelectedChatModel);
   expect(await h.binding.port.send({ text: 'New task' }, signal())).toEqual({ sessionId: 'created', title: 'created', provider: 'claude', status: 'started' });
-  expect(h.host.createConversation).toHaveBeenCalledWith({ providerId: 'claude', selectedModel: 'claude-code/claude-sonnet-4-5' });
+  expect(h.host.createConversation).toHaveBeenCalledWith({
+    providerId: 'claude', selectedModel: 'claude-code/claude-sonnet-4-5', origin: { kind: 'session-tool', conversationId: 'sender' },
+  });
   expect(h.host.settings.lastSelectedChatModel).toEqual(seed);
   expect(h.pool.getAttachment('created')).toBeNull();
   await waitFor(() => expect(h.backend.sessions[0]?.requests).toHaveLength(1));
@@ -581,6 +592,10 @@ describe('outside-client API', () => {
 
     expect(model.state.messages.some(message => message.responseContinuationOf !== undefined)).toBe(true);
     expect(await api.read('recipient')).toBe(expected);
+    const snapshot = await h.binding.port.read({ sessionId: 'recipient' }, signal());
+    expect(snapshot).toMatchObject({ fromTurn: 1, toTurn: 1, totalTurns: 1 });
+    expect(snapshot.content.slice(snapshot.content.indexOf('## T1 user\n')))
+      .toBe(`## T1 user\nInspect the note\n\n## T1 assistant\n${expected}\n`);
   });
 
   it('delivers client text as the user\'s own prompt, reports the active session, and reads the finished reply', async () => {

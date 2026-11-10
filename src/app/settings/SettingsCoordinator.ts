@@ -1,3 +1,5 @@
+import { SerialQueue } from '@/utils/SerialQueue';
+
 export type SettingsMutation<T extends object> = (
   settings: T,
 ) => void | Promise<void>;
@@ -32,7 +34,7 @@ function publishSettings<T extends object>(settings: T, snapshot: T): void {
 }
 
 export class SettingsCoordinator<T extends object> {
-  private tail: Promise<void> = Promise.resolve();
+  private readonly queue = new SerialQueue();
 
   constructor(
     private readonly settings: T,
@@ -72,9 +74,7 @@ export class SettingsCoordinator<T extends object> {
   }
 
   private enqueue(operation: () => Promise<void>): Promise<void> {
-    const result = this.tail.then(operation);
-    this.tail = result.catch(() => undefined);
-    return result;
+    return this.queue.run(operation);
   }
 
   #enqueueTransactional(

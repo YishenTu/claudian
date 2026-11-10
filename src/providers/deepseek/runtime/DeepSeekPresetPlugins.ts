@@ -68,13 +68,12 @@ export function buildDeepSeekPresetPlugins(
   return [
     {
       id: 'claudian-compatibility', name: paths.compatibility,
-      config: { promptDirectory: paths.promptDirectory, ...(auxiliary ? { allow } : { codeModeFile: paths.codeModeFile }) },
+      config: { promptDirectory: paths.promptDirectory, ...(auxiliary ? { allow } : { codeModeFile: paths.codeModeFile, listAgents: true }) },
     },
-    // Chat presets present tools per agent from the live code-mode preference instead.
-    ...(auxiliary ? [plugin('agent-tool-presentation', { mode: 'native' })] : []),
     plugin('agent-instructions', { maxBytes: 65536 }),
     plugin('time-context'),
-    plugin('tool-fs'),
+    // apply_patch is opt-in; auxiliary presets' `allow` list still hides it.
+    plugin('tool-fs', { applyPatch: true }),
     plugin('tool-fs-search', { sampleOverCapGlobResults: false }),
     // Read-only tasks (Inline Edit) take a user's `/skill` gestures; their `allow` policy still hides the skill tool.
     ...(preset !== 'claudian-passive' ? [plugin('skill-filesystem'), plugin('tool-skill')] : []),
@@ -83,7 +82,6 @@ export function buildDeepSeekPresetPlugins(
       plugin(platform === 'win32' ? 'tool-pwsh' : 'tool-bash'),
       plugin('tool-jobs'),
       plugin('tool-subagent-control'),
-      { id: 'tool-subagent-list-agents', name: '@deepseek-ai/dsh-tool-subagent-control/list-agents' },
       plugin('tool-subagent', { provider: 'spawn', toolName: 'subagent', backgroundMode: 'continuable', modelSelectionSettings: false }),
       { ...plugin('tool-subagent', { provider: 'fork', toolName: 'subagent_fork', backgroundMode: 'continuable', modelSelectionSettings: false }), id: 'tool-subagent-fork' },
       plugin('tool-ask-user'),

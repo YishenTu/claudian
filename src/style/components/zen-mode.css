@@ -241,7 +241,7 @@
   min-width: 0;
   overflow: hidden;
   color: var(--text-muted);
-  font-size: var(--font-ui-small);
+  font-size: calc(13 * var(--claudian-font-px));
   text-overflow: ellipsis;
   white-space: nowrap;
 }

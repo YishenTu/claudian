@@ -278,3 +278,76 @@
 .claudian-project-modal .claudian-project-memory-setting .claudian-setting-validation {
   flex-basis: 100%;
 }
+
+/*
+ * The icon button sits before the name. Its panel drops below the whole Name row and aligns to the row's right
+ * edge, so a narrow modal shrinks the panel instead of pushing it past the modal's left edge.
+ */
+.claudian-project-modal .claudian-project-name-setting {
+  position: relative;
+}
+
+.claudian-project-icon-picker {
+  flex: 0 0 auto;
+}
+
+.claudian-project-icon-trigger {
+  width: var(--input-height);
+  height: var(--input-height);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--input-radius);
+}
+
+.claudian-project-icon-panel {
+  position: absolute;
+  z-index: var(--layer-popover);
+  top: calc(100% + 4px);
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  box-sizing: border-box;
+  width: 296px;
+  max-width: 100%;
+  padding: 8px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-m);
+  /* Covers the fields below; stays opaque when translucent themes clear the primary background. */
+  background-color: var(--background-secondary);
+  background-image: linear-gradient(var(--background-primary), var(--background-primary));
+  box-shadow: var(--shadow-s);
+}
+
+.claudian-project-icon-search {
+  width: 100%;
+}
+
+/* Eight columns: ProjectIconPicker moves Up and Down by this count. */
+.claudian-project-icon-grid {
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  gap: 2px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.claudian-project-icon-cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  aspect-ratio: 1;
+}
+
+.claudian-project-icon-cell[aria-pressed="true"] {
+  background-color: var(--background-modifier-active-hover);
+  color: var(--interactive-accent);
+}
+
+.claudian-project-icon-status {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
+.claudian-project-icon-status:empty {
+  display: none;
+}
