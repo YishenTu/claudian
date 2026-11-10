@@ -97,6 +97,8 @@ export class LinkedContentSelector {
       cls: 'claudian-linked-content-picker-search',
       attr: {
         type: 'text',
+        role: 'combobox',
+        'aria-expanded': 'false',
         'aria-labelledby': this.prefixId,
         autocomplete: 'off',
         'aria-autocomplete': 'list',
@@ -272,11 +274,13 @@ export class LinkedContentSelector {
   }
 
   #showPickerResults(): void {
+    this.searchInput?.setAttribute('aria-expanded', 'true');
     this.pickerEl?.addClass('is-visible');
   }
 
   #hidePickerResults(): void {
     this.#clearPickerResults();
+    this.searchInput?.setAttribute('aria-expanded', 'false');
     this.pickerEl?.removeClass('is-visible');
   }
 
