@@ -86,19 +86,22 @@ export const fileNamingRule = {
   },
 };
 
-// Chat folders may import their own layer or lower ones. Hub contracts are importable from every
-// layer and may only type-import chat modules, so they never create a runtime dependency.
+// Chat modules form one strict order, lowest first: a module may import only itself and modules
+// listed before it, so folder imports cannot form cycles. Layers only group the order for readers.
+// Hub contracts are importable from every module and may only type-import chat modules, so they
+// never create a runtime dependency.
 const CHAT_LAYERS = [
   ['utilities', ['utils']],
-  ['renderers', ['rendering', 'subagents', 'interactions', 'navigation']],
+  ['renderers', ['rendering', 'interactions', 'navigation']],
   ['presentation', ['state', 'composer', 'linked-content', 'zen']],
-  ['session', ['execution', 'conversation', 'turns', 'session-messaging', 'sessions', 'input', 'side-chat']],
-  ['shell', ['tabs', 'session-manager', 'projects', 'workspace', 'view', 'ClaudianView']],
+  ['session', ['execution', 'turns', 'conversation', 'side-chat', 'input', 'sessions', 'session-messaging']],
+  ['shell', ['projects', 'tabs', 'session-manager', 'workspace', 'view', 'ClaudianView']],
 ];
 const CHAT_HUBS = new Set(['ChatFeatureHost', 'ChatSettings']);
 const CHAT_ROOT = 'src/features/chat/';
-const chatLayerOf = new Map(CHAT_LAYERS.flatMap(([name, modules], rank) =>
-  modules.map(module => [module, { name, rank }])));
+const chatOrderOf = new Map(CHAT_LAYERS
+  .flatMap(([layer, modules]) => modules.map(module => ({ module, layer })))
+  .map(({ module, layer }, rank) => [module, { layer, rank }]));
 
 // The first path segment below chat/, without extension: a folder or a root file.
 const chatModuleOf = relativePath => relativePath.split('/')[0].replace(/\.ts$/, '');
@@ -120,7 +123,7 @@ export const chatLayersRule = {
     schema: [],
     messages: {
       upward:
-        "Chat '{{from}}' ({{fromLayer}} layer) must not import '{{to}}' ({{toLayer}} layer). Move the shared contract down or receive it through a port; layers are listed in CHAT_LAYERS in eslint.config.mjs.",
+        "Chat '{{from}}' ({{fromLayer}} layer) must not import '{{to}}' ({{toLayer}} layer), which comes later in CHAT_LAYERS in eslint.config.mjs. Move the shared contract down or receive it through a port.",
       unassigned:
         "Chat module '{{module}}' has no layer. Add it to CHAT_LAYERS in eslint.config.mjs.",
       hubValueImport:
@@ -134,7 +137,7 @@ export const chatLayersRule = {
     const sourceRelative = filename.slice(rootIndex + CHAT_ROOT.length + 1);
     const from = chatModuleOf(sourceRelative);
     const fromHub = CHAT_HUBS.has(from);
-    const fromLayer = chatLayerOf.get(from);
+    const fromLayer = chatOrderOf.get(from);
 
     function check(node) {
       const specifier = node.source?.value;
@@ -145,12 +148,12 @@ export const chatLayersRule = {
         if (!isTypeOnlyImport(node)) context.report({ node, messageId: 'hubValueImport', data: { from } });
         return;
       }
-      const toLayer = chatLayerOf.get(to);
+      const toLayer = chatOrderOf.get(to);
       if (!toLayer) {
         context.report({ node, messageId: 'unassigned', data: { module: to } });
       } else if (fromLayer && toLayer.rank > fromLayer.rank) {
         context.report({ node, messageId: 'upward', data: {
-          from, fromLayer: fromLayer.name, to, toLayer: toLayer.name,
+          from, fromLayer: fromLayer.layer, to, toLayer: toLayer.layer,
         } });
       }
     }

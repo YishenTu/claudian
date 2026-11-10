@@ -1,5 +1,5 @@
 import type { SubagentInfo, ToolCallInfo } from '@/core/types';
-import { resolveStoredTaskSubagent } from '@/features/chat/subagents/storedTaskSubagent';
+import { resolveStoredTaskSubagent } from '@/features/chat/rendering/subagents/storedTaskSubagent';
 
 function taskCall(overrides: Partial<ToolCallInfo> = {}): ToolCallInfo {
   return {

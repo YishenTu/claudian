@@ -3,8 +3,8 @@ import { createSessionModelStub } from '@test/helpers/ConversationPorts';
 
 import type { SessionMessage } from '@/core/session-tools/sessionMessageEnvelope';
 import type { ChatExecutionCoordinator } from '@/features/chat/execution/ChatExecutionCoordinator';
-import { SessionMailbox } from '@/features/chat/session-messaging/SessionMailbox';
 import { ChatSessionRuntime } from '@/features/chat/sessions/ChatSessionRuntime';
+import { SessionMailbox } from '@/features/chat/sessions/SessionMailbox';
 
 const flush = () => new Promise<void>(resolve => setImmediate(resolve));
 const message = (text: string): SessionMessage => ({ from: 'Sender', sessionId: 'sender', text });

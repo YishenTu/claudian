@@ -1,13 +1,9 @@
 import type { MailboxMessage } from '@/core/session-tools/sessionMessageEnvelope';
 import type { SessionToolSendMode, SessionToolSendStatus } from '@/core/session-tools/sessionToolSpecs';
+import { SessionMessageDeferredError } from '@/features/chat/input/MainTurnExecution';
 import type { ChatSessionRuntime } from '@/features/chat/sessions/ChatSessionRuntime';
 import type { SessionModel } from '@/features/chat/sessions/SessionModel';
-import type { TurnCancelReason } from '@/features/chat/turns/TurnCoordinator';
 import { throwIfAborted } from '@/utils/abort';
-
-export type SessionMessageUnsentReason = TurnCancelReason | 'failed' | 'deferred' | 'deleted' | 'archived';
-
-export class SessionMessageDeferredError extends Error {}
 
 interface MailboxEntry {
   readonly message: MailboxMessage;

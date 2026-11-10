@@ -48,7 +48,8 @@ import {
   type SessionStatusIndicatorKind,
   sessionStatusText,
 } from '@/features/chat/session-manager/SessionStatusPresentation';
-import { bindMenuToggle, runSessionAction, showMenuAt } from '@/features/chat/session-manager/SessionSurfaceShared';
+import { bindMenuToggle, showMenuAt } from '@/features/chat/session-manager/SessionSurfaceShared';
+import { runSessionAction } from '@/features/chat/utils/runSessionAction';
 import { t } from '@/i18n/i18n';
 import { LiveListSorter } from '@/shared/components/LiveListSorter';
 

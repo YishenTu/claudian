@@ -7,6 +7,7 @@ import type {
   ProviderId,
 } from '@/core/types';
 import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
+import type { SessionComposerPort } from '@/features/chat/composer/SessionComposer';
 import { ConversationBranching } from '@/features/chat/conversation/ConversationBranching';
 import { ConversationRewind, type ConversationSaveOptions } from '@/features/chat/conversation/ConversationRewind';
 import { resolveChatSystemInstructions } from '@/features/chat/execution/chatExecutionConfiguration';
@@ -14,14 +15,13 @@ import type { ChatExecutionCoordinator } from '@/features/chat/execution/ChatExe
 import { resolveSessionInstructions } from '@/features/chat/execution/projectInstructions';
 import type { LinkedContentController, LinkedContentSubmissionToken } from '@/features/chat/linked-content';
 import type { MessageRenderer } from '@/features/chat/rendering/MessageRenderer';
+import type { SubagentManager } from '@/features/chat/rendering/subagents/SubagentManager';
 import {
   pickWelcomeGreeting,
   renderWelcomeContent,
 } from '@/features/chat/rendering/WelcomeRenderer';
-import type { ChatSessionRuntime } from '@/features/chat/sessions/ChatSessionRuntime';
-import type { SessionComposerPort } from '@/features/chat/sessions/SessionComposer';
 import type { ChatState } from '@/features/chat/state/ChatState';
-import type { SubagentManager } from '@/features/chat/subagents/SubagentManager';
+import type { TurnCancelOptions, TurnCancelReason } from '@/features/chat/turns/TurnCoordinator';
 
 /** Longest a progress-only change waits for its coalesced save. */
 const PROGRESS_SAVE_DELAY_MS = 1_000;
@@ -38,11 +38,14 @@ export interface ConversationCallbacks {
 }
 
 /** The tab session capabilities conversation transitions coordinate with. */
-export type ConversationSession = Pick<
-  ChatSessionRuntime,
-  'canNavigateConversation' | 'runConversationNavigation' | 'hasActiveTurn' | 'cancelTurn' | 'isIdle'
-  | 'hasBackgroundWork'
->;
+export interface ConversationSession {
+  readonly canNavigateConversation: boolean;
+  readonly hasActiveTurn: boolean;
+  readonly hasBackgroundWork: boolean;
+  readonly isIdle: boolean;
+  runConversationNavigation(operation: (signal: AbortSignal) => Promise<unknown>): Promise<void>;
+  cancelTurn(reason: TurnCancelReason, options?: TurnCancelOptions): boolean;
+}
 
 export interface ConversationControllerDeps {
   plugin: ChatFeatureHost;

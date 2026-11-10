@@ -17,27 +17,25 @@ import type { AskUserAnswers, ChatMessage, ToolCallInfo } from '@/core/types';
 import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
 import type { ChatSettings } from '@/features/chat/ChatSettings';
 import { findComposerSessionMentions } from '@/features/chat/composer/composerSessionMentions';
+import { resolveSessionMentions } from '@/features/chat/composer/resolveSessionMentions';
+import type { SessionComposerPort } from '@/features/chat/composer/SessionComposer';
 import type { ConversationController } from '@/features/chat/conversation/ConversationController';
 import { FirstTurnAdmission } from '@/features/chat/conversation/FirstTurnAdmission';
 import type { ChatExecutionCoordinator } from '@/features/chat/execution/ChatExecutionCoordinator';
 import type { BuiltInCommandController } from '@/features/chat/input/BuiltInCommandController';
 import type { ComposerSelections } from '@/features/chat/input/ComposerSelections';
-import { resolveSessionMentions } from '@/features/chat/input/resolveSessionMentions';
+import { type MainTurn, MainTurnExecution, type SessionMessageUnsentReason } from '@/features/chat/input/MainTurnExecution';
 import { SubmissionPreparations } from '@/features/chat/input/SubmissionPreparations';
 import { deliverAsyncQuestion } from '@/features/chat/interactions/asyncQuestionDelivery';
 import type { SessionInteractions } from '@/features/chat/interactions/SessionInteractions';
 import type { LinkedContentController } from '@/features/chat/linked-content';
 import type { MessageRenderer } from '@/features/chat/rendering/MessageRenderer';
-import type { SessionMessageUnsentReason } from '@/features/chat/session-messaging/SessionMailbox';
-import type { ChatSessionRuntime, TurnCancelOptions } from '@/features/chat/sessions/ChatSessionRuntime';
-import type { SessionComposerPort } from '@/features/chat/sessions/SessionComposer';
 import type { SideChatController } from '@/features/chat/side-chat/SideChatController';
 import type { ChatState } from '@/features/chat/state/ChatState';
 import { captureSelectionSnapshots, createQueuedMessage } from '@/features/chat/state/chatTurnRequest';
 import type { ChatTurnRequest, TabReviewOutcome } from '@/features/chat/state/types';
-import { type MainTurn, MainTurnExecution } from '@/features/chat/turns/MainTurnExecution';
 import type { StreamController } from '@/features/chat/turns/StreamController';
-import type { TurnCoordinator } from '@/features/chat/turns/TurnCoordinator';
+import type { TurnCancelOptions, TurnCancelReason, TurnCoordinator } from '@/features/chat/turns/TurnCoordinator';
 import { TurnQueue } from '@/features/chat/turns/TurnQueue';
 import { type ProviderEchoClaim, TurnSteering } from '@/features/chat/turns/TurnSteering';
 import { t } from '@/i18n/i18n';
@@ -45,6 +43,15 @@ import type { ComposerInputElement } from '@/shared/composer-dropdown/types';
 
 /** Rejected dispatch leaves draft recovery with its caller; handled work owns recovery. */
 type DispatchResult = 'rejected' | 'handled' | 'queued';
+
+/** The session capabilities input coordinates with. */
+export interface InputSession {
+  readonly turns: TurnCoordinator;
+  /** Pending session messages, which Stop discards. */
+  readonly mailbox: { clear(): void } | null;
+  cancelTurn(reason: TurnCancelReason, options?: TurnCancelOptions): boolean;
+  stopMainBackgroundWork(): void;
+}
 
 export interface InputControllerDeps {
   plugin: ChatFeatureHost;
@@ -76,7 +83,7 @@ export interface InputControllerDeps {
   canStartTurn: () => boolean;
   isClosing: () => boolean;
   /** The session-owned turn activity and its single cancellation recipe. */
-  session: Pick<ChatSessionRuntime, 'turns' | 'cancelTurn' | 'stopMainBackgroundWork' | 'mailbox'>;
+  session: InputSession;
   /** Queued work and preparation can outlive the foreground turn's idle notification. */
   onWorkChanged?: () => void;
   /** Destination seam for the shared composer; absent means main-only. */

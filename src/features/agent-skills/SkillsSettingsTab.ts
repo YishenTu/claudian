@@ -21,7 +21,10 @@ import type { DebouncedSettingsWriter } from '@/shared/settings/DebouncedSetting
 
 type SkillsSubTab = 'claude' | 'shared';
 
-export type SkillsSettingsHost = Pick<FeatureHost, 'settings' | 'mutateSettings' | 'notifyAgentSkillsChanged'>;
+/** Capabilities the skills panel uses; it publishes vault skill changes through its host. */
+export interface SkillsSettingsHost extends Pick<FeatureHost, 'settings' | 'mutateSettings'> {
+  notifyAgentSkillsChanged(): Promise<void>;
+}
 
 
 /**

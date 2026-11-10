@@ -15,11 +15,11 @@ import type {
 } from '@/core/execution';
 import { isSteerableExecutionSession } from '@/core/execution';
 import type { ChatMessage, ImageAttachment, ProviderId } from '@/core/types';
+import type { SessionToolBinding } from '@/features/chat/execution/ChatExecutionCoordinator';
 import { consumeExecutionEvents } from '@/features/chat/execution/consumeExecutionEvents';
 import { ExecutionInteractions } from '@/features/chat/execution/ExecutionInteractions';
 import { ExecutionSessionSupervisor } from '@/features/chat/execution/ExecutionSessionSupervisor';
 import { SessionEventStream } from '@/features/chat/execution/SessionEventStream';
-import type { SessionToolBinding } from '@/features/chat/session-messaging/SessionMessagingService';
 import { toError } from '@/utils/error';
 
 export type SideChatTurnStatus =

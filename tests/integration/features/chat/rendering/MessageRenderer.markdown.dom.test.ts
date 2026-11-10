@@ -10,8 +10,8 @@ import { fireEvent, within } from '@testing-library/dom';
 import { type App, Component, MarkdownRenderer, type TFile } from 'obsidian';
 
 import { MessageRenderer } from '@/features/chat/rendering/MessageRenderer';
+import { SubagentManager } from '@/features/chat/rendering/subagents/SubagentManager';
 import { ChatState } from '@/features/chat/state/ChatState';
-import { SubagentManager } from '@/features/chat/subagents/SubagentManager';
 import { StreamController } from '@/features/chat/turns/StreamController';
 import * as fileLinks from '@/utils/fileLink';
 

@@ -15,14 +15,14 @@ import type { RenderContentOptions } from '@/features/chat/rendering/markdown/Ma
 import { escapeRawHTMLTags } from '@/features/chat/rendering/markdown/markdownHTML';
 import type { LiveTranscriptOptions, MessageRenderer } from '@/features/chat/rendering/MessageRenderer';
 import { createResponseTextBlock } from '@/features/chat/rendering/ResponseLayout';
+import type { AsyncSubagentHistoryRecovery } from '@/features/chat/rendering/subagents/AsyncSubagentHistoryRecovery';
+import type { SubagentManager } from '@/features/chat/rendering/subagents/SubagentManager';
 import {
   createThinkingBlock,
   finalizeThinkingBlock,
   type ThinkingBlockState,
 } from '@/features/chat/rendering/ThinkingBlockRenderer';
 import type { ChatState } from '@/features/chat/state/ChatState';
-import type { AsyncSubagentHistoryRecovery } from '@/features/chat/subagents/AsyncSubagentHistoryRecovery';
-import type { SubagentManager } from '@/features/chat/subagents/SubagentManager';
 import { StreamingRenderCoordinator } from '@/features/chat/turns/StreamingRenderCoordinator';
 import { SubagentStreamRouter } from '@/features/chat/turns/SubagentStreamRouter';
 import { ThinkingIndicator } from '@/features/chat/turns/ThinkingIndicator';

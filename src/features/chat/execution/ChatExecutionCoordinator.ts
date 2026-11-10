@@ -19,6 +19,7 @@ import type {
   ProviderNativeResumeSeed,
   ProviderSessionEvent,
   ProviderSessionSnapshot,
+  ProviderSessionToolPort,
   ProviderSystemInstructions,
   ProviderToolPolicy,
 } from '@/core/execution';
@@ -45,10 +46,16 @@ import {
   reduceRequestedTurnIdentity,
 } from '@/features/chat/execution/RequestedTurnIdentity';
 import { SessionEventStream } from '@/features/chat/execution/SessionEventStream';
-import type { SessionToolBinding } from '@/features/chat/session-messaging/SessionMessagingService';
 import { t } from '@/i18n/i18n';
 import { throwIfAborted } from '@/utils/abort';
 import { toError } from '@/utils/error';
+
+
+/** Session tools bound to one conversation; disposing releases the binding. */
+export interface SessionToolBinding {
+  readonly port: ProviderSessionToolPort;
+  dispose(): void;
+}
 
 export type ChatExecutionCoordinatorState =
   | 'absent'

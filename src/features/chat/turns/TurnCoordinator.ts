@@ -3,6 +3,12 @@ import type { TurnActivity } from '@/features/chat/state/types';
 /** Why an admitted turn is being cancelled; non-user reasons also release its presentation. */
 export type TurnCancelReason = 'user' | 'new-conversation' | 'shutdown';
 
+export interface TurnCancelOptions {
+  dismissInteractions?: boolean;
+  /** Another session's interrupt keeps the pending session messages it is delivered with. */
+  keepMailbox?: boolean;
+}
+
 /**
  * Response progress after admission: input preparation (session references, branch commit,
  * Conversation shell), the provider-facing response, then rendering and persistence settlement.

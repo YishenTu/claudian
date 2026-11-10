@@ -17,7 +17,7 @@ import { deliverAsyncQuestion } from '@/features/chat/interactions/asyncQuestion
 import { createInteractionPromptPort } from '@/features/chat/interactions/interactionPromptPort';
 import { SessionInteractions } from '@/features/chat/interactions/SessionInteractions';
 import { MessageRenderer } from '@/features/chat/rendering/MessageRenderer';
-import { SessionTranscript } from '@/features/chat/sessions/SessionTranscript';
+import { SubagentManager } from '@/features/chat/rendering/subagents/SubagentManager';
 import { SideChatCommandSubmission } from '@/features/chat/side-chat/SideChatCommandSubmission';
 import { SideChatSession } from '@/features/chat/side-chat/SideChatSession';
 import type {
@@ -26,10 +26,10 @@ import type {
   SideChatStatus,
 } from '@/features/chat/side-chat/SideChatTypes';
 import { ChatState } from '@/features/chat/state/ChatState';
-import { SubagentManager } from '@/features/chat/subagents/SubagentManager';
 import { BackgroundResponses } from '@/features/chat/turns/BackgroundResponses';
 import { renderSessionTaskNotification } from '@/features/chat/turns/BackgroundTurnRenderer';
 import { ResponseStream } from '@/features/chat/turns/ResponseStream';
+import { SessionTranscript } from '@/features/chat/turns/SessionTranscript';
 import {
   StreamController,
 } from '@/features/chat/turns/StreamController';

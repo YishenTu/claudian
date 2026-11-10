@@ -289,7 +289,7 @@ test('chat layers are enforced for source files', async () => {
   assert.deepEqual(config.rules['local/chat-layers'], [2]);
 });
 
-test('chat layers reject imports of a higher layer by alias, relative path, re-export or dynamic import', () => {
+test('chat layers reject imports of a later module by alias, relative path, re-export or dynamic import', () => {
   for (const prefix of ['/repo/', 'D:\\repo\\']) {
     for (const [file, code] of [
       ['src/features/chat/state/ChatState.ts', "import type { TurnCoordinator } from '@/features/chat/turns/TurnCoordinator';"],
@@ -297,6 +297,9 @@ test('chat layers reject imports of a higher layer by alias, relative path, re-e
       ['src/features/chat/rendering/tools/ToolRenderer.ts', "export { ChatState } from '../../state/ChatState';"],
       ['src/features/chat/conversation/ConversationLifecycle.ts', "export * from '@/features/chat/tabs/ChatTab';"],
       ['src/features/chat/utils/animationFrame.ts', "void import('@/features/chat/rendering/MessageRenderer');"],
+      // Later modules of the same layer are rejected too, so folders cannot import each other.
+      ['src/features/chat/conversation/ConversationController.ts', "import type { ChatSessionRuntime } from '@/features/chat/sessions/ChatSessionRuntime';"],
+      ['src/features/chat/projects/projectActions.ts', "import { showMenuAt } from '../session-manager/SessionSurfaceShared';"],
     ]) {
       const reports = chatLayerReports(prefix + file, code);
       assert.equal(reports.length, 1, `${prefix}${file}: ${code}`);
@@ -305,10 +308,11 @@ test('chat layers reject imports of a higher layer by alias, relative path, re-e
   }
 });
 
-test('chat layers allow same-layer, lower-layer, own-folder, hub and non-chat imports', () => {
+test('chat layers allow earlier-module, own-folder, hub and non-chat imports', () => {
   for (const [file, code] of [
     ['src/features/chat/turns/TurnCoordinator.ts', "import type { TurnActivity } from '@/features/chat/state/types';"],
     ['src/features/chat/sessions/SessionModel.ts', "import { InputController } from '@/features/chat/input/InputController';"],
+    ['src/features/chat/rendering/MessageRenderer.ts', "import { renderSubagent } from './subagents/SubagentRenderer';"],
     ['src/features/chat/tabs/TabBar.ts', "import { TabId } from './ChatTab';"],
     ['src/features/chat/rendering/MessageRenderer.ts', "import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';"],
     ['src/features/chat/composer/toolbar/types.ts', "import type { ChatSettings } from '../../ChatSettings';"],

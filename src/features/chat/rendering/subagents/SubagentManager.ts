@@ -7,7 +7,7 @@ import type {
   ToolCallInfo,
 } from '@/core/types';
 import type { ToolProviderPayload } from '@/core/types/tools';
-import { SubagentCardView } from '@/features/chat/subagents/SubagentCardView';
+import { SubagentCardView } from '@/features/chat/rendering/subagents/SubagentCardView';
 
 export type SubagentStateChangeCallback = (subagent: SubagentInfo) => void;
 

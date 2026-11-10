@@ -20,15 +20,15 @@ import {
   markResponseElement,
 } from '@/features/chat/rendering/ResponseLayout';
 import { createSessionLink, registerSessionLinkHandler } from '@/features/chat/rendering/sessionLinks';
+import { resolveStoredTaskSubagent } from '@/features/chat/rendering/subagents/storedTaskSubagent';
+import { resolveSubagentAdapter } from '@/features/chat/rendering/subagents/subagentAdapterResolution';
+import { renderSubagentHistory } from '@/features/chat/rendering/subagents/SubagentHistoryRenderer';
+import { renderStoredAsyncSubagent, renderStoredSubagent } from '@/features/chat/rendering/subagents/SubagentRenderer';
 import { renderStoredThinkingBlock } from '@/features/chat/rendering/ThinkingBlockRenderer';
 import { updateToolCallResult } from '@/features/chat/rendering/tools/ToolCallRenderer';
 import { isSilentWriteStdinTool, renderToolCard } from '@/features/chat/rendering/tools/toolCardDispatch';
 import { TranscriptFollow } from '@/features/chat/rendering/TranscriptFollow';
 import { createWelcomeElement } from '@/features/chat/rendering/WelcomeRenderer';
-import { resolveStoredTaskSubagent } from '@/features/chat/subagents/storedTaskSubagent';
-import { resolveSubagentAdapter } from '@/features/chat/subagents/subagentAdapterResolution';
-import { renderSubagentHistory } from '@/features/chat/subagents/SubagentHistoryRenderer';
-import { renderStoredAsyncSubagent, renderStoredSubagent } from '@/features/chat/subagents/SubagentRenderer';
 import { type ConversationDirectoryEntry, formatConversationDirectoryTitle, getRenderedConversationDirectory } from '@/features/chat/utils/conversationDirectoryTitle';
 import { t } from '@/i18n/i18n';
 import { ImagePreviewModal } from '@/shared/modals/ImagePreviewModal';

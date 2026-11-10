@@ -2,7 +2,7 @@
 const mockedTools = vi.mocked(await import('@/features/chat/rendering/tools/ToolCallRenderer'));
 const mockedEdits = vi.mocked(await import('@/features/chat/rendering/tools/WriteEditRenderer'));
 const mockedThinking = vi.mocked(await import('@/features/chat/rendering/ThinkingBlockRenderer'));
-const mockedSubagents = vi.mocked(await import('@/features/chat/subagents/SubagentRenderer'));
+const mockedSubagents = vi.mocked(await import('@/features/chat/rendering/subagents/SubagentRenderer'));
 import '@/providers';
 
 import { TEST_CODEX_MODEL } from '@test/helpers/codexModels';
@@ -23,12 +23,12 @@ import type { ChatMessage, StreamChunk,ToolCallInfo, UsageInfo } from '@/core/ty
 import * as displayOnlyCodeFences from '@/features/chat/rendering/markdown/DisplayOnlyCodeFences';
 import { MessageRenderer } from '@/features/chat/rendering/MessageRenderer';
 import { providerOutputEventToStreamChunk } from '@/features/chat/rendering/providerOutputChunks';
-import { ChatState } from '@/features/chat/state/ChatState';
 import {
   AsyncSubagentHistoryRecovery,
   type AsyncSubagentHistoryRecoveryDeps,
-} from '@/features/chat/subagents/AsyncSubagentHistoryRecovery';
-import { SubagentManager } from '@/features/chat/subagents/SubagentManager';
+} from '@/features/chat/rendering/subagents/AsyncSubagentHistoryRecovery';
+import { SubagentManager } from '@/features/chat/rendering/subagents/SubagentManager';
+import { ChatState } from '@/features/chat/state/ChatState';
 import { StreamController, type StreamControllerDeps } from '@/features/chat/turns/StreamController';
 import { TurnCoordinator } from '@/features/chat/turns/TurnCoordinator';
 import * as markdownMath from '@/utils/markdownMath';
