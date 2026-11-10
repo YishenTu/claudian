@@ -25,6 +25,7 @@
     "promptSuggestionHint": "按 Tab 接受",
     "selectAvailableModel": "请先选择可用的模型再发送。",
     "reloadingHistory": "此对话在 Claudian 之外发生了变化，正在重新加载。加载完成后请重新发送。",
+    "changedOutsideWithBackgroundTask": "此对话在 Claudian 之外继续进行，而先前会话的后台任务仍在运行。请停止该任务或等待其完成，然后重新发送。",
     "selectAvailableTitleModel": "请在 Claudian 设置中选择可用的标题生成模型。",
     "rewind": {
       "confirmMessage": "回退到此处？此消息之后的文件更改可能被覆盖或删除。此操作无法撤销。",
