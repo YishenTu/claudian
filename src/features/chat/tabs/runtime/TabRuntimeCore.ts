@@ -39,7 +39,6 @@ export function buildTabRuntimeCore(options: TabRuntimeConstructionContext): Tab
     get providerId() { return session.providerId; },
     get draftModel() { return session.draftModel; },
     get hydrationState() { return model.hydrationState; },
-    set hydrationState(value) { model.hydrationState = value; },
     executionCoordinator: runtime.executionCoordinator,
     providerCatalogResolver: () => options.getProviderCatalogConfig(catalogContext),
     captureReviewableSettlement: outcome => model.captureReview(outcome),

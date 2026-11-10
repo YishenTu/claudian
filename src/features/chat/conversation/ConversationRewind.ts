@@ -5,9 +5,9 @@ import { extractUserDisplayContent } from '@/core/prompt/promptContext';
 import type { ChatMessage } from '@/core/types';
 import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
 import type { ComposerDraftController } from '@/features/chat/composer/ComposerDraftController';
-import { findRewindContext } from '@/features/chat/conversation/rewind';
 import type { ChatExecutionCoordinator } from '@/features/chat/execution/ChatExecutionCoordinator';
 import type { ChatState } from '@/features/chat/state/ChatState';
+import { findRewindContext } from '@/features/chat/utils/rewind';
 import { t } from '@/i18n/i18n';
 import { confirm } from '@/shared/modals/ConfirmModal';
 

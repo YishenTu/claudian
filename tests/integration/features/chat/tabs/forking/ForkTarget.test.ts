@@ -40,7 +40,10 @@ it('preserves linked content, source project, messages, and provider state in a 
   const fork = forkRequestFrom(manager, source)(forkContext({ linkedContentPath: 'Projects', projectId: 'project-1', messages, sourceConversationId: source.conversationId }));
   choose();
   await fork;
-  expect(plugin.createConversation).toHaveBeenCalledWith(expect.objectContaining({ linkedContentPath: 'Projects', providerId: 'claude', projectId: 'project-1' }));
+  expect(plugin.createConversation).toHaveBeenCalledWith(expect.objectContaining({
+    linkedContentPath: 'Projects', providerId: 'claude', projectId: 'project-1',
+    origin: { kind: 'fork', conversationId: source.conversationId },
+  }));
   expect(plugin.updateConversation).toHaveBeenCalledWith('forked', expect.objectContaining({ messages, providerState: { fork: true } }));
   expect(manager.getActiveTab()?.conversationId).toBe('forked');
   expect(manager.getTabCount()).toBe(2);

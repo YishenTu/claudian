@@ -1,7 +1,8 @@
 import type { ProviderId } from '@/core/providers/types';
-import type { ChatSessionRuntime, SessionIdentity, TurnCancelOptions } from '@/features/chat/sessions/ChatSessionRuntime';
+import type { ChatSessionRuntime, SessionIdentity } from '@/features/chat/sessions/ChatSessionRuntime';
 import type { TabLifecycleState } from '@/features/chat/tabs/ChatTab';
 import type { TabIdentity } from '@/features/chat/tabs/TabIdentity';
+import type { TurnCancelOptions } from '@/features/chat/turns/TurnCoordinator';
 import type { TurnCancelReason, TurnCoordinator } from '@/features/chat/turns/TurnCoordinator';
 
 /** The identity fields a tab owns; conversation, provider, and draft model belong to its session. */
