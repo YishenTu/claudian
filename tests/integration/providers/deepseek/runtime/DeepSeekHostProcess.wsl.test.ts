@@ -140,8 +140,8 @@ describe.skipIf(path.sep === '\\')('DeepSeek WSL host process', () => {
     const { port } = resetting.address() as { port: number };
     launchOutput = () => `http://127.0.0.1:${port}/?token=fixture\n`;
     await expect((await startHost()).attach()).rejects.toThrow(/inside WSL through localhost.*localhostForwarding/);
-    // The unauthenticated launch is shut down rather than left running in the distro.
-    expect(launched).toMatchObject({ killed: true, signalCode: 'SIGTERM' });
+    // The unauthenticated launch ends through its stdin lease rather than being left running in the distro.
+    expect(launched).toMatchObject({ killed: false, exitCode: 0 });
   });
 
 });

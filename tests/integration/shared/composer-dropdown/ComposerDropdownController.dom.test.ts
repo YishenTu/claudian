@@ -76,6 +76,83 @@ it('shows vault mentions on the keystroke that requests them and updates the ren
   }
 });
 
+it('keeps an Escape-dismissed trigger closed until a new trigger is typed', () => {
+  const container = document.body.createDiv();
+  const input = container.createEl('textarea', { attr: { 'aria-label': 'Message' } });
+  // A short word followed by a space still matches inside another name.
+  const mention = new MentionSource({ getCachedVaultFiles: () => [file('Book ideas.md', 1)], getCachedVaultFolders: () => [] });
+  const controller = new ComposerDropdownController(container, input, [mention]);
+  const type = (value: string): void => {
+    input.value = value;
+    input.selectionStart = input.selectionEnd = value.length;
+    controller.handleInputChange();
+  };
+  // Visibility is a CSS class jsdom does not apply; the controller's state is what hosts consult.
+  const options = (): (string | null)[] => {
+    expect(controller.isVisible()).toBe(true);
+    return within(container).getAllByRole('option').map(option => option.textContent);
+  };
+  try {
+    type('ask @ok i');
+    expect(options()).toEqual(['Book ideas.md']);
+    expect(controller.handleKeydown(new KeyboardEvent('keydown', { key: 'Escape' }))).toBe(true);
+    expect(controller.isVisible()).toBe(false);
+
+    type('ask @ok id');
+    expect(controller.isVisible()).toBe(false);
+    // A hidden menu leaves Enter to the composer instead of selecting a mention.
+    expect(controller.handleKeydown(new KeyboardEvent('keydown', { key: 'Enter' }))).toBe(false);
+    expect(input.value).toBe('ask @ok id');
+
+    type('ask @ok idea @Bo');
+    expect(options()).toEqual(['Book ideas.md']);
+
+    // Deleting the dismissed trigger forgets the dismissal, so retyping it opens the menu.
+    type('ask @ok i');
+    expect(controller.handleKeydown(new KeyboardEvent('keydown', { key: 'Escape' }))).toBe(true);
+    type('ask ');
+    type('ask @ok i');
+    expect(options()).toEqual(['Book ideas.md']);
+
+    // Sending clears the input without an input event; the next keystroke still sees the trigger gone.
+    const key = (name: string): boolean => controller.handleKeydown(new KeyboardEvent('keydown', { key: name }));
+    expect(key('Escape')).toBe(true);
+    input.value = '';
+    input.selectionStart = input.selectionEnd = 0;
+    expect(key('@')).toBe(false);
+    type('ask @ok i');
+    expect(options()).toEqual(['Book ideas.md']);
+
+    // Keyboard caret moves are selection-only, so the next key observes the caret leaving the trigger.
+    expect(key('Escape')).toBe(true);
+    input.selectionStart = input.selectionEnd = 0;
+    expect(key('End')).toBe(false);
+    type('ask @ok id');
+    expect(options()).toEqual(['Book ideas.md']);
+
+    // Moving past text that no longer matches the trigger also forgets the dismissal.
+    const placeCaret = (value: string, caret: number): void => {
+      input.value = value;
+      input.selectionStart = input.selectionEnd = caret;
+    };
+    placeCaret('ask @ok i zz', 9);
+    controller.handleInputChange();
+    expect(options()).toEqual(['Book ideas.md']);
+    expect(key('Escape')).toBe(true);
+    placeCaret('ask @ok i zz', 12);
+    expect(key('ArrowLeft')).toBe(false);
+    placeCaret('ask @ok i zz', 9);
+    expect(key('ArrowLeft')).toBe(false);
+    placeCaret('ask @ok id zz', 10);
+    controller.handleInputChange();
+    expect(options()).toEqual(['Book ideas.md']);
+  } finally {
+    controller.destroy();
+    mention.destroy();
+    container.remove();
+  }
+});
+
 // Browser layout is external to jsdom. These ports resolve the shipped CSS anchors/cap;
 // they never choose a side or decide whether content fits.
 function fixedLayout(top: number, viewport: number, count: number) {

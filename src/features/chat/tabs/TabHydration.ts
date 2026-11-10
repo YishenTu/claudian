@@ -44,7 +44,6 @@ export class TabHydration {
     }
     const needsHydration = !!tab.conversationId && tab.hydrationState !== 'ready';
     if (needsHydration) {
-      tab.hydrationState = 'loading';
       renderTabHydrationState(tab, undefined, deps.onRetry);
       await waitForTabPaint(tab);
       if (!deps.isTabAlive(tab)) return 'aborted';
@@ -68,22 +67,26 @@ export class TabHydration {
           }
         }
         if (!deps.isTabAlive(tab)) return 'aborted';
-        tab.hydrationState = 'ready';
-      } else if (tab.conversationId && tab.state.messages.length > 0) {
-        tab.hydrationState = 'ready';
       } else if (!tab.conversationId && tab.state.messages.length === 0) {
         // New tab with no conversation - initialize welcome greeting
         tab.controllers.conversationController.initializeWelcome();
-        tab.hydrationState = 'ready';
       }
+      // A retry after a failed provider startup leaves a loaded transcript showing again.
+      clearTabHydrationStatus(tab);
     } catch (error) {
       if (!deps.isTabAlive(tab)) return 'aborted';
-      tab.hydrationState = 'failed';
+      // The session model owns hydration; a failed provider startup leaves a loaded transcript loaded.
       renderTabHydrationState(tab, error, deps.onRetry);
       return 'failed';
     }
 
     return deps.isTabAlive(tab) ? 'ready' : 'aborted';
+  }
+}
+
+function clearTabHydrationStatus(tab: AssembledTabRuntime): void {
+  for (const statusEl of Array.from(tab.dom.messagesEl.children)) {
+    if (statusEl.hasClass('claudian-tab-hydration')) statusEl.remove();
   }
 }
 
@@ -99,7 +102,9 @@ function renderTabHydrationState(
   onRetry: (tab: AssembledTabRuntime) => void,
 ): void {
   const messagesEl = tab.dom.messagesEl;
-  messagesEl.empty();
+  // A loaded transcript stays in place under a startup error; only an unloaded one is replaced.
+  if (tab.hydrationState === 'ready') clearTabHydrationStatus(tab);
+  else messagesEl.empty();
 
   const statusEl = messagesEl.createDiv({ cls: 'claudian-tab-hydration' });
   if (!error) {

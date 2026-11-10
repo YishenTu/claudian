@@ -15,8 +15,6 @@ export interface TabRuntimeCallbackHost {
   readonly navigation: TabConversationNavigation;
   readonly layoutPolicy: TabLayoutPolicy;
   readonly forkTargetHost: ForkTargetHost;
-  /** Shutdown has begun but the final identity snapshot is not sealed yet. */
-  isShutdownSnapshotOpen(): boolean;
   /** Rebinds the tab to a new blank draft carrying `seed`. */
   startNew(tab: AssembledTabRuntime, seed?: DraftSeed): Promise<void>;
   /** What New started from `tab` begins with: its project, if any. */
@@ -95,7 +93,7 @@ export function createTabRuntimeCallbacks(
     onConversationIdChanged: (runtime, conversationId) => {
       if (!membership.isOwned(runtime)) return;
       const destroyed = membership.isDestroyed();
-      if (destroyed && !host.isShutdownSnapshotOpen()) return;
+      if (destroyed && !membership.isShutdownSnapshotOpen()) return;
       if (!destroyed) commandDiscovery.invalidateTab(runtime.id);
       callbacks.onTabConversationChanged?.(runtime.id, conversationId);
       providerPresence.startForTab(runtime);

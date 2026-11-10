@@ -227,7 +227,7 @@ export interface MCPToolCallItem {
   status?: string;
   /** JSON value; some servers report the raw argument string. */
   arguments?: unknown;
-  result?: { content?: Array<{ type?: string; text?: string }> } | null;
+  result?: { content?: Array<{ type?: string; text?: string }>; structuredContent?: unknown } | null;
   error?: { message: string } | string | null;
   durationMs?: number | null;
 }

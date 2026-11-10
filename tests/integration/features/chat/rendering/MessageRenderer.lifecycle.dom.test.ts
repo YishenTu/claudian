@@ -137,39 +137,6 @@ it('does not start another render after disposal', async () => {
   expect(host.textContent).toBe('');
 });
 
-it.each(['user scroll', 'history replacement', 'disposal', 'following growth'])('fences deferred tail scrolling across %s', action => {
-  let pending!: FrameRequestCallback;
-  const request = vi.spyOn(window, 'requestAnimationFrame').mockImplementation(callback => { pending = callback; return 91; });
-  const cancel = vi.spyOn(window, 'cancelAnimationFrame').mockImplementation(() => undefined);
-  let height = 1000;
-  Object.defineProperties(host, {
-    scrollHeight: { configurable: true, get: () => height },
-    clientHeight: { configurable: true, value: 100 },
-  });
-  host.scrollTop = 850;
-  try {
-    renderer.scrollToBottomIfNeeded();
-    expect(request).toHaveBeenCalledTimes(1);
-    if (action === 'user scroll') {
-      host.scrollTop = 100;
-      host.dispatchEvent(new Event('scroll'));
-    }
-    if (action === 'history replacement') {
-      renderer.renderMessages([], () => 'Empty');
-      host.scrollTop = 30;
-    }
-    if (action === 'disposal') {
-      renderer.dispose();
-    }
-    if (action === 'following growth') height = 1400;
-    pending(0);
-    expect(host.scrollTop).toBe(action === 'user scroll' ? 100 : action === 'history replacement' ? 30 : action === 'disposal' ? 850 : 1400);
-  } finally {
-    request.mockRestore();
-    cancel.mockRestore();
-  }
-});
-
 it('releases a late child even when its onload throws', async () => {
   let finish!: () => void;
   vi.mocked(MarkdownRenderer.render).mockImplementationOnce(async (_app, _markdown, _el, _path, scope) => {

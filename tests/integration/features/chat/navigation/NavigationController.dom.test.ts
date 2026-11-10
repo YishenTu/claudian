@@ -67,3 +67,37 @@ it('stops held-key scrolling when its window blurs and waits for another keydown
     expect(messages.scrollTop).toBe(beforeRelease);
   } finally { controller.dispose(); }
 });
+
+it('keeps one scroll loop when the held direction reverses', () => {
+  const host = document.body.appendChild(document.createElement('div'));
+  const messages = host.appendChild(document.createElement('div'));
+  messages.tabIndex = -1;
+  const input = host.appendChild(document.createElement('textarea'));
+  const frames = new Map<number, FrameRequestCallback>();
+  let frameId = 0;
+  vi.spyOn(window, 'requestAnimationFrame').mockImplementation(callback => {
+    frames.set(++frameId, callback); return frameId;
+  });
+  vi.spyOn(window, 'cancelAnimationFrame').mockImplementation(id => { frames.delete(id); });
+  const advanceFrame = () => {
+    const pending = [...frames.values()]; frames.clear();
+    for (const frame of pending) frame(performance.now());
+  };
+  const controller = new NavigationController({ getMessagesEl: () => messages, getInputEl: () => input,
+    getSettings: () => ({ scrollUpKey: 'w', scrollDownKey: 's', focusInputKey: 'i' }), isStreaming: () => false });
+  try {
+    controller.initialize();
+    messages.focus();
+    messages.scrollTop = 1_000;
+    fireEvent.keyDown(messages, { key: 's' });
+    const step = messages.scrollTop - 1_000;
+    expect(step).toBeGreaterThan(0);
+    fireEvent.keyDown(messages, { key: 'w' });
+    const reversed = messages.scrollTop;
+
+    advanceFrame();
+    expect(messages.scrollTop).toBe(reversed - step);
+    advanceFrame();
+    expect(messages.scrollTop).toBe(reversed - 2 * step);
+  } finally { controller.dispose(); }
+});

@@ -34,7 +34,8 @@ interface ServerEntry {
   readonly launchKey: string;
   retainWhenIdle: boolean;
   consumers: number;
-  retired: boolean;
+  /** `admitting` entries are keyed in `servers`; `draining` ones in `draining`; `closing` ones in neither. */
+  state: 'admitting' | 'draining' | 'closing';
   readonly retirementListeners: Set<() => void>;
   readonly supersessionListeners: Set<() => void>;
 }
@@ -86,7 +87,7 @@ export class OpencodeServerService {
     entry.consumers += 1;
     try {
       const server = await entry.promise;
-      if (!generation.aborted && !entry.retired && !server.close && server.client.isStarted()) return this.lease(entry, server);
+      if (!generation.aborted && entry.state === 'admitting' && !server.close && server.client.isStarted()) return this.lease(entry, server);
     } catch { /* A failed start is not a running server. */ }
     await this.release(entry);
     return null;
@@ -112,7 +113,7 @@ export class OpencodeServerService {
           launchKey: launch.key,
           retainWhenIdle: false,
           consumers: 0,
-          retired: obsolete,
+          state: obsolete ? 'draining' : 'admitting',
           retirementListeners: new Set(),
           supersessionListeners: new Set(),
         };
@@ -156,7 +157,7 @@ export class OpencodeServerService {
       (event, listener) => {
         const listeners = event === 'retired' ? entry.retirementListeners : entry.supersessionListeners;
         listeners.add(listener);
-        if (event === 'retired' ? entry.retired : this.isSuperseded(entry)) listener();
+        if (event === 'retired' ? entry.state !== 'admitting' : this.isSuperseded(entry)) listener();
         return () => listeners.delete(listener);
       },
       () => {
@@ -182,7 +183,7 @@ export class OpencodeServerService {
         continue;
       }
       this.servers.delete(key);
-      entry.retired = true;
+      entry.state = 'draining';
       this.draining.add(entry);
       for (const listener of [...entry.retirementListeners]) listener();
       if (entry.consumers === 0) void this.retire(entry);
@@ -208,6 +209,7 @@ export class OpencodeServerService {
   private retire(entry: ServerEntry, error?: Error): Promise<void> {
     if (this.servers.get(entry.key) === entry) this.servers.delete(entry.key);
     this.draining.delete(entry);
+    entry.state = 'closing';
     entry.retirementListeners.clear();
     entry.supersessionListeners.clear();
     const closing = entry.promise.then(server => this.close(server, error), () => undefined);

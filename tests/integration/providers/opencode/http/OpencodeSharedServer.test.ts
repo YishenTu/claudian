@@ -29,6 +29,17 @@ it('prewarms concurrent tab-presence requests without creating native draft sess
   } finally { await f.dispose(); }
 });
 
+it('releases the retained server through its stdin lease before disposal resolves', async () => {
+  const f = await createFixture();
+  try {
+    await f.workspace.startRuntime?.();
+    const [{ pid }] = f.processes();
+    // Killing a WSL launcher can leave the Linux server holding vault files after disposal.
+    await f.workspace.dispose?.();
+    expect(readFileSync(`${f.log}.released`, 'utf8').trim().split('\n')).toEqual([String(pid)]);
+  } finally { await f.dispose(); }
+});
+
 it('retains a v2 conversation database binding when runtime settings move to another database', () => {
   const conversation = conversationRecord('test', { providerId: 'opencode', sessionId: 'original', providerState: { sessionId: 'original', databasePath: '/original.db' } });
   const settings = { providerConfigs: { opencode: { enabled: true, environmentHash: 'old', environmentVariables: 'OPENCODE_DB=/replacement.db' } } };
