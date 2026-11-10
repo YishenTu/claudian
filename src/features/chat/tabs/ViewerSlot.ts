@@ -1,8 +1,8 @@
 import type { App } from 'obsidian';
 
+import type { TabId } from '@/features/chat/ChatFeatureHost';
 import type { ChatSessionRuntime } from '@/features/chat/sessions/ChatSessionRuntime';
 import type { DraftSessionHold } from '@/features/chat/sessions/SessionRuntimePool';
-import type { TabId } from '@/features/chat/tabs/ChatTab';
 import { sessionProjectId } from '@/features/chat/tabs/draftSeed';
 import type { ParkedDrafts } from '@/features/chat/tabs/ParkedDrafts';
 import type { NavigationRequestCheck, TabConversationNavigation } from '@/features/chat/tabs/TabConversationNavigation';

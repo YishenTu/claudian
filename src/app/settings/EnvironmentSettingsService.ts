@@ -11,6 +11,7 @@ import type { ProviderSettingsCoordinator } from '@/core/providers/ProviderSetti
 import type { ProviderId } from '@/core/providers/types';
 import type { ClaudianSettings } from '@/core/types';
 import type { EnvironmentScope } from '@/core/types/settings';
+import { SerialQueue } from '@/utils/SerialQueue';
 
 import type { RuntimeSettingsCoordinator } from './RuntimeSettingsCoordinator';
 import type { SettingsMutation } from './SettingsCoordinator';
@@ -36,7 +37,7 @@ export interface EnvironmentSettingsServiceDeps {
  * only then publishes the change; updates are serialized in submission order.
  */
 export class EnvironmentSettingsService {
-  private updateTail: Promise<void> = Promise.resolve();
+  private readonly updates = new SerialQueue();
 
   constructor(private readonly deps: EnvironmentSettingsServiceDeps) {}
 
@@ -64,11 +65,7 @@ export class EnvironmentSettingsService {
 
   async applyEnvironmentVariablesBatch(updates: readonly EnvironmentUpdate[]): Promise<void> {
     const queuedUpdates = updates.map(update => ({ ...update }));
-    const apply = this.updateTail.then(
-      () => this.#applyEnvironmentVariablesBatchNow(queuedUpdates),
-    );
-    this.updateTail = apply.catch(() => undefined);
-    await apply;
+    await this.updates.run(() => this.#applyEnvironmentVariablesBatchNow(queuedUpdates));
   }
 
   async applyProviderRuntimeSettings(

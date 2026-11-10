@@ -736,6 +736,23 @@ it('can cancel while native Pi is waiting to retry and fences later events', asy
 });
 
 it.each([
+  { text: '/review', context: undefined, expected: '/review' },
+  {
+    text: '/review', context: { linkedContent: { path: 'note.md' } },
+    expected: '/review \n\n<linked_content path="note.md" />',
+  },
+  {
+    text: '/review', context: capturedSelections,
+    expected: '/review \n\n' + capturedSelectionPrompt,
+  },
+  {
+    text: '/review task', context: { linkedContent: { path: 'note.md' } },
+    expected: '/review task\n\n<linked_content path="note.md" />',
+  },
+  {
+    text: '/review\nuser arguments', context: { linkedContent: { path: 'note.md' } },
+    expected: '/review\nuser arguments\n\n<linked_content path="note.md" />',
+  },
   { text: '/skill:review', context: undefined, expected: '/skill:review' },
   {
     text: '/skill:review', context: { linkedContent: { path: 'note.md' } },
@@ -762,7 +779,7 @@ it.each([
     text: '/skill:review\nuser arguments', context: { linkedContent: { path: 'note.md' } },
     expected: '/skill:review\nuser arguments\n\n<linked_content path="note.md" />',
   },
-])('preserves Pi skill syntax when attaching context to prompts and steers: $text', async ({ text, context, expected }) => {
+])('preserves Pi slash command syntax when attaching context to prompts and steers: $text', async ({ text, context, expected }) => {
   const { session, processes, whenRequest } = await createHarness();
   if (!isSteerableExecutionSession(session)) throw new Error('Pi must expose steering');
   const request = createRequest({ input: [{ type: 'text', text }], context });

@@ -1,4 +1,4 @@
-import { createInterface, type Interface } from 'node:readline';
+import { subscribeJSONLLines } from '@/utils/jsonlLines';
 
 const DEFAULT_TIMEOUT_MS = 30_000;
 
@@ -92,7 +92,7 @@ export class JSONRPCTransport {
   private nextId = 1;
   private readonly notificationHandlers = new Map<string, Set<JSONRPCNotificationHandler>>();
   private readonly pending = new Map<number, PendingRequest>();
-  private readline: Interface | null = null;
+  private unsubscribeInputLines: (() => void) | null = null;
   private readonly requestHandlers = new Map<string, JSONRPCRequestHandler>();
   private streamCloseTimer: number | null = null;
   private readonly streamUnsubscribers: Array<() => void> = [];
@@ -113,29 +113,18 @@ export class JSONRPCTransport {
   }
 
   start(): void {
-    if (this.readline || this.disposed) return;
+    if (this.unsubscribeInputLines || this.disposed) return;
 
-    this.readline = createInterface({
-      crlfDelay: Infinity,
-      input: this.streams.input,
-    });
-    this.readline.on('line', line => this.#handleLine(line));
-    this.readline.on('error', (error: Error) => {
-      this.#closeFromUnknown(error, 'JSON-RPC input error');
-    });
-    this.readline.on('close', () => {
-      this.#closeFromStream('JSON-RPC input closed');
-    });
+    // node:readline also splits on U+2028/U+2029, which JSON strings may contain literally.
+    this.unsubscribeInputLines = subscribeJSONLLines(
+      this.streams.input,
+      line => this.#handleLine(line),
+      () => this.#closeFromStream('JSON-RPC input closed'),
+    );
 
     this.streamUnsubscribers.push(
       subscribeStreamEvent(this.streams.input, 'error', (error?: unknown) => {
         this.#closeFromUnknown(error, 'JSON-RPC input error');
-      }),
-      subscribeStreamEvent(this.streams.input, 'end', () => {
-        this.#closeFromStream('JSON-RPC input closed');
-      }),
-      subscribeStreamEvent(this.streams.input, 'close', () => {
-        this.#closeFromStream('JSON-RPC input closed');
       }),
       subscribeStreamEvent(this.streams.output, 'error', (error?: unknown) => {
         this.#closeFromUnknown(error, 'JSON-RPC output error');
@@ -285,13 +274,7 @@ export class JSONRPCTransport {
     while (this.streamUnsubscribers.length > 0) {
       this.streamUnsubscribers.pop()?.();
     }
-
-    if (this.readline) {
-      const readline = this.readline;
-      this.readline = null;
-      readline.close();
-      readline.removeAllListeners();
-    }
+    this.unsubscribeInputLines?.();
 
     for (const pending of this.pending.values()) {
       pending.cleanup();
