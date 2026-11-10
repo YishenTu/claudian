@@ -2,7 +2,7 @@ import type { Component } from 'obsidian';
 
 import type { ProviderId } from '@/core/providers/types';
 import type { Conversation } from '@/core/types';
-import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
+import type { ChatFeatureHost, TabId } from '@/features/chat/ChatFeatureHost';
 import type { ForkContext } from '@/features/chat/conversation/forkSourceTypes';
 import type { ChatExecutionCoordinator } from '@/features/chat/execution/ChatExecutionCoordinator';
 import type { MessageRenderer } from '@/features/chat/rendering/MessageRenderer';
@@ -10,7 +10,6 @@ import type { SessionPresentation } from '@/features/chat/sessions/SessionModel'
 import type { SessionAttachmentOwner } from '@/features/chat/sessions/SessionRuntimePool';
 import type { ChatState } from '@/features/chat/state/ChatState';
 import type { TabAttention, TabReviewOutcome } from '@/features/chat/state/types';
-import type { TabId } from '@/features/chat/tabs/ChatTab';
 import type { TabIdentity } from '@/features/chat/tabs/TabIdentity';
 import type { TabSession } from '@/features/chat/tabs/TabSession';
 import type { AssembledTabRuntime, ProviderCatalogInfo, ProviderCatalogResolver, TabControllers, TabDOMElements, TabServices } from '@/features/chat/tabs/types';

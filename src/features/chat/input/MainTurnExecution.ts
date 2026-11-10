@@ -8,6 +8,7 @@ import { decodeSessionMessage } from '@/core/session-tools/sessionMessageEnvelop
 import type { ChatMessage, ImageAttachment } from '@/core/types';
 import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
 import type { ChatSettings } from '@/features/chat/ChatSettings';
+import type { SessionComposerPort } from '@/features/chat/composer/SessionComposer';
 import type { ConversationController } from '@/features/chat/conversation/ConversationController';
 import type { FirstTurnAdmission } from '@/features/chat/conversation/FirstTurnAdmission';
 import {
@@ -22,17 +23,21 @@ import {
 } from '@/features/chat/execution/ChatExecutionCoordinator';
 import { resolveSessionInstructions } from '@/features/chat/execution/projectInstructions';
 import type { MessageRenderer } from '@/features/chat/rendering/MessageRenderer';
-import { SessionMessageDeferredError, type SessionMessageUnsentReason } from '@/features/chat/session-messaging/SessionMailbox';
-import type { SessionComposerPort } from '@/features/chat/sessions/SessionComposer';
 import type { ChatState } from '@/features/chat/state/ChatState';
 import { captureSelectionSnapshots, createQueuedMessage } from '@/features/chat/state/chatTurnRequest';
 import type { ChatTurnRequest, TabReviewOutcome } from '@/features/chat/state/types';
 import { ResponseStream } from '@/features/chat/turns/ResponseStream';
 import type { StreamController } from '@/features/chat/turns/StreamController';
-import type { TurnCoordinator } from '@/features/chat/turns/TurnCoordinator';
+import type { TurnCancelReason, TurnCoordinator } from '@/features/chat/turns/TurnCoordinator';
 import type { TurnQueue } from '@/features/chat/turns/TurnQueue';
 import type { TurnSteering } from '@/features/chat/turns/TurnSteering';
 import { toError } from '@/utils/error';
+
+/** Why a session message never reached its recipient's provider. */
+export type SessionMessageUnsentReason = TurnCancelReason | 'failed' | 'deferred' | 'deleted' | 'archived';
+
+/** The recipient's mailbox defers a session message while competing work runs. */
+export class SessionMessageDeferredError extends Error {}
 
 /** A main turn admitted for execution, with everything captured when it was admitted. */
 export interface MainTurn {

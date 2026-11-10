@@ -6,7 +6,7 @@ import { tmpdir } from 'os';
 import { join } from 'path';
 
 import type { SubagentInfo, ToolCallInfo } from '@/core/types';
-import { SubagentManager } from '@/features/chat/subagents/SubagentManager';
+import { SubagentManager } from '@/features/chat/rendering/subagents/SubagentManager';
 
 const createManager = () => {
   const updates: SubagentInfo[] = [];

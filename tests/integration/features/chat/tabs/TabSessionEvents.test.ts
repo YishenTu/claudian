@@ -17,9 +17,9 @@ import { ConversationController } from '@/features/chat/conversation/Conversatio
 import { ChatExecutionCoordinator } from '@/features/chat/execution/ChatExecutionCoordinator';
 import { LinkedContentController } from '@/features/chat/linked-content';
 import { MessageRenderer } from '@/features/chat/rendering/MessageRenderer';
+import { SubagentManager } from '@/features/chat/rendering/subagents/SubagentManager';
 import { SessionEvents } from '@/features/chat/sessions/SessionEvents';
 import { ChatState } from '@/features/chat/state/ChatState';
-import { SubagentManager } from '@/features/chat/subagents/SubagentManager';
 import { StreamController } from '@/features/chat/turns/StreamController';
 import { CodexSubagentTracker } from '@/providers/codex/execution/CodexSubagentTracker';
 import { CodexNotificationRouter } from '@/providers/codex/runtime/CodexNotificationRouter';

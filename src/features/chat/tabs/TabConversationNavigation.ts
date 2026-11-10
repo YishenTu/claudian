@@ -1,5 +1,5 @@
-import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
-import type { TabId, TabManagerViewHost } from '@/features/chat/tabs/ChatTab';
+import type { ChatFeatureHost, TabId } from '@/features/chat/ChatFeatureHost';
+import type { TabManagerViewHost } from '@/features/chat/tabs/ChatTab';
 import { commitProvisionalTab } from '@/features/chat/tabs/TabLifecycle';
 import type { AssembledTabRuntime, TabMembershipView } from '@/features/chat/tabs/types';
 import { revealWorkspaceLeaf } from '@/utils/obsidianCompat';

@@ -17,8 +17,8 @@ import { ConversationController } from '@/features/chat/conversation/Conversatio
 import { LinkedContentController } from '@/features/chat/linked-content';
 import { NavigationSidebar } from '@/features/chat/navigation/NavigationSidebar';
 import { MessageRenderer } from '@/features/chat/rendering/MessageRenderer';
+import { SubagentManager } from '@/features/chat/rendering/subagents/SubagentManager';
 import { ChatState } from '@/features/chat/state/ChatState';
-import { SubagentManager } from '@/features/chat/subagents/SubagentManager';
 
 const start = testDate().getTime();
 

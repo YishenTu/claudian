@@ -17,9 +17,9 @@ import { ProviderExecutionLifecycleRegistry, type ProviderExecutionRequest } fro
 import type { ChatMessage, ImageAttachment } from '@/core/types';
 import { ChatExecutionCoordinator } from '@/features/chat/execution/ChatExecutionCoordinator';
 import { MessageRenderer } from '@/features/chat/rendering/MessageRenderer';
+import { SubagentManager } from '@/features/chat/rendering/subagents/SubagentManager';
 import { SessionEvents } from '@/features/chat/sessions/SessionEvents';
 import { ChatState } from '@/features/chat/state/ChatState';
-import { SubagentManager } from '@/features/chat/subagents/SubagentManager';
 import { BackgroundResponses } from '@/features/chat/turns/BackgroundResponses';
 import { renderSessionTaskNotification } from '@/features/chat/turns/BackgroundTurnRenderer';
 import { ResponseStream } from '@/features/chat/turns/ResponseStream';

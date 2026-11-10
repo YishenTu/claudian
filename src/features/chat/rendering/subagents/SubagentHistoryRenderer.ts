@@ -1,6 +1,6 @@
 import type { ChatMessage, SubagentInfo, ToolCallInfo } from '@/core/types';
 import { setupDisclosureButton } from '@/features/chat/rendering/collapsible';
-import { createSubagentBlock } from '@/features/chat/subagents/SubagentRenderer';
+import { createSubagentBlock } from '@/features/chat/rendering/subagents/SubagentRenderer';
 import { t } from '@/i18n/i18n';
 
 let nextHistoryId = 0;

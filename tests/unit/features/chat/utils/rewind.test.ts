@@ -1,5 +1,5 @@
 import type { ChatMessage } from '@/core/types';
-import { findRewindContext } from '@/features/chat/conversation/rewind';
+import { findRewindContext } from '@/features/chat/utils/rewind';
 
 describe('findRewindContext', () => {
   it('finds the nearest previous assistant UUID and detects a following response UUID', () => {

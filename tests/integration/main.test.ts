@@ -25,8 +25,8 @@ import { LoopbackSessionToolServer } from '@/core/session-tools/LoopbackSessionT
 import { TOOL_SUBAGENT } from '@/core/tools/toolNames';
 import { type ClaudianSettings, type Conversation, type SessionMetadata, VIEW_TYPE_CLAUDIAN } from '@/core/types';
 import { ClaudianView } from '@/features/chat/ClaudianView';
+import { resolveSessionMentions } from '@/features/chat/composer/resolveSessionMentions';
 import { ConversationTitleGeneration } from '@/features/chat/conversation/ConversationTitleGeneration';
-import { resolveSessionMentions } from '@/features/chat/input/resolveSessionMentions';
 import { SessionMessagingService } from '@/features/chat/session-messaging/SessionMessagingService';
 import { SessionRuntimePool } from '@/features/chat/sessions/SessionRuntimePool';
 import { ZenModeController } from '@/features/chat/zen/ZenModeController';

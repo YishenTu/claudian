@@ -11,7 +11,7 @@ import {
   renderStoredSubagent,
   updateAsyncSubagentBlock,
   updateSubagentBlock,
-} from '@/features/chat/subagents/SubagentRenderer';
+} from '@/features/chat/rendering/subagents/SubagentRenderer';
 
 const getTextByClass = (el: Element, cls: string): string[] => {
   const results: string[] = [];

@@ -1,6 +1,6 @@
 import type { ProviderId } from '@/core/providers/types';
 import type { SubagentInfo, ToolCallInfo } from '@/core/types';
-import type { SubagentManager } from '@/features/chat/subagents/SubagentManager';
+import type { SubagentManager } from '@/features/chat/rendering/subagents/SubagentManager';
 
 export interface SubagentHistoryRecoveryRequest {
   readonly providerId: ProviderId;

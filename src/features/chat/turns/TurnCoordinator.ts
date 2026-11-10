@@ -1,22 +1,19 @@
+import type { TurnActivity } from '@/features/chat/state/types';
+
 /** Why an admitted turn is being cancelled; non-user reasons also release its presentation. */
 export type TurnCancelReason = 'user' | 'new-conversation' | 'shutdown';
+
+export interface TurnCancelOptions {
+  dismissInteractions?: boolean;
+  /** Another session's interrupt keeps the pending session messages it is delivered with. */
+  keepMailbox?: boolean;
+}
 
 /**
  * Response progress after admission: input preparation (session references, branch commit,
  * Conversation shell), the provider-facing response, then rendering and persistence settlement.
  */
 export type TurnPhase = 'preparing' | 'responding' | 'settling';
-
-/** Read side of one foreground turn owner, for presentation state that derives from it. */
-export interface TurnActivity {
-  /** A response is admitted and has not reached settlement; it can still be cancelled. */
-  readonly isInFlight: boolean;
-  /** Recorded for the rest of the admitted turn, through settlement; provider events cannot clear it. */
-  readonly cancelRequested: boolean;
-  /** Identifies the response that owns streaming presentation; invalidation supersedes it. */
-  readonly streamGeneration: number;
-  subscribe(listener: () => void): () => void;
-}
 
 interface AdmittedTurn {
   readonly settled: Promise<void>;

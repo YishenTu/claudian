@@ -19,8 +19,9 @@ import {
   isCompletedReview,
   type SessionStatusDisplay,
 } from '@/features/chat/session-manager/SessionStatusPresentation';
-import { runSessionAction, showMenuAt } from '@/features/chat/session-manager/SessionSurfaceShared';
+import { showMenuAt } from '@/features/chat/session-manager/SessionSurfaceShared';
 import type { TabAttention } from '@/features/chat/state/types';
+import { runSessionAction } from '@/features/chat/utils/runSessionAction';
 import { t } from '@/i18n/i18n';
 import type { TranslationKey } from '@/i18n/types';
 import { confirmDelete } from '@/shared/modals/ConfirmModal';

@@ -12,12 +12,15 @@ import type {
 } from '@/core/types';
 import type { ConversationLifecycle } from '@/features/chat/conversation/ConversationLifecycle';
 import type { ChatExecutionPersistence } from '@/features/chat/execution/ChatExecutionCoordinator';
-import type { SessionToolBinding } from '@/features/chat/session-messaging/SessionMessagingService';
+import type { SessionToolBinding } from '@/features/chat/execution/ChatExecutionCoordinator';
 import type { SessionRuntimePool } from '@/features/chat/sessions/SessionRuntimePool';
-import type { ChatTab, TabId, TabManagerViewHost } from '@/features/chat/tabs/ChatTab';
+import type { ChatTab, TabManagerViewHost } from '@/features/chat/tabs/ChatTab';
 import type { TabIdentity } from '@/features/chat/tabs/TabIdentity';
 import type { ZenModeSource } from '@/features/chat/zen/types';
 import type { FeatureHost } from '@/features/FeatureHost';
+
+/** Tab identifier type. */
+export type TabId = string;
 
 export interface ChatModelSelectionPort {
   beginIntent(): number;
@@ -81,6 +84,8 @@ export type ChatProjects = ProjectReader & ProjectMutations & ProjectMemoryOpera
 
 /** Application capabilities chat needs on top of the feature-neutral `FeatureHost`. */
 export interface ChatFeatureHost extends FeatureHost {
+  /** Advances when vault skills change, invalidating provider command caches. */
+  getAgentSkillResourceGeneration(): number;
   readonly sessionRuntimes: ChatSessionRuntimes;
   bindSessionTools(conversationId: string): SessionToolBinding;
   readonly chatModelSelection: ChatModelSelectionPort;

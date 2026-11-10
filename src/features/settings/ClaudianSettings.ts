@@ -12,7 +12,7 @@ import type {
   DualPaneSide,
   SessionAutoArchiveAfter,
 } from '@/core/types/settings';
-import { SkillsSettingsTab } from '@/features/agent-skills/SkillsSettingsTab';
+import { type SkillsSettingsHost, SkillsSettingsTab } from '@/features/agent-skills/SkillsSettingsTab';
 import type { FeatureHost } from '@/features/FeatureHost';
 import { buildNavMappingText, parseNavMappings } from '@/features/settings/keyboardNavigation';
 import { getAvailableLocales, getLocaleDisplayName, setLocale, t } from '@/i18n/i18n';
@@ -52,8 +52,11 @@ function bindCommittedControl<T>(
   });
 }
 
+/** The shared host plus the capabilities of panels this tab renders. */
+export type SettingsFeatureHost = FeatureHost & SkillsSettingsHost;
+
 export class ClaudianSettingTab extends PluginSettingTab {
-  private readonly host: FeatureHost;
+  private readonly host: SettingsFeatureHost;
   private activeTab: SettingsTabId = 'general';
   private activeProviderTab: ProviderId | null = null;
   private refreshTitleModelOptions: (() => void) | null = null;
@@ -64,7 +67,7 @@ export class ClaudianSettingTab extends PluginSettingTab {
   private readonly textEdits: DebouncedSettingsWriter<ClaudianSettings>;
   private readonly customAliasDrafts = new Map<string, string>();
 
-  constructor(app: App, plugin: Plugin, host: FeatureHost) {
+  constructor(app: App, plugin: Plugin, host: SettingsFeatureHost) {
     super(app, plugin);
     this.host = host;
     this.textEdits = new DebouncedSettingsWriter(async (mutation) => {

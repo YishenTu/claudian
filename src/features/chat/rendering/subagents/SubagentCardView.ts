@@ -7,7 +7,7 @@ import {
   updateAsyncSubagentBlock,
   updateSubagentBlock,
   updateSubagentProgress,
-} from '@/features/chat/subagents/SubagentRenderer';
+} from '@/features/chat/rendering/subagents/SubagentRenderer';
 
 /** Disposable card presentation. Task identity and lifecycle stay with SubagentManager. */
 export class SubagentCardView {

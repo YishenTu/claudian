@@ -3,13 +3,13 @@ import '@/providers';
 
 import { TOOL_SUBAGENT } from '@/core/tools/toolNames';
 import type { SubagentInfo } from '@/core/types';
-import { ChatState } from '@/features/chat/state/ChatState';
 import {
   AsyncSubagentHistoryRecovery,
   type AsyncSubagentHistoryRecoveryDeps,
-} from '@/features/chat/subagents/AsyncSubagentHistoryRecovery';
-import { SubagentManager } from '@/features/chat/subagents/SubagentManager';
-import { SubagentStreamRouter } from '@/features/chat/subagents/SubagentStreamRouter';
+} from '@/features/chat/rendering/subagents/AsyncSubagentHistoryRecovery';
+import { SubagentManager } from '@/features/chat/rendering/subagents/SubagentManager';
+import { ChatState } from '@/features/chat/state/ChatState';
+import { SubagentStreamRouter } from '@/features/chat/turns/SubagentStreamRouter';
 
 
 

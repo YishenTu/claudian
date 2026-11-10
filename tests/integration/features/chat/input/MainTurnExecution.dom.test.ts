@@ -12,8 +12,8 @@ import { fireEvent, within } from '@testing-library/dom';
 import { Component, MarkdownRenderer } from 'obsidian';
 
 import { MessageRenderer } from '@/features/chat/rendering/MessageRenderer';
+import { SubagentManager } from '@/features/chat/rendering/subagents/SubagentManager';
 import { ChatState } from '@/features/chat/state/ChatState';
-import { SubagentManager } from '@/features/chat/subagents/SubagentManager';
 import { renderSessionTaskNotification } from '@/features/chat/turns/BackgroundTurnRenderer';
 import { StreamController } from '@/features/chat/turns/StreamController';
 

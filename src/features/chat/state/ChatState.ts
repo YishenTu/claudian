@@ -13,10 +13,10 @@ import type {
   TabAttention,
   TabReviewOutcome,
   ThinkingBlockState,
+  TurnActivity,
   WriteEditState,
 } from '@/features/chat/state/types';
 import { mergeReportedUsage } from '@/features/chat/state/usageInfo';
-import type { TurnActivity } from '@/features/chat/turns/TurnCoordinator';
 
 /** Presentation without a foreground turn owner, such as replayed background output. */
 const NO_TURN_ACTIVITY: TurnActivity = Object.freeze({

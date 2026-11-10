@@ -1,6 +1,6 @@
 import type { MessageRenderer } from '@/features/chat/rendering/MessageRenderer';
+import type { SubagentManager } from '@/features/chat/rendering/subagents/SubagentManager';
 import type { ChatState } from '@/features/chat/state/ChatState';
-import type { SubagentManager } from '@/features/chat/subagents/SubagentManager';
 import type { StreamController } from '@/features/chat/turns/StreamController';
 
 /** An optional transcript view over a session model. Attachment never changes execution. */
