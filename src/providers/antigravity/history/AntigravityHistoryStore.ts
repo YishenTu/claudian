@@ -45,7 +45,7 @@ interface TurnBuilder {
   readonly toolCalls: ToolCallInfo[];
   /** Request time of a user turn; automatic responses have none. */
   readonly requestedAt?: number;
-  lastStepAt?: number;
+  lastStep?: TranscriptStep;
 }
 
 /** agy records no result step for calls a denial aborted; a later step proves they never ran. */
@@ -146,11 +146,19 @@ export function parseAntigravityTranscript(
     }
   };
 
-  const finishTurn = (): void => {
+  const finishTurn = (endOfTranscript = false): void => {
     if (!turn) return;
     // Calls without a result at the end of the transcript may still be running.
-    const { assistant, blocks, lastStepAt, requestedAt, toolCalls } = turn;
-    if (requestedAt && lastStepAt && lastStepAt >= requestedAt) {
+    const { assistant, blocks, lastStep, requestedAt, toolCalls } = turn;
+    // agy has no cancellation record. A final model reply, compaction, or permission denial ends the run;
+    // user inputs and task reports can split an ongoing run, so only infer a stop at the transcript end.
+    const completed = lastStep?.type === 'CHECKPOINT'
+      || (lastStep?.type === 'PLANNER_RESPONSE' && !lastStep.tool_calls?.length)
+      || (lastStep?.type === 'GENERIC' && lastStep.status === 'ERROR'
+        && /\bpermission check failed\b/.test(lastStep.error ?? lastStep.content ?? ''));
+    if (lastStep && !completed && endOfTranscript) assistant.isInterrupt = true;
+    const lastStepAt = lastStep?.type === 'CHECKPOINT' ? 0 : parseTimestamp(lastStep?.created_at);
+    if (completed && requestedAt && lastStepAt && lastStepAt >= requestedAt) {
       assistant.completedAt = lastStepAt;
       assistant.durationSeconds = Math.floor((lastStepAt - requestedAt) / 1_000);
     }
@@ -216,6 +224,7 @@ export function parseAntigravityTranscript(
         if (step.status !== 'DONE') break;
         const current: TurnBuilder = turn ?? startTurn(stepId, timestamp, true);
         current.blocks.push({ type: 'context_compacted' });
+        current.lastStep = step;
         break;
       }
       case 'PLANNER_RESPONSE': {
@@ -250,11 +259,11 @@ export function parseAntigravityTranscript(
         break;
     }
     const current = turn as TurnBuilder | null;
-    if (current && timestamp > 0 && (step.type === 'PLANNER_RESPONSE' || step.type === 'GENERIC')) {
-      current.lastStepAt = timestamp;
+    if (current && (step.type === 'PLANNER_RESPONSE' || step.type === 'GENERIC')) {
+      current.lastStep = step;
     }
   }
-  finishTurn();
+  finishTurn(true);
   return messages;
 }
 
