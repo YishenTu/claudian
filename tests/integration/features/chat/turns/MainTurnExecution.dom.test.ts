@@ -4,9 +4,10 @@ import '@/providers';
 import type { UnscopedExecutionEvent } from '@test/helpers/ChatExecutionHarness';
 import { createFixture } from '@test/helpers/ChatInputHarness';
 import { createTestSession } from '@test/helpers/ConversationPorts';
+import { useTranscriptGeometry } from '@test/helpers/dom/transcriptGeometry';
 import { createChatFeatureHost } from '@test/helpers/features/chat/ChatFeatureHostFixture';
 import { parseCodexSessionContent } from '@test/helpers/providers/codex/parseCodexSessionContent';
-import { testTime } from '@test/helpers/testClock';
+import { testDate, testTime } from '@test/helpers/testClock';
 import { fireEvent, within } from '@testing-library/dom';
 import { Component, MarkdownRenderer } from 'obsidian';
 
@@ -149,4 +150,51 @@ it('shows only the indicator for a turn stopped after blank thinking alone, live
   renderer.renderMessages(state.messages, () => 'Welcome');
   await Promise.resolve();
   expect(inspect(messagesEl)).toEqual(expected);
+});
+
+// Issue #2189: another session's message arrives without moving a reader scrolled up, while the
+// user's own send still lands at the bottom. Streamed text grows its row, so following is visible.
+it.each([true, false])('keeps a scrolled-up reader in place for a session message but not for their own send (auto-scroll %s)', async autoScroll => {
+  vi.useFakeTimers();
+  cleanups.push(() => vi.useRealTimers());
+  const fixture = await createFixture();
+  const { state, renderer } = fixture.deps;
+  const messagesEl = fixture.deps.getMessagesEl()!;
+  fixture.plugin.settings.enableAutoScroll = autoScroll;
+  const geometry = useTranscriptGeometry(messagesEl, { rowHeight: row => 100 + (row.textContent?.length ?? 0) });
+  for (let index = 0; index < 6; index++) {
+    state.addMessage({ id: `u${index}`, role: 'user', content: `Prompt ${index}`, timestamp: testDate().getTime() });
+    state.addMessage({ id: `a${index}`, role: 'assistant', content: `Answer ${index}`, timestamp: testDate().getTime(),
+      completedAt: testDate().getTime(), contentBlocks: [{ type: 'text', content: `Answer ${index}` }] });
+  }
+  renderer.renderMessages(state.messages, () => 'Welcome');
+  const reply = async (send: () => Promise<void>) => {
+    const response = fixture.holdNextResponse();
+    const sending = send();
+    const run = await response.started;
+    const atHandoff = messagesEl.scrollTop;
+    await fixture.emit(run, text('A reply long enough to grow its row past the follow threshold.'));
+    await vi.advanceTimersByTimeAsync(200);
+    geometry.layout();
+    run.complete();
+    await sending;
+    await vi.advanceTimersByTimeAsync(200);
+    geometry.layout();
+    return atHandoff;
+  };
+  fireEvent.wheel(messagesEl, { deltaY: -100 });
+  messagesEl.scrollTop = 200;
+  fireEvent.scroll(messagesEl);
+
+  const sessionHandoff = await reply(() => fixture.controller.sendSessionMessage(
+    { from: 'Sender', sessionId: 'sender', text: 'Please inspect this' },
+    { assertBeforeHandoff: () => undefined, onUnsent: () => undefined },
+  ));
+  expect(within(messagesEl).getByText('Please inspect this')).toBeTruthy();
+  expect([sessionHandoff, messagesEl.scrollTop]).toEqual([200, 200]);
+
+  const userHandoff = await reply(() => fixture.controller.sendMessage({ content: 'Read the note' }));
+  expect(userHandoff).toBeGreaterThan(200);
+  // The send lands at the bottom; the reply streamed after it is followed only with auto-scroll on.
+  expect(messagesEl.scrollTop === geometry.bottom()).toBe(autoScroll);
 });

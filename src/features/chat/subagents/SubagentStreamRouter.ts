@@ -45,7 +45,6 @@ export interface SubagentStreamRouterDeps {
   /** Subagent cards replace or hide the main tool cards they take over. */
   tools: Pick<ToolCallStream, 'flush' | 'flushBefore' | 'detach' | 'remove'>;
   indicator: Pick<ThinkingIndicator, 'show'>;
-  scrollToBottom: () => void;
 }
 
 /**
@@ -213,7 +212,6 @@ export class SubagentStreamRouter {
         break;
       }
     }
-    this.deps.scrollToBottom();
   }
 
   /** Releases this stream's agent tasks from the shared manager when its response ends. */

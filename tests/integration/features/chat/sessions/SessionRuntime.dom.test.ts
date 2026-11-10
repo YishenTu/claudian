@@ -1339,7 +1339,6 @@ it('publishes session status only when its list projection changes', async () =>
   native.emitText(' Second chunk.');
   native.emitOutput({ type: 'usage', usage: { inputTokens: 10, contextWindow: 1000, contextTokens: 10, percentage: 1 } } as never);
   await waitFor(() => expect(tab.state.currentTextContent).toBe('First chunk. Second chunk.'));
-  tab.state.autoScrollEnabled = !tab.state.autoScrollEnabled;
   expect(h.statusChanges).not.toHaveBeenCalled();
   native.complete();
   await sending;

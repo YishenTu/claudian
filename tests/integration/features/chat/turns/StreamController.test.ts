@@ -830,31 +830,6 @@ describe('StreamController - Text Content', () => {
   });
 
   describe('Timer lifecycle', () => {
-    it('should scroll to a newly shown thinking indicator when auto-scroll is enabled', () => {
-      const messagesEl = deps.getMessagesEl();
-      Object.defineProperty(messagesEl, 'scrollHeight', { value: 1_000, configurable: true });
-      messagesEl.scrollTop = 0;
-
-      controller.thinkingIndicator.show();
-      vi.advanceTimersByTime(416);
-
-      expect(document.querySelector('.claudian-thinking')).not.toBeNull();
-      expect(messagesEl.scrollTop).toBe(1_000);
-    });
-
-    it('should not scroll to a newly shown thinking indicator when auto-scroll is paused', () => {
-      const messagesEl = deps.getMessagesEl();
-      Object.defineProperty(messagesEl, 'scrollHeight', { value: 1_000, configurable: true });
-      messagesEl.scrollTop = 0;
-      deps.state.autoScrollEnabled = false;
-
-      controller.thinkingIndicator.show();
-      vi.advanceTimersByTime(416);
-
-      expect(document.querySelector('.claudian-thinking')).not.toBeNull();
-      expect(messagesEl.scrollTop).toBe(0);
-    });
-
     it('should clear timer interval in resetStreamingState', () => {
       deps.state.responseStartTime = performance.now();
 
@@ -955,8 +930,9 @@ describe('StreamController - Text Content', () => {
 
   });
 
-  describe('scrollToBottom - settings', () => {
-    it('scrolls after rendered snapshots instead of every text chunk', async () => {
+  describe('transcript layout', () => {
+    // Following belongs to the transcript's resize observation, so streaming never forces layout.
+    it('streams text without reading transcript layout', async () => {
       const messagesEl = deps.getMessagesEl();
       const readHeight = vi.fn(() => 1000);
       Object.defineProperty(messagesEl, 'scrollHeight', { get: readHeight, configurable: true });
@@ -972,48 +948,7 @@ describe('StreamController - Text Content', () => {
       await vi.advanceTimersByTimeAsync(20);
 
       expect(deps.renderer.renderContent).toHaveBeenCalledWith(expect.anything(), 'chunk '.repeat(60), { deferMath: true, deferDiagrams: true });
-      expect(messagesEl.scrollTop).toBe(1000);
-      expect(readHeight.mock.calls.length).toBeLessThanOrEqual(vi.mocked(deps.renderer.renderContent).mock.calls.length);
-    });
-
-    it('should not scroll when enableAutoScroll setting is false', async () => {
-      Object.assign(deps.plugin.settings, { enableAutoScroll: false });
-      const messagesEl = deps.getMessagesEl();
-      Object.defineProperty(messagesEl, 'scrollHeight', { value: 1000, configurable: true });
-      messagesEl.scrollTop = 0;
-
-      const msg = createTestMessage();
-      deps.state.currentTextEl = document.body.createDiv();
-      await controller.handleStreamChunk({ type: 'text', content: 'Hello' }, msg);
-
-      vi.advanceTimersByTime(16);
-      await Promise.resolve();
-      expect(messagesEl.scrollTop).toBe(0);
-
-      Object.assign(deps.plugin.settings, { enableAutoScroll: true });
-      await controller.handleStreamChunk({ type: 'text', content: ' again' }, msg);
-      await vi.advanceTimersByTimeAsync(200);
-      expect(messagesEl.scrollTop).toBe(1000);
-    });
-
-    it('should not scroll when autoScrollEnabled state is false', async () => {
-      deps.state.autoScrollEnabled = false;
-      const messagesEl = deps.getMessagesEl();
-      Object.defineProperty(messagesEl, 'scrollHeight', { value: 1000, configurable: true });
-      messagesEl.scrollTop = 0;
-
-      const msg = createTestMessage();
-      deps.state.currentTextEl = document.body.createDiv();
-      await controller.handleStreamChunk({ type: 'text', content: 'Hello' }, msg);
-
-      vi.advanceTimersByTime(16);
-      await Promise.resolve();
-      expect(messagesEl.scrollTop).toBe(0);
-
-      deps.state.autoScrollEnabled = true;
-      await controller.handleStreamChunk({ type: 'text', content: ' again' }, msg);
-      await vi.advanceTimersByTimeAsync(200);
-      expect(messagesEl.scrollTop).toBe(1000);
+      expect(readHeight).not.toHaveBeenCalled();
     });
   });
 

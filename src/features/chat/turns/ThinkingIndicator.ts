@@ -6,7 +6,6 @@ export interface ThinkingIndicatorDeps {
   state: ChatState;
   getMessagesEl: () => HTMLElement | null;
   updateQueueIndicator: () => void;
-  scrollToBottom: () => void;
 }
 
 /** Debounce delay before showing the indicator (ms). */
@@ -132,7 +131,6 @@ export class ThinkingIndicator {
     if (this.#el) {
       contentEl.appendChild(this.#el);
       this.deps.updateQueueIndicator();
-      this.deps.scrollToBottom();
       return;
     }
 
@@ -185,6 +183,5 @@ export class ThinkingIndicator {
     this.stopElapsedTimer();
     const thinkingWindow = target.ownerDocument.defaultView ?? timerWindow;
     this.#elapsedTimer = { id: thinkingWindow.setInterval(updateTimer, 1000), window: thinkingWindow };
-    this.deps.scrollToBottom();
   }
 }

@@ -30,5 +30,6 @@
 
 - A transcript renders only a suffix that starts at a prompt; earlier messages render on request through `MessageRenderer`. A DOM lookup miss can mean an unrendered earlier message: reveal it through the renderer or skip presentation, never fall back to the current reply.
 - Open response blocks, tool/subagent records, and pending interaction answers must survive absent presentation. Detach cancels view jobs and releases DOM; it does not finalize blocks or settle requests.
+- Each transcript presentation's `TranscriptFollow` (owned by its `MessageRenderer`, main and side chat alike) is the only owner of follow intent and of writes that move the reader to the end. Session-level code keeps no scroll state and requests no follow; arrivals use `holdArrival`, the user's own send `reveal`, opening `land`.
 - Deferred presentation work (indicators, prompt resumes, scheduled renders) is fenced by the stream generation that scheduled it; never apply it to whichever turn is current.
 - Model selection alone must not change displayed context usage. Retain the previous complete report until the new model reports a usable window; never combine one model’s token count with another model’s window.

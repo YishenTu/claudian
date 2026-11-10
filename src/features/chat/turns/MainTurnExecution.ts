@@ -148,7 +148,7 @@ export class MainTurnExecution {
   }
 
   async #run(turn: MainTurn, signal: AbortSignal): Promise<void> {
-    const { plugin, state, streamController, conversationController } = this.deps;
+    const { state, streamController, conversationController } = this.deps;
     const { displayContent, request: turnRequest, images: imagesForMessage } = turn;
     const isCompact = parseCompactCommand(turnRequest.text) !== null;
     const restoreUnsentInput = (request: ChatTurnRequest, merge = true, unsentReason: SessionMessageUnsentReason = 'failed'): void => {
@@ -183,7 +183,6 @@ export class MainTurnExecution {
 
     const streamGeneration = this.deps.turns.beginResponse();
     streamController.beginResponse();
-    state.autoScrollEnabled = plugin.settings.enableAutoScroll ?? true; // Reset auto-scroll based on setting
 
     // Hide welcome message when sending first message
     const welcomeEl = this.deps.getWelcomeEl();
@@ -209,6 +208,8 @@ export class MainTurnExecution {
     this.#activeTurnStart = userMsg;
     state.markConversationDirty();
     this.deps.renderer?.addMessage(userMsg);
+    // The user's own turn lands at the bottom and re-arms following; another session's keeps the reader's place.
+    if (turn.origin === 'user') this.deps.renderer?.follow.reveal();
 
     const rollbackFailedTurn = (assistantMsg?: ChatMessage): void => {
       // Admission can overlap independent background output. Only this unaccepted submission is rolled back.
@@ -408,7 +409,6 @@ export class MainTurnExecution {
           // Native completion wins over a cancel that reached the provider too late.
           interrupted = end.outcome === 'cancelled' || (state.cancelRequested && end.outcome !== 'completed');
           await this.responseStream.finish(finalAssistantMsg, { interrupted, failed: end.outcome === 'failed' });
-          this.#syncScrollToBottomAfterRenderUpdates();
 
           const saveExtras = accepted ? { resumeAtMessageId: undefined } : undefined;
           await conversationController.save(true, saveExtras).catch(error => {
@@ -683,20 +683,4 @@ export class MainTurnExecution {
     streamController.subagents.releaseManaged();
   }
 
-  #syncScrollToBottomAfterRenderUpdates(): void {
-    const { plugin, state } = this.deps;
-    if (!(plugin.settings.enableAutoScroll ?? true)) return;
-    if (!state.autoScrollEnabled) return;
-
-    const messagesEl = this.deps.getMessagesEl();
-    const view = messagesEl?.ownerDocument.defaultView;
-    if (!messagesEl || !view) return;
-    view.requestAnimationFrame(() => {
-      if (this.deps.getMessagesEl() !== messagesEl) return;
-      if (!(this.deps.plugin.settings.enableAutoScroll ?? true)) return;
-      if (!this.deps.state.autoScrollEnabled) return;
-
-      messagesEl.scrollTop = messagesEl.scrollHeight;
-    });
-  }
 }

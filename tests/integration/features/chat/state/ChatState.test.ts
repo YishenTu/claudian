@@ -343,19 +343,6 @@ describe('ChatState', () => {
     });
   });
 
-  describe('autoScrollEnabled', () => {
-    it('notifies only when auto-scroll changes', () => {
-      const onAutoScrollChanged = vi.fn();
-      const chatState = new ChatState({ onAutoScrollChanged });
-      chatState.autoScrollEnabled = true;
-      expect(onAutoScrollChanged).not.toHaveBeenCalled();
-
-      chatState.autoScrollEnabled = false;
-
-      expect(onAutoScrollChanged).toHaveBeenCalledWith(false);
-    });
-  });
-
   describe('response timer', () => {
     it('stores responseStartTime', () => {
       const chatState = new ChatState();

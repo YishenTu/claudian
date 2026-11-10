@@ -411,6 +411,7 @@ export class SideChatRuntime {
     };
     this.state.addMessage(userMessage);
     this.renderer?.addMessage(userMessage);
+    this.renderer?.follow.reveal();
     if (this.state.messages.length === 1 && this.deps.plugin.settings.enableAutoTitleGeneration) {
       void this.#generateTitle(userMessage);
     }
@@ -420,7 +421,6 @@ export class SideChatRuntime {
     const assistantMessage = this.#responseStream.start();
     this.#sawInitialProviderUserMessage = false;
     this.#awaitingProviderAssistantStart = true;
-    this.state.autoScrollEnabled = true;
     this.#stream.thinkingIndicator.show();
     this.state.responseStartTime = performance.now();
     this.#refreshStatus();
