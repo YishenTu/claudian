@@ -244,10 +244,11 @@ export class ComposerDropdownController {
   }
 
   #hasCurrentMatch(): boolean {
-    const previous = this.activeMatch;
+    const open = this.#open;
+    const previous = open?.match;
     const cursor = this.inputEl.selectionStart;
     if (!previous || cursor === null || cursor !== this.inputEl.selectionEnd) return false;
-    const current = this.activeSource?.match(this.inputEl.value, cursor);
+    const current = open.source.match(this.inputEl.value, cursor);
     return !!current && current.start === previous.start && current.end === previous.end
       && current.query === previous.query && current.trigger === previous.trigger
       && current.atInputStart === previous.atInputStart;
