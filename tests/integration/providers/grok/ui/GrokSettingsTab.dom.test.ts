@@ -1,5 +1,4 @@
 /** @vitest-environment jsdom */
-import '@/providers';
 
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
@@ -15,11 +14,16 @@ import spawn from 'cross-spawn';
 
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { ProviderWorkspaceRegistry } from '@/core/providers/ProviderWorkspaceRegistry';
+import { registerProviderModules } from '@/core/providers/registerProviderModules';
 import type { ClaudianSettings } from '@/core/types';
 import { t } from '@/i18n/i18n';
+import { claudeProviderRegistration } from '@/providers/claude/registration';
 import { createGrokWorkspaceServices, type GrokWorkspaceServices } from '@/providers/grok/app/GrokWorkspaceServices';
+import { grokProviderRegistration } from '@/providers/grok/registration';
 import { getGrokProviderSettings, updateGrokProviderSettings } from '@/providers/grok/settings';
 import { grokSettingsTabRenderer } from '@/providers/grok/ui/GrokSettingsTab';
+
+registerProviderModules([claudeProviderRegistration, grokProviderRegistration]);
 
 vi.mock('cross-spawn', () => ({ default: vi.fn(() => { throw new Error('Native CLI unavailable in settings test'); }) }));
 
@@ -215,7 +219,9 @@ it('keeps a committed CLI path after recycle failure and allows reverting it', a
 
 it('rejects an existing relative CLI path', async () => {
   const file = await executable();
-  const relative = path.relative(process.cwd(), file);
+  // Relative to the Vault, which shares the file's drive; relative to `process.cwd()` crosses drives on CI Windows and stays absolute.
+  const relative = path.relative(fixture.vault.root, file);
+  expect(path.isAbsolute(relative)).toBe(false);
   await render();
   await setCLIPath(relative);
   expect(persist).not.toHaveBeenCalled();

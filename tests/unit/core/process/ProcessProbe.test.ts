@@ -50,6 +50,20 @@ describe('process probe bounds', () => {
     expect(child.kill).toHaveBeenCalledWith('SIGTERM');
   });
 
+  // A cold native start on a loaded Windows host has exceeded 5s (OpenCode `--version` on CI).
+  it('waits for a slow native command by default', async () => {
+    vi.useFakeTimers();
+    const child = childProcess();
+    vi.mocked(spawn).mockReturnValueOnce(child as never);
+    const result = runProcessProbe({ command: 'test', args: [], cwd: '/tmp', env: {} });
+    await vi.advanceTimersByTimeAsync(10_000);
+    child.stdout.write('2.0.18\n');
+    child.emit('exit', 0, null);
+    child.emit('close', 0, null);
+    expect(await result).toBe('2.0.18\n');
+    expect(child.kill).not.toHaveBeenCalled();
+  });
+
   it('terminates a command that exceeds the output limit', async () => {
     const child = childProcess();
     vi.mocked(spawn).mockReturnValueOnce(child as never);

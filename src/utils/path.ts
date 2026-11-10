@@ -135,8 +135,8 @@ export function translateMsysPath(value: string): string {
   return value;
 }
 
-function normalizePathBeforeResolution(p: string): string {
-  const expanded = expandHomePath(p);
+function normalizePathBeforeResolution(p: string, expandConfiguration: boolean): string {
+  const expanded = expandConfiguration ? expandHomePath(p) : p;
   return translateMsysPath(expanded);
 }
 
@@ -158,11 +158,11 @@ function normalizeWindowsPathPrefix(value: string): string {
   return normalized;
 }
 
-export function normalizePathForFilesystem(value: string): string {
+function normalizeFilesystemPath(value: string, expandConfiguration: boolean): string {
   if (!value || typeof value !== 'string') {
     return '';
   }
-  const expanded = normalizePathBeforeResolution(value);
+  const expanded = normalizePathBeforeResolution(value, expandConfiguration);
   const normalized = (() => {
     try {
       return process.platform === 'win32'
@@ -176,29 +176,22 @@ export function normalizePathForFilesystem(value: string): string {
   return normalizeWindowsPathPrefix(normalized);
 }
 
-export function normalizePathForComparison(value: string): string {
-  if (!value || typeof value !== 'string') {
-    return '';
-  }
+export function normalizePathForFilesystem(value: string): string {
+  return normalizeFilesystemPath(value, true);
+}
 
-  const expanded = normalizePathBeforeResolution(value);
-  const normalized = (() => {
-    try {
-      return process.platform === 'win32'
-        ? path.win32.normalize(expanded)
-        : path.normalize(expanded);
-    } catch {
-      return expanded;
-    }
-  })();
-
-  const normalizedWithPrefix = normalizeWindowsPathPrefix(normalized)
+function normalizeComparisonPath(value: string, expandConfiguration: boolean): string {
+  const normalizedWithPrefix = normalizeFilesystemPath(value, expandConfiguration)
     .replace(/\\/g, '/')
     .replace(/\/+$/, '');
 
   return process.platform === 'win32'
     ? normalizedWithPrefix.toLowerCase()
     : normalizedWithPrefix;
+}
+
+export function normalizePathForComparison(value: string): string {
+  return normalizeComparisonPath(value, true);
 }
 
 function normalizeVaultEventPath(value: string): string {
@@ -231,17 +224,18 @@ export function rewriteVaultPathAfterRename(
   return null;
 }
 
-export function isPathWithinDirectory(
+function isPathWithinDirectoryWithMode(
   candidatePath: string,
   directoryPath: string,
-  relativeBasePath?: string,
+  relativeBasePath: string | undefined,
+  expandConfiguration: boolean,
 ): boolean {
   if (!candidatePath || !directoryPath) {
     return false;
   }
 
-  const directoryReal = normalizePathForComparison(resolveRealPath(directoryPath));
-  const normalizedCandidate = normalizePathForFilesystem(candidatePath);
+  const directoryReal = normalizeComparisonPath(resolveRealPath(directoryPath), expandConfiguration);
+  const normalizedCandidate = normalizeFilesystemPath(candidatePath, expandConfiguration);
   if (!normalizedCandidate) {
     return false;
   }
@@ -250,8 +244,16 @@ export function isPathWithinDirectory(
     ? normalizedCandidate
     : path.resolve(relativeBasePath ?? directoryPath, normalizedCandidate);
 
-  const resolvedCandidate = normalizePathForComparison(resolveRealPath(absCandidate));
+  const resolvedCandidate = normalizeComparisonPath(resolveRealPath(absCandidate), expandConfiguration);
   return resolvedCandidate === directoryReal || resolvedCandidate.startsWith(directoryReal + '/');
+}
+
+export function isPathWithinDirectory(
+  candidatePath: string,
+  directoryPath: string,
+  relativeBasePath?: string,
+): boolean {
+  return isPathWithinDirectoryWithMode(candidatePath, directoryPath, relativeBasePath, true);
 }
 
 export function isPathWithinVault(candidatePath: string, vaultPath: string): boolean {
@@ -264,14 +266,18 @@ export function normalizePathForVault(
 ): string | null {
   if (!rawPath) return null;
 
-  const normalizedRaw = normalizePathForFilesystem(rawPath);
+  const normalizedRaw = normalizeFilesystemPath(rawPath, false);
   if (!normalizedRaw) return null;
 
-  if (vaultPath && isPathWithinVault(normalizedRaw, vaultPath)) {
+  if (vaultPath && isPathWithinDirectoryWithMode(normalizedRaw, vaultPath, vaultPath, false)) {
     const absolute = path.isAbsolute(normalizedRaw)
       ? normalizedRaw
       : path.resolve(vaultPath, normalizedRaw);
-    const relative = path.relative(vaultPath, absolute);
+    let relative = path.relative(vaultPath, absolute);
+    // Providers may report a canonical path while the vault was opened through a symlink.
+    if (relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
+      relative = path.relative(resolveRealPath(vaultPath), resolveRealPath(absolute));
+    }
     return relative ? relative.replace(/\\/g, '/') : null;
   }
 

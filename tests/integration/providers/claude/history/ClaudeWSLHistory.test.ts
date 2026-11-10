@@ -1,5 +1,3 @@
-import '@/providers';
-
 import * as fs from 'node:fs';
 import * as fsPromises from 'node:fs/promises';
 
@@ -19,10 +17,14 @@ import { getInstallationKey } from '@/core/device/InstallationKey';
 import { createProviderHistoryPathContext } from '@/core/providers/historyPathContext';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { ProviderSettingsCoordinator } from '@/core/providers/ProviderSettingsCoordinator';
+import { registerProviderModules } from '@/core/providers/registerProviderModules';
 import type { ClaudianSettings, Conversation } from '@/core/types';
 import { createClaudianAPI } from '@/features/chat/session-messaging/ClaudianAPI';
 import { SessionMessagingService } from '@/features/chat/session-messaging/SessionMessagingService';
 import { loadSDKSessionMessages } from '@/providers/claude/history/ClaudeHistoryStore';
+import { claudeProviderRegistration } from '@/providers/claude/registration';
+
+registerProviderModules([claudeProviderRegistration]);
 
 vi.mock('fs', async () => ({ ...await vi.importActual<typeof import('fs')>('fs') }));
 vi.mock('fs/promises', async () => ({ ...await vi.importActual<typeof import('fs/promises')>('fs/promises') }));

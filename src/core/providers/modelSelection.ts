@@ -1,6 +1,7 @@
 import type { ProviderId } from './types';
 
 const PROVIDER_MODEL_SELECTION_PREFIXES: Partial<Record<ProviderId, string>> = {
+  antigravity: 'antigravity/',
   claude: 'claude-code/',
   codex: 'openai-codex/',
   grok: 'grok/',

@@ -1,5 +1,4 @@
 // @test-ci {"inputs":["tests/fixtures/providers/grok/runtime/models-list.json","tests/fixtures/providers/grok/runtime/models-list-byok.json"]}
-import '@/providers';
 
 import { readFileSync } from 'node:fs';
 import * as path from 'node:path';
@@ -8,11 +7,16 @@ import { createProviderHostFixture } from '@test/helpers/providerRuntimeHost';
 
 import { getProviderSettingsSnapshotWithModel } from '@/core/providers/conversationModel';
 import { ProviderSettingsCoordinator } from '@/core/providers/ProviderSettingsCoordinator';
+import { registerProviderModules } from '@/core/providers/registerProviderModules';
+import { claudeProviderRegistration } from '@/providers/claude/registration';
 import { normalizeGrokSessionModelMetadata, normalizeGrokSetModelMetadata } from '@/providers/grok/execution/GrokSessionModelMetadata';
+import { grokProviderRegistration } from '@/providers/grok/registration';
 import { GrokModelCatalogCoordinator } from '@/providers/grok/runtime/GrokModelCatalogCoordinator';
 import { createGrokModels } from '@/providers/grok/runtime/GrokModels';
 import { getGrokProviderSettings, projectGrokModelSettings } from '@/providers/grok/settings';
 import { grokChatUIConfig } from '@/providers/grok/ui/GrokChatUIConfig';
+
+registerProviderModules([claudeProviderRegistration, grokProviderRegistration]);
 
 const nativeCatalog = JSON.parse(readFileSync(
   path.resolve('tests/fixtures/providers/grok/runtime/models-list.json'), 'utf8',

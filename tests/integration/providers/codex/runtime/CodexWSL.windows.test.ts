@@ -1,5 +1,4 @@
 // @test-ci {"inputs":["src/providers/codex/**","tests/{unit,integration}/providers/codex/**","tests/helpers/providers/codex/**","tests/helpers/testClock.ts"]}
-import '@/providers';
 
 import * as path from 'node:path';
 
@@ -11,9 +10,14 @@ import { hasNativeWSL } from '@test/helpers/WSLNativeTarget';
 import { getInstallationKey } from '@/core/device/InstallationKey';
 import type { ProviderExecutionEvent } from '@/core/execution';
 import { parseEnvironmentVariables } from '@/core/process/env';
+import { registerProviderModules } from '@/core/providers/registerProviderModules';
+import { claudeProviderRegistration } from '@/providers/claude/registration';
 import { CodexExecutionBackend } from '@/providers/codex/execution/CodexExecutionBackend';
 import { CodexConversationHistoryService } from '@/providers/codex/history/CodexConversationHistoryService';
+import { codexProviderRegistration } from '@/providers/codex/registration';
 import { CodexAppServerRuntime } from '@/providers/codex/runtime/CodexAppServerRuntime';
+
+registerProviderModules([claudeProviderRegistration, codexProviderRegistration]);
 
 // CI uses WSL1. This proves Windows/WSL launch and filesystem mechanics with the native peer.
 describe.skipIf(!hasNativeWSL())('native Codex WSL session and history', () => {
@@ -41,7 +45,7 @@ describe.skipIf(!hasNativeWSL())('native Codex WSL session and history', () => {
       const events: ProviderExecutionEvent[] = [];
       for await (const event of session.execute({
         input: [{ type: 'text', text }], configuration: { model: TEST_CODEX_MODEL, reasoning: 'high', permissionMode: 'yolo',
-          systemInstructions: { kind: 'explicit', instructions: 'Reply to the fixture prompt.' } },
+          systemInstructions: { kind: 'explicit', purpose: 'title', instructions: 'Reply to the fixture prompt.' } },
         toolPolicy: { kind: 'provider-default' }, signal: AbortSignal.timeout(40_000),
       }).events) events.push(event);
       expect(events.filter(event => event.type === 'execution_error')).toEqual([]);

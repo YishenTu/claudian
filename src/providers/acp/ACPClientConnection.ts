@@ -7,6 +7,11 @@ import {
 } from './methodNames';
 import type {
   ACPCancelNotification,
+  ACPClientCapabilities,
+  ACPCloseSessionRequest,
+  ACPCloseSessionResponse,
+  ACPCreateElicitationRequest,
+  ACPCreateElicitationResponse,
   ACPImplementation,
   ACPInitializeRequest,
   ACPInitializeResponse,
@@ -18,7 +23,11 @@ import type {
   ACPPromptResponse,
   ACPRequestPermissionRequest,
   ACPRequestPermissionResponse,
+  ACPResumeSessionRequest,
+  ACPResumeSessionResponse,
   ACPSessionNotification,
+  ACPSetSessionConfigOptionRequest,
+  ACPSetSessionConfigOptionResponse,
   ACPSetSessionModelRequest,
   ACPSetSessionModelResponse,
   ACPSetSessionModeRequest,
@@ -34,6 +43,10 @@ type SessionNotificationListener = (
 const ACP_PROMPT_TURN_TIMEOUT_MS = 0;
 
 export interface ACPClientConnectionDelegate {
+  /** Registered only when present; advertise `elicitation` in client capabilities to receive requests. */
+  createElicitation?: (
+    request: ACPCreateElicitationRequest,
+  ) => Promise<ACPCreateElicitationResponse>;
   onSessionNotification?: SessionNotificationListener;
   requestPermission?: (
     request: ACPRequestPermissionRequest,
@@ -41,6 +54,7 @@ export interface ACPClientConnectionDelegate {
 }
 
 export interface ACPClientConnectionOptions {
+  clientCapabilities?: ACPClientCapabilities;
   clientInfo?: ACPImplementation | null;
   delegate?: ACPClientConnectionDelegate;
   transport: ACPJSONRPCTransport;
@@ -61,6 +75,7 @@ export class ACPClientConnection {
 
   initialize(): Promise<ACPInitializeResponse> {
     return this.#request<ACPInitializeResponse>('initialize', {
+      ...(this.options.clientCapabilities ? { clientCapabilities: this.options.clientCapabilities } : {}),
       clientInfo: this.options.clientInfo ?? null,
       protocolVersion: ACP_PROTOCOL_VERSION,
     } satisfies ACPInitializeRequest);
@@ -72,6 +87,18 @@ export class ACPClientConnection {
 
   loadSession(request: ACPLoadSessionRequest): Promise<ACPLoadSessionResponse> {
     return this.#request<ACPLoadSessionResponse>('loadSession', request);
+  }
+
+  resumeSession(request: ACPResumeSessionRequest): Promise<ACPResumeSessionResponse> {
+    return this.#request<ACPResumeSessionResponse>('resumeSession', request);
+  }
+
+  closeSession(request: ACPCloseSessionRequest): Promise<ACPCloseSessionResponse> {
+    return this.#request<ACPCloseSessionResponse>('closeSession', request);
+  }
+
+  setConfigOption(request: ACPSetSessionConfigOptionRequest): Promise<ACPSetSessionConfigOptionResponse> {
+    return this.#request<ACPSetSessionConfigOptionResponse>('setConfigOption', request);
   }
 
   prompt(request: ACPPromptRequest): Promise<ACPPromptResponse> {
@@ -113,6 +140,14 @@ export class ACPClientConnection {
       subscribeRequest(
         ACP_SERVER_REQUEST_METHODS.requestPermission,
         (params) => requestPermission(params as ACPRequestPermissionRequest),
+      );
+    }
+
+    if (delegate?.createElicitation) {
+      const createElicitation = delegate.createElicitation;
+      subscribeRequest(
+        ACP_SERVER_REQUEST_METHODS.createElicitation,
+        (params) => createElicitation(params as ACPCreateElicitationRequest),
       );
     }
   }

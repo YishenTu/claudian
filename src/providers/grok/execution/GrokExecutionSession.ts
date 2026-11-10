@@ -17,6 +17,7 @@ import {
   type ACPContentBlock,
   ACPInteractionController,
   type ACPMCPServer,
+  ACPNativeOwnerSlot,
   type ACPPromptResponse,
   ACPRequestedTurn,
   type ACPSessionConfigOption,
@@ -154,8 +155,16 @@ RewindableExecutionSession {
   private disposalFlight: Promise<void> | null = null;
   private disposed = false;
   private forkCreationFlight: Promise<string> | null = null;
-  private nativeOwner: GrokNativeOwner | null = null;
-  private nativeStartupFlight: Promise<GrokExecutionNativeConnection> | null = null;
+  private readonly nativeSlot = new ACPNativeOwnerSlot<GrokNativeOwner>((owner, wasCurrent) => {
+    if (wasCurrent) {
+      owner.notificationUnsubscribe();
+      owner.modeUnsubscribe();
+      owner.interjectionUnsubscribe();
+      owner.modelsUnsubscribe();
+    }
+    owner.shutdownFlight ??= Promise.resolve().then(() => owner.native.shutdown());
+    return owner.shutdownFlight;
+  });
   private quarantineGeneration = 0;
   private readonly interactionController: ACPInteractionController;
   private readonly interactionRouter: GrokExecutionInteractionRouter;
@@ -275,7 +284,7 @@ RewindableExecutionSession {
     try { assertGrokModelAvailable(this.host, request.configuration.model); }
     catch (error) { if (error instanceof ProviderModelUnavailableError) return false; throw error; }
     const active = this.active;
-    const native = this.nativeOwner?.initialized ? this.nativeOwner.native : null;
+    const native = this.nativeSlot.current?.initialized ? this.nativeSlot.current.native : null;
     if (
       !active
       || this.#isCancellationRequested(active)
@@ -330,14 +339,12 @@ RewindableExecutionSession {
       });
       this.#emitCurrentSnapshot();
       active.abortController.abort();
-      active.run.finish({
+      this.#endRun(active, {
         category: 'configuration',
         message: 'Grok Build does not support reliable exact allow-list enforcement.',
         recoverable: false,
         type: 'execution_error',
       });
-      active.turn.dispose();
-      if (this.active === active) this.active = null;
       return;
     }
     let unsubscribeClose: (() => void) | undefined;
@@ -391,7 +398,7 @@ RewindableExecutionSession {
       });
       this.#emitCurrentSnapshot();
       active.abortController.abort();
-      active.run.finish({
+      this.#endRun(active, {
         category,
         message: error instanceof Error ? error.message : String(error),
         ...(category === 'provider-session-missing' && this.providerSessionId
@@ -400,8 +407,6 @@ RewindableExecutionSession {
         recoverable: true,
         type: 'execution_error',
       });
-      active.turn.dispose();
-      this.active = null;
     } finally {
       unsubscribeClose?.();
     }
@@ -410,35 +415,19 @@ RewindableExecutionSession {
   async #ensureNative(
     active?: ActiveExecution,
   ): Promise<GrokExecutionNativeConnection> {
-    const currentOwner = this.nativeOwner;
-    if (
-      !this.nativeStartupFlight
-      && currentOwner?.initialized
-      && currentOwner.native.isAlive?.() !== false
-    ) return currentOwner.native;
-    let startupFlight = this.nativeStartupFlight;
-    if (!startupFlight) {
-      startupFlight = this.#startNative(this.quarantineGeneration);
-      this.nativeStartupFlight = startupFlight;
-      startupFlight.then(
-        () => {
-          if (this.nativeStartupFlight === startupFlight) this.nativeStartupFlight = null;
-        },
-        () => {
-          if (this.nativeStartupFlight === startupFlight) this.nativeStartupFlight = null;
-        },
-      );
-    }
-    const native = await startupFlight;
+    const owner = await this.nativeSlot.ensure(
+      current => current.initialized && current.native.isAlive?.() !== false,
+      () => this.#startNative(this.quarantineGeneration),
+    );
     this.#throwIfCancellationRequested(active);
-    return native;
+    return owner.native;
   }
 
   async #startNative(
     quarantineGeneration: number,
-  ): Promise<GrokExecutionNativeConnection> {
-    const previousOwner = this.nativeOwner;
-    if (previousOwner) await this.#shutdownNativeOwner(previousOwner);
+  ): Promise<GrokNativeOwner> {
+    const previousOwner = this.nativeSlot.current;
+    if (previousOwner) await this.nativeSlot.detach(previousOwner);
     const context = await resolveGrokExecutionContext(this.host, this.config.workingDirectory);
     const launch = buildTargetLaunchSpec({ ...context, args: ['agent', '--no-leader', 'stdio'] });
     const historyContext = await resolveGrokHistoryEnvironment({
@@ -512,7 +501,7 @@ RewindableExecutionSession {
       notificationUnsubscribe: () => {},
       shutdownFlight: null,
     };
-    this.nativeOwner = owner;
+    this.nativeSlot.install(owner);
     try {
       this.mirrorDeduplicator.reset();
       owner.notificationUnsubscribe = native.onNotification((notification, source) => {
@@ -543,10 +532,10 @@ RewindableExecutionSession {
         throw new Error('Grok Build native startup was cancelled.');
       }
       owner.initialized = true;
-      return native;
+      return owner;
     } catch (error) {
       try {
-        await this.#shutdownNativeOwner(owner);
+        await this.nativeSlot.detach(owner);
       } catch {
         // Startup cleanup cannot replace the error that initiated quarantine.
       }
@@ -704,7 +693,7 @@ RewindableExecutionSession {
       throw error;
     });
     const route = await this.sessionToolRoute;
-    const launch = this.nativeOwner!.launch;
+    const launch = this.nativeSlot.current!.launch;
     if (launch.target.method === 'wsl') {
       const relay = await createWSLSessionToolRelay({
         target: launch.target, hostCwd: launch.spawnCwd, env: launch.env, route, mode: 'mcp',
@@ -819,7 +808,7 @@ RewindableExecutionSession {
       }
       return;
     }
-    let update = mapGrokNativePaths(notification.update, this.nativeOwner?.launch.pathMapper);
+    let update = mapGrokNativePaths(notification.update, this.nativeSlot.current?.launch.pathMapper);
     if (update.sessionUpdate === 'agent_message_chunk' || update.sessionUpdate === 'user_message_chunk') {
       const role = update.sessionUpdate === 'agent_message_chunk' ? 'assistant' : 'user';
       const messageId = resolveGrokLiveMessageId(update, role, notification._meta);
@@ -831,7 +820,7 @@ RewindableExecutionSession {
     // current_mode metadata is ignored.
     const metadata = active.turn.handleUpdate(update);
     if (metadata?.type === 'config_options') {
-      const owner = this.nativeOwner;
+      const owner = this.nativeSlot.current;
       if (owner) void this.#publishModelsFromConfig(metadata.configOptions, owner);
     }
   }
@@ -873,13 +862,11 @@ RewindableExecutionSession {
     this.#updateSnapshot('idle');
     this.#emitCurrentSnapshot();
     active.abortController.abort();
-    active.run.finish({
+    this.#endRun(active, {
       providerPayload: response,
       reason: mapStopReason(response.stopReason),
       type: 'turn_completed',
     });
-    active.turn.dispose();
-    this.active = null;
   }
 
   async #cancelRun(run: RequestedRunChannel, reason: string): Promise<void> {
@@ -892,7 +879,7 @@ RewindableExecutionSession {
     active.abortController.abort();
     this.interactionController.dismissAll('cancelled');
     this.interactionRouter.dismissAll('cancelled');
-    const native = this.nativeOwner?.native ?? null;
+    const native = this.nativeSlot.current?.native ?? null;
     this.cancellationFlight = (async () => {
       await this.#joinForkCreation();
       const sessionId = this.providerSessionId;
@@ -913,17 +900,22 @@ RewindableExecutionSession {
           });
           this.#emitCurrentSnapshot();
         }
-        active.run.finish({
+        this.#endRun(active, {
           reason,
           type: 'cancelled',
         });
-        active.turn.dispose();
-        if (this.active === active) this.active = null;
       }
     })().finally(() => {
       this.cancellationFlight = null;
     });
     return this.cancellationFlight;
+  }
+
+  /** The one way a run ends: its terminal event, its turn's disposal, and release of the session slot. */
+  #endRun(active: ActiveExecution, terminal: Parameters<RequestedRunChannel['finish']>[0]): void {
+    active.run.finish(terminal);
+    active.turn.dispose();
+    if (this.active === active) this.active = null;
   }
 
   #isCancellationRequested(active: ActiveExecution): boolean {
@@ -941,32 +933,7 @@ RewindableExecutionSession {
 
   async #shutdownNative(): Promise<void> {
     await this.#joinForkCreation();
-    const startupFlight = this.nativeStartupFlight;
-    const owner = this.nativeOwner;
-    let shutdownError: Error | null = null;
-    if (owner) {
-      try {
-        await this.#shutdownNativeOwner(owner);
-      } catch (error) {
-        shutdownError = toError(error);
-      }
-    }
-    if (startupFlight) {
-      try {
-        await startupFlight;
-      } catch {
-        // The startup caller receives the initiating startup failure.
-      }
-    }
-    const remainingOwner = this.nativeOwner;
-    if (remainingOwner) {
-      try {
-        await this.#shutdownNativeOwner(remainingOwner);
-      } catch (error) {
-        shutdownError ??= toError(error);
-      }
-    }
-    if (shutdownError) throw shutdownError;
+    await this.nativeSlot.shutdown();
   }
 
   #createForkSession(
@@ -1012,28 +979,14 @@ RewindableExecutionSession {
     }
   }
 
-  #shutdownNativeOwner(owner: GrokNativeOwner): Promise<void> {
-    if (this.nativeOwner === owner) {
-      this.nativeOwner = null;
-      owner.notificationUnsubscribe();
-      owner.modeUnsubscribe();
-      owner.interjectionUnsubscribe();
-      owner.modelsUnsubscribe();
-    }
-    if (!owner.shutdownFlight) {
-      owner.shutdownFlight = Promise.resolve().then(() => owner.native.shutdown());
-    }
-    return owner.shutdownFlight;
-  }
-
   #isCurrentNativeOwner(owner: GrokNativeOwner): boolean {
-    return !this.disposed && this.nativeOwner === owner;
+    return !this.disposed && this.nativeSlot.isCurrent(owner);
   }
 
   #getNativeOwner(
     native: GrokExecutionNativeConnection,
   ): GrokNativeOwner {
-    const owner = this.nativeOwner;
+    const owner = this.nativeSlot.current;
     if (!owner || owner.native !== native) {
       throw new Error('Grok Build native connection ownership changed.');
     }
@@ -1079,9 +1032,9 @@ RewindableExecutionSession {
     return {
       canRewind: response.success,
       ...(response.error ? { error: response.error } : {}),
-      conflicts: mapGrokNativePaths(response.conflicts, this.nativeOwner?.launch.pathMapper),
-      filesChanged: [...response.cleanFiles, ...response.revertedFiles].map(value => this.nativeOwner?.launch.target.method === 'wsl'
-        ? this.nativeOwner.launch.pathMapper.toHostPath(value) ?? value : value),
+      conflicts: mapGrokNativePaths(response.conflicts, this.nativeSlot.current?.launch.pathMapper),
+      filesChanged: [...response.cleanFiles, ...response.revertedFiles].map(value => this.nativeSlot.current?.launch.target.method === 'wsl'
+        ? this.nativeSlot.current.launch.pathMapper.toHostPath(value) ?? value : value),
     };
   }
 
@@ -1103,7 +1056,7 @@ RewindableExecutionSession {
     persistedSessionDirectory: string | null | undefined,
   ): void {
     this.providerSessionId = providerSessionId;
-    if (this.nativeOwner?.sessionStoreKey) this.state.setProviderStateValue('sessionStoreKey', this.nativeOwner.sessionStoreKey);
+    if (this.nativeSlot.current?.sessionStoreKey) this.state.setProviderStateValue('sessionStoreKey', this.nativeSlot.current.sessionStoreKey);
     for (const key of ['historySessionId', 'historyResumeAt']) {
       if (key in this.state.providerState) this.state.deleteProviderStateValue(key);
     }
@@ -1111,7 +1064,7 @@ RewindableExecutionSession {
       persistedSessionDirectory,
       providerSessionId,
       this.config.workingDirectory,
-      this.nativeOwner!.historyContext,
+      this.nativeSlot.current!.historyContext,
     );
     if (sessionDirectory) {
       this.state.setProviderStateValue('sessionDirectory', sessionDirectory);
@@ -1371,8 +1324,4 @@ function classifyError(
   if (message.includes('config') || message.includes('model')) return 'configuration';
   if (message.includes('transport') || message.includes('closed')) return 'transport';
   return 'unknown';
-}
-
-function toError(error: unknown): Error {
-  return error instanceof Error ? error : new Error(String(error));
 }

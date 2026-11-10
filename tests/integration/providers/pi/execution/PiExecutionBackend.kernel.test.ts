@@ -450,6 +450,86 @@ describe('PiExecutionBackend', () => {
     }
   });
 
+  /** A resumed Pi session whose saved turn leaf `a1` another Pi client left at `a2` by appending from `parent`. */
+  async function createAppendedPiSession(parent: string, treeResponses: Array<Record<string, unknown>>) {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'pi-leaf-resume-'));
+    const sessionFile = path.join(root, 'session.jsonl');
+    const entry = (id: string, parentId: string | null, role: 'user' | 'assistant', text: string) => `${JSON.stringify({
+      type: 'message', id, parentId, message: role === 'user' ? { role, content: text } : { role, content: [{ type: 'text', text }] },
+    })}\n`;
+    await fs.writeFile(sessionFile, JSON.stringify({ type: 'session', id: 'pi-session-1', cwd: root }) + '\n'
+      + entry('u1', null, 'user', 'Hello') + entry('a1', 'u1', 'assistant', 'Hi')
+      + entry('u2', parent, 'user', 'From the CLI') + entry('a2', 'u2', 'assistant', 'CLI reply'));
+    let prompted = createDeferred();
+    const responses: { current?: Map<string, unknown> } = {};
+    const harness = await createHarness(createConfig({
+      workingDirectory: root,
+      resumeSeed: { providerSessionId: 'pi-session-1', providerState: { sessionId: 'pi-session-1', sessionFile, leafEntryId: 'a1' } },
+    }), undefined, async <T>(type: string): Promise<T> => {
+      if (type === 'prompt') prompted.resolve();
+      if (type === 'claudian_tree') return { sessionId: 'pi-session-1', sessionFile, ...treeResponses.shift() } as T;
+      return responses.current?.get(type) as T;
+    });
+    responses.current = harness.responses;
+    harness.responses.set('get_state', { sessionId: 'pi-session-1', sessionFile });
+    // The session file is in the configured store, so the resumed process stays bound to it across turns.
+    harness.host.settings.providerConfigs.pi!.environmentVariables = `PI_CODING_AGENT_SESSION_DIR=${root}`;
+    return {
+      ...harness, sessionFile,
+      /** Resolves when the next prompt reaches the kernel. */
+      nextPrompt: () => { prompted = createDeferred(); return prompted.promise; },
+      cleanup: async () => { await harness.session.dispose(); await fs.rm(root, { recursive: true, force: true }); },
+    };
+  }
+
+  it.each([
+    { appended: 'branches from an earlier entry', parent: 'u1', restores: true },
+    { appended: 'continues the saved leaf', parent: 'a1', restores: false },
+  ])('resumes the shown turn leaf after restart when another Pi client $appended', async ({ parent, restores }) => {
+    const pi = await createAppendedPiSession(parent, [{ cancelled: false, leafId: 'a1' }]);
+    try {
+      const prompted = pi.nextPrompt();
+      const events = collect(pi.session.execute(createRequest()).events);
+      await prompted;
+      const requests = pi.kernels[0].requests;
+      const restoreIndex = requests.findIndex(r => r.type === 'claudian_tree');
+      const expected = restores
+        ? { operation: 'restore', targetId: 'a1', leafId: 'a1', appendId: 'a2', sessionFile: pi.sessionFile, sessionId: 'pi-session-1' }
+        : null;
+      expect(restoreIndex === -1 ? null : requests[restoreIndex].payload).toEqual(expected);
+      // Restoration, when needed, happens before the prompt reaches the resumed process.
+      expect(restoreIndex).toBeLessThan(requests.findIndex(r => r.type === 'prompt'));
+      completeTurn(pi.kernels[0]);
+      await events;
+    } finally {
+      await pi.cleanup();
+    }
+  });
+
+  it('retries aligning the resumed turn leaf after a cancelled restoration', async () => {
+    const pi = await createAppendedPiSession('u1', [{ cancelled: true, leafId: null }, { cancelled: false, leafId: 'a1' }]);
+    try {
+      const failed = await collect(pi.session.execute(createRequest()).events);
+      expect(failed).toContainEqual(expect.objectContaining({ type: 'execution_error' }));
+      expect(pi.kernels[0].requests.some(r => r.type === 'prompt')).toBe(false);
+
+      const prompted = pi.nextPrompt();
+      const events = collect(pi.session.execute(createRequest()).events);
+      await prompted;
+      expect(pi.kernels).toHaveLength(1);
+      const kernel = pi.kernels[0];
+      // The same process is retried; it must be brought back to the shown leaf again before the prompt.
+      const restores = kernel.requests.filter(r => r.type === 'claudian_tree');
+      expect(restores).toHaveLength(2);
+      expect(restores[1].payload).toMatchObject({ operation: 'restore', targetId: 'a1', leafId: 'a1' });
+      expect(kernel.requests.indexOf(restores[1])).toBeLessThan(kernel.requests.findIndex(r => r.type === 'prompt'));
+      completeTurn(kernel);
+      await events;
+    } finally {
+      await pi.cleanup();
+    }
+  });
+
   it('uses an isolated no-session kernel for command metadata probes', async () => {
     const responses = new Map<string, unknown>([
       ['get_commands', {
@@ -1787,7 +1867,8 @@ describe('PiExecutionBackend', () => {
         },
       }));
       const eventsPromise = collect(run.events);
-      await waitFor(() => harness.kernels.length === expectedKernels);
+      await waitFor(() => harness.kernels.length === expectedKernels
+        && getPromptMessages(harness.kernels.at(-1)!).length === 1);
       completeTurn(harness.kernels.at(-1)!);
       await eventsPromise;
     };
@@ -2391,6 +2472,7 @@ describe('PiExecutionBackend', () => {
     rollback.resolve();
     await waitFor(() => createForkSessionFile.mock.calls.length === 2, 100);
     await waitFor(() => harness.kernels.length === 1, 100);
+    await waitFor(() => getPromptMessages(harness.kernels[0]).length === 1);
     harness.kernels[0].emit({ type: 'agent_start' });
     harness.kernels[0].emit({ type: 'agent_end' });
     harness.kernels[0].emit({ type: 'agent_settled' });
@@ -2456,6 +2538,7 @@ describe('PiExecutionBackend', () => {
     })).events);
     firstCreation.resolve(firstTarget);
     await waitFor(() => harness.kernels.length === 1, 100);
+    await waitFor(() => getPromptMessages(harness.kernels[0]).length === 1);
     harness.kernels[0].emit({ type: 'agent_start' });
     harness.kernels[0].emit({ type: 'agent_end' });
     harness.kernels[0].emit({ type: 'agent_settled' });
@@ -2515,6 +2598,7 @@ describe('PiExecutionBackend', () => {
 
     expect(createForkSessionFile).toHaveBeenCalledTimes(2);
     await waitFor(() => harness.kernels.length === 1, 100);
+    await waitFor(() => getPromptMessages(harness.kernels[0]).length === 1);
     harness.kernels[0].emit({ type: 'agent_start' });
     harness.kernels[0].emit({ type: 'agent_end' });
     harness.kernels[0].emit({ type: 'agent_settled' });
@@ -2619,6 +2703,7 @@ describe('PiExecutionBackend', () => {
       sessionFile: forkFile,
       sessionId: 'fork-session',
     });
+    await waitFor(() => getPromptMessages(harness.kernels[0]).length === 1);
     harness.kernels[0].emit({ type: 'agent_start' });
     harness.kernels[0].emit({ type: 'agent_end' });
     harness.kernels[0].emit({ type: 'agent_settled' });
@@ -2805,6 +2890,46 @@ describe('PiExecutionBackend', () => {
       expect(backgroundEvents(events).filter(event => event.type === 'background_turn_started')).toHaveLength(1);
       expect(harness.session.getStatus()).toBe('idle');
       await harness.session.dispose();
+    });
+
+    it('keeps a requested turn open when an extension run ends before its prompt is dispatched', async () => {
+      const modelConfigured = createDeferred();
+      let modelRequested = false;
+      const harness = (await createHarness(createConfig(), undefined, async <T>(type: string) => {
+        if (type === 'set_model') {
+          modelRequested = true;
+          await modelConfigured.promise;
+        }
+        return harness.responses.get(type) as T;
+      }));
+      try {
+        const events: ProviderSessionEvent[] = [];
+        harness.session.onEvent(event => events.push(event));
+        const requested = collect(harness.session.execute(createRequest()).events);
+        await waitFor(() => modelRequested);
+        // A session-start extension run finishes while preflight still holds the user's prompt.
+        emitWake(harness.kernels[0]);
+        harness.kernels[0].emit({ type: 'agent_end' });
+        harness.kernels[0].emit({ type: 'agent_settled' });
+        await waitFor(() => events.some(event => event.type === 'background_turn_completed'));
+        modelConfigured.resolve();
+        await waitFor(() => getPromptMessages(harness.kernels[0]).length === 1);
+
+        const kernel = harness.kernels[0];
+        kernel.emit({ type: 'agent_start' });
+        kernel.emit({ message: { role: 'assistant' }, type: 'message_start' });
+        kernel.emit({ assistantMessageEvent: { delta: 'Requested reply', type: 'text_delta' }, type: 'message_update' });
+        kernel.emit({ type: 'agent_end' });
+        kernel.emit({ type: 'agent_settled' });
+        const requestedEvents = await requested;
+
+        expect(requestedEvents).toContainEqual(expect.objectContaining({ text: 'Requested reply', type: 'text_delta' }));
+        expect(requestedEvents).not.toContainEqual(expect.objectContaining({ text: 'Parent reply', type: 'text_delta' }));
+        expect(backgroundEvents(events)).toContainEqual(expect.objectContaining({ text: 'Parent reply', type: 'text_delta' }));
+      } finally {
+        modelConfigured.resolve();
+        await harness.session.dispose();
+      }
     });
 
     it('renders a custom message steered into a requested run in that run', async () => {

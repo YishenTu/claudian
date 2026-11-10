@@ -2,7 +2,6 @@
  * @vitest-environment jsdom
  * @vitest-environment-options {"customExportConditions":["node","node-addons"]}
  */
-import '@/providers';
 
 import { createHarness as createCoordinator, deferred } from '@test/helpers/ChatExecutionHarness';
 import { createFixture } from '@test/helpers/ChatInputHarness';
@@ -17,12 +16,17 @@ import { isSteerableExecutionSession, type ProviderExecutionEvent, type Provider
 import { createExecutionPathMapper } from '@/core/process/execution-target/WSLPathMapper';
 import { getProviderConfig, setProviderConfig } from '@/core/providers/providerConfig';
 import type { ProviderHost } from '@/core/providers/ProviderHost';
+import { registerProviderModules } from '@/core/providers/registerProviderModules';
 import type { ImageAttachment } from '@/core/types';
 import type { ChatSettings } from '@/features/chat/ChatSettings';
+import { claudeProviderRegistration } from '@/providers/claude/registration';
 import { DeepSeekExecutionBackend } from '@/providers/deepseek/execution/DeepSeekExecutionBackend';
+import { deepseekProviderRegistration } from '@/providers/deepseek/registration';
 import { isRecord } from '@/providers/deepseek/remote/DeepSeekRemoteClient';
 import { getDeepSeekHome } from '@/providers/deepseek/runtime/DeepSeekHome';
 import type { DeepSeekHost } from '@/providers/deepseek/runtime/DeepSeekHost';
+
+registerProviderModules([claudeProviderRegistration, deepseekProviderRegistration]);
 
 let peer: NativePeer;
 let deepseek: DeepSeekHost;
@@ -40,7 +44,7 @@ const time = testDate().getTime();
 let host: ProviderHost;
 
 function request(text = 'requested'): ProviderExecutionRequest {
-  return { input: [{ type: 'text', text }], configuration: { systemInstructions: { kind: 'explicit', instructions: 'literal {prompt}' }, permissionMode: 'normal' }, toolPolicy: { kind: 'provider-default' }, signal: new AbortController().signal };
+  return { input: [{ type: 'text', text }], configuration: { systemInstructions: { kind: 'explicit', purpose: 'title', instructions: 'literal {prompt}' }, permissionMode: 'normal' }, toolPolicy: { kind: 'provider-default' }, signal: new AbortController().signal };
 }
 /** Appends one durable event to the claimed root's follow stream; subagent streams are driven separately. */
 function event(type: string, data: unknown): void {
@@ -74,7 +78,7 @@ beforeEach(async () => {
     if (method === 'session/create') return { sessionId: nativeRequest(args).sessionId ? 'minted' : 'root', agentPreset: 'claudian' };
     if (method === 'session/updateQueue') {
       inbox = inbox.filter((item) => item.id !== nativeRequest(args).itemId);
-      peer.send('session/control', { type: 'projection', sessionId: 'root', key: 'inbox', seq: ++seq, value: { 'next-turn': inbox } });
+      peer.send('session/control', { type: 'projection', sessionId: 'root', seq: ++seq, changes: [{ key: 'inbox', val: { 'next-turn': inbox } }] });
       return { accepted: true };
     }
     if (method === 'session/cancel') { event('turn/end', { turn: nativeTurn, reason: { kind: 'cancelled' } }); return {}; }
@@ -119,8 +123,8 @@ it.each([
 });
 /** Announces a native subagent of root through the catalog, its descriptor and the roster. */
 function announceChild(mode: 'continuable' | 'one-shot', running: boolean): void {
-  peer.send('session/control', { type: 'projection', sessionId: 'root', key: 'subagentCatalog', value: [{ id: 'child', mode, label: 'child task' }] });
-  peer.send('session/control', { type: 'projection', sessionId: 'child', key: 'subagent', value: { mode, label: 'child task', seq: 0 } });
+  peer.send('session/control', { type: 'projection', sessionId: 'root', changes: [{ key: 'subagentCatalog', val: [{ id: 'child', mode, label: 'child task' }] }] });
+  peer.send('session/control', { type: 'projection', sessionId: 'child', changes: [{ key: 'subagent', val: { mode, label: 'child task', seq: 0 } }] });
   peer.send('$events', { type: 'emit', event: 'api-session/added', args: [{ sessionId: 'child', parentSessionId: 'root', origin: 'subagent', agentAvailable: true, running }] });
 }
 
@@ -170,9 +174,9 @@ async function runningTurn(): Promise<{ run: ReturnType<ProviderExecutionSession
 }
 /** Native's inbox projection with the given steered items still waiting for the next step boundary. */
 function pendingSteers(items: Array<{ id: string; rpcId: string; text: string }>): void {
-  peer.send('session/control', { type: 'projection', sessionId: 'root', key: 'inbox', seq: ++seq, value: {
+  peer.send('session/control', { type: 'projection', sessionId: 'root', seq: ++seq, changes: [{ key: 'inbox', val: {
     'next-turn': [], 'next-step': items.map(item => ({ id: item.id, role: 'user', source: { kind: 'user', rpcId: item.rpcId }, content: [{ type: 'text', text: item.text }] })),
-  } });
+  } }] });
 }
 
 it('joins steered input to the running requested turn once native claims it at a step boundary', async () => {
@@ -496,7 +500,7 @@ it('removes only a cancelled queued request and preserves the automatic turn', a
   begin();
   event('assistant/message', { turn: nativeTurn, step: 0, message: { content: [{ type: 'text', text: 'working' }] } });
   inbox = [{ id: 'ours', source: { kind: 'user', rpcId: run.executionId }, content: [{ type: 'text', text: 'requested' }] }];
-  peer.send('session/control', { type: 'projection', sessionId: 'root', key: 'inbox', seq: ++seq, value: { 'next-turn': inbox } });
+  peer.send('session/control', { type: 'projection', sessionId: 'root', seq: ++seq, changes: [{ key: 'inbox', val: { 'next-turn': inbox } }] });
   run.cancel(); await done;
   expect(peer.calls.filter(c => c.method === 'session/updateQueue')).toMatchObject([{ args: { request: { itemId: 'ours' } } }]);
   expect(peer.calls.some(c => c.method === 'session/cancel')).toBe(false);
@@ -625,7 +629,7 @@ it.each(['error', 'blocked'])('keeps native jobs and the Host alive after a requ
 
 function enqueue(rpcId: string): void {
   inbox = [...inbox, { id: `item-${rpcId}`, source: { kind: 'user', rpcId }, content: [{ type: 'text', text: 'requested' }] }];
-  peer.send('session/control', { type: 'projection', sessionId: 'root', key: 'inbox', seq: ++seq, value: { 'next-turn': inbox } });
+  peer.send('session/control', { type: 'projection', sessionId: 'root', seq: ++seq, changes: [{ key: 'inbox', val: { 'next-turn': inbox } }] });
 }
 function failAutomatic(): void {
   event('turn/end', { turn: nativeTurn, reason: { kind: 'error', error: { message: 'Temporary model failure' } } });
@@ -682,7 +686,7 @@ it.each([
   enqueue(run.executionId);
   nativeTurn++; event('turn/start', { turn: nativeTurn });
   event('agent/inbox/spliced', { target: 'next-turn', start: 0, removedCount: 1, inserted: [] });
-  inbox = []; peer.send('session/control', { type: 'projection', sessionId: 'root', key: 'inbox', seq: ++seq, value: { 'next-turn': inbox } });
+  inbox = []; peer.send('session/control', { type: 'projection', sessionId: 'root', seq: ++seq, changes: [{ key: 'inbox', val: { 'next-turn': inbox } }] });
   event('turn/end', { turn: nativeTurn, reason: { kind, ...(kind === 'error' ? { error: { message: 'Hook runner failed' } } : {}) } });
   await done;
   expect(events.at(-1)).toMatchObject({ type: 'execution_error', category: 'configuration', recoverable: true, message: expect.stringContaining(message) });
@@ -699,7 +703,7 @@ function claimBeforeRemoval(itemId: string): never {
   setTimeout(() => {
     const rpcId = itemId.slice('item-'.length);
     inbox = inbox.filter((item) => item.id !== itemId);
-    peer.send('session/control', { type: 'projection', sessionId: 'root', key: 'inbox', seq: ++seq, value: { 'next-turn': inbox } });
+    peer.send('session/control', { type: 'projection', sessionId: 'root', seq: ++seq, changes: [{ key: 'inbox', val: { 'next-turn': inbox } }] });
     nativeTurn++; event('turn/start', { turn: nativeTurn });
     event('user/message', { id: `user-${nativeTurn}`, content: [{ type: 'text', text: 'requested' }], source: { kind: 'user', rpcId } });
   }, 20);
@@ -1158,6 +1162,35 @@ it('fails the conversation on a transport failure without stopping the native wo
   expect(peer.calls.some(c => c.method === 'session/cancel')).toBe(true);
 });
 
+it('stops the native work of a failed conversation closed while its binding is being retained', async () => {
+  let jobs = [{ id: 'job', owner: 'root', status: 'running' }];
+  serveJobs(() => jobs);
+  const ordinaryCall = peer.onCall;
+  peer.onCall = (method, args) => {
+    if (method === '$events/result') return NATIVE_RESET;
+    if (method === 'job/kill') { jobs = []; peer.send('job/list', { type: 'rows', jobs }, jobsOf('root')); return { status: 'requested' }; }
+    return ordinaryCall(method, args);
+  };
+  port.askUserQuestion = vi.fn<typeof port.askUserQuestion>(async () => ({ interactionId: 'question', answers: { q: 'Yes' } }));
+  create();
+  let closed: Promise<void> | undefined;
+  // A consumer closes the conversation as soon as it observes the failure, while the failure is still detaching.
+  session.onEvent(event => {
+    if (!closed && event.type === 'session_state_changed' && event.snapshot.status === 'invalidated') closed = session.dispose();
+  });
+  const run = session.execute(request());
+  const done = collect(run.events, []);
+  await until(() => peer.calls.some(c => c.method === 'session/prompt'));
+  begin(run.executionId);
+  peer.send('$events', { type: 'waterfall', eventId: 'question', event: 'user-questions/request', agentId: 'root', request: { questions: [{ id: 'q', question: 'Continue?', options: [{ label: 'Yes' }] }] } });
+  await done;
+  await until(() => !!closed);
+  await closed;
+
+  expect(peer.calls.filter(c => c.method === 'job/kill')).toEqual([{ method: 'job/kill', args: { request: { sessionId: 'root', jobId: 'job' } } }]);
+  expect(session.hasBackgroundWork?.()).toBe(false);
+});
+
 it('resolves native tool image references inside the owning session', async () => {
   const ordinary = peer.onCall;
   peer.onCall = (method, args) => method === 'session/attachment'
@@ -1170,7 +1203,7 @@ it('resolves native tool image references inside the owning session', async () =
   event('tool/result', { message: { toolCallId: 'image', content: [{ type: 'image', attachment: { attachmentId: 'image-data' } }] } });
   answer('seen'); await done;
   expect(events.find(e => e.type === 'tool_completed')).toMatchObject({ resultDetails: { resultImages: [{ kind: 'data', mediaType: 'image/png', data: 'aW1hZ2U=' }] } });
-  expect(peer.calls.find(c => c.method === 'session/attachment')?.args).toEqual({ request: { sessionId: 'root', attachmentId: 'image-data' } });
+  expect(peer.calls.find(c => c.method === 'session/attachment')?.args).toEqual({ request: { sessionId: 'root', attachmentId: 'image-data', attachment: { attachmentId: 'image-data' } } });
 });
 
 it('recovers the saved native preset before resuming an unbound conversation', async () => {

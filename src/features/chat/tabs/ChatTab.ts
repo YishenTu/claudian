@@ -2,6 +2,7 @@ import type { Component, TFile, WorkspaceLeaf } from 'obsidian';
 
 import type { ProviderId, TitleGenerationService } from '@/core/providers/types';
 import type { ChatMessage } from '@/core/types';
+import type { TabId } from '@/features/chat/ChatFeatureHost';
 import type { TabAttention } from '@/features/chat/state/types';
 import type { TabIdentity } from '@/features/chat/tabs/TabIdentity';
 import type { ZenPresentationPort } from '@/features/chat/zen/types';
@@ -37,9 +38,6 @@ export interface TabManagerInterface {
   /** Reports aggregate user-visible work for a runtime tab. */
   isTabWorking(tabId: TabId): boolean;
 }
-
-/** Tab identifier type. */
-export type TabId = string;
 
 /**
  * Runtime tab lifecycle states, independent from conversation binding:

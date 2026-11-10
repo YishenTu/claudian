@@ -6,8 +6,17 @@ The API is experimental: its shape may change in minor releases while `version` 
 
 ## Getting the API
 
+The public Obsidian SDK types omit the runtime plugin manager. Use a local type
+intersection for the member needed here. Put the type imports at file scope and
+run the remaining statements inside your plugin's methods.
+
 ```ts
-const claudian = this.app.plugins.getPlugin('realclaudian') as { api?: ClaudianAPI } | null;
+import type { App } from 'obsidian';
+
+const app = this.app as App & {
+  plugins: { getPlugin(id: string): { api?: ClaudianAPI } | null };
+};
+const claudian = app.plugins.getPlugin('realclaudian');
 const api = claudian?.api;
 if (api?.version !== 1) return; // Claudian is missing, disabled, still loading, or incompatible
 ```
@@ -52,10 +61,17 @@ Returns the final answer of the last finished turn as Markdown: the text the age
 
 ## Turn-ended event
 
-Claudian fires a workspace event when a session finishes its turn and any work the turn left running:
+Claudian fires a workspace event when a session finishes its turn and any work the
+turn left running. This custom event is absent from the SDK's workspace overloads;
+describe it locally and register the returned event reference for unload cleanup:
 
 ```ts
-this.registerEvent(this.app.workspace.on('claudian:turn-ended', async ({ sessionId }: { sessionId: string }) => {
+import type { EventRef, Workspace } from 'obsidian';
+
+const workspace = this.app.workspace as Workspace & {
+  on(name: 'claudian:turn-ended', callback: (event: { sessionId: string }) => void): EventRef;
+};
+this.registerEvent(workspace.on('claudian:turn-ended', async ({ sessionId }: { sessionId: string }) => {
   if (sessionId !== mySessionId) return;
   const reply = await api.read(sessionId);
   // speak or display the reply

@@ -85,9 +85,9 @@ export function createOpencodeHTTPMetadataFixture(): OpencodeHTTPMetadataFixture
   };
 }
 
-export async function waitUntil(predicate: () => boolean): Promise<void> {
+export async function waitUntil(predicate: () => boolean | Promise<boolean>): Promise<void> {
   const deadline = Date.now() + 40_000;
-  while (!predicate()) {
+  while (!(await predicate())) {
     if (Date.now() >= deadline) throw new Error('Fixture did not reach the expected state.');
     await new Promise(resolve => setTimeout(resolve, 10));
   }

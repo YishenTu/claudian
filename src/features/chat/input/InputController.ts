@@ -17,27 +17,25 @@ import type { AskUserAnswers, ChatMessage, ToolCallInfo } from '@/core/types';
 import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
 import type { ChatSettings } from '@/features/chat/ChatSettings';
 import { findComposerSessionMentions } from '@/features/chat/composer/composerSessionMentions';
+import { resolveSessionMentions } from '@/features/chat/composer/resolveSessionMentions';
+import type { SessionComposerPort } from '@/features/chat/composer/SessionComposer';
 import type { ConversationController } from '@/features/chat/conversation/ConversationController';
 import { FirstTurnAdmission } from '@/features/chat/conversation/FirstTurnAdmission';
 import type { ChatExecutionCoordinator } from '@/features/chat/execution/ChatExecutionCoordinator';
 import type { BuiltInCommandController } from '@/features/chat/input/BuiltInCommandController';
 import type { ComposerSelections } from '@/features/chat/input/ComposerSelections';
-import { resolveSessionMentions } from '@/features/chat/input/resolveSessionMentions';
+import { type MainTurn, MainTurnExecution, type SessionMessageUnsentReason } from '@/features/chat/input/MainTurnExecution';
 import { SubmissionPreparations } from '@/features/chat/input/SubmissionPreparations';
 import { deliverAsyncQuestion } from '@/features/chat/interactions/asyncQuestionDelivery';
 import type { SessionInteractions } from '@/features/chat/interactions/SessionInteractions';
 import type { LinkedContentController } from '@/features/chat/linked-content';
 import type { MessageRenderer } from '@/features/chat/rendering/MessageRenderer';
-import type { SessionMessageUnsentReason } from '@/features/chat/session-messaging/SessionMailbox';
-import type { ChatSessionRuntime, TurnCancelOptions } from '@/features/chat/sessions/ChatSessionRuntime';
-import type { SessionComposerPort } from '@/features/chat/sessions/SessionComposer';
 import type { SideChatController } from '@/features/chat/side-chat/SideChatController';
 import type { ChatState } from '@/features/chat/state/ChatState';
 import { captureSelectionSnapshots, createQueuedMessage } from '@/features/chat/state/chatTurnRequest';
 import type { ChatTurnRequest, TabReviewOutcome } from '@/features/chat/state/types';
-import { type MainTurn, MainTurnExecution } from '@/features/chat/turns/MainTurnExecution';
 import type { StreamController } from '@/features/chat/turns/StreamController';
-import type { TurnCoordinator } from '@/features/chat/turns/TurnCoordinator';
+import type { TurnCancelOptions, TurnCancelReason, TurnCoordinator } from '@/features/chat/turns/TurnCoordinator';
 import { TurnQueue } from '@/features/chat/turns/TurnQueue';
 import { type ProviderEchoClaim, TurnSteering } from '@/features/chat/turns/TurnSteering';
 import { t } from '@/i18n/i18n';
@@ -45,6 +43,15 @@ import type { ComposerInputElement } from '@/shared/composer-dropdown/types';
 
 /** Rejected dispatch leaves draft recovery with its caller; handled work owns recovery. */
 type DispatchResult = 'rejected' | 'handled' | 'queued';
+
+/** The session capabilities input coordinates with. */
+export interface InputSession {
+  readonly turns: TurnCoordinator;
+  /** Pending session messages, which Stop discards. */
+  readonly mailbox: { clear(): void } | null;
+  cancelTurn(reason: TurnCancelReason, options?: TurnCancelOptions): boolean;
+  stopMainBackgroundWork(): void;
+}
 
 export interface InputControllerDeps {
   plugin: ChatFeatureHost;
@@ -68,13 +75,15 @@ export interface InputControllerDeps {
   getTabProviderId: () => ProviderId | null;
   /** Returns true if ready. */
   ensureExecutionInitialized: () => Promise<boolean>;
+  /** The shown history is being checked, or reloaded after a change outside Claudian. */
+  historyRefresh: () => 'checking' | 'reloading' | null;
   builtInCommands: Pick<BuiltInCommandController, 'execute'>;
   /** Captures a review reporter when a terminal provider turn becomes visible. */
   captureReviewableSettlement?: (outcome: TabReviewOutcome) => () => void;
   canStartTurn: () => boolean;
   isClosing: () => boolean;
   /** The session-owned turn activity and its single cancellation recipe. */
-  session: Pick<ChatSessionRuntime, 'turns' | 'cancelTurn' | 'stopMainBackgroundWork' | 'mailbox'>;
+  session: InputSession;
   /** Queued work and preparation can outlive the foreground turn's idle notification. */
   onWorkChanged?: () => void;
   /** Destination seam for the shared composer; absent means main-only. */
@@ -207,6 +216,11 @@ export class InputController {
         new Notice(t('chat.selectAvailableModel'));
         return;
       }
+      // Main input waits for a reload of changed history; the draft stays for the user to send again.
+      if (this.deps.historyRefresh() && (options?.destination ?? this.deps.drafts.destination) === 'main') {
+        new Notice(t('chat.reloadingHistory'));
+        return;
+      }
       const result = await this.#dispatchMessage(options);
       queued = result === 'queued';
     } finally {
@@ -214,9 +228,12 @@ export class InputController {
     }
   }
 
-  /** Mailbox dispatch never reads the composer destination, drafts, or live selections. */
+  /**
+   * Mailbox dispatch never reads the composer destination, drafts, or live selections. A reload does not
+   * block it: dispatch loads the history first, which also retries a failed reload.
+   */
   get canStartSessionMessage(): boolean {
-    return this.deps.canStartTurn() && !this.turns.isActive && !this.queue.message
+    return this.deps.canStartTurn() && !this.turns.isActive && !this.queue.message && this.deps.historyRefresh() !== 'checking'
       && !this.preparations.pendingMainAdmission && !this.isPreparingMainTurn
       && !this.deps.conversationController.hasBranchDraft;
   }
@@ -250,12 +267,7 @@ export class InputController {
     const request: ChatTurnRequest = {
       text: encodeSessionMessage(message), images: [], editorSelection: null, browserSelection: null, canvasSelection: null,
     };
-    const pending = await this.steering.steer(createQueuedMessage(message.text, request), () => undefined, signal);
-    if (pending.providerDisposition === 'definitely-unsent') {
-      this.steering.release(pending);
-      return 'not-sent';
-    }
-    return pending.providerDisposition === 'accepted-awaiting-correlation' ? 'accepted' : 'uncertain';
+    return this.steering.steerMessage(createQueuedMessage(message.text, request), 'drop', () => undefined, signal);
   }
 
   /** Another session's interrupt: the user's Stop for main work, keeping pending session messages. */
@@ -289,14 +301,9 @@ export class InputController {
         return {
           steer: async onDelivery => {
             if (!this.steering.canSteer) return 'not-sent';
-            const pending = await this.steering.steer(
-              { ...createQueuedMessage(reply.displayContent, turnRequest), onDelivery }, () => undefined, signal,
+            return this.steering.steerMessage(
+              { ...createQueuedMessage(reply.displayContent, turnRequest), onDelivery }, 'drop', () => undefined, signal,
             );
-            if (pending.providerDisposition === 'definitely-unsent') {
-              this.steering.release(pending);
-              return 'not-sent';
-            }
-            return pending.providerDisposition === 'accepted-awaiting-correlation' ? 'accepted' : 'uncertain';
           },
           submit: (onDelivery, assertBeforeHandoff) => this.sendMessage({
             destination: 'main', content: reply.displayContent, images: [], turnRequestOverride: turnRequest,
@@ -311,8 +318,14 @@ export class InputController {
     return this.execution.settledTranscriptEnd(messages);
   }
 
+  /** A main submission Stop can still withdraw; drives the busy UI and Stop. */
   get isPreparingMainTurn(): boolean {
     return this.preparations.isPreparing('main');
+  }
+
+  /** Any main preparation that has not settled, including stopped ones still unwinding into the composer. */
+  get hasUnsettledMainWork(): boolean {
+    return this.preparations.hasUnsettled('main');
   }
 
   handleExecutionEvent(event: ProviderExecutionEvent): Promise<void> {

@@ -158,7 +158,6 @@ export function buildTabRuntimeControllers(
         options.onDraftModelChanged?.(tab, tab.draftModel);
         break;
       case 'usage': refreshTabContextUsage(tab, plugin); break;
-      case 'scroll': ui.navigationSidebar.updateVisibility(); break;
       case 'work':
         renderer.refreshBranchButtonState();
         options.onWorkChanged?.(tab);

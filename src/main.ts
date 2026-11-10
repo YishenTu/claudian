@@ -98,8 +98,10 @@ export default class ClaudianPlugin extends Plugin {
     inactiveSessions: { request: () => this.inactiveSessionArchiver.request() },
     hasLoadedAllSessionMetadata: () => this.sessionMetadata.hasLoadedAll,
   });
-  private readonly startupMaintenanceAbort = new AbortController();
-  private isUnloading = false;
+  /** Aborted once by `onunload`; the single record that the plugin is unloading. */
+  private readonly lifetime = new AbortController();
+  /** Set only while `onload` awaits the application domains. */
+  private applicationLoad: Promise<void> | null = null;
   private applicationShutdownPromise: Promise<void> | null = null;
   private modelMetadataMigration: Promise<void> | null = null;
   private sessionInputCleanup: Promise<void> | null = null;
@@ -108,7 +110,14 @@ export default class ClaudianPlugin extends Plugin {
   async onload() {
     StartupProfiler.startOnload();
     try {
-      await StartupProfiler.runAsync('settings-load', () => this.loadApplication());
+      this.applicationLoad = StartupProfiler.runAsync('settings-load', () => this.loadApplication());
+      try {
+        await this.applicationLoad;
+      } finally {
+        this.applicationLoad = null;
+      }
+      // Unloaded while loading: shutdown owns the domains just built, and nothing may register after cleanup ran.
+      if (this.isUnloading) return;
       this.zenMode.start();
       // Provider workspace services are initialized lazily on first use.
 
@@ -145,9 +154,11 @@ export default class ClaudianPlugin extends Plugin {
       for (const command of createChatTabCommands({ workspace: this.app.workspace, views: this.views })) {
         this.addCommand(command);
       }
-      this.addCommand(createChatFocusCommand(
-        () => this.views.getInputFocusView(this.zenMode.getActiveLeaf())?.getActiveTab()?.composer ?? null,
-      ));
+      this.addCommand(createChatFocusCommand({
+        getComposer: () => this.views.getInputFocusView(this.zenMode.getActiveLeaf())?.getActiveTab()?.composer ?? null,
+        getBackgroundChat: () => this.views.getBackgroundSidebarLeaf(),
+        revealChat: (leaf, focus) => this.views.activateView(leaf, focus),
+      }));
       this.addCommand(this.zenMode.createToggleHistoryCommand());
 
       this.addCommand({
@@ -167,7 +178,7 @@ export default class ClaudianPlugin extends Plugin {
         this.sessionInputCleanupTimer = window.setTimeout(() => {
           this.sessionInputCleanupTimer = null;
           if (this.isUnloading) return;
-          this.sessionInputCleanup = this.storage.cleanupObsoleteSessionInputs(this.startupMaintenanceAbort.signal);
+          this.sessionInputCleanup = this.storage.cleanupObsoleteSessionInputs(this.lifetime.signal);
         }, 0);
       });
       // Started early so the first provider launch rarely waits for the shell.
@@ -175,7 +186,7 @@ export default class ClaudianPlugin extends Plugin {
       this.app.workspace.onLayoutReady(() => {
         if (this.isUnloading || this.modelMetadataMigration) return;
         this.modelMetadataMigration = migrateSelectedModelMetadata(
-          this.providerHost, this.startupMaintenanceAbort.signal,
+          this.providerHost, this.lifetime.signal,
         );
       });
     } finally {
@@ -183,15 +194,15 @@ export default class ClaudianPlugin extends Plugin {
     }
   }
 
+  private get isUnloading(): boolean {
+    return this.lifetime.signal.aborted;
+  }
+
   onunload(): void {
-    this.isUnloading = true;
-    this.sessionMessaging?.beginShutdown();
-    this.sessionRuntimes?.beginShutdown();
+    this.lifetime.abort();
+    this.fenceLoadedDomains();
     // Return any zen presentation to its view before asynchronous shutdown.
     this.zenMode.dispose();
-    this.vaultContentEvents?.dispose();
-    this.inactiveSessionArchiver?.dispose();
-    this.startupMaintenanceAbort.abort();
     if (this.sessionInputCleanupTimer !== null) {
       window.clearTimeout(this.sessionInputCleanupTimer);
       this.sessionInputCleanupTimer = null;
@@ -279,6 +290,7 @@ export default class ClaudianPlugin extends Plugin {
     this.sessionRuntimes = new SessionRuntimePool({
       createRuntime: identity => createChatSessionRuntime(this.chatHost, identity),
       releaseHistory: (id, canRelease) => domains.conversationRepository.releaseHistory(id, canRelease),
+      readNativeHistoryRevision: id => domains.conversationRepository.readNativeHistoryRevision(id),
       // Returning to a recent session skips reloading and parsing its transcript.
       retainedDetachedSessions: 3,
       onChanged: () => this.chatViews.notifyConversationListChanged(),
@@ -318,7 +330,20 @@ export default class ClaudianPlugin extends Plugin {
     this.inactiveSessionArchiver = new InactiveSessionArchiver(this.chatHost);
   }
 
+  /** Synchronously stops admission into domains that loading has built so far; idempotent. */
+  private fenceLoadedDomains(): void {
+    this.sessionMessaging?.beginShutdown();
+    this.sessionRuntimes?.beginShutdown();
+    this.vaultContentEvents?.dispose();
+    this.inactiveSessionArchiver?.dispose();
+  }
+
   private async shutdownApplication(): Promise<void> {
+    if (this.applicationLoad) {
+      // Domains finished by a load still in flight at unload are fenced and torn down like loaded ones.
+      await this.applicationLoad.catch(() => undefined);
+      this.fenceLoadedDomains();
+    }
     try {
       await Promise.allSettled([
         this.sessionMetadata?.dispose(),

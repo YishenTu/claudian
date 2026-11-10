@@ -2,7 +2,7 @@ import { parser } from '@lezer/markdown';
 import { DesktopVault } from '@test/helpers/core/DesktopVault';
 
 import type { VaultFileAdapter } from '@/core/storage/VaultFileAdapter';
-import { CLAUDE_COMMANDS_ROOT } from '@/features/agent-skills/AgentSkillRepository';
+import { AgentSkillRollbackError, CLAUDE_COMMANDS_ROOT } from '@/features/agent-skills/AgentSkillRepository';
 import {
   ClaudeCommandCollisionError,
   ClaudeCommandRepository,
@@ -50,6 +50,24 @@ describe('ClaudeCommandRepository', () => {
     const [reloaded] = (await owner.list()).commands;
     expect(reloaded.description).toBe('Changed description');
     expect(reloaded.instructions).toBe(instructions);
+  });
+
+  it('preserves a leading Markdown list between horizontal rules when editing a command', async () => {
+    const instructions = '---\n- Read the note\n- Summarize its key points\n---\nUse a short reply.';
+    await addCommand('summary.md', `${instructions}\n`);
+    const repository = new ClaudeCommandRepository(files);
+    const [loaded] = (await repository.list()).commands;
+
+    expect(loaded.instructions).toBe(instructions);
+    expect(loaded.frontmatter).toEqual({});
+    await repository.update(loaded.name, loaded.revision, {
+      name: loaded.name, description: 'Summarize a note', instructions: loaded.instructions,
+    });
+    const [reloaded] = (await repository.list()).commands;
+    expect(reloaded.description).toBe('Summarize a note');
+    expect(reloaded.instructions).toBe(instructions);
+    expect(reloaded.frontmatter).toEqual({ description: 'Summarize a note' });
+    expect(await vault.read(`${CLAUDE_COMMANDS_ROOT}/summary.md`)).toContain(`---\n${instructions}\n`);
   });
 
   it('returns an empty list when the commands folder is missing', async () => {
@@ -236,6 +254,79 @@ describe('ClaudeCommandRepository', () => {
     expect(await vault.exists(`${CLAUDE_COMMANDS_ROOT}/old/review.md`)).toBe(false);
     expect(await vault.exists(`${CLAUDE_COMMANDS_ROOT}/old`)).toBe(false);
     expect(await vault.exists(CLAUDE_COMMANDS_ROOT)).toBe(true);
+  });
+
+  it('preserves the original command and revision when source removal fails, then retries the rename', async () => {
+    await addCommand('old/review.md', REVIEW_COMMAND);
+    const repository = new ClaudeCommandRepository(files);
+    const [loaded] = (await repository.list()).commands;
+    const target = `${CLAUDE_COMMANDS_ROOT}/team/review.md`;
+    const input = { name: 'team/review', description: 'Updated review', instructions: 'Updated body.' };
+    const sourceFailure = new Error('generated source removal failure');
+    const remove = vault.app.vault.adapter.remove.bind(vault.app.vault.adapter);
+    const fault = vi.spyOn(vault.app.vault.adapter, 'remove').mockImplementation(async file => {
+      if (file === loaded.filePath) throw sourceFailure;
+      return remove(file);
+    });
+    let afterFailure;
+    try {
+      await expect(repository.update(loaded.name, loaded.revision, input)).rejects.toMatchObject({ cause: sourceFailure });
+      afterFailure = {
+        raw: await vault.read(loaded.filePath),
+        targetExists: await vault.exists(target),
+        reloaded: await new ClaudeCommandRepository(files).list(),
+      };
+    } finally {
+      fault.mockRestore();
+    }
+    const retry = await repository.update(loaded.name, loaded.revision, input)
+      .then(value => ({ value, error: null }), (error: unknown) => ({ value: null, error }));
+
+    expect({ targetExists: afterFailure.targetExists, names: afterFailure.reloaded.commands.map(command => command.name), retryError: retry.error })
+      .toEqual({ targetExists: false, names: ['old/review'], retryError: null });
+    expect(afterFailure.raw).toBe(REVIEW_COMMAND);
+    expect(afterFailure.reloaded).toEqual({ commands: [loaded], diagnostics: [] });
+    expect(retry.value).toMatchObject({
+      name: 'team/review', filePath: target, description: 'Updated review', instructions: 'Updated body.',
+      frontmatter: { 'argument-hint': '[file]', 'allowed-tools': ['Read', 'Grep'] },
+    });
+    expect(await vault.exists(loaded.filePath)).toBe(false);
+    expect(await vault.exists(`${CLAUDE_COMMANDS_ROOT}/old`)).toBe(false);
+    expect((await new ClaudeCommandRepository(files).list()).commands).toEqual([retry.value]);
+  });
+
+  it('reports the leftover target and both failures when command rename rollback cannot remove it', async () => {
+    await addCommand('old/review.md', REVIEW_COMMAND);
+    const repository = new ClaudeCommandRepository(files);
+    const [loaded] = (await repository.list()).commands;
+    const target = `${CLAUDE_COMMANDS_ROOT}/team/review.md`;
+    const sourceFailure = new Error('generated source removal failure');
+    const cleanupFailure = new Error('generated target cleanup failure');
+    const remove = vault.app.vault.adapter.remove.bind(vault.app.vault.adapter);
+    const fault = vi.spyOn(vault.app.vault.adapter, 'remove').mockImplementation(async file => {
+      if (file === loaded.filePath) throw sourceFailure;
+      if (file === target) throw cleanupFailure;
+      return remove(file);
+    });
+    try {
+      const failure = await repository.update(loaded.name, loaded.revision, {
+        name: 'team/review', description: 'Updated review', instructions: 'Updated body.',
+      }).catch((error: unknown) => error);
+      expect(await vault.read(loaded.filePath)).toBe(REVIEW_COMMAND);
+      expect(await vault.read(target)).toContain('Updated body.');
+      const reloaded = await new ClaudeCommandRepository(files).list();
+      expect(reloaded.commands.map(command => command.name)).toEqual(['old/review', 'team/review']);
+      expect(reloaded.commands[0]).toEqual(loaded);
+      expect(reloaded.commands[1]).toMatchObject({ description: 'Updated review', instructions: 'Updated body.',
+        frontmatter: { 'argument-hint': '[file]', 'allowed-tools': ['Read', 'Grep'] } });
+      expect(failure).toBeInstanceOf(AgentSkillRollbackError);
+      expect(failure).toMatchObject({
+        message: expect.stringContaining(target), cause: { cause: sourceFailure },
+        rollbackErrors: [{ cause: cleanupFailure }],
+      });
+    } finally {
+      fault.mockRestore();
+    }
   });
 
   it('validates renamed segments but tolerates an unchanged legacy name', async () => {

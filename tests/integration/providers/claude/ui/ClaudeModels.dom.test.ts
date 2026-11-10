@@ -1,6 +1,5 @@
 /** @vitest-environment jsdom */
 
-import '@/providers';
 
 import { deserialize, serialize } from 'node:v8';
 
@@ -12,8 +11,10 @@ import { Notice } from 'obsidian';
 import { ProviderModelCatalogController } from '@/core/providers/models/ProviderModelCatalog';
 import type { ProviderHost } from '@/core/providers/ProviderHost';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
+import { registerProviderModules } from '@/core/providers/registerProviderModules';
 import type { ClaudianSettings } from '@/core/types';
 import { createClaudeWorkspaceServices } from '@/providers/claude/app/ClaudeWorkspaceServices';
+import { claudeProviderRegistration } from '@/providers/claude/registration';
 import type { ClaudeModelDiscovery } from '@/providers/claude/runtime/ClaudeModels';
 import { createClaudeModels } from '@/providers/claude/runtime/ClaudeModels';
 import { getClaudeProviderSettings, updateClaudeProviderSettings } from '@/providers/claude/settings';
@@ -21,6 +22,8 @@ import { claudeChatUIConfig } from '@/providers/claude/ui/ClaudeChatUIConfig';
 import { renderProviderModelsSection } from '@/shared/settings/ProviderModelsSection';
 import { ModelSelector } from '@/shared/toolbar/ModelSelector';
 import { ToolbarMenuGroup } from '@/shared/toolbar/ToolbarMenu';
+
+registerProviderModules([claudeProviderRegistration]);
 
 const cleanups: Array<() => void | Promise<void>> = [];
 afterEach(async () => {

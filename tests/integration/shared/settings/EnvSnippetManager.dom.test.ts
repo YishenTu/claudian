@@ -9,6 +9,7 @@ import { Notice } from 'obsidian';
 import type { Mock } from 'vitest';
 
 import { ProviderChatOptionsReconciler } from '@/app/settings/ProviderChatOptionsReconciler';
+import { getProviderEnvironmentVariables, getRuntimeEnvironmentVariables } from '@/core/providers/providerEnvironment';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { ProviderSettingsCoordinator } from '@/core/providers/ProviderSettingsCoordinator';
 import { getChatSettingsSnapshot } from '@/features/chat/ChatSettings';
@@ -136,6 +137,42 @@ it('preserves own context-limit keys when inserting a snippet with production ob
     JSON.parse('{"sibling":256000,"__proto__":64000,"custom":128000}'),
   );
   expect(await axe(container)).toHaveNoViolations();
+});
+
+it.each([
+  { envVars: 'ANTHROPIC_MODEL=custom\n# Claude trailing', model: 'custom' },
+  { envVars: '# Claude only', model: undefined },
+])('preserves shared settings when inserting the scoped snippet $envVars', async ({ envVars, model }) => {
+  const shared = 'PATH=/generated/bin\nHTTPS_PROXY=http://proxy.example.test:8080\n# shared keep';
+  const { host, settings, settingsStorage } = await createProviderHostFixture({ settings: {
+    sharedEnvironmentVariables: shared,
+    providerConfigs: {
+      claude: { environmentVariables: 'ANTHROPIC_MODEL=old' },
+      codex: { environmentVariables: 'OPENAI_MODEL=codex-keep' },
+    },
+    envSnippets: [{ id: 'commented', name: 'Commented Claude', description: '', scope: 'provider:claude', envVars }],
+  } });
+  const container = document.body.createEl('main');
+  const completed = vi.fn();
+  new EnvSnippetManager(container, host, 'provider:claude', completed);
+
+  fireEvent.click(within(container).getByRole('button', { name: 'Insert' }));
+  await waitFor(() => expect(completed).toHaveBeenCalledTimes(1));
+
+  expect(settings.sharedEnvironmentVariables).toBe(shared);
+  expect(getProviderEnvironmentVariables(settings, 'claude')).toBe(envVars);
+  expect(getProviderEnvironmentVariables(settings, 'codex')).toBe('OPENAI_MODEL=codex-keep');
+  expect(getRuntimeEnvironmentVariables(settings, 'claude')).toEqual({
+    PATH: '/generated/bin', HTTPS_PROXY: 'http://proxy.example.test:8080',
+    ...(model ? { ANTHROPIC_MODEL: model } : {}),
+  });
+  expect(getRuntimeEnvironmentVariables(settings, 'codex')).toEqual({
+    PATH: '/generated/bin', HTTPS_PROXY: 'http://proxy.example.test:8080', OPENAI_MODEL: 'codex-keep',
+  });
+  const reloaded = await settingsStorage.load();
+  expect(reloaded.sharedEnvironmentVariables).toBe(shared);
+  expect(getProviderEnvironmentVariables(reloaded, 'claude')).toBe(envVars);
+  expect(getProviderEnvironmentVariables(reloaded, 'codex')).toBe('OPENAI_MODEL=codex-keep');
 });
 
 it.each(aliasCases)('applies snippet aliases through provider settings while preserving unrelated aliases (%o)', async modelAliases => {

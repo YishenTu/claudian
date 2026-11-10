@@ -376,7 +376,6 @@ export function buildTabRuntimeUI(
   );
   const contextTray = new ComposerContextTray(dom.contextRowEl, {
     onDidChange: () => {
-      runtimeRef.current()?.renderer.scrollToBottomIfNeeded();
       runtimeRef.current()?.ui.promptSuggestion.refresh();
     },
   });

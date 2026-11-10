@@ -1,5 +1,3 @@
-import '@/providers';
-
 import * as path from 'node:path';
 
 import { claudeCatalogFixture } from '@test/helpers/claudeModels';
@@ -86,7 +84,7 @@ export async function createForkTestEnvironment() {
       submissionId: user.id,
       timestamp: user.timestamp, rawDisplayText: text, canonicalText: text, images: [],
       conversationHistory: history, messages: { user, assistant },
-      configuration: { model: { claude: 'claude-sonnet-4-5', codex: 'gpt-5', grok: 'grok/grok-code-fast-1', pi: 'pi:anthropic/claude-sonnet-4', opencode: 'opencode:test/model' }[chat.conversation.providerId], permissionMode: 'normal', systemInstructions: { kind: 'explicit', instructions: 'Answer the user.' } },
+      configuration: { model: { claude: 'claude-sonnet-4-5', codex: 'gpt-5', grok: 'grok/grok-code-fast-1', pi: 'pi:anthropic/claude-sonnet-4', opencode: 'opencode:test/model' }[chat.conversation.providerId], permissionMode: 'normal', systemInstructions: { kind: 'explicit', purpose: 'title', instructions: 'Answer the user.' } },
       toolPolicy: { kind: 'provider-default' },
     }).catch(error => { throw new Error(JSON.stringify(error.cause ?? error), { cause: error }); });
     if (result.status !== expectedStatus) throw new Error(JSON.stringify(result));

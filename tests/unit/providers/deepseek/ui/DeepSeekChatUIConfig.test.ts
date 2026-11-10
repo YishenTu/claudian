@@ -1,7 +1,10 @@
-import '@/providers';
-
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
+import { registerProviderModules } from '@/core/providers/registerProviderModules';
+import { claudeProviderRegistration } from '@/providers/claude/registration';
+import { deepseekProviderRegistration } from '@/providers/deepseek/registration';
 import { DEEPSEEK_PROVIDER_ICON } from '@/shared/icons';
+
+registerProviderModules([claudeProviderRegistration, deepseekProviderRegistration]);
 
 describe('DeepSeekChatUIConfig', () => {
   it('offers exactly the saved permission modes, with only native full access bypassing approvals', () => {

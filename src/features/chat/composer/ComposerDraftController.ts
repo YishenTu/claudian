@@ -4,7 +4,7 @@ import type { ComposerInputElement } from '@/shared/composer-dropdown/types';
 
 /**
  * Appends a raw unsent suffix to a restored draft prefix, keeping the suffix bytes intact.
- * Admission and prefix separators match appendMarkdownSnippet (2LF none, 1LF one, else 2LF).
+ * Nonblank prefixes are separated from the suffix by at least two newlines.
  */
 export function appendRawDraftSuffix(prefix: string, suffix: string): string {
   if (!suffix.trim()) return prefix;

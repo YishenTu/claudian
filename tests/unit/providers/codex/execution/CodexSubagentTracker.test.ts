@@ -27,10 +27,9 @@ it('fences completion reads across a follow-up and deduplicates native completio
   tracker.activity({ ...started, id: 'complete', kind: 'completed' }, 'parent-1');
   tracker.turnCompleted('child', child('Old answer.').turns[0]);
   expect(updates).toHaveLength(count);
-  expect(tracker.hasBackgroundWork()).toBe(true);
+  expect(updates.at(-1)).toMatchObject({ id: 'followup', status: 'running' });
   tracker.turnCompleted('child', { ...child('New answer.').turns[0], id: 'child-turn-2' });
   expect(updates.at(-1)).toMatchObject({ status: 'completed', result: 'New answer.' });
-  expect(tracker.hasBackgroundWork()).toBe(false);
 });
 
 it('fences a pending child read after the native process is released', async () => {
@@ -42,15 +41,17 @@ it('fences a pending child read after the native process is released', async () 
   resolveRead(child('Late answer.'));
   await Promise.resolve();
   expect(publish).toHaveBeenCalledTimes(1);
-  expect(tracker.hasBackgroundWork()).toBe(false);
 });
 
 it('restores agent identity on resume and assigns a separate card to new child turns', async () => {
   const publish = vi.fn();
   const tracker = new CodexSubagentTracker(publish, async () => child('Ready.'));
   tracker.seed({ ...child(''), id: 'parent', turns: [{ id: 'parent-turn', status: 'completed', error: null,
-    items: [started, { ...started, id: 'complete', kind: 'completed' }],
+    items: [started, { ...started, id: 'complete', kind: 'completed' },
+      // A child's send_message back to the parent targets the resumed thread itself.
+      { ...started, id: 'reply-to-parent', kind: 'interacted', agentThreadId: 'parent', agentPath: '/root' }],
   }] });
+  expect(tracker.turnStarted('parent', 'parent-turn-2')).toBe(false);
   tracker.activity({ ...started, id: 'followup', kind: 'interacted' }, 'parent-turn-2');
   await Promise.resolve();
   tracker.turnStarted('child', 'new-turn');
@@ -67,7 +68,6 @@ it('does not restart an idle child when native send_message reports interacted',
   tracker.activity({ ...started, id: 'idle-message', kind: 'interacted' }, 'later');
   await Promise.resolve();
   expect(publish).toHaveBeenLastCalledWith(expect.objectContaining({ status: 'completed', result: 'Ready.' }));
-  expect(tracker.hasBackgroundWork()).toBe(false);
 });
 
 it('hydrates identity when native child turn start overtakes the initial read', async () => {
@@ -133,7 +133,6 @@ it.each(['completion', 'hydration'] as const)('retains a phase-less final child 
   }
   expect(updates.at(-1)).toMatchObject({ status: 'completed', result: 'The requested report.' });
   expect(updates.at(-1)?.toolCalls).toEqual([expect.objectContaining({ id: 'cmd', status: 'completed' })]);
-  expect(tracker.hasBackgroundWork()).toBe(false);
 });
 
 it.each([

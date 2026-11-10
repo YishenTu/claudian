@@ -111,6 +111,27 @@ describe('JSONRPCTransport', () => {
     await expect(failed).rejects.toBeInstanceOf(JSONRPCErrorResponse);
   });
 
+  it.each([
+    ['one chunk', (bytes: Buffer) => [bytes]],
+    ['single-byte chunks', (bytes: Buffer) => [...bytes].map(byte => Buffer.from([byte]))],
+  ])('frames responses only on LF when they arrive in %s', async (_label, chunk) => {
+    const lineSeparator = String.fromCharCode(0x2028);
+    const paragraphSeparator = String.fromCharCode(0x2029);
+    const first = harness.transport.request('first');
+    const second = harness.transport.request('second');
+    const firstId = (await harness.nextOutbound()).id;
+    const secondId = (await harness.nextOutbound()).id;
+    const firstText = `a${lineSeparator}b${paragraphSeparator}c`;
+    const secondText = '你好 😀 \\u2028';
+
+    const wire = `${JSON.stringify({ id: firstId, jsonrpc: '2.0', result: firstText })}\r\n`
+      + `${JSON.stringify({ id: secondId, jsonrpc: '2.0', result: secondText })}\n`;
+    for (const part of chunk(Buffer.from(wire))) harness.input.write(part);
+
+    await expect(first).resolves.toBe(firstText);
+    await expect(second).resolves.toBe(secondText);
+  });
+
   it('times out and ignores a later response', async () => {
     vi.useFakeTimers();
     const request = harness.transport.request('slow', {}, { timeoutMs: 500 });

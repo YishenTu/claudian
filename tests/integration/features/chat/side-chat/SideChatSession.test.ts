@@ -1,3 +1,5 @@
+import '@/providers';
+
 import { deferred } from '@test/helpers/ChatInputHarness';
 import { FakeSideBackend, waitFor } from '@test/helpers/features/chat/SideChatSessionHarness';
 
