@@ -12,6 +12,11 @@ import type {
 
 type ProviderStateRecord = Record<string, unknown>;
 
+/** Only an invalidated session carries its invalidation. */
+type StatusState =
+  | { readonly status: Exclude<ProviderSessionStatus, 'invalidated'> }
+  | { readonly status: 'invalidated'; readonly invalidation: ProviderSessionInvalidation };
+
 export interface SessionSnapshotStateOptions {
   readonly providerId: ProviderId;
   readonly sessionInstanceId: string;
@@ -39,8 +44,7 @@ export class SessionSnapshotState {
   readonly #providerState: ProviderStateRecord;
   readonly #providerStateDeletes = new Set<string>();
   readonly #listeners = new Set<(event: ProviderSessionEvent) => void>();
-  #status: ProviderSessionStatus = 'idle';
-  #invalidation: ProviderSessionInvalidation | undefined;
+  #state: StatusState = { status: 'idle' };
   #revision = 0;
   #sequence = 0;
 
@@ -50,11 +54,11 @@ export class SessionSnapshotState {
   }
 
   get status(): ProviderSessionStatus {
-    return this.#status;
+    return this.#state.status;
   }
 
   get invalidation(): ProviderSessionInvalidation | undefined {
-    return this.#invalidation;
+    return this.#state.status === 'invalidated' ? this.#state.invalidation : undefined;
   }
 
   get revision(): number {
@@ -67,14 +71,22 @@ export class SessionSnapshotState {
   }
 
   setStatus(status: Exclude<ProviderSessionStatus, 'invalidated'>): void {
-    this.#status = status;
-    this.#invalidation = undefined;
+    this.#state = { status };
     this.#revision += 1;
   }
 
+  /**
+   * Reports whether work remains after some of it settled: `executing` while any does, otherwise
+   * `idle`. An invalidation stands once work settles; only new work (`setStatus`) clears it.
+   */
+  settleActivity(hasWork: boolean): void {
+    if (hasWork) this.setStatus('executing');
+    else if (this.#state.status === 'invalidated') this.#revision += 1;
+    else this.setStatus('idle');
+  }
+
   invalidate(invalidation: ProviderSessionInvalidation): void {
-    this.#status = 'invalidated';
-    this.#invalidation = Object.freeze({ ...invalidation });
+    this.#state = { invalidation: Object.freeze({ ...invalidation }), status: 'invalidated' };
     this.#revision += 1;
   }
 
@@ -116,17 +128,11 @@ export class SessionSnapshotState {
         ? { providerStateDeletes: Object.freeze(providerStateDeletes) }
         : {}),
     };
-    if (this.#status === 'invalidated') {
-      return Object.freeze({
-        ...base,
-        status: 'invalidated' as const,
-        invalidation: this.#invalidation ?? Object.freeze({
-          reason: 'provider-error' as const,
-          recoverable: true,
-        }),
-      });
+    const state = this.#state;
+    if (state.status === 'invalidated') {
+      return Object.freeze({ ...base, invalidation: state.invalidation, status: 'invalidated' as const });
     }
-    return Object.freeze({ ...base, status: this.#status });
+    return Object.freeze({ ...base, status: state.status });
   }
 
   onEvent(listener: (event: ProviderSessionEvent) => void): () => void {

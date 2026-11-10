@@ -67,10 +67,14 @@ describe('registerFileLinkHandler', () => {
     const pending = pendingOperation();
     const fail = () => delayed ? pending.promise : Promise.reject(failure);
     const existingLeaf = Object.assign(new WorkspaceLeaf(), {
+      getRoot: () => ({}),
+
       getViewState: () => ({ type: 'markdown', state: { file: 'Notes/Plan.md' } }),
       setEphemeralState: vi.fn(),
     });
     const otherLeaf = Object.assign(new WorkspaceLeaf(), {
+      getRoot: () => ({}),
+
       getViewState: () => ({ type: 'markdown', state: { file: 'Archive/Plan.md' } }),
     });
     const base = new App();
@@ -155,10 +159,14 @@ it.each([
   const reveal = pendingOperation();
   const existingLeaf = Object.assign(new WorkspaceLeaf(), {
     isDeferred,
+    getRoot: () => ({}),
+
     getViewState: () => ({ type: 'markdown', state: { file: 'Notes/Plan.md' } }),
     setEphemeralState: vi.fn(),
   });
   const otherLeaf = Object.assign(new WorkspaceLeaf(), {
+    getRoot: () => ({}),
+
     getViewState: () => ({ type: 'markdown', state: { file: 'Archive/Plan.md' } }),
   });
   const base = new App();
@@ -191,6 +199,56 @@ it.each([
   }
 });
 
+
+it.each([
+  ['opens a new tab when only a sidebar pane tracks the note', false],
+  ['reveals the editor tab rather than a sidebar pane tracking the same note', true],
+] as const)('%s', async (_name, hasEditorTab) => {
+  const rootSplit = {};
+  const leftSplit = {};
+  const rightSplit = {};
+  const sidebarLeaves = [
+    ['outline', rightSplit],
+    ['backlink', leftSplit],
+  ].map(([type, root]) => Object.assign(new WorkspaceLeaf(), {
+    getRoot: () => root,
+    getViewState: () => ({ type, state: { file: 'Notes/Plan.md' } }),
+    setEphemeralState: vi.fn(),
+  }));
+  const editorLeaf = Object.assign(new WorkspaceLeaf(), {
+    getRoot: () => rootSplit,
+
+    getViewState: () => ({ type: 'markdown', state: { file: 'Notes/Plan.md' } }),
+    setEphemeralState: vi.fn(),
+  });
+  const leaves = hasEditorTab ? [...sidebarLeaves, editorLeaf] : sidebarLeaves;
+  const base = new App();
+  const app = Object.assign(base, {
+    metadataCache: Object.assign(base.metadataCache, { getFirstLinkpathDest: vi.fn<App['metadataCache']['getFirstLinkpathDest']>().mockReturnValue(Object.assign(new TFile(), { path: 'Notes/Plan.md' })) }),
+    workspace: Object.assign(base.workspace, {
+      rootSplit, leftSplit, rightSplit,
+      iterateAllLeaves: (visit: (leaf: WorkspaceLeaf) => void) => leaves.forEach(visit),
+      revealLeaf: vi.fn<App['workspace']['revealLeaf']>().mockResolvedValue(undefined),
+      openLinkText: vi.fn<App['workspace']['openLinkText']>().mockResolvedValue(undefined),
+    }),
+  });
+  const container = document.createElement('div');
+  container.innerHTML = '<a class="internal-link" href="Notes/Plan.md" data-href="Notes/Plan.md#Heading">Plan</a>';
+  document.body.appendChild(container);
+  const cleanup = registerFileLinkHandler(app, container);
+  try {
+    fireEvent.click(within(container).getByRole('link', { name: 'Plan' }));
+    await nextTurn();
+    expect(vi.mocked(app.workspace.revealLeaf).mock.calls).toEqual(hasEditorTab ? [[editorLeaf]] : []);
+    expect(editorLeaf.setEphemeralState.mock.calls).toEqual(hasEditorTab ? [[{ focus: true, subpath: '#Heading' }]] : []);
+    expect(vi.mocked(app.workspace.openLinkText).mock.calls).toEqual(hasEditorTab ? [] : [['Notes/Plan.md#Heading', '', 'tab']]);
+    for (const leaf of sidebarLeaves) expect(leaf.setEphemeralState).not.toHaveBeenCalled();
+    expect(Notice).not.toHaveBeenCalled();
+  } finally {
+    cleanup();
+    container.remove();
+  }
+});
 
 it.each([
   ['click', { ctrlKey: true }, 'tab'],

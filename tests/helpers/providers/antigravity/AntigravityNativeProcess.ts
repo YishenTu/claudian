@@ -23,7 +23,7 @@ import type {
   ACPSetSessionConfigOptionRequest,
 } from '@/providers/acp';
 
-/** Config options as `agy acp` 1.5.1 reports them on session/new, resume and load. */
+/** Config options as `agy acp` 1.5.4 reports them on session/new, resume and load. */
 export function antigravityConfigOptions(): ACPSessionConfigOption[] {
   return structuredClone(sessionConfigOptions) as ACPSessionConfigOption[];
 }

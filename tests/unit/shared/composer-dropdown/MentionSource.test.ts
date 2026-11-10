@@ -96,16 +96,53 @@ describe('MentionSource', () => {
     expect(updated.slice(0, 2).map(item => item.id)).toEqual(['vault-file:folder0/Note 0.md', 'vault-folder:folder0']);
   });
 
-  it('matches @ at a token boundary and preserves file names containing spaces', () => {
-    const { source: value } = source();
-    expect(value.match('Ask @Al', 7)).toEqual(expect.objectContaining({ query: 'Al' }));
-    expect(value.match('mail@example', 12)).toBeNull();
-    expect(value.match('@Alpha note', 11)).toEqual(expect.objectContaining({
-      query: 'Alpha note',
-    }));
+  it('matches @ at a token boundary and keeps spaces only while a name still matches', () => {
+    const { source: value } = source({
+      getCachedVaultFiles: () => [file('notes/Alpha note.md', 5)],
+      getCachedVaultFolders: () => [{ name: 'My Projects', path: 'My Projects' }],
+    }, {
+      getSessionItems: () => [
+        { id: 'session:1', kind: 'value', label: 'Weekly review', replacement: 'token ', mtime: 1 },
+      ],
+    });
+    const queryAt = (input: string) => value.match(input, input.length)?.query ?? null;
+    expect(queryAt('Ask @Al')).toBe('Al');
+    expect(queryAt('mail@example')).toBeNull();
+    // Each kind of name keeps a spaced query open, by name or by path.
+    expect(queryAt('@Alpha note')).toBe('Alpha note');
+    expect(queryAt('@notes/alpha N')).toBe('notes/alpha N');
+    expect(queryAt('@my proj')).toBe('my proj');
+    expect(queryAt('@Weekly rev')).toBe('Weekly rev');
+    // An unmatched word stays open until a space, then closes for the rest of the line.
+    expect(queryAt('meet @3pm')).toBe('3pm');
+    expect(queryAt('meet @3pm ')).toBeNull();
+    expect(queryAt('meet @3pm tomorrow')).toBeNull();
     const completed = '@[A \\] B](claudian-session:conv-1-a) summarize this';
     expect(value.match(completed, completed.length)).toBeNull();
     expect(value.match(`${completed} @Al`, completed.length + 4)).toEqual(expect.objectContaining({ query: 'Al' }));
+    value.destroy();
+  });
+
+  it('does not rescan the vault while an unmatched spaced query is extended', () => {
+    const files = [file('notes/Alpha note.md', 5)];
+    const getCachedVaultFiles = vi.fn(() => files);
+    const { source: value } = source({ getCachedVaultFiles });
+    const queryAt = (input: string) => value.match(input, input.length)?.query ?? null;
+    expect(queryAt('meet @3pm t')).toBeNull();
+    const scans = getCachedVaultFiles.mock.calls.length;
+    expect(queryAt('meet @3pm to')).toBeNull();
+    expect(queryAt('meet @3pm tomorrow')).toBeNull();
+    expect(getCachedVaultFiles.mock.calls.length).toBe(scans);
+
+    // Any other query forgets the rejection, so names added since then are found.
+    expect(queryAt('meet ')).toBeNull();
+    files.push(file('3pm tomorrow.md', 6));
+    expect(queryAt('meet @3pm tomorrow')).toBe('3pm tomorrow');
+    // Vault invalidation also forgets it.
+    expect(queryAt('@new n')).toBeNull();
+    files.push(file('New note.md', 7));
+    value.invalidate();
+    expect(queryAt('@new no')).toBe('new no');
     value.destroy();
   });
 

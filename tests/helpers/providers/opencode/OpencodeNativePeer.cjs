@@ -137,7 +137,11 @@ function startNativePeer(options) {
     else process.stdout.write(JSON.stringify({ url }) + '\n');
   });
   process.stdin.resume();
-  process.stdin.on('end', () => { scenario.close?.(); context.disconnect(); server.close(); });
+  process.stdin.on('end', () => {
+    // Records a lease release that a kill would skip.
+    if (env.PROCESS_LOG) fs.appendFileSync(env.PROCESS_LOG + '.released', process.pid + '\n');
+    scenario.close?.(); context.disconnect(); server.close();
+  });
 }
 
 /** @param {PeerContext} context @returns {Scenario} */

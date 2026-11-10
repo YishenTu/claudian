@@ -6,7 +6,7 @@ import type {
   ProviderToolPolicy,
 } from '@/core/execution';
 import { setLocale } from '@/i18n/i18n';
-import { CodexExecutionServerRequestRouter } from '@/providers/codex/execution/CodexExecutionServerRequestRouter';
+import { type ActiveInteractionTurn, CodexExecutionServerRequestRouter } from '@/providers/codex/execution/CodexExecutionServerRequestRouter';
 import { CodexDynamicToolRegistry } from '@/providers/codex/runtime/CodexDynamicToolRegistry';
 import { createCodexSessionTools } from '@/providers/codex/runtime/CodexSessionTools';
 
@@ -23,8 +23,16 @@ function createRouter(
   askUserQuestion: ProviderInteractionPort['askUserQuestion'],
   toolPolicy: ProviderToolPolicy = { kind: 'provider-default' },
   dismissInteraction: ProviderInteractionPort['dismissInteraction'] = () => undefined,
+  turn: { current: ActiveInteractionTurn | null } = { current: null },
 ) {
-  const router = new CodexExecutionServerRequestRouter(
+  turn.current ??= {
+    cancellation: new AbortController(),
+    localTurnId: 'local-turn',
+    nativeThreadId: 'thread-confirmation',
+    nativeTurnId: 'turn-confirmation',
+    toolPolicy,
+  };
+  return new CodexExecutionServerRequestRouter(
     'session-confirmation',
     {
       askUserQuestion,
@@ -34,15 +42,8 @@ function createRouter(
       dismissInteraction,
     },
     (threadId, turnId) => threadId === 'thread-confirmation' && turnId === 'turn-confirmation',
+    () => turn.current,
   );
-  router.setActiveTurn({
-    cancellation: new AbortController(),
-    localTurnId: 'local-turn',
-    nativeThreadId: 'thread-confirmation',
-    nativeTurnId: 'turn-confirmation',
-    toolPolicy,
-  });
-  return router;
 }
 
 function createPendingQuestion() {
@@ -88,14 +89,15 @@ describe('CodexExecutionServerRequestRouter', () => {
       'session-confirmation',
       interactionPort,
       (threadId, turnId) => threadId === 'thread-confirmation' && turnId === 'turn-confirmation',
+      () => activeTurn,
     );
-    router.setActiveTurn({
-    cancellation: new AbortController(),
+    const activeTurn: ActiveInteractionTurn = {
+      cancellation: new AbortController(),
       localTurnId: 'local-turn',
       nativeThreadId: 'thread-confirmation',
       nativeTurnId: 'turn-confirmation',
       toolPolicy: { kind: 'unrestricted' },
-    });
+    };
 
     // Captured app-server payload, with native identities replaced by test values.
     await expect(router.handleServerRequest(
@@ -221,18 +223,19 @@ describe('CodexExecutionServerRequestRouter', () => {
 
   it.each(['abort', 'native resolution', 'turn replacement'])('rejects a late accepting answer after %s', async invalidation => {
     const question = createPendingQuestion();
-    const router = createRouter(question.askUserQuestion);
+    const turn: { current: ActiveInteractionTurn | null } = { current: null };
+    const router = createRouter(question.askUserQuestion, undefined, undefined, turn);
     const result = router.handleServerRequest('stale', 'mcpServer/elicitation/request', confirmationRequest);
     const [request, signal] = question.askUserQuestion.mock.calls[0];
     if (invalidation === 'abort') router.abortAll('cancelled');
     else if (invalidation === 'native resolution') router.resolveNativeRequest('stale', 'thread-confirmation');
-    else router.setActiveTurn({
-    cancellation: new AbortController(),
+    else turn.current = {
+      cancellation: new AbortController(),
       localTurnId: 'different-local-turn',
       nativeThreadId: 'thread-confirmation',
       nativeTurnId: 'different-native-turn',
       toolPolicy: { kind: 'provider-default' },
-    });
+    };
     expect(signal.aborted).toBe(invalidation !== 'turn replacement');
     question.resolve({
       interactionId: request.interactionId,
@@ -387,8 +390,8 @@ it('localizes Codex command approval labels without changing native decisions', 
     requestApproval,
     askUserQuestion: async request => ({ interactionId: request.interactionId, answers: {} }),
     dismissInteraction: () => undefined,
-  }, () => true);
-  router.setActiveTurn({ localTurnId: 'local-turn', nativeThreadId: 'thread-confirmation', nativeTurnId: 'turn-confirmation', toolPolicy: { kind: 'provider-default' }, cancellation: new AbortController() });
+  }, () => true, () => activeTurn);
+  const activeTurn: ActiveInteractionTurn = { localTurnId: 'local-turn', nativeThreadId: 'thread-confirmation', nativeTurnId: 'turn-confirmation', toolPolicy: { kind: 'provider-default' }, cancellation: new AbortController() };
   try {
     await expect(router.handleServerRequest('command', 'item/commandExecution/requestApproval', {
       threadId: 'thread-confirmation', turnId: 'turn-confirmation', itemId: 'command-item', command: 'npm test',

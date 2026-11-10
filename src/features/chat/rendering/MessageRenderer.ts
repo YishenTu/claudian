@@ -20,15 +20,15 @@ import {
   markResponseElement,
 } from '@/features/chat/rendering/ResponseLayout';
 import { createSessionLink, registerSessionLinkHandler } from '@/features/chat/rendering/sessionLinks';
+import { resolveStoredTaskSubagent } from '@/features/chat/rendering/subagents/storedTaskSubagent';
+import { resolveSubagentAdapter } from '@/features/chat/rendering/subagents/subagentAdapterResolution';
+import { renderSubagentHistory } from '@/features/chat/rendering/subagents/SubagentHistoryRenderer';
+import { renderStoredAsyncSubagent, renderStoredSubagent } from '@/features/chat/rendering/subagents/SubagentRenderer';
 import { renderStoredThinkingBlock } from '@/features/chat/rendering/ThinkingBlockRenderer';
 import { updateToolCallResult } from '@/features/chat/rendering/tools/ToolCallRenderer';
 import { isSilentWriteStdinTool, renderToolCard } from '@/features/chat/rendering/tools/toolCardDispatch';
+import { TranscriptFollow } from '@/features/chat/rendering/TranscriptFollow';
 import { createWelcomeElement } from '@/features/chat/rendering/WelcomeRenderer';
-import { resolveStoredTaskSubagent } from '@/features/chat/subagents/storedTaskSubagent';
-import { resolveSubagentAdapter } from '@/features/chat/subagents/subagentAdapterResolution';
-import { renderSubagentHistory } from '@/features/chat/subagents/SubagentHistoryRenderer';
-import { renderStoredAsyncSubagent, renderStoredSubagent } from '@/features/chat/subagents/SubagentRenderer';
-import { cancelScheduledAnimationFrame, scheduleAnimationFrame, type ScheduledAnimationFrame } from '@/features/chat/utils/animationFrame';
 import { type ConversationDirectoryEntry, formatConversationDirectoryTitle, getRenderedConversationDirectory } from '@/features/chat/utils/conversationDirectoryTitle';
 import { t } from '@/i18n/i18n';
 import { ImagePreviewModal } from '@/shared/modals/ImagePreviewModal';
@@ -96,8 +96,8 @@ export class MessageRenderer {
   readonly #openConversation: ((conversationId: string) => Promise<void>) | undefined;
   private readonly imagePreviewModal = new ImagePreviewModal();
   private readonly contentRemovalObserver?: MutationObserver;
-  #pendingLayoutScroll: ResizeObserver | null = null;
-  #pendingTailScroll: { frame?: ScheduledAnimationFrame; scrollTop: number } | null = null;
+  /** Whether this presentation follows its latest content; main and side chat share it. */
+  readonly follow: TranscriptFollow;
   readonly #markdown: MarkdownContentRenderer;
   readonly #actions: MessageActions;
   readonly #finalizer: ResponseFinalizer;
@@ -126,6 +126,7 @@ export class MessageRenderer {
     this.#openConversation = openConversation;
     this.plugin = plugin;
     this.messagesEl = messagesEl;
+    this.follow = new TranscriptFollow(messagesEl, () => plugin.settings);
     this.getCapabilities = getCapabilities ?? (() => ({
       providerId: DEFAULT_CHAT_PROVIDER_ID,
       supportsNativeHistory: false,
@@ -188,9 +189,8 @@ export class MessageRenderer {
 
   dispose(): void {
     if (this.#markdown.isDisposed) return;
-    this.#cancelTailScroll();
+    this.follow.dispose();
     this.contentRemovalObserver?.disconnect();
-    this.#cancelLayoutScroll();
     this.#markdown.dispose();
     this.imagePreviewModal.close();
     this.removeFileLinkHandler();
@@ -234,13 +234,14 @@ export class MessageRenderer {
   // ============================================
 
   /**
-   * Adds a new message to the chat during streaming.
+   * Adds a new message to the chat during streaming, following it only for a reader at the bottom.
    * Returns the message element for content updates.
    */
   addMessage(msg: ChatMessage, afterMessageId?: string): HTMLElement {
     if (msg.role === 'user' && msg.displayContent === '' && !msg.images?.length) {
       return this.messagesEl;
     }
+    const followArrival = this.follow.holdArrival();
     if (afterMessageId !== undefined) this.#revealThrough(afterMessageId);
     const previous = this.messagesEl.lastChild;
     let element: HTMLElement;
@@ -259,7 +260,7 @@ export class MessageRenderer {
       for (let node = previous ? previous.nextSibling : this.messagesEl.firstChild; node; node = node.nextSibling) added.push(node);
       anchor.after(...added);
     }
-    this.scrollToBottom();
+    followArrival();
     return element;
   }
 
@@ -308,7 +309,7 @@ export class MessageRenderer {
     }
     this.#renderRange(messages, start, messages.length, live);
 
-    this.#scrollToBottomOnceLaidOut();
+    this.follow.land();
     return newWelcomeEl;
   }
 
@@ -385,6 +386,7 @@ export class MessageRenderer {
     if (!el) return;
     const offset = el.getBoundingClientRect().top - this.messagesEl.getBoundingClientRect().top;
     this.messagesEl.scrollTop += offset - anchor.offset;
+    this.follow.keepReadingPosition();
   }
 
   /** A removed message must not come back when its earlier block is revealed. */
@@ -818,61 +820,5 @@ export class MessageRenderer {
 
   refreshBranchButtonState(): void {
     this.#actions.refreshBranchButtonState();
-  }
-
-  // ============================================
-  // Utilities
-  // ============================================
-
-  /** Scrolls messages container to bottom. */
-  scrollToBottom(): void {
-    this.#cancelTailScroll();
-    this.messagesEl.scrollTop = this.messagesEl.scrollHeight;
-  }
-
-  #cancelTailScroll(): void {
-    const pending = this.#pendingTailScroll;
-    this.#pendingTailScroll = null;
-    if (pending?.frame) cancelScheduledAnimationFrame(pending.frame);
-  }
-
-  /** A transcript rendered into a hidden presentation ignores scroll writes until it gets a box. */
-  #scrollToBottomOnceLaidOut(): void {
-    this.#cancelLayoutScroll();
-    this.scrollToBottom();
-    if (this.messagesEl.clientHeight > 0) return;
-    const Observer = this.messagesEl.ownerDocument?.defaultView?.ResizeObserver;
-    if (!Observer) return;
-    const observer = new Observer(() => {
-      if (this.messagesEl.clientHeight === 0) return;
-      this.#cancelLayoutScroll();
-      this.scrollToBottom();
-    });
-    this.#pendingLayoutScroll = observer;
-    observer.observe(this.messagesEl);
-  }
-
-  #cancelLayoutScroll(): void {
-    this.#pendingLayoutScroll?.disconnect();
-    this.#pendingLayoutScroll = null;
-  }
-
-  /** Scrolls to bottom if already near bottom (within threshold). */
-  scrollToBottomIfNeeded(threshold = 100): void {
-    this.#cancelTailScroll();
-    if (this.#markdown.isDisposed) return;
-    const { scrollTop, scrollHeight, clientHeight } = this.messagesEl;
-    const isNearBottom = scrollHeight - scrollTop - clientHeight < threshold;
-    if (isNearBottom) {
-      const pending = { scrollTop } as { frame?: ScheduledAnimationFrame; scrollTop: number };
-      this.#pendingTailScroll = pending;
-      pending.frame = scheduleAnimationFrame(() => {
-        if (this.#pendingTailScroll !== pending) return;
-        this.#pendingTailScroll = null;
-        if (this.messagesEl.scrollTop === pending.scrollTop) {
-          this.messagesEl.scrollTop = this.messagesEl.scrollHeight;
-        }
-      }, this.messagesEl.ownerDocument.defaultView);
-    }
   }
 }
