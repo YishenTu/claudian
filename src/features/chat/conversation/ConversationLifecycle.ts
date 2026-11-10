@@ -7,9 +7,8 @@ import type {
   ProjectMutations,
   ProjectReader,
 } from '@/core/types';
-import type { ChatTabManagerHost, ChatViewHost } from '@/features/chat/ChatFeatureHost';
+import type { ChatTabManagerHost, ChatViewHost, TabId } from '@/features/chat/ChatFeatureHost';
 import type { SessionRuntimePool } from '@/features/chat/sessions/SessionRuntimePool';
-import type { TabId } from '@/features/chat/tabs/ChatTab';
 
 /** Application conversation writes the lifecycle applies after its tab policy. */
 export interface ConversationLifecycleStore {

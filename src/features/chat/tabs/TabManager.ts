@@ -2,10 +2,10 @@ import { type App, Notice } from 'obsidian';
 
 import { type AppTabManagerState, normalizeTabLabel } from '@/core/bootstrap/tabManagerState';
 import type { ProviderId } from '@/core/providers/types';
-import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
+import type { ChatFeatureHost, TabId } from '@/features/chat/ChatFeatureHost';
 import type { ChatSessionRuntime } from '@/features/chat/sessions/ChatSessionRuntime';
 import { type DraftSessionHold, SessionAlreadyAttached, type SessionRevealOptions } from '@/features/chat/sessions/SessionRuntimePool';
-import type { TabBarItem, TabId, TabManagerInterface, TabManagerViewHost } from '@/features/chat/tabs/ChatTab';
+import type { TabBarItem, TabManagerInterface, TabManagerViewHost } from '@/features/chat/tabs/ChatTab';
 import { inheritedDraftSeed } from '@/features/chat/tabs/draftSeed';
 import type { ForkTargetHost } from '@/features/chat/tabs/forking/ForkTarget';
 import { ParkedDrafts } from '@/features/chat/tabs/ParkedDrafts';

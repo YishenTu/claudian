@@ -1,7 +1,8 @@
 import { Menu } from 'obsidian';
 
 import { normalizeTabLabel } from '@/core/bootstrap/tabManagerState';
-import type { TabBarItem, TabId } from '@/features/chat/tabs/ChatTab';
+import type { TabId } from '@/features/chat/ChatFeatureHost';
+import type { TabBarItem } from '@/features/chat/tabs/ChatTab';
 import { scheduleAnimationFrame } from '@/features/chat/utils/animationFrame';
 import { t } from '@/i18n/i18n';
 

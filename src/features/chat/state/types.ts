@@ -117,6 +117,17 @@ export type ChatActivity =
   | { kind: 'tool'; tool: ToolCallInfo }
   | { kind: 'error'; message: string };
 
+/** Read side of one foreground turn owner, for presentation state that derives from it. */
+export interface TurnActivity {
+  /** A response is admitted and has not reached settlement; it can still be cancelled. */
+  readonly isInFlight: boolean;
+  /** Recorded for the rest of the admitted turn, through settlement; provider events cannot clear it. */
+  readonly cancelRequested: boolean;
+  /** Identifies the response that owns streaming presentation; invalidation supersedes it. */
+  readonly streamGeneration: number;
+  subscribe(listener: () => void): () => void;
+}
+
 /** Callbacks for ChatState changes. */
 export interface ChatStateCallbacks {
   onStreamingStateChanged?: (isStreaming: boolean) => void;

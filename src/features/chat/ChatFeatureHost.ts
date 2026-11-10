@@ -14,10 +14,13 @@ import type { ConversationLifecycle } from '@/features/chat/conversation/Convers
 import type { ChatExecutionPersistence } from '@/features/chat/execution/ChatExecutionCoordinator';
 import type { SessionToolBinding } from '@/features/chat/session-messaging/SessionMessagingService';
 import type { SessionRuntimePool } from '@/features/chat/sessions/SessionRuntimePool';
-import type { ChatTab, TabId, TabManagerViewHost } from '@/features/chat/tabs/ChatTab';
+import type { ChatTab, TabManagerViewHost } from '@/features/chat/tabs/ChatTab';
 import type { TabIdentity } from '@/features/chat/tabs/TabIdentity';
 import type { ZenModeSource } from '@/features/chat/zen/types';
 import type { FeatureHost } from '@/features/FeatureHost';
+
+/** Tab identifier type. */
+export type TabId = string;
 
 export interface ChatModelSelectionPort {
   beginIntent(): number;

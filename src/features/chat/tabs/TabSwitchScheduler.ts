@@ -1,4 +1,4 @@
-import type { TabId } from '@/features/chat/tabs/ChatTab';
+import type { TabId } from '@/features/chat/ChatFeatureHost';
 
 type ActivationStartedCallback = (previousTabId: TabId | null) => void;
 

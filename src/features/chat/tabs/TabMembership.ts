@@ -1,6 +1,6 @@
 import type { AppTabManagerState } from '@/core/bootstrap/tabManagerState';
 import type { ProviderId } from '@/core/providers/types';
-import type { TabId } from '@/features/chat/tabs/ChatTab';
+import type { TabId } from '@/features/chat/ChatFeatureHost';
 import type { BlankTabSelection, TabIdentity } from '@/features/chat/tabs/TabIdentity';
 import type { AssembledTabRuntime, TabMembershipView } from '@/features/chat/tabs/types';
 

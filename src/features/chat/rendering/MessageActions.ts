@@ -4,9 +4,9 @@ import type { ChatRewindMode } from '@/core/execution';
 import type { ProviderCapabilities } from '@/core/providers/types';
 import type { ChatMessage } from '@/core/types';
 import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
-import { findRewindContext } from '@/features/chat/conversation/rewind';
 import { getResponseElementKind } from '@/features/chat/rendering/ResponseLayout';
 import { formatConversationDirectoryTitle } from '@/features/chat/utils/conversationDirectoryTitle';
+import { findRewindContext } from '@/features/chat/utils/rewind';
 import { t } from '@/i18n/i18n';
 import { bindCopyFeedback } from '@/shared/components/CopyableCodeFence';
 

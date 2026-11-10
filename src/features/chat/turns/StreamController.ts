@@ -23,8 +23,8 @@ import {
 import type { ChatState } from '@/features/chat/state/ChatState';
 import type { AsyncSubagentHistoryRecovery } from '@/features/chat/subagents/AsyncSubagentHistoryRecovery';
 import type { SubagentManager } from '@/features/chat/subagents/SubagentManager';
-import { SubagentStreamRouter } from '@/features/chat/subagents/SubagentStreamRouter';
 import { StreamingRenderCoordinator } from '@/features/chat/turns/StreamingRenderCoordinator';
+import { SubagentStreamRouter } from '@/features/chat/turns/SubagentStreamRouter';
 import { ThinkingIndicator } from '@/features/chat/turns/ThinkingIndicator';
 import { mergeToolProviderPayload, ToolCallStream } from '@/features/chat/turns/ToolCallStream';
 import { hasStreamingMathDelimiters } from '@/utils/markdownMath';

@@ -9,7 +9,7 @@ import {
   type AsyncSubagentHistoryRecoveryDeps,
 } from '@/features/chat/subagents/AsyncSubagentHistoryRecovery';
 import { SubagentManager } from '@/features/chat/subagents/SubagentManager';
-import { SubagentStreamRouter } from '@/features/chat/subagents/SubagentStreamRouter';
+import { SubagentStreamRouter } from '@/features/chat/turns/SubagentStreamRouter';
 
 
 
