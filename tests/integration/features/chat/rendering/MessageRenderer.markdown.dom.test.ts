@@ -82,7 +82,6 @@ it('keeps finalized collapsed thinking lazy and renders its final math on expans
     plugin: await createChatFeatureHost({ app, settings: { ...settings, deferMathRenderingDuringStreaming: true, enableAutoScroll: true } }),
     state, renderer, subagentManager: subagents, getMessagesEl: () => host, updateQueueIndicator: () => undefined,
   });
-  state.autoScrollEnabled = true;
   const readHeight = vi.fn(() => 1000);
   Object.defineProperty(host, 'scrollHeight', { get: readHeight, configurable: true });
   try {
@@ -93,7 +92,8 @@ it('keeps finalized collapsed thinking lazy and renders its final math on expans
     }
     const header = within(host).getByRole('button', { name: /Thinking/ });
     expect(header.getAttribute('aria-expanded')).toBe('false');
-    expect(readHeight).toHaveBeenCalledTimes(1);
+    // Streaming reads no layout; following belongs to the transcript's resize observation.
+    expect(readHeight).not.toHaveBeenCalled();
     await stream.finalizeCurrentThinkingBlock(message);
     expect(MarkdownRenderer.render).not.toHaveBeenCalled();
     expect(message).toMatchObject({ contentBlocks: [{ type: 'thinking', content: '$x$ '.repeat(60) }] });

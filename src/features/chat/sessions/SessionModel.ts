@@ -31,7 +31,7 @@ import { StreamController } from '@/features/chat/turns/StreamController';
 import type { ComposerInputElement } from '@/shared/composer-dropdown/types';
 import { getVaultPath } from '@/utils/path';
 
-export type SessionChange = 'streaming' | 'rewinding' | 'attention' | 'conversation' | 'identity' | 'usage' | 'scroll' | 'work' | 'commands' | 'settings' | 'destination' | 'project';
+export type SessionChange = 'streaming' | 'rewinding' | 'attention' | 'conversation' | 'identity' | 'usage' | 'work' | 'commands' | 'settings' | 'destination' | 'project';
 
 /** The current view only. No execution dependency may retain an earlier instance. */
 export interface SessionPresentation {
@@ -85,7 +85,6 @@ export class SessionModel {
       onAttentionChanged: () => this.publish('attention'),
       onConversationChanged: () => this.publish('conversation'),
       onUsageChanged: () => this.publish('usage'),
-      onAutoScrollChanged: () => this.publish('scroll'),
     }, { get: () => session.conversationId, set: id => session.setConversationId(id) }, session.turns, session.attention);
     this.subagentManager = new SubagentManager(info => {
       this.streamController.subagents.onAsyncSubagentStateChange(info);

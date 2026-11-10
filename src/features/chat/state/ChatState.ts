@@ -40,7 +40,6 @@ function createInitialState(): ChatStateData {
     writeEditStates: new Map(),
     pendingTools: new Map(),
     usage: null,
-    autoScrollEnabled: true, // Default; controllers will override based on settings
   };
 }
 
@@ -53,8 +52,6 @@ export class ChatState {
   #activity: ChatActivity | null = null;
   #waitingStatus: string | null = null;
   readonly #activityListeners = new Set<() => void>();
-  /** Last transcript scroll offset seen while laid out; a hidden scroller reports zero. */
-  readingScrollTop = 0;
 
   #conversationRevision = 0;
   #savedConversationRevision = 0;
@@ -327,22 +324,6 @@ export class ChatState {
   setActionRequired(required: boolean): void { this.sessionAttention.setActionRequired(required); }
   markReviewRequired(outcome: TabReviewOutcome = 'completed'): void { this.sessionAttention.markReviewRequired(outcome); }
   acknowledgeReview(): void { this.sessionAttention.acknowledgeReview(); }
-
-  // ============================================
-  // Auto-Scroll Control
-  // ============================================
-
-  get autoScrollEnabled(): boolean {
-    return this.state.autoScrollEnabled;
-  }
-
-  set autoScrollEnabled(value: boolean) {
-    const changed = this.state.autoScrollEnabled !== value;
-    this.state.autoScrollEnabled = value;
-    if (changed) {
-      this._callbacks.onAutoScrollChanged?.(value);
-    }
-  }
 
   // ============================================
   // Response Timer State

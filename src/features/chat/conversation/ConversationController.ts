@@ -364,13 +364,12 @@ export class ConversationController {
    * Shared logic for restoring a conversation into the current tab.
    */
   #restoreConversation(conversation: Conversation): void {
-    const { plugin, state } = this.deps;
+    const { state } = this.deps;
 
     this.#branching.reset();
     state.currentConversationId = conversation.id;
     state.messages = [...conversation.messages];
     state.usage = conversation.usage ?? null;
-    state.autoScrollEnabled = plugin.settings.enableAutoScroll ?? true;
     state.discardPendingConversationSave();
 
     this.deps.getLinkedContentController().lock(conversation.linkedContentPath);
@@ -381,12 +380,11 @@ export class ConversationController {
 
   /** Clears the tab back to the blank entry point; a conversation is created on first send. */
   async #resetToEntryState(): Promise<void> {
-    const { plugin, state } = this.deps;
+    const { state } = this.deps;
     this.#branching.reset();
     state.currentConversationId = null;
     state.clearMessages();
     state.usage = null;
-    state.autoScrollEnabled = plugin.settings.enableAutoScroll ?? true;
     state.discardPendingConversationSave();
 
     await this.#getExecutionCoordinator()?.bindConversation(null);

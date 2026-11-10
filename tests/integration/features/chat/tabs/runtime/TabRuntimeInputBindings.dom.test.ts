@@ -3,6 +3,8 @@ import '@/providers';
 
 import { axe } from '@test/helpers/accessibility';
 import { holdResponse } from '@test/helpers/ConversationPorts';
+import { triggerResize } from '@test/helpers/dom/ResizeObserver';
+import { followsGrowth } from '@test/helpers/dom/transcriptGeometry';
 import { createChatFeatureHost } from '@test/helpers/features/chat/ChatFeatureHostFixture';
 import { createSessionRuntimePool } from '@test/helpers/features/chat/SessionRuntimePoolHarness';
 import { createHarness, releaseSideChatHarnesses } from '@test/helpers/features/chat/SideChatDOMHarness';
@@ -75,6 +77,13 @@ afterEach(async () => {
 
 function setScrollHeight(height: number): void {
   Object.defineProperty(tab.dom.messagesEl, 'scrollHeight', { configurable: true, value: height });
+}
+
+/** Stands in for the browser layout pass that resizes the transcript's rows after content changes. */
+function layout(): void {
+  for (const child of Array.from(tab.dom.messagesEl.children)) {
+    triggerResize(child, { contentRect: new DOMRectReadOnly(), contentBoxSize: [], borderBoxSize: [], devicePixelContentBoxSize: [] });
+  }
 }
 
 async function streamText(): Promise<void> {
@@ -186,20 +195,22 @@ it.each([
   { name: '20px boundary', growth: 21, movement: 1 },
 ])('keeps following through a layout scroll: $name', async ({ growth, movement }) => {
   expect(tab.state.isStreaming).toBe(true);
-  expect(tab.state.autoScrollEnabled).toBe(true);
+  expect(followsGrowth(tab.dom.messagesEl)).toBe(true);
   // jsdom has no layout engine; supply the geometry observed when the browser delivers scroll.
   setScrollHeight(1000 + growth);
   tab.dom.messagesEl.scrollTop += movement;
   await streamText();
   fireEvent.scroll(tab.dom.messagesEl);
+  layout();
   await vi.advanceTimersByTimeAsync(200);
 
-  expect(tab.state.autoScrollEnabled).toBe(true);
+  expect(followsGrowth(tab.dom.messagesEl)).toBe(true);
   expect(tab.dom.messagesEl.scrollTop).toBe(1000 + growth);
 
   // Later frames must continue following, not only the frame already queued before scroll.
   setScrollHeight(1200 + growth);
   await streamText();
+  layout();
   await vi.advanceTimersByTimeAsync(200);
   expect(tab.dom.messagesEl.scrollTop).toBe(1200 + growth);
 });
@@ -233,19 +244,42 @@ it.each([
     fireEvent.scroll(messagesEl);
     setScrollHeight(1200);
     await streamText();
+    layout();
     await vi.advanceTimersByTimeAsync(200);
-    expect(tab.state.autoScrollEnabled).toBe(false);
+    expect(followsGrowth(tab.dom.messagesEl)).toBe(false);
     expect(messagesEl.scrollTop).toBe(250);
 
     messagesEl.scrollTop = 700;
     fireEvent.scroll(messagesEl);
     setScrollHeight(1400);
     await streamText();
+    layout();
     await vi.advanceTimersByTimeAsync(200);
-    expect(tab.state.autoScrollEnabled).toBe(true);
+    expect(followsGrowth(tab.dom.messagesEl)).toBe(true);
     expect(messagesEl.scrollTop).toBe(1400);
   },
 );
+
+it('follows again after Next at the last prompt scrolls to the bottom', async () => {
+  const messagesEl = tab.dom.messagesEl;
+  messagesEl.createDiv({ cls: 'claudian-message claudian-message-user', attr: { 'data-toc-title': 'Prompt' } });
+  messagesEl.scrollTo = vi.fn();
+  fireEvent.wheel(messagesEl, { deltaY: -100 });
+  messagesEl.scrollTop = 250;
+  fireEvent.scroll(messagesEl);
+
+  fireEvent.click(getByRole(tab.dom.messagesWrapperEl, 'button', { name: 'Next message' }));
+  expect(messagesEl.scrollTo).toHaveBeenCalledWith({ top: 1000, behavior: 'smooth' });
+  // The smooth scroll arrives at the bottom.
+  messagesEl.scrollTop = 500;
+  fireEvent.scroll(messagesEl);
+  setScrollHeight(1200);
+  await streamText();
+  layout();
+  await vi.advanceTimersByTimeAsync(200);
+
+  expect(messagesEl.scrollTop).toBe(1200);
+});
 
 it.each(['pointerup', 'pointercancel'])('keeps following through layout scrolls after %s', async (release) => {
   pressContent(0);
@@ -254,9 +288,10 @@ it.each(['pointerup', 'pointercancel'])('keeps following through layout scrolls 
   tab.dom.messagesEl.scrollTop += 1;
   fireEvent.scroll(tab.dom.messagesEl);
   await streamText();
+  layout();
   await vi.advanceTimersByTimeAsync(200);
 
-  expect(tab.state.autoScrollEnabled).toBe(true);
+  expect(followsGrowth(tab.dom.messagesEl)).toBe(true);
   expect(tab.dom.messagesEl.scrollTop).toBe(1036);
 });
 

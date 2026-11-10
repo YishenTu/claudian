@@ -11,7 +11,6 @@ describe('ThinkingIndicator', () => {
   let turns: TurnCoordinator;
   let state: ChatState;
   let updateQueueIndicator: Mock;
-  let scrollToBottom: Mock;
   let indicator: ThinkingIndicator;
   let contentEl: HTMLElement;
   const shown = (): HTMLElement | null => contentEl.querySelector<HTMLElement>('.claudian-thinking');
@@ -24,12 +23,10 @@ describe('ThinkingIndicator', () => {
     contentEl = messagesEl.createDiv();
     state.currentContentEl = contentEl;
     updateQueueIndicator = vi.fn();
-    scrollToBottom = vi.fn();
     indicator = new ThinkingIndicator({
       state,
       getMessagesEl: () => messagesEl,
       updateQueueIndicator,
-      scrollToBottom,
     });
   });
 
@@ -41,16 +38,14 @@ describe('ThinkingIndicator', () => {
     vi.useRealTimers();
   });
 
-  it('appears after its debounce delay and scrolls it into view', () => {
+  it('appears after its debounce delay', () => {
     indicator.show();
     vi.advanceTimersByTime(399);
     expect(shown()).toBeNull();
-    expect(scrollToBottom).not.toHaveBeenCalled();
 
     vi.advanceTimersByTime(1);
     expect(shown()).not.toBeNull();
     expect(state.waitingStatus).not.toBeNull();
-    expect(scrollToBottom).toHaveBeenCalled();
   });
 
   it('returns after a text pause only while the response streams', async () => {

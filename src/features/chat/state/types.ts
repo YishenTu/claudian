@@ -103,11 +103,6 @@ export interface ChatStateData {
 
   // Context window usage
   usage: UsageInfo | null;
-
-  // Runtime-only attention state
-
-  // Auto-scroll control during streaming
-  autoScrollEnabled: boolean;
 }
 
 /**
@@ -129,7 +124,6 @@ export interface ChatStateCallbacks {
   onConversationChanged?: (id: string | null) => void;
   onUsageChanged?: (usage: UsageInfo | null) => void;
   onAttentionChanged?: (attention: TabAttention) => void;
-  onAutoScrollChanged?: (enabled: boolean) => void;
 }
 
 // Re-export types that are used across the chat feature

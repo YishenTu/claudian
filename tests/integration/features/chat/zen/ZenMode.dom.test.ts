@@ -3,6 +3,7 @@ import '@/providers';
 
 import { axe } from '@test/helpers/accessibility';
 import { ControlledResizeObserver, triggerResize } from '@test/helpers/dom/ResizeObserver';
+import { useTranscriptGeometry } from '@test/helpers/dom/transcriptGeometry';
 import {
   cleanups,
   createChatWorkspaceFixture,
@@ -1043,18 +1044,30 @@ it('keeps the preview line on the main chat while a side chat is selected', asyn
 
 it('keeps the reader scroll intent through geometry-only scrolls after relocation', async () => {
   const { tab, rightSplit, setCollapsed } = await createChatWorkspaceFixture();
-  seedHistory(tab);
+  const messagesEl = tab.dom.messagesEl;
+  let grown = false;
+  const geometry = useTranscriptGeometry(messagesEl, { rowHeight: row => (grown && row.dataset.messageId === 'a7' ? 600 : 100) });
+  tab.state.messages = Array.from({ length: 8 }, (_, index) => [
+    { id: `u${index}`, role: 'user' as const, content: `Question ${index}`, timestamp: testDate().getTime() },
+    { id: `a${index}`, role: 'assistant' as const, content: `Answer ${index}`, timestamp: testDate().getTime() },
+  ]).flat();
+  tab.renderer.renderMessages(tab.state.messages, () => 'Welcome');
   setCollapsed(rightSplit, true);
   fireEvent.click(within(zenPanel()!).getByRole('button', { name: 'Show conversation' }));
   // The reader moved away from new output.
-  tab.state.autoScrollEnabled = false;
+  fireEvent.wheel(messagesEl, { deltaY: -100 });
+  messagesEl.scrollTop = 300;
+  fireEvent.scroll(messagesEl);
 
   setCollapsed(rightSplit, false);
-  fireEvent.scroll(tab.dom.messagesEl);
-  expect(tab.state.autoScrollEnabled).toBe(true);
+  // Relocation reports the bottom before the transcript has its final layout.
+  messagesEl.scrollTop = geometry.bottom();
+  fireEvent.scroll(messagesEl);
   await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
+  grown = true;
+  geometry.layout();
 
-  expect(tab.state.autoScrollEnabled).toBe(false);
+  expect(messagesEl.scrollTop).toBe(300);
 });
 
 it('keeps the last visible reading position when collapsing the sidebar hides the transcript', async () => {
@@ -1074,7 +1087,6 @@ it('keeps the last visible reading position when collapsing the sidebar hides th
   fireEvent.wheel(messagesEl, { deltaY: -100 });
   messagesEl.scrollTop = 300;
   fireEvent.scroll(messagesEl);
-  expect(tab.state.autoScrollEnabled).toBe(false);
 
   collapse();
   setCollapsed(rightSplit, false);
