@@ -181,8 +181,9 @@ export class SessionRuntimePool {
     if (baseline.state === 'current') {
       if (!this.canRevalidate(record, attachment)) return false;
       const current = await this.readNativeRevision(conversationId);
-      // A newer baseline supersedes this comparison.
-      if (current === baseline.revision || record.freshness !== baseline || record.revisionRead) return false;
+      // A newer baseline supersedes this comparison. Main work that started during the read owns it instead:
+      // its own check, or for provider-started work the read after it, may already include that work's writes.
+      if (current === baseline.revision || record.freshness !== baseline || record.revisionRead || record.runtime.isMainWorking) return false;
       record.freshness = { state: 'stale', reloadRevision: null };
     }
     // Every check of a stale record marks its provider session, even one busy now: an idle session is
@@ -252,6 +253,9 @@ export class SessionRuntimePool {
     const id = record.runtime.conversationId;
     const baseline = record.freshness;
     if (!id || baseline.state !== 'current') return;
+    // Work the provider started itself (a task notification) has already written its native history when it
+    // is observed, so a read now would count those writes as an outside change; the read after it absorbs them.
+    if (!record.runtime.hasActiveTurn && record.runtime.hasMainBackgroundWork) return;
     record.ownWorkCheck = this.readNativeRevision(id).then(revision => {
       // As in any check, a revision that cannot be read after one was known counts as changed.
       if (record.freshness === baseline && revision !== baseline.revision) {

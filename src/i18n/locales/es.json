@@ -25,6 +25,7 @@
     "promptSuggestionHint": "Tab para aceptar",
     "selectAvailableModel": "Selecciona un modelo disponible antes de enviar.",
     "reloadingHistory": "Este chat cambió fuera de Claudian y se está recargando. Vuelve a enviar cuando termine.",
+    "changedOutsideWithBackgroundTask": "Este chat continuó fuera de Claudian mientras una tarea en segundo plano de su sesión anterior sigue en ejecución. Detén la tarea o espera a que termine y vuelve a enviar.",
     "selectAvailableTitleModel": "Selecciona un modelo de títulos disponible en los ajustes de Claudian.",
     "rewind": {
       "confirmMessage": "¿Rebobinar a este punto? Los cambios de archivos posteriores a este mensaje podrían sobrescribirse o eliminarse. Esta acción no se puede deshacer.",

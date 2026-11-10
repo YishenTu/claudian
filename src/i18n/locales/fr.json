@@ -25,6 +25,7 @@
     "promptSuggestionHint": "Tab pour accepter",
     "selectAvailableModel": "Sélectionnez un modèle disponible avant d’envoyer.",
     "reloadingHistory": "Cette conversation a changé en dehors de Claudian et se recharge. Renvoyez une fois le rechargement terminé.",
+    "changedOutsideWithBackgroundTask": "Cette conversation s'est poursuivie en dehors de Claudian alors qu'une tâche en arrière-plan de sa session précédente est toujours en cours. Arrêtez la tâche ou attendez qu'elle se termine, puis renvoyez.",
     "selectAvailableTitleModel": "Sélectionnez un modèle de titre disponible dans les paramètres de Claudian.",
     "rewind": {
       "confirmMessage": "Rembobiner jusqu'à ce point ? Les modifications de fichiers postérieures à ce message peuvent être écrasées ou supprimées. Cette action est irréversible.",

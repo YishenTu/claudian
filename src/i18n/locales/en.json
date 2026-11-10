@@ -25,6 +25,7 @@
     "promptSuggestionHint": "Tab to accept",
     "selectAvailableModel": "Select an available model before sending.",
     "reloadingHistory": "This chat changed outside Claudian and is reloading. Send again when it finishes.",
+    "changedOutsideWithBackgroundTask": "This chat continued outside Claudian while a background task from its earlier session is still running. Stop the task or wait for it to finish, then send again.",
     "selectAvailableTitleModel": "Select an available title model in Claudian settings.",
     "rewind": {
       "confirmMessage": "Rewind to this point? File changes after this message may be overwritten or removed. This cannot be undone.",

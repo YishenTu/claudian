@@ -46,6 +46,7 @@ import {
 } from '@/features/chat/execution/RequestedTurnIdentity';
 import { SessionEventStream } from '@/features/chat/execution/SessionEventStream';
 import type { SessionToolBinding } from '@/features/chat/session-messaging/SessionMessagingService';
+import { t } from '@/i18n/i18n';
 import { throwIfAborted } from '@/utils/abort';
 import { toError } from '@/utils/error';
 
@@ -220,7 +221,7 @@ export class ChatExecutionInteractionStaleError extends Error {
 export class ChatExecutionPreHandoffError extends Error {
   override readonly cause: unknown;
 
-  /** Provider-supplied explanation safe to show the user; absent for internal failures. */
+  /** Explanation safe to show the user; absent for internal failures. */
   constructor(cause: unknown, readonly userMessage?: string) {
     super(cause instanceof Error ? cause.message : String(cause));
     this.name = 'ChatExecutionPreHandoffError';
@@ -474,7 +475,7 @@ export class ChatExecutionCoordinator {
         createExecutionRequest(submission, requestController.signal),
       );
     } catch (error) {
-      throw new ChatExecutionPreHandoffError(error);
+      throw error instanceof ChatExecutionPreHandoffError ? error : new ChatExecutionPreHandoffError(error);
     }
 
     const active: ActiveExecution = {
@@ -828,7 +829,8 @@ export class ChatExecutionCoordinator {
     const stale = this.#sessionBinding;
     if (!stale?.nativeHistoryChanged || !this.#isBindingCurrent(stale)) return;
     if (stale.session.blocksIdleRelease?.() || this.hasBackgroundWork) {
-      throw new Error('This chat continued outside Claudian while a background task from its earlier session is still running. Stop the task or wait for it to finish, then send again.');
+      const reason = t('chat.changedOutsideWithBackgroundTask');
+      throw new ChatExecutionPreHandoffError(reason, reason);
     }
     await this.#enqueuePreparation(async () => {
       if (this.#sessionBinding !== stale) return;
