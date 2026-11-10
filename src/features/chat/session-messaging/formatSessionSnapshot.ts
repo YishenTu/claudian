@@ -33,9 +33,26 @@ function splitFinishedTurns(messages: readonly ChatMessage[], running: boolean):
   return turns;
 }
 
-function formatReply(responses: readonly ChatMessage[]): string {
-  const final = responses.filter(message => message.role === 'assistant')
-    .map(getFinalResponseText).filter(text => text.trim()).join('\n\n');
+function getChainFinalText(last: ChatMessage, segments: readonly ChatMessage[]): string {
+  const blocks = segments.flatMap(segment => segment.contentBlocks?.length
+    ? segment.contentBlocks : [{ type: 'text' as const, content: segment.content }]);
+  return getFinalResponseText({ ...last, contentBlocks: blocks });
+}
+
+function formatReply(responses: ChatMessage[]): string {
+  const seen = new Set<ChatMessage>();
+  const replies: Array<{ start: number; text: string }> = [];
+  // The last segment owns final-text extraction; its chain occupies the original response's slot.
+  for (let index = responses.length - 1; index >= 0; index--) {
+    const message = responses[index];
+    const notification: boolean = isStandaloneTaskNotification(message);
+    if (message.role !== 'assistant' || notification || seen.has(message)) continue;
+    const segments = getResponseSegments(message, responses);
+    for (const segment of segments) seen.add(segment);
+    replies.push({ start: responses.indexOf(segments[0]), text: getChainFinalText(message, segments) });
+  }
+  const final = replies.sort((left, right) => left.start - right.start)
+    .map(reply => reply.text).filter(text => text.trim()).join('\n\n');
   return final || formatEmptyReply(responses);
 }
 
@@ -57,9 +74,7 @@ export function formatLastReply(messages: readonly ChatMessage[], running: boole
   }).at(-1);
   if (!last) return formatEmptyReply(turn.responses);
   const segments = getResponseSegments(last, turn.responses);
-  const blocks = segments.flatMap(segment => segment.contentBlocks?.length
-    ? segment.contentBlocks : [{ type: 'text' as const, content: segment.content }]);
-  const final = getFinalResponseText({ ...last, contentBlocks: blocks });
+  const final = getChainFinalText(last, segments);
   return final.trim() ? final : formatEmptyReply(turn.responses);
 }
 

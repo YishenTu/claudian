@@ -5,6 +5,7 @@ import { existsSync, rmSync, writeFileSync } from 'node:fs';
 import { axe } from '@test/helpers/accessibility';
 import { fireEvent, waitFor, within } from '@testing-library/dom';
 
+import { t } from '@/i18n/i18n';
 import { OpencodeHTTPClient } from '@/providers/opencode/http/OpencodeHTTPClient';
 import { OpencodeMetadataService } from '@/providers/opencode/metadata/OpencodeMetadataService';
 import { OpencodeCLIResolver } from '@/providers/opencode/runtime/OpencodeCLIResolver';
@@ -144,7 +145,8 @@ it('filters a native custom provider named all independently from All providers'
     await waitFor(() => expect(f.catalog.getSnapshot().status).toBe('ready'), { timeout: 40_000 });
     expect(f.catalog.getSnapshot().models.map(model => model.providerKey).sort()).toEqual(['all', 'other']);
     const ui = within(f.container);
-    const filter = ui.getByRole('combobox');
+    // Windows also renders an Installation method select, so address the filter by name.
+    const filter = ui.getByRole('combobox', { name: t('settings.modelPicker.providerFilterLabel') });
     const provider = within(filter).getByRole('option', { name: 'all (1)' }) as HTMLOptionElement;
     fireEvent.change(filter, { target: { value: provider.value } });
     expect(ui.getAllByRole('checkbox')).toHaveLength(1);

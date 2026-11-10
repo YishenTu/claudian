@@ -231,6 +231,11 @@ test('providers avoid root app imports', () => {
  * Listed explicitly so a new provider module is runtime until it is reviewed into this set.
  */
 const PROVIDER_DOCUMENT_WRAPPERS = new Set([
+  'src/providers/antigravity/AntigravityModelPolicy.ts',
+  'src/providers/antigravity/app/AntigravityCommandLoader.ts',
+  'src/providers/antigravity/env/AntigravitySettingsReconciler.ts',
+  'src/providers/antigravity/runtime/AntigravityCLIResolver.ts',
+  'src/providers/antigravity/settings.ts',
   'src/providers/claude/ClaudeModelPolicy.ts',
   'src/providers/claude/env/ClaudeSettingsReconciler.ts',
   'src/providers/claude/runtime/ClaudeCLIResolver.ts',

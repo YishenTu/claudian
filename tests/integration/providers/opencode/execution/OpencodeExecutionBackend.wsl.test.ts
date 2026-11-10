@@ -1,5 +1,4 @@
 // @test-ci {"native":true,"inputs":["tests/helpers/providers/opencode/OpencodeNativePeer.cjs"]}
-import '@/providers';
 
 import * as fs from 'node:fs';
 import * as fsPromises from 'node:fs/promises';
@@ -16,9 +15,14 @@ import spawn from 'cross-spawn';
 
 import { getInstallationKey } from '@/core/device/InstallationKey';
 import type { ProviderExecutionEvent } from '@/core/execution';
+import { registerProviderModules } from '@/core/providers/registerProviderModules';
+import { claudeProviderRegistration } from '@/providers/claude/registration';
 import { createOpencodeWorkspaceServices } from '@/providers/opencode/app/OpencodeWorkspaceServices';
 import { OpencodeExecutionBackend } from '@/providers/opencode/execution/OpencodeExecutionBackend';
+import { opencodeProviderRegistration } from '@/providers/opencode/registration';
 import { resolveOpencodeTarget } from '@/providers/opencode/runtime/OpencodeExecutionTarget';
+
+registerProviderModules([claudeProviderRegistration, opencodeProviderRegistration]);
 
 vi.mock('fs', async () => ({ ...await vi.importActual<typeof import('fs')>('fs') }));
 vi.mock('fs/promises', async () => ({ ...await vi.importActual<typeof import('fs/promises')>('fs/promises') }));

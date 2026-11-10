@@ -8,5 +8,8 @@ it('decodes, selects and updates installation-key maps without changing another 
   expect(updated).toEqual({ installationMethod: 'wsl', wslDistroOverride: 'Fedora', installationMethodsByHost: { first: 'wsl', second: 'wsl' }, wslDistroOverridesByHost: { first: 'Ubuntu', second: 'Fedora' } });
   expect(stored.wslDistroOverridesByHost.second).toBe('Debian');
   expect(updateInstallationSettings(updated, { wslDistroOverride: '' }, 'second', 'win32').wslDistroOverridesByHost).toEqual({ first: 'Ubuntu' });
+  // The default method is the absence of a host entry, so echoing it back never pins the host.
+  expect(updateInstallationSettings(stored, { installationMethod: 'native-windows' }, 'new', 'win32').installationMethodsByHost).toEqual({ first: 'wsl', second: 'native-windows' });
+  expect(updateInstallationSettings(updated, { installationMethod: 'native-windows' }, 'second', 'win32').installationMethodsByHost).toEqual({ first: 'wsl' });
   expect(updateInstallationSettings(updated, {}, 'second', 'darwin')).toEqual({ installationMethod: 'native-windows', wslDistroOverride: '', installationMethodsByHost: { first: 'wsl' }, wslDistroOverridesByHost: { first: 'Ubuntu' } });
 });

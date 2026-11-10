@@ -1,5 +1,3 @@
-import '@/providers';
-
 import { randomUUID } from 'node:crypto';
 import * as fs from 'node:fs';
 import * as fsPromises from 'node:fs/promises';
@@ -14,9 +12,14 @@ import spawn from 'cross-spawn';
 
 import { getInstallationKey } from '@/core/device/InstallationKey';
 import type { ProviderExecutionEvent } from '@/core/execution';
+import { registerProviderModules } from '@/core/providers/registerProviderModules';
+import { claudeProviderRegistration } from '@/providers/claude/registration';
 import { CodexExecutionBackend } from '@/providers/codex/execution/CodexExecutionBackend';
 import { CodexConversationHistoryService } from '@/providers/codex/history/CodexConversationHistoryService';
+import { codexProviderRegistration } from '@/providers/codex/registration';
 import { CodexAppServerRuntime } from '@/providers/codex/runtime/CodexAppServerRuntime';
+
+registerProviderModules([claudeProviderRegistration, codexProviderRegistration]);
 
 vi.mock('node:fs', async importOriginal => ({ ...await importOriginal<typeof fs>() }));
 vi.mock('node:fs/promises', async importOriginal => ({ ...await importOriginal<typeof fsPromises>() }));
@@ -86,7 +89,7 @@ describe.skipIf(process.platform === 'win32')('Codex WSL session history wiring'
       ].map(record => JSON.stringify({ timestamp: testTime(), ...record })).join('\n'));
       const events: ProviderExecutionEvent[] = [];
       for await (const event of session.execute({ input: [{ type: 'text', text: 'hello' }],
-        configuration: { model: TEST_CODEX_MODEL, permissionMode: 'yolo', systemInstructions: { kind: 'explicit', instructions: 'Reply.' } },
+        configuration: { model: TEST_CODEX_MODEL, permissionMode: 'yolo', systemInstructions: { kind: 'explicit', purpose: 'title', instructions: 'Reply.' } },
         toolPolicy: { kind: 'provider-default' }, signal: AbortSignal.timeout(5_000),
       }).events) events.push(event);
       expect(events.at(-1)).toMatchObject({ type: 'turn_completed' });

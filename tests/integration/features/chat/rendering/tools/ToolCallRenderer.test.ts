@@ -1,5 +1,6 @@
 /** @vitest-environment jsdom */
 
+import { axe } from '@test/helpers/accessibility';
 import { fireEvent, within } from '@testing-library/dom';
 import { setIcon } from 'obsidian';
 
@@ -41,23 +42,34 @@ describe('ToolCallRenderer', () => {
       expect(header?.getAttribute('aria-expanded')).toBe('true');
     });
 
-    it('builds Bash-specific classes, icon, command content, and toggle state', () => {
-      const parentEl = document.createElement('div');
-      const toolCall = createToolCall({
-        name: 'Bash',
-        input: { command: 'npm test' },
-      });
-      const toolEl = renderToolCall(parentEl, toolCall);
-      const header = within(toolEl).getByRole('button', { name: /click to (?:expand|collapse)/ });
-      const content = toolEl.querySelector('.claudian-tool-content');
+    it.each([
+      ['short ASCII', 'npm test', 'npm test', 'npm test'],
+      ['visible pair boundary', 'echo ' + 'a'.repeat(54) + '🚀', 'echo ' + 'a'.repeat(54) + '...', 'echo ' + 'a'.repeat(35) + '...'],
+      ['accessible pair boundary', 'echo ' + 'a'.repeat(34) + '🚀', 'echo ' + 'a'.repeat(34) + '🚀', 'echo ' + 'a'.repeat(34) + '...'],
+      ['long ASCII', 'echo ' + 'a'.repeat(70), 'echo ' + 'a'.repeat(55) + '...', 'echo ' + 'a'.repeat(35) + '...'],
+      ['fitting pair before a cut', 'echo ' + 'a'.repeat(33) + '🚀 tail', 'echo ' + 'a'.repeat(33) + '🚀 tail', 'echo ' + 'a'.repeat(33) + '🚀...'],
+      ['short emoji', 'echo 🚀', 'echo 🚀', 'echo 🚀'],
+    ])('builds Bash content and toggle state with %s', async (_case, command, summary, accessibleCommand) => {
+      const parentEl = document.body.createDiv();
+      try {
+        const toolCall = createToolCall({
+          name: 'Bash',
+          input: { command },
+        });
+        const toolEl = renderToolCall(parentEl, toolCall);
+        expect(toolEl.querySelector('.claudian-tool-summary')?.textContent).toBe(summary);
+        const header = within(toolEl).getByRole('button', { name: `Bash: ${accessibleCommand} - click to expand` });
+        const content = toolEl.querySelector('.claudian-tool-content');
 
-      expect(toolEl.hasClass('claudian-tool-call-bash')).toBe(true);
-      expect(setIcon).toHaveBeenCalledWith(expect.anything(), 'terminal');
+        expect(toolEl.hasClass('claudian-tool-call-bash')).toBe(true);
+        expect(setIcon).toHaveBeenCalledWith(expect.anything(), 'terminal');
 
-      fireEvent.click(header);
-      expect(toolCall.isExpanded).toBe(true);
-      expect(toolEl.querySelector('.claudian-tool-bash-command')?.textContent).toBe('$ npm test');
-      expect(content?.hasClass('claudian-hidden')).toBe(false);
+        fireEvent.click(header);
+        expect(toolCall.isExpanded).toBe(true);
+        expect(toolEl.querySelector('.claudian-tool-bash-command')?.textContent).toBe(`$ ${command}`);
+        expect(content?.hasClass('claudian-hidden')).toBe(false);
+        expect(await axe(toolEl)).toHaveNoViolations();
+      } finally { parentEl.remove(); }
     });
 
     it('builds TodoWrite preview, content, icon, and toggle handlers', () => {
@@ -140,20 +152,30 @@ describe('ToolCallRenderer', () => {
       expect(answerEls[0].textContent).toBe('Blue');
     });
 
-    it('renders AskUserQuestion answers by stable question id', () => {
-      const parentEl = document.createElement('div');
+    it.each([false, true])('renders completed secret=%s answers without changing their stored values', async isSecret => {
+      const parentEl = document.body.createDiv();
+      const answer = 'sample-sensitive-token-123';
       const toolCall = createToolCall({
         name: 'AskUserQuestion',
         status: 'completed',
-        input: { questions: [{ id: 'q1', question: 'Color?' }] },
-        result: '{"answers":{"q1":{"answers":["Blue"]}}}',
+        input: { questions: [
+          { id: 'token', question: 'Enter API token', isSecret },
+          { id: 'ordinary', question: 'Color?' },
+          { id: 'unanswered', question: 'Unanswered secret?', isSecret: true },
+        ] },
+        result: JSON.stringify({ answers: { token: { answers: [answer] }, ordinary: { answers: ['Blue'] } } }),
       });
 
-      const toolEl = renderStoredToolCall(parentEl, toolCall);
-      const answerEls = toolEl.querySelectorAll('.claudian-ask-review-a-text');
-
-      expect(answerEls).toHaveLength(1);
-      expect(answerEls[0].textContent).toBe('Blue');
+      try {
+        const toolEl = renderStoredToolCall(parentEl, toolCall, { initiallyExpanded: true });
+        expect(within(toolEl).getByText(isSecret ? '••••••••' : answer)).toBeDefined();
+        expect(toolEl.textContent?.includes(answer)).toBe(!isSecret);
+        expect(within(toolEl).getByText('Blue')).toBeDefined();
+        expect(within(toolEl).getByText('Not answered')).toBeDefined();
+        expect(toolCall.result).toContain(answer);
+        expect(toolCall.resolvedAnswers?.token).toBe(answer);
+        expect(await axe(parentEl)).toHaveNoViolations();
+      } finally { parentEl.remove(); }
     });
 
     it.each(['toString', 'constructor'])('falls back to the own question-text answer when id %s has no own entry', id => {

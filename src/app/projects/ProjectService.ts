@@ -16,6 +16,7 @@ import {
   type ProjectRecord,
   type ProjectUpdatePatch,
 } from '@/core/types';
+import { SerialQueue } from '@/utils/SerialQueue';
 
 import type { ProjectStore } from './ProjectStore';
 
@@ -43,7 +44,7 @@ export interface ProjectServiceDeps {
 export class ProjectService implements ProjectReader, ProjectMutations, ProjectMemoryOperations {
   readonly #records = new Map<string, ProjectRecord>();
   readonly #listeners = new Set<() => void>();
-  #queue: Promise<void> = Promise.resolve();
+  readonly #queue = new SerialQueue();
 
   constructor(records: readonly ProjectRecord[], private readonly deps: ProjectServiceDeps) {
     for (const record of records) this.#records.set(record.id, record);
@@ -70,6 +71,7 @@ export class ProjectService implements ProjectReader, ProjectMutations, ProjectM
       name,
       instructions: input.instructions,
       memoryPath: requireMemoryPath(input.memoryPath),
+      ...(input.icon?.trim() ? { icon: input.icon.trim() } : {}),
       isPinned: false,
       isArchived: false,
       createdAt: Date.now(),
@@ -95,19 +97,24 @@ export class ProjectService implements ProjectReader, ProjectMutations, ProjectM
   async update(id: string, patch: ProjectUpdatePatch): Promise<void> {
     const name = patch.name !== undefined ? requireName(patch.name) : undefined;
     const requestedPath = patch.memoryPath !== undefined ? requireMemoryPath(patch.memoryPath) : undefined;
+    const icon = patch.icon !== undefined ? patch.icon?.trim() ?? '' : undefined;
     return this.#enqueue(async () => {
       const record = this.#records.get(id);
       if (!record) return;
+      const { icon: currentIcon, ...rest } = record;
+      const nextIcon = icon !== undefined ? icon : currentIcon;
       const updated: ProjectRecord = {
-        ...record,
+        ...rest,
         ...(name !== undefined ? { name } : {}),
         ...(patch.instructions !== undefined ? { instructions: patch.instructions } : {}),
         ...(requestedPath !== undefined ? { memoryPath: requestedPath } : {}),
+        ...(nextIcon ? { icon: nextIcon } : {}),
       };
       if (
         updated.name === record.name
         && updated.instructions === record.instructions
         && updated.memoryPath === record.memoryPath
+        && updated.icon === record.icon
       ) {
         return;
       }
@@ -214,7 +221,7 @@ export class ProjectService implements ProjectReader, ProjectMutations, ProjectM
   /** Waits for queued writes; later notifications reach no listener. */
   async dispose(): Promise<void> {
     this.#listeners.clear();
-    await this.#queue;
+    await this.#queue.settled();
   }
 
   #commit(id: string, next: (record: ProjectRecord) => ProjectRecord): Promise<void> {
@@ -313,9 +320,7 @@ export class ProjectService implements ProjectReader, ProjectMutations, ProjectM
   }
 
   #enqueue<T>(operation: () => Promise<T>): Promise<T> {
-    const result = this.#queue.then(operation);
-    this.#queue = result.then(() => undefined, () => undefined);
-    return result;
+    return this.#queue.run(operation);
   }
 }
 

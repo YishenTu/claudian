@@ -1,3 +1,5 @@
+import '@/providers';
+
 import type { ForkTestEnvironment } from '@test/helpers/features/chat/ProviderForkTestHarness';
 
 import type {
@@ -88,7 +90,7 @@ export async function traceSideChild(
         configuration: {
           model: options.model ?? captured.sourceSelectedModel,
           permissionMode: options.permissionMode ?? 'normal',
-          systemInstructions: { instructions: 'Answer the user.', kind: 'explicit' },
+          systemInstructions: { instructions: 'Answer the user.', kind: 'explicit', purpose: 'title' },
         },
         conversationHistory: history,
         text,

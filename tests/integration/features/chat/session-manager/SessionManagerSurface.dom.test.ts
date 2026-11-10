@@ -34,22 +34,27 @@ function conversation(id: string, overrides: Partial<ConversationMeta> = {}): Co
   };
 }
 
-async function createSurface() {
+async function createSurface(active = false) {
   // Active rows carry their own Archive action; an archived-only list keeps navigation names unique.
-  const conversations = [conversation('archived', { isArchived: true })];
+  const conversations = [conversation('archived', { isArchived: !active })];
   const workspace = createObsidianWorkspace(document.body);
   const app = new App();
   Object.assign(app.workspace, workspace);
   const { plugin } = await createSessionBrowserHost({ conversations, host: {
     app, settings: { enableAutoTitleGeneration: false },
+    renameConversation: async (id, title) => {
+      const record = conversations.find(conversation => conversation.id === id);
+      if (record) record.title = title;
+    },
   } });
   const requestNew = vi.fn();
+  const openConversation = vi.fn().mockResolvedValue(undefined);
   const surface = new SessionManagerSurface({
     plugin,
     navigation: {
       contentExists: () => true,
       getConversationStatus: () => ({ openState: 'closed', isRunning: false }),
-      openConversation: vi.fn().mockResolvedValue(undefined),
+      openConversation,
       openSessionConversation: vi.fn().mockResolvedValue(undefined),
       startLinkedContentConversation: vi.fn().mockResolvedValue(undefined),
       startProjectConversation: vi.fn().mockResolvedValue(undefined),
@@ -64,7 +69,7 @@ async function createSurface() {
   onTestFinished(() => surface.dispose());
   surface.mountSidebar(host);
   surface.renderSidebar();
-  return { host, requestNew, surface, workspace };
+  return { host, requestNew, surface, workspace, conversations, plugin, openConversation };
 }
 
 afterEach(() => {
@@ -91,6 +96,55 @@ it('follows the left sidebar theme token through theme changes and releases its 
     surface.dispose();
   }
   expect(workspace.listenerCount()).toBe(0);
+});
+
+it.each([
+  { finish: 'save', key: 'Enter', calls: [['archived', 'My uncommitted title']], title: 'My uncommitted title' },
+  { finish: 'cancel', key: 'Escape', calls: [], title: 'archived' },
+])('retains an inline title draft through passive list invalidations until $finish', async ({ key, calls, title }) => {
+  const { host, surface, plugin, conversations, openConversation } = await createSurface(true);
+  const ui = within(host);
+  const rename = vi.spyOn(plugin, 'renameConversation');
+  fireEvent.contextMenu(ui.getByRole('button', { name: /^archived/ }));
+  const menu = (Menu as typeof Menu & { instances: Array<{ items: Array<{ title: string; clickHandler: (() => void) | null }> }> }).instances.at(-1)!;
+  menu.items.find(item => item.title === 'Rename')!.clickHandler!();
+  const input = await ui.findByRole('textbox', { name: 'Conversation title' }) as HTMLInputElement;
+  fireEvent.input(input, { target: { value: 'My uncommitted title' } });
+  input.setSelectionRange(3, 9, 'backward');
+  conversations.push(conversation('Arrived while editing'));
+  surface.invalidate();
+  const current = ui.getByRole('textbox', { name: 'Conversation title' }) as HTMLInputElement;
+  expect(current).toBe(input);
+  expect(current.value).toBe('My uncommitted title');
+  expect(document.activeElement).toBe(current);
+  expect([current.selectionStart, current.selectionEnd, current.selectionDirection]).toEqual([3, 9, 'backward']);
+  expect(ui.getByRole('button', { name: /^Arrived while editing/ })).toBeDefined();
+  expect(rename).not.toHaveBeenCalled();
+  expect(await axe(host)).toHaveNoViolations();
+  fireEvent.click(current);
+  fireEvent.keyDown(current, { key });
+  expect(openConversation).not.toHaveBeenCalled();
+  await waitFor(() => expect(ui.queryByRole('textbox', { name: 'Conversation title' })).toBeNull());
+  expect(rename.mock.calls).toEqual(calls);
+  expect(ui.getByRole('button', { name: new RegExp(`^${title}`) })).toBeDefined();
+});
+
+it.each(['delete', 'archive'] as const)('releases an inline title draft when its row leaves the active list (%s)', async action => {
+  const { host, surface, plugin, conversations } = await createSurface(true);
+  const ui = within(host);
+  const rename = vi.spyOn(plugin, 'renameConversation');
+  fireEvent.contextMenu(ui.getByRole('button', { name: /^archived/ }));
+  const menu = (Menu as typeof Menu & { instances: Array<{ items: Array<{ title: string; clickHandler: (() => void) | null }> }> }).instances.at(-1)!;
+  menu.items.find(item => item.title === 'Rename')!.clickHandler!();
+  const input = await ui.findByRole('textbox', { name: 'Conversation title' }) as HTMLInputElement;
+  fireEvent.input(input, { target: { value: 'Do not persist this draft' } });
+  if (action === 'delete') conversations.length = 0;
+  else conversations[0].isArchived = true;
+  surface.invalidate();
+  expect(ui.queryByRole('textbox', { name: 'Conversation title' })).toBeNull();
+  expect(input.isConnected).toBe(false);
+  expect(surface.handleEscape()).toBe(false);
+  expect(rename).not.toHaveBeenCalled();
 });
 
 it.each(['editing query', 'list invalidation'])('preserves the search caret and selection while %s', async action => {
@@ -226,7 +280,7 @@ describe('projects section', () => {
       fixture,
       projects: createProjectsFake([
         projectRecord({ id: 'launch', name: 'Launch', createdAt: testDate({ days: -10 }).getTime() }),
-        projectRecord({ id: 'empty', name: 'Empty', createdAt: testDate({ days: -2 }).getTime() }),
+        projectRecord({ id: 'empty', name: 'Empty', icon: 'lucide-rocket', createdAt: testDate({ days: -2 }).getTime() }),
       ]),
     } });
     vi.spyOn(plugin, 'mutateSettings');
@@ -443,17 +497,18 @@ describe('projects section', () => {
     const { host, plugin, region, surface, view } = await createProjectSurface();
 
     const emptyToggle = () => within(region()).getByRole('button', { name: sectionName('Empty', 0) });
-    expect(folderIcon(emptyToggle())).toBe('lucide-folder');
+    // A chosen icon stays in both states; the default folder swaps (Launch, below).
+    expect(folderIcon(emptyToggle())).toBe('lucide-rocket');
     fireEvent.click(emptyToggle());
     await vi.mocked(plugin.mutateSettings).mock.results.at(-1)!.value;
     expect(within(region()).getByText(t('chat.projects.noSessions'))).toBeTruthy();
-    expect(folderIcon(emptyToggle())).toBe('lucide-folder-open');
+    expect(folderIcon(emptyToggle())).toBe('lucide-rocket');
     surface.invalidate();
     expect(emptyToggle().getAttribute('aria-expanded')).toBe('true');
-    expect(folderIcon(emptyToggle())).toBe('lucide-folder-open');
+    expect(folderIcon(emptyToggle())).toBe('lucide-rocket');
     fireEvent.click(emptyToggle());
     await vi.mocked(plugin.mutateSettings).mock.results.at(-1)!.value;
-    expect(folderIcon(emptyToggle())).toBe('lucide-folder');
+    expect(folderIcon(emptyToggle())).toBe('lucide-rocket');
     fireEvent.click(emptyToggle());
     await vi.mocked(plugin.mutateSettings).mock.results.at(-1)!.value;
 

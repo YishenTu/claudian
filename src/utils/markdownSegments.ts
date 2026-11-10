@@ -491,6 +491,10 @@ function findHTMLEnd(line: string, start: number): number | null {
   if (!/[A-Za-z]/.test(line[index] ?? '')) {
     return null;
   }
+  while (/[\w-]/.test(line[index] ?? '')) index += 1;
+  if (!/[\s/>]/.test(line[index] ?? '')) {
+    return null;
+  }
 
   let quote: '"' | "'" | null = null;
   for (; index < line.length; index += 1) {

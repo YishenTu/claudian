@@ -1,5 +1,3 @@
-import '@/providers';
-
 import * as sdkModule from '@anthropic-ai/claude-agent-sdk';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
@@ -8,8 +6,12 @@ import { DesktopVault } from '@test/helpers/core/DesktopVault';
 import { createProviderHostFixture } from '@test/helpers/providerRuntimeHost';
 
 import type { ProviderExecutionRequest, ProviderSessionConfig, ProviderSessionToolPort } from '@/core/execution';
+import { registerProviderModules } from '@/core/providers/registerProviderModules';
 import type { SessionToolMCPServer } from '@/core/session-tools/sessionToolMCP';
 import { ClaudeExecutionSession } from '@/providers/claude/execution/ClaudeExecutionSession';
+import { claudeProviderRegistration } from '@/providers/claude/registration';
+
+registerProviderModules([claudeProviderRegistration]);
 
 let vault: DesktopVault;
 beforeAll(async () => { vault = await DesktopVault.create(); });
@@ -101,7 +103,7 @@ describe('Claude session tools', () => {
       expect(sdk.getLastOptions()?.mcpServers?.claudian_sessions === first).toBe(lifecycle === 'persistent');
       // Different instructions force a new persistent query too.
       const next = request();
-      await drain(bound.execute({ ...next, configuration: { ...next.configuration, systemInstructions: { kind: 'explicit', instructions: 'Changed' } } }).events);
+      await drain(bound.execute({ ...next, configuration: { ...next.configuration, systemInstructions: { kind: 'explicit', purpose: 'title', instructions: 'Changed' } } }).events);
       expect(sdk.getLastOptions()?.mcpServers?.claudian_sessions).not.toBe(first);
     } finally { await bound.dispose(); }
   });

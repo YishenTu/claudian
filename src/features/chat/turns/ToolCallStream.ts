@@ -98,7 +98,6 @@ export interface ToolCallStreamDeps {
   state: ChatState;
   indicator: Pick<ThinkingIndicator, 'show'>;
   getMessagesEl: () => HTMLElement | null;
-  scrollToBottom: () => void;
   onQuestionToolChanged?: (tool: ToolCallInfo) => void;
 }
 
@@ -153,7 +152,7 @@ export class ToolCallStream {
   }
 
   output(chunk: Extract<StreamChunk, { type: 'tool_output' }>, msg: ChatMessage): void {
-    this.#renderPending(chunk.id);
+    this.#renderThrough(chunk.id);
 
     const existing = msg.toolCalls?.find(tc => tc.id === chunk.id);
     if (!existing) return;
@@ -170,7 +169,7 @@ export class ToolCallStream {
 
   complete(chunk: Extract<StreamChunk, { type: 'tool_result' }>, msg: ChatMessage): void {
     const { state } = this.deps;
-    this.#renderPending(chunk.id);
+    this.#renderThrough(chunk.id);
 
     const existing = msg.toolCalls?.find(tc => tc.id === chunk.id);
     if (existing) {
@@ -274,6 +273,13 @@ export class ToolCallStream {
     this.#buffer(toolCall);
   }
 
+  /** Renders a buffered tool, after the buffered tools that arrived before it so cards keep arrival order. */
+  #renderThrough(toolId: string): void {
+    if (!this.deps.state.pendingTools.has(toolId)) return;
+    this.flushBefore(toolId);
+    this.#renderPending(toolId);
+  }
+
   #renderPending(toolId: string): void {
     const { state } = this.deps;
     const pending = state.pendingTools.get(toolId);
@@ -318,7 +324,6 @@ export class ToolCallStream {
     const frame = scheduleAnimationFrame(() => {
       this.#outputFrames.delete(toolId);
       updateToolCallResult(this.deps.state.toolCallElements.get(toolId), toolCall);
-      this.deps.scrollToBottom();
     }, this.deps.getMessagesEl()?.ownerDocument.defaultView ?? null);
     this.#outputFrames.set(toolId, frame);
   }

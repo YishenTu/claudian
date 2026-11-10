@@ -55,7 +55,7 @@ require('node:readline').createInterface({ input: process.stdin }).on('line', li
   const history: ChatMessage[] = [{ id: 'previous', role: 'user', content: 'Refactor this', timestamp: testDate().getTime(),
     executionInput: { schemaVersion: 1, canonicalText: 'Refactor this', context: previous } }];
   try {
-    const run = session.execute({ configuration: { model: MODEL, reasoning: null, systemInstructions: { kind: 'explicit', instructions: '' } },
+    const run = session.execute({ configuration: { model: MODEL, reasoning: null, systemInstructions: { kind: 'explicit', purpose: 'title', instructions: '' } },
       input: [{ type: 'text', text: 'Refactor this' }], context, conversationHistory: history,
       signal: new AbortController().signal, toolPolicy: { kind: 'provider-default' } });
     const events = [];

@@ -29,7 +29,7 @@
 }
 
 .claudian-drop-content span {
-  font-size: 12px;
+  font-size: calc(12 * var(--claudian-font-px));
   font-weight: 500;
 }
 

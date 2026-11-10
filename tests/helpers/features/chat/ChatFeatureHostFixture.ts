@@ -22,6 +22,7 @@ Promise<ChatFeatureHost & { settings: ClaudianSettings }> {
   const host: ChatFeatureHost & { settings: ClaudianSettings } = {
     ...fixture.host,
     settings: fixture.settings,
+    getAgentSkillResourceGeneration: () => fixture.agentSkills.getGeneration(),
     get sessionRuntimes() { return unconfiguredCapability(); },
     get chatModelSelection() { return unconfiguredCapability(); },
     get conversationLifecycle() { return unconfiguredCapability(); },

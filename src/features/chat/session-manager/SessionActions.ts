@@ -8,6 +8,7 @@ import {
   editProject,
   openProjectMemory,
 } from '@/features/chat/projects/projectActions';
+import { projectIconId } from '@/features/chat/projects/projectIcon';
 import { projectsForPicker } from '@/features/chat/projects/projectOrder';
 import type { SessionDropTarget } from '@/features/chat/session-manager/SessionDrag';
 import type { SessionListSectionKind } from '@/features/chat/session-manager/SessionListOrganizer';
@@ -18,8 +19,9 @@ import {
   isCompletedReview,
   type SessionStatusDisplay,
 } from '@/features/chat/session-manager/SessionStatusPresentation';
-import { runSessionAction, showMenuAt } from '@/features/chat/session-manager/SessionSurfaceShared';
+import { showMenuAt } from '@/features/chat/session-manager/SessionSurfaceShared';
 import type { TabAttention } from '@/features/chat/state/types';
+import { runSessionAction } from '@/features/chat/utils/runSessionAction';
 import { t } from '@/i18n/i18n';
 import type { TranslationKey } from '@/i18n/types';
 import { confirmDelete } from '@/shared/modals/ConfirmModal';
@@ -46,6 +48,7 @@ export type SessionRowActionKind =
   | 'open-in-new-tab'
   | 'open-in-background-tab'
   | 'switch-to-open'
+  | 'open-parent'
   | 'assign-device'
   | 'pin'
   | 'unpin'
@@ -77,11 +80,15 @@ export interface SessionRowActionInput {
   tracksAttention?: boolean;
   /** The session's live project; a stale `projectId` resolves to none. */
   project?: ProjectRecord | null;
+  /** The active session that started this one, if it still exists. */
+  parentId?: string | null;
 }
 
 /** A rendered row; its surface decides where the rename editor appears. */
 export interface SessionRow extends SessionRowActionInput {
   beginRename: () => void;
+  /** Sessions folded under this row, which archive and restore with it. */
+  folded?: readonly { readonly id: string; readonly isRunning: boolean }[];
 }
 
 /** Project texts are localized when shown; session texts are not localized yet. */
@@ -95,6 +102,7 @@ const ROW_ACTION_TITLES: Readonly<Record<SessionRowActionKind, ActionText>> = {
   'open-in-new-tab': 'Open in new tab',
   'open-in-background-tab': 'Open in background tab',
   'switch-to-open': 'Switch to open session',
+  'open-parent': 'Open parent session',
   'assign-device': 'Assign to this device',
   pin: 'Pin',
   unpin: 'Unpin',
@@ -109,15 +117,36 @@ const ROW_ACTION_TITLES: Readonly<Record<SessionRowActionKind, ActionText>> = {
   delete: 'Delete',
 };
 
-const INLINE_BUTTONS: Readonly<Partial<Record<SessionRowActionKind, { cls: string; icon: string }>>> = {
-  'open-in-new-tab': { cls: 'claudian-open-new-tab-btn', icon: 'square-plus' },
-  'assign-device': { cls: 'claudian-assign-device-btn', icon: 'monitor-down' },
-  pin: { cls: 'claudian-pin-btn', icon: 'pin' },
-  unpin: { cls: 'claudian-pin-btn', icon: 'pin-off' },
-  rename: { cls: '', icon: 'pencil' },
-  archive: { cls: 'claudian-archive-btn', icon: 'archive' },
-  restore: { cls: 'claudian-restore-btn', icon: 'undo-2' },
-  delete: { cls: 'claudian-delete-btn', icon: 'trash-2' },
+/** Lucide ids shared by row buttons and menu items, so an action looks the same on both surfaces. */
+const ROW_ACTION_ICONS: Readonly<Record<SessionRowActionKind, string>> = {
+  'open-in-new-tab': 'square-plus',
+  'open-in-background-tab': 'app-window',
+  'switch-to-open': 'arrow-right-left',
+  'open-parent': 'corner-left-up',
+  'assign-device': 'monitor-down',
+  pin: 'pin',
+  unpin: 'pin-off',
+  'mark-unread': 'mail',
+  'mark-read': 'mail-open',
+  rename: 'pencil',
+  'copy-session-id': 'copy',
+  'move-to-project': 'folder-input',
+  'remove-from-project': 'folder-minus',
+  archive: 'archive',
+  restore: 'undo-2',
+  delete: 'trash-2',
+};
+
+/** Row button classes for the kinds that render inline. */
+const INLINE_BUTTON_CLASSES: Readonly<Partial<Record<SessionRowActionKind, string>>> = {
+  'open-in-new-tab': 'claudian-open-new-tab-btn',
+  'assign-device': 'claudian-assign-device-btn',
+  pin: 'claudian-pin-btn',
+  unpin: 'claudian-pin-btn',
+  rename: '',
+  archive: 'claudian-archive-btn',
+  restore: 'claudian-restore-btn',
+  delete: 'claudian-delete-btn',
 };
 
 type SynchronousRowActionKind = 'rename' | 'mark-unread' | 'mark-read' | 'move-to-project';
@@ -126,6 +155,7 @@ const ROW_ACTION_FAILURES: Readonly<Record<Exclude<SessionRowActionKind, Synchro
   'open-in-new-tab': 'Failed to load conversation',
   'open-in-background-tab': 'Failed to load conversation',
   'switch-to-open': 'Failed to load conversation',
+  'open-parent': 'Failed to load conversation',
   'copy-session-id': 'Failed to copy session ID',
   'assign-device': 'Failed to assign session to this device',
   pin: 'Failed to pin session',
@@ -138,6 +168,21 @@ const ROW_ACTION_FAILURES: Readonly<Record<Exclude<SessionRowActionKind, Synchro
 
 function action(kind: SessionRowActionKind, disabled = false): SessionRowAction {
   return { kind, disabled };
+}
+
+/** The folded sessions archiving (idle ones) or restoring (all) a row also moves. */
+function foldedIdsFor(row: Pick<SessionRow, 'folded'>, isArchiving: boolean): string[] {
+  return (row.folded ?? [])
+    .filter(child => !isArchiving || !child.isRunning)
+    .map(child => child.id);
+}
+
+/** Names what an action moves besides its own row, so archiving a collapsed parent is never silent. */
+function rowActionTitle(kind: SessionRowActionKind, row: Pick<SessionRow, 'folded'>): string {
+  const title = actionText(ROW_ACTION_TITLES[kind]);
+  if (kind !== 'archive' && kind !== 'restore') return title;
+  const count = foldedIdsFor(row, kind === 'archive').length;
+  return count === 0 ? title : `${title} with ${count} folded ${count === 1 ? 'session' : 'sessions'}`;
 }
 
 /** Only the unread dot or no badge can be toggled; every other badge keeps its own state. */
@@ -189,6 +234,7 @@ export function resolveRowActions(
       actions.push(action('switch-to-open'));
     }
   }
+  if (input.parentId && mode === 'active') actions.push(action('open-parent'));
   if (mode === 'archived') {
     actions.push(action('restore'), action('delete'));
     return actions;
@@ -242,18 +288,18 @@ export class SessionActions {
     options: SessionActionOptions,
   ): void {
     for (const rowAction of resolveRowActions('inline', row, options)) {
-      const presentation = INLINE_BUTTONS[rowAction.kind];
-      if (!presentation) continue;
+      const cls = INLINE_BUTTON_CLASSES[rowAction.kind];
+      if (cls === undefined) continue;
       const button = actionsEl.createEl('button', {
-        cls: ['claudian-action-btn', presentation.cls].filter(Boolean).join(' '),
+        cls: ['claudian-action-btn', cls].filter(Boolean).join(' '),
         attr: { type: 'button' },
       });
-      setIcon(button, presentation.icon);
+      setIcon(button, ROW_ACTION_ICONS[rowAction.kind]);
       button.setAttribute(
         'aria-label',
         rowAction.kind === 'archive' && rowAction.disabled
           ? 'Cannot archive a running session'
-          : actionText(ROW_ACTION_TITLES[rowAction.kind]),
+          : rowActionTitle(rowAction.kind, row),
       );
       if (rowAction.disabled) {
         button.setAttribute('disabled', '');
@@ -271,9 +317,16 @@ export class SessionActions {
     const menu = new Menu().setUseNativeMenu(false);
     const tracksAttention = canShowAttention(options);
     const project = this.deps.plugin.projects.get(row.conversation.projectId);
-    for (const rowAction of resolveRowActions('menu', { ...row, tracksAttention, project }, options)) {
+    // Archived sessions are not opened; the archive offers only restore and delete.
+    const parentId = row.conversation.origin?.conversationId;
+    const parent = parentId
+      ? this.deps.plugin.getConversationList().find(candidate => candidate.id === parentId && !candidate.isArchived)
+      : undefined;
+    for (const rowAction of resolveRowActions('menu', { ...row, tracksAttention, project, parentId: parent?.id }, options)) {
       menu.addItem((menuItem) => {
-        menuItem.setTitle(actionText(ROW_ACTION_TITLES[rowAction.kind]));
+        menuItem
+          .setTitle(rowActionTitle(rowAction.kind, row))
+          .setIcon(ROW_ACTION_ICONS[rowAction.kind]);
         if (rowAction.disabled) {
           menuItem.setDisabled(true);
           return;
@@ -306,12 +359,14 @@ export class SessionActions {
       const ids = selected.map(conversation => conversation.id);
       menu.addItem(menuItem => menuItem
         .setTitle(`Restore ${sessionCount(ids.length)}`)
+        .setIcon(ROW_ACTION_ICONS.restore)
         .onClick(() => {
           selection.clear();
           runSessionAction(() => lifecycle.restore(ids), 'Failed to restore sessions');
         }));
       menu.addItem(menuItem => menuItem
         .setTitle(`Delete ${sessionCount(ids.length)}`)
+        .setIcon(ROW_ACTION_ICONS.delete)
         .onClick(() => {
           selection.clear();
           runSessionAction(
@@ -330,6 +385,7 @@ export class SessionActions {
       const pinIds = isPinning ? unpinnedIds : selected.map(conversation => conversation.id);
       menu.addItem(menuItem => menuItem
         .setTitle(`${isPinning ? 'Pin' : 'Unpin'} ${sessionCount(pinIds.length)}`)
+        .setIcon(ROW_ACTION_ICONS[isPinning ? 'pin' : 'unpin'])
         .onClick(() => {
           selection.clear();
           runSessionAction(
@@ -344,6 +400,7 @@ export class SessionActions {
       const sharedProjectId = projectIds.size === 1 ? [...projectIds][0] : null;
       menu.addItem(menuItem => menuItem
         .setTitle(t('chat.projects.menu.moveSelectionTo', { count: ids.length }))
+        .setIcon(ROW_ACTION_ICONS['move-to-project'])
         .onClick((event) => {
           this.#showProjectPicker(ids, sharedProjectId, event, anchorEl);
         }));
@@ -352,7 +409,11 @@ export class SessionActions {
         .map(conversation => conversation.id);
       if (memberIds.length > 0) {
         menu.addItem(menuItem => menuItem
-          .setTitle(t('chat.projects.menu.removeSelectionFrom', { count: memberIds.length }))
+          .setTitle(t(
+            memberIds.length === 1 ? 'chat.projects.menu.removeSelectionFrom' : 'chat.projects.menu.removeSelectionFromPlural',
+            { count: memberIds.length },
+          ))
+          .setIcon(ROW_ACTION_ICONS['remove-from-project'])
           .onClick(() => {
             selection.clear();
             runSessionAction(
@@ -369,6 +430,7 @@ export class SessionActions {
     menu.addItem((menuItem) => {
       menuItem
         .setTitle(`Archive ${sessionCount(archivableIds.length)}`)
+        .setIcon(ROW_ACTION_ICONS.archive)
         .setDisabled(archivableIds.length === 0);
       if (archivableIds.length > 0 && options.sessionActionMode === 'active') {
         menuItem.onClick(() => {
@@ -410,6 +472,7 @@ export class SessionActions {
         const { path, isPinned } = linkedContent;
         menu.addItem(menuItem => menuItem
           .setTitle(isPinned ? 'Unpin Linked content' : 'Pin Linked content')
+          .setIcon(ROW_ACTION_ICONS[isPinned ? 'unpin' : 'pin'])
           .onClick(() => {
             runSessionAction(
               () => onSetLinkedContentPinned(path, !isPinned),
@@ -448,6 +511,7 @@ export class SessionActions {
     if (project.isArchived) {
       menu.addItem(menuItem => menuItem
         .setTitle(t('chat.projects.menu.restore'))
+        .setIcon(ROW_ACTION_ICONS.restore)
         .onClick(() => {
           runSessionAction(
             () => plugin.conversationLifecycle.restoreProject(project.id),
@@ -459,6 +523,7 @@ export class SessionActions {
     }
     menu.addItem(menuItem => menuItem
       .setTitle(project.isPinned ? t('chat.projects.menu.unpin') : t('chat.projects.menu.pin'))
+      .setIcon(ROW_ACTION_ICONS[project.isPinned ? 'unpin' : 'pin'])
       .onClick(() => {
         runSessionAction(
           () => plugin.projects.setPinned(project.id, !project.isPinned),
@@ -467,13 +532,15 @@ export class SessionActions {
       }));
     menu.addItem(menuItem => menuItem
       .setTitle(t('chat.projects.menu.edit'))
+      .setIcon('pencil')
       .onClick(() => editProject(plugin, project)));
     menu.addItem(menuItem => menuItem
       .setTitle(t('chat.projects.menu.openMemory'))
+      .setIcon('brain')
       .onClick(() => openProjectMemory(plugin, project)));
     menu.addSeparator();
     menu.addItem((menuItem) => {
-      menuItem.setTitle(t('chat.projects.menu.archive'));
+      menuItem.setTitle(t('chat.projects.menu.archive')).setIcon(ROW_ACTION_ICONS.archive);
       if (conversations.some(isRunning)) {
         menuItem.setDisabled(true);
         return;
@@ -494,6 +561,7 @@ export class SessionActions {
     const { plugin } = this.deps;
     menu.addItem(menuItem => menuItem
       .setTitle(t('chat.projects.menu.delete'))
+      .setIcon(ROW_ACTION_ICONS.delete)
       .setWarning(true)
       .onClick(() => {
         runSessionAction(() => deleteProject(plugin, project), t('chat.projects.errors.delete'));
@@ -513,6 +581,7 @@ export class SessionActions {
     menu.addItem((menuItem) => {
       menuItem
         .setTitle(title)
+        .setIcon(ROW_ACTION_ICONS.archive)
         .setDisabled(archivableIds.length === 0);
       if (archivableIds.length > 0) {
         menuItem.onClick(() => {
@@ -554,7 +623,7 @@ export class SessionActions {
     const menu = new Menu().setUseNativeMenu(false);
     for (const project of projects) {
       menu.addItem((menuItem) => {
-        menuItem.setTitle(project.name);
+        menuItem.setTitle(project.name).setIcon(projectIconId(project));
         if (project.id === currentProjectId) menuItem.setChecked(true);
         menuItem.onClick(() => {
           selection.clear();
@@ -568,6 +637,7 @@ export class SessionActions {
     if (projects.length > 0) menu.addSeparator();
     menu.addItem(menuItem => menuItem
       .setTitle(t('chat.projects.menu.newProject'))
+      .setIcon('folder-plus')
       .onClick(() => {
         selection.clear();
         createProject(plugin, {
@@ -616,12 +686,14 @@ export class SessionActions {
     const lifecycle = this.deps.plugin.conversationLifecycle;
     menu.addItem(menuItem => menuItem
       .setTitle('Restore all sessions')
+      .setIcon(ROW_ACTION_ICONS.restore)
       .setDisabled(ids.length === 0)
       .onClick(() => {
         runSessionAction(() => lifecycle.restore(ids), 'Failed to restore sessions');
       }));
     menu.addItem(menuItem => menuItem
       .setTitle('Delete all sessions')
+      .setIcon(ROW_ACTION_ICONS.delete)
       .setDisabled(ids.length === 0)
       .onClick(() => {
         runSessionAction(
@@ -631,7 +703,20 @@ export class SessionActions {
       }));
   }
 
+  /**
+   * A row archives and restores the sessions folded under it, so what it shows moves as one; running ones stay,
+   * as group archiving leaves them.
+   */
+  #setArchivedWithFolded(row: SessionRow, isArchived: boolean): Promise<void> {
+    const lifecycle = this.deps.plugin.conversationLifecycle;
+    const { id } = row.conversation;
+    const foldedIds = foldedIdsFor(row, isArchived);
+    if (foldedIds.length === 0) return lifecycle.setArchived(id, isArchived);
+    return isArchived ? lifecycle.archive([id, ...foldedIds]) : lifecycle.restore([id, ...foldedIds]);
+  }
+
   /** `anchorEl` is where a follow-up menu opens for keyboard use. */
+
   #runRowAction(
     kind: SessionRowActionKind,
     row: SessionRow,
@@ -669,6 +754,8 @@ export class SessionActions {
           return options.onOpenConversationInNewTab?.(id, false);
         case 'switch-to-open':
           return options.onSelectConversation(id);
+        case 'open-parent':
+          return row.conversation.origin ? options.onSelectConversation(row.conversation.origin.conversationId) : undefined;
         case 'assign-device':
           return options.onAssignConversationToDevice?.(id);
         case 'copy-session-id':
@@ -678,7 +765,7 @@ export class SessionActions {
           return this.deps.plugin.conversationLifecycle.setPinned([id], kind === 'pin');
         case 'archive':
         case 'restore':
-          return this.deps.plugin.conversationLifecycle.setArchived(id, kind === 'archive');
+          return this.#setArchivedWithFolded(row, kind === 'archive');
         case 'delete':
           return this.deleteSessions([id], { confirm: false, rerender: options.onRerender });
         case 'remove-from-project':

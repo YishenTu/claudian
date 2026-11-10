@@ -30,8 +30,20 @@ export class SessionAlreadyAttached extends Error {
 interface SessionStatus {
   readonly conversationId: string | null;
   readonly isWorking: boolean;
+  readonly isMainWorking: boolean;
   readonly attention: ChatSessionRuntime['statusAttention'];
 }
+
+/**
+ * Whether a session's cached history and provider session match its native history. `current` holds the
+ * revision they last matched: read when a presentation first loads them and whenever their own main work
+ * settles. `stale` means it changed outside Claudian; only a completed reload clears it, from the revision
+ * read just before that reload's hydration.
+ */
+type NativeHistoryFreshness =
+  | { readonly state: 'unknown' }
+  | { readonly state: 'current'; readonly revision: string }
+  | { readonly state: 'stale'; readonly reloadRevision: Promise<string | null> | null };
 
 interface SessionRecord {
   readonly runtime: ChatSessionRuntime;
@@ -46,11 +58,24 @@ interface SessionRecord {
   settledWaiters: Array<(settled: boolean) => void>;
   /** When a presentation last detached it; 0 if none ever has. Orders retention of viewed sessions. */
   viewedAt: number;
+  freshness: NativeHistoryFreshness;
+  /** The latest baseline read while it is in flight; only it may set the baseline, and checks join it. */
+  revisionRead: Promise<void> | null;
+  /** The check started with the session's own main work, which the read after it waits for. */
+  ownWorkCheck: Promise<void> | null;
+  /** Every opener joins the complete check, eviction and provider release. */
+  revalidation: Promise<void> | null;
   unsubscribe(): void;
 }
 
+/**
+ * How long a revision read may take. Sends wait on the check, so a provider that does not answer (a hung
+ * `opencode serve`) is treated as unknown: after a known revision that counts as changed and reloads.
+ */
+export const NATIVE_REVISION_READ_TIMEOUT_MS = 5_000;
+
 function readStatus(runtime: ChatSessionRuntime): SessionStatus {
-  return { conversationId: runtime.conversationId, isWorking: runtime.isWorking, attention: runtime.statusAttention };
+  return { conversationId: runtime.conversationId, isWorking: runtime.isWorking, isMainWorking: runtime.isMainWorking, attention: runtime.statusAttention };
 }
 
 export class SessionRuntimePool {
@@ -66,6 +91,8 @@ export class SessionRuntimePool {
   constructor(private readonly deps: {
     createRuntime(identity: SessionIdentity): ChatSessionRuntime;
     releaseHistory(id: string, canRelease: () => boolean): Promise<boolean>;
+    /** The provider's opaque revision of a conversation's native history; null when unknown. */
+    readNativeHistoryRevision?(id: string): Promise<string | null>;
     /** Recently viewed idle conversation sessions that keep their loaded history; 0 when omitted. */
     retainedDetachedSessions?: number;
     onChanged(): void;
@@ -109,7 +136,157 @@ export class SessionRuntimePool {
     }
     const attachment = Object.freeze({ runtime: record.runtime, owner });
     record.attachment = attachment;
+    // Read before the presentation hydrates, so a change landing during hydration counts as newer.
+    if (record.freshness.state === 'unknown' && !record.revisionRead) this.observeNativeRevision(record);
     return { acquired: true, attachment };
+  }
+
+  /**
+   * Before a presentation shows a conversation's idle session, drops its cached history and provider
+   * session when native history changed outside Claudian since they last matched it, so the history is
+   * read again and the next send resumes from it. Detached sessions are evicted; the presentation that
+   * holds `attachment` keeps its model, which loads the history again in place, refusing main sends until
+   * the check and reload end. A revision that can no longer be read after one was known counts as
+   * changed; a change whose reload was declined is retried by the next check. Null, without yielding,
+   * when there is nothing to check.
+   */
+  revalidate(conversationId: string, attachment?: SessionAttachment): Promise<void> | null {
+    const record = this.conversations.get(conversationId);
+    if (!record) return null;
+    if (record.revalidation) return record.revalidation;
+    if (record.freshness.state === 'unknown' && !record.revisionRead) return null;
+    if (!this.canRevalidate(record, attachment)) return null;
+    const model = record.runtime.peekModel;
+    record.revalidation = (attachment && model
+      ? model.refreshHistory(async () => await this.isStale(conversationId, record, attachment)
+        && await this.reloadAttached(conversationId, record, attachment))
+      : this.revalidateDetached(conversationId, record))
+      .finally(() => { record.revalidation = null; });
+    return record.revalidation;
+  }
+
+  private canRevalidate(record: SessionRecord, attachment: SessionAttachment | undefined): boolean {
+    if (!attachment) return this.canEvict(record);
+    const model = record.runtime.peekModel;
+    return this.#isLive(record) && record.attachment === attachment
+      && record.runtime.isIdle && !!model && model.canRefreshHistory;
+  }
+
+  /** Compares a current baseline with native history, marking it stale on a change; true while stale. */
+  private async isStale(conversationId: string, record: SessionRecord, attachment: SessionAttachment | undefined): Promise<boolean> {
+    // The baseline may still be landing: a first read, a retry after hydration, or a settled turn's own writes.
+    while (record.revisionRead) await record.revisionRead;
+    const baseline = record.freshness;
+    if (baseline.state === 'unknown') return false;
+    if (baseline.state === 'current') {
+      if (!this.canRevalidate(record, attachment)) return false;
+      const current = await this.readNativeRevision(conversationId);
+      // A newer baseline supersedes this comparison. Main work that started during the read owns it instead:
+      // its own check, or for provider-started work the read after it, may already include that work's writes.
+      if (current === baseline.revision || record.freshness !== baseline || record.revisionRead || record.runtime.isMainWorking) return false;
+      record.freshness = { state: 'stale', reloadRevision: null };
+    }
+    // Every check of a stale record marks its provider session, even one busy now: an idle session is
+    // released, and one that cannot be is replaced by its next send. Opening must not fail on it.
+    await record.runtime.executionCoordinator.releaseForChangedHistory().catch(error => this.deps.onError(error));
+    await record.eviction;
+    return this.canRevalidate(record, attachment);
+  }
+
+  private async revalidateDetached(conversationId: string, record: SessionRecord): Promise<void> {
+    if (!await this.isStale(conversationId, record, undefined)) return;
+    record.eviction = this.evict(record, { retain: false }).then(interrupted => {
+      record.eviction = null;
+      if (interrupted) this.changed(record);
+    }, error => {
+      record.eviction = null;
+      this.deps.onError(error);
+    });
+    await record.eviction;
+    // Nothing cached remains to be stale; the next presentation hydrates afresh and reads a new baseline.
+    if (!record.runtime.peekModel) record.freshness = { state: 'unknown' };
+  }
+
+  /** Drops the cached history under its presentation; true when it did, so the model loads it again. */
+  private async reloadAttached(conversationId: string, record: SessionRecord, attachment: SessionAttachment): Promise<boolean> {
+    const model = record.runtime.peekModel;
+    const freshness = record.freshness;
+    if (!model || freshness.state !== 'stale') return false;
+    const eligible = () => this.canRevalidate(record, attachment) && record.runtime.peekModel === model && record.freshness === freshness;
+    try {
+      // A dirty transcript is written before native history replaces it, as detached eviction does.
+      if (model.state.hasPendingConversationSave) await model.conversationController.save(false);
+      if (model.state.hasPendingConversationSave || !eligible()) return false;
+      if (!await this.deps.releaseHistory(conversationId, eligible) || !eligible()) return false;
+    } catch (error) {
+      this.deps.onError(error);
+      return false;
+    }
+    // Read before the presentation hydrates, so a change landing during hydration counts as newer.
+    record.freshness = { state: 'stale', reloadRevision: this.readNativeRevision(conversationId) };
+    return true;
+  }
+
+  /** Reads a new baseline, after `before` (a check of what changed before the session's own work). */
+  private observeNativeRevision(record: SessionRecord, before: Promise<void> | null = null): void {
+    const id = record.runtime.conversationId;
+    if (!id || !this.deps.readNativeHistoryRevision || record.freshness.state === 'stale') return;
+    const isStale = () => record.freshness.state === 'stale';
+    const read: Promise<void> = Promise.resolve(before)
+      .then(() => isStale() ? null : this.readNativeRevision(id))
+      .then(revision => {
+        if (record.revisionRead !== read || isStale() || !this.#isCurrent(record)) return;
+        // A read that cannot answer keeps a known baseline; the next check compares against it.
+        if (revision) record.freshness = { state: 'current', revision };
+      })
+      .finally(() => {
+        if (record.revisionRead === read) record.revisionRead = null;
+      });
+    record.revisionRead = read;
+  }
+
+  /**
+   * The read after the session's own work absorbs what that work wrote. A change already made outside
+   * Claudian before the work started must not be absorbed with it, so it is checked for first.
+   */
+  private checkBeforeOwnWork(record: SessionRecord): void {
+    const id = record.runtime.conversationId;
+    const baseline = record.freshness;
+    if (!id || baseline.state !== 'current') return;
+    // Work the provider started itself (a task notification) has already written its native history when it
+    // is observed, so a read now would count those writes as an outside change; the read after it absorbs them.
+    if (!record.runtime.hasActiveTurn && record.runtime.hasMainBackgroundWork) return;
+    record.ownWorkCheck = this.readNativeRevision(id).then(revision => {
+      // As in any check, a revision that cannot be read after one was known counts as changed.
+      if (record.freshness === baseline && revision !== baseline.revision) {
+        record.freshness = { state: 'stale', reloadRevision: null };
+      }
+    });
+  }
+
+  private async observeHydratedRevision(record: SessionRecord): Promise<void> {
+    const freshness = record.freshness;
+    if (freshness.state === 'stale') {
+      if (!freshness.reloadRevision) return;
+      const revision = await freshness.reloadRevision;
+      if (record.freshness !== freshness || !this.#isCurrent(record)) return;
+      record.freshness = revision ? { state: 'current', revision } : { state: 'unknown' };
+      if (revision) return;
+    }
+    while (record.revisionRead) await record.revisionRead;
+    if (this.#isCurrent(record) && record.freshness.state === 'unknown') this.observeNativeRevision(record);
+  }
+
+  private async readNativeRevision(id: string): Promise<string | null> {
+    const read = this.deps.readNativeHistoryRevision?.(id).catch(() => null);
+    if (!read) return null;
+    let timer: number | undefined;
+    const timeout = new Promise<null>(resolve => { timer = window.setTimeout(() => resolve(null), NATIVE_REVISION_READ_TIMEOUT_MS); });
+    try {
+      return await Promise.race([read, timeout]);
+    } finally {
+      window.clearTimeout(timer);
+    }
   }
 
   /**
@@ -126,12 +303,18 @@ export class SessionRuntimePool {
     const record: SessionRecord = {
       runtime, status: readStatus(runtime),
       attachment: null, eviction: null, retired: false, holds: 0, settledWaiters: [], viewedAt: 0,
+      freshness: { state: 'unknown' }, revisionRead: null, ownWorkCheck: null, revalidation: null,
       unsubscribe: () => undefined,
     };
     this.records.set(runtime, record);
     this.keys.set(runtime.sessionKey, record);
     if (record.status.conversationId) this.conversations.set(record.status.conversationId, record);
-    record.unsubscribe = runtime.subscribe(() => this.changed(record));
+    const unsubscribeChanged = runtime.subscribe(() => this.changed(record));
+    const unsubscribeHydrated = runtime.subscribeHydrated(() => {
+      // Hydration can start a native host that was unavailable at the initial read.
+      void this.observeHydratedRevision(record);
+    });
+    record.unsubscribe = () => { unsubscribeChanged(); unsubscribeHydrated(); };
     return record;
   }
 
@@ -151,7 +334,7 @@ export class SessionRuntimePool {
         if (!held) return;
         held = false;
         record.holds -= 1;
-        if (this.records.get(runtime) === record) this.changed(record);
+        if (this.#isCurrent(record)) this.changed(record);
       },
     };
   }
@@ -178,6 +361,12 @@ export class SessionRuntimePool {
     record.status = status;
     // Streaming, usage and presentation changes leave session lists untouched.
     if (promoted || status.isWorking !== previous.isWorking || status.attention !== previous.attention) this.deps.onChanged();
+    // Only main work reconciles the cached main transcript and provider context.
+    if (!previous.isMainWorking && status.isMainWorking && status.conversationId) this.checkBeforeOwnWork(record);
+    if (previous.isMainWorking && !status.isMainWorking && status.conversationId) {
+      this.observeNativeRevision(record, record.ownWorkCheck);
+      record.ownWorkCheck = null;
+    }
     if (previous.isWorking && !status.isWorking && status.conversationId) this.deps.onSessionSettled?.(status.conversationId);
     if (!status.isWorking) this.settleWaiters(record, true);
     if (record.retired) {
@@ -214,7 +403,7 @@ export class SessionRuntimePool {
 
   private canEvict(record: SessionRecord): boolean {
     const { runtime } = record;
-    return this.records.get(runtime) === record && !this.closing && !record.attachment
+    return this.#isCurrent(record) && !this.closing && !record.attachment
       && runtime.isIdle && (!runtime.peekModel || runtime.peekModel.canEvict);
   }
 
@@ -231,7 +420,7 @@ export class SessionRuntimePool {
   }
 
   /** Returns true when changing retention conditions interrupted the attempt. */
-  private async evict(record: SessionRecord): Promise<boolean> {
+  private async evict(record: SessionRecord, options: { retain: boolean } = { retain: true }): Promise<boolean> {
     const { runtime } = record;
     const model = runtime.peekModel;
     const eligible = () => this.canEvict(record) && runtime.peekModel === model;
@@ -246,9 +435,12 @@ export class SessionRuntimePool {
     if (model.state.hasPendingConversationSave) {
       await model.conversationController.save(false);
       if (!eligible()) return true;
+      // Releasing would drop changes the save did not persist; the next eviction retries them first.
+      if (model.state.hasPendingConversationSave) return false;
     }
-    if (this.isRetained(record)) return false;
-    const releasable = () => eligible() && !this.isRetained(record);
+    const retained = () => options.retain && this.isRetained(record);
+    if (retained()) return false;
+    const releasable = () => eligible() && !retained();
     const released = await this.deps.releaseHistory(runtime.conversationId, releasable);
     if (!releasable()) return true;
     if (released) runtime.releaseModel(model);
@@ -291,7 +483,7 @@ export class SessionRuntimePool {
   }
 
   private isReleasable(record: SessionRecord): boolean {
-    return this.records.get(record.runtime) === record && !this.closing && !record.attachment && !record.runtime.isWorking;
+    return this.#isLive(record) && !record.attachment && !record.runtime.isWorking;
   }
 
   private disposeRecord(record: SessionRecord): Promise<void> {
@@ -324,5 +516,15 @@ export class SessionRuntimePool {
       const failures = results.filter(result => result.status === 'rejected');
       if (failures.length) throw new AggregateError(failures.map(result => result.reason as unknown), 'Failed to drain session runtimes');
     })();
+  }
+
+  /** The pool still owns this record; disposal or replacement ends it. */
+  #isCurrent(record: SessionRecord): boolean {
+    return this.records.get(record.runtime) === record;
+  }
+
+  /** Current and not fenced by plugin shutdown. */
+  #isLive(record: SessionRecord): boolean {
+    return this.#isCurrent(record) && !this.closing;
   }
 }

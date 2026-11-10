@@ -1,12 +1,15 @@
-import '@/providers';
-
 import { ProviderSettingsCoordinator } from '@/core/providers/ProviderSettingsCoordinator';
+import { registerProviderModules } from '@/core/providers/registerProviderModules';
+import { claudeProviderRegistration } from '@/providers/claude/registration';
 import { normalizePiVisibleModels } from '@/providers/pi/config';
 import { piSettingsReconciler } from '@/providers/pi/env/PiSettingsReconciler';
+import { piProviderRegistration } from '@/providers/pi/registration';
 import {
   getPiProviderSettings,
   updatePiProviderSettings
 } from '@/providers/pi/settings';
+
+registerProviderModules([claudeProviderRegistration, piProviderRegistration]);
 
 describe('Pi settings normalization', () => {
   const discoveredModels = [

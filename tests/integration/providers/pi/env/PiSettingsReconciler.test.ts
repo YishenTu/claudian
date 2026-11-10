@@ -1,10 +1,14 @@
 // @test-ci {"native":true}
-import '@/providers';
 
 import { createWSLDistroFixture } from '@test/helpers/WSLProcessFixture';
 
 import { getInstallationKey } from '@/core/device/InstallationKey';
 import { ProviderSettingsCoordinator } from '@/core/providers/ProviderSettingsCoordinator';
+import { registerProviderModules } from '@/core/providers/registerProviderModules';
+import { claudeProviderRegistration } from '@/providers/claude/registration';
+import { piProviderRegistration } from '@/providers/pi/registration';
+
+registerProviderModules([claudeProviderRegistration, piProviderRegistration]);
 
 // Default-distro discovery runs the fixture's real wsl.exe on POSIX hosts; Windows hosts have the real one.
 it.skipIf(process.platform === 'win32')('keeps a UNC-inferred Pi target when the unrelated default distro changes', async () => {

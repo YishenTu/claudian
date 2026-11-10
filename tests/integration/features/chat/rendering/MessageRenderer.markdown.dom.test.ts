@@ -10,8 +10,8 @@ import { fireEvent, within } from '@testing-library/dom';
 import { type App, Component, MarkdownRenderer, type TFile } from 'obsidian';
 
 import { MessageRenderer } from '@/features/chat/rendering/MessageRenderer';
+import { SubagentManager } from '@/features/chat/rendering/subagents/SubagentManager';
 import { ChatState } from '@/features/chat/state/ChatState';
-import { SubagentManager } from '@/features/chat/subagents/SubagentManager';
 import { StreamController } from '@/features/chat/turns/StreamController';
 import * as fileLinks from '@/utils/fileLink';
 
@@ -82,7 +82,6 @@ it('keeps finalized collapsed thinking lazy and renders its final math on expans
     plugin: await createChatFeatureHost({ app, settings: { ...settings, deferMathRenderingDuringStreaming: true, enableAutoScroll: true } }),
     state, renderer, subagentManager: subagents, getMessagesEl: () => host, updateQueueIndicator: () => undefined,
   });
-  state.autoScrollEnabled = true;
   const readHeight = vi.fn(() => 1000);
   Object.defineProperty(host, 'scrollHeight', { get: readHeight, configurable: true });
   try {
@@ -93,7 +92,8 @@ it('keeps finalized collapsed thinking lazy and renders its final math on expans
     }
     const header = within(host).getByRole('button', { name: /Thinking/ });
     expect(header.getAttribute('aria-expanded')).toBe('false');
-    expect(readHeight).toHaveBeenCalledTimes(1);
+    // Streaming reads no layout; following belongs to the transcript's resize observation.
+    expect(readHeight).not.toHaveBeenCalled();
     await stream.finalizeCurrentThinkingBlock(message);
     expect(MarkdownRenderer.render).not.toHaveBeenCalled();
     expect(message).toMatchObject({ contentBlocks: [{ type: 'thinking', content: '$x$ '.repeat(60) }] });
@@ -163,6 +163,13 @@ it('settles an in-flight thinking render before finalizing a newly collapsed blo
 });
 
 it.each([
+  [false, 'Use <meta_name>.', 'Use &lt;meta_name&gt;.'],
+  [false, String.raw`Math \(a<b, c>d\) and <placeholder>.`, 'Math $a<b, c>d$ and &lt;placeholder&gt;.'],
+  [true, String.raw`Math \(a<b, c>d\) and <placeholder>.`, String.raw`Math \$a<b, c>d\$ and &lt;placeholder&gt;.`],
+  [false, String.raw`Math \[a<b, c>d\] and <placeholder>.`, 'Math $$a<b, c>d$$ and &lt;placeholder&gt;.'],
+  [true, String.raw`Math \[a<b, c>d\] and <placeholder>.`, String.raw`Math \$\$a<b, c>d\$\$ and &lt;placeholder&gt;.`],
+  [false, '\\[\na<b,\nc>d\n\\]', '$$\na<b,\nc>d\n$$'],
+  [true, '\\[\na<b,\nc>d\n\\]', '\\$\\$\na<b,\nc>d\n\\$\\$'],
   [false, 'Inline \\(x<y\\).\n\\[y^2\\]\n`echo $PATH`', 'Inline $x<y$.\n$$y^2$$\n`echo $PATH`'],
   [true, 'Inline \\(x<y\\).\n\\[y^2\\]\n`echo $PATH`', 'Inline \\$x<y\\$.\n\\$\\$y^2\\$\\$\n`echo $PATH`'],
   [false, 'Padded \\(  x + y  \\).', 'Padded $x + y$.'],

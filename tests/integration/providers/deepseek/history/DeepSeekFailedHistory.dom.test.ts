@@ -3,7 +3,6 @@
  * @vitest-environment-options {"customExportConditions":["node","node-addons"]}
  */
 
-import '@/providers';
 
 import { axe } from '@test/helpers/accessibility';
 import { nativeDefaults } from '@test/helpers/deepseek/NativeDefaults';
@@ -17,10 +16,15 @@ import { Component } from 'obsidian';
 import type { ProviderExecutionEvent, ProviderExecutionSession } from '@/core/execution';
 import type { ProviderHost } from '@/core/providers/ProviderHost';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
+import { registerProviderModules } from '@/core/providers/registerProviderModules';
 import { MessageRenderer } from '@/features/chat/rendering/MessageRenderer';
+import { claudeProviderRegistration } from '@/providers/claude/registration';
 import { DeepSeekExecutionBackend } from '@/providers/deepseek/execution/DeepSeekExecutionBackend';
 import { DeepSeekConversationHistoryService } from '@/providers/deepseek/history/DeepSeekConversationHistoryService';
+import { deepseekProviderRegistration } from '@/providers/deepseek/registration';
 import type { DeepSeekHost } from '@/providers/deepseek/runtime/DeepSeekHost';
+
+registerProviderModules([claudeProviderRegistration, deepseekProviderRegistration]);
 
 const time = testDate().getTime();
 let host: ProviderHost;
@@ -61,7 +65,7 @@ it.each([
 ])('keeps a $kind reply consistent with live completion and fork availability after reopening', async ({ kind, terminal, completed, interrupted }) => {
   const run = session.execute({
     input: [{ type: 'text', text: 'Please continue' }], signal: new AbortController().signal,
-    configuration: { systemInstructions: { kind: 'explicit', instructions: 'Review' }, permissionMode: 'normal' },
+    configuration: { systemInstructions: { kind: 'explicit', purpose: 'title', instructions: 'Review' }, permissionMode: 'normal' },
     toolPolicy: { kind: 'provider-default' },
   });
   const events: ProviderExecutionEvent[] = [];

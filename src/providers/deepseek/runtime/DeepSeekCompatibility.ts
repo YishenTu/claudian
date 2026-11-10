@@ -9,7 +9,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 export const name = 'claudian-compatibility';
-export const inject = ['systemPrompt', 'tools', 'sessionProjections'];
+export const inject = ['systemPrompt', 'tools', 'sessionProjections', 'agents', 'loader'];
 
 export function apply(ctx, config) {
   if (typeof config?.promptDirectory !== 'string' || !config.promptDirectory) {
@@ -25,7 +25,9 @@ export function apply(ctx, config) {
   const prompt = context => {
     const session = context?.agent?.session;
     if (!session) return '';
-    const turn = ctx.sessionProjections.stateOf(session, 'turnBoundary')?.lastTurn;
+    // dsh 0.2.2 deprecates the generic projection read in favour of the owning Agent service.
+    const turn = (typeof ctx.agents.turnBoundaryOf === 'function' ? ctx.agents.turnBoundaryOf(session)
+      : ctx.sessionProjections.stateOf(session, 'turnBoundary'))?.lastTurn;
     const current = turnPrompts.get(session.id);
     if (current && turn !== undefined && current.turn === turn) return current.text;
     const parent = session.header?.parentSession;
@@ -46,26 +48,47 @@ export function apply(ctx, config) {
       interpolate: false, complete: false,
     }), 'claudian.compatibility.section()');
   }
+  // Cordis accepts only a disposer or nothing as the resolved result.
+  return Promise.all([config.listAgents === true && mountListAgents(ctx), presentTools(ctx, config)]).then(() => undefined);
+}
+
+// dsh 0.2.2 registers list_agents with the subagent control plugin; 0.2.1 ships it as a separate entry.
+async function mountListAgents(ctx) {
+  const listAgents = await ctx.loader.import('@deepseek-ai/dsh-tool-subagent-control/list-agents').catch(error => {
+    if (error?.code === 'ERR_PACKAGE_PATH_NOT_EXPORTED') return undefined;
+    throw error;
+  });
+  if (listAgents) ctx.plugin(listAgents);
+}
+
+// Each agent reaches tools directly ('native') or only through run_code programs ('both'). dsh 0.2.1 declares that with
+// tools.presentAs(); 0.2.2 mounts the matching executor plugin in the agent's scope. Auxiliary agents stay direct with
+// their fixed allow list; chat agents follow Claudian's live code-mode preference, read only between turns.
+async function presentTools(ctx, config) {
+  let executors;
+  if (typeof ctx.tools.presentAs !== 'function') {
+    const [native, ptc] = await Promise.all(['native', 'ptc'].map(name => ctx.loader.import('@deepseek-ai/dsh-tool-executor-' + name)));
+    executors = { native, both: ptc };
+  }
+  const declared = new WeakMap();
+  const present = (agent, mode) => {
+    const current = declared.get(agent);
+    if (current?.mode === mode) return;
+    current?.dispose();
+    declared.set(agent, { mode, dispose: executors ? agent.ctx.plugin(executors[mode]).dispose : agent.ctx.tools.presentAs(mode) });
+  };
   if (config.allow !== undefined) {
     ctx.on('agent/created', ({ agent }) => {
-      agent.ctx.tools.presentAs('native');
+      present(agent, 'native');
       agent.ctx.tools.restrict({ allow: config.allow });
     });
+    return;
   }
-  if (config.codeModeFile !== undefined) {
-    // Chat presentation follows Claudian's live code-mode preference, read only between turns.
-    const declared = new WeakMap();
-    const present = agent => {
-      let mode = 'native';
-      try { if (readFileSync(config.codeModeFile, 'utf8') === 'both') mode = 'both'; } catch {}
-      const current = declared.get(agent);
-      if (current?.mode === mode) return;
-      current?.dispose();
-      declared.set(agent, { mode, dispose: agent.ctx.tools.presentAs(mode) });
-    };
-    ctx.on('agent/created', ({ agent }) => present(agent));
-    ctx.on('agent/status', ({ agent, status }) => { if (status === 'running') present(agent); });
-  }
+  const preference = () => {
+    try { return readFileSync(config.codeModeFile, 'utf8') === 'both' ? 'both' : 'native'; } catch { return 'native'; }
+  };
+  ctx.on('agent/created', ({ agent }) => present(agent, preference()));
+  ctx.on('agent/status', ({ agent, status }) => { if (status === 'running') present(agent, preference()); });
 }
 `;
 
@@ -249,7 +272,7 @@ export function apply(ctx, config) {
   if (!['stateFile', 'readyFile', 'spillRoot', 'attachmentRoot'].every(key => typeof config?.[key] === 'string' && config[key])) {
     throw new TypeError('Claudian ephemeral sessions require state, readiness, spill and attachment paths.');
   }
-  const ready = { persistence: false, projectionGuard: false, workspaceGuard: false, spillGuard: false, attachmentGuard: false };
+  const ready = { persistence: false, forkGuard: false, projectionGuard: false, workspaceGuard: false, spillGuard: false, attachmentGuard: false };
   const report = () => {
     const temporary = config.readyFile + '.tmp';
     writeFileSync(temporary, JSON.stringify(ready), { mode: 0o600 });
@@ -272,9 +295,13 @@ export function apply(ctx, config) {
     claimed.add(offer.token);
     return true;
   };
-  const isEphemeral = (header, inheritedEventCount) => header.id.startsWith(PREFIX)
-    || (header.parentSession !== undefined && (memory.has(header.parentSession)
-      || (header.origin === undefined && claimFork(header.parentSession, inheritedEventCount))));
+  // dsh 0.2.1 names a fork's source in its header; 0.2.2 omits it for ordinary forks, so session/fork scopes its source.
+  const forking = new AsyncLocalStorage();
+  const isEphemeral = (header, inheritedEventCount) => {
+    if (header.id.startsWith(PREFIX)) return true;
+    const parent = header.parentSession ?? forking.getStore();
+    return parent !== undefined && (memory.has(parent) || (header.origin === undefined && claimFork(parent, inheritedEventCount)));
+  };
 
   const backend = ctx.get('sessionPersistence');
   const original = { create: backend.create, open: backend.open, stat: backend.stat };
@@ -369,6 +396,13 @@ export function apply(ctx, config) {
       }, guardCtx, 'claudian.ephemeral.uploads-' + key);
     }
     ready.attachmentGuard = true;
+    report();
+  });
+  ctx.inject(['sessionController'], guardCtx => {
+    wrap(guardCtx.sessionController, 'fork', fork => function (request, ...args) {
+      return forking.run(request.sessionId, () => fork.call(this, request, ...args));
+    }, guardCtx, 'claudian.ephemeral.fork');
+    ready.forkGuard = true;
     report();
   });
   // The projection cache keeps one never-pruned record per session, titled with its first user message.

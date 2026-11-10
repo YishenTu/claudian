@@ -29,6 +29,17 @@ it('prewarms concurrent tab-presence requests without creating native draft sess
   } finally { await f.dispose(); }
 });
 
+it('releases the retained server through its stdin lease before disposal resolves', async () => {
+  const f = await createFixture();
+  try {
+    await f.workspace.startRuntime?.();
+    const [{ pid }] = f.processes();
+    // Killing a WSL launcher can leave the Linux server holding vault files after disposal.
+    await f.workspace.dispose?.();
+    expect(readFileSync(`${f.log}.released`, 'utf8').trim().split('\n')).toEqual([String(pid)]);
+  } finally { await f.dispose(); }
+});
+
 it('retains a v2 conversation database binding when runtime settings move to another database', () => {
   const conversation = conversationRecord('test', { providerId: 'opencode', sessionId: 'original', providerState: { sessionId: 'original', databasePath: '/original.db' } });
   const settings = { providerConfigs: { opencode: { enabled: true, environmentHash: 'old', environmentVariables: 'OPENCODE_DB=/replacement.db' } } };
@@ -410,4 +421,23 @@ it('loads a module plugin folder once per shared server and forwards the native 
     const response = await fetch(data.url, {method:'POST',headers:{'Content-Type':'application/json','X-Claudian-Route':data.routeId},body:JSON.stringify({tool:'claudian_list_destinations',args:{},callerNativeId:'ses_1'})});
     expect(response.status).toBe(404);
   } finally { await session.dispose(); await run; await control.dispose(); await f.dispose(); }
+});
+
+it('answers a running-server lookup only after a lease has started its server', async () => {
+  const f = await createFixture();
+  try {
+    const launch = async () => ({ cliPath: f.cli, cwd: f.root, environment: f.environment });
+    // A lease that never sent a request leaves a retained entry whose process was never spawned.
+    await (await f.workspace.serverService.acquire(f.cli, f.root, f.environment)).dispose();
+    await expect(f.workspace.serverService.acquireRunning(launch)).resolves.toBeNull();
+    expect(f.processes()).toHaveLength(0);
+
+    const control = await f.workspace.serverService.acquire(f.cli, f.root, f.environment);
+    expect(await control.request('/fixture/sessions')).toMatchObject({ data: { ids: [] } });
+    await control.dispose();
+    const running = await f.workspace.serverService.acquireRunning(launch);
+    expect(running).not.toBeNull();
+    await running?.dispose();
+    expect(f.processes()).toHaveLength(1);
+  } finally { await f.dispose(); }
 });

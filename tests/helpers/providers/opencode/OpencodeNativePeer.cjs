@@ -9,7 +9,7 @@ const { EventEmitter, once } = require('node:events');
 
 /** @typedef {Record<string, any>} WireObject Native JSON, including deliberately malformed scenario input. */
 /** @typedef {{id: string, type: string} & WireObject} NativeMessage */
-/** @typedef {{model?: {providerID: string, id: string}, messages: NativeMessage[]}} HistorySession */
+/** @typedef {{model?: {providerID: string, id: string}, time?: {created?: number, updated?: number, idle?: number}, messages: NativeMessage[]}} HistorySession */
 /**
  * @typedef {object} OpencodePeerOptions
  * @property {'execution'|'workspace'|'metadata'|'history'|'retention'} scenario
@@ -137,7 +137,11 @@ function startNativePeer(options) {
     else process.stdout.write(JSON.stringify({ url }) + '\n');
   });
   process.stdin.resume();
-  process.stdin.on('end', () => { scenario.close?.(); context.disconnect(); server.close(); });
+  process.stdin.on('end', () => {
+    // Records a lease release that a kill would skip.
+    if (env.PROCESS_LOG) fs.appendFileSync(env.PROCESS_LOG + '.released', process.pid + '\n');
+    scenario.close?.(); context.disconnect(); server.close();
+  });
 }
 
 /** @param {PeerContext} context @returns {Scenario} */
@@ -697,7 +701,7 @@ function historyScenario(context) {
       fs.writeFileSync(env.OPENCODE_DB, JSON.stringify(state));
       res.end(JSON.stringify({ data: { id: child } })); return;
     }
-    res.end(JSON.stringify({ data: { id, ...(session.model ? { model: session.model } : {}) } }));
+    res.end(JSON.stringify({ data: { id, ...(session.model ? { model: session.model } : {}), ...(session.time ? { time: session.time } : {}) } }));
   };
   return { handle };
 }

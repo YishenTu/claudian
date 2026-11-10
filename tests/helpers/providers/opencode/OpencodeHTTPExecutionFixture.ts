@@ -81,7 +81,7 @@ async function createFixture(resume = false, approval?: (signal: AbortSignal) =>
 function request(text = '/review changes'): ProviderExecutionRequest {
   return {
     input: [{ type: 'text', text }],
-    configuration: { model: 'opencode:deepseek/chat', permissionMode: 'normal', systemInstructions: { kind: 'explicit', instructions: 'Review changes.' } },
+    configuration: { model: 'opencode:deepseek/chat', permissionMode: 'normal', systemInstructions: { kind: 'explicit', purpose: 'title', instructions: 'Review changes.' } },
     toolPolicy: { kind: 'provider-default' }, signal: new AbortController().signal,
   };
 }

@@ -6,10 +6,15 @@ import { createFixture, request } from '@test/helpers/providers/opencode/Opencod
 import { writeOpencodeNativePeer } from '@test/helpers/providers/opencode/OpencodeNativePeer';
 
 import { type ProviderExecutionEvent, ProviderExecutionLifecycleRegistry, type ProviderSessionEvent } from '@/core/execution';
+import { registerProviderModules } from '@/core/providers/registerProviderModules';
 import { ChatExecutionCoordinator } from '@/features/chat/execution/ChatExecutionCoordinator';
 import { providerOutputEventToStreamChunk } from '@/features/chat/rendering/providerOutputChunks';
+import { claudeProviderRegistration } from '@/providers/claude/registration';
 import { OpencodeExecutionBackend } from '@/providers/opencode/execution/OpencodeExecutionBackend';
 import { OpencodeServerService } from '@/providers/opencode/http/OpencodeServerService';
+import { opencodeProviderRegistration } from '@/providers/opencode/registration';
+
+registerProviderModules([claudeProviderRegistration, opencodeProviderRegistration]);
 
 it('delivers child completion and automatic parent replies after the requested turn', async () => {
   const f = await createFixture();

@@ -1,7 +1,6 @@
 /** @vitest-environment jsdom */
 import { createChatFeatureHost } from '@test/helpers/features/chat/ChatFeatureHostFixture';
 type WithoutScope<T> = T extends unknown ? Omit<T, 'scope'> : never;
-import '@/providers';
 
 import { useClaudeSessionFiles } from '@test/helpers/providers/claudeHistory';
 import { testDate } from '@test/helpers/testClock';
@@ -9,15 +8,19 @@ import { fireEvent, within } from '@testing-library/dom';
 import { Component, MarkdownRenderer } from 'obsidian';
 
 import type { ProviderExecutionEvent } from '@/core/execution';
+import { registerProviderModules } from '@/core/providers/registerProviderModules';
 import { MessageRenderer } from '@/features/chat/rendering/MessageRenderer';
+import { SubagentManager } from '@/features/chat/rendering/subagents/SubagentManager';
 import { ChatState } from '@/features/chat/state/ChatState';
-import { SubagentManager } from '@/features/chat/subagents/SubagentManager';
 import { BackgroundResponses } from '@/features/chat/turns/BackgroundResponses';
 import { renderSessionTaskNotification } from '@/features/chat/turns/BackgroundTurnRenderer';
 import { ResponseStream } from '@/features/chat/turns/ResponseStream';
 import { StreamController } from '@/features/chat/turns/StreamController';
 import { TurnCoordinator } from '@/features/chat/turns/TurnCoordinator';
 import { loadSDKSessionMessages } from '@/providers/claude/history/ClaudeHistoryStore';
+import { claudeProviderRegistration } from '@/providers/claude/registration';
+
+registerProviderModules([claudeProviderRegistration]);
 
 vi.mock('node:fs/promises');
 const writeSession = useClaudeSessionFiles();
