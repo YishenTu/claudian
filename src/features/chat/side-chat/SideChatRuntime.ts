@@ -17,7 +17,7 @@ import { deliverAsyncQuestion } from '@/features/chat/interactions/asyncQuestion
 import { createInteractionPromptPort } from '@/features/chat/interactions/interactionPromptPort';
 import { SessionInteractions } from '@/features/chat/interactions/SessionInteractions';
 import { MessageRenderer } from '@/features/chat/rendering/MessageRenderer';
-import { SessionTranscript } from '@/features/chat/sessions/SessionTranscript';
+import { SubagentManager } from '@/features/chat/rendering/subagents/SubagentManager';
 import { SideChatCommandSubmission } from '@/features/chat/side-chat/SideChatCommandSubmission';
 import { SideChatSession } from '@/features/chat/side-chat/SideChatSession';
 import type {
@@ -26,10 +26,10 @@ import type {
   SideChatStatus,
 } from '@/features/chat/side-chat/SideChatTypes';
 import { ChatState } from '@/features/chat/state/ChatState';
-import { SubagentManager } from '@/features/chat/subagents/SubagentManager';
 import { BackgroundResponses } from '@/features/chat/turns/BackgroundResponses';
 import { renderSessionTaskNotification } from '@/features/chat/turns/BackgroundTurnRenderer';
 import { ResponseStream } from '@/features/chat/turns/ResponseStream';
+import { SessionTranscript } from '@/features/chat/turns/SessionTranscript';
 import {
   StreamController,
 } from '@/features/chat/turns/StreamController';
@@ -89,7 +89,6 @@ export class SideChatRuntime {
   readonly #responseStream: ResponseStream;
   /** Owns the requested side turn; presentation state derives from it. */
   readonly #turns = new TurnCoordinator();
-  #status: SideChatStatus = 'preparing';
   #lastError: string | null = null;
   #disposed = false;
   #disposal: Promise<void> | null = null;
@@ -273,7 +272,10 @@ export class SideChatRuntime {
   }
 
   get status(): SideChatStatus {
-    return this.#status;
+    if (this.state.requiresAction) return 'action-required';
+    if (this.isWorking) return 'working';
+    if (this.#lastError) return 'error';
+    return this.state.messages.length === 0 ? 'preparing' : 'idle';
   }
 
   get title(): string | null {
@@ -409,6 +411,7 @@ export class SideChatRuntime {
     };
     this.state.addMessage(userMessage);
     this.renderer?.addMessage(userMessage);
+    this.renderer?.follow.reveal();
     if (this.state.messages.length === 1 && this.deps.plugin.settings.enableAutoTitleGeneration) {
       void this.#generateTitle(userMessage);
     }
@@ -418,7 +421,6 @@ export class SideChatRuntime {
     const assistantMessage = this.#responseStream.start();
     this.#sawInitialProviderUserMessage = false;
     this.#awaitingProviderAssistantStart = true;
-    this.state.autoScrollEnabled = true;
     this.#stream.thinkingIndicator.show();
     this.state.responseStartTime = performance.now();
     this.#refreshStatus();
@@ -528,8 +530,6 @@ export class SideChatRuntime {
     this.#prompts.expireAsyncQuestions();
     this.#prompts.dismissAll();
     await this.#session.dispose();
-    this.state.clearFlavorTimerInterval();
-    this.state.clearThinkingIndicatorTimeout();
     this.#stream.dispose();
     this.detachPresentation();
     this.#subagents.resetStreamingState();
@@ -693,16 +693,8 @@ export class SideChatRuntime {
     this.#refreshStatus();
   }
 
+  /** Publishes a change to anything `status` derives from. */
   #refreshStatus(): void {
-    this.#status = this.state.requiresAction
-      ? 'action-required'
-      : this.isWorking
-        ? 'working'
-        : this.#lastError
-          ? 'error'
-          : this.state.messages.length === 0
-            ? 'preparing'
-            : 'idle';
     this.deps.onStatusChanged();
   }
 }

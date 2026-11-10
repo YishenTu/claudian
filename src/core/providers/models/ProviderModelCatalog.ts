@@ -93,12 +93,16 @@ export function normalizeSelectedModelIds(ids: readonly string[]): string[] {
 }
 
 /** Common settings policy. Providers retain discovery, native metadata and persistence authority. */
+/** Discovery progress; only a failure carries its message. */
+type DiscoveryState =
+  | { readonly status: 'idle' | 'loading' | 'ready' }
+  | { readonly status: 'failed'; readonly error: string };
+
 export class ProviderModelCatalogController implements ProviderModelCatalog {
   private readonly transitionFence = new ProviderTransitionFence();
   private attempted = false;
   private stale = false;
-  private status: ProviderModelCatalogSnapshot['status'] = 'idle';
-  private error: string | undefined;
+  private discovery: DiscoveryState = { status: 'idle' };
   private controller: AbortController | null = null;
   private flight: Promise<ProviderModelCatalogRefreshResult> | null = null;
   private readonly pending = new Set<Promise<ProviderModelCatalogRefreshResult>>();
@@ -111,7 +115,7 @@ export class ProviderModelCatalogController implements ProviderModelCatalog {
   constructor(private readonly options: ProviderModelCatalogOptions) {
     this.unsubscribeChanges = options.observeChanges?.(() => {
       // An older background read must not finish an in-flight explicit refresh.
-      if (this.status === 'loading') this.publish();
+      if (this.discovery.status === 'loading') this.publish();
       else this.publishReady();
     });
   }
@@ -136,8 +140,8 @@ export class ProviderModelCatalogController implements ProviderModelCatalog {
       models,
       selectedIds,
       stale: this.stale,
-      status: this.status,
-      error: this.error,
+      status: this.discovery.status,
+      error: this.discovery.status === 'failed' ? this.discovery.error : undefined,
       discoveredCount: state.models.length,
       defaultModelId: selectedIds.find(id => known.has(id) && known.get(id)?.isAvailable !== false) ?? null,
     };
@@ -156,8 +160,7 @@ export class ProviderModelCatalogController implements ProviderModelCatalog {
     const controller = new AbortController();
     const generation = ++this.generation;
     this.controller = controller;
-    this.status = 'loading';
-    this.error = undefined;
+    this.discovery = { status: 'loading' };
     const flight = this.discover(controller, generation).finally(() => {
       this.pending.delete(flight);
       if (this.flight === flight) {
@@ -180,10 +183,10 @@ export class ProviderModelCatalogController implements ProviderModelCatalog {
       return result;
     } catch (error) {
       if (controller.signal.aborted || this.disposed || generation !== this.generation) return { changed: false };
-      this.status = 'failed';
-      this.error = error instanceof Error ? error.message : 'Model discovery failed.';
+      const message = error instanceof Error ? error.message : 'Model discovery failed.';
+      this.discovery = { error: message, status: 'failed' };
       this.publish();
-      return { changed: false, diagnostics: this.error };
+      return { changed: false, diagnostics: message };
     }
   }
 
@@ -204,8 +207,7 @@ export class ProviderModelCatalogController implements ProviderModelCatalog {
     this.controller = null;
     this.flight = null;
     this.stale = true;
-    this.status = 'idle';
-    this.error = undefined;
+    this.discovery = { status: 'idle' };
     this.publish();
   }
 
@@ -272,8 +274,7 @@ export class ProviderModelCatalogController implements ProviderModelCatalog {
 
   private publishReady(): void {
     this.stale = false;
-    this.status = 'ready';
-    this.error = undefined;
+    this.discovery = { status: 'ready' };
     this.publish();
   }
 
