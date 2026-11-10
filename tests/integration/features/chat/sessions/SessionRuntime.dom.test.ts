@@ -12,7 +12,7 @@ import { createSessionRuntimePool, type RuntimePoolFixtureOptions } from '@test/
 import { FakeSideBackend } from '@test/helpers/features/chat/SideChatSessionHarness';
 import { testDate } from '@test/helpers/testClock';
 import { fireEvent, waitFor, within } from '@testing-library/dom';
-import { App, Component, Menu, TFile, TFolder } from 'obsidian';
+import { App, Component, Menu, Notice, TFile, TFolder } from 'obsidian';
 import type { Mock } from 'vitest';
 
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
@@ -163,6 +163,38 @@ it('keeps a model when history release declines and releases unrelated unowned h
   await destroyTab(second);
 });
 
+it('keeps a detached model whose eviction save was overtaken by a newer change', async () => {
+  const releases: string[] = [];
+  const h = await setup({ releaseHistory: async (id, canRelease) => {
+    if (!canRelease()) return false;
+    releases.push(id);
+    return true;
+  } });
+  const at = testDate().getTime();
+  const tab = await h.attach();
+  const runtime = tab.session.runtime;
+  const model = runtime.model;
+  const state = model.state;
+  state.messages = [...state.messages, { id: 'local', role: 'assistant', content: 'Unsaved reply', timestamp: at }];
+  state.markConversationDirty();
+  const write = vi.spyOn(h.plugin, 'updateConversation');
+  let finishWrite!: () => void;
+  write.mockImplementationOnce(() => new Promise<void>(resolve => { finishWrite = resolve; }));
+
+  await destroyTab(tab);
+  await vi.waitFor(() => expect(write).toHaveBeenCalledTimes(1));
+  // Output that lands while eviction's save is writing is not in that save.
+  state.messages = [...state.messages, { id: 'later', role: 'assistant', content: 'Later reply', timestamp: at }];
+  state.markConversationDirty();
+  finishWrite();
+  await vi.waitFor(() => expect(state.hasPendingConversationSave).toBe(true));
+  await new Promise<void>(resolve => setImmediate(resolve));
+
+  expect(releases).toEqual([]);
+  expect(runtime.peekModel === model).toBe(true);
+  expect(model.state.messages.map(message => message.id)).toContain('later');
+});
+
 // The user continues a conversation in the provider's own client, which changes its native revision.
 async function setupRevisionedSession(options: RuntimePoolFixtureOptions = {}) {
   const native = { revision: 'before' };
@@ -263,6 +295,8 @@ it('refuses a send through a provider session that cannot release yet and replac
   await second.controllers.inputController.sendMessage();
   expect(s.provider.requests).toHaveLength(0);
   expect(s.h.backend.sessions).toHaveLength(1);
+  // The refusal names what the user must do, not a generic retry.
+  expect(Notice).toHaveBeenLastCalledWith(t('chat.changedOutsideWithBackgroundTask'));
 
   s.provider.liveNativeTask = false;
   second.controllers.drafts.restore('main', { content: 'Continue from the CLI turn' });
@@ -272,6 +306,30 @@ it('refuses a send through a provider session that cannot release yet and replac
   expect(s.provider.requests).toHaveLength(0);
   await waitFor(() => expect(s.h.backend.latest.requests).toHaveLength(1));
   s.h.backend.latest.complete();
+  await sending;
+  await destroyTab(second);
+});
+
+it('counts a provider-started background turn as its own work, so a send during its live task still reaches the session', async () => {
+  const s = await setupRevisionedSession();
+  // A task notification: the provider writes and starts the turn before Claudian observes it.
+  s.provider.liveNativeTask = true;
+  s.native.revision = 'task notification written';
+  s.provider.emitBackgroundEvent({ type: 'background_turn_started' });
+  expect(s.runtime.isMainWorking).toBe(true);
+  s.native.revision = 'background turn written';
+  // The turn leaves the next background task running, which keeps the provider process from releasing.
+  s.provider.emitBackgroundEvent({ type: 'background_turn_completed', reason: 'completed', nativeAssistantId: 'background-checkpoint' });
+  expect(await s.h.pool.whenSettled('conversation')).toBe(true);
+  await s.detach();
+
+  const second = await s.h.attach();
+  expect(s.provider.disposeCalls).toBe(0);
+  second.controllers.drafts.restore('main', { content: 'Continue after the task notification' });
+  const sending = second.controllers.inputController.sendMessage();
+  await waitFor(() => expect(s.provider.requests).toHaveLength(1));
+  expect(s.h.backend.sessions).toHaveLength(1);
+  s.provider.complete();
   await sending;
   await destroyTab(second);
 });
@@ -499,6 +557,35 @@ function holdableRead(native: { revision: string }) {
     },
   };
 }
+
+it('leaves a check that a provider-started background turn overtakes to that turn, so a send during its live task still reaches the session', async () => {
+  const native = { revision: 'before' };
+  const gate = holdableRead(native);
+  const s = await setupRevisionedSession({ readNativeHistoryRevision: gate.read });
+  s.provider.liveNativeTask = true;
+  // The task notification is written before Claudian observes its turn, while a check is reading.
+  native.revision = 'task notification written';
+  const finishRead = gate.holdNext();
+  const checking = s.h.pool.revalidate('conversation', s.h.pool.getAttachment('conversation')!);
+  await gate.held;
+  s.provider.emitBackgroundEvent({ type: 'background_turn_started' });
+  expect(s.runtime.isMainWorking).toBe(true);
+  finishRead.resolve();
+  await checking;
+  native.revision = 'background turn written';
+  s.provider.emitBackgroundEvent({ type: 'background_turn_completed', reason: 'completed', nativeAssistantId: 'background-checkpoint' });
+  expect(await s.h.pool.whenSettled('conversation')).toBe(true);
+  await s.detach();
+
+  const second = await s.h.attach();
+  second.controllers.drafts.restore('main', { content: 'Continue after the task notification' });
+  const sending = second.controllers.inputController.sendMessage();
+  await waitFor(() => expect(s.provider.requests).toHaveLength(1));
+  expect(s.h.backend.sessions).toHaveLength(1);
+  s.provider.complete();
+  await sending;
+  await destroyTab(second);
+});
 
 it('replaces the provider session on reopen when a busy session skipped its release during the check', async () => {
   const native = { revision: 'before' };
@@ -1252,7 +1339,6 @@ it('publishes session status only when its list projection changes', async () =>
   native.emitText(' Second chunk.');
   native.emitOutput({ type: 'usage', usage: { inputTokens: 10, contextWindow: 1000, contextTokens: 10, percentage: 1 } } as never);
   await waitFor(() => expect(tab.state.currentTextContent).toBe('First chunk. Second chunk.'));
-  tab.state.autoScrollEnabled = !tab.state.autoScrollEnabled;
   expect(h.statusChanges).not.toHaveBeenCalled();
   native.complete();
   await sending;

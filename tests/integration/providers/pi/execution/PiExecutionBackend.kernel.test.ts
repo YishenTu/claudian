@@ -1867,7 +1867,8 @@ describe('PiExecutionBackend', () => {
         },
       }));
       const eventsPromise = collect(run.events);
-      await waitFor(() => harness.kernels.length === expectedKernels);
+      await waitFor(() => harness.kernels.length === expectedKernels
+        && getPromptMessages(harness.kernels.at(-1)!).length === 1);
       completeTurn(harness.kernels.at(-1)!);
       await eventsPromise;
     };
@@ -2471,6 +2472,7 @@ describe('PiExecutionBackend', () => {
     rollback.resolve();
     await waitFor(() => createForkSessionFile.mock.calls.length === 2, 100);
     await waitFor(() => harness.kernels.length === 1, 100);
+    await waitFor(() => getPromptMessages(harness.kernels[0]).length === 1);
     harness.kernels[0].emit({ type: 'agent_start' });
     harness.kernels[0].emit({ type: 'agent_end' });
     harness.kernels[0].emit({ type: 'agent_settled' });
@@ -2536,6 +2538,7 @@ describe('PiExecutionBackend', () => {
     })).events);
     firstCreation.resolve(firstTarget);
     await waitFor(() => harness.kernels.length === 1, 100);
+    await waitFor(() => getPromptMessages(harness.kernels[0]).length === 1);
     harness.kernels[0].emit({ type: 'agent_start' });
     harness.kernels[0].emit({ type: 'agent_end' });
     harness.kernels[0].emit({ type: 'agent_settled' });
@@ -2595,6 +2598,7 @@ describe('PiExecutionBackend', () => {
 
     expect(createForkSessionFile).toHaveBeenCalledTimes(2);
     await waitFor(() => harness.kernels.length === 1, 100);
+    await waitFor(() => getPromptMessages(harness.kernels[0]).length === 1);
     harness.kernels[0].emit({ type: 'agent_start' });
     harness.kernels[0].emit({ type: 'agent_end' });
     harness.kernels[0].emit({ type: 'agent_settled' });
@@ -2699,6 +2703,7 @@ describe('PiExecutionBackend', () => {
       sessionFile: forkFile,
       sessionId: 'fork-session',
     });
+    await waitFor(() => getPromptMessages(harness.kernels[0]).length === 1);
     harness.kernels[0].emit({ type: 'agent_start' });
     harness.kernels[0].emit({ type: 'agent_end' });
     harness.kernels[0].emit({ type: 'agent_settled' });
@@ -2885,6 +2890,46 @@ describe('PiExecutionBackend', () => {
       expect(backgroundEvents(events).filter(event => event.type === 'background_turn_started')).toHaveLength(1);
       expect(harness.session.getStatus()).toBe('idle');
       await harness.session.dispose();
+    });
+
+    it('keeps a requested turn open when an extension run ends before its prompt is dispatched', async () => {
+      const modelConfigured = createDeferred();
+      let modelRequested = false;
+      const harness = (await createHarness(createConfig(), undefined, async <T>(type: string) => {
+        if (type === 'set_model') {
+          modelRequested = true;
+          await modelConfigured.promise;
+        }
+        return harness.responses.get(type) as T;
+      }));
+      try {
+        const events: ProviderSessionEvent[] = [];
+        harness.session.onEvent(event => events.push(event));
+        const requested = collect(harness.session.execute(createRequest()).events);
+        await waitFor(() => modelRequested);
+        // A session-start extension run finishes while preflight still holds the user's prompt.
+        emitWake(harness.kernels[0]);
+        harness.kernels[0].emit({ type: 'agent_end' });
+        harness.kernels[0].emit({ type: 'agent_settled' });
+        await waitFor(() => events.some(event => event.type === 'background_turn_completed'));
+        modelConfigured.resolve();
+        await waitFor(() => getPromptMessages(harness.kernels[0]).length === 1);
+
+        const kernel = harness.kernels[0];
+        kernel.emit({ type: 'agent_start' });
+        kernel.emit({ message: { role: 'assistant' }, type: 'message_start' });
+        kernel.emit({ assistantMessageEvent: { delta: 'Requested reply', type: 'text_delta' }, type: 'message_update' });
+        kernel.emit({ type: 'agent_end' });
+        kernel.emit({ type: 'agent_settled' });
+        const requestedEvents = await requested;
+
+        expect(requestedEvents).toContainEqual(expect.objectContaining({ text: 'Requested reply', type: 'text_delta' }));
+        expect(requestedEvents).not.toContainEqual(expect.objectContaining({ text: 'Parent reply', type: 'text_delta' }));
+        expect(backgroundEvents(events)).toContainEqual(expect.objectContaining({ text: 'Parent reply', type: 'text_delta' }));
+      } finally {
+        modelConfigured.resolve();
+        await harness.session.dispose();
+      }
     });
 
     it('renders a custom message steered into a requested run in that run', async () => {

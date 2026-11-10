@@ -16,6 +16,7 @@ import {
   type ProjectRecord,
   type ProjectUpdatePatch,
 } from '@/core/types';
+import { SerialQueue } from '@/utils/SerialQueue';
 
 import type { ProjectStore } from './ProjectStore';
 
@@ -43,7 +44,7 @@ export interface ProjectServiceDeps {
 export class ProjectService implements ProjectReader, ProjectMutations, ProjectMemoryOperations {
   readonly #records = new Map<string, ProjectRecord>();
   readonly #listeners = new Set<() => void>();
-  #queue: Promise<void> = Promise.resolve();
+  readonly #queue = new SerialQueue();
 
   constructor(records: readonly ProjectRecord[], private readonly deps: ProjectServiceDeps) {
     for (const record of records) this.#records.set(record.id, record);
@@ -220,7 +221,7 @@ export class ProjectService implements ProjectReader, ProjectMutations, ProjectM
   /** Waits for queued writes; later notifications reach no listener. */
   async dispose(): Promise<void> {
     this.#listeners.clear();
-    await this.#queue;
+    await this.#queue.settled();
   }
 
   #commit(id: string, next: (record: ProjectRecord) => ProjectRecord): Promise<void> {
@@ -319,9 +320,7 @@ export class ProjectService implements ProjectReader, ProjectMutations, ProjectM
   }
 
   #enqueue<T>(operation: () => Promise<T>): Promise<T> {
-    const result = this.#queue.then(operation);
-    this.#queue = result.then(() => undefined, () => undefined);
-    return result;
+    return this.#queue.run(operation);
   }
 }
 

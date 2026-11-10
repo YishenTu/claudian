@@ -384,10 +384,18 @@ it('locks the editor while Reload after a conflict reads the file, so no new typ
   fireEvent.click(controls.getByRole('button', { name: t('chat.projects.memory.reload') }));
 
   expect(textarea.disabled).toBe(true);
+  // Reload already chose the file's text; a write started now would race the read it waits on.
+  const overwrite = controls.getByRole('button', { name: t('chat.projects.memory.overwrite') });
+  expect(overwrite).toHaveProperty('disabled', true);
+  fireEvent.click(overwrite);
+  fireEvent.keyDown(textarea, { key: 's', metaKey: true, ctrlKey: true });
   release();
   await waitFor(() => expect(textarea.value).toBe('Agent edits'));
   expect(textarea.disabled).toBe(false);
   expect(hasDirtyMark(dialog)).toBe(false);
+  expect(memory.saveMemory).toHaveBeenCalledTimes(1);
+  expect(memory.content).toBe('Agent edits');
+  expect(screen.getByRole('dialog')).toBeTruthy();
 });
 
 it('locks the text while a save is in flight and unlocks it when the save conflicts', async () => {

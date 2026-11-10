@@ -14,9 +14,9 @@ import type { ChatMessage, StreamChunk, ToolCallInfo } from '@/core/types';
 import type { QuestionAnswerHandler } from '@/features/chat/interactions/InlineAskUserQuestion';
 import { SessionInteractions } from '@/features/chat/interactions/SessionInteractions';
 import { MessageRenderer } from '@/features/chat/rendering/MessageRenderer';
+import { SubagentManager } from '@/features/chat/rendering/subagents/SubagentManager';
 import { renderStoredToolCall, renderToolCall, updateToolCallResult } from '@/features/chat/rendering/tools/ToolCallRenderer';
 import { ChatState } from '@/features/chat/state/ChatState';
-import { SubagentManager } from '@/features/chat/subagents/SubagentManager';
 import { StreamController } from '@/features/chat/turns/StreamController';
 import { claudeProviderRegistration } from '@/providers/claude/registration';
 import { CODEX_PROVIDER_CAPABILITIES } from '@/providers/codex/capabilities';
@@ -301,6 +301,8 @@ describe.each(['live', 'history'] as const)('%s Codex tool presentation', mode =
     it.each([
       ['string arguments', { id: 'mcp-args', status: 'completed', arguments: '{"query":"vault notes"}', result: { content: [{ type: 'text', text: 'hit' }] } },
         { input: { query: 'vault notes' }, status: 'completed', result: 'hit' }],
+      ['structured-only content', { id: 'mcp-structured', status: 'completed', arguments: {}, result: { content: [], structuredContent: { matches: ['vault note'], count: 1 } } },
+        { input: {}, status: 'completed', result: '{\n  "matches": [\n    "vault note"\n  ],\n  "count": 1\n}' }],
       ['cancellation', { id: 'mcp-cancelled', status: 'cancelled', arguments: { query: 'vault notes' } },
         { input: { query: 'vault notes' }, status: 'error', result: 'Failed' }],
       ['error text', { id: 'mcp-error', status: 'completed', arguments: {}, error: 'Server disconnected' },
@@ -320,6 +322,28 @@ describe.each(['live', 'history'] as const)('%s Codex tool presentation', mode =
     expect(tools).toEqual([expect.objectContaining({
       id: mode === 'history' ? 'tail-ws-0' : `search-${status}`, name: 'WebSearch', input: { actionType: 'search', query: 'vault sync' }, status: expectedStatus, result: 'Search complete',
     })]);
+  });
+
+  it('keeps native secret question answers masked in completed cards', async () => {
+    const answer = 'sample-sensitive-token-123';
+    const output = JSON.stringify({ answers: { token: { answers: [answer] } } });
+    const tool = restoreTool(mode, 'request_user_input', {
+      questions: [{ id: 'token', header: 'Token', question: 'Enter API token',
+        isSecret: true, isOther: true, options: [{ label: 'Use a token', description: 'Authenticate' }] }],
+    }, output);
+    const parent = document.body.createDiv();
+    try {
+      const card = mode === 'live'
+        ? renderToolCall(parent, { ...tool, status: 'running', result: undefined }, { initiallyExpanded: true })
+        : renderStoredToolCall(parent, tool, { initiallyExpanded: true });
+      if (mode === 'live') updateToolCallResult(card, tool);
+      expect(within(card).getByText('Enter API token')).toBeDefined();
+      expect(within(card).getByText('••••••••')).toBeDefined();
+      expect(card.textContent).not.toContain(answer);
+      expect(tool.result).toBe(output);
+      expect(tool.resolvedAnswers?.token).toBe(answer);
+      expect(await axe(parent)).toHaveNoViolations();
+    } finally { parent.remove(); }
   });
 
   it('renders async question acknowledgement with the original question and options', async () => {
@@ -647,5 +671,23 @@ it.each([false, true].flatMap(lateNative => ['text', 'thinking'].map(boundary =>
   } finally {
     stream.dispose(); subagents.clear(); renderer.dispose();
     vi.useRealTimers();
+  }
+});
+
+
+it('shows structured-only native MCP output and preserves text/error precedence', async () => {
+  const data = { matches: ['vault note'], count: 1 };
+  const structured = restoreNativeMcpTool({ id: 'structured', status: 'completed', result: { content: [], structuredContent: data } })[0];
+  const block = renderStoredToolCall(document.body.createDiv(), structured, { initiallyExpanded: true });
+  expect(within(block).getByText(/vault note/).textContent).toContain('vault note');
+  expect((await axe(block)).violations).toEqual([]);
+  for (const [content, error, expected] of [
+    [[{ type: 'text', text: 'Human-readable result' }], undefined, 'Human-readable result'],
+    [[], 'Server disconnected', 'Server disconnected'],
+  ] as const) {
+    const tool = restoreNativeMcpTool({ id: 'precedence', status: 'completed', error,
+      result: { content, structuredContent: data } })[0];
+    expect(tool.result).toBe(expected);
+    expect(tool.status).toBe(error ? 'error' : 'completed');
   }
 });
