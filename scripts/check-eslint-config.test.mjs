@@ -300,6 +300,8 @@ test('chat layers reject imports of a later module by alias, relative path, re-e
       // Later modules of the same layer are rejected too, so folders cannot import each other.
       ['src/features/chat/conversation/ConversationController.ts', "import type { ChatSessionRuntime } from '@/features/chat/sessions/ChatSessionRuntime';"],
       ['src/features/chat/projects/projectActions.ts', "import { showMenuAt } from '../session-manager/SessionSurfaceShared';"],
+      // An alias path is resolved before its folder is read.
+      ['src/features/chat/state/ChatState.ts', "export type { ChatSessionRuntime } from '@/features/chat/state/../sessions/ChatSessionRuntime';"],
     ]) {
       const reports = chatLayerReports(prefix + file, code);
       assert.equal(reports.length, 1, `${prefix}${file}: ${code}`);
@@ -329,10 +331,14 @@ test('chat hub contracts may import any layer for types only', () => {
   const hub = '/repo/src/features/chat/ChatFeatureHost.ts';
   assert.deepEqual(chatLayerReports(hub, "import type { ChatTab } from '@/features/chat/tabs/ChatTab';"), []);
   assert.deepEqual(chatLayerReports(hub, "import { type ChatTab } from '@/features/chat/tabs/ChatTab';"), []);
+  assert.deepEqual(chatLayerReports(hub, "import type { ChatSettings } from './ChatSettings';"), []);
   for (const code of [
     "import { TabManager } from '@/features/chat/tabs/TabManager';",
     "import { type ChatTab, TabManager } from '@/features/chat/tabs/TabManager';",
     "export { TabManager } from './tabs/TabManager';",
+    // Hubs are exempt as targets, but a hub's own value import of another hub is still runtime coupling.
+    "import { getChatSettingsSnapshot } from './ChatSettings';",
+    "export { getChatSettingsSnapshot } from '@/features/chat/ChatSettings';",
   ]) {
     const reports = chatLayerReports(hub, code);
     assert.equal(reports.length, 1, code);

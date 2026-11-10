@@ -106,11 +106,14 @@ const chatOrderOf = new Map(CHAT_LAYERS
 // The first path segment below chat/, without extension: a folder or a root file.
 const chatModuleOf = relativePath => relativePath.split('/')[0].replace(/\.ts$/, '');
 
+// Resolves `@/` and relative specifiers from the repository root, so `..` segments in either form
+// are applied before the target folder is read. Null for imports outside chat/.
 function chatImportTarget(sourceRelative, specifier) {
-  if (specifier.startsWith('@/features/chat/')) return chatModuleOf(specifier.slice('@/features/chat/'.length));
-  if (!specifier.startsWith('.')) return null;
-  const resolved = posix.normalize(posix.join(posix.dirname(sourceRelative), specifier));
-  return resolved.startsWith('..') ? null : chatModuleOf(resolved);
+  let resolved;
+  if (specifier.startsWith('@/')) resolved = posix.normalize(`src/${specifier.slice(2)}`);
+  else if (specifier.startsWith('.')) resolved = posix.join(CHAT_ROOT, posix.dirname(sourceRelative), specifier);
+  else return null;
+  return resolved.startsWith(CHAT_ROOT) ? chatModuleOf(resolved.slice(CHAT_ROOT.length)) : null;
 }
 
 const isTypeOnlyImport = node => node.importKind === 'type' || node.exportKind === 'type'
@@ -143,11 +146,13 @@ export const chatLayersRule = {
       const specifier = node.source?.value;
       if (typeof specifier !== 'string') return;
       const to = chatImportTarget(sourceRelative, specifier);
-      if (to === null || to === from || CHAT_HUBS.has(to)) return;
+      if (to === null || to === from) return;
+      // Checked before the hub-target exemption, so hubs cannot value-import each other either.
       if (fromHub) {
         if (!isTypeOnlyImport(node)) context.report({ node, messageId: 'hubValueImport', data: { from } });
         return;
       }
+      if (CHAT_HUBS.has(to)) return;
       const toLayer = chatOrderOf.get(to);
       if (!toLayer) {
         context.report({ node, messageId: 'unassigned', data: { module: to } });
