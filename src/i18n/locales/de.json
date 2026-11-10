@@ -304,6 +304,10 @@
       "label": "Berechtigungsmodus",
       "current": "Berechtigungsmodus: {mode}",
       "changeFailed": "Berechtigungsmodus konnte nicht geändert werden",
+      "antigravity": {
+        "auto": "Automatisch",
+        "autoDesc": "Änderungen im Arbeitsbereich und Befehle in der Sandbox genehmigen; zusätzliche Zugriffe prüfen"
+      },
       "claude": {
         "auto": "Automatisch",
         "manual": "Manuell",

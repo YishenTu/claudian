@@ -304,6 +304,10 @@
       "label": "권한 모드",
       "current": "권한 모드: {mode}",
       "changeFailed": "권한 모드를 변경하지 못했습니다",
+      "antigravity": {
+        "auto": "자동",
+        "autoDesc": "작업 공간 편집과 샌드박스 명령을 승인하고 추가 접근을 검토"
+      },
       "claude": {
         "auto": "자동",
         "manual": "수동",

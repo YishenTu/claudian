@@ -304,6 +304,10 @@
       "label": "權限模式",
       "current": "權限模式：{mode}",
       "changeFailed": "切換權限模式失敗",
+      "antigravity": {
+        "auto": "自動",
+        "autoDesc": "核准工作區編輯和沙盒命令；審查額外存取"
+      },
       "claude": {
         "auto": "自動",
         "manual": "手動",

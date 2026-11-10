@@ -304,6 +304,10 @@
       "label": "Permission mode",
       "current": "Permission mode: {mode}",
       "changeFailed": "Failed to change permission mode",
+      "antigravity": {
+        "auto": "Auto",
+        "autoDesc": "Approve workspace edits and sandboxed commands; review extra access"
+      },
       "claude": {
         "auto": "Auto",
         "manual": "Manual",

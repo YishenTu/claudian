@@ -304,6 +304,10 @@
       "label": "权限模式",
       "current": "权限模式：{mode}",
       "changeFailed": "切换权限模式失败",
+      "antigravity": {
+        "auto": "自动",
+        "autoDesc": "批准工作区编辑和沙盒命令；审查额外访问"
+      },
       "claude": {
         "auto": "自动",
         "manual": "手动",

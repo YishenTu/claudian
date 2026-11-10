@@ -11,6 +11,7 @@ import type { ProviderPermissionModeOption } from '@/core/providers/types';
 import { createInputToolbar } from '@/features/chat/composer/toolbar/InputToolbar';
 import type { ToolbarCallbacks } from '@/features/chat/composer/toolbar/types';
 import { setLocale } from '@/i18n/i18n';
+import { antigravityChatUIConfig } from '@/providers/antigravity/ui/AntigravityChatUIConfig';
 import { claudeChatUIConfig } from '@/providers/claude/ui/ClaudeChatUIConfig';
 import { codexChatUIConfig } from '@/providers/codex/ui/CodexChatUIConfig';
 
@@ -519,6 +520,19 @@ describe('permission button', () => {
     expect(ui.queryByRole('button', { name: /^Permission mode/ })).toBeNull();
     toolbar.permissionToggle.setVisible(true);
     expect(ui.getByRole('button', { name: 'Permission mode: YOLO' })).toBe(button);
+  });
+
+  it('selects Antigravity Auto without marking it as bypassing approvals', async () => {
+    const { callbacks, host, ui } = renderToolbar({
+      permissionModes: antigravityChatUIConfig.getPermissionModeOptions?.() ?? undefined,
+    });
+    fireEvent.click(ui.getByRole('button', { name: 'Permission mode: Ask' }));
+    fireEvent.click(ui.getByRole('menuitemradio', { name: /^Auto/ }));
+    await flush();
+    expect(callbacks.onPermissionModeChange).toHaveBeenCalledWith('auto');
+    const button = ui.getByRole('button', { name: 'Permission mode: Auto' });
+    expect(button.classList.contains('claudian-toolbar-chip--alert')).toBe(false);
+    expect((await axe(host)).violations).toEqual([]);
   });
 
   it('lists every Claude permission mode with its description and alerts only on YOLO', async () => {

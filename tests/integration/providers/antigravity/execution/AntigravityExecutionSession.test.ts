@@ -570,6 +570,7 @@ describe('AntigravityExecutionSession', () => {
 
   it.each<[string, string]>([
     ['acceptEdits', 'accept-edits'],
+    ['auto', 'auto'],
     ['yolo', 'default'],
   ])('maps permission mode %s to native mode %s', async (permissionMode, nativeMode) => {
     const session = await createSession();
@@ -581,6 +582,17 @@ describe('AntigravityExecutionSession', () => {
       : [{ configId: 'mode', sessionId: 'session-new', value: nativeMode }]);
     peer.finishPrompt();
     await collect(run.events);
+  });
+
+  it('does not prompt when the native session rejects unsupported Auto mode', async () => {
+    const session = await createSession({}, peer => {
+      peer.configOptions = peer.configOptions.map(option => option.id === 'mode' && option.type === 'select'
+        ? { ...option, options: option.options.filter(value => 'value' in value).filter(value => value.value !== 'auto') }
+        : option);
+    });
+    const events = await collect(session.execute(request('hello', { permissionMode: 'auto' })).events);
+    expect(events.at(-1)).toMatchObject({ type: 'execution_error' });
+    expect(spawned[0].prompts).toHaveLength(0);
   });
 
   it('rejects a model the session does not advertise before prompting', async () => {
@@ -722,7 +734,7 @@ describe('AntigravityExecutionSession', () => {
     const peer = await firstPeer();
     await changed;
     await peer.waitForPrompts(1);
-    expect(session.getCommandSnapshot?.()?.map(command => command.name)).toEqual(['goal', 'compact']);
+    expect(session.getCommandSnapshot?.()?.map(command => command.name)).toEqual(['goal']);
     peer.finishPrompt();
     await collect(run.events);
   });
@@ -739,15 +751,17 @@ describe('AntigravityExecutionSession', () => {
   });
 
   it.each([
-    ['allow', { optionId: 'allow', outcome: 'selected' }],
-    ['deny', { optionId: 'reject', outcome: 'selected' }],
-  ] as const)('asks before a tool runs in Ask mode and answers %s', async (decision, outcome) => {
+    ['normal', 'allow', { optionId: 'allow', outcome: 'selected' }],
+    ['normal', 'deny', { optionId: 'reject', outcome: 'selected' }],
+    ['auto', 'allow', { optionId: 'allow', outcome: 'selected' }],
+    ['auto', 'deny', { optionId: 'reject', outcome: 'selected' }],
+  ] as const)('asks before a tool runs in %s mode and answers %s', async (permissionMode, decision, outcome) => {
     const port = createInteractionPort();
     port.requestApproval.mockImplementation(async (approval: ProviderApprovalInteractionRequest) => ({
       decision, interactionId: approval.interactionId,
     }));
     const session = await createSession({ interactionPort: port });
-    const run = session.execute(request('edit'));
+    const run = session.execute(request('edit', { permissionMode }));
     const peer = await firstPeer();
     await peer.waitForPrompts(1);
 

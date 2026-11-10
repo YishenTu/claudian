@@ -304,6 +304,10 @@
       "label": "Mode d’autorisation",
       "current": "Mode d’autorisation : {mode}",
       "changeFailed": "Impossible de modifier le mode d’autorisation",
+      "antigravity": {
+        "auto": "Auto",
+        "autoDesc": "Autoriser les modifications de l’espace de travail et les commandes isolées ; examiner les accès supplémentaires"
+      },
       "claude": {
         "auto": "Automatique",
         "manual": "Manuel",
