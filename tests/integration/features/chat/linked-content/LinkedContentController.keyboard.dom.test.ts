@@ -73,21 +73,21 @@ it('navigates linked-content choices with arrows, selects, and returns focus on 
     fireEvent.keyDown(search, { key: 'Enter' });
 
     expect(controller.getSnapshot()).toEqual({ mode: 'explicit-draft', path: 'Projects' });
-    expect(view.queryByRole('textbox')).toBeNull();
+    expect(view.queryByRole('combobox', { name: 'Linked content:' })).toBeNull();
     expect(view.queryByRole('listbox')).toBeNull();
     expect(selector.getAttribute('aria-expanded')).toBe('false');
     expect(document.activeElement).toBe(selector);
 
     fireEvent.click(view.getByRole('button', { name: 'Projects' }));
     fireEvent.keyDown(view.getByRole('combobox', { name: 'Linked content:' }), { key: 'Escape' });
-    expect(view.queryByRole('textbox')).toBeNull();
+    expect(view.queryByRole('combobox', { name: 'Linked content:' })).toBeNull();
     expect(selector.getAttribute('aria-expanded')).toBe('false');
     expect(document.activeElement).toBe(selector);
 
     fireEvent.click(selector);
     expect(view.getByRole('combobox', { name: 'Linked content:' })).toBeTruthy();
     fireEvent.keyDown(document.body, { key: 'Escape' });
-    expect(view.queryByRole('textbox')).toBeNull();
+    expect(view.queryByRole('combobox', { name: 'Linked content:' })).toBeNull();
     expect(selector.getAttribute('aria-expanded')).toBe('false');
     expect(document.activeElement).toBe(selector);
   } finally {
