@@ -36,6 +36,27 @@ it('routes subagent work to its claimed root and keeps forks, which name their s
   expect(() => roster.claim('fork', () => {})).toThrow(/already open/);
 });
 
+it('applies both batched (0.2.2+) and per-key (≤0.2.1) projection frames', async () => {
+  const failures: Error[] = [];
+  roster.dispose();
+  roster = new DeepSeekRoster(peer.client, error => failures.push(error));
+  peer.onCall = () => ({ items: [row('root')] });
+  peer.onOpen = (endpoint, _args, send) => {
+    if (endpoint === 'session/control') send({ type: 'baseline', value: { projections: { root: { asOfSeq: 0, values: { inbox: { 'next-turn': [] } } } } } });
+  };
+  await roster.start();
+  await until(() => roster.ready);
+  peer.send('session/control', { type: 'projection', sessionId: 'root', seq: 1, changes: [
+    { key: 'subagentCatalog', val: [{ id: 'child', mode: 'continuable' }] },
+    { key: 'inbox', val: { 'next-turn': ['queued'] } },
+  ] });
+  peer.send('session/control', { type: 'projection', sessionId: 'child', key: 'subagent', value: { mode: 'continuable' }, seq: 2 });
+  await until(() => roster.projection('child') !== undefined || failures.length > 0);
+  expect(failures).toEqual([]);
+  expect(roster.projection('root')).toEqual({ inbox: { 'next-turn': ['queued'] }, subagentCatalog: [{ id: 'child', mode: 'continuable' }] });
+  expect(roster.projection('child')).toEqual({ subagent: { mode: 'continuable' } });
+});
+
 async function until(predicate: () => boolean): Promise<void> {
   const deadline = Date.now() + 2000;
   while (!predicate()) {

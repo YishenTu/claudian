@@ -37,7 +37,7 @@
 
 .claudian-welcome-text {
   font-family: Copernicus, 'Tiempos Headline', Tiempos, Georgia, 'Times New Roman', serif;
-  font-size: 28px;
+  font-size: calc(28 * var(--claudian-font-px));
   font-weight: 300;
   color: var(--text-muted);
   letter-spacing: -0.01em;
@@ -65,7 +65,7 @@
   padding: 2px 4px;
   color: var(--text-muted);
   font-family: inherit;
-  font-size: 12px;
+  font-size: calc(12 * var(--claudian-font-px));
   line-height: 1.4;
 }
 
@@ -273,7 +273,7 @@
 
 .claudian-linked-content-picker-empty {
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: calc(11 * var(--claudian-font-px));
   padding: 8px;
   text-align: center;
 }
@@ -324,6 +324,7 @@
 }
 
 .claudian-message-content {
+  font-size: var(--font-text-size);
   line-height: 1.5;
   overflow-x: auto;
   user-select: text;
@@ -403,7 +404,7 @@ button.claudian-text-copy-btn:disabled {
 
 button.claudian-text-copy-btn.copied {
   color: var(--text-accent);
-  font-size: 11px;
+  font-size: calc(11 * var(--claudian-font-px));
   font-family: var(--font-monospace);
 }
 
@@ -557,7 +558,7 @@ button.claudian-work-header:disabled {
 
 .claudian-branch-position {
   color: var(--text-muted);
-  font-size: var(--font-ui-smaller);
+  font-size: calc(12 * var(--claudian-font-px));
   font-variant-numeric: tabular-nums;
 }
 
@@ -598,8 +599,8 @@ button.claudian-work-header:disabled {
 /* Toolbar text sits in the same 16px box as the action icons. */
 .claudian-message-actions .claudian-message-timestamp,
 .claudian-message-actions .claudian-response-throughput {
-  font-size: var(--font-ui-small);
-  line-height: 16px;
+  font-size: calc(13 * var(--claudian-font-px));
+  line-height: calc(16 * var(--claudian-font-px));
 }
 
 .claudian-message-assistant > .claudian-message-actions .claudian-message-timestamp {
@@ -661,7 +662,7 @@ button.claudian-work-header:disabled {
 
 .claudian-user-msg-actions button.copied {
   color: var(--text-accent);
-  font-size: 11px;
+  font-size: calc(11 * var(--claudian-font-px));
   font-family: var(--font-monospace);
 }
 
@@ -683,7 +684,7 @@ button.claudian-work-header:disabled {
 
 .claudian-compact-boundary-label {
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: calc(11 * var(--claudian-font-px));
   white-space: nowrap;
 }
 
@@ -706,7 +707,7 @@ button.claudian-work-header:disabled {
   background: transparent;
   box-shadow: none;
   color: var(--text-muted);
-  font-size: var(--font-ui-smaller);
+  font-size: calc(12 * var(--claudian-font-px));
   cursor: pointer;
 }
 
@@ -788,7 +789,7 @@ button.claudian-work-header:disabled {
   color: var(--text-normal);
   cursor: pointer;
   font: inherit;
-  font-size: var(--font-ui-small);
+  font-size: calc(13 * var(--claudian-font-px));
 }
 
 .claudian-messages-wrapper button.claudian-message-quote-btn:hover {
@@ -849,6 +850,6 @@ button.claudian-session-link:focus-visible {
   align-items: baseline;
   gap: 0 0.3em;
   margin-bottom: 4px;
-  font-size: var(--font-ui-smaller);
+  font-size: calc(12 * var(--claudian-font-px));
   color: var(--text-muted);
 }

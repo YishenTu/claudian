@@ -1,6 +1,7 @@
 import type { ProviderId } from '@/core/providers/types';
 import type { ChatMessage } from '@/core/types';
 import type { ForkSourceCapture } from '@/features/chat/conversation/forkSourceTypes';
+import type { ResolvedProjectInstructions } from '@/features/chat/execution/projectInstructions';
 
 /** Composer destination derived from side panel expansion; never separately mutable. */
 export type SideChatDestination = 'main' | 'side';
@@ -26,7 +27,7 @@ export interface SideChatSource {
   readonly linkedContentPath?: string;
   readonly messages: readonly ChatMessage[];
   /** Side-chat project instructions rendered from the parent's live project at start; never re-resolved. */
-  readonly sessionInstructions?: string;
+  readonly sessionInstructions?: ResolvedProjectInstructions;
 }
 
 /** In-memory provider settings projection owned by one side chat. */

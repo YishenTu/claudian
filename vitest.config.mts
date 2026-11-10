@@ -7,10 +7,10 @@ const parallelism = availableParallelism?.() ?? cpus().length;
 const maxWorkers = Math.max(1, Math.floor(parallelism / 2));
 const testFiles = ['tests/unit/**/*.test.ts', 'tests/integration/**/*.test.ts'];
 const processFiles = [
-  // Worker threads cannot change the working directory for native Windows containment.
-  'tests/unit/core/storage/pathContainment.test.ts',
   // Worker threads cannot change process.umask.
   'tests/integration/app/storage/JSONCommitDurability.test.ts',
+  // Worker threads cannot process.chdir; drive-relative Windows paths resolve against the working directory's drive.
+  'tests/unit/core/storage/pathContainment.test.ts',
   // Keep createRequire and the production loader on the same CommonJS cache.
   'tests/unit/i18n/i18n.test.ts',
   // The structuredClone polyfill returns arrays in the native V8 realm.

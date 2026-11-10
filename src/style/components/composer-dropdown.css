@@ -20,11 +20,15 @@
 
 .claudian-composer-dropdown--fixed {
   position: fixed;
+  top: var(--claudian-fixed-dropdown-top);
   right: auto;
   bottom: var(--claudian-fixed-dropdown-bottom);
   left: var(--claudian-fixed-dropdown-left);
   z-index: 10001;
+  box-sizing: border-box;
   width: var(--claudian-fixed-dropdown-width);
+  max-height: var(--claudian-fixed-dropdown-max-height);
+  margin-bottom: 0;
 }
 
 .claudian-composer-dropdown-item {
@@ -76,7 +80,7 @@
 }
 
 .claudian-composer-dropdown-label {
-  font-size: 13px;
+  font-size: calc(13 * var(--claudian-font-px));
 }
 
 .claudian-composer-dropdown-match {
@@ -92,7 +96,7 @@
 .claudian-composer-dropdown-detail {
   margin-top: 2px;
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: calc(11 * var(--claudian-font-px));
 }
 
 .claudian-composer-dropdown-item.is-loading,

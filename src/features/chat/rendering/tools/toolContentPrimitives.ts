@@ -31,7 +31,11 @@ export function getInputText(input: Record<string, unknown>, key: string, fallba
 
 export function truncateText(text: string, maxLength: number): string {
   if (text.length <= maxLength) return text;
-  return text.substring(0, maxLength) + '...';
+  let end = maxLength;
+  const before = text.charCodeAt(end - 1);
+  const after = text.charCodeAt(end);
+  if (before >= 0xD800 && before <= 0xDBFF && after >= 0xDC00 && after <= 0xDFFF) end--;
+  return text.substring(0, end) + '...';
 }
 
 export function fileNameOnly(filePath: string): string {

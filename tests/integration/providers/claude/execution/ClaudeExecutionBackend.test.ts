@@ -2,7 +2,6 @@
 import { buildSDKMessage } from '@test/helpers/sdkMessages';
 const actualModule0 = await import('node:fs/promises');
 const actualModule1 = await import('node:fs/promises');
-import '@/providers';
 
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
@@ -30,14 +29,20 @@ import * as env from '@/core/process/env';
 import { ProviderModelUnavailableError } from '@/core/providers/models/ProviderModelUnavailableError';
 import type { ProviderHost } from '@/core/providers/ProviderHost';
 import type { ProviderRuntimeHost } from '@/core/providers/ProviderRuntimeHost';
+import { registerProviderModules } from '@/core/providers/registerProviderModules';
 import type { Conversation } from '@/core/types';
 import { createClaudeWorkspaceServices } from '@/providers/claude/app/ClaudeWorkspaceServices';
 import { ClaudeExecutionBackend } from '@/providers/claude/execution/ClaudeExecutionBackend';
 import { ClaudeExecutionSession } from '@/providers/claude/execution/ClaudeExecutionSession';
 import { ClaudeConversationHistoryService } from '@/providers/claude/history/ClaudeConversationHistoryService';
 import * as historyStore from '@/providers/claude/history/ClaudeHistoryStore';
+import { claudeProviderRegistration } from '@/providers/claude/registration';
 import { assertClaudeModelAvailable } from '@/providers/claude/runtime/ClaudeModelAvailability';
 import { getClaudeProviderSettings, updateClaudeProviderSettings } from '@/providers/claude/settings';
+import { codexProviderRegistration } from '@/providers/codex/registration';
+
+// Codex is registered so another provider can own the active settings.
+registerProviderModules([claudeProviderRegistration, codexProviderRegistration]);
 
 const {
   createFailingPersistentQuery, createIdlePersistentQuery, createInputDrivenQuery,
@@ -897,7 +902,7 @@ describe('ClaudeExecutionBackend', () => {
     await collectEvents(resumable.execute(createRequest({
       configuration: {
         systemInstructions: {
-          kind: 'explicit',
+          kind: 'explicit', purpose: 'title',
           instructions: 'Refine the instruction.',
         },
       },
@@ -906,7 +911,7 @@ describe('ClaudeExecutionBackend', () => {
     await collectEvents(resumable.execute(createRequest({
       configuration: {
         systemInstructions: {
-          kind: 'explicit',
+          kind: 'explicit', purpose: 'title',
           instructions: 'Continue refining.',
         },
       },
@@ -926,7 +931,7 @@ describe('ClaudeExecutionBackend', () => {
       configuration: {
         reasoning: null,
         systemInstructions: {
-          kind: 'explicit',
+          kind: 'explicit', purpose: 'title',
           instructions: 'Generate a title.',
         },
       },
@@ -966,7 +971,7 @@ describe('ClaudeExecutionBackend', () => {
         }));
       const request = createRequest({
         configuration: {
-          systemInstructions: { kind: 'explicit', instructions: 'Edit the draft.' },
+          systemInstructions: { kind: 'explicit', purpose: 'title', instructions: 'Edit the draft.' },
         },
         toolPolicy: { kind: 'read-only' },
       });
@@ -986,7 +991,7 @@ describe('ClaudeExecutionBackend', () => {
             ? {
                 configuration: {
                   systemInstructions: {
-                    kind: 'explicit' as const,
+                    kind: 'explicit' as const, purpose: 'title' as const,
                     instructions: 'Edit the draft with new guidance.',
                   },
                 },
@@ -1036,7 +1041,7 @@ describe('ClaudeExecutionBackend', () => {
           ],
           input: [{ type: 'text', text: 'Continue with B' }],
           ...(reason === 'configuration change' ? {
-            configuration: { systemInstructions: { kind: 'explicit', instructions: 'New guidance' } },
+            configuration: { systemInstructions: { kind: 'explicit', purpose: 'title', instructions: 'New guidance' } },
           } : {}),
         });
         const events = await collectEvents(session.execute(request).events);
@@ -2979,7 +2984,7 @@ describe('ClaudeExecutionBackend', () => {
       configuration: {
         systemInstructions: {
           instructions: 'Use a replacement persistent query.',
-          kind: 'explicit',
+          kind: 'explicit', purpose: 'title',
         },
       },
       input: [{ type: 'text', text: 'Retry with a changed restart key' }],
@@ -3439,6 +3444,41 @@ describe('ClaudeExecutionSession steering', () => {
   function steerRequest(text: string): ProviderExecutionRequest {
     return createRequest({ input: [{ type: 'text', text }] });
   }
+
+  it('sends the next turn only after a cancelled background turn reports its interruption', async () => {
+    const interruptRequested = createDeferred<null>();
+    const { session, done, sessionEvents, getQuery } = await startSteerableSession(async function* (nextInput, keepOpen) {
+      const prompt = await nextInput();
+      yield { type: 'system', subtype: 'init', session_id: 'session-1' };
+      yield replayOf(prompt);
+      yield assistantText('assistant-1', 'First reply');
+      yield { type: 'result', subtype: 'success', user_message_uuids: [prompt.uuid], queued_turn_count: 0 };
+      yield assistantText('background-1', 'Background started');
+      const next = nextInput();
+      // Native reports the interrupt asynchronously; input sent before it would be tagged as the interrupted turn.
+      // The bound only limits waiting for input that a correct session holds back.
+      await Promise.race([next, interruptRequested.promise.then(() => new Promise(resolve => setTimeout(resolve, 50)))]);
+      yield { type: 'result', subtype: 'success', queued_turn_count: 0 };
+      const second = await next;
+      yield replayOf(second);
+      yield assistantText('assistant-2', 'Second reply');
+      yield { type: 'result', subtype: 'success', user_message_uuids: [second.uuid], queued_turn_count: 0 };
+      await keepOpen;
+    });
+    await done;
+    await waitFor(() => sessionEvents.some(event => event.type === 'background_turn_started'));
+    getQuery()!.interrupt.mockImplementation(async () => { interruptRequested.resolve(null); });
+    session.cancel();
+
+    const secondEvents: ProviderExecutionEvent[] = [];
+    for await (const event of session.execute(steerRequest('Second')).events) secondEvents.push(event);
+
+    expect(secondEvents).toContainEqual(expect.objectContaining({ type: 'text_delta', text: 'Second reply' }));
+    expect(sessionEvents.filter(event => event.type === 'background_turn_completed')).toEqual([
+      expect.objectContaining({ reason: 'interrupted' }),
+    ]);
+    await session.dispose();
+  });
 
   it('folds a steer into the running native turn at its replay acknowledgement', async () => {
     const steerReceived = createDeferred<sdkModule.SDKUserMessage>();

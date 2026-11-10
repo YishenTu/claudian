@@ -1,0 +1,31 @@
+name: Set up Node and dependencies
+description: Install the .node-version Node and the locked npm dependencies, reusing a pristine node_modules snapshot for an unchanged lockfile.
+
+runs:
+  using: composite
+  steps:
+    - name: Setup Node
+      id: node
+      uses: actions/setup-node@v4
+      with:
+        node-version-file: .node-version
+
+    - name: Restore node_modules
+      id: modules
+      uses: actions/cache/restore@v4
+      with:
+        path: node_modules
+        key: node-modules-${{ runner.os }}-${{ runner.arch }}-${{ steps.node.outputs.node-version }}-${{ hashFiles('package-lock.json') }}
+
+    - name: Install dependencies
+      if: steps.modules.outputs.cache-hit != 'true'
+      shell: bash
+      run: npm ci
+
+    # Save immediately so later job steps (builds, Vitest caches) never enter the snapshot.
+    - name: Save node_modules
+      if: steps.modules.outputs.cache-hit != 'true'
+      uses: actions/cache/save@v4
+      with:
+        path: node_modules
+        key: ${{ steps.modules.outputs.cache-primary-key }}

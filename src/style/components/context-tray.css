@@ -29,7 +29,7 @@
   border-radius: 12px;
   background: var(--background-primary);
   color: var(--text-normal);
-  font-size: 12px;
+  font-size: calc(12 * var(--claudian-font-px));
   line-height: 1;
 }
 
@@ -50,7 +50,7 @@
   background: transparent;
   color: inherit;
   font-family: inherit;
-  font-size: 12px;
+  font-size: calc(12 * var(--claudian-font-px));
   line-height: 1;
   text-align: start;
   box-shadow: none;
@@ -106,7 +106,7 @@
   background: transparent;
   color: var(--text-muted);
   font-family: inherit;
-  font-size: 14px;
+  font-size: calc(14 * var(--claudian-font-px));
   line-height: 1;
   cursor: pointer;
   box-shadow: none;
@@ -150,7 +150,7 @@
   background: var(--background-primary);
   color: var(--text-muted);
   font-family: inherit;
-  font-size: 11px;
+  font-size: calc(11 * var(--claudian-font-px));
   line-height: 1;
   cursor: pointer;
   box-shadow: none;

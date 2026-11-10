@@ -140,6 +140,7 @@ export class DesktopVault {
   }
 
   async dispose(): Promise<void> {
-    await fs.rm(this.root, { recursive: true, force: true });
+    // A provider process or queued store write can still land in the tree while it is removed (ENOTEMPTY).
+    await fs.rm(this.root, { recursive: true, force: true, maxRetries: 5 });
   }
 }

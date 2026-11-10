@@ -20,6 +20,7 @@ import {
   type Conversation,
   type ConversationMeta,
   type ConversationMutablePatch,
+  type ConversationOrigin,
   type ConversationPlacement,
   type ConversationSummary,
   type ProjectReader,
@@ -64,6 +65,14 @@ interface ConversationDeletionState {
   readonly executionBinding: ExecutionBindingState | null;
 }
 
+/**
+ * A conversation deleted in this session: `removing` until its metadata removal commits (rollback
+ * forgets it), then `removed`. The retained projection is dropped when the record set is replaced.
+ */
+type ConversationDeletion =
+  | { readonly phase: 'removing'; state: ConversationDeletionState | null }
+  | { readonly phase: 'removed' };
+
 interface LinkedContentPathRename {
   oldPath: string;
   newPath: string;
@@ -76,6 +85,7 @@ const IMMUTABLE_CONVERSATION_PATCH_FIELDS = [
   'createdAt',
   'linkedContentPath',
   'projectId',
+  'origin',
 ] as const;
 
 /** Mutable fields plus repository-owned membership, which only dedicated methods write. */
@@ -94,13 +104,11 @@ export class ConversationRepository {
   private hydratedConversationIds = new Set<string>();
   private hydrationPromises = new Map<string, Promise<Conversation | null>>();
   private conversationGenerations = new Map<string, number>();
-  private deletedConversationIds = new Set<string>();
-  private deletingConversationIds = new Set<string>();
+  private readonly deletedConversations = new Map<string, ConversationDeletion>();
   /** A repeated delete joins the one in flight instead of retrying cleanup before durable removal. */
   private readonly deletions = new Map<string, Promise<void>>();
   private readonly deletionCleanups = new Map<string, Promise<void>>();
   private readonly persistenceQueues = new Map<string, Promise<void>>();
-  private readonly deletionStates = new Map<string, ConversationDeletionState>();
   private readonly linkedContentPathRenames: LinkedContentPathRename[] = [];
   private readonly pendingLinkedContentPathCorrectionIds = new Set<string>();
   private readonly metadataTargets = new Map<string, SessionMetadataAuthority>();
@@ -119,8 +127,7 @@ export class ConversationRepository {
       canWrite: conversation => this.#canWriteConversation(conversation),
       canAdopt: id => (
         !this.#getRecord(id)
-        && !this.deletedConversationIds.has(id)
-        && !this.deletingConversationIds.has(id)
+        && !this.deletedConversations.has(id)
       ),
       isHydrated: id => this.hydratedConversationIds.has(id),
       invalidate: id => this.#invalidateConversation(id),
@@ -134,8 +141,7 @@ export class ConversationRepository {
     this.executionBindings = new ConversationExecutionBindings({
       fence,
       isTransientDeletionBinding: (conversationId, binding) => (
-        this.deletingConversationIds.has(conversationId)
-        && this.deletionStates.get(conversationId)?.executionBinding === binding
+        this.#deletionState(conversationId)?.executionBinding === binding
       ),
       discardModelRecovery: (conversation) => {
         if (conversation.modelRecoverySource || this.modelRecovery.hasPendingRecovery(conversation.id)) {
@@ -160,7 +166,7 @@ export class ConversationRepository {
       this.#applyLinkedContentPathRenamesToHydratedConversation(conversation);
     }
     this.conversations = conversations.filter(
-      ({ id }) => !this.deletedConversationIds.has(id),
+      ({ id }) => !this.deletedConversations.has(id),
     );
     this.recordsById.clear();
     for (const record of this.conversations) this.recordsById.set(record.id, record);
@@ -179,7 +185,9 @@ export class ConversationRepository {
     this.hydrationPromises.clear();
     this.modelRecovery.clear();
     this.executionBindings.clear();
-    this.deletionStates.clear();
+    for (const deletion of this.deletedConversations.values()) {
+      if (deletion.phase === 'removing') deletion.state = null;
+    }
   }
 
   async adoptMetadataConversations(
@@ -263,7 +271,7 @@ export class ConversationRepository {
       }
     }
     const added = conversations.filter(({ id }) => {
-      if (existingIds.has(id) || this.deletedConversationIds.has(id) || this.deletingConversationIds.has(id)) {
+      if (existingIds.has(id) || this.deletedConversations.has(id)) {
         return false;
       }
       existingIds.add(id);
@@ -323,12 +331,13 @@ export class ConversationRepository {
     selectedModel?: string;
     linkedContentPath?: string;
     projectId?: string;
+    origin?: ConversationOrigin;
   }): Promise<Conversation> {
     const settings = this.deps.getSettings();
     const providerId = options?.providerId ?? DEFAULT_CHAT_PROVIDER_ID;
     const sessionId = options?.sessionId;
     const id = sessionId ?? this.generateId();
-    if (this.deletedConversationIds.has(id)) {
+    if (this.deletedConversations.has(id)) {
       throw new Error(`Conversation was deleted in this session: ${id}`);
     }
     const providerSettings =
@@ -356,6 +365,7 @@ export class ConversationRepository {
       ...(options?.projectId !== undefined && this.#isLiveProject(options.projectId)
         ? { projectId: options.projectId }
         : {}),
+      ...(options?.origin ? { origin: { kind: options.origin.kind, conversationId: options.origin.conversationId } } : {}),
     };
 
     this.metadataTargets.set(conversation.id, 'device');
@@ -409,7 +419,7 @@ export class ConversationRepository {
       (conversation) => conversation.id === id,
     );
     if (index === -1) {
-      if (this.deletedConversationIds.has(id)) {
+      if (this.deletedConversations.has(id)) {
         await this.#retryDeletedConversationCleanup(id);
       }
       return;
@@ -422,9 +432,7 @@ export class ConversationRepository {
       generation: this.#getConversationGeneration(id),
       executionBinding: this.executionBindings.get(id),
     };
-    this.deletionStates.set(id, deletionState);
-    this.deletingConversationIds.add(id);
-    this.deletedConversationIds.add(id);
+    this.deletedConversations.set(id, { phase: 'removing', state: deletionState });
     this.conversations.splice(index, 1);
     this.recordsById.delete(id);
     this.hydratedConversationIds.delete(id);
@@ -443,15 +451,12 @@ export class ConversationRepository {
           ? this.persistence.deleteCurrentMetadata(id)
           : this.persistence.deleteCurrentMetadata(id, target));
         metadataRemoved = true;
-        this.deletingConversationIds.delete(id);
-        this.deletionStates.delete(id);
+        this.deletedConversations.set(id, { phase: 'removed' });
         this.executionBindings.delete(id);
       });
     } catch (error) {
       if (!metadataRemoved) {
-        this.deletingConversationIds.delete(id);
-        this.deletedConversationIds.delete(id);
-        this.deletionStates.delete(id);
+        this.deletedConversations.delete(id);
         this.conversations.splice(
           Math.min(index, this.conversations.length),
           0,
@@ -480,11 +485,10 @@ export class ConversationRepository {
   }
 
   async #retryDeletedConversationCleanup(id: string): Promise<void> {
-    if (!this.deletedConversationIds.has(id)) {
+    if (!this.deletedConversations.has(id)) {
       return;
     }
-    this.deletedConversationIds.add(id);
-    this.deletingConversationIds.delete(id);
+    this.deletedConversations.set(id, { phase: 'removed' });
     await this.#finalizeDeletedConversation(id);
   }
 
@@ -661,7 +665,7 @@ export class ConversationRepository {
       const patch = createPatch(conversation);
       if (!patch) return;
       const discardSupersededSessionFields = (): void => {
-        const deletion = this.deletionStates.get(id);
+        const deletion = this.#deletionState(id);
         if (
           this.#getConversationGeneration(id) === generation
           || (deletion?.conversation === conversation && deletion.generation === generation)
@@ -862,6 +866,31 @@ export class ConversationRepository {
     return this.getSync(id);
   }
 
+  /**
+   * The provider's opaque revision of a conversation's live native history, compared by sessions to
+   * notice changes made outside Claudian. Null when the record is gone or the provider cannot tell.
+   */
+  async readNativeHistoryRevision(id: string): Promise<string | null> {
+    const conversation = this.#getRecord(id);
+    if (!conversation) return null;
+    const vaultPath = this.deps.getVaultPath();
+    try {
+      return await this.deps.providers.getConversationHistoryService(conversation.providerId).readNativeHistoryRevision(
+        {
+          sessionId: conversation.sessionId,
+          providerState: conversation.providerState,
+          resumeAtMessageId: conversation.resumeAtMessageId,
+          // Revisions describe the native store; cached messages play no part.
+          messages: [],
+        },
+        vaultPath,
+        this.#getHistoryPathContext(conversation.providerId, vaultPath),
+      );
+    } catch {
+      return null;
+    }
+  }
+
   /** Releases only the hydrated projection, after admitted writes and history reads settle. */
   async releaseHistory(id: string, canRelease: () => boolean): Promise<boolean> {
     // The reader owns hydration errors; cleanup still rechecks whether history may be released.
@@ -987,6 +1016,7 @@ export class ConversationRepository {
       preview: this.#getPreview(conversation),
       linkedContentPath: conversation.linkedContentPath,
       projectId: conversation.projectId,
+      ...(conversation.origin ? { origin: { ...conversation.origin } } : {}),
       isPinned: conversation.isPinned,
       isArchived: conversation.isArchived,
       titleGenerationStatus: conversation.titleGenerationStatus,
@@ -1175,7 +1205,13 @@ export class ConversationRepository {
   /** A committed write also belongs in the projection retained for deletion rollback. */
   #isConversationRetained(conversation: Conversation): boolean {
     return this.#getRecord(conversation.id) === conversation
-      || this.deletionStates.get(conversation.id)?.conversation === conversation;
+      || this.#deletionState(conversation.id)?.conversation === conversation;
+  }
+
+  /** The projection retained while a deletion's metadata removal is in flight. */
+  #deletionState(id: string): ConversationDeletionState | null {
+    const deletion = this.deletedConversations.get(id);
+    return deletion?.phase === 'removing' ? deletion.state : null;
   }
 
   #canWriteConversation(
@@ -1183,8 +1219,7 @@ export class ConversationRepository {
   ): boolean {
     return (
       this.#getRecord(conversation.id) === conversation
-      && !this.deletedConversationIds.has(conversation.id)
-      && !this.deletingConversationIds.has(conversation.id)
+      && !this.deletedConversations.has(conversation.id)
     );
   }
 
@@ -1257,6 +1292,7 @@ export class ConversationRepository {
       ...(modelRecoverySource ? { modelRecoverySource } : {}),
       linkedContentPath,
       projectId: conversation.projectId,
+      ...(conversation.origin ? { origin: { ...conversation.origin } } : {}),
       isPinned: conversation.isPinned,
       isArchived: conversation.isArchived,
       usage: conversation.usage,

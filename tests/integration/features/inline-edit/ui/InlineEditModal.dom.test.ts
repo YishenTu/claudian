@@ -9,6 +9,7 @@ import {
   submitInstruction,
   typeInstruction,
 } from '@test/helpers/features/inline-edit/InlineEditDOMHarness';
+import { testDate } from '@test/helpers/testClock';
 import { fireEvent, screen, waitFor, within } from '@testing-library/dom';
 import { Component, type Editor, MarkdownRenderer, Notice, TFile, TFolder, WorkspaceLeaf } from 'obsidian';
 
@@ -112,6 +113,15 @@ function holdProviderStart(heldProviderId: string) {
 
 it('switches provider from the model picker until the first request, then keeps it', async () => {
   const h = await createHarness();
+  const saves: Array<() => Promise<void>> = [];
+  const mutateSettings = h.plugin.mutateSettings;
+  h.plugin.mutateSettings = (mutation) => {
+    let release!: () => void;
+    const held = new Promise<void>(resolve => { release = resolve; });
+    const saving = held.then(() => mutateSettings(mutation));
+    saves.push(() => { release(); return saving; });
+    return saving;
+  };
   // GPT's Max effort is known only once the provider has fetched the picked model's metadata.
   let gptMetadataReady = false;
   const codex = registerFakeInlineEditProvider('codex', [{ value: 'gpt', label: 'GPT' }], {
@@ -127,40 +137,50 @@ it('switches provider from the model picker until the first request, then keeps 
   typeInstruction('Make it formal');
   const codexStart = holdProviderStart('codex');
 
-  fireEvent.click(screen.getByRole('button', { name: 'Model: Sonnet, effort High' }));
-  const providers = within(screen.getByRole('dialog', { name: 'Model options' })).getAllByRole('tab');
-  expect(providers.map(tab => tab.getAttribute('aria-label'))).toEqual(['claude', 'codex']);
-  fireEvent.click(within(screen.getByRole('tablist', { name: 'Provider' })).getByRole('tab', { name: 'codex' }));
-  fireEvent.click(screen.getByRole('option', { name: 'GPT' }));
-  // The chip shows the pick while its provider starts, and an effort chosen meanwhile is kept.
-  await screen.findByRole('button', { name: 'Model: GPT, effort High' });
-  fireEvent.click(within(screen.getByRole('listbox', { name: 'Thinking' })).getByRole('option', { name: 'Low' }));
-  await screen.findByRole('button', { name: 'Model: GPT, effort Low' });
-  // Enter while the provider starts sends nothing until the edit runs on it.
-  fireEvent.keyDown(input(), { key: 'Enter' });
-  await new Promise(resolve => window.setTimeout(resolve, 0));
-  expect([h.backend.sessions, codex.sessions]).toEqual([[], []]);
-  codexStart.finish();
+  try {
+    fireEvent.click(screen.getByRole('button', { name: 'Model: Sonnet, effort High' }));
+    const providers = within(screen.getByRole('dialog', { name: 'Model options' })).getAllByRole('tab');
+    expect(providers.map(tab => tab.getAttribute('aria-label'))).toEqual(['claude', 'codex']);
+    fireEvent.click(within(screen.getByRole('tablist', { name: 'Provider' })).getByRole('tab', { name: 'codex' }));
+    fireEvent.click(screen.getByRole('option', { name: 'GPT' }));
+    // The chip shows the pick while its provider starts, and an effort chosen meanwhile is kept.
+    await screen.findByRole('button', { name: 'Model: GPT, effort High' });
+    fireEvent.click(within(screen.getByRole('listbox', { name: 'Thinking' })).getByRole('option', { name: 'Low' }));
+    await screen.findByRole('button', { name: 'Model: GPT, effort Low' });
+    // Enter while the provider starts sends nothing until the edit runs on it.
+    fireEvent.keyDown(input(), { key: 'Enter' });
+    // Request admission is independent of remembering the low selection.
+    await saves[0]();
+    expect(h.plugin.settings.inlineEditModel).toEqual({ providerId: 'codex', model: 'gpt', reasoning: 'high' });
+    expect([h.backend.sessions, codex.sessions]).toEqual([[], []]);
+    codexStart.finish();
 
-  await waitFor(() => expect(codex.sessions[0]?.requests).toHaveLength(1));
-  expect(h.backend.sessions).toHaveLength(0);
-  expect(codex.sessions[0].requests[0].configuration).toMatchObject({ model: 'gpt', reasoning: 'low' });
-  // The instruction typed before the switch survives the composer's rebuild.
-  expect(codex.sessions[0].requests[0].input[0]).toMatchObject({ text: expect.stringContaining('Make it formal') });
-  expect(h.plugin.settings.inlineEditModel).toEqual({ providerId: 'codex', model: 'gpt', reasoning: 'low' });
+    await waitFor(() => expect(codex.sessions[0]?.requests).toHaveLength(1));
+    expect(h.backend.sessions).toHaveLength(0);
+    expect(codex.sessions[0].requests[0].configuration).toMatchObject({ model: 'gpt', reasoning: 'low' });
+    // The instruction typed before the switch survives the composer's rebuild.
+    expect(codex.sessions[0].requests[0].input[0]).toMatchObject({ text: expect.stringContaining('Make it formal') });
+    // Sending the local low pick does not wait for its default to become durable.
+    expect(h.plugin.settings.inlineEditModel).toEqual({ providerId: 'codex', model: 'gpt', reasoning: 'high' });
+    await saves[1]();
+    await waitFor(() => expect(h.plugin.settings.inlineEditModel).toEqual({ providerId: 'codex', model: 'gpt', reasoning: 'low' }));
 
-  // A clarification continues the conversation on its provider, so the picker offers only its models.
-  codex.sessions[0].emitText('Which tone?');
-  codex.sessions[0].complete();
-  await waitFor(() => expect(input().placeholder).toBe('Reply to continue...'));
-  fireEvent.click(screen.getByRole('button', { name: 'Model: GPT, effort Low' }));
-  const menu = screen.getByRole('dialog', { name: 'Model options' });
-  expect(within(menu).getAllByRole('option').map(option => option.textContent)).toContain('GPT');
-  expect(within(menu).queryAllByRole('tab')).toEqual([]);
-  expect(within(within(menu).getByRole('listbox', { name: 'Thinking' })).getByRole('option', { name: 'Max' })).toBeDefined();
-  fireEvent.keyDown(h.editorView.contentDOM, { key: 'Escape' });
-  fireEvent.keyDown(h.editorView.contentDOM, { key: 'Escape' });
-  await expect(result).resolves.toEqual({ decision: 'reject' });
+    // A clarification continues the conversation on its provider, so the picker offers only its models.
+    codex.sessions[0].emitText('Which tone?');
+    codex.sessions[0].complete();
+    await waitFor(() => expect(input().placeholder).toBe('Reply to continue...'));
+    fireEvent.click(screen.getByRole('button', { name: 'Model: GPT, effort Low' }));
+    const menu = screen.getByRole('dialog', { name: 'Model options' });
+    expect(within(menu).getAllByRole('option').map(option => option.textContent)).toContain('GPT');
+    expect(within(menu).queryAllByRole('tab')).toEqual([]);
+    expect(within(within(menu).getByRole('listbox', { name: 'Thinking' })).getByRole('option', { name: 'Max' })).toBeDefined();
+    fireEvent.keyDown(h.editorView.contentDOM, { key: 'Escape' });
+    fireEvent.keyDown(h.editorView.contentDOM, { key: 'Escape' });
+    await expect(result).resolves.toEqual({ decision: 'reject' });
+  } finally {
+    codexStart.finish();
+    await Promise.all(saves.map(save => save()));
+  }
 });
 
 describe('a submit waiting for a picked provider to start', () => {
@@ -250,12 +270,40 @@ it('keeps the provider when a picked model is not uniquely owned by one enabled 
   await expect(result).resolves.toEqual({ decision: 'reject' });
 });
 
-it('suggests Vault folders for @ mentions', async () => {
+it('refreshes file and folder suggestions when the same inline session reopens its popup', async () => {
   const h = await createHarness();
-  h.app.vault.getAllLoadedFiles = () => [Object.assign(new TFolder(), { name: 'src', path: 'src' })];
-  h.createSession().show();
-  typeInstruction('@s');
-  expect(await screen.findByRole('option', { name: /src\// })).toBeDefined();
+  const stat = { ctime: testDate().getTime(), mtime: testDate().getTime(), size: 1 };
+  const oldFile = Object.assign(new TFile(), { path: 'Old.md', name: 'Old.md', stat });
+  const oldFolder = Object.assign(new TFolder(), { path: 'OldFolder', name: 'OldFolder' });
+  let inventory: Array<TFile | TFolder> = [oldFile, oldFolder];
+  h.app.vault.getAllLoadedFiles = () => inventory;
+  const session = h.createSession();
+  session.show();
+  typeInstruction('@OldF');
+  expect(await screen.findByRole('option', { name: '@OldFolder/' })).toBeDefined();
+  typeInstruction('@');
+  const labels = () => within(screen.getByRole('listbox')).getAllByRole('option').map(option => option.textContent).sort();
+  expect(labels()).toEqual(['@OldFolder/', 'Old.md']);
+  typeInstruction('No trigger');
+  expect(screen.getByRole('listbox').hasClass('is-visible')).toBe(false);
+  expect(input().hasAttribute('aria-activedescendant')).toBe(false);
+  const currentInput = input();
+  const newFile = Object.assign(new TFile(), { path: 'New.md', name: 'New.md', stat });
+  const newFolder = Object.assign(new TFolder(), { path: 'NewFolder', name: 'NewFolder' });
+  inventory = [newFile, oldFolder, newFolder];
+  h.app.vault.trigger('delete', oldFile);
+  h.app.vault.trigger('create', newFile);
+  h.app.vault.trigger('create', newFolder);
+  typeInstruction('@');
+  expect(input()).toBe(currentInput);
+  expect(labels()).toEqual(['@NewFolder/', '@OldFolder/', 'New.md']);
+  expect(screen.queryByRole('option', { name: 'Old.md' })).toBeNull();
+  expect(h.settled).not.toHaveBeenCalled();
+  session.close();
+  const later = h.createSession();
+  later.show(); typeInstruction('@');
+  expect(labels()).toEqual(['@NewFolder/', '@OldFolder/', 'New.md']);
+  later.close();
 });
 
 it('keeps open inline suggestions anchored after note scroll and viewport resize', async () => {
@@ -271,8 +319,17 @@ it('keeps open inline suggestions anchored after note scroll and viewport resize
   typeInstruction('@s');
   const option = await screen.findByRole('option', { name: /src\// });
   const list = screen.getByRole('listbox', { name: 'Input suggestions' });
-  expect(list.style.getPropertyValue('--claudian-fixed-dropdown-bottom')).toBe(`${window.innerHeight - top + 4}px`);
+  expect(list.style.getPropertyValue('--claudian-fixed-dropdown-bottom')).toBe(`${window.innerHeight - top + 8}px`);
   const active = input().getAttribute('aria-activedescendant');
+  for (const modifier of ['shiftKey', 'ctrlKey', 'metaKey', 'altKey']) {
+    const event = new KeyboardEvent('keydown', { key: 'Tab', [modifier]: true, bubbles: true, cancelable: true });
+    input().dispatchEvent(event);
+    expect(event.defaultPrevented).toBe(false);
+    expect(input().value).toBe('@s');
+    expect(screen.getByRole('listbox', { name: 'Input suggestions' })).toBe(list);
+    expect(input().getAttribute('aria-activedescendant')).toBe(active);
+  }
+
   measure.mockClear();
   list.scrollTop = 25;
   fireEvent.scroll(list);
@@ -280,7 +337,7 @@ it('keeps open inline suggestions anchored after note scroll and viewport resize
   expect(list.scrollTop).toBe(25);
   top = 210;
   fireEvent.scroll(h.editorView.scrollDOM);
-  expect(list.style.getPropertyValue('--claudian-fixed-dropdown-bottom')).toBe(`${window.innerHeight - top + 4}px`);
+  expect(list.style.getPropertyValue('--claudian-fixed-dropdown-bottom')).toBe(`${window.innerHeight - top + 8}px`);
   left = 160;
   fireEvent.resize(window);
   expect(list.style.getPropertyValue('--claudian-fixed-dropdown-left')).toBe('160px');
@@ -295,6 +352,9 @@ it('keeps open inline suggestions anchored after note scroll and viewport resize
   expect(measure).not.toHaveBeenCalled();
   typeInstruction('@s');
   await screen.findByRole('option', { name: /src\// });
+  fireEvent.keyDown(input(), { key: 'Tab' });
+  expect(input().value).toBe('@src/ ');
+  expect(list.hasClass('is-visible')).toBe(false);
   session.close();
   measure.mockClear();
   fireEvent.scroll(h.editorView.scrollDOM);
@@ -500,8 +560,8 @@ it.each([false, true].flatMap(alreadyOpen => [
   const sourcePath = 'Section/note.md';
   const file = Object.assign(new TFile(), { path: samePage ? sourcePath : 'Section/target.md', basename: samePage ? 'note' : 'target' });
   h.app.vault.getAbstractFileByPath = vi.fn((path: string) => path === sourcePath ? file : null);
-  const leaf = Object.assign(new WorkspaceLeaf(), { getViewState: () => ({ type: 'markdown', state: { file: file.path } }), setEphemeralState: vi.fn() });
-  const unrelated = Object.assign(new WorkspaceLeaf(), { getViewState: () => ({ type: 'markdown', state: { file: 'Elsewhere/target.md' } }), setEphemeralState: vi.fn() });
+  const leaf = Object.assign(new WorkspaceLeaf(), { getRoot: () => ({}), getViewState: () => ({ type: 'markdown', state: { file: file.path } }), setEphemeralState: vi.fn() });
+  const unrelated = Object.assign(new WorkspaceLeaf(), { getRoot: () => ({}), getViewState: () => ({ type: 'markdown', state: { file: 'Elsewhere/target.md' } }), setEphemeralState: vi.fn() });
   h.app.metadataCache.getFirstLinkpathDest = vi.fn((_path: string, source: string) => source === sourcePath ? file : Object.assign(new TFile(), { path: 'Elsewhere/target.md' }));
   Object.assign(h.app.workspace, {
     iterateAllLeaves: (visit: (entry: typeof leaf) => void) => [unrelated, ...(alreadyOpen ? [leaf] : [])].forEach(visit),

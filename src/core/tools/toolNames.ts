@@ -2,6 +2,8 @@
 // so only transcripts recorded before the removal contain it.
 export const TOOL_AGENT_OUTPUT = 'TaskOutput' as const;
 export const TOOL_ASK_USER_QUESTION = 'AskUserQuestion' as const;
+/** Lists a provider's background commands and their state. */
+export const TOOL_MANAGE_TASKS = 'ManageTasks' as const;
 export const TOOL_BASH = 'Bash' as const;
 export const TOOL_BASH_OUTPUT = 'BashOutput' as const;
 export const TOOL_EDIT = 'Edit' as const;

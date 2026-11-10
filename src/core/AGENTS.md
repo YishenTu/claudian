@@ -1,14 +1,14 @@
 # Core constraints
 
 - Provider lifecycle leases fence provider-wide transitions; they must not acquire tab turn state. Registries must not absorb registered-service lifecycle/storage.
-- Callers resolve system instructions to literal text with the shared core prompt builders (chat resolves the Main Agent prompt from settings, the Vault root and session instructions). Adapters deliver that text through native transport/replacement mechanics and kind-specific protocol framing; they never build, substitute or select prompts, or read prompt settings.
+- Callers resolve system instructions to literal text with the shared core prompt builders. Adapters deliver that text through native transport/replacement mechanics and kind-specific protocol framing; they never build, substitute or select prompts, or read prompt settings.
 - Inline Edit has a separate shared explicit prompt with host-provided date/Vault path. Do not append Custom Instructions; keep tool guidance capability-based.
 - New Linked content references use normalized path-only shape, excluding the Vault root. Legacy Note forms are decode-only. A directory reference changes neither CWD nor recursive ingestion.
 
 ## Provider policy
 
-- Explicit execution model/reasoning choices are authoritative: adapters may translate or validate them, but cannot silently substitute saved/default effort. Null reasoning means no explicit override; omitted reasoning permits auxiliary defaults. High is the default effort; preserve explicit supported choices and never silently choose another effort as a default.
-- Do not assume provider parity. Check the owning capabilities, registration, and UI config before sharing behavior; use `ProviderRegistry` and `ProviderWorkspaceRegistry`.
+- Explicit execution model/reasoning choices are authoritative: adapters may translate or validate them, but cannot silently substitute saved/default effort. Null reasoning means no explicit override; omitted reasoning permits auxiliary defaults. High is the default effort; never silently choose another effort as a default.
+- Check the owning capabilities, registration, and UI config through `ProviderRegistry` and `ProviderWorkspaceRegistry` before sharing behavior across providers.
 - App/features may store opaque provider state but may not interpret native session/checkpoint fields. Providers normalize native payloads at the core boundary.
 - Conversation metadata and opaque provider state never persist inline binary/base64 payloads (including `ToolResultDetails.resultImages` data); native transcripts keep the bytes.
 - Live output and history replay remain separate. Application metadata changes never edit or delete native history files; explicit native session operations belong to providers.
@@ -16,7 +16,7 @@
 - Session tools have one neutral contract: providers expose them only to sessions configured with a session-tool port and call them through `invokeSessionTool`, which denies every policy except `provider-default`/`unrestricted`. Claudian auto-approves them: any native approval request for them is allowed without prompting the user. The loopback endpoint binds 127.0.0.1, rejects browser `Origin`s and foreign `Host`s, and carries caller identity only in unguessable, revocable route ids.
 - Runtime-discovered commands are read-only. Auxiliary queries own their sessions, cancellation, and interactions independently from chat; a provider may share its own process across consumers.
 - The shared model catalog owns selection policy; providers retain discovery, native metadata, and persistence. Only selected models persist. Startup fills missing selected-model reasoning metadata through provider-native discovery; no hardcoded model effort migrations. Unavailable selections stay visible as unavailable rather than silently defaulting.
-- Explicit selected-model order is durable user preference, including a full-list order; do not collapse it to legacy null/native-default ordering. Chat options, the toolbar, settings, and default resolution preserve that order; the first saved model appears at the top of the dropdown.
+- Explicit selected-model order is durable user preference, including a full-list order; do not collapse it to legacy null/native-default ordering. Chat options, the toolbar, settings, and default resolution preserve that order.
 
 ## Persistence and model resolution
 

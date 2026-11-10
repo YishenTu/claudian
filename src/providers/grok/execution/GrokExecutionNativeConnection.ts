@@ -1,7 +1,7 @@
 import {
-  ACPClientConnection,
-  ACPJSONRPCTransport,
-  ACPSubprocess,
+  type ACPClientConnection,
+  type ACPJSONRPCTransport,
+  ACPNativeProcess,
 } from '@/providers/acp';
 
 import { normalizeGrokCommands } from '../normalization/grokCommandNormalization';
@@ -40,38 +40,29 @@ const GROK_MODEL_UPDATE_NOTIFICATION_METHODS = [
 
 export class GrokExecutionNativeConnectionImpl
 implements GrokExecutionNativeConnection {
-  private readonly connection: ACPClientConnection;
+  private readonly native: ACPNativeProcess;
   private readonly listeners = new Set<Parameters<GrokExecutionNativeConnection['onNotification']>[0]>();
   private readonly interjectionListeners = new Set<Parameters<NonNullable<GrokExecutionNativeConnection['onInterjection']>>[0]>();
   private readonly modeListeners = new Set<(mode: 'normal' | 'yolo') => void>();
   private readonly modelListeners = new Set<
     Parameters<NonNullable<GrokExecutionNativeConnection['onModelsChanged']>>[0]
   >();
-  private readonly process: ACPSubprocess;
-  private readonly transport: ACPJSONRPCTransport;
   private readonly unsubscribers: Array<() => void> = [];
 
   constructor(options: GrokExecutionNativeCreateOptions) {
-    this.process = new ACPSubprocess({
-      args: options.args ?? ['agent', '--no-leader', 'stdio'],
-      windowsVerbatimArguments: options.windowsVerbatimArguments,
-      command: options.command,
-      cwd: options.cwd,
-      env: options.env,
-    });
-    this.process.start();
-    this.transport = new ACPJSONRPCTransport({
-      input: this.process.stdout,
-      onClose: listener => this.process.onClose(listener),
-      output: this.process.stdin,
-    });
-    this.connection = new ACPClientConnection({
-      clientInfo: { name: 'claudian', version: options.version },
+    this.native = new ACPNativeProcess({
+      launch: {
+        args: options.args ?? ['agent', '--no-leader', 'stdio'],
+        windowsVerbatimArguments: options.windowsVerbatimArguments,
+        command: options.command,
+        cwd: options.cwd,
+        env: options.env,
+      },
+      version: options.version,
       delegate: {
         onSessionNotification: notification => this.notify(notification, 'standard'),
         requestPermission: request => options.requestPermission(request),
       },
-      transport: this.transport,
     });
     for (const method of [
       ...GROK_SESSION_UPDATE_NOTIFICATION_METHODS,
@@ -126,8 +117,16 @@ implements GrokExecutionNativeConnection {
     this.connection.cancel({ sessionId });
   }
 
+  private get connection(): ACPClientConnection {
+    return this.native.client;
+  }
+
+  private get transport(): ACPJSONRPCTransport {
+    return this.native.transport;
+  }
+
   flush(): Promise<void> {
-    return this.transport.flush();
+    return this.native.flush();
   }
 
   fork: NonNullable<GrokExecutionNativeConnection['fork']> = request => (
@@ -150,11 +149,11 @@ implements GrokExecutionNativeConnection {
   }
 
   isAlive(): boolean {
-    return this.process.isAlive();
+    return this.native.isAlive();
   }
 
   onClose(listener: (error?: Error) => void): () => void {
-    return this.process.onClose(listener);
+    return this.native.onClose(listener);
   }
 
   interject(
@@ -227,15 +226,14 @@ implements GrokExecutionNativeConnection {
     this.connection.setModel(request)
   );
 
-  async shutdown(): Promise<void> {
-    while (this.unsubscribers.length > 0) this.unsubscribers.pop()?.();
-    this.listeners.clear();
-    this.modeListeners.clear();
-    this.interjectionListeners.clear();
-    this.modelListeners.clear();
-    this.connection.dispose();
-    this.transport.dispose();
-    await this.process.shutdown();
+  shutdown(): Promise<void> {
+    return this.native.shutdown(() => {
+      while (this.unsubscribers.length > 0) this.unsubscribers.pop()?.();
+      this.listeners.clear();
+      this.modeListeners.clear();
+      this.interjectionListeners.clear();
+      this.modelListeners.clear();
+    });
   }
 
   private notify(

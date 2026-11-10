@@ -50,7 +50,7 @@
   background: transparent;
   box-shadow: none;
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: calc(12 * var(--claudian-font-px));
   font-weight: normal;
   white-space: nowrap;
   cursor: pointer;
@@ -162,7 +162,7 @@
 .claudian-toolbar-popover-heading {
   padding: 6px 8px 3px;
   color: var(--text-faint);
-  font-size: 10px;
+  font-size: calc(10 * var(--claudian-font-px));
   font-weight: 600;
   letter-spacing: 0.05em;
   text-transform: uppercase;
@@ -171,7 +171,7 @@
 .claudian-toolbar-popover-empty {
   padding: 6px 8px;
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: calc(12 * var(--claudian-font-px));
 }
 
 .claudian-toolbar-popover button.claudian-toolbar-popover-option,
@@ -189,7 +189,7 @@
   background: transparent;
   box-shadow: none;
   color: var(--text-normal);
-  font-size: 12px;
+  font-size: calc(12 * var(--claudian-font-px));
   font-weight: normal;
   text-align: start;
   cursor: pointer;
@@ -229,7 +229,7 @@
 
 .claudian-toolbar-popover-option-detail {
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: calc(11 * var(--claudian-font-px));
   line-height: 1.3;
 }
 
@@ -263,6 +263,7 @@
  */
 .claudian-toolbar-popover.claudian-model-popover {
   --claudian-model-provider-tab-size: 28px;
+  --claudian-model-provider-tab-min-size: 20px;
   --claudian-model-provider-gap: 2px;
   --claudian-model-heading-height: calc(4px + 13px + 6px);
   --claudian-model-row-height: calc(4px + 16px + 1px + 14px + 4px);
@@ -295,7 +296,7 @@
 .claudian-model-column .claudian-toolbar-popover-heading {
   padding-top: 4px;
   padding-bottom: 6px;
-  line-height: 13px;
+  line-height: calc(13 * var(--claudian-font-px));
 }
 
 /* Upstream groups in the model list are set apart by their headings alone, with no divider. */
@@ -354,7 +355,7 @@
 
 .claudian-model-option .claudian-toolbar-popover-option-label {
   font-weight: 500;
-  line-height: 16px;
+  line-height: calc(16 * var(--claudian-font-px));
 }
 
 /* A description wraps to two lines at most; its full text stays in the row's tooltip. */
@@ -364,18 +365,22 @@
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
   line-clamp: 2;
-  line-height: 14px;
+  line-height: calc(14 * var(--claudian-font-px));
 }
 
-/* Provider tabs: a bare icon each with no fill; the browsed provider is at full strength with a bar in its colour. */
+/*
+ * Provider tabs: a bare icon each with no fill; the browsed provider is at full strength with a bar in its colour.
+ * Tabs shrink from their full size so every provider fits the popover's fixed height; only a list too long even at
+ * the minimum scrolls.
+ */
 .claudian-toolbar-popover button.claudian-model-provider-tab,
 .claudian-toolbar-popover button.claudian-model-provider-tab:is(:hover, :focus, :focus-visible, :active) {
   position: relative;
   justify-content: center;
-  flex: 0 0 auto;
+  flex: 0 1 var(--claudian-model-provider-tab-size);
   width: auto;
-  height: var(--claudian-model-provider-tab-size);
-  min-height: var(--claudian-model-provider-tab-size);
+  height: auto;
+  min-height: var(--claudian-model-provider-tab-min-size);
   margin: 0;
   padding: 0;
   background: transparent;

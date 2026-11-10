@@ -46,7 +46,7 @@
   box-shadow: none;
   color: var(--text-muted);
   font: inherit;
-  font-size: var(--font-ui-smaller);
+  font-size: calc(12 * var(--claudian-font-px));
   text-align: start;
   cursor: pointer;
 }
@@ -145,7 +145,7 @@
   white-space: nowrap;
   text-overflow: ellipsis;
   margin: 0;
-  font-size: var(--font-ui-small);
+  font-size: calc(13 * var(--claudian-font-px));
   font-weight: var(--font-semibold);
   color: var(--text-normal);
 }
@@ -170,7 +170,7 @@
   box-shadow: none;
   color: var(--text-muted);
   font: inherit;
-  font-size: var(--font-ui-smaller);
+  font-size: calc(12 * var(--claudian-font-px));
   cursor: pointer;
 }
 

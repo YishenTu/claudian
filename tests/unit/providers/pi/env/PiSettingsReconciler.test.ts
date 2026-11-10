@@ -1,13 +1,16 @@
-import '@/providers';
-
 import { conversationRecord } from '@test/helpers/features/chat/ConversationFixture';
 
 import { getInstallationKey } from '@/core/device/InstallationKey';
 import { getProviderConfig, setProviderConfig } from '@/core/providers/providerConfig';
 import { ProviderSettingsCoordinator } from '@/core/providers/ProviderSettingsCoordinator';
+import { registerProviderModules } from '@/core/providers/registerProviderModules';
 import { isVersionedRuntimeInputFingerprint } from '@/core/providers/settings/RuntimeInputFingerprint';
+import { claudeProviderRegistration } from '@/providers/claude/registration';
 import { piSettingsReconciler } from '@/providers/pi/env/PiSettingsReconciler';
+import { piProviderRegistration } from '@/providers/pi/registration';
 import { getPiProviderSettings } from '@/providers/pi/settings';
+
+registerProviderModules([claudeProviderRegistration, piProviderRegistration]);
 
 interface PiFingerprintInputs {
   cliPath?: string;

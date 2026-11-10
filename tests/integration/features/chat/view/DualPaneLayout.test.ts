@@ -1,12 +1,11 @@
 /** @vitest-environment jsdom */
-import { createEvent, fireEvent } from '@testing-library/dom';
+import { axe } from '@test/helpers/accessibility';
+import { createEvent, fireEvent, waitFor, within } from '@testing-library/dom';
 import { Notice } from 'obsidian';
 import type { Mock } from 'vitest';
 
-import { DualPaneLayout,type DualPaneLayoutSettings } from '@/features/chat/view/DualPaneLayout';
-
-
-
+import { DualPaneLayout, type DualPaneLayoutSettings } from '@/features/chat/view/DualPaneLayout';
+import { setLocale } from '@/i18n/i18n';
 function deferred<T = void>() {
   let resolve!: (value: T) => void;
   let reject!: (error: Error) => void;
@@ -184,7 +183,11 @@ describe('DualPaneLayout', () => {
     expect(harness.containerEl.hasClass('claudian-wide-session-layout')).toBe(true);
   });
 
-  it('reports one failure when overlapping compact transitions share a failed preview cleanup', async () => {
+  it.each([
+    ['en', 'Failed to close the provisional session preview'],
+    ['zh-CN', '无法关闭临时会话预览'],
+  ] as const)('reports one %s failure when overlapping compact transitions share a failed preview cleanup', async (locale, message) => {
+    setLocale(locale);
     const sharedCleanup = deferred();
     const harness = createLayoutHarness({
       width: 900,
@@ -197,12 +200,10 @@ describe('DualPaneLayout', () => {
     observer.resize(600);
     observer.resize(599);
     sharedCleanup.reject(new Error('close failed'));
-    await flushPromises();
+    await waitFor(() => expect(harness.layout.isWide).toBe(false));
 
     expect(harness.hooks.releaseViewerSlot).toHaveBeenCalledTimes(2);
-    expect(Notice).toHaveBeenCalledTimes(1);
-    expect(Notice).toHaveBeenCalledWith('Failed to close the provisional session preview');
-    expect(harness.layout.isWide).toBe(false);
+    expect(Notice).toHaveBeenCalledExactlyOnceWith(message);
   });
 
   it('cancels a pending compact transition when the view becomes wide again', async () => {
@@ -273,14 +274,23 @@ describe('DualPaneLayout', () => {
     );
   });
 
-  it('clamps the resized session column to preserve the minimum chat width', () => {
+  it.each([
+    ['en', 'Resize conversation sessions'],
+    ['zh-CN', '调整对话会话区域大小'],
+  ] as const)('clamps the session column through the %s separator', async (locale, name) => {
+    setLocale(locale);
     const harness = createLayoutHarness({ width: 700 });
+    document.body.append(harness.containerEl);
+    harness.containerEl.append(harness.resizerEl, harness.sidebarEl);
     harness.initialize();
-    const event = createEvent.keyDown(harness.resizerEl, { key: 'ArrowLeft' });
+    const separator = within(harness.containerEl).getByRole('separator', { name });
+    expect(separator.getAttribute('aria-orientation')).toBe('vertical');
+    expect(separator.getAttribute('tabindex')).toBe('0');
+    const event = createEvent.keyDown(separator, { key: 'ArrowLeft' });
     const preventDefault = vi.spyOn(event, 'preventDefault');
 
     for (let step = 0; step < 20; step += 1) {
-      fireEvent(harness.resizerEl, event);
+      fireEvent(separator, event);
     }
 
     expect(preventDefault).toHaveBeenCalled();
@@ -288,7 +298,9 @@ describe('DualPaneLayout', () => {
       '--claudian-session-sidebar-width',
       '375px',
     );
-    expect(harness.resizerEl.getAttribute('aria-valuemax')).toBe('375');
+    expect(separator.getAttribute('aria-valuemax')).toBe('375');
+    expect(separator.getAttribute('aria-valuenow')).toBe('375');
+    expect(await axe(harness.containerEl)).toHaveNoViolations();
   });
 
   it('ignores resize input while compact', () => {
@@ -304,4 +316,4 @@ describe('DualPaneLayout', () => {
   });
 });
 
-afterEach(() => { document.body.replaceChildren(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
+afterEach(() => { document.body.replaceChildren(); vi.restoreAllMocks(); vi.unstubAllGlobals(); setLocale('en'); });

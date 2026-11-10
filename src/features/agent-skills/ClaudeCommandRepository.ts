@@ -6,11 +6,13 @@ import type { AgentSkillDiagnostic, AgentSkillInput } from '@/features/agent-ski
 import { normalizeInstructionMarkdown, serializeMarkdownWithFrontmatter } from '@/features/agent-skills/AgentSkillCodec';
 import {
   AgentSkillRepositoryError,
+  AgentSkillRollbackError,
   CLAUDE_COMMANDS_ROOT,
   type SkillFrontmatterPolicy,
 } from '@/features/agent-skills/AgentSkillRepository';
 import { parseFrontmatter } from '@/features/agent-skills/frontmatter';
 import { AgentSkillValidationError, validateAgentSkillName } from '@/features/agent-skills/validateAgentSkill';
+import { SerialQueue } from '@/utils/SerialQueue';
 
 const COMMAND_EXTENSION = '.md';
 
@@ -82,7 +84,7 @@ function parseClaudeCommandMarkdown(raw: string): {
 
 /** Manages vault-level Claude command files under `.claude/commands`. */
 export class ClaudeCommandRepository {
-  private mutationQueue: Promise<void> = Promise.resolve();
+  private readonly mutationQueue = new SerialQueue();
   readonly frontmatterPolicy: SkillFrontmatterPolicy;
 
   constructor(
@@ -140,7 +142,21 @@ export class ClaudeCommandRepository {
       if (await this.#exists(targetPath)) throw new ClaudeCommandCollisionError(input.name);
       await this.files.ensureManagedFolder(path.posix.dirname(targetPath));
       await this.files.writeManagedFile(targetPath, content);
-      await this.files.removeManagedFile(current.filePath);
+      try {
+        await this.files.removeManagedFile(current.filePath);
+      } catch (error) {
+        try {
+          await this.files.removeManagedFile(targetPath);
+        } catch (rollbackError) {
+          throw new AgentSkillRollbackError(
+            `Could not rename command "${previousName}" and rollback was incomplete: "${targetPath}" could not be removed`,
+            error,
+            [rollbackError instanceof Error ? rollbackError : new Error(String(rollbackError))],
+          );
+        }
+        await this.#pruneEmptyFolders(path.posix.dirname(targetPath));
+        throw error;
+      }
       await this.#pruneEmptyFolders(path.posix.dirname(current.filePath));
       return this.#documentFromRaw(targetPath, content);
     });
@@ -250,8 +266,6 @@ export class ClaudeCommandRepository {
   }
 
   #withMutation<T>(operation: () => Promise<T>): Promise<T> {
-    const result = this.mutationQueue.then(operation, operation);
-    this.mutationQueue = result.then(() => undefined, () => undefined);
-    return result;
+    return this.mutationQueue.run(operation);
   }
 }

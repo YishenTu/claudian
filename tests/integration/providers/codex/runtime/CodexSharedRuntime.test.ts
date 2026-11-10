@@ -244,7 +244,7 @@ describe('Codex shared runtime', () => {
   };
   const request: ProviderExecutionRequest = {
     input: [{ type: 'text', text: 'hello' }],
-    configuration: { model: TEST_CODEX_MODEL, permissionMode: 'yolo', systemInstructions: { kind: 'explicit', instructions: 'Be concise.' } },
+    configuration: { model: TEST_CODEX_MODEL, permissionMode: 'yolo', systemInstructions: { kind: 'explicit', purpose: 'title', instructions: 'Be concise.' } },
     toolPolicy: { kind: 'provider-default' }, signal: new AbortController().signal,
   };
   async function collect(events: AsyncIterable<ProviderExecutionEvent>): Promise<ProviderExecutionEvent[]> {
@@ -862,14 +862,14 @@ describe('Codex shared runtime', () => {
   it.each(['explicit', 'main-agent'] as const)('refreshes %s instructions on a retained native thread that ignores subscribed resume overrides', async kind => {
     mockNative.autoReconcile = true;
     const session = createBackend(plugin, createRuntime()).createSession(config);
-    const initial = { ...request, configuration: { ...request.configuration, systemInstructions: { kind, instructions: 'Be concise.' } } };
+    const initial = { ...request, configuration: { ...request.configuration, systemInstructions: { kind, purpose: 'title' as const, instructions: 'Be concise.' } } };
     const output = collect(session.execute(initial).events);
     const process = await waitForRequest('turn/start');
     expect(process.requests.find(rpc => rpc.method === 'thread/start')!.params.baseInstructions).toBe('Be concise.');
     complete(process, 'thread-1');
     await output;
     const changed = collect(session.execute({ ...request, configuration: {
-      ...request.configuration, systemInstructions: { kind, instructions: 'Use the new rules.' },
+      ...request.configuration, systemInstructions: { kind, purpose: 'title' as const, instructions: 'Use the new rules.' },
     } }).events);
     await waitForRequest('turn/start', 0, 2);
     expect(process.turnInstructions).toHaveLength(2);

@@ -2,6 +2,7 @@ import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
+import askUserQuestion from '@test/fixtures/providers/grok/extensions/ask-user-question.json';
 import compactCompleted from '@test/fixtures/providers/grok/runtime/compaction-completed.json';
 import turnCompleted from '@test/fixtures/providers/grok/runtime/turn-completed.json';
 import { capturedSelectionPrompt, capturedSelections } from '@test/helpers/capturedSelections';
@@ -61,6 +62,9 @@ const interactionPort: ProviderInteractionPort = {
   requestApproval: vi.fn(),
 };
 
+// A host-absolute Vault root: native Windows normalizes a bare POSIX path to `\tmp\vault`.
+const vaultRoot = path.resolve('/tmp/vault');
+
 const sessionConfig: ProviderSessionConfig = {
   interactionPort,
   lifecycle: 'persistent',
@@ -69,7 +73,7 @@ const sessionConfig: ProviderSessionConfig = {
     providerSessionId: 'session-existing',
     providerState: { sessionDirectory: '/tmp/grok-session' },
   },
-  workingDirectory: '/tmp/vault',
+  workingDirectory: vaultRoot,
 };
 
 function executionRequest(text = 'hello'): ProviderExecutionRequest {
@@ -78,7 +82,7 @@ function executionRequest(text = 'hello'): ProviderExecutionRequest {
       permissionMode: 'normal',
       model: 'grok/grok-4',
       reasoning: 'high',
-      systemInstructions: { kind: 'explicit', instructions: 'Be exact.' },
+      systemInstructions: { kind: 'explicit', purpose: 'title', instructions: 'Be exact.' },
     },
     input: [{ text, type: 'text' }],
     signal: new AbortController().signal,
@@ -91,6 +95,49 @@ async function collect(events: AsyncIterable<ProviderExecutionEvent>): Promise<P
   for await (const event of events) collected.push(event);
   return collected;
 }
+
+it('dismisses a pending native question when its requesting turn loses the transport', async () => {
+  const native = new GrokNativeProcess();
+  let promptEntered!: () => void;
+  const prompted = new Promise<void>(resolve => { promptEntered = resolve; });
+  native.promptImplementation = () => { promptEntered(); return new Promise(() => {}); };
+  let interactionEntered!: () => void;
+  const entered = new Promise<void>(resolve => { interactionEntered = resolve; });
+  let questionSignal: AbortSignal | undefined;
+  let finishQuestion!: () => void;
+  const dismissInteraction = vi.fn();
+  const port: ProviderInteractionPort = {
+    requestApproval: vi.fn(), dismissInteraction,
+    askUserQuestion: (request, signal) => {
+      questionSignal = signal;
+      interactionEntered();
+      return new Promise(resolve => {
+        finishQuestion = () => resolve({ interactionId: request.interactionId, answers: null });
+        signal?.addEventListener('abort', finishQuestion, { once: true });
+      });
+    },
+  };
+  const session = createBackend(await createGrokHost(), {
+    processFactory: { create: () => native },
+  }).createSession({ ...sessionConfig, interactionPort: port });
+  const events = collect(session.execute(executionRequest()).events);
+  await prompted;
+  const { method, params } = askUserQuestion.request;
+  void native.request(method, { ...params, sessionId: 'session-existing' }).catch(() => undefined);
+  await entered;
+
+  try {
+    expect(questionSignal?.aborted).toBe(false);
+    native.child.kill();
+    expect((await events).at(-1)).toMatchObject({ type: 'execution_error', category: 'transport' });
+
+    expect(questionSignal?.aborted).toBe(true);
+    expect(dismissInteraction).toHaveBeenCalledExactlyOnceWith(expect.stringContaining(':question:'), 'cancelled');
+  } finally {
+    finishQuestion();
+    await session.dispose();
+  }
+});
 
 it.each(['', 'Inspect these images'])('sends native ACP image blocks with text %j', async text => {
   const native = new GrokNativeProcess();
@@ -337,7 +384,7 @@ it('encodes path-only Linked content without changing the Vault-root session CWD
     context: { ...capturedSelections, sessionReferences: [{ id: 'conv-1-ref', title: 'Review', providerId: 'codex', updatedAt: 'updated' }], linkedContent: { path: 'Projects/Research' } },
   }).events);
 
-  expect(native.loadRequests[0]?.cwd).toBe('/tmp/vault');
+  expect(native.loadRequests[0]?.cwd).toBe(vaultRoot);
   expect(native.promptRequests[0]?.prompt).toEqual([{
     text: 'Inspect linked content\n\n<linked_content path="Projects/Research" />\n\n' + capturedSelectionPrompt + '\n\n<context_sessions>\n<context_session title="Review" id="conv-1-ref" provider="codex" updated="updated" />\n</context_sessions>',
     type: 'text',
@@ -430,7 +477,7 @@ it('reconnects and loads once when load-scoped session metadata changes', async 
     ...executionRequest('second'),
     configuration: {
       ...firstRequest.configuration,
-      systemInstructions: { kind: 'explicit', instructions: 'Use the replacement policy.' },
+      systemInstructions: { kind: 'explicit', purpose: 'title', instructions: 'Use the replacement policy.' },
     },
   };
 

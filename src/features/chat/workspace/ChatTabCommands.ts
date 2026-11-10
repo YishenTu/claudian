@@ -2,6 +2,7 @@ import type { Command, Workspace } from 'obsidian';
 
 import { VIEW_TYPE_CLAUDIAN } from '@/core/types';
 import type { ChatViewHost } from '@/features/chat/ChatFeatureHost';
+import { t } from '@/i18n/i18n';
 
 export interface ChatTabCommandsDeps {
   readonly workspace: Pick<Workspace, 'getLeavesOfType'>;
@@ -36,7 +37,7 @@ export function createChatTabCommands(deps: ChatTabCommandsDeps): Command[] {
   return [
     {
       id: 'new-tab',
-      name: 'New',
+      name: t('chat.tabNavigation.commandNew'),
       checkCallback: (checking: boolean) => {
         if (!canCreateNewTab()) return false;
         if (!checking) void startNew();
@@ -45,7 +46,7 @@ export function createChatTabCommands(deps: ChatTabCommandsDeps): Command[] {
     },
     {
       id: 'new-session',
-      name: 'Replace current conversation',
+      name: t('chat.tabNavigation.commandReplace'),
       checkCallback: (checking: boolean) => {
         const tabManager = getCompactTabManager();
         const activeTab = tabManager?.getActiveTab();
@@ -56,7 +57,7 @@ export function createChatTabCommands(deps: ChatTabCommandsDeps): Command[] {
     },
     {
       id: 'close-current-tab',
-      name: 'Close current tab',
+      name: t('chat.tabNavigation.commandClose'),
       checkCallback: (checking: boolean) => {
         const tabManager = getCompactTabManager();
         if (!tabManager) return false;
@@ -69,7 +70,7 @@ export function createChatTabCommands(deps: ChatTabCommandsDeps): Command[] {
     },
     {
       id: 'rename-current-tab',
-      name: 'Rename current tab',
+      name: t('chat.tabNavigation.commandRename'),
       checkCallback: (checking: boolean) => {
         const view = views.getView();
         if (!view?.isTabBarVisible()) return false;

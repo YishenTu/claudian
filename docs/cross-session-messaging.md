@@ -48,9 +48,25 @@ For other Obsidian plugins that want to send prompts to sessions, see the [Plugi
 
 Without a `sessionId`, the message starts a new session. Omitted choices follow your new-tab defaults. An agent can pick a `provider` (which then needs a `model`), a `model`, and a `reasoning` level. Invalid choices are rejected with the valid options listed. A session started from a project member joins that project.
 
+The new session records the session that started it, and the session list shows the two together. In the sidebar, sessions an agent started, and forks, fold under the session they came from, behind a collapsed row such as **2 Agent Sessions · 1 Fork**:
+
+- A fold sits where its most recently active session would, and opens on its own while it holds the session you are in.
+- A collapsed fold shows its sessions' combined status, such as running or waiting for input.
+- A session keeps its own row when it is pinned, is in a different project, or is linked to different content. Folds stay within Pinned, Projects or Sessions, and nothing folds while you search. The compact history drop-up lists every session.
+- Hovering a session shows which session started it and which sessions it started. Its menu offers **Open parent session** while that session is active.
+- **Archive** and **Restore** on a session also move the sessions folded under it, except running ones, and say how many. A group's **Archive all sessions** includes the sessions folded in it. Deleting a session never deletes the sessions it started.
+
+The link is stored as `origin` (`{ "kind": "session-tool" | "fork", "conversationId": "…" }`) in the session's `.meta.json`. It is written once, when the session is created. Sessions created before this version have no link and keep their own rows.
+
 #### Switching an existing session's model
 
-With an existing session, the message runs on that session's own provider, model and reasoning settings. An agent can pass `model` or `reasoning` to switch them before the message is delivered. The model must belong to the session's provider. The switch stays for the session's later turns and shows in its model controls. A switch cannot be combined with `steer`, and a rejected send changes nothing.
+With an existing session, the message runs on that session's own provider, model and
+reasoning settings. An agent can pass `model` or `reasoning` to switch them before
+the message is delivered. The model must belong to the session's provider. The
+switch stays for the session's later turns and shows in its model controls. A
+switch cannot be combined with `steer`. Invalid model or reasoning choices are
+rejected before switching. Once a model switch commits, later cancellation or
+delivery failure does not undo it.
 
 A reasoning level chosen by an agent applies to that session only and does not change your saved setting, so it resets after Obsidian or the plugin restarts.
 

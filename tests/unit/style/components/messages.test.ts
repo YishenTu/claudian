@@ -146,3 +146,28 @@ describe('Message action row visibility', () => {
     }
   });
 });
+
+describe('Message text size', () => {
+  // Chat prose follows Obsidian's note text size, like its font family (#2052).
+  it.each([
+    ['user', 'claudian-message-user'],
+    ['assistant', 'claudian-message-assistant'],
+  ])('uses the note text size for %s message content', (_role, roleClass) => {
+    const style = document.createElement('style');
+    style.textContent = readFileSync(path.resolve('src/style/components/messages.css'), 'utf8');
+    document.head.appendChild(style);
+
+    const message = document.createElement('div');
+    message.className = `claudian-message ${roleClass}`;
+    message.innerHTML = '<div class="claudian-message-content"><div class="claudian-text-block"><p></p></div></div>';
+    document.body.appendChild(message);
+
+    try {
+      const content = message.querySelector<HTMLElement>('.claudian-message-content')!;
+      expect(window.getComputedStyle(content).getPropertyValue('font-size')).toBe('var(--font-text-size)');
+    } finally {
+      message.remove();
+      style.remove();
+    }
+  });
+});

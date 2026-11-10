@@ -1,23 +1,33 @@
 /** @vitest-environment jsdom */
-import '@/providers';
 
 import { axe } from '@test/helpers/accessibility';
 import { TEST_CODEX_MODEL } from '@test/helpers/codexModels';
 import { controlChangeSettled } from '@test/helpers/ObsidianHost';
 import { CodexRuntimeHarness } from '@test/helpers/providers/codex/CodexRuntimeHarness';
 import { createCodexWorkspaceHarness } from '@test/helpers/providers/codex/CodexWorkspaceHarness';
+import { WSLProcessFixture } from '@test/helpers/WSLProcessFixture';
 import { fireEvent, waitFor, within } from '@testing-library/dom';
 import * as fs from 'fs';
 
 import { getInstallationKey } from '@/core/device/InstallationKey';
 import { ProviderExecutionTransitionError } from '@/core/execution';
+import { registerProviderModules } from '@/core/providers/registerProviderModules';
+import { claudeProviderRegistration } from '@/providers/claude/registration';
 import { CodexExecutionBackend } from '@/providers/codex/execution/CodexExecutionBackend';
+import { codexProviderRegistration } from '@/providers/codex/registration';
 import { getCodexProviderSettings } from '@/providers/codex/settings';
 import { codexChatUIConfig } from '@/providers/codex/ui/CodexChatUIConfig';
 
+registerProviderModules([claudeProviderRegistration, codexProviderRegistration]);
+
 const mockNative = new CodexRuntimeHarness();
+// WSL installation probes reach the shared wsl.exe fake; every other launch is the native Codex peer.
+const wsl = new WSLProcessFixture();
+wsl.binaries.set('/native/codex', { path: '/native/codex', version: 'codex-cli 0.99.0' });
 vi.mock('fs', async () => ({ ...(await vi.importActual<typeof import('fs')>('fs')) }));
-vi.mock('cross-spawn', () => ({ default: vi.fn(() => mockNative.createProcess()) }));
+vi.mock('cross-spawn', () => ({ default: vi.fn((command: string, args?: readonly string[], options?: object) => (
+  /(?:^|[\\/])wsl\.exe$/u.test(command) ? wsl.spawn(command, args, options) : mockNative.createProcess()
+)) }));
 
 const platform = Object.getOwnPropertyDescriptor(process, 'platform')!;
 const fixtures: Awaited<ReturnType<typeof createCodexWorkspaceHarness>>[] = [];
@@ -31,10 +41,10 @@ afterEach(async () => {
   controls.splice(0).forEach(control => control.dispose());
   await Promise.all(fixtures.splice(0).map(fixture => fixture.dispose()));
   Object.defineProperty(process, 'platform', platform);
-  vi.restoreAllMocks(); document.body.replaceChildren();
+  vi.unstubAllEnvs(); vi.restoreAllMocks(); document.body.replaceChildren();
 });
-async function render(config: Record<string, unknown> = {}) {
-  const fixture = await createCodexWorkspaceHarness(config);
+async function render(config: Record<string, unknown> = {}, workingDirectory?: string) {
+  const fixture = await createCodexWorkspaceHarness(config, { workingDirectory });
   fixture.resolveCliPath.mockResolvedValue('/native/codex');
   fixtures.push(fixture);
   const container = document.body.createDiv();
@@ -76,7 +86,8 @@ it.each([false, true])('restores automatic CLI detection without retaining legac
 
 it('checks the committed WSL distro and persists Linux CLI commands through a runtime transition', async () => {
   Object.defineProperty(process, 'platform', { ...platform, value: 'win32' });
-  const h = await render({ installationMethodsByHost: { [getInstallationKey()]: 'wsl' }, wslDistroOverridesByHost: { [getInstallationKey()]: 'Ubuntu' } });
+  vi.stubEnv('SystemRoot', 'C:\\Windows');
+  const h = await render({ installationMethodsByHost: { [getInstallationKey()]: 'wsl' }, wslDistroOverridesByHost: { [getInstallationKey()]: 'Ubuntu' } }, 'C:\\vault');
   await waitFor(() => expect(h.resolveCliPath).toHaveBeenCalledWith('codex', expect.objectContaining({ executionTarget: expect.objectContaining({ distroName: 'Ubuntu' }) })));
   fireEvent.input(within(h.container).getByPlaceholderText('Ubuntu'), { target: { value: 'Debian' } });
   await waitFor(() => expect(h.resolveCliPath).toHaveBeenCalledWith('codex', expect.objectContaining({ executionTarget: expect.objectContaining({ distroName: 'Debian' }) })));

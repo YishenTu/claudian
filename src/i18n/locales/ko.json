@@ -14,8 +14,18 @@
     "none": "없음"
   },
   "chat": {
+    "queue": {
+      "queued": "대기 중",
+      "steering": "방향 조정 중",
+      "steerNow": "지금 방향 조정",
+      "edit": "대기 중인 메시지 편집",
+      "discard": "대기 중인 메시지 삭제",
+      "images": "[이미지]"
+    },
     "promptSuggestionHint": "Tab으로 수락",
     "selectAvailableModel": "전송하기 전에 사용 가능한 모델을 선택하세요.",
+    "reloadingHistory": "이 채팅이 Claudian 외부에서 변경되어 다시 불러오는 중입니다. 완료되면 다시 보내세요.",
+    "changedOutsideWithBackgroundTask": "이전 세션의 백그라운드 작업이 아직 실행 중인 상태에서 이 채팅이 Claudian 외부에서 계속되었습니다. 작업을 중지하거나 완료될 때까지 기다린 후 다시 보내세요.",
     "selectAvailableTitleModel": "Claudian 설정에서 사용 가능한 제목 생성 모델을 선택하세요.",
     "rewind": {
       "confirmMessage": "이 시점으로 되감으시겠습니까? 이 메시지 이후의 파일 변경 사항이 덮어쓰이거나 삭제될 수 있습니다. 이 작업은 실행 취소할 수 없습니다.",
@@ -103,6 +113,53 @@
       "moreContext": "컨텍스트 항목 {count}개 더 표시",
       "showLess": "접기",
       "moreItems": "+{count}개 더"
+    },
+    "welcome": {
+      "sunday": "즐거운 일요일 보내세요",
+      "sundayNamed": "{name}님, 즐거운 일요일 보내세요",
+      "monday": "즐거운 월요일 보내세요",
+      "mondayNamed": "{name}님, 즐거운 월요일 보내세요",
+      "tuesday": "즐거운 화요일 보내세요",
+      "tuesdayNamed": "{name}님, 즐거운 화요일 보내세요",
+      "wednesday": "즐거운 수요일 보내세요",
+      "wednesdayNamed": "{name}님, 즐거운 수요일 보내세요",
+      "thursday": "즐거운 목요일 보내세요",
+      "thursdayNamed": "{name}님, 즐거운 목요일 보내세요",
+      "friday": "즐거운 금요일 보내세요",
+      "fridayNamed": "{name}님, 즐거운 금요일 보내세요",
+      "saturday": "즐거운 토요일 보내세요!",
+      "saturdayNamed": "{name}님, 즐거운 토요일 보내세요",
+      "backAtIt": "다시 시작해 봐요!",
+      "backAtItNamed": "{name}님, 다시 시작해 봐요",
+      "fridayFeeling": "금요일이라 기분이 좋네요",
+      "fridayFeelingNamed": "{name}님, 금요일이라 기분이 좋네요",
+      "weekend": "주말이 왔어요",
+      "weekendNamed": "{name}님, 주말이 왔어요",
+      "sundaySession": "일요일에도 함께할까요?",
+      "morning": "좋은 아침이에요",
+      "morningNamed": "{name}님, 좋은 아침이에요",
+      "coffee": "커피와 함께 {brand} 할 시간인가요?",
+      "afternoon": "좋은 오후예요",
+      "afternoonNamed": "{name}님, 좋은 오후예요",
+      "hey": "안녕하세요",
+      "heyNamed": "{name}님, 안녕하세요",
+      "howGoing": "어떻게 지내세요?",
+      "howGoingNamed": "{name}님, 어떻게 지내세요?",
+      "evening": "좋은 저녁이에요",
+      "eveningNamed": "{name}님, 좋은 저녁이에요",
+      "eveningShort": "저녁 인사드려요",
+      "eveningShortNamed": "{name}님, 저녁 인사드려요",
+      "howDay": "오늘 하루는 어땠나요?",
+      "howDayNamed": "{name}님, 오늘 하루는 어땠나요?",
+      "nightOwl": "안녕하세요, 올빼미족 여러분",
+      "hiHow": "안녕, 잘 지내세요?",
+      "hiHowNamed": "{name}님, 잘 지내세요?",
+      "welcomeBack": "다시 오신 걸 환영해요!",
+      "welcomeBackNamed": "{name}님, 다시 오신 걸 환영해요!",
+      "whatsNew": "새로운 소식 있나요?",
+      "whatsNewNamed": "{name}님, 새로운 소식 있나요?",
+      "returnsNamed": "{name}님이 돌아왔어요!",
+      "right": "정말 맞는 말씀이에요!"
     },
     "worked": "작업 완료",
     "taskNotification": "작업 알림",
@@ -200,6 +257,27 @@
       "agentCount": "에이전트 {count}개",
       "agentCountPlural": "에이전트 {count}개"
     },
+    "subagentUI": {
+      "prompt": "프롬프트",
+      "result": "결과",
+      "taskLabel": "하위 에이전트 작업: {description} - {status}",
+      "backgroundTaskLabel": "백그라운드 작업: {description} - {status}",
+      "statusLabel": "상태: {status}",
+      "initializing": "초기화 중",
+      "error": "오류",
+      "orphaned": "미완료",
+      "completed": "완료",
+      "runningInBackground": "백그라운드에서 실행 중",
+      "running": "실행 중",
+      "orphanedResult": "작업이 완료되기 전에 대화가 종료되었습니다",
+      "lastTool": "마지막 도구: {name}",
+      "toolUse": "도구 사용 {count}회",
+      "toolUses": "도구 사용 {count}회",
+      "tokens": "{value} 토큰",
+      "compactTokens": "{value}k 토큰",
+      "previousRuns": "이전 실행 ({count})",
+      "runLabel": "실행 {number} · {status}"
+    },
     "citations": {
       "memoryUsed": "사용된 메모리",
       "source": "출처 {count}개",
@@ -226,6 +304,10 @@
       "label": "권한 모드",
       "current": "권한 모드: {mode}",
       "changeFailed": "권한 모드를 변경하지 못했습니다",
+      "antigravity": {
+        "auto": "자동",
+        "autoDesc": "작업 공간 편집과 샌드박스 명령을 승인하고 추가 접근을 검토"
+      },
       "claude": {
         "auto": "자동",
         "manual": "수동",
@@ -250,6 +332,11 @@
       "active": "생각 중 {seconds}초…",
       "completed": "{seconds}초 동안 생각함",
       "label": "생각"
+    },
+    "contextUsage": {
+      "label": "컨텍스트 사용량",
+      "details": "컨텍스트 사용량: {details}",
+      "nearLimit": " (한도에 가까워지고 있습니다. 계속하려면 {command}를 실행하세요)"
     },
     "suggestions": {
       "loading": "불러오는 중…",
@@ -347,6 +434,25 @@
       "modeSteer": "실행 중인 턴에 추가",
       "modeInterrupt": "현재 작업 중단"
     },
+    "modelPicker": {
+      "options": "모델 옵션",
+      "provider": "공급자",
+      "modelLabel": "모델: {label}",
+      "unavailable": "모델을 사용할 수 없음",
+      "setup": "모델 설정",
+      "guidance": "공급자 설정에서 활성화된 모델을 선택하세요. 검색에 실패했다면 모델 목록을 새로고침하세요.",
+      "model": "모델",
+      "empty": "사용 가능한 모델이 없습니다. 공급자 설정을 확인하고 검색에 실패했다면 모델 목록을 새로고침하세요.",
+      "changeModelFailed": "모델을 변경하지 못했습니다",
+      "defaultEffort": "기본값",
+      "effortLabel": "사고 수준 {label}",
+      "thinking": "사고",
+      "changeEffortFailed": "사고 수준을 변경하지 못했습니다",
+      "fastActive": "빠른 모드 켜짐",
+      "fast": "빠름",
+      "fastLabel": "빠른 모드: {label}",
+      "changeTierFailed": "서비스 등급을 변경하지 못했습니다"
+    },
     "navigation": {
       "scrollToTop": "맨 위로 스크롤",
       "previousMessage": "이전 메시지",
@@ -354,6 +460,37 @@
       "nextMessage": "다음 메시지",
       "scrollToBottom": "맨 아래로 스크롤",
       "emptyDirectory": "이 대화에는 사용자 프롬프트가 없습니다"
+    },
+    "tabNavigation": {
+      "tabName": "탭 이름",
+      "renameTab": "탭 이름 바꾸기…",
+      "resetName": "탭 이름 초기화",
+      "showNumber": "번호 표시",
+      "showName": "이름 표시",
+      "showTitle": "제목 표시",
+      "closeTab": "탭 닫기",
+      "active": "활성",
+      "needsInput": "사용자 입력 필요",
+      "working": "작업 중",
+      "errorReview": "오류로 중지됨, 검토 가능",
+      "finishedReview": "완료됨, 검토 가능",
+      "idle": "대기 중",
+      "badge": "{title}, {status}",
+      "namedBadge": "{label}({title}), {status}",
+      "newTab": "새 탭",
+      "newConversation": "새 대화",
+      "showWideFailed": "넓은 레이아웃에서 세션을 표시하지 못했습니다",
+      "createTabFailed": "탭을 만들지 못했습니다",
+      "createConversationFailed": "대화를 만들지 못했습니다",
+      "startConversationFailed": "새 대화를 시작하지 못했습니다",
+      "switchFailed": "탭을 전환하지 못했습니다",
+      "closeFailed": "탭을 닫지 못했습니다",
+      "resize": "대화 패널 너비 조절",
+      "previewCloseFailed": "임시 세션 미리보기를 닫지 못했습니다",
+      "commandNew": "새로 만들기",
+      "commandReplace": "현재 대화 바꾸기",
+      "commandClose": "현재 탭 닫기",
+      "commandRename": "현재 탭 이름 바꾸기"
     },
     "projects": {
       "header": "프로젝트",
@@ -375,6 +512,7 @@
         "moveSelectionTo": "세션 {count}개를 프로젝트로 이동…",
         "removeFrom": "프로젝트에서 제거",
         "removeSelectionFrom": "세션 {count}개를 프로젝트에서 제거",
+        "removeSelectionFromPlural": "세션 {count}개를 프로젝트에서 제거",
         "newProject": "새 프로젝트…"
       },
       "deleteConfirm": "“{name}” 프로젝트를 삭제하고 메모리 파일을 휴지통으로 옮길까요? 세션은 프로젝트 없이 유지됩니다.",
@@ -396,6 +534,11 @@
         "name": "이름",
         "nameDesc": "세션 관리자와 멤버 세션에 표시됩니다.",
         "namePlaceholder": "프로젝트 이름",
+        "iconButton": "프로젝트 아이콘: {icon}",
+        "iconDefault": "기본 폴더",
+        "iconPicker": "프로젝트 아이콘 선택",
+        "iconSearch": "아이콘 검색",
+        "iconNoMatches": "일치하는 아이콘이 없습니다.",
         "instructions": "지침",
         "instructionsDesc": "다음 턴부터 모든 멤버 세션의 시스템 프롬프트에 추가됩니다.",
         "memoryPath": "메모리 파일",
@@ -772,6 +915,12 @@
         "desc": "Grok Build에만 전달되는 환경 변수입니다. 사용자 지정 모델의 비밀 값은 이 제공자 범위에 남아 있으며 네이티브 구성에서 env_key로 참조됩니다."
       }
     },
+    "antigravity": {
+      "environment": {
+        "name": "Antigravity 환경 변수",
+        "desc": "Antigravity(agy)에만 전달되는 환경 변수입니다(예: GEMINI_API_KEY)."
+      }
+    },
     "deepseek": {
       "installation": {
         "desc": "자동 감지는 dsh를 우선하고 다음으로 macOS 또는 Windows의 Desktop을 찾습니다. 둘 다 설치된 경우 Desktop의 .app 경로 또는 Windows 설치 폴더를 입력하면 선택할 수 있습니다. 먼저 Desktop을 열어 초기 설정을 완료하세요.",
@@ -780,7 +929,7 @@
       "preset": "프리셋",
       "codeMode": {
         "name": "코드 모드 사용",
-        "desc": "기존 대화를 포함해 각 대화의 다음 턴부터 적용됩니다. 직접 도구와 함께 네이티브 run_code를 추가합니다."
+        "desc": "기존 대화를 포함해 각 대화의 다음 턴부터 적용됩니다. 모델이 도구를 직접 호출하지 않고 네이티브 run_code 프로그램에서 호출합니다."
       },
       "presetPlugins": {
         "name": "추가 프리셋 플러그인",

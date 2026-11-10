@@ -6,10 +6,6 @@
   animation: thinking-pulse 1.5s ease-in-out infinite;
 }
 
-.claudian-thinking.claudian-thinking--compact {
-  color: var(--claudian-compact);
-}
-
 .claudian-thinking-hint {
   color: var(--text-muted);
   font-style: normal;
@@ -18,7 +14,7 @@
 
 .claudian-thinking-label {
   flex: 1;
-  font-size: 13px;
+  font-size: calc(13 * var(--claudian-font-px));
   font-weight: 500;
   color: var(--claudian-brand);
 }
@@ -26,7 +22,7 @@
 /* Thinking block content - tree-branch style */
 .claudian-thinking-content {
   padding-inline-start: 24px;
-  font-size: 13px;
+  font-size: calc(13 * var(--claudian-font-px));
   line-height: 1.5;
   color: var(--text-muted);
   max-height: 400px;
@@ -40,5 +36,5 @@
 
 .claudian-thinking-content code {
   font-family: var(--font-monospace);
-  font-size: 12px;
+  font-size: calc(12 * var(--claudian-font-px));
 }

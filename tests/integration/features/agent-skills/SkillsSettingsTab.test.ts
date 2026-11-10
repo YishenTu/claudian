@@ -9,6 +9,7 @@ import { AGENT_SKILLS_ROOT, CLAUDE_COMMANDS_ROOT, CLAUDE_SKILLS_ROOT } from '@/f
 import { ClaudeSkillSync } from '@/features/agent-skills/ClaudeSkillSync';
 import { SkillsSettingsTab } from '@/features/agent-skills/SkillsSettingsTab';
 import { t } from '@/i18n/i18n';
+import { DebouncedSettingsWriter } from '@/shared/settings/DebouncedSettingsWriter';
 
 function skill(name: string, description = 'Description'): string {
   return `---\nname: ${name}\ndescription: ${description}\n---\nInstructions\n`;
@@ -36,7 +37,8 @@ describe('SkillsSettingsTab', () => {
 
   function render(): HTMLElement {
     const container = document.body.appendChild(document.createElement('main'));
-    tab = new SkillsSettingsTab(container, fixture.host.app, vault.files, fixture.host);
+    tab = new SkillsSettingsTab(container, fixture.host.app, vault.files, fixture.host,
+      new DebouncedSettingsWriter(mutation => fixture.host.mutateSettings(mutation), () => undefined));
     return container;
   }
 

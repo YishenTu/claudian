@@ -26,7 +26,7 @@ body.theme-dark .claudian-resume-dropdown {
 
 .claudian-resume-header {
   padding: 8px 12px;
-  font-size: 12px;
+  font-size: calc(12 * var(--claudian-font-px));
   font-weight: 600;
   color: var(--text-muted);
   text-transform: uppercase;
@@ -43,7 +43,7 @@ body.theme-dark .claudian-resume-dropdown {
   padding: 16px;
   text-align: center;
   color: var(--text-muted);
-  font-size: 13px;
+  font-size: calc(13 * var(--claudian-font-px));
 }
 
 .claudian-resume-item {
@@ -93,7 +93,7 @@ body.theme-dark .claudian-resume-dropdown {
 }
 
 .claudian-resume-item-title {
-  font-size: 13px;
+  font-size: calc(13 * var(--claudian-font-px));
   font-weight: 500;
   color: var(--text-normal);
   white-space: nowrap;
@@ -102,7 +102,7 @@ body.theme-dark .claudian-resume-dropdown {
 }
 
 .claudian-resume-item-date {
-  font-size: 11px;
+  font-size: calc(11 * var(--claudian-font-px));
   color: var(--text-faint);
   margin-top: 2px;
 }

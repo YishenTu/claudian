@@ -1,7 +1,6 @@
 /** @vitest-environment jsdom */
 
 
-import '@/providers';
 
 import { axe } from '@test/helpers/accessibility';
 import { controlChangeSettled } from '@test/helpers/ObsidianHost';
@@ -9,7 +8,12 @@ import { createCodexWorkspaceHarness } from '@test/helpers/providers/codex/Codex
 import { fireEvent, waitFor, within } from '@testing-library/dom';
 
 import { getInstallationKey } from '@/core/device/InstallationKey';
+import { registerProviderModules } from '@/core/providers/registerProviderModules';
+import { claudeProviderRegistration } from '@/providers/claude/registration';
+import { codexProviderRegistration } from '@/providers/codex/registration';
 import { getCodexProviderSettings } from '@/providers/codex/settings';
+
+registerProviderModules([claudeProviderRegistration, codexProviderRegistration]);
 
 const originalPlatform = Object.getOwnPropertyDescriptor(process, 'platform')!;
 const fixtures: Awaited<ReturnType<typeof createCodexWorkspaceHarness>>[] = [];

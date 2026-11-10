@@ -1,9 +1,12 @@
-import '@/providers';
-
 import { createProviderHostFixture } from '@test/helpers/providerRuntimeHost';
 
 import { getInstallationKey } from '@/core/device/InstallationKey';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
+import { registerProviderModules } from '@/core/providers/registerProviderModules';
+import { claudeProviderRegistration } from '@/providers/claude/registration';
+import { piProviderRegistration } from '@/providers/pi/registration';
+
+registerProviderModules([claudeProviderRegistration, piProviderRegistration]);
 
 it.each([
   ['host-native', String.raw`C:\Vault`, String.raw`C:\Vault`],
