@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 
 import { axe } from '@test/helpers/accessibility';
+import { controlChangeSettled } from '@test/helpers/ObsidianHost';
 import { createProviderHostFixture } from '@test/helpers/providerRuntimeHost';
 import { fireEvent, waitFor, within } from '@testing-library/dom';
 
@@ -43,9 +44,11 @@ async function createHost(deepseekEnabled: boolean) {
   let transitionActive = false;
   const mutationsInsideTransition: boolean[] = [];
   const persist = vi.fn(async (_settings: ClaudianSettings): Promise<void> => undefined);
+  const publish = vi.fn(async (): Promise<void> => undefined);
   const fixture = await createProviderHostFixture({
     settings: { providerConfigs: { claude: { enabled: !deepseekEnabled }, deepseek: { enabled: deepseekEnabled } } },
     beforePersist: async settings => { mutationsInsideTransition.push(transitionActive); await persist(settings); },
+    afterPublish: publish,
   });
   const transition = fixture.lifecycle.runTransition.bind(fixture.lifecycle);
   vi.spyOn(fixture.lifecycle, 'runTransition').mockImplementation(async <T>(ids: ProviderId[], run: (scope: ProviderExecutionTransitionScope) => Promise<T>, parent?: ProviderExecutionTransitionScope): Promise<T> => {
@@ -57,7 +60,7 @@ async function createHost(deepseekEnabled: boolean) {
   });
   vi.spyOn(fixture.host, 'runProviderExecutionTransition');
   vi.spyOn(fixture.host, 'applyProviderRuntimeSettings');
-  return { ...fixture, persist, transitions, mutationsInsideTransition };
+  return { ...fixture, persist, publish, transitions, mutationsInsideTransition };
 }
 
 /** Lets on-demand module loading and the validation it gates settle. */
@@ -221,6 +224,63 @@ describe('DeepSeekSettingsTab', () => {
     await waitFor(() => expect(getDeepSeekProviderSettings(host.settings).codeMode).toBe(false));
     expect(host.runProviderExecutionTransition).not.toHaveBeenCalled();
     expect(await axe(container)).toHaveNoViolations();
+  });
+
+  it('restores the committed code-mode state after a rejected save and permits retry', async () => {
+    const { host, persist, container, ui } = await render();
+    const toggle = ui.getByRole('switch', { name: 'Enable code mode' }) as HTMLInputElement;
+    persist.mockRejectedValueOnce(new Error('Settings write failed'));
+
+    fireEvent.click(toggle);
+    await expect(controlChangeSettled(toggle)).rejects.toThrow('Settings write failed');
+
+    expect(getDeepSeekProviderSettings(host.settings).codeMode).toBe(false);
+    expect(toggle.checked).toBe(false);
+    expect(toggle.getAttribute('aria-checked')).toBe('false');
+    expect(persist).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(toggle);
+    await controlChangeSettled(toggle);
+    expect(getDeepSeekProviderSettings(host.settings).codeMode).toBe(true);
+    expect(toggle.checked).toBe(true);
+    expect(persist).toHaveBeenCalledTimes(2);
+    expect(await axe(container)).toHaveNoViolations();
+  });
+
+  it('keeps a later code-mode choice while an earlier save is pending', async () => {
+    const { host, persist, ui } = await render();
+    const toggle = ui.getByRole('switch', { name: 'Enable code mode' }) as HTMLInputElement;
+    let entered!: () => void;
+    const started = new Promise<void>(resolve => { entered = resolve; });
+    let release!: () => void;
+    const held = new Promise<void>(resolve => { release = resolve; });
+    persist.mockImplementationOnce(async () => { entered(); await held; });
+
+    fireEvent.click(toggle);
+    const first = controlChangeSettled(toggle);
+    await started;
+    fireEvent.click(toggle);
+    const latest = controlChangeSettled(toggle);
+    release();
+    await Promise.all([first, latest]);
+
+    expect(getDeepSeekProviderSettings(host.settings).codeMode).toBe(false);
+    expect(toggle.checked).toBe(false);
+    expect(persist).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps a durably saved code-mode choice when later publication fails', async () => {
+    const { host, persist, publish, ui } = await render();
+    const toggle = ui.getByRole('switch', { name: 'Enable code mode' }) as HTMLInputElement;
+    publish.mockRejectedValueOnce(new Error('Publication failed'));
+
+    fireEvent.click(toggle);
+    await expect(controlChangeSettled(toggle)).rejects.toThrow('post-commit publication failed');
+
+    expect(getDeepSeekProviderSettings(host.settings).codeMode).toBe(true);
+    expect(toggle.checked).toBe(true);
+    expect(toggle.getAttribute('aria-checked')).toBe('true');
+    expect(persist).toHaveBeenCalledTimes(1);
   });
 
   it('previews the effective chat preset and applies valid additional plugin rows as a provider runtime change', async () => {
