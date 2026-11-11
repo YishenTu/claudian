@@ -377,6 +377,18 @@ export class VaultFileAdapter {
     }));
   }
 
+  /** True when following the path lands on a directory. A dangling or non-folder link is false. */
+  async isManagedDirectory(resourcePath: string): Promise<boolean> {
+    const normalized = normalizeManagedPath(resourcePath);
+    try {
+      const stat = await fs.stat(this.#resolveManagedDesktopPath(this.#basePath(), normalized));
+      return stat.isDirectory();
+    } catch (error) {
+      if (isNotFound(error)) return false;
+      throw new ManagedResourcePathError(`Could not inspect managed resource: ${normalized}`, { cause: error });
+    }
+  }
+
   /** Renames one directory entry onto its other spelling. Different files and hard links stay collisions. */
   async #renameSameManagedEntry(source: string, target: string): Promise<boolean> {
     if (source === target) return true;
