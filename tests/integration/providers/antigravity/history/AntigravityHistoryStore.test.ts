@@ -3,7 +3,10 @@ import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
+import { testClock } from '@test/helpers/testClock';
+
 import type { ChatMessage } from '@/core/types';
+import { isInterruptedResponse } from '@/features/chat/rendering/ResponseLayout';
 import { loadAntigravityHistory, readAntigravityContextTokens } from '@/providers/antigravity/history/AntigravityHistoryStore';
 
 const FIXTURES = path.resolve('tests/fixtures/providers/antigravity/history');
@@ -208,6 +211,128 @@ describe('loadAntigravityHistory', () => {
       [4, Date.parse('2026-01-01T00:05:04Z')],
     ]);
     expect(messages[1].toolCalls?.[0].resultFormat).toBe('plain');
+  });
+
+  it.each([
+    ['a completed tool without a final reply', 'DONE', 'Command exited with code 0.', false],
+    ['a failed tool without a final reply', 'ERROR', 'Command failed.', false],
+    ['a background launch without a final reply', 'RUNNING', 'Tool is running as a background task with task id: s/task-2', false],
+    // A denial settles session/prompt successfully; it does not cancel the live execution run.
+    ['a permission denial', 'ERROR', 'Encountered error in step execution: permission check failed for unsandboxed command: user denied permission', true],
+  ])('replays %s with the live completion treatment', async (_name, status, content, completed) => {
+    const clock = testClock();
+    const request = userStep(0, 'Run it.', { created_at: clock().toISOString() });
+    clock.advance({ seconds: 1 });
+    const call = replyStep(1, { created_at: clock().toISOString(),
+      tool_calls: [{ args: { CommandLine: 'echo done' }, name: 'run_command' }] });
+    clock.advance({ seconds: 2 });
+    await installSteps([request, call,
+      { content, created_at: clock().toISOString(), status, step_index: 2, type: 'GENERIC' },
+    ]);
+
+    const messages = await loadAntigravityHistory(storeRoot, SESSION_ID);
+    const response = messages[1];
+
+    expect(messages).toHaveLength(2);
+    expect(isInterruptedResponse(response, messages)).toBe(!completed);
+    expect(response.isInterrupt).toBe(completed ? undefined : true);
+    expect(response.durationSeconds).toBe(completed ? 3 : undefined);
+    expect(response.completedAt).toBe(completed ? clock().getTime() : undefined);
+  });
+
+  it('marks a trailing planner with pending tools interrupted, then clears it when the final reply arrives', async () => {
+    const clock = testClock();
+    const request = userStep(0, 'Run it.', { created_at: clock().toISOString() });
+    clock.advance({ seconds: 1 });
+    const call = replyStep(1, { created_at: clock().toISOString(),
+      tool_calls: [{ args: { CommandLine: 'sleep 30' }, name: 'run_command' }] });
+    await installSteps([request, call]);
+
+    const unfinished = await loadAntigravityHistory(storeRoot, SESSION_ID);
+    expect(isInterruptedResponse(unfinished[1], unfinished)).toBe(true);
+    expect(unfinished[1].durationSeconds).toBeUndefined();
+    expect(unfinished[1].completedAt).toBeUndefined();
+    // agy has no terminal marker: this snapshot could be a stopped run or a still-running external client.
+    expect(unfinished[1].toolCalls?.[0].status).toBe('running');
+
+    clock.advance({ seconds: 2 });
+    const result = { content: 'Tool is running as a background task with task id: s/task-2',
+      created_at: clock().toISOString(), status: 'RUNNING', step_index: 2, type: 'GENERIC' };
+    clock.advance({ seconds: 1 });
+    await installSteps([request, call, result, replyStep(3, { content: 'Launched.', created_at: clock().toISOString() })]);
+
+    const finished = await loadAntigravityHistory(storeRoot, SESSION_ID);
+    expect(finished[1].isInterrupt).toBeUndefined();
+    expect(finished[1].durationSeconds).toBe(4);
+    expect(finished[1].toolCalls?.[0].status).toBe('completed');
+  });
+
+  it.each([false, true])('does not mark the segment before a steer interrupted (stopped continuation: %s)', async stopped => {
+    const clock = testClock();
+    const request = userStep(0, 'Run it.', { created_at: clock().toISOString() });
+    clock.advance({ seconds: 1 });
+    const call = replyStep(1, { created_at: clock().toISOString(),
+      tool_calls: [{ args: { CommandLine: 'sleep 8' }, name: 'run_command' }] });
+    clock.advance({ seconds: 1 });
+    const steer = userStep(3, 'Also say BANANA.', { created_at: clock().toISOString() });
+    clock.advance({ seconds: 8 });
+    const result = { content: 'Command exited with code 0.', created_at: clock().toISOString(),
+      status: 'DONE', step_index: 2, type: 'GENERIC' };
+    clock.advance({ seconds: 1 });
+    await installSteps([request, call, result, steer, replyStep(4, {
+      created_at: clock().toISOString(), ...(stopped
+        ? { tool_calls: [{ args: { CommandLine: 'echo BANANA' }, name: 'run_command' }] }
+        : { content: 'BANANA' }),
+    })]);
+
+    const messages = await loadAntigravityHistory(storeRoot, SESSION_ID);
+
+    expect(messages.map(message => message.role)).toEqual(['user', 'assistant', 'user', 'assistant']);
+    expect(messages[1].isInterrupt).toBeUndefined();
+    expect(messages[1].durationSeconds).toBeUndefined();
+    expect(messages[1].completedAt).toBeUndefined();
+    expect(isInterruptedResponse(messages[3], messages)).toBe(stopped);
+    expect(messages[3].durationSeconds).toBe(stopped ? undefined : 9);
+  });
+
+  it('does not infer a stop when a background report splits an unfinished response', async () => {
+    const clock = testClock();
+    const request = userStep(0, 'Investigate.', { created_at: clock().toISOString() });
+    clock.advance({ seconds: 1 });
+    const call = replyStep(1, { created_at: clock().toISOString(),
+      tool_calls: [{ args: { CommandLine: 'sleep 30' }, name: 'run_command' }] });
+    clock.advance({ seconds: 1 });
+    await installSteps([request, call,
+      { content: '<SYSTEM_MESSAGE>\n[Message] sender=s/task-1 content=Task finished\n</SYSTEM_MESSAGE>',
+        created_at: clock().toISOString(), status: 'DONE', step_index: 2, type: 'SYSTEM_MESSAGE' },
+      replyStep(3, { content: 'Done.', created_at: clock().toISOString() }),
+    ]);
+
+    const messages = await loadAntigravityHistory(storeRoot, SESSION_ID);
+
+    expect(messages.map(message => message.role)).toEqual(['user', 'assistant', 'assistant']);
+    expect(messages.map(message => message.isInterrupt)).toEqual([undefined, undefined, undefined]);
+    expect(messages[1].durationSeconds).toBeUndefined();
+    expect(messages[2].content).toBe('Done.');
+  });
+
+  it.each(['empty', 'system notice', 'task report', 'compaction'])('does not invent an interruption for %s without model output', async kind => {
+    const clock = testClock();
+    const request = userStep(0, kind === 'compaction' ? '/compact' : 'Go.', { created_at: clock().toISOString() });
+    clock.advance({ seconds: 1 });
+    const steps = kind === 'empty' ? [] : [{
+      content: kind === 'compaction' ? 'Summary' : `<SYSTEM_MESSAGE>\n[Message] sender=${kind === 'system notice' ? 'system' : 's/task-1'} content=Notice\n</SYSTEM_MESSAGE>`,
+      created_at: clock().toISOString(), source: 'SYSTEM', status: 'DONE', step_index: 1,
+      type: kind === 'compaction' ? 'CHECKPOINT' : 'SYSTEM_MESSAGE',
+    }];
+    await installSteps([request, ...steps]);
+
+    const messages = await loadAntigravityHistory(storeRoot, SESSION_ID);
+
+    expect(messages).toHaveLength(kind === 'empty' || kind === 'system notice' ? 1 : 2);
+    expect(messages.every(message => message.isInterrupt === undefined && message.durationSeconds === undefined)).toBe(true);
+    const blockType = kind === 'task report' ? 'task_notification' : kind === 'compaction' ? 'context_compacted' : undefined;
+    expect(messages[1]?.contentBlocks?.[0].type).toBe(blockType);
   });
 
   it('decodes JSON-encoded arguments when only the short transcript exists', async () => {

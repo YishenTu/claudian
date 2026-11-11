@@ -26,7 +26,7 @@ import { createInputToolbar } from '@/features/chat/composer/toolbar/InputToolba
 import { NavigationSidebar } from '@/features/chat/navigation/NavigationSidebar';
 import { ProjectChip } from '@/features/chat/projects/ProjectChip';
 import { getSessionProviderId } from '@/features/chat/sessions/sessionProvider';
-import { getSessionCapabilities, getSessionChatUIConfig, getSessionSelectedModel, getSessionSettingsSnapshot, type SessionSettingsSnapshot, updateSessionProviderSettings, updateSessionReasoning } from '@/features/chat/sessions/sessionSettings';
+import { getSessionCapabilities, getSessionChatUIConfig, getSessionSelectedModel, getSessionSettingsSnapshot, type SessionSettingsSnapshot, updateSessionReasoning } from '@/features/chat/sessions/sessionSettings';
 import type { SideChatController } from '@/features/chat/side-chat/SideChatController';
 import type {
   PublishedTabRuntimeRef,
@@ -171,7 +171,6 @@ function buildInputToolbar(
     sideChat.updateSideSettings(patch);
     const tab = runtimeRef.requirePublished();
     tab.ui.modelSelector.updateDisplay();
-    tab.ui.modeSelector.updateDisplay();
     tab.ui.effortSelector.updateDisplay();
     tab.ui.permissionToggle.updateDisplay();
     tab.ui.serviceTierToggle.updateDisplay();
@@ -255,9 +254,7 @@ function buildInputToolbar(
         tab.ui.effortSelector.updateDisplay();
         tab.ui.serviceTierToggle.updateDisplay();
         tab.ui.modelSelector.updateDisplay();
-        tab.ui.modeSelector.updateDisplay();
         tab.ui.modelSelector.renderOptions();
-        tab.ui.modeSelector.renderOptions();
         applyProviderUIGating(tab, plugin);
         return;
       }
@@ -318,21 +315,6 @@ function buildInputToolbar(
       tab.ui.serviceTierToggle.updateDisplay();
       tab.ui.modelSelector.updateDisplay();
       tab.ui.modelSelector.renderOptions();
-    },
-    onModeChange: async (mode: string) => {
-      const tab = runtimeRef.requirePublished();
-      if (getSelectedSideChat()) {
-        // Mode selection is provider-owned UI state that side chat does not project.
-        new Notice('Mode selection applies to the main chat.');
-        tab.ui.modeSelector.updateDisplay();
-        return;
-      }
-      await updateSessionProviderSettings(tab.session.runtime, plugin, (settings) => {
-        getSessionChatUIConfig(tab, plugin).applyModeSelection?.(mode, settings);
-      });
-      tab.ui.modeSelector.updateDisplay();
-      tab.ui.modeSelector.renderOptions();
-      onUserModified();
     },
     onEffortLevelChange: async (effort: string) => {
       if (applySideSetting({ reasoning: effort })) return;
@@ -427,7 +409,6 @@ export function buildTabRuntimeUI(
     contextTray,
     ...contextManagers,
     modelSelector: toolbar.modelSelector,
-    modeSelector: toolbar.modeSelector,
     effortSelector: toolbar.effortSelector,
     permissionToggle: toolbar.permissionToggle,
     serviceTierToggle: toolbar.serviceTierToggle,

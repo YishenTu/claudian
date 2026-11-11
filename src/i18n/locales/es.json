@@ -173,7 +173,12 @@
       "resume": "Reanudar conversación",
       "loading": "Cargando conversación…",
       "current": "Sesión actual",
-      "loadFailed": "No se pudo cargar la conversación"
+      "loadFailed": "No se pudo cargar la conversación",
+      "search": "Buscar sesiones",
+      "searchArchived": "Buscar sesiones archivadas",
+      "clearSearch": "Borrar búsqueda",
+      "showArchive": "Mostrar sesiones archivadas",
+      "showSessions": "Mostrar sesiones activas"
     },
     "linkedContent": {
       "label": "Contenido vinculado:",
@@ -468,6 +473,8 @@
       "showNumber": "Mostrar número",
       "showName": "Mostrar nombre",
       "showTitle": "Mostrar título",
+      "moveLeft": "Mover a la izquierda",
+      "moveRight": "Mover a la derecha",
       "closeTab": "Cerrar pestaña",
       "active": "activa",
       "needsInput": "requiere tu intervención",

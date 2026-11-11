@@ -8,8 +8,9 @@ import { followsGrowth } from '@test/helpers/dom/transcriptGeometry';
 import { createChatFeatureHost } from '@test/helpers/features/chat/ChatFeatureHostFixture';
 import { createSessionRuntimePool } from '@test/helpers/features/chat/SessionRuntimePoolHarness';
 import { createHarness, releaseSideChatHarnesses } from '@test/helpers/features/chat/SideChatDOMHarness';
-import { fireEvent, getByRole, waitFor } from '@testing-library/dom';
-import { App, Component } from 'obsidian';
+import { testDate } from '@test/helpers/testClock';
+import { createEvent, fireEvent, getByRole, waitFor } from '@testing-library/dom';
+import { App, Component, TFile } from 'obsidian';
 
 import type { ChatMessage, Conversation } from '@/core/types';
 import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
@@ -415,4 +416,44 @@ it('wakes the mailbox when the user withdraws their queued input', async () => {
     harness.backend.sessions.forEach(session => session.complete());
     await tab.session.turns.drain();
   }
+});
+
+
+it.each([
+  { name: 'caret before the trigger', start: 2, end: 2, click: false },
+  { name: 'caret inside the query', start: 9, end: 9, click: false },
+  { name: 'selected query text', start: 8, end: 10, click: false },
+  { name: 'clicked suggestion after moving the caret', start: 2, end: 2, click: true },
+  { name: 'unchanged completion caret', start: 10, end: 10, click: false },
+  { name: 'clicked suggestion with unchanged caret', start: 10, end: 10, click: true },
+])('admits a mention only for its current completion range: $name', async ({ start, end, click }) => {
+  vi.useRealTimers();
+  const note = Object.assign(new TFile(), { path: 'Notes/A.md', name: 'A.md', basename: 'A', extension: 'md', stat: { mtime: testDate().getTime() } });
+  vi.spyOn(plugin.app.vault, 'getFiles').mockReturnValue([note]);
+  const draft = 'Discuss @A';
+  const input = tab.dom.inputEl;
+  input.value = draft;
+  input.selectionStart = input.selectionEnd = draft.length;
+  input.focus();
+  fireEvent.input(input);
+  const option = await waitFor(() => getByRole(tab.dom.inputComposerEl, 'option', { name: 'Notes/A.md' }));
+  const textbox = getByRole(tab.dom.inputComposerEl, 'textbox', { name: 'Message' });
+  expect(textbox.getAttribute('aria-activedescendant')).toBe(option.id);
+  // These setters dispatch real CodeMirror selection transactions, which do not emit input.
+  input.selectionStart = start;
+  input.selectionEnd = end;
+  const valid = start === draft.length && end === draft.length;
+  const key = createEvent.keyDown(textbox, { key: 'Tab', code: 'Tab' });
+  if (click) {
+    fireEvent.click(option);
+  } else {
+    fireEvent(textbox, key);
+  }
+  expect(key.defaultPrevented).toBe(!click && valid);
+  expect(input.value).toBe(valid ? 'Discuss [[Notes/A.md|A]] ' : draft);
+  expect(tab.ui.composerDropdown.isVisible()).toBe(false);
+  expect(textbox.getAttribute('aria-activedescendant')).toBeNull();
+  expect(document.activeElement).toBe(textbox);
+  expect(await axe(textbox)).toHaveNoViolations();
+  expect(tab.state.messages).toEqual([]);
 });

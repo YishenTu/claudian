@@ -11,7 +11,7 @@ export interface ProviderModelEnablementWarning {
 
 export interface ProviderEnablementWarning {
   hide(): void;
-  showFor(durationMs?: number): void;
+  showFor(): void;
 }
 
 interface StyledProviderWarning {
@@ -74,13 +74,13 @@ export function renderLastEnabledProviderWarning(
     warning.setVisible(false);
   };
 
-  const showFor = (durationMs = LAST_PROVIDER_WARNING_DURATION_MS): void => {
+  const showFor = (): void => {
     hide();
     warning.setVisible(true);
     hideTimer = window.setTimeout(() => {
       hideTimer = null;
       warning.setVisible(false);
-    }, durationMs);
+    }, LAST_PROVIDER_WARNING_DURATION_MS);
   };
 
   return { hide, showFor };

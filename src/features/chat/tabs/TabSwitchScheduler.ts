@@ -42,10 +42,6 @@ export class TabSwitchScheduler {
 
   constructor(private readonly host: TabSwitchSchedulerHost) {}
 
-  get requestRevision(): number {
-    return this.#requestRevision;
-  }
-
   /** Records the newest activation intent; a superseded in-flight switch re-queues it. */
   reserveIntent(tabId: TabId): number {
     const requestRevision = ++this.#requestRevision;

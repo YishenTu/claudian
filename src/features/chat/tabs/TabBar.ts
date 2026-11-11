@@ -5,6 +5,7 @@ import type { TabId } from '@/features/chat/ChatFeatureHost';
 import type { TabBarItem } from '@/features/chat/tabs/ChatTab';
 import { scheduleAnimationFrame } from '@/features/chat/utils/animationFrame';
 import { t } from '@/i18n/i18n';
+import { LiveListSorter } from '@/shared/components/LiveListSorter';
 
 const EXPANDED_TITLE_MAX_LENGTH = 32;
 const TRUNCATED_TITLE_SUFFIX = '...';
@@ -22,6 +23,9 @@ export interface TabBarCallbacks {
 
   /** Called when the user renames a tab (a normalized label) or resets its name (null). */
   onTabLabelChange: (tabId: TabId, label: string | null) => void;
+
+  /** Called when the user moves a tab before another tab, or to the end (null). */
+  onTabMove: (tabId: TabId, beforeTabId: TabId | null) => void;
 
   /** Called when persisted badge display state (title expansion) changes. */
   onDisplayStateChanged?: () => void;
@@ -53,6 +57,15 @@ export class TabBar {
   private items: TabBarItem[] = [];
   private badgeEls = new Map<TabId, HTMLElement>();
   private labelEditor: TabLabelEditor | null = null;
+  /** Drags a badge along the bar while the others slide aside; idle while a rename editor is open. */
+  readonly #sorter = new LiveListSorter({
+    axis: 'x',
+    canStart: () => !this.labelEditor,
+    onDrop: (tabId, targetId, placement) => {
+      this.#moveNextTo(tabId, targetId, placement);
+      return Promise.resolve();
+    },
+  });
   private lastKnownScrollLeft = 0;
   private readonly handleScroll = (): void => {
     this.captureScrollPosition();
@@ -75,6 +88,8 @@ export class TabBar {
    * @param items Tab items to render.
    */
   update(items: TabBarItem[]): void {
+    // A lifted badge and the badges sliding beside it stay put until the drop settles.
+    if (this.#sorter.deferRender(() => this.update(items))) return;
     this.#captureStableScrollPosition();
     const activeElement = this.containerEl.ownerDocument.activeElement;
     const focusedTabId = [...this.badgeEls].find(([, badgeEl]) => badgeEl === activeElement)?.[0];
@@ -104,7 +119,7 @@ export class TabBar {
       this.badgeEls.set(item.id, badgeEl);
       orderedEls.push(badgeEl);
     }
-    for (const staleEl of previousBadgeEls.values()) staleEl.remove();
+    for (const staleEl of previousBadgeEls.values()) this.#removeBadge(staleEl);
 
     // Only out-of-place nodes move, so stable badges and the rename input stay attached.
     let nextEl = this.containerEl.firstElementChild;
@@ -162,6 +177,7 @@ export class TabBar {
     });
     inputEl.value = item.label ?? '';
     badgeEl.replaceWith(editorEl);
+    this.#sorter.detach(badgeEl);
     this.badgeEls.delete(tabId);
     const editor: TabLabelEditor = {
       tabId, editorEl, inputEl, listeners: new AbortController(),
@@ -188,8 +204,12 @@ export class TabBar {
     return true;
   }
 
-  /** Cancels an open rename, for the view's Escape chain; returns whether Escape was consumed. */
+  /**
+   * Cancels a tab drag or an open rename, for the view's Escape chain; returns whether Escape was consumed. The
+   * view's keymap can see Escape before the drag does, so the drag is cancelled here rather than the active turn.
+   */
   handleEscape(): boolean {
+    if (this.#sorter.cancelDrag()) return true;
     if (!this.labelEditor || this.labelEditor.isHeld) return false;
     this.#finishRename(false, true);
     return true;
@@ -252,6 +272,34 @@ export class TabBar {
 
     badgeEl.className = `claudian-tab-badge ${stateClass}`;
     this.#applyBadgeDisplay(badgeEl, item);
+    // Re-registering restores the sort class the state class assignment cleared.
+    this.#sorter.attach([badgeEl], { id: item.id });
+  }
+
+  #removeBadge(badgeEl: HTMLElement): void {
+    this.#sorter.detach(badgeEl);
+    badgeEl.remove();
+  }
+
+  /** Moves a dragged tab beside the tab it was dropped on. */
+  #moveNextTo(tabId: TabId, targetId: TabId, placement: 'before' | 'after'): void {
+    if (placement === 'before') {
+      this.callbacks.onTabMove(tabId, targetId);
+      return;
+    }
+    const remaining = this.items.filter(candidate => candidate.id !== tabId);
+    const targetIndex = remaining.findIndex(candidate => candidate.id === targetId);
+    if (targetIndex < 0) return;
+    this.callbacks.onTabMove(tabId, remaining[targetIndex + 1]?.id ?? null);
+  }
+
+  /** Moves a tab one slot toward the start (-1) or the end (1), as the menu's keyboard path. */
+  #moveBy(tabId: TabId, offset: -1 | 1): void {
+    const index = this.items.findIndex(candidate => candidate.id === tabId);
+    if (index < 0) return;
+    const beforeIndex = offset < 0 ? index - 1 : index + 2;
+    if (beforeIndex < 0 || beforeIndex > this.items.length) return;
+    this.callbacks.onTabMove(tabId, this.items[beforeIndex]?.id ?? null);
   }
 
   #applyBadgeDisplay(badgeEl: HTMLElement, item: TabBarItem): void {
@@ -290,6 +338,19 @@ export class TabBar {
       .setTitle(isTitleExpanded ? t('chat.tabNavigation.showNumber') : hasLabel ? t('chat.tabNavigation.showName') : t('chat.tabNavigation.showTitle'))
       .setIcon(isTitleExpanded ? 'hash' : 'type')
       .onClick(() => this.#toggleBadgeTitle(item.id)));
+    const index = this.items.findIndex(candidate => candidate.id === item.id);
+    if (index > 0) {
+      menu.addItem(menuItem => menuItem
+        .setTitle(t('chat.tabNavigation.moveLeft'))
+        .setIcon('arrow-left')
+        .onClick(() => this.#moveBy(item.id, -1)));
+    }
+    if (index >= 0 && index < this.items.length - 1) {
+      menu.addItem(menuItem => menuItem
+        .setTitle(t('chat.tabNavigation.moveRight'))
+        .setIcon('arrow-right')
+        .onClick(() => this.#moveBy(item.id, 1)));
+    }
     if (item.canClose) {
       menu.addItem(menuItem => menuItem
         .setTitle(t('chat.tabNavigation.closeTab'))
@@ -399,6 +460,7 @@ export class TabBar {
     this.containerEl.empty();
     this.containerEl.removeClass('claudian-tab-badges');
     this.containerEl.removeEventListener('scroll', this.handleScroll);
+    this.#sorter.dispose();
     this.expandedTitleTabIds.clear();
     this.badgeEls.clear();
     this.items = [];

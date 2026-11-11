@@ -2,8 +2,7 @@ import type { ProviderId } from '@/core/providers/types';
 import type { ChatSessionRuntime, SessionIdentity } from '@/features/chat/sessions/ChatSessionRuntime';
 import type { TabLifecycleState } from '@/features/chat/tabs/ChatTab';
 import type { TabIdentity } from '@/features/chat/tabs/TabIdentity';
-import type { TurnCancelOptions } from '@/features/chat/turns/TurnCoordinator';
-import type { TurnCancelReason, TurnCoordinator } from '@/features/chat/turns/TurnCoordinator';
+import type { TurnCoordinator } from '@/features/chat/turns/TurnCoordinator';
 
 /** The identity fields a tab owns; conversation, provider, and draft model belong to its session. */
 export type TabPresentationIdentity = Pick<TabIdentity, 'id' | 'lifecycleState' | 'label'>;
@@ -29,13 +28,9 @@ export class TabSession {
   get acceptsIntents(): boolean { return this.runtime.acceptsIntents; }
   get canNavigateConversation(): boolean { return this.runtime.canNavigateConversation; }
   get hasActiveTurn(): boolean { return this.runtime.hasActiveTurn; }
-  get hasBackgroundWork(): boolean { return this.runtime.hasBackgroundWork; }
   get hasMainBackgroundWork(): boolean { return this.runtime.hasMainBackgroundWork; }
   get isWorking(): boolean { return this.runtime.isWorking; }
 
-  cancelTurn(reason: TurnCancelReason, options?: TurnCancelOptions): boolean {
-    return this.runtime.cancelTurn(reason, options);
-  }
   selectDraft(providerId: ProviderId | null, model: string | null): void {
     this.runtime.selectDraft(providerId, model);
   }

@@ -10,7 +10,6 @@ import type { ChatViewPlacement } from '@/core/types/settings';
 import type { ClaudianView } from '@/features/chat/ClaudianView';
 import type { TabComposerPort } from '@/features/chat/tabs/ChatTab';
 import type { ZenModeController } from '@/features/chat/zen/ZenModeController';
-import { revealWorkspaceLeaf } from '@/utils/obsidianCompat';
 
 /** Identifies a mounted chat view without relying on class identity across reloads. */
 export function isClaudianView(value: unknown): value is ClaudianView {
@@ -123,7 +122,7 @@ export class ClaudianViews {
     this.#toggleHiddenLeaf = leaf;
     const sibling = this.#findMostRecentSibling(leaf);
     if (sibling) {
-      await revealWorkspaceLeaf(this.workspace, sibling);
+      await this.workspace.revealLeaf(sibling);
       return;
     }
     // A chat-only tab group can only hide with its sidebar; zen must not replace it.
@@ -158,7 +157,7 @@ export class ClaudianViews {
         });
       }
 
-      await revealWorkspaceLeaf(workspace, leaf);
+      await workspace.revealLeaf(leaf);
       if (!focusSuperseded && isClaudianView(leaf.view)) {
         if (!focusComposer) {
           leaf.view.focusActiveInput();

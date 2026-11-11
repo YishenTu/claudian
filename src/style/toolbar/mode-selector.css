@@ -1,6 +1,0 @@
-/* Provider mode chip: the provider's active option keeps the brand accent. */
-.claudian-input-toolbar button.claudian-toolbar-chip.claudian-toolbar-chip--accent,
-.claudian-input-toolbar button.claudian-toolbar-chip.claudian-toolbar-chip--accent:is(:hover, :focus, :focus-visible, :active, [aria-expanded='true']),
-.claudian-toolbar-chip--accent .claudian-toolbar-chip-primary {
-  color: var(--claudian-brand);
-}

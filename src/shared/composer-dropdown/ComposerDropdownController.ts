@@ -114,6 +114,10 @@ export class ComposerDropdownController {
     if (this.dismissed) this.#findSourceMatch();
     if (!this.view.isVisible() || event.isComposing) return false;
     if (event.key === 'Tab' && (event.shiftKey || event.ctrlKey || event.metaKey || event.altKey)) return false;
+    if (!this.#hasCurrentMatch()) {
+      this.hide();
+      return false;
+    }
     switch (event.key) {
       case 'ArrowDown':
         if (this.selectedIndex < 0) return false;
@@ -239,7 +243,23 @@ export class ComposerDropdownController {
     return -1;
   }
 
+  #hasCurrentMatch(): boolean {
+    const open = this.#open;
+    const previous = open?.match;
+    const cursor = this.inputEl.selectionStart;
+    if (!previous || cursor === null || cursor !== this.inputEl.selectionEnd) return false;
+    const current = open.source.match(this.inputEl.value, cursor);
+    return !!current && current.start === previous.start && current.end === previous.end
+      && current.query === previous.query && current.trigger === previous.trigger
+      && current.atInputStart === previous.atInputStart;
+  }
+
   #selectIndex(index: number): void {
+    // Caret-only moves do not emit input in either the rich editor or a native textarea.
+    if (!this.#hasCurrentMatch()) {
+      this.hide();
+      return;
+    }
     const item = this.items[index];
     const open = this.#open;
     if (!item || item.kind === 'status' || item.disabled || !open) return;

@@ -307,6 +307,13 @@ export class ClaudianView extends ItemView implements ZenModeSource {
           if (isTabWorkspaceInitialized()) this.updateTabBar();
           persist();
         },
+        onTabOrderChanged: () => {
+          if (isTabWorkspaceInitialized()) {
+            this.updateTabBar();
+            this.notifyConversationNavigationChanged();
+          }
+          persist();
+        },
         onTabWorkChanged: () => {
           if (isTabWorkspaceInitialized()) {
             this.updateTabBar();
@@ -430,6 +437,7 @@ export class ClaudianView extends ItemView implements ZenModeSource {
         void this.handleTabClose(tabId);
       },
       onTabLabelChange: (tabId, label) => this.tabManager?.setTabLabel(tabId, label),
+      onTabMove: (tabId, beforeTabId) => this.tabManager?.moveTab(tabId, beforeTabId),
       onDisplayStateChanged: () => this.tabWorkspace.persist(),
     });
 
@@ -642,6 +650,7 @@ export class ClaudianView extends ItemView implements ZenModeSource {
       const activeTab = this.tabManager?.getActiveTab();
       if (this.sessions.handleEscape()) return false;
       if (this.tabBar?.handleEscape()) return false;
+      if (activeTab?.ui.navigationSidebar.handleEscape()) return false;
       // Menus also consume Escape in the capture phase; this covers a keymap that sees it first.
       if (activeTab?.composer.closeOpenMenu()) return false;
       if (!e.defaultPrevented && activeTab) {

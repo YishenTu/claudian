@@ -502,12 +502,11 @@ describe('Tab provider execution ownership', () => {
       { getProviderCatalogConfig },
     );
     const controls = [
-      tab.ui.modelSelector, tab.ui.modeSelector, tab.ui.effortSelector,
+      tab.ui.modelSelector, tab.ui.effortSelector,
       tab.ui.permissionToggle, tab.ui.serviceTierToggle,
     ];
     const updates = controls.map((control) => vi.spyOn(control, 'updateDisplay'));
-    const optionRenders = [tab.ui.modelSelector, tab.ui.modeSelector]
-      .map((control) => vi.spyOn(control, 'renderOptions'));
+    const optionRenders = [vi.spyOn(tab.ui.modelSelector, 'renderOptions')];
     getProviderCatalogConfig.mockClear();
 
     tab.refreshProviderControls();
@@ -898,7 +897,6 @@ describe('Tab provider execution ownership', () => {
       expect(tab?.ui.fileContextManager).not.toBeNull();
       expect(tab?.ui.imageContextManager).not.toBeNull();
       expect(tab?.ui.modelSelector).not.toBeNull();
-      expect(tab?.ui.modeSelector).not.toBeNull();
       expect(tab?.ui.effortSelector).not.toBeNull();
       expect(tab?.ui.permissionToggle).not.toBeNull();
       expect(tab?.ui.serviceTierToggle).not.toBeNull();
