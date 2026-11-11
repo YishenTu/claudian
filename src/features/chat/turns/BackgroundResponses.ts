@@ -51,7 +51,7 @@ export class BackgroundResponses {
     // Reserve the new reply beside its user, ahead of input admitted after this background turn.
     const target = reserveBackgroundTurn(this.host, { index: index + 2, after: message.id, automatic: false });
     response.spans.push({ afterSequence: event.scope.sequence, user: message, target, events: [] });
-    this.host.state.hasPendingConversationSave = true;
+    this.host.state.markConversationDirty();
     return message;
   }
 

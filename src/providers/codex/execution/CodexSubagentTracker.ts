@@ -25,10 +25,6 @@ export class CodexSubagentTracker {
     private readonly workingDirectory?: () => string,
   ) {}
 
-  hasBackgroundWork(): boolean {
-    return [...this.agents.values()].some(agent => agent.info.status === 'running');
-  }
-
   threadClosed(threadId: string): void {
     const agent = this.agents.get(threadId);
     if (!agent) return;

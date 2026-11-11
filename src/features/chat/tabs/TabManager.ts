@@ -2,10 +2,10 @@ import { type App, Notice } from 'obsidian';
 
 import { type AppTabManagerState, normalizeTabLabel } from '@/core/bootstrap/tabManagerState';
 import type { ProviderId } from '@/core/providers/types';
-import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
+import type { ChatFeatureHost, TabId } from '@/features/chat/ChatFeatureHost';
 import type { ChatSessionRuntime } from '@/features/chat/sessions/ChatSessionRuntime';
 import { type DraftSessionHold, SessionAlreadyAttached, type SessionRevealOptions } from '@/features/chat/sessions/SessionRuntimePool';
-import type { TabBarItem, TabId, TabManagerInterface, TabManagerViewHost } from '@/features/chat/tabs/ChatTab';
+import type { TabBarItem, TabManagerInterface, TabManagerViewHost } from '@/features/chat/tabs/ChatTab';
 import { inheritedDraftSeed } from '@/features/chat/tabs/draftSeed';
 import type { ForkTargetHost } from '@/features/chat/tabs/forking/ForkTarget';
 import { ParkedDrafts } from '@/features/chat/tabs/ParkedDrafts';
@@ -43,7 +43,6 @@ import type {
 } from '@/features/chat/tabs/types';
 import { linkedContentExists, ViewerSlot } from '@/features/chat/tabs/ViewerSlot';
 import type { VaultMentionDataProvider } from '@/shared/mention/VaultMentionDataProvider';
-import { revealWorkspaceLeaf } from '@/utils/obsidianCompat';
 
 type CreateTabOptions = {
   activate?: boolean;
@@ -115,7 +114,6 @@ export class TabManager implements TabManagerInterface {
   readonly viewerSlot: ViewerSlot;
   private destructionPromise: Promise<void> | null = null;
   private shutdownDrainPromise: Promise<void> | null = null;
-  private shutdownSnapshotOpen = false;
 
   constructor(
     plugin: ChatFeatureHost,
@@ -195,7 +193,6 @@ export class TabManager implements TabManagerInterface {
       navigation: this.navigation,
       layoutPolicy,
       forkTargetHost,
-      isShutdownSnapshotOpen: () => this.shutdownSnapshotOpen,
       inheritedSeed: tab => inheritedDraftSeed(this.plugin.projects, tab),
       startNew: (tab, seed) => this.navigation.enqueue(tab, async (isCurrent) => {
         await this.rebindTab(tab, null, isCurrent, { seed });
@@ -461,7 +458,7 @@ export class TabManager implements TabManagerInterface {
 
   private async revealTab(tabId: TabId, isCurrent: () => boolean = () => true, options: SessionRevealOptions = {}): Promise<void> {
     const identity = this.membership.getIdentity(tabId);
-    await revealWorkspaceLeaf(this.plugin.app.workspace, this.view.leaf);
+    await this.plugin.app.workspace.revealLeaf(this.view.leaf);
     if (!isCurrent()) return;
     // Navigation joins teardown so it can choose another owner after attachment release.
     // Duplicate-owner lookup during assembly must not join: it may itself be the close's successor.
@@ -809,6 +806,19 @@ export class TabManager implements TabManagerInterface {
     }
   }
 
+  /**
+   * Moves a tab before another tab, or to the end (null). Order persists with the tab identities;
+   * no tab reloads and the active tab stays active.
+   */
+  moveTab(tabId: TabId, beforeTabId: TabId | null): void {
+    if (!this.isTabLive(tabId) || !this.membership.move(tabId, beforeTabId)) return;
+    try {
+      this.callbacks.onTabOrderChanged?.();
+    } catch {
+      // The order is committed; an observer failure must not roll it back.
+    }
+  }
+
   // ============================================
   // Tab Bar Data
   // ============================================
@@ -876,14 +886,11 @@ export class TabManager implements TabManagerInterface {
 
   /** Synchronously fences new work while preserving state for the shutdown snapshot. */
   beginShutdown(): void {
-    if (this.membership.isDestroyed()) return;
-    this.membership.markDestroyed();
-    this.shutdownSnapshotOpen = true;
+    this.membership.beginShutdown();
   }
 
   /** Seals the final identity snapshot so late runtime callbacks cannot mutate tab state. */
   sealShutdownSnapshot(): void {
-    this.shutdownSnapshotOpen = false;
     this.membership.sealIdentities();
   }
 

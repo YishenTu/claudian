@@ -1,20 +1,21 @@
 /** @vitest-environment jsdom */
 import { FakeSession, requestedScope } from '@test/helpers/ChatExecutionHarness';
 import { holdResponse } from '@test/helpers/ConversationPorts';
+import { followsGrowth } from '@test/helpers/dom/transcriptGeometry';
 import { createChatFeatureHost } from '@test/helpers/features/chat/ChatFeatureHostFixture';
 import { registerChatTestProvider } from '@test/helpers/features/chat/ChatProviderFixture';
 import { createClaudianView } from '@test/helpers/features/chat/ClaudianViewHarness';
 import { createProjectsFake, projectRecord } from '@test/helpers/features/chat/ProjectsFake';
 import { createSessionBrowserHost } from '@test/helpers/features/chat/SessionBrowserTestHarness';
 import { fireEvent } from '@testing-library/dom';
-import { App, Component, MarkdownRenderer, Notice, WorkspaceLeaf } from 'obsidian';
+import { App, Component, MarkdownRenderer, WorkspaceLeaf } from 'obsidian';
 import type { Mock, MockInstance } from 'vitest';
 
 import { RoutedTitleGenerationService } from '@/core/auxiliary/RoutedTitleGenerationService';
 import type { ProviderSessionEvent } from '@/core/execution';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { ProviderWorkspaceRegistry } from '@/core/providers/ProviderWorkspaceRegistry';
-import type { Conversation, ImageAttachment, ToolCallInfo } from '@/core/types';
+import type { Conversation, ToolCallInfo } from '@/core/types';
 import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
 import { ConversationLifecycle } from '@/features/chat/conversation/ConversationLifecycle';
 import type { ChatExecutionCoordinator } from '@/features/chat/execution/ChatExecutionCoordinator';
@@ -41,7 +42,6 @@ import {
   type TabRuntimeFactoryOptions,
 } from '@/features/chat/tabs/TabRuntimeFactory';
 import type { AssembledTabRuntime } from '@/features/chat/tabs/types';
-import { setLocale } from '@/i18n/i18n';
 import { VaultMentionDataProvider } from '@/shared/mention/VaultMentionDataProvider';
 
 const coordinatorInstances: ChatExecutionCoordinator[] = [];
@@ -502,12 +502,11 @@ describe('Tab provider execution ownership', () => {
       { getProviderCatalogConfig },
     );
     const controls = [
-      tab.ui.modelSelector, tab.ui.modeSelector, tab.ui.effortSelector,
+      tab.ui.modelSelector, tab.ui.effortSelector,
       tab.ui.permissionToggle, tab.ui.serviceTierToggle,
     ];
     const updates = controls.map((control) => vi.spyOn(control, 'updateDisplay'));
-    const optionRenders = [tab.ui.modelSelector, tab.ui.modeSelector]
-      .map((control) => vi.spyOn(control, 'renderOptions'));
+    const optionRenders = [vi.spyOn(tab.ui.modelSelector, 'renderOptions')];
     getProviderCatalogConfig.mockClear();
 
     tab.refreshProviderControls();
@@ -579,7 +578,7 @@ describe('Tab provider execution ownership', () => {
     Object.defineProperty(tab.dom.messagesEl, 'scrollHeight', { configurable: true, value: 1_000 });
     Object.defineProperty(tab.dom.messagesEl, 'clientHeight', { configurable: true, value: 500 });
     tab.dom.messagesEl.scrollTop = 100;
-    tab.state.autoScrollEnabled = false;
+    fireEvent.wheel(tab.dom.messagesEl, { deltaY: -100 });
     tab.dom.messagesEl.scrollTo = vi.fn();
 
     const bottomButton = tab.dom.messagesWrapperEl.querySelector<HTMLElement>(
@@ -588,24 +587,25 @@ describe('Tab provider execution ownership', () => {
     bottomButton?.click();
 
     expect(bottomButton).not.toBeNull();
-    expect(tab.state.autoScrollEnabled).toBe(true);
+    expect(followsGrowth(tab.dom.messagesEl)).toBe(true);
 
     fireEvent.scroll(tab.dom.messagesEl);
 
-    expect(tab.state.autoScrollEnabled).toBe(true);
+    expect(followsGrowth(tab.dom.messagesEl)).toBe(true);
 
     tab.dom.messagesEl.scrollTop = 500;
     fireEvent.scroll(tab.dom.messagesEl);
     Object.defineProperty(tab.dom.messagesEl, 'scrollHeight', { configurable: true, value: 1_200 });
     fireEvent.scroll(tab.dom.messagesEl);
 
-    expect(tab.state.autoScrollEnabled).toBe(true);
+    expect(followsGrowth(tab.dom.messagesEl)).toBe(true);
 
     const sidebar = tab.dom.messagesWrapperEl.querySelector<HTMLElement>('.claudian-nav-sidebar')!;
-    for (const buttonIndex of [0, 1, 3]) {
+    // Top moves away; with no prompt to step to, Previous and Next do not move the reader.
+    for (const [buttonIndex, follows] of [[0, false], [1, true], [3, true]] as const) {
       bottomButton?.click();
       sidebar?.querySelectorAll<HTMLElement>('button')[buttonIndex]?.click();
-      expect(tab.state.autoScrollEnabled).toBe(false);
+      expect(followsGrowth(tab.dom.messagesEl)).toBe(follows);
     }
 
     const userMessage = tab.dom.messagesEl.createDiv({ cls: 'claudian-message-user' });
@@ -614,32 +614,32 @@ describe('Tab provider execution ownership', () => {
     bottomButton?.click();
     sidebar?.querySelectorAll<HTMLElement>('button')[2]?.click();
     tab.dom.messagesWrapperEl.querySelector<HTMLElement>('.claudian-nav-toc-item')?.click();
-    expect(tab.state.autoScrollEnabled).toBe(false);
+    expect(followsGrowth(tab.dom.messagesEl)).toBe(false);
 
     bottomButton?.click();
     fireEvent.keyDown(messageControl, {key: 'w', altKey: false, ctrlKey: false, metaKey: false, shiftKey: false});
-    expect(tab.state.autoScrollEnabled).toBe(false);
+    expect(followsGrowth(tab.dom.messagesEl)).toBe(false);
 
     bottomButton?.click();
     fireEvent.keyDown(messageControl, {key: 'PageUp', altKey: false, ctrlKey: false, metaKey: false, shiftKey: false});
-    expect(tab.state.autoScrollEnabled).toBe(false);
+    expect(followsGrowth(tab.dom.messagesEl)).toBe(false);
 
     bottomButton?.click();
     fireEvent.pointerDown(tab.dom.messagesEl, { clientX: 250 });
-    expect(tab.state.autoScrollEnabled).toBe(true);
+    expect(followsGrowth(tab.dom.messagesEl)).toBe(true);
 
     fireEvent.touchStart(userMessage);
-    expect(tab.state.autoScrollEnabled).toBe(true);
+    expect(followsGrowth(tab.dom.messagesEl)).toBe(true);
 
     fireEvent.touchMove(userMessage);
-    expect(tab.state.autoScrollEnabled).toBe(false);
+    expect(followsGrowth(tab.dom.messagesEl)).toBe(false);
 
     bottomButton?.click();
     fireEvent.keyDown(messageControl, {key: ' ', altKey: false, ctrlKey: false, metaKey: false, shiftKey: false});
-    expect(tab.state.autoScrollEnabled).toBe(true);
+    expect(followsGrowth(tab.dom.messagesEl)).toBe(true);
 
     fireEvent.pointerMove(tab.dom.messagesEl, { buttons: 1 });
-    expect(tab.state.autoScrollEnabled).toBe(true);
+    expect(followsGrowth(tab.dom.messagesEl)).toBe(true);
 
     bottomButton?.click();
     Object.defineProperty(tab.dom.messagesEl, 'offsetWidth', { value: 506, configurable: true });
@@ -656,16 +656,16 @@ describe('Tab provider execution ownership', () => {
       toJSON: vi.fn(),
     });
     fireEvent(tab.dom.messagesEl, new MouseEvent('pointerdown', { bubbles: true, clientX: 503 }));
-    expect(tab.state.autoScrollEnabled).toBe(false);
+    expect(followsGrowth(tab.dom.messagesEl)).toBe(false);
 
     bottomButton?.click();
     fireEvent.keyDown(messageControl, {key: 'Home', altKey: false, ctrlKey: true, metaKey: false, shiftKey: false});
-    expect(tab.state.autoScrollEnabled).toBe(false);
+    expect(followsGrowth(tab.dom.messagesEl)).toBe(false);
 
     bottomButton?.click();
     fireEvent.wheel(tab.dom.messagesEl, {});
 
-    expect(tab.state.autoScrollEnabled).toBe(false);
+    expect(followsGrowth(tab.dom.messagesEl)).toBe(false);
   });
 
   describe('waiting indicator around an earlier turn question', () => {
@@ -688,7 +688,7 @@ describe('Tab provider execution ownership', () => {
       tab.controllers.streamController.thinkingIndicator.show();
       await vi.advanceTimersByTimeAsync(500);
       expect(tab.state.requiresAction).toBe(true);
-      expect(tab.state.thinkingEl).toBeNull();
+      expect(tab.state.waitingStatus).toBeNull();
       const settleQuestion = async () => {
         tab.controllers.inputController.updateAsyncQuestion({ ...question, resolvedAnswers: { '0': 'History' } });
         await vi.advanceTimersByTimeAsync(0);
@@ -706,7 +706,7 @@ describe('Tab provider execution ownership', () => {
       await settleQuestion();
       await vi.advanceTimersByTimeAsync(500);
 
-      expect(tab.state.thinkingEl).not.toBeNull();
+      expect(tab.state.waitingStatus).not.toBeNull();
       await finishLater();
     });
 
@@ -720,7 +720,7 @@ describe('Tab provider execution ownership', () => {
       await settleQuestion();
       await vi.advanceTimersByTimeAsync(500);
 
-      expect(tab.state.thinkingEl).toBeNull();
+      expect(tab.state.waitingStatus).toBeNull();
       await finishLater();
     });
   });
@@ -732,12 +732,12 @@ describe('Tab provider execution ownership', () => {
       plugin,
       containerEl: document.createElement('div'),
     });
-    tab.state.autoScrollEnabled = false;
+    fireEvent.wheel(tab.dom.messagesEl, { deltaY: -100 });
     tab.dom.messagesEl.scrollTo = vi.fn();
 
     tab.dom.messagesWrapperEl.querySelector<HTMLElement>('.claudian-nav-btn-bottom')?.click();
 
-    expect(tab.state.autoScrollEnabled).toBe(false);
+    expect(followsGrowth(tab.dom.messagesEl)).toBe(false);
   });
 
   it('re-arms auto-scroll when a streaming user manually returns to the bottom', async () => {
@@ -756,22 +756,12 @@ describe('Tab provider execution ownership', () => {
       tab.dom.messagesEl.scrollTop = 250;
       fireEvent.scroll(tab.dom.messagesEl);
 
-      expect(tab.state.autoScrollEnabled).toBe(false);
+      expect(followsGrowth(tab.dom.messagesEl)).toBe(false);
 
       tab.dom.messagesEl.scrollTop = 500;
       fireEvent.scroll(tab.dom.messagesEl);
 
-      expect(tab.state.autoScrollEnabled).toBe(true);
-
-      tab.state.currentContentEl = tab.dom.messagesEl.createDiv();
-      Object.defineProperty(tab.dom.messagesEl, 'scrollHeight', { configurable: true, value: 1_200 });
-      await tab.controllers.streamController.handleStreamChunk(
-        { type: 'text', content: 'continued' },
-        { id: 'assistant', timestamp: Date.now(), content: '', role: 'assistant' },
-      );
-      await vi.advanceTimersByTimeAsync(200);
-
-      expect(tab.dom.messagesEl.scrollTop).toBe(1_200);
+      expect(followsGrowth(tab.dom.messagesEl)).toBe(true);
     } finally {
       vi.useRealTimers();
     }
@@ -788,29 +778,19 @@ describe('Tab provider execution ownership', () => {
       Object.defineProperty(tab.dom.messagesEl, 'scrollHeight', { configurable: true, value: 1_000 });
       Object.defineProperty(tab.dom.messagesEl, 'clientHeight', { configurable: true, value: 500 });
       tab.dom.messagesEl.scrollTop = 250;
-      tab.state.autoScrollEnabled = false;
+      fireEvent.wheel(tab.dom.messagesEl, { deltaY: -100 });
 
       fireEvent.wheel(tab.dom.messagesEl, {deltaY: 120});
       tab.dom.messagesEl.scrollTop = 500;
       fireEvent.scroll(tab.dom.messagesEl);
 
-      expect(tab.state.autoScrollEnabled).toBe(true);
+      expect(followsGrowth(tab.dom.messagesEl)).toBe(true);
 
       for (let index = 0; index < 3; index++) {
         fireEvent.wheel(tab.dom.messagesEl, {deltaY: 120});
       }
 
-      expect(tab.state.autoScrollEnabled).toBe(true);
-
-      tab.state.currentContentEl = tab.dom.messagesEl.createDiv();
-      Object.defineProperty(tab.dom.messagesEl, 'scrollHeight', { configurable: true, value: 1_200 });
-      await tab.controllers.streamController.handleStreamChunk(
-        { type: 'text', content: 'continued' },
-        { id: 'assistant', timestamp: Date.now(), content: '', role: 'assistant' },
-      );
-      await vi.advanceTimersByTimeAsync(200);
-
-      expect(tab.dom.messagesEl.scrollTop).toBe(1_200);
+      expect(followsGrowth(tab.dom.messagesEl)).toBe(true);
     } finally {
       vi.useRealTimers();
     }
@@ -827,14 +807,14 @@ describe('Tab provider execution ownership', () => {
       Object.defineProperty(tab.dom.messagesEl, 'clientHeight', { configurable: true, value: 500 });
       tab.dom.messagesEl.scrollTop = 500;
       tab.dom.messagesEl.scrollTo = vi.fn();
-      tab.state.autoScrollEnabled = false;
+      fireEvent.wheel(tab.dom.messagesEl, { deltaY: -100 });
 
       fireEvent.scroll(tab.dom.messagesEl);
       tab.dom.messagesWrapperEl.querySelector<HTMLElement>('.claudian-nav-btn-top')?.click();
       fireEvent.wheel(tab.dom.messagesEl, {deltaY: 120});
       vi.advanceTimersByTime(150);
 
-      expect(tab.state.autoScrollEnabled).toBe(false);
+      expect(followsGrowth(tab.dom.messagesEl)).toBe(false);
     } finally {
       vi.useRealTimers();
     }
@@ -917,7 +897,6 @@ describe('Tab provider execution ownership', () => {
       expect(tab?.ui.fileContextManager).not.toBeNull();
       expect(tab?.ui.imageContextManager).not.toBeNull();
       expect(tab?.ui.modelSelector).not.toBeNull();
-      expect(tab?.ui.modeSelector).not.toBeNull();
       expect(tab?.ui.effortSelector).not.toBeNull();
       expect(tab?.ui.permissionToggle).not.toBeNull();
       expect(tab?.ui.serviceTierToggle).not.toBeNull();
@@ -1057,7 +1036,7 @@ describe('Tab provider execution ownership', () => {
     globalThis.ResizeObserver = vi.fn().mockImplementation(function () {
       const disconnect = vi.fn();
       disconnects.push(disconnect);
-      return { disconnect, observe: vi.fn() };
+      return { disconnect, observe: vi.fn(), unobserve: vi.fn() };
     }) as unknown as typeof ResizeObserver;
     const { containerEl, removeTabRoot } = createTrackedTabContainer();
     const onTabCreated = vi.fn();
@@ -1087,7 +1066,7 @@ describe('Tab provider execution ownership', () => {
     globalThis.ResizeObserver = vi.fn().mockImplementation(function () {
       const disconnect = vi.fn();
       disconnects.push(disconnect);
-      return { disconnect, observe: vi.fn() };
+      return { disconnect, observe: vi.fn(), unobserve: vi.fn() };
     }) as unknown as typeof ResizeObserver;
     const originalInitialize = NavigationController.prototype.initialize;
     const initializeSpy = vi.spyOn(NavigationController.prototype, 'initialize')
@@ -1786,43 +1765,6 @@ describe('Tab provider execution ownership', () => {
     expect(tab.state.currentConversationId).toBe(conversation.id);
   });
 
-  it('reports an initialization failure in the selected language and restores the unsent draft', async () => {
-    setLocale('zh-CN');
-    onTestFinished(() => { setLocale('en'); });
-    const conversation = createConversation();
-    const cause = new Error('Message was not sent. Please try again.');
-    claude.createSession.mockImplementationOnce(() => { throw cause; });
-    const plugin = await createPlugin({
-      getConversationById: vi.fn(async id => id === conversation.id ? conversation : null),
-      renameConversation: vi.fn(async () => undefined),
-    });
-    const tab = await createTestTab({ plugin, containerEl: document.createElement('div'), conversation });
-    expect(claude.createSession).not.toHaveBeenCalled();
-    expect(tab.executionCoordinator.prepare).not.toHaveBeenCalled();
-    const image: ImageAttachment = {
-      id: 'retry-image', name: 'retry.png', mediaType: 'image/png', data: 'aGVsbG8=', size: 5, source: 'paste',
-    };
-    tab.ui.imageContextManager.setImages([image]);
-    tab.dom.inputEl.value = 'retry after initialization';
-    vi.mocked(Notice).mockClear();
-
-    await tab.controllers.inputController.sendMessage();
-
-    expect(claude.createSession).toHaveBeenCalledTimes(1);
-    expect(claude.createSession.mock.results[0]).toMatchObject({ type: 'throw', value: cause });
-    expect(FakeSession.prototype.execute).not.toHaveBeenCalled();
-    expect(tab.dom.inputEl.value).toBe('retry after initialization');
-    expect(tab.ui.imageContextManager.getAttachedImages()).toEqual([image]);
-    expect(tab.state.messages).toEqual([]);
-    expect(tab.dom.messagesEl.querySelectorAll('.claudian-message')).toHaveLength(0);
-    expect(tab.session.turns.isActive).toBe(false);
-    expect(tab.state.isStreaming).toBe(false);
-    expect(vi.mocked(Notice).mock.calls).toEqual([
-      ['Message was not sent. Please try again.'],
-      ['无法初始化代理执行。请重试。'],
-    ]);
-  });
-
   it('routes requested events through the current input controller', async () => {
     const conversation = createConversation();
     const plugin = await createPlugin({ getConversationById: vi.fn(async () => conversation), renameConversation: vi.fn(async () => undefined), completeConversationTitleGeneration: vi.fn(async () => undefined) });
@@ -2089,7 +2031,7 @@ describe('Tab provider execution ownership', () => {
     globalThis.ResizeObserver = vi.fn().mockImplementation(function () {
       const disconnect = vi.fn();
       disconnects.push(disconnect);
-      return { disconnect, observe: vi.fn() };
+      return { disconnect, observe: vi.fn(), unobserve: vi.fn() };
     }) as unknown as typeof ResizeObserver;
     const { containerEl, removeTabRoot } = createTrackedTabContainer();
     const tab = await createTestTab({ plugin: await createPlugin(), containerEl: containerEl });

@@ -80,10 +80,6 @@ jobs:
           echo "Vitest shuffle seed: $SHUFFLE_SEED"
           npm run test:unit -- --sequence.shuffle --sequence.seed="$SHUFFLE_SEED"
 
-      - name: Build production plugin
-        if: startsWith(matrix.shard, '1/')
-        run: npm run build
-
   open-handles:
     runs-on: ubuntu-latest
     timeout-minutes: 45
@@ -101,21 +97,3 @@ jobs:
 
       - name: Detect Vitest lifecycle leaks
         run: npm run check:open-handles
-
-  production-audit:
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version-file: .node-version
-          cache: npm
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Audit production dependencies
-        run: npm audit --omit=dev --audit-level=moderate

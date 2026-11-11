@@ -21,7 +21,6 @@ export class CodexAppServerProcess {
       env: launchSpec.env,
       windowsVerbatimArguments: launchSpec.windowsVerbatimArguments,
       stderrBufferLimit: STDERR_BUFFER_LIMIT,
-      stdio: ['pipe', 'pipe', 'pipe'],
     });
     this.process.onClose(({ code, signal }) => {
       for (const callback of [...this.exitCallbacks]) {
@@ -43,11 +42,6 @@ export class CodexAppServerProcess {
   get stdout(): Readable {
     this.#assertStarted();
     return this.process.stdout;
-  }
-
-  get stderr(): Readable {
-    this.#assertStarted();
-    return this.process.stderr;
   }
 
   start(): void {

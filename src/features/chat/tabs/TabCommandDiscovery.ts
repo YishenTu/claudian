@@ -13,9 +13,8 @@ import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { ProviderWorkspaceRegistry } from '@/core/providers/ProviderWorkspaceRegistry';
 import type { ProviderId } from '@/core/providers/types';
 import type { Conversation, SlashCommand } from '@/core/types';
-import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
+import type { ChatFeatureHost, TabId } from '@/features/chat/ChatFeatureHost';
 import { getSessionProviderId } from '@/features/chat/sessions/sessionProvider';
-import type { TabId } from '@/features/chat/tabs/ChatTab';
 import type { TabIdentity } from '@/features/chat/tabs/TabIdentity';
 import type { AssembledTabRuntime, ProviderCatalogInfo, TabMembershipView } from '@/features/chat/tabs/types';
 import { throwIfAborted } from '@/utils/abort';
@@ -24,6 +23,14 @@ type ProviderRuntimeCommandCacheEntry = {
   result: ProviderCommandDiscoveryResult<SlashCommand>;
   key: string;
 };
+
+/** Everything discovery keeps for one tab; released together. */
+interface TabDiscoveryRecord {
+  /** Advances when the tab's command context changes, fencing cached and in-flight answers. */
+  commandContextRevision: number;
+  store: ProviderCommandDiscoveryStore<ProviderCommandEntry> | null;
+  runtimeCommands: ProviderRuntimeCommandCacheEntry | null;
+}
 
 type ProviderCommandLookup = {
   commandContextRevision: number;
@@ -51,13 +58,8 @@ const ABORT_MESSAGE = 'Provider command discovery aborted';
  * it never runs eagerly and never creates chat sessions.
  */
 export class TabCommandDiscovery {
-  private readonly providerRuntimeCommandCache = new Map<TabId, ProviderRuntimeCommandCacheEntry>();
-  private readonly providerCommandDiscoveryStores = new Map<
-    TabId,
-    ProviderCommandDiscoveryStore<ProviderCommandEntry>
-  >();
+  private readonly tabs = new Map<TabId, TabDiscoveryRecord>();
   private readonly providerResourceGenerations = new Map<ProviderId, number>();
-  private readonly tabCommandContextRevisions = new Map<TabId, number>();
 
   /** Membership and liveness are revalidated through `membership` across every await. */
   constructor(
@@ -67,14 +69,14 @@ export class TabCommandDiscovery {
 
   /** Starts per-tab discovery metadata for a newly assembled runtime. */
   registerTab(tabId: TabId): void {
-    this.tabCommandContextRevisions.set(tabId, 0);
+    this.#record(tabId).commandContextRevision = 0;
     this.#ensureDiscoveryStore(tabId);
   }
 
   /** Invalidates cached and in-flight discovery after a tab's command context changes. */
   invalidateTab(tabId: TabId): void {
     if (!this.#advanceCommandContextRevision(tabId)) return;
-    this.providerCommandDiscoveryStores.get(tabId)?.invalidate();
+    this.tabs.get(tabId)?.store?.invalidate();
   }
 
   invalidateProviders(providerIds?: ProviderId | ProviderId[]): void {
@@ -149,19 +151,22 @@ export class TabCommandDiscovery {
 
   /** Cancels and forgets a tab's discovery state. */
   releaseTab(tabId: TabId): void {
-    this.providerCommandDiscoveryStores.get(tabId)?.dispose();
-    this.providerRuntimeCommandCache.delete(tabId);
-    this.providerCommandDiscoveryStores.delete(tabId);
-    this.tabCommandContextRevisions.delete(tabId);
+    this.tabs.get(tabId)?.store?.dispose();
+    this.tabs.delete(tabId);
   }
 
   /** Tab IDs that still own any discovery state, including state outliving membership. */
   getTrackedTabIds(): TabId[] {
-    return [...new Set<TabId>([
-      ...this.providerRuntimeCommandCache.keys(),
-      ...this.providerCommandDiscoveryStores.keys(),
-      ...this.tabCommandContextRevisions.keys(),
-    ])];
+    return [...this.tabs.keys()];
+  }
+
+  #record(tabId: TabId): TabDiscoveryRecord {
+    let record = this.tabs.get(tabId);
+    if (!record) {
+      record = { commandContextRevision: 0, runtimeCommands: null, store: null };
+      this.tabs.set(tabId, record);
+    }
+    return record;
   }
 
   /** Releases every tab's discovery state. */
@@ -234,7 +239,7 @@ export class TabCommandDiscovery {
     context: ProviderCommandContext,
     signal: AbortSignal,
   ): Promise<ProviderCommandDiscoveryResult<SlashCommand>> {
-    const cached = this.providerRuntimeCommandCache.get(tab.id);
+    const cached = this.tabs.get(tab.id)?.runtimeCommands;
     if (cached?.key === context.cacheKey) return cached.result;
 
     const result = await loadProviderCommands(providerId, {
@@ -244,10 +249,11 @@ export class TabCommandDiscovery {
       signal,
     });
     if (this.#isContextCurrent(tab, providerId, context)) {
-      if (result.status === 'ready' || result.status === 'empty') {
-        this.providerRuntimeCommandCache.set(tab.id, { key: context.cacheKey, result });
-      } else {
-        this.providerRuntimeCommandCache.delete(tab.id);
+      const cacheable = result.status === 'ready' || result.status === 'empty';
+      if (cacheable) this.#record(tab.id).runtimeCommands = { key: context.cacheKey, result };
+      else {
+        const record = this.tabs.get(tab.id);
+        if (record) record.runtimeCommands = null;
       }
     }
     return result;
@@ -257,7 +263,7 @@ export class TabCommandDiscovery {
     tab: AssembledTabRuntime,
     providerId: ProviderId,
   ): Promise<ProviderCommandLookup> {
-    const commandContextRevision = this.tabCommandContextRevisions.get(tab.id) ?? 0;
+    const commandContextRevision = this.tabs.get(tab.id)?.commandContextRevision ?? 0;
     const conversationId = tab.conversationId;
     const conversation = conversationId
       ? await this.plugin.getConversationById(conversationId)
@@ -282,11 +288,9 @@ export class TabCommandDiscovery {
     const tab = this.membership.getTab(tabId);
     if (!tab || !this.membership.isTabStateMutable(tab)) return false;
 
-    this.tabCommandContextRevisions.set(
-      tabId,
-      (this.tabCommandContextRevisions.get(tabId) ?? 0) + 1,
-    );
-    this.providerRuntimeCommandCache.delete(tabId);
+    const record = this.#record(tabId);
+    record.commandContextRevision += 1;
+    record.runtimeCommands = null;
     return true;
   }
 
@@ -297,7 +301,7 @@ export class TabCommandDiscovery {
   ): boolean {
     return this.#isTabProviderCurrent(tab, providerId)
       && tab.conversationId === context.tab.conversationId
-      && (this.tabCommandContextRevisions.get(tab.id) ?? 0) === context.commandContextRevision
+      && (this.tabs.get(tab.id)?.commandContextRevision ?? 0) === context.commandContextRevision
       && this.plugin.providerHost.executionLifecycleRegistry.getProviderGeneration(providerId)
         === context.providerGeneration
       && this.#getProviderResourceGeneration(providerId) === context.resourceGeneration;
@@ -354,10 +358,8 @@ export class TabCommandDiscovery {
   #ensureDiscoveryStore(
     tabId: TabId,
   ): ProviderCommandDiscoveryStore<ProviderCommandEntry> {
-    const existing = this.providerCommandDiscoveryStores.get(tabId);
-    if (existing) {
-      return existing;
-    }
+    const record = this.#record(tabId);
+    if (record.store) return record.store;
 
     const discovery = new ProviderCommandDiscoveryStore(
       signal => this.#getProviderCommandDiscovery(tabId, signal),
@@ -378,7 +380,7 @@ export class TabCommandDiscovery {
         },
       },
     );
-    this.providerCommandDiscoveryStores.set(tabId, discovery);
+    record.store = discovery;
     return discovery;
   }
 }

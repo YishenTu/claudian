@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { createConversationControllerDeps } from '@test/helpers/features/chat/ConversationControllerFixture';
+import { testDate } from '@test/helpers/testClock';
 import type { Mock } from 'vitest';
 
 import { ConversationController } from '@/features/chat/conversation/ConversationController';
@@ -139,7 +140,7 @@ describe('ConversationController', () => {
       deps.state.currentConversationId = 'conv-1';
       deps.state.messages = [{ id: '1', role: 'user', content: 'test', timestamp: Date.now() }];
 
-      deps.state.hasPendingConversationSave = true;
+      deps.state.markConversationDirty();
 
       await controller.save(false);
 
@@ -148,6 +149,25 @@ describe('ConversationController', () => {
       expect(updates).not.toHaveProperty('resumeAtMessageId');
       expect(deps.state.hasPendingConversationSave).toBe(false);
     });
+  });
+
+  it('keeps a change made while a save is writing pending for the next save', async () => {
+    deps.state.currentConversationId = 'conv-1';
+    deps.state.messages = [{ id: '1', role: 'user', content: 'test', timestamp: testDate().getTime() }];
+    deps.state.markConversationDirty();
+    let finishWrite!: () => void;
+    (deps.plugin.updateConversation as Mock).mockImplementationOnce(() => new Promise<void>(resolve => { finishWrite = resolve; }));
+
+    const saving = controller.save(false);
+    await vi.waitFor(() => expect(deps.plugin.updateConversation).toHaveBeenCalledTimes(1));
+    // Background output lands after the write took its snapshot.
+    deps.state.messages = [...deps.state.messages, { id: '2', role: 'user', content: 'later', timestamp: testDate().getTime() }];
+    deps.state.markConversationDirty();
+    finishWrite();
+    await saving;
+
+    expect((deps.plugin.updateConversation as Mock).mock.calls[0][1].messages.map((message: { id: string }) => message.id)).toEqual(['1']);
+    expect(deps.state.hasPendingConversationSave).toBe(true);
   });
 
   describe('loadActive with existing conversation', () => {

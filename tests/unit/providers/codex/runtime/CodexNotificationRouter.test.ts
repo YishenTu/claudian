@@ -3835,6 +3835,26 @@ describe('CodexNotificationRouter', () => {
     expect(JSON.stringify(chunks)).not.toContain('tokens_left');
   });
 
+  it('keeps a child MCP call open through a script yield until its native completion', () => {
+    const childRouter = new CodexNotificationRouter(chunk => chunks.push(chunk), '/workspace', true);
+    childRouter.beginTurn();
+    childRouter.handleNotification('rawResponseItem/completed', { item: {
+      type: 'custom_tool_call', name: 'exec', call_id: 'call-mcp', input: 'text(await tools.mcp__codex_apps__github_fetch({url:"https://example.com/a"}));',
+    } });
+    const native = { type: 'mcpToolCall', id: 'exec-mcp', server: 'codex_apps', tool: 'github.fetch', arguments: { url: 'https://example.com/a' } };
+    childRouter.handleNotification('item/started', { item: { ...native, status: 'inProgress', result: null, error: null } });
+    childRouter.handleNotification('rawResponseItem/completed', { item: {
+      type: 'custom_tool_call_output', call_id: 'call-mcp', output: 'Script running with cell ID 42\nWall time 10.0 seconds\nOutput:\n',
+    } });
+    childRouter.handleNotification('item/completed', { item: { ...native, status: 'failed', error: null,
+      result: { content: [{ type: 'text', text: 'Repository not accessible' }] } } });
+    childRouter.handleNotification('turn/completed', { turn: { id: 'turn1', items: [], status: 'completed', error: null } });
+
+    expect(chunks.filter(chunk => chunk.type === 'tool_result')).toEqual([
+      expect.objectContaining({ content: 'Repository not accessible', isError: true }),
+    ]);
+  });
+
   describe('webSearch tool', () => {
     it.each([
       [{ type: 'openPage', url: 'https://example.com/page' }, { actionType: 'open_page', url: 'https://example.com/page' }],

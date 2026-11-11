@@ -52,6 +52,24 @@ describe('ClaudeCommandRepository', () => {
     expect(reloaded.instructions).toBe(instructions);
   });
 
+  it('preserves a leading Markdown list between horizontal rules when editing a command', async () => {
+    const instructions = '---\n- Read the note\n- Summarize its key points\n---\nUse a short reply.';
+    await addCommand('summary.md', `${instructions}\n`);
+    const repository = new ClaudeCommandRepository(files);
+    const [loaded] = (await repository.list()).commands;
+
+    expect(loaded.instructions).toBe(instructions);
+    expect(loaded.frontmatter).toEqual({});
+    await repository.update(loaded.name, loaded.revision, {
+      name: loaded.name, description: 'Summarize a note', instructions: loaded.instructions,
+    });
+    const [reloaded] = (await repository.list()).commands;
+    expect(reloaded.description).toBe('Summarize a note');
+    expect(reloaded.instructions).toBe(instructions);
+    expect(reloaded.frontmatter).toEqual({ description: 'Summarize a note' });
+    expect(await vault.read(`${CLAUDE_COMMANDS_ROOT}/summary.md`)).toContain(`---\n${instructions}\n`);
+  });
+
   it('returns an empty list when the commands folder is missing', async () => {
     await vault.remove(CLAUDE_COMMANDS_ROOT);
     await expect(new ClaudeCommandRepository(files).list()).resolves.toEqual({

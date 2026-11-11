@@ -134,13 +134,7 @@ export async function startApplication(options: ApplicationStartupOptions): Prom
     providerSettings,
     runtimeSettings,
     isUnloading: () => options.isUnloading(),
-    whenLayoutReady: (callback) => {
-      if (typeof workspace.onLayoutReady === 'function') {
-        workspace.onLayoutReady(callback);
-      } else {
-        callback();
-      }
-    },
+    whenLayoutReady: callback => workspace.onLayoutReady(callback),
     onConversationListChanged: () => options.onConversationListChanged(),
     onAllMetadataLoaded: () => options.onAllMetadataLoaded(),
   });

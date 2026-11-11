@@ -1,4 +1,4 @@
-import type { TabId } from '@/features/chat/tabs/ChatTab';
+import type { TabId } from '@/features/chat/ChatFeatureHost';
 
 type ActivationStartedCallback = (previousTabId: TabId | null) => void;
 
@@ -41,10 +41,6 @@ export class TabSwitchScheduler {
   #latestIntent: TabSwitchIntent | null = null;
 
   constructor(private readonly host: TabSwitchSchedulerHost) {}
-
-  get requestRevision(): number {
-    return this.#requestRevision;
-  }
 
   /** Records the newest activation intent; a superseded in-flight switch re-queues it. */
   reserveIntent(tabId: TabId): number {

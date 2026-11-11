@@ -115,9 +115,21 @@ export class CDP {
   }
 
   async locate(role, name, required = true) {
+    const trees = [];
     for (const page of this.pages.values()) {
-      const node = (await this.tree(page)).find(node => !node.ignored && node.role?.value === role && (name instanceof RegExp ? name.test(node.name?.value ?? '') : node.name?.value === name));
+      const nodes = await this.tree(page);
+      trees.push({ page, nodes });
+      const node = nodes.find(node => !node.ignored && node.role?.value === role && (name instanceof RegExp ? name.test(node.name?.value ?? '') : node.name?.value === name));
       if (node?.backendDOMNodeId) return { page, node };
+    }
+    // Some host HTML menus expose their captions as StaticText rather than menuitem.
+    if (role === 'menuitem' && typeof name === 'string') {
+      for (const { page, nodes } of trees) {
+        for (const node of nodes.filter(node => !node.ignored && node.role?.value === 'StaticText' && node.name?.value === name && node.backendDOMNodeId)) {
+          const target = { page, node, menuCaption: name };
+          if (await this.menuCaptionPoint(target)) return target;
+        }
+      }
     }
     if (required) throw new Error(`No accessible ${role} named ${JSON.stringify(name)}`);
     return null;
@@ -134,9 +146,32 @@ export class CDP {
     } finally { await this.send('Runtime.releaseObject', { objectId: object.objectId }, page.sessionId); }
   }
 
+  async menuCaptionPoint(target, scroll = false) {
+    return this.onNode(target, `function(){
+      const element=this.nodeType===3?this.parentElement:this;
+      const title=element?.closest('.menu-item-title');
+      const item=title?.closest('.menu-item');
+      const menu=item?.closest('.menu');
+      if(!title||!item||!menu||title.textContent!==${JSON.stringify(target.menuCaption)})return null;
+      const win=title.ownerDocument.defaultView;
+      for(const el of [title,item,menu]){
+        const style=win.getComputedStyle(el);const rect=el.getBoundingClientRect();
+        if(!el.isConnected||style.display==='none'||style.visibility==='hidden'||style.visibility==='collapse'||Number(style.opacity)===0||rect.width<=0||rect.height<=0)return null;
+      }
+      if(${scroll})item.scrollIntoView({block:'center'});
+      const rect=item.getBoundingClientRect();
+      const point={x:rect.x+rect.width/2,y:rect.y+rect.height/2};
+      const hit=title.ownerDocument.elementFromPoint(point.x,point.y);
+      return hit&&item.contains(hit)?point:null;
+    }`);
+  }
+
   async click(role, name) {
     const target = await this.waitFor(role, name);
-    const point = await this.onNode(target, 'function(){this.scrollIntoView({block:"center"});const r=this.getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2};}');
+    const point = target.menuCaption === undefined
+      ? await this.onNode(target, 'function(){this.scrollIntoView({block:"center"});const r=this.getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2};}')
+      : await this.menuCaptionPoint(target, true);
+    if (!point) throw new Error(`Host menu caption is no longer visible: ${name}`);
     for (const type of ['mousePressed', 'mouseReleased']) await this.send('Input.dispatchMouseEvent', { type, ...point, button: 'left', clickCount: 1 }, target.page.sessionId);
     return target;
   }

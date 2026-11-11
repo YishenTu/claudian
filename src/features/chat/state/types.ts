@@ -82,8 +82,6 @@ export interface ChatStateData {
 
   /** Guards the destructive rewind transaction from overlapping tab actions. */
   isRewinding: boolean;
-  /** Local tab state is ahead of persisted conversation metadata. */
-  hasPendingConversationSave: boolean;
 
   // Conversation identity
   currentConversationId: string | null;
@@ -95,10 +93,7 @@ export interface ChatStateData {
   currentContentEl: HTMLElement | null;
   currentTextEl: HTMLElement | null;
   currentThinkingState: ThinkingBlockState | null;
-  thinkingEl: HTMLElement | null;
   queueIndicatorEl: HTMLElement | null;
-  /** Debounce timeout for showing thinking indicator after inactivity. */
-  thinkingIndicatorTimeout: number | null;
 
   // Tool tracking maps
   toolCallElements: Map<string, HTMLElement>;
@@ -108,14 +103,6 @@ export interface ChatStateData {
 
   // Context window usage
   usage: UsageInfo | null;
-
-  // Runtime-only attention state
-
-  // Auto-scroll control during streaming
-  autoScrollEnabled: boolean;
-
-  // Response timer state
-  flavorTimerInterval: number | null;
 }
 
 /**
@@ -130,6 +117,17 @@ export type ChatActivity =
   | { kind: 'tool'; tool: ToolCallInfo }
   | { kind: 'error'; message: string };
 
+/** Read side of one foreground turn owner, for presentation state that derives from it. */
+export interface TurnActivity {
+  /** A response is admitted and has not reached settlement; it can still be cancelled. */
+  readonly isInFlight: boolean;
+  /** Recorded for the rest of the admitted turn, through settlement; provider events cannot clear it. */
+  readonly cancelRequested: boolean;
+  /** Identifies the response that owns streaming presentation; invalidation supersedes it. */
+  readonly streamGeneration: number;
+  subscribe(listener: () => void): () => void;
+}
+
 /** Callbacks for ChatState changes. */
 export interface ChatStateCallbacks {
   onStreamingStateChanged?: (isStreaming: boolean) => void;
@@ -137,7 +135,6 @@ export interface ChatStateCallbacks {
   onConversationChanged?: (id: string | null) => void;
   onUsageChanged?: (usage: UsageInfo | null) => void;
   onAttentionChanged?: (attention: TabAttention) => void;
-  onAutoScrollChanged?: (enabled: boolean) => void;
 }
 
 // Re-export types that are used across the chat feature

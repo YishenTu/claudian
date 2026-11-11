@@ -1,4 +1,5 @@
 import type { UsageInfo } from '@/core/types';
+import { t } from '@/i18n/i18n';
 
 export class ContextUsageMeter {
   private container: HTMLElement;
@@ -9,7 +10,7 @@ export class ContextUsageMeter {
   constructor(parentEl: HTMLElement) {
     this.container = parentEl.createDiv({ cls: 'claudian-context-meter' });
     this.container.setAttribute('role', 'progressbar');
-    this.container.setAttribute('aria-label', 'Context usage');
+    this.container.setAttribute('aria-label', t('chat.contextUsage.label'));
     this.container.setAttribute('aria-valuemin', '0');
     this.container.setAttribute('aria-valuemax', '100');
     this.render();
@@ -95,9 +96,9 @@ export class ContextUsageMeter {
     // The percentage leads because zen shows the gauge without its number.
     let tooltip = `${usage.percentage}% · ${usageText}`;
     if (usage.percentage > 80) {
-      tooltip += ' (Approaching limit, run `/compact` to continue)';
+      tooltip += t('chat.contextUsage.nearLimit', { command: '`/compact`' });
     }
-    this.container.setAttribute('aria-label', `Context usage: ${tooltip}`);
+    this.container.setAttribute('aria-label', t('chat.contextUsage.details', { details: tooltip }));
     this.container.setAttribute('aria-valuenow', String(usage.percentage));
     this.container.setAttribute('aria-valuetext', usageText);
   }

@@ -29,10 +29,6 @@ export class AgentSkillManagementCoordinator {
     private readonly commands: ClaudeCommandRepository | null = null,
   ) {}
 
-  get root(): string {
-    return this.repository.root;
-  }
-
   get frontmatterPolicy(): SkillFrontmatterPolicy {
     return this.repository.frontmatterPolicy;
   }

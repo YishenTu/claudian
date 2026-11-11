@@ -94,7 +94,6 @@ export class ResponseStream {
 
   async finish(message: ChatMessage, outcome: { interrupted: boolean; failed: boolean }): Promise<void> {
     const { state, renderer, stream } = this.host;
-    state.clearFlavorTimerInterval();
     stream.thinkingIndicator.hide();
     let last = message;
     if (outcome.interrupted) {

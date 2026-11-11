@@ -15,14 +15,27 @@ export interface MentionSourceCallbacks {
 }
 
 export interface MentionSourceOptions {
-  readonly getSessionItems?: () => readonly (ComposerDropdownValueItem & { readonly mtime: number })[];
+  readonly getSessionItems?: () => readonly SessionMentionItem[];
   readonly formatVaultFileMention?: (path: string) => string;
+}
+
+type SessionMentionItem = ComposerDropdownValueItem & { readonly mtime: number };
+
+/** Case-insensitive containment shared by the open-trigger check and result filtering. */
+function containsQuery(query: string, ...fields: readonly string[]): boolean {
+  return fields.some(field => field.toLocaleLowerCase().includes(query));
+}
+
+function normalizeFolderPath(path: string): string {
+  return path.replace(/\\/g, '/').replace(/\/+$/, '');
 }
 
 export class MentionSource implements ComposerDropdownSource {
   readonly id = 'mentions';
 
   private readonly listeners = new Set<() => void>();
+  /** Last spaced query that matched no name; kept only while each match extends it. */
+  #unmatchedQuery: string | null = null;
 
   constructor(
     private readonly callbacks: MentionSourceCallbacks,
@@ -42,12 +55,23 @@ export class MentionSource implements ComposerDropdownSource {
   }
 
   match(input: string, cursor: number): ComposerTriggerMatch | null {
+    const unmatchedQuery = this.#unmatchedQuery;
+    this.#unmatchedQuery = null;
     const before = input.slice(0, cursor);
     const index = before.lastIndexOf('@');
     if (index < 0 || (index > 0 && !/\s/.test(before[index - 1]))) return null;
     const query = before.slice(index + 1);
     // A completed `@[label](target)` mention token is not an open trigger.
     if (/^\[(?:\\[\\\]]|[^\]\\\r\n])*\]\([^\s)]+\)/.test(query)) return null;
+    // Once a spaced query matches no name, further typing cannot match again; close for the rest of the line.
+    if (/\s/.test(query)) {
+      const lowerQuery = query.toLocaleLowerCase();
+      // Substring search is monotonic, so extending a rejected query skips the vault scan.
+      if ((unmatchedQuery !== null && lowerQuery.startsWith(unmatchedQuery)) || !this.#hasAnyMatch(lowerQuery)) {
+        this.#unmatchedQuery = lowerQuery;
+        return null;
+      }
+    }
     return {
       atInputStart: index === 0,
       end: cursor,
@@ -68,6 +92,7 @@ export class MentionSource implements ComposerDropdownSource {
   }
 
   invalidate(): void {
+    this.#unmatchedQuery = null;
     this.notify();
   }
 
@@ -76,7 +101,16 @@ export class MentionSource implements ComposerDropdownSource {
     return () => this.listeners.delete(listener);
   }
 
-  #vaultItems(query: string, sessions: readonly (ComposerDropdownValueItem & { readonly mtime: number })[]): readonly ComposerDropdownValueItem[] {
+  #hasAnyMatch(query: string): boolean {
+    return this.callbacks.getCachedVaultFolders().some(folder => {
+      const path = normalizeFolderPath(folder.path);
+      return path !== '' && containsQuery(query, folder.name, path);
+    })
+      || this.callbacks.getCachedVaultFiles().some(file => containsQuery(query, file.name, file.path))
+      || (this.options.getSessionItems?.() ?? []).some(item => containsQuery(query, item.label));
+  }
+
+  #vaultItems(query: string, sessions: readonly SessionMentionItem[]): readonly ComposerDropdownValueItem[] {
     type Scored = {
       readonly path: string;
       readonly mtime: number;
@@ -107,10 +141,10 @@ export class MentionSource implements ComposerDropdownSource {
     };
     const matchingFolders: Scored[] = [];
     for (const folder of this.callbacks.getCachedVaultFolders()) {
-      const path = folder.path.replace(/\\/g, '/').replace(/\/+$/, '');
+      const path = normalizeFolderPath(folder.path);
       if (!path) continue;
+      if (query && !containsQuery(query, folder.name, path)) continue;
       const name = query ? folder.name.toLocaleLowerCase() : '';
-      if (query && !name.includes(query) && !path.toLocaleLowerCase().includes(query)) continue;
       matchingFolders.push({
         path, name: folder.name, mtime: 0, starts: name.startsWith(query), type: 'folder',
       });
@@ -126,8 +160,8 @@ export class MentionSource implements ComposerDropdownSource {
           directoryMtimes.set(directory, Math.max(directoryMtimes.get(directory) ?? 0, file.stat.mtime));
         }
       }
+      if (query && !containsQuery(query, file.name, file.path)) continue;
       const name = query ? file.name.toLocaleLowerCase() : '';
-      if (query && !name.includes(query) && !file.path.toLocaleLowerCase().includes(query)) continue;
       retain(fileItems, {
         path: file.path,
         mtime: file.stat.mtime,
@@ -153,7 +187,7 @@ export class MentionSource implements ComposerDropdownSource {
       retain(folders, { ...folder, mtime: folderMtimes.get(folder.path) ?? 0 }, 50);
     }
 
-    const sessionItems: Scored[] = sessions.filter(item => item.label.toLocaleLowerCase().includes(query))
+    const sessionItems: Scored[] = sessions.filter(item => containsQuery(query, item.label))
       .map(item => ({ path: item.id, name: item.label, mtime: item.mtime,
         starts: item.label.toLocaleLowerCase().startsWith(query), type: 'session', item }));
     return [...folders, ...fileItems, ...sessionItems]

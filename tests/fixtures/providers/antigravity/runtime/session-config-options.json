@@ -34,6 +34,7 @@
     "options": [
       { "value": "default", "name": "Default", "description": "Ask before edits and commands, per your permission settings." },
       { "value": "accept-edits", "name": "Accept edits", "description": "Approve file edits in the workspace without asking." },
+      { "value": "auto", "name": "Auto", "description": "Approve edits and safe commands; ask before irreversible actions." },
       { "value": "plan", "name": "Plan", "description": "Plan carefully before executing a task." }
     ]
   }

@@ -98,7 +98,6 @@ export interface ToolCallStreamDeps {
   state: ChatState;
   indicator: Pick<ThinkingIndicator, 'show'>;
   getMessagesEl: () => HTMLElement | null;
-  scrollToBottom: () => void;
   onQuestionToolChanged?: (tool: ToolCallInfo) => void;
 }
 
@@ -325,7 +324,6 @@ export class ToolCallStream {
     const frame = scheduleAnimationFrame(() => {
       this.#outputFrames.delete(toolId);
       updateToolCallResult(this.deps.state.toolCallElements.get(toolId), toolCall);
-      this.deps.scrollToBottom();
     }, this.deps.getMessagesEl()?.ownerDocument.defaultView ?? null);
     this.#outputFrames.set(toolId, frame);
   }
