@@ -9,6 +9,7 @@ import { renderSessionGroupToggleIcon } from '@/features/chat/session-manager/Se
 import {
   archiveScopeOptions,
   beginInlineRenameNextFrame,
+  bindSessionSearchInput,
   createSessionHeaderAction,
   createSessionHeaderMenuAction,
   type SessionSurfaceNavigation,
@@ -341,31 +342,7 @@ export class SessionSidebar {
       },
     });
     searchInput.value = search.query;
-    let committedCompositionValue: string | null = null;
-    searchInput.addEventListener('compositionstart', () => {
-      search.composing = true;
-      committedCompositionValue = null;
-    });
-    searchInput.addEventListener('compositionend', () => {
-      search.composing = false;
-      committedCompositionValue = searchInput.value;
-      this.updateSearchQuery(searchInput.value);
-      queueMicrotask(() => {
-        committedCompositionValue = null;
-      });
-    });
-    searchInput.addEventListener('input', (event) => {
-      if (
-        search.composing
-        || (event as InputEvent | undefined)?.isComposing
-      ) return;
-      if (committedCompositionValue === searchInput.value) {
-        committedCompositionValue = null;
-        return;
-      }
-      committedCompositionValue = null;
-      this.updateSearchQuery(searchInput.value);
-    });
+    bindSessionSearchInput(searchInput, search, query => this.updateSearchQuery(query));
     searchInput.addEventListener('keydown', (event) => {
       if (event.key !== 'Escape') return;
       if (search.composing || event.isComposing) {

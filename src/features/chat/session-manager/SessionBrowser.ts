@@ -100,7 +100,6 @@ type HistoryRenderOptions = SessionActionOptions & SessionStatusDisplay & Sessio
   historyHeaderLabel?: string;
   allowConversationSelection?: boolean;
   searchQuery?: string;
-  onBeforeRestoreListState?: (container: HTMLElement) => void;
   onRequestInlineRename?: (request: {
     beginRename: (item: HTMLElement) => void;
     conversationId: string;
@@ -331,7 +330,6 @@ export class SessionBrowser {
     );
     recordVisibleCount(list, visibleCount);
     const restorePosition = (): void => {
-      options.onBeforeRestoreListState?.(container);
       restoreRename?.();
       restoreSessionListPosition(
         previousPosition,

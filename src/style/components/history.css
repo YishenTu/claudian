@@ -939,27 +939,44 @@ body.theme-dark .claudian-session-metadata-popover {
   cursor: default;
 }
 
-.claudian-history-archive-control {
-  position: sticky;
-  top: 0;
-  z-index: 1;
+/*
+ * The drop-up's search bar stays above its scrolling list: the field fills the row, followed by
+ * clear (while there is a query) and the archive toggle as header-style icon buttons.
+ */
+.claudian-history-search-bar {
   display: flex;
+  flex-shrink: 0;
   align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
-  color: var(--text-muted);
-  font-size: calc(13 * var(--claudian-font-px));
-  font-weight: 500;
-  cursor: pointer;
-  background: var(--background-secondary);
+  gap: var(--claudian-session-action-gap);
+  padding-inline-end: 6px;
   border-bottom: 1px solid var(--background-modifier-border);
-  transition: background 0.15s ease, color 0.15s ease;
 }
 
-.claudian-history-archive-control:hover,
-.claudian-history-archive-control:focus-visible {
+.claudian-history-search-bar .claudian-session-search-field {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  padding-block: 8px;
+}
+
+.claudian-history-search-bar .claudian-history-search-clear[hidden] {
+  display: none;
+}
+
+.claudian-history-menu-list {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+}
+
+/* The row Enter opens from the search field. */
+.claudian-history-menu .claudian-history-item.claudian-history-item--keyboard-active {
   background: var(--background-modifier-hover);
-  color: var(--text-normal);
+}
+
+.claudian-history-menu .claudian-history-item--keyboard-active .claudian-history-item-actions {
+  opacity: 1;
 }
 
 /* Single-pane dropup shell (opens upward since it's at bottom of view) */
@@ -1045,8 +1062,7 @@ body.theme-dark .claudian-nav-dropup-menu {
   padding-inline-start: var(--claudian-history-menu-label-start);
 }
 
-.claudian-history-menu .claudian-history-section--sessions:not(:first-child),
-.claudian-history-menu .claudian-history-archive-control + .claudian-history-section--sessions {
+.claudian-history-menu .claudian-history-section--sessions:not(:first-child) {
   margin-top: 4px;
 }
 
