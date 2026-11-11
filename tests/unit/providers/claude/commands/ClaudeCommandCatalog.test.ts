@@ -11,7 +11,7 @@ describe('ClaudeCommandCatalog', () => {
       expect(entries).toHaveLength(0);
     });
 
-    it('hides every Claude Code built-in and custom rows its names shadow, keeping skills and custom commands', async () => {
+    it('hides Claude Code built-ins except /goal and custom rows their names shadow, keeping skills and custom commands', async () => {
       const catalog = new ClaudeCommandCatalog();
 
       const entries = await catalog.listDropdownEntries({ includeBuiltIns: false, commandSnapshot: [
@@ -21,9 +21,10 @@ describe('ClaudeCommandCatalog', () => {
         { id: 'sdk:init', name: 'init', description: 'My init', content: '', source: 'sdk' },
         { id: 'sdk:simplify', name: 'simplify', description: 'Shadowed', content: '', source: 'sdk' },
         { id: 'sdk:simplify', name: 'Simplify', description: 'Native', content: '', source: 'builtin' },
+        { id: 'sdk:goal', name: 'goal', description: 'Set a goal', content: '', source: 'builtin' },
       ] });
 
-      expect(entries.map(e => e.name)).toEqual(['commit', 'init']);
+      expect(entries.map(e => e.name)).toEqual(['commit', 'init', 'goal']);
     });
 
     it('keeps every row of a snapshot without built-in provenance', async () => {

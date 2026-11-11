@@ -31,7 +31,7 @@ export interface CodexThreadRequest {
   readonly policy: CodexPolicy;
   readonly serviceTier: string | null;
   readonly baseInstructions: string;
-  readonly persistExtendedHistory: boolean | undefined;
+  readonly persistExtendedHistory: boolean;
   readonly toolPolicy: ProviderToolPolicy;
 }
 
@@ -68,11 +68,11 @@ export class CodexThreadBinder {
   #pendingForkTarget: CodexPendingForkTarget | undefined;
   #forkIdentityPromise: Promise<CodexPendingForkTarget> | null = null;
   #forkSetupPromise: Promise<CodexEnsuredThread> | null = null;
-  #loadedThreadId: string | null = null;
+  /** The thread this generation loaded and the base instructions it was loaded with. */
+  #loadedThread: { readonly threadId: string; readonly baseInstructions: string } | null = null;
   /** Sandbox mode in effect on the loaded thread; turn/start overrides persist across turns. */
   #loadedThreadSandbox: string | null = null;
   #loadedThreadSandboxRevision = 0;
-  #loadedThreadBaseInstructions: string | null = null;
   #supportsApprovalReviewer = false;
 
   constructor(
@@ -122,9 +122,8 @@ export class CodexThreadBinder {
 
   /** The generation that loaded threads is no longer attached. */
   unload(): void {
-    this.#loadedThreadId = null;
+    this.#loadedThread = null;
     this.#setLoadedThreadSandbox(null);
-    this.#loadedThreadBaseInstructions = null;
     this.#supportsApprovalReviewer = false;
   }
 
@@ -146,8 +145,8 @@ export class CodexThreadBinder {
     if (
       identity.threadId
       && (
-        this.#loadedThreadId !== identity.threadId
-        || this.#loadedThreadBaseInstructions !== request.baseInstructions
+        this.#loadedThread?.threadId !== identity.threadId
+        || this.#loadedThread.baseInstructions !== request.baseInstructions
       )
     ) {
       if (request.persistExtendedHistory === false) {
@@ -186,7 +185,7 @@ export class CodexThreadBinder {
         ...(request.persistExtendedHistory === false
           ? { ephemeral: true }
           : {}),
-        ...persistExtendedHistoryParam(request),
+        persistExtendedHistory: request.persistExtendedHistory,
         ...(dynamicTools.length > 0 ? { dynamicTools } : {}),
       },
     );
@@ -280,8 +279,7 @@ export class CodexThreadBinder {
 
     if (request.persistExtendedHistory === false) {
       // thread/fork already loaded the ephemeral child at the captured checkpoint.
-      this.#loadedThreadId = target.threadId;
-      this.#loadedThreadBaseInstructions = request.baseInstructions;
+      this.#loadedThread = { threadId: target.threadId, baseInstructions: request.baseInstructions };
       this.#consumePendingFork(run);
       return { threadId: target.threadId, sessionFilePath: null };
     }
@@ -404,7 +402,7 @@ export class CodexThreadBinder {
           ? withLegacyToolInstructions(request.baseInstructions)
           : request.baseInstructions,
       ),
-      ...persistExtendedHistoryParam(request),
+      persistExtendedHistory: request.persistExtendedHistory,
     };
   }
 
@@ -413,9 +411,8 @@ export class CodexThreadBinder {
     result: ThreadStartResult,
     baseInstructions: string,
   ): void {
-    this.#loadedThreadId = threadId;
+    this.#loadedThread = { threadId, baseInstructions };
     this.#setLoadedThreadSandbox(sandboxModeOf(result.sandbox));
-    this.#loadedThreadBaseInstructions = baseInstructions;
   }
 
   #recordApprovalReviewer(result: ThreadStartResult, requested: unknown): void {
@@ -432,12 +429,6 @@ export class CodexThreadBinder {
 
 function withLegacyToolInstructions(baseInstructions: string): string {
   return `${baseInstructions}\n\n${LEGACY_WORKSPACE_DEPENDENCY_INSTRUCTIONS}`;
-}
-
-function persistExtendedHistoryParam(request: CodexThreadRequest): { persistExtendedHistory?: boolean } {
-  return request.persistExtendedHistory !== undefined
-    ? { persistExtendedHistory: request.persistExtendedHistory }
-    : {};
 }
 
 function shouldExposeDynamicTools(policy: ProviderToolPolicy): boolean {

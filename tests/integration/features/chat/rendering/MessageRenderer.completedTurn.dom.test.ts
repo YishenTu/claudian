@@ -13,19 +13,20 @@ import { fireEvent, waitFor, within } from '@testing-library/dom';
 import { Component, MarkdownRenderer } from 'obsidian';
 
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
-import type { ChatMessage, ToolCallInfo } from '@/core/types';
+import type { ChatMessage, Conversation, ToolCallInfo } from '@/core/types';
 import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
 import { ConversationController } from '@/features/chat/conversation/ConversationController';
 import { LinkedContentController } from '@/features/chat/linked-content';
 import { MessageRenderer } from '@/features/chat/rendering/MessageRenderer';
 import { createResponseTextBlock } from '@/features/chat/rendering/ResponseLayout';
+import { SubagentManager } from '@/features/chat/rendering/subagents/SubagentManager';
 import { createThinkingBlock, finalizeThinkingBlock } from '@/features/chat/rendering/ThinkingBlockRenderer';
 import { SessionMessagingService } from '@/features/chat/session-messaging/SessionMessagingService';
 import { ChatState } from '@/features/chat/state/ChatState';
-import { SubagentManager } from '@/features/chat/subagents/SubagentManager';
 import { destroyTab } from '@/features/chat/tabs/TabLifecycle';
 import { createTabRuntime } from '@/features/chat/tabs/TabRuntimeFactory';
 import { setLocale } from '@/i18n/i18n';
+import { mapOpencodeNativeMessages } from '@/providers/opencode/history/OpencodeHistoryStore';
 import { piProviderRegistration } from '@/providers/pi/registration';
 import { VaultMentionDataProvider } from '@/shared/mention/VaultMentionDataProvider';
 
@@ -485,6 +486,26 @@ it('keeps requested work on both sides of a mid-response notification in its own
   renderer.dispose();
 });
 
+it('shows only final whole-turn OpenCode throughput across consecutive compactions', () => {
+  const start = testDate().getTime();
+  const { renderer, messagesEl } = setup('opencode');
+  const history = mapOpencodeNativeMessages([
+    { id: 'u', type: 'user', text: 'Work', time: { created: start } },
+    { id: 'a1', type: 'assistant', time: { created: start + 100, completed: start + 1000 },
+      finish: 'stop', tokens: { output: 10, reasoning: 2 }, content: [{ type: 'text', text: 'Before' }] },
+    { id: 'c', type: 'compaction', status: 'completed', time: { created: start + 1100 } },
+    { id: 'c-again', type: 'compaction', status: 'completed', time: { created: start + 1150 } },
+    { id: 'a2', type: 'assistant', time: { created: start + 1200, completed: start + 3000 },
+      finish: 'stop', tokens: { output: 20, reasoning: 3 }, content: [{ type: 'text', text: 'After' }] },
+    { id: 'idle', type: 'idle', outcome: 'completed', time: { created: start + 3100 } },
+  ]);
+  renderer.renderMessages(history, () => 'Hello');
+
+  expect(within(messagesEl).getByText('11.7 tok/s').getAttribute('aria-label')).toBe('35 tokens · 3s');
+  expect(within(messagesEl).queryAllByText(/tok\/s/)).toHaveLength(1);
+  renderer.dispose();
+});
+
 it.each(['claude', 'pi', 'opencode', 'codex'])('shows native throughput for %s on replay', async (provider) => {
   const { renderer, messagesEl } = setup(provider);
   const response = { ...messages[2], turnStats: { outputTokens: 125, durationMs: 2500 } };
@@ -685,6 +706,7 @@ it('orders the Pi prompt toolbar as branches, tree, copy, time through live and 
     new Component(),
     messagesEl, undefined, fork, () => ProviderRegistry.getCapabilities('pi'),
     { navigate: vi.fn(), isBusy: () => busy });
+  onTestFinished(() => renderer.dispose());
   const first: ChatMessage = { ...messages[0], treeBranches: ['native-u1'] };
   const prompt: ChatMessage = { id: 'second', role: 'user', content: 'Try B', timestamp: 2 };
   const reply: ChatMessage = { id: 'reply-b', role: 'assistant', content: 'Answer B', timestamp: 3,
@@ -712,8 +734,14 @@ it('orders the Pi prompt toolbar as branches, tree, copy, time through live and 
     expect(messagesEl.querySelector('[data-message-id="u1"] .claudian-branch-marker')).toBeNull();
   };
   assertOrder();
-  renderer.refreshBranchButtons(history);
-  assertOrder();
+  for (const name of ['Previous branch', 'Branch from this prompt', 'Copy message']) {
+    const action = within(promptEl).getByRole('button', { name });
+    action.focus();
+    expect(document.activeElement).toBe(action);
+    renderer.refreshBranchButtons(history);
+    expect(document.activeElement).toBe(within(promptEl).getByRole('button', { name }));
+    assertOrder();
+  }
   renderer.refreshMessageTimestamps();
   assertOrder();
   settings.showMessageTimestamps = false;
@@ -730,7 +758,6 @@ it('orders the Pi prompt toolbar as branches, tree, copy, time through live and 
   renderer.refreshBranchButtons(history);
   expect(promptEl.querySelector('.claudian-branch-marker')).toBeNull();
   expect(within(promptEl).getByRole('button', { name: 'Branch from this prompt' })).toBeTruthy();
-  renderer.dispose();
 });
 
 it('previews a branch without saving it and restores history when focus leaves the composer', async () => {
@@ -742,12 +769,15 @@ it('previews a branch without saving it and restores history when focus leaves t
     createExecutionBackend: () => ({ providerId: 'pi', createSession: () => native }),
   });
   onTestFinished(() => ProviderRegistry.register('pi', piProviderRegistration));
+  const conversation: Conversation = { id: 'pi-chat', providerId: 'pi', title: 'History', messages: history,
+    sessionId: null, createdAt: testDate().getTime(), lastActivityAt: testDate().getTime() };
   const pool = createSessionRuntimePool(() => plugin);
   const messaging = new SessionMessagingService({
     getHost: () => plugin, getActiveConversationId: () => 'pi-chat', refreshModelControls: () => undefined,
   });
   const plugin: ChatFeatureHost = await createChatFeatureHost({
     sessionRuntimes: pool, bindSessionTools: id => messaging.bindSessionTools(id), updateConversation: vi.fn(), projects: createProjectsFake(),
+    getConversationById: async id => (id === conversation.id ? conversation : null),
     executionPersistence: {
       registerExecutionBinding: vi.fn(), releaseExecutionBinding: vi.fn(),
       assertConversationExecutionAuthority: vi.fn(), recordConversationActivity: vi.fn(),
@@ -756,9 +786,7 @@ it('previews a branch without saving it and restores history when focus leaves t
   });
   const component = new Component();
   const tab = await createTabRuntime({
-    plugin, component, containerEl: document.body.createDiv(),
-    conversation: { id: 'pi-chat', providerId: 'pi', title: 'History', messages: history,
-      sessionId: null, createdAt: testDate().getTime(), lastActivityAt: testDate().getTime() },
+    plugin, component, containerEl: document.body.createDiv(), conversation,
     mentionDataProvider: new VaultMentionDataProvider(plugin.app), getProviderCatalogConfig: () => null,
     isRuntimeLive: () => true, openConversation: async () => undefined, startNewConversation: async () => undefined,
   });
@@ -768,8 +796,7 @@ it('previews a branch without saving it and restores history when focus leaves t
   const controller = tab.controllers.conversationController;
   await tab.executionCoordinator.bindConversation({ conversationId: 'pi-chat', providerId: 'pi' });
   await tab.executionCoordinator.prepare();
-  state.messages = history;
-  tab.hydrationState = 'ready';
+  await tab.session.runtime.model.hydrate();
   const send = inputComposerEl.createEl('button', { text: 'Send', attr: { type: 'button' } });
   const outside = document.body.createEl('button', { text: 'Outside', attr: { type: 'button' } });
   renderer.renderMessages(history, () => 'Hello');

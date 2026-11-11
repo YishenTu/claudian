@@ -14,7 +14,7 @@ it('runs YOLO with automatic native approvals while still answering questions, t
       for await (const event of f.session.execute({
         ...turn, configuration: { ...turn.configuration, permissionMode },
       }).events) events.push(event);
-      expect(events.at(-1)?.type).toBe('turn_completed');
+      expect(events.at(-1)?.type, `permissionMode=${permissionMode}; terminalEvent=${JSON.stringify(events.at(-1))}`).toBe('turn_completed');
       expect(f.approvals).toHaveLength(permissionMode === 'yolo' ? 0 : 1);
     }
     expect(f.questions).toEqual([expect.objectContaining({ kind: 'question' }), expect.objectContaining({ kind: 'question' })]);
@@ -29,7 +29,7 @@ it('runs Ask and YOLO on a native build agent, changing only the approval policy
       const turn = request('agents');
       const events: ProviderExecutionEvent[] = [];
       for await (const event of f.session.execute({ ...turn, configuration: { ...turn.configuration, permissionMode } }).events) events.push(event);
-      expect(events.at(-1)?.type).toBe('turn_completed');
+      expect(events.at(-1)?.type, `permissionMode=${permissionMode}; terminalEvent=${JSON.stringify(events.at(-1))}`).toBe('turn_completed');
       selected.push(JSON.parse(events.flatMap(event => event.type === 'text_delta' ? [event.text] : []).join('')));
     }
     const agents = selected.at(-1)!;

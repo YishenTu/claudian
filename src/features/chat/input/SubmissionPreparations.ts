@@ -40,6 +40,12 @@ export class SubmissionPreparations {
     }
   }
 
+  /** Whether any preparation for `destination` is still running, cancelled or not. */
+  hasUnsettled(destination: ComposerDestination): boolean {
+    return [...this.preparations.values()].some(preparation => preparation.destination === destination);
+  }
+
+  /** Whether a preparation for `destination` is running and not yet cancelled. */
   isPreparing(destination: ComposerDestination): boolean {
     return [...this.preparations].some(([controller, preparation]) =>
       preparation.destination === destination && !controller.signal.aborted);

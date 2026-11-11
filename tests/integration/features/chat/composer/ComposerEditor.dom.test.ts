@@ -561,6 +561,8 @@ it('focuses an already open note when its composer link is clicked', async () =>
   const parent = document.body.createDiv();
   const app = createApp();
   const leaf = {
+    getRoot: () => ({}),
+
     getViewState: () => ({ type: 'markdown', state: { file: 'Notes/A note.md' } }),
     setEphemeralState: vi.fn(),
   };

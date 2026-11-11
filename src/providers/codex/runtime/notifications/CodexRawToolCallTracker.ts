@@ -29,6 +29,21 @@ interface PendingWrappedWaitCall {
 }
 
 /**
+ * Where an admitted raw call's output goes. Each call takes exactly one route at admission;
+ * a pending `wait` becomes wrapped once its yielded cell's command is known. Calls without a
+ * route are in flight in the ledger or deferred to a correlator.
+ */
+type RawCallRoute =
+  /** Output of a script whose yielded cell is withheld. */
+  | { readonly kind: 'withheld' }
+  | { readonly kind: 'wrapped-wait'; readonly wait: WrappedWaitCall }
+  | { readonly kind: 'pending-wrapped-wait'; readonly wait: PendingWrappedWaitCall }
+  /** Silent polls and internal tools: output is dropped. */
+  | { readonly kind: 'suppressed' }
+  /** Raw output is terminal unless a canonical completion also arrives. */
+  | { readonly kind: 'immediate' };
+
+/**
  * Tracks tool calls reported as raw response items: their publication, their output,
  * and Code Mode continuations (`wait` calls on yielded script cells).
  *
@@ -40,17 +55,12 @@ export class CodexRawToolCallTracker {
   #pendingOutputItemsByCallId = new Map<string, Record<string, unknown>>();
   #toolNamesByCallId = new Map<string, string>();
   #handledOutputCallIds = new Set<string>();
-  /** Calls whose raw output is terminal unless a canonical completion also arrives. */
-  #immediateOutputCallIds = new Set<string>();
+  readonly #routes = new Map<string, RawCallRoute>();
   #wrappedCommandCallIdsByCellId = new Map<string, string>();
   #wrappedCommandOutputByCallId = new Map<string, string>();
-  #wrappedWaitCallsByCallId = new Map<string, WrappedWaitCall>();
-  #pendingWrappedWaitCallsByCallId = new Map<string, PendingWrappedWaitCall>();
   #canonicalPrefilledCommandCallIds = new Set<string>();
-  /** Yielded cells of scripts whose output is withheld, and the calls whose output carries them. */
+  /** Yielded cells of scripts whose output is withheld. */
   #withheldExecCellIds = new Set<string>();
-  #withheldOutputCallIds = new Set<string>();
-  #suppressedCallIds = new Set<string>();
   #ignoredLateOutputCallIds = new Set<string>();
 
   constructor(
@@ -65,15 +75,11 @@ export class CodexRawToolCallTracker {
     this.#pendingOutputItemsByCallId.clear();
     this.#toolNamesByCallId.clear();
     this.#handledOutputCallIds.clear();
-    this.#immediateOutputCallIds.clear();
+    this.#routes.clear();
     this.#wrappedCommandCallIdsByCellId.clear();
     this.#wrappedCommandOutputByCallId.clear();
-    this.#wrappedWaitCallsByCallId.clear();
-    this.#pendingWrappedWaitCallsByCallId.clear();
     this.#canonicalPrefilledCommandCallIds.clear();
     this.#withheldExecCellIds.clear();
-    this.#withheldOutputCallIds.clear();
-    this.#suppressedCallIds.clear();
     this.#ignoredLateOutputCallIds.clear();
   }
 
@@ -87,18 +93,18 @@ export class CodexRawToolCallTracker {
     if (rawName === 'wait') {
       const cellId = readCodexExecCellIdArgument(rawArguments);
       if (cellId && this.#withheldExecCellIds.delete(cellId)) {
-        this.#withheldOutputCallIds.add(callId);
+        this.#routes.set(callId, { kind: 'withheld' });
         return;
       }
       const commandCallId = cellId
         ? this.#wrappedCommandCallIdsByCellId.get(cellId)
         : undefined;
       if (cellId && commandCallId) {
-        this.#wrappedWaitCallsByCallId.set(callId, { commandCallId, cellId });
+        this.#routes.set(callId, { kind: 'wrapped-wait', wait: { cellId, commandCallId } });
         return;
       }
       if (cellId) {
-        this.#pendingWrappedWaitCallsByCallId.set(callId, { cellId, rawArguments });
+        this.#routes.set(callId, { kind: 'pending-wrapped-wait', wait: { cellId, rawArguments } });
         return;
       }
     }
@@ -107,7 +113,7 @@ export class CodexRawToolCallTracker {
       isCodexSilentWriteStdinCall(rawName, rawArguments)
       || isCodexInternalToolCall(rawName, item.namespace)
     ) {
-      this.#suppressedCallIds.add(callId);
+      this.#routes.set(callId, { kind: 'suppressed' });
       return;
     }
 
@@ -140,7 +146,7 @@ export class CodexRawToolCallTracker {
       ));
       if (expectedCalls?.length === 0) {
         // Its output, and any yielded continuation, carries only internal values or silent polls.
-        this.#withheldOutputCallIds.add(callId);
+        this.#routes.set(callId, { kind: 'withheld' });
         return;
       }
       if (decodedCalls && expectedCalls && !isSingleCommand) {
@@ -149,7 +155,7 @@ export class CodexRawToolCallTracker {
       }
     }
 
-    this.#immediateOutputCallIds.add(callId);
+    this.#routes.set(callId, { kind: 'immediate' });
     this.startCall(callId, rawName, rawArguments);
   }
 
@@ -182,7 +188,7 @@ export class CodexRawToolCallTracker {
       ? firstString(normalized.input.command)
       : '';
     if (command) {
-      const rawOwnsCompletion = this.#immediateOutputCallIds.has(callId);
+      const rawOwnsCompletion = this.#routes.get(callId)?.kind === 'immediate';
       const paired = this.commands.correlateRawCommand({
         callId,
         rawName,
@@ -222,7 +228,8 @@ export class CodexRawToolCallTracker {
       this.#pendingOutputItemsByCallId.set(callId, item);
       return;
     }
-    if (this.#pendingWrappedWaitCallsByCallId.has(callId)) {
+    const route = this.#routes.get(callId);
+    if (route?.kind === 'pending-wrapped-wait') {
       this.#pendingOutputItemsByCallId.set(callId, item);
       return;
     }
@@ -232,21 +239,24 @@ export class CodexRawToolCallTracker {
     this.#handledOutputCallIds.add(callId);
     this.ledger.inFlightRawCallIds.delete(callId);
 
-    if (this.#withheldOutputCallIds.delete(callId)) {
+    if (route?.kind === 'withheld') {
+      this.#routes.delete(callId);
       this.#withholdExecCell(item.output);
       return;
     }
 
-    const wrappedWaitCall = this.#wrappedWaitCallsByCallId.get(callId);
-    if (wrappedWaitCall) {
-      this.#wrappedWaitCallsByCallId.delete(callId);
-      this.#handleWrappedWaitOutput(wrappedWaitCall, item.output);
+    if (route?.kind === 'wrapped-wait') {
+      this.#routes.delete(callId);
+      this.#handleWrappedWaitOutput(route.wait, item.output);
       return;
     }
 
+    if (route?.kind === 'suppressed') {
+      this.#routes.delete(callId);
+      return;
+    }
     if (
-      this.#suppressedCallIds.delete(callId)
-      || this.#ignoredLateOutputCallIds.has(callId)
+      this.#ignoredLateOutputCallIds.has(callId)
       || this.ledger.emittedResultIds.has(callId)
     ) {
       return;
@@ -275,7 +285,8 @@ export class CodexRawToolCallTracker {
       isError: isCodexToolOutputError(rawOutputText),
     };
 
-    if (this.#immediateOutputCallIds.delete(callId)) {
+    if (this.#routes.get(callId)?.kind === 'immediate') {
+      this.#routes.delete(callId);
       const execCellId = normalizedName === 'Bash' || normalizedName === 'exec'
         ? extractCodexExecCellId(rawOutputText)
         : undefined;
@@ -386,12 +397,11 @@ export class CodexRawToolCallTracker {
   }
 
   #bindPendingWrappedWaitCalls(cellId: string, commandCallId: string): void {
-    for (const [waitCallId, waitCall] of this.#pendingWrappedWaitCallsByCallId) {
-      if (waitCall.cellId !== cellId) {
+    for (const [waitCallId, route] of [...this.#routes]) {
+      if (this.#routes.get(waitCallId) !== route || route.kind !== 'pending-wrapped-wait' || route.wait.cellId !== cellId) {
         continue;
       }
-      this.#pendingWrappedWaitCallsByCallId.delete(waitCallId);
-      this.#wrappedWaitCallsByCallId.set(waitCallId, { commandCallId, cellId });
+      this.#routes.set(waitCallId, { kind: 'wrapped-wait', wait: { cellId, commandCallId } });
       const pendingOutput = this.#pendingOutputItemsByCallId.get(waitCallId);
       if (pendingOutput) {
         this.#pendingOutputItemsByCallId.delete(waitCallId);
@@ -415,9 +425,10 @@ export class CodexRawToolCallTracker {
   }
 
   #flushPendingWrappedWaitCalls(terminalError: boolean): void {
-    for (const [callId, waitCall] of this.#pendingWrappedWaitCallsByCallId) {
-      this.#pendingWrappedWaitCallsByCallId.delete(callId);
-      this.startCall(callId, 'wait', waitCall.rawArguments);
+    for (const [callId, route] of [...this.#routes]) {
+      if (this.#routes.get(callId) !== route || route.kind !== 'pending-wrapped-wait') continue;
+      this.#routes.delete(callId);
+      this.startCall(callId, 'wait', route.wait.rawArguments);
       const pendingOutput = this.#pendingOutputItemsByCallId.get(callId);
       if (pendingOutput) {
         this.#pendingOutputItemsByCallId.delete(callId);
@@ -448,20 +459,20 @@ export class CodexRawToolCallTracker {
     for (const callId of yieldedCommandCallIds) {
       closeCall(callId, this.#wrappedCommandOutputByCallId.get(callId) ?? '');
     }
-    for (const callId of this.#immediateOutputCallIds) {
-      closeCall(callId, '');
+    for (const [callId, route] of this.#routes) {
+      if (route.kind === 'immediate') closeCall(callId, '');
     }
     for (const callId of this.ledger.inFlightRawCallIds) {
       closeCall(callId, '');
     }
     this.#wrappedCommandCallIdsByCellId.clear();
     this.#wrappedCommandOutputByCallId.clear();
-    this.#wrappedWaitCallsByCallId.clear();
     this.#withheldExecCellIds.clear();
-    this.#withheldOutputCallIds.clear();
-    this.#pendingWrappedWaitCallsByCallId.clear();
     this.ledger.inFlightRawCallIds.clear();
-    this.#immediateOutputCallIds.clear();
+    // Suppressed calls stay known so their late output is still dropped.
+    for (const [callId, route] of [...this.#routes]) {
+      if (route.kind !== 'suppressed') this.#routes.delete(callId);
+    }
   }
 }
 

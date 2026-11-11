@@ -1,8 +1,8 @@
-import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
-import type { TabId, TabManagerViewHost } from '@/features/chat/tabs/ChatTab';
+import type { ChatFeatureHost, TabId } from '@/features/chat/ChatFeatureHost';
+import type { TabManagerViewHost } from '@/features/chat/tabs/ChatTab';
 import { commitProvisionalTab } from '@/features/chat/tabs/TabLifecycle';
 import type { AssembledTabRuntime, TabMembershipView } from '@/features/chat/tabs/types';
-import { revealWorkspaceLeaf } from '@/utils/obsidianCompat';
+import { SerialQueue } from '@/utils/SerialQueue';
 
 export type OpenConversationOptions = {
   preferNewTab?: boolean;
@@ -32,7 +32,7 @@ export interface TabConversationNavigationHost {
  */
 export class TabConversationNavigation {
   #requestRevision = 0;
-  #tail: Promise<void> = Promise.resolve();
+  readonly #queue = new SerialQueue();
   #fence: Promise<void> | null = null;
 
   constructor(private readonly host: TabConversationNavigationHost) {}
@@ -70,17 +70,10 @@ export class TabConversationNavigation {
     ) return;
     const requestRevision = ++this.#requestRevision;
     const isCurrent = (): boolean => this.#isCurrent(requestRevision, sourceTab);
-    const pending = this.#tail
-      .catch(() => undefined)
-      .then(async () => {
-        if (!isCurrent()) return;
-        await operation(isCurrent);
-      });
-    this.#tail = pending.then(
-      () => undefined,
-      () => undefined,
-    );
-    await pending;
+    await this.#queue.run(async () => {
+      if (!isCurrent()) return;
+      await operation(isCurrent);
+    });
   }
 
   /**
@@ -112,7 +105,7 @@ export class TabConversationNavigation {
   /** Supersedes every queued request and waits for the in-flight one to settle. */
   async invalidateAndDrain(): Promise<void> {
     this.#requestRevision += 1;
-    await this.#tail;
+    await this.#queue.settled();
   }
 
   /**
@@ -158,7 +151,7 @@ export class TabConversationNavigation {
     const crossViewResult = host.plugin.findConversationAcrossViews(conversationId);
     if (!crossViewResult || crossViewResult.view === host.view) return false;
 
-    await revealWorkspaceLeaf(host.plugin.app.workspace, crossViewResult.view.leaf);
+    await host.plugin.app.workspace.revealLeaf(crossViewResult.view.leaf);
     if (!isCurrent()) return true;
     const refreshedTarget = host.plugin.findConversationAcrossViews(conversationId);
     const targetManager = refreshedTarget?.view.getTabManager() ?? null;

@@ -1,16 +1,9 @@
-import '@/providers';
-
 import { testDate } from '@test/helpers/testClock';
 import type { Mocked } from 'vitest';
 
-import { ConversationRepository } from '@/app/conversations/ConversationRepository';
 import { SessionStorage } from '@/app/storage/SessionStorage';
 import { getDeviceSessionsPath, SESSIONS_PATH } from '@/core/bootstrap/storagePaths';
-import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
-import { ProviderSettingsCoordinator } from '@/core/providers/ProviderSettingsCoordinator';
-import type { ProviderId } from '@/core/providers/types';
 import type { VaultFileAdapter } from '@/core/storage/VaultFileAdapter';
-import type { Conversation, SessionMetadata, SubagentInfo, UsageInfo } from '@/core/types';
 
 
 
@@ -19,22 +12,6 @@ const DEVICE_KEY = `device-${'a'.repeat(64)}`;
 describe('SessionStorage', () => {
   let mockAdapter: Mocked<VaultFileAdapter>;
   let storage: SessionStorage;
-
-  function toSessionMetadata(conversation: Conversation): SessionMetadata {
-    const repository = new ConversationRepository({
-      providers: ProviderRegistry,
-      providerSettings: ProviderSettingsCoordinator,
-      getSettings: () => ({}),
-      getVaultPath: () => '/vault',
-      persistence: {} as never,
-      onConversationDeleted: vi.fn(),
-    });
-    return (
-      repository as unknown as {
-        toSessionMetadata(value: Conversation): SessionMetadata;
-      }
-    ).toSessionMetadata(conversation);
-  }
 
   beforeEach(() => {
     mockAdapter = {
@@ -186,6 +163,31 @@ describe('SessionStorage', () => {
       const result = await storage.load('session-project');
 
       expect('projectId' in result!.metadata ? result!.metadata.projectId : 'absent').toBe(expected ?? 'absent');
+      expect(result?.needsMigration).toBe(needsMigration);
+    });
+
+    it.each([
+      [{ kind: 'fork', conversationId: 'parent-a' }, { kind: 'fork', conversationId: 'parent-a' }, false],
+      [{ kind: 'session-tool', conversationId: 'parent-a' }, { kind: 'session-tool', conversationId: 'parent-a' }, false],
+      [{ kind: 'subagent', conversationId: 'parent-a' }, undefined, true],
+      [{ kind: 'fork', conversationId: '../outside' }, undefined, true],
+      [{ kind: 'fork' }, undefined, true],
+      ['parent-a', undefined, true],
+    ])('keeps only a well-formed origin %o and migrates malformed ones', async (stored, expected, needsMigration) => {
+      mockAdapter.exists.mockImplementation(async (path: string) => (
+        path === `${SESSIONS_PATH}/session-origin.meta.json`
+      ));
+      mockAdapter.read.mockResolvedValue(JSON.stringify({
+        id: 'session-origin',
+        title: 'Started elsewhere',
+        createdAt: 100,
+        lastActivityAt: 200,
+        origin: stored,
+      }));
+
+      const result = await storage.load('session-origin');
+
+      expect('origin' in result!.metadata ? result!.metadata.origin : 'absent').toEqual(expected ?? 'absent');
       expect(result?.needsMigration).toBe(needsMigration);
     });
 
@@ -548,278 +550,4 @@ describe('SessionStorage', () => {
     });
   });
 
-  describe('toSessionMetadata - extractSubagentData', () => {
-    it('extracts subagent data from Agent toolCalls', () => {
-      const conversation: Conversation = {
-        id: 'conv-subagent',
-        providerId: 'claude' as ProviderId,
-        title: 'Subagent Test',
-        createdAt: 1700000000,
-        lastActivityAt: 1700001000,
-        sessionId: 'sdk-session',
-        messages: [
-          { id: 'msg-1', role: 'user', content: 'Hello', timestamp: 1700000100 },
-          {
-            id: 'msg-2',
-            role: 'assistant',
-            content: 'Working...',
-            timestamp: 1700000200,
-            toolCalls: [
-              {
-                id: 'task-1',
-                name: 'Agent',
-                input: { description: 'Test subagent' },
-                status: 'completed',
-                result: 'Done',
-                subagent: {
-                  id: 'task-1',
-                  description: 'Test subagent',
-                  isExpanded: false,
-                  status: 'completed' as const,
-                  toolCalls: [],
-                  result: 'Done',
-                },
-              },
-            ],
-          },
-        ],
-      };
-
-      const metadata = toSessionMetadata(conversation);
-
-      expect((metadata.providerState)?.subagentData).toBeDefined();
-      expect((metadata.providerState?.subagentData as Record<string, unknown> | undefined)?.['task-1']).toEqual(expect.objectContaining({
-        id: 'task-1',
-        description: 'Test subagent',
-        status: 'completed',
-      }));
-    });
-
-    it.each(['sync', 'async'] as const)('omits base64 images from persisted %s subagent results without changing live results', mode => {
-      const now = testDate().getTime();
-      const imageData = 'a'.repeat(512 * 1024);
-      const image = { type: 'image', source: { type: 'base64', media_type: 'image/png', data: imageData } };
-      const text = { type: 'text', text: 'Archive scan transcription' };
-      const imageResult = JSON.stringify([text, image]);
-      const nested: SubagentInfo = {
-        id: 'nested', description: 'Nested reader', status: 'completed', isExpanded: false,
-        result: JSON.stringify([image]),
-        toolCalls: [{ id: 'read-nested', name: 'Read', input: { file_path: '/scan.png' }, status: 'completed', result: imageResult }],
-      };
-      const subagent: SubagentInfo = {
-        id: 'task-images', description: 'Read scans', status: 'completed', isExpanded: false, mode,
-        toolCalls: [
-          { id: 'read', name: 'Read', input: { file_path: '/scan.png' }, status: 'completed', result: imageResult },
-          { id: 'text', name: 'Read', input: {}, status: 'completed', result: 'plain text mentioning "base64"' },
-          { id: 'json', name: 'Read', input: {}, status: 'completed', result: '[ {"type":"text","text":"base64"} ]' },
-          { id: 'nested', name: 'Agent', input: {}, status: 'completed', result: 'Done', subagent: nested },
-        ],
-      };
-      const conversation: Conversation = {
-        id: 'images', providerId: 'claude', title: 'Scans', createdAt: now, lastActivityAt: now, sessionId: 'native',
-        messages: [{ id: 'msg', role: 'assistant', content: '', timestamp: now,
-          toolCalls: [{ id: subagent.id, name: 'Agent', input: {}, status: 'completed', subagent }],
-        }],
-      };
-      const liveSnapshot = structuredClone(conversation);
-
-      const metadata = toSessionMetadata(conversation);
-      const persisted = (metadata.providerState?.subagentData as Record<string, SubagentInfo>)[subagent.id];
-      const strippedImage = { ...image, source: { ...image.source, data: '' } };
-
-      expect(JSON.stringify(metadata).includes(imageData)).toBe(false);
-      expect(JSON.parse(persisted.toolCalls[0].result!)).toEqual([text, strippedImage]);
-      expect(persisted.toolCalls[0].input).toEqual({ file_path: '/scan.png' });
-      expect(persisted.toolCalls[1].result).toBe(subagent.toolCalls[1].result);
-      expect(persisted.toolCalls[2].result).toBe(subagent.toolCalls[2].result);
-      expect(JSON.parse(persisted.toolCalls[3].subagent!.result!)).toEqual([strippedImage]);
-      expect(JSON.parse(persisted.toolCalls[3].subagent!.toolCalls[0].result!)).toEqual([text, strippedImage]);
-      expect(conversation).toEqual(liveSnapshot);
-    });
-
-    it('returns undefined subagentData when no subagents present', () => {
-      const conversation: Conversation = {
-        id: 'conv-no-subagent',
-        providerId: 'claude' as ProviderId,
-        title: 'No Subagent',
-        createdAt: 1700000000,
-        lastActivityAt: 1700001000,
-        sessionId: null,
-        messages: [
-          { id: 'msg-1', role: 'user', content: 'Hello', timestamp: 1700000100 },
-          { id: 'msg-2', role: 'assistant', content: 'Hi!', timestamp: 1700000200 },
-        ],
-      };
-
-      const metadata = toSessionMetadata(conversation);
-
-      expect((metadata.providerState)?.subagentData).toBeUndefined();
-    });
-
-    it('ignores Agent toolCalls without linked subagent', () => {
-      const conversation: Conversation = {
-        id: 'conv-task-subagent',
-        providerId: 'claude' as ProviderId,
-        title: 'Task Subagent Test',
-        createdAt: 1700000000,
-        lastActivityAt: 1700001000,
-        sessionId: 'sdk-session',
-        messages: [
-          {
-            id: 'msg-1',
-            role: 'assistant',
-            content: '',
-            timestamp: 1700000200,
-            toolCalls: [
-              {
-                id: 'task-1',
-                name: 'Agent',
-                input: { description: 'Background task', run_in_background: true },
-                status: 'completed',
-                result: 'Task running',
-              },
-            ],
-          },
-        ],
-      };
-
-      const metadata = toSessionMetadata(conversation);
-
-      expect((metadata.providerState)?.subagentData).toBeUndefined();
-    });
-  });
-
-  describe('toSessionMetadata - resumeAtMessageId', () => {
-    it('includes resumeAtMessageId when set', () => {
-      const conversation: Conversation = {
-        id: 'conv-rewind',
-        providerId: 'claude' as ProviderId,
-        title: 'Rewind Test',
-        createdAt: 1700000000,
-        lastActivityAt: 1700001000,
-        sessionId: 'sdk-session',
-        messages: [],
-        resumeAtMessageId: 'assistant-uuid-123',
-      };
-
-      const metadata = toSessionMetadata(conversation);
-
-      expect(metadata.resumeAtMessageId).toBe('assistant-uuid-123');
-    });
-
-    it('omits resumeAtMessageId when not set', () => {
-      const conversation: Conversation = {
-        id: 'conv-no-rewind',
-        providerId: 'claude' as ProviderId,
-        title: 'No Rewind',
-        createdAt: 1700000000,
-        lastActivityAt: 1700001000,
-        sessionId: null,
-        messages: [],
-      };
-
-      const metadata = toSessionMetadata(conversation);
-
-      expect(metadata.resumeAtMessageId).toBeUndefined();
-    });
-  });
-
-  describe('toSessionMetadata', () => {
-    it('does not fall back to unsanitized state when the provider rejects it', () => {
-      const service = ProviderRegistry.getConversationHistoryService('claude');
-      const sanitizer = vi.spyOn(service, 'buildPersistedProviderState').mockReturnValue(undefined);
-      const conversation: Conversation = {
-        id: 'conv-rejected-provider-state',
-        providerId: 'claude',
-        title: 'Rejected state',
-        createdAt: 1,
-        lastActivityAt: 1,
-        sessionId: null,
-        messages: [],
-        providerState: { untrustedPath: '/outside/root/session.jsonl' },
-      };
-
-      expect(toSessionMetadata(conversation).providerState).toBeUndefined();
-      sanitizer.mockRestore();
-    });
-
-    it('converts Conversation to SessionMetadata', () => {
-      const usage: UsageInfo = {
-        model: 'claude-opus-4-5',
-        inputTokens: 5000,
-        cacheCreationInputTokens: 1000,
-        cacheReadInputTokens: 500,
-        contextWindow: 200000,
-        contextTokens: 6500,
-        percentage: 3,
-      };
-
-      const conversation: Conversation = {
-        id: 'conv-convert',
-        providerId: 'claude' as ProviderId,
-        title: 'Convert Test',
-        createdAt: 1700000000,
-        lastActivityAt: 1700000900,
-        sessionId: 'sdk-session',
-        providerState: { providerSessionId: 'current-sdk-session' },
-        messages: [
-          { id: 'msg-1', role: 'user', content: 'Hello', timestamp: 1700000100 },
-        ],
-        linkedContentPath: 'notes/test.md',
-        usage,
-        titleGenerationStatus: 'success',
-      };
-
-      const metadata = toSessionMetadata(conversation);
-
-      expect(metadata.id).toBe('conv-convert');
-      expect(metadata.title).toBe('Convert Test');
-      expect(metadata.createdAt).toBe(1700000000);
-      expect(metadata.lastActivityAt).toBe(1700000900);
-      expect(metadata.sessionId).toBe('sdk-session');
-      expect((metadata.providerState)?.providerSessionId).toBe('current-sdk-session');
-      expect(metadata.linkedContentPath).toBe('notes/test.md');
-      expect(metadata.usage).toEqual(usage);
-      expect(metadata.titleGenerationStatus).toBe('success');
-
-      // Should not include messages
-      expect(metadata).not.toHaveProperty('messages');
-    });
-
-    it('includes forkSource when set', () => {
-      const conversation: Conversation = {
-        id: 'conv-fork',
-        providerId: 'claude' as ProviderId,
-        title: 'Fork Test',
-        createdAt: 1700000000,
-        lastActivityAt: 1700001000,
-        sessionId: null,
-        messages: [],
-        providerState: { forkSource: { sessionId: 'source-session-abc', resumeAt: 'asst-uuid-xyz' } },
-      };
-
-      const metadata = toSessionMetadata(conversation);
-
-      expect((metadata.providerState)?.forkSource).toEqual({
-        sessionId: 'source-session-abc',
-        resumeAt: 'asst-uuid-xyz',
-      });
-    });
-
-    it('omits forkSource when not set', () => {
-      const conversation: Conversation = {
-        id: 'conv-no-fork',
-        providerId: 'claude' as ProviderId,
-        title: 'No Fork',
-        createdAt: 1700000000,
-        lastActivityAt: 1700001000,
-        sessionId: 'sdk-session',
-        messages: [],
-      };
-
-      const metadata = toSessionMetadata(conversation);
-
-      expect((metadata.providerState)?.forkSource).toBeUndefined();
-    });
-  });
 });

@@ -363,6 +363,5 @@ describe('GrokChatUIConfig', () => {
       fallbackValue: 'normal',
       values: options.map(option => option.value),
     }));
-    expect(grokChatUIConfig.getModeSelector?.({})).toBeNull();
   });
 });

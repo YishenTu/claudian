@@ -141,6 +141,33 @@ it.each([false, true])('resolves current titles once and carries snapshots throu
   } finally { await fixture.native.coordinator.dispose(); await fixture.native.registry.dispose(); }
 });
 
+it('preserves both original reference drafts when their queued messages are edited', async () => {
+  const fixture = await setup();
+  await fixture.native.coordinator.bindConversation({ conversationId: 'conversation-1', providerId: 'claude' });
+  const release = await fixture.holdResponse();
+  const first = `    firstIndented()\n\nUse ${token}  \n`;
+  const second = `    secondIndented()\n\nUse ${token}  \n`;
+  try {
+    fixture.input.value = first;
+    await fixture.controller.sendMessage();
+    expect(fixture.state.queuedMessage?.turnRequest.draftContent).toBe(first);
+    fixture.input.value = second;
+    await fixture.controller.sendMessage();
+    expect(fixture.plugin.getConversationById).toHaveBeenCalledTimes(2);
+    expect(fixture.state.queuedMessage?.turnRequest.text).toBe(
+      'firstIndented()\n\nUse @"Current title"\n\nsecondIndented()\n\nUse @"Current title"',
+    );
+    fixture.controller.queue.withdrawToComposer();
+    expect(fixture.input.value).toBe(`${first}\n${second}`);
+    expect(fixture.state.queuedMessage).toBeNull();
+    expect(fixture.native.backends.get('claude')!.sessions).toHaveLength(0);
+  } finally {
+    await release();
+    await fixture.native.coordinator.dispose();
+    await fixture.native.registry.dispose();
+  }
+});
+
 it('preserves the original token draft when the session cannot be loaded', async () => {
   const fixture = (await setup());
   try {
@@ -281,6 +308,32 @@ it('cancels and drains queued snapshot preparation before plugin shutdown finish
   expect(fixture.state.queuedMessage).toBeNull();
   expect(fixture.input.value).toBe(token);
   await fixture.native.coordinator.dispose(); await fixture.native.registry.dispose();
+});
+
+it('keeps a stopped snapshot preparation as pending work until it settles', async () => {
+  const fixture = (await setup());
+  const gate = deferred<Conversation | null>();
+  const source = await fixture.plugin.getConversationById(id);
+  fixture.plugin.getConversationById.mockClear().mockReturnValue(gate.promise);
+  const releaseTurn = await fixture.holdResponse();
+  fixture.input.value = token;
+  const sending = fixture.controller.sendMessage();
+  try {
+    await waitForCall(fixture.plugin.getConversationById);
+    fixture.controller.cancelStreaming();
+    await releaseTurn();
+
+    // Stop withdraws the preparation from the UI, but it still resumes and restores its draft later.
+    expect(fixture.controller.isPreparingMainTurn).toBe(false);
+    expect(fixture.controller.hasUnsettledMainWork).toBe(true);
+    gate.resolve(source);
+    await sending;
+    expect(fixture.controller.hasUnsettledMainWork).toBe(false);
+    expect(fixture.input.value).toBe(token);
+  } finally {
+    gate.resolve(source);
+    await fixture.native.coordinator.dispose(); await fixture.native.registry.dispose();
+  }
 });
 
 it.each([false, true])('restores prepared drafts when rewind begins during hydration (plain follow-up: %s)', async followUp => {

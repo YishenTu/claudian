@@ -251,3 +251,41 @@ it('updates a disabled provider surface from its committed enablement notificati
   expect(within(titleModels).getByRole('option', { name: 'Codex: GPT-5.5' })).toBeDefined();
   expect(within(h.container).queryByRole('status')).toBeNull();
 });
+
+
+it.each(['success', 'failure'] as const)('retains hidden-command drafts when settings reopen before save %s', async phase => {
+  let entered!: () => void;
+  const started = new Promise<void>(resolve => { entered = resolve; });
+  let release!: () => void;
+  const pending = new Promise<void>(resolve => { release = resolve; });
+  let writes = 0;
+  const h = await createSettings({ hiddenCommands: ['compact'] }, async () => {
+    if (++writes === 1) {
+      entered();
+      await pending;
+      if (phase === 'failure') throw new Error('Disk unavailable');
+    }
+  });
+  fireEvent.click(within(h.container).getByRole('button', { name: t('settings.tabs.skills') }));
+  const input = within(h.container).getByRole<HTMLTextAreaElement>('textbox', { name: t('settings.skills.hidden.name') });
+  fireEvent.input(input, { target: { value: 'compact\nreview' } });
+  fireEvent.blur(input);
+  try {
+    await started;
+    expect(h.settings.hiddenCommands).toEqual(['compact']);
+    h.tab.update();
+    const reopened = within(h.container).getByRole<HTMLTextAreaElement>('textbox', { name: t('settings.skills.hidden.name') });
+    expect(reopened.value).toBe('compact\nreview');
+  } finally {
+    release();
+  }
+  const saved = await h.tab['textEdits'].flush();
+  expect(saved).toBe(phase === 'success');
+  const reopened = within(h.container).getByRole<HTMLTextAreaElement>('textbox', { name: t('settings.skills.hidden.name') });
+  expect(reopened.value).toBe('compact\nreview');
+  expect(h.settings.hiddenCommands).toEqual(phase === 'success' ? ['compact', 'review'] : ['compact']);
+  fireEvent.blur(reopened);
+  expect(await h.tab['textEdits'].flush()).toBe(true);
+  expect((await h.storage.load()).hiddenCommands).toEqual(['compact', 'review']);
+  expect(writes).toBe(phase === 'success' ? 1 : 2);
+});

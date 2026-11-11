@@ -104,6 +104,12 @@ button.claudian-tab-badge-action-required {
   border-color: var(--color-orange);
 }
 
+/* A dragged badge covers the badges sliding under it; stays opaque when translucent themes clear the primary background. */
+.claudian-tab-badges.claudian-live-sorting > button.claudian-tab-badge.claudian-live-sort-lifted {
+  background-color: var(--background-secondary);
+  background-image: linear-gradient(var(--background-primary), var(--background-primary));
+}
+
 /* The rename wrapper owns the surface; its embedded input stays transparent and borderless. */
 .claudian-tab-label-editor {
   display: flex;

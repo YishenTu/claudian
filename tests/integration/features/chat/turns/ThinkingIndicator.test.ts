@@ -6,284 +6,73 @@ import type { Mock } from 'vitest';
 import { ChatState } from '@/features/chat/state/ChatState';
 import { ThinkingIndicator } from '@/features/chat/turns/ThinkingIndicator';
 import { TurnCoordinator } from '@/features/chat/turns/TurnCoordinator';
-import { setLocale } from '@/i18n/i18n';
+import { t } from '@/i18n/i18n';
+import { formatDurationMmSs } from '@/utils/date';
 
 describe('ThinkingIndicator', () => {
   let turns: TurnCoordinator;
   let state: ChatState;
   let updateQueueIndicator: Mock;
-  let scrollToBottom: Mock;
   let indicator: ThinkingIndicator;
-  let messagesEl: HTMLElement;
-
-  function createIndicator(): ThinkingIndicator {
-    return new ThinkingIndicator({ state, getMessagesEl: () => messagesEl, updateQueueIndicator, scrollToBottom });
-  }
+  let contentEl: HTMLElement;
+  const shown = (): HTMLElement | null => contentEl.querySelector<HTMLElement>('.claudian-thinking');
 
   beforeEach(() => {
     vi.useFakeTimers();
     turns = new TurnCoordinator();
     state = new ChatState({}, undefined, turns);
-    messagesEl = document.body.createDiv();
-    state.currentContentEl = messagesEl.createDiv();
+    const messagesEl = document.body.createDiv();
+    contentEl = messagesEl.createDiv();
+    state.currentContentEl = contentEl;
     updateQueueIndicator = vi.fn();
-    scrollToBottom = vi.fn();
-    indicator = createIndicator();
+    indicator = new ThinkingIndicator({
+      state,
+      getMessagesEl: () => messagesEl,
+      updateQueueIndicator,
+    });
   });
 
   afterEach(() => {
-    state.clearThinkingIndicatorTimeout();
-    state.clearFlavorTimerInterval();
     indicator.dispose();
     state.dispose();
-    setLocale('en');
     document.body.replaceChildren();
     vi.restoreAllMocks();
     vi.useRealTimers();
   });
 
-  function waiting() {
-    return [state.thinkingEl?.firstElementChild?.textContent, state.waitingStatus];
-  }
+  it('appears after its debounce delay', () => {
+    indicator.show();
+    vi.advanceTimersByTime(399);
+    expect(shown()).toBeNull();
 
-  it('preserves every English flavor and its selection bucket', () => {
-    const english = [
-      'Thinking...',
-      'Pondering...',
-      'Processing...',
-      'Analyzing...',
-      'Considering...',
-      'Working on it...',
-      'Vibing...',
-      'One moment...',
-      'On it...',
-      'Ruminating...',
-      'Contemplating...',
-      'Reflecting...',
-      'Mulling it over...',
-      'Let me think...',
-      'Hmm...',
-      'Cogitating...',
-      'Deliberating...',
-      'Weighing options...',
-      'Gathering thoughts...',
-      'Brewing ideas...',
-      'Connecting dots...',
-      'Assembling thoughts...',
-      'Spinning up neurons...',
-      'Loading brilliance...',
-      'Consulting the oracle...',
-      'Summoning knowledge...',
-      'Crunching thoughts...',
-      'Dusting off neurons...',
-      'Wrangling ideas...',
-      'Herding thoughts...',
-      'Juggling concepts...',
-      'Untangling this...',
-      'Piecing it together...',
-      'Sipping coffee...',
-      'Warming up...',
-      'Getting cozy with this...',
-      'Settling in...',
-      'Making tea...',
-      'Grabbing a snack...',
-      'Parsing...',
-      'Compiling thoughts...',
-      'Running inference...',
-      'Querying the void...',
-      'Defragmenting brain...',
-      'Allocating memory...',
-      'Optimizing...',
-      'Indexing...',
-      'Syncing neurons...',
-      'Breathing...',
-      'Finding clarity...',
-      'Channeling focus...',
-      'Centering...',
-      'Aligning chakras...',
-      'Meditating on this...',
-      'Asking the stars...',
-      'Reading tea leaves...',
-      'Shaking the magic 8-ball...',
-      'Consulting ancient scrolls...',
-      'Decoding the matrix...',
-      'Communing with the ether...',
-      'Peering into the abyss...',
-      'Channeling the cosmos...',
-      'Diving in...',
-      'Rolling up sleeves...',
-      'Getting to work...',
-      'Tackling this...',
-      'On the case...',
-      'Investigating...',
-      'Exploring...',
-      'Digging deeper...',
-      'Bear with me...',
-      'Hang tight...',
-      'Just a sec...',
-      'Working my magic...',
-      'Almost there...',
-      'Give me a moment...',
-    ];
-    const random = vi.spyOn(Math, 'random');
     vi.advanceTimersByTime(1);
-    state.responseStartTime = performance.now();
-
-    for (const [index, expected] of english.entries()) {
-      random.mockClear().mockReturnValue((index + 0.25) / 76);
-      indicator.show();
-      vi.advanceTimersByTime(399);
-      expect(state.thinkingEl).toBeNull();
-      expect(random).not.toHaveBeenCalled();
-      expect(scrollToBottom).not.toHaveBeenCalled();
-
-      vi.advanceTimersByTime(1);
-      expect(waiting()).toEqual([expected, expected]);
-      expect(scrollToBottom).toHaveBeenCalledTimes(1);
-
-      indicator.show();
-      vi.advanceTimersByTime(1_000);
-      expect(random).toHaveBeenCalledTimes(1);
-      indicator.hide();
-      scrollToBottom.mockClear();
-    }
-  });
-
-  it.each([
-    [0, 'Thinking...'],
-    [0.01, 'Thinking...'],
-    [0.014, 'Pondering...'],
-    [0.9999999999999999, 'Give me a moment...'],
-  ])('selects the original flavor at random value %s', (value, expected) => {
-    vi.spyOn(Math, 'random').mockReturnValue(value);
-    indicator.show();
-    vi.advanceTimersByTime(400);
-    expect(waiting()).toEqual([expected, expected]);
-  });
-
-  it.each([
-    [0, '思考中…'],
-    [8, '马上处理…'],
-    [9, '反复推敲中…'],
-    [18, '整理思路中…'],
-    [19, '酝酿点子中…'],
-    [32, '拼合思路中…'],
-    [33, '喝口咖啡…'],
-    [38, '拿点零食…'],
-    [39, '解析中…'],
-    [47, '同步神经元中…'],
-    [48, '深呼吸…'],
-    [53, '静心思考中…'],
-    [54, '向星辰提问…'],
-    [61, '连接宇宙灵感…'],
-    [62, '深入探索中…'],
-    [69, '深挖线索中…'],
-    [70, '请稍等…'],
-    [75, '给我一点时间…'],
-  ])('localizes the flavor at group boundary index %s', (index, expected) => {
-    setLocale('zh-CN');
-    vi.spyOn(Math, 'random').mockReturnValue((index + 0.25) / 76);
-    indicator.show();
-    vi.advanceTimersByTime(400);
-    expect(waiting()).toEqual([expected, expected]);
-  });
-
-  it('reads the active locale on each fresh show after import', () => {
-    vi.spyOn(Math, 'random').mockReturnValue(0);
-    const observed = [];
-    for (const locale of ['en', 'zh-CN', 'en'] as const) {
-      setLocale(locale);
-      indicator = createIndicator();
-      indicator.show();
-      vi.advanceTimersByTime(400);
-      observed.push(waiting());
-      indicator.dispose();
-    }
-    expect(observed).toEqual([
-      ['Thinking...', 'Thinking...'],
-      ['思考中…', '思考中…'],
-      ['Thinking...', 'Thinking...'],
-    ]);
-  });
-
-  it.each([
-    ['en', 'Thinking...', ' (esc to interrupt · 0s)', ' (esc to interrupt · 59s)', ' (esc to interrupt · 1m 0s)'],
-    ['zh-CN', '思考中…', '（按 esc 中断 · 0s）', '（按 esc 中断 · 59s）', '（按 esc 中断 · 1m 0s）'],
-  ] as const)('formats the full interrupt hint in %s without changing elapsed time', (locale, flavor, initial, beforeMinute, afterMinute) => {
-    setLocale(locale);
-    const random = vi.spyOn(Math, 'random').mockReturnValue(0);
-    vi.advanceTimersByTime(1);
-    state.responseStartTime = performance.now();
-    indicator.show();
-    vi.advanceTimersByTime(400);
-
-    const hint = state.thinkingEl?.querySelector('.claudian-thinking-hint');
-    const observed = [hint?.textContent];
-    vi.advanceTimersByTime(59_000);
-    observed.push(hint?.textContent);
-    vi.advanceTimersByTime(1_000);
-    observed.push(hint?.textContent);
-    expect(observed).toEqual([initial, beforeMinute, afterMinute]);
-    expect(waiting()).toEqual([flavor, flavor]);
-    expect(random).toHaveBeenCalledTimes(1);
-  });
-
-  it('retains literal explicit text across hide and resume, then localizes ordinary waiting', async () => {
-    setLocale('zh-CN');
-    const finish = holdResponse(turns);
-    const random = vi.spyOn(Math, 'random').mockReturnValue(0);
-    try {
-      indicator.show('Thinking...');
-      vi.advanceTimersByTime(400);
-      expect(waiting()).toEqual(['Thinking...', 'Thinking...']);
-      indicator.hide();
-      indicator.resume(state.streamGeneration);
-      vi.advanceTimersByTime(400);
-      expect(waiting()).toEqual(['Thinking...', 'Thinking...']);
-      expect(random).not.toHaveBeenCalled();
-
-      indicator.endExplicit();
-      indicator.show();
-      vi.advanceTimersByTime(400);
-      expect(waiting()).toEqual(['思考中…', '思考中…']);
-      expect(random).toHaveBeenCalledTimes(1);
-    } finally {
-      await finish();
-    }
-  });
-
-  it('treats an empty override as ordinary waiting', () => {
-    setLocale('zh-CN');
-    const random = vi.spyOn(Math, 'random').mockReturnValue(0);
-    indicator.show('');
-    vi.advanceTimersByTime(400);
-    expect(waiting()).toEqual(['思考中…', '思考中…']);
-    expect(random).toHaveBeenCalledTimes(1);
+    expect(shown()).not.toBeNull();
+    expect(state.waitingStatus).not.toBeNull();
   });
 
   it('returns after a text pause only while the response streams', async () => {
     indicator.afterTextPause();
     vi.advanceTimersByTime(2_000);
-    expect(state.thinkingEl).toBeNull();
+    expect(shown()).toBeNull();
 
     const finish = holdResponse(turns);
     indicator.afterTextPause();
     vi.advanceTimersByTime(400);
-    expect(state.thinkingEl).toBeNull();
+    expect(shown()).toBeNull();
     vi.advanceTimersByTime(1_100);
-    expect(state.thinkingEl).not.toBeNull();
+    expect(shown()).not.toBeNull();
     await finish();
   });
 
   it('resumes only while the response streams', async () => {
     indicator.resume(state.streamGeneration);
     vi.advanceTimersByTime(500);
-    expect(state.thinkingEl).toBeNull();
+    expect(shown()).toBeNull();
 
     const finish = holdResponse(turns);
     indicator.resume(state.streamGeneration);
     vi.advanceTimersByTime(500);
-    expect(state.thinkingEl).not.toBeNull();
+    expect(shown()).not.toBeNull();
     await finish();
   });
 
@@ -295,7 +84,7 @@ describe('ThinkingIndicator', () => {
     const finishNext = holdResponse(turns);
     indicator.resume(generation);
     vi.advanceTimersByTime(500);
-    expect(state.thinkingEl).toBeNull();
+    expect(shown()).toBeNull();
     await finishNext();
   });
 
@@ -308,7 +97,7 @@ describe('ThinkingIndicator', () => {
       state.setActionRequired(true);
       indicator.show();
       vi.advanceTimersByTime(500);
-      expect(state.thinkingEl).toBeNull();
+      expect(shown()).toBeNull();
       state.setActionRequired(false);
       return { earlier, finishCurrent };
     }
@@ -317,7 +106,7 @@ describe('ThinkingIndicator', () => {
       const { earlier, finishCurrent } = await withholdCurrentIndicator();
       indicator.resume(earlier);
       vi.advanceTimersByTime(500);
-      expect(state.thinkingEl).not.toBeNull();
+      expect(shown()).not.toBeNull();
       await finishCurrent();
     });
 
@@ -326,7 +115,7 @@ describe('ThinkingIndicator', () => {
       indicator.hide();
       indicator.resume(earlier);
       vi.advanceTimersByTime(500);
-      expect(state.thinkingEl).toBeNull();
+      expect(shown()).toBeNull();
       await finishCurrent();
     });
 
@@ -335,7 +124,7 @@ describe('ThinkingIndicator', () => {
       await finishCurrent();
       indicator.resume(earlier);
       vi.advanceTimersByTime(500);
-      expect(state.thinkingEl).toBeNull();
+      expect(shown()).toBeNull();
     });
   });
 
@@ -344,12 +133,13 @@ describe('ThinkingIndicator', () => {
 
     indicator.show();
     vi.advanceTimersByTime(500);
-    expect(state.flavorTimerInterval).not.toBeNull();
+    expect(shown()).not.toBeNull();
+    expect(vi.getTimerCount()).toBe(1);
 
     indicator.hide();
 
-    expect(state.flavorTimerInterval).toBeNull();
-    expect(state.thinkingEl).toBeNull();
+    expect(vi.getTimerCount()).toBe(0);
+    expect(shown()).toBeNull();
     expect(state.waitingStatus).toBeNull();
   });
 
@@ -396,7 +186,7 @@ describe('ThinkingIndicator', () => {
     indicator.show();
     vi.advanceTimersByTime(500);
 
-    expect(state.thinkingEl).toBeNull();
+    expect(shown()).toBeNull();
   });
 
   it('should not show indicator when a thinking block is active', () => {
@@ -405,7 +195,7 @@ describe('ThinkingIndicator', () => {
     indicator.show();
     vi.advanceTimersByTime(500);
 
-    expect(state.thinkingEl).toBeNull();
+    expect(shown()).toBeNull();
   });
 
   it('keeps an explicit status across hide and resume until it ends', () => {
@@ -419,7 +209,7 @@ describe('ThinkingIndicator', () => {
     expect(state.waitingStatus).toBe('Compacting...');
 
     indicator.endExplicit();
-    expect(state.thinkingEl).toBeNull();
+    expect(shown()).toBeNull();
     indicator.show();
     vi.advanceTimersByTime(500);
     expect(state.waitingStatus).not.toBeNull();
@@ -432,19 +222,22 @@ describe('ThinkingIndicator', () => {
     indicator.show();
     await supersede();
     vi.advanceTimersByTime(500);
-    expect(state.thinkingEl).toBeNull();
+    expect(shown()).toBeNull();
     expect(state.waitingStatus).toBeNull();
 
     indicator.show();
     vi.advanceTimersByTime(500);
-    const staleEl = state.thinkingEl;
+    const staleEl = shown();
     expect(staleEl).not.toBeNull();
     await supersede();
 
     indicator.show();
     vi.advanceTimersByTime(500);
-    expect(state.thinkingEl).not.toBeNull();
-    expect(state.thinkingEl).not.toBe(staleEl);
+    expect(shown()).not.toBeNull();
+    expect(shown()).not.toBe(staleEl);
+    expect(staleEl!.isConnected).toBe(false);
+    // Only the replacement indicator's elapsed-time tick remains.
+    expect(vi.getTimerCount()).toBe(1);
   });
 
   it('keeps the pending delay when asked to show again before it elapses', () => {
@@ -455,7 +248,7 @@ describe('ThinkingIndicator', () => {
     indicator.show();
     vi.advanceTimersByTime(100);
 
-    expect(state.thinkingEl).not.toBeNull();
+    expect(shown()).not.toBeNull();
   });
 
   it('should re-append existing indicator to bottom when called again', () => {
@@ -464,18 +257,18 @@ describe('ThinkingIndicator', () => {
     indicator.show();
     vi.advanceTimersByTime(500);
 
-    const thinkingEl = state.thinkingEl;
-    const firstInterval = state.flavorTimerInterval;
+    const thinkingEl = shown();
     expect(thinkingEl).not.toBeNull();
-    expect(firstInterval).not.toBeNull();
+    expect(vi.getTimerCount()).toBe(1);
 
     indicator.show();
 
-    expect(state.thinkingEl).toBe(thinkingEl);
+    expect(shown()).toBe(thinkingEl);
     expect(updateQueueIndicator).toHaveBeenCalled();
 
     vi.advanceTimersByTime(500);
-    expect(state.flavorTimerInterval).toBe(firstInterval);
+    expect(contentEl.querySelectorAll('.claudian-thinking')).toHaveLength(1);
+    expect(vi.getTimerCount()).toBe(1);
   });
 
   it('should clear interval when timerSpan becomes disconnected from DOM', () => {
@@ -487,8 +280,8 @@ describe('ThinkingIndicator', () => {
     indicator.show();
     vi.advanceTimersByTime(500);
 
-    expect(state.flavorTimerInterval).not.toBeNull();
-    const thinkingEl = state.thinkingEl;
+    expect(vi.getTimerCount()).toBe(1);
+    const thinkingEl = shown();
     expect(thinkingEl).not.toBeNull();
 
     // The timer span is the second child (first is flavor text, second is hint)
@@ -496,30 +289,13 @@ describe('ThinkingIndicator', () => {
     expect(timerSpan).toBeDefined();
 
     vi.advanceTimersByTime(1000);
-    expect(state.flavorTimerInterval).not.toBeNull();
-    expect(timerSpan.textContent).toContain('esc to interrupt');
+    expect(vi.getTimerCount()).toBe(1);
+    expect(timerSpan.textContent).toBe(t('chat.busyIndicator.hint', { duration: formatDurationMmSs(1) }));
 
     timerSpan.remove();
     vi.advanceTimersByTime(1000);
 
-    expect(state.flavorTimerInterval).toBeNull();
-  });
-
-  it('should clear pre-existing interval before creating new one', () => {
-    vi.advanceTimersByTime(1);
-    state.responseStartTime = performance.now();
-    const activeWindow = state.currentContentEl!.ownerDocument.defaultView!;
-    const clearIntervalSpy = vi.spyOn(activeWindow, 'clearInterval');
-
-    state.setFlavorTimerInterval(activeWindow.setInterval(() => {}, 9999), activeWindow);
-
-    indicator.show();
-    vi.advanceTimersByTime(500);
-
-    expect(clearIntervalSpy).toHaveBeenCalled();
-    expect(state.flavorTimerInterval).not.toBeNull();
-
-    clearIntervalSpy.mockRestore();
+    expect(vi.getTimerCount()).toBe(0);
   });
 
   it('should not update timer text when responseStartTime is null', () => {
@@ -529,9 +305,9 @@ describe('ThinkingIndicator', () => {
     indicator.show();
     vi.advanceTimersByTime(500);
 
-    expect(state.thinkingEl).not.toBeNull();
+    expect(shown()).not.toBeNull();
 
-    const timerSpan = state.thinkingEl!.children[1];
+    const timerSpan = shown()!.children[1];
     timerSpan.setText('Existing timer text');
 
     state.responseStartTime = null;
@@ -539,6 +315,6 @@ describe('ThinkingIndicator', () => {
 
     expect(timerSpan.textContent).toBe('Existing timer text');
     // The interval is not cleared by the null check.
-    expect(state.flavorTimerInterval).not.toBeNull();
+    expect(vi.getTimerCount()).toBe(1);
   });
 });

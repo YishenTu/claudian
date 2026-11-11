@@ -66,9 +66,9 @@ describe('SessionBrowser session metadata popover', () => {
     expect(item.querySelector('.claudian-history-item-date')).toBeNull();
     fireEvent.mouseEnter(item);
     const tooltip = within(document.body).getByRole('tooltip');
-    expect([...tooltip.querySelectorAll('.claudian-session-metadata-label')].map(label => label.textContent))
-      .toEqual(['Created', 'Last active']);
     const visibleRows = [...tooltip.children].filter(row => !row.classList.contains('claudian-hidden'));
+    expect(visibleRows.flatMap(row => [...row.querySelectorAll('.claudian-session-metadata-label')].map(label => label.textContent)))
+      .toEqual(['Created', 'Last active']);
     expect(visibleRows.map(row => row.querySelector('.claudian-session-metadata-value')?.textContent))
       .toEqual([
         ...(title ? [title] : []),

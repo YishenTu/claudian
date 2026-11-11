@@ -92,10 +92,11 @@ export function renderSessionTaskNotification(
   };
   recordNotificationPredecessors(message, afterRequestedEvent, afterBackgroundEvent);
   host.state.addMessage(message);
+  const followArrival = host.renderer?.follow.holdArrival();
   const element = host.renderer?.addMessage(message) ?? null;
   const contentEl = element?.querySelector<HTMLElement>('.claudian-message-content');
   if (contentEl) host.renderer?.renderTaskNotification(contentEl, content);
-  host.renderer?.scrollToBottom();
+  followArrival?.();
 }
 
 function isVisibleAutoTurnChunk(chunk: StreamChunk, hiddenToolIds: Set<string>): boolean {
@@ -184,7 +185,8 @@ export async function renderAutoTriggeredTurn(
     },
   });
   state.currentConversationId = host.state.currentConversationId;
-  state.autoScrollEnabled = host.state.autoScrollEnabled;
+  // The settled turn renders as one arrival, measured on the presentation it started in.
+  const followArrival = host.renderer?.follow.holdArrival();
   const stream = host.stream.createBackgroundStream(state);
   const segments: ChatMessage[] = [];
   let checkpointMessage: ChatMessage | undefined;
@@ -263,6 +265,6 @@ export async function renderAutoTriggeredTurn(
     return visible.length > 0 || result.interruptedAt !== undefined;
   } finally {
     stream.dispose();
-    host.renderer?.scrollToBottom();
+    followArrival?.();
   }
 }

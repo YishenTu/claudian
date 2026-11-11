@@ -4,6 +4,7 @@ import '@/providers';
 import { axe } from '@test/helpers/accessibility';
 import { createHarness as createExecutionHarness } from '@test/helpers/ChatExecutionHarness';
 import { createConversationPorts } from '@test/helpers/ConversationPorts';
+import { triggerResize } from '@test/helpers/dom/ResizeObserver';
 import { createChatFeatureHost } from '@test/helpers/features/chat/ChatFeatureHostFixture';
 import { createProjectsFake } from '@test/helpers/features/chat/ProjectsFake';
 import { testDate } from '@test/helpers/testClock';
@@ -16,8 +17,8 @@ import { ConversationController } from '@/features/chat/conversation/Conversatio
 import { LinkedContentController } from '@/features/chat/linked-content';
 import { NavigationSidebar } from '@/features/chat/navigation/NavigationSidebar';
 import { MessageRenderer } from '@/features/chat/rendering/MessageRenderer';
+import { SubagentManager } from '@/features/chat/rendering/subagents/SubagentManager';
 import { ChatState } from '@/features/chat/state/ChatState';
-import { SubagentManager } from '@/features/chat/subagents/SubagentManager';
 
 const start = testDate().getTime();
 
@@ -212,6 +213,10 @@ it('returns to the reading position after cancelling a branch preview of a revea
   controller.cancelBranchDraft();
 
   expect(messagesEl.querySelector('[data-message-id="u30"]')).not.toBeNull();
+  expect(messagesEl.querySelector<HTMLElement>('[data-message-id="u5"]')!.getBoundingClientRect().top).toBe(-30);
+  // The rerendered transcript's next layout pass must not take the reader back to its end.
+  const entry = { contentRect: new DOMRectReadOnly(0, 0, 800, 100), contentBoxSize: [], borderBoxSize: [], devicePixelContentBoxSize: [] };
+  for (const el of [messagesEl, ...Array.from(messagesEl.children)]) triggerResize(el, entry);
   expect(messagesEl.querySelector<HTMLElement>('[data-message-id="u5"]')!.getBoundingClientRect().top).toBe(-30);
   renderer.dispose();
 });

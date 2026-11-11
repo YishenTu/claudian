@@ -8,6 +8,9 @@ const SPACER_CLASS = 'claudian-live-sort-spacer';
 /** How much of a neighbour the dragged card's leading edge covers before the neighbour moves away. */
 const DISPLACE_FRACTION = 0.3;
 
+/** The direction a list lays out and sorts along. */
+export type SortAxis = 'x' | 'y';
+
 /** Where a dropped item lands relative to the item it is dropped on. */
 export type SortPlacement = 'before' | 'after';
 
@@ -27,6 +30,10 @@ export interface LiveListSorterDeps {
   onDragStart?(): void;
   /** Row controls that keep their own pointer behavior. */
   ignoreSelector?: string;
+  /** Layout direction of the list; vertical by default. */
+  axis?: SortAxis;
+  /** False while presses on rows should not start a drag. */
+  canStart?(): boolean;
 }
 
 /** An item's row and the elements under it that fold away while it is dragged. */
@@ -35,16 +42,20 @@ interface SortEntry {
   readonly block: readonly [HTMLElement, ...HTMLElement[]];
 }
 
+/** An item's extent along the sort axis. */
 interface SortItem {
   readonly entry: SortEntry;
-  readonly top: number;
-  readonly height: number;
+  readonly start: number;
+  readonly size: number;
 }
 
 interface SortLift {
   readonly list: HTMLElement;
-  /** The list's viewport top and scroll position at lift, so scrolling it or any ancestor keeps the row under the pointer. */
-  readonly startTop: number;
+  /**
+   * The list's viewport start and scroll position at lift, so scrolling it or any ancestor keeps the row under the
+   * pointer.
+   */
+  readonly listStart: number;
   readonly startScroll: number;
   /** Holds the folded members' height at the end of the list's content while they are folded. */
   readonly spacer: HTMLElement | null;
@@ -62,9 +73,10 @@ interface SortLift {
 interface SortGesture {
   readonly entry: SortEntry;
   readonly doc: Document;
-  readonly startY: number;
+  /** Pointer position along the sort axis at the press. */
+  readonly startPos: number;
   /** The latest pointer position, which a scroll re-applies with the pointer held still. */
-  lastY: number;
+  lastPos: number;
   /** Set once the press travels past the threshold and the row lifts. */
   lift: SortLift | null;
   readonly cleanup: () => void;
@@ -78,11 +90,16 @@ interface SortGesture {
  */
 export class LiveListSorter {
   #entries: SortEntry[] = [];
+  /** Rows already listening for presses; a row attached again only replaces its entry. */
+  readonly #listening = new WeakSet<HTMLElement>();
   #gesture: SortGesture | null = null;
   #settling = false;
   #deferredRender: (() => void) | null = null;
+  readonly #axis: AxisGeometry;
 
-  constructor(private readonly deps: LiveListSorterDeps) {}
+  constructor(private readonly deps: LiveListSorterDeps) {
+    this.#axis = AXES[deps.axis ?? 'y'];
+  }
 
   /** An item is lifted, or its drop is still saving. */
   get isDragging(): boolean {
@@ -102,19 +119,43 @@ export class LiveListSorter {
     this.#entries = [];
   }
 
-  /** Makes an item sortable by pressing its row (`block[0]`). */
+  /**
+   * Makes an item sortable by pressing its row (`block[0]`). Attaching a row that is already sortable replaces its
+   * entry, so a list that keeps its row nodes across renders re-registers them instead of rebuilding them.
+   */
   attach(block: readonly [HTMLElement, ...HTMLElement[]], row: LiveSortRow): void {
-    const entry: SortEntry = { row, block };
-    this.#entries.push(entry);
+    const rowEl = block[0];
+    this.#entries = this.#entries.filter(entry => entry.block[0] !== rowEl);
+    this.#entries.push({ row, block });
     for (const el of block) el.classList.add(ITEM_CLASS);
+    if (this.#listening.has(rowEl)) return;
+    this.#listening.add(rowEl);
     const { ignoreSelector } = this.deps;
     // Popout windows have their own Element constructor.
-    const ElementConstructor = block[0].ownerDocument.defaultView?.Element ?? Element;
-    block[0].addEventListener('pointerdown', (event) => {
+    const ElementConstructor = rowEl.ownerDocument.defaultView?.Element ?? Element;
+    rowEl.addEventListener('pointerdown', (event) => {
       if (event.button !== 0 || this.#gesture || this.#settling) return;
+      if (this.deps.canStart && !this.deps.canStart()) return;
       if (ignoreSelector && event.target instanceof ElementConstructor && event.target.closest(ignoreSelector)) return;
-      this.#press(entry, event);
+      const entry = this.#entries.find(candidate => candidate.block[0] === rowEl);
+      if (entry) this.#press(entry, event);
     });
+  }
+
+  /** Stops sorting a row that left the list; a press on it ends. */
+  detach(rowEl: HTMLElement): void {
+    this.#entries = this.#entries.filter(entry => entry.block[0] !== rowEl);
+    if (this.#gesture?.entry.block[0] === rowEl) this.#cancel();
+  }
+
+  /** Cancels a lifted drag, as Escape does; returns whether one was lifted. */
+  cancelDrag(): boolean {
+    const gesture = this.#gesture;
+    if (!gesture?.lift) return false;
+    this.#cancel();
+    // The button is still held; its release ends the cancelled drag, not a click on the row.
+    swallowClickAfterRelease(gesture.doc);
+    return true;
   }
 
   /** Ends any drag for teardown; a held render is discarded rather than run. */
@@ -157,8 +198,8 @@ export class LiveListSorter {
     this.#gesture = {
       entry,
       doc,
-      startY: event.clientY,
-      lastY: event.clientY,
+      startPos: this.#axis.pointer(event),
+      lastPos: this.#axis.pointer(event),
       lift: null,
       cleanup: () => {
         doc.removeEventListener('pointermove', onMove, true);
@@ -174,10 +215,10 @@ export class LiveListSorter {
   #move(event: PointerEvent): void {
     const gesture = this.#gesture;
     if (!gesture) return;
-    gesture.lastY = event.clientY;
+    gesture.lastPos = this.#axis.pointer(event);
     let lift = gesture.lift;
     if (!lift) {
-      if (Math.abs(event.clientY - gesture.startY) < DRAG_THRESHOLD_PX) return;
+      if (Math.abs(gesture.lastPos - gesture.startPos) < DRAG_THRESHOLD_PX) return;
       lift = this.#lift(gesture);
       if (!lift) {
         this.#endGesture();
@@ -190,21 +231,23 @@ export class LiveListSorter {
 
   /** Moves the lifted row under the pointer and slides the others to open the slot it would take. */
   #follow(gesture: SortGesture, lift: SortLift): void {
-    const scrolled = lift.startTop - lift.list.getBoundingClientRect().top + lift.list.scrollTop - lift.startScroll;
-    const offset = Math.min(lift.maxOffset, Math.max(lift.minOffset, gesture.lastY - gesture.startY + scrolled));
-    setOffset(gesture.entry.block, offset);
+    const axis = this.#axis;
+    const scrolled = lift.listStart - axis.start(lift.list.getBoundingClientRect())
+      + axis.scroll(lift.list) - lift.startScroll;
+    const offset = Math.min(lift.maxOffset, Math.max(lift.minOffset, gesture.lastPos - gesture.startPos + scrolled));
+    this.#setOffset(gesture.entry.block, offset);
     // A neighbour moves away once the card's leading edge covers part of it, so the card never rests on it.
-    const top = lift.dragged.top + offset;
-    const bottom = top + lift.dragged.height;
-    const displacedAbove = lift.others.slice(0, lift.draggedIndex)
-      .filter(item => top < item.top + item.height * (1 - DISPLACE_FRACTION)).length;
-    const displacedBelow = lift.others.slice(lift.draggedIndex)
-      .filter(item => bottom > item.top + item.height * DISPLACE_FRACTION).length;
-    const targetIndex = lift.draggedIndex - displacedAbove + displacedBelow;
+    const start = lift.dragged.start + offset;
+    const end = start + lift.dragged.size;
+    const displacedBefore = lift.others.slice(0, lift.draggedIndex)
+      .filter(item => start < item.start + item.size * (1 - DISPLACE_FRACTION)).length;
+    const displacedAfter = lift.others.slice(lift.draggedIndex)
+      .filter(item => end > item.start + item.size * DISPLACE_FRACTION).length;
+    const targetIndex = lift.draggedIndex - displacedBefore + displacedAfter;
     lift.targetIndex = targetIndex;
     const { draggedIndex, dragged } = lift;
     lift.others.forEach((item, index) => {
-      setOffset(item.entry.block, shiftOf(index, draggedIndex, targetIndex, dragged.height + lift.gap));
+      this.#setOffset(item.entry.block, shiftOf(index, draggedIndex, targetIndex, dragged.size + lift.gap));
     });
   }
 
@@ -213,23 +256,29 @@ export class LiveListSorter {
     const [rowEl, ...folded] = gesture.entry.block;
     const list = rowEl.parentElement;
     if (!list) return null;
+    const axis = this.#axis;
     const group = this.#entries.filter(entry => (
       entry.row.group === gesture.entry.row.group && entry.block[0].parentElement === list
     ));
-    if (group.length < 2) return null;
+    // Rows kept across renders register in attach order, which a reorder leaves behind their layout order.
+    group.sort((a, b) => (
+      a.block[0].compareDocumentPosition(b.block[0]) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1
+    ));
+    // A row re-attached since the press has a new entry; one detached since then cannot lift.
+    const draggedIndex = group.findIndex(entry => entry.block[0] === rowEl);
+    if (group.length < 2 || draggedIndex < 0) return null;
     // Folding keeps the list's scroll height, so a list scrolled near its end is not pulled back under the pointer.
     // The space is held inside the scrolled content: padding on the list would let it grow past its section.
-    const foldedHeight = folded.reduce((sum, el) => sum + el.getBoundingClientRect().height, 0);
+    const foldedSize = folded.reduce((sum, el) => sum + axis.size(el.getBoundingClientRect()), 0);
     let spacer: HTMLElement | null = null;
-    if (foldedHeight > 0) {
+    if (foldedSize > 0) {
       spacer = list.createDiv({ cls: SPACER_CLASS, attr: { 'aria-hidden': 'true' } });
-      spacer.style.height = `${foldedHeight}px`;
+      spacer.style[axis.sizeStyle] = `${foldedSize}px`;
     }
     for (const el of folded) el.classList.add(FOLDED_CLASS);
     list.classList.add(SORTING_CLASS);
     rowEl.classList.add(LIFTED_CLASS);
-    const items = group.map(measure);
-    const draggedIndex = group.indexOf(gesture.entry);
+    const items = group.map(entry => measure(entry, axis));
     const dragged = items[draggedIndex];
     const first = items[0];
     const last = items[items.length - 1];
@@ -237,15 +286,15 @@ export class LiveListSorter {
     rowEl.ownerDocument.getSelection()?.removeAllRanges();
     gesture.lift = {
       list,
-      startTop: list.getBoundingClientRect().top,
-      startScroll: list.scrollTop,
+      listStart: axis.start(list.getBoundingClientRect()),
+      startScroll: axis.scroll(list),
       spacer,
       dragged,
       others: items.filter(item => item !== dragged),
       draggedIndex,
-      gap: Math.max(0, items[1].top - (items[0].top + items[0].height)),
-      minOffset: first.top - dragged.top,
-      maxOffset: (last.top + last.height) - (dragged.top + dragged.height),
+      gap: Math.max(0, items[1].start - (items[0].start + items[0].size)),
+      minOffset: first.start - dragged.start,
+      maxOffset: (last.start + last.size) - (dragged.start + dragged.size),
       targetIndex: draggedIndex,
     };
     this.deps.onDragStart?.();
@@ -271,8 +320,8 @@ export class LiveListSorter {
     const between = targetIndex > draggedIndex
       ? others.slice(draggedIndex, targetIndex)
       : others.slice(targetIndex, draggedIndex);
-    const distance = between.reduce((sum, item) => sum + item.height + lift.gap, 0);
-    setOffset(gesture.entry.block, targetIndex > draggedIndex ? distance : -distance);
+    const distance = between.reduce((sum, item) => sum + item.size + lift.gap, 0);
+    this.#setOffset(gesture.entry.block, targetIndex > draggedIndex ? distance : -distance);
     gesture.entry.block[0].classList.remove(LIFTED_CLASS);
     gesture.cleanup();
     this.#gesture = null;
@@ -283,7 +332,7 @@ export class LiveListSorter {
       .finally(() => {
         this.#settling = false;
         // A failed save may publish no render, so the rows are put back before any held render replaces them.
-        resetLayout(gesture.entry, lift);
+        this.#resetLayout(gesture.entry, lift);
         this.#runDeferredRender();
       });
   }
@@ -293,7 +342,19 @@ export class LiveListSorter {
     if (!gesture) return;
     gesture.cleanup();
     this.#gesture = null;
-    if (gesture.lift) resetLayout(gesture.entry, gesture.lift);
+    if (gesture.lift) this.#resetLayout(gesture.entry, gesture.lift);
+  }
+
+  #resetLayout(entry: SortEntry, lift: SortLift): void {
+    lift.list.classList.remove(SORTING_CLASS);
+    entry.block[0].classList.remove(LIFTED_CLASS);
+    for (const el of entry.block) el.classList.remove(FOLDED_CLASS);
+    lift.spacer?.remove();
+    for (const item of [lift.dragged, ...lift.others]) this.#setOffset(item.entry.block, 0);
+  }
+
+  #setOffset(block: readonly HTMLElement[], offset: number): void {
+    for (const el of block) el.style.transform = offset === 0 ? '' : `${this.#axis.translate}(${offset}px)`;
   }
 
   #runDeferredRender(): void {
@@ -301,14 +362,6 @@ export class LiveListSorter {
     this.#deferredRender = null;
     render?.();
   }
-}
-
-function resetLayout(entry: SortEntry, lift: SortLift): void {
-  lift.list.classList.remove(SORTING_CLASS);
-  entry.block[0].classList.remove(LIFTED_CLASS);
-  for (const el of entry.block) el.classList.remove(FOLDED_CLASS);
-  lift.spacer?.remove();
-  for (const item of [lift.dragged, ...lift.others]) setOffset(item.entry.block, 0);
 }
 
 /** Swallows the click the browser fires for the pointer release being handled now. */
@@ -335,11 +388,43 @@ function swallowClickAfterRelease(doc: Document): void {
   doc.addEventListener('pointercancel', stop, true);
 }
 
-function measure(entry: SortEntry): SortItem {
+/** Reads positions, sizes, scroll and transforms along one sort axis. */
+interface AxisGeometry {
+  pointer(event: PointerEvent): number;
+  start(rect: DOMRect): number;
+  end(rect: DOMRect): number;
+  size(rect: DOMRect): number;
+  scroll(el: HTMLElement): number;
+  readonly sizeStyle: 'height' | 'width';
+  readonly translate: 'translateX' | 'translateY';
+}
+
+const AXES: Record<SortAxis, AxisGeometry> = {
+  x: {
+    pointer: event => event.clientX,
+    start: rect => rect.left,
+    end: rect => rect.right,
+    size: rect => rect.width,
+    scroll: el => el.scrollLeft,
+    sizeStyle: 'width',
+    translate: 'translateX',
+  },
+  y: {
+    pointer: event => event.clientY,
+    start: rect => rect.top,
+    end: rect => rect.bottom,
+    size: rect => rect.height,
+    scroll: el => el.scrollTop,
+    sizeStyle: 'height',
+    translate: 'translateY',
+  },
+};
+
+function measure(entry: SortEntry, axis: AxisGeometry): SortItem {
   const visible = entry.block.filter(el => !el.classList.contains(FOLDED_CLASS));
-  const top = visible[0].getBoundingClientRect().top;
-  const bottom = visible[visible.length - 1].getBoundingClientRect().bottom;
-  return { entry, top, height: bottom - top };
+  const start = axis.start(visible[0].getBoundingClientRect());
+  const end = axis.end(visible[visible.length - 1].getBoundingClientRect());
+  return { entry, start, size: end - start };
 }
 
 /** How far another item moves to open the dragged one's slot: by the dragged pitch, toward its origin. */
@@ -347,8 +432,4 @@ function shiftOf(index: number, draggedIndex: number, targetIndex: number, pitch
   if (index >= draggedIndex && index < targetIndex) return -pitch;
   if (index < draggedIndex && index >= targetIndex) return pitch;
   return 0;
-}
-
-function setOffset(block: readonly HTMLElement[], offset: number): void {
-  for (const el of block) el.style.transform = offset === 0 ? '' : `translateY(${offset}px)`;
 }

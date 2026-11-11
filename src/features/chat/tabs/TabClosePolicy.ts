@@ -1,4 +1,4 @@
-import type { TabId } from '@/features/chat/tabs/ChatTab';
+import type { TabId } from '@/features/chat/ChatFeatureHost';
 import type { TabIdentity } from '@/features/chat/tabs/TabIdentity';
 import { deactivateTab, destroyTab } from '@/features/chat/tabs/TabLifecycle';
 import type { TabMembership } from '@/features/chat/tabs/TabMembership';

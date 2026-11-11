@@ -122,6 +122,23 @@ interface PiPromptImage {
   readonly type: 'image';
 }
 
+/**
+ * `preflight` until the prompt or compact request is sent; `dispatched` while native work may
+ * continue; `ended` once the run ended without a retry but before settlement (a later agent_start
+ * reopens it); `settled` once native settlement was observed, after which a later agent_start
+ * belongs to someone else.
+ */
+type ActiveRunPhase = 'preflight' | 'dispatched' | 'ended' | 'settled';
+
+function hasRunEnded(active: ActiveRun): boolean {
+  return active.phase === 'ended';
+}
+
+/** Native work sent for this request may still be running. */
+function isUnsettledDispatch(active: ActiveRun): boolean {
+  return active.phase === 'dispatched' || active.phase === 'ended';
+}
+
 interface ActiveRun {
   readonly toolPolicy: ProviderToolPolicy;
   readonly sessionToolController: AbortController;
@@ -130,15 +147,13 @@ interface ActiveRun {
   readonly run: RequestedRunChannel;
   accepted: boolean;
   assistantStarted: boolean;
-  nativeRequestDispatched: boolean;
+  phase: ActiveRunPhase;
   nativeAssistantId?: string;
   turnStats?: TurnStats;
   nativeUserMessageId?: string;
   pendingTerminalError: Error | null;
-  endedWithoutRetry: boolean;
+  /** A native run began for this request; a handled command may never start one. */
   runStarted: boolean;
-  /** Native settlement was observed; a later agent_start belongs to someone else. */
-  settled: boolean;
   /** The latest assistant message ended without calling tools. */
   answered: boolean;
   /** Native timestamp of that message, which identifies its persisted entry. */
@@ -212,7 +227,6 @@ implements ProviderExecutionSession, SteerableExecutionSession {
   private forkMaterializationFlight: Promise<void> | null = null;
   private kernel: PiExecutionKernel | null = null;
   private kernelGeneration = 0;
-  private processKey: string | null = null;
   private readonly kernelSessionTargets = new Set<string>();
   private kernelResumeValidationTarget: string | null = null;
   /** A kernel resumed by session target has not yet been aligned with the shown turn leaf. */
@@ -344,7 +358,7 @@ implements ProviderExecutionSession, SteerableExecutionSession {
       void tracked.catch(() => undefined);
       active.run.close();
       if (this.activeRun === active) this.activeRun = null;
-      if (!this.disposed) this.state.setStatus(this.#hasBackgroundWork() ? 'executing' : 'idle');
+      if (!this.disposed) this.state.settleActivity(this.#hasBackgroundWork());
     }
   }
 
@@ -500,7 +514,7 @@ implements ProviderExecutionSession, SteerableExecutionSession {
       reason: 'Cancelled',
       type: 'cancelled',
     });
-    this.#shutdownAfterStop(active.nativeRequestDispatched);
+    this.#shutdownAfterStop(active.phase !== 'preflight');
   }
 
   /**
@@ -618,11 +632,9 @@ implements ProviderExecutionSession, SteerableExecutionSession {
       }),
       accepted: false,
       assistantStarted: false,
-      nativeRequestDispatched: false,
+      phase: 'preflight',
       pendingTerminalError: null,
-      endedWithoutRetry: false,
       runStarted: false,
-      settled: false,
       answered: false,
       endedAtAnswer: false,
       terminalSignal: createDeferred<void>(),
@@ -655,7 +667,7 @@ implements ProviderExecutionSession, SteerableExecutionSession {
       const input = encoded.input;
       let promptHandled = false;
       if (input.kind === 'compact') {
-        active.nativeRequestDispatched = true;
+        active.phase = 'dispatched';
         await this.kernel.request(
           'compact',
           { customInstructions: input.instructions },
@@ -666,7 +678,7 @@ implements ProviderExecutionSession, SteerableExecutionSession {
         this.#ensureAccepted(active);
         this.#emitRequested(active, { type: 'context_compacted' });
       } else {
-        active.nativeRequestDispatched = true;
+        active.phase = 'dispatched';
         const response = await this.kernel.request<{ disposition?: string } | undefined>(
           'prompt',
           {
@@ -683,7 +695,7 @@ implements ProviderExecutionSession, SteerableExecutionSession {
         promptHandled = response?.disposition === 'handled';
         if (typeof response?.disposition !== 'string') {
           this.#kernelSettlement = 'agent_end';
-          if (active.endedWithoutRetry) this.#settleRun(active);
+          if (hasRunEnded(active)) this.#settleRun(active);
         } else {
           this.#kernelSettlement = 'agent_settled';
         }
@@ -713,7 +725,7 @@ implements ProviderExecutionSession, SteerableExecutionSession {
           usage,
         });
       }
-      this.state.setStatus(this.#hasBackgroundWork() ? 'executing' : 'idle');
+      this.state.settleActivity(this.#hasBackgroundWork());
       this.#emitRequestedState(active);
       this.#finishRequested(active, {
         nativeUserMessageId: active.nativeUserMessageId,
@@ -726,7 +738,7 @@ implements ProviderExecutionSession, SteerableExecutionSession {
     } catch (error) {
       if (!active.run.isTerminal) {
         // A lost response cannot prove that native work stopped. Fence that process before allowing a retry.
-        const shouldShutdown = active.nativeRequestDispatched && !active.settled
+        const shouldShutdown = isUnsettledDispatch(active)
           && (active.runStarted || !(error instanceof PiRPCResponseError));
         this.#finishError(active, error);
         try {
@@ -891,7 +903,7 @@ implements ProviderExecutionSession, SteerableExecutionSession {
         getSessionToolInvocation: () => {
           const owner = this.#requestedOutputTarget();
           if (!this.#isCurrentKernel(kernel, generation) || this.kernelResumeValidationTarget !== null
-            || !owner?.nativeRequestDispatched) return undefined;
+            || !owner) return undefined;
           return {
             port: this.config.sessionTools,
             toolPolicy: owner.toolPolicy,
@@ -920,7 +932,6 @@ implements ProviderExecutionSession, SteerableExecutionSession {
     this.kernel = kernel;
     this.#kernelSettlement = null;
     this.#kernelModel = null;
-    this.processKey = launchSpec.processKey;
     this.kernelResumeValidationTarget = launchSpec.sessionTarget;
     this.#alignResumedLeaf = !!launchSpec.sessionTarget;
     this.#replaceKernelSessionTargets(launchSpec.sessionTarget);
@@ -1063,7 +1074,7 @@ implements ProviderExecutionSession, SteerableExecutionSession {
     if (event.type === 'agent_start') {
       // Overflow recovery can start a new run even when agent_end.willRetry was false.
       active.pendingTerminalError = null;
-      active.endedWithoutRetry = false;
+      active.phase = 'dispatched';
       active.runStarted = true;
       this.#ensureAccepted(active);
       return;
@@ -1073,7 +1084,7 @@ implements ProviderExecutionSession, SteerableExecutionSession {
         active.pendingTerminalError = null;
         return;
       }
-      active.endedWithoutRetry = true;
+      active.phase = 'ended';
       if (this.#kernelSettlement === 'agent_end') this.#settleRun(active);
       return;
     }
@@ -1142,8 +1153,7 @@ implements ProviderExecutionSession, SteerableExecutionSession {
       && getRecord(event.message).role === 'user'
       && active
       && this.isActive(active)
-      && active.nativeRequestDispatched
-      && !active.settled
+      && isUnsettledDispatch(active)
     ) {
       // Pi delivers queued input at a message boundary; the requested turn owns what follows.
       this.#settleBackgroundTurn(background);
@@ -1170,10 +1180,19 @@ implements ProviderExecutionSession, SteerableExecutionSession {
     }
   }
 
-  /** The requested run owns native output until it settles, unless a background run is still streaming ahead of it. */
+  /**
+   * The requested run owns native output from dispatch until it settles, unless a background run is
+   * still streaming ahead of it. Output before dispatch belongs to a run some extension started.
+   */
   #requestedOutputTarget(): ActiveRun | null {
     const active = this.activeRun;
-    if (!active || active.run.isTerminal || active.settled || this.#backgroundTurn) return null;
+    if (
+      !active
+      || active.phase === 'preflight'
+      || active.phase === 'settled'
+      || active.run.isTerminal
+      || this.#backgroundTurn
+    ) return null;
     return active;
   }
 
@@ -1372,7 +1391,7 @@ implements ProviderExecutionSession, SteerableExecutionSession {
     }
     if (!this.disposed && this.state.status !== 'invalidated') {
       const requested = this.activeRun !== null && !this.activeRun.run.isTerminal;
-      this.state.setStatus(requested || this.#hasBackgroundWork() ? 'executing' : 'idle');
+      this.state.settleActivity(requested || this.#hasBackgroundWork());
     }
     this.#emitBackgroundState(background);
     this.#emitBackground(background, {
@@ -1440,7 +1459,6 @@ implements ProviderExecutionSession, SteerableExecutionSession {
       kernel.getStderrSnapshot(),
     );
     this.kernel = null;
-    this.processKey = null;
     this.kernelResumeValidationTarget = null;
     this.kernelSessionTargets.clear();
     if (!this.#hasNativeSessionState() && !this.#shouldDisableNativePersistence()) {
@@ -1489,7 +1507,7 @@ implements ProviderExecutionSession, SteerableExecutionSession {
   }
 
   #ensureAccepted(active: ActiveRun): void {
-    if (!this.isActive(active) || !active.nativeRequestDispatched) return;
+    if (!this.isActive(active) || active.phase === 'preflight') return;
     this.nativeConversationContextEstablished = true;
     if (active.accepted) return;
     active.accepted = true;
@@ -1714,7 +1732,7 @@ implements ProviderExecutionSession, SteerableExecutionSession {
       this.kernel?.getStderrSnapshot(),
     );
     if (details.category === 'configuration') {
-      this.state.setStatus(this.#hasBackgroundWork() ? 'executing' : 'idle');
+      this.state.settleActivity(this.#hasBackgroundWork());
     } else {
       this.state.invalidate({
         message: details.message,
@@ -1805,7 +1823,7 @@ implements ProviderExecutionSession, SteerableExecutionSession {
   }
 
   #settleRun(active: ActiveRun): void {
-    active.settled = true;
+    active.phase = 'settled';
     active.sessionToolController.abort();
     this.#ensureAccepted(active);
     const pendingTerminalError = active.pendingTerminalError;
@@ -1818,7 +1836,7 @@ implements ProviderExecutionSession, SteerableExecutionSession {
   }
 
   #canReuseKernel(launchSpec: PiLaunchSpec): boolean {
-    if (!this.kernel || this.processKey !== launchSpec.processKey) return false;
+    if (!this.kernel || this.kernel.launchSpec.processKey !== launchSpec.processKey) return false;
     return launchSpec.sessionTarget
       ? this.kernelSessionTargets.has(launchSpec.sessionTarget)
       : this.kernelSessionTargets.size === 0;
@@ -1838,7 +1856,6 @@ implements ProviderExecutionSession, SteerableExecutionSession {
     if (this.shutdownPromise) return this.shutdownPromise;
     const kernel = this.kernel;
     this.kernel = null;
-    this.processKey = null;
     this.kernelResumeValidationTarget = null;
     this.kernelSessionTargets.clear();
     this.kernelGeneration += 1;
@@ -2001,8 +2018,8 @@ function encodePrompt(
 } {
   const inputText = getInputText(request);
   let text = appendExecutionContext(inputText, request.context);
-  // Pi splits a leading skill name at a literal space, not the context's newline separator.
-  if (text !== inputText && /^\/skill:\S+$/.test(inputText)) {
+  // Pi splits skill and extension command names at a literal space, not the context separator.
+  if (text !== inputText && /^\/\S+$/.test(inputText)) {
     text = `${inputText} ${text.slice(inputText.length)}`;
   }
   if (replayConversationHistory && request.conversationHistory?.length) {
