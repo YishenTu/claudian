@@ -22,35 +22,10 @@ import { AccessibleSetting } from '@/shared/settings/AccessibleSetting';
 import { formatContextLimit, parseContextLimit } from '@/shared/settings/contextLimit';
 import { DebouncedSettingsWriter } from '@/shared/settings/DebouncedSettingsWriter';
 import { renderEnvironmentSettingsSection } from '@/shared/settings/EnvironmentSettingsSection';
+import { bindCommittedControl } from '@/shared/settings/CommittedControl';
 import { frameSettingsGroups } from '@/shared/settings/SettingsGroups';
 
 type SettingsTabId = 'general' | 'providers' | 'skills';
-
-/** Keep native controls aligned with the serialized settings owner's committed snapshot. */
-function bindCommittedControl<T>(
-  control: { setValue(value: T): unknown; onChange(callback: (value: T) => Promise<void>): unknown },
-  getValue: () => T,
-  save: (value: T) => Promise<void>,
-  onChanged?: () => void,
-): void {
-  let synchronizing = false;
-  control.setValue(getValue());
-  control.onChange(async value => {
-    if (synchronizing) return;
-    const previous = getValue();
-    try {
-      await save(value);
-    } finally {
-      synchronizing = true;
-      try {
-        control.setValue(getValue());
-      } finally {
-        synchronizing = false;
-      }
-      if (getValue() !== previous) onChanged?.();
-    }
-  });
-}
 
 /** The shared host plus the capabilities of panels this tab renders. */
 export type SettingsFeatureHost = FeatureHost & SkillsSettingsHost;
