@@ -51,16 +51,14 @@ interface Generation {
   readonly id: number;
   readonly abort: AbortController;
   readonly ready: Promise<Ready>;
-  /** Set once `ready` resolves, for callers that must not wait on a startup. */
-  settled?: Ready;
+  /** `ready` carries the started process for callers that must not wait on a startup; `retiring` is terminal. */
+  phase: { readonly kind: 'booting' } | { readonly kind: 'ready'; readonly ready: Ready } | { readonly kind: 'retiring'; readonly retirement: Promise<void> };
   forks: Promise<unknown>;
   readonly lost: Set<(loss: DeepSeekHostLoss, error: Error) => void>;
   users: number;
   idleTimer?: number;
-  retirement?: Promise<void>;
-  reconnect?: Promise<void>;
-  /** The socket dropped while a reconnection was in flight, outdating that attempt. */
-  dropped?: boolean;
+  /** A reconnection in flight; `dropped` records a socket drop that outdated its current attempt. */
+  reconnection?: { dropped: boolean };
 }
 
 /** Native reads that never activate a saved session or take its writer. */
@@ -102,7 +100,7 @@ export class DeepSeekHost {
     let ready;
     try { ready = await abortable(generation.ready, signal); } catch (error) { this.leave(generation); throw error; }
     // Loss can land between startup and this continuation; its listeners have already run.
-    if (generation.retirement) { this.leave(generation); throw new Error('DeepSeek process exited during startup.'); }
+    if (generation.phase.kind === 'retiring') { this.leave(generation); throw new Error('DeepSeek process exited during startup.'); }
     const { process, roster, home, ephemeral, execution } = ready;
     const claims = new Map<string, () => void>();
     const lost = new Set<(loss: DeepSeekHostLoss, error: Error) => void>();
@@ -121,7 +119,7 @@ export class DeepSeekHost {
         const run = generation.forks.then(async () => {
           // A fork waiting behind another may outlive its lease or its process; neither may start it.
           if (released) throw new Error('DeepSeek Host lease is released.');
-          if (generation.retirement) throw new Error('DeepSeek process ended before the fork started.');
+          if (generation.phase.kind === 'retiring') throw new Error('DeepSeek process ended before the fork started.');
           const withdraw = ephemeralFork ? await process.offerEphemeralFork(request.sessionId, request.atSeq) : undefined;
           let unresolved = false;
           let forked = false;
@@ -200,8 +198,8 @@ export class DeepSeekHost {
    */
   async readIfRunning<T>(operation: (reader: DeepSeekReader, home: string, execution?: DeepSeekExecutionContext) => Promise<T>): Promise<T | undefined> {
     const generation = this.current;
-    if (!generation?.settled || generation.retirement || this.fence.isUnavailable()) return undefined;
-    const { process, home, execution } = generation.settled;
+    if (generation?.phase.kind !== 'ready' || this.fence.isUnavailable()) return undefined;
+    const { process, home, execution } = generation.phase.ready;
     return operation(coldReader(process), home, execution);
   }
 
@@ -234,15 +232,17 @@ export class DeepSeekHost {
   private leave(generation: Generation): void {
     generation.users--;
     // A failed startup is already forgotten; only the current process idles out.
-    if (generation.users > 0 || generation.retirement || generation !== this.current) return;
+    if (generation.users > 0 || generation.phase.kind === 'retiring' || generation !== this.current) return;
     generation.idleTimer = window.setTimeout(() => { void this.retire(generation); }, this.idleMs);
   }
 
   private begin(): Generation {
     const abort = new AbortController();
-    const generation: Generation = { id: ++this.generations, abort, lost: new Set(), users: 0, forks: Promise.resolve(), ready: this.boot(abort.signal, () => generation) };
+    const generation: Generation = { id: ++this.generations, abort, phase: { kind: 'booting' }, lost: new Set(), users: 0, forks: Promise.resolve(), ready: this.boot(abort.signal, () => generation) };
     // A failed startup leaves no generation behind; the next caller starts fresh.
-    generation.ready.then(ready => { generation.settled = ready; }, () => { if (this.current === generation) this.current = undefined; });
+    generation.ready.then(ready => {
+      if (generation.phase.kind === 'booting') generation.phase = { kind: 'ready', ready };
+    }, () => { if (this.current === generation) this.current = undefined; });
     this.current = generation;
     return generation;
   }
@@ -280,27 +280,34 @@ export class DeepSeekHost {
 
   private reconnect(generation: Generation, process: DeepSeekProcess, roster: DeepSeekRoster): void {
     if (generation !== this.current) return;
-    if (generation.reconnect) { generation.dropped = true; return; }
-    generation.reconnect = this.reconnectWithinBudget(generation, process, roster)
+    if (generation.reconnection) { generation.reconnection.dropped = true; return; }
+    const reconnection = { dropped: false };
+    generation.reconnection = reconnection;
+    void this.reconnectWithinBudget(generation, process, roster, reconnection)
       .catch(error => this.lose(generation, 'transport', error instanceof Error ? error : new Error('DeepSeek reconnection failed.')))
-      .finally(() => { generation.reconnect = undefined; });
+      .finally(() => { if (generation.reconnection === reconnection) generation.reconnection = undefined; });
   }
 
   /** Retiring would end the live process and all its work, so only a transport that stays down past the budget is lost. */
-  private async reconnectWithinBudget(generation: Generation, process: DeepSeekProcess, roster: DeepSeekRoster): Promise<void> {
+  private async reconnectWithinBudget(
+    generation: Generation,
+    process: DeepSeekProcess,
+    roster: DeepSeekRoster,
+    reconnection: { dropped: boolean },
+  ): Promise<void> {
     const budget = new AbortController();
     const timer = window.setTimeout(() => budget.abort(), RECONNECT_BUDGET_MS);
     const signal = AbortSignal.any([generation.abort.signal, budget.signal]);
     let failure: unknown;
     try {
       for (let attempt = 0; ; attempt++) {
-        generation.dropped = false;
+        reconnection.dropped = false;
         roster.reset();
         try {
           await process.client.connect(signal);
           await roster.start(signal);
           if (signal.aborted) throw new Error('DeepSeek reconnection timed out.');
-          if (!generation.dropped) return;
+          if (!reconnection.dropped) return;
           failure = new Error('DeepSeek event connection closed.');
         } catch (error) {
           if (!signal.aborted || failure === undefined) failure = error;
@@ -319,7 +326,7 @@ export class DeepSeekHost {
   }
 
   private lose(generation: Generation, loss: DeepSeekHostLoss, error: Error): void {
-    if (generation.retirement) return;
+    if (generation.phase.kind === 'retiring') return;
     for (const listener of [...generation.lost]) listener(loss, error);
     generation.lost.clear();
     void this.retire(generation);
@@ -331,12 +338,12 @@ export class DeepSeekHost {
   }
 
   private retire(generation: Generation): Promise<void> {
-    if (generation.retirement) return generation.retirement;
+    if (generation.phase.kind === 'retiring') return generation.phase.retirement;
     if (this.current === generation) this.current = undefined;
     if (generation.idleTimer !== undefined) window.clearTimeout(generation.idleTimer);
     generation.abort.abort();
     const retirement = generation.ready.then(({ process, roster }) => { roster.dispose(); return process.dispose(); }, () => undefined);
-    generation.retirement = retirement;
+    generation.phase = { kind: 'retiring', retirement };
     this.retiring.add(retirement);
     void retirement.finally(() => this.retiring.delete(retirement));
     return retirement;

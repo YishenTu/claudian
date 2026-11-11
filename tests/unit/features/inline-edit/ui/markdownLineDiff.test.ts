@@ -51,6 +51,17 @@ describe('markdown line diff', () => {
       expectedDocuments: ['delete', 'insert'],
     },
     {
+      name: 'an interior LCS tie keeps delete-before-insert ordering',
+      oldMarkdown: 'head\nA\nB\ntail',
+      newMarkdown: 'head\nB\nA\ntail',
+      expectedDiffOps: [
+        { type: 'equal', text: 'head\n' }, { type: 'delete', text: 'A\n' },
+        { type: 'equal', text: 'B\n' }, { type: 'insert', text: 'A\n' },
+        { type: 'equal', text: 'tail' },
+      ],
+      expectedDocuments: ['delete', 'insert'],
+    },
+    {
       name: 'CRLF line endings stay exact around a middle replacement',
       oldMarkdown: 'head\r\nold\r\nfoot\r\n',
       newMarkdown: 'head\r\nnew\r\nfoot\r\n',

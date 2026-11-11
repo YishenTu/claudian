@@ -32,7 +32,6 @@
 
 /* Toolbar */
 @import url("./toolbar/model-selector.css");
-@import url("./toolbar/mode-selector.css");
 @import url("./toolbar/thinking-selector.css");
 @import url("./toolbar/permission-toggle.css");
 @import url("./toolbar/service-tier-toggle.css");

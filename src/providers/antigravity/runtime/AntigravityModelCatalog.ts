@@ -19,8 +19,8 @@ import { computeAntigravityRuntimeInputHash } from './AntigravityRuntimeEnvironm
  */
 export class AntigravityModelCatalog {
   private disposed = false;
-  /** Runtime-input fingerprint under which a live session last reported models. */
-  private liveContextKey: string | null = null;
+  /** Latest live report, retained so an unsuccessful settings write can be retried without probing. */
+  private liveReport: { contextKey: string; models: AntigravityModel[]; defaultModelId: string | null } | null = null;
 
   constructor(
     private readonly host: ProviderRuntimeHost,
@@ -28,22 +28,23 @@ export class AntigravityModelCatalog {
   ) {}
 
   async refresh(signal: AbortSignal): Promise<ProviderModelCatalogRefreshResult> {
-    if (this.disposed || !decodeAntigravityConfig(this.host.config, this.host.selection).enabled) {
+    if (this.disposed || signal.aborted || !decodeAntigravityConfig(this.host.config, this.host.selection).enabled) {
       return { changed: false };
     }
     const contextKey = this.#getContextKey();
-    if (this.liveContextKey === contextKey) return { changed: false };
+    const live = this.liveReport;
+    if (live?.contextKey === contextKey) return this.#persist(live.models, live.defaultModelId, contextKey, 'live', signal);
     const metadata = await this.discover(signal);
     if (metadata.models.length === 0) {
       return { changed: false, diagnostics: 'Antigravity reported no available models.' };
     }
-    return this.#persist(metadata.models, metadata.currentModelId, contextKey, 'probe');
+    return this.#persist(metadata.models, metadata.currentModelId, contextKey, 'probe', signal);
   }
 
   mergeLiveModels(models: AntigravityModel[], defaultModelId: string | null): Promise<ProviderModelCatalogRefreshResult> {
     if (this.disposed || models.length === 0) return Promise.resolve({ changed: false });
     const contextKey = this.#getContextKey();
-    this.liveContextKey = contextKey;
+    this.liveReport = { contextKey, models, defaultModelId };
     return this.#persist(models, defaultModelId, contextKey, 'live');
   }
 
@@ -56,16 +57,17 @@ export class AntigravityModelCatalog {
     defaultModelId: string | null,
     contextKey: string,
     source: 'live' | 'probe',
+    signal?: AbortSignal,
   ): Promise<ProviderModelCatalogRefreshResult> {
     let result: ProviderModelCatalogRefreshResult = { changed: false };
     await this.host.updateConfig((config, selection) => {
       const current = decodeAntigravityConfig(config, selection);
       // Reports from a superseded CLI or environment must not overwrite the current catalog.
-      if (this.disposed || computeAntigravityRuntimeInputHash(current, this.host.environmentText) !== contextKey) {
+      if (this.disposed || signal?.aborted || computeAntigravityRuntimeInputHash(current, this.host.environmentText) !== contextKey) {
         return false;
       }
       // A probe started before a live report must not replace it when it finishes later.
-      if (source === 'probe' && this.liveContextKey === contextKey) return false;
+      if (source === 'probe' && this.liveReport?.contextKey === contextKey) return false;
       const previous = current.currentCatalog;
       const next: AntigravityCatalogSnapshot = {
         defaultModelId: defaultModelId ?? previous?.defaultModelId ?? null,

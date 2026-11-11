@@ -108,11 +108,17 @@ export async function createInlineEditHarness() {
   const component = new Component();
   component.load();
   const editorView = new EditorView({
-    state: EditorState.create({ doc: 'hello world', selection: { anchor: 0, head: 5 } }),
+    state: EditorState.create({ doc: 'hello world' }),
     parent: document.body,
     extensions: EditorView.contentAttributes.of({ 'aria-label': 'Note editor' }),
   });
-  const editor = createObsidianEditor(editorView);
+  let end = 5;
+  const editor: Editor & { cm: EditorView } = Object.assign(createObsidianEditor(editorView), {
+    cm: editorView,
+    getCursor: (which = 'head') => ({ line: 0, ch: which === 'from' ? 0 : end }),
+    getSelection: () => 'hello world'.slice(0, end),
+    replaceRange: (text: string) => editorView.dispatch({ changes: { from: 0, to: end, insert: text } }),
+  });
   const context = { mode: 'selection' as const, selectedText: 'hello' };
   const settled = vi.fn();
   const notePath = 'note.md';
@@ -134,10 +140,7 @@ export async function createInlineEditHarness() {
   return {
     app, backend, component, createModal, createSession, editor, editorView, notePath, owner, plugin, settled,
     settingsStorage: fixture.settingsStorage,
-    changeSelection() {
-      editorView.dispatch({ selection: { anchor: 0, head: 11 } });
-      fireEvent.mouseUp(editorView.dom);
-    },
+    changeSelection() { end = 11; fireEvent.mouseUp(editorView.dom); },
   };
 }
 

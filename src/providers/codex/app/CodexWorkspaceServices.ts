@@ -32,11 +32,6 @@ export interface CodexWorkspaceServices extends ProviderWorkspaceServices {
   dispose(): Promise<void>;
 }
 
-export interface CodexWorkspaceServicesOptions {
-  readonly modelCatalogCoordinator?: CodexModelCatalogCoordinator;
-  readonly skillListingService?: CodexSkillListingService;
-}
-
 /**
  * Commits a Codex catalog update in one settings transaction with the application's
  * model-selection normalization, which may change any provider's selections. A
@@ -63,18 +58,15 @@ export function createCodexModelCatalogCommit(
 
 export async function createCodexWorkspaceServices(
   plugin: ProviderHost,
-  options: CodexWorkspaceServicesOptions = {},
 ): Promise<CodexWorkspaceServices> {
   const runtimeHost = plugin.getRuntimeHost('codex');
   const runtime = new CodexAppServerRuntime(runtimeHost, message => { new Notice(message); });
-  const skillListProvider = options.skillListingService
-    ?? new CodexSkillListingService(runtime);
-  const modelCatalogCoordinator = options.modelCatalogCoordinator
-    ?? new CodexModelCatalogCoordinator(
-      runtimeHost,
-      new CodexModelDiscoveryService(runtimeHost, runtime),
-      createCodexModelCatalogCommit(plugin),
-    );
+  const skillListProvider = new CodexSkillListingService(runtime);
+  const modelCatalogCoordinator = new CodexModelCatalogCoordinator(
+    runtimeHost,
+    new CodexModelDiscoveryService(runtimeHost, runtime),
+    createCodexModelCatalogCommit(plugin),
+  );
   const commandCatalog = new CodexCommandCatalog(skillListProvider);
   const modelCatalog = createCodexModels(runtimeHost, modelCatalogCoordinator);
   const sessionArchive = new CodexThreadArchiveService(runtime);

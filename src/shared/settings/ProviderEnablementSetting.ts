@@ -1,6 +1,7 @@
 import { type Setting, type ToggleComponent } from 'obsidian';
 
 import { AccessibleSetting } from '@/shared/settings/AccessibleSetting';
+import { bindCommittedControl } from '@/shared/settings/CommittedControl';
 
 export interface ProviderEnablementSettingOptions {
   container: HTMLElement;
@@ -27,31 +28,10 @@ export function renderProviderEnablementSetting(
     .setDesc(options.description)
     .addToggle((component) => {
       toggle = component;
-      let synchronizing = false;
-      const synchronizeValue = (): void => {
-        synchronizing = true;
-        try {
-          component.setValue(options.getValue());
-        } finally {
-          synchronizing = false;
-        }
-      };
-      component
-        .setValue(options.getValue())
-        .onChange(async (enabled) => {
-          // Obsidian invokes onChange for changed programmatic values too.
-          if (synchronizing) return;
-          if (disabled) {
-            synchronizeValue();
-            return;
-          }
-
-          try {
-            await options.onChange(enabled);
-          } finally {
-            synchronizeValue();
-          }
-        });
+      bindCommittedControl(component, options.getValue, async (enabled) => {
+        if (disabled) return;
+        await options.onChange(enabled);
+      });
     });
 
   const setDisabled = (nextDisabled: boolean): void => {

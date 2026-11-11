@@ -12,6 +12,7 @@ import {
 } from '@/features/agent-skills/AgentSkillRepository';
 import { parseFrontmatter } from '@/features/agent-skills/frontmatter';
 import { AgentSkillValidationError, validateAgentSkillName } from '@/features/agent-skills/validateAgentSkill';
+import { SerialQueue } from '@/utils/SerialQueue';
 
 const COMMAND_EXTENSION = '.md';
 
@@ -83,7 +84,7 @@ function parseClaudeCommandMarkdown(raw: string): {
 
 /** Manages vault-level Claude command files under `.claude/commands`. */
 export class ClaudeCommandRepository {
-  private mutationQueue: Promise<void> = Promise.resolve();
+  private readonly mutationQueue = new SerialQueue();
   readonly frontmatterPolicy: SkillFrontmatterPolicy;
 
   constructor(
@@ -265,8 +266,6 @@ export class ClaudeCommandRepository {
   }
 
   #withMutation<T>(operation: () => Promise<T>): Promise<T> {
-    const result = this.mutationQueue.then(operation, operation);
-    this.mutationQueue = result.then(() => undefined, () => undefined);
-    return result;
+    return this.mutationQueue.run(operation);
   }
 }

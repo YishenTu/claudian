@@ -3,7 +3,7 @@ name: CI
 on:
   # Documentation-only changes skip CI; scripts/ciTestSelection.mjs owns this list.
   push:
-    branches: [main, codex/cloud-integration]
+    branches: [main]
     paths-ignore: &documentation-paths
       - '**/*.md'
       - '.github/*.md'
@@ -12,7 +12,7 @@ on:
       - 'docs/**'
       - LICENSE
   pull_request:
-    branches: [main, codex/cloud-integration]
+    branches: [main]
     paths-ignore: *documentation-paths
   workflow_call:
 

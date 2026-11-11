@@ -19,6 +19,7 @@ import {
 } from '@/features/agent-skills/AgentSkillCodec';
 import { AgentSkillValidationError, validateAgentSkillInput, validateAgentSkillName } from '@/features/agent-skills/validateAgentSkill';
 import { mapWithConcurrency } from '@/utils/concurrency';
+import { SerialQueue } from '@/utils/SerialQueue';
 
 export const AGENT_SKILLS_ROOT = '.agents/skills';
 export const CLAUDE_SKILLS_ROOT = '.claude/skills';
@@ -76,7 +77,7 @@ function toError(error: unknown): Error {
 }
 
 export class AgentSkillRepository {
-  private mutationQueue: Promise<void> = Promise.resolve();
+  private readonly mutationQueue = new SerialQueue();
   readonly root: string;
   readonly frontmatterPolicy: SkillFrontmatterPolicy;
   private readonly readPolicy: SkillReadPolicy;
@@ -366,8 +367,6 @@ export class AgentSkillRepository {
   }
 
   #withMutation<T>(operation: () => Promise<T>): Promise<T> {
-    const result = this.mutationQueue.then(operation, operation);
-    this.mutationQueue = result.then(() => undefined, () => undefined);
-    return result;
+    return this.mutationQueue.run(operation);
   }
 }

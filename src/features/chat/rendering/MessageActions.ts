@@ -4,9 +4,9 @@ import type { ChatRewindMode } from '@/core/execution';
 import type { ProviderCapabilities } from '@/core/providers/types';
 import type { ChatMessage } from '@/core/types';
 import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
-import { findRewindContext } from '@/features/chat/conversation/rewind';
 import { getResponseElementKind } from '@/features/chat/rendering/ResponseLayout';
 import { formatConversationDirectoryTitle } from '@/features/chat/utils/conversationDirectoryTitle';
+import { findRewindContext } from '@/features/chat/utils/rewind';
 import { t } from '@/i18n/i18n';
 import { bindCopyFeedback } from '@/shared/components/CopyableCodeFence';
 
@@ -212,11 +212,13 @@ export class MessageActions {
       () => {
         copyBtn.empty();
         copyBtn.setText(t('chat.codeBlock.copied'));
+        copyBtn.setAttribute('aria-label', t('chat.codeBlock.copied'));
         copyBtn.classList.add('copied');
       },
       () => {
         copyBtn.empty();
         setIcon(copyBtn, 'copy');
+        copyBtn.setAttribute('aria-label', t('chat.copyMessage'));
         copyBtn.classList.remove('copied');
       },
     );
@@ -235,6 +237,8 @@ export class MessageActions {
     const branchActions = this.callbacks.branches;
     if (!branchActions || !this.getCapabilities().supportsConversationBranches
       || message.role !== 'user' || (!message.treeBranches && !pendingNativeIdentity)) return;
+    const active = element.ownerDocument.activeElement as HTMLElement | null;
+    const focusedAction = active && element.contains(active) ? active.dataset.branchAction : undefined;
     element.querySelectorAll('[data-branch-action], .claudian-branch-position, .claudian-branch-marker').forEach(child => child.remove());
     element.classList.remove('claudian-message-branched');
     const toolbar = this.#getOrCreateToolbar(element);
@@ -242,7 +246,7 @@ export class MessageActions {
     const anchor = toolbar.querySelector('.claudian-user-msg-copy-btn, .claudian-message-timestamp');
     const addButton = (label: string, icon: string, target?: string, unavailable = false, reason = '') => {
       const button = toolbar.createEl('button', {
-        attr: { type: 'button', 'aria-label': label, 'data-branch-action': 'true', 'data-branch-unavailable': String(unavailable), 'data-branch-unavailable-reason': reason },
+        attr: { type: 'button', 'aria-label': label, 'data-branch-action': label, 'data-branch-unavailable': String(unavailable), 'data-branch-unavailable-reason': reason },
       });
       toolbar.insertBefore(button, anchor);
       setIcon(button, icon);
@@ -269,6 +273,11 @@ export class MessageActions {
     }
     addButton('Branch from this prompt', 'git-branch', undefined, !message.userMessageId,
       'Branching is available after this prompt is saved.');
+    if (focusedAction) {
+      Array.from(toolbar.querySelectorAll<HTMLButtonElement>('[data-branch-action]'))
+        .find(button => button.dataset.branchAction === focusedAction && !button.disabled)
+        ?.focus({ preventScroll: true });
+    }
   }
 
   #getOrCreateToolbar(msgEl: HTMLElement): HTMLElement {

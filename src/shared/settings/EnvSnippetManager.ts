@@ -454,10 +454,6 @@ export class EnvSnippetManager {
     new Notice(`Environment snippet "${snippet.name}" deleted`);
   }
 
-  public refresh() {
-    this.render();
-  }
-
   #shouldDisplaySnippet(snippet: EnvSnippet): boolean {
     if (this.scope === 'shared') {
       return !snippet.scope || snippet.scope === 'shared';

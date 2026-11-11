@@ -15,13 +15,15 @@ import type {
   Conversation,
   ConversationMeta,
   ConversationMutablePatch,
+  ConversationOrigin,
   ConversationSummary,
   StoredChatModelSelection,
 } from '@/core/types';
 import type { ChatFeatureHost, ChatProjects, ChatSessionRuntimes } from '@/features/chat/ChatFeatureHost';
 import type { ClaudianView } from '@/features/chat/ClaudianView';
 import type { ConversationLifecycle } from '@/features/chat/conversation/ConversationLifecycle';
-import type { SessionMessagingService, SessionToolBinding } from '@/features/chat/session-messaging/SessionMessagingService';
+import type { SessionToolBinding } from '@/features/chat/execution/ChatExecutionCoordinator';
+import type { SessionMessagingService } from '@/features/chat/session-messaging/SessionMessagingService';
 import type { SessionRuntimePool } from '@/features/chat/sessions/SessionRuntimePool';
 import type { ZenModeSource } from '@/features/chat/zen/types';
 import type { ZenModeController } from '@/features/chat/zen/ZenModeController';
@@ -81,10 +83,6 @@ export class ClaudianFeatureHost implements FeatureHost {
     return this.domains.environment.getActiveEnvironmentVariables(providerId);
   }
 
-  getAgentSkillResourceGeneration(): number {
-    return this.domains.agentSkills.getGeneration();
-  }
-
   notifyAgentSkillsChanged(): Promise<void> {
     return this.domains.agentSkills.notifyChanged();
   }
@@ -125,6 +123,10 @@ export class ClaudianChatFeatureHost extends ClaudianFeatureHost implements Chat
     this.projects = domains.projects;
   }
 
+  getAgentSkillResourceGeneration(): number {
+    return this.domains.agentSkills.getGeneration();
+  }
+
   bindSessionTools(conversationId: string): SessionToolBinding {
     return this.domains.sessionMessaging.bindSessionTools(conversationId);
   }
@@ -135,6 +137,7 @@ export class ClaudianChatFeatureHost extends ClaudianFeatureHost implements Chat
     selectedModel?: string;
     linkedContentPath?: string;
     projectId?: string;
+    origin?: ConversationOrigin;
   }): Promise<Conversation> {
     return this.domains.conversations.createConversation(options);
   }

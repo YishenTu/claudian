@@ -21,24 +21,36 @@ export function computeMarkdownDiff(oldText: string, newText: string): DiffOp[] 
   const oldLines = allOldLines.slice(prefixLength, oldEnd);
   const newLines = allNewLines.slice(prefixLength, newEnd);
   const m = oldLines.length, n = newLines.length;
-  const dp: number[][] = Array.from({ length: m + 1 }, () => Array<number>(n + 1).fill(0));
+  // Scores need only the preceding row. For traceback, equality is recoverable
+  // from the original lines; one bit per cell records choosing insert over delete.
+  const insertSteps = new Uint8Array(Math.ceil(m * n / 8));
+  let previous = new Uint32Array(n + 1);
+  let current = new Uint32Array(n + 1);
 
   for (let i = 1; i <= m; i++) {
     for (let j = 1; j <= n; j++) {
-      dp[i][j] = oldLines[i-1] === newLines[j-1]
-        ? dp[i-1][j-1] + 1
-        : Math.max(dp[i-1][j], dp[i][j-1]);
+      if (oldLines[i - 1] === newLines[j - 1]) {
+        current[j] = previous[j - 1] + 1;
+      } else if (current[j - 1] >= previous[j]) {
+        current[j] = current[j - 1];
+        const cell = (i - 1) * n + j - 1;
+        insertSteps[Math.floor(cell / 8)] |= 1 << (cell % 8);
+      } else {
+        current[j] = previous[j];
+      }
     }
+    [previous, current] = [current, previous];
   }
 
   const temp: DiffOp[] = [];
   let i = m, j = n;
 
   while (i > 0 || j > 0) {
+    const cell = (i - 1) * n + j - 1;
     if (i > 0 && j > 0 && oldLines[i-1] === newLines[j-1]) {
       temp.push({ type: 'equal', text: oldLines[i-1] });
       i--; j--;
-    } else if (j > 0 && (i === 0 || dp[i][j-1] >= dp[i-1][j])) {
+    } else if (j > 0 && (i === 0 || (insertSteps[Math.floor(cell / 8)] & (1 << (cell % 8))) !== 0)) {
       temp.push({ type: 'insert', text: newLines[j-1] });
       j--;
     } else {
