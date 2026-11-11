@@ -22,7 +22,7 @@ import { SessionEvents } from '@/features/chat/sessions/SessionEvents';
 import { createConversationExecutionBinding } from '@/features/chat/sessions/sessionExecution';
 import { captureLatestCompletedForkSource } from '@/features/chat/sessions/SessionForkSource';
 import { requireSessionProviderId } from '@/features/chat/sessions/sessionProvider';
-import { getSessionChatUIConfig, getSessionSelectedModel, getSessionSettingsSnapshot, updateSessionProviderSettings } from '@/features/chat/sessions/sessionSettings';
+import { getSessionSelectedModel, getSessionSettingsSnapshot, updateSessionProviderSettings } from '@/features/chat/sessions/sessionSettings';
 import { SideChatController, type SideChatControllerPresentation } from '@/features/chat/side-chat/SideChatController';
 import { ChatState } from '@/features/chat/state/ChatState';
 import type { TabReviewOutcome } from '@/features/chat/state/types';
@@ -283,9 +283,7 @@ export class SessionModel {
   /** Applies native permission changes through the same owner as toolbar selections. */
   async updatePermissionMode(mode: string): Promise<void> {
     await updateSessionProviderSettings(this.session, this.plugin, settings => {
-      const ui = getSessionChatUIConfig(this.session, this.plugin);
-      if (ui.applyPermissionMode) ui.applyPermissionMode(mode, settings);
-      else settings.permissionMode = mode;
+      settings.permissionMode = mode;
     });
     this.publish('settings');
   }

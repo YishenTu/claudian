@@ -414,25 +414,14 @@ export class JSONRPCTransport {
   }
 }
 
-type StreamWithEvents = {
-  off?: (eventName: string, listener: (...args: unknown[]) => void) => void;
-  on?: (eventName: string, listener: (...args: unknown[]) => void) => void;
-  removeListener?: (eventName: string, listener: (...args: unknown[]) => void) => void;
-};
-
 function subscribeStreamEvent(
   stream: NodeJS.ReadableStream | NodeJS.WritableStream,
   eventName: string,
   listener: (...args: unknown[]) => void,
 ): () => void {
-  const evented = stream as StreamWithEvents;
-  evented.on?.(eventName, listener);
+  stream.on(eventName, listener);
   return () => {
-    if (typeof evented.off === 'function') {
-      evented.off(eventName, listener);
-      return;
-    }
-    evented.removeListener?.(eventName, listener);
+    stream.off(eventName, listener);
   };
 }
 

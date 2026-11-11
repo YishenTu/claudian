@@ -21,7 +21,6 @@ import {
   renderWelcomeContent,
 } from '@/features/chat/rendering/WelcomeRenderer';
 import type { ChatState } from '@/features/chat/state/ChatState';
-import type { TurnCancelOptions, TurnCancelReason } from '@/features/chat/turns/TurnCoordinator';
 
 /** Longest a progress-only change waits for its coalesced save. */
 const PROGRESS_SAVE_DELAY_MS = 1_000;
@@ -41,10 +40,7 @@ export interface ConversationCallbacks {
 export interface ConversationSession {
   readonly canNavigateConversation: boolean;
   readonly hasActiveTurn: boolean;
-  readonly hasBackgroundWork: boolean;
-  readonly isIdle: boolean;
   runConversationNavigation(operation: (signal: AbortSignal) => Promise<unknown>): Promise<void>;
-  cancelTurn(reason: TurnCancelReason, options?: TurnCancelOptions): boolean;
 }
 
 export interface ConversationControllerDeps {

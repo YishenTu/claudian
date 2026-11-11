@@ -7,8 +7,6 @@ import { grokProviderRegistration } from './grok/registration';
 import { opencodeProviderRegistration } from './opencode/registration';
 import { piProviderRegistration } from './pi/registration';
 
-let builtInProvidersRegistered = false;
-
 export const BUILT_IN_PROVIDER_MODULES = [
   antigravityProviderRegistration,
   claudeProviderRegistration,
@@ -19,13 +17,4 @@ export const BUILT_IN_PROVIDER_MODULES = [
   piProviderRegistration,
 ] as const;
 
-export function registerBuiltInProviders(): void {
-  if (builtInProvidersRegistered) {
-    return;
-  }
-
-  registerProviderModules(BUILT_IN_PROVIDER_MODULES);
-  builtInProvidersRegistered = true;
-}
-
-registerBuiltInProviders();
+registerProviderModules(BUILT_IN_PROVIDER_MODULES);

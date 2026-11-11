@@ -5,14 +5,13 @@ import * as zlib from 'node:zlib';
 
 import { LineBuffer } from '@/utils/LineBuffer';
 
-const DEFAULT_JSONL_IDLE_TIMEOUT_MS = 10_000;
+/** A read rejects when the file yields no data for this long; total read time is unbounded. */
+const JSONL_IDLE_TIMEOUT_MS = 10_000;
 const JSONL_READ_CHUNK_BYTES = 1024 * 1024;
 
 export interface JSONLFileReadOptions {
   /** Rejects on a line longer than this many UTF-16 code units; defaults to V8's string limit. */
   maxLineLength?: number;
-  /** Rejects when the file yields no data for this long; total read time is unbounded. */
-  idleTimeoutMs?: number;
   /** Bytes read per chunk; readers that stop early keep this small to avoid reading past the stop. */
   chunkBytes?: number;
 }
@@ -41,13 +40,12 @@ export async function forEachJSONLLine(
   onLine: (line: string) => boolean | void,
   options: JSONLFileReadOptions = {},
 ): Promise<void> {
-  const idleTimeoutMs = options.idleTimeoutMs ?? DEFAULT_JSONL_IDLE_TIMEOUT_MS;
   const lines = new LineBuffer(options.maxLineLength ?? constants.MAX_STRING_LENGTH);
   const input = openJSONLStream(filePath, options.chunkBytes ?? JSONL_READ_CHUNK_BYTES);
   let timer: number | undefined;
   const armTimer = (): void => {
     window.clearTimeout(timer);
-    timer = window.setTimeout(() => input.destroy(new Error('Timed out reading JSONL history.')), idleTimeoutMs);
+    timer = window.setTimeout(() => input.destroy(new Error('Timed out reading JSONL history.')), JSONL_IDLE_TIMEOUT_MS);
   };
   const stop = new Error('JSONL read stopped.');
   const accept = (line: string): void => {

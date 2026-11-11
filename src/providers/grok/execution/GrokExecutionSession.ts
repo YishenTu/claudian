@@ -95,7 +95,7 @@ import {
 interface GrokExecutionSessionOptions {
   readonly modelCatalogCoordinator?: Pick<GrokModelCatalogCoordinator, 'mergeLiveModels'>;
   readonly nativeFactory: GrokExecutionNativeFactory;
-  readonly resolvePromptIndex?: (
+  readonly resolvePromptIndex: (
     sessionDirectory: string,
     providerSessionId: string,
     assistantMessageId: string,
@@ -582,13 +582,13 @@ RewindableExecutionSession {
       if (!native.fork || !state.forkSourceSessionDirectory) {
         throw new Error('Grok Build fork metadata is incomplete.');
       }
-      const targetPromptIndex = await this.options.resolvePromptIndex?.(
+      const targetPromptIndex = await this.options.resolvePromptIndex(
         state.forkSourceSessionDirectory,
         state.forkSource.sessionId,
         state.forkSource.resumeAt,
       );
       this.#throwIfCancellationRequested(active);
-      if (targetPromptIndex === null || targetPromptIndex === undefined) {
+      if (targetPromptIndex === null) {
         throw new Error('The Grok Build fork checkpoint could not be located.');
       }
       const sessionId = await this.#createForkSession(
@@ -1001,9 +1001,6 @@ RewindableExecutionSession {
     const state = parseGrokProviderState(this.state.providerState);
     if (!this.providerSessionId || !assistantMessageId || !state.sessionDirectory) {
       return { canRewind: false, error: 'Grok Build rewind metadata is unavailable.' };
-    }
-    if (!this.options.resolvePromptIndex) {
-      return { canRewind: false, error: 'Grok Build prompt index resolution is unavailable.' };
     }
     const checkpointSessionId = this.providerSessionId;
     const promptIndex = await this.options.resolvePromptIndex(

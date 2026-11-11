@@ -445,7 +445,7 @@ describe('projects section', () => {
     fireEvent.click(within(host).getByRole('button', { name: 'Chat history' }));
     const menuEl = host.querySelector<HTMLElement>('.claudian-history-menu')!;
     // jsdom has no layout: stack every row 40px tall in document order inside a 400px list.
-    const rowSelector = '.claudian-history-item, .claudian-session-group-header, .claudian-history-header, .claudian-history-archive-control';
+    const rowSelector = '.claudian-history-item, .claudian-session-group-header, .claudian-history-header';
     const rect = (top: number, height: number) => ({ top, bottom: top + height, height, left: 0, right: 300, width: 300 }) as DOMRect;
     const layout = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
       const list = menuEl.querySelector<HTMLElement>('.claudian-history-list')!;
@@ -606,5 +606,152 @@ describe('projects section', () => {
     expect(within(region()).getByRole('button', { name: t('chat.projects.header') }).getAttribute('aria-expanded'))
       .toBe('false');
     expect(within(region()).queryByRole('button', { name: sectionName('Launch', 1) })).toBeNull();
+  });
+
+  describe('compact history search', () => {
+    async function openCompactHistory() {
+      const surfaceHarness = await createProjectSurface({ wide: false });
+      const { host, surface } = surfaceHarness;
+      surface.mountHistoryControl(host);
+      const historyButton = within(host).getByRole('button', { name: 'Chat history' });
+      fireEvent.click(historyButton);
+      const menuEl = host.querySelector<HTMLElement>('.claudian-history-menu')!;
+      const history = within(menuEl);
+      // Named by its placeholder, which follows the archive view.
+      const searchBox = () => history.getByRole('combobox') as HTMLInputElement;
+      /** The title of the row the search box marks active, or null when none is. */
+      const activeTitle = () => {
+        const id = searchBox().getAttribute('aria-activedescendant');
+        if (!id) return null;
+        const row = menuEl.ownerDocument.getElementById(id);
+        expect(row && menuEl.contains(row)).toBe(true);
+        return row!.querySelector('.claudian-history-item-title')!.textContent;
+      };
+      const type = (value: string) => fireEvent.input(searchBox(), { target: { value } });
+      return { ...surfaceHarness, activeTitle, history, historyButton, menuEl, searchBox, type };
+    }
+
+    it('focuses the search on open and filters with the session search, opening members of collapsed projects', async () => {
+      const { activeTitle, history, menuEl, region, searchBox, type } = await openCompactHistory();
+      expect(searchBox().ownerDocument.activeElement).toBe(searchBox());
+      expect(history.getByRole('combobox', { name: t('chat.sessions.search') })).toBe(searchBox());
+      expect(searchBox().getAttribute('placeholder')).toBe(t('chat.sessions.search'));
+      expect(activeTitle()).toBeNull();
+      expect(history.queryByText('Member session')).toBeNull();
+
+      type('member');
+      expect(within(region()).getByText('Member session')).toBeTruthy();
+      expect(history.queryByText('Loose session')).toBeNull();
+      expect(history.queryByText('Pinned session')).toBeNull();
+      expect(activeTitle()).toBe('Member session');
+      // The field survives re-rendering the list it filters.
+      expect(searchBox().ownerDocument.activeElement).toBe(searchBox());
+      expect((await axe(menuEl)).violations).toEqual([]);
+
+      type('no such session');
+      expect(history.getByText(t('chat.sessions.noMatch'))).toBeTruthy();
+      expect(activeTitle()).toBeNull();
+    });
+
+    it('moves the active match with the arrow keys and opens it with Enter', async () => {
+      const { activeTitle, menuEl, navigation, searchBox, surface, type } = await openCompactHistory();
+      type('session');
+      // Only a keyboard move scrolls; re-renders keep the reader's position.
+      const scroll = vi.spyOn(HTMLElement.prototype, 'scrollIntoView');
+      onTestFinished(() => scroll.mockRestore());
+      surface.invalidate();
+      expect(scroll).not.toHaveBeenCalled();
+      const titles = Array.from(menuEl.querySelectorAll('.claudian-history-item-title'), title => title.textContent);
+      expect(titles.sort()).toEqual(['Loose session', 'Member session', 'Pinned session']);
+      const order = Array.from(menuEl.querySelectorAll('.claudian-history-item-title'), title => title.textContent);
+      expect(activeTitle()).toBe(order[0]);
+
+      fireEvent.keyDown(searchBox(), { key: 'ArrowDown' });
+      expect(activeTitle()).toBe(order[1]);
+      expect(scroll.mock.contexts).toEqual([menuEl.ownerDocument.getElementById(searchBox().getAttribute('aria-activedescendant')!)]);
+      fireEvent.keyDown(searchBox(), { key: 'ArrowDown' });
+      fireEvent.keyDown(searchBox(), { key: 'ArrowDown' });
+      expect(activeTitle()).toBe(order[2]);
+      fireEvent.keyDown(searchBox(), { key: 'ArrowUp' });
+      expect(activeTitle()).toBe(order[1]);
+      // Composition owns its keys.
+      fireEvent.keyDown(searchBox(), { key: 'ArrowDown', isComposing: true });
+      expect(activeTitle()).toBe(order[1]);
+
+      fireEvent.keyDown(searchBox(), { key: 'Enter' });
+      await waitFor(() => expect(menuEl.hasClass('visible')).toBe(false));
+      const expectedId = { 'Loose session': 'loose', 'Member session': 'member', 'Pinned session': 'pinned' }[order[1]!];
+      expect(navigation.openConversation).toHaveBeenCalledWith(expectedId, undefined);
+    });
+
+    it('clears the query on the first Escape and closes on the second, starting fresh when reopened', async () => {
+      const { history, historyButton, menuEl, searchBox, surface, type } = await openCompactHistory();
+      fireEvent.compositionStart(searchBox());
+      expect(surface.isComposing).toBe(true);
+      fireEvent.compositionEnd(searchBox());
+      expect(surface.isComposing).toBe(false);
+
+      type('loose');
+      expect(surface.handleEscape()).toBe(true);
+      expect(searchBox().value).toBe('');
+      expect(history.getByText('Pinned session')).toBeTruthy();
+      expect(menuEl.hasClass('visible')).toBe(true);
+      expect(searchBox().ownerDocument.activeElement).toBe(searchBox());
+
+      expect(surface.handleEscape()).toBe(true);
+      expect(menuEl.hasClass('visible')).toBe(false);
+      expect(historyButton.ownerDocument.activeElement).toBe(historyButton);
+      expect(surface.handleEscape()).toBe(false);
+
+      fireEvent.click(historyButton);
+      type('loose');
+      fireEvent.click(historyButton);
+      fireEvent.click(historyButton);
+      expect(searchBox().value).toBe('');
+      expect(history.getByText('Pinned session')).toBeTruthy();
+    });
+
+    it('skips sessions in a collapsed section, even when the active match was collapsed away', async () => {
+      const { activeTitle, history, menuEl, navigation, region, searchBox, type } = await openCompactHistory();
+      type('session');
+      expect(within(region()).getByText('Member session')).toBeTruthy();
+      // Make the project member the active match, then collapse its section without leaving the field.
+      while (activeTitle() !== 'Member session') fireEvent.keyDown(searchBox(), { key: 'ArrowDown' });
+      fireEvent.click(within(region()).getByRole('button', { name: t('chat.projects.header') }));
+      const visible = () => history.queryAllByRole('button', { name: /session/ })
+        .filter(row => row.matches('.claudian-history-item-content'))
+        .map(row => row.querySelector('.claudian-history-item-title')!.textContent);
+      expect(visible()).not.toContain('Member session');
+
+      fireEvent.keyDown(searchBox(), { key: 'Enter' });
+      await waitFor(() => expect(menuEl.hasClass('visible')).toBe(false));
+      const opened = vi.mocked(navigation.openConversation).mock.calls.map(([id]) => id);
+      expect(opened).toHaveLength(1);
+      expect(opened[0]).not.toBe('member');
+    });
+
+    it('drops the keyboard choice when an outside click hides the menu and it reopens', async () => {
+      const { activeTitle, historyButton, menuEl, searchBox, surface } = await openCompactHistory();
+      fireEvent.keyDown(searchBox(), { key: 'ArrowDown' });
+      expect(activeTitle()).not.toBeNull();
+
+      surface.dismissDropdownFor({ composedPath: () => [] } as unknown as Event);
+      fireEvent.click(historyButton);
+      expect(menuEl.hasClass('visible')).toBe(true);
+      expect(activeTitle()).toBeNull();
+      expect(menuEl.querySelector('.claudian-history-item--keyboard-active')).toBeNull();
+    });
+
+    it('switches to the archive from the search bar, which then searches archived sessions', async () => {
+      const { history, searchBox, type } = await openCompactHistory();
+      type('loose');
+      fireEvent.click(history.getByRole('button', { name: t('chat.sessions.showArchive') }));
+      expect(searchBox().value).toBe('');
+      expect(history.getByRole('combobox', { name: t('chat.sessions.searchArchived') })).toBe(searchBox());
+      expect(history.queryByText('Pinned session')).toBeNull();
+      fireEvent.click(history.getByRole('button', { name: t('chat.sessions.showSessions') }));
+      expect(searchBox().getAttribute('placeholder')).toBe(t('chat.sessions.search'));
+      expect(history.getByText('Pinned session')).toBeTruthy();
+    });
   });
 });

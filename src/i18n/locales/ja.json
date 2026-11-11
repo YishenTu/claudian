@@ -173,7 +173,12 @@
       "resume": "会話を再開",
       "loading": "会話を読み込み中…",
       "current": "現在のセッション",
-      "loadFailed": "会話の読み込みに失敗しました"
+      "loadFailed": "会話の読み込みに失敗しました",
+      "search": "セッションを検索",
+      "searchArchived": "アーカイブ済みセッションを検索",
+      "clearSearch": "検索をクリア",
+      "showArchive": "アーカイブ済みセッションを表示",
+      "showSessions": "アクティブなセッションを表示"
     },
     "linkedContent": {
       "label": "リンクされたコンテンツ：",
@@ -468,6 +473,8 @@
       "showNumber": "番号を表示",
       "showName": "名前を表示",
       "showTitle": "タイトルを表示",
+      "moveLeft": "左へ移動",
+      "moveRight": "右へ移動",
       "closeTab": "タブを閉じる",
       "active": "アクティブ",
       "needsInput": "入力が必要",

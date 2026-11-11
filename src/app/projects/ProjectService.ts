@@ -267,8 +267,12 @@ export class ProjectService implements ProjectReader, ProjectMutations, ProjectM
 
   /** Relocates existing memory, keeping a copy for other owners; a missing file is only repointed. */
   async #relocateMemory(source: string, target: string, preserveSource: boolean): Promise<boolean> {
-    if (await this.#memoryExists(target)) throw new ProjectMemoryPathTakenError(target);
-    if (!await this.#memoryExists(source)) return false;
+    const targetExists = await this.#memoryExists(target);
+    const sourceExists = await this.#memoryExists(source);
+    if (!sourceExists) {
+      if (targetExists) throw new ProjectMemoryPathTakenError(target);
+      return false;
+    }
     if (preserveSource) {
       if (!await this.#createMemory(target, await this.deps.memory.readManagedFile(source))) {
         throw new ProjectMemoryPathTakenError(target);

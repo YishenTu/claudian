@@ -6,9 +6,9 @@ import {
   CODEX_WEB_SEARCH_RESULT,
   isCodexFailedToolStatus,
   isCodexToolOutputError,
+  normalizeCodexMCPToolCompletion,
   normalizeCodexMCPToolInput,
   normalizeCodexMCPToolName,
-  normalizeCodexMCPToolState,
   normalizeCodexToolCall,
   normalizeCodexToolInput,
   normalizeCodexToolName,
@@ -439,12 +439,8 @@ export function projectMCPToolUse(item: MCPToolCallItem): CodexToolUseProjection
 }
 
 export function projectMCPToolResult(item: MCPToolCallItem): CodexToolResultProjection {
-  const state = normalizeCodexMCPToolState(item.status, item.result, item.error);
-  return {
-    // A completion without a terminal status or output did not report success.
-    content: state.result ?? 'Failed',
-    isError: state.isError,
-  };
+  const { result, isError } = normalizeCodexMCPToolCompletion(item.status, item.result, item.error);
+  return { content: result, isError };
 }
 
 // -- dynamicToolCall ----------------------------------------------------------

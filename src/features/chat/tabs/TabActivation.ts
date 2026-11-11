@@ -48,10 +48,6 @@ export class TabActivation {
     });
   }
 
-  get requestRevision(): number {
-    return this.#scheduler.requestRevision;
-  }
-
   /** Records the newest activation intent before a new tab's assembly begins. */
   reserveIntent(tabId: TabId): number {
     return this.#scheduler.reserveIntent(tabId);

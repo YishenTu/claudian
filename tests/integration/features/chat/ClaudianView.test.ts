@@ -9,6 +9,7 @@ import { registerChatTestProvider } from '@test/helpers/features/chat/ChatProvid
 import { createClaudianView } from '@test/helpers/features/chat/ClaudianViewHarness';
 import { conversationRecord } from '@test/helpers/features/chat/ConversationFixture';
 import { createSessionBrowserHost } from '@test/helpers/features/chat/SessionBrowserTestHarness';
+import { testDate } from '@test/helpers/testClock';
 import { fireEvent, waitFor, within } from '@testing-library/dom';
 import { Menu, Notice, Platform, Scope, TFile } from 'obsidian';
 
@@ -526,10 +527,10 @@ describe('ClaudianView tab controls and layout', () => {
     expect(contentEl.classList.contains('claudian-wide-session-layout')).toBe(true);
     expect(historyMenu.classList.contains('visible')).toBe(false);
     fireEvent.click(contentEl.querySelector<HTMLElement>('.claudian-session-search-control')!);
-    expect(contentEl.querySelector('.claudian-session-search-input')).not.toBeNull();
+    expect(contentEl.querySelector('.claudian-session-sidebar .claudian-session-search-input')).not.toBeNull();
     const released = vi.spyOn(manager.viewerSlot, 'release');
     resize(400);
-    expect(contentEl.querySelector('.claudian-session-search-input')).toBeNull();
+    expect(contentEl.querySelector('.claudian-session-sidebar .claudian-session-search-input')).toBeNull();
     expect(contentEl.classList.contains('claudian-wide-session-layout')).toBe(true);
     await released.mock.results[0].value;
     // The layout's continuation follows the owner's fulfilled release promise.
@@ -635,14 +636,14 @@ describe('ClaudianView composer and scoped keys', () => {
     const tab = manager.getActiveTab()!;
     const release = holdResponse(tab.session.runtime.turns);
     fireEvent.click(contentEl.querySelector<HTMLElement>('.claudian-session-search-control')!);
-    const search = contentEl.querySelector<HTMLInputElement>('.claudian-session-search-input')!;
+    const search = contentEl.querySelector<HTMLInputElement>('.claudian-session-sidebar .claudian-session-search-input')!;
     fireEvent.compositionStart(search);
     expect(scoped(view, 'Escape')).toBeUndefined();
     expect(tab.state.isStreaming).toBe(true);
     expect(tab.session.turns.cancelRequested).toBe(false);
     fireEvent.compositionEnd(search);
     expect(scoped(view, 'Escape')).toBe(false);
-    expect(contentEl.querySelector('.claudian-session-search-input')).toBeNull();
+    expect(contentEl.querySelector('.claudian-session-sidebar .claudian-session-search-input')).toBeNull();
     expect(tab.state.isStreaming).toBe(true);
     expect(tab.session.turns.cancelRequested).toBe(false);
     scoped(view, 'Escape');
@@ -683,6 +684,35 @@ describe('ClaudianView composer and scoped keys', () => {
     expect(tab.session.turns.cancelRequested).toBe(true);
     await release();
     expect(tab.state.isStreaming).toBe(false);
+  });
+
+  it('dismisses the conversation directory through the host keymap before stopping a turn', async () => {
+    const { view, manager } = await openView();
+    const tab = manager.getActiveTab()!;
+    const release = holdResponse(tab.session.runtime.turns);
+    const prompt = { id: 'question', role: 'user' as const, content: 'Plan the note', timestamp: testDate().getTime() };
+    tab.state.messages = [prompt];
+    tab.renderer.renderMessages(tab.state.messages, () => '');
+    Object.defineProperty(tab.dom.messagesEl, 'scrollHeight', { configurable: true, value: 2_000 });
+    Object.defineProperty(tab.dom.messagesEl, 'clientHeight', { configurable: true, value: 400 });
+    tab.ui.navigationSidebar.updateVisibility();
+    await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
+    const toggle = within(tab.dom.contentEl).getByRole('button', { name: 'Conversation directory' });
+    fireEvent.click(toggle);
+    const entry = within(tab.dom.contentEl).getByRole('button', { name: '1. Plan the note' });
+    entry.focus();
+    view.app.keymap.pushScope(view.scope!);
+    try {
+      fireEvent.keyDown(entry, { key: 'Escape' });
+      expect(toggle.getAttribute('aria-expanded')).toBe('false');
+      expect(document.activeElement).toBe(toggle);
+      expect(tab.session.turns.cancelRequested).toBe(false);
+      fireEvent.keyDown(toggle, { key: 'Escape' });
+      expect(tab.session.turns.cancelRequested).toBe(true);
+    } finally {
+      view.app.keymap.popScope(view.scope!);
+      await release();
+    }
   });
 
   it('dismisses inline session rename before handling the scoped stop action', async () => {

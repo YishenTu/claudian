@@ -25,14 +25,12 @@ export interface ManagedStdioProcessOptions {
   env: NodeJS.ProcessEnv;
   /** Bypass cross-spawn's implicit Windows shell fallback. */
   directSpawn?: boolean;
-  finalShutdownTimeoutMs?: number;
   killProcessTree?: boolean;
   sigkillTimeoutMs?: number;
   /** Shutdown first closes stdin and waits this long for a stdin-leased child to exit before signalling it. */
   stdinCloseGraceMs?: number;
   stderrBufferLimit?: number;
   windowsVerbatimArguments?: boolean;
-  stdio?: 'pipe' | ['pipe', 'pipe', 'pipe'];
 }
 
 export interface ManagedStdioProcessExitState {
@@ -110,7 +108,7 @@ export class ManagedStdioProcess {
       proc = spawnProcess(resolvedSpawnSpec.command, resolvedSpawnSpec.args, {
         cwd: this.options.cwd,
         env: this.options.env,
-        stdio: this.options.stdio ?? 'pipe',
+        stdio: 'pipe',
         windowsHide: true,
         ...(this.#ownsProcessGroup ? { detached: true } : {}),
         ...(this.options.windowsVerbatimArguments ? { windowsVerbatimArguments: true } : {}),
@@ -261,7 +259,7 @@ export class ManagedStdioProcess {
           destroyStdio(proc);
           this.#clearLifecycleListeners();
           finish();
-        }, this.options.finalShutdownTimeoutMs ?? DEFAULT_FINAL_SHUTDOWN_TIMEOUT_MS);
+        }, DEFAULT_FINAL_SHUTDOWN_TIMEOUT_MS);
       }, this.options.sigkillTimeoutMs ?? DEFAULT_SIGKILL_TIMEOUT_MS);
 
       this.#killProcess(proc, 'SIGTERM');

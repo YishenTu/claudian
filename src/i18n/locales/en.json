@@ -173,7 +173,12 @@
       "resume": "Resume conversation",
       "loading": "Loading conversation…",
       "current": "Current session",
-      "loadFailed": "Failed to load conversation"
+      "loadFailed": "Failed to load conversation",
+      "search": "Search sessions",
+      "searchArchived": "Search archived sessions",
+      "clearSearch": "Clear search",
+      "showArchive": "Show archived sessions",
+      "showSessions": "Show active sessions"
     },
     "linkedContent": {
       "label": "Linked content:",
@@ -468,6 +473,8 @@
       "showNumber": "Show number",
       "showName": "Show name",
       "showTitle": "Show title",
+      "moveLeft": "Move left",
+      "moveRight": "Move right",
       "closeTab": "Close tab",
       "active": "active",
       "needsInput": "needs your input",

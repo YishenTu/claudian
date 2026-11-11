@@ -1,5 +1,6 @@
 import type { ChatMessage } from '@/core/types';
-import { appendRawDraftSuffix, type ComposerDestination, type ComposerDraft, type ComposerDraftController } from '@/features/chat/composer/ComposerDraftController';
+import { type ComposerDestination, type ComposerDraft, type ComposerDraftController } from '@/features/chat/composer/ComposerDraftController';
+import { appendRawDraftSuffix } from '@/features/chat/utils/draftText';
 
 export type SessionComposerPort = Pick<ComposerDraftController, 'destination' | 'capture' | 'consume' | 'restore' | 'changeDestination'>;
 

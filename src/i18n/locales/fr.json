@@ -173,7 +173,12 @@
       "resume": "Reprendre la conversation",
       "loading": "Chargement de la conversation…",
       "current": "Session actuelle",
-      "loadFailed": "Impossible de charger la conversation"
+      "loadFailed": "Impossible de charger la conversation",
+      "search": "Rechercher des sessions",
+      "searchArchived": "Rechercher des sessions archivées",
+      "clearSearch": "Effacer la recherche",
+      "showArchive": "Afficher les sessions archivées",
+      "showSessions": "Afficher les sessions actives"
     },
     "linkedContent": {
       "label": "Contenu lié :",
@@ -468,6 +473,8 @@
       "showNumber": "Afficher le numéro",
       "showName": "Afficher le nom",
       "showTitle": "Afficher le titre",
+      "moveLeft": "Déplacer vers la gauche",
+      "moveRight": "Déplacer vers la droite",
       "closeTab": "Fermer l’onglet",
       "active": "actif",
       "needsInput": "nécessite votre intervention",

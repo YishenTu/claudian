@@ -14,7 +14,6 @@ import {
 } from '@/features/chat/linked-content/LinkedContentPresentation';
 import { LinkedContentSelector } from '@/features/chat/linked-content/LinkedContentSelector';
 import { t } from '@/i18n/i18n';
-import { revealWorkspaceLeaf } from '@/utils/obsidianCompat';
 
 export type LinkedContentMode = 'auto-draft' | 'explicit-draft' | 'submitting' | 'locked';
 
@@ -406,7 +405,7 @@ export class LinkedContentController {
       }
     });
     if (existingLeaf) {
-      await revealWorkspaceLeaf(workspace, existingLeaf);
+      await workspace.revealLeaf(existingLeaf);
       return;
     }
     await workspace.getLeaf('tab').openFile(file);
