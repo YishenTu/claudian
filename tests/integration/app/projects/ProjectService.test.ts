@@ -313,7 +313,7 @@ describe('ProjectService', () => {
     expect(changed).not.toHaveBeenCalled();
   });
 
-  it.for(['commit', 'metadata failure', 'shared claim'] as const)('handles a native same-entry memory alias without relocating: %s', async (outcome, { skip }) => {
+  it.for(['commit', 'metadata failure', 'shared claim'] as const)('persists a native same-entry memory spelling: %s', async (outcome, { skip }) => {
     const { vault, projects, store } = await fixture();
     const record = await projects.create({ name: 'Case spelling', instructions: 'Original', memoryPath: 'Notes/MEMORY.md' });
     const original = await projects.readMemory(record.id);
@@ -350,9 +350,17 @@ describe('ProjectService', () => {
       expect(active.get(record.id)).toEqual(expectedRecord);
       expect(await vault.read(`${PROJECTS_PATH}/${record.id}.json`)).toBe(outcome === 'commit'
         ? `${JSON.stringify(expectedRecord, null, 2)}\n` : beforeMetadata);
-      expect(moved).toHaveBeenCalledWith(record.memoryPath, alias);
+      if (outcome === 'commit') {
+        expect(moved).toHaveBeenCalledWith(record.memoryPath, alias);
+        expect(await fs.readdir(vault.resolve('Notes'))).toEqual(['memory.md']);
+      } else if (outcome === 'metadata failure') {
+        expect(moved).toHaveBeenCalledWith(record.memoryPath, alias);
+        expect(await fs.readdir(vault.resolve('Notes'))).toEqual(['MEMORY.md']);
+      } else {
+        expect(moved).not.toHaveBeenCalled();
+        expect(await fs.readdir(vault.resolve('Notes'))).toEqual(['MEMORY.md']);
+      }
       expect(removed).not.toHaveBeenCalled();
-      expect(await fs.readdir(vault.resolve('Notes'))).toEqual(['memory.md']);
       expect(await vault.read(record.memoryPath)).toBe(bytes);
       const reloaded = await fixture({ vault });
       expect(reloaded.projects.get(record.id)).toMatchObject(outcome === 'commit'
