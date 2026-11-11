@@ -6,6 +6,8 @@ import type { Mock } from 'vitest';
 import { ChatState } from '@/features/chat/state/ChatState';
 import { ThinkingIndicator } from '@/features/chat/turns/ThinkingIndicator';
 import { TurnCoordinator } from '@/features/chat/turns/TurnCoordinator';
+import { t } from '@/i18n/i18n';
+import { formatDurationMmSs } from '@/utils/date';
 
 describe('ThinkingIndicator', () => {
   let turns: TurnCoordinator;
@@ -288,7 +290,7 @@ describe('ThinkingIndicator', () => {
 
     vi.advanceTimersByTime(1000);
     expect(vi.getTimerCount()).toBe(1);
-    expect(timerSpan.textContent).toContain('esc to interrupt');
+    expect(timerSpan.textContent).toBe(t('chat.busyIndicator.hint', { duration: formatDurationMmSs(1) }));
 
     timerSpan.remove();
     vi.advanceTimersByTime(1000);

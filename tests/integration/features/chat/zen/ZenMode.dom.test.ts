@@ -23,9 +23,10 @@ import { getToolIcon } from '@/core/tools/toolIcons';
 import type { StreamChunk } from '@/core/types';
 import { ChatState } from '@/features/chat/state/ChatState';
 import type { AssembledTabRuntime } from '@/features/chat/tabs/types';
-import { FLAVOR_TEXTS } from '@/features/chat/turns/flavorTexts';
+import { FLAVOR_TEXT_KEYS } from '@/features/chat/turns/flavorTexts';
 import type { ZenPresentationPort } from '@/features/chat/zen/types';
 import { ZenModePanel } from '@/features/chat/zen/ZenModePanel';
+import { t } from '@/i18n/i18n';
 import { adaptCodexStreamChunk } from '@/providers/codex/execution/CodexExecutionEventNormalizer';
 import { CodexNotificationRouter } from '@/providers/codex/runtime/CodexNotificationRouter';
 
@@ -248,7 +249,7 @@ function waitingIndicatorText(tab: AssembledTabRuntime): string | null {
 }
 
 async function waitForFlavor(tab: AssembledTabRuntime, timeout?: number): Promise<string> {
-  await waitFor(() => expect(FLAVOR_TEXTS).toContain(waitingIndicatorText(tab)), { timeout });
+  await waitFor(() => expect(FLAVOR_TEXT_KEYS.map(key => t(key))).toContain(waitingIndicatorText(tab)), { timeout });
   return waitingIndicatorText(tab)!;
 }
 
