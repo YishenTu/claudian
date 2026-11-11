@@ -2,7 +2,7 @@ import type { ProjectRecord } from '@/core/types';
 import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
 import { ProjectEditorModal } from '@/features/chat/projects/ProjectEditorModal';
 import { ProjectMemoryModal } from '@/features/chat/projects/ProjectMemoryModal';
-import { runSessionAction } from '@/features/chat/session-manager/SessionSurfaceShared';
+import { runSessionAction } from '@/features/chat/utils/runSessionAction';
 import { t } from '@/i18n/i18n';
 import { confirm } from '@/shared/modals/ConfirmModal';
 

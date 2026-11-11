@@ -201,21 +201,44 @@ it('discovers models after two empty startup reads when native catalog events ar
   fixture.environment.EMPTY_INITIAL_READS = '2';
   const { host: plugin } = await fixture.createHostFixture();
   const service = new OpencodeMetadataService(plugin.getRuntimeHost('opencode'), plugin.executionLifecycleRegistry);
+  let startRead!: () => void;
+  let releaseRead!: () => void;
+  let publishCatalog!: () => void;
+  const started = new Promise<void>(resolve => { startRead = resolve; });
+  const released = new Promise<void>(resolve => { releaseRead = resolve; });
+  const published = new Promise<void>(resolve => { publishCatalog = resolve; });
+  let publications = 0;
+  const unobserve = service.observeCatalog(() => { if (++publications === 4) publishCatalog(); });
+  let modelReads = 0;
+  let catalogReads = 0;
+  const request = OpencodeHTTPClient.prototype.request;
+  const spy = vi.spyOn(OpencodeHTTPClient.prototype, 'request').mockImplementation(async function (this: OpencodeHTTPClient, route, options) {
+    if (route === '/api/integration') catalogReads++;
+    const held = route === '/api/model' && ++modelReads === 4;
+    if (held) { startRead(); await released; }
+    return request.call(this, route, options);
+  });
   try {
     await expect(service.loadCatalog()).resolves.toBe(true);
     expect(getOpencodeProviderSettings(plugin.settings).discoveredModels).toEqual([]);
     await vi.waitFor(() => expect(getOpencodeProviderSettings(plugin.settings).discoveredModels)
       .toContainEqual({ rawId: 'deepseek/chat', label: 'deepseek/DeepSeek Chat' }));
     expect(Number(readFileSync(fixture.environment.ENDPOINT_FILE! + '.read', 'utf8'))).toBeGreaterThanOrEqual(3);
-    // Advance only the background deadline; its already-scheduled tick and native HTTP I/O remain real.
+    await started;
+    expect(catalogReads).toBe(4);
+    expect(modelReads).toBe(4);
+    expect(Number(readFileSync(fixture.environment.ENDPOINT_FILE! + '.read', 'utf8'))).toBe(3);
+    // The next read is admitted before expiry but its real HTTP dispatch is still pending.
+    // Move the discovery deadline past it, then observe the full catalog publication before checking new starts.
     vi.useFakeTimers({ now: Date.now(), toFake: ['Date', 'setTimeout', 'clearTimeout'] });
     await vi.advanceTimersByTimeAsync(5_000);
-    await yieldToIO(300);
-    const finalReads = Number(readFileSync(fixture.environment.ENDPOINT_FILE! + '.read', 'utf8'));
+    releaseRead();
+    await published;
     await vi.advanceTimersByTimeAsync(1_000);
-    await yieldToIO(50);
-    expect(Number(readFileSync(fixture.environment.ENDPOINT_FILE! + '.read', 'utf8'))).toBe(finalReads);
-  } finally { vi.useRealTimers(); await service.dispose(); }
+    expect(catalogReads).toBe(4);
+    expect(modelReads).toBe(4);
+    expect(Number(readFileSync(fixture.environment.ENDPOINT_FILE! + '.read', 'utf8'))).toBe(4);
+  } finally { releaseRead(); vi.useRealTimers(); await service.dispose(); spy.mockRestore(); unobserve(); }
 });
 
 it('publishes enabled native models without depending on the command catalog', async () => {

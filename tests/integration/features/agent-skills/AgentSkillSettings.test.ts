@@ -23,7 +23,7 @@ import { t } from '@/i18n/i18n';
 
 vi.mock('node:fs/promises', async () => {
   const actual = (await vi.importActual<typeof fs>('node:fs/promises'));
-  return { ...actual, writeFile: vi.fn(actual.writeFile) };
+  return { ...actual, writeFile: vi.fn(actual.writeFile), readFile: vi.fn(actual.readFile) };
 });
 
 const vaults: DesktopVault[] = [];
@@ -63,6 +63,7 @@ function save(dialog: HTMLElement) {
 beforeEach(() => { document.body.replaceChildren(); vi.clearAllMocks(); });
 afterEach(async () => {
   vi.mocked(fs.writeFile).mockImplementation(actualModule0.writeFile);
+  vi.mocked(fs.readFile).mockImplementation(actualModule0.readFile);
   await Promise.all(vaults.splice(0).map(vault => vault.dispose()));
 });
 
@@ -174,6 +175,64 @@ describe('AgentSkillSettings', () => {
     expect(screen.getByRole('dialog')).toBe(dialog);
   });
 
+  it('confirms a skill deletion once while its trash operation is pending', async () => {
+    const { vault, repository, settings, coordinator } = await setup();
+    await repository.create({ name: 'shared-skill', description: 'Shared', instructions: 'Instructions' });
+    await settings.refresh();
+    const trash = vi.spyOn(coordinator, 'trash');
+    const adapter = vault.app.vault.adapter;
+    const actualTrash = adapter.trashSystem.bind(adapter);
+    let release!: () => void;
+    const pending = new Promise<void>(resolve => { release = resolve; });
+    const trashSystem = vi.spyOn(adapter, 'trashSystem').mockImplementation(async path => {
+      await pending;
+      return actualTrash(path);
+    });
+    fireEvent.click(screen.getByRole('button', { name: t('common.delete') }));
+    const dialog = screen.getByRole('dialog');
+    const button = within(dialog).getByRole<HTMLButtonElement>('button', {
+      name: t('settings.agentSkills.delete.confirm'),
+    });
+    try {
+      button.click();
+      await waitFor(() => expect(trashSystem).toHaveBeenCalledTimes(1));
+      expect(button.disabled).toBe(true);
+      button.click();
+    } finally {
+      release();
+    }
+    await Promise.allSettled(trash.mock.results.map(result => result.value));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(vault.trashed).toEqual(['.agents/skills/shared-skill']);
+    expect((await repository.list()).skills).toEqual([]);
+    expect((Notice as Mock).mock.calls.map(args => args[0])).toEqual([
+      t('settings.agentSkills.deleted', { name: 'shared-skill' }),
+    ]);
+    expect(trash).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the deletion confirmation retryable after trash fails', async () => {
+    const { vault, repository, settings } = await setup();
+    await repository.create({ name: 'shared-skill', description: 'Shared', instructions: 'Instructions' });
+    await settings.refresh();
+    vi.spyOn(vault.app.vault.adapter, 'trashSystem').mockRejectedValueOnce(new Error('Trash unavailable'));
+    vi.spyOn(vault.app.vault.adapter, 'trashLocal').mockRejectedValueOnce(new Error('Trash unavailable'));
+    fireEvent.click(screen.getByRole('button', { name: t('common.delete') }));
+    const dialog = screen.getByRole('dialog');
+    const button = within(dialog).getByRole<HTMLButtonElement>('button', {
+      name: t('settings.agentSkills.delete.confirm'),
+    });
+    button.click();
+    await waitFor(() => expect(Notice).toHaveBeenCalledWith(expect.stringContaining('Failed to move shared skill to trash:')));
+    expect(button.disabled).toBe(false);
+    expect(screen.getByRole('dialog')).toBe(dialog);
+    expect((await repository.list()).skills).toHaveLength(1);
+    expect((await axe(dialog)).violations).toEqual([]);
+    button.click();
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect((await repository.list()).skills).toEqual([]);
+  });
+
   it('shows diagnostics and confirms deletion of the entire package', async () => {
     const { vault, repository, settings } = await setup();
     await repository.create({ name: 'shared-skill', description: 'Shared', instructions: 'Instructions' });
@@ -215,6 +274,41 @@ describe('AgentSkillSettings repair of flagged packages', () => {
     expect(result.diagnostics).toEqual([]);
     expect(result.skills).toEqual([expect.objectContaining({ name: 'no-description', description: 'Now described' })]);
     await waitFor(() => expect(screen.queryByText('.agents/skills/no-description')).toBeNull());
+  });
+
+  it.each([false, true])('only opens a loaded repair editor while its settings panel is active (disposed: %s)', async disposed => {
+    const { vault, settings, coordinator } = await setup();
+    await vault.write('.agents/skills/no-description/SKILL.md', '---\nname: no-description\n---\nExisting instructions\n');
+    await settings.refresh();
+    let entered!: () => void;
+    const reading = new Promise<void>(resolve => { entered = resolve; });
+    let release!: () => void;
+    const pending = new Promise<void>(resolve => { release = resolve; });
+    vi.mocked(fs.readFile).mockImplementationOnce(async (...args) => {
+      entered();
+      await pending;
+      return actualModule0.readFile(...args);
+    });
+    const load = vi.spyOn(coordinator, 'readForRepair');
+    const row = screen.getByText('.agents/skills/no-description').closest<HTMLElement>('.claudian-agent-skills-diagnostic')!;
+    fireEvent.click(within(row).getByRole('button', { name: t('settings.agentSkills.fix') }));
+    try {
+      await reading;
+      if (disposed) settings.dispose();
+    } finally {
+      release();
+    }
+    await load.mock.results[0].value;
+    const dialog = screen.queryByRole('dialog', { name: t('settings.agentSkills.modal.titleFix') });
+    try {
+      expect(dialog === null).toBe(disposed);
+      const descriptions = dialog ? within(dialog).getAllByRole<HTMLInputElement>('textbox').map(input => input.value) : [];
+      expect(descriptions).toEqual(disposed ? [] : ['no-description', '', 'Existing instructions']);
+      expect((await axe(dialog ?? row)).violations).toEqual([]);
+    } finally {
+      // Obsidian's existing window-capture Escape closes a modal opened by the live control.
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+    }
   });
 
   it('lists only flagged packages the user can fix or delete', async () => {

@@ -283,6 +283,32 @@ it('cancels and drains queued snapshot preparation before plugin shutdown finish
   await fixture.native.coordinator.dispose(); await fixture.native.registry.dispose();
 });
 
+it('keeps a stopped snapshot preparation as pending work until it settles', async () => {
+  const fixture = (await setup());
+  const gate = deferred<Conversation | null>();
+  const source = await fixture.plugin.getConversationById(id);
+  fixture.plugin.getConversationById.mockClear().mockReturnValue(gate.promise);
+  const releaseTurn = await fixture.holdResponse();
+  fixture.input.value = token;
+  const sending = fixture.controller.sendMessage();
+  try {
+    await waitForCall(fixture.plugin.getConversationById);
+    fixture.controller.cancelStreaming();
+    await releaseTurn();
+
+    // Stop withdraws the preparation from the UI, but it still resumes and restores its draft later.
+    expect(fixture.controller.isPreparingMainTurn).toBe(false);
+    expect(fixture.controller.hasUnsettledMainWork).toBe(true);
+    gate.resolve(source);
+    await sending;
+    expect(fixture.controller.hasUnsettledMainWork).toBe(false);
+    expect(fixture.input.value).toBe(token);
+  } finally {
+    gate.resolve(source);
+    await fixture.native.coordinator.dispose(); await fixture.native.registry.dispose();
+  }
+});
+
 it.each([false, true])('restores prepared drafts when rewind begins during hydration (plain follow-up: %s)', async followUp => {
   const fixture = (await setup());
   const hydration = deferred<Conversation | null>();

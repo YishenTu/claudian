@@ -5,9 +5,9 @@ import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
 import { getChatWorkingDirectory } from '@/features/chat/execution/chatExecutionConfiguration';
 import { ChatExecutionCoordinator } from '@/features/chat/execution/ChatExecutionCoordinator';
 import { createInteractionPromptPort } from '@/features/chat/interactions/interactionPromptPort';
-import { SessionMailbox } from '@/features/chat/session-messaging/SessionMailbox';
 import { ChatSessionRuntime, type SessionIdentity } from '@/features/chat/sessions/ChatSessionRuntime';
 import { createConversationExecutionBinding } from '@/features/chat/sessions/sessionExecution';
+import { SessionMailbox } from '@/features/chat/sessions/SessionMailbox';
 import { createSessionMessageId, createSessionSideChat, SessionModel } from '@/features/chat/sessions/SessionModel';
 import { t } from '@/i18n/i18n';
 

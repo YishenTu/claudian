@@ -688,6 +688,125 @@
   margin: -4px 0;
 }
 
+/* A session another session started leads its title with its kind: an agent session or a fork. */
+.claudian-history-item-lineage {
+  display: inline-flex;
+  margin-inline-end: 6px;
+  color: var(--text-faint);
+  vertical-align: -1px;
+}
+
+.claudian-history-item-lineage svg {
+  width: 12px;
+  height: 12px;
+}
+
+/*
+ * Sessions folded under the session that started them: a quiet native disclosure button over their rows. Obsidian
+ * restores button chrome on interaction states, so the reset covers them.
+ */
+:is(.claudian-session-sidebar, .claudian-history-menu) .claudian-session-children-toggle,
+:is(.claudian-session-sidebar, .claudian-history-menu) .claudian-session-children-toggle:is(:hover, :focus, :focus-visible, :active, .mobile-tap) {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  cursor: pointer;
+}
+
+:is(.claudian-session-sidebar, .claudian-history-menu) .claudian-session-children-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 4px;
+  width: 100%;
+  height: 22px;
+  margin: 0;
+  padding: 0 12px 0 14px;
+  border-radius: 6px;
+  color: var(--text-faint);
+  font: inherit;
+  font-size: calc(12 * var(--claudian-font-px));
+  font-weight: 400;
+}
+
+:is(.claudian-session-sidebar, .claudian-history-menu) .claudian-session-children-toggle:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-muted);
+}
+
+:is(.claudian-session-sidebar, .claudian-history-menu) .claudian-session-children-toggle:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: -2px;
+}
+
+.claudian-session-children-sign {
+  display: flex;
+  flex: 0 0 auto;
+}
+
+.claudian-session-children-sign svg {
+  width: 12px;
+  height: 12px;
+}
+
+.claudian-session-children-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-align: start;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* A guide line ties the folded rows to their toggle's chevron. */
+.claudian-session-children {
+  position: relative;
+}
+
+.claudian-session-children::before {
+  position: absolute;
+  inset-block: 2px 4px;
+  inset-inline-start: 21px;
+  border-inline-start: 1px solid var(--background-modifier-border);
+  content: "";
+}
+
+.claudian-session-children .claudian-history-item-title {
+  color: var(--text-faint);
+}
+
+/* The persistent sidebar aligns the fold with its row inset, one step further inside a group. */
+.claudian-session-sidebar .claudian-session-children-toggle {
+  padding-inline: calc(var(--claudian-session-inline-inset) + 2px) var(--claudian-session-inline-inset);
+}
+
+.claudian-session-sidebar .claudian-session-children::before {
+  inset-inline-start: calc(var(--claudian-session-inline-inset) + 7px);
+}
+
+.claudian-session-sidebar .claudian-session-children .claudian-history-item {
+  padding-inline-start: calc(var(--claudian-session-inline-inset) + 18px);
+}
+
+.claudian-session-sidebar .claudian-session-group-body .claudian-session-children-toggle {
+  padding-inline-start: calc(
+    var(--claudian-session-inline-inset) + var(--claudian-session-icon-size) + var(--claudian-session-icon-gap) + 2px
+  );
+}
+
+.claudian-session-sidebar .claudian-session-group-body .claudian-session-children::before {
+  inset-inline-start: calc(
+    var(--claudian-session-inline-inset) + var(--claudian-session-icon-size) + var(--claudian-session-icon-gap) + 7px
+  );
+}
+
+.claudian-session-sidebar .claudian-session-group-body .claudian-session-children .claudian-history-item {
+  padding-inline-start: calc(
+    var(--claudian-session-inline-inset) + var(--claudian-session-icon-size) + var(--claudian-session-icon-gap) + 18px
+  );
+}
+
 .claudian-session-metadata-popover {
   position: fixed;
   z-index: 1000;
