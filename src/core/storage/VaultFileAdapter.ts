@@ -381,7 +381,7 @@ export class VaultFileAdapter {
   async #renameSameManagedEntry(source: string, target: string): Promise<boolean> {
     if (source === target) return true;
     const base = this.#basePath();
-    let same = false;
+    let same: boolean;
     try {
       same = await fs.realpath(this.#resolveManagedDesktopPath(base, source))
         === await fs.realpath(this.#resolveManagedDesktopPath(base, target));
