@@ -38,9 +38,6 @@ type CloseListener = (error?: Error) => void;
 
 export class PiSubprocess {
   private promptDirectory: string | null = null;
-  private closeError: Error | null = null;
-  private readonly closeListeners = new Set<CloseListener>();
-  private notifiedClose = false;
   private readonly process: ManagedStdioProcess;
 
   constructor(launchSpec: PiSubprocessLaunchSpec) {
@@ -81,20 +78,8 @@ export class PiSubprocess {
       this.#cleanupPrompt();
       throw error;
     }
-    this.process.onError((error) => {
-      this.#cleanupPrompt();
-      this.closeError = error;
-      this.#notifyClose(error);
-    });
-    this.process.onExit(({ code, signal }) => {
-      this.#cleanupPrompt();
-      const exitError = this.closeError ?? (
-        code === 0 && signal === null
-          ? undefined
-          : new Error(`Pi subprocess exited (${formatExit(code, signal)})`)
-      );
-      this.#notifyClose(exitError);
-    });
+    this.process.onError(() => this.#cleanupPrompt());
+    this.process.onExit(() => this.#cleanupPrompt());
   }
 
   get stdin(): Writable {
@@ -120,10 +105,10 @@ export class PiSubprocess {
   }
 
   onClose(listener: CloseListener): () => void {
-    this.closeListeners.add(listener);
-    return () => {
-      this.closeListeners.delete(listener);
-    };
+    return this.process.onTerminated(
+      listener,
+      (code, signal) => new Error(`Pi subprocess exited (${formatExit(code, signal)})`),
+    );
   }
 
   async shutdown(): Promise<void> {
@@ -140,19 +125,6 @@ export class PiSubprocess {
     if (!this.process.isStarted()) {
       throw new Error('Pi subprocess is not started');
     }
-  }
-
-  #notifyClose(error?: Error): void {
-    if (this.notifiedClose) return;
-    this.notifiedClose = true;
-    for (const listener of [...this.closeListeners]) {
-      try {
-        listener(error);
-      } catch {
-        // Close observers cannot interrupt provider cleanup.
-      }
-    }
-    this.closeListeners.clear();
   }
 }
 

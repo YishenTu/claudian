@@ -1162,6 +1162,35 @@ it('fails the conversation on a transport failure without stopping the native wo
   expect(peer.calls.some(c => c.method === 'session/cancel')).toBe(true);
 });
 
+it('stops the native work of a failed conversation closed while its binding is being retained', async () => {
+  let jobs = [{ id: 'job', owner: 'root', status: 'running' }];
+  serveJobs(() => jobs);
+  const ordinaryCall = peer.onCall;
+  peer.onCall = (method, args) => {
+    if (method === '$events/result') return NATIVE_RESET;
+    if (method === 'job/kill') { jobs = []; peer.send('job/list', { type: 'rows', jobs }, jobsOf('root')); return { status: 'requested' }; }
+    return ordinaryCall(method, args);
+  };
+  port.askUserQuestion = vi.fn<typeof port.askUserQuestion>(async () => ({ interactionId: 'question', answers: { q: 'Yes' } }));
+  create();
+  let closed: Promise<void> | undefined;
+  // A consumer closes the conversation as soon as it observes the failure, while the failure is still detaching.
+  session.onEvent(event => {
+    if (!closed && event.type === 'session_state_changed' && event.snapshot.status === 'invalidated') closed = session.dispose();
+  });
+  const run = session.execute(request());
+  const done = collect(run.events, []);
+  await until(() => peer.calls.some(c => c.method === 'session/prompt'));
+  begin(run.executionId);
+  peer.send('$events', { type: 'waterfall', eventId: 'question', event: 'user-questions/request', agentId: 'root', request: { questions: [{ id: 'q', question: 'Continue?', options: [{ label: 'Yes' }] }] } });
+  await done;
+  await until(() => !!closed);
+  await closed;
+
+  expect(peer.calls.filter(c => c.method === 'job/kill')).toEqual([{ method: 'job/kill', args: { request: { sessionId: 'root', jobId: 'job' } } }]);
+  expect(session.hasBackgroundWork?.()).toBe(false);
+});
+
 it('resolves native tool image references inside the owning session', async () => {
   const ordinary = peer.onCall;
   peer.onCall = (method, args) => method === 'session/attachment'

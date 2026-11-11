@@ -123,16 +123,6 @@ export class LiveListSorter {
     this.#endGesture();
   }
 
-  /** Cancels a lifted gesture for a host key scope, before it handles another Escape action. */
-  cancel(): boolean {
-    const gesture = this.#gesture;
-    if (!gesture?.lift) return false;
-    this.#cancel();
-    // The held pointer's eventual release must not activate the cancelled row.
-    swallowClickAfterRelease(gesture.doc);
-    return true;
-  }
-
   /** Cancels any drag, restoring the list as rendered. */
   #cancel(): void {
     const lifted = this.#gesture?.lift != null;
@@ -151,10 +141,12 @@ export class LiveListSorter {
       if (gesture?.lift) this.#follow(gesture, gesture.lift);
     };
     const onKey = (keyEvent: KeyboardEvent): void => {
-      if (keyEvent.key !== 'Escape' || !this.cancel()) return;
+      if (keyEvent.key !== 'Escape' || !this.#gesture?.lift) return;
       keyEvent.preventDefault();
       keyEvent.stopPropagation();
-
+      this.#cancel();
+      // The button is still held; its release ends the cancelled drag, not a click on the row.
+      swallowClickAfterRelease(doc);
     };
     doc.addEventListener('pointermove', onMove, true);
     doc.addEventListener('pointerup', onUp, true);

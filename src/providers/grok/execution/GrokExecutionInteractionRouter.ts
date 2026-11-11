@@ -51,7 +51,7 @@ export class GrokExecutionInteractionRouter {
     const turnId = this.getTurnId();
     const request = parseQuestionRequest(params, this.getSessionId());
     if (!turnId || !request || signal?.aborted) return { outcome: 'cancelled' };
-    const pending = this.#begin(this.#nextId('question'));
+    const pending = this.#begin(this.#nextId('question'), signal);
     const { interactionId } = pending;
     let dismissReason: ProviderInteractionDismissReason = 'cancelled';
     try {
@@ -95,9 +95,9 @@ export class GrokExecutionInteractionRouter {
   }
 
   /** Grok asks one question at a time; a new question supersedes the previous one. */
-  #begin(interactionId: string): PendingInteraction {
+  #begin(interactionId: string, signal?: AbortSignal): PendingInteraction {
     this.dismissAll('superseded');
-    return this.pending.begin(interactionId)!;
+    return this.pending.begin(interactionId, signal)!;
   }
 }
 

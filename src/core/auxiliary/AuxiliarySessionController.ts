@@ -16,12 +16,10 @@ export interface AuxiliaryRequest {
 }
 
 export class AuxiliarySessionController {
-  private abortController: AbortController | null = null;
-  private activeRun: ProviderExecutionRun | null = null;
+  private activeRun: { readonly run: ProviderExecutionRun; readonly abortController: AbortController } | null = null;
   private cancelled = false;
   private generation = 0;
-  private invalidationUnsubscribe: (() => void) | null = null;
-  private lease: ProviderExecutionSessionLease | null = null;
+  private binding: { readonly lease: ProviderExecutionSessionLease; readonly unsubscribe: () => void } | null = null;
   private releasePromise: Promise<void> | null = null;
   private resetRequired = false;
 
@@ -33,7 +31,7 @@ export class AuxiliarySessionController {
   ) {}
 
   get hasSession(): boolean {
-    return this.lease !== null;
+    return this.binding !== null;
   }
 
   get requiresReset(): boolean {
@@ -58,23 +56,17 @@ export class AuxiliarySessionController {
       },
       this.owner,
     );
-    this.lease = lease;
-    this.invalidationUnsubscribe = lease.onInvalidated(() => {
-      if (this.lease !== lease) return;
-      this.generation += 1;
-      this.lease = null;
-      this.invalidationUnsubscribe = null;
+    const unsubscribe = lease.onInvalidated(() => {
+      if (this.binding?.lease !== lease) return;
+      this.binding = null;
       this.resetRequired = true;
-      this.cancelled = true;
-      this.abortController?.abort();
-      this.activeRun?.cancel();
-      this.abortController = null;
-      this.activeRun = null;
+      this.#stopRun();
     });
+    this.binding = { lease, unsubscribe };
   }
 
   async execute(request: AuxiliaryRequest): Promise<string> {
-    const lease = this.lease;
+    const lease = this.binding?.lease;
     if (!lease) {
       throw new Error(
         this.cancelled
@@ -97,26 +89,18 @@ export class AuxiliarySessionController {
       signal: abortController.signal,
       toolPolicy: this.toolPolicy,
     };
-    this.abortController = abortController;
     const run = lease.session.execute(executionRequest);
-    this.activeRun = run;
+    const active = { abortController, run };
+    this.activeRun = active;
     try {
       return await this.collector.collect(run);
     } finally {
-      if (this.activeRun === run) {
-        this.activeRun = null;
-        this.abortController = null;
-      }
+      if (this.activeRun === active) this.activeRun = null;
     }
   }
 
   cancel(): void {
-    this.generation += 1;
-    this.cancelled = true;
-    this.abortController?.abort();
-    this.activeRun?.cancel();
-    this.abortController = null;
-    this.activeRun = null;
+    this.#stopRun();
     const release = this.#releaseCurrent();
     // Observe fire-and-forget cleanup without replacing the promise awaited by
     // startRoot() or dispose(), which must still surface lifecycle failures.
@@ -129,22 +113,27 @@ export class AuxiliarySessionController {
   }
 
   async dispose(): Promise<void> {
+    this.#stopRun();
+    await this.#releaseCurrent();
+  }
+
+  /** Supersedes pending startup and stops the active run. */
+  #stopRun(): void {
     this.generation += 1;
     this.cancelled = true;
-    this.abortController?.abort();
-    this.activeRun?.cancel();
-    this.abortController = null;
+    const active = this.activeRun;
     this.activeRun = null;
-    await this.#releaseCurrent();
+    active?.abortController.abort();
+    active?.run.cancel();
   }
 
   #releaseCurrent(): Promise<void> {
     if (this.releasePromise) return this.releasePromise;
-    const lease = this.lease;
-    this.lease = null;
-    this.invalidationUnsubscribe?.();
-    this.invalidationUnsubscribe = null;
-    if (!lease) return Promise.resolve();
+    const binding = this.binding;
+    this.binding = null;
+    if (!binding) return Promise.resolve();
+    binding.unsubscribe();
+    const { lease } = binding;
     const release = lease.release().finally(() => {
       if (this.releasePromise === release) {
         this.releasePromise = null;

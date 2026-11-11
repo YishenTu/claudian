@@ -25,12 +25,16 @@ export interface CodexSessionConnectionHost {
  * app-server: its thread scope, client-hosted dynamic tools, and path mapping.
  * The runtime owns the process; releasing detaches the scope, never the server.
  */
+interface Attachment {
+  readonly connection: CodexAppServerConnection;
+  readonly scope: CodexThreadScope;
+  readonly runtimeContext: CodexRuntimeContext;
+  readonly detachListeners: () => void;
+}
+
 export class CodexSessionConnection {
-  #connection: CodexAppServerConnection | null = null;
-  #scope: CodexThreadScope | null = null;
-  #runtimeContext: CodexRuntimeContext | null = null;
+  #attachment: Attachment | null = null;
   #dynamicToolRegistry = new CodexDynamicToolRegistry();
-  #detachListeners: (() => void) | null = null;
   #release: Promise<void> | null = null;
 
   constructor(
@@ -39,11 +43,11 @@ export class CodexSessionConnection {
   ) {}
 
   get transport(): CodexRPCTransport | null {
-    return this.#connection?.transport ?? null;
+    return this.#attachment?.connection.transport ?? null;
   }
 
   get scope(): CodexThreadScope | null {
-    return this.#scope;
+    return this.#attachment?.scope ?? null;
   }
 
   get dynamicToolRegistry(): CodexDynamicToolRegistry {
@@ -51,29 +55,31 @@ export class CodexSessionConnection {
   }
 
   get pathMapper(): TargetLaunchSpec['pathMapper'] | undefined {
-    return this.#connection?.launchSpec.pathMapper;
+    return this.#attachment?.connection.launchSpec.pathMapper;
   }
 
   get sessionsDirHost(): string | null | undefined {
-    return this.#runtimeContext?.sessionsDirHost;
+    return this.#attachment?.runtimeContext.sessionsDirHost;
   }
 
   get hasBackgroundWork(): boolean {
-    return this.#scope?.hasBackgroundWork ?? false;
+    return this.#attachment?.scope.hasBackgroundWork ?? false;
   }
 
   isAttachedTo(connection: CodexAppServerConnection): boolean {
-    return this.#connection === connection;
+    return this.#attachment?.connection === connection;
   }
 
   /** Attached to a live generation whose threads still own native work. */
   isDraining(): boolean {
-    return Boolean(this.#connection?.isAlive() && this.#scope?.hasWork);
+    const attachment = this.#attachment;
+    return Boolean(attachment?.connection.isAlive() && attachment.scope.hasWork);
   }
 
   /** Attached to a retired generation that no longer owns native work. */
   isReleasable(): boolean {
-    return Boolean(this.#connection?.isRetired() && !this.#scope?.hasWork);
+    const attachment = this.#attachment;
+    return Boolean(attachment?.connection.isRetired() && !attachment.scope.hasWork);
   }
 
   /** Settles an in-flight detachment before another attachment may start. */
@@ -87,31 +93,27 @@ export class CodexSessionConnection {
    */
   async attach(connection: CodexAppServerConnection): Promise<CodexDynamicToolRegistry> {
     const runtimeContext = await connection.initialized;
-    this.#connection = connection;
-    this.#runtimeContext = runtimeContext;
     this.#dynamicToolRegistry = new CodexDynamicToolRegistry();
     this.#dynamicToolRegistry.register(createCodexWorkspaceDependencyTool(runtimeContext));
     if (this.sessionTools) {
       for (const tool of createCodexSessionTools(this.sessionTools)) this.#dynamicToolRegistry.register(tool);
     }
-    this.#scope = connection.createThreadScope(this.host.observer);
+    const scope = connection.createThreadScope(this.host.observer);
     const offExit = connection.onExit(() => {
-      if (this.#connection === connection) this.host.onExit();
+      if (this.#attachment?.connection === connection) this.host.onExit();
     });
     const offRetire = connection.onRetired(() => this.host.onRetired());
-    this.#detachListeners = () => { offExit(); offRetire(); };
+    this.#attachment = { connection, detachListeners: () => { offExit(); offRetire(); }, runtimeContext, scope };
     return this.#dynamicToolRegistry;
   }
 
   /** Detaches the thread scope; it keeps native cleanup ownership until closure. */
   release(): Promise<void> {
     if (this.#release) return this.#release;
-    const scope = this.#scope;
-    this.#scope = null;
-    this.#connection = null;
-    this.#runtimeContext = null;
-    this.#detachListeners?.();
-    this.#detachListeners = null;
+    const attachment = this.#attachment;
+    this.#attachment = null;
+    attachment?.detachListeners();
+    const scope = attachment?.scope;
     this.#dynamicToolRegistry = new CodexDynamicToolRegistry();
     this.host.onRelease();
     const pending = scope?.detach() ?? Promise.resolve();
@@ -124,7 +126,7 @@ export class CodexSessionConnection {
 
   /** The vault directory as the app-server sees it. */
   targetWorkingDirectory(): string {
-    const launchSpec = this.#connection?.launchSpec;
+    const launchSpec = this.#attachment?.connection.launchSpec;
     if (!launchSpec) return this.host.workingDirectory;
     return launchSpec.pathMapper.toTargetPath(this.host.workingDirectory) ?? launchSpec.targetCwd;
   }

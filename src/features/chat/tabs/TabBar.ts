@@ -1,8 +1,10 @@
 import { Menu } from 'obsidian';
 
 import { normalizeTabLabel } from '@/core/bootstrap/tabManagerState';
-import type { TabBarItem, TabId } from '@/features/chat/tabs/ChatTab';
+import type { TabId } from '@/features/chat/ChatFeatureHost';
+import type { TabBarItem } from '@/features/chat/tabs/ChatTab';
 import { scheduleAnimationFrame } from '@/features/chat/utils/animationFrame';
+import { t } from '@/i18n/i18n';
 
 const EXPANDED_TITLE_MAX_LENGTH = 32;
 const TRUNCATED_TITLE_SUFFIX = '...';
@@ -153,7 +155,7 @@ export class TabBar {
       cls: 'claudian-tab-label-input',
       attr: {
         type: 'text',
-        'aria-label': 'Tab name',
+        'aria-label': t('chat.tabNavigation.tabName'),
         placeholder: item.title,
         spellcheck: 'false',
       },
@@ -262,33 +264,35 @@ export class TabBar {
     badgeEl.toggleClass('claudian-tab-badge-expanded', isTitleExpanded);
     badgeEl.setAttribute('data-title-expanded', isTitleExpanded ? 'true' : 'false');
     // Obsidian uses aria-label for hover tooltips here; adding title causes duplicate tooltip text.
-    const name = label === undefined ? item.title : `${label} (${item.title})`;
-    badgeEl.setAttribute('aria-label', `${name}, ${this.#getBadgeStatusLabel(item)}`);
+    const status = this.#getBadgeStatusLabel(item);
+    badgeEl.setAttribute('aria-label', label === undefined
+      ? t('chat.tabNavigation.badge', { title: item.title, status })
+      : t('chat.tabNavigation.namedBadge', { label, title: item.title, status }));
   }
 
   #openBadgeMenu(item: TabBarItem, event: MouseEvent): void {
     const hasLabel = item.label !== undefined;
     const menu = new Menu().setUseNativeMenu(false);
     menu.addItem(menuItem => menuItem
-      .setTitle('Rename tab…')
+      .setTitle(t('chat.tabNavigation.renameTab'))
       .setIcon('pencil')
       .onClick(() => {
         this.beginRename(item.id);
       }));
     if (hasLabel) {
       menu.addItem(menuItem => menuItem
-        .setTitle('Reset tab name')
+        .setTitle(t('chat.tabNavigation.resetName'))
         .setIcon('rotate-ccw')
         .onClick(() => this.callbacks.onTabLabelChange(item.id, null)));
     }
     const isTitleExpanded = this.expandedTitleTabIds.has(item.id);
     menu.addItem(menuItem => menuItem
-      .setTitle(isTitleExpanded ? 'Show number' : hasLabel ? 'Show name' : 'Show title')
+      .setTitle(isTitleExpanded ? t('chat.tabNavigation.showNumber') : hasLabel ? t('chat.tabNavigation.showName') : t('chat.tabNavigation.showTitle'))
       .setIcon(isTitleExpanded ? 'hash' : 'type')
       .onClick(() => this.#toggleBadgeTitle(item.id)));
     if (item.canClose) {
       menu.addItem(menuItem => menuItem
-        .setTitle('Close tab')
+        .setTitle(t('chat.tabNavigation.closeTab'))
         .setIcon('x')
         .onClick(() => this.callbacks.onTabClose(item.id)));
     }
@@ -451,15 +455,15 @@ export class TabBar {
   }
 
   #getBadgeStatusLabel(item: TabBarItem): string {
-    if (item.isActive) return 'active';
-    if (item.attention?.kind === 'action-required') return 'needs your input';
-    if (item.isWorking) return 'working';
+    if (item.isActive) return t('chat.tabNavigation.active');
+    if (item.attention?.kind === 'action-required') return t('chat.tabNavigation.needsInput');
+    if (item.isWorking) return t('chat.tabNavigation.working');
     if (item.attention?.kind === 'review') {
       return item.attention.outcome === 'error'
-        ? 'stopped with an error, ready to review'
-        : 'finished, ready to review';
+        ? t('chat.tabNavigation.errorReview')
+        : t('chat.tabNavigation.finishedReview');
     }
-    return 'idle';
+    return t('chat.tabNavigation.idle');
   }
 
   #truncateExpandedTitle(title: string): string {

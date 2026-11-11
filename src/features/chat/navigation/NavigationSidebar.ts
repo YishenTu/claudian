@@ -1,5 +1,6 @@
 import { setIcon } from 'obsidian';
 
+import type { NavigationScrollIntent } from '@/features/chat/rendering/TranscriptFollow';
 import {
   cancelScheduledAnimationFrame,
   scheduleAnimationFrame,
@@ -7,8 +8,6 @@ import {
 } from '@/features/chat/utils/animationFrame';
 import { type ConversationDirectoryEntry, getRenderedConversationDirectory } from '@/features/chat/utils/conversationDirectoryTitle';
 import { t } from '@/i18n/i18n';
-
-type NavigationScrollIntent = 'away' | 'bottom';
 
 /**
  * Floating sidebar for navigating chat history.
@@ -79,14 +78,8 @@ export class NavigationSidebar {
       this.messagesEl.scrollTo({ top: this.messagesEl.scrollHeight, behavior: 'smooth' });
     });
 
-    this.prevBtn.addEventListener('click', () => {
-      this.onScrollIntent?.('away');
-      this.#scrollToMessage('prev');
-    });
-    this.nextBtn.addEventListener('click', () => {
-      this.onScrollIntent?.('away');
-      this.#scrollToMessage('next');
-    });
+    this.prevBtn.addEventListener('click', () => this.#scrollToMessage('prev'));
+    this.nextBtn.addEventListener('click', () => this.#scrollToMessage('next'));
     this.tocBtn.addEventListener('click', (event) => {
       event.stopPropagation();
       this.#toggleDirectory();
@@ -257,28 +250,21 @@ export class NavigationSidebar {
 
     const scrollTop = this.messagesEl.scrollTop;
     const threshold = 30;
-
-    if (direction === 'prev') {
-      // Find the last message strictly above the current scroll position
-      for (let i = messages.length - 1; i >= 0; i--) {
-        if (messages[i].offsetTop < scrollTop - threshold) {
-          this.#scrollToElement(messages[i]);
-          return;
-        }
-      }
-      // Already at or above the first message — scroll to top
-      this.messagesEl.scrollTo({ top: 0, behavior: 'smooth' });
-    } else {
-      // Find the first message strictly below the current scroll position
-      for (let i = 0; i < messages.length; i++) {
-        if (messages[i].offsetTop > scrollTop + threshold) {
-          this.#scrollToElement(messages[i]);
-          return;
-        }
-      }
-      // Already at or past the last message — scroll to bottom
-      this.messagesEl.scrollTo({ top: this.messagesEl.scrollHeight, behavior: 'smooth' });
+    const target = direction === 'prev'
+      // The last message strictly above the current scroll position
+      ? [...messages].reverse().find(message => message.offsetTop < scrollTop - threshold)
+      // The first message strictly below the current scroll position
+      : messages.find(message => message.offsetTop > scrollTop + threshold);
+    if (target) {
+      this.onScrollIntent?.('away');
+      this.#scrollToElement(target);
+      return;
     }
+    // Already past the last prompt in that direction: go to the transcript's edge, which for
+    // the bottom resumes following.
+    const toBottom = direction === 'next';
+    this.onScrollIntent?.(toBottom ? 'bottom' : 'away');
+    this.messagesEl.scrollTo({ top: toBottom ? this.messagesEl.scrollHeight : 0, behavior: 'smooth' });
   }
 
   setOnScrollIntent(callback: ((intent: NavigationScrollIntent) => void) | null): void {

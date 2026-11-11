@@ -175,7 +175,7 @@ async function createPiView() {
     getProviderCatalogConfig: () => null, isRuntimeLive: () => true,
     openConversation: async () => {}, startNewConversation: async () => {},
   });
-  tab.hydrationState = 'ready';
+  await tab.session.runtime.model.hydrate();
   await tab.executionCoordinator.bindConversation({ conversationId: conversation.id, providerId: 'pi' });
   await tab.executionCoordinator.prepare();
   activateTab(tab);

@@ -5,6 +5,8 @@
 - For test changes or changes to the code they cover, follow `tests/AGENTS.md`, even when no test edit is planned.
 - Tests follow the guides of the source they cover; they do not inherit `src/` instructions automatically.
 - Build, dependency, lockfile, locale/static-asset import, and `esbuild.config.mjs` changes also require `scripts/AGENTS.md`. Composition changes require the guides of the services being wired.
+- For changes to provider execution, prompt construction, model selection, provider settings, or conversation persistence, follow `src/core/AGENTS.md` even when editing implementations or consumers outside `src/core/`.
+- For settings UI changes, also follow `src/features/settings/AGENTS.md`, including controls rendered by providers and other feature panels.
 - Use the Node version in `.node-version`. For code changes, the full verification command is:
 
 ```bash
@@ -23,6 +25,7 @@ npm run typecheck && npm run lint && npm run test && npm run build && npm run ch
 - Features use `FeatureHost` and core registries, never concrete app/provider implementations. `FeatureHost` stays feature-neutral; chat-only capabilities belong in chat's `ChatFeatureHost` extension. Providers use `ProviderHost`, never feature orchestration. Core imports none of these implementations.
 - Shared ACP code contains protocol mechanics and protocol-level normalization only; provider launch policy, extensions, provider-specific normalization, and history stay provider-owned.
 - Each piece of mutable state or policy has one authoritative owner; other modules read derived projections or call the owner's API. Do not add parallel flags, maps, or guards that must be kept in sync; consolidate into the owner instead. Code that only looks alike under different provider semantics is not shared policy.
+- Within that owner, model a lifecycle with more than two stages, or data valid only in some stages, as one discriminated union (a phase plus that stage's data) rather than independent booleans or nullable fields. Exceptions: facts that vary independently, and fields with deliberately different lifetimes; note which in a comment.
 
 ## Local conventions
 
@@ -30,6 +33,7 @@ npm run typecheck && npm run lint && npm run test && npm run build && npm run ch
 - Use English for code/comments/identifiers/commits/code blocks. Soft-wrap Markdown. Put uncommitted notes, traces, and throwaway scripts in `.context/`. No production `console.*`.
 - TypeScript files use PascalCase for their main concept, camelCase for utility bags, and kebab-case for external package names. Preserve `index.ts` barrels, `types.ts` buckets, and source-mirrored test names; this does not require creating new barrels or type buckets. No interface `I` prefix. Preserve acronym capitals in filenames and matching owned identifiers (`ACPClientConnection`, `buildACPUsageInfo`, `URLs`); leading acronyms remain lowercase in camelCase (`acpConnection`). Preserve external API names and serialized keys. Folders use kebab-case; imports omit `.ts` and prefer `@/`.
 - UI actions use native controls. Buttons that do not submit a form declare `type="button"`; non-native controls need equivalent accessible names, roles, and keyboard behavior.
+- Route new or changed plugin-authored UI text through `t()`, including notices, tooltips, placeholders, and accessible names.
 
 ## Regression verification
 

@@ -10,8 +10,8 @@ import { Component } from 'obsidian';
 
 import type { ChatMessage, StreamChunk } from '@/core/types';
 import { MessageRenderer } from '@/features/chat/rendering/MessageRenderer';
+import { SubagentManager } from '@/features/chat/rendering/subagents/SubagentManager';
 import { ChatState } from '@/features/chat/state/ChatState';
-import { SubagentManager } from '@/features/chat/subagents/SubagentManager';
 import { StreamController } from '@/features/chat/turns/StreamController';
 
 let host: HTMLElement;

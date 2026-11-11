@@ -16,6 +16,12 @@ import {
 import { SessionDrag } from '@/features/chat/session-manager/SessionDrag';
 import { SessionInlineRename } from '@/features/chat/session-manager/SessionInlineRename';
 import {
+  describeLineage,
+  lineageChildrenLabel,
+  lineageFoldKey,
+  lineageIcon,
+} from '@/features/chat/session-manager/SessionLineage';
+import {
   deriveSessionListModel,
   type ProjectListSection,
   type SessionListSection,
@@ -42,7 +48,8 @@ import {
   type SessionStatusIndicatorKind,
   sessionStatusText,
 } from '@/features/chat/session-manager/SessionStatusPresentation';
-import { bindMenuToggle, runSessionAction, showMenuAt } from '@/features/chat/session-manager/SessionSurfaceShared';
+import { bindMenuToggle, showMenuAt } from '@/features/chat/session-manager/SessionSurfaceShared';
+import { runSessionAction } from '@/features/chat/utils/runSessionAction';
 import { t } from '@/i18n/i18n';
 import { LiveListSorter } from '@/shared/components/LiveListSorter';
 
@@ -72,9 +79,12 @@ type HistoryRenderOptions = SessionActionOptions & SessionStatusDisplay & Sessio
   sort?: SessionManagerSort;
   /**
    * Whether a group (Linked content, project) or a whole section (`sessionManagerSectionKey`) is collapsed, by its
-   * key; the surface owns the state and each kind's default. Without it everything is expanded.
+   * key; the surface owns the state and each kind's default. A lineage fold passes the default its contents give.
+   * Without it everything is expanded.
    */
-  isGroupCollapsed?: (groupKey: string) => boolean;
+  isGroupCollapsed?: (groupKey: string, defaultCollapsed?: boolean) => boolean;
+  /** Folds sessions under the listed session that started them; the compact quick switcher lists every row. */
+  showLineageFolds?: boolean;
   onGroupCollapseChange?: (groupKey: string, collapsed: boolean) => void;
   onGroupKeysChange?: (groupKeys: readonly string[]) => void;
   onStartLinkedContentConversation?: (contentPath: string) => Promise<void>;
@@ -95,6 +105,11 @@ type HistoryRenderOptions = SessionActionOptions & SessionStatusDisplay & Sessio
     beginRename: (item: HTMLElement) => void;
     conversationId: string;
   }) => void;
+};
+
+/** One list render's options with the model's folded sessions, which every row and group of the render reads. */
+type ListRenderOptions = HistoryRenderOptions & {
+  readonly foldedChildren: ReadonlyMap<string, readonly ConversationMeta[]>;
 };
 
 type HistorySurfaceRenderOptions = Omit<HistoryRenderOptions, 'onRerender'> & {
@@ -159,10 +174,6 @@ export class SessionBrowser {
     return this.projectSorter.deferRender(render);
   }
 
-  cancelProjectSort(): boolean {
-    return this.projectSorter.cancel();
-  }
-
   cancelInlineRename(): boolean {
     return this.inlineRename.cancel();
   }
@@ -204,7 +215,8 @@ export class SessionBrowser {
     const organization = options.organization ?? 'list';
     const isGrouped = organization === 'linked-content';
 
-    this.inlineRename.releaseWithin(container);
+    const restoreRename = options.preserveListState ? this.inlineRename.preserveWithin(container) : undefined;
+    if (!restoreRename) this.inlineRename.releaseWithin(container);
     container.empty();
 
     const model = deriveSessionListModel(plugin.getConversationList(), {
@@ -221,8 +233,20 @@ export class SessionBrowser {
       contentExists: options.contentExists,
       contentIsNote: options.contentIsNote,
       groupByRecency: options.groupByRecency ? { now: Date.now() } : undefined,
+      foldLineage: options.showLineageFolds,
     });
     const { conversationsByLinkedContent, pinnedContentSections, sections } = model;
+    const listOptions: ListRenderOptions = {
+      ...options,
+      foldedChildren: model.foldedChildren,
+      getLineage: options.getLineage ?? (conversation => describeLineage(
+        conversation,
+        // Counts what this list can show: the archive's children in the archive, active ones outside it.
+        plugin.getConversationList().filter(candidate => (
+          options.sessionScope === undefined || !!candidate.isArchived === (options.sessionScope === 'archived')
+        )),
+      )),
+    };
     const showSessionSections = options.showPinnedSection || options.showArchivedSection || model.projectSections !== null;
 
     let list: HTMLElement;
@@ -254,14 +278,14 @@ export class SessionBrowser {
           if (canDrag) this.drag.attachTarget(pinnedSection, { kind: 'pinned' });
           // Like the Projects section, pinned projects show even when no session matches.
           for (const projectSection of model.pinnedProjectSections) {
-            this.#renderProjectSection(pinnedList, projectSection, options, model.conversationsByProject);
+            this.#renderProjectSection(pinnedList, projectSection, listOptions, model.conversationsByProject);
           }
         } else {
           this.drag.attachPinnedPlaceholder(pinnedSection);
         }
       }
       if (model.projectSections) {
-        projectsList = this.#renderProjectsSection(list, model.projectSections, options, model.conversationsByProject);
+        projectsList = this.#renderProjectsSection(list, model.projectSections, listOptions, model.conversationsByProject);
       }
 
       const sessionsLabel = options.showArchivedSection ? 'Archived' : 'Sessions';
@@ -308,6 +332,7 @@ export class SessionBrowser {
     recordVisibleCount(list, visibleCount);
     const restorePosition = (): void => {
       options.onBeforeRestoreListState?.(container);
+      restoreRename?.();
       restoreSessionListPosition(
         previousPosition,
         sectionScrolling ? sessionList : list,
@@ -346,7 +371,7 @@ export class SessionBrowser {
           section,
           visibleConversations,
           isCollapsed,
-          options,
+          listOptions,
           linkedContentConversations(section),
         );
         renderedConversationCount += visibleConversations.length;
@@ -357,7 +382,7 @@ export class SessionBrowser {
         Math.max(0, visibleCount - renderedConversationCount),
       );
       for (const conversation of visiblePinnedConversations) {
-        this.#renderHistoryConversationItem(pinnedList, conversation, options);
+        this.#renderHistoryConversationItem(pinnedList, conversation, listOptions);
       }
       renderedConversationCount += visiblePinnedConversations.length;
     }
@@ -377,15 +402,15 @@ export class SessionBrowser {
           section,
           visibleConversations,
           isCollapsed,
-          options,
+          listOptions,
           linkedContentConversations(section),
         );
       } else {
         if (section.kind === 'recency') {
-          this.#renderRecencyDivider(sessionList, section, options);
+          this.#renderRecencyDivider(sessionList, section, listOptions);
         }
         for (const conversation of visibleConversations) {
-          this.#renderHistoryConversationItem(sessionList, conversation, options);
+          this.#renderHistoryConversationItem(sessionList, conversation, listOptions);
         }
       }
       renderedConversationCount += visibleConversations.length;
@@ -419,7 +444,7 @@ export class SessionBrowser {
     section: SessionListSection,
     visibleConversations: readonly ConversationMeta[],
     isCollapsed: boolean,
-    options: HistoryRenderOptions,
+    options: ListRenderOptions,
     linkedContentConversations: readonly ConversationMeta[],
   ): void {
     const { groupHeader, groupStatusKind, showGroupReviewState } = this.#createGroupHeader(
@@ -536,7 +561,7 @@ export class SessionBrowser {
     const buildGroupMenu = contentPath
       ? this.actions.groupMenu(
           {
-            conversations: linkedContentConversations,
+            conversations: this.#withFoldedChildren(linkedContentConversations, options),
             linkedContent: {
               path: contentPath,
               kind: section.kind,
@@ -562,14 +587,14 @@ export class SessionBrowser {
     list: HTMLElement,
     section: SessionListSection,
     isCollapsed: boolean,
-    options: HistoryRenderOptions,
+    options: ListRenderOptions,
     modifierClasses: readonly string[],
   ): {
     groupHeader: HTMLElement;
     groupStatusKind: SessionStatusIndicatorKind | null;
     showGroupReviewState: boolean;
   } {
-    const conversationStatuses = section.conversations.map(conversation => (
+    const conversationStatuses = this.#withFoldedChildren(section.conversations, options).map(conversation => (
       this.#statusOf(conversation, options)
     ));
     const groupStatusKind = groupIndicatorKind(conversationStatuses, options);
@@ -633,7 +658,7 @@ export class SessionBrowser {
   #renderProjectsSection(
     list: HTMLElement,
     projectSections: readonly ProjectListSection[],
-    options: HistoryRenderOptions,
+    options: ListRenderOptions,
     conversationsByProject: ReadonlyMap<string, readonly ConversationMeta[]>,
   ): HTMLElement {
     const label = t('chat.projects.header');
@@ -660,7 +685,7 @@ export class SessionBrowser {
   #renderProjectSection(
     list: HTMLElement,
     section: ProjectListSection,
-    options: HistoryRenderOptions,
+    options: ListRenderOptions,
     conversationsByProject: ReadonlyMap<string, readonly ConversationMeta[]>,
   ): void {
     const { project } = section;
@@ -764,7 +789,7 @@ export class SessionBrowser {
   #renderHistoryConversationItem(
     list: HTMLElement,
     conversation: ConversationMeta,
-    options: HistoryRenderOptions,
+    options: ListRenderOptions,
   ): void {
     if (options.signal?.aborted) return;
 
@@ -806,6 +831,12 @@ export class SessionBrowser {
       cls: 'claudian-history-item-title',
       text: conversation.title,
     });
+    if (conversation.origin) {
+      // Decorative: the metadata popover names the session that started this one.
+      const lineageEl = titleEl.createSpan({ cls: 'claudian-history-item-lineage', attr: { 'aria-hidden': 'true' } });
+      setIcon(lineageEl, lineageIcon(conversation.origin.kind));
+      titleEl.prepend(lineageEl);
+    }
     if (options.showMetadataPopover) {
       const focusTarget = isSelectable ? content : item;
       focusTarget.setAttribute('tabindex', '0');
@@ -839,6 +870,10 @@ export class SessionBrowser {
       status,
       attention: canShowAttention(options) ? status.attention ?? null : null,
       beginRename: () => this.#beginRename(item, conversation, options),
+      folded: options.foldedChildren.get(conversation.id)?.map(child => ({
+        id: child.id,
+        isRunning: this.#statusOf(child, options).isRunning,
+      })),
     });
 
     // A right-press must not focus the row: Obsidian returns focus there when Esc closes the menu, and focus
@@ -870,6 +905,81 @@ export class SessionBrowser {
     if (sessionStatusKind) {
       this.#createSessionStatusIndicator(item, sessionStatusKind);
     }
+
+    const children = options.foldedChildren.get(conversation.id);
+    if (children?.length) this.#renderLineageFold(list, conversation.id, children, options);
+  }
+
+  /**
+   * The sessions folded under the row of the session that started them: a native disclosure button, which shows
+   * their combined status while collapsed, over their rows. It opens and closes in place, so keyboard focus stays
+   * on it.
+   */
+  #renderLineageFold(
+    list: HTMLElement,
+    parentId: string,
+    children: readonly ConversationMeta[],
+    options: ListRenderOptions,
+  ): void {
+    const key = lineageFoldKey(parentId);
+    const statuses = children.map(child => this.#statusOf(child, options));
+    // The current session is never hidden in a fold unless the user closed it.
+    const holdsCurrent = statuses.some(status => status.openState === 'current');
+    let isCollapsed = options.isGroupCollapsed?.(key, !holdsCurrent) ?? false;
+    const toggle = list.createEl('button', {
+      cls: 'claudian-session-children-toggle',
+      attr: { type: 'button' },
+    });
+    // The corner arrow reads as "started from the row above"; the revealed rows show the open state.
+    const sign = toggle.createSpan({ cls: 'claudian-session-children-sign', attr: { 'aria-hidden': 'true' } });
+    setIcon(sign, 'corner-down-right');
+    toggle.createSpan({ cls: 'claudian-session-children-label', text: lineageChildrenLabel(children) });
+    const statusKind = groupIndicatorKind(statuses, options);
+    const statusIndicator = statusKind === null
+      ? null
+      : this.#createSessionStatusIndicator(toggle, statusKind, true, isCollapsed);
+    let childList: HTMLElement | null = null;
+
+    const present = (): void => {
+      toggle.setAttribute('aria-expanded', isCollapsed ? 'false' : 'true');
+      statusIndicator?.toggleClass(
+        statusKind === 'running'
+          ? 'claudian-session-group-running-indicator--visible'
+          : 'claudian-session-group-status-indicator--visible',
+        isCollapsed,
+      );
+      if (isCollapsed) {
+        childList?.remove();
+        childList = null;
+        return;
+      }
+      if (childList) return;
+      childList = createDiv({ cls: 'claudian-session-children' });
+      toggle.after(childList);
+      for (const child of children) {
+        this.#renderHistoryConversationItem(childList, child, options);
+      }
+    };
+    present();
+    toggle.addEventListener('click', (event) => {
+      event.stopPropagation();
+      isCollapsed = !isCollapsed;
+      present();
+      options.onGroupCollapseChange?.(key, isCollapsed);
+    });
+  }
+
+  /** The conversations followed by everything folded under them, as a group shows them. */
+  #withFoldedChildren(
+    conversations: readonly ConversationMeta[],
+    options: ListRenderOptions,
+  ): readonly ConversationMeta[] {
+    const withChildren = conversations.flatMap(conversation => [
+      conversation,
+      ...options.foldedChildren.get(conversation.id) ?? [],
+    ]);
+    // A fork can belong to the group by its own Linked content and also be folded under a member.
+    return [...new Map(withChildren.map(conversation => [conversation.id, conversation])).values()];
   }
 
   /** Drag and drop places sessions in the persistent sidebar's active view only. */
@@ -991,6 +1101,8 @@ export class SessionBrowser {
     });
     const { icon, label } = indicatorPresentation(kind);
     if (icon) setIcon(indicator, icon);
+    // A named image: a role-less span may not carry an accessible name.
+    indicator.setAttribute('role', 'img');
     indicator.setAttribute('aria-label', label);
     return indicator;
   }
@@ -1020,12 +1132,12 @@ export class SessionBrowser {
   #renderRecencyDivider(
     list: HTMLElement,
     section: SessionListSection,
-    options: HistoryRenderOptions,
+    options: ListRenderOptions,
   ): void {
     const divider = list.createDiv({ cls: 'claudian-session-recency-divider' });
     divider.createSpan({ cls: 'claudian-session-recency-divider-label', text: section.label });
     const buildMenu = this.actions.groupMenu(
-      { conversations: section.conversations },
+      { conversations: this.#withFoldedChildren(section.conversations, options) },
       options,
       conversation => this.#statusOf(conversation, options).isRunning,
     );

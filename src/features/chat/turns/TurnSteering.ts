@@ -145,6 +145,26 @@ export class TurnSteering {
     return pending;
   }
 
+  /**
+   * Steers and settles definitely unsent input: `drop` discards it, `restore` returns it to the
+   * composer (parking it while its conversation is inactive). Accepted or uncertain delivery stays
+   * pending for provider correlation and is never resent.
+   */
+  async steerMessage(
+    queuedMessage: QueuedMessage,
+    unsent: 'drop' | 'restore',
+    reportFailure?: (message: string) => void,
+    signal?: AbortSignal,
+  ): Promise<'accepted' | 'uncertain' | 'not-sent'> {
+    const pending = await this.steer(queuedMessage, reportFailure, signal);
+    if (pending.providerDisposition === 'definitely-unsent') {
+      if (unsent === 'drop') this.release(pending);
+      else this.restoreIfDefinitelyUnsent(pending);
+      return 'not-sent';
+    }
+    return pending.providerDisposition === 'accepted-awaiting-correlation' ? 'accepted' : 'uncertain';
+  }
+
   #markUncertain(pending: PendingSteerState, reportFailure: (message: string) => void): void {
     pending.providerDisposition = 'ambiguous-awaiting-reconciliation';
     this.#clearUi(pending);

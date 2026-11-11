@@ -111,9 +111,8 @@ export class SessionManagerSurface {
     this.sidebar.render();
   }
 
-  /** Handles Escape for project sorting, inline rename and search; returns whether it was consumed. */
+  /** Handles Escape for inline rename and search; returns whether it was consumed. */
   handleEscape(): boolean {
-    if (this.browser.cancelProjectSort()) return true;
     if (this.browser.cancelInlineRename()) return true;
     return this.sidebar.dismissSearch();
   }
