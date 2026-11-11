@@ -685,7 +685,9 @@
       "ariaDescription": "Benutzerdefinierte Bezeichnung in der Modellauswahl. Leer lassen, um die Standardbezeichnung zu verwenden."
     },
     "customContextLimits": {
-      "invalid": "Ungültiges Format. Verwenden Sie: 256k, 1m oder exakte Anzahl (1000-10000000)."
+      "invalid": "Ungültiges Format. Verwenden Sie: 256k, 1m oder exakte Anzahl (1000-10000000).",
+      "saveFailed": "Kontextfenster konnte nicht gespeichert werden. Erneut versuchen.",
+      "savedRefreshFailed": "Kontextfenster wurde gespeichert, aber die Aktualisierung der Einstellungen ist fehlgeschlagen."
     },
     "enableChrome": {
       "name": "Chrome-Erweiterung aktivieren",

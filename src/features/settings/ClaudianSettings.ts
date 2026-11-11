@@ -765,8 +765,8 @@ export class ClaudianSettingTab extends PluginSettingTab {
       };
 
       const contextLimitNotices: CommittedControlNotices = {
-        committed: 'Context limit was saved, but settings refresh failed.',
-        rejected: 'Could not save context limit. Try again.',
+        committed: t('settings.customContextLimits.savedRefreshFailed'),
+        rejected: t('settings.customContextLimits.saveFailed'),
       };
       bindCommittedControl(
         {

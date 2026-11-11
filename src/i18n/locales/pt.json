@@ -685,7 +685,9 @@
       "ariaDescription": "Rótulo personalizado exibido no seletor de modelos. Deixe vazio para usar o padrão."
     },
     "customContextLimits": {
-      "invalid": "Formato inválido. Use: 256k, 1m ou número exato (1000-10000000)."
+      "invalid": "Formato inválido. Use: 256k, 1m ou número exato (1000-10000000).",
+      "saveFailed": "Não foi possível salvar a janela de contexto. Tente novamente.",
+      "savedRefreshFailed": "A janela de contexto foi salva, mas a atualização das configurações falhou."
     },
     "enableChrome": {
       "name": "Habilitar extensão do Chrome",
