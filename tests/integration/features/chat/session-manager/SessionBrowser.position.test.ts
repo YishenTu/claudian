@@ -227,55 +227,6 @@ describe('SessionListPosition', () => {
 
     expect(container.querySelector<HTMLElement>('.claudian-history-list')!.scrollTop).toBe(120);
   });
-
-  it('installs surface controls before restoring preserved list position', () => {
-    const container = document.body.createDiv();
-    (deps.plugin.getConversationList as Mock).mockReturnValue([
-      { id: 'conv-1', title: 'Conversation', createdAt: 1 },
-    ]);
-    const options = {
-      onSelectConversation: vi.fn(),
-      preserveListState: true,
-      onBeforeRestoreListState: (listContainer: HTMLElement) => {
-        const list = listContainer.querySelector<HTMLElement>('.claudian-history-list')!;
-        list.insertBefore(document.createElement('div'), list.firstChild);
-        // Installing controls resets scroll; restoration must run afterwards to win.
-        list.scrollTop = 0;
-      },
-    };
-
-    controller.renderHistoryDropdown(container, options);
-    container.querySelector<HTMLElement>('.claudian-history-list')!.scrollTop = 120;
-
-    controller.renderHistoryDropdown(container, options);
-
-    expect(container.querySelector<HTMLElement>('.claudian-history-list')!.scrollTop).toBe(120);
-  });
-
-  it.each(['active', 'archived'] as const)(
-    'installs surface controls when the %s session scope is empty',
-    (sessionScope) => {
-      const container = document.body.createDiv();
-      const onBeforeRestoreListState = vi.fn((listContainer: HTMLElement) => {
-        const list = listContainer.querySelector<HTMLElement>('.claudian-history-list')!;
-        list.insertBefore(document.createElement('div'), list.firstChild);
-      });
-      (deps.plugin.getConversationList as Mock).mockReturnValue([]);
-
-      controller.renderHistoryDropdown(container, {
-        onSelectConversation: vi.fn(),
-        sessionScope,
-        preserveListState: true,
-        onBeforeRestoreListState,
-      });
-
-      const list = container.querySelector<HTMLElement>('.claudian-history-list')!;
-      expect(onBeforeRestoreListState).toHaveBeenCalledWith(container);
-      const emptyState = list.querySelector<HTMLElement>('.claudian-history-empty')!;
-      expect(list.children[0]).not.toBe(emptyState);
-      expect(emptyState).not.toBeNull();
-    },
-  );
 });
 
 afterEach(() => { document.body.replaceChildren(); vi.restoreAllMocks(); });

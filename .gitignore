@@ -1,7 +1,6 @@
 # Build output
 /main.js
 /styles.css
-/.codex-vendor/
 /dist/
 /build/
 *.js.map

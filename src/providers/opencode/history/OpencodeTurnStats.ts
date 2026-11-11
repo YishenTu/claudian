@@ -58,7 +58,8 @@ export function selectOpencodeTurnStats(messages: readonly NativeRecord[], selec
   let result: TurnStats | undefined;
   for (const [index, message] of messages.slice(start).entries()) {
     if (index > 0 && message.type === 'user') break;
-    // Native control entries end the turn.
+    // Compaction preserves the selected turn's accumulated statistics.
+    if (message.type === 'compaction') continue;
     if (message.type !== 'user' && message.type !== 'assistant') break;
     result = stats.add({ ...message, role: message.type });
   }

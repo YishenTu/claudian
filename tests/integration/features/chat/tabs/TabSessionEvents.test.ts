@@ -17,9 +17,9 @@ import { ConversationController } from '@/features/chat/conversation/Conversatio
 import { ChatExecutionCoordinator } from '@/features/chat/execution/ChatExecutionCoordinator';
 import { LinkedContentController } from '@/features/chat/linked-content';
 import { MessageRenderer } from '@/features/chat/rendering/MessageRenderer';
+import { SubagentManager } from '@/features/chat/rendering/subagents/SubagentManager';
 import { SessionEvents } from '@/features/chat/sessions/SessionEvents';
 import { ChatState } from '@/features/chat/state/ChatState';
-import { SubagentManager } from '@/features/chat/subagents/SubagentManager';
 import { StreamController } from '@/features/chat/turns/StreamController';
 import { CodexSubagentTracker } from '@/providers/codex/execution/CodexSubagentTracker';
 import { CodexNotificationRouter } from '@/providers/codex/runtime/CodexNotificationRouter';
@@ -99,11 +99,17 @@ async function createCodexChildTab() {
 
   await coordinator.bindConversation({ conversationId: 'conversation', providerId: 'claude' });
   await coordinator.prepare();
+  // The provider reports background work while a published child is still running.
+  const running = new Set<string>();
   const tracker = new CodexSubagentTracker(
-    subagent => backend.latest.emitSessionEvent({ type: 'subagent_updated', subagent }),
+    subagent => {
+      if (subagent.status === 'running') running.add(subagent.id);
+      else running.delete(subagent.id);
+      backend.latest.emitSessionEvent({ type: 'subagent_updated', subagent });
+    },
     async () => { throw new Error('Child read unavailable'); },
   );
-  Object.assign(backend.latest, { hasBackgroundWork: () => tracker.hasBackgroundWork() });
+  Object.assign(backend.latest, { hasBackgroundWork: () => running.size > 0 });
 
   state.currentConversationId = 'conversation';
   const message: ChatMessage = {

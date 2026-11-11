@@ -172,6 +172,11 @@ export class NavigationController {
     }
 
     this.scrollDirection = direction;
+    // Replace a running loop's pending frame so a reversal steps at once without a second loop.
+    if (this.animationFrame !== null) {
+      cancelScheduledAnimationFrame(this.animationFrame);
+      this.animationFrame = null;
+    }
     this.scrollLoop();
   }
 

@@ -27,6 +27,27 @@ describe('SessionSnapshotState', () => {
     expect(state.invalidation).toBeUndefined();
   });
 
+  it('settles activity to idle or executing while keeping an invalidation once work ends', () => {
+    const state = new SessionSnapshotState({
+      providerId: 'claude',
+      readProviderSessionId: () => null,
+      sessionInstanceId: 'session-1',
+    });
+    state.setStatus('executing');
+    state.settleActivity(false);
+    expect(state.status).toBe('idle');
+
+    state.invalidate({ reason: 'process-exited', recoverable: true });
+    const revision = state.revision;
+    state.settleActivity(false);
+    expect(state.getSnapshot()).toMatchObject({ status: 'invalidated', invalidation: { reason: 'process-exited' } });
+    expect(state.revision).toBe(revision + 1);
+
+    state.settleActivity(true);
+    expect(state.status).toBe('executing');
+    expect(state.invalidation).toBeUndefined();
+  });
+
   it('publishes immutable provider-state copies with recorded deletions', () => {
     const state = new SessionSnapshotState({
       providerId: 'pi',

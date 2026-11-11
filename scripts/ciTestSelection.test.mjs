@@ -70,6 +70,7 @@ test('platform-sensitive unit tests retain native checks for both direct and sou
   for (const [source, consumer] of [
     ['src/core/process/env.ts', 'tests/unit/core/process/env.test.ts'],
     ['src/core/storage/VaultFileAdapter.ts', 'tests/integration/core/storage/VaultFileAdapter.test.ts'],
+    ['src/core/storage/pathContainment.ts', 'tests/unit/core/storage/pathContainment.test.ts'],
     ['src/providers/codex/history/CodexHistoryStore.ts', 'tests/unit/providers/codex/history/CodexHistoryStore.test.ts'],
     ['src/providers/deepseek/ui/DeepSeekSettingsTab.ts', 'tests/integration/providers/deepseek/ui/DeepSeekSettingsTab.dom.test.ts'],
   ]) {
@@ -172,7 +173,7 @@ test('filesystem-read documentation, styles, and captured fixtures retain their 
   assert.deepEqual(select(['src/features/chat/AGENTS.md']).testFiles, [docs]);
   assert.ok(select(['src/style/components/code.css']).testFiles.includes('tests/unit/style/components/code.test.ts'));
   for (const consumer of [
-    'tests/unit/style/components/zen-mode.test.ts',
+    'tests/integration/style/components/zen-mode.test.ts',
     'tests/unit/style/settings/base.test.ts',
     'tests/integration/features/chat/navigation/NavigationSidebar.dom.test.ts',
   ]) {
@@ -355,7 +356,7 @@ test('a provider-internal change selects no other provider suites through the re
   const tracker = 'src/providers/codex/execution/CodexSubagentTracker.ts';
   const selection = selectRelatedCiTests({ changes: [{ status: 'M', path: tracker }] });
   const others = /^tests\/(?:unit|integration)\/providers\/(?:claude|deepseek|grok|opencode|pi)\//;
-  assert.ok(selection.testFiles.includes('tests/unit/providers/codex/execution/CodexSubagentTracker.test.ts'));
+  assert.ok(selection.testFiles.includes('tests/integration/providers/codex/execution/CodexSubagentTracker.test.ts'));
   // Another provider's suite is selected only when it registers Codex itself.
   const registersCodex = file => readFileSync(file, 'utf8').includes('codexProviderRegistration');
   assert.deepEqual(selection.testFiles.filter(file => others.test(file) && !registersCodex(file)), []);

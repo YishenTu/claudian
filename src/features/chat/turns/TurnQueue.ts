@@ -149,8 +149,7 @@ export class TurnQueue {
     if (!message || !steering.canSteer) return;
 
     this.#write(null);
-    const pending = await steering.steer(message);
-    if (pending.providerDisposition === 'definitely-unsent') steering.restoreIfDefinitelyUnsent(pending);
+    await steering.steerMessage(message, 'restore');
   }
 
   /** The queued message, or else the current conversation's visible pending steer. */

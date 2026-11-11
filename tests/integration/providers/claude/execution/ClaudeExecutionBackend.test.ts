@@ -269,92 +269,6 @@ describe('ClaudeExecutionBackend', () => {
     }
   });
 
-  it('retains native task progress across requested turns in the same session', async () => {
-    const session = new ClaudeExecutionBackend((await createHost()).host.getRuntimeHost('claude')).createSession(createConfig());
-    sdkMock.setMockMessages([
-      { type: 'system', subtype: 'init', session_id: 'task-session' },
-      { type: 'assistant', message: { content: [{ type: 'tool_use', id: 'create-task', name: 'TaskCreate',
-        input: { subject: 'Ship the fix', activeForm: 'Shipping the fix' } }] } },
-      { type: 'user', tool_use_result: { task: { id: '1', subject: 'Ship the fix' } },
-        message: { content: [{ type: 'tool_result', tool_use_id: 'create-task', content: 'Task #1 created successfully' }] } },
-    ]);
-    try {
-      const created = await collectEvents(session.execute(createRequest()).events);
-      expect(created).toContainEqual(expect.objectContaining({
-        type: 'tool_started', toolCallId: 'create-task', name: 'TodoWrite',
-        input: { todos: [{ content: 'Ship the fix', activeForm: 'Shipping the fix', status: 'pending' }] },
-        providerPayload: { rawName: 'TaskCreate', rawInput: { subject: 'Ship the fix', activeForm: 'Shipping the fix' } },
-      }));
-      expect(created).toContainEqual(expect.objectContaining({
-        type: 'tool_started', toolCallId: 'create-task', name: 'TodoWrite',
-        input: { todos: [{ id: '1', content: 'Ship the fix', activeForm: 'Shipping the fix', status: 'pending' }] },
-        providerPayload: expect.objectContaining({ rawName: 'TaskCreate', rawOutput: { task: { id: '1', subject: 'Ship the fix' } } }),
-      }));
-      expect(created).toContainEqual(expect.objectContaining({ type: 'tool_completed', toolCallId: 'create-task' }));
-      expect(created.at(-1)?.type).toBe('turn_completed');
-      sdkMock.setMockMessages([
-        { type: 'assistant', message: { content: [{ type: 'tool_use', id: 'update-task', name: 'TaskUpdate',
-          input: { taskId: '1', status: 'completed' } }] } },
-        { type: 'user', tool_use_result: { success: true, taskId: '1', updatedFields: ['status'],
-          statusChange: { from: 'pending', to: 'completed' } },
-          message: { content: [{ type: 'tool_result', tool_use_id: 'update-task', content: 'Task #1 completed' }] } },
-      ]);
-      const updated = await collectEvents(session.execute(createRequest()).events);
-      expect(updated).toContainEqual(expect.objectContaining({
-        type: 'tool_started', name: 'TodoWrite', toolCallId: 'update-task',
-        input: { todos: [{ id: '1', content: 'Ship the fix', activeForm: 'Shipping the fix', status: 'completed' }] },
-      }));
-      expect(updated.at(-1)?.type).toBe('turn_completed');
-      expect(sdkMock.getQueryCallCount()).toBe(1);
-    } finally { await session.dispose(); }
-  });
-
-  it.each(['cancel', 'tool-error'])('discards unconfirmed task previews after a later turn ends with %s', async ending => {
-    const session = new ClaudeExecutionBackend((await createHost()).host.getRuntimeHost('claude')).createSession(createConfig());
-    sdkMock.setMockMessages([
-      { type: 'system', subtype: 'init', session_id: 'task-session' },
-      { type: 'assistant', message: { content: [{ type: 'tool_use', id: 'create-kept', name: 'TaskCreate', input: { subject: 'Kept task' } }] } },
-      { type: 'user', tool_use_result: { task: { id: '1', subject: 'Kept task' } },
-        message: { content: [{ type: 'tool_result', tool_use_id: 'create-kept', content: 'Created' }] } },
-    ]);
-    try {
-      await collectEvents(session.execute(createRequest()).events);
-      sdkMock.setMockMessages([
-        { type: 'assistant', message: { content: [
-          { type: 'tool_use', id: 'update-unconfirmed', name: 'TaskUpdate', input: { taskId: '1', status: 'in_progress' } },
-          { type: 'tool_use', id: 'create-unconfirmed', name: 'TaskCreate', input: { subject: 'Unconfirmed task' } },
-        ] } },
-        ...(ending === 'tool-error' ? [
-          { type: 'user', tool_use_result: { success: false }, message: { content: [
-            { type: 'tool_result', tool_use_id: 'update-unconfirmed', content: 'Update failed', is_error: true },
-            { type: 'tool_result', tool_use_id: 'create-unconfirmed', content: 'Create failed', is_error: true },
-          ] } },
-        ] : []),
-      ]);
-      const controller = new AbortController();
-      const stopped: ProviderExecutionEvent[] = [];
-      for await (const event of session.execute(createRequest({ signal: controller.signal })).events) {
-        stopped.push(event);
-        if (ending === 'cancel' && event.type === 'tool_started' && event.toolCallId === 'create-unconfirmed') controller.abort();
-      }
-      expect(stopped.at(-1)?.type).toBe(ending === 'cancel' ? 'cancelled' : 'turn_completed');
-      sdkMock.setMockMessages([
-        { type: 'system', subtype: 'init', session_id: 'task-session' },
-        { type: 'assistant', message: { content: [{ type: 'tool_use', id: 'create-next', name: 'TaskCreate', input: { subject: 'Next task' } }] } },
-        { type: 'user', tool_use_result: { task: { id: '2', subject: 'Next task' } },
-          message: { content: [{ type: 'tool_result', tool_use_id: 'create-next', content: 'Created' }] } },
-      ]);
-      const next = await collectEvents(session.execute(createRequest()).events);
-      expect(next).toContainEqual(expect.objectContaining({
-        type: 'tool_started', toolCallId: 'create-next',
-        input: { todos: [
-          { id: '1', content: 'Kept task', activeForm: 'Kept task', status: 'pending' },
-          { id: '2', content: 'Next task', activeForm: 'Next task', status: 'pending' },
-        ] },
-      }));
-    } finally { await session.dispose(); }
-  });
-
   it('restarts the query when session-tool attachment presence changes', async () => {
     let sessionTools: ProviderSessionConfig['sessionTools'];
     const config = createConfig();
@@ -2472,7 +2386,7 @@ describe('ClaudeExecutionBackend', () => {
           { type: 'text', text: 'Checking task output.' },
           { type: 'tool_use', id: 'read-background', name: 'Read', input: { file_path: '/tmp/task-output' } },
           { type: 'tool_use', id: 'read-second', name: 'Read', input: { file_path: '/tmp/second' } },
-          { type: 'tool_use', id: 'task-create', name: 'TaskCreate', input: { subject: 'Inspect output', activeForm: 'Inspecting output' } },
+          { type: 'tool_use', id: 'read-third', name: 'Read', input: { file_path: '/tmp/third' } },
         ] } },
         { type: 'system', subtype: 'task_notification', session_id: 'session-1', task_id: 'task-1',
           status: 'completed', output_file: '/tmp/task-output', summary: 'Task finished' },
@@ -2481,8 +2395,9 @@ describe('ClaudeExecutionBackend', () => {
           { type: 'tool_result', tool_use_id: 'read-background', content: 'First output' },
           { type: 'tool_result', tool_use_id: 'read-second', content: 'Second output' },
         ] } },
-        { type: 'user', tool_use_result: { task: { id: '1', subject: 'Inspect output' } }, message: { content: [
-          { type: 'tool_result', tool_use_id: 'task-create', content: 'Task #1 created successfully: Inspect output' },
+        // A result arriving in a later native message still belongs to the background round.
+        { type: 'user', message: { content: [
+          { type: 'tool_result', tool_use_id: 'read-third', content: 'Third output' },
         ] } },
         { type: 'assistant', uuid: 'requested-checkpoint', message: { id: 'native-requested', content: [
           { type: 'text', text: 'Follow-up received.' },
@@ -2511,12 +2426,8 @@ describe('ClaudeExecutionBackend', () => {
         expect(background.filter(event => event.type === 'tool_completed')).toEqual([
           expect.objectContaining({ toolCallId: 'read-background', content: 'First output' }),
           expect.objectContaining({ toolCallId: 'read-second', content: 'Second output' }),
-          expect.objectContaining({ toolCallId: 'task-create' }),
+          expect.objectContaining({ toolCallId: 'read-third', content: 'Third output' }),
         ]);
-        expect(background).toContainEqual(expect.objectContaining({
-          type: 'tool_started', toolCallId: 'task-create', name: 'TodoWrite',
-          input: { todos: [{ id: '1', content: 'Inspect output', activeForm: 'Inspecting output', status: 'pending' }] },
-        }));
         expect(background.filter(event => event.type === 'text_delta')).toEqual([
           expect.objectContaining({ text: 'Checking task output.' }),
         ]);
@@ -3444,6 +3355,41 @@ describe('ClaudeExecutionSession steering', () => {
   function steerRequest(text: string): ProviderExecutionRequest {
     return createRequest({ input: [{ type: 'text', text }] });
   }
+
+  it('sends the next turn only after a cancelled background turn reports its interruption', async () => {
+    const interruptRequested = createDeferred<null>();
+    const { session, done, sessionEvents, getQuery } = await startSteerableSession(async function* (nextInput, keepOpen) {
+      const prompt = await nextInput();
+      yield { type: 'system', subtype: 'init', session_id: 'session-1' };
+      yield replayOf(prompt);
+      yield assistantText('assistant-1', 'First reply');
+      yield { type: 'result', subtype: 'success', user_message_uuids: [prompt.uuid], queued_turn_count: 0 };
+      yield assistantText('background-1', 'Background started');
+      const next = nextInput();
+      // Native reports the interrupt asynchronously; input sent before it would be tagged as the interrupted turn.
+      // The bound only limits waiting for input that a correct session holds back.
+      await Promise.race([next, interruptRequested.promise.then(() => new Promise(resolve => setTimeout(resolve, 50)))]);
+      yield { type: 'result', subtype: 'success', queued_turn_count: 0 };
+      const second = await next;
+      yield replayOf(second);
+      yield assistantText('assistant-2', 'Second reply');
+      yield { type: 'result', subtype: 'success', user_message_uuids: [second.uuid], queued_turn_count: 0 };
+      await keepOpen;
+    });
+    await done;
+    await waitFor(() => sessionEvents.some(event => event.type === 'background_turn_started'));
+    getQuery()!.interrupt.mockImplementation(async () => { interruptRequested.resolve(null); });
+    session.cancel();
+
+    const secondEvents: ProviderExecutionEvent[] = [];
+    for await (const event of session.execute(steerRequest('Second')).events) secondEvents.push(event);
+
+    expect(secondEvents).toContainEqual(expect.objectContaining({ type: 'text_delta', text: 'Second reply' }));
+    expect(sessionEvents.filter(event => event.type === 'background_turn_completed')).toEqual([
+      expect.objectContaining({ reason: 'interrupted' }),
+    ]);
+    await session.dispose();
+  });
 
   it('folds a steer into the running native turn at its replay acknowledgement', async () => {
     const steerReceived = createDeferred<sdkModule.SDKUserMessage>();

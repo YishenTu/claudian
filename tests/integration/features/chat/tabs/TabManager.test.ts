@@ -5,6 +5,7 @@ import { createFeatureHostFixture } from '@test/helpers/FeatureHostFixture';
 import { registerChatTestProvider } from '@test/helpers/features/chat/ChatProviderFixture';
 import { conversationRecord, createManager, createPlugin, deferred, forkRequestFrom, holdHistory, navigationOwner } from '@test/helpers/features/chat/TabManagerIntegrationHarness';
 import { testDate } from '@test/helpers/testClock';
+import { fireEvent, waitFor, within } from '@testing-library/dom';
 import { Notice } from 'obsidian';
 
 import { ProviderWorkspaceRegistry } from '@/core/providers/ProviderWorkspaceRegistry';
@@ -379,6 +380,54 @@ beforeEach(() => {
     ]);
   });
 
+  it('reorders tabs in place, keeping the active runtime, and restores the persisted order', async () => {
+    const plugin = await createPlugin({
+      getCachedConversation: (id: string) => (conversationRecord(id, { providerId: 'claude' })),
+    });
+    const onTabOrderChanged = vi.fn();
+    const { manager } = await createManager(plugin, { onTabOrderChanged });
+    await manager.restoreState({
+      openTabs: [
+        { tabId: 'one', conversationId: 'one' },
+        { tabId: 'two', conversationId: 'two', label: 'Review' },
+        { tabId: 'three', conversationId: 'three' },
+      ],
+      activeTabId: 'two',
+    });
+    const active = manager.getTab('two')!;
+
+    manager.moveTab('three', 'one');
+    manager.moveTab('one', null);
+
+    expect(manager.getTabBarItems().map(item => [item.id, item.index, item.isActive])).toEqual([
+      ['three', 1, false], ['two', 2, true], ['one', 3, false],
+    ]);
+    expect(manager.getTab('two')).toBe(active);
+    expect(onTabOrderChanged).toHaveBeenCalledTimes(2);
+    manager.moveTab('one', null);
+    manager.moveTab('three', 'two');
+    manager.moveTab('missing', 'one');
+    expect(onTabOrderChanged).toHaveBeenCalledTimes(2);
+
+    const persisted = manager.getPersistedState();
+    expect(persisted).toEqual({
+      openTabs: [
+        { tabId: 'three', conversationId: 'three' },
+        { tabId: 'two', conversationId: 'two', label: 'Review' },
+        { tabId: 'one', conversationId: 'one' },
+      ],
+      activeTabId: 'two',
+    });
+    await manager.destroy();
+    const { manager: restored } = await createManager(plugin);
+    try {
+      await restored.restoreState(persisted);
+      expect(restored.getPersistedState()).toEqual(persisted);
+    } finally {
+      await restored.destroy();
+    }
+  });
+
   it('does not treat teardown lifecycle as a committed membership removal', async () => {
     const { manager } = await createManager();
     const tab = await manager.createTab(null, 'tearing-down-tab');
@@ -436,7 +485,7 @@ it('validates cached workspace ownership during admission', async () => {
   const foreign = await createFeatureHostFixture({ vault });
   await ProviderWorkspaceRegistry.ensureInitialized(foreign.providerHost, 'claude', 'other-vault');
   const tab = await manager.createTab();
-  expect(tab?.hydrationState).toBe('failed');
+  expect(within(tab!.dom.messagesEl).getByRole('button', { name: 'Retry' })).toBeTruthy();
   expect(provider.sessions).toEqual([]);
   expect(provider.loadCommands).not.toHaveBeenCalled();
 });
@@ -1264,6 +1313,32 @@ describe('returning to a tab whose native history changed', () => {
 
     await t.goAwayAndBack();
     expect(t.one.dom.messagesEl.textContent).toContain('Reply from the CLI');
+  });
+
+  it('keeps saving a loaded transcript after provider startup fails on reactivation', async () => {
+    const t = await setupChangedTab();
+    const startup = vi.spyOn(ProviderWorkspaceRegistry, 'ensureInitialized');
+    startup.mockImplementation(async (_host, _providerId, reason) => {
+      if (reason === 'tab-activation') throw new Error('Provider unavailable');
+    });
+    try {
+      await t.goAwayAndBack();
+      expect(t.one.dom.messagesEl.textContent).toContain('Provider unavailable');
+    } finally {
+      startup.mockRestore();
+    }
+    // A successful retry shows the transcript that stayed loaded, not the stale startup error.
+    fireEvent.click(within(t.one.dom.messagesEl).getByRole('button', { name: 'Retry' }));
+    await waitFor(() => expect(t.one.dom.messagesEl.textContent).not.toContain('Provider unavailable'));
+    expect(t.one.dom.messagesEl.textContent).toContain('Cached reply');
+    const update = vi.mocked(t.plugin.updateConversation);
+    update.mockClear();
+    t.one.state.messages = [...t.one.state.messages, { id: 'local', role: 'assistant', content: 'Local reply', timestamp: testDate().getTime() }];
+
+    await t.one.session.runtime.model.conversationController.save();
+
+    // The transcript stayed loaded, so a failed provider startup cannot turn its saves into no-ops.
+    expect(update).toHaveBeenCalledWith('one', expect.objectContaining({ messages: expect.arrayContaining([expect.objectContaining({ id: 'local' })]) }));
   });
 
   it('keeps an unsaved transcript until its save succeeds, then reloads', async () => {

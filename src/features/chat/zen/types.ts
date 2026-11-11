@@ -2,6 +2,7 @@ import type { Scope, WorkspaceLeaf } from 'obsidian';
 
 import type { ProviderId } from '@/core/providers/types';
 import type { ChatMessage } from '@/core/types';
+import type { TranscriptScrollSnapshot } from '@/features/chat/rendering/TranscriptFollow';
 import type { ChatActivity } from '@/features/chat/state/types';
 
 /** Containers owned by the zen surface that receive a source's live nodes. */
@@ -31,10 +32,7 @@ export interface ZenModeSource {
 }
 
 /** Reading intent captured before the transcript is relocated. */
-export interface ZenScrollSnapshot {
-  readonly top: number;
-  readonly follow: boolean;
-}
+export type ZenScrollSnapshot = TranscriptScrollSnapshot;
 
 /** Activity reads and tab-owned scroll behavior available to the zen presentation. */
 export interface ZenPresentationPort {

@@ -2592,6 +2592,41 @@ describe('CodexExecutionBackend', () => {
     },
   );
 
+  it('keeps a process exit reported while cancellation joins fork setup', async () => {
+    const firstResume = createDeferred<ReturnType<typeof createThreadResult>>();
+    nativeRequest.mockImplementation(async (method: string) => {
+      if (method === 'initialize') {
+        return {
+          userAgent: 'test',
+          codexHome: '/tmp/.codex',
+          platformFamily: 'unix',
+          platformOs: wslTarget ? 'linux' : 'macos',
+        };
+      }
+      if (method === 'thread/fork') {
+        return createThreadResult('thread-fork-target', [{ id: 'checkpoint' }, { id: 'later-turn' }]);
+      }
+      if (method === 'thread/resume') return firstResume.promise;
+      if (method === 'thread/revert') return createThreadResult('thread-fork-target', [{ id: 'checkpoint' }]);
+      throw new Error(`Unexpected method: ${method}`);
+    });
+    const session = createBackend(await createPlugin()).createSession(createForkSessionConfig());
+    const run = session.execute(createRequest());
+    const eventsPromise = collectEvents(run.events);
+    await native.waitForRequest('thread/resume');
+
+    run.cancel();
+    native.processes.at(-1)!.exit();
+    await nativeRoundTrip();
+    firstResume.resolve(createThreadResult('thread-fork-target', [{ id: 'checkpoint' }, { id: 'later-turn' }]));
+    const cancelledEvents = await eventsPromise;
+
+    expect(cancelledEvents.at(-1)).toMatchObject({ type: 'cancelled' });
+    // The cancelled run's settlement cannot hide that its process is gone.
+    expect(session.getSnapshot()).toMatchObject({ status: 'invalidated', invalidation: { reason: 'process-exited' } });
+    await session.dispose();
+  });
+
   it('joins fork setup through cancellation and retries the adopted child immediately', async () => {
     const firstResume = createDeferred<ReturnType<typeof createThreadResult>>();
     let resumeCount = 0;

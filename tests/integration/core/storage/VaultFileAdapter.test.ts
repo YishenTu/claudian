@@ -149,6 +149,42 @@ describe('VaultFileAdapter on a desktop vault', () => {
       }
     });
 
+    it('leaves a package path unchanged when the source and target spellings match', async () => {
+      const vault = await DesktopVault.create();
+      const vaultPath = vault.root;
+      try {
+        const source = path.join(vaultPath, '.agents/skills/old');
+        await fs.mkdir(source, { recursive: true });
+        await fs.writeFile(path.join(source, 'SKILL.md'), 'skill');
+        await expect(vault.files.relocateManagedPackage('.agents/skills/old', '.agents/skills/old'))
+          .resolves.toBeUndefined();
+        expect(await fs.readFile(path.join(source, 'SKILL.md'), 'utf8')).toBe('skill');
+        expect((await fs.lstat(source)).isSymbolicLink()).toBe(false);
+        expect(await fs.readdir(path.dirname(source))).toEqual(['old']);
+      } finally {
+        await vault.dispose();
+      }
+    });
+
+    it('does not replace a package with a link to itself', async () => {
+      const vault = await DesktopVault.create();
+      const vaultPath = vault.root;
+      try {
+        const source = path.join(vaultPath, '.agents/skills/old');
+        const target = path.join(vaultPath, '.agents/skills/new');
+        await fs.mkdir(source, { recursive: true });
+        await fs.writeFile(path.join(source, 'SKILL.md'), 'skill');
+        await fs.symlink(source, target, 'junction');
+        await expect(vault.files.relocateManagedPackage('.agents/skills/old', '.agents/skills/new')).rejects.toThrow();
+        expect(await fs.readFile(path.join(source, 'SKILL.md'), 'utf8')).toBe('skill');
+        expect((await fs.lstat(target)).isSymbolicLink()).toBe(true);
+        expect(await fs.realpath(target)).toBe(await fs.realpath(source));
+        expect((await fs.readdir(path.dirname(source))).sort()).toEqual(['new', 'old']);
+      } finally {
+        await vault.dispose();
+      }
+    });
+
   });
   describe('managed folders on desktop', () => {
     let vault: DesktopVault;

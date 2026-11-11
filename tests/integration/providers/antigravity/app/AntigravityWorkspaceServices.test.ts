@@ -5,6 +5,7 @@ import {
   antigravitySessionModels,
 } from '@test/helpers/providers/antigravity/AntigravityNativeProcess';
 import spawn from 'cross-spawn';
+import type { Mock } from 'vitest';
 
 import type { ProviderHost } from '@/core/providers/ProviderHost';
 import type { ProviderCommandLoaderContext } from '@/core/providers/types';
@@ -22,13 +23,19 @@ const AGY_COMMANDS = ['goal', 'compact', 'schedule', 'browser', 'plan', 'grill-m
   'agy-customizations', 'antigravity-guide'].map(name => ({ description: `${name} command`, name }));
 
 let host: ProviderHost;
+let persist: Mock<() => Promise<void>>;
+let publish: Mock<() => Promise<void>>;
 let native: AntigravityNativeProcess;
 let services: AntigravityWorkspaceServices;
 
 beforeEach(async () => {
+  persist = vi.fn(async () => undefined);
+  publish = vi.fn(async () => undefined);
   ({ host } = await createProviderHostFixture({
     overrides: { getResolvedProviderCliPath: async () => 'agy' },
     settings: { providerConfigs: { antigravity: { enabled: true } } },
+    beforePersist: async () => { await persist(); },
+    afterPublish: async () => { await publish(); },
   }));
   native = new AntigravityNativeProcess();
   native.newSessionId = 'session-probe';
@@ -56,7 +63,7 @@ describe('Antigravity workspace metadata discovery', () => {
 
     if (result.status !== 'ready') throw new Error(`Expected ready commands, got ${result.status}`);
     expect(result.items.map(command => command.name)).toEqual([
-      'goal', 'compact', 'grill-me', 'learn', 'agy-customizations', 'antigravity-guide',
+      'goal', 'grill-me', 'learn', 'agy-customizations', 'antigravity-guide',
     ]);
     // The discovery session is closed without a prompt, so agy does not list it.
     expect(native.closeRequests).toEqual(['session-probe']);
@@ -109,6 +116,39 @@ describe('Antigravity workspace metadata discovery', () => {
 
     expect(spawn).not.toHaveBeenCalled();
     expect(services.modelCatalog!.getSnapshot().models.map(model => model.id)).toEqual(['gemini-4-argon', 'gemini-3.8-flash', 'claude-opus-5-5', 'claude-sonnet-5-5', 'gpt-oss-120b-medium']);
+  });
+
+  it('retries an unsaved live model report when the user refreshes, without creating a discovery session', async () => {
+    const report = readAntigravitySessionModels(antigravityConfigOptions(), antigravitySessionModels());
+    persist.mockRejectedValueOnce(new Error('Settings write failed'));
+
+    await expect(services.modelCatalogOwner.mergeLiveModels(report.models, report.currentModelId))
+      .rejects.toThrow('Settings write failed');
+    expect(services.modelCatalog!.getSnapshot().models).toEqual([]);
+    const cancelled = new AbortController();
+    cancelled.abort();
+    await services.modelCatalogOwner.refresh(cancelled.signal);
+    expect(persist).toHaveBeenCalledTimes(1);
+
+    await services.modelCatalog!.refresh({ force: true });
+
+    expect(services.modelCatalog!.getSnapshot().models.map(model => model.id)).toContain('gemini-4-argon');
+    expect(levels('claude-opus-5-5')).toEqual(['low', 'medium', 'high']);
+    expect(spawn).not.toHaveBeenCalled();
+    expect(persist).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not repeat a durable live catalog write after post-commit publication fails', async () => {
+    const report = readAntigravitySessionModels(antigravityConfigOptions(), antigravitySessionModels());
+    publish.mockRejectedValueOnce(new Error('Publication failed'));
+
+    await expect(services.modelCatalogOwner.mergeLiveModels(report.models, report.currentModelId))
+      .rejects.toThrow('post-commit publication failed');
+    await services.modelCatalog!.refresh({ force: true });
+
+    expect(services.modelCatalog!.getSnapshot().models.map(model => model.id)).toContain('gemini-4-argon');
+    expect(spawn).not.toHaveBeenCalled();
+    expect(persist).toHaveBeenCalledTimes(1);
   });
 
   it('keeps the live report when a discovery started earlier finishes later', async () => {

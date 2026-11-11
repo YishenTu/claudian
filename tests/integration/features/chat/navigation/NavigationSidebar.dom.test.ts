@@ -148,6 +148,22 @@ it('offers history navigation as named native buttons and the directory as a dis
   expect(directory.getAttribute('aria-expanded')).toBe('false');
 });
 
+it.each(['select', 'escape'] as const)('returns focus to the directory toggle after keyboard %s', async action => {
+  const { parentEl, view, messagesEl } = mount(true);
+  const toggle = view.getByRole('button', { name: 'Conversation directory' });
+  toggle.focus();
+  fireEvent.click(toggle);
+  const entry = view.getByRole('button', { name: '2. Second question' });
+  entry.focus();
+  if (action === 'escape') fireEvent.keyDown(entry, { key: 'Escape' });
+  else fireEvent.click(entry, { detail: 0 });
+  expect(view.queryByRole('button', { name: '2. Second question' })).toBeNull();
+  expect(toggle.getAttribute('aria-expanded')).toBe('false');
+  expect(document.activeElement).toBe(toggle);
+  expect(vi.mocked(messagesEl.scrollTo).mock.calls.length).toBe(action === 'select' ? 1 : 0);
+  expect(await axe(parentEl)).toHaveNoViolations();
+});
+
 it('keeps the navigation out of the accessibility tree and tab order while it is not shown', () => {
   const { view } = mount(false);
 

@@ -11,6 +11,7 @@ export function parseOpencodeNativeVersion(version: string | undefined | null): 
   if (!version) return undefined;
   const major = Number(version.match(/^(\d+)\./u)?.[1]);
   if (major === 2) return major;
+  // v1 wording goes with the settings migration notice (see OpencodeMigrationNotice; remove after 2027-01-29).
   if (major === 1) throw new Error('OpenCode v1 is no longer supported. Update to OpenCode v2.');
   throw new Error(`Unsupported OpenCode version: ${version}. Use OpenCode v2.`);
 }

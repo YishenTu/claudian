@@ -1,6 +1,6 @@
 import type { AppTabManagerState } from '@/core/bootstrap/tabManagerState';
 import type { ProviderId } from '@/core/providers/types';
-import type { TabId } from '@/features/chat/tabs/ChatTab';
+import type { TabId } from '@/features/chat/ChatFeatureHost';
 import type { BlankTabSelection, TabIdentity } from '@/features/chat/tabs/TabIdentity';
 import type { AssembledTabRuntime, TabMembershipView } from '@/features/chat/tabs/types';
 
@@ -36,15 +36,23 @@ export class TabMembership implements TabMembershipView {
   readonly #records = new Map<TabId, TabRecord>();
   #activeTabId: TabId | null = null;
   #activationClock = 0;
-  #destroyed = false;
-  #identitiesSealed = false;
+  /**
+   * `live` admits work; `draining` fences new work while identity reports still reach the shutdown
+   * snapshot; `sealed` freezes identities once that snapshot is final.
+   */
+  #shutdown: 'live' | 'draining' | 'sealed' = 'live';
 
   // ============================================
   // Reads
   // ============================================
 
   isDestroyed(): boolean {
-    return this.#destroyed;
+    return this.#shutdown !== 'live';
+  }
+
+  /** Shutdown has begun but the final identity snapshot is not sealed yet. */
+  isShutdownSnapshotOpen(): boolean {
+    return this.#shutdown === 'draining';
   }
 
   /** The optimistic active tab; committed activation history is recorded separately. */
@@ -84,11 +92,11 @@ export class TabMembership implements TabMembershipView {
   }
 
   isTabAlive(tab: Readonly<TabIdentity>): boolean {
-    return !this.#destroyed && this.isAvailableToAdmittedClose(tab);
+    return !this.isDestroyed() && this.isAvailableToAdmittedClose(tab);
   }
 
   isTabStateMutable(tab: Readonly<TabIdentity>): boolean {
-    return !this.#destroyed && this.isOwned(tab);
+    return !this.isDestroyed() && this.isOwned(tab);
   }
 
   isCloseClaimed(tabId: TabId): boolean {
@@ -116,8 +124,9 @@ export class TabMembership implements TabMembershipView {
   // Membership transitions
   // ============================================
 
-  markDestroyed(): void {
-    this.#destroyed = true;
+  /** Fences new work; a later call leaves an already-begun shutdown unchanged. */
+  beginShutdown(): void {
+    if (this.#shutdown === 'live') this.#shutdown = 'draining';
   }
 
   setActiveTabId(tabId: TabId | null): void {
@@ -214,7 +223,7 @@ export class TabMembership implements TabMembershipView {
     const member = this.getMember(tabId);
     if (member?.kind === 'assembled') {
       member.runtime.session.selectDraft(selection.providerId, selection.draftModel);
-    } else if (member && !this.#identitiesSealed) {
+    } else if (member && this.#shutdown !== 'sealed') {
       member.identity.providerId = selection.providerId;
       member.identity.draftModel = selection.draftModel;
     }
@@ -231,9 +240,29 @@ export class TabMembership implements TabMembershipView {
     return true;
   }
 
+  /**
+   * Moves a tab before another member, or to the end (null), keeping its record so admission,
+   * activation history and the runtime are untouched. Returns whether membership order changed.
+   */
+  move(tabId: TabId, beforeTabId: TabId | null): boolean {
+    const record = this.#records.get(tabId);
+    if (!record?.member || tabId === beforeTabId) return false;
+    if (beforeTabId !== null && !this.#records.get(beforeTabId)?.member) return false;
+    const memberIds = [...this.#records].flatMap(([id, candidate]) => (candidate.member ? [id] : []));
+    const target = beforeTabId === null ? memberIds.length : memberIds.indexOf(beforeTabId);
+    if (target === memberIds.indexOf(tabId) + 1) return false;
+
+    const entries = [...this.#records].filter(([id]) => id !== tabId);
+    const insertAt = beforeTabId === null ? entries.length : entries.findIndex(([id]) => id === beforeTabId);
+    entries.splice(insertAt, 0, [tabId, record]);
+    this.#records.clear();
+    for (const [id, entry] of entries) this.#records.set(id, entry);
+    return true;
+  }
+
   /** Seals every identity for the final shutdown snapshot. */
   sealIdentities(): void {
-    this.#identitiesSealed = true;
+    this.#shutdown = 'sealed';
     for (const tab of this.getAllTabs()) tab.session.sealIdentity();
   }
 

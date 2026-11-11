@@ -66,8 +66,7 @@ function resolveWSLSessionFile(
       const packageDir = context.environment.PI_PACKAGE_DIR?.trim();
       if (packageDir) {
         const packageFile = piHostPath(path.posix.join(directory(packageDir), 'package.json'), target);
-        const pkg = JSON.parse(fs.readFileSync(packageFile, 'utf8')) as { piConfig?: { configDir?: unknown } };
-        if (typeof pkg.piConfig?.configDir === 'string' && pkg.piConfig.configDir) configDir = pkg.piConfig.configDir;
+        configDir = readPackageConfigDirectory(packageFile);
       }
       if (linuxHome) roots.push(path.posix.join(linuxHome, configDir, 'agent', 'sessions'));
       // Native state supplies the distro user's absolute locator. Never use Windows HOME.
@@ -115,6 +114,11 @@ function resolveLocalDirectory(value: string | undefined, home: string, cwd: str
   }
 }
 
+function readPackageConfigDirectory(packageFile: string): string {
+  const pkg = JSON.parse(fs.readFileSync(packageFile, 'utf8')) as { piConfig?: { configDir?: unknown } };
+  return typeof pkg.piConfig?.configDir === 'string' && pkg.piConfig.configDir ? pkg.piConfig.configDir : '.pi';
+}
+
 function getTrustedRoots(
   vaultPath: string | null,
   context: ProviderHistoryEnvironment,
@@ -140,7 +144,13 @@ function getTrustedRoots(
       roots.push(vaultSessionRoot);
     }
   }
-  roots.push(path.join(home, '.pi', 'agent', 'sessions'));
+  let configDir = '.pi';
+  const packageDir = resolveLocalDirectory(context.environment.PI_PACKAGE_DIR, home, cwd);
+  if (packageDir) {
+    try { configDir = readPackageConfigDirectory(path.join(packageDir, 'package.json')); }
+    catch { /* Unreadable package metadata cannot establish a custom history root. */ }
+  }
+  roots.push(path.join(home, configDir, 'agent', 'sessions'));
   return [...new Set(roots)];
 }
 
