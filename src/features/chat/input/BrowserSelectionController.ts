@@ -2,6 +2,7 @@ import type { App, ItemView } from 'obsidian';
 
 import type { BrowserSelectionContext } from '@/core/prompt/browserContext';
 import type { ComposerContextTray } from '@/features/chat/composer/ComposerContextTray';
+import { t } from '@/i18n/i18n';
 
 type BrowserLikeWebview = HTMLElement & {
   executeJavaScript?: (code: string, userGesture?: boolean) => Promise<unknown>;
@@ -241,8 +242,7 @@ export class BrowserSelectionController {
   private updateIndicator(): void {
     if (this.storedSelection) {
       const lineCount = this.storedSelection.selectedText.split(/\r?\n/).length;
-      const lineLabel = lineCount === 1 ? 'line' : 'lines';
-      const label = `${lineCount} ${lineLabel} selected`;
+      const label = t(lineCount === 1 ? 'chat.selectedContext.line' : 'chat.selectedContext.lines', { count: lineCount });
       this.contextTray.setItems('browser-selection', [{
         id: 'browser-selection',
         kind: 'selection',
