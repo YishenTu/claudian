@@ -790,6 +790,12 @@ export function normalizeCodexMCPToolName(server: unknown, tool: unknown): strin
   return `mcp__${serverName}__${toolName}`;
 }
 
+/** Code Mode calls MCP tools by identifier-safe names, e.g. `github.fetch` as `github_fetch`. */
+export function codexScriptToolNamesMatch(requested: string, native: string): boolean {
+  const scriptName = (name: string) => (name.startsWith('mcp__') ? name.replace(/[^A-Za-z0-9_]/g, '_') : name);
+  return scriptName(requested) === scriptName(native);
+}
+
 export function normalizeCodexMCPToolInput(rawArguments: unknown): Record<string, unknown> {
   if (typeof rawArguments === 'string') {
     return parseCodexArguments(rawArguments);
@@ -829,6 +835,17 @@ export function normalizeCodexMCPToolState(
     status: isTerminal ? (isError ? 'error' : 'completed') : 'running',
     ...(result ? { result } : {}),
   };
+}
+
+/** The visible result of a completed MCP item, live or persisted. */
+export function normalizeCodexMCPToolCompletion(
+  rawStatus: unknown,
+  resultPayload?: unknown,
+  rawError?: unknown,
+): { result: string; isError: boolean } {
+  const state = normalizeCodexMCPToolState(rawStatus, resultPayload, rawError);
+  // A completion without a terminal status or output did not report success.
+  return { result: state.result ?? 'Failed', isError: state.isError };
 }
 
 function extractCodexMCPResultText(resultPayload?: unknown): string {

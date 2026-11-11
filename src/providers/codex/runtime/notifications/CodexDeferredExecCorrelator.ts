@@ -2,6 +2,7 @@ import * as path from 'path';
 
 import type { ToolProviderPayload } from '@/core/types';
 import {
+  codexScriptToolNamesMatch,
   codexToolRequestsMatch,
   type DecodedCodexExecEnvelopeCall,
   isCodexToolOutputError,
@@ -280,7 +281,7 @@ export class CodexDeferredExecCorrelator {
     const projectedName = semanticToolName(name);
     const availableCalls = [...this.#deferredCalls.values()].flatMap(deferredExec => (
       deferredExec.expectedCalls
-        .filter(call => !call.claimed && call.name === projectedName)
+        .filter(call => !call.claimed && codexScriptToolNamesMatch(call.name, projectedName))
         .map(expectedCall => ({ deferredExec, expectedCall }))
     ));
     const sameIdCalls = canonicalItemId
