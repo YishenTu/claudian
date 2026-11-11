@@ -377,6 +377,26 @@ export class VaultFileAdapter {
     }));
   }
 
+  /** Renames one directory entry onto its other spelling. Different files and hard links stay collisions. */
+  async #renameSameManagedEntry(source: string, target: string): Promise<boolean> {
+    if (source === target) return true;
+    const base = this.#basePath();
+    let same: boolean;
+    try {
+      same = await fs.realpath(this.#resolveManagedDesktopPath(base, source))
+        === await fs.realpath(this.#resolveManagedDesktopPath(base, target));
+    } catch (error) {
+      if (isNotFound(error)) return false;
+      throw new ManagedResourcePathError(`Could not compare managed resources: ${source} and ${target}`, { cause: error });
+    }
+    if (!same) return false;
+    await fs.rename(
+      this.#resolveManagedDesktopPath(base, source),
+      this.#resolveManagedDesktopPath(base, target),
+    );
+    return true;
+  }
+
   async removeManagedFile(filePath: string): Promise<void> {
     if (!await this.verifyManagedPath(filePath, { expectedType: 'file', allowMissing: true })) return;
     try {
@@ -412,6 +432,7 @@ export class VaultFileAdapter {
     // The vault root itself needs no verification.
     if (separator !== -1) await this.verifyManagedPath(target.slice(0, separator), { expectedType: 'folder' });
     if (await this.#managedTargetExists(target)) {
+      if (await this.#renameSameManagedEntry(source, target)) return;
       throw new ManagedResourceCollisionError(target);
     }
     try {
@@ -435,6 +456,7 @@ export class VaultFileAdapter {
     const parent = path.posix.dirname(target);
     if (parent !== '.') await this.verifyManagedPath(parent, { expectedType: 'folder' });
     if (await this.#managedTargetExists(target)) {
+      if (await this.#renameSameManagedEntry(source, target)) return;
       throw new ManagedResourceCollisionError(target);
     }
     const basePath = this.#basePath();
