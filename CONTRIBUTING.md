@@ -2,11 +2,15 @@
 
 Issues and pull requests are welcome. Issues are the preferred way to contribute: if you describe the problem and your environment clearly, I will review it and make a best effort to address it.
 
+These rules apply to outside contributions. The maintainer may change any part of the project directly, including `README.md`, documentation and design, and may waive a rule for a specific pull request.
+
 ## Before You Start
 
 - Search existing issues and pull requests to avoid duplicates.
-- For a substantial change, open an issue first so the problem and scope can be discussed before implementation.
+- For a substantial change or a change to intended behavior (such as new settings, commands, or UI), open an issue and get agreement before implementing it, even if you see it as a fix.
+- An open issue is a proposal, not an accepted task. Before implementing someone else's issue, check that the maintainer has confirmed the problem and the direction there. If they haven't, comment on the issue first. Pull requests for issues that haven't been confirmed, or that go against the maintainer's response, may be closed without review.
 - Keep each pull request focused on one problem. Unrelated fixes, refactors, formatting changes, or dependency updates should be submitted separately.
+- When a change is too large for one pull request, prefer a stacked series: each pull request builds on the previous one and names the pull request it depends on. Avoid many independent pull requests that touch the same files and must be rebased one after another.
 
 ## Reporting an Issue
 
@@ -18,9 +22,19 @@ A useful issue explains the problem well enough for someone else to understand a
 - Your Claudian version, Obsidian version, operating system, provider, provider CLI version, and installation method.
 - Relevant logs, screenshots, or recordings.
 
+For a feature request or a proposal to change existing behavior, start with the user problem or use case and your rationale. A proposed solution is helpful, but explaining the need is more important than prescribing an implementation, and current behavior may be intentional.
+
 Remove API keys, tokens, private vault content, personal paths, and other sensitive information before attaching logs or screenshots.
 
-For a feature request, start with the user problem or unmet use case. A proposed solution is helpful, but explaining the need is more important than prescribing an implementation.
+## Development
+
+AI coding agents are welcome, and current state-of-the-art models are recommended.
+
+- Use the Node.js version declared in `.node-version`.
+- Follow [AGENTS.md](AGENTS.md) and the scoped `AGENTS.md`. They are the authoritative development, testing and verification rules.
+- For a bug fix or behavior change, write the failing test first, confirm it fails for the intended reason, then make the narrowest change that passes it.
+- Before submitting a pull request, run the verification your change requires.
+- Have the change reviewed by a different model from the one that wrote it, covering correctness, architecture and ownership boundaries, and simplification. Address the findings, and mention the review under Validation.
 
 ## Pull Requests
 
@@ -29,16 +43,29 @@ Pull requests are welcome when they solve a specific, well-defined problem. A pu
 - **Why:** the problem being solved, who it affects, and why it is worth solving.
 - **What:** the behavior or code that changes.
 - **Why this approach:** why the proposed design is a good fit, including meaningful alternatives and tradeoffs.
-- **Validation:** tests and manual checks performed, with screenshots or recordings for user-facing changes.
+- **Validation:** tests and manual checks you actually ran, and what you did not verify, with screenshots or recordings for user-facing changes.
 - **Impact:** known limitations, compatibility or data risks, and any follow-up work.
 - **Context:** a linked issue when one exists.
 
 Please also:
 
-- Add or update tests for behavior changes and bug fixes.
+- Title and describe a pull request by what it actually does. New capabilities and changes to intended behavior are features, not fixes; reserve `fix:` for restoring behavior that is broken.
 - Preserve provider and feature ownership boundaries; avoid coupling shared feature code to provider internals.
 - Avoid new production dependencies unless the need and tradeoff are explicit.
-- Update documentation when behavior or user-facing configuration changes.
+- Keep one source of truth for each piece of state, policy, or text; reuse existing helpers instead of copying them.
+
+### Bug Fixes
+
+A bug fix must show that the problem occurs in real use, through a reproduction, a real record, or a real configuration. A test that fails only under conditions real use does not produce is not enough. For speculative edge cases and defensive hardening, open an issue first that explains the failure mode, its likelihood, and the cost of the fix.
+
+### Tests
+
+Add or update tests for behavior changes and bug fixes. Tests are judged by quality, not size. Follow [tests/AGENTS.md](tests/AGENTS.md): exercise the real behavior, assert observable results rather than incidental details, and catch a regression that existing checks would miss.
+
+### Documentation
+
+- Do not modify `README.md`. The maintainer owns it; pull requests that change it will be asked to drop those changes.
+- Do not add documentation that explains features; the maintainer adds it when needed. Do correct existing documentation that your change makes inaccurate.
 
 ## New Provider Policy
 
@@ -54,56 +81,3 @@ This is a maintenance and product-quality boundary:
 You may open an issue to describe an unmet provider-related use case, but please do not submit a new-provider implementation. An issue does not imply that the provider will be added.
 
 Contributions that improve an existing provider are welcome when they follow the focused pull request requirements above and preserve the expected cross-provider experience.
-
-## Development
-
-Claudian requires the Node.js version declared in `.node-version`.
-
-```bash
-npm install
-npm run dev
-```
-
-For a bug fix or new behavior, add or update a failing test first, then make the narrowest implementation change that passes it. Use focused checks while iterating. Before submitting a pull request with code or test changes, run the full verification suite:
-
-```bash
-npm run typecheck
-npm run lint
-npm run test
-npm run build
-npm run check:performance
-```
-
-Run one unit or integration file with `npm run test:unit -- tests/unit/example.test.ts`; file paths replace the old runner-specific path flag. Use `npm run test:watch -- <path>` for watching and `npm run test:coverage` for V8 coverage of `src/`.
-
-For local iteration, `npm run test:affected -- --base origin/main` selects tests from
-committed, staged, unstaged and untracked changes using the CI dependency graph.
-It prints the selection and runs the selected Vitest and script checks.
-Use `--list` to inspect without running, `--full` for all tests, and `-- --maxWorkers=1` to forward Vitest
-options. Unknown inputs or an unavailable base retain full coverage. For code or test
-changes, this does not replace typecheck, lint, build/performance checks or native
-checks on other platforms.
-
-For documentation-only changes, a production build is not required. Follow the authoritative rules in [AGENTS.md](AGENTS.md): run `git diff --check` and the affected documentation tests.
-
-CI skips documentation-only changes. Every other change runs typecheck, lint and the dependency audit in parallel from the start; the production build, lockfile, dependency-review and workflow checks run only when their inputs change. The native WSL job runs only for WSL-related source (launch, execution target, path mapping, the session-tool relay, or installation-method handling) or WSL test infrastructure; scheduled verification runs every WSL suite weekly. `scripts/ciTestSelection.mjs` owns that policy.
-
-Full Linux CI verification uses four Vitest shards; affected selections add a shard per 200 selected suites, up to four. Script checks run in their own `scripts` lane alongside the shards. Each Linux Vitest shard uses four workers and restores the latest recorded file durations, so Vitest starts the slowest suites first; shard membership depends only on file paths. Every lane must pass the aggregate test gate, and each Vitest shard uploads its own timing artifact. Sharding uses more runner capacity to reduce elapsed time; compare runner minutes as well as wall time.
-
-Vitest runs through the package wrappers with `--outputFile=<path>` produce JSON, suite execution timings and metadata including resolved workers and unhandled-error counts. Suite execution timings exclude import/worker startup; wall time includes them. CI uploads these
-for Linux, native smoke and scheduled suites. To compare native worker counts locally:
-
-```bash
-npm run test:cross-platform -- --maxWorkers=2 --outputFile=.context/native.json
-node scripts/summarize-vitest-results.mjs .context/native.json .context/native-timings
-```
-
-CI runs native smoke with three workers on macOS and one on Windows. The local wrapper
-remains serial unless a worker count is supplied. Compare the same selection and
-commit, including fixture setup/teardown, and report elapsed time separately from
-summed suite durations. Recheck timings on the actual CI runners before increasing
-concurrency further.
-
-Scheduled Linux verification also shuffles test files and tests once, using and printing the workflow run ID as its seed. Reproduce with `npm run test:unit -- --sequence.shuffle --sequence.seed=<seed>`. Linux CI still runs selected tests under `faketime -m -f +1100d` with monotonic clocks excluded and shared memory disabled (`FAKETIME_DISABLE_SHM=1`). Threaded mode serializes libfaketime clock updates; disabling shared memory prevents a killed native child from leaving its stat semaphore locked. Worker threads and child processes still inherit the same relative clock offset. The CI test step stops after five minutes and retains active-file diagnostics in `vitest.json.progress.json` if execution is interrupted.
-
-The project architecture and area-specific development rules are documented in `AGENTS.md` and the scoped `AGENTS.md` files under `src/`.

@@ -8,6 +8,7 @@ import {
 import { VIEW_TYPE_CLAUDIAN } from '@/core/types';
 import type { ChatViewPlacement } from '@/core/types/settings';
 import type { ClaudianView } from '@/features/chat/ClaudianView';
+import type { TabComposerPort } from '@/features/chat/tabs/ChatTab';
 import type { ZenModeController } from '@/features/chat/zen/ZenModeController';
 import { revealWorkspaceLeaf } from '@/utils/obsidianCompat';
 
@@ -53,6 +54,15 @@ export class ClaudianViews {
       ?? views.find(view => view === preferred)
       ?? views[0]
       ?? null;
+  }
+
+  /** A chat tucked behind another tab of an expanded sidebar, preferring the current chat view. */
+  getBackgroundSidebarLeaf(): WorkspaceLeaf | null {
+    const hidden = this.workspace.getLeavesOfType(VIEW_TYPE_CLAUDIAN).filter(leaf => (
+      this.#getExpandedSidebar(leaf) && !(isClaudianView(leaf.view) && leaf.view.containerEl.isShown())
+    ));
+    const preferred = this.getView();
+    return hidden.find(leaf => leaf.view === preferred) ?? hidden[0] ?? null;
   }
 
   findConversationAcrossViews(conversationId: string): { view: ClaudianView; tabId: string } | null {
@@ -121,8 +131,11 @@ export class ClaudianViews {
     zen.hide(leaf);
   }
 
-  /** Reveals and focuses the preferred or active chat leaf, else the first one, else opens one. */
-  async activateView(preferred?: WorkspaceLeaf): Promise<void> {
+  /**
+   * Reveals and focuses the preferred or active chat leaf, else the first one, else opens one.
+   * `focusComposer` replaces the default input focus once the chat is shown.
+   */
+  async activateView(preferred?: WorkspaceLeaf, focusComposer?: (composer: TabComposerPort) => void): Promise<void> {
     const { workspace } = this;
     const leaves = workspace.getLeavesOfType(VIEW_TYPE_CLAUDIAN);
     const existingLeaf = preferred ?? this.#getActiveView(leaves)?.leaf ?? leaves[0];
@@ -147,7 +160,12 @@ export class ClaudianViews {
 
       await revealWorkspaceLeaf(workspace, leaf);
       if (!focusSuperseded && isClaudianView(leaf.view)) {
-        leaf.view.focusActiveInput();
+        if (!focusComposer) {
+          leaf.view.focusActiveInput();
+        } else {
+          const composer = leaf.view.getActiveTab()?.composer;
+          if (composer) focusComposer(composer);
+        }
       }
     } finally {
       workspace.offref(focusIntentRef);

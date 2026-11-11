@@ -1,4 +1,5 @@
 import type { ProviderUIOption } from '@/core/providers/types';
+import { t } from '@/i18n/i18n';
 import { createProviderIconSvg } from '@/shared/icons';
 import { nextToolbarId, runToolbarAction, ToolbarMenu, type ToolbarMenuGroup } from '@/shared/toolbar/ToolbarMenu';
 import type { ModelPickerCallbacks } from '@/shared/toolbar/types';
@@ -49,7 +50,7 @@ export class ModelSelector {
     this.menu = new ToolbarMenu(parentEl, {
       anchorCls: 'claudian-toolbar-chip-anchor--model claudian-model-selector',
       buttonCls: 'claudian-model-btn',
-      menuLabel: 'Model options',
+      menuLabel: t('chat.modelPicker.options'),
       popupRole: 'dialog',
       closeOnSelect: false,
       group: menuGroup,
@@ -66,7 +67,7 @@ export class ModelSelector {
     this.labelEl = this.menu.createChipPart('claudian-toolbar-chip-primary claudian-model-label');
     this.providersEl = this.menu.menuEl.createDiv({
       cls: 'claudian-model-column claudian-model-providers',
-      attr: { role: 'tablist', 'aria-label': 'Provider', 'aria-orientation': 'vertical' },
+      attr: { role: 'tablist', 'aria-label': t('chat.modelPicker.provider'), 'aria-orientation': 'vertical' },
     });
     this.optionsEl = this.menu.menuEl.createDiv({
       cls: 'claudian-model-column claudian-model-options',
@@ -134,11 +135,11 @@ export class ModelSelector {
         width: 12,
       });
     }
-    const label = modelInfo?.label || (currentModel ? 'Model unavailable' : 'Set up models');
+    const label = modelInfo?.label || (currentModel ? t('chat.modelPicker.unavailable') : t('chat.modelPicker.setup'));
     this.labelEl.setText(label);
-    this.modelDescription = modelInfo ? `Model: ${label}` : label;
+    this.modelDescription = modelInfo ? t('chat.modelPicker.modelLabel', { label }) : label;
     this.#updateAccessibleName();
-    this.menu.buttonEl.title = modelInfo ? '' : 'Choose an enabled model in provider settings. If discovery failed, refresh the model list.';
+    this.menu.buttonEl.title = modelInfo ? '' : t('chat.modelPicker.guidance');
   }
 
   renderOptions() {
@@ -161,11 +162,11 @@ export class ModelSelector {
 
     this.optionsEl.empty();
     const headingId = nextToolbarId('heading');
-    this.optionsEl.createDiv({ cls: 'claudian-toolbar-popover-heading', text: 'Model', attr: { id: headingId } });
+    this.optionsEl.createDiv({ cls: 'claudian-toolbar-popover-heading', text: t('chat.modelPicker.model'), attr: { id: headingId } });
     if (!models.length) {
       this.optionsEl.createDiv({
         cls: 'claudian-toolbar-popover-empty',
-        text: 'No models available. Check provider settings and refresh the model list if discovery failed.',
+        text: t('chat.modelPicker.empty'),
         attr: { role: 'status' },
       });
     }
@@ -213,7 +214,7 @@ export class ModelSelector {
             await this.callbacks.onModelChange(model.value);
             this.updateDisplay();
             this.renderOptions();
-          }, 'Failed to change model');
+          }, t('chat.modelPicker.changeModelFailed'));
         },
       });
       // The model's name is the option's name; its title already carries the description.

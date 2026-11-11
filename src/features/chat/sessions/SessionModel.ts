@@ -6,6 +6,7 @@ import type { TitleGenerationService } from '@/core/providers/types';
 import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
 import type { ComposerDraftController } from '@/features/chat/composer/ComposerDraftController';
 import type { ComposerPromptSuggestion } from '@/features/chat/composer/ComposerPromptSuggestion';
+import { SessionComposer } from '@/features/chat/composer/SessionComposer';
 import { ConversationController } from '@/features/chat/conversation/ConversationController';
 import type { BuiltInCommandController } from '@/features/chat/input/BuiltInCommandController';
 import type { ComposerSelections } from '@/features/chat/input/ComposerSelections';
@@ -13,25 +14,24 @@ import { InputController } from '@/features/chat/input/InputController';
 import { SessionInteractions } from '@/features/chat/interactions/SessionInteractions';
 import { LinkedContentController, type LinkedContentControllerOptions } from '@/features/chat/linked-content';
 import type { MessageRenderer } from '@/features/chat/rendering/MessageRenderer';
+import { AsyncSubagentHistoryRecovery } from '@/features/chat/rendering/subagents/AsyncSubagentHistoryRecovery';
+import { SubagentManager } from '@/features/chat/rendering/subagents/SubagentManager';
 import { pickWelcomeGreeting } from '@/features/chat/rendering/WelcomeRenderer';
 import type { ChatSessionRuntime } from '@/features/chat/sessions/ChatSessionRuntime';
-import { SessionComposer } from '@/features/chat/sessions/SessionComposer';
 import { SessionEvents } from '@/features/chat/sessions/SessionEvents';
 import { createConversationExecutionBinding } from '@/features/chat/sessions/sessionExecution';
 import { captureLatestCompletedForkSource } from '@/features/chat/sessions/SessionForkSource';
 import { requireSessionProviderId } from '@/features/chat/sessions/sessionProvider';
 import { getSessionChatUIConfig, getSessionSelectedModel, getSessionSettingsSnapshot, updateSessionProviderSettings } from '@/features/chat/sessions/sessionSettings';
-import { SessionTranscript } from '@/features/chat/sessions/SessionTranscript';
 import { SideChatController, type SideChatControllerPresentation } from '@/features/chat/side-chat/SideChatController';
 import { ChatState } from '@/features/chat/state/ChatState';
 import type { TabReviewOutcome } from '@/features/chat/state/types';
-import { AsyncSubagentHistoryRecovery } from '@/features/chat/subagents/AsyncSubagentHistoryRecovery';
-import { SubagentManager } from '@/features/chat/subagents/SubagentManager';
+import { SessionTranscript } from '@/features/chat/turns/SessionTranscript';
 import { StreamController } from '@/features/chat/turns/StreamController';
 import type { ComposerInputElement } from '@/shared/composer-dropdown/types';
 import { getVaultPath } from '@/utils/path';
 
-export type SessionChange = 'streaming' | 'rewinding' | 'attention' | 'conversation' | 'identity' | 'usage' | 'scroll' | 'work' | 'commands' | 'settings' | 'destination' | 'project';
+export type SessionChange = 'streaming' | 'rewinding' | 'attention' | 'conversation' | 'identity' | 'usage' | 'work' | 'commands' | 'settings' | 'destination' | 'project';
 
 /** The current view only. No execution dependency may retain an earlier instance. */
 export interface SessionPresentation {
@@ -71,11 +71,11 @@ export class SessionModel {
   private hydration: Promise<void> | null = null;
   private readonly titleWork = new Set<Promise<void>>();
   private readonly recovery: AsyncSubagentHistoryRecovery;
-  hydrationState: 'idle' | 'loading' | 'ready' | 'failed';
+  #hydrationState: 'idle' | 'loading' | 'ready' | 'failed';
 
   constructor(readonly session: ChatSessionRuntime, private readonly plugin: ChatFeatureHost) {
     const getRenderer = () => this.transcript?.renderer ?? null;
-    this.hydrationState = session.conversationId ? 'idle' : 'ready';
+    this.#hydrationState = session.conversationId ? 'idle' : 'ready';
     this.state = new ChatState({
       onStreamingStateChanged: streaming => {
         if (streaming) this.presentation?.suggestions.beginTurn();
@@ -85,7 +85,6 @@ export class SessionModel {
       onAttentionChanged: () => this.publish('attention'),
       onConversationChanged: () => this.publish('conversation'),
       onUsageChanged: () => this.publish('usage'),
-      onAutoScrollChanged: () => this.publish('scroll'),
     }, { get: () => session.conversationId, set: id => session.setConversationId(id) }, session.turns, session.attention);
     this.subagentManager = new SubagentManager(info => {
       this.streamController.subagents.onAsyncSubagentStateChange(info);
@@ -162,7 +161,7 @@ export class SessionModel {
       getSelectedModel: () => getSessionSelectedModel(session, plugin),
       isClosing: () => session.isDisposed,
       isConversationHydrated: () => this.hydrationState === 'ready',
-      onConversationHydrated: () => { this.hydrationState = 'ready'; },
+      onConversationHydrated: () => { this.#hydrationState = 'ready'; },
       onPersistenceChanged: () => session.notifyChanged(),
       onBranchPreviewCancelled: () => this.publish('work'),
       // Presentation-only: the seed is no session status, so only the attached composer hears it.
@@ -228,7 +227,7 @@ export class SessionModel {
 
   /** Admitted input and async subagents keep the session working without a foreground turn. */
   get hasPendingWork(): boolean {
-    return this.subagentManager.hasActiveAsyncSubagents() || this.inputController.isPreparingMainTurn || !!this.state.queuedMessage;
+    return this.subagentManager.hasActiveAsyncSubagents() || this.inputController.hasUnsettledMainWork || !!this.state.queuedMessage;
   }
 
   get hasPendingInteraction(): boolean {
@@ -268,7 +267,7 @@ export class SessionModel {
     this.publish('work');
     try {
       if (!await reload()) return;
-      if (this.hydrationState === 'ready') this.hydrationState = 'idle';
+      if (this.#hydrationState === 'ready') this.#hydrationState = 'idle';
       this.historyRefresh = 'reloading';
       await this.hydrate().catch(() => undefined);
     } finally {
@@ -347,20 +346,25 @@ export class SessionModel {
     this.presentation = null;
   }
 
+  /** Whether the shown transcript is loaded; only this model's loads and conversation changes move it. */
+  get hydrationState(): 'idle' | 'loading' | 'ready' | 'failed' {
+    return this.#hydrationState;
+  }
+
   async hydrate(): Promise<void> {
-    if (this.hydrationState === 'ready') return;
+    if (this.#hydrationState === 'ready') return;
     if (this.hydration) return this.hydration;
-    this.hydrationState = 'loading';
+    this.#hydrationState = 'loading';
     this.hydration = this.conversationController.loadActive()
       .then(() => {
-        this.hydrationState = 'ready';
+        this.#hydrationState = 'ready';
         if (this.historyRefresh === 'reloading') {
           this.historyRefresh = null;
           this.publish('work');
         }
         this.session.notifyHydrated();
       })
-      .catch(error => { this.hydrationState = 'failed'; throw error; })
+      .catch(error => { this.#hydrationState = 'failed'; throw error; })
       .finally(() => { this.hydration = null; });
     return this.hydration;
   }

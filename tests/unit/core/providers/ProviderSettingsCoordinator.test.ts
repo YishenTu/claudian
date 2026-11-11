@@ -627,6 +627,14 @@ describe('ProviderSettingsCoordinator', () => {
       expect(settings.permissionMode).toBe(permissionMode);
     });
 
+    it('preserves the saved Antigravity Auto permission mode', () => {
+      const snapshot = ProviderSettingsCoordinator.getProviderSettingsSnapshot({
+        settingsProvider: 'claude', permissionMode: 'normal',
+        savedProviderPermissionMode: { antigravity: 'auto' },
+      }, 'antigravity');
+      expect(snapshot.permissionMode).toBe('auto');
+    });
+
     it.each(['normal', 'acceptEdits', 'yolo'])('preserves the saved Grok permission %s', permissionMode => {
       const snapshot = ProviderSettingsCoordinator.getProviderSettingsSnapshot({
         settingsProvider: 'claude', permissionMode: 'auto',

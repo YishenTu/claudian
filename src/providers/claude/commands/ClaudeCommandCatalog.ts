@@ -36,6 +36,9 @@ function slashCommandToEntry(cmd: SlashCommand): ProviderCommandEntry {
   };
 }
 
+// Built-ins Claudian supports in its chat (it forwards `active_goal` state), so the picker keeps them.
+const LISTED_NATIVE_COMMANDS = new Set(['goal']);
+
 // A cold CLI start plus capped MCP startup can exceed the shared picker deadline.
 const CLAUDE_COMMAND_DISCOVERY_TIMEOUT_MS = 30_000;
 
@@ -64,11 +67,13 @@ export class ClaudeCommandCatalog implements ProviderCommandCatalog {
     // .claude/commands/ and .claude/skills/ internally). No file scan needed.
     const commands = context.commandSnapshot ?? await this.#ensureProbed(context.signal);
     // Claude Code's own commands mostly target its terminal UI, so the picker offers only skills and
-    // custom commands. A marked row runs for its name, so it also hides an unmarked row sharing that name.
+    // custom commands, plus the few built-ins Claudian supports. A marked row runs for its name, so it
+    // also hides an unmarked row sharing that name.
     // Snapshots from CLIs that do not mark built-ins cannot be classified and are kept whole.
     const nativeNames = new Set(commands
       .filter(cmd => cmd.source === 'builtin')
-      .map(cmd => cmd.name.toLowerCase()));
+      .map(cmd => cmd.name.toLowerCase())
+      .filter(name => !LISTED_NATIVE_COMMANDS.has(name)));
     return commands
       .filter(cmd => !nativeNames.has(cmd.name.toLowerCase()))
       .map(slashCommandToEntry);

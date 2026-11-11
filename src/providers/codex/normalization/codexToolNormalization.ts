@@ -1,4 +1,5 @@
 import { isSessionTool } from '@/core/tools/toolNames';
+import { extractToolResultContent } from '@/core/tools/toolResultContent';
 import type { ToolProviderPayload } from '@/core/types';
 import { stringifyUnknown } from '@/utils/stringify';
 
@@ -230,8 +231,10 @@ function readJavaScriptStringToken(
       }
     }
 
-    const value = decodeSingleQuotedString(literal.slice(1, -1));
-    return value === null ? null : { value, end: index + 1 };
+    return {
+      value: decodeSingleQuotedString(literal.slice(1, -1)),
+      end: index + 1,
+    };
   }
 
   return null;
@@ -415,28 +418,35 @@ function extractApplyPatch(
   call: ExecEnvelopeToolCall,
 ): string | null {
   const argumentToken = tokens[call.openParenTokenIndex + 1];
-  const closeToken = tokens[call.openParenTokenIndex + 2];
-  // Expressions and extra arguments are outside this static decoder's contract.
-  if (closeToken?.kind !== 'punctuation' || closeToken.value !== ')') return null;
   if (argumentToken?.kind === 'string') return argumentToken.value;
   if (argumentToken?.kind !== 'identifier') return null;
-  // Only the declaration and this argument may use the name; other uses can shadow it.
-  const uses = tokens.slice(0, call.openParenTokenIndex + 2)
-    .filter(token => token.kind === 'identifier' && token.value === argumentToken.value);
-  if (uses.length !== 2) return null;
 
   let patch: string | null = null;
   for (let index = 0; index <= call.toolTokenIndex - 4; index += 1) {
     const declarationToken = tokens[index];
-    if (declarationToken?.kind !== 'identifier'
-      || !['const', 'let', 'var'].includes(declarationToken.value)
-      || tokens[index + 1]?.value !== argumentToken.value) continue;
-    // A mutable binding, transformed initializer or repeated declaration is ambiguous.
-    const end = tokens[index + 4];
-    if (patch !== null || declarationToken.value !== 'const'
-      || tokens[index + 2]?.value !== '=' || tokens[index + 3]?.kind !== 'string'
-      || end?.kind !== 'punctuation' || ![';', ','].includes(end.value)) return null;
-    patch = tokens[index + 3].value;
+    if (
+      declarationToken?.kind === 'identifier'
+      && (declarationToken.value === 'const'
+        || declarationToken.value === 'let'
+        || declarationToken.value === 'var')
+      && tokens[index + 1]?.value === argumentToken.value
+      && tokens[index + 2]?.value === '='
+      && tokens[index + 3]?.kind === 'string'
+    ) {
+      patch = tokens[index + 3]?.value ?? null;
+    }
+  }
+
+  // Real apply_patch scripts append to a let binding (`patch += "…"`). The declaration alone is only the header.
+  if (patch !== null) {
+    const name = argumentToken.value;
+    for (let index = 0; index + 3 < call.openParenTokenIndex; index += 1) {
+      if (tokens[index]?.kind === 'identifier' && tokens[index]?.value === name
+        && tokens[index + 1]?.value === '+' && tokens[index + 2]?.value === '='
+        && tokens[index + 3]?.kind === 'string') {
+        patch += tokens[index + 3]?.value ?? '';
+      }
+    }
   }
 
   return patch;
@@ -451,9 +461,7 @@ function findMatchingToken(
   let depth = 0;
 
   for (let index = openTokenIndex; index < tokens.length; index += 1) {
-    const token = tokens[index];
-    if (token?.kind !== 'punctuation') continue;
-    const value = token.value;
+    const value = tokens[index]?.value;
     if (value === open) {
       depth += 1;
     } else if (value === close) {
@@ -465,15 +473,7 @@ function findMatchingToken(
   return null;
 }
 
-function decodeSingleQuotedString(value: string): string | null {
-  // This is a deliberately small static decoder, not a JavaScript evaluator.
-  // Unsupported escapes must retain the opaque script rather than change its arguments.
-  for (let index = 0; index < value.length; index++) {
-    if (value[index] !== '\\') continue;
-    const escaped = value[++index];
-    if (!escaped || !'\\\'"nrtbfv0'.includes(escaped)
-      || (escaped === '0' && /[0-9]/.test(value[index + 1] ?? ''))) return null;
-  }
+function decodeSingleQuotedString(value: string): string {
   return value.replace(/\\([\\'"nrtbfv0])/g, (_match, escaped: string) => {
     const escapes: Record<string, string> = {
       '\\': '\\',
@@ -602,6 +602,7 @@ function normalizeQuestions(input: Record<string, unknown>): Array<Record<string
         : `Q${index + 1}`,
       options,
       multiSelect: Boolean(item.multiSelect ?? item.multi_select),
+      ...(item.isSecret === true ? { isSecret: true } : {}),
     };
   });
 }
@@ -770,6 +771,7 @@ interface CodexMCPResultPart {
 
 interface CodexMCPResultPayload {
   content?: CodexMCPResultPart[] | null;
+  structuredContent?: unknown;
 }
 
 export interface NormalizedCodexMCPToolState {
@@ -830,13 +832,12 @@ export function normalizeCodexMCPToolState(
 function extractCodexMCPResultText(resultPayload?: unknown): string {
   if (!resultPayload || typeof resultPayload !== 'object') return '';
 
-  const content = (resultPayload as CodexMCPResultPayload).content;
-  if (!Array.isArray(content)) return '';
-
-  return content
+  const { content, structuredContent } = resultPayload as CodexMCPResultPayload;
+  const text = Array.isArray(content) ? content
     .map(item => (typeof item?.text === 'string' ? item.text : ''))
     .filter(Boolean)
-    .join('\n');
+    .join('\n') : '';
+  return text || extractToolResultContent(structuredContent, { fallbackIndent: 2 });
 }
 
 // ---------------------------------------------------------------------------

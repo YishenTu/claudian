@@ -1,5 +1,5 @@
 import type { ProviderId } from '@/core/providers/types';
-import type { TabId } from '@/features/chat/tabs/ChatTab';
+import type { TabId } from '@/features/chat/ChatFeatureHost';
 import { TabHydration } from '@/features/chat/tabs/TabHydration';
 import type { TabIdentity } from '@/features/chat/tabs/TabIdentity';
 import { activateTab, deactivateTab } from '@/features/chat/tabs/TabLifecycle';

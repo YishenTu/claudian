@@ -104,13 +104,6 @@ describe('ChatState', () => {
       expect(chatState.currentThinkingState).toBe(state);
     });
 
-    it('stores thinkingEl', () => {
-      const chatState = new ChatState();
-      const el = document.createElement('div');
-      chatState.thinkingEl = el;
-      expect(chatState.thinkingEl).toBe(el);
-    });
-
     it('stores queueIndicatorEl', () => {
       const chatState = new ChatState();
       const el = document.createElement('div');
@@ -350,49 +343,11 @@ describe('ChatState', () => {
     });
   });
 
-  describe('autoScrollEnabled', () => {
-    it('notifies only when auto-scroll changes', () => {
-      const onAutoScrollChanged = vi.fn();
-      const chatState = new ChatState({ onAutoScrollChanged });
-      chatState.autoScrollEnabled = true;
-      expect(onAutoScrollChanged).not.toHaveBeenCalled();
-
-      chatState.autoScrollEnabled = false;
-
-      expect(onAutoScrollChanged).toHaveBeenCalledWith(false);
-    });
-  });
-
   describe('response timer', () => {
     it('stores responseStartTime', () => {
       const chatState = new ChatState();
       chatState.responseStartTime = 12345;
       expect(chatState.responseStartTime).toBe(12345);
-    });
-  });
-
-  describe('clearFlavorTimerInterval', () => {
-    it('clears active interval', () => {
-      const chatState = new ChatState();
-      const clearSpy = vi.spyOn(window, 'clearInterval');
-      const interval = window.setInterval(() => {}, 1000);
-      chatState.setFlavorTimerInterval(interval, window);
-
-      chatState.clearFlavorTimerInterval();
-
-      expect(clearSpy).toHaveBeenCalledWith(interval);
-      expect(chatState.flavorTimerInterval).toBeNull();
-      clearSpy.mockRestore();
-    });
-
-    it('is a no-op when no interval is active', () => {
-      const chatState = new ChatState();
-      const clearSpy = vi.spyOn(window, 'clearInterval');
-
-      chatState.clearFlavorTimerInterval();
-
-      expect(clearSpy).not.toHaveBeenCalled();
-      clearSpy.mockRestore();
     });
   });
 
