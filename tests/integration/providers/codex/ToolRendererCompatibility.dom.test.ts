@@ -61,7 +61,7 @@ function restoreTool(mode: 'live' | 'history', name: string, input: unknown, out
   return { ...uses[0], status: results[0].isError ? 'error' : 'completed', result: results[0].content };
 }
 
-type SessionStep = { raw: Record<string, unknown> } | { webSearch: Record<string, unknown> };
+type SessionStep = { raw: Record<string, unknown> } | { webSearch: Record<string, unknown> } | { mcp: Record<string, unknown> };
 
 /** Restores visible tools from raw items plus native web events (v2 live items, persisted Extension items). */
 function restoreSession(mode: 'live' | 'history', steps: SessionStep[], streamRawExecCalls = false): ToolCallInfo[] {
@@ -70,7 +70,9 @@ function restoreSession(mode: 'live' | 'history', steps: SessionStep[], streamRa
       timestamp: testTime({ seconds: index }),
       ...('raw' in step
         ? { type: 'response_item', payload: step.raw }
-        : { type: 'event_msg', payload: { type: 'item_completed', item: { ...step.webSearch, type: 'Extension', kind: 'web.search' } } }),
+        : { type: 'event_msg', payload: { type: 'item_completed', item: 'mcp' in step
+          ? { ...step.mcp, type: 'McpToolCall' }
+          : { ...step.webSearch, type: 'Extension', kind: 'web.search' } } }),
     })).join('\n')).flatMap(message => message.toolCalls ?? []);
   }
   const chunks: StreamChunk[] = [];
@@ -79,6 +81,11 @@ function restoreSession(mode: 'live' | 'history', steps: SessionStep[], streamRa
   for (const step of steps) {
     if ('raw' in step) {
       router.handleNotification('rawResponseItem/completed', { item: step.raw });
+      continue;
+    }
+    if ('mcp' in step) {
+      router.handleNotification('item/started', { item: { ...step.mcp, type: 'mcpToolCall', status: 'inProgress', result: null, error: null } });
+      router.handleNotification('item/completed', { item: { ...step.mcp, type: 'mcpToolCall' } });
       continue;
     }
     // Native web search starts before its request is known.
@@ -314,6 +321,61 @@ describe.each(['live', 'history'] as const)('%s Codex tool presentation', mode =
       expect(tools).toEqual([expect.objectContaining({ id: call.id, name: 'mcp__docs__search', ...expected })]);
     });
   }
+
+  it.each([1, 2])('shows the native result of each of %i Code Mode MCP calls with dotted tool names', callCount => {
+    // Code Mode exposes `github.fetch` as the identifier-safe `github_fetch`.
+    const calls = [
+      { id: 'mcp-read', server: 'codex_apps', tool: 'github.fetch', arguments: { url: 'https://example.com/main.rs' }, status: 'completed', error: null,
+        result: { content: [{ type: 'text', text: 'Action completed.' }], structuredContent: { content: 'fn main() {}\n' } } },
+      { id: 'mcp-denied', server: 'codex_apps', tool: 'github.fetch', arguments: { url: 'https://example.com/private.rs' }, status: 'failed', error: null,
+        result: { content: [{ type: 'text', text: 'Repository not accessible' }] } },
+    ].slice(0, callCount);
+    const tools = restoreSession(mode, [
+      { raw: { type: 'custom_tool_call', name: 'exec', call_id: 'script',
+        input: calls.map(call => `text(await tools.mcp__codex_apps__github_fetch(${JSON.stringify(call.arguments)}));`).join('\n') } },
+      ...calls.map(call => ({ mcp: call })),
+      { raw: { type: 'custom_tool_call_output', call_id: 'script', output: scriptOutput(...calls.map(call => JSON.stringify(call.result))) } },
+    ]);
+    expect(tools.filter(tool => tool.name.startsWith('mcp__'))).toEqual([
+      expect.objectContaining({ name: 'mcp__codex_apps__github.fetch', input: { url: 'https://example.com/main.rs' },
+        status: 'completed', result: 'Action completed.\n\n{\n  "content": "fn main() {}\\n"\n}' }),
+      expect.objectContaining({ name: 'mcp__codex_apps__github.fetch', input: { url: 'https://example.com/private.rs' },
+        status: 'error', result: 'Repository not accessible' }),
+    ].slice(0, callCount));
+  });
+
+  it('shows MCP calls from an opaque script and correlates calls after it finishes', () => {
+    const native = (id: string, url: string) => ({ id, server: 'codex_apps', tool: 'github.fetch', arguments: { url }, status: 'completed', error: null,
+      result: { content: [{ type: 'text', text: `Fetched ${url}` }] } });
+    const tools = restoreSession(mode, [
+      { raw: { type: 'custom_tool_call', name: 'exec', call_id: 'loop',
+        input: 'for (const url of ["https://example.com/a", "https://example.com/b"]) text(await tools.mcp__codex_apps__github_fetch({url}));' } },
+      { mcp: native('mcp-a', 'https://example.com/a') },
+      { mcp: native('mcp-b', 'https://example.com/b') },
+      { raw: { type: 'custom_tool_call_output', call_id: 'loop', output: scriptOutput('a', 'b') } },
+      { raw: { type: 'custom_tool_call', name: 'exec', call_id: 'single',
+        input: 'text(await tools.mcp__codex_apps__github_fetch({url:"https://example.com/c"}));' } },
+      { mcp: native('mcp-c', 'https://example.com/c') },
+      { raw: { type: 'custom_tool_call_output', call_id: 'single', output: scriptOutput('c') } },
+    ]);
+    expect(tools.filter(tool => tool.name.startsWith('mcp__')).map(({ input, status, result }) => ({ input, status, result }))).toEqual(
+      ['a', 'b', 'c'].map(page => ({ input: { url: `https://example.com/${page}` }, status: 'completed', result: `Fetched https://example.com/${page}` })),
+    );
+  });
+
+  it.each([
+    ['its script fails afterwards', 'text(await tools.mcp__codex_apps__github_fetch({url:"https://example.com/a"})); throw new Error("later");', ['mcp-a'], 'Script failed\nOutput:\nlater'],
+    ['an identical call makes ownership ambiguous', 'text(await tools.mcp__codex_apps__github_fetch({url:"https://example.com/a"}));\ntext(await tools.mcp__codex_apps__github_fetch({url:"https://example.com/a"}));', ['mcp-a', 'mcp-a2'], undefined],
+  ] as const)('keeps the native MCP result when %s', (_label, source, nativeIds, failure) => {
+    const tools = restoreSession(mode, [
+      { raw: { type: 'custom_tool_call', name: 'exec', call_id: 'script', input: source } },
+      ...nativeIds.map(id => ({ mcp: { id, server: 'codex_apps', tool: 'github.fetch', arguments: { url: 'https://example.com/a' }, status: 'completed', error: null,
+        result: { content: [{ type: 'text', text: `Fetched by ${id}` }] } } })),
+      { raw: { type: 'custom_tool_call_output', call_id: 'script', output: failure ?? scriptOutput('a') } },
+    ]);
+    const results = tools.filter(tool => tool.name.startsWith('mcp__')).map(tool => tool.result);
+    for (const id of nativeIds) expect(results).toContain(`Fetched by ${id}`);
+  });
 
   it.each([
     ['completed', 'completed'],
