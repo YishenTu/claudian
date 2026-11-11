@@ -168,6 +168,13 @@ export class NavigationSidebar {
       || candidate.getAttribute?.('data-role') === 'user';
   }
 
+  /** The view's host key scope dismisses this disclosure before a turn can be stopped. */
+  handleEscape(): boolean {
+    if (!this.tocPopover) return false;
+    this.#closeDirectory(true);
+    return true;
+  }
+
   #toggleDirectory(): void {
     if (this.tocPopover) {
       this.#closeDirectory();
@@ -181,6 +188,12 @@ export class NavigationSidebar {
     this.#closeDirectory();
     this.tocBtn.setAttribute('aria-expanded', 'true');
     this.tocPopover = this.parentEl.createDiv({ cls: 'claudian-nav-toc-popover' });
+    this.tocPopover.addEventListener('keydown', event => {
+      if (event.key !== 'Escape' || event.isComposing) return;
+      event.preventDefault();
+      event.stopPropagation();
+      this.#closeDirectory(true);
+    });
     this.tocPopover.createDiv({ cls: 'claudian-nav-toc-title', text: t('chat.navigation.directory') });
     const listEl = this.tocPopover.createDiv({ cls: 'claudian-nav-toc-list' });
 
@@ -202,7 +215,7 @@ export class NavigationSidebar {
         this.onScrollIntent?.('away');
         const element = entry.reveal();
         if (element) this.#scrollToElement(element);
-        this.#closeDirectory();
+        this.#closeDirectory(true);
       });
     });
   }
@@ -212,11 +225,12 @@ export class NavigationSidebar {
     this.#openDirectory();
   }
 
-  #closeDirectory(): void {
+  #closeDirectory(restoreFocus = false): void {
     this.tocPopover?.remove();
     this.tocPopover = null;
     // Construction can fail before the toggle exists; destroy() still closes the directory.
     this.tocBtn?.setAttribute('aria-expanded', 'false');
+    if (restoreFocus) this.tocBtn?.focus();
   }
 
   #scrollToElement(el: HTMLElement): void {

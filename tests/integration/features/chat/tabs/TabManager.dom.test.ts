@@ -20,6 +20,7 @@ import { SessionManagerSurface } from '@/features/chat/session-manager/SessionMa
 import { SessionNavigation } from '@/features/chat/session-manager/SessionNavigation';
 import { SessionMessagingService } from '@/features/chat/session-messaging/SessionMessagingService';
 import { TabManager } from '@/features/chat/tabs/TabManager';
+import { t } from '@/i18n/i18n';
 import { VaultMentionDataProvider } from '@/shared/mention/VaultMentionDataProvider';
 
 afterEach(() => {
@@ -390,7 +391,7 @@ it.each(['running', 'idle'] as const)('uses the target session runtime to guard 
     conversations.get('conversation')!.isArchived = true;
     conversations.get('third')!.isArchived = true;
     surface.invalidate();
-    fireEvent.click(ui.getByRole('button', { name: (name, element) => name === 'Archive' && element.textContent === 'Archive' }));
+    fireEvent.click(ui.getByRole('button', { name: t('chat.sessions.showArchive') }));
     const rowTitle = target === 'running' ? 'Conversation' : 'third';
     const row = ui.getByText(rowTitle, { exact: true }).closest<HTMLElement>('.claudian-history-item')!;
     const deleting = vi.spyOn(lifecycle, 'delete');

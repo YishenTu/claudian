@@ -95,7 +95,7 @@ export function createMutationConfig({ file, vitestConfig, plugin, reportDirecto
     incremental,
     incrementalFile,
     ignorePatterns: ['.mutation', '.context', '.agents', '.claude', '.env*', 'build', 'dist', '/main.js',
-      '/styles.css', 'coverage', 'test-results', '*.log', '.codex-vendor'],
+      '/styles.css', 'coverage', 'test-results', '*.log'],
   };
 }
 

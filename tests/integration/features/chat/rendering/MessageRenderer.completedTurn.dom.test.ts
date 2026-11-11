@@ -26,6 +26,7 @@ import { ChatState } from '@/features/chat/state/ChatState';
 import { destroyTab } from '@/features/chat/tabs/TabLifecycle';
 import { createTabRuntime } from '@/features/chat/tabs/TabRuntimeFactory';
 import { setLocale } from '@/i18n/i18n';
+import { mapOpencodeNativeMessages } from '@/providers/opencode/history/OpencodeHistoryStore';
 import { piProviderRegistration } from '@/providers/pi/registration';
 import { VaultMentionDataProvider } from '@/shared/mention/VaultMentionDataProvider';
 
@@ -482,6 +483,26 @@ it('keeps requested work on both sides of a mid-response notification in its own
   expect(within(messagesEl).getByText('Old task result.').closest('[hidden]')).toBeNull();
   expect(within(messagesEl).getByText('Work before notification.').closest('[hidden]')).toBeNull();
   expect(within(messagesEl).getByText('Work after notification.').closest('[hidden]')).toBeNull();
+  renderer.dispose();
+});
+
+it('shows only final whole-turn OpenCode throughput across consecutive compactions', () => {
+  const start = testDate().getTime();
+  const { renderer, messagesEl } = setup('opencode');
+  const history = mapOpencodeNativeMessages([
+    { id: 'u', type: 'user', text: 'Work', time: { created: start } },
+    { id: 'a1', type: 'assistant', time: { created: start + 100, completed: start + 1000 },
+      finish: 'stop', tokens: { output: 10, reasoning: 2 }, content: [{ type: 'text', text: 'Before' }] },
+    { id: 'c', type: 'compaction', status: 'completed', time: { created: start + 1100 } },
+    { id: 'c-again', type: 'compaction', status: 'completed', time: { created: start + 1150 } },
+    { id: 'a2', type: 'assistant', time: { created: start + 1200, completed: start + 3000 },
+      finish: 'stop', tokens: { output: 20, reasoning: 3 }, content: [{ type: 'text', text: 'After' }] },
+    { id: 'idle', type: 'idle', outcome: 'completed', time: { created: start + 3100 } },
+  ]);
+  renderer.renderMessages(history, () => 'Hello');
+
+  expect(within(messagesEl).getByText('11.7 tok/s').getAttribute('aria-label')).toBe('35 tokens · 3s');
+  expect(within(messagesEl).queryAllByText(/tok\/s/)).toHaveLength(1);
   renderer.dispose();
 });
 

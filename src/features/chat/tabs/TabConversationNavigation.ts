@@ -2,7 +2,6 @@ import type { ChatFeatureHost, TabId } from '@/features/chat/ChatFeatureHost';
 import type { TabManagerViewHost } from '@/features/chat/tabs/ChatTab';
 import { commitProvisionalTab } from '@/features/chat/tabs/TabLifecycle';
 import type { AssembledTabRuntime, TabMembershipView } from '@/features/chat/tabs/types';
-import { revealWorkspaceLeaf } from '@/utils/obsidianCompat';
 import { SerialQueue } from '@/utils/SerialQueue';
 
 export type OpenConversationOptions = {
@@ -152,7 +151,7 @@ export class TabConversationNavigation {
     const crossViewResult = host.plugin.findConversationAcrossViews(conversationId);
     if (!crossViewResult || crossViewResult.view === host.view) return false;
 
-    await revealWorkspaceLeaf(host.plugin.app.workspace, crossViewResult.view.leaf);
+    await host.plugin.app.workspace.revealLeaf(crossViewResult.view.leaf);
     if (!isCurrent()) return true;
     const refreshedTarget = host.plugin.findConversationAcrossViews(conversationId);
     const targetManager = refreshedTarget?.view.getTabManager() ?? null;

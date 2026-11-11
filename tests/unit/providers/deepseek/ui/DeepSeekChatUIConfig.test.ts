@@ -21,7 +21,6 @@ describe('DeepSeekChatUIConfig', () => {
       expect(option).toBeDefined();
       expect(option!.bypassesApprovals).toBeFalsy();
     }
-    expect(ui.getModeSelector?.({})).toBeNull();
     expect(ui.getProviderIcon?.()).toBe(DEEPSEEK_PROVIDER_ICON);
   });
 });

@@ -1,5 +1,4 @@
 import { ContextUsageMeter } from '@/features/chat/composer/toolbar/ContextUsageMeter';
-import { ModeSelector } from '@/features/chat/composer/toolbar/ModeSelector';
 import { PermissionToggle } from '@/features/chat/composer/toolbar/PermissionToggle';
 import { ServiceTierToggle } from '@/features/chat/composer/toolbar/ServiceTierToggle';
 import type { ToolbarCallbacks } from '@/features/chat/composer/toolbar/types';
@@ -12,7 +11,6 @@ export function createInputToolbar(
   callbacks: ToolbarCallbacks,
 ): {
   modelSelector: ModelSelector;
-  modeSelector: ModeSelector;
   effortSelector: EffortSelector;
   contextUsageMeter: ContextUsageMeter;
   menus: ToolbarMenus;
@@ -25,13 +23,11 @@ export function createInputToolbar(
   const contextUsageMeter = new ContextUsageMeter(parentEl);
   const effortSelector = new EffortSelector(modelSelector, callbacks);
   const serviceTierToggle = new ServiceTierToggle(modelSelector, callbacks);
-  const modeSelector = new ModeSelector(parentEl, callbacks, menuGroup);
   // Permission is the last control; CSS pushes it to the toolbar's far end.
   const permissionToggle = new PermissionToggle(parentEl, callbacks, menuGroup);
 
   return {
     modelSelector,
-    modeSelector,
     effortSelector,
     serviceTierToggle,
     contextUsageMeter,

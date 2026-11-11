@@ -46,11 +46,6 @@ export class SubagentCardView {
     if (view) updateSubagentProgress(view, progress);
   }
 
-  release(id: string): void {
-    this.cards.delete(id);
-    this.pendingParents.delete(id);
-  }
-
   clear(): void {
     this.cards.clear();
     this.pendingParents.clear();

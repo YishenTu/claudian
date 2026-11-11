@@ -9,9 +9,6 @@ export const deepseekChatUIConfig: ProviderChatUIConfig = {
   getPermissionModeOptions() {
     return DEEPSEEK_PERMISSION_MODE_OPTIONS;
   },
-  getModeSelector(): null {
-    return null;
-  },
   getProviderIcon() {
     return DEEPSEEK_PROVIDER_ICON;
   },

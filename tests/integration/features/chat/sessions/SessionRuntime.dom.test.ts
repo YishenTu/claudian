@@ -1085,8 +1085,10 @@ it('lists Linked content choices from the attached view\'s cached vault index', 
   const selector = within(tab.dom.messagesEl).getByRole('button', { name: 'None' });
   for (const query of ['plan', 'notes']) {
     fireEvent.click(selector);
-    const search = within(tab.dom.messagesEl).getByRole('textbox', { name: 'Linked content:' });
+    const search = within(tab.dom.messagesEl).getByRole('combobox', { name: 'Linked content:' });
+    expect(search.getAttribute('aria-expanded')).toBe('false');
     fireEvent.input(search, { target: { value: query } });
+    expect(search.getAttribute('aria-expanded')).toBe('true');
     expect(within(tab.dom.messagesEl).getByRole('option', { name: query === 'plan' ? /^Plan\./ : /^Notes\./ })).toBeTruthy();
     fireEvent.click(selector);
   }

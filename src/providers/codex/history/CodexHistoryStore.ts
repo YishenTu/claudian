@@ -41,6 +41,7 @@ import {
   appendCodexCommandOutput,
   CODEX_ASYNC_QUESTION_RESULT,
   CODEX_WEB_SEARCH_RESULT,
+  codexScriptToolNamesMatch,
   codexToolRequestsMatch,
   decodeCodexExecEnvelopeCalls,
   extractCodexExecCellId,
@@ -48,6 +49,9 @@ import {
   isCodexInternalToolCall,
   isCodexSilentWriteStdinCall,
   isCodexToolOutputError,
+  normalizeCodexMCPToolCompletion,
+  normalizeCodexMCPToolInput,
+  normalizeCodexMCPToolName,
   normalizeCodexToolCall,
   normalizeCodexToolResult,
   normalizeCodexWebSearchInput,
@@ -117,6 +121,12 @@ interface PersistedEventPayload {
     parsed_cmd?: Array<{ cmd?: unknown }>;
     aggregated_output?: unknown;
     exit_code?: unknown;
+    server?: unknown;
+    tool?: unknown;
+    arguments?: unknown;
+    status?: unknown;
+    result?: unknown;
+    error?: unknown;
   };
   type?: string;
   text?: string;
@@ -514,6 +524,11 @@ interface PersistedNativeCall {
   toolCallId?: string;
   /** An opaque script may issue any request, so it blocks correlation until the turn ends. */
   request: { name: string; input: Record<string, unknown> } | null;
+  /**
+   * The opaque script behind a null request. Once it finishes without yielding it stops
+   * blocking MCP calls, which complete before their script returns; commands can outlive it.
+   */
+  opaqueScript?: { callId: string; finished: boolean };
 }
 
 interface PersistedParseContext {
@@ -572,14 +587,14 @@ function processPersistedToolCall(
   }
   const failedScript = payload.name === 'exec' && ctx.failedExecCallIds.has(callId);
   if (payload.name === 'exec' && !execEnvelopeCalls) {
-    ctx.nativeCallCandidates.push({ request: null });
+    ctx.nativeCallCandidates.push({ request: null, opaqueScript: { callId, finished: false } });
   }
   const candidates = execEnvelopeCalls ?? [{ ...normalized, rawInput: parsedArgs }];
   candidates.forEach(({ name, input, rawInput }, index) => {
-    if (name !== 'Bash' && name !== 'WebSearch') return;
+    if (name !== 'Bash' && name !== 'WebSearch' && !name.startsWith('mcp__')) return;
     // Direct/single command outputs own their result, but omitting them would
     // make an identical request in another script appear uniquely correlated.
-    const toolCallId = execEnvelopeCalls && !failedScript && (name === 'WebSearch' || execEnvelopeCalls.length > 1)
+    const toolCallId = execEnvelopeCalls && !failedScript && (name !== 'Bash' || execEnvelopeCalls.length > 1)
       ? (execEnvelopeCalls.length > 1 ? `${callId}:${index + 1}` : callId)
       : undefined;
     if (name === 'Bash') {
@@ -701,6 +716,9 @@ function processPersistedToolOutput(
   // A yielded withheld script continues through `wait` calls that carry the same combined output.
   const yieldedCellId = withholdsOutput ? extractCodexExecCellId(rawOutput) : undefined;
   if (yieldedCellId) ctx.withheldExecCellIds.add(yieldedCellId);
+  const opaqueScript = ctx.nativeCallCandidates.find(({ opaqueScript: script }) => script?.callId === callId)?.opaqueScript;
+  // A yielded script continues in later `wait` calls.
+  if (opaqueScript && !extractCodexExecCellId(rawOutput)) opaqueScript.finished = true;
 
   const execEnvelopeToolCallIds = ctx.execEnvelopeToolCallIds.get(callId);
   if (execEnvelopeToolCallIds) {
@@ -783,14 +801,24 @@ function processPersistedToolOutput(
   });
 }
 
+function persistedRequestMatches(
+  request: NonNullable<PersistedNativeCall['request']>,
+  name: string,
+  nativeInputs: Record<string, unknown>[],
+): boolean {
+  return codexScriptToolNamesMatch(request.name, name)
+    && nativeInputs.some(input => codexToolRequestsMatch(name, request.input, input));
+}
+
 /** Claims the open script call a native item completes, when its request identifies exactly one. */
 function claimPersistedExecCall(
   name: string,
   nativeInputs: Record<string, unknown>[],
   ctx: PersistedParseContext,
 ): ToolCallInfo | null {
-  const matches = ctx.nativeCallCandidates.filter(({ request }) => !request || (request.name === name
-    && nativeInputs.some(input => codexToolRequestsMatch(name, request.input, input))));
+  const matches = ctx.nativeCallCandidates.filter(({ request, opaqueScript }) => (request
+    ? persistedRequestMatches(request, name, nativeInputs)
+    : !(opaqueScript?.finished && name.startsWith('mcp__'))));
   if (matches.length !== 1 || !matches[0].request) return null;
   const [call] = matches;
   const toolCall = call.toolCallId ? findPersistedToolCallById(ctx, call.toolCallId) : null;
@@ -812,7 +840,11 @@ function resolvePersistedWorkingDirectory(directory: unknown, baseDirectory?: st
   }
 }
 
-function applyPersistedNativeExecItem(item: NonNullable<PersistedEventPayload['item']>, ctx: PersistedParseContext): void {
+function applyPersistedNativeExecItem(
+  item: NonNullable<PersistedEventPayload['item']>,
+  timestamp: number,
+  ctx: PersistedParseContext,
+): void {
   if (item.id) {
     if (ctx.observedNativeItemIds.has(item.id)) return;
     ctx.observedNativeItemIds.add(item.id);
@@ -822,6 +854,23 @@ function applyPersistedNativeExecItem(item: NonNullable<PersistedEventPayload['i
     const toolCall = claimPersistedExecCall('WebSearch', [input], ctx);
     const webSearchResults = normalizeWebSearchResults(item.results);
     if (toolCall && webSearchResults) toolCall.webSearchResults = webSearchResults;
+    return;
+  }
+  if (item.type === 'McpToolCall') {
+    const name = normalizeCodexMCPToolName(item.server, item.tool);
+    const input = normalizeCodexMCPToolInput(item.arguments);
+    let toolCall = claimPersistedExecCall(name, [input], ctx);
+    if (toolCall) {
+      // A single-call script's output is the script's rendering of this result, not the result.
+      ctx.suppressedToolOutputIds.add(toolCall.id);
+    } else if (item.id) {
+      // Like live, an unclaimed call (opaque, ambiguous, or from a failed script) keeps its own card.
+      pushPersistedNormalizedToolCall(item.id, { name, input }, timestamp, ctx);
+      toolCall = findPersistedToolCallById(ctx, item.id);
+    }
+    if (!toolCall) return;
+    const { result, isError } = normalizeCodexMCPToolCompletion(item.status, item.result, item.error);
+    Object.assign(toolCall, { name, input, status: isError ? 'error' : 'completed', result });
     return;
   }
   const commands = [item.parsed_cmd?.[0]?.cmd, Array.isArray(item.command) ? item.command.at(-1) : item.command]
@@ -1138,8 +1187,8 @@ function processEventMsg(
         pushPersistedNormalizedToolCall(activity.id, { name: 'spawn_agent', input: { task_name: activity.agentPath } }, timestamp, ctx);
       }
       const item = payload.item;
-      if ((item?.type === 'Extension' && item.kind === 'web.search') || item?.type === 'CommandExecution') {
-        applyPersistedNativeExecItem(item, ctx);
+      if ((item?.type === 'Extension' && item.kind === 'web.search') || item?.type === 'CommandExecution' || item?.type === 'McpToolCall') {
+        applyPersistedNativeExecItem(item, timestamp, ctx);
         break;
       }
       if ((item?.type !== 'AgentMessage' && item?.type !== 'agentMessage')

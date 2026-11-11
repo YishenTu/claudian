@@ -15,6 +15,8 @@ export interface QueueStripActions {
 
 /** Renders the follow-up attached to the top of the composer; the queue owns every action. */
 export function renderQueueStrip(el: HTMLElement, view: QueueStripView | null, actions: QueueStripActions): void {
+  const active = el.ownerDocument.activeElement;
+  const focusedAction = active && el.contains(active) ? active.getAttribute('data-queue-action') : null;
   el.empty();
   if (!view) {
     el.removeClass('claudian-visible-flex');
@@ -40,17 +42,18 @@ export function renderQueueStrip(el: HTMLElement, view: QueueStripView | null, a
         text: t('chat.queue.steerNow'),
       });
       steerButton.setAttribute('type', 'button');
+      steerButton.dataset.queueAction = 'steer';
       steerButton.addEventListener('click', (event) => {
         event.stopPropagation();
         actions.steer();
       });
     }
 
-    createIconButton(actionsEl, 'pencil', t('chat.queue.edit')).addEventListener('click', (event) => {
+    createIconButton(actionsEl, 'pencil', t('chat.queue.edit'), 'edit').addEventListener('click', (event) => {
       event.stopPropagation();
       actions.edit();
     });
-    createIconButton(actionsEl, 'trash-2', t('chat.queue.discard')).addEventListener('click', (event) => {
+    createIconButton(actionsEl, 'trash-2', t('chat.queue.discard'), 'discard').addEventListener('click', (event) => {
       event.stopPropagation();
       actions.discard();
     });
@@ -58,6 +61,10 @@ export function renderQueueStrip(el: HTMLElement, view: QueueStripView | null, a
 
   el.addClass('claudian-visible-flex');
   el.removeClass('claudian-hidden');
+  if (focusedAction) {
+    Array.from(el.querySelectorAll<HTMLButtonElement>('[data-queue-action]'))
+      .find(button => button.dataset.queueAction === focusedAction)?.focus({ preventScroll: true });
+  }
 }
 
 function formatQueuedMessagePreview(message: QueuedMessage): string {
@@ -71,7 +78,7 @@ function formatQueuedMessagePreview(message: QueuedMessage): string {
   return preview;
 }
 
-function createIconButton(parentEl: HTMLElement, icon: string, label: string): HTMLElement {
+function createIconButton(parentEl: HTMLElement, icon: string, label: string, action: string): HTMLElement {
   const button = parentEl.createEl('button', {
     cls: 'claudian-queue-indicator-icon-action',
     attr: {
@@ -79,6 +86,7 @@ function createIconButton(parentEl: HTMLElement, icon: string, label: string): H
       type: 'button',
     },
   });
+  button.dataset.queueAction = action;
   setIcon(button, icon);
   return button;
 }

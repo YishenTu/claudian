@@ -10,6 +10,7 @@ function createMockCallbacks(): TabBarCallbacks {
     onTabClick: vi.fn(),
     onTabClose: vi.fn(),
     onTabLabelChange: vi.fn(),
+    onTabMove: vi.fn(),
   };
 }
 

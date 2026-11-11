@@ -31,7 +31,7 @@ export interface CodexThreadRequest {
   readonly policy: CodexPolicy;
   readonly serviceTier: string | null;
   readonly baseInstructions: string;
-  readonly persistExtendedHistory: boolean | undefined;
+  readonly persistExtendedHistory: boolean;
   readonly toolPolicy: ProviderToolPolicy;
 }
 
@@ -185,7 +185,7 @@ export class CodexThreadBinder {
         ...(request.persistExtendedHistory === false
           ? { ephemeral: true }
           : {}),
-        ...persistExtendedHistoryParam(request),
+        persistExtendedHistory: request.persistExtendedHistory,
         ...(dynamicTools.length > 0 ? { dynamicTools } : {}),
       },
     );
@@ -402,7 +402,7 @@ export class CodexThreadBinder {
           ? withLegacyToolInstructions(request.baseInstructions)
           : request.baseInstructions,
       ),
-      ...persistExtendedHistoryParam(request),
+      persistExtendedHistory: request.persistExtendedHistory,
     };
   }
 
@@ -429,12 +429,6 @@ export class CodexThreadBinder {
 
 function withLegacyToolInstructions(baseInstructions: string): string {
   return `${baseInstructions}\n\n${LEGACY_WORKSPACE_DEPENDENCY_INSTRUCTIONS}`;
-}
-
-function persistExtendedHistoryParam(request: CodexThreadRequest): { persistExtendedHistory?: boolean } {
-  return request.persistExtendedHistory !== undefined
-    ? { persistExtendedHistory: request.persistExtendedHistory }
-    : {};
 }
 
 function shouldExposeDynamicTools(policy: ProviderToolPolicy): boolean {

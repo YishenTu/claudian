@@ -1,7 +1,6 @@
 import type { Component, TFile, WorkspaceLeaf } from 'obsidian';
 
 import type { ProviderId, TitleGenerationService } from '@/core/providers/types';
-import type { ChatMessage } from '@/core/types';
 import type { TabId } from '@/features/chat/ChatFeatureHost';
 import type { TabAttention } from '@/features/chat/state/types';
 import type { TabIdentity } from '@/features/chat/tabs/TabIdentity';
@@ -56,9 +55,6 @@ export interface TabLinkedContentPort {
   reopenAutoDraft(): void;
   handleActiveFileChanged(file: TFile | null, isActiveOwner: boolean): void;
   handleActiveFileMetadataChanged(file: TFile | null): void;
-  handleRenamed(oldPath: string, newPath: string, includeDescendants?: boolean): void;
-  handleDeleted(path: string, includeDescendants?: boolean): void;
-  handleCreated(path: string): void;
 }
 
 /** Composer operations a host view drives without reaching into the composer's DOM or controls. */
@@ -125,11 +121,9 @@ export interface ChatTab {
   readonly draftModel: string | null;
   /** The user's custom name for the tab, absent when it shows its conversation title. */
   readonly label?: string;
-  /** The tab's presentation identity and projections of its attached session's activity. */
-  readonly session: { readonly hasActiveTurn: boolean };
   readonly hydrationState: TabHydrationState;
   /** Presentation reads; mutation stays with the tab's controllers. */
-  readonly state: { readonly attention: TabAttention; readonly isStreaming: boolean; readonly messages: readonly ChatMessage[] };
+  readonly state: { readonly isStreaming: boolean };
   readonly services: { readonly titleGenerationService: TitleGenerationService };
   readonly composer: TabComposerPort;
   readonly linkedContent: TabLinkedContentPort;

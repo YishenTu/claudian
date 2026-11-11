@@ -379,10 +379,6 @@ export class ProviderSettingsCoordinator {
     }
 
     const currentPermissionMode = normalizeStoredPermissionMode(permissionPolicy, settings.permissionMode, settings);
-    const derivedPermissionMode = normalizeToggleValue(
-      uiConfig.resolvePermissionMode?.(settings),
-      new Set(permissionPolicy.values),
-    );
     const savedPermissionModeValue = normalizeStoredPermissionMode(
       permissionPolicy,
       savedPermissionMode?.[providerId],
@@ -390,7 +386,6 @@ export class ProviderSettingsCoordinator {
     );
 
     const projectedPermissionMode = savedPermissionModeValue
-      ?? derivedPermissionMode
       ?? (shouldPreferCurrentProjection || settings.settingsProvider === providerId ? currentPermissionMode : undefined)
       ?? normalizeToggleValue(permissionPolicy.defaultValue, new Set(permissionPolicy.values))
       ?? currentPermissionMode;

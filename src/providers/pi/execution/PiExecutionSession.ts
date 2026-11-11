@@ -227,7 +227,6 @@ implements ProviderExecutionSession, SteerableExecutionSession {
   private forkMaterializationFlight: Promise<void> | null = null;
   private kernel: PiExecutionKernel | null = null;
   private kernelGeneration = 0;
-  private processKey: string | null = null;
   private readonly kernelSessionTargets = new Set<string>();
   private kernelResumeValidationTarget: string | null = null;
   /** A kernel resumed by session target has not yet been aligned with the shown turn leaf. */
@@ -933,7 +932,6 @@ implements ProviderExecutionSession, SteerableExecutionSession {
     this.kernel = kernel;
     this.#kernelSettlement = null;
     this.#kernelModel = null;
-    this.processKey = launchSpec.processKey;
     this.kernelResumeValidationTarget = launchSpec.sessionTarget;
     this.#alignResumedLeaf = !!launchSpec.sessionTarget;
     this.#replaceKernelSessionTargets(launchSpec.sessionTarget);
@@ -1461,7 +1459,6 @@ implements ProviderExecutionSession, SteerableExecutionSession {
       kernel.getStderrSnapshot(),
     );
     this.kernel = null;
-    this.processKey = null;
     this.kernelResumeValidationTarget = null;
     this.kernelSessionTargets.clear();
     if (!this.#hasNativeSessionState() && !this.#shouldDisableNativePersistence()) {
@@ -1839,7 +1836,7 @@ implements ProviderExecutionSession, SteerableExecutionSession {
   }
 
   #canReuseKernel(launchSpec: PiLaunchSpec): boolean {
-    if (!this.kernel || this.processKey !== launchSpec.processKey) return false;
+    if (!this.kernel || this.kernel.launchSpec.processKey !== launchSpec.processKey) return false;
     return launchSpec.sessionTarget
       ? this.kernelSessionTargets.has(launchSpec.sessionTarget)
       : this.kernelSessionTargets.size === 0;
@@ -1859,7 +1856,6 @@ implements ProviderExecutionSession, SteerableExecutionSession {
     if (this.shutdownPromise) return this.shutdownPromise;
     const kernel = this.kernel;
     this.kernel = null;
-    this.processKey = null;
     this.kernelResumeValidationTarget = null;
     this.kernelSessionTargets.clear();
     this.kernelGeneration += 1;

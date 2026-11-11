@@ -1,13 +1,12 @@
 import { buildSDKMessage } from '@test/helpers/sdkMessages';
 
 import { encodeSessionMessage } from '@/core/session-tools/sessionMessageEnvelope';
-import { TOOL_TODO_WRITE } from '@/core/tools/toolNames';
 import { ClaudeExecutionEventNormalizer } from '@/providers/claude/execution/ClaudeExecutionEventNormalizer';
 import { parseSDKMessageToChat } from '@/providers/claude/history/sdkMessageParsing';
 
 const msg = buildSDKMessage;
 
-describe('ClaudeExecutionEventNormalizer task tools', () => {
+describe('ClaudeExecutionEventNormalizer tool calls', () => {
   it('maps Linux file input and patch paths at the neutral event boundary', () => {
     const normalizer = new ClaudeExecutionEventNormalizer();
     const executionTarget = { method: 'wsl', platformFamily: 'unix', platformOs: 'linux', distroName: 'Ubuntu' } as const;
@@ -32,65 +31,7 @@ describe('ClaudeExecutionEventNormalizer task tools', () => {
     }) }));
   });
 
-  it('shares task snapshots between native turn channels and clears them for a new session', () => {
-    const normalizer = new ClaudeExecutionEventNormalizer();
-    const create = (id: string, subject: string) => msg({ type: 'assistant', message: {
-      content: [{ type: 'tool_use', id, name: 'TaskCreate', input: { subject } }],
-    } });
-    normalizer.normalize(msg({ type: 'system', subtype: 'init', session_id: 'session-one' }), 'requested');
-    normalizer.normalize(create('create-first', 'First task'), 'requested');
-    normalizer.normalize(msg({ type: 'user', tool_use_result: { task: { id: '1', subject: 'First task' } },
-      message: { content: [{ type: 'tool_result', tool_use_id: 'create-first', content: 'Created' }] } }), 'requested');
-    normalizer.reset('requested');
-    // Reinitialization of the same native session does not replace its task list.
-    normalizer.normalize(msg({ type: 'system', subtype: 'init', session_id: 'session-one' }), 'background');
-    const continued = normalizer.normalize(msg({ type: 'assistant', message: {
-      content: [{ type: 'tool_use', id: 'update-background', name: 'TaskUpdate', input: { taskId: '1', status: 'in_progress' } }],
-    } }), 'background');
-    expect(continued).toContainEqual(expect.objectContaining({ type: 'output', event: expect.objectContaining({
-      type: 'tool_started', name: TOOL_TODO_WRITE,
-      input: { todos: [{ id: '1', content: 'First task', activeForm: 'First task', status: 'in_progress' }] },
-    }) }));
-    normalizer.normalize(msg({ type: 'user', tool_use_result: { success: true, taskId: '1', updatedFields: ['status'] },
-      message: { content: [{ type: 'tool_result', tool_use_id: 'update-background', content: 'Updated' }] } }), 'background');
-    normalizer.reset('requested');
-    normalizer.reset('background');
-    const retained = normalizer.normalize(msg({ type: 'assistant', message: {
-      content: [{ type: 'tool_use', id: 'get-retained', name: 'TaskGet', input: { taskId: '1' } }],
-    } }), 'requested');
-    expect(retained).toContainEqual(expect.objectContaining({ type: 'output', event: expect.objectContaining({
-      type: 'tool_started', input: { todos: [{ id: '1', content: 'First task', activeForm: 'First task', status: 'in_progress' }] },
-    }) }));
-    normalizer.normalize(msg({ type: 'system', subtype: 'init', session_id: 'session-two' }), 'requested');
-    const fresh = normalizer.normalize(create('create-second', 'Second task'), 'requested');
-    expect(fresh).toContainEqual(expect.objectContaining({ type: 'output', event: expect.objectContaining({
-      type: 'tool_started', name: TOOL_TODO_WRITE,
-      input: { todos: [{ content: 'Second task', activeForm: 'Second task', status: 'pending' }] },
-    }) }));
-  });
-
-  it.each([false, true])('retains a confirmed background deletion when retiring an earlier requested preview (status change: %s)', statusChange => {
-    const normalizer = new ClaudeExecutionEventNormalizer();
-    normalizer.normalize(msg({ type: 'system', subtype: 'init', session_id: 'task-session' }), 'requested');
-    normalizer.normalize(msg({ type: 'assistant', message: { content: [{ type: 'tool_use', id: 'read-before', name: 'TaskList', input: {} }] } }), 'requested');
-    normalizer.normalize(msg({ type: 'user', tool_use_result: { tasks: [{ id: '1', subject: 'Deleted task', status: 'pending' }] },
-      message: { content: [{ type: 'tool_result', tool_use_id: 'read-before', content: 'One task' }] } }), 'requested');
-    for (const [channel, id] of [['requested', 'old-delete'], ['background', 'confirmed-delete']] as const) {
-      normalizer.normalize(msg({ type: 'assistant', message: { content: [{ type: 'tool_use', id, name: 'TaskUpdate', input: { taskId: '1', status: 'deleted' } }] } }), channel);
-    }
-    normalizer.normalize(msg({ type: 'user', tool_use_result: { success: true, taskId: '1', updatedFields: ['status'],
-      ...(statusChange ? { statusChange: { from: 'pending', to: 'deleted' } } : {}) },
-      message: { content: [{ type: 'tool_result', tool_use_id: 'confirmed-delete', content: 'Deleted' }] } }), 'background');
-
-    normalizer.reset('requested');
-
-    const next = normalizer.normalize(msg({ type: 'assistant', message: { content: [{ type: 'tool_use', id: 'inspect-after', name: 'TaskList', input: {} }] } }), 'background');
-    expect(next).toContainEqual(expect.objectContaining({ type: 'output', event: expect.objectContaining({
-      type: 'tool_started', input: { todos: [] },
-    }) }));
-  });
-
-  it('does not add subagent task mutations to the main TodoWrite list', () => {
+  it('passes a subagent tool call through under its native name and subagent scope', () => {
     const normalizer = new ClaudeExecutionEventNormalizer();
     const events = normalizer.normalize(msg({
       type: 'assistant',
@@ -113,10 +54,6 @@ describe('ClaudeExecutionEventNormalizer task tools', () => {
         name: 'TaskCreate',
         toolScope: { kind: 'subagent', subagentId: 'agent-1' },
       }),
-    }));
-    expect(events).not.toContainEqual(expect.objectContaining({
-      type: 'output',
-      event: expect.objectContaining({ name: TOOL_TODO_WRITE }),
     }));
   });
 });

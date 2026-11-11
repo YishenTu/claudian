@@ -1,5 +1,6 @@
 /** @vitest-environment jsdom */
 import { axe } from '@test/helpers/accessibility';
+import { firePointer } from '@test/helpers/dom/pointer';
 import { testDate } from '@test/helpers/testClock';
 import { createEvent, fireEvent, within } from '@testing-library/dom';
 import { Menu } from 'obsidian';
@@ -35,6 +36,7 @@ function setup(items: TabBarItem[] = [item(), item({ id: 'tab-2', index: 2, titl
     onTabClick: vi.fn(),
     onTabClose: vi.fn(),
     onTabLabelChange: vi.fn(),
+    onTabMove: vi.fn(),
     onDisplayStateChanged: vi.fn(),
   };
   const tabBar = new TabBar(container, callbacks);
@@ -55,6 +57,21 @@ function chooseMenuItem(menu: MockMenu, title: string): void {
   const entry = menu.items.find(menuItem => menuItem.title === title);
   if (!entry?.clickHandler) throw new Error(`Missing menu item: ${title}`);
   entry.clickHandler();
+}
+
+/** Lays badges out 24px apart, since jsdom has no layout. */
+function layOut(badges: HTMLElement[]): void {
+  badges.forEach((badge, index) => {
+    badge.getBoundingClientRect = () => DOMRect.fromRect({ x: index * 28, y: 0, width: 24, height: 24 });
+  });
+}
+
+function threeItems(overrides: Partial<TabBarItem> = {}): TabBarItem[] {
+  return [
+    item(overrides),
+    item({ id: 'tab-2', index: 2, title: 'Second session', ...overrides }),
+    item({ id: 'tab-3', index: 3, title: 'Third session', ...overrides }),
+  ];
 }
 
 function menuTitles(menu: MockMenu): string[] {
@@ -80,12 +97,12 @@ describe('TabBar tab labels', () => {
 
     const menu = openMenu(closeable);
     expect(callbacks.onTabClose).not.toHaveBeenCalled();
-    expect(menuTitles(menu)).toEqual(['Rename tab…', 'Show title', 'Close tab']);
+    expect(menuTitles(menu)).toEqual(['Rename tab…', 'Show title', 'Move right', 'Close tab']);
     chooseMenuItem(menu, 'Close tab');
     expect(callbacks.onTabClose).toHaveBeenCalledWith('tab-1');
 
     const pinned = ui.getByRole('button', { name: 'Pinned session, idle' });
-    expect(menuTitles(openMenu(pinned))).toEqual(['Rename tab…', 'Show title']);
+    expect(menuTitles(openMenu(pinned))).toEqual(['Rename tab…', 'Show title', 'Move left']);
   });
 
   it('renders whole localized badge names for every status without translating titles or labels', () => {
@@ -205,7 +222,7 @@ describe('TabBar tab labels', () => {
     ]);
     expect(ui.getByRole('button', { name: /^Second/ })).toBe(second);
     expect(ui.getByRole('button', { name: /^Refactor/ })).toBe(first);
-    expect(second.className).toBe('claudian-tab-badge claudian-tab-badge-active');
+    expect(second.classList.contains('claudian-tab-badge-active')).toBe(true);
     expect(first.textContent).toBe('3');
 
     tabBar.update([item({ index: 1 })]);
@@ -310,7 +327,7 @@ describe('TabBar tab labels', () => {
     tabBar.update([item(), item({ id: 'tab-2', index: 2, title: 'Second session', label: 'Docs' })]);
     expect(ui.getByRole('button', { name: /^Docs/ }).textContent).toBe('2');
     const menu = openMenu(ui.getByRole('button', { name: /^Docs/ }));
-    expect(menuTitles(menu)).toEqual(['Rename tab…', 'Reset tab name', 'Show name', 'Close tab']);
+    expect(menuTitles(menu)).toEqual(['Rename tab…', 'Reset tab name', 'Show name', 'Move left', 'Close tab']);
     chooseMenuItem(menu, 'Reset tab name');
     expect(callbacks.onTabLabelChange).toHaveBeenLastCalledWith('tab-2', null);
   });
@@ -425,6 +442,22 @@ describe('TabBar tab labels', () => {
     expect(callbacks.onDisplayStateChanged).toHaveBeenCalledTimes(4);
   });
 
+  it('moves a tab one position from the menu, emitting the tab it moves before', () => {
+    const { callbacks, ui } = setup([
+      item(),
+      item({ id: 'tab-2', index: 2, title: 'Second session' }),
+      item({ id: 'tab-3', index: 3, title: 'Third session' }),
+    ]);
+    const middle = ui.getByRole('button', { name: /^Second/ });
+
+    chooseMenuItem(openMenu(middle), 'Move left');
+    expect(callbacks.onTabMove).toHaveBeenLastCalledWith('tab-2', 'tab-1');
+    chooseMenuItem(openMenu(middle), 'Move right');
+    expect(callbacks.onTabMove).toHaveBeenLastCalledWith('tab-2', null);
+    chooseMenuItem(openMenu(ui.getByRole('button', { name: /^Refactor/ })), 'Move right');
+    expect(callbacks.onTabMove).toHaveBeenLastCalledWith('tab-1', 'tab-3');
+  });
+
   it('starts renaming the requested tab from a command', () => {
     const { tabBar, ui } = setup();
 
@@ -434,5 +467,101 @@ describe('TabBar tab labels', () => {
     const input = ui.getByRole('textbox', { name: 'Tab name' }) as HTMLInputElement;
     expect(input.placeholder).toBe('Second session');
     expect(document.activeElement).toBe(input);
+  });
+});
+
+describe('TabBar live sorting', () => {
+  beforeEach(() => { vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] }); });
+  // A release's click swallow ends on a timer; run it so it cannot reach the next test's clicks.
+  afterEach(async () => {
+    await vi.runOnlyPendingTimersAsync();
+    vi.useRealTimers();
+  });
+
+  it('slides the other tabs aside while a tab is dragged, holding refreshes until the drop', async () => {
+    const { callbacks, tabBar, ui } = setup(threeItems());
+    const [first, second, third] = ui.getAllByRole('button');
+    layOut([first, second, third]);
+    const offsets = () => [first, second, third].map(badge => badge.style.transform);
+
+    firePointer('pointerDown', first, 0, 10);
+    firePointer('pointerMove', document, 0, 40);
+    expect(offsets()).toEqual(['translateX(30px)', 'translateX(-28px)', '']);
+    // A streaming refresh mid-drag waits, so the badges under the pointer stay put.
+    tabBar.update(threeItems({ isWorking: true }));
+    expect(third.classList.contains('claudian-tab-badge-streaming')).toBe(false);
+    firePointer('pointerMove', document, 0, 90);
+    expect(offsets()).toEqual(['translateX(56px)', 'translateX(-28px)', 'translateX(-28px)']);
+    firePointer('pointerUp', document, 0, 90);
+    fireEvent.click(first);
+
+    expect(callbacks.onTabMove).toHaveBeenCalledExactlyOnceWith('tab-1', null);
+    expect(callbacks.onTabClick).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(third.classList.contains('claudian-tab-badge-streaming')).toBe(true);
+    expect(offsets()).toEqual(['', '', '']);
+    // Only the release's own click is swallowed.
+    fireEvent.click(first);
+    expect(callbacks.onTabClick).toHaveBeenCalledExactlyOnceWith('tab-1');
+  });
+
+  it('moves a tab before the one it is dragged past toward the start', async () => {
+    const { callbacks, ui } = setup(threeItems());
+    const [first, second, third] = ui.getAllByRole('button');
+    layOut([first, second, third]);
+
+    firePointer('pointerDown', third, 0, 60);
+    firePointer('pointerMove', document, 0, 46);
+    expect([first, second, third].map(badge => badge.style.transform)).toEqual(['', 'translateX(28px)', 'translateX(-14px)']);
+    firePointer('pointerUp', document, 0, 46);
+    expect(callbacks.onTabMove).toHaveBeenCalledExactlyOnceWith('tab-3', 'tab-2');
+    fireEvent.click(third);
+    expect(callbacks.onTabClick).not.toHaveBeenCalled();
+  });
+
+  it('lifts a pressed tab whose badge the bar refreshed before the drag began', () => {
+    const { callbacks, tabBar, ui } = setup(threeItems());
+    const [first, second, third] = ui.getAllByRole('button');
+    layOut([first, second, third]);
+
+    firePointer('pointerDown', first, 0, 10);
+    tabBar.update(threeItems({ isWorking: true }));
+    firePointer('pointerMove', document, 0, 40);
+    expect([first, second, third].map(badge => badge.style.transform)).toEqual(['translateX(30px)', 'translateX(-28px)', '']);
+    firePointer('pointerUp', document, 0, 40);
+    expect(callbacks.onTabMove).toHaveBeenCalledExactlyOnceWith('tab-1', 'tab-3');
+  });
+
+  it('keeps clicks, Escape and renames free of drags', async () => {
+    const { callbacks, tabBar, ui } = setup(threeItems());
+    const [first, second, third] = ui.getAllByRole('button');
+    layOut([first, second, third]);
+    const offsets = () => [first, second, third].map(badge => badge.style.transform);
+
+    // A press that barely moves is a click.
+    firePointer('pointerDown', second, 0, 30);
+    firePointer('pointerMove', document, 0, 32);
+    firePointer('pointerUp', document, 0, 32);
+    fireEvent.click(second);
+    expect(callbacks.onTabClick).toHaveBeenCalledExactlyOnceWith('tab-2');
+
+    // Escape cancels a lifted drag before the view's Escape chain can reach the turn.
+    firePointer('pointerDown', first, 0, 10);
+    firePointer('pointerMove', document, 0, 40);
+    expect(offsets()).not.toEqual(['', '', '']);
+    expect(tabBar.handleEscape()).toBe(true);
+    expect(offsets()).toEqual(['', '', '']);
+    firePointer('pointerUp', document, 0, 40);
+    fireEvent.click(first);
+    expect(callbacks.onTabClick).toHaveBeenCalledOnce();
+    expect(tabBar.handleEscape()).toBe(false);
+    await vi.advanceTimersByTimeAsync(0);
+
+    tabBar.beginRename('tab-2');
+    firePointer('pointerDown', first, 0, 10);
+    firePointer('pointerMove', document, 0, 70);
+    firePointer('pointerUp', document, 0, 70);
+    expect(offsets()).toEqual(['', '', '']);
+    expect(callbacks.onTabMove).not.toHaveBeenCalled();
   });
 });

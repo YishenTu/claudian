@@ -184,3 +184,37 @@ export function beginInlineRenameNextFrame(
     beginRename(targetItem);
   }, container.ownerDocument.defaultView);
 }
+
+/**
+ * Reports `input`'s query to `onQuery` once per committed change. IME composition holds the query until it commits,
+ * and `state.composing` tells Escape and re-rendering that the composition owns the field.
+ */
+export function bindSessionSearchInput(
+  input: HTMLInputElement,
+  state: { composing: boolean },
+  onQuery: (query: string) => void,
+): void {
+  let committedCompositionValue: string | null = null;
+  input.addEventListener('compositionstart', () => {
+    state.composing = true;
+    committedCompositionValue = null;
+  });
+  input.addEventListener('compositionend', () => {
+    state.composing = false;
+    committedCompositionValue = input.value;
+    onQuery(input.value);
+    queueMicrotask(() => {
+      committedCompositionValue = null;
+    });
+  });
+  input.addEventListener('input', (event) => {
+    if (state.composing || (event as InputEvent | undefined)?.isComposing) return;
+    // The input event that follows compositionend repeats the committed text.
+    if (committedCompositionValue === input.value) {
+      committedCompositionValue = null;
+      return;
+    }
+    committedCompositionValue = null;
+    onQuery(input.value);
+  });
+}

@@ -51,6 +51,34 @@ async function writeConfiguredHistory(sessionFile: string, cwd: string): Promise
 const describePosix = process.platform === 'win32' ? describe.skip : describe;
 
 describe('PiConversationHistoryService', () => {
+  it('hydrates a native partial reply and its terminal provider failure', async () => {
+    const dir = await createTempDirectory('pi-failed-history-');
+    const sessionFile = path.join(dir, 'session.jsonl');
+    const transcript = [
+      { type: 'message', id: 'u1', message: { role: 'user', content: 'Review this' } },
+      { type: 'message', id: 'a1', parentId: 'u1', message: {
+        role: 'assistant', stopReason: 'error', errorMessage: 'Provider quota exceeded', content: [
+          { type: 'thinking', thinking: 'Inspecting the input' },
+          { type: 'text', text: 'Partial answer' },
+        ],
+      } },
+    ].map(entry => JSON.stringify(entry)).join('\n');
+    await fs.writeFile(sessionFile, transcript);
+    const conversation = createConversation(sessionFile);
+
+    Object.assign(conversation, await new PiConversationHistoryService().hydrateConversationHistory(conversation, null));
+
+    expect(conversation.messages[1]).toMatchObject({
+      content: 'Partial answer\n\n**Error:** Provider quota exceeded',
+      contentBlocks: [
+        { type: 'thinking', content: 'Inspecting the input' },
+        { type: 'text', content: 'Partial answer' },
+        { type: 'text', content: '\n\n**Error:** Provider quota exceeded' },
+      ],
+    });
+    expect(await fs.readFile(sessionFile, 'utf8')).toBe(transcript);
+  });
+
   it('hydrates from providerState sessionFile', async () => {
     const dir = await createTempDirectory('pi-history-');
     const sessionFile = path.join(dir, 'session.jsonl');
@@ -652,6 +680,29 @@ describe('PiConversationHistoryService', () => {
     expect(result.providerState?.sessionId).toBe('s1');
     expect(await fs.readFile(sessionFile, 'utf8')).toBe(nativeContent);
   });
+
+  it.each(['metadata locator', 'logical session ID'] as const)(
+    'hydrates a package-selected config directory from its %s', async locator => {
+      const root = await createTempDirectory('pi-package-store-');
+      const home = path.join(root, 'home');
+      const vault = path.join(root, 'vault');
+      const packageDir = path.join(root, 'native-package');
+      await fs.mkdir(packageDir, { recursive: true });
+      await fs.writeFile(path.join(packageDir, 'package.json'), JSON.stringify({ piConfig: { configDir: '.pi-work' } }));
+      const sessionFile = path.join(home, '.pi-work', 'agent', 'sessions', 'vault', 's1.jsonl');
+      const nativeContent = await writeConfiguredHistory(sessionFile, vault);
+      const conversation = createConversation(sessionFile);
+      if (locator === 'logical session ID') conversation.providerState = { sessionId: 's1' };
+
+      const result = await new PiConversationHistoryService().hydrateConversationHistory(conversation, vault,
+        { environment: { HOME: home, USERPROFILE: home, PI_PACKAGE_DIR: packageDir } });
+
+      expect(result.messages?.map(message => message.content)).toEqual([
+        'Read the configured history', 'Configured history is intact',
+      ]);
+      expect(await fs.readFile(sessionFile, 'utf8')).toBe(nativeContent);
+    },
+  );
 
   it('anchors relative configured roots to the context launch vault when no explicit vault is supplied', async () => {
     const root = await createTempDirectory('pi-context-syntax-');

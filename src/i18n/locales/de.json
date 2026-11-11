@@ -173,7 +173,12 @@
       "resume": "Unterhaltung fortsetzen",
       "loading": "Unterhaltung wird geladen…",
       "current": "Aktuelle Sitzung",
-      "loadFailed": "Unterhaltung konnte nicht geladen werden"
+      "loadFailed": "Unterhaltung konnte nicht geladen werden",
+      "search": "Sitzungen durchsuchen",
+      "searchArchived": "Archivierte Sitzungen durchsuchen",
+      "clearSearch": "Suche löschen",
+      "showArchive": "Archivierte Sitzungen anzeigen",
+      "showSessions": "Aktive Sitzungen anzeigen"
     },
     "linkedContent": {
       "label": "Verknüpfter Inhalt:",
@@ -468,6 +473,8 @@
       "showNumber": "Nummer anzeigen",
       "showName": "Namen anzeigen",
       "showTitle": "Titel anzeigen",
+      "moveLeft": "Nach links verschieben",
+      "moveRight": "Nach rechts verschieben",
       "closeTab": "Tab schließen",
       "active": "aktiv",
       "needsInput": "deine Eingabe ist erforderlich",

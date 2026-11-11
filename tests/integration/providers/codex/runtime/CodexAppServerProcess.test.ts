@@ -71,7 +71,7 @@ describe('CodexAppServerProcess', () => {
         '/usr/bin/codex',
         ['app-server', '--listen', 'stdio://'],
         expect.objectContaining({
-          stdio: ['pipe', 'pipe', 'pipe'],
+          stdio: 'pipe',
           cwd: '/workspace',
         }),
       );
@@ -125,13 +125,12 @@ describe('CodexAppServerProcess', () => {
   });
 
   describe('stdio accessors', () => {
-    it('exposes stdin, stdout, and stderr from the spawned process', () => {
+    it('exposes stdin and stdout from the spawned process', () => {
       const server = new CodexAppServerProcess(createLaunchSpec());
       server.start();
 
       expect(server.stdin).toBe(mockProc.stdin);
       expect(server.stdout).toBe(mockProc.stdout);
-      expect(server.stderr).toBe(mockProc.stderr);
     });
 
     it('throws when accessing stdio before start', () => {
@@ -139,7 +138,6 @@ describe('CodexAppServerProcess', () => {
 
       expect(() => server.stdin).toThrow();
       expect(() => server.stdout).toThrow();
-      expect(() => server.stderr).toThrow();
     });
   });
 
