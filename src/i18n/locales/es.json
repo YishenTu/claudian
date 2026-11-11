@@ -705,7 +705,8 @@
     "acceptLabel": "Aceptar edición en línea",
     "retryFallback": "Ha ocurrido un error. Inténtalo de nuevo",
     "replyPlaceholder": "Responde para continuar…",
-    "noResponseFallback": "El agente no respondió"
+    "noResponseFallback": "El agente no respondió",
+    "followUpPlaceholder": "Pide cambios o pulsa Intro para aceptar"
   },
   "settings": {
     "tabs": {

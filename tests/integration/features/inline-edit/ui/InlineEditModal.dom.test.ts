@@ -405,8 +405,9 @@ it('previews the selected source as deleted and the replacement as inserted Mark
     block.classList.contains('claudian-diff-del') ? 'delete' : block.classList.contains('claudian-diff-ins') ? 'insert' : 'equal',
     block.textContent,
   ])).toEqual([['delete', 'hello'], ['insert', 'Hi']]));
-  // The previewed source is hidden from the editor until the edit settles.
-  expect(h.editorView.contentDOM.textContent).toBe(`${preview.textContent} world`);
+  // The previewed source is hidden from the editor until the edit settles; the composer stays above it.
+  const composer = input().closest('.claudian-inline-input-container')!;
+  expect(h.editorView.contentDOM.textContent).toBe(`${composer.textContent}${preview.textContent} world`);
 });
 
 it('releases Markdown resources when clarification previews are replaced and the edit closes', async () => {

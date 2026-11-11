@@ -705,7 +705,8 @@
     "acceptLabel": "Принять встроенное редактирование",
     "retryFallback": "Произошла ошибка. Повторите попытку",
     "replyPlaceholder": "Ответьте, чтобы продолжить…",
-    "noResponseFallback": "Агент не ответил"
+    "noResponseFallback": "Агент не ответил",
+    "followUpPlaceholder": "Попросите изменения или нажмите Enter, чтобы принять"
   },
   "settings": {
     "tabs": {

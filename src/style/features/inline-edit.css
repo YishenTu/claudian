@@ -98,7 +98,7 @@ body.claudian-selection-highlight-active ::highlight(claudian-selection) {
   padding: 0;
 }
 
-/* Clarifying question: the card's first section, above the reply row. */
+/* The agent's latest text reply: the card's first section, above the instruction row. */
 .claudian-inline-agent-reply {
   padding: 10px 12px;
   border-bottom: 1px solid var(--background-modifier-border);
@@ -109,6 +109,17 @@ body.claudian-selection-highlight-active ::highlight(claudian-selection) {
   overflow-wrap: break-word;
 }
 
+/* The instruction the reply answers, as one muted line. */
+.claudian-inline-agent-reply > p.claudian-inline-reply-instruction {
+  margin: 0 0 4px;
+  overflow: hidden;
+  color: var(--text-faint);
+  font-size: var(--font-ui-smaller, 12px);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.claudian-inline-reply-instruction + *,
 .claudian-inline-agent-reply > :first-child,
 .claudian-inline-diff-preview-body > :first-child,
 .claudian-diff-block > :first-child {

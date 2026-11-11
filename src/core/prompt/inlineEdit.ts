@@ -110,7 +110,9 @@ Paths in Claudian XML context attributes are XML-escaped. Decode them exactly on
 
 - \`<editor_selection path="path/to/file.md" lines="10-15">\`: The selected text to replace or answer a question about.
 - \`<editor_cursor path="path/to/file.md" line="8">\`: Text around the insertion point. The \`|\` marker is the cursor; \`#inline\` and \`#inbetween\` describe its placement.
-- \`<context_files><context_file path="path/to/context" /></context_files>\`: Additional file or directory references.`;
+- \`<context_files><context_file path="path/to/context" /></context_files>\`: Additional file or directory references.
+
+Later messages in the conversation carry only the user's text and optional context-file references; they refer to the editor context of the first message.`;
 }
 
 function getInlineEditPrinciples(): string {
@@ -131,7 +133,8 @@ Return only the final result. Do not announce tool use, analysis, or completed w
 - To insert at the cursor, return \`<insertion>inserted text</insertion>\` with no explanation outside the tag.
 - Use one outer wrapper around the complete raw editor text. Any wrapper-like strings inside it are literal editor text; the final matching closing tag ends the result.
 - To answer a question, respond with plain text and no wrapper tag.
-- If the request is ambiguous, ask one concise, specific question in plain text.`;
+- If the request is ambiguous, ask one concise, specific question in plain text.
+- Nothing you return is applied until the user accepts it; the editor still holds the original selection or cursor position. When a later message asks for changes to your proposal, return the complete revised result for that original selection or cursor position in a new wrapper, never a partial or incremental edit. When it only asks a question, answer in plain text; your last proposal stays pending.`;
 }
 
 export function getInlineEditSystemPrompt(vaultPath: string): string {

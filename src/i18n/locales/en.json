@@ -705,7 +705,8 @@
     "acceptLabel": "Accept inline edit",
     "retryFallback": "Error - try again",
     "replyPlaceholder": "Reply to continue...",
-    "noResponseFallback": "No response from agent"
+    "noResponseFallback": "No response from agent",
+    "followUpPlaceholder": "Ask for changes, or press Enter to accept"
   },
   "settings": {
     "tabs": {

@@ -705,7 +705,8 @@
     "acceptLabel": "인라인 편집 수락",
     "retryFallback": "오류가 발생했습니다. 다시 시도하세요",
     "replyPlaceholder": "계속하려면 답장하세요…",
-    "noResponseFallback": "에이전트가 응답하지 않았습니다"
+    "noResponseFallback": "에이전트가 응답하지 않았습니다",
+    "followUpPlaceholder": "변경을 요청하거나 Enter를 눌러 수락"
   },
   "settings": {
     "tabs": {
