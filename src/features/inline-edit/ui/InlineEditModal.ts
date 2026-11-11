@@ -456,11 +456,11 @@ export class InlineEditSession {
     }
 
     // !e.isComposing: skip during IME composition (Chinese, Japanese, Korean, etc.)
-    // Bubble phase, so the instruction's suggestion menu and the model menu close on Escape first; an
-    // Escape one of them consumed leaves the edit open.
+    // Bubble phase, so the instruction's suggestion menu and the model menu close on Escape first and
+    // stop it there. The note editor's own keymap also handles Escape, so a handled event still rejects.
     const ownerDocument = this.getOwnerDocument();
     const onKeydown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !e.isComposing && !e.defaultPrevented && this.isKeyboardEventInContext(e)) {
+      if (e.key === 'Escape' && !e.isComposing && this.isKeyboardEventInContext(e)) {
         this.reject();
       }
     };
@@ -1191,6 +1191,8 @@ export class InlineEditSession {
 
   private handleKeydown(e: KeyboardEvent) {
     if (this.inputResources?.dropdown.handleKeydown(e)) {
+      // An Escape that closed the suggestion menu ends there instead of also rejecting the edit.
+      if (e.key === 'Escape') e.stopPropagation();
       return;
     }
 

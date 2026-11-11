@@ -1,5 +1,6 @@
 /** @vitest-environment jsdom */
-import { EditorState } from '@codemirror/state';
+import { EditorState, StateEffect } from '@codemirror/state';
+import { keymap } from '@codemirror/view';
 import { axe } from '@test/helpers/accessibility';
 import {
   createInlineEditHarness as createHarness,
@@ -731,6 +732,16 @@ it.each(['drafting', 'reviewing'] as const)('closes the composer suggestion menu
   expect(menu.classList.contains('is-visible')).toBe(false);
   expect(h.settled).not.toHaveBeenCalled();
   fireEvent.keyDown(input(), { key: 'Escape' });
+  expect(h.settled.mock.calls).toEqual([[{ decision: 'reject' }]]);
+});
+
+it('rejects on Escape in a note editor whose own keymap handles Escape', async () => {
+  const h = await createHarness();
+  // Obsidian's editor binds Escape, so CodeMirror marks the event handled before it bubbles to the document.
+  h.editorView.dispatch({ effects: StateEffect.appendConfig.of(keymap.of([{ key: 'Escape', run: () => true }])) });
+  h.createSession().show();
+  h.editorView.contentDOM.focus();
+  expect(fireEvent.keyDown(h.editorView.contentDOM, { key: 'Escape' })).toBe(false);
   expect(h.settled.mock.calls).toEqual([[{ decision: 'reject' }]]);
 });
 
