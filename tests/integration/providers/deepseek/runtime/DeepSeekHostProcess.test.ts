@@ -252,10 +252,12 @@ describe('native Host process', () => {
 
   it('stops a Host that never becomes ready when startup is cancelled or times out', async () => {
     const cancel = new AbortController();
-    const cancelled = start('hang', {}, cancel.signal);
+    const cancelled = start('hang', { FAKE_DSH_INTERRUPTS: join(root, 'interrupts.log') }, cancel.signal);
     const first = await launched();
     cancel.abort();
     await expect(cancelled).rejects.toThrow('DeepSeek startup cancelled.');
+    // An abandoned startup still releases native's locks through its own interrupt rather than a kill.
+    expect(await readFile(join(root, 'interrupts.log'), 'utf8')).toBe(`${JSON.stringify({ pid: first.pid, by: 'owner' })}\n`);
     await expectGone(first);
 
     await rm(log);

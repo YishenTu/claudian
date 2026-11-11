@@ -370,7 +370,9 @@ it('applies an explicit model and reasoning to the new session before its first 
   const h = (await setup());
   expect(await h.binding.port.send({ text: 'New task', provider: 'claude', model: 'claude-sonnet-4-5', reasoning: 'low' }, signal()))
     .toEqual({ sessionId: 'created', title: 'created', provider: 'claude', status: 'started' });
-  expect(h.host.createConversation).toHaveBeenCalledWith({ providerId: 'claude', selectedModel: 'claude-code/claude-sonnet-4-5' });
+  expect(h.host.createConversation).toHaveBeenCalledWith({
+    providerId: 'claude', selectedModel: 'claude-code/claude-sonnet-4-5', origin: { kind: 'session-tool', conversationId: 'sender' },
+  });
   await waitFor(() => expect(h.backend.sessions[0]?.requests).toHaveLength(1));
   expect(modelChoice(h.backend.latest.requests[0])).toEqual({ model: 'claude-code/claude-sonnet-4-5', reasoning: 'low' });
   // The session-owned choice does not rewrite the user's saved effort.
@@ -440,7 +442,9 @@ it('creates a headless session using the selected default without mutating the f
   const h = (await setup());
   const seed = structuredClone(h.host.settings.lastSelectedChatModel);
   expect(await h.binding.port.send({ text: 'New task' }, signal())).toEqual({ sessionId: 'created', title: 'created', provider: 'claude', status: 'started' });
-  expect(h.host.createConversation).toHaveBeenCalledWith({ providerId: 'claude', selectedModel: 'claude-code/claude-sonnet-4-5' });
+  expect(h.host.createConversation).toHaveBeenCalledWith({
+    providerId: 'claude', selectedModel: 'claude-code/claude-sonnet-4-5', origin: { kind: 'session-tool', conversationId: 'sender' },
+  });
   expect(h.host.settings.lastSelectedChatModel).toEqual(seed);
   expect(h.pool.getAttachment('created')).toBeNull();
   await waitFor(() => expect(h.backend.sessions[0]?.requests).toHaveLength(1));

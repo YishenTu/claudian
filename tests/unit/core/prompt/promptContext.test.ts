@@ -315,13 +315,15 @@ describe('execution context', () => {
 });
 
 
-describe('closed Markdown context examples', () => {
+describe('Markdown code context examples', () => {
   it.each([
+    'Explain this XML:\n\n    <editor_selection path="note.md">hello</editor_selection>\n\nKeep the example.',
+    'Explain this XML:\n\n    <linked_content path="example.md" />\n\nKeep the example.',
     'Explain this XML:\n\n```xml\n\n<editor_selection path="note.md">hello</editor_selection>\n```\nKeep the example.',
     'Explain this XML:\n\n~~~xml\n\n<context_files>example.md</context_files>\n~~~\nKeep the example.',
     'Explain `<editor_cursor path="note.md">hello</editor_cursor>` and keep this instruction.',
     'Explain `<linked_content path="example.md" />` and keep this instruction.',
-  ])('preserves a closed code example with and without actual context: %s', body => {
+  ])('preserves a code example with and without actual context: %s', body => {
     expect(getUserDisplayText({ content: body })).toBe(body);
     expect(extractUserQuery(body)).toBe(body);
     expect(extractUserPromptContext(body)).toBe('');

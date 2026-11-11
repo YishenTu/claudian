@@ -71,7 +71,7 @@ export class SessionManagerSurface {
 
   /** True while session search is composing IME input; Escape belongs to the composition. */
   get isComposing(): boolean {
-    return this.sidebar.isComposing;
+    return this.sidebar.isComposing || this.dropdown.isComposing;
   }
 
   /** Builds the dual-pane sidebar surface inside `sidebarEl`. */
@@ -111,10 +111,10 @@ export class SessionManagerSurface {
     this.sidebar.render();
   }
 
-  /** Handles Escape for inline rename and search; returns whether it was consumed. */
+  /** Handles Escape for inline rename, search, and the open dropdown; returns whether it was consumed. */
   handleEscape(): boolean {
     if (this.browser.cancelInlineRename()) return true;
-    return this.sidebar.dismissSearch();
+    return this.sidebar.dismissSearch() || this.dropdown.handleEscape();
   }
 
   /** Shows New only while another tab can be created. */
@@ -132,6 +132,7 @@ export class SessionManagerSurface {
   private setArchiveView(isArchiveView: boolean): void {
     if (this.isArchiveView === isArchiveView) return;
     this.sidebar.discardSearch();
+    this.dropdown.discardSearch();
     this.isArchiveView = isArchiveView;
     this.dropdown.markDirty();
     this.sidebar.markDirty();

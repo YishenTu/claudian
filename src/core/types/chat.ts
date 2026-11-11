@@ -8,6 +8,18 @@ export interface ForkSource {
   resumeAt: string;
 }
 
+/** How a conversation came to exist when another conversation started it. */
+export type ConversationOriginKind = 'fork' | 'session-tool';
+
+/**
+ * The conversation that started this one, written once at creation: a fork records its source, and a session
+ * created by `claudian_send_message` records its caller. Absent for sessions the user starts.
+ */
+export interface ConversationOrigin {
+  readonly kind: ConversationOriginKind;
+  readonly conversationId: string;
+}
+
 /** View type identifier for Obsidian. */
 export const VIEW_TYPE_CLAUDIAN = 'claudian-view';
 
@@ -169,6 +181,8 @@ export interface Conversation {
   readonly linkedContentPath?: string;
   /** Raw project membership; resolve it through `ProjectReader.get` before use. */
   readonly projectId?: string;
+  /** Creation-only lineage; the named conversation may since have been deleted. */
+  readonly origin?: ConversationOrigin;
   /** Whether the session is pinned in the dual-pane session manager. */
   isPinned?: boolean;
   /** Whether the session is archived and hidden from active session lists. */
@@ -188,7 +202,7 @@ export type ConversationSummary = Readonly<Pick<Conversation, 'id' | 'providerId
 
 export type ConversationMutablePatch = Partial<Omit<
   Conversation,
-  'id' | 'providerId' | 'createdAt' | 'linkedContentPath' | 'projectId'
+  'id' | 'providerId' | 'createdAt' | 'linkedContentPath' | 'projectId' | 'origin'
 >>;
 
 /**
@@ -223,6 +237,8 @@ export interface ConversationMeta {
   linkedContentPath?: string;
   /** Raw project membership; resolve it through `ProjectReader.get` before use. */
   projectId?: string;
+  /** Creation-only lineage; the named conversation may since have been deleted. */
+  origin?: ConversationOrigin;
   /** Whether the session is pinned in the dual-pane session manager. */
   isPinned?: boolean;
   /** Whether the session is archived and hidden from active session lists. */
@@ -256,6 +272,7 @@ export interface SessionMetadata {
   modelRecoverySource?: ConversationModelRecoverySource;
   linkedContentPath?: string;
   projectId?: string;
+  origin?: ConversationOrigin;
   isPinned?: boolean;
   isArchived?: boolean;
   usage?: UsageInfo;

@@ -53,7 +53,8 @@ export class SideChatController {
   #fullHeightHost: HTMLElement | null = null;
   #mainPlaceholder: string | null = null;
   #startSequence = 0;
-  #starting = false;
+  /** The start that owns the side chat until it settles; discard or shutdown supersede it at once. */
+  #startingSequence: number | null = null;
   #startingCommand: SideChatCommandSubmission | null = null;
   #pendingStart: Promise<boolean> | null = null;
   #previewActive = false;
@@ -92,7 +93,11 @@ export class SideChatController {
     return this.#runtime !== null && this.isExpanded ? 'side' : 'main';
   }
 
-  get isWorking(): boolean { return this.#starting || (this.#runtime?.isWorking ?? false); }
+  get isWorking(): boolean { return this.#isStarting || (this.#runtime?.isWorking ?? false); }
+
+  get #isStarting(): boolean {
+    return this.#startingSequence !== null && this.#startingSequence === this.#startSequence;
+  }
 
   get runtime(): SideChatRuntime | null {
     return this.#runtime;
@@ -135,7 +140,7 @@ export class SideChatController {
       return false;
     }
     if (this.#disposed) return false;
-    if (this.#starting && !this.#runtime) {
+    if (this.#isStarting && !this.#runtime) {
       new Notice(t('chat.sideChat.alreadyExists'));
       return false;
     }
@@ -206,7 +211,7 @@ export class SideChatController {
   }
 
   async discard(): Promise<void> {
-    if (!this.#runtime && !this.#panel && !this.#starting) return;
+    if (!this.#runtime && !this.#panel && !this.#isStarting) return;
     this.#startSequence += 1;
     this.#startingCommand?.cancel();
     const pendingStart = this.#pendingStart;
@@ -260,7 +265,7 @@ export class SideChatController {
   ): Promise<boolean> {
     const parent = this.deps.parent;
     const sequence = ++this.#startSequence;
-    this.#starting = true;
+    this.#startingSequence = sequence;
     this.deps.onStatusChanged?.();
     let transferred = false;
     try {
@@ -300,7 +305,7 @@ export class SideChatController {
         command.cancel();
         await command.settled;
       }
-      this.#starting = false;
+      if (this.#startingSequence === sequence) this.#startingSequence = null;
       this.deps.onStatusChanged?.();
     }
   }

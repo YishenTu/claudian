@@ -8,7 +8,6 @@ import {
   mkdirSync,
   promises as fsPromises,
   readFileSync,
-  rmSync,
 } from 'fs';
 import { assertRuntimeDependencyParity } from './scripts/runtimeDependencyParity.mjs';
 import rendererSafeUnrefHelpers from './scripts/rendererSafeUnref.js';
@@ -171,8 +170,6 @@ const copyToObsidian = {
   setup(build) {
     build.onEnd((result) => {
       if (result.errors.length > 0) return;
-      rmSync(path.join(process.cwd(), '.codex-vendor'), { recursive: true, force: true });
-
       if (!OBSIDIAN_PLUGIN_PATH) return;
 
       if (!existsSync(OBSIDIAN_PLUGIN_PATH)) {
@@ -186,9 +183,6 @@ const copyToObsidian = {
           console.log(`Copied ${file} to Obsidian plugin folder`);
         }
       }
-
-      const pluginVendorRoot = path.join(OBSIDIAN_PLUGIN_PATH, '.codex-vendor');
-      rmSync(pluginVendorRoot, { recursive: true, force: true });
     });
   }
 };

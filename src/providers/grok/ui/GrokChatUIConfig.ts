@@ -8,9 +8,6 @@ export const grokChatUIConfig: ProviderChatUIConfig = {
   getPermissionModeOptions() {
     return GROK_PERMISSION_MODE_OPTIONS;
   },
-  getModeSelector(): null {
-    return null;
-  },
   getProviderIcon() {
     return GROK_PROVIDER_ICON;
   },

@@ -8,6 +8,8 @@ export {
   type ConversationMeta,
   type ConversationModelRecoverySource,
   type ConversationMutablePatch,
+  type ConversationOrigin,
+  type ConversationOriginKind,
   type ConversationPlacement,
   type ConversationSummary,
   type ExecutionInputContextSnapshot,

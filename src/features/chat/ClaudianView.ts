@@ -5,11 +5,11 @@ import { StartupProfiler } from '@/core/performance/StartupProfiler';
 import { getHiddenCommandSet } from '@/core/providers/commands/hiddenCommands';
 import { DEFAULT_CHAT_PROVIDER_ID, type ProviderId } from '@/core/providers/types';
 import { VIEW_TYPE_CLAUDIAN } from '@/core/types';
-import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
+import type { ChatFeatureHost, TabId } from '@/features/chat/ChatFeatureHost';
 import { SessionManagerSurface, setControlAvailability } from '@/features/chat/session-manager/SessionManagerSurface';
 import { SessionNavigation } from '@/features/chat/session-manager/SessionNavigation';
 import { getSessionProviderId } from '@/features/chat/sessions/sessionProvider';
-import type { ChatTab, TabId } from '@/features/chat/tabs/ChatTab';
+import type { ChatTab } from '@/features/chat/tabs/ChatTab';
 import { inheritedDraftSeed } from '@/features/chat/tabs/draftSeed';
 import { TabWorkspaceLifecycle } from '@/features/chat/tabs/persistence/TabWorkspaceLifecycle';
 import { TabBar } from '@/features/chat/tabs/TabBar';
@@ -28,6 +28,7 @@ import {
 import { ChatPresentationPlacement } from '@/features/chat/view/ChatPresentationPlacement';
 import { DualPaneLayout, type DualPaneLayoutElements } from '@/features/chat/view/DualPaneLayout';
 import type { ZenModeSlots, ZenModeSource, ZenPresentationPort } from '@/features/chat/zen/types';
+import { t } from '@/i18n/i18n';
 import { VaultMentionDataProvider } from '@/shared/mention/VaultMentionDataProvider';
 
 type LoadableView = {
@@ -113,7 +114,7 @@ export class ClaudianView extends ItemView implements ZenModeSource {
         // Restore enters wide itself; afterwards entering wide unloads the narrow tabs.
         if (!this.tabWorkspace.isReady) return;
         void this.tabManager?.viewerSlot.enter()
-          .catch(() => new Notice('Failed to show the session in the wide layout'));
+          .catch(() => new Notice(t('chat.tabNavigation.showWideFailed')));
       },
       renderSidebar: () => this.sessions.renderSidebar(),
       onLeaveWideRequested: () => this.sessions.leaveWide(),
@@ -306,6 +307,13 @@ export class ClaudianView extends ItemView implements ZenModeSource {
           if (isTabWorkspaceInitialized()) this.updateTabBar();
           persist();
         },
+        onTabOrderChanged: () => {
+          if (isTabWorkspaceInitialized()) {
+            this.updateTabBar();
+            this.notifyConversationNavigationChanged();
+          }
+          persist();
+        },
         onTabWorkChanged: () => {
           if (isTabWorkspaceInitialized()) {
             this.updateTabBar();
@@ -429,6 +437,7 @@ export class ClaudianView extends ItemView implements ZenModeSource {
         void this.handleTabClose(tabId);
       },
       onTabLabelChange: (tabId, label) => this.tabManager?.setTabLabel(tabId, label),
+      onTabMove: (tabId, beforeTabId) => this.tabManager?.moveTab(tabId, beforeTabId),
       onDisplayStateChanged: () => this.tabWorkspace.persist(),
     });
 
@@ -439,7 +448,7 @@ export class ClaudianView extends ItemView implements ZenModeSource {
       attr: { type: 'button' },
     });
     setIcon(this.newTabButtonEl, 'square-plus');
-    this.newTabButtonEl.setAttribute('aria-label', 'New tab');
+    this.newTabButtonEl.setAttribute('aria-label', t('chat.tabNavigation.newTab'));
     this.newTabButtonEl.addEventListener('click', () => this.requestNewTab());
 
     const newBtn = navActionsEl.createEl('button', {
@@ -447,7 +456,7 @@ export class ClaudianView extends ItemView implements ZenModeSource {
       attr: { type: 'button' },
     });
     setIcon(newBtn, 'square-pen');
-    newBtn.setAttribute('aria-label', 'New conversation');
+    newBtn.setAttribute('aria-label', t('chat.tabNavigation.newConversation'));
     newBtn.addEventListener('click', () => this.requestNewConversation());
 
     this.sessions.mountHistoryControl(navActionsEl);
@@ -462,19 +471,19 @@ export class ClaudianView extends ItemView implements ZenModeSource {
   }
 
   private requestNewTab(): void {
-    void this.createNewTab().catch(() => new Notice('Failed to create tab'));
+    void this.createNewTab().catch(() => new Notice(t('chat.tabNavigation.createTabFailed')));
   }
 
   private requestNewConversation(): void {
     void (async () => {
       await this.tabManager?.createNewConversation();
       this.sessions.invalidate();
-    })().catch(() => new Notice('Failed to create conversation'));
+    })().catch(() => new Notice(t('chat.tabNavigation.createConversationFailed')));
   }
 
   private requestDualNew(): void {
     void this.startNewConversation()
-      .catch(() => new Notice('Failed to start a new conversation'));
+      .catch(() => new Notice(t('chat.tabNavigation.startConversationFailed')));
   }
 
   /** Wide: tab commands open sessions and start drafts in the viewer slot; compact: in the tab. */
@@ -541,7 +550,7 @@ export class ClaudianView extends ItemView implements ZenModeSource {
   private handleTabClick(tabId: TabId): void {
     const switched = this.tabManager?.switchToTab(tabId);
     if (switched) {
-      void switched.catch(() => new Notice('Failed to switch tab'));
+      void switched.catch(() => new Notice(t('chat.tabNavigation.switchFailed')));
     }
   }
 
@@ -550,7 +559,7 @@ export class ClaudianView extends ItemView implements ZenModeSource {
       await this.tabManager?.closeTab(tabId);
       this.updateTabBarVisibility();
     } catch {
-      new Notice('Failed to close tab');
+      new Notice(t('chat.tabNavigation.closeFailed'));
     }
   }
 
@@ -641,6 +650,7 @@ export class ClaudianView extends ItemView implements ZenModeSource {
       const activeTab = this.tabManager?.getActiveTab();
       if (this.sessions.handleEscape()) return false;
       if (this.tabBar?.handleEscape()) return false;
+      if (activeTab?.ui.navigationSidebar.handleEscape()) return false;
       // Menus also consume Escape in the capture phase; this covers a keymap that sees it first.
       if (activeTab?.composer.closeOpenMenu()) return false;
       if (!e.defaultPrevented && activeTab) {

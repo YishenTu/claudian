@@ -48,12 +48,25 @@ export interface OpencodeExecutionSessionOptions {
   readonly createKernel?: OpencodeSessionKernelFactory;
 }
 
+interface KernelEpoch {
+  retired: boolean;
+  readonly metadata: AbortController;
+}
+
+function createKernelEpoch(): KernelEpoch {
+  return { retired: false, metadata: new AbortController() };
+}
+
 /** One requested run and its live-output gate. */
 interface OpencodeActiveRun {
   readonly run: RequestedRunChannel;
   /** Between the prompt being sent and the run ending; native output outside it is not this run's. */
   liveOutput: boolean;
   accepted: boolean;
+  /**
+   * Cancellation this session accepted: unlike the channel's request, a cancel arriving after native
+   * completion leaves it false so the run still completes.
+   */
   cancellationRequested: boolean;
   nativeCompleted: boolean;
   /** Whether this run started or configured native work that cancellation must stop. */
@@ -68,9 +81,11 @@ export class OpencodeExecutionSession implements ProviderExecutionSession, Steer
   private readonly createKernel: OpencodeSessionKernelFactory;
   private activeRun: OpencodeActiveRun | null = null;
   private kernel: OpencodeSessionKernel | null = null;
-  private kernelGeneration = 0;
-  private kernelRetired = false;
-  private kernelMetadataController = new AbortController();
+  /**
+   * The kernel generation callbacks belong to. A retired epoch admits no new turn; its metadata
+   * work is aborted when it is retired, superseded, or replaced.
+   */
+  private kernelEpoch: KernelEpoch = createKernelEpoch();
 
   private kernelConfigurationKey: string | null = null;
   private kernelDisposalPromise: Promise<void> | null = null;
@@ -247,10 +262,10 @@ export class OpencodeExecutionSession implements ProviderExecutionSession, Steer
       if (
         kernel
         && native
-        && (this.kernelRetired || this.kernelConfigurationKey !== kernelConfigurationKey)
+        && (this.kernelEpoch.retired || this.kernelConfigurationKey !== kernelConfigurationKey)
       ) {
         // A new turn cannot reuse a retired generation or interrupt its descendants.
-        if (this.kernelRetired) {
+        if (this.kernelEpoch.retired) {
           await kernel.whenIdle();
           if (!this.#isRunCurrent(active, generation)) return;
         }
@@ -261,19 +276,19 @@ export class OpencodeExecutionSession implements ProviderExecutionSession, Steer
       }
       if (!kernel || !native) {
         active.ownsNativeWork = true;
-        const kernelGeneration = ++this.kernelGeneration;
-        this.kernelMetadataController = new AbortController();
+        const epoch = this.kernelEpoch = createKernelEpoch();
+        const isCurrentKernel = (): boolean => epoch === this.kernelEpoch && !this.disposed;
         kernel = this.createKernel({
           onNativeWorkChanged: () => {
-            if (kernelGeneration === this.kernelGeneration && !this.disposed) this.#releaseRetiredKernel();
+            if (isCurrentKernel()) this.#releaseRetiredKernel();
           },
           onSuperseded: () => {
-            if (kernelGeneration === this.kernelGeneration && !this.disposed) this.kernelMetadataController.abort();
+            if (isCurrentKernel()) epoch.metadata.abort();
           },
           onRetired: () => {
-            if (kernelGeneration !== this.kernelGeneration || this.disposed) return;
-            this.kernelRetired = true;
-            this.kernelMetadataController.abort();
+            if (!isCurrentKernel()) return;
+            epoch.retired = true;
+            epoch.metadata.abort();
             this.#releaseRetiredKernel();
           },
           config: this.config,
@@ -281,26 +296,26 @@ export class OpencodeExecutionSession implements ProviderExecutionSession, Steer
           forkSource: getOpencodeState(this.seedProviderState).forkSource,
           getActiveTurnId: () => this.activeRun?.run.turnId ?? this.backgroundTurn?.id ?? null,
           openNativeInteraction: () => {
-            if (kernelGeneration !== this.kernelGeneration || this.disposed) return;
+            if (!isCurrentKernel()) return;
             const key = randomUUID();
             const turn = this.#openBackgroundScope(key);
             return { turnId: turn.id, close: () => this.#closeBackgroundScope(key, 'completed') };
           },
           onNativeTaskStarted: (sessionId, originatingTurnId) => {
-            if (kernelGeneration !== this.kernelGeneration || this.disposed) return;
+            if (!isCurrentKernel()) return;
             return this.#openBackgroundScope(sessionId, originatingTurnId).id;
           },
           onNativeTaskCompleted: (event) => {
-            if (kernelGeneration !== this.kernelGeneration || this.disposed) return;
+            if (!isCurrentKernel()) return;
             this.state.emit(event);
             this.#closeBackgroundScope(event.subagentId, event.status === 'completed' ? 'completed' : 'provider-ended');
           },
           onNativeSubagentProgress: (progress) => {
-            if (kernelGeneration !== this.kernelGeneration || this.disposed) return;
+            if (!isCurrentKernel()) return;
             this.state.emit({ type: 'subagent_progress', progress });
           },
           onNativeTurn: (status, error, requested) => {
-            if (kernelGeneration !== this.kernelGeneration || this.disposed) return;
+            if (!isCurrentKernel()) return;
             if (status === 'started' && !requested) {
               this.state.setStatus('executing');
               this.#emitSessionSnapshot();
@@ -310,13 +325,13 @@ export class OpencodeExecutionSession implements ProviderExecutionSession, Steer
               if (error) this.#emitBackground({ type: 'notice', level: 'warning', message: error });
               this.#emitBackground({ type: 'background_turn_completed', reason: 'completed', providerSessionId: this.nativeSessionId ?? undefined });
               this.backgroundTurn = null;
-              this.state.setStatus(this.backgroundScopes.size ? 'executing' : 'idle');
+              this.state.settleActivity(this.backgroundScopes.size > 0);
               this.#emitSessionSnapshot();
               this.#releaseRetiredKernel();
             }
           },
           onNativeOutput: (event, childSessionId) => {
-            if (kernelGeneration !== this.kernelGeneration || this.disposed) return;
+            if (!isCurrentKernel()) return;
             const current = this.activeRun;
             const child = childSessionId ? this.backgroundScopes.get(childSessionId) : undefined;
             if (child && (current?.run.turnId !== child.originatingTurnId || !current || !isAcceptingLiveOutput(current))) {
@@ -329,7 +344,7 @@ export class OpencodeExecutionSession implements ProviderExecutionSession, Steer
             }
           },
           onClosed: (error) => {
-            this.#handleKernelClosed(kernelGeneration, error);
+            this.#handleKernelClosed(epoch, error);
           },
           host: this.host,
           sessionInstanceId: this.sessionInstanceId,
@@ -351,7 +366,7 @@ export class OpencodeExecutionSession implements ProviderExecutionSession, Steer
         if (!this.#isRunCurrent(active, generation)) return;
         phase = 'run';
         this.nativeInfo = native;
-        await projectOpencodeMetadata(this.host, { models: native.models }, this.kernelMetadataController.signal);
+        await projectOpencodeMetadata(this.host, { models: native.models }, this.kernelEpoch.metadata.signal);
       } else {
         // Configuring a reused kernel is native work: cancellation must stop it.
         active.ownsNativeWork = true;
@@ -384,7 +399,7 @@ export class OpencodeExecutionSession implements ProviderExecutionSession, Steer
         ? await kernel.readTurnStats(native.sessionId, { userMessageId: response.userMessageId, startedAt }).catch(() => undefined)
         : undefined;
       if (!this.#isRunCurrent(active, generation)) return;
-      this.state.setStatus(this.backgroundTurn || this.backgroundScopes.size ? 'executing' : 'idle');
+      this.state.settleActivity(Boolean(this.backgroundTurn) || this.backgroundScopes.size > 0);
       this.#emitRunSnapshot(active);
       run.finish(response.stopReason === 'cancelled'
         ? { reason: 'provider-cancelled', type: 'cancelled' }
@@ -440,7 +455,7 @@ export class OpencodeExecutionSession implements ProviderExecutionSession, Steer
   }
 
   #releaseRetiredKernel(): void {
-    if (this.kernelRetired && !this.activeRun && !this.backgroundTurn && this.backgroundScopes.size === 0 && !this.kernel?.hasNativeWork) {
+    if (this.kernelEpoch.retired && !this.activeRun && !this.backgroundTurn && this.backgroundScopes.size === 0 && !this.kernel?.hasNativeWork) {
       void this.#disposeKernel();
     }
   }
@@ -472,7 +487,7 @@ export class OpencodeExecutionSession implements ProviderExecutionSession, Steer
       await projectOpencodeMetadata(this.host, {
         selectedRawModelId: selectedModel,
         thinkingLevels: listOpencodeThinkingLevels(model),
-      }, this.kernelMetadataController.signal);
+      }, this.kernelEpoch.metadata.signal);
     }
     if (reasoning && (!selectedModel || (variant && !model?.variants.includes(variant)))) {
       throw new Error(`OpenCode model "${selectedModel}" does not support thinking level "${reasoning}".`);
@@ -510,7 +525,7 @@ export class OpencodeExecutionSession implements ProviderExecutionSession, Steer
     const generation = ++this.lifecycleGeneration;
     if (!active.ownsNativeWork) {
       // The kernel may still serve an earlier turn's descendants; only stop waiting.
-      this.state.setStatus(this.backgroundTurn || this.backgroundScopes.size ? 'executing' : 'idle');
+      this.state.settleActivity(Boolean(this.backgroundTurn) || this.backgroundScopes.size > 0);
       this.#emitRunSnapshot(active);
       active.run.finish({ reason: 'cancelled', type: 'cancelled' });
       this.activeRun = null;
@@ -531,10 +546,10 @@ export class OpencodeExecutionSession implements ProviderExecutionSession, Steer
   }
 
   #handleKernelClosed(
-    kernelGeneration: number,
+    epoch: KernelEpoch,
     error: Error,
   ): void {
-    if (kernelGeneration !== this.kernelGeneration) return;
+    if (epoch !== this.kernelEpoch) return;
     const active = this.activeRun;
     if (!active || active.run.isTerminal || this.disposed) {
       if (!this.disposed) {
@@ -635,13 +650,12 @@ export class OpencodeExecutionSession implements ProviderExecutionSession, Steer
       this.backgroundTurn = null;
     }
     const kernel = this.kernel;
-    const releaseCleanup = this.kernelRetired && !this.disposed;
-    this.kernelMetadataController.abort();
-    this.kernelRetired = false;
+    const releaseCleanup = this.kernelEpoch.retired && !this.disposed;
+    this.kernelEpoch.metadata.abort();
+    this.kernelEpoch = createKernelEpoch();
     this.kernel = null;
     this.nativeInfo = null;
     this.kernelConfigurationKey = null;
-    this.kernelGeneration += 1;
     if (!kernel) return;
 
     const pending = (async () => {

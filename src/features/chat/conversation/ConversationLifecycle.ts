@@ -7,9 +7,7 @@ import type {
   ProjectMutations,
   ProjectReader,
 } from '@/core/types';
-import type { ChatTabManagerHost, ChatViewHost } from '@/features/chat/ChatFeatureHost';
-import type { SessionRuntimePool } from '@/features/chat/sessions/SessionRuntimePool';
-import type { TabId } from '@/features/chat/tabs/ChatTab';
+import type { ChatTabManagerHost, ChatViewHost, TabId } from '@/features/chat/ChatFeatureHost';
 
 /** Application conversation writes the lifecycle applies after its tab policy. */
 export interface ConversationLifecycleStore {
@@ -26,8 +24,17 @@ export interface ConversationLifecycleStore {
   ): Promise<number>;
 }
 
+/** The session pool operations the lifecycle coordinates with. */
+export interface ConversationLifecycleSessions {
+  /** The live session, whose pending session messages the lifecycle discards. */
+  get(conversationId: string): { readonly mailbox: { clear(): void } | null } | null;
+  isRunning(conversationId: string): boolean;
+  retire(conversationId: string): Promise<void>;
+  whenSettled(conversationId: string): Promise<boolean>;
+}
+
 export interface ConversationLifecycleDeps {
-  readonly sessions: Pick<SessionRuntimePool, 'get' | 'isRunning' | 'retire' | 'whenSettled'>;
+  readonly sessions: ConversationLifecycleSessions;
   readonly conversations: ConversationLifecycleStore;
   readonly projects: Pick<ProjectReader, 'get'> & Pick<ProjectMutations, 'setArchived'>;
   readonly views: { getAllViews(): readonly ChatViewHost[] };

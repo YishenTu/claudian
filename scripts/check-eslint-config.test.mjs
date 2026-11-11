@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
+import tsparser from '@typescript-eslint/parser';
 import { ESLint } from 'eslint';
 
-import { fileNamingRule } from '../eslint.config.mjs';
+import { chatLayersRule, fileNamingRule } from '../eslint.config.mjs';
 import packageJson from '../package.json' with { type: 'json' };
 
 for (const [name, code, rule] of [
@@ -258,4 +259,103 @@ test('tests use the shared Obsidian fake and seeded installation key instead of 
       assert.equal(result.messages.filter(message => message.ruleId === 'no-restricted-syntax').length, 0, `${filePath}: ${code}`);
     }
   }
+});
+
+// Drives the rule directly, like reportsFor above, so absolute and Windows paths reach it unchanged.
+function chatLayerReports(physicalFilename, code) {
+  const reported = [];
+  const visitor = chatLayersRule.create({
+    physicalFilename,
+    report: ({ messageId, data }) => reported.push(chatLayersRule.meta.messages[messageId]
+      .replace(/\{\{(\w+)\}\}/g, (_, key) => data[key])),
+  });
+  const visit = node => {
+    if (!node || typeof node.type !== 'string') return;
+    visitor[node.type]?.(node);
+    for (const [key, value] of Object.entries(node)) {
+      if (key === 'parent') continue;
+      for (const child of Array.isArray(value) ? value : [value]) {
+        if (child && typeof child === 'object') visit(child);
+      }
+    }
+  };
+  visit(tsparser.parse(code, { sourceType: 'module', ecmaVersion: 'latest' }));
+  return reported;
+}
+
+test('chat layers are enforced for source files', async () => {
+  const config = await new ESLint().calculateConfigForFile('src/features/chat/state/ChatState.ts');
+
+  assert.deepEqual(config.rules['local/chat-layers'], [2]);
+});
+
+test('chat layers reject imports of a later module by alias, relative path, re-export or dynamic import', () => {
+  for (const prefix of ['/repo/', 'D:\\repo\\']) {
+    for (const [file, code] of [
+      ['src/features/chat/state/ChatState.ts', "import type { TurnCoordinator } from '@/features/chat/turns/TurnCoordinator';"],
+      ['src/features/chat/state/ChatState.ts', "import { TurnCoordinator } from '../turns/TurnCoordinator';"],
+      ['src/features/chat/rendering/tools/ToolRenderer.ts', "export { ChatState } from '../../state/ChatState';"],
+      ['src/features/chat/conversation/ConversationLifecycle.ts', "export * from '@/features/chat/tabs/ChatTab';"],
+      ['src/features/chat/utils/animationFrame.ts', "void import('@/features/chat/rendering/MessageRenderer');"],
+      // Later modules of the same layer are rejected too, so folders cannot import each other.
+      ['src/features/chat/conversation/ConversationController.ts', "import type { ChatSessionRuntime } from '@/features/chat/sessions/ChatSessionRuntime';"],
+      ['src/features/chat/projects/projectActions.ts', "import { showMenuAt } from '../session-manager/SessionSurfaceShared';"],
+      // An alias path is resolved before its folder is read.
+      ['src/features/chat/state/ChatState.ts', "export type { ChatSessionRuntime } from '@/features/chat/state/../sessions/ChatSessionRuntime';"],
+    ]) {
+      const reports = chatLayerReports(prefix + file, code);
+      assert.equal(reports.length, 1, `${prefix}${file}: ${code}`);
+      assert.match(reports[0], /must not import/);
+    }
+  }
+});
+
+test('chat layers allow earlier-module, own-folder, hub and non-chat imports', () => {
+  for (const [file, code] of [
+    ['src/features/chat/turns/TurnCoordinator.ts', "import type { TurnActivity } from '@/features/chat/state/types';"],
+    ['src/features/chat/sessions/SessionModel.ts', "import { InputController } from '@/features/chat/input/InputController';"],
+    ['src/features/chat/rendering/MessageRenderer.ts', "import { renderSubagent } from './subagents/SubagentRenderer';"],
+    ['src/features/chat/tabs/TabBar.ts', "import { TabId } from './ChatTab';"],
+    ['src/features/chat/rendering/MessageRenderer.ts', "import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';"],
+    ['src/features/chat/composer/toolbar/types.ts', "import type { ChatSettings } from '../../ChatSettings';"],
+    ['src/features/chat/utils/rewind.ts', "import type { ChatMessage } from '@/core/types';"],
+    ['src/features/chat/state/ChatState.ts', "import { t } from '../../../i18n/i18n';"],
+    ['src/features/chat/ClaudianView.ts', "import { TabManager } from '@/features/chat/tabs/TabManager';"],
+    ['src/features/settings/ClaudianSettings.ts', "import { TabManager } from '@/features/chat/tabs/TabManager';"],
+  ]) {
+    assert.deepEqual(chatLayerReports('/repo/' + file, code), [], `${file}: ${code}`);
+  }
+});
+
+test('chat hub contracts may import any layer for types only', () => {
+  const hub = '/repo/src/features/chat/ChatFeatureHost.ts';
+  assert.deepEqual(chatLayerReports(hub, "import type { ChatTab } from '@/features/chat/tabs/ChatTab';"), []);
+  assert.deepEqual(chatLayerReports(hub, "import { type ChatTab } from '@/features/chat/tabs/ChatTab';"), []);
+  assert.deepEqual(chatLayerReports(hub, "import type { ChatSettings } from './ChatSettings';"), []);
+  for (const code of [
+    "import { TabManager } from '@/features/chat/tabs/TabManager';",
+    "import { type ChatTab, TabManager } from '@/features/chat/tabs/TabManager';",
+    "export { TabManager } from './tabs/TabManager';",
+    // Hubs are exempt as targets, but a hub's own value import of another hub is still runtime coupling.
+    "import { getChatSettingsSnapshot } from './ChatSettings';",
+    "export { getChatSettingsSnapshot } from '@/features/chat/ChatSettings';",
+  ]) {
+    const reports = chatLayerReports(hub, code);
+    assert.equal(reports.length, 1, code);
+    assert.match(reports[0], /may only type-import/);
+  }
+});
+
+test('chat layers require every chat folder and root file to be assigned a layer', () => {
+  const newFolder = chatLayerReports('/repo/src/features/chat/history/HistoryList.ts', "import type { ChatMessage } from '@/core/types';");
+  assert.equal(newFolder.length, 1);
+  assert.match(newFolder[0], /'history' has no layer/);
+
+  const newRootFile = chatLayerReports('/repo/src/features/chat/ChatShortcuts.ts', '');
+  assert.equal(newRootFile.length, 1);
+  assert.match(newRootFile[0], /'ChatShortcuts' has no layer/);
+
+  const unknownTarget = chatLayerReports('/repo/src/features/chat/tabs/TabBar.ts', "import { list } from '@/features/chat/history/HistoryList';");
+  assert.equal(unknownTarget.length, 1);
+  assert.match(unknownTarget[0], /'history' has no layer/);
 });
