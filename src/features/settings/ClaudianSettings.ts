@@ -19,7 +19,7 @@ import { getAvailableLocales, getLocaleDisplayName, setLocale, t } from '@/i18n/
 import type { Locale } from '@/i18n/types';
 import { createProviderIconSvg } from '@/shared/icons';
 import { AccessibleSetting } from '@/shared/settings/AccessibleSetting';
-import { bindCommittedControl } from '@/shared/settings/CommittedControl';
+import { bindCommittedControl, type CommittedControlNotices } from '@/shared/settings/CommittedControl';
 import { formatContextLimit, parseContextLimit } from '@/shared/settings/contextLimit';
 import { DebouncedSettingsWriter } from '@/shared/settings/DebouncedSettingsWriter';
 import { renderEnvironmentSettingsSection } from '@/shared/settings/EnvironmentSettingsSection';
@@ -764,17 +764,32 @@ export class ClaudianSettingTab extends PluginSettingTab {
         }
       };
 
-      const saveContextLimit = async (): Promise<void> => {
-        const trimmed = inputEl.value.trim();
-        const parsed = trimmed ? parseContextLimit(trimmed) : null;
-        const error = trimmed && parsed === null ? t('settings.customContextLimits.invalid') : '';
-        validationEl.setText(error);
-        validationEl.toggleClass('claudian-hidden', !error);
-        inputEl.classList.toggle('claudian-input-error', Boolean(error));
-        inputEl.setAttribute('aria-invalid', String(Boolean(error)));
-        if (error) return;
+      const contextLimitNotices: CommittedControlNotices = {
+        committed: 'Context limit was saved, but settings refresh failed.',
+        rejected: 'Could not save context limit. Try again.',
+      };
+      bindCommittedControl(
+        {
+          setValue(value: string) { inputEl.value = value; },
+          onChange(callback) {
+            inputEl.addEventListener('input', () => { void callback(inputEl.value); });
+          },
+        },
+        () => {
+          const limits = this.host.settings.customContextLimits ?? {};
+          const current = Object.hasOwn(limits, modelId) ? limits[modelId] : undefined;
+          return current ? formatContextLimit(current) : '';
+        },
+        async (raw) => {
+          const trimmed = raw.trim();
+          const parsed = trimmed ? parseContextLimit(trimmed) : null;
+          const message = trimmed && parsed === null ? t('settings.customContextLimits.invalid') : '';
+          validationEl.setText(message);
+          validationEl.toggleClass('claudian-hidden', !message);
+          inputEl.classList.toggle('claudian-input-error', Boolean(message));
+          inputEl.setAttribute('aria-invalid', String(Boolean(message)));
+          if (message) return false;
 
-        try {
           await this.host.mutateSettings((settings) => {
             settings.customContextLimits ??= {};
             if (!trimmed) {
@@ -786,17 +801,10 @@ export class ClaudianSettingTab extends PluginSettingTab {
               ]);
             }
           });
-        } catch (error) {
-          const committed = error !== null && typeof error === 'object'
-            && 'committed' in error && error.committed === true;
-          new Notice(committed ? 'Context limit was saved, but settings refresh failed.'
-            : 'Could not save context limit. Try again.');
-        }
-      };
-
-      inputEl.addEventListener('input', () => {
-        void saveContextLimit();
-      });
+        },
+        undefined,
+        contextLimitNotices,
+      );
       aliasInputEl.addEventListener('blur', () => {
         void saveAlias();
       });
