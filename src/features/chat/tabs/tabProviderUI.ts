@@ -68,8 +68,6 @@ export async function toggleTabServiceTier(
 export function refreshTabProviderUI(tab: AssembledTabRuntime): void {
   tab.ui.modelSelector.updateDisplay();
   tab.ui.modelSelector.renderOptions();
-  tab.ui.modeSelector.updateDisplay();
-  tab.ui.modeSelector.renderOptions();
   tab.ui.effortSelector.updateDisplay();
   tab.ui.permissionToggle.updateDisplay();
   tab.ui.serviceTierToggle.updateDisplay();
@@ -117,14 +115,9 @@ export async function updateTabPermissionMode(
   plugin: ChatFeatureHost,
   mode: string,
 ): Promise<void> {
-  const uiConfig = getSessionChatUIConfig(tab, plugin);
   try {
     await updateSessionProviderSettings(tab.session.runtime, plugin, (settings) => {
-      if (uiConfig.applyPermissionMode) {
-        uiConfig.applyPermissionMode(mode, settings);
-      } else {
-        settings.permissionMode = mode;
-      }
+      settings.permissionMode = mode;
     });
   } finally {
     tab.ui.permissionToggle.updateDisplay();

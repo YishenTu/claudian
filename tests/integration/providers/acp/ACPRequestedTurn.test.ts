@@ -69,14 +69,14 @@ describe('ACPRequestedTurn', () => {
   });
 
   it('records context usage only while live output is accepted', () => {
-    const { turn } = createTurn();
+    const { run, turn } = createTurn();
 
     turn.handleUpdate({ sessionUpdate: 'usage_update', size: 1000, used: 10 });
     expect(turn.contextUsage).toBeNull();
 
     turn.beginLiveOutput();
     turn.handleUpdate({ sessionUpdate: 'usage_update', size: 1000, used: 250 });
-    turn.endLiveOutput();
+    run.finish({ reason: 'completed', type: 'turn_completed' });
     turn.handleUpdate({ sessionUpdate: 'usage_update', size: 1000, used: 400 });
 
     expect(turn.contextUsage).toMatchObject({ size: 1000, used: 250 });

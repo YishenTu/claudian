@@ -18,9 +18,6 @@ export const antigravityChatUIConfig: ProviderChatUIConfig = {
       },
     ];
   },
-  getModeSelector(): null {
-    return null;
-  },
   getProviderIcon() {
     return ANTIGRAVITY_PROVIDER_ICON;
   },

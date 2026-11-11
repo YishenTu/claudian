@@ -18,6 +18,7 @@ export type UserContentBlock = TextContentBlock | ImageContentBlock;
 
 export const UNSUPPORTED_SDK_TOOLS = ['EnterPlanMode', 'ExitPlanMode'] as const;
 
+/** Live output has no handling for these tools: disallowing them is what keeps them out of a turn. */
 export const DISABLED_BUILTIN_TASK_TOOLS = [
   'TodoWrite',
   'TaskCreate',

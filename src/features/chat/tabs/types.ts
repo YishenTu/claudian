@@ -11,7 +11,6 @@ import type { ImageContextManager } from '@/features/chat/composer/ImageContextM
 import type { MainChatComposerDropdown } from '@/features/chat/composer/MainChatComposerDropdown';
 import type { PromptHistoryNavigation } from '@/features/chat/composer/PromptHistoryNavigation';
 import type { ContextUsageMeter } from '@/features/chat/composer/toolbar/ContextUsageMeter';
-import type { ModeSelector } from '@/features/chat/composer/toolbar/ModeSelector';
 import type { PermissionToggle } from '@/features/chat/composer/toolbar/PermissionToggle';
 import type { ServiceTierToggle } from '@/features/chat/composer/toolbar/ServiceTierToggle';
 import type { ConversationController } from '@/features/chat/conversation/ConversationController';
@@ -105,7 +104,6 @@ export interface TabUIComponents {
   readonly linkedContentController: LinkedContentController;
   readonly imageContextManager: ImageContextManager;
   readonly modelSelector: ModelSelector;
-  readonly modeSelector: ModeSelector;
   readonly effortSelector: EffortSelector;
   readonly permissionToggle: PermissionToggle;
   readonly serviceTierToggle: ServiceTierToggle;

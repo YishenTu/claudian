@@ -112,10 +112,6 @@ export class SideChatSession {
     });
   }
 
-  get providerId(): ProviderId {
-    return this.deps.providerId;
-  }
-
   /** Native child identity once the provider established one; undefined before that. */
   get providerSessionId(): string | undefined {
     return this.#providerSessionId;

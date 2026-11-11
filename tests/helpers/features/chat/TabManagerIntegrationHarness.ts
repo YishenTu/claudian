@@ -14,7 +14,6 @@ import { SessionMessagingService } from '@/features/chat/session-messaging/Sessi
 import type { TabManagerViewHost } from '@/features/chat/tabs/ChatTab';
 import { TabConversationNavigation } from '@/features/chat/tabs/TabConversationNavigation';
 import { TabManager } from '@/features/chat/tabs/TabManager';
-import { TabMembership } from '@/features/chat/tabs/TabMembership';
 import { createTabRuntimeCallbacks, type TabRuntimeCallbackHost } from '@/features/chat/tabs/TabRuntimeCallbacks';
 import type { AssembledTabRuntime } from '@/features/chat/tabs/types';
 import type { TabLayoutPolicy, TabManagerCallbacks } from '@/features/chat/tabs/types';
@@ -118,13 +117,6 @@ export function holdHistory(plugin: ChatFeatureHost, conversationId: string) {
 export function navigationOwner(manager: TabManager): TabConversationNavigation {
   const owner: unknown = Reflect.get(manager, 'navigation');
   if (!(owner instanceof TabConversationNavigation)) throw new Error('TabManager navigation owner was not constructed');
-  return owner;
-}
-
-/** ForkTarget receives this same membership owner from the composition in TabManager. */
-export function membershipOwner(manager: TabManager): TabMembership {
-  const owner: unknown = Reflect.get(manager, 'membership');
-  if (!(owner instanceof TabMembership)) throw new Error('TabManager membership owner was not constructed');
   return owner;
 }
 

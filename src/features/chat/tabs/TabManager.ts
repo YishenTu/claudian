@@ -43,7 +43,6 @@ import type {
 } from '@/features/chat/tabs/types';
 import { linkedContentExists, ViewerSlot } from '@/features/chat/tabs/ViewerSlot';
 import type { VaultMentionDataProvider } from '@/shared/mention/VaultMentionDataProvider';
-import { revealWorkspaceLeaf } from '@/utils/obsidianCompat';
 
 type CreateTabOptions = {
   activate?: boolean;
@@ -459,7 +458,7 @@ export class TabManager implements TabManagerInterface {
 
   private async revealTab(tabId: TabId, isCurrent: () => boolean = () => true, options: SessionRevealOptions = {}): Promise<void> {
     const identity = this.membership.getIdentity(tabId);
-    await revealWorkspaceLeaf(this.plugin.app.workspace, this.view.leaf);
+    await this.plugin.app.workspace.revealLeaf(this.view.leaf);
     if (!isCurrent()) return;
     // Navigation joins teardown so it can choose another owner after attachment release.
     // Duplicate-owner lookup during assembly must not join: it may itself be the close's successor.

@@ -38,8 +38,6 @@ export function buildTabRuntimePorts(
       refreshTabContextUsage(getRuntime(), plugin);
       ui.modelSelector.updateDisplay();
       ui.modelSelector.renderOptions();
-      ui.modeSelector.updateDisplay();
-      ui.modeSelector.renderOptions();
       ui.effortSelector.updateDisplay();
       ui.permissionToggle.updateDisplay();
       ui.serviceTierToggle.updateDisplay();

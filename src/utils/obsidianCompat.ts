@@ -1,5 +1,5 @@
 import type { EditorView } from '@codemirror/view';
-import type { App, Editor, TFile, Workspace, WorkspaceLeaf } from 'obsidian';
+import type { App, Editor, TFile } from 'obsidian';
 
 /**
  * Gets the CodeMirror EditorView from an Obsidian Editor.
@@ -15,10 +15,6 @@ export function getVaultFileByPath(app: App, filePath: string): TFile | null {
     return file;
   }
   return null;
-}
-
-export async function revealWorkspaceLeaf(workspace: Workspace, leaf: WorkspaceLeaf): Promise<void> {
-  await workspace.revealLeaf(leaf);
 }
 
 function isVaultFile(value: unknown): value is TFile {

@@ -40,20 +40,13 @@ export interface ClaudeTaskToolResultOptions {
 }
 
 /**
- * Reduces Claude Code's incremental task tools into the full-list TodoWrite
- * snapshots consumed by the provider-neutral chat UI.
+ * Reduces the incremental task tools recorded in Claude Code transcripts into the full-list
+ * TodoWrite snapshots consumed by the provider-neutral chat UI. Live sessions disallow these
+ * tools (`DISABLED_BUILTIN_TASK_TOOLS`), so only history replay uses this.
  */
 export class ClaudeTaskToolNormalizer {
-  private sessionId: string | null = null;
   private readonly calls = new Map<string, TaskCallState>();
   private readonly tasks = new Map<string, StoredTask>();
-
-  /** Task mutations span turns, but a different native session owns a different task list. */
-  bindSession(sessionId: string): void {
-    if (this.sessionId === sessionId) return;
-    this.reset();
-    this.sessionId = sessionId;
-  }
 
   normalizeToolUse(
     toolCallId: string,
@@ -117,25 +110,6 @@ export class ClaudeTaskToolNormalizer {
 
     call.settled = true;
     return this.#buildNormalizedCall(call, effectiveOutput);
-  }
-
-  /** Retire one output channel's calls, discarding only its unconfirmed previews. */
-  finishCalls(toolCallIds: Iterable<string>): void {
-    for (const id of [...toolCallIds].reverse()) {
-      const call = this.calls.get(id);
-      if (!call) continue;
-      if (!call.settled) {
-        if (call.rawName === 'TaskCreate' && call.taskKey) this.tasks.delete(call.taskKey);
-        if (call.rawName === 'TaskUpdate') this.#restoreUpdate(call);
-      }
-      this.calls.delete(id);
-    }
-  }
-
-  reset(): void {
-    this.sessionId = null;
-    this.calls.clear();
-    this.tasks.clear();
   }
 
   #getOrCreateCall(toolCallId: string, rawName: ClaudeTaskToolName): TaskCallState {

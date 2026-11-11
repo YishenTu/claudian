@@ -2,25 +2,20 @@
   "compilerOptions": {
     "paths": {
       "@/*": ["./src/*"],
-      "@test/*": ["./tests/*"],
-      "@modelcontextprotocol/sdk/*": ["./node_modules/@modelcontextprotocol/sdk/dist/esm/*"]
+      "@test/*": ["./tests/*"]
     },
     "skipLibCheck": true,
-    "inlineSourceMap": true,
-    "inlineSources": true,
+    "noEmit": true,
     "module": "ESNext",
     "target": "ES6",
     "allowJs": true,
     "noImplicitAny": true,
     "moduleResolution": "bundler",
-    "importHelpers": true,
     "isolatedModules": true,
     "strictNullChecks": true,
     "resolveJsonModule": true,
     "types": ["node"],
-    "lib": ["DOM", "ES2022"],
-    "outDir": "./dist",
-    "rootDir": "."
+    "lib": ["DOM", "ES2022"]
   },
-  "include": ["src/**/*.ts", "src/**/*.d.ts"]
+  "include": ["src/**/*.ts"]
 }

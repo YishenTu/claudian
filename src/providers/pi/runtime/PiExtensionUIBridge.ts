@@ -18,10 +18,6 @@ export interface PiExtensionUIEditorRequest extends PiRPCRecord {
 }
 
 export type PiExtensionUINotifyRequest = PiRPCRecord;
-export type PiExtensionUISetEditorTextRequest = PiRPCRecord;
-export type PiExtensionUISetStatusRequest = PiRPCRecord;
-export type PiExtensionUISetTitleRequest = PiRPCRecord;
-export type PiExtensionUISetWidgetRequest = PiRPCRecord;
 
 export interface PiExtensionUIRenderer {
   confirm(request: PiExtensionUIConfirmRequest, signal: AbortSignal): Promise<{ cancelled?: boolean; confirmed?: boolean }>;
@@ -29,10 +25,6 @@ export interface PiExtensionUIRenderer {
   input(request: PiExtensionUIInputRequest, signal: AbortSignal): Promise<{ cancelled?: boolean; value?: string }>;
   notify(request: PiExtensionUINotifyRequest): void;
   select(request: PiExtensionUISelectRequest, signal: AbortSignal): Promise<{ cancelled?: boolean; value?: string }>;
-  setEditorText(request: PiExtensionUISetEditorTextRequest): void;
-  setStatus(request: PiExtensionUISetStatusRequest): void;
-  setTitle(request: PiExtensionUISetTitleRequest): void;
-  setWidget(request: PiExtensionUISetWidgetRequest): void;
 }
 
 export class PiExtensionUIBridge {
@@ -76,21 +68,15 @@ export class PiExtensionUIBridge {
           level: request.notifyType === 'warning' || request.notifyType === 'error' ? 'warning' : 'info',
         });
         return true;
+      // Fire-and-forget presentation requests Claudian does not render; they need no response.
       case 'setStatus':
       case 'set_status':
-        this.renderer?.setStatus(request);
-        return true;
       case 'setWidget':
       case 'set_widget':
-        this.renderer?.setWidget(request);
-        return true;
       case 'setTitle':
       case 'set_title':
-        this.renderer?.setTitle(request);
-        return true;
       case 'setEditorText':
       case 'set_editor_text':
-        this.renderer?.setEditorText(request);
         return true;
       default:
         this.#sendCancellation(request);
