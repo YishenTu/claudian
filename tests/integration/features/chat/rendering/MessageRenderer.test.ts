@@ -903,7 +903,6 @@ describe('MessageRenderer', () => {
   it('addMessage skips empty bubble for image-only user messages', async () => {
     const messagesEl = document.body.createDiv();
     const { renderer } = createRenderer(messagesEl);
-    const scrollSpy = vi.spyOn(renderer, 'scrollToBottom').mockImplementation(() => {});
 
     const msg: ChatMessage = {
       id: 'u1',
@@ -917,7 +916,6 @@ describe('MessageRenderer', () => {
 
     // Should still return an element (last child or messagesEl)
     expect(result).toBeDefined();
-    expect(scrollSpy).toHaveBeenCalled();
   });
 
   it('addMessage creates assistant message element without user-specific rendering', async () => {
@@ -975,54 +973,6 @@ describe('MessageRenderer', () => {
     const imgEl = messagesEl.querySelector('.claudian-message-image')!.children[0];
 
     expect(imgEl.getAttribute('src')).toBe('data:image/png;base64,abc123');
-  });
-
-  // ============================================
-  // Scroll utilities
-  // ============================================
-
-  it('scrollToBottom sets scrollTop to scrollHeight', async () => {
-    const messagesEl = document.body.createDiv();
-    Object.defineProperty(messagesEl, 'scrollHeight', { value: 1000, configurable: true });
-    const { renderer } = createRenderer(messagesEl);
-
-    renderer.scrollToBottom();
-
-    expect(messagesEl.scrollTop).toBe(1000);
-  });
-
-  it('scrollToBottomIfNeeded scrolls when near bottom', async () => {
-    const messagesEl = document.body.createDiv();
-    Object.defineProperty(messagesEl, 'scrollHeight', { value: 1000, configurable: true });
-    messagesEl.scrollTop = 950;
-    Object.defineProperty(messagesEl, 'clientHeight', { value: 0, configurable: true });
-    const { renderer } = createRenderer(messagesEl);
-
-    // Mock requestAnimationFrame
-    const origRAF = globalThis.requestAnimationFrame;
-    (globalThis).requestAnimationFrame = (cb: FrameRequestCallback) => { cb(0); return 0; };
-
-    try {
-      renderer.scrollToBottomIfNeeded();
-      // Near bottom (1000 - 950 - 0 = 50, < 100 threshold) → scrolls
-      expect(messagesEl.scrollTop).toBe(1000);
-    } finally {
-      (globalThis).requestAnimationFrame = origRAF;
-    }
-  });
-
-  it('scrollToBottomIfNeeded does not scroll when far from bottom', async () => {
-    const messagesEl = document.body.createDiv();
-    Object.defineProperty(messagesEl, 'scrollHeight', { value: 1000, configurable: true });
-    messagesEl.scrollTop = 100;
-    Object.defineProperty(messagesEl, 'clientHeight', { value: 0, configurable: true });
-    const { renderer } = createRenderer(messagesEl);
-
-    const originalScrollTop = messagesEl.scrollTop;
-    renderer.scrollToBottomIfNeeded();
-
-    // scrollTop should not change (900 > 100 threshold)
-    expect(messagesEl.scrollTop).toBe(originalScrollTop);
   });
 
   // ============================================

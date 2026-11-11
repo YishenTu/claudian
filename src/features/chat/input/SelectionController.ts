@@ -103,7 +103,7 @@ export class SelectionController {
       }
       // Keep the captured selection only while focus is transitioning into
       // the chat UI; any other leaf switch should drop stale prompt context.
-      this.#clearWhenFileContextIsUnavailable();
+      this.#releaseUnlessHandingOff();
       return;
     }
 
@@ -116,7 +116,7 @@ export class SelectionController {
     const editor = view.editor;
     const editorView = getEditorView(editor);
     if (!editorView) {
-      this.#clearWhenFileContextIsUnavailable();
+      this.#releaseUnlessHandingOff();
       return;
     }
 
@@ -153,14 +153,14 @@ export class SelectionController {
         this.onUserSelectionChanged?.();
       }
     } else {
-      this.#handleDeselection();
+      this.#releaseUnlessHandingOff();
     }
   }
 
   #pollDOMSelection(view: FileView): void {
     const containerEl = view.containerEl;
     if (!containerEl) {
-      this.#clearWhenFileContextIsUnavailable();
+      this.#releaseUnlessHandingOff();
       return;
     }
 
@@ -174,7 +174,7 @@ export class SelectionController {
         (!anchorNode || !containerEl.contains(anchorNode))
         && (!focusNode || !containerEl.contains(focusNode))
       ) {
-        this.#handleDeselection();
+        this.#releaseUnlessHandingOff();
         return;
       }
 
@@ -204,7 +204,7 @@ export class SelectionController {
         this.onUserSelectionChanged?.();
       }
     } else {
-      this.#handleDeselection();
+      this.#releaseUnlessHandingOff();
     }
   }
 
@@ -345,7 +345,8 @@ export class SelectionController {
     return this.#selectionMatchesRanges(this.#getDocumentSelection(this.#getFocusScopeOwnerDocument()), ranges);
   }
 
-  #clearWhenFileContextIsUnavailable(): void {
+  /** Drops the stored selection the user left, unless focus is moving into the chat input. */
+  #releaseUnlessHandingOff(): void {
     if (!this.storedSelection) return;
     if (this.#isFocusWithinChatSidebar()) {
       this.inputHandoffGraceUntil = null;
@@ -355,28 +356,7 @@ export class SelectionController {
       return;
     }
 
-    this.inputHandoffGraceUntil = null;
-    this.#clearHighlight();
-    this.storedSelection = null;
-    this.updateIndicator();
-    this.onUserSelectionChanged?.();
-  }
-
-  #handleDeselection(): void {
-    if (!this.storedSelection) return;
-    if (this.#isFocusWithinChatSidebar()) {
-      this.inputHandoffGraceUntil = null;
-      return;
-    }
-
-    if (this.inputHandoffGraceUntil !== null && Date.now() <= this.inputHandoffGraceUntil) {
-      return;
-    }
-
-    this.inputHandoffGraceUntil = null;
-    this.#clearHighlight();
-    this.storedSelection = null;
-    this.updateIndicator();
+    this.clear();
     this.onUserSelectionChanged?.();
   }
 

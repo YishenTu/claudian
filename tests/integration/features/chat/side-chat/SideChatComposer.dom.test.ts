@@ -159,6 +159,30 @@ it('discards the side chat, releases its session and restores the main composer'
   expect(harness.composerEl.classList.contains('claudian-side-chat-expanded')).toBe(false);
 });
 
+it('starts a new side chat while a discarded start is still unwinding', async () => {
+  const harness = await createHarness();
+  const coordinator = harness.tab.executionCoordinator;
+  const resolveForkSource = coordinator.resolveForkSource.bind(coordinator);
+  let releaseFirst!: () => void;
+  const firstCaptured = new Promise<void>(resolve => { releaseFirst = resolve; });
+  const firstCapture = vi.spyOn(coordinator, 'resolveForkSource')
+    .mockImplementationOnce(async (...args) => { await firstCaptured; return resolveForkSource(...args); });
+  const first = harness.controller.handleCommandSubmission('First', []);
+  await waitFor(() => expect(firstCapture).toHaveBeenCalledTimes(1));
+  const discarding = harness.controller.discard();
+
+  const request = harness.backend.nextRequest(request => request.toolPolicy.kind === 'provider-default');
+  const second = harness.controller.handleCommandSubmission('Second', []);
+  // A discarded start no longer owns the side chat, so the next command is not refused as a duplicate.
+  const outcome = await Promise.race([request.then(() => 'started'), second.then(started => (started ? 'started' : 'refused'))]);
+  releaseFirst();
+  await Promise.all([first, discarding]);
+
+  expect(outcome).toBe('started');
+  expect((await request).input).toEqual([{ text: 'Second', type: 'text' }]);
+  expect(await first).toBe(false);
+});
+
 it('rejects a nested side command and an empty prompt without creating anything', async () => {
   const harness = await createHarness();
   const { started } = await startSideChat(harness);

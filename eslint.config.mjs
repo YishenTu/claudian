@@ -8,7 +8,7 @@ import { DEFAULT_BRANDS } from 'eslint-plugin-obsidianmd/dist/lib/rules/ui/brand
 import simpleImportSort from 'eslint-plugin-simple-import-sort';
 import { defineConfig } from 'eslint/config';
 import { isBuiltin } from 'node:module';
-import { dirname } from 'node:path';
+import { dirname, posix } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import packageJson from './package.json' with { type: 'json' };
@@ -86,6 +86,95 @@ export const fileNamingRule = {
   },
 };
 
+// Chat modules form one strict order, lowest first: a module may import only itself and modules
+// listed before it, so folder imports cannot form cycles. Layers only group the order for readers.
+// Hub contracts are importable from every module and may only type-import chat modules, so they
+// never create a runtime dependency.
+const CHAT_LAYERS = [
+  ['utilities', ['utils']],
+  ['renderers', ['rendering', 'interactions', 'navigation']],
+  ['presentation', ['state', 'composer', 'linked-content', 'zen']],
+  ['session', ['execution', 'turns', 'conversation', 'side-chat', 'input', 'sessions', 'session-messaging']],
+  ['shell', ['projects', 'tabs', 'session-manager', 'workspace', 'view', 'ClaudianView']],
+];
+const CHAT_HUBS = new Set(['ChatFeatureHost', 'ChatSettings']);
+const CHAT_ROOT = 'src/features/chat/';
+const chatOrderOf = new Map(CHAT_LAYERS
+  .flatMap(([layer, modules]) => modules.map(module => ({ module, layer })))
+  .map(({ module, layer }, rank) => [module, { layer, rank }]));
+
+// The first path segment below chat/, without extension: a folder or a root file.
+const chatModuleOf = relativePath => relativePath.split('/')[0].replace(/\.ts$/, '');
+
+// Resolves `@/` and relative specifiers from the repository root, so `..` segments in either form
+// are applied before the target folder is read. Null for imports outside chat/.
+function chatImportTarget(sourceRelative, specifier) {
+  let resolved;
+  if (specifier.startsWith('@/')) resolved = posix.normalize(`src/${specifier.slice(2)}`);
+  else if (specifier.startsWith('.')) resolved = posix.join(CHAT_ROOT, posix.dirname(sourceRelative), specifier);
+  else return null;
+  return resolved.startsWith(CHAT_ROOT) ? chatModuleOf(resolved.slice(CHAT_ROOT.length)) : null;
+}
+
+const isTypeOnlyImport = node => node.importKind === 'type' || node.exportKind === 'type'
+  || (node.specifiers?.length > 0 && node.specifiers.every(s => s.importKind === 'type' || s.exportKind === 'type'));
+
+// Exported so scripts/check-eslint-config.test.mjs can exercise it directly.
+export const chatLayersRule = {
+  meta: {
+    type: 'problem',
+    schema: [],
+    messages: {
+      upward:
+        "Chat '{{from}}' ({{fromLayer}} layer) must not import '{{to}}' ({{toLayer}} layer), which comes later in CHAT_LAYERS in eslint.config.mjs. Move the shared contract down or receive it through a port.",
+      unassigned:
+        "Chat module '{{module}}' has no layer. Add it to CHAT_LAYERS in eslint.config.mjs.",
+      hubValueImport:
+        "Chat hub contract '{{from}}' may only type-import chat modules.",
+    },
+  },
+  create(context) {
+    const filename = (context.physicalFilename ?? context.filename).replaceAll('\\', '/');
+    const rootIndex = filename.lastIndexOf(`/${CHAT_ROOT}`);
+    if (rootIndex < 0) return {};
+    const sourceRelative = filename.slice(rootIndex + CHAT_ROOT.length + 1);
+    const from = chatModuleOf(sourceRelative);
+    const fromHub = CHAT_HUBS.has(from);
+    const fromLayer = chatOrderOf.get(from);
+
+    function check(node) {
+      const specifier = node.source?.value;
+      if (typeof specifier !== 'string') return;
+      const to = chatImportTarget(sourceRelative, specifier);
+      if (to === null || to === from) return;
+      // Checked before the hub-target exemption, so hubs cannot value-import each other either.
+      if (fromHub) {
+        if (!isTypeOnlyImport(node)) context.report({ node, messageId: 'hubValueImport', data: { from } });
+        return;
+      }
+      if (CHAT_HUBS.has(to)) return;
+      const toLayer = chatOrderOf.get(to);
+      if (!toLayer) {
+        context.report({ node, messageId: 'unassigned', data: { module: to } });
+      } else if (fromLayer && toLayer.rank > fromLayer.rank) {
+        context.report({ node, messageId: 'upward', data: {
+          from, fromLayer: fromLayer.layer, to, toLayer: toLayer.layer,
+        } });
+      }
+    }
+
+    return {
+      Program(node) {
+        if (!fromHub && !fromLayer) context.report({ node, messageId: 'unassigned', data: { module: from } });
+      },
+      ImportDeclaration: check,
+      ExportNamedDeclaration: check,
+      ExportAllDeclaration: check,
+      ImportExpression: check,
+    };
+  },
+};
+
 const declaredTestPackages = new Set([
   ...Object.keys(packageJson.dependencies ?? {}),
   ...Object.keys(packageJson.devDependencies ?? {}),
@@ -133,6 +222,7 @@ const declaredTestDependenciesRule = {
 const localPlugin = { rules: {
   'file-naming': fileNamingRule,
   'declared-test-dependencies': declaredTestDependenciesRule,
+  'chat-layers': chatLayersRule,
 } };
 
 // Hard-coded ISO timestamps for expiries or injected clocks make tests depend on the date they run.
@@ -303,6 +393,7 @@ export default defineConfig([
     rules: {
       ...strictObsidianRules,
       ...strictTypeAwareRules,
+      'local/chat-layers': 'error',
       // Preserve project constraints that the official preset relaxes.
       '@typescript-eslint/no-unused-expressions': ['error', { allowShortCircuit: false, allowTernary: false }],
       'prefer-const': 'error',

@@ -75,7 +75,6 @@ export interface GrokModelDiscoveryServiceOptions {
   modelCommandTimeoutMs?: number;
   probe?: GrokModelCatalogProbeLike;
   runner?: GrokCatalogCommandRunner;
-  versionCommandTimeoutMs?: number;
 }
 
 export interface GrokCatalogFingerprintInputs {
@@ -254,7 +253,7 @@ export class GrokModelDiscoveryService implements GrokModelDiscoveryServiceLike 
         ...launch,
         cwd: launch.spawnCwd,
         signal,
-        timeoutMs: this.options.versionCommandTimeoutMs ?? VERSION_COMMAND_TIMEOUT_MS,
+        timeoutMs: VERSION_COMMAND_TIMEOUT_MS,
       });
       if (versionResult.exitCode === 0 && !versionResult.termination) {
         version = versionResult.stdout.trim() || version;

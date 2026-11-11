@@ -29,7 +29,7 @@ import type {
 import type { CodexDynamicToolRegistry } from '@/providers/codex/runtime/CodexDynamicToolRegistry';
 import { isCodexSessionTool } from '@/providers/codex/runtime/CodexSessionTools';
 
-interface ActiveInteractionTurn {
+export interface ActiveInteractionTurn {
   readonly localTurnId: string;
   readonly nativeThreadId: string;
   readonly nativeTurnId: string;
@@ -45,7 +45,6 @@ interface PendingServerRequest {
 type NativeTurnObserver = (threadId: string, turnId: string) => boolean;
 
 export class CodexExecutionServerRequestRouter {
-  private activeTurn: ActiveInteractionTurn | null = null;
   private dynamicToolRegistry: CodexDynamicToolRegistry | null = null;
   private interactionCounter = 0;
   private readonly interactions: PendingInteractionLedger;
@@ -56,12 +55,15 @@ export class CodexExecutionServerRequestRouter {
     private readonly sessionInstanceId: string,
     private readonly interactionPort: ProviderInteractionPort,
     private readonly observeNativeTurn: NativeTurnObserver,
+    /** The run's bound native turn; the run owns it, and its cancellation ends it for this router. */
+    private readonly readActiveTurn: () => ActiveInteractionTurn | null,
   ) {
     this.interactions = new PendingInteractionLedger(interactionPort);
   }
 
-  setActiveTurn(turn: ActiveInteractionTurn | null): void {
-    this.activeTurn = turn;
+  get #activeTurn(): ActiveInteractionTurn | null {
+    const turn = this.readActiveTurn();
+    return turn && !turn.cancellation.signal.aborted ? turn : null;
   }
 
   setDynamicToolRegistry(registry: CodexDynamicToolRegistry | null): void {
@@ -117,8 +119,7 @@ export class CodexExecutionServerRequestRouter {
   abortAll(reason: ProviderInteractionDismissReason): void {
     this.pendingByNativeKey.clear();
     this.interactions.dismissAll(reason);
-    this.activeTurn?.cancellation.abort();
-    this.activeTurn = null;
+    this.#activeTurn?.cancellation.abort();
   }
 
   async #handleDynamicToolCall(
@@ -369,7 +370,7 @@ export class CodexExecutionServerRequestRouter {
       }, pending.interaction.signal);
       if (
         pending.interaction.signal.aborted
-        || this.activeTurn !== turn
+        || !isSameTurn(this.#activeTurn, turn)
         || this.interactions.isStaleResponse(pending.interaction, response)
         || !isPlainRecord(response.answers)
         || Object.keys(response.answers).length !== 1
@@ -396,7 +397,7 @@ export class CodexExecutionServerRequestRouter {
       throw new Error('Stale Codex server request');
     }
 
-    const turn = this.activeTurn;
+    const turn = this.#activeTurn;
     if (
       !turn
       || turn.nativeThreadId !== threadId
@@ -566,4 +567,11 @@ function mapFileChangeApprovalDecision(
   if (decision === 'allow-always') return 'acceptForSession';
   if (decision === 'cancel') return 'cancel';
   return 'decline';
+}
+
+function isSameTurn(current: ActiveInteractionTurn | null, turn: ActiveInteractionTurn): boolean {
+  return current !== null
+    && current.localTurnId === turn.localTurnId
+    && current.nativeThreadId === turn.nativeThreadId
+    && current.nativeTurnId === turn.nativeTurnId;
 }

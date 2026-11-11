@@ -1,4 +1,5 @@
 import { isSessionTool } from '@/core/tools/toolNames';
+import { extractToolResultContent } from '@/core/tools/toolResultContent';
 import type { ToolProviderPayload } from '@/core/types';
 import { stringifyUnknown } from '@/utils/stringify';
 
@@ -421,6 +422,7 @@ function extractApplyPatch(
   if (argumentToken?.kind !== 'identifier') return null;
 
   let patch: string | null = null;
+  let declarationIndex = -1;
   for (let index = 0; index <= call.toolTokenIndex - 4; index += 1) {
     const declarationToken = tokens[index];
     if (
@@ -433,6 +435,19 @@ function extractApplyPatch(
       && tokens[index + 3]?.kind === 'string'
     ) {
       patch = tokens[index + 3]?.value ?? null;
+      declarationIndex = index;
+    }
+  }
+
+  // Real apply_patch scripts append after the declaration (`patch += "…"`). Earlier += runs before that initializer.
+  if (patch !== null) {
+    const name = argumentToken.value;
+    for (let index = declarationIndex + 4; index + 3 < call.openParenTokenIndex; index += 1) {
+      if (tokens[index]?.kind === 'identifier' && tokens[index]?.value === name
+        && tokens[index + 1]?.value === '+' && tokens[index + 2]?.value === '='
+        && tokens[index + 3]?.kind === 'string') {
+        patch += tokens[index + 3]?.value ?? '';
+      }
     }
   }
 
@@ -589,6 +604,7 @@ function normalizeQuestions(input: Record<string, unknown>): Array<Record<string
         : `Q${index + 1}`,
       options,
       multiSelect: Boolean(item.multiSelect ?? item.multi_select),
+      ...(item.isSecret === true ? { isSecret: true } : {}),
     };
   });
 }
@@ -757,6 +773,7 @@ interface CodexMCPResultPart {
 
 interface CodexMCPResultPayload {
   content?: CodexMCPResultPart[] | null;
+  structuredContent?: unknown;
 }
 
 export interface NormalizedCodexMCPToolState {
@@ -771,6 +788,12 @@ export function normalizeCodexMCPToolName(server: unknown, tool: unknown): strin
   const toolName = typeof tool === 'string' ? tool : '';
   if (!serverName && !toolName) return 'tool';
   return `mcp__${serverName}__${toolName}`;
+}
+
+/** Code Mode calls MCP tools by identifier-safe names, e.g. `github.fetch` as `github_fetch`. */
+export function codexScriptToolNamesMatch(requested: string, native: string): boolean {
+  const scriptName = (name: string) => (name.startsWith('mcp__') ? name.replace(/[^A-Za-z0-9_]/g, '_') : name);
+  return scriptName(requested) === scriptName(native);
 }
 
 export function normalizeCodexMCPToolInput(rawArguments: unknown): Record<string, unknown> {
@@ -814,16 +837,29 @@ export function normalizeCodexMCPToolState(
   };
 }
 
+/** The visible result of a completed MCP item, live or persisted. */
+export function normalizeCodexMCPToolCompletion(
+  rawStatus: unknown,
+  resultPayload?: unknown,
+  rawError?: unknown,
+): { result: string; isError: boolean } {
+  const state = normalizeCodexMCPToolState(rawStatus, resultPayload, rawError);
+  // A completion without a terminal status or output did not report success.
+  return { result: state.result ?? 'Failed', isError: state.isError };
+}
+
 function extractCodexMCPResultText(resultPayload?: unknown): string {
   if (!resultPayload || typeof resultPayload !== 'object') return '';
 
-  const content = (resultPayload as CodexMCPResultPayload).content;
-  if (!Array.isArray(content)) return '';
-
-  return content
+  const { content, structuredContent } = resultPayload as CodexMCPResultPayload;
+  const text = Array.isArray(content) ? content
     .map(item => (typeof item?.text === 'string' ? item.text : ''))
     .filter(Boolean)
-    .join('\n');
+    .join('\n') : '';
+  const structured = extractToolResultContent(structuredContent, { fallbackIndent: 2 });
+  // A server that sends `structuredContent: {}` serializes to '{}'; do not append that to the text.
+  if (text && structured && structured !== '{}') return `${text}\n\n${structured}`;
+  return text || structured;
 }
 
 // ---------------------------------------------------------------------------

@@ -109,8 +109,8 @@ export async function createHarness(options: {
     mentionDataProvider: new VaultMentionDataProvider(plugin.app), getProviderCatalogConfig: () => null,
     isRuntimeLive: () => true, openConversation: async () => undefined, startNewConversation: async () => undefined,
   });
+  await tab.session.runtime.model.hydrate();
   tab.state.messages = messages;
-  tab.hydrationState = 'ready';
   const imageContextManager = new ImageContextManager(plugin.app.keymap, inputWrapperEl, inputEl, {});
   const settings = plugin.settings;
   const lifecycleRegistry = plugin.providerHost.executionLifecycleRegistry;

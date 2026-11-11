@@ -198,7 +198,6 @@ function normalizeLoadedProviderConfigs(settings: Record<string, unknown>): {
   let changed = false;
 
   for (const { adapter, providerId } of getProviderSettingsAdapters()) {
-    const fields = adapter.runtimeOnlyFields ?? [];
     const config = providerConfigs[providerId];
     if (!config) {
       continue;
@@ -207,13 +206,6 @@ function normalizeLoadedProviderConfigs(settings: Record<string, unknown>): {
     const projected = adapter.projectPersistedConfig?.(settings);
     if (projected) {
       changed = JSON.stringify(projected) !== JSON.stringify(config) || changed;
-    }
-
-    for (const field of fields) {
-      if (field in config) {
-        delete config[field];
-        changed = true;
-      }
     }
   }
 
@@ -225,9 +217,7 @@ function projectPersistableProviderConfigs(settings: Record<string, unknown>): P
   for (const { adapter, providerId } of getProviderSettingsAdapters()) {
     const config = providerConfigs[providerId];
     if (!config) continue;
-    const persisted = adapter.projectPersistedConfig?.(settings) ?? config;
-    for (const field of adapter.runtimeOnlyFields ?? []) delete persisted[field];
-    providerConfigs[providerId] = persisted;
+    providerConfigs[providerId] = adapter.projectPersistedConfig?.(settings) ?? config;
   }
   return providerConfigs;
 }

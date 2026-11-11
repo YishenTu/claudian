@@ -4,10 +4,10 @@ import type { ConversationBranchResult, ProviderSystemInstructions } from '@/cor
 import { getUserDisplayText } from '@/core/prompt/promptContext';
 import type { ChatMessage } from '@/core/types';
 import type { ComposerDraft, ComposerDraftController } from '@/features/chat/composer/ComposerDraftController';
+import type { ConversationSession } from '@/features/chat/conversation/ConversationController';
 import { buildChatExecutionConfiguration } from '@/features/chat/execution/chatExecutionConfiguration';
 import type { ChatExecutionCoordinator } from '@/features/chat/execution/ChatExecutionCoordinator';
 import type { MessageRenderer, ReadingAnchor } from '@/features/chat/rendering/MessageRenderer';
-import type { ChatSessionRuntime } from '@/features/chat/sessions/ChatSessionRuntime';
 import type { ChatState } from '@/features/chat/state/ChatState';
 
 export interface ConversationBranchingDeps {
@@ -15,7 +15,7 @@ export interface ConversationBranchingDeps {
   setRewinding(value: boolean): void;
   renderer: Pick<MessageRenderer, 'refreshBranchButtons' | 'refreshBranchButtonState' | 'captureReadingAnchor' | 'restoreReadingAnchor'> | null;
   drafts: Pick<ComposerDraftController, 'destination' | 'capture' | 'restore'>;
-  session: Pick<ChatSessionRuntime, 'canNavigateConversation' | 'runConversationNavigation'>;
+  session: Pick<ConversationSession, 'canNavigateConversation' | 'runConversationNavigation'>;
   getExecutionCoordinator: () => ChatExecutionCoordinator | null;
   ensureExecutionInitialized?: () => Promise<boolean>;
   getSelectedModel?: () => string | null;

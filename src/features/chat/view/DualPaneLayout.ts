@@ -1,5 +1,7 @@
 import { Notice } from 'obsidian';
 
+import { t } from '@/i18n/i18n';
+
 const WIDE_SESSION_LAYOUT_MIN_WIDTH = 600;
 const MIN_CHAT_PANEL_WIDTH = 320;
 const MIN_SESSION_SIDEBAR_WIDTH = 180;
@@ -58,7 +60,7 @@ export class DualPaneLayout {
     this.elements = elements;
     const { containerEl, resizerEl } = elements;
     resizerEl.setAttribute('role', 'separator');
-    resizerEl.setAttribute('aria-label', 'Resize conversation sessions');
+    resizerEl.setAttribute('aria-label', t('chat.tabNavigation.resize'));
     resizerEl.setAttribute('aria-orientation', 'vertical');
     resizerEl.setAttribute('tabindex', '0');
     resizerEl.addEventListener('pointerdown', (event) => this.startResize(event));
@@ -150,7 +152,7 @@ export class DualPaneLayout {
     } catch {
       // Overlapping requests share one cleanup, so only the latest one reports its failure.
       if (requestRevision === this.compactRequestRevision) {
-        new Notice('Failed to close the provisional session preview');
+        new Notice(t('chat.tabNavigation.previewCloseFailed'));
       }
     }
     const containerEl = this.elements?.containerEl;
