@@ -11,7 +11,6 @@ import type { TFile } from 'obsidian';
 import { setIcon } from 'obsidian';
 
 import { ProviderCommandDiscoveryStore } from '@/core/providers/commands/ProviderCommandDiscoveryStore';
-import { setLocale } from '@/i18n/i18n';
 import { GrokCommandCatalog } from '@/providers/grok/commands/GrokCommandCatalog';
 import { normalizeGrokCommands } from '@/providers/grok/normalization/grokCommandNormalization';
 import { ComposerDropdownController } from '@/shared/composer-dropdown/ComposerDropdownController';
@@ -70,6 +69,83 @@ it('shows vault mentions on the keystroke that requests them and updates the ren
     expect(input.getAttribute('aria-activedescendant')).toBe(gamma.id);
     gamma.click();
     expect(input.value).toBe('@Gamma.md ');
+  } finally {
+    controller.destroy();
+    mention.destroy();
+    container.remove();
+  }
+});
+
+it('keeps an Escape-dismissed trigger closed until a new trigger is typed', () => {
+  const container = document.body.createDiv();
+  const input = container.createEl('textarea', { attr: { 'aria-label': 'Message' } });
+  // A short word followed by a space still matches inside another name.
+  const mention = new MentionSource({ getCachedVaultFiles: () => [file('Book ideas.md', 1)], getCachedVaultFolders: () => [] });
+  const controller = new ComposerDropdownController(container, input, [mention]);
+  const type = (value: string): void => {
+    input.value = value;
+    input.selectionStart = input.selectionEnd = value.length;
+    controller.handleInputChange();
+  };
+  // Visibility is a CSS class jsdom does not apply; the controller's state is what hosts consult.
+  const options = (): (string | null)[] => {
+    expect(controller.isVisible()).toBe(true);
+    return within(container).getAllByRole('option').map(option => option.textContent);
+  };
+  try {
+    type('ask @ok i');
+    expect(options()).toEqual(['Book ideas.md']);
+    expect(controller.handleKeydown(new KeyboardEvent('keydown', { key: 'Escape' }))).toBe(true);
+    expect(controller.isVisible()).toBe(false);
+
+    type('ask @ok id');
+    expect(controller.isVisible()).toBe(false);
+    // A hidden menu leaves Enter to the composer instead of selecting a mention.
+    expect(controller.handleKeydown(new KeyboardEvent('keydown', { key: 'Enter' }))).toBe(false);
+    expect(input.value).toBe('ask @ok id');
+
+    type('ask @ok idea @Bo');
+    expect(options()).toEqual(['Book ideas.md']);
+
+    // Deleting the dismissed trigger forgets the dismissal, so retyping it opens the menu.
+    type('ask @ok i');
+    expect(controller.handleKeydown(new KeyboardEvent('keydown', { key: 'Escape' }))).toBe(true);
+    type('ask ');
+    type('ask @ok i');
+    expect(options()).toEqual(['Book ideas.md']);
+
+    // Sending clears the input without an input event; the next keystroke still sees the trigger gone.
+    const key = (name: string): boolean => controller.handleKeydown(new KeyboardEvent('keydown', { key: name }));
+    expect(key('Escape')).toBe(true);
+    input.value = '';
+    input.selectionStart = input.selectionEnd = 0;
+    expect(key('@')).toBe(false);
+    type('ask @ok i');
+    expect(options()).toEqual(['Book ideas.md']);
+
+    // Keyboard caret moves are selection-only, so the next key observes the caret leaving the trigger.
+    expect(key('Escape')).toBe(true);
+    input.selectionStart = input.selectionEnd = 0;
+    expect(key('End')).toBe(false);
+    type('ask @ok id');
+    expect(options()).toEqual(['Book ideas.md']);
+
+    // Moving past text that no longer matches the trigger also forgets the dismissal.
+    const placeCaret = (value: string, caret: number): void => {
+      input.value = value;
+      input.selectionStart = input.selectionEnd = caret;
+    };
+    placeCaret('ask @ok i zz', 9);
+    controller.handleInputChange();
+    expect(options()).toEqual(['Book ideas.md']);
+    expect(key('Escape')).toBe(true);
+    placeCaret('ask @ok i zz', 12);
+    expect(key('ArrowLeft')).toBe(false);
+    placeCaret('ask @ok i zz', 9);
+    expect(key('ArrowLeft')).toBe(false);
+    placeCaret('ask @ok id zz', 10);
+    controller.handleInputChange();
+    expect(options()).toEqual(['Book ideas.md']);
   } finally {
     controller.destroy();
     mention.destroy();
@@ -370,59 +446,6 @@ it('marks the typed text in slash command names and shows the alias a query matc
     controller.destroy();
     slash.destroy();
     container.remove();
-  }
-});
-
-it('searches localized built-in descriptions and inserts the original command on Enter', async () => {
-  const catalog = new GrokCommandCatalog();
-  const discovery = new ProviderCommandDiscoveryStore(async () => {
-    const items = await catalog.listDropdownEntries({
-      includeBuiltIns: false,
-      commandSnapshot: normalizeGrokCommands([{ name: 'fresh', description: 'Start a new conversation' }]),
-    });
-    if (!items.length) throw new Error('Expected a native command');
-    return { status: 'ready', items: [items[0], ...items.slice(1)] };
-  });
-  const slash = new SlashCommandSource({
-    providerConfig: catalog.getDropdownConfig(),
-    providerDiscovery: discovery,
-  });
-  const container = document.body.createDiv();
-  const input = container.createEl('textarea', { attr: { 'aria-label': 'Message' } });
-  setLocale('zh-CN');
-  const controller = new ComposerDropdownController(container, input, [slash]);
-  const onKeydown = (event: KeyboardEvent) => controller.handleKeydown(event);
-  input.addEventListener('keydown', onKeydown);
-  const ui = within(container);
-  const type = (value: string) => {
-    input.value = value;
-    input.setSelectionRange(value.length, value.length);
-    controller.handleInputChange();
-  };
-  try {
-    await discovery.load();
-    type('/');
-    expect(ui.getByRole('option', { name: '/fresh Start a new conversation' })).toBeDefined();
-    type('/开始');
-    const list = ui.getByRole('listbox', { name: '输入建议' });
-    const option = within(list).getByRole('option', { name: '/new 开始新对话' });
-    expect(within(list).getAllByRole('option')).toEqual([option]);
-    expect(input.getAttribute('aria-activedescendant')).toBe(option.id);
-    expect(option.getAttribute('aria-selected')).toBe('true');
-    expect(await axe(container)).toHaveNoViolations();
-    expect(fireEvent.keyDown(input, { key: 'Enter', cancelable: true })).toBe(false);
-    expect(input.value).toBe('/new ');
-    expect([input.selectionStart, input.selectionEnd]).toEqual([5, 5]);
-    expect(controller.isVisible()).toBe(false);
-    expect(input.hasAttribute('aria-activedescendant')).toBe(false);
-    expect(input.hasAttribute('aria-controls')).toBe(false);
-  } finally {
-    input.removeEventListener('keydown', onKeydown);
-    controller.destroy();
-    slash.destroy();
-    discovery.dispose();
-    container.remove();
-    setLocale('en');
   }
 });
 

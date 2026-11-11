@@ -113,9 +113,6 @@ function composeTabRuntime(
     get hydrationState() {
       return core.hydrationState;
     },
-    set hydrationState(value) {
-      core.hydrationState = value;
-    },
     get draftModel() {
       return core.draftModel;
     },

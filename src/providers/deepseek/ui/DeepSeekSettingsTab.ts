@@ -9,6 +9,7 @@ import { t } from '@/i18n/i18n';
 import { DEEPSEEK_PROVIDER_ICON } from '@/shared/icons';
 import { AccessibleSetting } from '@/shared/settings/AccessibleSetting';
 import { renderCLIInstallationSetting } from '@/shared/settings/CLIInstallationSetting';
+import { bindCommittedControl } from '@/shared/settings/CommittedControl';
 import { renderEnvironmentSettingsSection } from '@/shared/settings/EnvironmentSettingsSection';
 import { renderExecutionTargetSettings, validateExecutionTargetCLIPath } from '@/shared/settings/ExecutionTargetSettings';
 import { renderLastEnabledProviderWarning, renderProviderModelEnablementWarning } from '@/shared/settings/ProviderModelEnablementWarning';
@@ -91,7 +92,13 @@ export function createDeepSeekSettingsTabRenderer(workspace: { cliResolver: Deep
       new AccessibleSetting(container).setName(t('settings.deepseek.preset')).setHeading();
       new AccessibleSetting(container).setName(t('settings.deepseek.codeMode.name')).setDesc(t('settings.deepseek.codeMode.desc'))
         .addToggle(toggle => {
-          toggle.setValue(settings().codeMode).onChange(async codeMode => { await host.mutateSettings(settings => { updateDeepSeekProviderSettings(settings, { codeMode }); }); });
+          bindCommittedControl(
+            toggle,
+            () => settings().codeMode,
+            async codeMode => {
+              await host.mutateSettings(next => { updateDeepSeekProviderSettings(next, { codeMode }); });
+            },
+          );
           toggle.toggleEl.setAttribute('aria-label', t('settings.deepseek.codeMode.name'));
         });
       const refreshPreset = renderPresetPlugins(container, host, settings);

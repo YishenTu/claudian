@@ -1,10 +1,10 @@
 import type { ProviderId } from '@/core/providers/types';
 import type { ChatExecutionCoordinator } from '@/features/chat/execution/ChatExecutionCoordinator';
-import type { SessionMailbox } from '@/features/chat/session-messaging/SessionMailbox';
+import type { SessionMailbox } from '@/features/chat/sessions/SessionMailbox';
 import type { SessionChange, SessionModel } from '@/features/chat/sessions/SessionModel';
 import type { SideChatController } from '@/features/chat/side-chat/SideChatController';
 import { SessionAttention } from '@/features/chat/state/SessionAttention';
-import { type TurnCancelReason, TurnCoordinator } from '@/features/chat/turns/TurnCoordinator';
+import { type TurnCancelOptions, type TurnCancelReason, TurnCoordinator } from '@/features/chat/turns/TurnCoordinator';
 
 export interface SessionIdentity {
   conversationId: string | null;
@@ -15,12 +15,6 @@ export interface SessionIdentity {
 }
 
 let nextSessionKey = 0;
-
-export interface TurnCancelOptions {
-  dismissInteractions?: boolean;
-  /** Another session's interrupt keeps the pending session messages it is delivered with. */
-  keepMailbox?: boolean;
-}
 
 export class ChatSessionRuntime {
   /** Stable for the session's lifetime; how a held draft is reattached before it has a conversation. */

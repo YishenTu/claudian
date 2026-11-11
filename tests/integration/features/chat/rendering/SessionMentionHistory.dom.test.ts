@@ -62,6 +62,13 @@ it.each(['claude', 'codex', 'opencode', 'pi', 'grok'] as const)('hides snapshot 
 
 it.each([
   {
+    label: 'context-free indented XML example',
+    body: 'Explain this XML:\n\n    <editor_selection path="note.md">hello</editor_selection>\n\nKeep the example.',
+    appendContext: false,
+    visibleExample: '<editor_selection path="note.md">hello</editor_selection>',
+    finalInstruction: 'Keep the example.',
+  },
+  {
     label: 'XML example with actual appended context',
     body: 'Explain this XML:\n\n```xml\n\n<editor_selection path="note.md">hello</editor_selection>\n```\nKeep the example.',
     appendContext: true,

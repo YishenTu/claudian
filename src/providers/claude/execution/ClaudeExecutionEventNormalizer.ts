@@ -20,7 +20,6 @@ import type { TurnStats, UsageInfo } from '../../../core/types';
 import { createTurnStats } from '../../../core/types';
 import { mapClaudeToolInputPaths, mapClaudeToolResultPaths } from '../normalization/claudePaths';
 import { normalizeClaudeSessionToolName } from '../normalization/claudeSessionToolNames';
-import { ClaudeTaskToolNormalizer } from '../normalization/ClaudeTaskToolNormalizer';
 import { normalizeClaudeToolResultDetails } from '../normalization/claudeToolResultDetails';
 import type {
   ClaudeAsyncSubagentCompletionEvent,
@@ -111,7 +110,6 @@ interface NormalizationState {
 }
 
 export class ClaudeExecutionEventNormalizer {
-  private readonly taskToolNormalizer = new ClaudeTaskToolNormalizer();
   private readonly states: Record<
     ClaudeExecutionEventChannel,
     NormalizationState
@@ -138,7 +136,6 @@ export class ClaudeExecutionEventNormalizer {
     })) {
       switch (event.type) {
         case 'session_init':
-          this.taskToolNormalizer.bindSession(event.sessionId);
           normalized.push({ type: 'session_init', event });
           break;
         case 'async_subagent_completion':
@@ -154,9 +151,7 @@ export class ClaudeExecutionEventNormalizer {
           normalized.push({ type: 'native_error', message: event.content });
           break;
         default:
-          for (const chunk of normalizeTaskToolChunk(event, this.taskToolNormalizer)) {
-            this.#normalizeOutputChunk(message, chunk, state, normalized);
-          }
+          this.#normalizeOutputChunk(message, event, state, normalized);
       }
     }
 
@@ -219,7 +214,6 @@ export class ClaudeExecutionEventNormalizer {
   reset(channel: ClaudeExecutionEventChannel): void {
     const state = this.states[channel];
     state.streamState.clearAll();
-    this.taskToolNormalizer.finishCalls(state.toolNames.keys());
     state.usageState.clear();
     state.toolScopes.clear();
     state.toolNames.clear();
@@ -306,46 +300,6 @@ function createNormalizationState(): NormalizationState {
   };
 }
 
-function normalizeTaskToolChunk(
-  chunk: ClaudeOutputChunk,
-  normalizer: ClaudeTaskToolNormalizer,
-): ClaudeOutputChunk[] {
-  if (chunk.type === 'tool_use') {
-    const normalized = normalizer.normalizeToolUse(chunk.id, chunk.name, chunk.input);
-    if (!normalized) return [chunk];
-    return [{
-      ...chunk,
-      name: normalized.name,
-      input: normalized.input,
-      providerPayload: normalized.providerPayload,
-    }];
-  }
-
-  if (chunk.type === 'tool_result') {
-    const normalized = normalizer.normalizeToolResult(
-      chunk.id,
-      chunk.toolUseResult,
-      {
-        fallbackContent: chunk.content,
-        isError: chunk.isError,
-      },
-    );
-    if (!normalized) return [chunk];
-    return [
-      {
-        type: 'tool_use',
-        id: chunk.id,
-        name: normalized.name,
-        input: normalized.input,
-        providerPayload: normalized.providerPayload,
-      },
-      chunk,
-    ];
-  }
-
-  return [chunk];
-}
-
 function toOutputEvent(
   chunk: ClaudeOutputChunk,
   state: NormalizationState,
@@ -414,9 +368,6 @@ function normalizeToolStarted(
     input: chunk.input,
     ...(normalizeClaudeSessionToolName(chunk.name) !== chunk.name
       ? { providerPayload: { rawName: chunk.name } } : {}),
-    ...('providerPayload' in chunk && chunk.providerPayload
-      ? { providerPayload: chunk.providerPayload }
-      : {}),
   };
 }
 
@@ -439,10 +390,9 @@ function normalizeToolCompleted(
       : { toolScope: { kind: 'main' as const } }
   );
   const resultDetails = normalizeClaudeToolResultDetails(chunk.toolUseResult);
-  const providerPayload = chunk.providerPayload
-    ?? (chunk.toolUseResult !== undefined && carriesTaskResult(state.toolNames.get(chunk.id))
-      ? { rawOutput: chunk.toolUseResult }
-      : undefined);
+  const providerPayload = chunk.toolUseResult !== undefined && carriesTaskResult(state.toolNames.get(chunk.id))
+    ? { rawOutput: chunk.toolUseResult }
+    : undefined;
   return {
     type: 'tool_completed',
     toolCallId: chunk.id,

@@ -55,7 +55,6 @@ function createToolStream(expandFileEditsByDefault = false) {
     plugin: { app: {}, settings: { expandFileEditsByDefault } } as ToolCallStreamDeps['plugin'],
     indicator: { show: () => undefined },
     getMessagesEl: () => parent,
-    scrollToBottom: () => undefined,
   });
   const message: ChatMessage = {
     id: 'refined-response', role: 'assistant', content: '', timestamp: testClock()().getTime(), toolCalls: [],
@@ -535,7 +534,7 @@ it('omits silent write_stdin polling cards from the live response while preservi
   state.currentContentEl = parent;
   const stream = new ToolCallStream({
     state, plugin: await createChatFeatureHost(),
-    indicator: { show: () => undefined }, getMessagesEl: () => parent, scrollToBottom: () => undefined,
+    indicator: { show: () => undefined }, getMessagesEl: () => parent,
   });
   const message = { id: 'response', role: 'assistant' as const, content: '', timestamp: Date.now(), toolCalls: [] };
   stream.use({ type: 'tool_use', id: 'refined-poll', name: 'unknown', input: {} }, message);

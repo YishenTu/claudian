@@ -4,9 +4,6 @@ import { piModelPolicy } from '../PiModelPolicy';
 
 export const piChatUIConfig: ProviderChatUIConfig = {
   ...piModelPolicy,
-  getModeSelector(): null {
-    return null;
-  },
   getProviderIcon() {
     return PI_PROVIDER_ICON;
   },

@@ -396,6 +396,42 @@ describe('Codex MCP normalization helpers', () => {
     });
   });
 
+  it('keeps MCP structured content when the result also carries text', () => {
+    expect(normalizeCodexMCPToolState(
+      'completed',
+      {
+        content: [{ type: 'text', text: 'Action completed.' }],
+        structuredContent: { content: 'use std::collections::HashMap;\n' },
+      },
+      undefined,
+    )).toEqual({
+      isTerminal: true,
+      isError: false,
+      status: 'completed',
+      result: 'Action completed.\n\n{\n  "content": "use std::collections::HashMap;\\n"\n}',
+    });
+  });
+
+  it('keeps text-only MCP results unchanged', () => {
+    expect(normalizeCodexMCPToolState('completed', { content: [{ text: 'hit' }] }, undefined).result).toBe('hit');
+  });
+
+  it('keeps structured-only MCP results unchanged', () => {
+    expect(normalizeCodexMCPToolState(
+      'completed',
+      { content: [], structuredContent: { matches: ['vault note'], count: 1 } },
+      undefined,
+    ).result).toBe('{\n  "matches": [\n    "vault note"\n  ],\n  "count": 1\n}');
+  });
+
+  it('drops an empty structured payload instead of adding an empty object', () => {
+    expect(normalizeCodexMCPToolState(
+      'completed',
+      { content: [{ type: 'text', text: 'Action completed.' }], structuredContent: {} },
+      undefined,
+    ).result).toBe('Action completed.');
+  });
+
   it('normalizes MCP failed state with error text', () => {
     expect(normalizeCodexMCPToolState(
       'failed',

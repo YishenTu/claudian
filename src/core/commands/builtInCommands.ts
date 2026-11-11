@@ -5,6 +5,8 @@
  * These are handled separately from user-defined slash commands.
  */
 
+import type { TranslationKey } from '@/i18n/types';
+
 import { ProviderRegistry } from '../providers/ProviderRegistry';
 import type { ProviderCapabilities, ProviderId } from '../providers/types';
 
@@ -17,7 +19,8 @@ export type BuiltInCommandAction =
 type BuiltInCommandCapability =
   | 'supportsNativeHistory'
   | 'supportsFork'
-  | 'supportsFastMode';
+  | 'supportsFastMode'
+  | 'supportsCompaction';
 type BuiltInCommandCapabilityContext =
   Partial<Pick<ProviderCapabilities, BuiltInCommandCapability>>
   & Partial<Pick<ProviderCapabilities, 'providerId'>>;
@@ -26,11 +29,11 @@ type BuiltInCommandSupportContext = ProviderId | BuiltInCommandCapabilityContext
 export interface BuiltInCommand {
   name: string;
   aliases?: string[];
-  description: string;
+  descriptionKey: TranslationKey;
   action: BuiltInCommandAction;
   /** Hint for arguments shown in dropdown (e.g., "path"). */
   argumentHint?: string;
-  /** When set, provider capabilities must expose this feature. */
+  /** When set, availability follows this provider capability and its documented default. */
   requiredCapability?: BuiltInCommandCapability;
 }
 
@@ -44,31 +47,32 @@ export const BUILT_IN_COMMANDS: BuiltInCommand[] = [
   {
     name: 'new',
     aliases: ['clear'],
-    description: 'Start a new conversation',
+    descriptionKey: 'chat.suggestions.builtInDescriptions.new',
     action: 'clear',
   },
   {
     name: 'compact',
-    description: 'Compact conversation history',
+    descriptionKey: 'chat.suggestions.builtInDescriptions.compact',
     action: 'compact',
+    requiredCapability: 'supportsCompaction',
   },
   {
     name: 'sessions',
     aliases: ['resume'],
-    description: 'Resume a previous conversation',
+    descriptionKey: 'chat.suggestions.builtInDescriptions.sessions',
     action: 'resume',
     requiredCapability: 'supportsNativeHistory',
   },
   {
     name: 'fast',
-    description: 'Toggle fast mode',
+    descriptionKey: 'chat.suggestions.builtInDescriptions.fast',
     action: 'fast',
     requiredCapability: 'supportsFastMode',
   },
   {
     name: 'side',
     aliases: ['btw'],
-    description: 'Ask a temporary side question from the latest reply',
+    descriptionKey: 'chat.suggestions.builtInDescriptions.side',
     action: 'side',
     argumentHint: 'prompt',
     requiredCapability: 'supportsFork',
@@ -114,6 +118,7 @@ export function isBuiltInCommandSupported(
   }
 
   const capabilities = resolveCapabilities(context);
+  if (command.requiredCapability === 'supportsCompaction') return capabilities?.supportsCompaction !== false;
   return capabilities ? capabilities[command.requiredCapability] === true : false;
 }
 
@@ -184,7 +189,7 @@ export function getBuiltInCommandsForDropdown(context?: BuiltInCommandSupportCon
   id: string;
   name: string;
   aliases?: readonly string[];
-  description: string;
+  descriptionKey: TranslationKey;
   content: string;
   argumentHint?: string;
 }> {
@@ -194,7 +199,7 @@ export function getBuiltInCommandsForDropdown(context?: BuiltInCommandSupportCon
       id: `builtin:${cmd.name}`,
       name: cmd.name,
       aliases: cmd.aliases,
-      description: cmd.description,
+      descriptionKey: cmd.descriptionKey,
       content: '', // Built-in commands don't have prompt content
       argumentHint: cmd.argumentHint,
     }));

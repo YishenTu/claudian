@@ -12,9 +12,6 @@ export const opencodeChatUIConfig: ProviderChatUIConfig = {
   getPermissionModeOptions() {
     return OPENCODE_PERMISSION_MODE_OPTIONS;
   },
-  getModeSelector(): null {
-    return null;
-  },
   getProviderIcon() {
     return OPENCODE_PROVIDER_ICON;
   },

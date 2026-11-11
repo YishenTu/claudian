@@ -185,7 +185,8 @@ export class ProjectMemoryModal extends AccessibleModal {
     const changing = dirty || this.editing;
     this.cancelButton.hidden = !changing;
     this.saveButton.hidden = !changing;
-    this.saveButton.disabled = this.busy || !dirty;
+    this.saveButton.disabled = this.busy || this.reading || !dirty;
+    this.noticeEl.querySelectorAll('button').forEach((button) => { button.disabled = this.busy || this.reading; });
     this.contentArea.disabled = this.busy || this.reading || this.baseline === null;
     this.updatedEl.setText(this.modifiedAt === null
       ? ''
@@ -329,7 +330,8 @@ export class ProjectMemoryModal extends AccessibleModal {
   }
 
   private async save(overwrite: boolean): Promise<void> {
-    if (this.busy || this.baseline === null) return;
+    // A pending read is about to replace the editor text; writing now would race the text the user chose.
+    if (this.busy || this.reading || this.baseline === null) return;
     // The written text is captured now, so the editor stays locked until the write settles.
     this.setBusy(true);
     const content = this.contentArea.value;
@@ -386,7 +388,6 @@ export class ProjectMemoryModal extends AccessibleModal {
   /** While a write is in flight, nothing else may reload or write the memory file. */
   private setBusy(busy: boolean): void {
     this.busy = busy;
-    this.noticeEl.querySelectorAll('button').forEach((button) => { button.disabled = busy; });
     this.missingEl.querySelectorAll('button').forEach((button) => { button.disabled = busy; });
     this.sync();
   }

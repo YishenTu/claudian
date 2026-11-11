@@ -118,7 +118,7 @@ describe('builtInCommands', () => {
       expect(clearCmd).toBeDefined();
       expect(clearCmd?.id).toBe('builtin:new');
       expect(clearCmd?.aliases).toEqual(['clear']);
-      expect(clearCmd?.description).toBe('Start a new conversation');
+      expect(clearCmd?.descriptionKey).toBe('chat.suggestions.builtInDescriptions.new');
       expect(clearCmd?.content).toBe('');
     });
 

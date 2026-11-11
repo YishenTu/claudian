@@ -400,6 +400,42 @@ it.each([true, false])('applies a v2 interruption to the whole turn across compa
 });
 
 describe('OpenCode compaction boundaries', () => {
+  it.each(['completed', 'running', 'failed'].flatMap(status => ['completed', 'interrupted'].map(outcome => ({ status, outcome }))))('keeps whole-turn statistics across $status compaction with $outcome idle', ({ status, outcome }) => {
+    const start = testDate().getTime();
+    const messages = mapOpencodeNativeMessages([
+      { id: 'u', type: 'user', text: 'Work', time: { created: start } },
+      { id: 'a1', type: 'assistant', time: { created: start + 100, completed: start + 1000 },
+        finish: 'tool-calls', tokens: { output: 5, reasoning: 1 }, content: [{ type: 'text', text: 'Before' }] },
+      { id: 'a1-final', type: 'assistant', time: { created: start + 1000, completed: start + 1050 },
+        finish: 'stop', tokens: { output: 5, reasoning: 1 }, content: [{ type: 'text', text: ' continued' }] },
+      { id: 'c', type: 'compaction', status, time: { created: start + 1100 } },
+      { id: 'c-again', type: 'compaction', status, time: { created: start + 1150 } },
+      { id: 'a2', type: 'assistant', time: { created: start + 1200, completed: start + 3000 },
+        finish: 'stop', tokens: { output: 20, reasoning: 3 }, content: [{ type: 'text', text: 'After' }] },
+      { id: 'idle', type: 'idle', outcome, time: { created: start + 3100 } },
+    ]);
+
+    expect(messages.at(-1)?.turnStats).toEqual(outcome === 'completed' ? { outputTokens: 35, durationMs: 3000 } : undefined);
+    expect(messages[1].turnStats).toBeUndefined();
+    expect(messages.map(message => message.content)).toEqual(status === 'completed' ? ['Work', 'Before continued', '', '', 'After'] : ['Work', 'Before continued', 'After']);
+    expect(messages.filter(message => message.role === 'assistant').map(message => message.turnId))
+      .toEqual(status === 'completed' ? ['opencode-turn-0', 'opencode-turn-0', 'opencode-turn-0', 'opencode-turn-0'] : ['opencode-turn-0', 'opencode-turn-0']);
+  });
+
+  it('does not recover missing native usage after compaction', () => {
+    const start = testDate().getTime();
+    const messages = mapOpencodeNativeMessages([
+      { id: 'u', type: 'user', text: 'Work', time: { created: start } },
+      { id: 'a1', type: 'assistant', time: { created: start + 100, completed: start + 1000 },
+        finish: 'tool-calls', content: [{ type: 'text', text: 'Before' }] },
+      { id: 'c', type: 'compaction', status: 'completed', time: { created: start + 1100 } },
+      { id: 'a2', type: 'assistant', time: { created: start + 1200, completed: start + 3000 },
+        finish: 'stop', tokens: { output: 20, reasoning: 3 }, content: [{ type: 'text', text: 'After' }] },
+    ]);
+
+    expect(messages.at(-1)?.turnStats).toBeUndefined();
+  });
+
   const created = testDate().getTime();
   it.each(['completed', 'running', 'failed'])('restores only completed V2 compaction (%s)', status => {
     const messages = mapOpencodeNativeMessages([

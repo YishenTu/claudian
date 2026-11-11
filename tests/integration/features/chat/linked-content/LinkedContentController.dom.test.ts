@@ -123,6 +123,8 @@ describe('LinkedContentController DOM', () => {
     expect(welcomeEl.querySelector<HTMLElement>('.claudian-linked-content-picker-option')!).toBeNull();
     expect(labels(welcomeEl)).toEqual([]);
     const search = welcomeEl.querySelector<HTMLInputElement>('.claudian-linked-content-picker-search')!;
+    expect(search.getAttribute('role')).toBe('combobox');
+    expect(search.getAttribute('aria-expanded')).toBe('false');
     expect(search.getAttribute('aria-label')).toBeNull();
     expect(search.getAttribute('aria-labelledby')).toBe(
       welcomeEl.querySelector<HTMLElement>('.claudian-linked-content-selector-prefix')?.getAttribute('id'),
@@ -131,6 +133,7 @@ describe('LinkedContentController DOM', () => {
     expect(search.style.height).toBe('17px');
     search.value = 'Projects';
     fireEvent.input(search);
+    expect(search.getAttribute('aria-expanded')).toBe('true');
     expect(search.style.width).toBe('38px');
     expect(picker.hasClass('is-visible')).toBe(true);
     expect(welcomeEl.querySelector<HTMLElement>('.claudian-linked-content-picker-option')
