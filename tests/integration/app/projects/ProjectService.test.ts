@@ -350,7 +350,11 @@ describe('ProjectService', () => {
       expect(active.get(record.id)).toEqual(expectedRecord);
       expect(await vault.read(`${PROJECTS_PATH}/${record.id}.json`)).toBe(outcome === 'commit'
         ? `${JSON.stringify(expectedRecord, null, 2)}\n` : beforeMetadata);
-      expect(moved.mock.calls).toEqual(outcome === 'shared claim' ? [] : [[record.memoryPath, alias]]);
+      expect(moved.mock.calls).toEqual(outcome === 'shared claim'
+        ? []
+        : outcome === 'metadata failure'
+          ? [[record.memoryPath, alias], [alias, record.memoryPath]]
+          : [[record.memoryPath, alias]]);
       expect(await fs.readdir(vault.resolve('Notes'))).toEqual([outcome === 'commit' ? 'memory.md' : 'MEMORY.md']);
       expect(removed).not.toHaveBeenCalled();
       expect(await vault.read(record.memoryPath)).toBe(bytes);
