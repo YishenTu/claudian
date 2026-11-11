@@ -169,10 +169,11 @@ function getDiffBlockClass(type: DiffOp['type']): string {
 
 export type InlineEditDecision = 'accept' | 'edit' | 'reject';
 
-/** The edit under review; accepting writes its text over the source range. */
+/**
+ * The edit under review; accepting writes its text over the source range. A selection's proposal
+ * previews in place of the selection; a cursor's previews above the cursor.
+ */
 interface InlineEditProposal {
-  /** A replacement previews in place of its source; an insertion previews above it. */
-  kind: 'replacement' | 'insertion';
   text: string;
   diffOps: DiffOp[];
 }
@@ -929,15 +930,19 @@ export class InlineEditSession {
     }
 
     if (result.success) {
-      if (result.editedText !== undefined) {
-        this.#showProposal({
-          kind: 'replacement',
-          text: result.editedText,
-          diffOps: computeMarkdownDiff(this.selectedText, result.editedText),
-        });
-      } else if (result.insertedText !== undefined) {
-        const text = normalizeInsertionText(result.insertedText);
-        this.#showProposal({ kind: 'insertion', text, diffOps: [{ type: 'insert', text }] });
+      const proposedText = result.editedText ?? result.insertedText;
+      if (proposedText !== undefined) {
+        // The mode, not the wrapper the model chose, decides what accepting does: a selection is
+        // replaced and a cursor receives an insertion, so the preview must show exactly that.
+        if (this.mode === 'cursor') {
+          const text = normalizeInsertionText(proposedText);
+          this.#showProposal({ text, diffOps: [{ type: 'insert', text }] });
+        } else {
+          this.#showProposal({
+            text: proposedText,
+            diffOps: computeMarkdownDiff(this.selectedText, proposedText),
+          });
+        }
       } else if (result.clarification) {
         this.#showReply(userMessage, result.clarification);
       } else {
@@ -1023,7 +1028,7 @@ export class InlineEditSession {
     hideSelectionHighlight(this.editorView);
     this.editorView.dispatch({
       effects: showReview.of({
-        hidden: proposal.kind === 'replacement' ? { from: this.selFrom, to: this.selTo } : null,
+        hidden: this.mode === 'selection' ? { from: this.selFrom, to: this.selTo } : null,
         diffOps: proposal.diffOps,
         previewPos: this.editorView.state.doc.lineAt(this.selFrom).from,
         widget: this,
