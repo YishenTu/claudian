@@ -38,10 +38,10 @@ export function renderHostnameCLIPathSetting(
 
   const updateValidation = (value: string): boolean => {
     const error = options.validate?.(value) ?? null;
-    setElementText(validationEl, error ?? '');
-    toggleElementClass(validationEl, 'claudian-hidden', !error);
-    toggleElementClass(text.inputEl, 'claudian-input-error', Boolean(error));
-    text.inputEl.setAttribute?.('aria-invalid', String(Boolean(error)));
+    validationEl.setText(error ?? '');
+    validationEl.toggleClass('claudian-hidden', !error);
+    text.inputEl.toggleClass('claudian-input-error', Boolean(error));
+    text.inputEl.setAttribute('aria-invalid', String(Boolean(error)));
     return !error;
   };
 
@@ -80,14 +80,14 @@ export function renderHostnameCLIPathSetting(
       });
   });
 
-  addElementClass(text.inputEl, 'claudian-settings-cli-path-input');
-  text.inputEl.setAttribute?.('aria-label', options.name);
+  text.inputEl.addClass('claudian-settings-cli-path-input');
+  text.inputEl.setAttribute('aria-label', options.name);
   updateValidation(currentValue);
 
   const setDisabled = (nextDisabled: boolean): void => {
     disabled = nextDisabled;
     text.inputEl.disabled = nextDisabled;
-    text.inputEl.setAttribute?.('aria-disabled', String(nextDisabled));
+    text.inputEl.setAttribute('aria-disabled', String(nextDisabled));
   };
   const setDescription = (description: string): void => {
     setting.setDesc(description);
@@ -108,33 +108,4 @@ export function renderHostnameCLIPathSetting(
     text,
     validationEl,
   };
-}
-
-function addElementClass(element: HTMLElement, className: string): void {
-  const obsidianElement = element as HTMLElement & { addClass?: (name: string) => void };
-  if (obsidianElement.addClass) {
-    obsidianElement.addClass(className);
-    return;
-  }
-  element.classList?.add(className);
-}
-
-function toggleElementClass(element: HTMLElement, className: string, force: boolean): void {
-  const obsidianElement = element as HTMLElement & {
-    toggleClass?: (name: string, value: boolean) => void;
-  };
-  if (obsidianElement.toggleClass) {
-    obsidianElement.toggleClass(className, force);
-    return;
-  }
-  element.classList?.toggle(className, force);
-}
-
-function setElementText(element: HTMLElement, value: string): void {
-  const obsidianElement = element as HTMLElement & { setText?: (text: string) => void };
-  if (obsidianElement.setText) {
-    obsidianElement.setText(value);
-    return;
-  }
-  element.textContent = value;
 }

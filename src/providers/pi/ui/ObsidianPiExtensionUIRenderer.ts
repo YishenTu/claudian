@@ -10,11 +10,7 @@ import type {
   PiExtensionUINotifyRequest,
   PiExtensionUIRenderer,
   PiExtensionUISelectRequest,
-  PiExtensionUISetEditorTextRequest,
-  PiExtensionUISetStatusRequest,
-  PiExtensionUISetTitleRequest,
-  PiExtensionUISetWidgetRequest,
-} from './PiExtensionUIRenderer';
+} from '../runtime/PiExtensionUIBridge';
 
 export class ObsidianPiExtensionUIRenderer implements PiExtensionUIRenderer {
   constructor(private readonly app: App) {}
@@ -50,11 +46,6 @@ export class ObsidianPiExtensionUIRenderer implements PiExtensionUIRenderer {
   notify(request: PiExtensionUINotifyRequest): void {
     new Notice(getDisplayText(request));
   }
-
-  setStatus(_request: PiExtensionUISetStatusRequest): void {}
-  setWidget(_request: PiExtensionUISetWidgetRequest): void {}
-  setTitle(_request: PiExtensionUISetTitleRequest): void {}
-  setEditorText(_request: PiExtensionUISetEditorTextRequest): void {}
 }
 
 function getDisplayText(request: Record<string, unknown>): string {

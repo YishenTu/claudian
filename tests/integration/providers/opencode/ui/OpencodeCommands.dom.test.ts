@@ -75,7 +75,6 @@ it.each([false, true])('updates an open command menu while preserving focus and 
     ui: {
       composerDropdown: controller, promptSuggestion: { discard: () => undefined },
       modelSelector: { updateDisplay: () => undefined, renderOptions: () => undefined },
-      modeSelector: { updateDisplay: () => undefined, renderOptions: () => undefined },
       effortSelector: { updateDisplay: () => undefined }, serviceTierToggle: { updateDisplay: () => undefined },
       permissionToggle: { updateDisplay: () => undefined, setVisible: () => undefined },
       imageContextManager: { setEnabled: () => undefined }, contextUsageMeter: { update: () => undefined },

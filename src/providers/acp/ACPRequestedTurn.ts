@@ -50,7 +50,7 @@ export class ACPRequestedTurn {
     });
   }
 
-  /** True between `beginLiveOutput()` and `endLiveOutput()` while the run is open. */
+  /** True after `beginLiveOutput()` while the run is open. */
   get acceptingLiveOutput(): boolean {
     return this.#acceptingLiveOutput && !this.#options.run.isTerminal;
   }
@@ -64,10 +64,6 @@ export class ACPRequestedTurn {
   beginLiveOutput(): void {
     this.#normalizer.reset();
     this.#acceptingLiveOutput = true;
-  }
-
-  endLiveOutput(): void {
-    this.#acceptingLiveOutput = false;
   }
 
   accept(nativeUserMessageId?: string | null): void {

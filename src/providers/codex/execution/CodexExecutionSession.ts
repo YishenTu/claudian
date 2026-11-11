@@ -921,7 +921,7 @@ export class CodexExecutionSession
     } satisfies CodexProviderState & Record<string, unknown>;
   }
 
-  #resolveNativePersistence(): boolean | undefined {
+  #resolveNativePersistence(): boolean {
     if (this.config.nativePersistence === 'enabled') return true;
     if (this.config.nativePersistence === 'disabled-if-supported') return false;
     return this.config.lifecycle === 'persistent';

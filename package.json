@@ -39,11 +39,9 @@
   "author": "Yishen Tu",
   "license": "MIT",
   "devDependencies": {
-    "@eslint-community/eslint-plugin-eslint-comments": "^4.7.2",
     "@eslint/js": "^10.0.1",
     "@testing-library/dom": "^10.4.1",
     "@types/cross-spawn": "6.0.6",
-    "@types/jsdom": "^21.1.7",
     "@types/node": "^25.5.2",
     "@types/ws": "8.18.1",
     "@typescript-eslint/eslint-plugin": "^8.58.0",
@@ -58,7 +56,6 @@
     "eslint-plugin-simple-import-sort": "^12.1.1",
     "jsdom": "^26.1.0",
     "obsidian": "1.13.0",
-    "tsx": "^4.23.1",
     "typescript": "^6.0.2",
     "vitest": "^5.0.5"
   },
@@ -71,22 +68,13 @@
     "@modelcontextprotocol/sdk": "^1.32.1",
     "cross-spawn": "7.0.6",
     "jsonc-parser": "3.3.1",
-    "tslib": "^2.8.1",
     "ws": "8.21.2",
     "yaml": "2.9.0"
   },
   "overrides": {
     "@codemirror/state": "$@codemirror/state",
     "@codemirror/view": "$@codemirror/view",
-    "@hono/node-server": "2.1.5",
-    "@humanfs/node": "0.16.8",
-    "body-parser": "2.4.0",
-    "fast-uri": "3.1.9",
-    "hono": "4.13.13",
-    "ip-address": "10.7.4",
-    "js-yaml": "4.3.2",
     "minimatch": "11.0.3",
-    "moment": "2.31.0",
-    "qs": "6.17.1"
+    "moment": "2.31.0"
   }
 }

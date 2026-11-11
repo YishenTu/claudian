@@ -15,14 +15,12 @@ export interface ProviderModelPickerOptions {
   container: HTMLElement;
   emptyCatalogText: string;
   getState(): ProviderModelCatalogSnapshot;
-  initiallyOpen?: boolean;
   loadCatalog(force: boolean): Promise<void>;
   loadingCatalogText: string;
   modifier: string;
   onAliasChange(modelId: string, alias: string): Promise<void>;
   onSelectionChange(change: ProviderModelSelectionChange): Promise<void>;
   providerName: string;
-  searchPlaceholder?: string;
 }
 
 export function renderProviderModelPicker(
@@ -50,7 +48,7 @@ export function renderProviderModelPicker(
   const summaryEl = pickerEl.createDiv({ cls: 'claudian-provider-model-picker-summary' });
   const selectedEl = pickerEl.createDiv({ cls: 'claudian-provider-model-picker-selected' });
   const catalogEl = pickerEl.createEl('details', { cls: 'claudian-provider-model-picker-catalog' });
-  catalogEl.open = options.initiallyOpen ?? options.getState().selectedIds.length === 0;
+  catalogEl.open = options.getState().selectedIds.length === 0;
 
   const catalogSummaryEl = catalogEl.createEl('summary', {
     cls: 'claudian-provider-model-picker-catalog-summary',
@@ -69,7 +67,7 @@ export function renderProviderModelPicker(
     type: 'search',
   });
   searchInput.setAttribute('aria-label', t('settings.modelPicker.filterLabel', { provider: options.providerName }));
-  searchInput.placeholder = options.searchPlaceholder ?? t('settings.modelPicker.searchPlaceholder');
+  searchInput.placeholder = t('settings.modelPicker.searchPlaceholder');
   searchInput.addEventListener('input', () => {
     searchQuery = searchInput.value.trim().toLowerCase();
     renderList();

@@ -23,7 +23,7 @@ beforeAll(() => {
 function mountToolbar(toolbarEl: HTMLElement): void {
   const settings = { model: 'sonnet', reasoning: 'high', serviceTier: 'fast', permissionMode: 'normal' };
   createInputToolbar(toolbarEl, {
-    onModelChange: async () => {}, onModeChange: async () => {},
+    onModelChange: async () => {},
     onEffortLevelChange: async () => {}, onServiceTierChange: async () => {}, onPermissionModeChange: async () => {},
     getSettings: () => settings,
     getUIConfig: () => ({
@@ -34,10 +34,6 @@ function mountToolbar(toolbarEl: HTMLElement): void {
       getPermissionModeOptions: () => [{ value: 'normal', label: 'Safe' }, { value: 'yolo', label: 'YOLO', bypassesApprovals: true }],
       getServiceTierToggle: () => ({
         inactiveValue: 'default', inactiveLabel: 'Standard', activeValue: 'fast', activeLabel: 'Fast', isActive: true,
-      }),
-      getModeSelector: () => ({
-        label: 'Mode', value: 'build',
-        options: [{ value: 'build', label: 'Build' }, { value: 'plan', label: 'Plan' }],
       }),
     }),
     getCapabilities: () => ({ reasoningControl: 'effort' }),
@@ -242,10 +238,8 @@ describe('Zen mode styles', () => {
     expect(isShown(model)).toBe(true);
     expect(isShown(model.querySelector('.claudian-thinking-current')!)).toBe(true);
     expect(isShown(model.querySelector('.claudian-service-tier-indicator')!)).toBe(true);
-    // Permission and provider mode chips keep their values; zen only hides them.
-    for (const name of [/^Permission mode: Safe/, /^Mode: Build/]) {
-      expect([String(name), isShown(toolbar.getByRole('button', { name, hidden: true }))]).toEqual([String(name), false]);
-    }
+    // The permission chip keeps its value; zen only hides it.
+    expect(isShown(toolbar.getByRole('button', { name: /^Permission mode: Safe/, hidden: true }))).toBe(false);
     expect(window.getComputedStyle(toolbarEl).flexWrap).toBe('nowrap');
   });
 

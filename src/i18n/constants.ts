@@ -13,23 +13,22 @@ export interface LocaleInfo {
   code: Locale;
   name: string;           // Native name
   englishName: string;    // English name
-  flag?: string;          // Optional flag emoji
 }
 
 /**
  * All supported locales with display information
  */
 export const SUPPORTED_LOCALES: LocaleInfo[] = [
-  { code: 'en', name: 'English', englishName: 'English', flag: '🇺🇸' },
-  { code: 'zh-CN', name: '简体中文', englishName: 'Simplified Chinese', flag: '🇨🇳' },
-  { code: 'zh-TW', name: '繁體中文', englishName: 'Traditional Chinese', flag: '🇹🇼' },
-  { code: 'ja', name: '日本語', englishName: 'Japanese', flag: '🇯🇵' },
-  { code: 'ko', name: '한국어', englishName: 'Korean', flag: '🇰🇷' },
-  { code: 'de', name: 'Deutsch', englishName: 'German', flag: '🇩🇪' },
-  { code: 'fr', name: 'Français', englishName: 'French', flag: '🇫🇷' },
-  { code: 'es', name: 'Español', englishName: 'Spanish', flag: '🇪🇸' },
-  { code: 'ru', name: 'Русский', englishName: 'Russian', flag: '🇷🇺' },
-  { code: 'pt', name: 'Português', englishName: 'Portuguese', flag: '🇧🇷' },
+  { code: 'en', name: 'English', englishName: 'English' },
+  { code: 'zh-CN', name: '简体中文', englishName: 'Simplified Chinese' },
+  { code: 'zh-TW', name: '繁體中文', englishName: 'Traditional Chinese' },
+  { code: 'ja', name: '日本語', englishName: 'Japanese' },
+  { code: 'ko', name: '한국어', englishName: 'Korean' },
+  { code: 'de', name: 'Deutsch', englishName: 'German' },
+  { code: 'fr', name: 'Français', englishName: 'French' },
+  { code: 'es', name: 'Español', englishName: 'Spanish' },
+  { code: 'ru', name: 'Русский', englishName: 'Russian' },
+  { code: 'pt', name: 'Português', englishName: 'Portuguese' },
 ];
 
 /**
