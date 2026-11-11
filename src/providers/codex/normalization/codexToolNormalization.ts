@@ -422,6 +422,7 @@ function extractApplyPatch(
   if (argumentToken?.kind !== 'identifier') return null;
 
   let patch: string | null = null;
+  let declarationIndex = -1;
   for (let index = 0; index <= call.toolTokenIndex - 4; index += 1) {
     const declarationToken = tokens[index];
     if (
@@ -434,6 +435,19 @@ function extractApplyPatch(
       && tokens[index + 3]?.kind === 'string'
     ) {
       patch = tokens[index + 3]?.value ?? null;
+      declarationIndex = index;
+    }
+  }
+
+  // Real apply_patch scripts append after the declaration (`patch += "…"`). Earlier += runs before that initializer.
+  if (patch !== null) {
+    const name = argumentToken.value;
+    for (let index = declarationIndex + 4; index + 3 < call.openParenTokenIndex; index += 1) {
+      if (tokens[index]?.kind === 'identifier' && tokens[index]?.value === name
+        && tokens[index + 1]?.value === '+' && tokens[index + 2]?.value === '='
+        && tokens[index + 3]?.kind === 'string') {
+        patch += tokens[index + 3]?.value ?? '';
+      }
     }
   }
 
