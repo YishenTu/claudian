@@ -192,10 +192,11 @@ export class CodexDeferredExecCorrelator {
     });
     deferredExec.expectedCalls.forEach((call, index) => {
       if (call.claimed) {
-        // Native completion carries search sources and withheld command output;
-        // script output closes those only when the turn ends.
+        // Native completion carries search sources, MCP results and withheld command
+        // output; script output, which may only report a yield, closes those at turn end.
         if (emitResult && !call.canonicalCompleted && call.canonicalItemId
-          && (turnEnded || (this.options.streamRawExecCalls && call.name !== 'WebSearch' && !deferredExec.withholdsRawOutput))) {
+          && (turnEnded || (this.options.streamRawExecCalls && call.name !== 'WebSearch' && !call.name.startsWith('mcp__')
+            && !deferredExec.withholdsRawOutput))) {
           this.ledger.canonicalCompletedIds.add(call.canonicalItemId);
           this.sink.emit({ type: 'tool_result', id: call.canonicalItemId, ...resultFor(call) });
           call.canonicalCompleted = true;
