@@ -839,7 +839,10 @@ function extractCodexMCPResultText(resultPayload?: unknown): string {
     .map(item => (typeof item?.text === 'string' ? item.text : ''))
     .filter(Boolean)
     .join('\n') : '';
-  return text || extractToolResultContent(structuredContent, { fallbackIndent: 2 });
+  const structured = extractToolResultContent(structuredContent, { fallbackIndent: 2 });
+  // A server that sends `structuredContent: {}` serializes to '{}'; do not append that to the text.
+  if (text && structured && structured !== '{}') return `${text}\n\n${structured}`;
+  return text || structured;
 }
 
 // ---------------------------------------------------------------------------
