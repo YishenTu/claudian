@@ -705,7 +705,8 @@
     "acceptLabel": "Accepter la modification en ligne",
     "retryFallback": "Une erreur est survenue. Réessayez",
     "replyPlaceholder": "Répondez pour continuer…",
-    "noResponseFallback": "Aucune réponse de l’agent"
+    "noResponseFallback": "Aucune réponse de l’agent",
+    "followUpPlaceholder": "Demandez des modifications ou appuyez sur Entrée pour accepter"
   },
   "settings": {
     "tabs": {

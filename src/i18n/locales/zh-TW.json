@@ -705,7 +705,8 @@
     "acceptLabel": "接受行內編輯",
     "retryFallback": "發生錯誤，請重試",
     "replyPlaceholder": "回覆以繼續…",
-    "noResponseFallback": "代理未傳回回應"
+    "noResponseFallback": "代理未傳回回應",
+    "followUpPlaceholder": "提出修改要求，或按 Enter 接受"
   },
   "settings": {
     "tabs": {

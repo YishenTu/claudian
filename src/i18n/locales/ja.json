@@ -705,7 +705,8 @@
     "acceptLabel": "インライン編集を承認",
     "retryFallback": "エラーが発生しました。もう一度お試しください",
     "replyPlaceholder": "返信して続行…",
-    "noResponseFallback": "エージェントから応答がありません"
+    "noResponseFallback": "エージェントから応答がありません",
+    "followUpPlaceholder": "変更を依頼するか、Enter で承認"
   },
   "settings": {
     "tabs": {

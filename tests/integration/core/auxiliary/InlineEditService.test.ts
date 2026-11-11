@@ -26,7 +26,7 @@ function createService() {
 }
 
 describe('InlineEditService', () => {
-  it('keeps clarification continuity in an independent read-only session', async () => {
+  it('keeps clarification and follow-up continuity in an independent read-only session', async () => {
     const { backend, service } = createService();
     const first = service.send({ ...selection, instruction: 'Improve' }, { model: 'edit-model', reasoning: 'high' });
     await waitFor(() => backend.sessions[0]?.requests.length === 1);
@@ -78,7 +78,15 @@ describe('InlineEditService', () => {
     expect(backend.sessions[0].requests[1].input[0]).not.toMatchObject({
       text: expect.stringContaining('<editor_selection'),
     });
-    expect(service.isConversing).toBe(false);
+    // A proposed edit keeps the conversation open, so a follow-up revises it in the same session.
+    expect(service.isConversing).toBe(true);
+    const third = service.send({ ...selection, instruction: 'Shorter' });
+    await waitFor(() => backend.sessions[0]?.requests.length === 3);
+    expect(backend.sessions[0].requests[2].input).toEqual([{ text: 'Shorter', type: 'text' }]);
+    backend.sessions[0].emitText('<replacement>Fin</replacement>');
+    backend.sessions[0].complete();
+    await expect(third).resolves.toMatchObject({ editedText: 'Fin', success: true });
+    expect(backend.sessions).toHaveLength(1);
   });
 
   it('reports a transition that invalidated continuity and then starts from the editor context', async () => {

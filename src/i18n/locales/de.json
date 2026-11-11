@@ -705,7 +705,8 @@
     "acceptLabel": "Inline-Bearbeitung übernehmen",
     "retryFallback": "Fehler. Versuche es erneut",
     "replyPlaceholder": "Antworten, um fortzufahren…",
-    "noResponseFallback": "Keine Antwort vom Agenten"
+    "noResponseFallback": "Keine Antwort vom Agenten",
+    "followUpPlaceholder": "Änderungen anfordern oder mit Enter übernehmen"
   },
   "settings": {
     "tabs": {

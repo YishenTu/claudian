@@ -21,7 +21,8 @@ export interface InlineEditExecutionSelection {
 
 /**
  * One inline edit's read-only provider conversation. It alone decides whether a request opens the
- * conversation with its editor context or continues a clarification with just the instruction.
+ * conversation with its editor context or continues it with just the instruction, whether the last
+ * reply was a clarification, an answer or a proposed edit the user is still reviewing.
  */
 export class InlineEditService {
   private readonly controller: AuxiliarySessionController;
@@ -37,12 +38,12 @@ export class InlineEditService {
     );
   }
 
-  /** Whether the next request continues a clarification instead of starting from the editor context. */
+  /** Whether the next request continues the conversation instead of starting from the editor context. */
   get isConversing(): boolean {
     return this.conversing;
   }
 
-  /** The selection applies to this request only; the caller owns it across a clarification. */
+  /** The selection applies to this request only; the caller owns it across the conversation. */
   async send(
     request: InlineEditRequest,
     selection: InlineEditExecutionSelection = {},
@@ -82,8 +83,8 @@ export class InlineEditService {
         ),
       });
       const result = parseInlineEditResponse(text);
-      // A clarification opens the conversation; an empty reply leaves it as it was.
-      this.conversing = result.clarification !== undefined || (this.conversing && !result.success);
+      // Any reply opens the conversation until the caller ends it; an empty reply leaves it as it was.
+      this.conversing = result.success || this.conversing;
       return result;
     } catch (error) {
       this.conversing = false;

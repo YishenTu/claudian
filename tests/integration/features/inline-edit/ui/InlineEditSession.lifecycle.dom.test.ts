@@ -1,5 +1,6 @@
 /** @vitest-environment jsdom */
-import { EditorState } from '@codemirror/state';
+import { EditorState, StateEffect } from '@codemirror/state';
+import { keymap } from '@codemirror/view';
 import { axe } from '@test/helpers/accessibility';
 import {
   createInlineEditHarness as createHarness,
@@ -651,4 +652,109 @@ it.each([
   const outside = document.body.appendChild(document.createElement('button'));
   fireEvent.keyDown(target === 'outside' ? outside : h.editorView.contentDOM, { key });
   expect(h.settled.mock.calls).toEqual(expected);
+});
+
+const FOLLOW_UP_PLACEHOLDER = 'Ask for changes, or press Enter to accept';
+
+it('revises a pending proposal through follow-ups in the same conversation', async () => {
+  const h = await createHarness();
+  vi.mocked(MarkdownRenderer.render).mockImplementation(async (_app, markdown, element) => {
+    (element as HTMLElement).textContent = markdown;
+  });
+  h.createSession().show();
+  await showReplacementPreview(h, 'Hi');
+  const preview = () => screen.getByRole('toolbar', { name: 'Inline edit actions' }).parentElement!;
+  // The composer stays above the preview, so the proposal can be discussed before it is settled.
+  expect(input().placeholder).toBe(FOLLOW_UP_PLACEHOLDER);
+
+  submitInstruction('Why Hi?');
+  await waitFor(() => expect(h.backend.sessions[0].requests).toHaveLength(2));
+  const reachedEditor = vi.fn();
+  h.editorView.contentDOM.addEventListener('keydown', reachedEditor);
+  // A stray Enter while the follow-up runs neither accepts the proposal it may replace nor edits the note.
+  fireEvent.keyDown(document.body, { key: 'Enter' });
+  expect(reachedEditor).not.toHaveBeenCalled();
+  expect(h.settled).not.toHaveBeenCalled();
+  h.backend.sessions[0].emitText('It is shorter.');
+  h.backend.sessions[0].complete();
+  // The answer shows under the question it answers, and the proposal stays pending.
+  const composer = input().closest<HTMLElement>('.claudian-inline-input-container')!;
+  await within(composer).findByText('It is shorter.');
+  expect(within(composer).getByText('Why Hi?')).toBeDefined();
+  expect(preview().textContent).toContain('Hi');
+  expect(await axe(composer)).toHaveNoViolations();
+
+  submitInstruction('Use Yo');
+  await waitFor(() => expect(h.backend.sessions[0].requests).toHaveLength(3));
+  h.backend.sessions[0].emitText('<replacement>Yo</replacement>');
+  h.backend.sessions[0].complete();
+  await waitFor(() => expect(preview().textContent).toContain('Yo'));
+  expect(preview().textContent).not.toContain('Hi');
+  // The new proposal clears the answer about the previous one; no history accumulates.
+  expect(screen.queryByText('It is shorter.')).toBeNull();
+  expect(screen.queryByText('Why Hi?')).toBeNull();
+  expect(input().placeholder).toBe(FOLLOW_UP_PLACEHOLDER);
+  // Follow-ups carry only the instruction; the provider already holds the editor context and proposal.
+  expect(h.backend.sessions).toHaveLength(1);
+  expect(h.backend.sessions[0].requests.slice(1).map(request => request.input))
+    .toEqual([[{ text: 'Why Hi?', type: 'text' }], [{ text: 'Use Yo', type: 'text' }]]);
+
+  // Enter on an empty composer accepts the latest proposal.
+  fireEvent.keyDown(input(), { key: 'Enter' });
+  expect(h.settled.mock.calls).toEqual([[{ decision: 'accept', editedText: 'Yo' }]]);
+  expect(h.editorView.state.doc.toString()).toBe('Yo world');
+});
+
+it.each([
+  { key: 'Enter', draft: 'Shorter', modifier: { ctrlKey: true }, expected: { decision: 'accept', editedText: 'Hi' } },
+  { key: 'Enter', draft: 'Shorter', modifier: { metaKey: true }, expected: { decision: 'accept', editedText: 'Hi' } },
+  { key: 'Escape', draft: 'Shorter', modifier: {}, expected: { decision: 'reject' } },
+] as const)('settles a proposal with $key and $modifier from a composer holding a draft', async ({ key, draft, modifier, expected }) => {
+  const h = await createHarness();
+  h.createSession().show();
+  await showReplacementPreview(h, 'Hi');
+  typeInstruction(draft);
+  fireEvent.keyDown(input(), { key, ...modifier });
+  expect(h.settled.mock.calls).toEqual([[expected]]);
+  // The draft is never sent as a follow-up.
+  expect(h.backend.sessions[0].requests).toHaveLength(1);
+});
+
+it.each(['drafting', 'reviewing'] as const)('closes the composer suggestion menu on Escape before rejecting while %s', async phase => {
+  const h = await createHarness();
+  h.createSession().show();
+  if (phase === 'reviewing') await showReplacementPreview(h, 'Hi');
+  typeInstruction('@');
+  // The dropdown hides through its visibility class, which jsdom cannot turn into layout.
+  const menu = screen.getByRole('listbox');
+  expect(menu.classList.contains('is-visible')).toBe(true);
+  fireEvent.keyDown(input(), { key: 'Escape' });
+  expect(menu.classList.contains('is-visible')).toBe(false);
+  expect(h.settled).not.toHaveBeenCalled();
+  fireEvent.keyDown(input(), { key: 'Escape' });
+  expect(h.settled.mock.calls).toEqual([[{ decision: 'reject' }]]);
+});
+
+it('rejects on Escape in a note editor whose own keymap handles Escape', async () => {
+  const h = await createHarness();
+  // Obsidian's editor binds Escape, so CodeMirror marks the event handled before it bubbles to the document.
+  h.editorView.dispatch({ effects: StateEffect.appendConfig.of(keymap.of([{ key: 'Escape', run: () => true }])) });
+  h.createSession().show();
+  h.editorView.contentDOM.focus();
+  expect(fireEvent.keyDown(h.editorView.contentDOM, { key: 'Escape' })).toBe(false);
+  expect(h.settled.mock.calls).toEqual([[{ decision: 'reject' }]]);
+});
+
+it('keeps the proposal pending when a follow-up fails', async () => {
+  const h = await createHarness();
+  h.createSession().show();
+  await showReplacementPreview(h, 'Hi');
+  submitInstruction('Shorter');
+  await waitFor(() => expect(h.backend.sessions[0].requests).toHaveLength(2));
+  h.backend.sessions[0].fail('provider crashed');
+  await waitFor(() => expect(input().disabled).toBe(false));
+  // A selection change does not swap the pending proposal's preview back to a new edit's composer.
+  h.changeSelection();
+  fireEvent.click(screen.getByRole('button', { name: 'Accept inline edit' }));
+  expect(h.settled.mock.calls).toEqual([[{ decision: 'accept', editedText: 'Hi' }]]);
 });
