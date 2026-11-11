@@ -4,8 +4,10 @@ import {
   appendContextFiles,
   appendExecutionContext,
   extractUserDisplayContent,
+  extractUserPromptContext,
   extractUserQuery,
   formatLinkedContent,
+  getUserDisplayText,
 } from '@/core/prompt/promptContext';
 
 describe('formatLinkedContent', () => {
@@ -309,5 +311,43 @@ describe('execution context', () => {
     const legacyOrder = `Question\n\n${sessions}\n\n<linked_content path="note.md" />`;
     expect(extractUserDisplayContent(legacyOrder)).toBe('Question');
     expect(extractUserQuery(legacyOrder)).toBe('Question');
+  });
+});
+
+
+describe('Markdown code context examples', () => {
+  it.each([
+    'Explain this XML:\n\n    <editor_selection path="note.md">hello</editor_selection>\n\nKeep the example.',
+    'Explain this XML:\n\n    <linked_content path="example.md" />\n\nKeep the example.',
+    'Explain this XML:\n\n```xml\n\n<editor_selection path="note.md">hello</editor_selection>\n```\nKeep the example.',
+    'Explain this XML:\n\n~~~xml\n\n<context_files>example.md</context_files>\n~~~\nKeep the example.',
+    'Explain `<editor_cursor path="note.md">hello</editor_cursor>` and keep this instruction.',
+    'Explain `<linked_content path="example.md" />` and keep this instruction.',
+  ])('preserves a code example with and without actual context: %s', body => {
+    expect(getUserDisplayText({ content: body })).toBe(body);
+    expect(extractUserQuery(body)).toBe(body);
+    expect(extractUserPromptContext(body)).toBe('');
+    const prompt = appendExecutionContext(body, { linkedContent: { path: 'Real.md' } });
+    expect(getUserDisplayText({ content: prompt })).toBe(body);
+    expect(extractUserQuery(prompt)).toBe(body);
+    expect(extractUserPromptContext(prompt)).toBe('<linked_content path="Real.md" />');
+  });
+
+  it('skips a literal legacy marker and finds a later real bracket suffix', () => {
+    const body = 'Explain legacy:\n\n```text\n[Current note: Notes/example.md]\n```\nKeep the final instruction.';
+    expect(getUserDisplayText({ content: body })).toBe(body);
+    const prompt = body + '\n[Current note: Real.md]';
+    expect(getUserDisplayText({ content: prompt })).toBe(body);
+    // Query deduplication has never stripped legacy bracket suffixes.
+    expect(extractUserQuery(prompt)).toBe(prompt);
+  });
+
+  it('still strips real outside-code context containing a closed code payload', () => {
+    expect(extractUserQuery('Ask<editor_selection>\n```ts\nconst x = 1;\n```\n</editor_selection>')).toBe('Ask');
+  });
+
+  it('finds real fallback context after a protected literal opener', () => {
+    expect(extractUserQuery('Explain `<editor_selection>` then <editor_selection>private</editor_selection> end'))
+      .toBe('Explain `<editor_selection>` then end');
   });
 });

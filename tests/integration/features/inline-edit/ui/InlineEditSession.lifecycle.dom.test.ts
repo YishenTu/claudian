@@ -12,7 +12,7 @@ import {
 import { testDate } from '@test/helpers/testClock';
 import { fireEvent, screen, waitFor, within } from '@testing-library/dom';
 import { MarkdownView, WorkspaceLeaf } from 'obsidian';
-import { MarkdownRenderer, Notice, TFile } from 'obsidian';
+import { MarkdownRenderer, Notice, TFile, TFolder } from 'obsidian';
 import type { Mock } from 'vitest';
 
 import { buildCursorContext } from '@/core/prompt/editorContext';
@@ -29,8 +29,19 @@ afterEach(async () => {
 
 it('removes completion menus when inline edit is rejected after selection changes', async () => {
   const h = await createHarness();
+  const sentinel = vi.fn();
+  const sentinelRef = h.app.vault.on('create', sentinel);
+  onTestFinished(() => h.app.vault.offref(sentinelRef));
+  const on = vi.spyOn(h.app.vault, 'on');
+  const offref = vi.spyOn(h.app.vault, 'offref');
+  const oldFolder = Object.assign(new TFolder(), { name: 'OldFolder', path: 'OldFolder' });
+  let inventory: TFolder[] = [oldFolder];
+  h.app.vault.getAllLoadedFiles = () => inventory;
   const session = h.createSession();
+  expect(on).not.toHaveBeenCalled();
   session.show();
+  expect(on.mock.calls.map(([name]) => name)).toEqual(['create', 'delete', 'rename', 'modify']);
+  const refs = on.mock.results.map(result => result.value);
   expect(await axe(input().parentElement!)).toHaveNoViolations();
   const oldInput = input();
   typeInstruction('@');
@@ -38,18 +49,33 @@ it('removes completion menus when inline edit is rejected after selection change
   h.changeSelection();
   expect(input()).not.toBe(oldInput);
   expect(screen.queryByRole('listbox')).toBeNull();
+  expect(on).toHaveBeenCalledTimes(4);
+  const newFolder = Object.assign(new TFolder(), { name: 'NewFolder', path: 'NewFolder' });
+  inventory = [oldFolder, newFolder];
+  h.app.vault.trigger('create', newFolder);
   typeInstruction('@');
-  expect(screen.getByRole('listbox')).toBeDefined();
+  expect(within(screen.getByRole('listbox')).getAllByRole('option').map(option => option.textContent).sort())
+    .toEqual(['@NewFolder/', '@OldFolder/']);
   session.reject();
   expect(screen.queryByRole('listbox')).toBeNull();
+  expect(offref.mock.calls).toEqual(refs.map(ref => [ref]));
+  session.close(); session.close();
+  expect(offref).toHaveBeenCalledTimes(4);
+  h.app.vault.trigger('create', newFolder);
+  expect(sentinel).toHaveBeenCalledTimes(2);
 });
 
 it('settles inline editing and releases provider work when its editor is destroyed', async () => {
   const h = await createHarness();
+  const on = vi.spyOn(h.app.vault, 'on');
+  const offref = vi.spyOn(h.app.vault, 'offref');
   h.createSession().show();
+  expect(on).toHaveBeenCalledTimes(4);
+  const refs = on.mock.results.map(result => result.value);
   submitInstruction();
   await waitFor(() => expect(h.backend.sessions[0]?.getStatus()).toBe('executing'));
   h.editorView.destroy();
+  expect(offref.mock.calls).toEqual(refs.map(ref => [ref]));
   expect(h.backend.sessions[0].getStatus()).toBe('disposed');
   expect(h.settled.mock.calls).toEqual([[{ decision: 'reject' }]]);
 });
@@ -180,14 +206,19 @@ it.each(['cursor', 'selection'] as const)('rejects changed %s context during pro
 
 it('closes a visible edit on plugin unload without refocusing its editor', async () => {
   const h = await createHarness();
+  const on = vi.spyOn(h.app.vault, 'on');
+  const offref = vi.spyOn(h.app.vault, 'offref');
   const result = h.createModal().openAndWait();
   await screen.findByRole('textbox', { name: 'Edit instructions' });
+  expect(on).toHaveBeenCalledTimes(4);
+  const refs = on.mock.results.map(result => result.value);
   submitInstruction();
   await waitFor(() => expect(h.backend.sessions[0]?.getStatus()).toBe('executing'));
   const outside = document.body.appendChild(document.createElement('button'));
   outside.focus();
   h.owner.dispose();
   await expect(result).resolves.toEqual({ decision: 'reject' });
+  expect(offref.mock.calls).toEqual(refs.map(ref => [ref]));
   expect(h.backend.sessions[0].getStatus()).toBe('disposed');
   expect(document.activeElement).toBe(outside);
   expect(screen.queryByRole('textbox', { name: 'Edit instructions' })).toBeNull();
@@ -200,8 +231,12 @@ it.each([
   { action: 'Reject', keyboard: true },
 ] as const)('settles the preview through $action (keyboard: $keyboard)', async ({ action, keyboard }) => {
   const h = await createHarness();
+  const on = vi.spyOn(h.app.vault, 'on');
+  const offref = vi.spyOn(h.app.vault, 'offref');
   const result = h.createModal().openAndWait();
   await screen.findByRole('textbox', { name: 'Edit instructions' });
+  expect(on).toHaveBeenCalledTimes(4);
+  const refs = on.mock.results.map(result => result.value);
   submitInstruction();
   await waitFor(() => expect(h.backend.sessions[0]?.getStatus()).toBe('executing'));
   h.backend.sessions[0].emitText('<replacement>Hi</replacement>');
@@ -223,6 +258,7 @@ it.each([
     : { decision: 'reject' });
   expect(h.editorView.state.doc.toString()).toBe(action === 'Accept' ? 'Hi world' : 'hello world');
   expect(h.backend.sessions[0].getStatus()).toBe('disposed');
+  expect(offref.mock.calls).toEqual(refs.map(ref => [ref]));
 });
 
 it('opens the model menu outside the clipped editor widget, above its chip, and removes it with the edit', async () => {

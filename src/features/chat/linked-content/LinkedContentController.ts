@@ -60,6 +60,11 @@ interface ActiveSubmission {
   readonly queuedEvents: LinkedContentPathEvent[];
 }
 
+/** Only a submission in flight holds a checkpoint and queues path events until it settles. */
+type LinkedContentState =
+  | { readonly mode: Exclude<LinkedContentMode, 'submitting'> }
+  | { readonly mode: 'submitting'; readonly submission: ActiveSubmission };
+
 function isSameOrDescendant(path: string, parentPath: string, includeDescendants: boolean): boolean {
   return path === parentPath
     || (includeDescendants && path.startsWith(`${parentPath}/`));
@@ -82,9 +87,8 @@ export class LinkedContentController {
   private readonly app: App;
   private readonly options: LinkedContentControllerOptions;
   private readonly pickerSource: LinkedContentPickerSource;
-  private mode: LinkedContentMode = 'auto-draft';
+  private state: LinkedContentState = { mode: 'auto-draft' };
   private path: string | null = null;
-  private activeSubmission: ActiveSubmission | null = null;
   private selector: LinkedContentSelector | null = null;
   private chip: LinkedContentChip | null = null;
   private destroyed = false;
@@ -98,6 +102,10 @@ export class LinkedContentController {
     });
   }
 
+  private get mode(): LinkedContentMode {
+    return this.state.mode;
+  }
+
   getSnapshot(): LinkedContentSnapshot {
     return {
       mode: this.mode,
@@ -107,8 +115,7 @@ export class LinkedContentController {
 
   resetAutoDraft(): void {
     this.#assertLive();
-    this.activeSubmission = null;
-    this.mode = 'auto-draft';
+    this.state = { mode: 'auto-draft' };
     this.path = this.#eligibleActiveFilePath(this.app.workspace.getActiveFile());
     this.publish();
   }
@@ -127,7 +134,7 @@ export class LinkedContentController {
     if (this.mode === 'locked') {
       throw new Error('Linked content is locked for this Conversation');
     }
-    this.mode = 'explicit-draft';
+    this.state = { mode: 'explicit-draft' };
     this.path = path === null ? null : assertLinkedContentPath(path);
     this.publish();
   }
@@ -146,8 +153,7 @@ export class LinkedContentController {
 
   lock(path: string | undefined): void {
     this.#assertLive();
-    this.activeSubmission = null;
-    this.mode = 'locked';
+    this.state = { mode: 'locked' };
     this.path = path === undefined ? null : assertLinkedContentPath(path);
     this.publish();
   }
@@ -161,8 +167,7 @@ export class LinkedContentController {
     const token = Object.freeze(
       this.path === null ? {} : { path: this.path },
     ) as LinkedContentSubmissionToken;
-    this.activeSubmission = { token, checkpoint, queuedEvents: [] };
-    this.mode = 'submitting';
+    this.state = { mode: 'submitting', submission: { token, checkpoint, queuedEvents: [] } };
     this.publish();
     return token;
   }
@@ -170,20 +175,18 @@ export class LinkedContentController {
   commitSubmission(token: LinkedContentSubmissionToken): void {
     this.#assertLive();
     const submission = this.#requireSubmission(token);
-    this.mode = 'locked';
+    this.state = { mode: 'locked' };
     this.path = token.path ?? null;
     for (const event of submission.queuedEvents) this.#applyPathEvent(event);
-    this.activeSubmission = null;
     this.publish();
   }
 
   rollbackSubmission(token: LinkedContentSubmissionToken): void {
     this.#assertLive();
     const submission = this.#requireSubmission(token);
-    this.mode = submission.checkpoint.mode;
+    this.state = { mode: submission.checkpoint.mode };
     this.path = submission.checkpoint.path;
     for (const event of submission.queuedEvents) this.#applyPathEvent(event);
-    this.activeSubmission = null;
     this.publish();
   }
 
@@ -199,8 +202,8 @@ export class LinkedContentController {
       newPath: assertLinkedContentPath(newPath),
       includeDescendants,
     };
-    if (this.activeSubmission) {
-      this.activeSubmission.queuedEvents.push(event);
+    if (this.state.mode === 'submitting') {
+      this.state.submission.queuedEvents.push(event);
       return;
     }
     if (this.#applyPathEvent(event)) this.publish();
@@ -213,8 +216,8 @@ export class LinkedContentController {
       path: assertLinkedContentPath(path),
       includeDescendants,
     };
-    if (this.activeSubmission) {
-      this.activeSubmission.queuedEvents.push(event);
+    if (this.state.mode === 'submitting') {
+      this.state.submission.queuedEvents.push(event);
       return;
     }
     if (this.#applyPathEvent(event)) this.publish();
@@ -286,16 +289,16 @@ export class LinkedContentController {
   destroy(): void {
     if (this.destroyed) return;
     this.destroyed = true;
-    this.activeSubmission = null;
     this.unmountWelcome();
     this.unmountInfoRow();
   }
 
   #requireSubmission(token: LinkedContentSubmissionToken): ActiveSubmission {
-    if (!this.activeSubmission || this.activeSubmission.token !== token) {
+    const { state } = this;
+    if (state.mode !== 'submitting' || state.submission.token !== token) {
       throw new Error('Stale Linked content submission');
     }
-    return this.activeSubmission;
+    return state.submission;
   }
 
   #applyPathEvent(event: LinkedContentPathEvent): boolean {
@@ -313,7 +316,7 @@ export class LinkedContentController {
     }
     if (!isSameOrDescendant(this.path, event.path, event.includeDescendants)) return false;
     if (this.mode === 'locked') return true;
-    this.mode = 'explicit-draft';
+    this.state = { mode: 'explicit-draft' };
     this.path = null;
     return true;
   }

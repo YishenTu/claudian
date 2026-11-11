@@ -191,11 +191,11 @@ it('localizes uncertain answer-delivery feedback without requeueing the native r
 it.each([false, true])('honors Codex isSecret=%s during answer review and delivers the original value', async isSecret => {
   const parent = document.body.createDiv();
   const prompts = new SessionInteractions({ getPromptParentEl: () => parent });
-  const router = new CodexExecutionServerRequestRouter('session', createInteractionPromptPort(() => prompts), () => true);
-  router.setActiveTurn({
+  const turn = {
     localTurnId: 'local-turn', nativeThreadId: 'thread', nativeTurnId: 'turn',
-    toolPolicy: { kind: 'provider-default' }, cancellation: new AbortController(),
-  });
+    toolPolicy: { kind: 'provider-default' } as const, cancellation: new AbortController(),
+  };
+  const router = new CodexExecutionServerRequestRouter('session', createInteractionPromptPort(() => prompts), () => true, () => turn);
   const pending = router.handleServerRequest('request', 'item/tool/requestUserInput', {
     threadId: 'thread', turnId: 'turn', itemId: 'item', questions: [{
       id: 'token', header: 'Token', question: 'Enter API token', options: null, isOther: true, isSecret,

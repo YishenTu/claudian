@@ -268,3 +268,42 @@ it.each([
   await expect(new ClaudeConversationHistoryService().recoverConversationModelSelection(conversation, vaultPath, pathContext))
     .resolves.toBe(expected);
 });
+
+it('revises native history only for appends to the live session transcript', async () => {
+  const configDir = await fs.mkdtemp(path.join(os.tmpdir(), 'claudian-native-revision-'));
+  const vaultPath = path.join(configDir, 'vault');
+  const pathContext = { environment: { CLAUDE_CONFIG_DIR: configDir }, vaultPath };
+  const sessionDir = path.join(historyStore.getSDKProjectsPath(pathContext), historyStore.encodeVaultPathForSDK(vaultPath));
+  const line = (uuid: string) => JSON.stringify({ type: 'user', uuid, timestamp: testTime(), message: { content: uuid } });
+  await fs.mkdir(sessionDir, { recursive: true });
+  await fs.writeFile(path.join(sessionDir, 'previous.jsonl'), line('p1'));
+  await fs.writeFile(path.join(sessionDir, 'live.jsonl'), line('l1'));
+  const service = new ClaudeConversationHistoryService();
+  const conversation = createConversation({
+    sessionId: 'live',
+    providerState: { providerSessionId: 'live', previousProviderSessionIds: ['previous'] },
+  });
+  const read = (value = conversation) => service.readNativeHistoryRevision(value, vaultPath, pathContext);
+
+  try {
+    const initial = await read();
+    expect(initial).not.toBeNull();
+    await expect(read()).resolves.toBe(initial);
+    // A retired segment is never resumed, so writes to it do not concern the cached session.
+    await fs.appendFile(path.join(sessionDir, 'previous.jsonl'), '\n' + line('p2'));
+    await expect(read()).resolves.toBe(initial);
+    // `claude --resume live` appends to the same transcript.
+    await fs.appendFile(path.join(sessionDir, 'live.jsonl'), '\n' + line('l2'));
+    const appended = await read();
+    expect(appended).not.toBeNull();
+    expect(appended).not.toBe(initial);
+
+    await expect(read(createConversation({ sessionId: 'missing' }))).resolves.toBeNull();
+    await expect(read(createConversation({
+      sessionId: null,
+      providerState: { forkSource: { sessionId: 'live', resumeAt: 'l1' } },
+    }))).resolves.toBeNull();
+  } finally {
+    await fs.rm(configDir, { recursive: true, force: true });
+  }
+});

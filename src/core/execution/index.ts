@@ -75,6 +75,7 @@ export {
   type ProviderExecutionContext,
   type ProviderExecutionInputBlock,
   type ProviderExecutionRequest,
+  type ProviderExplicitInstructionPurpose,
   type ProviderLinkedContentContext,
   type ProviderSystemInstructions,
   type ProviderToolPolicy,

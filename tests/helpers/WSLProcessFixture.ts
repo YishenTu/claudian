@@ -49,6 +49,8 @@ export class WSLProcessFixture {
   };
   /** WSL interop runs Windows executables mounted under /mnt; false models `[interop] enabled=false`. */
   interop = true;
+  /** Delay before each launched command's output and exit; a cold or loaded WSL takes seconds per wsl.exe launch. */
+  launchDelayMs = 0;
   /** Receives requests for behavior this fake does not model; the default fails the running test. */
   onUnmodeled: (error: Error) => void = failRunningTest;
 
@@ -95,13 +97,15 @@ export class WSLProcessFixture {
     const reply = this.reply?.(request) ?? this.respond(request);
     // Node announces a started child on nextTick; output and exit come from the OS on a later turn.
     process.nextTick(() => child.emit('spawn'));
-    setImmediate(() => {
+    const deliver = () => {
       if (!reply.hold) processChild.complete(reply);
       else {
         if (reply.stdout) processChild.stdout.write(reply.stdout);
         if (reply.stderr) processChild.stderr.write(reply.stderr);
       }
-    });
+    };
+    if (this.launchDelayMs > 0) setTimeout(deliver, this.launchDelayMs);
+    else setImmediate(deliver);
     return child;
   };
 

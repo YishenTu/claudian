@@ -102,7 +102,7 @@ function executionRequest(text = 'hello'): ProviderExecutionRequest {
       permissionMode: 'normal',
       model: 'grok/grok-4',
       reasoning: 'high',
-      systemInstructions: { kind: 'explicit', instructions: 'Be exact.' },
+      systemInstructions: { kind: 'explicit', purpose: 'title', instructions: 'Be exact.' },
     },
     input: [{ text, type: 'text' }],
     signal: new AbortController().signal,

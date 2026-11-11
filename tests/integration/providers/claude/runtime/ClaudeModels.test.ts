@@ -1,9 +1,8 @@
-import '@/providers';
-
 import { createProviderHostFixture } from '@test/helpers/providerRuntimeHost';
 
 import type { ProviderRuntimeHost } from '@/core/providers/ProviderRuntimeHost';
 import { ProviderSettingsCoordinator } from '@/core/providers/ProviderSettingsCoordinator';
+import { registerProviderModules } from '@/core/providers/registerProviderModules';
 import { getClaudeModelOptions } from '@/providers/claude/modelOptions';
 import type { ClaudeDiscoveredModel } from '@/providers/claude/models';
 import { claudeProviderRegistration } from '@/providers/claude/registration';
@@ -11,6 +10,8 @@ import { assertClaudeModelAvailable } from '@/providers/claude/runtime/ClaudeMod
 import { createClaudeModels, discoverClaudeModels } from '@/providers/claude/runtime/ClaudeModels';
 import { getClaudeModelSource, getClaudeProviderSettings, updateClaudeProviderSettings } from '@/providers/claude/settings';
 import { claudeChatUIConfig } from '@/providers/claude/ui/ClaudeChatUIConfig';
+
+registerProviderModules([claudeProviderRegistration]);
 
 const rows = [{ value: 'sonnet', label: 'SDK Sonnet', description: '', resolvedModel: 'gateway-model' }];
 async function setup(enabled = true) {

@@ -97,7 +97,7 @@
   margin: 1px 0;
   padding: 8px var(--claudian-session-inline-inset);
   color: var(--text-muted);
-  font-size: 13px;
+  font-size: calc(13 * var(--claudian-font-px));
   font-weight: 500;
   cursor: pointer;
   border-radius: 6px;
@@ -137,7 +137,7 @@
   background: transparent;
   color: var(--text-normal);
   font-family: inherit;
-  font-size: 13px;
+  font-size: calc(13 * var(--claudian-font-px));
   box-shadow: none;
 }
 
@@ -358,7 +358,7 @@
   min-width: 0;
   padding: 8px 12px;
   color: var(--text-faint);
-  font-size: 13px;
+  font-size: calc(13 * var(--claudian-font-px));
   font-weight: 500;
   cursor: pointer;
   border-radius: 6px;
@@ -381,6 +381,11 @@
   height: 14px;
 }
 
+/* A chosen project icon does not open with its group, so a collapsed group dims it. */
+.claudian-session-group-toggle[aria-expanded="false"] .claudian-session-group-icon--custom {
+  opacity: 0.6;
+}
+
 .claudian-session-group-label {
   flex: 1 1 auto;
   min-width: 0;
@@ -396,7 +401,7 @@
 
 .claudian-session-group-status {
   flex-shrink: 0;
-  font-size: 10px;
+  font-size: calc(10 * var(--claudian-font-px));
   font-weight: 400;
 }
 
@@ -584,7 +589,7 @@
  */
 .claudian-session-sidebar .claudian-history-item-title,
 :is(.claudian-session-sidebar, .claudian-history-menu) .claudian-session-group-label {
-  line-height: 17px;
+  line-height: calc(17 * var(--claudian-font-px));
 }
 
 .claudian-session-sidebar .claudian-history-item.active,
@@ -605,7 +610,7 @@
   gap: var(--claudian-session-action-gap);
   padding: 8px var(--claudian-session-inline-inset) 2px;
   color: var(--text-faint);
-  font-size: var(--font-ui-smaller);
+  font-size: calc(12 * var(--claudian-font-px));
 }
 
 /* Stays focusable while visually quiet; Obsidian restores native chrome on interaction states. */
@@ -683,6 +688,125 @@
   margin: -4px 0;
 }
 
+/* A session another session started leads its title with its kind: an agent session or a fork. */
+.claudian-history-item-lineage {
+  display: inline-flex;
+  margin-inline-end: 6px;
+  color: var(--text-faint);
+  vertical-align: -1px;
+}
+
+.claudian-history-item-lineage svg {
+  width: 12px;
+  height: 12px;
+}
+
+/*
+ * Sessions folded under the session that started them: a quiet native disclosure button over their rows. Obsidian
+ * restores button chrome on interaction states, so the reset covers them.
+ */
+:is(.claudian-session-sidebar, .claudian-history-menu) .claudian-session-children-toggle,
+:is(.claudian-session-sidebar, .claudian-history-menu) .claudian-session-children-toggle:is(:hover, :focus, :focus-visible, :active, .mobile-tap) {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  cursor: pointer;
+}
+
+:is(.claudian-session-sidebar, .claudian-history-menu) .claudian-session-children-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 4px;
+  width: 100%;
+  height: 22px;
+  margin: 0;
+  padding: 0 12px 0 14px;
+  border-radius: 6px;
+  color: var(--text-faint);
+  font: inherit;
+  font-size: calc(12 * var(--claudian-font-px));
+  font-weight: 400;
+}
+
+:is(.claudian-session-sidebar, .claudian-history-menu) .claudian-session-children-toggle:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-muted);
+}
+
+:is(.claudian-session-sidebar, .claudian-history-menu) .claudian-session-children-toggle:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: -2px;
+}
+
+.claudian-session-children-sign {
+  display: flex;
+  flex: 0 0 auto;
+}
+
+.claudian-session-children-sign svg {
+  width: 12px;
+  height: 12px;
+}
+
+.claudian-session-children-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-align: start;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* A guide line ties the folded rows to their toggle's chevron. */
+.claudian-session-children {
+  position: relative;
+}
+
+.claudian-session-children::before {
+  position: absolute;
+  inset-block: 2px 4px;
+  inset-inline-start: 21px;
+  border-inline-start: 1px solid var(--background-modifier-border);
+  content: "";
+}
+
+.claudian-session-children .claudian-history-item-title {
+  color: var(--text-faint);
+}
+
+/* The persistent sidebar aligns the fold with its row inset, one step further inside a group. */
+.claudian-session-sidebar .claudian-session-children-toggle {
+  padding-inline: calc(var(--claudian-session-inline-inset) + 2px) var(--claudian-session-inline-inset);
+}
+
+.claudian-session-sidebar .claudian-session-children::before {
+  inset-inline-start: calc(var(--claudian-session-inline-inset) + 7px);
+}
+
+.claudian-session-sidebar .claudian-session-children .claudian-history-item {
+  padding-inline-start: calc(var(--claudian-session-inline-inset) + 18px);
+}
+
+.claudian-session-sidebar .claudian-session-group-body .claudian-session-children-toggle {
+  padding-inline-start: calc(
+    var(--claudian-session-inline-inset) + var(--claudian-session-icon-size) + var(--claudian-session-icon-gap) + 2px
+  );
+}
+
+.claudian-session-sidebar .claudian-session-group-body .claudian-session-children::before {
+  inset-inline-start: calc(
+    var(--claudian-session-inline-inset) + var(--claudian-session-icon-size) + var(--claudian-session-icon-gap) + 7px
+  );
+}
+
+.claudian-session-sidebar .claudian-session-group-body .claudian-session-children .claudian-history-item {
+  padding-inline-start: calc(
+    var(--claudian-session-inline-inset) + var(--claudian-session-icon-size) + var(--claudian-session-icon-gap) + 18px
+  );
+}
+
 .claudian-session-metadata-popover {
   position: fixed;
   z-index: 1000;
@@ -707,7 +831,7 @@ body.theme-dark .claudian-session-metadata-popover {
   gap: 8px;
   min-height: 28px;
   color: var(--text-normal);
-  font-size: var(--font-ui-small);
+  font-size: calc(13 * var(--claudian-font-px));
 }
 
 .claudian-session-metadata-row--provider {
@@ -824,7 +948,7 @@ body.theme-dark .claudian-session-metadata-popover {
   gap: 8px;
   padding: 8px 12px;
   color: var(--text-muted);
-  font-size: 13px;
+  font-size: calc(13 * var(--claudian-font-px));
   font-weight: 500;
   cursor: pointer;
   background: var(--background-secondary);
@@ -894,7 +1018,7 @@ body.theme-dark .claudian-nav-dropup-menu {
   border-bottom: 1px solid var(--background-modifier-border);
   border-radius: 0;
   color: var(--text-normal);
-  font-size: 13px;
+  font-size: calc(13 * var(--claudian-font-px));
   font-weight: 500;
 }
 
@@ -928,7 +1052,7 @@ body.theme-dark .claudian-nav-dropup-menu {
 
 .claudian-history-header {
   padding: 8px 12px;
-  font-size: 12px;
+  font-size: calc(12 * var(--claudian-font-px));
   font-weight: 600;
   color: var(--text-muted);
   text-transform: uppercase;
@@ -946,7 +1070,7 @@ body.theme-dark .claudian-nav-dropup-menu {
   padding: 16px;
   text-align: center;
   color: var(--text-muted);
-  font-size: 13px;
+  font-size: calc(13 * var(--claudian-font-px));
 }
 
 .claudian-history-item {
@@ -1041,7 +1165,7 @@ body.theme-dark .claudian-nav-dropup-menu {
 }
 
 .claudian-history-item-title {
-  font-size: 13px;
+  font-size: calc(13 * var(--claudian-font-px));
   font-weight: 500;
   color: var(--text-normal);
   white-space: nowrap;
@@ -1050,7 +1174,7 @@ body.theme-dark .claudian-nav-dropup-menu {
 }
 
 .claudian-history-item-date {
-  font-size: 11px;
+  font-size: calc(11 * var(--claudian-font-px));
   color: var(--text-faint);
   margin-top: 2px;
 }
@@ -1115,7 +1239,7 @@ body.theme-dark .claudian-nav-dropup-menu {
 .claudian-rename-input {
   width: 100%;
   padding: 2px 4px;
-  font-size: 13px;
+  font-size: calc(13 * var(--claudian-font-px));
   font-weight: 500;
   border: 1px solid var(--interactive-accent);
   border-radius: 4px;

@@ -1,6 +1,5 @@
 // @test-ci {"native":true}
 /** @vitest-environment jsdom */
-import '@/providers';
 
 import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -14,12 +13,17 @@ import { getInstallationKey } from '@/core/device/InstallationKey';
 import type { ProviderExecutionTransitionScope } from '@/core/execution';
 import * as ProcessProbe from '@/core/process/ProcessProbe';
 import * as CLIProbe from '@/core/providers/cli/CLIInstallationProbe';
+import { registerProviderModules } from '@/core/providers/registerProviderModules';
 import type { ProviderId } from '@/core/providers/types';
 import type { ClaudianSettings } from '@/core/types';
+import { claudeProviderRegistration } from '@/providers/claude/registration';
+import { deepseekProviderRegistration } from '@/providers/deepseek/registration';
 import { DeepSeekCLIResolver } from '@/providers/deepseek/runtime/DeepSeekCLIResolver';
 import { createDeepSeekModels } from '@/providers/deepseek/runtime/DeepSeekModels';
 import { getDeepSeekProviderSettings, updateDeepSeekProviderSettings } from '@/providers/deepseek/settings';
 import { createDeepSeekSettingsTabRenderer } from '@/providers/deepseek/ui/DeepSeekSettingsTab';
+
+registerProviderModules([claudeProviderRegistration, deepseekProviderRegistration]);
 
 const deviceKey = getInstallationKey();
 /** Observe the real probe completion before starting the DOM-render assertion deadline. */

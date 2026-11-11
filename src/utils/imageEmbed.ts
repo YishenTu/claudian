@@ -8,6 +8,7 @@
  */
 
 import type { App, TFile } from 'obsidian';
+import * as path from 'path';
 
 import { escapeHTML } from './html';
 import { transformMarkdownSegments } from './markdownSegments';
@@ -52,7 +53,11 @@ function resolveImageFile(
   if (file) return file;
 
   if (options.mediaFolder) {
-    const withFolder = `${options.mediaFolder}/${imagePath}`;
+    const { mediaFolder } = options;
+    const isVaultRelative = !path.posix.isAbsolute(mediaFolder) && !path.win32.isAbsolute(mediaFolder)
+      && !mediaFolder.split('/').includes('..');
+    const folder = isVaultRelative ? path.posix.normalize(mediaFolder).replace(/\/$/, '') : mediaFolder;
+    const withFolder = `${folder}/${imagePath}`;
     file = getVaultFileByPath(app, withFolder);
     if (file) return file;
   }

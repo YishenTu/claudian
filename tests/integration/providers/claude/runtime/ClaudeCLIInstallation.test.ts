@@ -1,5 +1,4 @@
 // @test-ci {"native":true}
-import '@/providers';
 
 import * as fs from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -7,7 +6,11 @@ import * as path from 'node:path';
 
 import { createProviderHostFixture } from '@test/helpers/providerRuntimeHost';
 
+import { registerProviderModules } from '@/core/providers/registerProviderModules';
+import { claudeProviderRegistration } from '@/providers/claude/registration';
 import { inspectClaudeInstallation } from '@/providers/claude/runtime/ClaudeCLIInstallation';
+
+registerProviderModules([claudeProviderRegistration]);
 
 // The bundled `node` is a POSIX shell script; Windows resolves a bundled Node differently.
 it.skipIf(process.platform === 'win32')('inspects a script CLI with the Node bundled beside it, ahead of the system Node', async () => {

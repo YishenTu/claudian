@@ -1,5 +1,5 @@
 import type { ProviderId } from '@/core/providers/types';
-import type { TabId } from '@/features/chat/tabs/ChatTab';
+import type { TabId } from '@/features/chat/ChatFeatureHost';
 import { TabHydration } from '@/features/chat/tabs/TabHydration';
 import type { TabIdentity } from '@/features/chat/tabs/TabIdentity';
 import { activateTab, deactivateTab } from '@/features/chat/tabs/TabLifecycle';
@@ -14,6 +14,8 @@ export interface TabActivationHost {
   /** Assembles a restored tab's runtime on its ID without activating it. */
   assembleRestored(identity: TabIdentity): Promise<AssembledTabRuntime | null>;
   ensureWorkspaceServices(tab: AssembledTabRuntime, providerId: ProviderId | null, reason: string): Promise<boolean>;
+  /** Drops a shown tab's cached history when its native history changed elsewhere; null when nothing to check. */
+  revalidateSession(tab: AssembledTabRuntime): Promise<void> | null;
 }
 
 /**
@@ -39,6 +41,7 @@ export class TabActivation {
     this.#hydration = new TabHydration({
       isTabAlive: tab => membership.isTabAlive(tab),
       ensureWorkspaceServices: (tab, providerId, reason) => host.ensureWorkspaceServices(tab, providerId, reason),
+      revalidateSession: tab => host.revalidateSession(tab),
       onRetry: (tab) => {
         if (membership.isTabAlive(tab)) void this.switchTo(tab.id);
       },

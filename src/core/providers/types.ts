@@ -40,6 +40,8 @@ export interface ProviderCapabilities {
   supportsImageAttachments: boolean;
   supportsTurnSteer?: boolean;
   supportsFastMode?: boolean;
+  /** Whether native /compact is available; defaults to true. */
+  supportsCompaction?: boolean;
   /** Can report authoritative main-agent output tokens and elapsed turn time. */
   supportsResponseThroughput?: boolean;
   reasoningControl: 'effort' | 'none';
@@ -189,10 +191,17 @@ export interface ProviderSvgPathChild {
 export interface ProviderSvgGroupChild {
   tag: 'g';
   attributes: Record<string, string>;
-  children: ProviderSvgPathChild[];
+  children: ProviderSvgChild[];
 }
 
-export type ProviderSvgChild = ProviderSvgGroupChild | ProviderSvgPathChild;
+/** Shapes and paint servers for full-colour marks; renderers scope their ids to each rendered copy. */
+export interface ProviderSvgElementChild {
+  tag: 'defs' | 'ellipse' | 'feGaussianBlur' | 'filter' | 'mask';
+  attributes: Record<string, string>;
+  children?: ProviderSvgChild[];
+}
+
+export type ProviderSvgChild = ProviderSvgElementChild | ProviderSvgGroupChild | ProviderSvgPathChild;
 
 export interface ProviderCompositeIconSvg {
   kind: 'composite';
@@ -495,6 +504,17 @@ export interface ProviderConversationHistoryService {
     vaultPath: string | null,
     pathContext?: ProviderHistoryPathContext,
   ): Promise<ProviderHistoryUpdate>;
+  /**
+   * An opaque token that changes whenever the conversation's live native history changes, including
+   * writes by processes other than Claudian. Callers only compare tokens for equality. Returns null when
+   * the history cannot be observed cheaply (no live native session, unreadable store, or a store that is
+   * not running), and must never start provider processes or create sessions to answer.
+   */
+  readNativeHistoryRevision(
+    conversation: ProviderHistoryInput,
+    vaultPath: string | null,
+    pathContext?: ProviderHistoryPathContext,
+  ): Promise<string | null>;
   resolveSessionIdForConversation(conversation: ProviderHistoryInput | null): string | null;
   isPendingForkConversation(conversation: ProviderHistoryInput): boolean;
   /** Builds opaque fork state; ephemeral creation may be deferred to its execution owner. */

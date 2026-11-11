@@ -81,7 +81,7 @@ async function createView(fakeBackend?: FakeSideBackend) {
     getProviderCatalogConfig: () => null, isRuntimeLive: () => true,
     openConversation: async () => {}, startNewConversation: async () => {},
   });
-  tab.hydrationState = 'ready';
+  await tab.session.runtime.model.hydrate();
   await tab.executionCoordinator.bindConversation({ conversationId: conversation.id, providerId: 'claude' });
   await tab.executionCoordinator.prepare();
   vi.spyOn(tab.dom.messagesEl, 'getClientRects').mockImplementation(() => (tab.dom.contentEl.hasClass('claudian-hidden') ? [] : [{}]) as unknown as DOMRectList);

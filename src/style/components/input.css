@@ -133,7 +133,7 @@ button.claudian-input-nav-btn[aria-disabled='true'] {
   border-radius: calc(var(--claudian-input-wrapper-radius) - 1px) calc(var(--claudian-input-wrapper-radius) - 1px) 0 0;
   background-color: rgb(var(--claudian-brand-rgb), 0.06);
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: calc(12 * var(--claudian-font-px));
 }
 
 .claudian-input-queue-strip-tag {

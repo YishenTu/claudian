@@ -1,5 +1,3 @@
-import '@/providers';
-
 import * as fs from 'node:fs';
 import * as fsPromises from 'node:fs/promises';
 import * as path from 'node:path';
@@ -18,9 +16,14 @@ import { ConversationPersistenceStore } from '@/app/storage/ConversationPersiste
 import { getInstallationKey } from '@/core/device/InstallationKey';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { ProviderSettingsCoordinator } from '@/core/providers/ProviderSettingsCoordinator';
+import { registerProviderModules } from '@/core/providers/registerProviderModules';
 import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
 import { createClaudianAPI } from '@/features/chat/session-messaging/ClaudianAPI';
 import { SessionMessagingService } from '@/features/chat/session-messaging/SessionMessagingService';
+import { claudeProviderRegistration } from '@/providers/claude/registration';
+import { grokProviderRegistration } from '@/providers/grok/registration';
+
+registerProviderModules([claudeProviderRegistration, grokProviderRegistration]);
 
 // `\\wsl$` UNC paths exist only on Windows hosts, so the host filesystem is the external boundary.
 vi.mock('node:fs', async importOriginal => ({ ...await importOriginal<typeof fs>() }));

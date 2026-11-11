@@ -13,6 +13,7 @@ import * as path from 'node:path';
 import type { App, DataAdapter } from 'obsidian';
 
 import { mapWithConcurrency } from '@/utils/concurrency';
+import { replaceFile } from '@/utils/fileReplace';
 
 export type ManagedResourceType = 'file' | 'folder';
 
@@ -180,22 +181,6 @@ export class VaultFileAdapter {
     throw new ManagedResourcePathError(`Managed resource does not exist: ${normalized}`);
   }
 
-  /** Same verified canonical directory entry; different hard-link names remain distinct. */
-  async isSameManagedFile(sourcePath: string, targetPath: string): Promise<boolean> {
-    const source = normalizeManagedPath(sourcePath);
-    const target = normalizeManagedPath(targetPath);
-    const sourceExists = await this.verifyManagedPath(source, { expectedType: 'file', allowMissing: true });
-    const targetExists = await this.verifyManagedPath(target, { expectedType: 'file', allowMissing: true });
-    if (!sourceExists || !targetExists) return false;
-    const base = this.#basePath();
-    try {
-      return await fs.realpath(this.#resolveManagedDesktopPath(base, source))
-        === await fs.realpath(this.#resolveManagedDesktopPath(base, target));
-    } catch (error) {
-      throw new ManagedResourcePathError(`Could not compare managed files: ${source} and ${target}`, { cause: error });
-    }
-  }
-
   /**
    * Verifies each existing segment root to leaf, rejecting links, vault escapes and wrong types, and returns how many
    * leading segments exist.
@@ -322,9 +307,12 @@ export class VaultFileAdapter {
     const separator = normalized.lastIndexOf('/');
     // The vault root itself needs no verification.
     if (separator !== -1) await this.verifyManagedPath(normalized.slice(0, separator), { expectedType: 'folder' });
-    await this.verifyManagedPath(normalized, { expectedType: 'file', allowMissing: true });
+    const exists = await this.verifyManagedPath(normalized, { expectedType: 'file', allowMissing: true });
     try {
-      await this.#writeFileAtomically(normalized, content);
+      const mode = exists
+        ? (await fs.lstat(this.#resolveManagedDesktopPath(this.#basePath(), normalized))).mode
+        : undefined;
+      await this.#writeFileAtomically(normalized, content, mode);
     } catch (error) {
       throw new ManagedResourcePathError(`Could not write managed resource: ${normalized}`, {
         cause: error,
@@ -334,15 +322,17 @@ export class VaultFileAdapter {
 
   /**
    * Writes a sibling temp file and renames it over the target, so a failed or
-   * torn write never leaves the previous content partially overwritten.
+   * torn write never leaves the previous content partially overwritten. Unchanged
+   * content is not rewritten: sync clients treat each replacement as delete + create.
    */
   async #writeFileAtomically(normalized: string, content: string, mode?: number): Promise<void> {
     const target = this.#resolveManagedDesktopPath(this.#basePath(), normalized);
+    if (await fs.readFile(target, 'utf8').catch(() => undefined) === content) return;
     const temp = path.join(path.dirname(target), `.claudian-${randomUUID()}.tmp`);
     try {
       await fs.writeFile(temp, content, { encoding: 'utf8', flag: 'wx', mode });
       if (mode !== undefined) await fs.chmod(temp, mode);
-      await fs.rename(temp, target);
+      await replaceFile(temp, target);
     } catch (error) {
       await fs.rm(temp, { force: true }).catch(() => undefined);
       throw error;
@@ -387,6 +377,26 @@ export class VaultFileAdapter {
     }));
   }
 
+  /** Renames one directory entry onto its other spelling. Different files and hard links stay collisions. */
+  async #renameSameManagedEntry(source: string, target: string): Promise<boolean> {
+    if (source === target) return true;
+    const base = this.#basePath();
+    let same = false;
+    try {
+      same = await fs.realpath(this.#resolveManagedDesktopPath(base, source))
+        === await fs.realpath(this.#resolveManagedDesktopPath(base, target));
+    } catch (error) {
+      if (isNotFound(error)) return false;
+      throw new ManagedResourcePathError(`Could not compare managed resources: ${source} and ${target}`, { cause: error });
+    }
+    if (!same) return false;
+    await fs.rename(
+      this.#resolveManagedDesktopPath(base, source),
+      this.#resolveManagedDesktopPath(base, target),
+    );
+    return true;
+  }
+
   async removeManagedFile(filePath: string): Promise<void> {
     if (!await this.verifyManagedPath(filePath, { expectedType: 'file', allowMissing: true })) return;
     try {
@@ -422,6 +432,7 @@ export class VaultFileAdapter {
     // The vault root itself needs no verification.
     if (separator !== -1) await this.verifyManagedPath(target.slice(0, separator), { expectedType: 'folder' });
     if (await this.#managedTargetExists(target)) {
+      if (await this.#renameSameManagedEntry(source, target)) return;
       throw new ManagedResourceCollisionError(target);
     }
     try {
@@ -445,6 +456,7 @@ export class VaultFileAdapter {
     const parent = path.posix.dirname(target);
     if (parent !== '.') await this.verifyManagedPath(parent, { expectedType: 'folder' });
     if (await this.#managedTargetExists(target)) {
+      if (await this.#renameSameManagedEntry(source, target)) return;
       throw new ManagedResourceCollisionError(target);
     }
     const basePath = this.#basePath();

@@ -24,9 +24,9 @@ import { InputController, type InputControllerDeps } from '@/features/chat/input
 import { SessionInteractions } from '@/features/chat/interactions/SessionInteractions';
 import { LinkedContentController } from '@/features/chat/linked-content';
 import { MessageRenderer } from '@/features/chat/rendering/MessageRenderer';
+import { SubagentManager } from '@/features/chat/rendering/subagents/SubagentManager';
 import { ChatState } from '@/features/chat/state/ChatState';
 import { createQueuedMessage } from '@/features/chat/state/chatTurnRequest';
-import { SubagentManager } from '@/features/chat/subagents/SubagentManager';
 import { cancelSelectedDestinationTurn } from '@/features/chat/tabs/TabInputEvents';
 import type { AssembledTabRuntime } from '@/features/chat/tabs/types';
 import { StreamController } from '@/features/chat/turns/StreamController';
@@ -94,7 +94,7 @@ function createRouting(
     }),
     drafts: harness.drafts,
     getSettings: () => ({ model: 'claude-model', reasoning: 'high', permissionMode: 'normal', serviceTier: 'default' }),
-    conversationController, ensureExecutionInitialized, getExecutionCoordinator,
+    conversationController, ensureExecutionInitialized, historyRefresh: () => null, getExecutionCoordinator,
     getInputEl: () => harness.inputEl, getSideChatController: () => harness.controller,
     getTabProviderId: () => 'claude', generateId: () => `main-${++nextId}`,
     getMessagesEl: () => messagesEl, getLinkedContentController: () => linkedContent,

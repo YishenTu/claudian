@@ -35,7 +35,7 @@ let settings: import('@/core/types').ClaudianSettings;
 let host: ProviderHost;
 
 function request(text = 'requested'): ProviderExecutionRequest {
-  return { input: [{ type: 'text', text }], configuration: { systemInstructions: { kind: 'explicit', instructions: 'literal {prompt}' }, permissionMode: 'normal' }, toolPolicy: { kind: 'provider-default' }, signal: new AbortController().signal };
+  return { input: [{ type: 'text', text }], configuration: { systemInstructions: { kind: 'explicit', purpose: 'title', instructions: 'literal {prompt}' }, permissionMode: 'normal' }, toolPolicy: { kind: 'provider-default' }, signal: new AbortController().signal };
 }
 function event(type: string, data: unknown): void {
   peer.send('session/follow', { type: 'event', event: { type, seq: ++seq, time, data } }, rootFollow('root'));
@@ -247,8 +247,8 @@ async function startChild(): Promise<(value: unknown) => void> {
     if (endpoint === 'session/follow' && nativeRequest(args).address!.childSessionId === 'child') { childFollow = send; return; }
     ordinaryOpen(endpoint, args, send);
   };
-  peer.send('session/control', { type: 'projection', sessionId: 'root', key: 'subagentCatalog', value: [{ id: 'child', mode: 'continuable', label: 'child task' }] });
-  peer.send('session/control', { type: 'projection', sessionId: 'child', key: 'subagent', value: { mode: 'continuable', label: 'child task', seq: 0 } });
+  peer.send('session/control', { type: 'projection', sessionId: 'root', changes: [{ key: 'subagentCatalog', val: [{ id: 'child', mode: 'continuable', label: 'child task' }] }] });
+  peer.send('session/control', { type: 'projection', sessionId: 'child', changes: [{ key: 'subagent', val: { mode: 'continuable', label: 'child task', seq: 0 } }] });
   peer.send('$events', { type: 'emit', event: 'api-session/added', args: [{ sessionId: 'child', parentSessionId: 'root', origin: 'subagent', agentAvailable: true, running: true }] });
   await waitFor(() => expect([...peer.streams.values()].filter(stream => stream.endpoint === 'session/follow').map(stream => nativeRequest(stream.args).address?.childSessionId)).toContain('child'));
   childFollow!({ type: 'snapshot', cursor: 0, records: [{ type: 'event', event: { type: 'turn/start', seq: 0, time, data: { turn: 0 } } }] });

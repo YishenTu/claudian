@@ -1,3 +1,4 @@
+// @test-ci {"native":true}
 /** @vitest-environment jsdom */
 const actualModule0 = await vi.importActual<typeof fs>('node:fs/promises');
 const actualModule1 = await vi.importActual<typeof fs>('node:fs/promises');
@@ -31,7 +32,7 @@ import { ConversationLifecycle } from '@/features/chat/conversation/Conversation
 
 vi.mock('node:fs/promises', async () => {
   const actual = (await vi.importActual<typeof fs>('node:fs/promises'));
-  return { ...actual, link: vi.fn(actual.link), rename: vi.fn(actual.rename), writeFile: vi.fn(actual.writeFile) };
+  return { ...actual, chmod: vi.fn(actual.chmod), link: vi.fn(actual.link), rename: vi.fn(actual.rename), writeFile: vi.fn(actual.writeFile) };
 });
 const actualFs = actualModule0;
 
@@ -40,6 +41,7 @@ const metadataLoaders: SessionMetadataLoader[] = [];
 afterEach(async () => {
   await Promise.all(metadataLoaders.splice(0).map(loader => loader.dispose()));
   allowWrites();
+  vi.mocked(fs.chmod).mockReset().mockImplementation(actualFs.chmod);
   vi.mocked(fs.rename).mockClear();
   await Promise.all(vaults.splice(0).map(vault => vault.dispose()));
 });
@@ -348,9 +350,9 @@ describe('ProjectService', () => {
       expect(active.get(record.id)).toEqual(expectedRecord);
       expect(await vault.read(`${PROJECTS_PATH}/${record.id}.json`)).toBe(outcome === 'commit'
         ? `${JSON.stringify(expectedRecord, null, 2)}\n` : beforeMetadata);
-      expect(moved).not.toHaveBeenCalled();
+      expect(moved).toHaveBeenCalledWith(record.memoryPath, alias);
       expect(removed).not.toHaveBeenCalled();
-      expect(await fs.readdir(vault.resolve('Notes'))).toEqual(['MEMORY.md']);
+      expect(await fs.readdir(vault.resolve('Notes'))).toEqual(['memory.md']);
       expect(await vault.read(record.memoryPath)).toBe(bytes);
       const reloaded = await fixture({ vault });
       expect(reloaded.projects.get(record.id)).toMatchObject(outcome === 'commit'
@@ -590,6 +592,68 @@ describe('ProjectService', () => {
     const saved = await projects.saveMemory(record.id, '# User edit\n', read.revision, { overwrite: true });
     expect(await readFile(vault, record.memoryPath)).toBe('# User edit\n');
     await expect(projects.readMemory(record.id)).resolves.toEqual(saved);
+  });
+
+  it.skipIf(process.platform === 'win32').each([0o600, 0o660])('preserves existing memory permissions %o through save and independent reload', async mode => {
+    const { vault, projects } = await fixture();
+    const record = await projects.create({ name: 'Private memory', instructions: '', memoryPath: 'Private/MEMORY.md' });
+    const original = await projects.readMemory(record.id);
+    if ('missing' in original) throw new Error('memory file should exist');
+    const target = vault.resolve(record.memoryPath);
+    await actualFs.chmod(target, mode);
+    expect((await actualFs.stat(target)).mode & 0o777).toBe(mode);
+    const content = '# Updated memory\n\nKeep these permissions.\n';
+
+    const saved = await projects.saveMemory(record.id, content, original.revision);
+
+    expect(saved.content).toBe(content);
+    expect(saved.revision).not.toBe(original.revision);
+    expect(await actualFs.readFile(target, 'utf8')).toBe(content);
+    expect((await actualFs.stat(target)).mode & 0o777).toBe(mode);
+    const store = new ProjectStore(vault.files);
+    const reloaded = new ProjectService((await store.load()).records, { store, memory: vault.files });
+    try {
+      const read = await reloaded.readMemory(record.id);
+      expect(read).toEqual(saved);
+    } finally {
+      await reloaded.dispose();
+    }
+  });
+
+  it.skipIf(process.platform === 'win32')('keeps memory bytes, mode and revision when staged chmod fails, then retries the original revision', async () => {
+    const { vault, projects } = await fixture();
+    const record = await projects.create({ name: 'Private memory', instructions: '', memoryPath: 'Private/MEMORY.md' });
+    const original = await projects.readMemory(record.id);
+    if ('missing' in original) throw new Error('memory file should exist');
+    const target = vault.resolve(record.memoryPath);
+    await actualFs.chmod(target, 0o600);
+    const failure = new Error('generated staged chmod failure');
+    const failedPaths: string[] = [];
+    vi.mocked(fs.chmod).mockImplementation(async (file, mode) => {
+      const candidate = String(file);
+      if (failedPaths.length === 0 && path.dirname(candidate) === path.dirname(target)
+        && /^\.claudian-.*\.tmp$/.test(path.basename(candidate))) {
+        failedPaths.push(candidate);
+        throw failure;
+      }
+      return actualFs.chmod(file, mode);
+    });
+    try {
+      await expect(projects.saveMemory(record.id, '# Changed\n', original.revision))
+        .rejects.toMatchObject({ cause: failure });
+      expect(failedPaths).toHaveLength(1);
+      expect(await actualFs.readFile(target, 'utf8')).toBe(original.content);
+      expect((await actualFs.stat(target)).mode & 0o777).toBe(0o600);
+      await expect(projects.readMemory(record.id)).resolves.toEqual(original);
+      expect((await actualFs.readdir(path.dirname(target))).filter(name => /^\.claudian-.*\.tmp$/.test(name))).toEqual([]);
+    } finally {
+      vi.mocked(fs.chmod).mockImplementation(actualFs.chmod);
+    }
+    const saved = await projects.saveMemory(record.id, '# Changed\n', original.revision);
+    expect(saved.content).toBe('# Changed\n');
+    expect(saved.revision).not.toBe(original.revision);
+    expect(await actualFs.readFile(target, 'utf8')).toBe('# Changed\n');
+    expect((await actualFs.stat(target)).mode & 0o777).toBe(0o600);
   });
 
   it('re-reads the memory file inside the write queue so two saves from one revision cannot both win', async () => {

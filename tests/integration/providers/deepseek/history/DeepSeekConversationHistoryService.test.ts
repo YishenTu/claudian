@@ -1,4 +1,4 @@
-import { NativePeer } from '@test/helpers/deepseek/NativePeer';
+import { NativePeer, type NativePeerLifecycle } from '@test/helpers/deepseek/NativePeer';
 import { nativeRequest } from '@test/helpers/deepseek/NativeRequest';
 import { testDate } from '@test/helpers/testClock';
 
@@ -10,17 +10,22 @@ import type { DeepSeekHost } from '@/providers/deepseek/runtime/DeepSeekHost';
 
 let peer: NativePeer;
 let deepseek: DeepSeekHost;
+let lifecycle: NativePeerLifecycle;
 let history: DeepSeekConversationHistoryService;
 const time = testDate().getTime();
 const state = { schemaVersion: 1, home: getDeepSeekHome(process.env, process.cwd()), profile: 'web', preset: 'claudian-code' };
 const input = { sessionId: 'root', providerState: state, messages: [] };
+/** The session projection native serves, cut at its last committed record. */
+const projection = (asOfSeq: number) => ({ asOfSeq, values: { agentPreset: 'claudian-code', modelSelection: { lastUsed: { provider: 'native', model: 'old-model' }, next: { provider: 'native', model: 'new-model' } } } });
+// dsh 0.2.2 reads an image by its full log reference; 0.2.1 by its id.
+const IMAGE_REF = { attachmentId: 'image', mediaType: 'image/png', bytes: 5, width: 1, height: 1, name: 'pixel.png' };
 const wire = (seq: number, type: string, data: unknown, surfaceOp: unknown = 'append') => ({ type: 'event', event: { seq, type, time: time + seq, data, surfaceOp } });
 let records: ReturnType<typeof wire>[];
 
 beforeEach(async () => {
   records = [
     wire(1, 'turn/start', { turn: 1 }),
-    wire(2, 'user/message', { id: 'u', source: { kind: 'user', rpcId: 'r' }, content: [{ type: 'text', text: 'read image' }, { type: 'image', attachment: { attachmentId: 'image' } }] }),
+    wire(2, 'user/message', { id: 'u', source: { kind: 'user', rpcId: 'r' }, content: [{ type: 'text', text: 'read image' }, { type: 'image', attachment: IMAGE_REF }] }),
     wire(3, 'assistant/message', { turn: 1, step: 0, message: { content: [{ type: 'reasoning', text: 'thinking' }, { type: 'text', text: 'checking' }] } }),
     wire(4, 'tool/call', { callId: 'read', name: 'read', arguments: '{"path":"note.md"}' }),
     wire(5, 'tool/result', { message: { toolCallId: 'read', content: [{ type: 'text', text: 'note contents' }, { type: 'image', attachment: { attachmentId: 'tool-image' } }], isError: false } }),
@@ -30,7 +35,7 @@ beforeEach(async () => {
   ];
   peer = new NativePeer();
   peer.onCall = (method, args) => {
-    if (method === 'session/projections') return { asOfSeq: 8, values: { agentPreset: 'claudian-code', modelSelection: { lastUsed: { provider: 'native', model: 'old-model' }, next: { provider: 'native', model: 'new-model' } } } };
+    if (method === 'session/projections') return projection(8);
     if (method === 'session/page') {
       const { throughSeq, beforeSeq } = nativeRequest(args);
       const visible = records.filter(row => row.event.seq <= throughSeq! && (beforeSeq === undefined || row.event.seq < beforeSeq));
@@ -42,7 +47,7 @@ beforeEach(async () => {
     throw new Error(`Forbidden history endpoint ${method}`);
   };
   await peer.open();
-  ({ deepseek } = peer.host());
+  ({ deepseek, lifecycle } = peer.host());
   history = new DeepSeekConversationHistoryService(async () => deepseek);
 });
 afterEach(async () => { await deepseek.dispose(); await peer.close(); });
@@ -53,7 +58,7 @@ it('hydrates fixed-cut native messages, images, tools and exact completed-turn c
   expect(result.messages?.[0]).toMatchObject({ role: 'user', content: 'read image', userMessageId: 'u', images: [{ id: 'image', data: 'aW1hZ2U=', mediaType: 'image/png' }] });
   expect(result.messages?.[1]).toMatchObject({ role: 'assistant', content: 'checkingdone', assistantMessageId: 'deepseek:seq:7', contentBlocks: [{ type: 'thinking', content: 'thinking' }, { type: 'text', content: 'checking' }, { type: 'tool_use', toolId: 'read' }, { type: 'text', content: 'done' }], toolCalls: [{ name: 'Read', input: { file_path: 'note.md' }, result: 'note contents', resultImages: [{ kind: 'data', data: 'aW1hZ2U=', mediaType: 'image/png' }] }], turnStats: { outputTokens: 7 } });
   expect(peer.calls.filter(c => c.method === 'session/page').every(c => nativeRequest(c.args).throughSeq === 8)).toBe(true);
-  expect(peer.calls.find(c => c.method === 'session/attachment')?.args).toEqual({ request: { sessionId: 'root', attachmentId: 'image' } });
+  expect(peer.calls.find(c => c.method === 'session/attachment')?.args).toEqual({ request: { sessionId: 'root', attachmentId: 'image', attachment: IMAGE_REF } });
   expect(peer.calls.some(c => c.method === 'session/create' || c.method === 'session/follow')).toBe(false);
   expect(history.buildPersistedProviderState({ ...input, messages: result.messages! })).toEqual(state);
 });
@@ -87,6 +92,35 @@ it('defers native forks to first execution and reads only the selected source pr
   const beyondSource = history.buildForkProviderState('root', 'deepseek:seq:9', state);
   await expect(history.hydrateConversationHistory({ ...input, sessionId: null, providerState: beyondSource }, '/vault'))
     .rejects.toThrow(/checkpoint is not present/i);
+});
+
+it('reads a native history revision only from an already-running Host, changing as native commits history', async () => {
+  // A cold Host stays cold: the revision never starts the native process.
+  await expect(history.readNativeHistoryRevision(input, '/vault')).resolves.toBeNull();
+  expect(lifecycle.starts).toBe(0);
+
+  await deepseek.start();
+  const revision = await history.readNativeHistoryRevision(input, '/vault');
+  expect(revision).not.toBeNull();
+  await expect(history.readNativeHistoryRevision(input, '/vault')).resolves.toBe(revision);
+
+  // Another native client (dsh web) commits a turn to the same session.
+  const ordinary = peer.onCall;
+  peer.onCall = (method, args) => method === 'session/projections' ? projection(11) : ordinary(method, args);
+  const advanced = await history.readNativeHistoryRevision(input, '/vault');
+  expect(advanced).not.toBeNull();
+  expect(advanced).not.toBe(revision);
+
+  await expect(history.readNativeHistoryRevision({ ...input, sessionId: null }, '/vault')).resolves.toBeNull();
+  const fork = history.buildForkProviderState('root', 'deepseek:seq:7', state);
+  await expect(history.readNativeHistoryRevision({ ...input, sessionId: null, providerState: fork }, '/vault')).resolves.toBeNull();
+  await expect(history.readNativeHistoryRevision({ ...input, providerState: { ...state, home: '/another-machine/.dsh' } }, '/vault')).resolves.toBeNull();
+  peer.onCall = () => null;
+  await expect(history.readNativeHistoryRevision(input, '/vault')).resolves.toBeNull();
+  peer.onCall = () => { throw new Error('Native read failed'); };
+  await expect(history.readNativeHistoryRevision(input, '/vault')).resolves.toBeNull();
+  expect(lifecycle.starts).toBe(1);
+  expect(peer.calls.some(c => c.method === 'session/follow' || c.method === 'session/create')).toBe(false);
 });
 
 it('recovers the native next model and distinguishes relocated stores from missing history', async () => {
@@ -138,7 +172,7 @@ it.each(['direct', 'subagent', 'subagent_fork'])('hydrates %s child tools throug
     { id: 'failed', status: 'error', result: 'old_string not found' }] });
   // A failed edit changed nothing, so it shows no diff built from its requested input.
   expect(result.messages?.[0].toolCalls?.[0].subagent?.toolCalls[2].diffData).toBeUndefined();
-  expect(peer.calls.find(c => c.method === 'session/attachment')?.args).toEqual({ request: { sessionId: 'child', attachmentId: 'child-image' } });
+  expect(peer.calls.find(c => c.method === 'session/attachment')?.args).toEqual({ request: { sessionId: 'child', attachmentId: 'child-image', attachment: { attachmentId: 'child-image' } } });
   expect(peer.calls.some(c => c.method === 'session/follow' || c.method === 'session/create')).toBe(false);
 });
 

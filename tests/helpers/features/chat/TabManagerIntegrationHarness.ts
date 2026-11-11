@@ -3,7 +3,7 @@ import { createFeatureHostFixture } from '@test/helpers/FeatureHostFixture';
 import { type ChatFeatureHostOptions,createChatFeatureHost } from '@test/helpers/features/chat/ChatFeatureHostFixture';
 import { conversationRecord } from '@test/helpers/features/chat/ConversationFixture';
 import { createProjectsFake, projectRecord } from '@test/helpers/features/chat/ProjectsFake';
-import { createSessionRuntimePool } from '@test/helpers/features/chat/SessionRuntimePoolHarness';
+import { createSessionRuntimePool, type RuntimePoolFixtureOptions } from '@test/helpers/features/chat/SessionRuntimePoolHarness';
 export { conversationRecord } from '@test/helpers/features/chat/ConversationFixture';
 import { Component, WorkspaceLeaf } from 'obsidian';
 
@@ -30,7 +30,7 @@ export function deferred<T>() {
   return { promise, resolve, reject };
 }
 
-export async function createPlugin(overrides: ChatFeatureHostOptions = {}) {
+export async function createPlugin(overrides: ChatFeatureHostOptions = {}, poolOptions: RuntimePoolFixtureOptions = {}) {
   const fixture = overrides.fixture ?? await createFeatureHostFixture({
     vault: await (sharedVault ??= DesktopVault.create()),
     app: overrides.app,
@@ -40,7 +40,7 @@ export async function createPlugin(overrides: ChatFeatureHostOptions = {}) {
       ...overrides.settings,
     },
   });
-  const pool = createSessionRuntimePool(() => plugin);
+  const pool = createSessionRuntimePool(() => plugin, poolOptions);
   const messaging = new SessionMessagingService({
     getHost: () => plugin, getActiveConversationId: () => null, refreshModelControls: () => undefined,
   });

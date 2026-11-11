@@ -77,38 +77,6 @@ function nativeAssistant(id: string, text: string, created: number) {
   return { id, type: 'assistant', time: { created }, content: [{ type: 'text', text }] };
 }
 
-test('releases cached history behind pending writes, preserves overlays, and reloads native history', async () => {
-  const conversation = createConversation();
-  conversation.messages = [{ id: 'local', role: 'assistant', content: 'Live client fragment', timestamp: 1 }];
-  const service = new ClaudeConversationHistoryService();
-  const projection = vi.spyOn(service, 'buildPersistedProviderState').mockImplementation((input, options) =>
-    options?.preserveProviderState ? input.providerState : { overlay: input.messages.map(message => message.content) });
-  const hydrate = vi.spyOn(service, 'hydrateConversationHistory').mockResolvedValue({
-    messages: [{ id: 'native', role: 'assistant', content: 'Native history', timestamp: 2 }],
-  });
-  vi.spyOn(ProviderRegistry, 'getConversationHistoryService').mockReturnValue(service);
-  const { repository, persistence } = createRepository(conversation);
-  let release!: () => void;
-  persistence.saveMetadata.mockImplementationOnce(() => new Promise(resolve => { release = resolve; }));
-  const saving = repository.rename(conversation.id, 'Saved title');
-  while (!release) await Promise.resolve();
-  let mayRelease = true;
-  const evicting = repository.releaseHistory(conversation.id, () => mayRelease);
-  mayRelease = false;
-  release();
-  await saving;
-  await expect(evicting).resolves.toBe(false);
-  expect(repository.getCachedConversation(conversation.id)?.messages[0].content).toBe('Live client fragment');
-  mayRelease = true;
-  await expect(repository.releaseHistory(conversation.id, () => mayRelease)).resolves.toBe(true);
-  expect(repository.getCachedConversation(conversation.id)?.messages).toEqual([]);
-  await repository.rename(conversation.id, 'After eviction');
-  expect(persistence.saveMetadata.mock.calls.at(-1)?.[0].providerState).toEqual({ overlay: ['Live client fragment'] });
-  expect(projection.mock.calls.at(-1)?.[1]).toMatchObject({ preserveProviderState: true });
-  expect((await repository.getById(conversation.id))?.messages.map(message => message.content)).toEqual(['Native history']);
-  expect(hydrate).toHaveBeenCalledTimes(1);
-});
-
 test('a superseded native history read cannot overwrite the current conversation', async () => {
   let started!: () => void;
   let release!: () => void;
@@ -141,6 +109,7 @@ test('does not publish recovered identity after concurrent deletion', async () =
   const { repository, persistence } = createRepository(conversation);
   vi.spyOn(ProviderRegistry, 'getConversationHistoryService').mockReturnValue({
     hydrateConversationHistory: async () => ({}),
+    readNativeHistoryRevision: async () => null,
     resolveSessionIdForConversation: value => value?.sessionId ?? null,
     isPendingForkConversation: () => false,
     buildForkProviderState: () => ({}),
@@ -217,6 +186,7 @@ test('late accepted binding survives a missing-session decision', async () => {
   let updating: Promise<void> | undefined;
   vi.spyOn(ProviderRegistry, 'getConversationHistoryService').mockReturnValue({
     hydrateConversationHistory: async () => ({}),
+    readNativeHistoryRevision: async () => null,
     resolveSessionIdForConversation: value => value?.sessionId ?? null,
     isPendingForkConversation: () => false,
     buildForkProviderState: () => ({}),

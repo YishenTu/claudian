@@ -1,0 +1,818 @@
+import '@/providers';
+
+// @vitest-environment jsdom
+import { FakeBranchSession } from '@test/helpers/ChatExecutionHarness';
+import { createFixture, deferred, waitForCall } from '@test/helpers/ChatInputHarness';
+import { conversationRecord } from '@test/helpers/features/chat/ConversationFixture';
+import { createProjectsFake, projectRecord } from '@test/helpers/features/chat/ProjectsFake';
+import { testDate } from '@test/helpers/testClock';
+import { Notice } from 'obsidian';
+
+import type { ConversationBranchResult, ProviderExecutionErrorEvent, ProviderExecutionEvent } from '@/core/execution';
+import { buildSystemPrompt } from '@/core/prompt/mainAgent';
+import { renderProjectMemberInstructions } from '@/core/prompt/projectPrompt';
+import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
+import type { ChatMessage, Conversation } from '@/core/types';
+import type { ImageAttachment } from '@/core/types';
+import { createQueuedMessage } from '@/features/chat/state/chatTurnRequest';
+
+const nativeCapabilities = ProviderRegistry.getCapabilities('claude');
+beforeEach(() => {
+  vi.spyOn(ProviderRegistry, 'getCapabilities').mockReturnValue({ ...nativeCapabilities, supportsTurnSteer: true });
+});
+afterEach(() => vi.restoreAllMocks());
+
+
+describe('MainTurnExecution', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(ProviderRegistry.getCapabilities).mockReturnValue({
+      ...nativeCapabilities,
+      providerId: 'claude',
+      supportsFork: true,
+      supportsNativeHistory: true,
+      supportsTurnSteer: true,
+    });
+
+  });
+
+  it.each(['claude', 'codex', 'grok', 'opencode', 'pi'])('uses the toolbar model and reasoning snapshot as the only submission input for %s', async providerId => {
+    const toolbar = { model: 'toolbar-model', reasoning: 'low', permissionMode: 'normal', serviceTier: 'default' };
+    const fixture = (await createFixture({
+      getSettings: () => toolbar,
+      getTabProviderId: () => providerId,
+    }));
+    await fixture.controller.sendMessage({ content: 'use toolbar settings' });
+    expect(fixture.native.requests).toMatchObject([{ configuration: toolbar }]);
+  });
+
+  it('submits and persists separate first and continued turns', async () => {
+    const fixture = await createFixture();
+    fixture.linkedContentController.lock('Projects');
+    let persistedMessages: ChatMessage[] | undefined;
+    fixture.plugin.updateConversation.mockImplementation(async (_id, updates) => {
+      persistedMessages = structuredClone(updates.messages);
+    });
+    const usage = { model: 'claude-model', inputTokens: 10, contextWindow: 100, contextTokens: 10, percentage: 10 };
+    fixture.native.respond.mockImplementation((run, request) => {
+      run.emit({ type: 'turn_started', accepted: true });
+      const text = request.input.filter(part => part.type === 'text').map(part => part.text).join('');
+      if (text === 'first') {
+        run.emit({ type: 'tool_started', toolCallId: 'agent-1', toolScope: { kind: 'main' }, name: 'Agent',
+          input: { run_in_background: false, prompt: 'Inspect', subagent_type: 'Explore' } });
+        run.emit({ type: 'tool_completed', toolCallId: 'agent-1', toolScope: { kind: 'main' }, content: 'Done' });
+      } else {
+        run.emit({ type: 'usage_updated', usage });
+      }
+      run.emit({ type: 'text_delta', text: `reply:${text}` });
+      run.complete();
+    });
+
+    await fixture.controller.sendMessage({ content: 'first' });
+    expect(fixture.state.messages.map(({ role, content }) => ({ role, content }))).toEqual([
+      { role: 'user', content: 'first' }, { role: 'assistant', content: 'reply:first' },
+    ]);
+    expect(persistedMessages).toMatchObject([
+      { role: 'user', content: 'first' }, { role: 'assistant', content: 'reply:first' },
+    ]);
+
+    expect(fixture.state.messages[1].contentBlocks).toEqual(expect.arrayContaining([expect.objectContaining({ type: 'subagent' })]));
+    await fixture.controller.sendMessage({ content: 'second' });
+    expect(fixture.state.usage).toMatchObject(usage);
+
+    const [first, second] = fixture.native.requests;
+    expect(first).toMatchObject({
+      input: [{ type: 'text', text: 'first' }],
+      context: { linkedContent: { path: 'Projects' } },
+      toolPolicy: { kind: 'provider-default' },
+      conversationHistory: [],
+    });
+    expect(second.context).not.toHaveProperty('linkedContent');
+    expect(second.conversationHistory).toMatchObject([
+      { role: 'user', content: 'first' }, { role: 'assistant', content: 'reply:first' },
+    ]);
+    const expected = [
+      { role: 'user', content: 'first' }, { role: 'assistant', content: 'reply:first' },
+      { role: 'user', content: 'second' }, { role: 'assistant', content: 'reply:second' },
+    ];
+    expect(fixture.state.messages.map(({ role, content }) => ({ role, content }))).toEqual(expected);
+    expect(persistedMessages).toMatchObject(expected);
+  });
+
+  it.each(['creation', 'initialization'] as const)(
+    'recovers queued follow-ups and newer drafts in admission order after %s fails', async failureAt => {
+      const images: ImageAttachment[] = ['first', 'queued', 'draft'].map(id => ({
+        id, name: `${id}.png`, mediaType: 'image/png', data: 'aGVsbG8=', size: 5, source: 'paste',
+      }));
+      const initialization = deferred<boolean>();
+      const initialize = vi.fn().mockResolvedValue(true);
+      if (failureAt === 'initialization') initialize.mockReturnValueOnce(initialization.promise);
+      const fixture = (await createFixture({
+        ensureExecutionInitialized: initialize,
+      }));
+      fixture.images.setImages([images[0]]);
+      const creation = deferred<Conversation>();
+      if (failureAt === 'creation') {
+        fixture.state.currentConversationId = null;
+        fixture.plugin.createConversation.mockReturnValueOnce(creation.promise)
+          .mockResolvedValue(conversationRecord('conversation-1'));
+      }
+      fixture.input.value = 'First request';
+      const first = fixture.controller.sendMessage();
+      const settled = first.catch((error: unknown) => error);
+      await waitForCall(failureAt === 'creation' ? fixture.plugin.createConversation : initialize);
+      fixture.input.value = 'Follow-up request';
+      fixture.images.setImages([images[1]]);
+      await fixture.controller.sendMessage();
+      fixture.input.value = '    newerDraft()\n';
+      fixture.images.setImages([images[2]]);
+      if (failureAt === 'creation') creation.reject(new Error('Disk full'));
+      else initialization.resolve(false);
+      expect(await settled).toEqual(failureAt === 'creation' ? new Error('Disk full') : undefined);
+
+      expect(fixture.session.turns.isActive).toBe(false);
+      expect(fixture.native.requests).toHaveLength(0);
+      expect(fixture.state.messages).toEqual([]);
+      expect(fixture.controller.queue.message).toBeNull();
+      expect(fixture.input.value).toBe('First request\n\nFollow-up request\n\n    newerDraft()\n');
+      expect(fixture.images.getAttachedImages()).toEqual(images);
+
+      await fixture.controller.sendMessage();
+      expect(fixture.native.requests).toHaveLength(1);
+      expect(fixture.native.requests[0]).toMatchObject({
+        input: [
+          { type: 'text', text: 'First request\n\nFollow-up request\n\n    newerDraft()' },
+          ...images.map(image => ({ type: 'image', image })),
+        ],
+      });
+    },
+  );
+
+  it('does not launch execution when close overlaps execution initialization', async () => {
+    let closing = false;
+    const fixture = (await createFixture({
+      isClosing: () => closing,
+      ensureExecutionInitialized: async () => {
+        closing = true;
+        fixture.session.cancelTurn('shutdown');
+        return true;
+      },
+    }));
+    await fixture.controller.sendMessage({ content: 'Keep the admitted input' });
+    expect(fixture.native.requests).toHaveLength(0);
+    expect(fixture.state.messages).toEqual([
+      expect.objectContaining({ role: 'user', content: 'Keep the admitted input' }),
+    ]);
+  });
+
+  it('submits the Main Agent prompt resolved from current settings and the Vault root without changing input', async () => {
+    const fixture = (await createFixture());
+    Object.assign(fixture.plugin.settings, { mediaFolder: 'media', systemPrompt: 'Prefer short answers.', userName: 'Ada' });
+
+    await fixture.controller.sendMessage({ content: 'list my projects' });
+
+    const submission = fixture.native.requests[0];
+    expect(submission).toMatchObject({
+      input: [{ type: 'text', text: 'list my projects' }],
+      configuration: { systemInstructions: {
+        kind: 'main-agent',
+        instructions: buildSystemPrompt({ customPrompt: 'Prefer short answers.', mediaFolder: 'media', userName: 'Ada', vaultPath: fixture.plugin.providerHost.workingDirectory ?? undefined }),
+      } },
+    });
+    expect(fixture.state.messages[0]?.content).toBe('list my projects');
+  });
+
+  it('names the working directory the session runs in, not a later host value', async () => {
+    const fixture = await createFixture({ workingDirectory: '/session-vault' });
+    // The real host's vault is a different, later value.
+    expect(fixture.plugin.providerHost.workingDirectory).not.toBe('/session-vault');
+
+    await fixture.controller.sendMessage({ content: 'where am I' });
+
+    const submission = fixture.native.requests[0];
+    expect(submission.configuration.systemInstructions).toEqual({
+      kind: 'main-agent', instructions: buildSystemPrompt({ vaultPath: '/session-vault' }),
+    });
+  });
+
+  describe('project session instructions', () => {
+    const message = { from: 'Sender', sessionId: 'sender', text: 'Please inspect this' };
+    const systemInstructions = (fixture: Awaited<ReturnType<typeof createFixture>>, call: number) => (
+      fixture.native.requests[call].configuration.systemInstructions
+    );
+    const mainAgent = (fixture: Awaited<ReturnType<typeof createFixture>>, sessionInstructions?: string) => ({
+      ...(sessionInstructions ? { projectId: 'project-1' } : {}),
+      kind: 'main-agent', instructions: buildSystemPrompt({ vaultPath: fixture.plugin.providerHost.workingDirectory ?? undefined, sessionInstructions }),
+    });
+
+    async function memberFixture() {
+      const record = projectRecord({ id: 'project-1', name: 'Launch', instructions: 'Ship the beta.' });
+      const projects = createProjectsFake([record]);
+      const fixture = (await createFixture());
+      let projectId: string | undefined = record.id;
+      // Membership is read from the detached summary, never by cloning the transcript each turn.
+      Object.assign(fixture.plugin, {
+        projects,
+        getConversationSummary: (id: string) => ({ id, providerId: 'claude', projectId }),
+      });
+      return { fixture, projects, record, leave: () => { projectId = undefined; } };
+    }
+
+    it('resolves the live project paragraph for user and session-message turns, applying edits at the next turn', async () => {
+      const { fixture, projects, record } = await memberFixture();
+
+      await fixture.controller.sendMessage({ content: 'user turn' });
+      await fixture.controller.sendSessionMessage(message, { assertBeforeHandoff: () => undefined, onUnsent: () => undefined });
+      const edited = { ...record, instructions: 'Ship the stable release.' };
+      projects.put(edited);
+      await fixture.controller.sendMessage({ content: 'after edit' });
+
+      expect([0, 1, 2].map(call => systemInstructions(fixture, call))).toEqual([
+        mainAgent(fixture, renderProjectMemberInstructions(record)),
+        mainAgent(fixture, renderProjectMemberInstructions(record)),
+        mainAgent(fixture, renderProjectMemberInstructions(edited)),
+      ]);
+      expect(fixture.plugin.getConversationSync).not.toHaveBeenCalled();
+    });
+
+    it.each(['removed', 'deleted'] as const)('sends the normal prompt once the session is %s from its project', async change => {
+      const { fixture, projects, record, leave } = await memberFixture();
+      await fixture.controller.sendMessage({ content: 'member turn' });
+
+      if (change === 'removed') leave();
+      else projects.remove(record.id);
+      await fixture.controller.sendMessage({ content: 'normal turn' });
+      await fixture.controller.sendSessionMessage(message, { assertBeforeHandoff: () => undefined, onUnsent: () => undefined });
+
+      expect(systemInstructions(fixture, 0)).toEqual(mainAgent(fixture, renderProjectMemberInstructions(record)));
+      expect(systemInstructions(fixture, 1)).toEqual(mainAgent(fixture));
+      expect(systemInstructions(fixture, 2)).toEqual(mainAgent(fixture));
+    });
+  });
+
+  it('numbers canonical submissions without counting interrupt markers', async () => {
+    const fixture = await createFixture();
+    fixture.linkedContentController.lock('note.md');
+    const editorContext = {
+      mode: 'selection' as const,
+      notePath: 'note.md',
+      selectedText: 'selected text',
+      startLine: 4,
+    };
+    const browserContext = {
+      selectedText: 'browser text',
+      source: 'browser',
+      url: 'https://example.com',
+    };
+    const canvasContext = {
+      canvasPath: 'map.canvas',
+      nodeIds: ['node-1'],
+    };
+    const image: ImageAttachment = {
+      data: 'aGVsbG8=',
+      id: 'image-b',
+      mediaType: 'image/png',
+      name: 'b.png',
+      size: 5,
+      source: 'paste',
+    };
+    const priorMessages = [
+      { id: 'user-a', role: 'user' as const, content: 'A', timestamp: 1 },
+      { id: 'assistant-a', role: 'assistant' as const, content: 'reply', timestamp: 2 },
+      {
+        id: 'interrupt-a',
+        role: 'user' as const,
+        content: 'interrupted',
+        isInterrupt: true,
+        timestamp: 3,
+      },
+    ];
+    priorMessages.forEach(message => fixture.state.addMessage(message));
+
+    await fixture.controller.sendMessage({
+      browserContextOverride: browserContext,
+      canvasContextOverride: canvasContext,
+      content: 'B',
+      editorContextOverride: editorContext,
+      images: [image],
+    });
+
+    const submission = fixture.native.requests[0];
+    expect(submission).toMatchObject({
+      input: [{ type: 'text', text: 'B' }, { type: 'image', image }],
+      context: {
+        selections: [
+          { kind: 'editor', selection: editorContext },
+          { kind: 'browser', selection: browserContext },
+          { kind: 'canvas', selection: canvasContext },
+        ],
+      },
+    });
+    expect(submission.conversationHistory?.map(message => message.id)).toEqual([
+      'user-a',
+      'assistant-a',
+      'interrupt-a',
+    ]);
+    expect(fixture.state.messages.at(-2)).toMatchObject({ role: 'user', content: 'B', images: [image] });
+  });
+
+  it('keeps context feature-owned in the normalized submission', async () => {
+    const fixture = await createFixture();
+    fixture.linkedContentController.lock('note.md');
+
+    await fixture.controller.sendMessage({
+      content: 'use context',
+      editorContextOverride: {
+        mode: 'selection',
+        notePath: 'note.md',
+        selectedText: 'selection',
+        startLine: 1,
+      },
+    });
+
+    expect(fixture.native.requests[0]).toMatchObject({
+      input: [{ type: 'text', text: 'use context' }],
+      configuration: expect.objectContaining({
+        model: 'claude-model',
+      }),
+      context: expect.objectContaining({
+        linkedContent: { path: 'note.md' },
+      }),
+    });
+  });
+
+  it('restores composer input and rolls back the local turn on definite pre-handoff failure', async () => {
+    const image: ImageAttachment = {
+      id: 'image-1',
+      name: 'image.png',
+      mediaType: 'image/png',
+      data: 'aGVsbG8=',
+      size: 5,
+      source: 'paste',
+    };
+    const fixture = await createFixture();
+    fixture.images.setImages([image]);
+    fixture.input.value = 'retry this';
+    fixture.execution.repository.assertConversationExecutionAuthority.mockRejectedValueOnce(new Error('ledger unavailable'));
+
+    await fixture.controller.sendMessage();
+
+    expect(fixture.input.value).toBe('retry this');
+    expect(fixture.images.getAttachedImages()).toEqual([image]);
+    expect(fixture.state.messages).toEqual([]);
+    expect(fixture.deps.getMessagesEl()?.textContent).toBe('');
+    expect(fixture.plugin.updateConversation).not.toHaveBeenCalled();
+    expect(fixture.state.activity?.kind).not.toBe('error');
+    expect(Notice).toHaveBeenCalledWith('Message was not sent. Please try again.');
+  });
+
+  it('keeps unsent input in the closing transcript when preparation fails before handoff', async () => {
+    let closing = false;
+    const fixture = (await createFixture({ isClosing: () => closing }));
+    fixture.execution.repository.assertConversationExecutionAuthority.mockImplementationOnce(async () => {
+      closing = true;
+      fixture.session.cancelTurn('shutdown');
+      throw new Error('closed during preparation');
+    });
+    await fixture.controller.sendMessage({ content: 'Keep the admitted input' });
+    expect(fixture.state.messages).toEqual([
+      expect.objectContaining({ role: 'user', content: 'Keep the admitted input' }),
+    ]);
+    expect(fixture.input.value).toBe('');
+  });
+
+  it('restores the unsent turn after an asynchronous unaccepted configuration rejection', async () => {
+    const image: ImageAttachment = { id: 'retry-image', name: 'retry.png', mediaType: 'image/png', data: 'aGVsbG8=', size: 5, source: 'paste' };
+    const fixture = await createFixture();
+    fixture.images.setImages([image]);
+    const rejection: ProviderExecutionEvent = {
+      type: 'execution_error',
+      category: 'configuration',
+      message: 'No enabled model is available.',
+      recoverable: false,
+      scope: {
+        kind: 'requested',
+        sessionInstanceId: 'session-1',
+        executionId: 'execution-1',
+        turnId: 'turn-1',
+        sequence: 2,
+      },
+    };
+    fixture.input.value = 'retry after configuration';
+    fixture.native.respond.mockImplementationOnce(run => run.emit(rejection));
+
+    await fixture.controller.sendMessage();
+
+    expect(fixture.input.value).toBe('retry after configuration');
+    expect(Notice).toHaveBeenCalledWith(rejection.message);
+    expect(fixture.images.getAttachedImages()).toEqual([image]);
+    expect(fixture.state.messages).toEqual([]);
+    expect(fixture.deps.getMessagesEl()?.textContent).toBe('');
+    expect(fixture.plugin.updateConversation).not.toHaveBeenCalled();
+    expect(fixture.state.activity?.kind).not.toBe('error');
+  });
+
+  it('does not restore input after an ambiguous post-handoff rejection', async () => {
+    const fixture = (await createFixture());
+    fixture.input.value = 'possibly sent';
+    fixture.native.respond.mockImplementationOnce(run => {
+      run.emit({ type: 'turn_started', accepted: true });
+      run.events.fail(new Error('stream failed'));
+    });
+
+    await fixture.controller.sendMessage();
+
+    expect(fixture.input.value).toBe('');
+    expect(fixture.state.messages).toHaveLength(2);
+    expect(fixture.plugin.updateConversation.mock.calls.at(-1)?.[1].messages).toEqual(fixture.state.messages);
+    expect(fixture.deps.getMessagesEl()?.textContent).toContain('stream failed');
+  });
+
+  it('puts the completed turn checkpoint and statistics on the final assistant projection after message boundaries', async () => {
+    const fixture = (await createFixture());
+    fixture.native.respond.mockImplementationOnce(run => {
+      run.emit({ type: 'turn_started', accepted: true });
+      run.emit({ type: 'assistant_message_started' });
+      run.emit({ type: 'assistant_message_started' });
+      run.emit({ type: 'turn_completed', reason: 'completed', nativeCheckpointId: 'completed-checkpoint',
+        turnStats: { outputTokens: 125, durationMs: 2500 } });
+    });
+
+    await fixture.controller.sendMessage({ content: 'Inspect the code' });
+
+    const assistants = fixture.state.messages.filter(message => message.role === 'assistant');
+    expect(assistants.length).toBeGreaterThan(1);
+    expect(assistants.at(-1)?.assistantMessageId).toBe('completed-checkpoint');
+    expect(assistants[0].assistantMessageId).toBeUndefined();
+    expect(assistants.at(-1)?.turnStats).toEqual({ outputTokens: 125, durationMs: 2500 });
+  });
+
+  it('timestamps the final response at execution completion instead of streaming start', async () => {
+    const startedAt = testDate().getTime();
+    const finishedAt = testDate({ seconds: 65 }).getTime();
+    let now = startedAt;
+    const nowSpy = vi.spyOn(Date, 'now').mockImplementation(() => now);
+    try {
+      const fixture = (await createFixture());
+      fixture.native.respond.mockImplementationOnce(run => {
+        run.emit({ type: 'turn_started', accepted: true });
+        now = finishedAt;
+        run.complete();
+      });
+      await fixture.controller.sendMessage({ content: 'Inspect' });
+      expect(fixture.state.messages[0].timestamp).toBe(startedAt);
+      expect(fixture.state.messages.at(-1)?.timestamp).toBe(startedAt);
+      expect(fixture.state.messages.at(-1)?.completedAt).toBe(finishedAt);
+    } finally {
+      nowSpy.mockRestore();
+    }
+  });
+
+  it.each([false, true])('stores response duration without a completion flavor on success (compaction: %s)', async compaction => {
+    let currentTime = 1000;
+    const nowSpy = vi.spyOn(performance, 'now').mockImplementation(() => currentTime);
+    try {
+      const fixture = (await createFixture());
+      fixture.native.respond.mockImplementationOnce(run => {
+        run.emit({ type: 'turn_started', accepted: true });
+        if (compaction) run.emit({ type: 'context_compacted' });
+        currentTime += 1500;
+        run.complete();
+      });
+
+      await fixture.controller.sendMessage({ content: 'test request' });
+
+      const assistantMessage = fixture.state.messages[1];
+      expect(assistantMessage.durationSeconds).toBe(1);
+      expect(assistantMessage.durationFlavorWord).toBeUndefined();
+    } finally {
+      nowSpy.mockRestore();
+    }
+  });
+
+  it('suppresses response duration on normalized execution errors when elapsed time exceeds one second', async () => {
+    let currentTime = 1000;
+    const nowSpy = vi.spyOn(performance, 'now').mockImplementation(() => currentTime);
+    try {
+      const fixture = (await createFixture());
+      const errorEvent: ProviderExecutionErrorEvent = {
+        category: 'provider',
+        message: 'Model overloaded',
+        recoverable: false,
+        scope: {
+          executionId: 'execution-1',
+          kind: 'requested',
+          sequence: 0,
+          sessionInstanceId: 'session-instance-1',
+          turnId: 'turn-1',
+        },
+        type: 'execution_error',
+      };
+      fixture.native.respond.mockImplementationOnce(run => {
+        run.emit({ type: 'turn_started', accepted: true });
+        currentTime += 1500;
+        run.emit(errorEvent);
+      });
+
+      await fixture.controller.sendMessage({ content: 'test request' });
+
+      expect(fixture.deps.getMessagesEl()?.textContent).toContain('Model overloaded');
+      const assistantMessage = fixture.state.messages[1];
+      expect(assistantMessage.durationSeconds).toBeUndefined();
+      expect(assistantMessage.durationFlavorWord).toBeUndefined();
+    } finally {
+      nowSpy.mockRestore();
+    }
+  });
+
+  it('suppresses response duration on catch-path rejections when elapsed time exceeds one second', async () => {
+    let currentTime = 1000;
+    const nowSpy = vi.spyOn(performance, 'now').mockImplementation(() => currentTime);
+    try {
+      const fixture = (await createFixture());
+      fixture.native.respond.mockImplementationOnce(run => {
+        run.emit({ type: 'turn_started', accepted: true });
+        currentTime += 1500;
+        run.events.fail(new Error('stream failed'));
+      });
+
+      await fixture.controller.sendMessage({ content: 'test request' });
+
+      expect(fixture.deps.getMessagesEl()?.textContent).toContain('stream failed');
+      const assistantMessage = fixture.state.messages[1];
+      expect(assistantMessage.durationSeconds).toBeUndefined();
+      expect(assistantMessage.durationFlavorWord).toBeUndefined();
+    } finally {
+      nowSpy.mockRestore();
+    }
+  });
+
+  it('renders and stores normalized requested output', async () => {
+    const fixture = (await createFixture());
+    fixture.native.respond.mockImplementationOnce(run => {
+      run.emit({ type: 'turn_started', accepted: true });
+      run.emit({ type: 'text_delta', text: 'world' });
+      run.complete();
+    });
+
+    await fixture.controller.sendMessage({ content: 'hello' });
+
+    expect(fixture.state.messages.filter(message => message.role === 'assistant').map(message => message.content)).toEqual(['world']);
+    expect(fixture.deps.getMessagesEl()?.textContent).toContain('world');
+    expect(fixture.plugin.updateConversation.mock.calls.at(-1)?.[1].messages).toMatchObject([
+      { role: 'user', content: 'hello' }, { role: 'assistant', content: 'world' },
+    ]);
+  });
+
+  it('reports no error activity for a session message the provider failed before accepting', async () => {
+    const fixture = (await createFixture());
+    const onUnsent = vi.fn();
+    fixture.native.respond.mockImplementationOnce(run => {
+      run.emit({ type: 'turn_started', accepted: false });
+      run.emit({ type: 'execution_error', category: 'transport', message: 'Transport closed', recoverable: true });
+    });
+
+    await fixture.controller.sendSessionMessage(
+      { from: 'Sender', sessionId: 'sender', text: 'Please inspect this' },
+      { assertBeforeHandoff: () => undefined, onUnsent },
+    );
+
+    // The unsent message returns to its mailbox; the rolled-back turn has no reply to carry the error.
+    expect(onUnsent).toHaveBeenCalled();
+    expect(fixture.state.messages).toEqual([]);
+    expect(fixture.state.activity?.kind).not.toBe('error');
+  });
+
+  it('restores pending input when the coordinator reports a missing session', async () => {
+    const fixture = (await createFixture());
+    fixture.input.value = 'retry me';
+    fixture.execution.missingSession.mockResolvedValueOnce('reset');
+    fixture.native.respond.mockImplementationOnce(run => {
+      run.emit({ type: 'turn_started', accepted: false });
+      run.emit({ type: 'execution_error', category: 'provider-session-missing', message: 'Session missing', recoverable: true });
+    });
+
+    await fixture.controller.sendMessage();
+
+    expect(fixture.input.value).toBe('retry me');
+    expect(fixture.state.messages).toEqual([]);
+    expect(fixture.plugin.updateConversation).not.toHaveBeenCalled();
+  });
+
+  it('keeps an accepted missing-session turn non-retryable while resetting recovery state', async () => {
+    const fixture = (await createFixture());
+    fixture.input.value = 'already handed off';
+    fixture.execution.missingSession.mockResolvedValueOnce('reset');
+    fixture.native.respond.mockImplementationOnce(run => {
+      run.emit({ type: 'turn_started', accepted: true });
+      run.emit({ type: 'execution_error', category: 'provider-session-missing', message: 'Session missing', recoverable: true });
+    });
+
+    await fixture.controller.sendMessage();
+
+    expect(fixture.input.value).toBe('');
+    expect(fixture.state.messages).toHaveLength(2);
+    expect(fixture.state.isStreaming).toBe(false);
+    expect(fixture.deps.getMessagesEl()?.querySelectorAll('.claudian-message')).toHaveLength(2);
+    expect(fixture.plugin.updateConversation).not.toHaveBeenCalled();
+    expect(Notice).toHaveBeenCalledWith(
+      'The provider session no longer exists. Claudian preserved the recoverable history; send again to rebuild the session.',
+    );
+  });
+
+  it('does not restore accepted input after missing-session deletion recovery', async () => {
+    const fixture = (await createFixture());
+    fixture.input.value = 'accepted before deletion';
+    fixture.execution.missingSession.mockResolvedValueOnce('deleted');
+    fixture.native.respond.mockImplementationOnce(run => {
+      run.emit({ type: 'turn_started', accepted: true });
+      run.emit({ type: 'execution_error', category: 'provider-session-missing', message: 'Session missing', recoverable: true });
+    });
+
+    await fixture.controller.sendMessage();
+
+    expect(fixture.input.value).toBe('');
+    expect(fixture.deps.getMessagesEl()?.querySelectorAll('.claudian-message')).toHaveLength(2);
+    expect(fixture.plugin.updateConversation).not.toHaveBeenCalled();
+    expect(Notice).toHaveBeenCalledWith(
+      'The provider session no longer exists. Its Claudian record was removed; send again to start a new session.',
+    );
+  });
+
+  it('returns a steer that is definitely unsent after missing-session deletion to the composer', async () => {
+    const fixture = (await createFixture());
+    fixture.input.value = 'deleted turn';
+    const lateSteer = createQueuedMessage('late steer', { text: 'late steer' });
+    vi.mocked(Notice).mockImplementationOnce(function () {
+      // The steer's provider rejection arrives after the deletion recovery, before the turn ends.
+      fixture.controller.queue.returnUnsent(lateSteer);
+      return {} as Notice;
+    });
+    fixture.execution.missingSession.mockResolvedValueOnce('deleted');
+    fixture.native.respond.mockImplementationOnce(run => {
+      run.emit({ type: 'turn_started', accepted: false });
+      run.emit({ type: 'execution_error', category: 'provider-session-missing', message: 'Session missing', recoverable: true });
+    });
+
+    await fixture.controller.sendMessage();
+
+    expect(fixture.state.queuedMessage).toBeNull();
+    expect(fixture.input.value).toContain('late steer');
+    expect(fixture.input.value).toContain('deleted turn');
+  });
+
+  it('keeps pending input intact when execution preparation fails', async () => {
+    const fixture = (await createFixture({
+      ensureExecutionInitialized: vi.fn().mockResolvedValue(false),
+    }));
+    fixture.input.value = 'not sent';
+
+    await fixture.controller.sendMessage();
+
+    expect(fixture.native.requests).toHaveLength(0);
+    expect(fixture.input.value).toBe('not sent');
+    expect(fixture.state.messages).toEqual([]);
+  });
+
+  it('reports a terminal completed turn as reviewable', async () => {
+    const onReviewableSettlement = vi.fn();
+    const fixture = (await createFixture({ onReviewableSettlement }));
+
+    await fixture.controller.sendMessage({ content: 'finish this' });
+
+    expect(fixture.deps.captureReviewableSettlement).toHaveBeenCalledWith('completed');
+    expect(onReviewableSettlement).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports a terminal accepted error as reviewable', async () => {
+    const onReviewableSettlement = vi.fn();
+    const fixture = (await createFixture({ onReviewableSettlement }));
+    fixture.native.respond.mockImplementationOnce(run => {
+      run.emit({ type: 'turn_started', accepted: true });
+      run.emit({ type: 'execution_error', category: 'provider', message: 'provider failed', recoverable: false });
+    });
+
+    await fixture.controller.sendMessage({ content: 'finish this' });
+
+    expect(fixture.deps.captureReviewableSettlement).toHaveBeenCalledWith('error');
+    expect(onReviewableSettlement).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(['cancelled', 'invalidated', 'missing-session'] as const)(
+    'does not report a %s turn as reviewable',
+    async (status) => {
+      const onReviewableSettlement = vi.fn();
+      const fixture = (await createFixture({ onReviewableSettlement }));
+      const response = fixture.holdNextResponse();
+      const sending = fixture.controller.sendMessage({ content: 'finish this' });
+      const run = await response.started;
+      if (status === 'invalidated') await fixture.execution.registry.runTransition(['claude'], async () => undefined);
+      else if (status === 'cancelled') run.emit({ type: 'cancelled', reason: 'Stopped' });
+      else run.emit({ type: 'execution_error', category: 'provider-session-missing', message: 'Session missing', recoverable: true });
+      await sending;
+
+      expect(onReviewableSettlement).not.toHaveBeenCalled();
+    },
+  );
+
+  it('does not report a definite pre-handoff failure as reviewable', async () => {
+    const onReviewableSettlement = vi.fn();
+    const fixture = (await createFixture({ onReviewableSettlement }));
+    fixture.execution.repository.assertConversationExecutionAuthority.mockRejectedValueOnce(new Error('not handed off'));
+
+    await fixture.controller.sendMessage({ content: 'finish this' });
+
+    expect(onReviewableSettlement).not.toHaveBeenCalled();
+  });
+
+  it('reports completed work when terminal persistence fails', async () => {
+    const onReviewableSettlement = vi.fn();
+    const fixture = (await createFixture({ onReviewableSettlement }));
+    fixture.plugin.updateConversation.mockRejectedValueOnce(new Error('save failed'));
+
+    await expect(fixture.controller.sendMessage({ content: 'finish this' }))
+      .rejects.toThrow('save failed');
+
+    expect(onReviewableSettlement).toHaveBeenCalledTimes(1);
+  });
+
+  it('acknowledges stale review when a new provider turn starts', async () => {
+    const fixture = (await createFixture());
+    fixture.state.markReviewRequired();
+
+    await fixture.controller.sendMessage({ content: 'continue working' });
+
+    expect(fixture.state.attention).toBeNull();
+  });
+});
+
+it.each(['before', 'after'] as const)(
+  'keeps one completion outcome when cancellation arrives %s native completion', async order => {
+    const fixture = await createFixture();
+    const response = fixture.holdNextResponse();
+    const sending = fixture.controller.sendMessage({ content: 'Work' });
+    const run = await response.started;
+    run.holdCancellation = true;
+    if (order === 'before') fixture.controller.cancelStreaming();
+    await fixture.emit(run, { type: 'turn_completed', reason: 'completed' });
+    if (order === 'after') fixture.controller.cancelStreaming();
+    await sending;
+    expect(fixture.state.messages.at(-1)?.isInterrupt).not.toBe(true);
+  },
+);
+
+it('cancels a turn while it commits a branch draft before provider handoff', async () => {
+  const native = new FakeBranchSession('claude', 'branch-session');
+  const fixture = await createFixture({ nativeSession: native });
+  const commit = deferred<ConversationBranchResult>();
+  const entered = deferred<void>();
+  native.navigateConversationBranch.mockImplementationOnce(() => { entered.resolve(); return commit.promise; });
+  const conversation = fixture.deps.conversationController;
+  fixture.state.messages = [
+    { id: 'first', role: 'user', content: 'First', timestamp: testDate().getTime(), userMessageId: 'native-first' },
+    { id: 'edit', role: 'user', content: 'Original', timestamp: testDate().getTime(), userMessageId: 'native-edit' },
+  ];
+  await conversation.navigateBranch('edit');
+  fixture.input.value = 'branch prompt';
+  const sending = fixture.controller.sendMessage();
+  await entered.promise;
+  expect(fixture.state.isStreaming).toBe(true);
+
+  fixture.controller.cancelStreaming();
+  expect(native.navigateConversationBranch.mock.calls[0][0].signal?.aborted).toBe(true);
+  commit.resolve({ status: 'committed', messages: [] });
+  await sending;
+
+  expect(fixture.native.requests).toHaveLength(0);
+  expect(fixture.input.value).toBe('branch prompt');
+  expect(fixture.state.isStreaming).toBe(false);
+});
+
+describe('branch draft submission', () => {
+  it.each([false, true])('waits for native branch navigation before sending and preserves cancelled drafts (%s)', async cancelled => {
+    const native = new FakeBranchSession('claude', 'branch-session');
+    const fixture = await createFixture({ nativeSession: native });
+    const first = { id: 'first', role: 'user' as const, content: 'First', timestamp: Date.now(), userMessageId: 'native-first' };
+    const prompt = { id: 'second', role: 'user' as const, content: 'Original', timestamp: Date.now(), userMessageId: 'native-second' };
+    fixture.state.messages = [first, prompt];
+    const navigation = deferred<ConversationBranchResult>();
+    const entered = deferred<void>();
+    native.navigateConversationBranch.mockImplementationOnce(() => { entered.resolve(); return navigation.promise; });
+    // The harness conversation owner is real; turn admission is wired to it at construction.
+    const conversation = fixture.deps.conversationController;
+    await conversation.navigateBranch('second');
+    fixture.input.value = 'Edited';
+    const sending = fixture.controller.sendMessage();
+    await entered.promise;
+    expect(fixture.native.requests).toHaveLength(0);
+    conversation.cancelBranchDraft(); // Focus changes during admitted submission must not undo it.
+    expect(fixture.input.value).toBe('');
+    navigation.resolve(cancelled ? { status: 'cancelled' } : { status: 'committed', messages: [first] });
+    await sending;
+    expect(fixture.native.requests.map(request => request.input)).toEqual(cancelled ? [] : [[{ type: 'text', text: 'Edited' }]]);
+    expect(fixture.input.value).toBe(cancelled ? 'Edited' : '');
+    expect(fixture.state.messages.some(message => message.id === 'second')).toBe(cancelled);
+    conversation.cancelBranchDraft();
+    expect(fixture.state.messages.some(message => message.content === 'Edited')).toBe(!cancelled);
+  });
+});

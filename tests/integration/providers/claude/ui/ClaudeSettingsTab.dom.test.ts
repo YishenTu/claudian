@@ -1,5 +1,4 @@
 /** @vitest-environment jsdom */
-import '@/providers';
 
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
@@ -11,11 +10,16 @@ import { createProviderHostFixture } from '@test/helpers/providerRuntimeHost';
 import { fireEvent, waitFor, within } from '@testing-library/dom';
 
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
+import { registerProviderModules } from '@/core/providers/registerProviderModules';
 import type { ProviderSettingsTabRenderHandle } from '@/core/providers/types';
 import { t } from '@/i18n/i18n';
 import { type ClaudeWorkspaceServices,createClaudeWorkspaceServices } from '@/providers/claude/app/ClaudeWorkspaceServices';
+import { claudeProviderRegistration } from '@/providers/claude/registration';
 import type { ClaudeCatalogProbe } from '@/providers/claude/runtime/ClaudeModels';
 import { getClaudeProviderSettings, updateClaudeProviderSettings } from '@/providers/claude/settings';
+import { piProviderRegistration } from '@/providers/pi/registration';
+
+registerProviderModules([claudeProviderRegistration, piProviderRegistration]);
 
 const models = [{ value: 'opus', label: 'Opus', description: '' }, { value: 'claude-opus-4-6', label: 'Opus 4.6', description: '' }];
 let fixture: Awaited<ReturnType<typeof createProviderHostFixture>>;

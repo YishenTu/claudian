@@ -1,9 +1,11 @@
 import * as path from 'node:path';
 
+import { normalizeImageMediaType } from '@/core/execution/imageAttachment';
 import type { ExecutionPathMapper } from '@/core/process/execution-target/types';
 import { decodeSessionMessage } from '@/core/session-tools/sessionMessageEnvelope';
 import { resolveToolDiffData } from '@/core/tools/toolDiff';
 import { extractACPDiffResultDetails } from '@/providers/acp/ACPToolResultNormalization';
+import { readFileRevision } from '@/utils/fileRevision';
 import { forEachJSONLLine } from '@/utils/jsonlFile';
 
 import { isWriteEditTool, TOOL_ASK_USER_QUESTION } from '../../../core/tools/toolNames';
@@ -12,7 +14,6 @@ import type {
   ChatMessage,
   ContentBlock,
   ImageAttachment,
-  ImageMediaType,
   ToolCallInfo,
   ToolResultDetails,
 } from '../../../core/types';
@@ -416,6 +417,15 @@ export async function loadGrokPromptIndexAfterAssistant(
   }
 }
 
+/** Cheap change token for the updates file hydration reads; null when it cannot be observed. */
+export function readGrokHistoryRevision(sessionDirectory: string): Promise<string | null> {
+  return readFileRevision(getGrokUpdatesPath(sessionDirectory));
+}
+
+function getGrokUpdatesPath(sessionDirectory: string): string {
+  return path.join(sessionDirectory, 'updates.jsonl');
+}
+
 /** Streams native updates; resolves null only when the session has no updates file. */
 async function readGrokUpdates<T>(
   sessionDirectory: string,
@@ -423,7 +433,7 @@ async function readGrokUpdates<T>(
 ): Promise<T | null> {
   try {
     await forEachJSONLLine(
-      path.join(sessionDirectory, 'updates.jsonl'),
+      getGrokUpdatesPath(sessionDirectory),
       line => consumer.pushLine(line),
     );
   } catch (error) {
@@ -645,7 +655,7 @@ function extractImageAttachment(
   const content = readRecord(value);
   if (!content || content.type !== 'image') return null;
   const data = readString(content.data);
-  const mediaType = readImageMediaType(content.mimeType);
+  const mediaType = normalizeImageMediaType(content.mimeType);
   if (!data || !mediaType) return null;
   const extension = mediaType === 'image/jpeg' ? 'jpg' : mediaType.slice('image/'.length);
   return {
@@ -656,18 +666,6 @@ function extractImageAttachment(
     size: Buffer.from(data, 'base64').byteLength,
     source: 'file',
   };
-}
-
-function readImageMediaType(value: unknown): ImageMediaType | null {
-  switch (value) {
-    case 'image/gif':
-    case 'image/jpeg':
-    case 'image/png':
-    case 'image/webp':
-      return value;
-    default:
-      return null;
-  }
 }
 
 function hasTextContent(value: unknown): boolean {

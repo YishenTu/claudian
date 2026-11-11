@@ -14,6 +14,8 @@ export interface TabHydrationDeps {
     providerId: ProviderId | null,
     reason: string,
   ): Promise<boolean>;
+  /** Resets the tab's hydration when its native history changed outside Claudian; null when nothing to check. */
+  revalidateSession(tab: AssembledTabRuntime): Promise<void> | null;
   /** Invoked by the rendered retry control; the caller owns re-activation. */
   readonly onRetry: (tab: AssembledTabRuntime) => void;
 }
@@ -34,9 +36,14 @@ export class TabHydration {
   async hydrateActivatedTab(tab: AssembledTabRuntime): Promise<TabHydrationOutcome> {
     const { deps } = this;
     const providerId = tab.providerId;
+    // A tab kept open while hidden returns with the history it last showed.
+    const revalidation = deps.revalidateSession(tab);
+    if (revalidation) {
+      await revalidation;
+      if (!deps.isTabAlive(tab)) return 'aborted';
+    }
     const needsHydration = !!tab.conversationId && tab.hydrationState !== 'ready';
     if (needsHydration) {
-      tab.hydrationState = 'loading';
       renderTabHydrationState(tab, undefined, deps.onRetry);
       await waitForTabPaint(tab);
       if (!deps.isTabAlive(tab)) return 'aborted';
@@ -60,22 +67,26 @@ export class TabHydration {
           }
         }
         if (!deps.isTabAlive(tab)) return 'aborted';
-        tab.hydrationState = 'ready';
-      } else if (tab.conversationId && tab.state.messages.length > 0) {
-        tab.hydrationState = 'ready';
       } else if (!tab.conversationId && tab.state.messages.length === 0) {
         // New tab with no conversation - initialize welcome greeting
         tab.controllers.conversationController.initializeWelcome();
-        tab.hydrationState = 'ready';
       }
+      // A retry after a failed provider startup leaves a loaded transcript showing again.
+      clearTabHydrationStatus(tab);
     } catch (error) {
       if (!deps.isTabAlive(tab)) return 'aborted';
-      tab.hydrationState = 'failed';
+      // The session model owns hydration; a failed provider startup leaves a loaded transcript loaded.
       renderTabHydrationState(tab, error, deps.onRetry);
       return 'failed';
     }
 
     return deps.isTabAlive(tab) ? 'ready' : 'aborted';
+  }
+}
+
+function clearTabHydrationStatus(tab: AssembledTabRuntime): void {
+  for (const statusEl of Array.from(tab.dom.messagesEl.children)) {
+    if (statusEl.hasClass('claudian-tab-hydration')) statusEl.remove();
   }
 }
 
@@ -91,7 +102,9 @@ function renderTabHydrationState(
   onRetry: (tab: AssembledTabRuntime) => void,
 ): void {
   const messagesEl = tab.dom.messagesEl;
-  messagesEl.empty();
+  // A loaded transcript stays in place under a startup error; only an unloaded one is replaced.
+  if (tab.hydrationState === 'ready') clearTabHydrationStatus(tab);
+  else messagesEl.empty();
 
   const statusEl = messagesEl.createDiv({ cls: 'claudian-tab-hydration' });
   if (!error) {

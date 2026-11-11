@@ -1,5 +1,4 @@
 // Retired-binding migration (#1647): delete this file after 2027-01-16.
-import '@/providers';
 
 import { DEFAULT_CLAUDIAN_SETTINGS } from '@test/helpers/defaultSettings';
 import { testDate, testTime } from '@test/helpers/testClock';
@@ -10,8 +9,13 @@ import * as path from 'path';
 import { ConversationRepository } from '@/app/conversations/ConversationRepository';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { ProviderSettingsCoordinator } from '@/core/providers/ProviderSettingsCoordinator';
+import { registerProviderModules } from '@/core/providers/registerProviderModules';
 import type { ClaudianSettings, Conversation } from '@/core/types';
+import { claudeProviderRegistration } from '@/providers/claude/registration';
+import { piProviderRegistration } from '@/providers/pi/registration';
 import { clearPiResumeState } from '@/providers/pi/types';
+
+registerProviderModules([claudeProviderRegistration, piProviderRegistration]);
 
 let root: string;
 let vault: string;

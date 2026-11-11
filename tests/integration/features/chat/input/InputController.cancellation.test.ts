@@ -1,3 +1,5 @@
+import '@/providers';
+
 // @vitest-environment jsdom
 import { createHarness, deferred, FakeSession, requestedScope } from '@test/helpers/ChatExecutionHarness';
 import { createFixture } from '@test/helpers/ChatInputHarness';
