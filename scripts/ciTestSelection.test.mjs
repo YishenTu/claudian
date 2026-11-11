@@ -356,7 +356,7 @@ test('a provider-internal change selects no other provider suites through the re
   const tracker = 'src/providers/codex/execution/CodexSubagentTracker.ts';
   const selection = selectRelatedCiTests({ changes: [{ status: 'M', path: tracker }] });
   const others = /^tests\/(?:unit|integration)\/providers\/(?:claude|deepseek|grok|opencode|pi)\//;
-  assert.ok(selection.testFiles.includes('tests/unit/providers/codex/execution/CodexSubagentTracker.test.ts'));
+  assert.ok(selection.testFiles.includes('tests/integration/providers/codex/execution/CodexSubagentTracker.test.ts'));
   // Another provider's suite is selected only when it registers Codex itself.
   const registersCodex = file => readFileSync(file, 'utf8').includes('codexProviderRegistration');
   assert.deepEqual(selection.testFiles.filter(file => others.test(file) && !registersCodex(file)), []);
