@@ -17,7 +17,8 @@ export type BuiltInCommandAction =
 type BuiltInCommandCapability =
   | 'supportsNativeHistory'
   | 'supportsFork'
-  | 'supportsFastMode';
+  | 'supportsFastMode'
+  | 'supportsCompaction';
 type BuiltInCommandCapabilityContext =
   Partial<Pick<ProviderCapabilities, BuiltInCommandCapability>>
   & Partial<Pick<ProviderCapabilities, 'providerId'>>;
@@ -30,7 +31,7 @@ export interface BuiltInCommand {
   action: BuiltInCommandAction;
   /** Hint for arguments shown in dropdown (e.g., "path"). */
   argumentHint?: string;
-  /** When set, provider capabilities must expose this feature. */
+  /** When set, availability follows this provider capability and its documented default. */
   requiredCapability?: BuiltInCommandCapability;
 }
 
@@ -51,6 +52,7 @@ export const BUILT_IN_COMMANDS: BuiltInCommand[] = [
     name: 'compact',
     description: 'Compact conversation history',
     action: 'compact',
+    requiredCapability: 'supportsCompaction',
   },
   {
     name: 'sessions',
@@ -114,6 +116,7 @@ export function isBuiltInCommandSupported(
   }
 
   const capabilities = resolveCapabilities(context);
+  if (command.requiredCapability === 'supportsCompaction') return capabilities?.supportsCompaction !== false;
   return capabilities ? capabilities[command.requiredCapability] === true : false;
 }
 

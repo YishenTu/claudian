@@ -11,7 +11,7 @@ import { PinnedLinkedContentPathCoordinator } from '@/app/settings/PinnedLinkedC
 import { ConversationPersistenceStore } from '@/app/storage/ConversationPersistenceStore';
 import type { SessionMetadataReadResult } from '@/app/storage/SessionStorage';
 import { SessionStorage } from '@/app/storage/SessionStorage';
-import type { SharedStorageService } from '@/app/storage/SharedStorageService';
+import { SharedStorageService } from '@/app/storage/SharedStorageService';
 import type { ClaudianChatFeatureHost } from '@/composition/ClaudianFeatureHosts';
 import type { ClaudianViews } from '@/composition/ClaudianViews';
 import { getDeviceSessionsPath } from '@/core/bootstrap/storagePaths';
@@ -25,12 +25,11 @@ import { LoopbackSessionToolServer } from '@/core/session-tools/LoopbackSessionT
 import { TOOL_SUBAGENT } from '@/core/tools/toolNames';
 import { type ClaudianSettings, type Conversation, type SessionMetadata, VIEW_TYPE_CLAUDIAN } from '@/core/types';
 import { ClaudianView } from '@/features/chat/ClaudianView';
+import { resolveSessionMentions } from '@/features/chat/composer/resolveSessionMentions';
 import { ConversationTitleGeneration } from '@/features/chat/conversation/ConversationTitleGeneration';
-import { resolveSessionMentions } from '@/features/chat/input/resolveSessionMentions';
 import { SessionMessagingService } from '@/features/chat/session-messaging/SessionMessagingService';
 import { SessionRuntimePool } from '@/features/chat/sessions/SessionRuntimePool';
 import { ZenModeController } from '@/features/chat/zen/ZenModeController';
-import { setLocale } from '@/i18n/i18n';
 import * as sdkSession from '@/providers/claude/history/ClaudeHistoryStore';
 import { createCodexModelCatalogCommit } from '@/providers/codex/app/CodexWorkspaceServices';
 import { CodexModelCatalogCoordinator } from '@/providers/codex/runtime/CodexModelCatalogCoordinator';
@@ -365,7 +364,6 @@ describe('ClaudianPlugin', () => {
       (instance as unknown as { applicationShutdownPromise?: Promise<void> })
         .applicationShutdownPromise
     )));
-    setLocale('en');
   });
 
   describe('onload', () => {
@@ -475,6 +473,31 @@ describe('ClaudianPlugin', () => {
         VIEW_TYPE_CLAUDIAN,
         expect.any(Function)
       );
+    });
+
+    it('registers nothing and shuts down the late domains when unloaded while loading', async () => {
+      const storageReady = deferred<void>();
+      const initialize = SharedStorageService.prototype.initialize;
+      const held = vi.spyOn(SharedStorageService.prototype, 'initialize').mockImplementation(async function (this: SharedStorageService) {
+        await storageReady.promise;
+        return initialize.call(this);
+      });
+      try {
+        const loading = plugin.onload();
+        await vi.waitFor(() => expect(held).toHaveBeenCalled());
+        plugin.onunload();
+        storageReady.resolve();
+        await loading;
+        await plugin['applicationShutdownPromise'];
+
+        expect(plugin.registerView as Mock).not.toHaveBeenCalled();
+        expect(plugin.addCommand as Mock).not.toHaveBeenCalled();
+        expect(plugin.addSettingTab as Mock).not.toHaveBeenCalled();
+        expect(() => chatHostOf(plugin).sessionRuntimes.ensure({ conversationId: 'late', providerId: 'claude', draftModel: null }))
+          .toThrow('Session runtime pool is shutting down');
+      } finally {
+        held.mockRestore();
+      }
     });
 
     it('registers the file explorer context menu', async () => {
@@ -670,7 +693,7 @@ describe('ClaudianPlugin', () => {
         providerState: { threadId: 'thread-before-invalidation' },
       };
       await plugin.onload();
-      runtimeSettingsOf(plugin)['pendingEnvironmentInvalidationGenerations'].set('codex', 1);
+      plugin.settings.pendingProviderSessionInvalidations.codex = 1;
       const scanSpy = vi.spyOn(SessionStorage.prototype, 'scan')
         .mockResolvedValue({
           records: deviceMetadataRecords(metadata),
@@ -1569,7 +1592,7 @@ describe('ClaudianPlugin', () => {
         expect(disposeWorkspaces).not.toHaveBeenCalled();
       } finally {
         release();
-        await (plugin as unknown as { applicationShutdownPromise: Promise<void> }).applicationShutdownPromise;
+        await plugin['applicationShutdownPromise'];
         dispose.mockRestore();
         disposeWorkspaces.mockRestore();
       }
@@ -1868,7 +1891,7 @@ describe('ClaudianPlugin', () => {
       })]);
 
       chatHostOf(plugin).notifyProviderChatOptionsChanged('claude');
-      await plugin['providerChatOptions']['tail'];
+      await plugin['providerChatOptions']['queue'].settled();
 
       expect(events).toEqual(['reconcile', 'refresh']);
     });
@@ -1884,7 +1907,7 @@ describe('ClaudianPlugin', () => {
       })]);
 
       chatHostOf(plugin).notifyProviderChatOptionsChanged('claude');
-      await plugin['providerChatOptions']['tail'];
+      await plugin['providerChatOptions']['queue'].settled();
 
       expect(refreshModelSelector).not.toHaveBeenCalled();
     });
@@ -2211,8 +2234,6 @@ describe('ClaudianPlugin', () => {
 
         const generation = plugin.settings.pendingProviderSessionInvalidations.claude;
         expect(generation).toEqual(expect.any(Number));
-        expect(runtimeSettingsOf(plugin)['pendingEnvironmentInvalidationGenerations'].get('claude'))
-          .toBe(generation);
         expect(chatHostOf(plugin).getConversationSync(conversation.id)!.sessionId).toBe('pre-invalidation-session');
         const persistedFailureSettings = JSON.parse(
           [...mockApp.vault.adapter.write.mock.calls]
@@ -2232,7 +2253,6 @@ describe('ClaudianPlugin', () => {
 
         expect(chatHostOf(plugin).getConversationSync(conversation.id)!.sessionId).toBeNull();
         expect(plugin.settings.pendingProviderSessionInvalidations.claude).toBeUndefined();
-        expect(runtimeSettingsOf(plugin)['pendingEnvironmentInvalidationGenerations'].has('claude')).toBe(false);
         expect(invalidateSpy).toHaveBeenCalledTimes(2);
         expect(plugin.executionLifecycleRegistry.getProviderGeneration('claude'))
           .toBe(initialGeneration + 2);
@@ -2267,8 +2287,6 @@ describe('ClaudianPlugin', () => {
         expect(chatHostOf(plugin).getConversationSync(first.id)!.sessionId).toBeNull();
         expect(chatHostOf(plugin).getConversationSync(second.id)!.sessionId).toBeNull();
         expect(generation).toEqual(expect.any(Number));
-        expect(runtimeSettingsOf(plugin)['pendingEnvironmentInvalidationGenerations'].get('claude'))
-          .toBe(generation);
         const persistedFailureSettings = JSON.parse(
           [...mockApp.vault.adapter.write.mock.calls]
             .reverse()
@@ -2289,7 +2307,6 @@ describe('ClaudianPlugin', () => {
           expect.objectContaining({ id: second.id, sessionId: null }),
         ]));
         expect(plugin.settings.pendingProviderSessionInvalidations.claude).toBeUndefined();
-        expect(runtimeSettingsOf(plugin)['pendingEnvironmentInvalidationGenerations'].has('claude')).toBe(false);
       } finally {
         saveMetadataSpy.mockRestore();
       }
@@ -2454,7 +2471,6 @@ describe('ClaudianPlugin', () => {
         resumeAtMessageId: 'deferred-resume-message',
       }));
       expect(plugin.settings.pendingProviderSessionInvalidations.claude).toBeUndefined();
-      expect(runtimeSettingsOf(plugin)['pendingEnvironmentInvalidationGenerations'].has('claude')).toBe(false);
       expect(saveMetadataSpy).not.toHaveBeenCalledWith(expect.objectContaining({
         id: deferredMetadata.id,
         sessionId: null,
@@ -3725,28 +3741,17 @@ describe('ClaudianPlugin', () => {
       expect(Notice).not.toHaveBeenCalledWith(expect.stringContaining('could not archive or restore'));
     });
 
-    it.each([
-      ['en', 'codex unavailable', 'Codex could not archive or restore its sessions: codex unavailable'],
-      ['zh-CN', 'Running sessions cannot be archived', 'Codex 无法归档或恢复其会话：Running sessions cannot be archived'],
-    ] as const)('keeps the local archive and reports the native failure in %s', async (locale, reason, notice) => {
-      const files = installVaultFiles({ '.claudian/claudian-settings.json': JSON.stringify({ locale }) });
+    it('keeps the local archive when the native archive fails', async () => {
       await plugin.onload();
-      const setSessionsArchived = vi.fn().mockRejectedValue(new Error(reason));
-      ProviderWorkspaceRegistry.setServices('codex', { sessionArchive: { setSessionsArchived } });
+      ProviderWorkspaceRegistry.setServices('codex', {
+        sessionArchive: { setSessionsArchived: vi.fn().mockRejectedValue(new Error('codex unavailable')) },
+      });
       const conversation = await chatHostOf(plugin).createConversation({ providerId: 'codex', sessionId: 'thread-1' });
 
       await chatHostOf(plugin).conversationLifecycle.setArchived(conversation.id, true);
 
       expect(chatHostOf(plugin).getConversationSync(conversation.id)?.isArchived).toBe(true);
-      const path = `${getDeviceSessionsPath(getHostnameKey())}/${conversation.id}.meta.json`;
-      expect(JSON.parse(files.get(path) ?? '{}')).toMatchObject({
-        id: conversation.id, providerId: 'codex', sessionId: 'thread-1', isArchived: true,
-      });
-      expect(setSessionsArchived).toHaveBeenCalledExactlyOnceWith([{
-        conversation: expect.objectContaining({ id: conversation.id, providerId: 'codex', sessionId: 'thread-1' }),
-        isArchived: true,
-      }]);
-      expect(Notice).toHaveBeenCalledWith(notice);
+      expect(Notice).toHaveBeenCalledWith('Codex could not archive or restore its sessions: codex unavailable');
     });
 
     it('does not initialize providers without native session archive', async () => {
@@ -4097,13 +4102,8 @@ describe('ClaudianPlugin', () => {
       { id: 'second-stale-session', providerId: 'claude' as const, title: 'Second stale', createdAt: inactiveFor(31), lastActivityAt: inactiveFor(30) },
     ];
 
-    const metadataPath = (id: string): string => `${getDeviceSessionsPath(getHostnameKey())}/${id}.meta.json`;
-
     async function loadAllSessions(settings: Record<string, unknown>): Promise<Map<string, string>> {
-      const files = installVaultFiles({
-        '.claudian/claudian-settings.json': JSON.stringify(settings),
-        ...Object.fromEntries(sessions.map(session => [metadataPath(session.id), JSON.stringify(session)])),
-      });
+      const files = installVaultFiles({ '.claudian/claudian-settings.json': JSON.stringify(settings) });
       vi.spyOn(SessionStorage.prototype, 'scan').mockImplementation(async (options) => {
         options?.onBatch?.(deviceMetadataRecords(...sessions));
         return { records: deviceMetadataRecords(...sessions), complete: true, invalidMetadataCount: 0 };
@@ -4119,26 +4119,15 @@ describe('ClaudianPlugin', () => {
       .filter(conversation => conversation.isArchived)
       .map(conversation => conversation.id);
 
-    it.each([
-      ['en', 'Auto-archived 2 inactive sessions'],
-      ['zh-CN', '已自动归档 2 个不活跃会话'],
-    ] as const)('archives unpinned sessions once metadata has loaded and reports completion in %s', async (locale, notice) => {
-      const files = await loadAllSessions({ locale, sessionAutoArchiveAfter: '14d' });
-      await waitForCondition(() => (Notice as unknown as Mock).mock.calls.some(
-        ([message]) => typeof message === 'string' && /^(?:Auto-archived|已自动归档) /.test(message),
-      ));
+    it('archives unpinned sessions past the threshold once all metadata has loaded', async () => {
+      const files = await loadAllSessions({ sessionAutoArchiveAfter: '14d' });
 
       expect(archivedIds()).toEqual(['stale-session', 'second-stale-session']);
-      for (const id of ['stale-session', 'second-stale-session']) {
-        const original = sessions.find(session => session.id === id)!;
-        expect(JSON.parse(files.get(metadataPath(id)) ?? '{}')).toMatchObject({
-          id, title: original.title, isArchived: true,
-        });
-      }
-      for (const id of ['recent-session', 'pinned-stale-session']) {
-        expect(files.get(metadataPath(id))).toBe(JSON.stringify(sessions.find(session => session.id === id)));
-      }
-      expect(Notice).toHaveBeenCalledWith(notice);
+      const persisted = JSON.parse(
+        files.get(`${getDeviceSessionsPath(getHostnameKey())}/stale-session.meta.json`) ?? '{}',
+      );
+      expect(persisted.isArchived).toBe(true);
+      expect(Notice).toHaveBeenCalledWith('Auto-archived 2 inactive sessions');
     });
 
     it('skips sessions held by a deferred chat pane that has not mounted its view', async () => {

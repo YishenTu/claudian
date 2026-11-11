@@ -2,6 +2,7 @@ import type { ProviderCommandDropdownConfig } from '@/core/providers/commands/Pr
 import type { ProviderCommandDiscoveryController } from '@/core/providers/commands/ProviderCommandDiscoveryStore';
 import type { ProviderCommandEntry } from '@/core/providers/commands/ProviderCommandEntry';
 import type { ProviderId, TitleGenerationService } from '@/core/providers/types';
+import type { TabId } from '@/features/chat/ChatFeatureHost';
 import type { ComposerContextTray } from '@/features/chat/composer/ComposerContextTray';
 import type { ComposerDraftController } from '@/features/chat/composer/ComposerDraftController';
 import type { ComposerPromptSuggestion } from '@/features/chat/composer/ComposerPromptSuggestion';
@@ -10,7 +11,6 @@ import type { ImageContextManager } from '@/features/chat/composer/ImageContextM
 import type { MainChatComposerDropdown } from '@/features/chat/composer/MainChatComposerDropdown';
 import type { PromptHistoryNavigation } from '@/features/chat/composer/PromptHistoryNavigation';
 import type { ContextUsageMeter } from '@/features/chat/composer/toolbar/ContextUsageMeter';
-import type { ModeSelector } from '@/features/chat/composer/toolbar/ModeSelector';
 import type { PermissionToggle } from '@/features/chat/composer/toolbar/PermissionToggle';
 import type { ServiceTierToggle } from '@/features/chat/composer/toolbar/ServiceTierToggle';
 import type { ConversationController } from '@/features/chat/conversation/ConversationController';
@@ -24,11 +24,11 @@ import type { NavigationController } from '@/features/chat/navigation/Navigation
 import type { NavigationSidebar } from '@/features/chat/navigation/NavigationSidebar';
 import type { ProjectChip } from '@/features/chat/projects/ProjectChip';
 import type { MessageRenderer } from '@/features/chat/rendering/MessageRenderer';
+import type { SubagentManager } from '@/features/chat/rendering/subagents/SubagentManager';
 import type { SideChatController } from '@/features/chat/side-chat/SideChatController';
 import type { ChatState } from '@/features/chat/state/ChatState';
 import type { TabAttention, TabReviewOutcome } from '@/features/chat/state/types';
-import type { SubagentManager } from '@/features/chat/subagents/SubagentManager';
-import type { ChatTab, TabHydrationState, TabId } from '@/features/chat/tabs/ChatTab';
+import type { ChatTab, TabHydrationState } from '@/features/chat/tabs/ChatTab';
 import type { TabIdentity } from '@/features/chat/tabs/TabIdentity';
 import type { TabSession } from '@/features/chat/tabs/TabSession';
 import type { StreamController } from '@/features/chat/turns/StreamController';
@@ -104,7 +104,6 @@ export interface TabUIComponents {
   readonly linkedContentController: LinkedContentController;
   readonly imageContextManager: ImageContextManager;
   readonly modelSelector: ModelSelector;
-  readonly modeSelector: ModeSelector;
   readonly effortSelector: EffortSelector;
   readonly permissionToggle: PermissionToggle;
   readonly serviceTierToggle: ServiceTierToggle;
@@ -150,8 +149,8 @@ export interface TabDOMElements {
  */
 export interface AssembledTabRuntime extends ChatTab {
   readonly session: TabSession;
-  /** State of loading the provider-owned conversation into the tab UI. */
-  hydrationState: TabHydrationState;
+  /** State of loading the provider-owned conversation into the tab UI; owned by the session model. */
+  readonly hydrationState: TabHydrationState;
 
   /** The attached session's provider execution; it outlives this tab presentation. */
   readonly executionCoordinator: ChatExecutionCoordinator;
@@ -227,6 +226,9 @@ export interface TabManagerCallbacks {
 
   /** Called when the user's custom label for a tab changes. */
   onTabLabelChanged?: (tabId: TabId, label: string | null) => void;
+
+  /** Called when the user reorders tabs. */
+  onTabOrderChanged?: () => void;
 
   /** Called when tab attention state changes (approval pending, etc.). */
   onTabAttentionChanged?: (tabId: TabId, attention: TabAttention) => void;

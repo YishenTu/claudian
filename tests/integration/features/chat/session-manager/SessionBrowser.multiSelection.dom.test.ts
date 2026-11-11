@@ -16,7 +16,7 @@ import type { HistoryConversationStatus } from '@/features/chat/session-manager/
 
 
 type MockMenu = {
-  items: Array<{ title: string; disabled: boolean; clickHandler: (() => void) | null }>;
+  items: Array<{ title: string; icon: string; disabled: boolean; clickHandler: (() => void) | null }>;
 };
 
 function lastMenu(): MockMenu {
@@ -108,6 +108,7 @@ describe('SessionBrowser multi-select archive', () => {
     fireEvent.contextMenu(button('Gamma session'));
     const menu = lastMenu();
     expect(menu.items.map(menuItem => menuItem.title)).toEqual(['Pin 2 sessions', 'Move 2 sessions to project…', 'Archive 2 sessions']);
+    expect(menu.items.map(menuItem => menuItem.icon)).toEqual(['pin', 'folder-input', 'archive']);
     menu.items[2].clickHandler?.();
     await Promise.resolve();
 

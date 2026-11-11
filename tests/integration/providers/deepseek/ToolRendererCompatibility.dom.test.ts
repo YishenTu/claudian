@@ -11,9 +11,9 @@ import { registerProviderModules } from '@/core/providers/registerProviderModule
 import type { ChatMessage } from '@/core/types';
 import { MessageRenderer } from '@/features/chat/rendering/MessageRenderer';
 import { providerOutputEventToStreamChunk } from '@/features/chat/rendering/providerOutputChunks';
+import { SubagentManager } from '@/features/chat/rendering/subagents/SubagentManager';
 import { renderStoredWriteEdit } from '@/features/chat/rendering/tools/WriteEditRenderer';
 import { ChatState } from '@/features/chat/state/ChatState';
-import { SubagentManager } from '@/features/chat/subagents/SubagentManager';
 import { StreamController } from '@/features/chat/turns/StreamController';
 import { claudeProviderRegistration } from '@/providers/claude/registration';
 import { loadDeepSeekHistory } from '@/providers/deepseek/history/DeepSeekHistoryStore';

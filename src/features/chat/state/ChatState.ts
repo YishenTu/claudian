@@ -13,10 +13,10 @@ import type {
   TabAttention,
   TabReviewOutcome,
   ThinkingBlockState,
+  TurnActivity,
   WriteEditState,
 } from '@/features/chat/state/types';
 import { mergeReportedUsage } from '@/features/chat/state/usageInfo';
-import type { TurnActivity } from '@/features/chat/turns/TurnCoordinator';
 
 /** Presentation without a foreground turn owner, such as replayed background output. */
 const NO_TURN_ACTIVITY: TurnActivity = Object.freeze({
@@ -30,21 +30,16 @@ function createInitialState(): ChatStateData {
   return {
     messages: [],
     isRewinding: false,
-    hasPendingConversationSave: false,
     currentConversationId: null,
     queuedMessage: null,
     currentContentEl: null,
     currentTextEl: null,
     currentThinkingState: null,
-    thinkingEl: null,
     queueIndicatorEl: null,
-    thinkingIndicatorTimeout: null,
     toolCallElements: new Map(),
     writeEditStates: new Map(),
     pendingTools: new Map(),
     usage: null,
-    autoScrollEnabled: true, // Default; controllers will override based on settings
-    flavorTimerInterval: null,
   };
 }
 
@@ -57,11 +52,9 @@ export class ChatState {
   #activity: ChatActivity | null = null;
   #waitingStatus: string | null = null;
   readonly #activityListeners = new Set<() => void>();
-  /** Last transcript scroll offset seen while laid out; a hidden scroller reports zero. */
-  readingScrollTop = 0;
-  private thinkingIndicatorTimeoutWindow: Window | null = null;
-  private flavorTimerIntervalWindow: Window | null = null;
 
+  #conversationRevision = 0;
+  #savedConversationRevision = 0;
   #wasStreaming = false;
   #queuedMessageClaimed = false;
   #transitionWriterClaimed = false;
@@ -183,12 +176,28 @@ export class ChatState {
     };
   }
 
+  /** Local tab state is ahead of persisted conversation metadata. */
   get hasPendingConversationSave(): boolean {
-    return this.state.hasPendingConversationSave;
+    return this.#conversationRevision !== this.#savedConversationRevision;
   }
 
-  set hasPendingConversationSave(value: boolean) {
-    this.state.hasPendingConversationSave = value;
+  markConversationDirty(): void {
+    this.#conversationRevision += 1;
+  }
+
+  /** The revision a save's snapshot covers; capture it before reading the state to write. */
+  get conversationRevision(): number {
+    return this.#conversationRevision;
+  }
+
+  /** Clears pending changes up to `revision`; later changes stay pending for the next save. */
+  markConversationSaved(revision: number): void {
+    this.#savedConversationRevision = Math.max(this.#savedConversationRevision, revision);
+  }
+
+  /** The tab state now matches storage, such as after loading or resetting it. */
+  discardPendingConversationSave(): void {
+    this.#savedConversationRevision = this.#conversationRevision;
   }
 
   // ============================================
@@ -264,24 +273,12 @@ export class ChatState {
     this.state.currentThinkingState = value;
   }
 
-  get thinkingEl(): HTMLElement | null {
-    return this.state.thinkingEl;
-  }
-
-  set thinkingEl(value: HTMLElement | null) {
-    this.state.thinkingEl = value;
-  }
-
   get queueIndicatorEl(): HTMLElement | null {
     return this.state.queueIndicatorEl;
   }
 
   set queueIndicatorEl(value: HTMLElement | null) {
     this.state.queueIndicatorEl = value;
-  }
-
-  get thinkingIndicatorTimeout(): number | null {
-    return this.state.thinkingIndicatorTimeout;
   }
 
   // ============================================
@@ -329,22 +326,6 @@ export class ChatState {
   acknowledgeReview(): void { this.sessionAttention.acknowledgeReview(); }
 
   // ============================================
-  // Auto-Scroll Control
-  // ============================================
-
-  get autoScrollEnabled(): boolean {
-    return this.state.autoScrollEnabled;
-  }
-
-  set autoScrollEnabled(value: boolean) {
-    const changed = this.state.autoScrollEnabled !== value;
-    this.state.autoScrollEnabled = value;
-    if (changed) {
-      this._callbacks.onAutoScrollChanged?.(value);
-    }
-  }
-
-  // ============================================
   // Response Timer State
   // ============================================
 
@@ -354,10 +335,6 @@ export class ChatState {
 
   set responseStartTime(value: number | null) {
     this.response.startedAt = value;
-  }
-
-  get flavorTimerInterval(): number | null {
-    return this.state.flavorTimerInterval;
   }
 
   // ============================================
@@ -373,12 +350,9 @@ export class ChatState {
   /** Releases the current view without ending or discarding an open response. */
   detachPresentation(): void {
     cleanupThinkingBlock(this.currentThinkingState);
-    this.clearThinkingIndicatorTimeout();
-    this.clearFlavorTimerInterval();
     this.currentContentEl = null;
     this.currentTextEl = null;
     this.currentThinkingState = null;
-    this.thinkingEl = null;
     this.queueIndicatorEl = null;
     this.toolCallElements.clear();
     this.writeEditStates.clear();
@@ -396,34 +370,6 @@ export class ChatState {
     this.responseStartTime = null;
   }
 
-  setThinkingIndicatorTimeout(value: number | null, ownerWindow: Window | null): void {
-    this.state.thinkingIndicatorTimeout = value;
-    this.thinkingIndicatorTimeoutWindow = value === null ? null : ownerWindow;
-  }
-
-  clearThinkingIndicatorTimeout(fallbackWindow: Window | null = null): void {
-    if (this.state.thinkingIndicatorTimeout) {
-      const ownerWindow = this.thinkingIndicatorTimeoutWindow ?? fallbackWindow ?? this.#getDefaultTimerWindow();
-      ownerWindow?.clearTimeout(this.state.thinkingIndicatorTimeout);
-      this.state.thinkingIndicatorTimeout = null;
-      this.thinkingIndicatorTimeoutWindow = null;
-    }
-  }
-
-  setFlavorTimerInterval(value: number | null, ownerWindow: Window | null): void {
-    this.state.flavorTimerInterval = value;
-    this.flavorTimerIntervalWindow = value === null ? null : ownerWindow;
-  }
-
-  clearFlavorTimerInterval(): void {
-    if (this.state.flavorTimerInterval) {
-      const ownerWindow = this.flavorTimerIntervalWindow ?? this.#getDefaultTimerWindow();
-      ownerWindow?.clearInterval(this.state.flavorTimerInterval);
-      this.state.flavorTimerInterval = null;
-      this.flavorTimerIntervalWindow = null;
-    }
-  }
-
   #onTurnActivityChanged(): void {
     const isStreaming = this.isStreaming;
     if (isStreaming === this.#wasStreaming) return;
@@ -439,10 +385,6 @@ export class ChatState {
 
   #notifyActivity(): void {
     for (const listener of this.#activityListeners) listener();
-  }
-
-  #getDefaultTimerWindow(): Window | null {
-    return typeof window === 'undefined' ? null : window;
   }
 
 }

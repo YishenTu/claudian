@@ -16,6 +16,7 @@ import {
   type ACPCreateElicitationResponse,
   ACPInteractionController,
   type ACPMCPServer,
+  ACPNativeOwnerSlot,
   type ACPPromptResponse,
   ACPRequestedTurn,
   type ACPRequestPermissionRequest,
@@ -44,6 +45,8 @@ import {
 import type { ProviderRuntimeHost } from '../../../core/providers/ProviderRuntimeHost';
 import type { ChatMessage, SlashCommand } from '../../../core/types';
 import { filterAntigravityCommands } from '../commands/AntigravityCommandCatalog';
+import { resolveAntigravityStoreRoot } from '../history/AntigravityHistoryPaths';
+import { readAntigravityContextTokens } from '../history/AntigravityHistoryStore';
 import {
   ANTIGRAVITY_MODE_CONFIG_ID,
   ANTIGRAVITY_MODEL_CONFIG_ID,
@@ -137,8 +140,10 @@ export class AntigravityExecutionSession implements ProviderExecutionSession, St
   private disposalFlight: Promise<void> | null = null;
   private disposed = false;
   private nativeConversationContextEstablished: boolean;
-  private nativeOwner: NativeOwner | null = null;
-  private nativeStartupFlight: Promise<NativeOwner> | null = null;
+  private readonly nativeSlot = new ACPNativeOwnerSlot<NativeOwner>(async (owner, wasCurrent) => {
+    if (wasCurrent) owner.unsubscribe();
+    await owner.native.shutdown();
+  });
   private providerSessionId: string | undefined;
   private sessionToolRoute: Promise<SessionToolRoute> | null = null;
   private readonly interactionController: ACPInteractionController;
@@ -218,7 +223,7 @@ export class AntigravityExecutionSession implements ProviderExecutionSession, St
 
   getCommandSnapshot(): readonly SlashCommand[] | undefined {
     const sessionId = this.providerSessionId;
-    const commands = sessionId ? this.nativeOwner?.commandsBySession.get(sessionId) : undefined;
+    const commands = sessionId ? this.nativeSlot.current?.commandsBySession.get(sessionId) : undefined;
     return commands?.map(command => ({ ...command }));
   }
 
@@ -242,7 +247,7 @@ export class AntigravityExecutionSession implements ProviderExecutionSession, St
         const active = this.active;
         if (active) await this.#cancelRun(active.run, 'session-disposed');
         if (this.cancellationFlight) await this.cancellationFlight;
-        await this.#shutdownNative();
+        await this.nativeSlot.shutdown();
       } finally {
         const route = await this.sessionToolRoute?.catch(() => null);
         route?.dispose();
@@ -263,11 +268,13 @@ export class AntigravityExecutionSession implements ProviderExecutionSession, St
    */
   async steer(request: ProviderExecutionRequest): Promise<boolean> {
     const active = this.active;
-    const owner = this.nativeOwner;
+    const owner = this.nativeSlot.current;
     const sessionId = this.providerSessionId;
     if (
       !active || this.#isCancellationRequested(active) || request.signal.aborted
       || active.latestPrompt === 0 || !owner?.initialized || owner.loadedSessionId !== sessionId || !sessionId
+      // A settled latest prompt has ended the native turn; the run is only finishing its usage read.
+      || active.prompts.get(active.latestPrompt)!.settled
     ) return false;
     const previous = active.prompts.get(active.latestPrompt)!;
     const text = getInputText(request);
@@ -338,14 +345,16 @@ export class AntigravityExecutionSession implements ProviderExecutionSession, St
           active.run.emit({ content: steer.text, type: 'user_message_started' });
         }
       }
-      this.#finishCompleted(active, response);
+      const contextTokens = await this.#readContextTokens(owner, response);
+      if (this.#isCancellationRequested(active)) return;
+      this.#finishCompleted(active, response, contextTokens);
     } catch (error) {
       if (this.#isCancellationRequested(active)) return;
       this.#failRecoverable(active, error);
     } finally {
       unsubscribeClose?.();
-      // Answers whose tool result never arrived have no consumer once the run ends.
-      this.questionRouter.clearAnswers();
+      // Answers whose tool result never arrived have no consumer once the run ends; a later run owns its own.
+      if (!this.active || this.active === active) this.questionRouter.clearAnswers();
     }
   }
 
@@ -386,24 +395,18 @@ export class AntigravityExecutionSession implements ProviderExecutionSession, St
   }
 
   async #ensureNative(active: ActiveExecution, creationAgentName?: string): Promise<NativeOwner> {
-    const owner = this.nativeOwner;
-    if (!this.nativeStartupFlight && owner?.initialized && owner.native.isAlive()
-      && (creationAgentName === undefined || owner.creationAgentName === creationAgentName)) return owner;
-    let flight = this.nativeStartupFlight;
-    if (!flight) {
-      flight = this.#startNative(active, creationAgentName);
-      this.nativeStartupFlight = flight;
-      const clear = () => { if (this.nativeStartupFlight === flight) this.nativeStartupFlight = null; };
-      flight.then(clear, clear);
-    }
-    const started = await flight;
+    const started = await this.nativeSlot.ensure(
+      owner => owner.initialized && owner.native.isAlive()
+        && (creationAgentName === undefined || owner.creationAgentName === creationAgentName),
+      () => this.#startNative(active, creationAgentName),
+    );
     this.#throwIfCancellationRequested(active);
     return started;
   }
 
   async #startNative(active: ActiveExecution, creationAgentName?: string): Promise<NativeOwner> {
-    const previous = this.nativeOwner;
-    if (previous) await this.#shutdownNativeOwner(previous);
+    const previous = this.nativeSlot.current;
+    if (previous) await this.nativeSlot.detach(previous);
     const args = creationAgentName ? [...ANTIGRAVITY_ACP_ARGS, '--agent', creationAgentName] : ANTIGRAVITY_ACP_ARGS;
     const launch = await resolveAntigravityLaunchSpec(this.host, args, this.config.workingDirectory);
     // A run cancelled during CLI lookup must not spawn a process that cancellation then waits on.
@@ -423,7 +426,7 @@ export class AntigravityExecutionSession implements ProviderExecutionSession, St
       native,
       unsubscribe: () => {},
     };
-    this.nativeOwner = owner;
+    this.nativeSlot.install(owner);
     try {
       owner.unsubscribe = native.onNotification(notification => {
         if (this.#isCurrentOwner(owner)) this.#handleNotification(owner, notification);
@@ -433,7 +436,7 @@ export class AntigravityExecutionSession implements ProviderExecutionSession, St
       owner.initialized = true;
       return owner;
     } catch (error) {
-      await this.#shutdownNativeOwner(owner).catch(() => undefined);
+      await this.nativeSlot.detach(owner).catch(() => undefined);
       throw error;
     }
   }
@@ -648,7 +651,14 @@ export class AntigravityExecutionSession implements ProviderExecutionSession, St
     active.run.emit({ content: steer.text, type: 'user_message_started' });
   }
 
-  #finishCompleted(active: ActiveExecution, response: ACPPromptResponse): void {
+  /** The response's usage sums every model call in the turn; the transcript's latest call measures the context. */
+  async #readContextTokens(owner: NativeOwner, response: ACPPromptResponse): Promise<number | null> {
+    if (!response.usage) return null;
+    const storeRoot = resolveAntigravityStoreRoot(owner.native.launch.env, process.platform);
+    return storeRoot ? readAntigravityContextTokens(storeRoot, this.providerSessionId!) : null;
+  }
+
+  #finishCompleted(active: ActiveExecution, response: ACPPromptResponse, contextTokens: number | null): void {
     // A successful response proves acceptance even when agy streamed no output for it.
     active.turn.accept();
     if (response.usage) {
@@ -657,7 +667,8 @@ export class AntigravityExecutionSession implements ProviderExecutionSession, St
         : undefined;
       const windowSize = getAntigravityContextWindowWorkaround(model);
       const usage = buildACPUsageInfo({
-        contextWindow: windowSize ? { size: windowSize, used: response.usage.totalTokens } : null,
+        // An unmeasured context reports none, which hides the meter rather than showing the turn's summed usage.
+        contextWindow: { size: windowSize ?? 0, used: contextTokens ?? 0 },
         model,
         promptUsage: response.usage,
       });
@@ -666,22 +677,18 @@ export class AntigravityExecutionSession implements ProviderExecutionSession, St
     this.#updateSnapshot('idle');
     this.#emitCurrentSnapshot();
     active.abortController.abort();
-    active.run.finish({
+    this.#endRun(active, {
       providerPayload: response,
       reason: response.stopReason === 'max_tokens' ? 'max-tokens' : response.stopReason === 'end_turn' ? 'completed' : 'provider-ended',
       type: 'turn_completed',
     });
-    active.turn.dispose();
-    this.active = null;
   }
 
   #failUnrecoverable(active: ActiveExecution, message: string): void {
     this.#updateSnapshot('invalidated', { message, reason: 'configuration-changed', recoverable: false });
     this.#emitCurrentSnapshot();
     active.abortController.abort();
-    active.run.finish({ category: 'configuration', message, recoverable: false, type: 'execution_error' });
-    active.turn.dispose();
-    if (this.active === active) this.active = null;
+    this.#endRun(active, { category: 'configuration', message, recoverable: false, type: 'execution_error' });
   }
 
   #failRecoverable(active: ActiveExecution, error: unknown): void {
@@ -696,7 +703,7 @@ export class AntigravityExecutionSession implements ProviderExecutionSession, St
     });
     this.#emitCurrentSnapshot();
     active.abortController.abort();
-    active.run.finish({
+    this.#endRun(active, {
       category,
       message,
       ...(category === 'provider-session-missing' && this.providerSessionId
@@ -705,8 +712,6 @@ export class AntigravityExecutionSession implements ProviderExecutionSession, St
       recoverable: true,
       type: 'execution_error',
     });
-    active.turn.dispose();
-    if (this.active === active) this.active = null;
   }
 
   async #cancelRun(run: RequestedRunChannel, reason: string): Promise<void> {
@@ -718,7 +723,7 @@ export class AntigravityExecutionSession implements ProviderExecutionSession, St
     active.abortController.abort();
     this.interactionController.dismissAll('cancelled');
     this.questionRouter.dismissAll('cancelled');
-    const owner = this.nativeOwner;
+    const owner = this.nativeSlot.current;
     const sessionId = this.providerSessionId;
     this.cancellationFlight = (async () => {
       try {
@@ -727,10 +732,10 @@ export class AntigravityExecutionSession implements ProviderExecutionSession, St
           owner.native.cancel(sessionId);
           // agy settles a cancelled prompt at once; a process that does not is replaced.
           const settled = await settleWithin(latest, CANCEL_SETTLE_TIMEOUT_MS);
-          if (!settled) await this.#shutdownNative();
+          if (!settled) await this.nativeSlot.shutdown();
         } else if (active.nativeTouched) {
           // Startup, resume or configuration was interrupted; its native outcome is unknown.
-          await this.#shutdownNative();
+          await this.nativeSlot.shutdown();
         }
       } catch {
         // Teardown failure cannot replace the already-requested cancellation terminal.
@@ -739,12 +744,17 @@ export class AntigravityExecutionSession implements ProviderExecutionSession, St
           this.#updateSnapshot('idle');
           this.#emitCurrentSnapshot();
         }
-        active.run.finish({ reason, type: 'cancelled' });
-        active.turn.dispose();
-        if (this.active === active) this.active = null;
+        this.#endRun(active, { reason, type: 'cancelled' });
       }
     })().finally(() => { this.cancellationFlight = null; });
     return this.cancellationFlight;
+  }
+
+  /** The one way a run ends: its terminal event, its turn's disposal, and release of the session slot. */
+  #endRun(active: ActiveExecution, terminal: Parameters<RequestedRunChannel['finish']>[0]): void {
+    active.run.finish(terminal);
+    active.turn.dispose();
+    if (this.active === active) this.active = null;
   }
 
   #isCancellationRequested(active: ActiveExecution): boolean {
@@ -755,25 +765,8 @@ export class AntigravityExecutionSession implements ProviderExecutionSession, St
     if (this.#isCancellationRequested(active)) throw new AntigravityExecutionCancellationError();
   }
 
-  async #shutdownNative(): Promise<void> {
-    const flight = this.nativeStartupFlight;
-    const owner = this.nativeOwner;
-    if (owner) await this.#shutdownNativeOwner(owner);
-    if (flight) await flight.catch(() => undefined);
-    const remaining = this.nativeOwner;
-    if (remaining) await this.#shutdownNativeOwner(remaining);
-  }
-
-  async #shutdownNativeOwner(owner: NativeOwner): Promise<void> {
-    if (this.nativeOwner === owner) {
-      this.nativeOwner = null;
-      owner.unsubscribe();
-    }
-    await owner.native.shutdown();
-  }
-
   #isCurrentOwner(owner: NativeOwner): boolean {
-    return !this.disposed && this.nativeOwner === owner;
+    return !this.disposed && this.nativeSlot.isCurrent(owner);
   }
 
   #setNativeConversationContextEstablished(established: boolean): void {
@@ -804,10 +797,11 @@ class AntigravitySessionPreparationError extends Error {
 }
 
 /**
- * Workaround: agy 1.5.0 reports no context window over ACP, so Gemini models assume Google's 1,048,576-token
- * window and other models leave the context meter hidden. Remove this once agy reports the limit.
+ * Workaround: agy 1.5.1 reports no context window over ACP and auto-compacts Gemini's 1,048,576-token models at a
+ * fixed 256,000 tokens (google-antigravity/antigravity-cli#1432), so Gemini models measure against that point
+ * and other models leave the context meter hidden. Remove this once agy reports the limit.
  */
-const GEMINI_CONTEXT_WINDOW_WORKAROUND = 1_048_576;
+const GEMINI_CONTEXT_WINDOW_WORKAROUND = 256_000;
 
 function getAntigravityContextWindowWorkaround(model: string | undefined): number | null {
   return model?.startsWith('gemini-') ? GEMINI_CONTEXT_WINDOW_WORKAROUND : null;

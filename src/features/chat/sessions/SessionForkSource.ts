@@ -45,7 +45,7 @@ function findLatestAssistantCheckpoint(messages: readonly ChatMessage[]): string
 }
 
 function deepCloneMessages(messages: ChatMessage[]): ChatMessage[] {
-  return deepClone(messages);
+  return structuredClone(messages);
 }
 
 async function resolveForkSource(
@@ -138,7 +138,7 @@ export async function captureLatestCompletedForkSource<T extends LiveForkSourceO
       resumeAt: lastAssistantUuid,
       sourceConversationId,
       sourceProviderState: source.sourceProviderState
-        ? deepClone(source.sourceProviderState)
+        ? structuredClone(source.sourceProviderState)
         : undefined,
       sourceSelectedModel: source.sourceSelectedModel,
       sourceSessionId: source.sourceSessionId,
@@ -205,9 +205,4 @@ export async function handleForkRequest<T extends ForkSourceOwner>(
     linkedContentPath: source.linkedContentPath,
     projectId: source.projectId,
   });
-}
-
-function deepClone<T>(value: T): T {
-  if (typeof structuredClone === 'function') return structuredClone(value);
-  return JSON.parse(JSON.stringify(value)) as T;
 }

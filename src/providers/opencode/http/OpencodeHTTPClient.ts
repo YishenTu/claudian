@@ -20,6 +20,9 @@ export class OpencodeHTTPError extends Error {
   constructor(readonly status: number, message: string) { super(message); }
 }
 
+// Native exits within milliseconds of EOF; the bound covers a slow WSL interop teardown.
+const STDIN_CLOSE_GRACE_MS = 3_000;
+
 /** One authenticated loopback server, owned through the native stdin lease. */
 export class OpencodeHTTPClient {
   private readonly controller = new AbortController();
@@ -36,7 +39,8 @@ export class OpencodeHTTPClient {
       command: cliPath, args: ['serve', '--stdio', '--hostname', '127.0.0.1', '--port', '0'],
     });
     this.cwd = spec.targetCwd;
-    this.process = new ManagedStdioProcess({ ...spec, cwd: spec.spawnCwd });
+    // `serve --stdio` exits on EOF; a signal would stop only the launcher of a WSL server still holding vault files.
+    this.process = new ManagedStdioProcess({ ...spec, cwd: spec.spawnCwd, stdinCloseGraceMs: STDIN_CLOSE_GRACE_MS });
   }
 
   signal(signal?: AbortSignal): AbortSignal {

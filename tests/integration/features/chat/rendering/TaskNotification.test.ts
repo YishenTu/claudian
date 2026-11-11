@@ -15,9 +15,9 @@ import type { ProviderBackgroundEventScope, ProviderBackgroundOutputEvent } from
 import type { ChatMessage } from '@/core/types';
 import { MessageRenderer } from '@/features/chat/rendering/MessageRenderer';
 import { providerOutputEventToStreamChunk } from '@/features/chat/rendering/providerOutputChunks';
+import { SubagentManager } from '@/features/chat/rendering/subagents/SubagentManager';
 import { SessionEvents } from '@/features/chat/sessions/SessionEvents';
 import { ChatState } from '@/features/chat/state/ChatState';
-import { SubagentManager } from '@/features/chat/subagents/SubagentManager';
 import { StreamController } from '@/features/chat/turns/StreamController';
 import { ClaudeExecutionSession } from '@/providers/claude/execution/ClaudeExecutionSession';
 

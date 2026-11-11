@@ -42,11 +42,12 @@ function renderAskUserQuestionResult(container: HTMLElement, toolCall: ToolCallI
       (q.id && Object.hasOwn(answers, q.id) ? answers[q.id] : undefined)
         ?? (Object.hasOwn(answers, q.question) ? answers[q.question] : undefined)
     );
+    const displayAnswer = q.isSecret === true && answer ? '••••••••' : answer;
     const pairEl = reviewEl.createDiv({ cls: 'claudian-ask-review-pair' });
     const bodyEl = pairEl.createDiv({ cls: 'claudian-ask-review-body' });
     bodyEl.createDiv({ text: q.question, cls: 'claudian-ask-review-q-text' });
     bodyEl.createDiv({
-      text: answer || t('chat.questions.notAnswered'),
+      text: displayAnswer || t('chat.questions.notAnswered'),
       cls: answer ? 'claudian-ask-review-a-text' : 'claudian-ask-review-empty',
     });
   }

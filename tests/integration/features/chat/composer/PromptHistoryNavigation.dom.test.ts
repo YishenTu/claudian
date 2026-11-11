@@ -103,7 +103,7 @@ async function createView(provisional = false, options: { managed?: boolean; dra
     isRuntimeLive: () => true, lifecycleState: provisional ? 'provisional' : 'open',
     openConversation: async () => {}, startNewConversation: async () => {},
   });
-  tab.hydrationState = 'ready';
+  await tab.session.runtime.model.hydrate();
   if (!options.draft) {
     await tab.executionCoordinator.bindConversation({ conversationId: conversation.id, providerId: 'claude' });
     await tab.executionCoordinator.prepare();
@@ -593,6 +593,19 @@ it('gives the actual resume picker and toolbar menu priority over active history
     key(view, 'Escape');
     expect(view.tab.dom.inputEl.value).toBe('');
     view.tab.dom.inputEl.focus();
+    view.tab.dom.inputEl.value = '/resume';
+    key(view, 'Enter');
+    await waitFor(() => expect(within(view.tab.dom.inputContainerEl).getByRole('listbox', { name: 'Resume conversation' })).toBeDefined());
+    view.tab.dom.inputEl.value = '';
+    const resume = within(view.tab.dom.inputContainerEl).getByRole('listbox', { name: 'Resume conversation' });
+    for (const modifier of ['shiftKey', 'ctrlKey', 'metaKey', 'altKey']) {
+      expect(key(view, 'Tab', { [modifier]: true }).inputPrevented).toBe(false);
+      expect(within(view.tab.dom.inputContainerEl).getByRole('listbox', { name: 'Resume conversation' })).toBe(resume);
+      expect(view.tab.dom.inputEl.value).toBe('');
+    }
+    // Plain Tab still picks the current session and dismisses its picker.
+    expect(key(view, 'Tab').inputPrevented).toBe(true);
+    expect(within(view.tab.dom.inputContainerEl).queryByRole('listbox', { name: 'Resume conversation' })).toBeNull();
     view.tab.dom.inputEl.value = '/resume';
     key(view, 'Enter');
     await waitFor(() => expect(within(view.tab.dom.inputContainerEl).getByRole('listbox', { name: 'Resume conversation' })).toBeDefined());

@@ -17,13 +17,14 @@ import { t } from '@/i18n/i18n';
 
 
 type MockMenuItem = {
-  title: string; checked: boolean | null; disabled: boolean; isWarning?: boolean;
+  title: string; icon: string; checked: boolean | null; disabled: boolean; isWarning?: boolean;
   clickHandler: ((event?: unknown) => void) | null;
 };
 type MockMenu = { items: MockMenuItem[]; showAtPosition: Mock; showAtMouseEvent: Mock };
 
 const menus = (): MockMenu[] => (Menu as unknown as { instances: MockMenu[] }).instances;
 const titles = (menu: MockMenu): string[] => menu.items.map(item => item.title);
+const icons = (menu: MockMenu): string[] => menu.items.map(item => item.icon);
 const item = (menu: MockMenu, title: string): MockMenuItem => menu.items.find(entry => entry.title === title)!;
 
 function session(id: string, extra: Partial<ConversationMeta> = {}): ConversationMeta {
@@ -233,6 +234,7 @@ it('starts a session in a project and manages the project from its section menu'
     t('chat.projects.menu.archive'),
     t('chat.projects.menu.delete'),
   ]);
+  expect(icons(menu)).toEqual(['pin', 'pencil', 'brain', 'archive', 'trash-2']);
 
   // Launch has a running member, so it cannot be archived yet.
   expect(item(menu, t('chat.projects.menu.archive')).disabled).toBe(true);
@@ -253,7 +255,7 @@ it('starts a session in a project and manages the project from its section menu'
 
   fireEvent.contextMenu(view.getByRole('button', { name: sectionName('Research', 1) }));
   const researchMenu = menus().at(-1)!;
-  expect(titles(researchMenu)).toContain(t('chat.projects.menu.unpin'));
+  expect(item(researchMenu, t('chat.projects.menu.unpin')).icon).toBe('pin-off');
   item(researchMenu, t('chat.projects.menu.archive')).clickHandler!();
   expect(lifecycle.archiveProject).toHaveBeenCalledWith('research');
 });
@@ -283,6 +285,7 @@ it('lists an archived project only in the archive, where it can be restored or d
   fireEvent.click(within(region).getByRole('button', { name: t('chat.projects.actionsFor', { name: 'Shelved' }) }));
   const menu = menus().at(-1)!;
   expect(titles(menu)).toEqual([t('chat.projects.menu.restore'), t('chat.projects.menu.delete')]);
+  expect(icons(menu)).toEqual(['undo-2', 'trash-2']);
   item(menu, t('chat.projects.menu.restore')).clickHandler!();
   expect(lifecycle.restoreProject).toHaveBeenCalledWith('shelved');
   item(menu, t('chat.projects.menu.delete')).clickHandler!();
@@ -309,10 +312,12 @@ it('moves a session between projects and removes it from its project from the ro
   expect(titles(rowMenu)).toEqual(expect.arrayContaining([
     t('chat.projects.menu.moveTo'), t('chat.projects.menu.removeFrom'),
   ]));
+  expect(item(rowMenu, t('chat.projects.menu.removeFrom')).icon).toBe('folder-minus');
   item(rowMenu, t('chat.projects.menu.moveTo')).clickHandler!();
   const picker = menus().at(-1)!;
   // Like the composer's project chip, pinned projects come first.
   expect(titles(picker)).toEqual(['Research', 'Idle', 'Launch', t('chat.projects.menu.newProject')]);
+  expect(icons(picker)).toEqual(['lucide-folder', 'lucide-folder', 'lucide-folder', 'folder-plus']);
   expect(item(picker, 'Launch').checked).toBe(true);
   item(picker, 'Research').clickHandler!();
   item(rowMenu, t('chat.projects.menu.removeFrom')).clickHandler!();
@@ -333,17 +338,23 @@ it('moves and removes a multi-selection', async () => {
   const { lifecycle, view } = await setup();
 
   fireEvent.click(view.getByRole('button', { name: /^alpha session/ }), { altKey: true });
+  fireEvent.click(view.getByRole('button', { name: /^busy session/ }), { altKey: true });
+  fireEvent.contextMenu(view.getByText('alpha session'));
+  expect(titles(menus().at(-1)!)).toContain('Remove 2 sessions from project');
+
+  fireEvent.click(view.getByRole('button', { name: /^busy session/ }), { altKey: true });
   fireEvent.click(view.getByRole('button', { name: /^loose session/ }), { altKey: true });
   fireEvent.contextMenu(view.getByText('alpha session'));
   const menu = menus().at(-1)!;
   expect(titles(menu)).toEqual(expect.arrayContaining([
     t('chat.projects.menu.moveSelectionTo', { count: 2 }),
-    t('chat.projects.menu.removeSelectionFrom', { count: 1 }),
+    'Remove 1 session from project',
   ]));
+  expect(item(menu, 'Remove 1 session from project').icon).toBe('folder-minus');
 
   item(menu, t('chat.projects.menu.moveSelectionTo', { count: 2 })).clickHandler!();
   item(menus().at(-1)!, 'Idle').clickHandler!();
-  item(menu, t('chat.projects.menu.removeSelectionFrom', { count: 1 })).clickHandler!();
+  item(menu, 'Remove 1 session from project').clickHandler!();
   await new Promise(resolve => setTimeout(resolve, 0));
 
   // One batched write per action, so the list republishes once for the whole selection.

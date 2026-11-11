@@ -3,6 +3,7 @@ import { Notice } from 'obsidian';
 import type { ConversationMeta, SessionAutoArchiveAfter } from '@/core/types';
 import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
 import { t } from '@/i18n/i18n';
+import { SerialQueue } from '@/utils/SerialQueue';
 
 const DAY_MS = 86_400_000;
 const AUTO_ARCHIVE_AFTER_DAYS: Record<SessionAutoArchiveAfter, number | null> = {
@@ -21,7 +22,7 @@ type InactiveSessionArchiverHost = Pick<
 
 /** Archives unpinned sessions that have been inactive past the configured threshold. */
 export class InactiveSessionArchiver {
-  private tail: Promise<void> = Promise.resolve();
+  private readonly queue = new SerialQueue();
   private disposed = false;
 
   constructor(
@@ -44,9 +45,7 @@ export class InactiveSessionArchiver {
 
   /** Serialized so overlapping triggers never archive from a stale list. */
   run(): Promise<void> {
-    const next = this.tail.then(() => this.archiveInactive());
-    this.tail = next.catch(() => undefined);
-    return next;
+    return this.queue.run(() => this.archiveInactive());
   }
 
   private async archiveInactive(): Promise<void> {

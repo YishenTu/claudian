@@ -2,6 +2,8 @@ export * from './ACPClientConnection';
 export * from './ACPExecutionEventNormalizer';
 export * from './ACPInteractionController';
 export * from './ACPJSONRPCTransport';
+export * from './ACPNativeOwnerSlot';
+export * from './ACPNativeProcess';
 export * from './ACPPermissionAdapter';
 export * from './ACPRequestedTurn';
 export * from './ACPSessionConfig';

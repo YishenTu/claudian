@@ -3,6 +3,7 @@ import { createProviderHostFixture, type ProviderHostFixtureOptions } from '@tes
 import { AgentSkillResources } from '@/composition/AgentSkillResources';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import type { FeatureHost } from '@/features/FeatureHost';
+import type { SettingsFeatureHost } from '@/features/settings/ClaudianSettings';
 
 export interface FeatureHostFixtureOptions extends Omit<ProviderHostFixtureOptions, 'overrides'> {
   providerOverrides?: ProviderHostFixtureOptions['overrides'];
@@ -14,12 +15,11 @@ export async function createFeatureHostFixture({ providerOverrides, overrides, .
   const fixture = await createProviderHostFixture({ ...options, overrides: providerOverrides });
   const providerHost = fixture.host;
   const agentSkills = new AgentSkillResources(() => []);
-  const host: FeatureHost = {
+  const host: SettingsFeatureHost = {
     app: providerHost.app, providerHost, settings: fixture.settings, storage: fixture.storage,
     getCommittedSettings: fixture.coordinator.getCommittedSettings.bind(fixture.coordinator),
     mutateSettings: fixture.coordinator.mutate.bind(fixture.coordinator),
     getActiveEnvironmentVariables: id => providerHost.getActiveEnvironmentVariables(id ?? ProviderRegistry.resolveSettingsProviderId(fixture.settings)),
-    getAgentSkillResourceGeneration: () => agentSkills.getGeneration(),
     notifyAgentSkillsChanged: () => agentSkills.notifyChanged(),
     notifyProviderChatOptionsChanged: id => providerHost.notifyProviderChatOptionsChanged(id),
     getActiveModelSelection: () => null,

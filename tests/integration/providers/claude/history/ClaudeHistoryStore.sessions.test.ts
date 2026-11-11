@@ -239,6 +239,7 @@ describe('Claude native history replay', () => {
       expect(taskCalls[0].providerPayload).toMatchObject({
         rawName: 'TaskCreate',
         rawInput: { subject: 'Inspect issue', activeForm: 'Inspecting issue' },
+        rawOutput: { task: { id: '1', subject: 'Inspect issue' } },
       });
       expect(taskCalls.at(-1)?.input).toEqual({
         todos: [{

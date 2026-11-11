@@ -60,7 +60,7 @@ it('shares one durable settings transaction between the feature, provider and ru
   expect(publish.mock.calls.at(-1)?.[1].providerConfigs.codex.enabled).toBe(false);
   expect(JSON.parse(await fixture.vault.read(CLAUDIAN_SETTINGS_PATH)).providerConfigs.codex.enabled).toBe(true);
   await fixture.host.notifyAgentSkillsChanged();
-  expect(fixture.host.getAgentSkillResourceGeneration()).toBe(1);
+  expect(fixture.agentSkills.getGeneration()).toBe(1);
 });
 
 it('rejects failed persistence without publishing runtime state and disposes owned resources once', async () => {
