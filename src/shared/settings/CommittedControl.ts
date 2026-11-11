@@ -26,10 +26,12 @@ export function bindCommittedControl<T>(
   notices?: CommittedControlNotices,
 ): void {
   let synchronizing = false;
+  let generation = 0;
   let displayed = getValue();
   control.setValue(displayed);
   control.onChange(async value => {
     if (synchronizing) return;
+    const savedGeneration = ++generation;
     const previous = displayed;
     let resync = true;
     try {
@@ -40,7 +42,8 @@ export function bindCommittedControl<T>(
       new Notice(committed ? notices.committed : notices.rejected);
       if (!committed) resync = false;
     } finally {
-      if (resync) {
+      // A newer edit owns the draft. An older save must not write the committed value over it.
+      if (resync && savedGeneration === generation) {
         synchronizing = true;
         try {
           displayed = getValue();

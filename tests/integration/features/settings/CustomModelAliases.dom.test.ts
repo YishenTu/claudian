@@ -207,6 +207,35 @@ it('reports rejected context-limit writes and allows correction without an unhan
   expect(await axe(container)).toHaveNoViolations();
 });
 
+it('keeps a newer invalid context draft when an earlier save finishes', async () => {
+  let release = (): void => {};
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  const persist = vi.fn(async () => { await gate; });
+  const { settings, coordinator, host } = await createFeatureHostFixture({
+    settings: { customContextLimits: { 'custom-model': 64000 }, providerConfigs: { claude: {
+      visibleModels: ['custom-model'], environmentVariables: 'ANTHROPIC_MODEL=custom-model',
+    } } },
+    beforePersist: persist,
+  });
+  const tab = new ClaudianSettingTab(host.app, createObsidianPlugin(host.app), host);
+  const container = document.body.createDiv();
+  onTestFinished(() => container.remove());
+  tab['renderCustomContextLimits'](container, 'claude');
+  const input = within(container).getByRole<HTMLInputElement>('textbox', { name: 'Context window for custom-model' });
+
+  fireEvent.input(input, { target: { value: '128k' } });
+  await waitFor(() => expect(persist).toHaveBeenCalledTimes(1));
+  fireEvent.input(input, { target: { value: 'abc' } });
+  expect(input.value).toBe('abc');
+  expect(input.getAttribute('aria-invalid')).toBe('true');
+  release();
+  await coordinator.mutateConditionally(() => false);
+
+  expect(settings.customContextLimits['custom-model']).toBe(128000);
+  expect(input.value).toBe('abc');
+  expect(input.getAttribute('aria-invalid')).toBe('true');
+});
+
 it('reports a committed context limit separately when settings publication fails', async () => {
   const persist = vi.fn();
   const { settings, coordinator, host, settingsStorage } = await createFeatureHostFixture({
