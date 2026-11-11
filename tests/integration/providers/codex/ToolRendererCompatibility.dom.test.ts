@@ -701,3 +701,14 @@ it.each(['live', 'history'] as const)('joins a mutable apply_patch binding in %s
   ]);
   expect(tools).toMatchObject([{ name: 'apply_patch', input: { patch: header + rest } }]);
 });
+
+it.each(['live', 'history'] as const)('ignores apply_patch appends that precede the declaration in %s', mode => {
+  const header = '*** Begin Patch\n';
+  const rest = '*** Add File: note.md\n+body\n*** End Patch';
+  const source = `patch += ${JSON.stringify('WRONG')}; var patch = ${JSON.stringify(header)}; patch += ${JSON.stringify(rest)}; text(await tools.apply_patch(patch));`;
+  const tools = restoreSession(mode, [
+    { raw: { type: 'custom_tool_call', name: 'exec', call_id: 'late-declaration', input: source } },
+    { raw: { type: 'custom_tool_call_output', call_id: 'late-declaration', output: 'Script completed\nOutput:\nSuccess' } },
+  ]);
+  expect(tools).toMatchObject([{ name: 'apply_patch', input: { patch: header + rest } }]);
+});
