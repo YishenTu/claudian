@@ -416,13 +416,17 @@ export function mapOpencodeNativeMessages(messages: StoredRow[], target?: Execut
   let turnStart = 0;
   const flush = () => {
     result.push(...mergeAdjacentAssistantMessages(segment));
+    // Merging can replace the last native step with an earlier assistant object.
+    if (segment.length > 0 && previousAssistant) previousAssistant = result.at(-1);
     segment = [];
-    stats.reset();
-    previousAssistant = undefined;
   };
   for (const row of messages) {
     if (row.type !== 'user' && row.type !== 'assistant') {
       flush();
+      if (row.type !== 'compaction') {
+        stats.reset();
+        previousAssistant = undefined;
+      }
       if (row.type === 'idle') {
         // V2 rows carry no turn ID: an idle entry ends the turn, so the rows since the last one share it.
         for (const message of result.slice(turnStart)) if (message.role === 'assistant') message.turnId = `opencode-turn-${turnStart}`;
