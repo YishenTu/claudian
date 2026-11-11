@@ -2,6 +2,7 @@
 import '@/providers';
 
 import { axe } from '@test/helpers/accessibility';
+import { holdResponse } from '@test/helpers/ConversationPorts';
 import { createChatFeatureHost } from '@test/helpers/features/chat/ChatFeatureHostFixture';
 import { createSessionRuntimePool } from '@test/helpers/features/chat/SessionRuntimePoolHarness';
 import { createHarness, releaseSideChatHarnesses, type SideChatDOMHarness } from '@test/helpers/features/chat/SideChatDOMHarness';
@@ -189,6 +190,34 @@ it.each([
     strip.remove();
   }
 });
+
+it.each(['Edit queued message', 'Discard queued message'])(
+  'keeps the focused %s action usable when the queue refreshes', async label => {
+    const tab = await createTab();
+    const release = holdResponse(tab.session.runtime.turns);
+    try {
+      const queue = tab.controllers.inputController.queue;
+      queue.enqueue({ content: 'First follow-up', turnRequest: { text: 'First follow-up' } });
+      const strip = within(tab.dom.queueIndicatorEl);
+      tab.dom.inputEl.focus();
+      queue.updateIndicator();
+      expect(tab.dom.inputEl.contains(document.activeElement)).toBe(true);
+      strip.getByRole('button', { name: label }).focus();
+      queue.enqueue({ content: 'Second follow-up', turnRequest: { text: 'Second follow-up' } });
+      const updated = strip.getByRole('button', { name: label });
+      expect(document.activeElement).toBe(updated);
+      expect(strip.getByText('First follow-up Second follow-up')).toBeDefined();
+      expect(await axe(tab.dom.queueIndicatorEl)).toHaveNoViolations();
+      fireEvent.click(updated);
+      expect(queue.message).toBeNull();
+      expect(tab.dom.inputEl.value).toBe(label === 'Edit queued message' ? 'First follow-up\n\nSecond follow-up' : '');
+    } finally {
+      tab.controllers.inputController.queue.clear();
+      await release();
+      await destroyTab(tab);
+    }
+  },
+);
 
 it('shows the linked note in an info row under the input box', async () => {
   const tab = await createTab(note.path);
