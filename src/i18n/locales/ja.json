@@ -473,6 +473,8 @@
       "showNumber": "番号を表示",
       "showName": "名前を表示",
       "showTitle": "タイトルを表示",
+      "moveLeft": "左へ移動",
+      "moveRight": "右へ移動",
       "closeTab": "タブを閉じる",
       "active": "アクティブ",
       "needsInput": "入力が必要",

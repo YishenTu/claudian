@@ -380,6 +380,54 @@ beforeEach(() => {
     ]);
   });
 
+  it('reorders tabs in place, keeping the active runtime, and restores the persisted order', async () => {
+    const plugin = await createPlugin({
+      getCachedConversation: (id: string) => (conversationRecord(id, { providerId: 'claude' })),
+    });
+    const onTabOrderChanged = vi.fn();
+    const { manager } = await createManager(plugin, { onTabOrderChanged });
+    await manager.restoreState({
+      openTabs: [
+        { tabId: 'one', conversationId: 'one' },
+        { tabId: 'two', conversationId: 'two', label: 'Review' },
+        { tabId: 'three', conversationId: 'three' },
+      ],
+      activeTabId: 'two',
+    });
+    const active = manager.getTab('two')!;
+
+    manager.moveTab('three', 'one');
+    manager.moveTab('one', null);
+
+    expect(manager.getTabBarItems().map(item => [item.id, item.index, item.isActive])).toEqual([
+      ['three', 1, false], ['two', 2, true], ['one', 3, false],
+    ]);
+    expect(manager.getTab('two')).toBe(active);
+    expect(onTabOrderChanged).toHaveBeenCalledTimes(2);
+    manager.moveTab('one', null);
+    manager.moveTab('three', 'two');
+    manager.moveTab('missing', 'one');
+    expect(onTabOrderChanged).toHaveBeenCalledTimes(2);
+
+    const persisted = manager.getPersistedState();
+    expect(persisted).toEqual({
+      openTabs: [
+        { tabId: 'three', conversationId: 'three' },
+        { tabId: 'two', conversationId: 'two', label: 'Review' },
+        { tabId: 'one', conversationId: 'one' },
+      ],
+      activeTabId: 'two',
+    });
+    await manager.destroy();
+    const { manager: restored } = await createManager(plugin);
+    try {
+      await restored.restoreState(persisted);
+      expect(restored.getPersistedState()).toEqual(persisted);
+    } finally {
+      await restored.destroy();
+    }
+  });
+
   it('does not treat teardown lifecycle as a committed membership removal', async () => {
     const { manager } = await createManager();
     const tab = await manager.createTab(null, 'tearing-down-tab');

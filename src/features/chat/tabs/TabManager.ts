@@ -806,6 +806,19 @@ export class TabManager implements TabManagerInterface {
     }
   }
 
+  /**
+   * Moves a tab before another tab, or to the end (null). Order persists with the tab identities;
+   * no tab reloads and the active tab stays active.
+   */
+  moveTab(tabId: TabId, beforeTabId: TabId | null): void {
+    if (!this.isTabLive(tabId) || !this.membership.move(tabId, beforeTabId)) return;
+    try {
+      this.callbacks.onTabOrderChanged?.();
+    } catch {
+      // The order is committed; an observer failure must not roll it back.
+    }
+  }
+
   // ============================================
   // Tab Bar Data
   // ============================================

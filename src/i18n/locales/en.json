@@ -473,6 +473,8 @@
       "showNumber": "Show number",
       "showName": "Show name",
       "showTitle": "Show title",
+      "moveLeft": "Move left",
+      "moveRight": "Move right",
       "closeTab": "Close tab",
       "active": "active",
       "needsInput": "needs your input",
