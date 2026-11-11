@@ -1,5 +1,6 @@
 import type { ProviderSelectionSnapshot } from '@/core/execution/ProviderExecutionRequest';
 import type { ChatTurnRequest, QueuedMessage } from '@/features/chat/state/types';
+import { appendRawDraftSuffix } from '@/features/chat/utils/draftText';
 
 /**
  * A turn's selections in capture order. Singular composer fields normalize only when no
@@ -37,7 +38,7 @@ export function mergeQueuedMessages(existing: QueuedMessage | null, incoming: Qu
     canvasSelection: undefined,
     sessionReferences: [...(earlier.sessionReferences ?? []), ...(later.sessionReferences ?? [])],
     ...(earlier.draftContent !== undefined || later.draftContent !== undefined ? {
-      draftContent: mergeText(earlier.draftContent ?? existing.content, later.draftContent ?? incoming.content),
+      draftContent: appendRawDraftSuffix(earlier.draftContent ?? existing.content, later.draftContent ?? incoming.content),
     } : {}),
     images: images.length > 0 ? images : undefined,
     text: mergeText(earlier.text, later.text),
