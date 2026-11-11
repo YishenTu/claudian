@@ -21,8 +21,6 @@ export interface FeatureHost {
     mutation: (settings: ClaudianSettings) => void | Promise<void>,
   ): Promise<void>;
   getActiveEnvironmentVariables(providerId?: ProviderId): string;
-  getAgentSkillResourceGeneration(): number;
-  notifyAgentSkillsChanged(): Promise<void>;
   notifyProviderChatOptionsChanged(providerId: ProviderId): void;
 
   /** Selected execution context, without exposing a chat view or runtime. */

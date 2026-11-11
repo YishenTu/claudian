@@ -5,6 +5,7 @@ import { buildCursorContext } from '@/core/prompt/editorContext';
 import type { FeatureHost } from '@/features/FeatureHost';
 import type { InlineEditSessionOwner } from '@/features/inline-edit/InlineEditSessionOwner';
 import { type InlineEditContext, InlineEditModal } from '@/features/inline-edit/ui/InlineEditModal';
+import { t } from '@/i18n/i18n';
 
 export interface InlineEditCommandDeps {
   readonly host: FeatureHost;
@@ -34,13 +35,13 @@ export function createInlineEditCommand(deps: InlineEditCommandDeps): Command {
   const { host } = deps;
   return {
     id: 'inline-edit',
-    name: 'Inline edit',
+    name: t('inlineEdit.commandName'),
     editorCallback: async (editor: Editor, ctx: MarkdownView | MarkdownFileInfo) => {
       const view = ctx instanceof MarkdownView
         ? ctx
         : host.app.workspace.getActiveViewOfType(MarkdownView);
       if (!view) {
-        new Notice('Inline edit unavailable: could not access the active Markdown view.');
+        new Notice(t('inlineEdit.viewUnavailable'));
         return;
       }
 
@@ -58,7 +59,7 @@ export function createInlineEditCommand(deps: InlineEditCommandDeps): Command {
       const result = await modal.openAndWait();
 
       if (result.decision === 'accept' && result.editedText !== undefined) {
-        new Notice(editContext.mode === 'cursor' ? 'Inserted' : 'Edit applied');
+        new Notice(editContext.mode === 'cursor' ? t('inlineEdit.inserted') : t('inlineEdit.applied'));
       }
     },
   };

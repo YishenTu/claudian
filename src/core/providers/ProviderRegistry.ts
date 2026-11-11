@@ -290,11 +290,7 @@ export class ProviderRegistry {
       : this.getRegisteredProviderIds();
     const decodedSelection = decodeProviderModelSelectionId(model);
 
-    if (
-      decodedSelection
-      && providerIds.includes(decodedSelection.providerId)
-      && (!options.onlyEnabledProviders || this.isEnabled(decodedSelection.providerId, settings))
-    ) {
+    if (decodedSelection && providerIds.includes(decodedSelection.providerId)) {
       return decodedSelection.providerId;
     }
 

@@ -1,6 +1,6 @@
 import type { ChildProcessWithoutNullStreams } from 'node:child_process';
 
-import { createNativeRPCProcess } from '@test/helpers/providers/NativeRPCTestProcess';
+import { createNativeRPCPeer } from '@test/helpers/providers/NativeRPCTestProcess';
 
 import type { ACPLoadSessionRequest, ACPNewSessionRequest, ACPNewSessionResponse, ACPPromptRequest,
   ACPSetSessionModelRequest, ACPSetSessionModeRequest } from '@/providers/acp';
@@ -8,6 +8,7 @@ import type { ACPLoadSessionRequest, ACPNewSessionRequest, ACPNewSessionResponse
 /** Raw peer responses and notifications, recorded after the real ACP transport serializes them. */
 export class GrokNativeProcess {
   readonly child: ChildProcessWithoutNullStreams;
+  readonly request: (method: string, params: unknown) => Promise<unknown>;
   readonly loadRequests: ACPLoadSessionRequest[] = [];
   readonly modeRequests: ACPSetSessionModeRequest[] = [];
   readonly modelRequests: ACPSetSessionModelRequest[] = [];
@@ -30,7 +31,7 @@ export class GrokNativeProcess {
   constructor() {
     // ACP requests arrive as decoded external JSON records; the casts bridge that wire shape to
     // the SDK request interfaces (which lack the record index signature), not partial owned fixtures.
-    this.child = createNativeRPCProcess(async (method, params) => {
+    const peer = createNativeRPCPeer(async (method, params) => {
       switch (method) {
         case 'initialize': return {
           protocolVersion: 1, agentCapabilities: { loadSession: true,
@@ -63,6 +64,8 @@ export class GrokNativeProcess {
         default: throw new Error('Unexpected native method: ' + method);
       }
     });
+    this.child = peer.child;
+    this.request = (method, params) => peer.request(method, params);
     this.child.on('exit', () => { this.shutdownCalls += 1; });
   }
 

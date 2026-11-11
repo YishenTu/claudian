@@ -1,8 +1,9 @@
 /** @vitest-environment jsdom */
 import '@/providers';
 
+import { useTranscriptGeometry } from '@test/helpers/dom/transcriptGeometry';
 import { createHarness, releaseSideChatHarnesses, startSideChat } from '@test/helpers/features/chat/SideChatDOMHarness';
-import { waitFor, within } from '@testing-library/dom';
+import { fireEvent, waitFor, within } from '@testing-library/dom';
 import { MarkdownRenderer } from 'obsidian';
 import type { Mock } from 'vitest';
 
@@ -54,4 +55,36 @@ it('defers hidden side-chat Markdown, catches up when visible, and releases view
   } finally {
     window.IntersectionObserver = original;
   }
+});
+
+it('follows a streaming side-chat reply at the bottom and stops following once the reader scrolls up', async () => {
+  const harness = await createHarness({ settings: { enableAutoScroll: true } });
+  const { started } = await startSideChat(harness);
+  harness.backend.latest.establishChild('side-session');
+  const runtime = harness.controller.runtime!;
+  const messagesEl = harness.composerEl.querySelector<HTMLElement>('.claudian-side-chat-messages')!;
+  const geometry = useTranscriptGeometry(messagesEl, { rowHeight: row => 100 + (row.textContent?.length ?? 0) * 10 });
+  // A streamed snapshot shows once its throttled Markdown render lands; the browser then lays it out.
+  const streamed = async (text: string) => {
+    harness.backend.latest.emitText(text);
+    await waitFor(() => expect(vi.mocked(MarkdownRenderer.render).mock.calls.some(([, markdown]) => markdown.includes(text.trim()))).toBe(true));
+    await new Promise(resolve => setTimeout(resolve, 0));
+    geometry.layout();
+  };
+
+  await streamed('First part of a reply long enough to overflow the side chat.');
+  await waitFor(() => expect(messagesEl.scrollTop).toBe(geometry.bottom()));
+  expect(geometry.bottom()).toBeGreaterThan(0);
+
+  fireEvent.wheel(messagesEl, { deltaY: -100 });
+  messagesEl.scrollTop = 0;
+  fireEvent.scroll(messagesEl);
+  await streamed(' A second part the reader has not reached yet.');
+  // Longer than a follow frame: a paused reader must not be moved by it.
+  await new Promise(resolve => setTimeout(resolve, 50));
+  expect(within(messagesEl).getByText(runtime.state.lastMessage!.content)).toBeTruthy();
+  expect(messagesEl.scrollTop).toBe(0);
+
+  harness.backend.latest.complete();
+  await started;
 });

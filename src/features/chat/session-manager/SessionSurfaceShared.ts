@@ -1,4 +1,4 @@
-import { type Menu, Notice, setIcon } from 'obsidian';
+import { type Menu, setIcon } from 'obsidian';
 
 import type { SessionBrowser } from '@/features/chat/session-manager/SessionBrowser';
 import type { HistoryConversationStatus } from '@/features/chat/session-manager/SessionStatusPresentation';
@@ -37,17 +37,6 @@ export interface SessionSurfaceShared {
 export interface InlineRenameRequest {
   beginRename: (item: HTMLElement) => void;
   conversationId: string;
-}
-
-/** Runs a session or project action, reporting any failure once as a notice. */
-export function runSessionAction(action: () => unknown, failureMessage: string): void {
-  void (async () => {
-    try {
-      await action();
-    } catch {
-      new Notice(failureMessage);
-    }
-  })();
 }
 
 /**
@@ -194,4 +183,38 @@ export function beginInlineRenameNextFrame(
     options.reveal?.();
     beginRename(targetItem);
   }, container.ownerDocument.defaultView);
+}
+
+/**
+ * Reports `input`'s query to `onQuery` once per committed change. IME composition holds the query until it commits,
+ * and `state.composing` tells Escape and re-rendering that the composition owns the field.
+ */
+export function bindSessionSearchInput(
+  input: HTMLInputElement,
+  state: { composing: boolean },
+  onQuery: (query: string) => void,
+): void {
+  let committedCompositionValue: string | null = null;
+  input.addEventListener('compositionstart', () => {
+    state.composing = true;
+    committedCompositionValue = null;
+  });
+  input.addEventListener('compositionend', () => {
+    state.composing = false;
+    committedCompositionValue = input.value;
+    onQuery(input.value);
+    queueMicrotask(() => {
+      committedCompositionValue = null;
+    });
+  });
+  input.addEventListener('input', (event) => {
+    if (state.composing || (event as InputEvent | undefined)?.isComposing) return;
+    // The input event that follows compositionend repeats the committed text.
+    if (committedCompositionValue === input.value) {
+      committedCompositionValue = null;
+      return;
+    }
+    committedCompositionValue = null;
+    onQuery(input.value);
+  });
 }

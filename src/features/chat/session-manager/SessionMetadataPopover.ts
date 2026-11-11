@@ -2,6 +2,7 @@ import { setIcon } from 'obsidian';
 
 import type { ProviderIconSvg } from '@/core/providers/types';
 import type { ConversationMeta } from '@/core/types';
+import { lineageIcon, type SessionLineage } from '@/features/chat/session-manager/SessionLineage';
 import { getLinkedContentTitle, isLegacyProvisionalLinkedContent } from '@/features/chat/session-manager/SessionListOrganizer';
 import { createProviderIconSvg } from '@/shared/icons';
 
@@ -12,8 +13,18 @@ export interface SessionMetadataOptions {
   contentIsNote?: (contentPath: string) => boolean;
   getProviderIcon?: (conversation: ConversationMeta) => ProviderIconSvg | null | undefined;
   getModelLabel?: (conversation: ConversationMeta) => string;
+  /** Which session started this one and which it started; omitted rows show none. */
+  getLineage?: (conversation: ConversationMeta) => SessionLineage;
   /** Closes the popover when the render that attached it is superseded. */
   signal?: AbortSignal;
+}
+
+interface LineageRow {
+  row: HTMLElement;
+  icon: HTMLElement;
+  label: HTMLElement;
+  value: HTMLElement;
+  iconId: string;
 }
 
 interface SessionMetadataView {
@@ -22,6 +33,9 @@ interface SessionMetadataView {
   provider: HTMLElement;
   created: HTMLElement;
   lastActive: HTMLElement;
+  parent: LineageRow;
+  started: HTMLElement;
+  forked: HTMLElement;
   providerIcon: SVGElement | null;
   providerIconKey: string;
 }
@@ -137,6 +151,26 @@ export class SessionMetadataPopover {
     view.provider.textContent = options.getModelLabel?.(conversation) ?? conversation.selectedModel ?? '';
     view.created.textContent = formatSessionCreatedDate(conversation.createdAt);
     view.lastActive.textContent = formatSessionLastActive(conversation.lastActivityAt);
+    const lineage = options.getLineage?.(conversation);
+    const { parent } = view;
+    parent.row.classList.toggle('claudian-hidden', !lineage?.parent);
+    if (lineage?.parent) {
+      const iconId = lineageIcon(lineage.parent.kind);
+      if (parent.iconId !== iconId) {
+        parent.icon.empty();
+        setIcon(parent.icon, iconId);
+        parent.iconId = iconId;
+      }
+      parent.label.textContent = lineage.parent.kind === 'fork' ? 'Forked from' : 'Started by';
+      parent.value.textContent = lineage.parent.title;
+    }
+    const count = (kind: string): number => lineage?.children.filter(child => child.origin?.kind === kind).length ?? 0;
+    const showCount = (value: HTMLElement, total: number, singular: string, plural: string): void => {
+      value.parentElement!.classList.toggle('claudian-hidden', total === 0);
+      value.textContent = `${total} ${total === 1 ? singular : plural}`;
+    };
+    showCount(view.started, count('session-tool'), 'agent session', 'agent sessions');
+    showCount(view.forked, count('fork'), 'session', 'sessions');
 
     const icon = options.getProviderIcon?.(conversation);
     const iconKey = JSON.stringify([conversation.providerId, icon ?? null]);
@@ -268,6 +302,18 @@ export class SessionMetadataPopover {
     return valueEl;
   }
 
+  #renderLineageRow(parent: HTMLElement): LineageRow {
+    const value = this.#renderRow(parent, 'bot', 'Started by', '');
+    const row = value.parentElement!;
+    return {
+      row,
+      icon: row.querySelector<HTMLElement>('.claudian-session-metadata-icon')!,
+      label: row.querySelector<HTMLElement>('.claudian-session-metadata-label')!,
+      value,
+      iconId: 'bot',
+    };
+  }
+
   #getView(document: Document) {
     if (this.view?.el.ownerDocument === document) return this.view;
     const el = document.body.createDiv({ cls: 'claudian-session-metadata-popover' });
@@ -281,6 +327,9 @@ export class SessionMetadataPopover {
       el, linkedContent, provider,
       created: this.#renderRow(el, 'calendar-days', 'Created', ''),
       lastActive: this.#renderRow(el, 'clock-3', 'Last active', ''),
+      parent: this.#renderLineageRow(el),
+      started: this.#renderRow(el, 'bot', 'Started', ''),
+      forked: this.#renderRow(el, 'git-branch', 'Forked', ''),
       providerIcon: null, providerIconKey: '',
     };
     return this.view;

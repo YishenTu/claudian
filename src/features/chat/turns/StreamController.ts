@@ -15,23 +15,18 @@ import type { RenderContentOptions } from '@/features/chat/rendering/markdown/Ma
 import { escapeRawHTMLTags } from '@/features/chat/rendering/markdown/markdownHTML';
 import type { LiveTranscriptOptions, MessageRenderer } from '@/features/chat/rendering/MessageRenderer';
 import { createResponseTextBlock } from '@/features/chat/rendering/ResponseLayout';
+import type { AsyncSubagentHistoryRecovery } from '@/features/chat/rendering/subagents/AsyncSubagentHistoryRecovery';
+import type { SubagentManager } from '@/features/chat/rendering/subagents/SubagentManager';
 import {
   createThinkingBlock,
   finalizeThinkingBlock,
   type ThinkingBlockState,
 } from '@/features/chat/rendering/ThinkingBlockRenderer';
 import type { ChatState } from '@/features/chat/state/ChatState';
-import type { AsyncSubagentHistoryRecovery } from '@/features/chat/subagents/AsyncSubagentHistoryRecovery';
-import type { SubagentManager } from '@/features/chat/subagents/SubagentManager';
-import { SubagentStreamRouter } from '@/features/chat/subagents/SubagentStreamRouter';
 import { StreamingRenderCoordinator } from '@/features/chat/turns/StreamingRenderCoordinator';
+import { SubagentStreamRouter } from '@/features/chat/turns/SubagentStreamRouter';
 import { ThinkingIndicator } from '@/features/chat/turns/ThinkingIndicator';
 import { mergeToolProviderPayload, ToolCallStream } from '@/features/chat/turns/ToolCallStream';
-import {
-  cancelScheduledAnimationFrame,
-  scheduleAnimationFrame,
-  type ScheduledAnimationFrame,
-} from '@/features/chat/utils/animationFrame';
 import { hasStreamingMathDelimiters } from '@/utils/markdownMath';
 
 export interface StreamControllerDeps {
@@ -72,23 +67,19 @@ export class StreamController {
   private viewportVisible = true;
   private readonly backgroundStreams = new Set<StreamController>();
   private onDispose?: () => void;
-  private pendingScrollFrame: ScheduledAnimationFrame | null = null;
 
   constructor(deps: StreamControllerDeps) {
     this.deps = deps;
-    const scrollToBottom = () => this.scrollToBottom();
     this.thinkingIndicator = new ThinkingIndicator({
       state: deps.state,
       getMessagesEl: deps.getMessagesEl,
       updateQueueIndicator: deps.updateQueueIndicator,
-      scrollToBottom,
     });
     this.#tools = new ToolCallStream({
       plugin: deps.plugin,
       state: deps.state,
       indicator: this.thinkingIndicator,
       getMessagesEl: deps.getMessagesEl,
-      scrollToBottom,
       onQuestionToolChanged: deps.onQuestionToolChanged,
     });
     this.subagents = new SubagentStreamRouter({
@@ -99,7 +90,6 @@ export class StreamController {
       asyncSubagentHistoryRecovery: deps.asyncSubagentHistoryRecovery,
       tools: this.#tools,
       indicator: this.thinkingIndicator,
-      scrollToBottom,
     });
     this.textRenderCoordinator = this.#createRenderCoordinator(
       () => this.#getStreamingRenderWindow(),
@@ -152,7 +142,6 @@ export class StreamController {
     for (const stream of this.backgroundStreams) stream.detachPresentation();
     this.textRenderCoordinator.cancel();
     this.thinkingRenderCoordinator.cancel();
-    this.#cancelPendingScroll();
     this.thinkingIndicator.detachPresentation();
     this.#tools.cancelAll();
     this.deps.state.detachPresentation();
@@ -190,7 +179,6 @@ export class StreamController {
         } else {
           await this.deps.renderer?.renderContent(el, content);
         }
-        this.scrollToBottom();
       },
     });
   }
@@ -317,9 +305,6 @@ export class StreamController {
       const tool = msg.toolCalls?.find(candidate => candidate.id === chunk.id);
       if (tool) state.recordActivity({ kind: 'tool', tool });
     }
-
-    // Text changes layout only when its throttled Markdown render completes.
-    if (chunk.type !== 'text' && chunk.type !== 'thinking') this.scrollToBottom();
   }
 
   /** Renders buffered tools and finalizes open thinking and text before a standalone block. */
@@ -415,7 +400,6 @@ export class StreamController {
       });
       state.currentThinkingState = thinkingState;
       this.#syncThinkingRenderAvailability();
-      this.scrollToBottom();
     }
 
     this.thinkingRenderCoordinator.request({
@@ -482,32 +466,6 @@ export class StreamController {
   // Utilities
   // ============================================
 
-  /** Scrolls messages to bottom if auto-scroll is enabled. */
-  private scrollToBottom(): void {
-    if (this.pendingScrollFrame !== null || !this.deps.getMessagesEl()) return;
-
-    this.pendingScrollFrame = scheduleAnimationFrame(() => {
-      this.pendingScrollFrame = null;
-      this.#applyScrollToBottom();
-    }, this.#getMessagesWindow());
-  }
-
-  #applyScrollToBottom(): void {
-    const { state, plugin } = this.deps;
-    if (!(plugin.settings.enableAutoScroll ?? true)) return;
-    if (!state.autoScrollEnabled) return;
-
-    const messagesEl = this.deps.getMessagesEl();
-    if (messagesEl) messagesEl.scrollTop = messagesEl.scrollHeight;
-  }
-
-  #cancelPendingScroll(): void {
-    if (this.pendingScrollFrame === null) return;
-
-    cancelScheduledAnimationFrame(this.pendingScrollFrame);
-    this.pendingScrollFrame = null;
-  }
-
   setTabActive(active: boolean): void {
     this.tabActive = active;
     this.#syncRenderAvailability();
@@ -553,7 +511,6 @@ export class StreamController {
     const { state } = this.deps;
     this.textRenderCoordinator.cancel();
     this.thinkingRenderCoordinator.cancel();
-    this.#cancelPendingScroll();
     this.thinkingIndicator.hide();
     state.resetStreamingPresentation();
     this.subagents.reset();
@@ -569,6 +526,5 @@ export class StreamController {
     this.textRenderCoordinator.dispose();
     this.thinkingRenderCoordinator.dispose();
     this.#tools.cancelAll();
-    this.#cancelPendingScroll();
   }
 }

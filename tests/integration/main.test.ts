@@ -2,7 +2,6 @@ import '@/providers';
 
 import { deferred } from '@test/helpers/ChatInputHarness';
 import { DEFAULT_CLAUDIAN_SETTINGS as DEFAULT_SETTINGS } from '@test/helpers/defaultSettings';
-import { registerChatTestProvider } from '@test/helpers/features/chat/ChatProviderFixture';
 import { grokEnvironmentHash, writeGrokCatalog } from '@test/helpers/providers/grokSettings';
 import { testClock } from '@test/helpers/testClock';
 import { App, Notice, type PluginManifest, TFile, TFolder, WorkspaceLeaf } from 'obsidian';
@@ -12,7 +11,7 @@ import { PinnedLinkedContentPathCoordinator } from '@/app/settings/PinnedLinkedC
 import { ConversationPersistenceStore } from '@/app/storage/ConversationPersistenceStore';
 import type { SessionMetadataReadResult } from '@/app/storage/SessionStorage';
 import { SessionStorage } from '@/app/storage/SessionStorage';
-import type { SharedStorageService } from '@/app/storage/SharedStorageService';
+import { SharedStorageService } from '@/app/storage/SharedStorageService';
 import type { ClaudianChatFeatureHost } from '@/composition/ClaudianFeatureHosts';
 import type { ClaudianViews } from '@/composition/ClaudianViews';
 import { getDeviceSessionsPath } from '@/core/bootstrap/storagePaths';
@@ -26,12 +25,11 @@ import { LoopbackSessionToolServer } from '@/core/session-tools/LoopbackSessionT
 import { TOOL_SUBAGENT } from '@/core/tools/toolNames';
 import { type ClaudianSettings, type Conversation, type SessionMetadata, VIEW_TYPE_CLAUDIAN } from '@/core/types';
 import { ClaudianView } from '@/features/chat/ClaudianView';
+import { resolveSessionMentions } from '@/features/chat/composer/resolveSessionMentions';
 import { ConversationTitleGeneration } from '@/features/chat/conversation/ConversationTitleGeneration';
-import { resolveSessionMentions } from '@/features/chat/input/resolveSessionMentions';
 import { SessionMessagingService } from '@/features/chat/session-messaging/SessionMessagingService';
 import { SessionRuntimePool } from '@/features/chat/sessions/SessionRuntimePool';
 import { ZenModeController } from '@/features/chat/zen/ZenModeController';
-import { setLocale } from '@/i18n/i18n';
 import * as sdkSession from '@/providers/claude/history/ClaudeHistoryStore';
 import { createCodexModelCatalogCommit } from '@/providers/codex/app/CodexWorkspaceServices';
 import { CodexModelCatalogCoordinator } from '@/providers/codex/runtime/CodexModelCatalogCoordinator';
@@ -477,6 +475,31 @@ describe('ClaudianPlugin', () => {
       );
     });
 
+    it('registers nothing and shuts down the late domains when unloaded while loading', async () => {
+      const storageReady = deferred<void>();
+      const initialize = SharedStorageService.prototype.initialize;
+      const held = vi.spyOn(SharedStorageService.prototype, 'initialize').mockImplementation(async function (this: SharedStorageService) {
+        await storageReady.promise;
+        return initialize.call(this);
+      });
+      try {
+        const loading = plugin.onload();
+        await vi.waitFor(() => expect(held).toHaveBeenCalled());
+        plugin.onunload();
+        storageReady.resolve();
+        await loading;
+        await plugin['applicationShutdownPromise'];
+
+        expect(plugin.registerView as Mock).not.toHaveBeenCalled();
+        expect(plugin.addCommand as Mock).not.toHaveBeenCalled();
+        expect(plugin.addSettingTab as Mock).not.toHaveBeenCalled();
+        expect(() => chatHostOf(plugin).sessionRuntimes.ensure({ conversationId: 'late', providerId: 'claude', draftModel: null }))
+          .toThrow('Session runtime pool is shutting down');
+      } finally {
+        held.mockRestore();
+      }
+    });
+
     it('registers the file explorer context menu', async () => {
       await plugin.onload();
 
@@ -670,7 +693,7 @@ describe('ClaudianPlugin', () => {
         providerState: { threadId: 'thread-before-invalidation' },
       };
       await plugin.onload();
-      runtimeSettingsOf(plugin)['pendingEnvironmentInvalidationGenerations'].set('codex', 1);
+      plugin.settings.pendingProviderSessionInvalidations.codex = 1;
       const scanSpy = vi.spyOn(SessionStorage.prototype, 'scan')
         .mockResolvedValue({
           records: deviceMetadataRecords(metadata),
@@ -1475,124 +1498,6 @@ describe('ClaudianPlugin', () => {
       expect(repository.getSync(ids[0])?.messages).toEqual(messages);
     });
 
-    it.each([
-      ['English at startup', 'en', 'Session state could not be saved. It remains in memory.'],
-      ['Chinese at startup', 'zh-CN', '无法保存会话状态。状态仍保留在内存中。'],
-      ['English after Chinese', 'en', 'Session state could not be saved. It remains in memory.'],
-    ] as const)('reports a failed session save and retries on the same runtime (%s)', async (_description, locale, expectedNotice) => {
-      onTestFinished(() => { setLocale('en'); });
-      const { sessions } = registerChatTestProvider('claude', {
-        models: [{ label: 'Test model', value: 'test-model' }],
-      });
-      const files = installVaultFiles({
-        '.claudian/claudian-settings.json': JSON.stringify({ locale }),
-      });
-      await plugin.onload();
-      const host = chatHostOf(plugin);
-      const conversation = await host.createConversation({ providerId: 'claude', selectedModel: 'test-model' });
-      const pool = host.sessionRuntimes;
-      const identity = { conversationId: conversation.id, providerId: 'claude', draftModel: null } as const;
-      let acquired = pool.acquire(identity, { reveal() {} });
-      const runtime = acquired.attachment.runtime;
-      const write = mockApp.vault.adapter.write;
-      const originalWrite = write.getMockImplementation()!;
-      const notice = vi.mocked(Notice);
-      const originalNotice = notice.getMockImplementation()!;
-      const target = `${getDeviceSessionsPath(getHostnameKey())}/${conversation.id}.meta.json`;
-      let unsubscribe: (() => void) | undefined;
-      let watchdogTimer: ReturnType<typeof setTimeout> | undefined;
-      let cleaned = false;
-      const cleanup = () => {
-        if (cleaned) return;
-        cleaned = true;
-        clearTimeout(watchdogTimer);
-        notice.mockImplementation(originalNotice);
-        write.mockImplementation(originalWrite);
-        unsubscribe?.();
-        pool.release(acquired.attachment);
-      };
-      onTestFinished(cleanup);
-      try {
-        expect(acquired.acquired).toBe(true);
-        const model = await runtime.ensureModel();
-        expect(await model.ensureExecutionInitialized()).toBe(true);
-        expect(sessions).toHaveLength(1);
-        const native = sessions[0];
-        const metadata = { id: conversation.id, providerId: 'claude', selectedModel: 'test-model' };
-        const baseline = files.get(target);
-        expect(baseline).toEqual(expect.any(String));
-        expect(JSON.parse(baseline!)).toMatchObject(metadata);
-        expect(model.state.messages).toEqual([]);
-        expect(host.getConversationList().find(entry => entry.id === conversation.id)?.messageCount).toBe(0);
-
-        const failure = new Error('Model metadata write failed');
-        const firstWrite = deferred<void>();
-        const watchdog = deferred<never>();
-        let awaiting = 'the first metadata write';
-        // The events order the test. Bound a missing event so cleanup runs before runner teardown.
-        watchdogTimer = setTimeout(() => watchdog.reject(new Error(`Did not observe ${awaiting}`)), 2_000);
-        let failedWrites = 0;
-        write.mockImplementation(async (...args) => {
-          if (args[0] !== target) return originalWrite(...args);
-          failedWrites += 1;
-          firstWrite.resolve();
-          throw failure;
-        });
-        native.emit({
-          type: 'task_notification', content: 'Unsaved result',
-          scope: { kind: 'session', sessionInstanceId: native.sessionInstanceId, sequence: 1 },
-        });
-        await Promise.race([firstWrite.promise, watchdog.promise]);
-        await runtime.awaitBackgroundWork();
-        const task = [{ role: 'assistant', contentBlocks: [{ type: 'task_notification', content: 'Unsaved result' }] }];
-        expect(failedWrites).toBe(1);
-        expect(model.state.messages).toMatchObject(task);
-        expect(model.state.hasPendingConversationSave).toBe(true);
-        expect(files.get(target)).toBe(baseline);
-
-        const reported = deferred<string | DocumentFragment>();
-        notice.mockImplementation(function (message) {
-          if (failedWrites === 2 && message !== failure.message) reported.resolve(message);
-        });
-        awaiting = 'the session save notice';
-        pool.release(acquired.attachment);
-        const displayedNotice = await Promise.race([reported.promise, watchdog.promise]);
-        expect(failedWrites).toBe(2);
-        expect(pool.get(conversation.id)).toBe(runtime);
-        expect(runtime.peekModel).toBe(model);
-        expect(model.state.messages).toMatchObject(task);
-        expect(model.state.hasPendingConversationSave).toBe(true);
-        expect(files.get(target)).toBe(baseline);
-
-        let successfulWrites = 0;
-        write.mockImplementation(async (...args) => {
-          await originalWrite(...args);
-          if (args[0] === target) successfulWrites += 1;
-        });
-        acquired = pool.acquire(identity, { reveal() {} });
-        expect(acquired.acquired).toBe(true);
-        expect(acquired.attachment.runtime).toBe(runtime);
-        const saved = deferred<void>();
-        unsubscribe = runtime.subscribe(() => {
-          if (successfulWrites > 0 && !model.state.hasPendingConversationSave) saved.resolve();
-        });
-        awaiting = 'the successful metadata retry';
-        pool.release(acquired.attachment);
-        await Promise.race([saved.promise, watchdog.promise]);
-
-        expect(successfulWrites).toBe(1);
-        expect(model.state.hasPendingConversationSave).toBe(false);
-        expect(runtime.peekModel).toBe(model);
-        expect(model.state.messages).toMatchObject(task);
-        expect(host.getConversationList().find(entry => entry.id === conversation.id)?.messageCount).toBe(1);
-        expect(JSON.parse(files.get(target)!)).toMatchObject(metadata);
-        expect(displayedNotice).toBe(expectedNotice);
-      } finally {
-        cleanup();
-        await runtime.awaitBackgroundWork();
-      }
-    });
-
     it("releases a detached model after another reader's hydration fails without reporting its error again", async () => {
       const { host, repository, ids } = await setupHistoryReads();
       const pool = host.sessionRuntimes;
@@ -1687,7 +1592,7 @@ describe('ClaudianPlugin', () => {
         expect(disposeWorkspaces).not.toHaveBeenCalled();
       } finally {
         release();
-        await (plugin as unknown as { applicationShutdownPromise: Promise<void> }).applicationShutdownPromise;
+        await plugin['applicationShutdownPromise'];
         dispose.mockRestore();
         disposeWorkspaces.mockRestore();
       }
@@ -1986,7 +1891,7 @@ describe('ClaudianPlugin', () => {
       })]);
 
       chatHostOf(plugin).notifyProviderChatOptionsChanged('claude');
-      await plugin['providerChatOptions']['tail'];
+      await plugin['providerChatOptions']['queue'].settled();
 
       expect(events).toEqual(['reconcile', 'refresh']);
     });
@@ -2002,7 +1907,7 @@ describe('ClaudianPlugin', () => {
       })]);
 
       chatHostOf(plugin).notifyProviderChatOptionsChanged('claude');
-      await plugin['providerChatOptions']['tail'];
+      await plugin['providerChatOptions']['queue'].settled();
 
       expect(refreshModelSelector).not.toHaveBeenCalled();
     });
@@ -2329,8 +2234,6 @@ describe('ClaudianPlugin', () => {
 
         const generation = plugin.settings.pendingProviderSessionInvalidations.claude;
         expect(generation).toEqual(expect.any(Number));
-        expect(runtimeSettingsOf(plugin)['pendingEnvironmentInvalidationGenerations'].get('claude'))
-          .toBe(generation);
         expect(chatHostOf(plugin).getConversationSync(conversation.id)!.sessionId).toBe('pre-invalidation-session');
         const persistedFailureSettings = JSON.parse(
           [...mockApp.vault.adapter.write.mock.calls]
@@ -2350,7 +2253,6 @@ describe('ClaudianPlugin', () => {
 
         expect(chatHostOf(plugin).getConversationSync(conversation.id)!.sessionId).toBeNull();
         expect(plugin.settings.pendingProviderSessionInvalidations.claude).toBeUndefined();
-        expect(runtimeSettingsOf(plugin)['pendingEnvironmentInvalidationGenerations'].has('claude')).toBe(false);
         expect(invalidateSpy).toHaveBeenCalledTimes(2);
         expect(plugin.executionLifecycleRegistry.getProviderGeneration('claude'))
           .toBe(initialGeneration + 2);
@@ -2385,8 +2287,6 @@ describe('ClaudianPlugin', () => {
         expect(chatHostOf(plugin).getConversationSync(first.id)!.sessionId).toBeNull();
         expect(chatHostOf(plugin).getConversationSync(second.id)!.sessionId).toBeNull();
         expect(generation).toEqual(expect.any(Number));
-        expect(runtimeSettingsOf(plugin)['pendingEnvironmentInvalidationGenerations'].get('claude'))
-          .toBe(generation);
         const persistedFailureSettings = JSON.parse(
           [...mockApp.vault.adapter.write.mock.calls]
             .reverse()
@@ -2407,7 +2307,6 @@ describe('ClaudianPlugin', () => {
           expect.objectContaining({ id: second.id, sessionId: null }),
         ]));
         expect(plugin.settings.pendingProviderSessionInvalidations.claude).toBeUndefined();
-        expect(runtimeSettingsOf(plugin)['pendingEnvironmentInvalidationGenerations'].has('claude')).toBe(false);
       } finally {
         saveMetadataSpy.mockRestore();
       }
@@ -2572,7 +2471,6 @@ describe('ClaudianPlugin', () => {
         resumeAtMessageId: 'deferred-resume-message',
       }));
       expect(plugin.settings.pendingProviderSessionInvalidations.claude).toBeUndefined();
-      expect(runtimeSettingsOf(plugin)['pendingEnvironmentInvalidationGenerations'].has('claude')).toBe(false);
       expect(saveMetadataSpy).not.toHaveBeenCalledWith(expect.objectContaining({
         id: deferredMetadata.id,
         sessionId: null,

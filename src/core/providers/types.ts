@@ -40,6 +40,8 @@ export interface ProviderCapabilities {
   supportsImageAttachments: boolean;
   supportsTurnSteer?: boolean;
   supportsFastMode?: boolean;
+  /** Whether native /compact is available; defaults to true. */
+  supportsCompaction?: boolean;
   /** Can report authoritative main-agent output tokens and elapsed turn time. */
   supportsResponseThroughput?: boolean;
   reasoningControl: 'effort' | 'none';
@@ -94,7 +96,6 @@ export interface ProviderSettingsStorageAdapter {
   /** Whether selected models need native effort metadata discovery during startup. */
   needsReasoningMetadata?(settings: Record<string, unknown>): boolean;
   hostScopedFields?: string[];
-  runtimeOnlyFields?: string[];
   /** Provider-owned durable projection; full discovery catalogs remain runtime-only. */
   projectPersistedConfig?(settings: Record<string, unknown>): Record<string, unknown>;
   normalizeStored(
@@ -240,13 +241,6 @@ export interface ProviderServiceTierPolicy {
 
 export type ProviderServiceTierToggleConfig = ProviderServiceTierPolicy;
 
-export interface ProviderModeSelectorConfig {
-  activeValue?: string;
-  label: string;
-  options: ProviderUIOption[];
-  value: string;
-}
-
 /** Provider model and execution preferences, independent of chat rendering. */
 export interface ProviderModelPolicy {
   readonly permissionModes?: ProviderPermissionModePolicy;
@@ -305,18 +299,8 @@ export interface ProviderModelPolicy {
     update(settings: Record<string, unknown>, aliases: Record<string, string>): void;
   };
 
-  /** Optional provider-owned mapping back into the shared permission-mode contract. */
-  resolvePermissionMode?(settings: Record<string, unknown>): string | null;
-
-  /** Optional hook when the toolbar changes permission mode. */
-  applyPermissionMode?(value: string, settings: unknown): void;
-
   /** Available service-tier choices and the currently resolved tier. */
   getServiceTierPolicy?(settings: Record<string, unknown>): ProviderServiceTierPolicy | null;
-
-  /** Optional hook when the toolbar changes a provider-owned mode selection. */
-  applyModeSelection?(value: string, settings: unknown): void;
-
 }
 
 /** UI composition may reuse policy, but application code consumes ProviderModelPolicy. */
@@ -325,7 +309,6 @@ export interface ProviderChatUIConfig extends Omit<ProviderModelPolicy, 'permiss
   prepareAssistantMarkdown?(markdown: string): string;
   getPermissionModeOptions?(settings?: Record<string, unknown>): readonly ProviderPermissionModeOption[] | null;
   getServiceTierToggle?(settings: Record<string, unknown>): ProviderServiceTierToggleConfig | null;
-  getModeSelector?(settings: Record<string, unknown>): ProviderModeSelectorConfig | null;
   getProviderIcon?(): ProviderIconSvg | null;
 }
 
