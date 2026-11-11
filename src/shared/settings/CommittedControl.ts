@@ -6,20 +6,22 @@ export function bindCommittedControl<T>(
   onChanged?: () => void,
 ): void {
   let synchronizing = false;
-  control.setValue(getValue());
+  let displayed = getValue();
+  control.setValue(displayed);
   control.onChange(async value => {
     if (synchronizing) return;
-    const previous = getValue();
+    const previous = displayed;
     try {
       await save(value);
     } finally {
       synchronizing = true;
       try {
-        control.setValue(getValue());
+        displayed = getValue();
+        control.setValue(displayed);
       } finally {
         synchronizing = false;
       }
-      if (getValue() !== previous) onChanged?.();
+      if (displayed !== previous) onChanged?.();
     }
   });
 }

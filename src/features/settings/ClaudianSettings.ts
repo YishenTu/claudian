@@ -19,10 +19,10 @@ import { getAvailableLocales, getLocaleDisplayName, setLocale, t } from '@/i18n/
 import type { Locale } from '@/i18n/types';
 import { createProviderIconSvg } from '@/shared/icons';
 import { AccessibleSetting } from '@/shared/settings/AccessibleSetting';
+import { bindCommittedControl } from '@/shared/settings/CommittedControl';
 import { formatContextLimit, parseContextLimit } from '@/shared/settings/contextLimit';
 import { DebouncedSettingsWriter } from '@/shared/settings/DebouncedSettingsWriter';
 import { renderEnvironmentSettingsSection } from '@/shared/settings/EnvironmentSettingsSection';
-import { bindCommittedControl } from '@/shared/settings/CommittedControl';
 import { frameSettingsGroups } from '@/shared/settings/SettingsGroups';
 
 type SettingsTabId = 'general' | 'providers' | 'skills';
