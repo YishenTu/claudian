@@ -227,6 +227,9 @@ export interface TabManagerCallbacks {
   /** Called when the user's custom label for a tab changes. */
   onTabLabelChanged?: (tabId: TabId, label: string | null) => void;
 
+  /** Called when the user reorders tabs. */
+  onTabOrderChanged?: () => void;
+
   /** Called when tab attention state changes (approval pending, etc.). */
   onTabAttentionChanged?: (tabId: TabId, attention: TabAttention) => void;
 

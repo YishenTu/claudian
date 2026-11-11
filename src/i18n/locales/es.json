@@ -473,6 +473,8 @@
       "showNumber": "Mostrar número",
       "showName": "Mostrar nombre",
       "showTitle": "Mostrar título",
+      "moveLeft": "Mover a la izquierda",
+      "moveRight": "Mover a la derecha",
       "closeTab": "Cerrar pestaña",
       "active": "activa",
       "needsInput": "requiere tu intervención",

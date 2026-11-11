@@ -473,6 +473,8 @@
       "showNumber": "顯示編號",
       "showName": "顯示名稱",
       "showTitle": "顯示標題",
+      "moveLeft": "向左移動",
+      "moveRight": "向右移動",
       "closeTab": "關閉分頁",
       "active": "目前",
       "needsInput": "需要您輸入",

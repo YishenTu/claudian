@@ -473,6 +473,8 @@
       "showNumber": "显示编号",
       "showName": "显示名称",
       "showTitle": "显示标题",
+      "moveLeft": "向左移动",
+      "moveRight": "向右移动",
       "closeTab": "关闭标签页",
       "active": "当前",
       "needsInput": "需要您输入",

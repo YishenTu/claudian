@@ -473,6 +473,8 @@
       "showNumber": "Nummer anzeigen",
       "showName": "Namen anzeigen",
       "showTitle": "Titel anzeigen",
+      "moveLeft": "Nach links verschieben",
+      "moveRight": "Nach rechts verschieben",
       "closeTab": "Tab schließen",
       "active": "aktiv",
       "needsInput": "deine Eingabe ist erforderlich",

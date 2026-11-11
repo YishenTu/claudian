@@ -473,6 +473,8 @@
       "showNumber": "번호 표시",
       "showName": "이름 표시",
       "showTitle": "제목 표시",
+      "moveLeft": "왼쪽으로 이동",
+      "moveRight": "오른쪽으로 이동",
       "closeTab": "탭 닫기",
       "active": "활성",
       "needsInput": "사용자 입력 필요",
