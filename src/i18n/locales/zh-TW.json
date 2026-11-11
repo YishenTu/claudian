@@ -173,7 +173,12 @@
       "resume": "繼續對話",
       "loading": "正在載入對話…",
       "current": "目前的工作階段",
-      "loadFailed": "載入對話失敗"
+      "loadFailed": "載入對話失敗",
+      "search": "搜尋工作階段",
+      "searchArchived": "搜尋已封存的工作階段",
+      "clearSearch": "清除搜尋",
+      "showArchive": "顯示已封存的工作階段",
+      "showSessions": "顯示使用中的工作階段"
     },
     "linkedContent": {
       "label": "關聯內容：",

@@ -173,7 +173,12 @@
       "resume": "Retomar conversa",
       "loading": "Carregando conversa…",
       "current": "Sessão atual",
-      "loadFailed": "Não foi possível carregar a conversa"
+      "loadFailed": "Não foi possível carregar a conversa",
+      "search": "Pesquisar sessões",
+      "searchArchived": "Pesquisar sessões arquivadas",
+      "clearSearch": "Limpar pesquisa",
+      "showArchive": "Mostrar sessões arquivadas",
+      "showSessions": "Mostrar sessões ativas"
     },
     "linkedContent": {
       "label": "Conteúdo vinculado:",

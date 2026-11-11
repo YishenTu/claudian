@@ -173,7 +173,12 @@
       "resume": "대화 이어가기",
       "loading": "대화 불러오는 중…",
       "current": "현재 세션",
-      "loadFailed": "대화를 불러오지 못했습니다"
+      "loadFailed": "대화를 불러오지 못했습니다",
+      "search": "세션 검색",
+      "searchArchived": "보관된 세션 검색",
+      "clearSearch": "검색 지우기",
+      "showArchive": "보관된 세션 보기",
+      "showSessions": "활성 세션 보기"
     },
     "linkedContent": {
       "label": "연결된 콘텐츠:",

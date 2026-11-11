@@ -4,7 +4,7 @@ import { createFeatureHostFixture } from '@test/helpers/FeatureHostFixture';
 import { registerChatTestProvider } from '@test/helpers/features/chat/ChatProviderFixture';
 import { createSessionBrowserHost } from '@test/helpers/features/chat/SessionBrowserTestHarness';
 import { testDate } from '@test/helpers/testClock';
-import { createEvent, fireEvent } from '@testing-library/dom';
+import { createEvent, fireEvent, within } from '@testing-library/dom';
 import { App, Menu, setIcon } from 'obsidian';
 import type { MockInstance } from 'vitest';
 
@@ -14,6 +14,7 @@ import { SessionBrowser } from '@/features/chat/session-manager/SessionBrowser';
 import { SessionManagerSurface } from '@/features/chat/session-manager/SessionManagerSurface';
 import type { SessionSurfaceNavigation } from '@/features/chat/session-manager/SessionSurfaceShared';
 import { ChatViewPublisher } from '@/features/chat/workspace/ChatViewPublisher';
+import { t } from '@/i18n/i18n';
 
 /** A document click whose dispatch path never entered the history control. */
 const outsideClick = () => ({ composedPath: () => [] }) as unknown as Event;
@@ -124,6 +125,10 @@ function findItem(container: HTMLElement, conversationId: string) {
 
 function navLabel(control: HTMLElement | null): string | null | undefined {
   return control?.querySelector<HTMLElement>('.claudian-session-nav-label')?.textContent;
+}
+
+function archiveToggle(menu: HTMLElement, label: 'showArchive' | 'showSessions'): HTMLElement {
+  return within(menu).getByRole('button', { name: t(`chat.sessions.${label}`) });
 }
 
 function sessionsHeaderLabel(container: HTMLElement): string | null | undefined {
@@ -687,27 +692,6 @@ describe('SessionManagerSurface New availability', () => {
 });
 
 describe('SessionManagerSurface history dropdown', () => {
-  it('keeps archive navigation at the top of the single-mode history list', async () => {
-    const h = await createHarness({
-      conversations: [conversation('active'), conversation('archived', { isArchived: true })],
-      wide: false,
-    });
-    h.historyButton.click();
-    const list = h.historyMenu.querySelector<HTMLElement>('.claudian-history-list')!;
-
-    const archiveControl = list.querySelector<HTMLElement>('.claudian-history-archive-control')!;
-    expect(list.children[0]).toBe(archiveControl);
-    expect(navLabel(archiveControl)).toBe('Archive');
-    const click = createEvent.click(archiveControl!);
-    const stopPropagation = vi.spyOn(click, 'stopPropagation');
-    fireEvent(archiveControl!, click);
-
-    expect(stopPropagation).toHaveBeenCalledTimes(1);
-    expect(navLabel(h.historyMenu.querySelector<HTMLElement>('.claudian-history-archive-control')!))
-      .toBe('Sessions');
-    expect(renderedIds(h.historyMenu)).toEqual(['archived']);
-  });
-
   it('keeps tab-aware navigation on the single-mode history surface', async () => {
     const popout = createPopoutDocument();
     const h = await createHarness({ doc: popout, conversations: [conversation('conversation-1')], wide: false });
@@ -727,7 +711,6 @@ describe('SessionManagerSurface history dropdown', () => {
     expect(options.showInlinePinAction).toBe(false);
     expect(options.onRequestInlineRename).toEqual(expect.any(Function));
     expect(options.onOpenConversationInNewTab).toEqual(expect.any(Function));
-    expect(options.onBeforeRestoreListState).toEqual(expect.any(Function));
     expect(options).not.toHaveProperty('organization');
     expect(options).not.toHaveProperty('showMetadataPopover');
     const item = findItem(h.historyMenu, 'conversation-1');
@@ -770,22 +753,22 @@ describe('SessionManagerSurface history dropdown', () => {
 
     h.historyButton.click();
 
+    const listHost = h.historyMenu.querySelector<HTMLElement>('.claudian-history-menu-list')!;
     expect(render).toHaveBeenLastCalledWith(
-      h.historyMenu,
+      listHost,
       expect.objectContaining({
         preserveListState: true,
         sessionScope: 'active',
         sessionActionMode: 'active',
         allowConversationSelection: true,
         onOpenConversationInNewTab: expect.any(Function),
-        onBeforeRestoreListState: expect.any(Function),
       }),
     );
     expect(renderedIds(h.historyMenu)).toEqual(['active']);
-    h.historyMenu.querySelector<HTMLElement>('.claudian-history-archive-control')!.click();
+    archiveToggle(h.historyMenu, 'showArchive').click();
 
     expect(render).toHaveBeenLastCalledWith(
-      h.historyMenu,
+      listHost,
       expect.objectContaining({
         preserveListState: true,
         sessionScope: 'archived',
@@ -794,8 +777,7 @@ describe('SessionManagerSurface history dropdown', () => {
       }),
     );
     expect(render.mock.calls.at(-1)?.[1]).not.toHaveProperty('onOpenConversationInNewTab');
-    expect(h.historyMenu.querySelector<HTMLElement>('.claudian-session-nav-label')?.textContent)
-      .toBe('Sessions');
+    expect(archiveToggle(h.historyMenu, 'showSessions')).toBeTruthy();
     expect(renderedIds(h.historyMenu)).toEqual(['archived']);
     expect(findItem(h.historyMenu, 'archived').hasClass('claudian-history-item--noninteractive'))
       .toBe(true);
@@ -880,10 +862,9 @@ describe('SessionManagerSurface wide layout transitions', () => {
     h.historyButton.click();
 
     expect(renderedIds(h.historyMenu)).toEqual(['archived']);
-    expect(navLabel(h.historyMenu.querySelector<HTMLElement>('.claudian-history-archive-control')!))
-      .toBe('Sessions');
+    expect(archiveToggle(h.historyMenu, 'showSessions')).toBeTruthy();
 
-    h.historyMenu.querySelector<HTMLElement>('.claudian-history-archive-control')!.click();
+    archiveToggle(h.historyMenu, 'showSessions').click();
     expect(renderedIds(h.historyMenu)).toEqual(['active']);
 
     h.state.wide = true;

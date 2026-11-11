@@ -527,10 +527,10 @@ describe('ClaudianView tab controls and layout', () => {
     expect(contentEl.classList.contains('claudian-wide-session-layout')).toBe(true);
     expect(historyMenu.classList.contains('visible')).toBe(false);
     fireEvent.click(contentEl.querySelector<HTMLElement>('.claudian-session-search-control')!);
-    expect(contentEl.querySelector('.claudian-session-search-input')).not.toBeNull();
+    expect(contentEl.querySelector('.claudian-session-sidebar .claudian-session-search-input')).not.toBeNull();
     const released = vi.spyOn(manager.viewerSlot, 'release');
     resize(400);
-    expect(contentEl.querySelector('.claudian-session-search-input')).toBeNull();
+    expect(contentEl.querySelector('.claudian-session-sidebar .claudian-session-search-input')).toBeNull();
     expect(contentEl.classList.contains('claudian-wide-session-layout')).toBe(true);
     await released.mock.results[0].value;
     // The layout's continuation follows the owner's fulfilled release promise.
@@ -636,14 +636,14 @@ describe('ClaudianView composer and scoped keys', () => {
     const tab = manager.getActiveTab()!;
     const release = holdResponse(tab.session.runtime.turns);
     fireEvent.click(contentEl.querySelector<HTMLElement>('.claudian-session-search-control')!);
-    const search = contentEl.querySelector<HTMLInputElement>('.claudian-session-search-input')!;
+    const search = contentEl.querySelector<HTMLInputElement>('.claudian-session-sidebar .claudian-session-search-input')!;
     fireEvent.compositionStart(search);
     expect(scoped(view, 'Escape')).toBeUndefined();
     expect(tab.state.isStreaming).toBe(true);
     expect(tab.session.turns.cancelRequested).toBe(false);
     fireEvent.compositionEnd(search);
     expect(scoped(view, 'Escape')).toBe(false);
-    expect(contentEl.querySelector('.claudian-session-search-input')).toBeNull();
+    expect(contentEl.querySelector('.claudian-session-sidebar .claudian-session-search-input')).toBeNull();
     expect(tab.state.isStreaming).toBe(true);
     expect(tab.session.turns.cancelRequested).toBe(false);
     scoped(view, 'Escape');
