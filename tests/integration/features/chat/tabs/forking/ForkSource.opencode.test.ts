@@ -1,5 +1,6 @@
 // @test-ci {"native":true,"inputs":["tests/helpers/providers/opencode/OpencodeNativePeer.cjs"]}
-import { copyFileSync, existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdtempSync, readFileSync, realpathSync, symlinkSync, writeFileSync } from 'node:fs';
+import { rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import * as path from 'node:path';
 
@@ -24,7 +25,8 @@ describe('OpenCode fork integration', () => {
   let root: string;
   beforeEach(() => { root = realpathSync(mkdtempSync(path.join(tmpdir(), 'claudian-opencode-fork-'))); });
   // Windows can keep a just-exited executable's image (the copied node.exe) locked briefly after the process is gone.
-  afterEach(() => { rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }); });
+  // Only async `rm` retries that: Node 24's native `rmSync` neither retries "Permission denied" nor waits between attempts on Windows.
+  afterEach(() => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }));
 
   function fork(cliPath: string, environment: NodeJS.ProcessEnv = process.env) {
     const databasePath = path.join(root, 'opencode.db');
