@@ -8,6 +8,7 @@ import type {
   ProjectReader,
 } from '@/core/types';
 import type { ChatTabManagerHost, ChatViewHost, TabId } from '@/features/chat/ChatFeatureHost';
+import { t } from '@/i18n/i18n';
 
 /** Application conversation writes the lifecycle applies after its tab policy. */
 export interface ConversationLifecycleStore {
@@ -80,7 +81,7 @@ export class ConversationLifecycle {
       return;
     }
     if (!await this.#closeTabsBeforeArchive(conversationId)) {
-      new Notice('Running sessions cannot be archived');
+      new Notice(t('chat.lifecycleFeedback.runningArchive'));
       return;
     }
     await this.#archiveAndClear([conversationId], conversation =>
@@ -124,7 +125,9 @@ export class ConversationLifecycle {
         );
     const skippedCount = conversationIds.length - archivedCount;
     if (skippedCount > 0) {
-      new Notice(`Skipped ${skippedCount} ${skippedCount === 1 ? 'session that is' : 'sessions that are'} open or running`);
+      new Notice(t(skippedCount === 1
+        ? 'chat.lifecycleFeedback.archiveSkippedOne'
+        : 'chat.lifecycleFeedback.archiveSkippedOther', { count: skippedCount }));
     }
     return archivedCount;
   }
@@ -180,8 +183,10 @@ export class ConversationLifecycle {
     }
     if (skippedCount === 0) return;
     new Notice(conversationIds.length === 1
-      ? 'Running sessions cannot be deleted'
-      : `Skipped ${skippedCount} ${skippedCount === 1 ? 'session that is' : 'sessions that are'} running`);
+      ? t('chat.lifecycleFeedback.runningDelete')
+      : t(skippedCount === 1
+          ? 'chat.lifecycleFeedback.deleteSkippedOne'
+          : 'chat.lifecycleFeedback.deleteSkippedOther', { count: skippedCount }));
   }
 
   /**
@@ -196,7 +201,7 @@ export class ConversationLifecycle {
       void this.deps.sessions.whenSettled(conversationId)
         .then(settled => settled ? this.#retireDeletedSession(conversationId) : undefined)
         .catch((error: unknown) => {
-          new Notice(error instanceof Error ? error.message : 'Failed to close the deleted session');
+          new Notice(error instanceof Error ? error.message : t('chat.lifecycleFeedback.deletedCloseFallback'));
         });
       return;
     }
