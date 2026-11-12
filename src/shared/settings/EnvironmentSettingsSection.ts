@@ -1,5 +1,6 @@
 import { Notice } from 'obsidian';
 
+import { t } from '@/i18n/i18n';
 import { AccessibleSetting } from '@/shared/settings/AccessibleSetting';
 
 import { getEnvironmentReviewKeysForScope } from '../../core/providers/providerEnvironment';
@@ -54,7 +55,7 @@ export function renderEnvironmentSettingsSection(
       return;
     }
 
-    reviewEl.setText(`Review environment ownership for: ${reviewKeys.join(', ')}`);
+    reviewEl.setText(t('settings.environmentFeedback.reviewOwnership', { keys: reviewKeys.join(', ') }));
     reviewEl.toggleClass('claudian-hidden', false);
   };
 
@@ -80,7 +81,7 @@ export function renderEnvironmentSettingsSection(
             renderCustomContextLimits?.(contextLimitsContainer);
             updateReviewWarning();
           } catch {
-            new Notice('Could not complete environment update.');
+            new Notice(t('settings.environmentFeedback.updateFailed'));
           }
         })();
       });

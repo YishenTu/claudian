@@ -138,7 +138,7 @@ export function renderProviderModelPicker(
       await options.onAliasChange(modelId, value);
       if (aliasDrafts.get(modelId) === value) aliasDrafts.delete(modelId);
     } catch {
-      new Notice('Could not save model alias. Try again.');
+      new Notice(t('settings.customModelAliases.saveFailed'));
     }
     renderSelected();
   };
@@ -369,7 +369,7 @@ export function renderProviderModelPicker(
     try {
       await options.onSelectionChange(change);
     } catch {
-      new Notice('Could not save model selection. Try again.');
+      new Notice(t('settings.modelPicker.saveFailed'));
     }
     renderAll();
   };
