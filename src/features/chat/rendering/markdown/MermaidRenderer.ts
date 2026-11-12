@@ -1,5 +1,7 @@
 import { loadMermaid, setIcon } from 'obsidian';
 
+import { t } from '@/i18n/i18n';
+
 interface MermaidApi {
   render(id: string, source: string, container: HTMLElement): Promise<{ svg: string }>;
 }
@@ -49,7 +51,7 @@ export async function renderMermaidDiagrams(
       if (!wrapper) continue;
       const diagram = staging.createDiv({ cls: 'claudian-mermaid' });
       const image = diagram.createEl('img');
-      image.alt = 'Mermaid diagram';
+      image.alt = t('chat.mermaid.diagramAlt');
       // An image document cannot execute SVG scripts or bind Mermaid click callbacks.
       image.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(markup)}`;
       const source = diagram.createDiv();
@@ -58,7 +60,7 @@ export async function renderMermaidDiagrams(
         cls: 'claudian-mermaid-toggle',
         attr: { type: 'button' },
       });
-      toggle.setAttribute('aria-label', 'Show diagram source');
+      toggle.setAttribute('aria-label', t('chat.mermaid.showSource'));
       setIcon(toggle, 'code-2');
       source.tabIndex = -1;
       const showSource = (visible: boolean) => {
