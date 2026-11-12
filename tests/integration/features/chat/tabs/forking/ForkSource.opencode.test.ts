@@ -42,7 +42,7 @@ describe('OpenCode fork integration', () => {
   // Only async `rm` retries that: Node 24's native `rmSync` neither retries "Permission denied" nor waits between attempts on Windows.
   afterEach(() => { const t = Date.now(); return rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }).finally(() => process.stderr.write(`[DIAG rm] ${Date.now() - t}ms` + "\n")); });
 
-  function fork(cliPath: string, environment: NodeJS.ProcessEnv = process.env) {
+  function fork(cliPath: string, environment: NodeJS.ProcessEnv = { ...process.env, PATH: path.dirname(process.execPath) }) {
     const databasePath = path.join(root, 'opencode.db');
     writeFileSync(databasePath, JSON.stringify({ 'ses-source': { messages: [
       { id: 'msg-user', type: 'user', time: { created: 1 }, text: 'Remember apples' },
