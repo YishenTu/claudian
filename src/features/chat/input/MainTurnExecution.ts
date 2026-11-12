@@ -381,7 +381,7 @@ export class MainTurnExecution {
       } else if (result.status === 'error' && result.error) {
         // A rolled-back unsent turn has no reply left to carry the error; its input returns for retry.
         end = { kind: 'response', outcome: 'failed' };
-        await streamController.appendError(result.error.message);
+        await streamController.appendError(result.error.message, undefined, this.responseStream.active ?? assistantMsg);
       }
     } catch (error) {
       if (error instanceof ChatExecutionPreHandoffError) {
@@ -396,7 +396,7 @@ export class MainTurnExecution {
       } else {
         if (end.kind === 'response') end = { kind: 'response', outcome: 'failed' };
         const errorMsg = error instanceof Error ? error.message : 'Unknown error';
-        await streamController.appendError(errorMsg);
+        await streamController.appendError(errorMsg, undefined, this.responseStream.active ?? assistantMsg);
         reviewReporter = this.deps.captureReviewableSettlement?.('error') ?? null;
       }
     } finally {
