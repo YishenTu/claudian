@@ -30,9 +30,14 @@ function item(overrides: Partial<TabBarItem> = {}): TabBarItem {
   };
 }
 
-function setup(items: TabBarItem[] = [item(), item({ id: 'tab-2', index: 2, title: 'Second session' })]) {
+function setup(
+  items: TabBarItem[] = [item(), item({ id: 'tab-2', index: 2, title: 'Second session' })],
+  showTitlesByDefault = false,
+) {
   const container = document.body.createDiv();
+  const defaults = { showTitlesByDefault };
   const callbacks = {
+    getShowTitlesByDefault: () => defaults.showTitlesByDefault,
     onTabClick: vi.fn(),
     onTabClose: vi.fn(),
     onTabLabelChange: vi.fn(),
@@ -41,7 +46,7 @@ function setup(items: TabBarItem[] = [item(), item({ id: 'tab-2', index: 2, titl
   };
   const tabBar = new TabBar(container, callbacks);
   tabBar.update(items);
-  return { container, callbacks, tabBar, ui: within(container) };
+  return { container, callbacks, defaults, tabBar, ui: within(container) };
 }
 
 function openMenu(badge: HTMLElement): MockMenu {
@@ -255,7 +260,7 @@ describe('TabBar tab labels', () => {
     const badge = ui.getByRole('button', { name: 'ACP restore (Refactor ACP session restore), idle' });
     expect(badge.textContent).toBe('ACP restore');
     expect(document.activeElement).toBe(badge);
-    expect(tabBar.getExpandedTitleTabIds()).toEqual(['tab-1']);
+    expect(tabBar.getDisplayOverrides()).toEqual({ 'tab-1': 'title' });
     expect(callbacks.onDisplayStateChanged).toHaveBeenCalledTimes(1);
 
     // The tab owns the label and republishes it; the refresh keeps keyboard focus on the badge.
@@ -433,13 +438,89 @@ describe('TabBar tab labels', () => {
     expect(labelled.classList.contains('claudian-tab-badge-expanded')).toBe(true);
     expect(labelled.getAttribute('data-title-expanded')).toBe('true');
     expect(callbacks.onDisplayStateChanged).toHaveBeenCalledTimes(3);
-    expect(tabBar.getExpandedTitleTabIds()).toEqual(['tab-1']);
+    expect(tabBar.getDisplayOverrides()).toEqual({ 'tab-1': 'title' });
     fireEvent.dblClick(labelled);
     expect(labelled.textContent).toBe('1');
     expect(labelled.classList.contains('claudian-tab-badge-expanded')).toBe(false);
     expect(labelled.getAttribute('data-title-expanded')).toBe('false');
-    expect(tabBar.getExpandedTitleTabIds()).toEqual([]);
+    expect(tabBar.getDisplayOverrides()).toEqual({ 'tab-1': 'number' });
     expect(callbacks.onDisplayStateChanged).toHaveBeenCalledTimes(4);
+  });
+
+  describe('with titles shown by default', () => {
+    const three = () => [
+      item(),
+      item({ id: 'tab-2', index: 2, title: 'Second session', label: 'Mine' }),
+      item({ id: 'tab-3', index: 3, title: 'New Chat' }),
+    ];
+
+    it('shows names, titles and the New Chat fallback, and follows later title changes', () => {
+      const { tabBar, ui } = setup(three(), true);
+
+      expect(ui.getAllByRole('button').map(badge => badge.textContent))
+        .toEqual(['Refactor ACP session restore', 'Mine', 'New Chat']);
+      expect(ui.getByRole('button', { name: /^Mine/ }).getAttribute('data-title-expanded')).toBe('true');
+      tabBar.update([item({ title: 'Renamed' }), ...three().slice(1, 2), item({ id: 'tab-3', index: 3, title: 'Generated title' })]);
+      expect(ui.getAllByRole('button').map(badge => badge.textContent)).toEqual(['Renamed', 'Mine', 'Generated title']);
+      expect(tabBar.getDisplayOverrides()).toEqual({});
+    });
+
+    it('lets individual tabs switch to numbers by double click or menu without touching the others', () => {
+      const { callbacks, tabBar, ui } = setup(three(), true);
+
+      fireEvent.dblClick(ui.getByRole('button', { name: /^Refactor/ }));
+      const menu = openMenu(ui.getByRole('button', { name: /^Mine/ }));
+      expect(menuTitles(menu)).toContain('Show number');
+      chooseMenuItem(menu, 'Show number');
+
+      expect(ui.getAllByRole('button').map(badge => badge.textContent)).toEqual(['1', '2', 'New Chat']);
+      expect(tabBar.getDisplayOverrides()).toEqual({ 'tab-1': 'number', 'tab-2': 'number' });
+      expect(callbacks.onDisplayStateChanged).toHaveBeenCalledTimes(2);
+      expect(menuTitles(openMenu(ui.getByRole('button', { name: /^Refactor/ })))).toContain('Show title');
+
+      fireEvent.dblClick(ui.getByRole('button', { name: /^Refactor/ }));
+      chooseMenuItem(openMenu(ui.getByRole('button', { name: /^Mine/ })), 'Show name');
+      expect(ui.getAllByRole('button').map(badge => badge.textContent))
+        .toEqual(['Refactor ACP session restore', 'Mine', 'New Chat']);
+      expect(tabBar.getDisplayOverrides()).toEqual({ 'tab-1': 'title', 'tab-2': 'title' });
+    });
+
+    it('reveals a newly saved name on a tab explicitly switched to its number', () => {
+      const { callbacks, tabBar, ui } = setup(three(), true);
+      fireEvent.dblClick(ui.getByRole('button', { name: /^New Chat/ }));
+      chooseMenuItem(openMenu(ui.getByRole('button', { name: /^New Chat/ })), 'Rename tab…');
+      const input = ui.getByRole('textbox', { name: 'Tab name' });
+      fireEvent.input(input, { target: { value: 'Fresh' } });
+      fireEvent.keyDown(input, { key: 'Enter' });
+
+      expect(ui.getByRole('button', { name: /^Fresh/ }).textContent).toBe('Fresh');
+      expect(tabBar.getDisplayOverrides()).toEqual({ 'tab-3': 'title' });
+      expect(callbacks.onTabLabelChange).toHaveBeenCalledWith('tab-3', 'Fresh');
+    });
+
+    it('keeps explicit choices in both directions when the default changes and follows it otherwise', () => {
+      const { defaults, tabBar, ui } = setup(three(), true);
+      fireEvent.dblClick(ui.getByRole('button', { name: /^Refactor/ }));
+      defaults.showTitlesByDefault = false;
+      fireEvent.dblClick(ui.getByRole('button', { name: /^Mine/ }));
+      tabBar.update(three());
+
+      expect(ui.getAllByRole('button').map(badge => badge.textContent)).toEqual(['1', 'Mine', '3']);
+      expect(tabBar.getDisplayOverrides()).toEqual({ 'tab-1': 'number', 'tab-2': 'title' });
+
+      defaults.showTitlesByDefault = true;
+      tabBar.update(three());
+      expect(ui.getAllByRole('button').map(badge => badge.textContent)).toEqual(['1', 'Mine', 'New Chat']);
+    });
+
+    it('restores sparse overrides and prunes closed tabs', () => {
+      const { tabBar, ui } = setup(three(), true);
+      tabBar.setDisplayOverrides({ 'tab-1': 'number', 'closed-tab': 'title' });
+      tabBar.update(three());
+
+      expect(ui.getAllByRole('button').map(badge => badge.textContent)).toEqual(['1', 'Mine', 'New Chat']);
+      expect(tabBar.getDisplayOverrides()).toEqual({ 'tab-1': 'number' });
+    });
   });
 
   it('moves a tab one position from the menu, emitting the tab it moves before', () => {

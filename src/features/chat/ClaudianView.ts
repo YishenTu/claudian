@@ -437,6 +437,7 @@ export class ClaudianView extends ItemView implements ZenModeSource {
         void this.handleTabClose(tabId);
       },
       onTabLabelChange: (tabId, label) => this.tabManager?.setTabLabel(tabId, label),
+      getShowTitlesByDefault: () => this.plugin.settings.showTabTitlesByDefault,
       onTabMove: (tabId, beforeTabId) => this.tabManager?.moveTab(tabId, beforeTabId),
       onDisplayStateChanged: () => this.tabWorkspace.persist(),
     });
@@ -538,6 +539,10 @@ export class ClaudianView extends ItemView implements ZenModeSource {
     for (const tab of this.tabManager?.getAllTabs() ?? []) {
       tab.refreshMessageTimestamps();
     }
+  }
+
+  refreshTabTitles(): void {
+    this.updateTabBar();
   }
 
   refreshDualPaneLayout(): void {

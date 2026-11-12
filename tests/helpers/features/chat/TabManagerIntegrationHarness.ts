@@ -86,7 +86,7 @@ export async function createManager(
     focusActiveInput: () => manager.getActiveTab()?.composer.focus(),
     isTabBarVisible: () => manager.getTabCount() > 1, renameActiveTab: () => false,
     notifyConversationListChanged: () => undefined, refreshModelSelector: () => undefined,
-    refreshTabControls: () => undefined, refreshDualPaneLayout: () => undefined,
+    refreshTabControls: () => undefined, refreshTabTitles: () => undefined, refreshDualPaneLayout: () => undefined,
     refreshMessageTimestamps: () => undefined, updateHiddenCommands: () => undefined,
     invalidateProviderCommandCaches: () => undefined, invalidateProviderResources: () => undefined,
   }, viewOverrides);

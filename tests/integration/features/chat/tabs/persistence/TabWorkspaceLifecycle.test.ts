@@ -73,7 +73,7 @@ describe('TabWorkspaceLifecycle', () => {
       expect(restoreState).toHaveBeenCalledWith({ activeTabId: null, openTabs: [] });
     });
 
-    it('publishes the open working set with only the expanded titles still open', async () => {
+    it('publishes the open working set with only the display overrides of open tabs', async () => {
       const state = {
         activeTabId: 'tab-2',
         openTabs: [
@@ -83,10 +83,10 @@ describe('TabWorkspaceLifecycle', () => {
       };
       const { lifecycle } = await createHarness({
         manager: { getPersistedState: () => state },
-        tabBar: { getExpandedTitleTabIds: () => ['tab-2', 'preview-tab'] },
+        tabBar: { getDisplayOverrides: () => ({ 'tab-1': 'number', 'tab-2': 'title', 'preview-tab': 'title' }) },
       });
 
-      expect(lifecycle.getState()).toEqual(viewState({ ...state, expandedTitleTabIds: ['tab-2'] }));
+      expect(lifecycle.getState()).toEqual(viewState({ ...state, tabDisplayOverrides: { 'tab-1': 'number', 'tab-2': 'title' } }));
     });
 
     it('keeps live persistence authoritative after another delivery to an initialized view', async () => {
@@ -111,7 +111,7 @@ describe('TabWorkspaceLifecycle', () => {
   describe('restore', () => {
     it('restores every open tab and prepares every bound conversation independently of layout', async () => {
       const restoreState = vi.fn().mockResolvedValue(undefined);
-      const setExpandedTitleTabIds = vi.fn();
+      const setDisplayOverrides = vi.fn();
       const state = {
         activeTabId: 'tab-2',
         openTabs: [
@@ -119,18 +119,18 @@ describe('TabWorkspaceLifecycle', () => {
           { conversationId: 'conversation-2', tabId: 'tab-2' },
           { conversationId: null, draftModel: 'codex:gpt-5', tabId: 'tab-3', label: 'Scratch' },
         ],
-        expandedTitleTabIds: ['tab-1'],
+        tabDisplayOverrides: { 'tab-1': 'title' as const, 'tab-2': 'number' as const },
       };
       const { host, lifecycle, plugin } = await createHarness({
         manager: { restoreState, getPersistedState: () => state },
-        tabBar: { getExpandedTitleTabIds: () => [], setExpandedTitleTabIds },
+        tabBar: { getDisplayOverrides: () => ({}), setDisplayOverrides },
       });
 
       await lifecycle.setState(viewState(state));
 
       expect(plugin.ensureConversationMetadataLoaded).toHaveBeenCalledWith(['conversation-1', 'conversation-2']);
       expect(restoreState).toHaveBeenCalledWith(state);
-      expect(setExpandedTitleTabIds).toHaveBeenCalledWith(['tab-1']);
+      expect(setDisplayOverrides).toHaveBeenCalledWith({ 'tab-1': 'title', 'tab-2': 'number' });
       expect(host.onInitialized).toHaveBeenCalledTimes(1);
       expect(vi.mocked(plugin.ensureConversationMetadataLoaded).mock.invocationCallOrder[0])
         .toBeLessThan(restoreState.mock.invocationCallOrder[0]);

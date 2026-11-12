@@ -412,6 +412,15 @@ export class ClaudianSettingTab extends PluginSettingTab {
     new AccessibleSetting(container).setName(t('settings.conversations')).setHeading();
 
     new AccessibleSetting(container)
+      .setName(t('settings.showTabTitlesByDefault.name'))
+      .setDesc(t('settings.showTabTitlesByDefault.desc'))
+      .addToggle((toggle) => {
+        bindCommittedControl(toggle, () => this.host.settings.showTabTitlesByDefault, async value => {
+          await this.host.mutateSettings(settings => { settings.showTabTitlesByDefault = value; });
+        });
+      });
+
+    new AccessibleSetting(container)
       .setName(t('settings.autoTitle.name'))
       .setDesc(t('settings.autoTitle.desc'))
       .addToggle((toggle) => {

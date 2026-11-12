@@ -1,6 +1,9 @@
 import type { ProviderId } from '../types/provider';
 import { isValidSessionMetadataId } from './storagePaths';
 
+/** A tab's explicit badge display; a tab without an entry follows the global default. */
+export type TabDisplayOverride = 'title' | 'number';
+
 /** Chat tab workspace state persisted per view across restarts. */
 export interface AppTabManagerState {
   openTabs: Array<{
@@ -14,7 +17,8 @@ export interface AppTabManagerState {
     preview?: true;
   }>;
   activeTabId: string | null;
-  expandedTitleTabIds?: string[];
+  /** Sparse explicit badge display choices by open tab id. */
+  tabDisplayOverrides?: Record<string, TabDisplayOverride>;
 }
 
 /** Longest custom tab label, in Unicode code points. */
@@ -100,27 +104,23 @@ export function decodeTabWorkspaceViewState(data: unknown): AppTabManagerState |
     return null;
   }
 
-  const expandedTitleTabIds: string[] = [];
-  if ('expandedTitleTabIds' in data) {
-    if (!Array.isArray(data.expandedTitleTabIds)) return null;
-
-    const seenExpandedTabIds = new Set<string>();
-    for (const tabId of data.expandedTitleTabIds) {
-      if (
-        !isNonBlankString(tabId)
-        || !openTabIds.has(tabId)
-        || seenExpandedTabIds.has(tabId)
-      ) {
-        return null;
+  // Legacy `expandedTitleTabIds` entries are explicit title choices; explicit overrides win.
+  const tabDisplayOverrides: Record<string, TabDisplayOverride> = {};
+  const legacyTabIds = Array.isArray(data.expandedTitleTabIds) ? data.expandedTitleTabIds : [];
+  for (const tabId of legacyTabIds) {
+    if (typeof tabId === 'string' && openTabIds.has(tabId)) tabDisplayOverrides[tabId] = 'title';
+  }
+  if (isRecord(data.tabDisplayOverrides)) {
+    for (const [tabId, override] of Object.entries(data.tabDisplayOverrides)) {
+      if (openTabIds.has(tabId) && (override === 'title' || override === 'number')) {
+        tabDisplayOverrides[tabId] = override;
       }
-      expandedTitleTabIds.push(tabId);
-      seenExpandedTabIds.add(tabId);
     }
   }
 
   return {
     openTabs,
     activeTabId: data.activeTabId,
-    ...(expandedTitleTabIds.length > 0 ? { expandedTitleTabIds } : {}),
+    ...(Object.keys(tabDisplayOverrides).length > 0 ? { tabDisplayOverrides } : {}),
   };
 }

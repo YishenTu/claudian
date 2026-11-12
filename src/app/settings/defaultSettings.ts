@@ -21,6 +21,7 @@ export const DEFAULT_CLAUDIAN_SETTINGS: ClaudianSettings = {
   enableAutoTitleGeneration: true,
   titleGenerationLocale: '',
   titleGenerationModel: '',
+  showTabTitlesByDefault: false,
 
   excludedTags: [],
   mediaFolder: '',

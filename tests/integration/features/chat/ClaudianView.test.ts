@@ -1,7 +1,9 @@
 /** @vitest-environment jsdom */
 
 import { createHarness as createExecutionHarness, deferred } from '@test/helpers/ChatExecutionHarness';
+import { claudeCatalogFixture } from '@test/helpers/claudeModels';
 import { holdResponse } from '@test/helpers/ConversationPorts';
+import { DesktopVault } from '@test/helpers/core/DesktopVault';
 import { useNextTaskAnimationFrames } from '@test/helpers/dom/animationFrames';
 import { triggerResize } from '@test/helpers/dom/ResizeObserver';
 import { createFeatureHostFixture } from '@test/helpers/FeatureHostFixture';
@@ -13,15 +15,23 @@ import { testDate } from '@test/helpers/testClock';
 import { fireEvent, waitFor, within } from '@testing-library/dom';
 import { Menu, Notice, Platform, Scope, TFile } from 'obsidian';
 
+import { ConversationRepository } from '@/app/conversations/ConversationRepository';
+import { ConversationService } from '@/app/conversations/ConversationService';
 import { ChatModelSelectionCoordinator } from '@/app/settings/ChatModelSelectionCoordinator';
+import { PinnedLinkedContentPathCoordinator } from '@/app/settings/PinnedLinkedContentPathCoordinator';
+import { SettingsCoordinator } from '@/app/settings/SettingsCoordinator';
+import { ConversationPersistenceStore } from '@/app/storage/ConversationPersistenceStore';
 import { ClaudianViews } from '@/composition/ClaudianViews';
 import { BUILT_IN_COMMANDS } from '@/core/commands/builtInCommands';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
+import { ProviderSettingsCoordinator } from '@/core/providers/ProviderSettingsCoordinator';
+import { ConversationTitleGeneration } from '@/features/chat/conversation/ConversationTitleGeneration';
 import { SessionMessagingService } from '@/features/chat/session-messaging/SessionMessagingService';
 import { TabManager } from '@/features/chat/tabs/TabManager';
 import type { TabLayoutPolicy } from '@/features/chat/tabs/types';
 import { ViewerSlot } from '@/features/chat/tabs/ViewerSlot';
 import { createChatTabCommands } from '@/features/chat/workspace/ChatTabCommands';
+import { ChatViewPublisher } from '@/features/chat/workspace/ChatViewPublisher';
 import { setLocale } from '@/i18n/i18n';
 
 beforeEach(() => {
@@ -35,11 +45,12 @@ const openedViews: Awaited<ReturnType<typeof createClaudianView>>[] = [];
 
 async function createView(options: {
   width?: number;
+  fixture?: Awaited<ReturnType<typeof createFeatureHostFixture>>;
   host?: Omit<NonNullable<NonNullable<Parameters<typeof createSessionBrowserHost>[0]>['host']>, 'fixture' | 'app'>;
 } = {}) {
   const records = ['one', 'two'].map(id => conversationRecord(id));
   const { settings, ...overrides } = options.host ?? {};
-  const fixture = await createFeatureHostFixture({ settings: { restoreTabsOnStartup: true, enableAutoTitleGeneration: false, ...settings } });
+  const fixture = options.fixture ?? await createFeatureHostFixture({ settings: { restoreTabsOnStartup: true, enableAutoTitleGeneration: false, ...settings } });
   const { plugin, pool } = await createSessionBrowserHost({ conversations: records.map(record => ({ ...record, messageCount: 0, preview: '' })), host: {
     fixture,
     chatModelSelection: new ChatModelSelectionCoordinator(fixture.coordinator),
@@ -107,6 +118,26 @@ describe('ClaudianView real tab lifecycle', () => {
     // Later host deliveries cannot replace already-admitted membership.
     await view.setState(workspaceState(['stale']), { history: false });
     expect(manager.getTabCount()).toBe(2);
+  });
+
+  it('keeps tab display overrides on tab ids through reorder, save and reopen', async () => {
+    const fixture = await createFeatureHostFixture({ settings: { restoreTabsOnStartup: true, enableAutoTitleGeneration: false } });
+    const { view, manager, contentEl } = await openView({ fixture }, {
+      tabWorkspace: { ...workspaceState(['a', 'b', 'c']).tabWorkspace, tabDisplayOverrides: { a: 'number', c: 'title' } },
+    });
+    const badges = () => within(contentEl.querySelector<HTMLElement>('.claudian-tab-badges')!).getAllByRole('button').map(badge => badge.textContent);
+    await waitFor(() => expect(badges()).toEqual(['1', '2', 'New Chat']));
+
+    manager.moveTab('a', null);
+    expect(manager.getTabIdentities().map(tab => tab.id)).toEqual(['b', 'c', 'a']);
+    await waitFor(() => expect(badges()).toEqual(['1', 'New Chat', '3']));
+
+    const saved = view.getState();
+    await view.onClose();
+    await view.setState(saved, { history: false });
+    await view.onOpen();
+    expect((view.getTabManager() as TabManager).getTabIdentities().map(tab => tab.id)).toEqual(['b', 'c', 'a']);
+    await waitFor(() => expect(badges()).toEqual(['1', 'New Chat', '3']));
   });
 
   it('abandons deferred metadata restoration when the view closes', async () => {
@@ -581,6 +612,87 @@ describe('ClaudianView tab controls and layout', () => {
     expect(markFilesDirty).toHaveBeenCalledTimes(1);
     await previousManager.destroy();
     expect(vi.mocked(plugin.app.vault.offref).mock.calls.map(([ref]) => (ref as unknown as { name: string }).name)).toEqual(expect.arrayContaining(['create', 'delete', 'modify', 'rename']));
+  });
+
+  it('shows titles in every mounted view only after the tab-title default is committed', async () => {
+    const fixture = await createFeatureHostFixture({ settings: { restoreTabsOnStartup: true, enableAutoTitleGeneration: false } });
+    const first = await openView({ fixture }, workspaceState(['a-1', 'a-2']));
+    const second = await openView({ fixture }, workspaceState(['b-1', 'b-2']));
+    const views = [first, second];
+    const publisher = new ChatViewPublisher({
+      views: { getAllViews: () => views.map(({ view }) => view) },
+      zenMode: { reconcile() {} }, inactiveSessions: { request() {} }, hasLoadedAllSessionMetadata: () => true,
+    });
+    const coordinator = new SettingsCoordinator(fixture.settings, async () => undefined,
+      (current, previous) => publisher.publishSettings(current, previous));
+    const tabButtons = ({ contentEl }: typeof first) => within(contentEl.querySelector<HTMLElement>('.claudian-tab-badges')!).getAllByRole('button');
+    const badges = (view: typeof first) => tabButtons(view).map(badge => badge.textContent);
+    await waitFor(() => views.forEach(view => expect(badges(view)).toEqual(['1', '2'])));
+
+    await coordinator.mutate(draft => { draft.userName = 'Unrelated'; });
+    await waitFor(() => views.forEach(view => expect(badges(view)).toEqual(['1', '2'])));
+
+    await coordinator.mutate(draft => { draft.showTabTitlesByDefault = true; });
+    await waitFor(() => views.forEach(view => expect(badges(view)).toEqual(['New Chat', 'New Chat'])));
+
+    fireEvent.dblClick(tabButtons(first)[0]);
+    await waitFor(() => expect(badges(first)).toEqual(['1', 'New Chat']));
+    expect(badges(second)).toEqual(['New Chat', 'New Chat']);
+
+    await coordinator.mutate(draft => { draft.showTabTitlesByDefault = false; });
+    await waitFor(() => views.forEach(view => expect(badges(view)).toEqual(['1', '2'])));
+  });
+
+  it('shows the fallback and then the generated title on a title-showing tab through the real title chain', async () => {
+    const fixture = await createFeatureHostFixture({ settings: {
+      restoreTabsOnStartup: true, enableAutoTitleGeneration: true, titleGenerationModel: 'haiku',
+      showTabTitlesByDefault: true, providerConfigs: { claude: claudeCatalogFixture(['haiku']) },
+    } });
+    const vault = await DesktopVault.create();
+    onTestFinished(() => vault.dispose());
+    const repository = new ConversationRepository({
+      providers: ProviderRegistry, providerSettings: ProviderSettingsCoordinator,
+      getSettings: () => fixture.settings, getVaultPath: () => vault.root,
+      persistence: new ConversationPersistenceStore(vault.files, `device-${'a'.repeat(64)}`),
+      onConversationDeleted: async () => undefined,
+    });
+    repository.replaceAll([conversationRecord('one', { title: '' }), conversationRecord('two')]);
+    const views: Awaited<ReturnType<typeof createView>>['view'][] = [];
+    const publisher = new ChatViewPublisher({
+      views: { getAllViews: () => views }, zenMode: { reconcile() {} },
+      inactiveSessions: { request() {} }, hasLoadedAllSessionMetadata: () => true,
+    });
+    const conversations = new ConversationService({
+      repository, sessionMetadata: { ensureLoaded: async () => undefined, ensureAllLoaded: async () => undefined },
+      pinnedLinkedContentPaths: new PinnedLinkedContentPathCoordinator(fixture.coordinator), nativeSessionArchives: { sync: async () => undefined },
+      onConversationListChanged: () => publisher.notifyConversationListChanged(),
+    });
+    const generation = deferred<void>();
+    const titles = new ConversationTitleGeneration({
+      host: {
+        settings: fixture.settings,
+        getConversationById: id => repository.getById(id),
+        renameConversation: (id, title) => conversations.renameConversation(id, title),
+        updateConversation: (id, patch) => conversations.updateConversation(id, patch),
+        completeConversationTitleGeneration: (id, expected, title) => conversations.completeConversationTitleGeneration(id, expected, title),
+      },
+      getService: () => ({
+        async generateTitle(id, _content, callback) { await generation.promise; await callback(id, { success: true, title: 'Generated name' }); },
+        cancel() {},
+      }),
+    });
+    const opened = await openView({ fixture, host: { getConversationSummary: id => repository.getSummary(id) } }, {
+      tabWorkspace: { version: 1, activeTabId: 't-2', openTabs: [{ tabId: 't-1', conversationId: 'one' }, { tabId: 't-2', conversationId: 'two' }] },
+    });
+    views.push(opened.view);
+    const badges = () => within(opened.contentEl.querySelector<HTMLElement>('.claudian-tab-badges')!).getAllByRole('button').map(badge => badge.textContent);
+    await waitFor(() => expect(badges()).toEqual(['New Chat', 'two']));
+
+    const first = titles.titleFirstTurn('one', { id: 'm', role: 'user', content: 'Explain the note. Please.', timestamp: testDate().getTime() });
+    await waitFor(() => expect(badges()).toEqual(['Explain the note', 'two']));
+    generation.resolve();
+    await first;
+    await waitFor(() => expect(badges()).toEqual(['Generated name', 'two']));
   });
 });
 

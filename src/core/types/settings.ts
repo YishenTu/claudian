@@ -120,6 +120,8 @@ export interface ClaudianSettings {
   enableAutoTitleGeneration: boolean;
   titleGenerationLocale: string;
   titleGenerationModel: string;
+  /** Chat tabs show titles instead of numbers unless a tab overrides it. */
+  showTabTitlesByDefault: boolean;
 
   // Content settings
   excludedTags: string[];

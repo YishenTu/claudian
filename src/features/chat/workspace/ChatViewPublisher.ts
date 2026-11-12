@@ -23,6 +23,7 @@ export class ChatViewPublisher {
       try { refresh(); } catch (error) { errors.push(error); }
     };
     const timestampsChanged = settings.showMessageTimestamps !== previous.showMessageTimestamps;
+    const tabTitlesChanged = settings.showTabTitlesByDefault !== previous.showTabTitlesByDefault;
     const layoutChanged = settings.enableDualPane !== previous.enableDualPane || settings.dualPaneSide !== previous.dualPaneSide;
     const commandsChanged = JSON.stringify(settings.hiddenCommands) !== JSON.stringify(previous.hiddenCommands);
     const contextChanged = JSON.stringify(settings.customContextLimits) !== JSON.stringify(previous.customContextLimits);
@@ -31,9 +32,10 @@ export class ChatViewPublisher {
       || settings.sessionManagerSort !== previous.sessionManagerSort
       || JSON.stringify(settings.projectOrder) !== JSON.stringify(previous.projectOrder)
       || JSON.stringify(settings.expandedProjectIds) !== JSON.stringify(previous.expandedProjectIds);
-    if (timestampsChanged || layoutChanged || commandsChanged || contextChanged || sessionsChanged) {
+    if (timestampsChanged || tabTitlesChanged || layoutChanged || commandsChanged || contextChanged || sessionsChanged) {
       for (const view of this.deps.views.getAllViews()) {
         if (timestampsChanged) publish(() => view.refreshMessageTimestamps());
+        if (tabTitlesChanged) publish(() => view.refreshTabTitles());
         if (layoutChanged) publish(() => view.refreshDualPaneLayout());
         if (commandsChanged) publish(() => view.updateHiddenCommands());
         if (contextChanged) publish(() => view.refreshModelSelector());

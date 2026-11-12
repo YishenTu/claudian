@@ -10,6 +10,7 @@ function createMockCallbacks(): TabBarCallbacks {
     onTabClick: vi.fn(),
     onTabClose: vi.fn(),
     onTabLabelChange: vi.fn(),
+    getShowTitlesByDefault: () => false,
     onTabMove: vi.fn(),
   };
 }
@@ -46,12 +47,12 @@ describe('TabBar', () => {
       const callbacks = createMockCallbacks();
       const tabBar = new TabBar(containerEl, callbacks);
 
-      tabBar.setExpandedTitleTabIds(['tab-1']);
+      tabBar.setDisplayOverrides({ 'tab-1': 'title' });
       tabBar.update([createTabBarItem({ id: 'tab-1', index: 1, title: 'Restored Title' })]);
 
       expect(containerEl.children[0].textContent).toBe('Restored Title');
       expect(containerEl.children[0].getAttribute('data-title-expanded')).toBe('true');
-      expect(tabBar.getExpandedTitleTabIds()).toEqual(['tab-1']);
+      expect(tabBar.getDisplayOverrides()).toEqual({ 'tab-1': 'title' });
     });
 
     it('should truncate expanded title labels with a literal ellipsis suffix', () => {

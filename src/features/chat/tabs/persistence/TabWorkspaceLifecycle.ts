@@ -16,13 +16,13 @@ export type TabWorkspaceTabManager = Pick<
   'getPersistedState' | 'restoreState' | 'beginShutdown' | 'drainForShutdownSnapshot' | 'sealShutdownSnapshot'
 >;
 
-type TabWorkspaceTitleState = Pick<TabBar, 'getExpandedTitleTabIds'>;
+type TabWorkspaceTitleState = Pick<TabBar, 'getDisplayOverrides'>;
 type TabWorkspacePersistence = Pick<TabStatePersistenceCoordinator, 'update' | 'flush'>;
 
 export interface TabWorkspaceLifecycleHost {
   getPlugin(): Pick<ChatFeatureHost, 'app' | 'settings' | 'ensureConversationMetadataLoaded'>;
   getTabManager(): TabWorkspaceTabManager | null;
-  getTabBar(): Pick<TabBar, 'getExpandedTitleTabIds' | 'setExpandedTitleTabIds'> | null;
+  getTabBar(): Pick<TabBar, 'getDisplayOverrides' | 'setDisplayOverrides'> | null;
   /** Publishes presentation once the restored workspace owns the view lifecycle. */
   onInitialized(): void;
 }
@@ -303,7 +303,7 @@ export class TabWorkspaceLifecycle {
     if (!isStillCurrent()) return;
 
     const tabBar = this.host.getTabBar();
-    tabBar?.setExpandedTitleTabIds(restorePlan.expandedTitleTabIds ?? []);
+    tabBar?.setDisplayOverrides(restorePlan.tabDisplayOverrides ?? {});
     this.pendingState = null;
     this.persist(tabManager, this.persistence);
   }
@@ -329,11 +329,12 @@ export class TabWorkspaceLifecycle {
     if (state.openTabs.length > 0 && state.activeTabId === null) return null;
 
     const openTabIds = new Set(state.openTabs.map(tab => tab.tabId));
-    const expandedTitleTabIds = (tabBar?.getExpandedTitleTabIds() ?? [])
-      .filter(tabId => openTabIds.has(tabId));
+    const tabDisplayOverrides = Object.fromEntries(
+      Object.entries(tabBar?.getDisplayOverrides() ?? {}).filter(([tabId]) => openTabIds.has(tabId)),
+    );
     return {
       ...state,
-      ...(expandedTitleTabIds.length > 0 ? { expandedTitleTabIds } : {}),
+      ...(Object.keys(tabDisplayOverrides).length > 0 ? { tabDisplayOverrides } : {}),
     };
   }
 }

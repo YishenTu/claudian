@@ -758,6 +758,10 @@
       "name": "Prompt système personnalisé",
       "desc": "Instructions supplémentaires ajoutées au prompt système par défaut"
     },
+    "showTabTitlesByDefault": {
+      "name": "Afficher les titres des onglets par défaut",
+      "desc": "Affiche les titres des conversations au lieu des numéros sur les onglets de chat. Chaque onglet peut toujours revenir à un numéro."
+    },
     "autoTitle": {
       "name": "Générer automatiquement les titres de conversation",
       "desc": "Génère automatiquement les titres de conversation après le premier message de l'utilisateur."

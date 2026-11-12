@@ -1,6 +1,6 @@
 import { Menu } from 'obsidian';
 
-import { normalizeTabLabel } from '@/core/bootstrap/tabManagerState';
+import { normalizeTabLabel, type TabDisplayOverride } from '@/core/bootstrap/tabManagerState';
 import type { TabId } from '@/features/chat/ChatFeatureHost';
 import type { TabBarItem } from '@/features/chat/tabs/ChatTab';
 import { scheduleAnimationFrame } from '@/features/chat/utils/animationFrame';
@@ -23,6 +23,9 @@ export interface TabBarCallbacks {
 
   /** Called when the user renames a tab (a normalized label) or resets its name (null). */
   onTabLabelChange: (tabId: TabId, label: string | null) => void;
+
+  /** Whether tabs without an explicit display choice show their title instead of a number. */
+  getShowTitlesByDefault: () => boolean;
 
   /** Called when the user moves a tab before another tab, or to the end (null). */
   onTabMove: (tabId: TabId, beforeTabId: TabId | null) => void;
@@ -53,7 +56,7 @@ interface TabLabelEditor {
 export class TabBar {
   private containerEl: HTMLElement;
   private callbacks: TabBarCallbacks;
-  private expandedTitleTabIds = new Set<TabId>();
+  private displayOverrides = new Map<TabId, TabDisplayOverride>();
   private items: TabBarItem[] = [];
   private badgeEls = new Map<TabId, HTMLElement>();
   private labelEditor: TabLabelEditor | null = null;
@@ -144,12 +147,12 @@ export class TabBar {
     this.restoreScrollPosition();
   }
 
-  getExpandedTitleTabIds(): TabId[] {
-    return Array.from(this.expandedTitleTabIds);
+  getDisplayOverrides(): Record<TabId, TabDisplayOverride> {
+    return Object.fromEntries(this.displayOverrides);
   }
 
-  setExpandedTitleTabIds(tabIds: readonly TabId[]): void {
-    this.expandedTitleTabIds = new Set(tabIds);
+  setDisplayOverrides(overrides: Readonly<Record<TabId, TabDisplayOverride>>): void {
+    this.displayOverrides = new Map(Object.entries(overrides));
   }
 
   /** Replaces the tab's badge with an inline name input. Returns false for an unknown tab. */
@@ -305,7 +308,7 @@ export class TabBar {
   #applyBadgeDisplay(badgeEl: HTMLElement, item: TabBarItem): void {
     // Expanded badges show the custom label when set, otherwise the conversation title.
     const label = item.label;
-    const isTitleExpanded = this.expandedTitleTabIds.has(item.id);
+    const isTitleExpanded = this.#isTitleShown(item.id);
     badgeEl.textContent = isTitleExpanded
       ? label ?? this.#truncateExpandedTitle(item.title)
       : String(item.index);
@@ -333,7 +336,7 @@ export class TabBar {
         .setIcon('rotate-ccw')
         .onClick(() => this.callbacks.onTabLabelChange(item.id, null)));
     }
-    const isTitleExpanded = this.expandedTitleTabIds.has(item.id);
+    const isTitleExpanded = this.#isTitleShown(item.id);
     menu.addItem(menuItem => menuItem
       .setTitle(isTitleExpanded ? t('chat.tabNavigation.showNumber') : hasLabel ? t('chat.tabNavigation.showName') : t('chat.tabNavigation.showTitle'))
       .setIcon(isTitleExpanded ? 'hash' : 'type')
@@ -385,8 +388,8 @@ export class TabBar {
       this.items[itemIndex] = labelled;
     }
     // Reveal a newly saved name; double click still returns the badge to its number.
-    const revealsLabel = changed && label !== null && !this.expandedTitleTabIds.has(editor.tabId);
-    if (revealsLabel) this.expandedTitleTabIds.add(editor.tabId);
+    const revealsLabel = changed && label !== null && !this.#isTitleShown(editor.tabId);
+    if (revealsLabel) this.displayOverrides.set(editor.tabId, 'title');
     if (holdSlot && item) {
       editor.isHeld = true;
       editor.inputEl.readOnly = true;
@@ -461,7 +464,7 @@ export class TabBar {
     this.containerEl.removeClass('claudian-tab-badges');
     this.containerEl.removeEventListener('scroll', this.handleScroll);
     this.#sorter.dispose();
-    this.expandedTitleTabIds.clear();
+    this.displayOverrides.clear();
     this.badgeEls.clear();
     this.items = [];
     this.lastKnownScrollLeft = 0;
@@ -491,22 +494,24 @@ export class TabBar {
 
   #pruneDisplayState(items: TabBarItem[]): void {
     const visibleTabIds = new Set(items.map(item => item.id));
-    for (const tabId of this.expandedTitleTabIds) {
+    for (const tabId of this.displayOverrides.keys()) {
       if (!visibleTabIds.has(tabId)) {
-        this.expandedTitleTabIds.delete(tabId);
+        this.displayOverrides.delete(tabId);
       }
     }
   }
 
   #toggleBadgeTitle(tabId: TabId): void {
-    if (this.expandedTitleTabIds.has(tabId)) {
-      this.expandedTitleTabIds.delete(tabId);
-    } else {
-      this.expandedTitleTabIds.add(tabId);
-    }
+    this.displayOverrides.set(tabId, this.#isTitleShown(tabId) ? 'number' : 'title');
 
     this.#refreshBadge(tabId);
     this.callbacks.onDisplayStateChanged?.();
+  }
+
+  /** An explicit choice wins; otherwise the global default applies. */
+  #isTitleShown(tabId: TabId): boolean {
+    const override = this.displayOverrides.get(tabId);
+    return override === undefined ? this.callbacks.getShowTitlesByDefault() : override === 'title';
   }
 
   /** Re-applies display state to the tab's current badge; menus may outlive the badge they opened on. */

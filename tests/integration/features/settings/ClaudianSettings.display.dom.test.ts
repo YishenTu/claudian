@@ -126,6 +126,16 @@ it.each([
   expect((await h.storage.load())[key]).toBe(false);
 });
 
+it.each([false, true])('persists the tab-title default, off by default, with automatic title generation %s', async enableAutoTitleGeneration => {
+  const h = await createSettings({ enableAutoTitleGeneration });
+  expect(h.settings.showTabTitlesByDefault).toBe(false);
+  const toggle = within(h.container).getByRole('switch', { name: t('settings.showTabTitlesByDefault.name') });
+  fireEvent.click(toggle);
+  await controlChangeSettled(toggle);
+  expect(h.settings.showTabTitlesByDefault).toBe(true);
+  expect((await h.storage.load()).showTabTitlesByDefault).toBe(true);
+});
+
 it('publishes timestamp preferences only after persistence completes', async () => {
   let finish!: () => void;
   const gate = new Promise<void>(resolve => { finish = resolve; });
