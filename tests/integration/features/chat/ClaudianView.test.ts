@@ -120,24 +120,27 @@ describe('ClaudianView real tab lifecycle', () => {
     expect(manager.getTabCount()).toBe(2);
   });
 
-  it('keeps tab display overrides on tab ids through reorder, save and reopen', async () => {
-    const fixture = await createFeatureHostFixture({ settings: { restoreTabsOnStartup: true, enableAutoTitleGeneration: false } });
+  it.each([
+    { showTabTitlesByDefault: false, initial: ['1', '2', 'New Chat'], reordered: ['1', 'New Chat', '3'] },
+    { showTabTitlesByDefault: true, initial: ['1', 'New Chat', 'New Chat'], reordered: ['New Chat', 'New Chat', '3'] },
+  ])('keeps tab display overrides on tab ids through reorder, save and reopen when titles by default is $showTabTitlesByDefault', async ({ showTabTitlesByDefault, initial, reordered }) => {
+    const fixture = await createFeatureHostFixture({ settings: { restoreTabsOnStartup: true, enableAutoTitleGeneration: false, showTabTitlesByDefault } });
     const { view, manager, contentEl } = await openView({ fixture }, {
       tabWorkspace: { ...workspaceState(['a', 'b', 'c']).tabWorkspace, tabDisplayOverrides: { a: 'number', c: 'title' } },
     });
     const badges = () => within(contentEl.querySelector<HTMLElement>('.claudian-tab-badges')!).getAllByRole('button').map(badge => badge.textContent);
-    await waitFor(() => expect(badges()).toEqual(['1', '2', 'New Chat']));
+    await waitFor(() => expect(badges()).toEqual(initial));
 
     manager.moveTab('a', null);
     expect(manager.getTabIdentities().map(tab => tab.id)).toEqual(['b', 'c', 'a']);
-    await waitFor(() => expect(badges()).toEqual(['1', 'New Chat', '3']));
+    await waitFor(() => expect(badges()).toEqual(reordered));
 
     const saved = view.getState();
     await view.onClose();
     await view.setState(saved, { history: false });
     await view.onOpen();
     expect((view.getTabManager() as TabManager).getTabIdentities().map(tab => tab.id)).toEqual(['b', 'c', 'a']);
-    await waitFor(() => expect(badges()).toEqual(['1', 'New Chat', '3']));
+    await waitFor(() => expect(badges()).toEqual(reordered));
   });
 
   it('abandons deferred metadata restoration when the view closes', async () => {
