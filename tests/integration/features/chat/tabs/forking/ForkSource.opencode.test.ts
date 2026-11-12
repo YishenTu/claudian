@@ -15,7 +15,7 @@ function writeNativeOpencode(root: string, options: { version: string; failFork?
   const diag = JSON.stringify(path.join(root, 'diag.log'));
   appendFileSync(cli, `
 ;(() => { const f = require('fs'); const d = (e) => f.appendFileSync(${diag}, JSON.stringify({ e, pid: process.pid, argv: process.argv.slice(2).join(' '), t: Date.now() }) + '\\n');
-d('boot'); process.stdin.on('end', () => d('stdin-end')); process.on('exit', () => d('exit'));
+d('boot exec=' + process.execPath + ' uptime=' + Math.round(process.uptime() * 1000)); process.stdin.on('end', () => d('stdin-end')); process.on('exit', () => d('exit'));
 const h = require('http'); const o = h.Server.prototype.close; h.Server.prototype.close = function (...a) { d('server-close-called'); this.on('close', () => d('server-closed')); return o.apply(this, a); };
 setInterval(() => { const hs = process._getActiveHandles().map(x => x.constructor.name); d('alive ' + hs.join(',')); }, 500).unref(); })();
 `);
