@@ -828,7 +828,9 @@
       "ariaDescription": "Libellé personnalisé affiché dans le sélecteur de modèle. Laissez vide pour utiliser la valeur par défaut."
     },
     "customContextLimits": {
-      "invalid": "Format invalide. Utilisez : 256k, 1m ou nombre exact (1000-10000000)."
+      "invalid": "Format invalide. Utilisez : 256k, 1m ou nombre exact (1000-10000000).",
+      "saveFailed": "Impossible d’enregistrer la fenêtre de contexte. Réessayez.",
+      "savedRefreshFailed": "Fenêtre de contexte enregistrée, mais l’actualisation des paramètres a échoué."
     },
     "enableChrome": {
       "name": "Activer l'extension Chrome",

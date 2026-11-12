@@ -828,7 +828,9 @@
       "ariaDescription": "Custom label shown in the model selector. Leave empty to use the default."
     },
     "customContextLimits": {
-      "invalid": "Invalid format. Use: 256k, 1m, or exact count (1000-10000000)."
+      "invalid": "Invalid format. Use: 256k, 1m, or exact count (1000-10000000).",
+      "saveFailed": "Could not save context limit. Try again.",
+      "savedRefreshFailed": "Context limit was saved, but settings refresh failed."
     },
     "enableChrome": {
       "name": "Enable Chrome extension",

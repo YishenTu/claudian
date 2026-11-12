@@ -828,7 +828,9 @@
       "ariaDescription": "Etiqueta personalizada que se muestra en el selector de modelos. Déjalo vacío para usar la predeterminada."
     },
     "customContextLimits": {
-      "invalid": "Formato inválido. Use: 256k, 1m o número exacto (1000-10000000)."
+      "invalid": "Formato inválido. Use: 256k, 1m o número exacto (1000-10000000).",
+      "saveFailed": "No se pudo guardar la ventana de contexto. Inténtalo de nuevo.",
+      "savedRefreshFailed": "La ventana de contexto se guardó, pero no se pudo actualizar la configuración."
     },
     "enableChrome": {
       "name": "Habilitar extensión de Chrome",

@@ -828,7 +828,9 @@
       "ariaDescription": "显示在模型选择器中的自定义标签。留空则使用默认值。"
     },
     "customContextLimits": {
-      "invalid": "格式无效。使用：256k、1m 或精确数量（1000-10000000）。"
+      "invalid": "格式无效。使用：256k、1m 或精确数量（1000-10000000）。",
+      "saveFailed": "无法保存上下文窗口，请重试。",
+      "savedRefreshFailed": "上下文窗口已保存，但刷新设置失败。"
     },
     "enableChrome": {
       "name": "启用 Chrome 扩展",

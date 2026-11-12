@@ -19,13 +19,15 @@ import { getAvailableLocales, getLocaleDisplayName, setLocale, t } from '@/i18n/
 import type { Locale } from '@/i18n/types';
 import { createProviderIconSvg } from '@/shared/icons';
 import { AccessibleSetting } from '@/shared/settings/AccessibleSetting';
-import { bindCommittedControl } from '@/shared/settings/CommittedControl';
+import { bindCommittedControl, type CommittedControlNotices } from '@/shared/settings/CommittedControl';
 import { formatContextLimit, parseContextLimit } from '@/shared/settings/contextLimit';
 import { DebouncedSettingsWriter } from '@/shared/settings/DebouncedSettingsWriter';
 import { renderEnvironmentSettingsSection } from '@/shared/settings/EnvironmentSettingsSection';
 import { frameSettingsGroups } from '@/shared/settings/SettingsGroups';
 
 type SettingsTabId = 'general' | 'providers' | 'skills';
+
+let nextContextValidationId = 0;
 
 /** The shared host plus the capabilities of panels this tab renders. */
 export type SettingsFeatureHost = FeatureHost & SkillsSettingsHost;
@@ -733,7 +735,12 @@ export class ClaudianSettingTab extends PluginSettingTab {
       });
       inputEl.setAttribute('aria-label', `Context window for ${modelId}`);
 
-      const validationEl = inputWrapper.createDiv({ cls: 'claudian-context-limit-validation claudian-hidden' });
+      const validationEl = inputWrapper.createDiv({
+        cls: 'claudian-context-limit-validation claudian-hidden',
+        attr: { id: `claudian-context-validation-${++nextContextValidationId}`, role: 'alert' },
+      });
+      inputEl.setAttribute('aria-describedby', validationEl.id);
+      inputEl.setAttribute('aria-invalid', 'false');
 
       const saveAlias = async (): Promise<void> => {
         const draft = aliasInputEl.value;
@@ -757,40 +764,47 @@ export class ClaudianSettingTab extends PluginSettingTab {
         }
       };
 
-      const saveContextLimit = async (): Promise<void> => {
-        const trimmed = inputEl.value.trim();
-
-        if (!trimmed) {
-          validationEl.toggleClass('claudian-hidden', true);
-          inputEl.classList.remove('claudian-input-error');
-        } else {
-          const parsed = parseContextLimit(trimmed);
-          if (parsed === null) {
-            validationEl.setText(t('settings.customContextLimits.invalid'));
-            validationEl.toggleClass('claudian-hidden', false);
-            inputEl.classList.add('claudian-input-error');
-            return;
-          }
-
-          validationEl.toggleClass('claudian-hidden', true);
-          inputEl.classList.remove('claudian-input-error');
-        }
-        await this.host.mutateSettings((settings) => {
-          settings.customContextLimits ??= {};
-          if (!trimmed) {
-            delete settings.customContextLimits[modelId];
-          } else {
-            settings.customContextLimits = Object.fromEntries([
-              ...Object.entries(settings.customContextLimits),
-              [modelId, parseContextLimit(trimmed)!],
-            ]);
-          }
-        });
+      const contextLimitNotices: CommittedControlNotices = {
+        committed: t('settings.customContextLimits.savedRefreshFailed'),
+        rejected: t('settings.customContextLimits.saveFailed'),
       };
+      bindCommittedControl(
+        {
+          setValue(value: string) { inputEl.value = value; },
+          onChange(callback) {
+            inputEl.addEventListener('input', () => { void callback(inputEl.value); });
+          },
+        },
+        () => {
+          const limits = this.host.settings.customContextLimits ?? {};
+          const current = Object.hasOwn(limits, modelId) ? limits[modelId] : undefined;
+          return current ? formatContextLimit(current) : '';
+        },
+        async (raw) => {
+          const trimmed = raw.trim();
+          const parsed = trimmed ? parseContextLimit(trimmed) : null;
+          const message = trimmed && parsed === null ? t('settings.customContextLimits.invalid') : '';
+          validationEl.setText(message);
+          validationEl.toggleClass('claudian-hidden', !message);
+          inputEl.classList.toggle('claudian-input-error', Boolean(message));
+          inputEl.setAttribute('aria-invalid', String(Boolean(message)));
+          if (message) return false;
 
-      inputEl.addEventListener('input', () => {
-        void saveContextLimit();
-      });
+          await this.host.mutateSettings((settings) => {
+            settings.customContextLimits ??= {};
+            if (!trimmed) {
+              delete settings.customContextLimits[modelId];
+            } else {
+              settings.customContextLimits = Object.fromEntries([
+                ...Object.entries(settings.customContextLimits),
+                [modelId, parsed!],
+              ]);
+            }
+          });
+        },
+        undefined,
+        contextLimitNotices,
+      );
       aliasInputEl.addEventListener('blur', () => {
         void saveAlias();
       });
