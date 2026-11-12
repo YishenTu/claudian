@@ -1,7 +1,8 @@
 // @test-ci {"native":true}
 const fs = await import('fs');
 import { execFileSync } from 'node:child_process';
-import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from 'node:fs';
+import { rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import * as path from 'node:path';
 
@@ -38,8 +39,9 @@ describe('enhanced CLI discovery and subprocess PATH', () => {
     }
     Object.assign(process.env, originalEnv);
     setLoginShellPathEntries([]);
-    // Windows can briefly lock the copied executable after it exits.
-    rmSync(directory, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+    // Windows can briefly lock the copied executable after it exits. Only async `rm` retries that:
+    // Node 24's native `rmSync` neither retries "Permission denied" nor waits between attempts on Windows.
+    return rm(directory, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
 
   it.each(['default', 'home fallback', 'XDG_DATA_HOME', 'MISE_DATA_DIR', 'MISE_SHIMS_DIR', 'npm_config_prefix', 'NPM_CONFIG_PREFIX', 'Npm_Config_Prefix', ...(!isWindows ? ['.npm-global', 'empty XDG_DATA_HOME', 'relative XDG_DATA_HOME', 'absolute pi-node XDG_DATA_HOME'] : [])])(
