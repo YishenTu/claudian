@@ -105,6 +105,11 @@ interface PromptRecord {
 
 interface ActiveExecution {
   readonly abortController: AbortController;
+  /**
+   * Until agy echoes this run's prompt, its output is a replay of what agy did between turns (its own replies to
+   * subagent and background-task reports), which the transcript and the automatic-response follower already cover.
+   */
+  awaitingEcho: boolean;
   /** Set once the run starts native work; cancelling before any prompt then retires the process. */
   nativeTouched: boolean;
   /** Prompts sent for this run; only the latest one's response ends it (earlier ones hand off). */
@@ -217,6 +222,7 @@ export class AntigravityExecutionSession implements ProviderExecutionSession, St
     });
     const active: ActiveExecution = {
       abortController: new AbortController(),
+      awaitingEcho: false,
       latestPrompt: 0,
       nativeTouched: false,
       prompts: new Map(),
@@ -358,6 +364,8 @@ export class AntigravityExecutionSession implements ProviderExecutionSession, St
       const blocks = compact
         ? [{ text: `/compact${compact.instructions ? ` ${compact.instructions}` : ''}`, type: 'text' as const }]
         : buildPromptBlocks(active.request, !this.nativeConversationContextEstablished);
+      // agy echoes a prompt's text, but not `/compact` or an image-only prompt.
+      active.awaitingEcho = !compact && hasEchoedText(blocks);
       const promptIndex = this.#sendPrompt(active, owner.native, sessionId, blocks);
       // Consumers treat the first user boundary as the turn's own input; only later ones mark steers. agy's
       // echo of this prompt is not a reliable boundary (`/compact` and images are not echoed).
@@ -670,8 +678,10 @@ export class AntigravityExecutionSession implements ProviderExecutionSession, St
     const active = this.active;
     if (!active || this.#isCancellationRequested(active) || notification.sessionId !== this.providerSessionId) return;
     const update = notification.update as ACPSessionNotification['update'] & { name?: unknown };
+    if (active.awaitingEcho && REPLAYED_UPDATE_KINDS.has(update.sessionUpdate)) return;
     switch (update.sessionUpdate) {
       case 'user_message_chunk':
+        active.awaitingEcho = false;
         // agy echoes prompts it accepts; only a steer's echo marks a new user message (the turn's own
         // boundary is emitted when its prompt is sent).
         if (active.turn.acceptingLiveOutput) active.turn.accept();
@@ -905,6 +915,13 @@ class AntigravityExecutionCancellationError extends Error {
 function readNativeToolName(request: ACPRequestPermissionRequest): string | undefined {
   const name = (request.toolCall as { name?: unknown }).name;
   return typeof name === 'string' && name.trim() ? name.trim() : undefined;
+}
+
+/** Output kinds agy replays from between turns at the start of the next prompt. */
+const REPLAYED_UPDATE_KINDS = new Set(['agent_message_chunk', 'agent_thought_chunk', 'plan', 'tool_call', 'tool_call_update']);
+
+function hasEchoedText(prompt: readonly ACPContentBlock[]): boolean {
+  return prompt.some(block => block.type === 'text' && block.text.trim().replace(/^\/\S+\s*/, '') !== '');
 }
 
 function buildSteerEchoPrefixes(text: string): string[] {

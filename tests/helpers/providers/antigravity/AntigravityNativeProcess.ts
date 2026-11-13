@@ -78,6 +78,11 @@ export class AntigravityNativeProcess {
   readonly resumeRequests: ACPResumeSessionRequest[] = [];
   /** Session ids `session/resume` can read; others fail as agy reports a missing session. */
   readonly knownSessions = new Set<string>(['session-existing']);
+  /**
+   * Output agy produced between turns (its own reply to a subagent or background task). agy streams it again at the
+   * start of the next prompt that starts a turn, before that prompt's echo.
+   */
+  readonly betweenTurnOutput: Array<Record<string, unknown>> = [];
   readonly readyMCPServers = new Map<string, ACPMCPServer[]>();
   /** Resume appends live in this process only and each resume append replaces the previous one. */
   readonly resumeAppends = new Map<string, string>();
@@ -220,6 +225,7 @@ export class AntigravityNativeProcess {
               // echoes the new text only when it injects it (tests emit that echo).
               previous.resolve({ stopReason: 'end_turn' });
             } else {
+              for (const update of this.betweenTurnOutput.splice(0)) this.emit(update, request.sessionId);
               // agy echoes a prompt that starts a turn; slash commands lose their command name.
               const text = request.prompt.filter(block => block.type === 'text').map(block => block.text).join('');
               const echo = text.replace(/^\/\S+/, '');
