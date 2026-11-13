@@ -274,7 +274,9 @@ export class ClaudianView extends ItemView implements ZenModeSource {
       this.tabContentEl,
       this,
       {
-        onTabCreated: () => {
+        onTabCreated: (tab, restored) => {
+          // The setting only decides how new tabs start; restored and open tabs keep their display.
+          if (!restored && this.plugin.settings.showTabTitlesByDefault) this.tabBar?.expandTitles([tab.id]);
           refreshActiveTabPresentationIfInitialized();
           persist();
         },

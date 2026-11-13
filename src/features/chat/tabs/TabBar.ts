@@ -148,8 +148,9 @@ export class TabBar {
     return Array.from(this.expandedTitleTabIds);
   }
 
-  setExpandedTitleTabIds(tabIds: readonly TabId[]): void {
-    this.expandedTitleTabIds = new Set(tabIds);
+  /** Shows these tabs' titles; additive, so tabs created while a workspace restores keep theirs. */
+  expandTitles(tabIds: readonly TabId[]): void {
+    for (const tabId of tabIds) this.expandedTitleTabIds.add(tabId);
   }
 
   /** Replaces the tab's badge with an inline name input. Returns false for an unknown tab. */

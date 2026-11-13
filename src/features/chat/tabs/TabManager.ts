@@ -389,7 +389,7 @@ export class TabManager implements TabManagerInterface {
     if (membership.getActiveTabId() === tab.id) membership.recordCommittedActivation(tab.id);
 
     try {
-      this.callbacks.onTabCreated?.(tab);
+      this.callbacks.onTabCreated?.(tab, restoredIdentity !== undefined);
     } catch {
       // Admission is committed; an observer failure must not retract published membership.
     }

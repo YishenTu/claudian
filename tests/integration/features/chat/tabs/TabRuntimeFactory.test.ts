@@ -907,7 +907,7 @@ describe('Tab provider execution ownership', () => {
       expect(contentChildren[messagesIndex + 1]).toBe(tab!.dom.inputComposerEl);
       expect(tab?.hydrationState).toBe('ready');
       expect(tab?.lifecycleState).toBe('open');
-      expect(onTabCreated).toHaveBeenCalledWith(tab);
+      expect(onTabCreated).toHaveBeenCalledWith(tab, false);
       expect(coordinatorInstances[0].prepare).not.toHaveBeenCalled();
     } finally {
       await manager.destroy();

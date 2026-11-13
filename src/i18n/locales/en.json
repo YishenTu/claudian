@@ -758,6 +758,10 @@
       "name": "Custom system prompt",
       "desc": "Additional instructions appended to the default system prompt"
     },
+    "showTabTitlesByDefault": {
+      "name": "Show tab titles by default",
+      "desc": "New chat tabs show their conversation title instead of a number. Open tabs keep their display, and any tab can still switch."
+    },
     "autoTitle": {
       "name": "Auto-generate conversation titles",
       "desc": "Automatically generate conversation titles after the first user message is sent."

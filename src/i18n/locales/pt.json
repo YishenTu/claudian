@@ -758,6 +758,10 @@
       "name": "Prompt de sistema personalizado",
       "desc": "Instruções adicionais anexadas ao prompt de sistema padrão"
     },
+    "showTabTitlesByDefault": {
+      "name": "Mostrar títulos das abas por padrão",
+      "desc": "As novas abas do chat mostram o título da conversa em vez de um número. As abas abertas mantêm a exibição, e qualquer aba ainda pode alternar."
+    },
     "autoTitle": {
       "name": "Gerar automaticamente títulos de conversa",
       "desc": "Gera automaticamente títulos de conversa após a primeira mensagem do usuário."
