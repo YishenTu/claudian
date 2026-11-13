@@ -40,3 +40,41 @@ describe('Chat type scale', () => {
     }
   });
 });
+
+// Settings provider tabs colour their icons from these tokens; without the light
+// palette Pi and Grok render white on a light background.
+describe('Light theme brand tokens', () => {
+  it.each([
+    '--claudian-brand-neutral',
+    '--claudian-brand-codex',
+    '--claudian-brand-opencode',
+    '--claudian-brand-pi',
+    '--claudian-brand-grok',
+  ])('resolves %s in settings as in chat', (token) => {
+    const style = document.createElement('style');
+    style.textContent = readFileSync(path.resolve('src/style/base/variables.css'), 'utf8');
+    document.head.appendChild(style);
+    document.body.classList.add('theme-light');
+    const chat = document.body.createDiv({ cls: 'claudian-container' });
+    const settings = document.body.createDiv({ cls: 'claudian-settings' });
+    const darkSettings = document.createElement('div');
+    darkSettings.className = 'claudian-settings';
+
+    try {
+      const chatValue = window.getComputedStyle(chat).getPropertyValue(token).trim();
+      document.body.classList.remove('theme-light');
+      document.body.appendChild(darkSettings);
+      const darkValue = window.getComputedStyle(darkSettings).getPropertyValue(token).trim();
+      document.body.classList.add('theme-light');
+
+      expect(chatValue).not.toBe(darkValue);
+      expect(window.getComputedStyle(settings).getPropertyValue(token).trim()).toBe(chatValue);
+    } finally {
+      chat.remove();
+      settings.remove();
+      darkSettings.remove();
+      document.body.classList.remove('theme-light');
+      style.remove();
+    }
+  });
+});
