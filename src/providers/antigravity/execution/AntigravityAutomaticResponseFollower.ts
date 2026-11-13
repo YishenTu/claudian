@@ -30,18 +30,19 @@ export interface AntigravityAutomaticResponseFollowerOptions {
   readonly publish: (message: ChatMessage) => void;
 }
 
-/** A live turn streams its own output over ACP; between turns only the transcript records agy's work. */
-type FollowerPhase =
-  | { readonly kind: 'turn' }
-  | { readonly kind: 'between-turns' }
-  | { readonly kind: 'following'; readonly stopWatching: () => void; quietTimer: number };
+/** Watching the transcript between turns; a live turn streams its own output over ACP. */
+interface Following {
+  readonly stopWatching: () => void;
+  quietTimer: number;
+  rescanTimer?: number;
+}
 
 /**
  * agy answers a subagent's report on its own after `end_turn` and writes that reply only to its transcript. While a
  * subagent is out between turns, this follows the transcript and publishes each such reply once it has ended.
  */
 export class AntigravityAutomaticResponseFollower {
-  #phase: FollowerPhase = { kind: 'turn' };
+  #following: Following | null = null;
   /**
    * The last step each live turn had recorded when its prompt settled, keyed by its user request's step index. agy
    * records steps before streaming them, so later steps were never streamed. Each turn keeps its first boundary.
@@ -61,7 +62,6 @@ export class AntigravityAutomaticResponseFollower {
   #unrecordedTurn = false;
   #scan: Promise<void> | null = null;
   #rescanRequested = false;
-  #rescanTimer: number | undefined;
   #disposed = false;
 
   constructor(private readonly options: AntigravityAutomaticResponseFollowerOptions) {}
@@ -72,7 +72,7 @@ export class AntigravityAutomaticResponseFollower {
 
   /** agy's process, and with it the subagent, must outlive idle release while a reply may still come. */
   get isFollowing(): boolean {
-    return this.#phase.kind === 'following';
+    return this.#following !== null;
   }
 
   /** A live turn launched a subagent, whose report agy may answer after the turn. */
@@ -89,14 +89,12 @@ export class AntigravityAutomaticResponseFollower {
 
   turnStarted(): void {
     this.#stopFollowing();
-    this.#phase = { kind: 'turn' };
   }
 
   /** `prompted` is false for a run that ended before agy received its prompt; it bounds no turn. */
   turnEnded(prompted: boolean): void {
     if (this.#disposed) return;
     this.#stopFollowing();
-    this.#phase = { kind: 'between-turns' };
     // Ordinary turns leave nothing for agy to answer later, so their transcript is not read.
     if (!this.#expectingWork) return;
     if (prompted) this.#unrecordedTurn = true;
@@ -109,37 +107,36 @@ export class AntigravityAutomaticResponseFollower {
   async dispose(): Promise<void> {
     this.#disposed = true;
     this.#stopFollowing();
-    this.#phase = { kind: 'turn' };
     await this.#scan;
   }
 
   #startFollowing(): void {
     const stopWatching = this.#watch();
-    this.#phase = { kind: 'following', quietTimer: window.setTimeout(() => this.#giveUp(), QUIET_LIMIT_MS), stopWatching };
+    this.#following = { quietTimer: window.setTimeout(() => this.#giveUp(), QUIET_LIMIT_MS), stopWatching };
   }
 
   #stopFollowing(): void {
-    window.clearTimeout(this.#rescanTimer);
-    this.#rescanTimer = undefined;
-    const phase = this.#phase;
-    if (phase.kind !== 'following') return;
-    window.clearTimeout(phase.quietTimer);
-    phase.stopWatching();
-    this.#phase = { kind: 'between-turns' };
+    const following = this.#following;
+    if (!following) return;
+    window.clearTimeout(following.quietTimer);
+    window.clearTimeout(following.rescanTimer);
+    following.stopWatching();
+    this.#following = null;
   }
 
+  /** Nothing more is expected until a live turn launches another subagent. */
   #giveUp(): void {
     this.#expectingWork = false;
     this.#stopFollowing();
   }
 
   #onTranscriptChange(): void {
-    const phase = this.#phase;
-    if (phase.kind !== 'following') return;
-    window.clearTimeout(phase.quietTimer);
-    phase.quietTimer = window.setTimeout(() => this.#giveUp(), QUIET_LIMIT_MS);
-    window.clearTimeout(this.#rescanTimer);
-    this.#rescanTimer = window.setTimeout(() => this.#requestScan(), RESCAN_DELAY_MS);
+    const following = this.#following;
+    if (!following) return;
+    window.clearTimeout(following.quietTimer);
+    following.quietTimer = window.setTimeout(() => this.#giveUp(), QUIET_LIMIT_MS);
+    window.clearTimeout(following.rescanTimer);
+    following.rescanTimer = window.setTimeout(() => this.#requestScan(), RESCAN_DELAY_MS);
   }
 
   #requestScan(): void {
@@ -172,7 +169,7 @@ export class AntigravityAutomaticResponseFollower {
       if (boundary && generation === this.#processGeneration) this.#processFirstRequest ??= boundary.userInput;
     }
     // Following belongs to the current process; its own rescan follows a read begun under an earlier one.
-    if (generation !== this.#processGeneration || this.#phase.kind !== 'following') return;
+    if (generation !== this.#processGeneration || !this.#following) return;
     let unfinished = false;
     for (const response of readAntigravityAutomaticResponses(transcript, this.options.sessionId)) {
       if (!this.#isUnstreamed(response) || this.#published.has(response.message.id)) continue;
@@ -185,8 +182,7 @@ export class AntigravityAutomaticResponseFollower {
     }
     if (unfinished) return;
     if (this.#processFirstRequest !== undefined && hasAntigravityOutstandingSubagents(transcript, this.#processFirstRequest)) return;
-    this.#expectingWork = false;
-    this.#stopFollowing();
+    this.#giveUp();
   }
 
   /** Started after the last step its live turn had recorded when that turn's prompt settled. */

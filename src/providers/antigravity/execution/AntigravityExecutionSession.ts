@@ -123,15 +123,10 @@ interface LoadedNativeSession {
   readonly systemPromptAppend: string | undefined;
 }
 
-/** Which agent a process must run to create a session; undefined `agentName` is agy's default agent. */
-interface NativeCreationAgent {
-  readonly agentName: string | undefined;
-}
-
 /** How the process must be launched for this run. */
 interface NativeLaunchRequirement {
-  /** Only for session/new: the agent the new session is created under. */
-  readonly creation?: NativeCreationAgent;
+  /** Only for session/new: the agent the new session is created under; undefined `agentName` is agy's default agent. */
+  readonly creation?: { readonly agentName: string | undefined };
   /** `--dangerously-skip-permissions`, which agy cannot change without restarting the process. */
   readonly skipPermissions: boolean;
 }
