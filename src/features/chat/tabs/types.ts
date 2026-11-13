@@ -200,8 +200,8 @@ export interface TabLayoutPolicy {
  * Callbacks for tab state changes.
  */
 export interface TabManagerCallbacks {
-  /** Called after a newly created tab completes admission. */
-  onTabCreated?: (tab: AssembledTabRuntime) => void;
+  /** Called after a tab runtime completes admission: a new tab, or a restored identity being assembled. */
+  onTabCreated?: (tab: AssembledTabRuntime, restored: boolean) => void;
 
   /** Called immediately after the active tab changes, before async tab loading completes. */
   onActiveTabChanged?: (fromTabId: TabId | null, toTabId: TabId) => void;

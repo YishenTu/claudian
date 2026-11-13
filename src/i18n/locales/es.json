@@ -758,6 +758,10 @@
       "name": "Prompt de sistema personalizado",
       "desc": "Instrucciones adicionales añadidas al prompt de sistema por defecto"
     },
+    "showTabTitlesByDefault": {
+      "name": "Mostrar títulos de pestañas por defecto",
+      "desc": "Las pestañas de chat nuevas muestran el título de la conversación en lugar de un número. Las pestañas abiertas conservan su visualización y cualquier pestaña puede cambiarse."
+    },
     "autoTitle": {
       "name": "Generar automáticamente títulos de conversación",
       "desc": "Genera automáticamente títulos de conversación después del primer mensaje del usuario."

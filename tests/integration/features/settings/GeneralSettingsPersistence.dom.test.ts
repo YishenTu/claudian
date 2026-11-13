@@ -25,6 +25,7 @@ const cases = [
   ['showMessageTimestamps', 'settings.showMessageTimestamps.name', false, true],
   ['deferMathRenderingDuringStreaming', 'settings.deferMathRenderingDuringStreaming.name', true, false],
   ['expandFileEditsByDefault', 'settings.expandFileEditsByDefault.name', false, true],
+  ['showTabTitlesByDefault', 'settings.showTabTitlesByDefault.name', true, false],
   ['enableAutoTitleGeneration', 'settings.autoTitle.name', true, false],
   ['titleGenerationModel', 'settings.titleModel.name', '', 'sonnet'],
   ['titleGenerationLocale', 'settings.titleLanguage.name', '', 'zh-CN'],

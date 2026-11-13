@@ -22,7 +22,7 @@ type TabWorkspacePersistence = Pick<TabStatePersistenceCoordinator, 'update' | '
 export interface TabWorkspaceLifecycleHost {
   getPlugin(): Pick<ChatFeatureHost, 'app' | 'settings' | 'ensureConversationMetadataLoaded'>;
   getTabManager(): TabWorkspaceTabManager | null;
-  getTabBar(): Pick<TabBar, 'getExpandedTitleTabIds' | 'setExpandedTitleTabIds'> | null;
+  getTabBar(): Pick<TabBar, 'getExpandedTitleTabIds' | 'expandTitles'> | null;
   /** Publishes presentation once the restored workspace owns the view lifecycle. */
   onInitialized(): void;
 }
@@ -303,7 +303,7 @@ export class TabWorkspaceLifecycle {
     if (!isStillCurrent()) return;
 
     const tabBar = this.host.getTabBar();
-    tabBar?.setExpandedTitleTabIds(restorePlan.expandedTitleTabIds ?? []);
+    tabBar?.expandTitles(restorePlan.expandedTitleTabIds ?? []);
     this.pendingState = null;
     this.persist(tabManager, this.persistence);
   }

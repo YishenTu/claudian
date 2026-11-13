@@ -35,11 +35,12 @@ const openedViews: Awaited<ReturnType<typeof createClaudianView>>[] = [];
 
 async function createView(options: {
   width?: number;
+  fixture?: Awaited<ReturnType<typeof createFeatureHostFixture>>;
   host?: Omit<NonNullable<NonNullable<Parameters<typeof createSessionBrowserHost>[0]>['host']>, 'fixture' | 'app'>;
 } = {}) {
   const records = ['one', 'two'].map(id => conversationRecord(id));
   const { settings, ...overrides } = options.host ?? {};
-  const fixture = await createFeatureHostFixture({ settings: { restoreTabsOnStartup: true, enableAutoTitleGeneration: false, ...settings } });
+  const fixture = options.fixture ?? await createFeatureHostFixture({ settings: { restoreTabsOnStartup: true, enableAutoTitleGeneration: false, ...settings } });
   const { plugin, pool } = await createSessionBrowserHost({ conversations: records.map(record => ({ ...record, messageCount: 0, preview: '' })), host: {
     fixture,
     chatModelSelection: new ChatModelSelectionCoordinator(fixture.coordinator),
@@ -107,6 +108,32 @@ describe('ClaudianView real tab lifecycle', () => {
     // Later host deliveries cannot replace already-admitted membership.
     await view.setState(workspaceState(['stale']), { history: false });
     expect(manager.getTabCount()).toBe(2);
+  });
+
+  it('keeps restored tab displays and shows titles only on tabs opened while titles are on by default', async () => {
+    const fixture = await createFeatureHostFixture({ settings: { restoreTabsOnStartup: true, enableAutoTitleGeneration: false, showTabTitlesByDefault: true } });
+    const { view, manager, contentEl } = await openView({ fixture }, {
+      tabWorkspace: { ...workspaceState(['a', 'b', 'c']).tabWorkspace, expandedTitleTabIds: ['a', 'b'] },
+    });
+    const badges = () => within(contentEl.querySelector<HTMLElement>('.claudian-tab-badges')!).getAllByRole('button').map(badge => badge.textContent);
+    await waitFor(() => expect(badges()).toEqual(['New Chat', 'New Chat', '3']));
+
+    const created = await view.createNewTab();
+    await waitFor(() => expect(badges()).toEqual(['New Chat', 'New Chat', '3', 'New Chat']));
+    expect(view.getState()).toMatchObject({ tabWorkspace: { expandedTitleTabIds: ['a', 'b', created!.id] } });
+
+    await fixture.coordinator.mutate(draft => { draft.showTabTitlesByDefault = false; });
+    await view.createNewTab();
+    await waitFor(() => expect(badges()).toEqual(['New Chat', 'New Chat', '3', 'New Chat', '5']));
+    expect(manager.getTabCount()).toBe(5);
+  });
+
+  it('shows the title on the first tab of an empty workspace when titles are on by default', async () => {
+    const fixture = await createFeatureHostFixture({ settings: { restoreTabsOnStartup: true, enableAutoTitleGeneration: false, showTabTitlesByDefault: true } });
+    const { view, contentEl } = await openView({ fixture });
+    await view.createNewTab();
+    const badges = () => within(contentEl.querySelector<HTMLElement>('.claudian-tab-badges')!).getAllByRole('button').map(badge => badge.textContent);
+    await waitFor(() => expect(badges()).toEqual(['New Chat', 'New Chat']));
   });
 
   it('abandons deferred metadata restoration when the view closes', async () => {

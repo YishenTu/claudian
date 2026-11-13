@@ -758,6 +758,10 @@
       "name": "Benutzerdefinierter System-Prompt",
       "desc": "Zusätzliche Anweisungen, die an den Standard-System-Prompt angehängt werden"
     },
+    "showTabTitlesByDefault": {
+      "name": "Tab-Titel standardmäßig anzeigen",
+      "desc": "Neue Chat-Tabs zeigen den Konversationstitel statt einer Nummer. Geöffnete Tabs behalten ihre Anzeige, und jeder Tab kann weiterhin umgestellt werden."
+    },
     "autoTitle": {
       "name": "Konversationstitel automatisch generieren",
       "desc": "Generiert automatisch Konversationstitel nach der ersten Nutzernachricht."

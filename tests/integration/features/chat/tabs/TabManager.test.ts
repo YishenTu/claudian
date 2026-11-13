@@ -84,7 +84,7 @@ beforeEach(() => {
       expect.objectContaining({ id: 'committed-tab' }),
     );
 
-    expect(onTabCreated).toHaveBeenCalledWith(expect.objectContaining({ id: 'committed-tab' }));
+    expect(onTabCreated).toHaveBeenCalledWith(expect.objectContaining({ id: 'committed-tab' }), false);
     expect(manager.getAllTabs()).toEqual([
       expect.objectContaining({ id: 'committed-tab' }),
     ]);
@@ -456,7 +456,7 @@ beforeEach(() => {
     });
 
     expect(background?.id).toBe('background-tab');
-    expect(onTabCreated.mock.calls).toEqual([[background]]);
+    expect(onTabCreated.mock.calls).toEqual([[background, false]]);
   });
 
   it('publishes active selection only after switching an admitted tab', async () => {

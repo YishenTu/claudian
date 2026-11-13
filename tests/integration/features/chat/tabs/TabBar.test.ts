@@ -46,7 +46,7 @@ describe('TabBar', () => {
       const callbacks = createMockCallbacks();
       const tabBar = new TabBar(containerEl, callbacks);
 
-      tabBar.setExpandedTitleTabIds(['tab-1']);
+      tabBar.expandTitles(['tab-1']);
       tabBar.update([createTabBarItem({ id: 'tab-1', index: 1, title: 'Restored Title' })]);
 
       expect(containerEl.children[0].textContent).toBe('Restored Title');
