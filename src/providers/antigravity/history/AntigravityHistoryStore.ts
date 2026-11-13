@@ -122,11 +122,15 @@ export function readAntigravityTurnBoundary(
   return undefined;
 }
 
-/** Whether a subagent the conversation created has not reported back yet (its id is the report's sender). */
-export function hasAntigravityOutstandingSubagents(transcript: AntigravityTranscript): boolean {
+/**
+ * Whether a subagent the conversation created at or after `sinceStep` has not reported back yet (its id is the
+ * report's sender).
+ */
+export function hasAntigravityOutstandingSubagents(transcript: AntigravityTranscript, sinceStep: number): boolean {
   const outstanding = new Set<string>();
-  for (const step of transcript.steps) {
-    const created = step.type === 'GENERIC' ? CREATED_SUBAGENT_PATTERN.exec(step.content ?? '') : null;
+  for (const [index, step] of transcript.steps.entries()) {
+    const created = step.type === 'GENERIC' && stepIndexOf(step, index) >= sinceStep
+      ? CREATED_SUBAGENT_PATTERN.exec(step.content ?? '') : null;
     if (created) outstanding.add(created[1]);
     const report = step.type === 'SYSTEM_MESSAGE' ? SYSTEM_REPORT_PATTERN.exec(step.content ?? '') : null;
     if (report) outstanding.delete(report[1]);

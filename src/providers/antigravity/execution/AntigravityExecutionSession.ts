@@ -168,7 +168,10 @@ export class AntigravityExecutionSession implements ProviderExecutionSession, St
   private disposed = false;
   private nativeConversationContextEstablished: boolean;
   private readonly nativeSlot = new ACPNativeOwnerSlot<NativeOwner>(async (owner, wasCurrent) => {
-    if (wasCurrent) owner.unsubscribe();
+    if (wasCurrent) {
+      owner.unsubscribe();
+      this.automaticResponses?.processEnded();
+    }
     await owner.native.shutdown();
   });
   private providerSessionId: string | undefined;

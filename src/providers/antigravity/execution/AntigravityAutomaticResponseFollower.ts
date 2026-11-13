@@ -50,6 +50,13 @@ export class AntigravityAutomaticResponseFollower {
   readonly #published = new Set<string>();
   /** Set by a live subagent launch; cleared once a scan finds every subagent reported and every reply finished. */
   #expectingWork = false;
+  /**
+   * The user request of the first turn recorded since agy's process started. Subagents die with their process, so
+   * only those created from this request on can still report.
+   */
+  #processFirstRequest: number | undefined;
+  /** Counts ended processes, so a read that began under an earlier process does not set the current one's request. */
+  #processGeneration = 0;
   /** A settled prompt whose boundary the next scan records. */
   #unrecordedTurn = false;
   #scan: Promise<void> | null = null;
@@ -71,6 +78,13 @@ export class AntigravityAutomaticResponseFollower {
   /** A live turn launched a subagent, whose report agy may answer after the turn. */
   subagentLaunched(): void {
     this.#expectingWork = true;
+  }
+
+  /** agy's process ended, and every subagent it was running with it. */
+  processEnded(): void {
+    this.#processGeneration += 1;
+    this.#processFirstRequest = undefined;
+    this.#giveUp();
   }
 
   turnStarted(): void {
@@ -145,6 +159,7 @@ export class AntigravityAutomaticResponseFollower {
   async #runScan(): Promise<void> {
     // Taken before reading: a turn that ends during this read is recorded by the rescan that reads after it.
     const recordsTurn = this.#unrecordedTurn;
+    const generation = this.#processGeneration;
     this.#unrecordedTurn = false;
     const transcript = await readAntigravityTranscript(this.options.storeRoot, this.options.sessionId);
     if (this.#disposed || !transcript) return;
@@ -154,6 +169,7 @@ export class AntigravityAutomaticResponseFollower {
       if (boundary && !this.#turnBoundaries.has(boundary.userInput)) {
         this.#turnBoundaries.set(boundary.userInput, boundary.lastStep);
       }
+      if (boundary && generation === this.#processGeneration) this.#processFirstRequest ??= boundary.userInput;
     }
     if (this.#phase.kind !== 'following') return;
     let unfinished = false;
@@ -166,7 +182,8 @@ export class AntigravityAutomaticResponseFollower {
       this.#published.add(response.message.id);
       this.options.publish(response.message);
     }
-    if (unfinished || hasAntigravityOutstandingSubagents(transcript)) return;
+    if (unfinished) return;
+    if (this.#processFirstRequest !== undefined && hasAntigravityOutstandingSubagents(transcript, this.#processFirstRequest)) return;
     this.#expectingWork = false;
     this.#stopFollowing();
   }

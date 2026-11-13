@@ -1088,6 +1088,49 @@ describe('AntigravityExecutionSession', () => {
     expect(session.blocksIdleRelease?.()).toBe(false);
   });
 
+  it('stops waiting for a subagent that died with a replaced process once the later subagents report', async () => {
+    const session = await createSession({}, peer => { peer.knownSessions.add('session-new'); });
+    const first = session.execute(request('Delegate'));
+    const peer = await firstPeer();
+    await peer.waitForPrompts(1);
+    peer.emit(invokeSubagent('call-1'), 'session-new');
+    const delegation = [
+      transcriptSteps.user(0, 'Delegate', testTime({ minutes: -3 })),
+      transcriptSteps.delegate(1, testTime({ minutes: -3 })),
+      transcriptSteps.created(2, 'sub-1', testTime({ minutes: -3 })),
+      transcriptSteps.reply(3, 'Waiting.', testTime({ minutes: -3 })),
+    ];
+    await writeTranscript('session-new', delegation);
+    peer.finishPrompt();
+    await collect(first.events);
+    expect(session.blocksIdleRelease?.()).toBe(true);
+
+    // Entering YOLO replaces agy's process, and sub-1 with it: it never reports.
+    const second = session.execute(request('Delegate again', { permissionMode: 'yolo' }));
+    const replacement = await spawnedProcess(2);
+    await replacement.waitForPrompts(1);
+    replacement.emit(invokeSubagent('call-2'), 'session-new');
+    const again = [
+      ...delegation,
+      transcriptSteps.user(4, 'Delegate again', testTime({ minutes: -2 })),
+      transcriptSteps.delegate(5, testTime({ minutes: -2 })),
+      transcriptSteps.created(6, 'sub-2', testTime({ minutes: -2 })),
+      transcriptSteps.reply(7, 'Waiting again.', testTime({ minutes: -2 })),
+    ];
+    await writeTranscript('session-new', again);
+    replacement.finishPrompt();
+    await collect(second.events);
+
+    const background = nextBackgroundTurn(session);
+    await writeTranscript('session-new', [
+      ...again,
+      transcriptSteps.report(8, 'sub-2', '391', testTime({ minutes: 5 })),
+      transcriptSteps.reply(9, 'SUB-RESULT=391', testTime({ minutes: 5 })),
+    ]);
+    expect((await background).filter(event => event.type === 'text_delta')).toEqual([expect.objectContaining({ text: 'SUB-RESULT=391' })]);
+    expect(session.blocksIdleRelease?.()).toBe(false);
+  });
+
   it('runs YOLO main chat with agy\'s skip-permissions flag and restarts the process when leaving or entering YOLO', async () => {
     const session = await createSession({}, peer => { peer.knownSessions.add('session-new'); });
     const launchArgs = () => vi.mocked(spawn).mock.calls.map(([, args]) => args);
