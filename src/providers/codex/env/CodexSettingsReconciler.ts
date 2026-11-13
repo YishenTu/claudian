@@ -1,166 +1,73 @@
 import { getInstallationKey } from '@/core/device/InstallationKey';
 import { parseEnvironmentVariables } from '@/core/process/env';
 import { resolveExecutionTarget } from '@/core/process/execution-target/ExecutionTargetResolver';
+import type { InstallationSettings } from '@/core/providers/settings/InstallationSettings';
 
 import {
   createCLIPathFingerprintInputs,
   hasCLIPathFingerprintInputs,
 } from '../../../core/providers/cli/CLIPathFingerprintInputs';
 import { getRuntimeEnvironmentText } from '../../../core/providers/providerEnvironment';
-import {
-  compareScopedRuntimeInputFingerprints,
-  isVersionedRuntimeInputFingerprint,
-  type SavedScopedRuntimeInputFingerprints,
-  type ScopedRuntimeInputFingerprints,
-} from '../../../core/providers/settings/RuntimeInputFingerprint';
 import type {
   ProviderEnvironmentReconciliation,
   ProviderSettingsReconciler,
   ProviderSettingsReconciliationContext,
 } from '../../../core/providers/types';
-import type { Conversation } from '../../../core/types';
 import { codexModelPolicy } from '../CodexModelPolicy';
-import { DEFAULT_CODEX_PROVIDER_SETTINGS } from '../config';
 import { resolveCodexModelSelection } from '../modelOptions';
-import {
-  CODEX_ENV_HASH_KEYS,
-  type CodexInstallationInputs,
-  computeCodexEnvHash,
-  computeCodexSessionEnvHash,
-  LEGACY_CODEX_ENV_HASH_KEYS,
-} from '../runtime/codexEnvironmentHash';
+import { computeCodexEnvHash } from '../runtime/codexEnvironmentHash';
 import {
   getCodexProviderSettings,
   updateCodexProviderSettings,
 } from '../settings';
-import { clearCodexResumeState } from '../types';
-
-function isCurrentLegacyCodexFingerprint(
-  environmentText: string,
-  savedFingerprint: string,
-): boolean {
-  if (isVersionedRuntimeInputFingerprint(savedFingerprint)) {
-    return false;
-  }
-
-  const environment = parseEnvironmentVariables(environmentText);
-  const legacyFingerprint = LEGACY_CODEX_ENV_HASH_KEYS
-    .filter(key => environment[key])
-    .map(key => `${key}=${environment[key]}`)
-    .sort()
-    .join('|');
-  return savedFingerprint === legacyFingerprint;
-}
-
-function getCodexRuntimeFingerprintState(settings: Record<string, unknown>, context?: ProviderSettingsReconciliationContext): {
-  current: ScopedRuntimeInputFingerprints;
-  environmentText: string;
-  hasFingerprintInputs: boolean;
-  providerEnabled: boolean;
-  saved: SavedScopedRuntimeInputFingerprints;
-} {
-  const environmentText = getRuntimeEnvironmentText(settings, 'codex');
-  const codexSettings = getCodexProviderSettings(settings);
-  const cliPathInputs = createCLIPathFingerprintInputs(
-    codexSettings.cliPathsByHost[getInstallationKey()],
-    codexSettings.cliPath,
-  );
-  const installation: CodexInstallationInputs = {
-    installationMethod: codexSettings.installationMethod,
-    wslDistroOverride: codexSettings.wslDistroOverride,
-  };
-  if (context?.vaultPath && process.platform === 'win32' && installation.installationMethod === 'wsl') {
-    const target = resolveExecutionTarget({ settings: installation, hostVaultPath: context.vaultPath });
-    installation.wslDistroOverride = target.distroName ?? installation.wslDistroOverride;
-  }
-  const environment = parseEnvironmentVariables(environmentText);
-  return {
-    current: {
-      runtime: computeCodexEnvHash(environmentText, { ...cliPathInputs, ...installation }),
-      session: computeCodexSessionEnvHash(environmentText, installation),
-    },
-    environmentText,
-    hasFingerprintInputs: Boolean(
-      hasCLIPathFingerprintInputs(cliPathInputs)
-      || codexSettings.installationMethod === 'wsl'
-      || codexSettings.wslDistroOverride
-      || CODEX_ENV_HASH_KEYS.some(key => Object.prototype.hasOwnProperty.call(environment, key))
-    ),
-    providerEnabled: codexSettings.enabled,
-    saved: {
-      environmentHash: codexSettings.environmentHash,
-      sessionEnvironmentHash: codexSettings.sessionEnvironmentHash,
-    },
-  };
-}
-
-function invalidateCodexConversationSessions(conversations: Conversation[]): Conversation[] {
-  return conversations.filter(conversation => (
-    conversation.providerId === 'codex' && clearCodexResumeState(conversation)
-  ));
-}
 
 export const codexSettingsReconciler = {
-  invalidateConversationSessions: invalidateCodexConversationSessions,
-
   reconcileModelWithEnvironment(settings: Record<string, unknown>, context?: ProviderSettingsReconciliationContext): ProviderEnvironmentReconciliation {
-    const fingerprint = getCodexRuntimeFingerprintState(settings, context);
-    if (!fingerprint.saved.environmentHash && !fingerprint.hasFingerprintInputs) {
+    const environmentText = getRuntimeEnvironmentText(settings, 'codex');
+    const codexSettings = getCodexProviderSettings(settings);
+    const cliPathInputs = createCLIPathFingerprintInputs(
+      codexSettings.cliPathsByHost[getInstallationKey()],
+      codexSettings.cliPath,
+    );
+    const installation: InstallationSettings = {
+      installationMethod: codexSettings.installationMethod,
+      wslDistroOverride: codexSettings.wslDistroOverride,
+    };
+    if (context?.vaultPath && process.platform === 'win32' && installation.installationMethod === 'wsl') {
+      const target = resolveExecutionTarget({ settings: installation, hostVaultPath: context.vaultPath });
+      installation.wslDistroOverride = target.distroName ?? installation.wslDistroOverride;
+    }
+    const hasFingerprintInputs = hasCLIPathFingerprintInputs(cliPathInputs)
+      || codexSettings.installationMethod === 'wsl'
+      || Boolean(codexSettings.wslDistroOverride)
+      || Object.keys(parseEnvironmentVariables(environmentText)).length > 0;
+    if (!codexSettings.environmentHash && !hasFingerprintInputs) {
       return { changed: false };
     }
-    const { changed, sessionPolicy } = compareScopedRuntimeInputFingerprints(
-      fingerprint.saved,
-      fingerprint.current,
-      computeCodexSessionEnvHash('', {
-        installationMethod: DEFAULT_CODEX_PROVIDER_SETTINGS.installationMethod,
-        wslDistroOverride: DEFAULT_CODEX_PROVIDER_SETTINGS.wslDistroOverride,
-      }),
-    );
-    if (!changed) {
+    const environmentHash = computeCodexEnvHash(environmentText, { ...cliPathInputs, ...installation });
+    if (environmentHash === codexSettings.environmentHash) {
       return { changed: false };
     }
 
     const currentModel = typeof settings.model === 'string' ? settings.model : '';
-    const nextModel = resolveCodexModelSelection(getCodexProviderSettings(settings), currentModel);
+    const nextModel = resolveCodexModelSelection(codexSettings, currentModel);
     if (nextModel) {
       settings.model = nextModel;
     }
 
-    updateCodexProviderSettings(settings, {
-      environmentHash: fingerprint.current.runtime,
-      sessionEnvironmentHash: fingerprint.current.session,
-    });
-    return { changed: true, sessionPolicy };
+    updateCodexProviderSettings(settings, { environmentHash });
+    return { changed: true };
   },
 
-  normalizeModelVariantSettings(settings: Record<string, unknown>, context?: ProviderSettingsReconciliationContext): boolean {
-    let changed = false;
-    const fingerprint = getCodexRuntimeFingerprintState(settings, context);
-    // Startup normalizes before reconciling. Upgrade an equivalent legacy
-    // fingerprint here so the fingerprint schema change is not treated as a
-    // runtime change that invalidates Codex sessions.
-    if (
-      (fingerprint.providerEnabled || fingerprint.hasFingerprintInputs)
-      && isCurrentLegacyCodexFingerprint(
-        fingerprint.environmentText,
-        fingerprint.saved.environmentHash,
-      )
-    ) {
-      updateCodexProviderSettings(settings, {
-        environmentHash: fingerprint.current.runtime,
-        sessionEnvironmentHash: fingerprint.current.session,
-      });
-      changed = true;
-    }
-
+  normalizeModelVariantSettings(settings: Record<string, unknown>): boolean {
     const model = settings.model as string;
     if (!model) {
-      return changed;
+      return false;
     }
 
     const normalizedModel = codexModelPolicy.normalizeModelVariant(model, settings);
     if (normalizedModel === model) {
-      return changed;
+      return false;
     }
 
     settings.model = normalizedModel;

@@ -1752,10 +1752,10 @@ it.each<AdmissionCase>([
     error: { category: 'configuration', message: expect.stringContaining('tool policy differs') }, sends: 0, status: 'invalidated' },
   { name: 'a resumed native session that no longer exists', resume: { providerSessionId: 'root', providerState: savedState() }, input: input => input,
     native: { 'session/projections': () => null },
-    error: { category: 'provider-session-missing', missingProviderSessionId: 'root' }, sends: 0, status: 'invalidated' },
+    error: { category: 'provider-session-missing' }, sends: 0, status: 'invalidated' },
   { name: 'a resumed native session removed before activation', resume: { providerSessionId: 'root', providerState: savedState() }, input: input => input,
     native: { 'commands/list': () => { throw nativeError('session/not-found', 'session "root" not found'); } },
-    error: { category: 'provider-session-missing', missingProviderSessionId: 'root' }, sends: 0, status: 'invalidated' },
+    error: { category: 'provider-session-missing' }, sends: 0, status: 'invalidated' },
   { name: 'a resumed native session from another directory', resume: { providerSessionId: 'root', providerState: savedState() }, input: input => input,
     native: { 'session/list': (_args, ordinary) => ({ items: (ordinary() as { items: Array<Record<string, unknown>> }).items.map((row) => ({ ...row, cwd: '/copied-from' })) }) },
     error: { category: 'configuration', message: expect.stringContaining('another directory (/copied-from)') }, sends: 0, status: 'idle' },
@@ -1778,6 +1778,8 @@ it.each<AdmissionCase>([
   expect(events.at(-1)).toMatchObject({ type: 'execution_error', recoverable: true, ...error });
   expect(nativeSends() - before).toBe(sends);
   await until(() => session.getStatus() === status);
+  // A failed resume never drops the conversation's native binding.
+  expect(resume && session.getSnapshot().providerSessionId).toBe(resume?.providerSessionId);
 });
 
 it('refuses a second requested execution while the first is admitting', async () => {

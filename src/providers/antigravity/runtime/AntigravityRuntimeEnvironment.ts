@@ -4,7 +4,6 @@ import { getEnhancedPath, parseEnvironmentVariables } from '@/core/process/env';
 import { createCLIPathFingerprintInputs } from '../../../core/providers/cli/CLIPathFingerprintInputs';
 import { createRuntimeInputFingerprint } from '../../../core/providers/settings/RuntimeInputFingerprint';
 import type { AntigravityProviderSettings } from '../config';
-import { resolveAntigravityStoreRoot } from '../history/AntigravityHistoryPaths';
 
 export function buildAntigravityRuntimeEnv(environmentText: string, cliPath: string): Record<string, string> {
   const configured = parseEnvironmentVariables(environmentText);
@@ -27,15 +26,5 @@ export function computeAntigravityRuntimeInputHash(
     additionalInputs: createCLIPathFingerprintInputs(settings.cliPathsByHost[getInstallationKey()], settings.cliPath),
     environmentKeys: environment.map(([key]) => key),
     environmentText,
-  });
-}
-
-/** Fingerprint of agy's native store, which follows the home directory configured for the CLI. */
-export function computeAntigravitySessionStoreHash(environmentText: string): string {
-  const environment = { ...process.env, ...parseEnvironmentVariables(environmentText) };
-  return createRuntimeInputFingerprint({
-    additionalInputs: { store: resolveAntigravityStoreRoot(environment, process.platform) ?? undefined },
-    environmentKeys: [],
-    environmentText: '',
   });
 }

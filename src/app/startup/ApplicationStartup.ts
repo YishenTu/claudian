@@ -1,6 +1,5 @@
 import { Notice, type Plugin } from 'obsidian';
 
-import type { ProviderExecutionLifecycleRegistry } from '@/core/execution/ProviderExecutionLifecycleRegistry';
 import { StartupProfiler } from '@/core/performance/StartupProfiler';
 import type { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import type { ProviderSettingsCoordinator } from '@/core/providers/ProviderSettingsCoordinator';
@@ -32,8 +31,6 @@ export type StartupProviderCatalog = Pick<
 export type StartupProviderSettings = Pick<
   typeof ProviderSettingsCoordinator,
   | 'getProviderSettingsSnapshot'
-  | 'invalidateConversationSessions'
-  | 'preservesConversationSession'
   | 'normalizeAllModelVariants'
   | 'normalizeProviderSelection'
   | 'persistProjectedProviderState'
@@ -46,7 +43,6 @@ export interface ApplicationStartupOptions {
   readonly defaultSettings: Readonly<ClaudianSettings>;
   readonly providers: StartupProviderCatalog;
   readonly providerSettings: StartupProviderSettings;
-  readonly executionLifecycle: Pick<ProviderExecutionLifecycleRegistry, 'markSessionsInvalidated'>;
   isUnloading(): boolean;
   publishCommittedSettings(
     settings: Readonly<ClaudianSettings>,
@@ -76,8 +72,8 @@ export interface ApplicationDomains {
 
 /**
  * Loads persisted settings and session metadata into complete application domains:
- * settings normalization, metadata adoption and model recovery, runtime
- * reconciliation, and pending provider-session invalidation.
+ * settings normalization, metadata adoption and model recovery, and runtime
+ * reconciliation.
  */
 export async function startApplication(options: ApplicationStartupOptions): Promise<ApplicationDomains> {
   const { plugin, providers, providerSettings } = options;
@@ -119,20 +115,14 @@ export async function startApplication(options: ApplicationStartupOptions): Prom
     onConversationDeleted: conversationId => options.onConversationDeleted(conversationId),
     projects,
   });
-  const runtimeSettings: RuntimeSettingsCoordinator = new RuntimeSettingsCoordinator({
+  const runtimeSettings = new RuntimeSettingsCoordinator({
     settings: settingsCoordinator,
-    conversations: conversationRepository,
-    executionLifecycle: options.executionLifecycle,
     getSettings: () => settings,
     getVaultPath: () => getVaultPath(plugin.app),
-    // Consulted only by post-startup commits, after the loader below exists.
-    canCompleteInvalidations: (): boolean => sessionMetadata.hasLoadedAll && !options.isUnloading(),
   });
-  const sessionMetadata: SessionMetadataLoader = new SessionMetadataLoader({
+  const sessionMetadata = new SessionMetadataLoader({
     sessions: storage.sessions,
     conversations: conversationRepository,
-    providerSettings,
-    runtimeSettings,
     isUnloading: () => options.isUnloading(),
     whenLayoutReady: callback => workspace.onLayoutReady(callback),
     onConversationListChanged: () => options.onConversationListChanged(),
@@ -158,19 +148,12 @@ export async function startApplication(options: ApplicationStartupOptions): Prom
     onConversationListChanged: () => options.onConversationListChanged(),
   });
 
-  const didNormalizePendingSessionInvalidations = runtimeSettings.syncPendingSessionInvalidations();
   const didNormalizeProviderSelection = providerSettings.normalizeProviderSelection(settings);
   const didNormalizeModelVariants = providerSettings.normalizeAllModelVariants(settings, { vaultPath: getVaultPath(plugin.app) });
 
   setLocale(settings.locale as Locale);
 
-  // No conversation is loaded yet: restored and remaining sessions apply pending
-  // invalidations as the metadata loader adopts them.
   const reconciliation = runtimeSettings.reconcile();
-  runtimeSettings.markPendingSessionInvalidations(
-    settings,
-    reconciliation.sessionInvalidationProviderIds,
-  );
 
   providerSettings.projectActiveProviderState(settings);
 
@@ -178,7 +161,6 @@ export async function startApplication(options: ApplicationStartupOptions): Prom
     reconciliation.changed
     || didNormalizeModelVariants
     || didNormalizeProviderSelection
-    || didNormalizePendingSessionInvalidations
   ) {
     await settingsCoordinator.persistCurrent();
   }

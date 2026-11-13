@@ -422,9 +422,6 @@ export class OpencodeExecutionSession implements ProviderExecutionSession, Steer
       run.finish({
         category: error instanceof ProviderModelUnavailableError ? 'configuration' : missing ? 'provider-session-missing' : 'provider',
         message: formatError(error),
-        ...(missing && resumeAttempt
-          ? { missingProviderSessionId: resumeAttempt }
-          : {}),
         recoverable: true,
         type: 'execution_error',
       });

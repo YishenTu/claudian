@@ -34,7 +34,7 @@ export function buildTabRuntimePorts(
       hostEl => controllers.sideChatController.setFullHeightHost(hostEl),
     ),
     refreshProviderControls: () => {
-      refreshTabContextUsage(getRuntime(), plugin);
+      refreshTabContextUsage(getRuntime());
       ui.modelSelector.updateDisplay();
       ui.modelSelector.renderOptions();
       ui.effortSelector.updateDisplay();

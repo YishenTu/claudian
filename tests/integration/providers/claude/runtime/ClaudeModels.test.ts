@@ -131,15 +131,18 @@ describe('Claude panel model discovery', () => {
     expect(getClaudeModelOptions(getClaudeModelSource(settings))).toEqual([]);
   });
 
-  it('keeps a legacy title selection when discovery canonicalizes its enabled SDK identity', async () => {
+  it('keeps a legacy title selection after loading persists the model key that enabled it', async () => {
     const { settings, host, appHost } = await setup();
     settings.titleGenerationModel = 'gateway-model';
     updateClaudeProviderSettings(settings, { visibleModels: null, discoveredModels: [], environmentVariables: 'ANTHROPIC_MODEL=gateway-model' });
+    claudeProviderRegistration.settingsStorage!.normalizeStored!(settings, structuredClone(settings));
     appHost.notifyProviderChatOptionsChanged = () => {
       ProviderSettingsCoordinator.reconcileTitleGenerationModelSelection(settings);
     };
     await discover(host, async () => rows);
-    expect(getClaudeProviderSettings(settings).visibleModels).toEqual(['sonnet']);
+    // A saved choice keeps an identity the SDK reports, here as Sonnet's resolved model.
+    expect(getClaudeProviderSettings(settings).visibleModels).toEqual(['gateway-model']);
+    expect(getClaudeModelOptions(getClaudeModelSource(settings)).map(model => model.value)).toEqual(['sonnet']);
     expect(settings.titleGenerationModel).toBe('gateway-model');
   });
 

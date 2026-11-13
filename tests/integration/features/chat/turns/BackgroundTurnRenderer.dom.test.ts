@@ -367,7 +367,6 @@ async function createBackgroundChat(withInput = false) {
       releaseExecutionBinding: () => undefined, assertConversationExecutionAuthority: async () => undefined,
       recordConversationActivity: async () => undefined },
     interactionPort: { requestApproval: vi.fn(), askUserQuestion: vi.fn(), dismissInteraction: vi.fn() }, workingDirectory: '/vault', createId: () => 'binding',
-    resolveMissingProviderSession: async () => 'not_found',
     onRequestedEvent: event => input?.controller.handleExecutionEvent(event),
     onSessionEvent: (event, context) => events.enqueue(event, context),
   });

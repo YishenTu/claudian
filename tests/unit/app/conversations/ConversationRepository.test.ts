@@ -61,22 +61,6 @@ function createRepository(
 }
 
 describe('ConversationRepository hydration', () => {
-  it.each([false, true])('does not copy unrelated history when invalidating providers (Claude: %s)', (invalidateClaude) => {
-    const affected = createConversation();
-    const unrelated = { ...createConversation('other'), providerId: 'codex' as const };
-    const serializeUnrelated = vi.fn(() => []);
-    Object.defineProperty(unrelated.messages, 'toJSON', { value: serializeUnrelated });
-    const { repository } = createRepository(affected);
-    repository.replaceAll([affected, unrelated]);
-
-    const result = repository.invalidateProviderSessions(invalidateClaude ? ['claude'] : []);
-
-    expect(result).toEqual(invalidateClaude ? [repository.getSync(affected.id)] : []);
-    expect(repository.getSync(affected.id)!.sessionId).toBe(invalidateClaude ? null : 'session-1');
-    expect(repository.getSync(unrelated.id)!.sessionId).toBe('session-1');
-    expect(serializeUnrelated).not.toHaveBeenCalled();
-  });
-
   beforeEach(() => {
     // Exercise repository fallback persistence against a provider that opts into fallback.
     // Claude's preservation policy has a separate regression below.
@@ -609,23 +593,21 @@ describe('ConversationRepository hydration', () => {
     expect(hydrateConversationHistory).toHaveBeenCalledTimes(1);
   });
 
-  it('durably saves a provider-recovered session reference before hydrating history', async () => {
+  it('durably saves a relocated session reference before hydrating history', async () => {
     const conversation = createConversation();
-    conversation.sessionId = null;
-    conversation.providerState = undefined;
     conversation.lastActivityAt = 42;
-    const recoverConversationSessionReference = vi.fn(async () => ({
-      sessionId: 'recovered-session',
-      providerState: { providerSessionId: 'recovered-session' },
+    const prepareRelocatedConversationSession = vi.fn(async () => ({
+      sessionId: null,
+      providerState: { previousProviderSessionIds: ['session-1'] },
     }));
-    const getConversationSessionAvailability = vi.fn().mockResolvedValue('available');
+    const getConversationSessionAvailability = vi.fn().mockResolvedValue('relocated');
     const hydrateConversationHistory = vi.fn().mockResolvedValue({
       messages: [{ id: 'message-1', role: 'user', content: 'Recovered', timestamp: 1 }],
     });
     vi.spyOn(ProviderRegistry, 'getConversationHistoryService').mockReturnValue({
       ...historyService,
-      recoverConversationSessionReference,
       getConversationSessionAvailability,
+      prepareRelocatedConversationSession,
       hydrateConversationHistory,
     });
     const { repository, persistence } = createRepository(conversation);
@@ -634,8 +616,8 @@ describe('ConversationRepository hydration', () => {
 
     expect(persistence.saveMetadata).toHaveBeenCalledWith(expect.objectContaining({
       id: conversation.id,
-      sessionId: 'recovered-session',
-      providerState: { providerSessionId: 'recovered-session' },
+      sessionId: null,
+      providerState: { previousProviderSessionIds: ['session-1'] },
       lastActivityAt: 42,
     }));
     expect(repository.getSync(conversation.id)!.messages.map(message => message.content)).toEqual(['Recovered']);

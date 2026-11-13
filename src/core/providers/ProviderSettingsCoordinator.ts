@@ -1,4 +1,3 @@
-import type { Conversation } from '../types';
 import { toProviderRuntimeModelId } from './modelSelection';
 import { ProviderRegistry } from './ProviderRegistry';
 import {
@@ -12,7 +11,6 @@ import type { ProviderId, ProviderModelPolicy, ProviderPermissionModePolicy, Pro
 export interface SettingsReconciliationResult {
   changed: boolean;
   environmentChangedProviderIds: ProviderId[];
-  sessionInvalidationProviderIds: ProviderId[];
 }
 
 const PROJECTION_KEYS = new Set([
@@ -402,7 +400,6 @@ export class ProviderSettingsCoordinator {
   ): SettingsReconciliationResult {
     let anyChanged = false;
     const environmentChangedProviderIds: ProviderId[] = [];
-    const sessionInvalidationProviderIds: ProviderId[] = [];
     const settingsProvider = getSettingsProviderId(settings);
 
     for (const providerId of providerIds) {
@@ -415,14 +412,11 @@ export class ProviderSettingsCoordinator {
         this.projectProviderState(targetSettings, providerId);
       }
 
-      const { changed, sessionPolicy } = reconciler.reconcileModelWithEnvironment(targetSettings, context);
+      const { changed } = reconciler.reconcileModelWithEnvironment(targetSettings, context);
 
       if (changed) {
         anyChanged = true;
         environmentChangedProviderIds.push(providerId);
-        if ((sessionPolicy ?? 'invalidate') === 'invalidate') {
-          sessionInvalidationProviderIds.push(providerId);
-        }
         this.persistProjectedProviderState(targetSettings, providerId);
         if (providerId !== settingsProvider) {
           mergeProviderSettings(settings, targetSettings);
@@ -437,28 +431,7 @@ export class ProviderSettingsCoordinator {
     return {
       changed: anyChanged,
       environmentChangedProviderIds,
-      sessionInvalidationProviderIds,
     };
-  }
-
-  static invalidateConversationSessions(
-    conversations: Conversation[],
-    providerIds: ProviderId[],
-  ): Conversation[] {
-    const invalidatedConversations: Conversation[] = [];
-    for (const providerId of new Set(providerIds)) {
-      const providerConversations = conversations.filter(c => c.providerId === providerId);
-      invalidatedConversations.push(
-        ...ProviderRegistry.getSettingsReconciler(providerId)
-          .invalidateConversationSessions(providerConversations),
-      );
-    }
-    return invalidatedConversations;
-  }
-
-  static preservesConversationSession(conversation: Conversation): boolean {
-    return ProviderRegistry.getSettingsReconciler(conversation.providerId)
-      .preservesConversationSession?.(conversation) ?? false;
   }
 
   static normalizeAllModelVariants(settings: Record<string, unknown>, context?: ProviderSettingsReconciliationContext): boolean {

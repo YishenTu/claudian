@@ -5,7 +5,6 @@ import type {
   ProviderPermissionModePolicy,
   ProviderUIOption,
 } from '../../core/providers/types';
-import { getCustomModelIds } from './claudeModelEnv';
 import {
   findClaudeModelOption,
   findClaudeModelSelectionOption,
@@ -17,7 +16,7 @@ import {
 import { isClaudeModelSelectionId, toClaudeRuntimeModelId } from './modelSelection';
 import { CLAUDE_MODEL_TIER_PATTERN, isClaudeModelTier } from './modelTiers';
 import { CLAUDE_PERMISSION_MODES, type ClaudePermissionMode } from './permissionModes';
-import { getClaudeModelSource, getClaudeProviderSettings, updateClaudeProviderSettings } from './settings';
+import { getClaudeModelSource } from './settings';
 import {
   isDefaultClaudeModel,
   resolveSupportedEffortLevel
@@ -46,10 +45,6 @@ const CLAUDE_PERMISSION_MODE_POLICY: ProviderPermissionModePolicy = Object.freez
 
 export const claudeModelPolicy: ProviderModelPolicy = {
   permissionModes: CLAUDE_PERMISSION_MODE_POLICY,
-  customModelAliases: {
-    get: settings => getClaudeProviderSettings(settings).modelAliases,
-    update: (settings, modelAliases) => { updateClaudeProviderSettings(settings, { modelAliases }); },
-  },
   getModelOptions(settings) {
     return getClaudeModelOptions(getClaudeModelSource(settings));
   },
@@ -95,10 +90,6 @@ export const claudeModelPolicy: ProviderModelPolicy = {
   // anything else may only follow an enabled model, and an unresolved model is returned unchanged.
   // Availability canonicalization is therefore the same operation.
   normalizeAvailableModelSelection: normalizeClaudeModelSelection,
-
-  getCustomModelIds(envVars: Record<string, string>): Set<string> {
-    return getCustomModelIds(envVars);
-  }
 };
 
 function normalizeClaudeModelSelection(model: string, settings: Record<string, unknown>): string {

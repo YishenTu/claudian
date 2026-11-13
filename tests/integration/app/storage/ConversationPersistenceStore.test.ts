@@ -477,12 +477,6 @@ test('compacts stored subagent copies in the background after all metadata loads
   });
   const loader = new SessionMetadataLoader({
     sessions: store.metadataReader, conversations: repository,
-    providerSettings: ProviderSettingsCoordinator,
-    runtimeSettings: {
-      getPendingProviderIds: () => [],
-      getPendingGenerations: () => new Map(),
-      completePendingSessionInvalidations: async () => undefined,
-    } as never,
     isUnloading: () => false, whenLayoutReady: callback => callback(), onConversationListChanged: () => undefined,
     // Read synchronously: the background pass starts after this callback returns.
     onAllMetadataLoaded: () => { atListPublication = readFileSync(path.join(root, DEVICE_PATH, 'redundant.meta.json'), 'utf8'); },

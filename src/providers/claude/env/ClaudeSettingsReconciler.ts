@@ -3,161 +3,46 @@ import { parseEnvironmentVariables } from '@/core/process/env';
 import { resolveExecutionTarget } from '@/core/process/execution-target/ExecutionTargetResolver';
 
 import {
-  type CLIPathFingerprintInputs,
   createCLIPathFingerprintInputs,
   hasCLIPathFingerprintInputs,
 } from '../../../core/providers/cli/CLIPathFingerprintInputs';
 import { getRuntimeEnvironmentText } from '../../../core/providers/providerEnvironment';
-import {
-  compareScopedRuntimeInputFingerprints,
-  createRuntimeInputFingerprint,
-  isVersionedRuntimeInputFingerprint,
-  type ScopedRuntimeInputFingerprints,
-} from '../../../core/providers/settings/RuntimeInputFingerprint';
+import { createEnvironmentRuntimeInputFingerprint } from '../../../core/providers/settings/RuntimeInputFingerprint';
 import type {
   ProviderEnvironmentReconciliation,
   ProviderSettingsReconciler,
   ProviderSettingsReconciliationContext,
 } from '../../../core/providers/types';
-import type { Conversation } from '../../../core/types';
-import { CLAUDE_MODEL_ENV_KEYS } from '../claudeModelEnv';
 import { invalidateClaudeHistoryContext } from '../history/ClaudeHistoryContext';
 import { getClaudeProviderSettings, updateClaudeProviderSettings } from '../settings';
-import { clearClaudeResumeState } from '../types/providerState';
-
-/** Session-scope with configured native home keys: changes invalidate bindings. */
-const SESSION_ENV_KEYS = [...CLAUDE_MODEL_ENV_KEYS, 'ANTHROPIC_BASE_URL'];
-/** Launch-only, like CLI paths: changes restart runtimes and keep bindings. */
-const LAUNCH_ENV_KEYS = ['PATH'];
-const NATIVE_HOME_ENV_KEYS = ['CLAUDE_CONFIG_DIR', 'HOME', 'USERPROFILE', 'HOMEDRIVE', 'HOMEPATH'];
-const ALL_FINGERPRINT_ENV_KEYS = [...SESSION_ENV_KEYS, ...LAUNCH_ENV_KEYS, ...NATIVE_HOME_ENV_KEYS];
-
-interface FingerprintInputs {
-  targetInputs?: Record<string, string | undefined>;
-  environmentText: string;
-  environment: Record<string, string>;
-  cliPathInputs: CLIPathFingerprintInputs;
-  savedFingerprint: string;
-  savedSessionFingerprint: string;
-}
-
-/** Reads every fingerprint input once per reconciliation. */
-function readFingerprintInputs(settings: Record<string, unknown>, context?: ProviderSettingsReconciliationContext): FingerprintInputs {
-  const environmentText = getRuntimeEnvironmentText(settings, 'claude');
-  const claudeSettings = getClaudeProviderSettings(settings);
-  return {
-    targetInputs: process.platform === 'win32' && claudeSettings.installationMethod === 'wsl'
-      ? { ...resolveExecutionTarget({ settings: claudeSettings, hostVaultPath: context?.vaultPath }) } : undefined,
-    environmentText,
-    environment: parseEnvironmentVariables(environmentText),
-    cliPathInputs: createCLIPathFingerprintInputs(
-      claudeSettings.cliPathsByHost[getInstallationKey()],
-      claudeSettings.cliPath,
-    ),
-    savedFingerprint: claudeSettings.environmentHash,
-    savedSessionFingerprint: claudeSettings.sessionEnvironmentHash,
-  };
-}
-
-/** Keeps existing default-home fingerprints stable when no override is configured. */
-function withConfiguredHomeKeys(keys: readonly string[], environment: Record<string, string>): string[] {
-  return [
-    ...keys,
-    ...NATIVE_HOME_ENV_KEYS.filter(key => Object.prototype.hasOwnProperty.call(environment, key)),
-  ];
-}
-
-function computeRuntimeFingerprint({ environmentText, environment, cliPathInputs, targetInputs }: FingerprintInputs): string {
-  return createRuntimeInputFingerprint({
-    additionalInputs: { ...cliPathInputs, ...targetInputs },
-    environmentKeys: withConfiguredHomeKeys([...SESSION_ENV_KEYS, ...LAUNCH_ENV_KEYS], environment),
-    environmentText,
-  });
-}
-
-function computeSessionFingerprint({ environmentText, environment, targetInputs }: Pick<FingerprintInputs, 'environment' | 'environmentText' | 'targetInputs'>): string {
-  return createRuntimeInputFingerprint({
-    additionalInputs: targetInputs,
-    environmentKeys: withConfiguredHomeKeys(SESSION_ENV_KEYS, environment),
-    environmentText,
-  });
-}
-
-function computeFingerprints(inputs: FingerprintInputs): ScopedRuntimeInputFingerprints {
-  return { runtime: computeRuntimeFingerprint(inputs), session: computeSessionFingerprint(inputs) };
-}
-
-function hasFingerprintInputs({ environment, cliPathInputs, targetInputs }: FingerprintInputs): boolean {
-  return Boolean(targetInputs) || hasCLIPathFingerprintInputs(cliPathInputs)
-    || ALL_FINGERPRINT_ENV_KEYS.some(key => Object.prototype.hasOwnProperty.call(environment, key));
-}
-
-/**
- * Unversioned fingerprints predate RuntimeInputFingerprint (#1024, 2026-08-03). Accepting a still-current
- * one lets it upgrade without invalidating sessions. Remove this branch after 2027-02-03, once settings
- * saved before #1024 are no longer migrated.
- */
-function isCurrentLegacyFingerprint({ environment, cliPathInputs, savedFingerprint, targetInputs }: FingerprintInputs): boolean {
-  if (
-    !savedFingerprint
-    || targetInputs
-    || isVersionedRuntimeInputFingerprint(savedFingerprint)
-    || hasCLIPathFingerprintInputs(cliPathInputs)
-  ) {
-    return false;
-  }
-
-  const legacyFingerprint = ALL_FINGERPRINT_ENV_KEYS
-    .filter(key => environment[key])
-    .map(key => `${key}=${environment[key]}`)
-    .sort()
-    .join('|');
-  return savedFingerprint === legacyFingerprint;
-}
-
-function invalidateClaudeConversationSessions(conversations: Conversation[]): Conversation[] {
-  return conversations.filter(conv => (
-    conv.providerId === 'claude' && clearClaudeResumeState(conv)
-  ));
-}
 
 export const claudeSettingsReconciler = {
-  invalidateConversationSessions: invalidateClaudeConversationSessions,
-
   reconcileModelWithEnvironment(settings: Record<string, unknown>, context?: ProviderSettingsReconciliationContext): ProviderEnvironmentReconciliation {
-    const inputs = readFingerprintInputs(settings, context);
-    if (!inputs.savedFingerprint && !hasFingerprintInputs(inputs)) {
-      return { changed: false };
-    }
-    if (isCurrentLegacyFingerprint(inputs)) {
-      return { changed: false };
-    }
-    const current = computeFingerprints(inputs);
-    const { changed, sessionPolicy } = compareScopedRuntimeInputFingerprints(
-      { environmentHash: inputs.savedFingerprint, sessionEnvironmentHash: inputs.savedSessionFingerprint },
-      current,
-      computeSessionFingerprint({ environment: {}, environmentText: '' }),
+    const environmentText = getRuntimeEnvironmentText(settings, 'claude');
+    const claudeSettings = getClaudeProviderSettings(settings);
+    const cliPathInputs = createCLIPathFingerprintInputs(
+      claudeSettings.cliPathsByHost[getInstallationKey()],
+      claudeSettings.cliPath,
     );
-    if (!changed) {
+    const targetInputs = process.platform === 'win32' && claudeSettings.installationMethod === 'wsl'
+      ? { ...resolveExecutionTarget({ settings: claudeSettings, hostVaultPath: context?.vaultPath }) }
+      : undefined;
+    const hasFingerprintInputs = Boolean(targetInputs)
+      || hasCLIPathFingerprintInputs(cliPathInputs)
+      || Object.keys(parseEnvironmentVariables(environmentText)).length > 0;
+    if (!claudeSettings.environmentHash && !hasFingerprintInputs) {
+      return { changed: false };
+    }
+    const environmentHash = createEnvironmentRuntimeInputFingerprint(environmentText, {
+      ...cliPathInputs,
+      ...targetInputs,
+    });
+    if (environmentHash === claudeSettings.environmentHash) {
       return { changed: false };
     }
 
-    if (sessionPolicy === 'invalidate') invalidateClaudeHistoryContext();
-    updateClaudeProviderSettings(settings, {
-      environmentHash: current.runtime,
-      sessionEnvironmentHash: current.session,
-    });
-    return { changed: true, sessionPolicy };
-  },
-
-  normalizeModelVariantSettings(settings: Record<string, unknown>, context?: ProviderSettingsReconciliationContext): boolean {
-    const inputs = readFingerprintInputs(settings, context);
-    if (!isCurrentLegacyFingerprint(inputs)) return false;
-    const current = computeFingerprints(inputs);
-    updateClaudeProviderSettings(settings, {
-      environmentHash: current.runtime,
-      sessionEnvironmentHash: current.session,
-    });
-    return true;
+    invalidateClaudeHistoryContext();
+    updateClaudeProviderSettings(settings, { environmentHash });
+    return { changed: true };
   },
 } satisfies ProviderSettingsReconciler;

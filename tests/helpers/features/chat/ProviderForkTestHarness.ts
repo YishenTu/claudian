@@ -65,7 +65,6 @@ export async function createForkTestEnvironment() {
       },
       workingDirectory: root,
       createId: () => `execution-${++sequence}`,
-      resolveMissingProviderSession: async () => 'preserved',
     });
     coordinators.push(coordinator);
     await coordinator.bindConversation({

@@ -62,5 +62,4 @@ export const deepseekModelPolicy: ProviderModelPolicy = {
     });
   },
   normalizeModelVariant: model => model,
-  getCustomModelIds: () => new Set(),
 };

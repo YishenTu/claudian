@@ -46,7 +46,6 @@ export function createChatSessionRuntime(plugin: ChatFeatureHost, identity: Sess
       });
     },
     onBackgroundWorkChanged: () => runtime.publish('work'),
-    resolveMissingProviderSession: (id, nativeId) => plugin.handleMissingProviderSession(id, nativeId),
     onError: error => { new Notice(error instanceof Error ? error.message : 'Provider execution failed.'); },
     idleReleaseMs: 30 * 60_000,
     isOwnerIdle: () => runtime.isIdle,

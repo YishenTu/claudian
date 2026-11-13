@@ -72,11 +72,8 @@ export async function createCodexWorkspaceServices(
   const sessionArchive = new CodexThreadArchiveService(runtime);
   const unregisterTransitionHook = plugin.executionLifecycleRegistry
     .registerTransitionHook('codex', {
-      // Running sessions survive launch-only changes on the replacement server. A change that
-      // invalidates Codex sessions retires their bindings, so the sessions end with them.
-      preserveSessions: (_session, { sessionsInvalidated }) => (
-        decodeCodexConfig(runtimeHost.config).enabled && !sessionsInvalidated
-      ),
+      // Running sessions survive runtime-input changes and continue on the replacement server.
+      preserveSessions: () => decodeCodexConfig(runtimeHost.config).enabled,
       beforeTransition: async () => {
         modelCatalog.beginTransition();
         modelCatalogCoordinator.beginEnvironmentTransition();

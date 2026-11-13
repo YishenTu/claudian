@@ -15,23 +15,14 @@ import { type ClaudeRuntimeCatalog, probeClaudeCatalog } from './probeClaudeMode
 export type ClaudeCatalogProbe = (host: ProviderRuntimeHost, signal: AbortSignal) => Promise<ClaudeRuntimeCatalog>;
 export type ClaudeModelDiscovery = (signal: AbortSignal) => Promise<ProviderModelCatalogRefreshResult>;
 
-/** Model options over a configuration under edit; the environment stays the host's committed one. */
-function modelSource(
-  config: Readonly<Record<string, unknown>>,
-  host: Pick<ProviderRuntimeHost, 'environmentText'>,
-): ClaudeModelSource {
-  return { config, get environmentText() { return host.environmentText; } };
-}
-
 /** Replaces the discovered catalog and moves enabled identities (and their aliases) onto reported rows. */
 function applyDiscoveredClaudeModels(
   config: Record<string, unknown>,
-  host: Pick<ProviderRuntimeHost, 'environmentText'>,
   models: ClaudeDiscoveredModel[],
 ): void {
   const current = decodeClaudeConfig(config);
   updateClaudeConfig(config, { discoveredModels: models });
-  const source = modelSource(config, host);
+  const source: ClaudeModelSource = { config };
   const catalog = getClaudeModelCatalog(source);
   const modelAliases = { ...current.modelAliases };
   const visibleModels = [...new Set(resolveClaudeVisibleModels(source, catalog).map(({ id, option }) => {
@@ -51,10 +42,9 @@ function applyDiscoveredClaudeModels(
 /** Output styles only replace the stored list when Claude Code reported some. */
 function applyDiscoveredClaudeCatalog(
   config: Record<string, unknown>,
-  host: Pick<ProviderRuntimeHost, 'environmentText'>,
   catalog: ClaudeRuntimeCatalog,
 ): void {
-  applyDiscoveredClaudeModels(config, host, catalog.models);
+  applyDiscoveredClaudeModels(config, catalog.models);
   if (catalog.outputStyles.length > 0) {
     updateClaudeConfig(config, { discoveredOutputStyles: catalog.outputStyles });
   }
@@ -81,7 +71,7 @@ export async function discoverClaudeModels(
   }
   await host.updateConfig(config => {
     if (!current(config)) return false;
-    applyDiscoveredClaudeCatalog(config, host, catalog);
+    applyDiscoveredClaudeCatalog(config, catalog);
     return true;
   });
   if (!current()) return { changed: false };
@@ -111,7 +101,7 @@ export async function applySessionClaudeCatalog(
   if (!needsWrite(host.config)) return false;
   const written = await host.updateConfig(config => {
     if (!needsWrite(config)) return false;
-    if (models.length > 0) applyDiscoveredClaudeModels(config, host, models);
+    if (models.length > 0) applyDiscoveredClaudeModels(config, models);
     if (catalog.outputStyles.length > 0) {
       updateClaudeConfig(config, { discoveredOutputStyles: catalog.outputStyles });
     }
@@ -131,7 +121,7 @@ export function createClaudeModels(
       update: (config, _selection, patch) => { updateClaudeConfig(config, patch); },
       read: config => {
         const current = decodeClaudeConfig(config);
-        const source = modelSource(config, host);
+        const source: ClaudeModelSource = { config };
         const models = getClaudeModelCatalog(source);
         return {
           enabled: current.enabled,

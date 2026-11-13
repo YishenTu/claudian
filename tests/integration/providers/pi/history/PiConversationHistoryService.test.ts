@@ -757,6 +757,8 @@ describe('PiConversationHistoryService', () => {
       );
 
       expect(result.messages).toEqual([]);
+      // History reads never change the binding, even when its path is not trusted.
+      expect(result.providerState?.sessionFile).toBe(sessionFile);
       expect(await fs.readFile(sessionFile, 'utf8')).toBe(nativeContent);
     },
   );
@@ -1059,46 +1061,6 @@ describe('PiConversationHistoryService', () => {
       expect(await service.readNativeHistoryRevision(pendingFork, null)).toBeNull();
       expect(await service.readNativeHistoryRevision(createConversation(path.join(dir, 'missing.jsonl')), null)).toBeNull();
     });
-  });
-
-  describe('resolveMissingConversationSession', () => {
-
-
-
-    it('clears an exact stale logical binding while preserving unknown state and native files', async () => {
-      const dir = await createTempDirectory('pi-missing-reset-');
-      const nativeFile = path.join(dir, 'unrelated.jsonl');
-      const nativeContent = '{"type":"session","id":"other"}\n';
-      await fs.writeFile(nativeFile, nativeContent);
-      const conversation = createConversation('/trusted/absent.jsonl');
-      conversation.providerState = {
-        futureResumeCursor: { token: 'keep-me' },
-        leafEntryId: 'assistant-1',
-        parentSession: '/trusted/parent.jsonl',
-        sessionId: 's1',
-      };
-      const service = new PiConversationHistoryService();
-
-      const update3 = await service.resolveMissingConversationSession?.(
-        conversation,
-        '/vault',
-        's1',
-      );
-      expect(update3.outcome).toBe('reset');
-      Object.assign(conversation, update3.changes);
-
-      expect(conversation.sessionId).toBeNull();
-      expect(conversation.providerState).toEqual({
-        bindingRetired: true,
-        futureResumeCursor: { token: 'keep-me' },
-        previousSessions: [{
-          leafEntryId: 'assistant-1',
-          sessionId: 's1',
-        }],
-      });
-      await expect(fs.readFile(nativeFile, 'utf8')).resolves.toBe(nativeContent);
-    });
-
   });
 });
 

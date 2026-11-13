@@ -64,7 +64,6 @@ async function render() {
   workspace = await createPiWorkspaceServices(plugin);
   ({ container } = mountProviderSettings(workspace.settingsTabRenderer!, plugin, {
     notifyProviderModelOptionsChanged: notify,
-    renderCustomContextLimits: () => { throw new Error("Pi does not render custom context limits"); },
   }));
   return fixture.coordinator;
 }

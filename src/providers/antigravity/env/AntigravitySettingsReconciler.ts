@@ -1,35 +1,22 @@
 import { getRuntimeEnvironmentText } from '../../../core/providers/providerEnvironment';
 import type { ProviderSettingsReconciler } from '../../../core/providers/types';
 import { decodeAntigravityModelId, encodeAntigravityModelId } from '../models';
-import {
-  computeAntigravityRuntimeInputHash,
-  computeAntigravitySessionStoreHash,
-} from '../runtime/AntigravityRuntimeEnvironment';
+import { computeAntigravityRuntimeInputHash } from '../runtime/AntigravityRuntimeEnvironment';
 import {
   ANTIGRAVITY_PROVIDER_ID,
   getAntigravityProviderSettings,
   updateAntigravityProviderSettings,
 } from '../settings';
-import { clearAntigravityResumeState } from '../types';
 
 export const antigravitySettingsReconciler: ProviderSettingsReconciler = {
-  invalidateConversationSessions: conversations => conversations.filter(conversation => (
-    conversation.providerId === ANTIGRAVITY_PROVIDER_ID && clearAntigravityResumeState(conversation)
-  )),
-
   reconcileModelWithEnvironment(settings) {
     const current = getAntigravityProviderSettings(settings);
     if (!current.enabled) return { changed: false };
     const environmentText = getRuntimeEnvironmentText(settings, ANTIGRAVITY_PROVIDER_ID);
     const environmentHash = computeAntigravityRuntimeInputHash(current, environmentText);
-    const sessionStoreHash = computeAntigravitySessionStoreHash(environmentText);
-    if (current.environmentHash === environmentHash && current.sessionStoreHash === sessionStoreHash) {
-      return { changed: false };
-    }
-    // A first fingerprint is a backfill; only a moved store (HOME/USERPROFILE) strands bindings.
-    const storeMoved = current.sessionStoreHash !== '' && current.sessionStoreHash !== sessionStoreHash;
-    updateAntigravityProviderSettings(settings, { environmentHash, sessionStoreHash });
-    return { changed: true, sessionPolicy: storeMoved ? 'invalidate' : 'reload' };
+    if (current.environmentHash === environmentHash) return { changed: false };
+    updateAntigravityProviderSettings(settings, { environmentHash });
+    return { changed: true };
   },
 
   normalizeModelVariantSettings(settings): boolean {

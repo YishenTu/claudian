@@ -154,13 +154,6 @@ export class ClaudianChatFeatureHost extends ClaudianFeatureHost implements Chat
     return this.domains.conversations.deleteConversation(id);
   }
 
-  handleMissingProviderSession(
-    id: string,
-    missingProviderSessionId?: string,
-  ): Promise<'deleted' | 'reset' | 'preserved' | 'not_found'> {
-    return this.domains.conversations.handleMissingProviderSession(id, missingProviderSessionId);
-  }
-
   renameConversation(id: string, title: string): Promise<void> {
     return this.domains.conversations.renameConversation(id, title);
   }

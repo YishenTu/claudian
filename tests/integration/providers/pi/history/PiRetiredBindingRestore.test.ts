@@ -1,5 +1,3 @@
-// Retired-binding migration (#1647): delete this file after 2027-01-16.
-
 import { DEFAULT_CLAUDIAN_SETTINGS } from '@test/helpers/defaultSettings';
 import { testDate, testTime } from '@test/helpers/testClock';
 import * as fs from 'fs';
@@ -13,7 +11,6 @@ import { registerProviderModules } from '@/core/providers/registerProviderModule
 import type { ClaudianSettings, Conversation } from '@/core/types';
 import { claudeProviderRegistration } from '@/providers/claude/registration';
 import { piProviderRegistration } from '@/providers/pi/registration';
-import { clearPiResumeState } from '@/providers/pi/types';
 
 registerProviderModules([claudeProviderRegistration, piProviderRegistration]);
 
@@ -43,10 +40,13 @@ function liveConversation(id: string, sessionId: string, sessionFile: string): C
   };
 }
 
-/** The shape an earlier version left after retiring the live binding. */
-function retiredByEarlierVersion(conversation: Conversation): Conversation {
+/** The shape an earlier version left after retiring the live binding, optionally marked as retired. */
+function retiredByEarlierVersion(conversation: Conversation, marker: Record<string, unknown> = {}): Conversation {
   const { sessionFile, sessionId, leafEntryId } = conversation.providerState as Record<string, string>;
-  return { ...conversation, sessionId: null, providerState: { previousSessions: [{ sessionFile, sessionId, leafEntryId }] } };
+  return {
+    ...conversation, sessionId: null,
+    providerState: { ...marker, previousSessions: [{ sessionFile, sessionId, leafEntryId }] },
+  };
 }
 
 function fixture(conversations: Conversation[]) {
@@ -80,12 +80,7 @@ function fixture(conversations: Conversation[]) {
   return { repository, saveMetadata };
 }
 
-async function treeBranchesOfEditedPrompt(repository: ConversationRepository, id: string) {
-  const conversation = await repository.ensureHydrated(id);
-  return conversation?.messages.find(message => message.content === 'Edited prompt')?.treeBranches;
-}
-
-describe('Pi bindings retired by an earlier version', () => {
+describe('Pi sessions retired by an earlier version', () => {
   beforeEach(() => {
     root = fs.mkdtempSync(path.join(os.tmpdir(), 'claudian-pi-restore-'));
     vault = path.join(root, 'vault');
@@ -98,35 +93,23 @@ describe('Pi bindings retired by an earlier version', () => {
     fs.rmSync(root, { recursive: true, force: true });
   });
 
-  it('restores the conversation\'s own session so its turns regain tree navigation', async () => {
+  it.each([
+    ['unmarked', {}],
+    ['marked', { bindingRetired: true }],
+  ])('reads an available %s retired session as history without restoring its binding', async (_case, marker) => {
+    // The conversation's own session, still in the configured store, once restored as the live binding.
     const live = liveConversation('conv-a', 'session-a', writeSession('session-a', testTime({ seconds: 1 })));
-    const { repository, saveMetadata } = fixture([retiredByEarlierVersion(live)]);
+    const retired = retiredByEarlierVersion(live, marker);
+    const { repository, saveMetadata } = fixture([structuredClone(retired)]);
 
-    expect(await treeBranchesOfEditedPrompt(repository, 'conv-a')).toEqual(['u1', 'u2']);
-    const restored = { sessionId: 'session-a', providerState: live.providerState };
-    expect(repository.getCachedConversation('conv-a')).toMatchObject(restored);
-    expect(saveMetadata).toHaveBeenCalledWith(expect.objectContaining(restored));
-  });
+    const hydrated = await repository.ensureHydrated('conv-a');
 
-  it('keeps a binding retired by the current version history-only', async () => {
-    const retired = liveConversation('conv-a', 'session-a', writeSession('session-a', testTime({ seconds: 1 })));
-    clearPiResumeState(retired);
-    const { repository } = fixture([retired]);
-
-    expect(await treeBranchesOfEditedPrompt(repository, 'conv-a')).toBeUndefined();
-    expect(repository.getCachedConversation('conv-a')?.sessionId).toBeNull();
-  });
-
-  it('never binds an unsent fork to the source session it was retired into', async () => {
-    // A pending fork retires into its source session, which existed before the fork was created.
-    const source = liveConversation('conv-fork', 'session-source', writeSession('session-source', testTime({ seconds: -60 })));
-    const { repository, saveMetadata } = fixture([retiredByEarlierVersion(source)]);
-
-    expect(await treeBranchesOfEditedPrompt(repository, 'conv-fork')).toBeUndefined();
-    expect(repository.getCachedConversation('conv-fork')?.sessionId).toBeNull();
-    // The decision is recorded once, so later opens do not re-read the transcript header.
-    expect(saveMetadata).toHaveBeenCalledWith(expect.objectContaining({
-      providerState: expect.objectContaining({ bindingRetired: true }),
-    }));
+    expect(hydrated?.messages.map(message => message.content)).toEqual(['Edited prompt', 'Edited answer']);
+    // Tree navigation belongs to a live binding only.
+    expect(hydrated?.messages.find(message => message.content === 'Edited prompt')?.treeBranches).toBeUndefined();
+    const cached = repository.getCachedConversation('conv-a');
+    expect(cached?.sessionId).toBeNull();
+    expect(cached?.providerState).toEqual(retired.providerState);
+    expect(saveMetadata).not.toHaveBeenCalled();
   });
 });

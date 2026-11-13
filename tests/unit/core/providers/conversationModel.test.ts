@@ -16,7 +16,6 @@ interface TestProviderConfig {
 function createUIConfig(config: TestProviderConfig): ProviderChatUIConfig {
   return {
     getModelOptions: () => config.options.map(value => ({ label: value, value })),
-    getCustomModelIds: () => new Set(),
     getDefaultModel: () => config.defaultModel ?? null,
     ownsModel: model => config.options.includes(model),
     supportsReasoningEffort: () => false,

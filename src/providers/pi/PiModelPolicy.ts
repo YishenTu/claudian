@@ -110,10 +110,6 @@ export const piModelPolicy: ProviderModelPolicy = {
   normalizeModelVariant(model: string): string {
     return model;
   },
-
-  getCustomModelIds(): Set<string> {
-    return new Set<string>();
-  },
 };
 
 function getCachedModel(model: string, settings: Record<string, unknown>): PiDiscoveredModel | null {

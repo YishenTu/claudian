@@ -221,7 +221,6 @@ export default class ClaudianPlugin extends Plugin {
       defaultSettings: createDefaultClaudianSettings(getBuiltInProviderDefaultConfigs()),
       providers: ProviderRegistry,
       providerSettings: ProviderSettingsCoordinator,
-      executionLifecycle: this.executionLifecycleRegistry,
       isUnloading: () => this.isUnloading,
       publishCommittedSettings: async (settings, previous) => this.chatViews.publishSettings(settings, previous),
       // No chat view can hold tabs before loading completes and assigns the lifecycle.

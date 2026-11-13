@@ -1,6 +1,6 @@
 # Grok constraints
 
-- Authentication is native: never automatically call ACP authenticate or persist xAI credentials. Preserve session identity across prompt/CLI changes by reloading it after process replacement; target, distro or native session-store changes retire the resume binding while keeping a recovery-only history locator.
+- Authentication is native: never automatically call ACP authenticate or persist xAI credentials. Preserve session identity across prompt, CLI, environment and target changes by reloading it after process replacement; a session the current store lacks fails as missing and keeps its binding.
 - Native fork requests omit system-prompt metadata. Load the child with the complete current replacement before its first prompt; mark configuration applied only after successful load.
 - Keep Grok/xAI tools enabled except native plan entry/exit, which Claudian blocks without replacing native or user agent profiles. Preserve unknown tool data and native task names/payloads while adapting subagent presentation.
 - ACP `session/set_mode` does not change Grok permissions; only session `_meta.autoMode`/`yoloMode` do, and relaxing is sticky until process replacement. Accept-edits is answered client-side on native `default` edit prompts. Native Claude-compatible `defaultMode` settings can still loosen Ask and Accept edits.

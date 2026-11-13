@@ -66,7 +66,6 @@ it.each(['background-approval', 'background-nested', 'mcp-form-late'])('keeps %s
   const coordinator = new ChatExecutionCoordinator({
     lifecycleRegistry: new ProviderExecutionLifecycleRegistry(), resolveBackend: () => backend,
     persistence: env.repository, workingDirectory: env.root, createId: () => 'execution-child',
-    resolveMissingProviderSession: async () => 'preserved',
     interactionPort: {
       requestApproval: async request => {
         if (request.description?.includes('echo child')) { interactions.push('approval'); await gate; }

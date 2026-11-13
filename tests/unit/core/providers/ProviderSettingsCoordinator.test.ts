@@ -7,7 +7,6 @@ import { getProviderSettingsSnapshotWithModel } from '@/core/providers/conversat
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { ProviderSettingsCoordinator } from '@/core/providers/ProviderSettingsCoordinator';
 import type { ProviderSettingsReconciler } from '@/core/providers/types';
-import type { Conversation } from '@/core/types';
 import { DEFAULT_CLAUDE_PROVIDER_SETTINGS } from '@/providers/claude/config';
 
 describe('ProviderSettingsCoordinator', () => {
@@ -349,15 +348,13 @@ describe('ProviderSettingsCoordinator', () => {
   });
 
   describe('reconcileProviders', () => {
-    it('defaults existing providers to invalidation and separates reload-policy changes', () => {
-      const defaultReconciler: ProviderSettingsReconciler = {
-        invalidateConversationSessions: vi.fn(conversations => conversations),
+    it('reports exactly the providers whose runtime inputs changed', () => {
+      const changedReconciler: ProviderSettingsReconciler = {
         reconcileModelWithEnvironment: vi.fn(() => ({ changed: true })),
         normalizeModelVariantSettings: vi.fn(() => false),
       };
-      const reloadReconciler: ProviderSettingsReconciler = {
-        invalidateConversationSessions: vi.fn(conversations => conversations),
-        reconcileModelWithEnvironment: vi.fn(() => ({ changed: true, sessionPolicy: 'reload' as const })),
+      const unchangedReconciler: ProviderSettingsReconciler = {
+        reconcileModelWithEnvironment: vi.fn(() => ({ changed: false })),
         normalizeModelVariantSettings: vi.fn(() => false),
       };
       const originalGetSettingsReconciler = ProviderRegistry.getSettingsReconciler.bind(
@@ -366,56 +363,27 @@ describe('ProviderSettingsCoordinator', () => {
       const originalGetChatUIConfig = ProviderRegistry.getModelPolicy.bind(ProviderRegistry);
       const reconcilerSpy = vi.spyOn(ProviderRegistry, 'getSettingsReconciler')
         .mockImplementation((providerId) => {
-          if (providerId === 'fake-invalidate') return defaultReconciler;
-          if (providerId === 'fake-reload') return reloadReconciler;
+          if (providerId === 'fake-changed') return changedReconciler;
+          if (providerId === 'fake-unchanged') return unchangedReconciler;
           return originalGetSettingsReconciler(providerId);
         });
       const settingsProviderSpy = vi.spyOn(ProviderRegistry, 'resolveSettingsProviderId')
-        .mockReturnValue('fake-invalidate');
+        .mockReturnValue('fake-changed');
       const uiConfigSpy = vi.spyOn(ProviderRegistry, 'getModelPolicy')
         .mockImplementation((providerId) => (
-          providerId === 'fake-invalidate' || providerId === 'fake-reload'
+          providerId === 'fake-changed' || providerId === 'fake-unchanged'
             ? originalGetChatUIConfig('claude')
             : originalGetChatUIConfig(providerId)
         ));
       const result = ProviderSettingsCoordinator.reconcileProviders(
         { model: 'haiku' },
-        ['fake-invalidate', 'fake-reload'],
+        ['fake-unchanged', 'fake-changed'],
       );
       reconcilerSpy.mockRestore();
       settingsProviderSpy.mockRestore();
       uiConfigSpy.mockRestore();
 
-      expect(result.environmentChangedProviderIds).toEqual([
-        'fake-invalidate',
-        'fake-reload',
-      ]);
-      expect(result.sessionInvalidationProviderIds).toEqual(['fake-invalidate']);
-    });
-  });
-
-  describe('invalidateConversationSessions', () => {
-    it('clears bindings only for conversations of the requested providers', () => {
-      const claudeConv = {
-        providerId: 'claude',
-        sessionId: 'claude-session',
-        providerState: { providerSessionId: 'claude-session' },
-        messages: [],
-      } as unknown as Conversation;
-      const codexConv = {
-        providerId: 'codex',
-        sessionId: 'thread-1',
-        providerState: { threadId: 'thread-1' },
-        messages: [],
-      } as unknown as Conversation;
-
-      expect(ProviderSettingsCoordinator.invalidateConversationSessions([claudeConv, codexConv], ['codex']))
-        .toEqual([codexConv]);
-      expect(codexConv.sessionId).toBeNull();
-      expect(claudeConv).toMatchObject({
-        sessionId: 'claude-session',
-        providerState: { providerSessionId: 'claude-session' },
-      });
+      expect(result).toEqual({ changed: true, environmentChangedProviderIds: ['fake-changed'] });
     });
   });
 
@@ -430,7 +398,7 @@ describe('ProviderSettingsCoordinator', () => {
         savedProviderModel: { codex: 'gpt-5.4' },
       };
 
-      expect(ProviderSettingsCoordinator.normalizeAllModelVariants(settings)).toBe(true);
+      expect(ProviderSettingsCoordinator.normalizeAllModelVariants(settings)).toBe(false);
       expect(settings.model).toBe('gpt-5.4');
       expect(settings.savedProviderModel).toEqual({ codex: 'gpt-5.4' });
     });
@@ -967,12 +935,6 @@ describe('ProviderSettingsCoordinator', () => {
 
   describe('provider-scoped reconciliation', () => {
     it('updates the inactive provider snapshot without clobbering the active projection', () => {
-      const codexConv = {
-        providerId: 'codex',
-        sessionId: 'thread-1',
-        messages: [],
-      } as unknown as Conversation;
-
       const settings: Record<string, unknown> = {
         settingsProvider: 'claude',
         providerConfigs: {
@@ -995,15 +957,7 @@ describe('ProviderSettingsCoordinator', () => {
       );
 
       expect(result.changed).toBe(true);
-      expect(result.sessionInvalidationProviderIds).toContain('codex');
-      expect(ProviderSettingsCoordinator.invalidateConversationSessions(
-        [codexConv], result.sessionInvalidationProviderIds,
-      )).toEqual([codexConv]);
-      expect(codexConv.sessionId).toBeNull();
-      expect(codexConv.providerState).toEqual({
-        nativeConversationContextEstablished: false,
-        previousSegments: [{ threadId: 'thread-1' }],
-      });
+      expect(result.environmentChangedProviderIds).toContain('codex');
       expect(settings.model).toBe('haiku');
       expect(settings.savedProviderModel).toEqual({
         claude: 'haiku',

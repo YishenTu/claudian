@@ -7,7 +7,6 @@ import type {
   ProviderConversationHistoryService,
   ProviderHistoryInput,
   ProviderHistoryPathContext,
-  ProviderHistoryResult,
   ProviderHistoryState,
   ProviderHistoryUpdate,
 } from '../../../core/providers/types';
@@ -20,7 +19,6 @@ import { type OpencodeBindingDatabase, resolveOpencodeBindingDatabase } from '..
 import { resolveOpencodeHistoryLaunch } from '../runtime/OpencodeCLILaunch';
 import { OpencodeTargetEnvironment } from '../runtime/OpencodeExecutionTarget';
 import {
-  clearOpencodeResumeState,
   getOpencodeState,
   type OpencodePreviousSession,
   type OpencodeProviderState,
@@ -171,24 +169,6 @@ export class OpencodeConversationHistoryService implements ProviderConversationH
     const sessionId = this.resolveSessionIdForConversation(conversation);
     if (sessionId) return { sessionId, ...(state.databasePath ? { databasePath: state.databasePath } : {}) };
     return state.previousSessions?.at(-1) ?? null;
-  }
-
-  async resolveMissingConversationSession(
-    input: ProviderHistoryInput,
-    _vaultPath: string | null,
-    missingProviderSessionId?: string,
-  ): Promise<ProviderHistoryResult<'delete' | 'reset' | 'preserve'>> {
-    const conversation = copyProviderHistoryState(input);
-    if (
-      !this.resolveSessionIdForConversation(conversation)
-      || !missingProviderSessionId
-      || this.resolveSessionIdForConversation(conversation) !== missingProviderSessionId
-    ) {
-      return { outcome: 'preserve' };
-    }
-
-    clearOpencodeResumeState(conversation, { releaseDatabase: false });
-    return { outcome: 'reset', changes: conversation };
   }
 
   /** Only the live binding; `previousSessions` are recovery-only and never resume or fork. */

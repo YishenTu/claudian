@@ -208,51 +208,6 @@ describe('OpencodeConversationHistoryService', () => {
     });
   });
 
-  describe('resolveMissingConversationSession', () => {
-    it('retires a confirmed stale resume ID to history while preserving provider-owned state', async () => {
-      const conversation = createConversation('missing-session', '/tmp/opencode.db');
-      conversation.providerState!.futureResumeCursor = { token: 'cursor-1' };
-      const service = new OpencodeConversationHistoryService();
-
-      const update1 = await service.resolveMissingConversationSession(
-        conversation,
-        null,
-        'missing-session',
-      );
-      expect(update1.outcome).toBe('reset');
-      Object.assign(conversation, update1.changes);
-
-      expect(conversation.sessionId).toBeNull();
-      expect(conversation.providerState).toEqual({
-        databasePath: '/tmp/opencode.db',
-        futureResumeCursor: { token: 'cursor-1' },
-        nativeConversationContextEstablished: false,
-        previousSessions: [{ sessionId: 'missing-session', databasePath: '/tmp/opencode.db' }],
-      });
-      expect(service.resolveSessionIdForConversation(conversation)).toBeNull();
-    });
-
-    it('preserves a newer resume ID when the failure identifies another session', async () => {
-      const conversation = createConversation('current-session', '/tmp/opencode.db');
-      conversation.providerState!.futureResumeCursor = { token: 'cursor-1' };
-      const service = new OpencodeConversationHistoryService();
-
-      const update2 = await service.resolveMissingConversationSession(
-        conversation,
-        null,
-        'stale-session',
-      );
-      expect(update2.outcome).toBe('preserve');
-      Object.assign(conversation, update2.changes);
-
-      expect(conversation.sessionId).toBe('current-session');
-      expect(conversation.providerState).toEqual({
-        databasePath: '/tmp/opencode.db',
-        futureResumeCursor: { token: 'cursor-1' },
-      });
-    });
-  });
-
   it('marks native context established when read-only hydration proves history exists', async () => {
     const dbPath = path.join(tmpRoot, 'opencode.db');
     seedDatabase(dbPath, 'session-established', 'Accepted prompt');

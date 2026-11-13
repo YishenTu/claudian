@@ -49,7 +49,7 @@ it.each([
   }
   const container = document.body.createDiv();
   const control = fixture.services.settingsTabRenderer!.render(container, {
-    plugin: host, notifyProviderModelOptionsChanged() {}, renderCustomContextLimits() {},
+    plugin: host, notifyProviderModelOptionsChanged() {},
   });
   if (control) controls.push(control);
   const select = within(container).getByRole<HTMLSelectElement>('combobox', { name: 'Installation method' });

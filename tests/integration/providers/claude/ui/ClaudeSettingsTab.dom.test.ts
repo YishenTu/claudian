@@ -51,14 +51,10 @@ afterEach(async () => {
 });
 
 async function render() {
-  const contextLimits = vi.fn((target: HTMLElement, provider: string) => {
-    target.createEl('output', { attr: { 'aria-label': `${provider} custom context limits` } });
-  });
   control = services.settingsTabRenderer!.render(container, {
-    plugin: fixture.host, notifyProviderModelOptionsChanged: notify, renderCustomContextLimits: contextLimits,
+    plugin: fixture.host, notifyProviderModelOptionsChanged: notify,
   });
   await services.modelCatalog!.refresh();
-  return contextLimits;
 }
 
 async function toggle(name: string, checked: boolean) {
@@ -199,14 +195,12 @@ it('updates the no-model warning through selection, discovery, and provider disa
   expect(getComputedStyle(warning).display).toBe('none');
 });
 
-it('renders accessible provider controls and scopes environment context limits to Claude', async () => {
-  const contextLimits = await render();
+it('renders accessible provider controls', async () => {
+  await render();
   expect(within(container).getByRole('heading', { name: 'Models' })).toBeTruthy();
   expect(within(container).getByRole('combobox', { name: 'Response style' })).toBeTruthy();
   expect(cliInput().placeholder).toContain('cli-wrapper.cjs');
   expect(cliInput().placeholder).not.toContain('cli.js');
-  expect(contextLimits).toHaveBeenCalledWith(expect.any(HTMLElement), 'claude');
-  expect(within(container).getByRole('status', { name: 'claude custom context limits' })).toBeTruthy();
   const forbidden = /slash commands|hidden commands|agent skills|enable opus.*1m|enable sonnet.*1m|default model|custom models/i;
   const controls = () => ['button', 'switch', 'textbox', 'combobox', 'heading'].flatMap(role =>
     within(container).queryAllByRole(role, { name: forbidden }));

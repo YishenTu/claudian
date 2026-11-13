@@ -90,7 +90,7 @@ it.skipIf(onWindows)('preserves bindings on probe failure and retries discovery 
   expect(environmentProbes()).toHaveLength(2);
 });
 
-it.skipIf(onWindows)('retires a pending fork whose source belongs to another distro during hydration', async () => {
+it.skipIf(onWindows)('keeps a pending fork whose source belongs to another distro unread and unchanged during hydration', async () => {
   const files = createWindowsHostFS({ fs: nodeFS, fsPromises: nodeFSPromises });
   native.environment = { HOME: '/home/alice' };
   await files.write(files.fromLinux('/home/alice/.pi/agent/sessions/source.jsonl', 'Debian'), transcript('other-distro-source'));
@@ -99,11 +99,11 @@ it.skipIf(onWindows)('retires a pending fork whose source belongs to another dis
     messages: [], sessionId: null,
     providerState: { customState: 'keep', forkSource: { sessionId: 'other-distro-source', resumeAt: 'assistant-1' }, forkSourceSessionFile: source },
   };
-  const result = await new PiConversationHistoryService().hydrateConversationHistory(pending, 'C:\\Vault', context);
-  expect(result.sessionId).toBeNull();
-  expect(result.providerState).toEqual({ customState: 'keep', bindingRetired: true,
-    previousSessions: [{ sessionFile: source, sessionId: 'other-distro-source', leafEntryId: 'assistant-1' }],
-  });
+  const result = await new PiConversationHistoryService().hydrateConversationHistory(structuredClone(pending), 'C:\\Vault', context);
+  expect(result.messages ?? []).toEqual([]);
+  // History reads never change the binding; execution reports the unavailable source instead.
+  expect(result.sessionId ?? null).toBeNull();
+  expect(result.providerState).toEqual(pending.providerState);
 });
 
 it.skipIf(onWindows)('rejects WSL fork construction when the source locator cannot establish a trusted file', async () => {

@@ -27,7 +27,7 @@ it('shows the model warning only when enabled without models and forwards releva
   const container = document.body.createEl('main');
   const notify = vi.fn();
   const warning = renderProviderModelEnablementWarning(container, {
-    plugin: host, renderCustomContextLimits() {}, notifyProviderModelOptionsChanged: notify,
+    plugin: host, notifyProviderModelOptionsChanged: notify,
   }, { getIsEnabled: () => enabled, getHasEnabledModels: () => hasModels,
     providerId: 'codex', providerName: 'Codex' });
   const message = within(container).getByText('No Codex models are enabled. Go to Models below and enable at least one model.');

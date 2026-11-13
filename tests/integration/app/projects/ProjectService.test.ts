@@ -18,11 +18,8 @@ import { ConversationService } from '@/app/conversations/ConversationService';
 import { SessionMetadataLoader } from '@/app/conversations/SessionMetadataLoader';
 import { ProjectService } from '@/app/projects/ProjectService';
 import { ProjectStore } from '@/app/projects/ProjectStore';
-import { RuntimeSettingsCoordinator } from '@/app/settings/RuntimeSettingsCoordinator';
-import { SettingsCoordinator } from '@/app/settings/SettingsCoordinator';
 import { SessionStorage } from '@/app/storage/SessionStorage';
 import { PROJECTS_PATH } from '@/core/bootstrap/storagePaths';
-import { ProviderExecutionLifecycleRegistry } from '@/core/execution/ProviderExecutionLifecycleRegistry';
 import { defaultProjectMemoryPath, projectMemoryFolderOf } from '@/core/path/ProjectMemoryPath';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { ProviderSettingsCoordinator } from '@/core/providers/ProviderSettingsCoordinator';
@@ -98,16 +95,10 @@ async function fixture(options: { vault?: DesktopVault; conversations?: Conversa
     projects,
   });
   repository.replaceAll(options.conversations ?? []);
-  const settingsCoordinator = new SettingsCoordinator(settings, async () => undefined);
   const sessions = new SessionStorage(files, `device-${'a'.repeat(64)}`);
   const metadataLoaded = deferred<void>();
-  const sessionMetadata: SessionMetadataLoader = new SessionMetadataLoader({
-    sessions, conversations: repository, providerSettings: ProviderSettingsCoordinator,
-    runtimeSettings: new RuntimeSettingsCoordinator({
-      settings: settingsCoordinator, conversations: repository, getSettings: () => settings,
-      canCompleteInvalidations: () => sessionMetadata.hasLoadedAll,
-      executionLifecycle: new ProviderExecutionLifecycleRegistry(),
-    }),
+  const sessionMetadata = new SessionMetadataLoader({
+    sessions, conversations: repository,
     isUnloading: () => false, whenLayoutReady: callback => callback(),
     onConversationListChanged, onAllMetadataLoaded: () => metadataLoaded.resolve(),
   });

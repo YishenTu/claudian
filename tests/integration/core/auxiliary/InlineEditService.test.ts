@@ -5,6 +5,7 @@ import {
 
 import { InlineEditService } from '@/core/auxiliary/InlineEditService';
 import { ProviderExecutionLifecycleRegistry } from '@/core/execution';
+import { t } from '@/i18n/i18n';
 
 const selection = { mode: 'selection', notePath: 'note.md', selectedText: 'draft' } as const;
 
@@ -87,6 +88,15 @@ describe('InlineEditService', () => {
     backend.sessions[0].complete();
     await expect(third).resolves.toMatchObject({ editedText: 'Fin', success: true });
     expect(backend.sessions).toHaveLength(1);
+  });
+
+  it('reports a missing native session with the localized notice instead of the native wording', async () => {
+    const { backend, service } = createService();
+    const result = service.send({ ...selection, instruction: 'Improve' });
+    await waitFor(() => backend.sessions[0]?.requests.length === 1);
+    backend.sessions[0].fail('No conversation found with session ID: native-session', 'provider-session-missing');
+
+    await expect(result).resolves.toEqual({ error: t('chat.executionNotices.sessionUnavailable'), success: false });
   });
 
   it('reports a transition that invalidated continuity and then starts from the editor context', async () => {

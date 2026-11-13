@@ -251,7 +251,6 @@ export type ProviderExecutionErrorEvent = ProviderEventBase<
     readonly category: ProviderExecutionErrorCategory;
     readonly message: string;
     readonly recoverable: boolean;
-    readonly missingProviderSessionId?: string;
   };
 
 export type ProviderRequestedExecutionEvent =

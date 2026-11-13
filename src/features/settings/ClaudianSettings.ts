@@ -1,7 +1,6 @@
 import type { App, Plugin, SettingDefinitionItem } from 'obsidian';
 import { Notice, PluginSettingTab } from 'obsidian';
 
-import { parseEnvironmentVariables } from '@/core/process/env';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { ProviderSettingsCoordinator } from '@/core/providers/ProviderSettingsCoordinator';
 import { ProviderWorkspaceRegistry } from '@/core/providers/ProviderWorkspaceRegistry';
@@ -19,15 +18,13 @@ import { getAvailableLocales, getLocaleDisplayName, setLocale, t } from '@/i18n/
 import type { Locale } from '@/i18n/types';
 import { createProviderIconSvg } from '@/shared/icons';
 import { AccessibleSetting } from '@/shared/settings/AccessibleSetting';
-import { bindCommittedControl, type CommittedControlNotices } from '@/shared/settings/CommittedControl';
-import { formatContextLimit, parseContextLimit } from '@/shared/settings/contextLimit';
+import { bindCommittedControl } from '@/shared/settings/CommittedControl';
 import { DebouncedSettingsWriter } from '@/shared/settings/DebouncedSettingsWriter';
 import { renderEnvironmentSettingsSection } from '@/shared/settings/EnvironmentSettingsSection';
 import { frameSettingsGroups } from '@/shared/settings/SettingsGroups';
 
 type SettingsTabId = 'general' | 'providers' | 'skills';
 
-let nextContextValidationId = 0;
 
 /** The shared host plus the capabilities of panels this tab renders. */
 export type SettingsFeatureHost = FeatureHost & SkillsSettingsHost;
@@ -42,7 +39,6 @@ export class ClaudianSettingTab extends PluginSettingTab {
   private readonly providerSettingsRenders = new Map<ProviderId, ProviderSettingsTabRenderHandle>();
   private skillsTab: SkillsSettingsTab | null = null;
   private readonly textEdits: DebouncedSettingsWriter<ClaudianSettings>;
-  private readonly customAliasDrafts = new Map<string, string>();
 
   constructor(app: App, plugin: Plugin, host: SettingsFeatureHost) {
     super(app, plugin);
@@ -148,9 +144,6 @@ export class ClaudianSettingTab extends PluginSettingTab {
           notifyProviderModelOptionsChanged: (changedProviderId) => {
             this.notifyProviderModelOptionsChanged(changedProviderId);
           },
-          renderCustomContextLimits: (target, targetProviderId) => (
-            this.renderCustomContextLimits(target, targetProviderId)
-          ),
         });
         if (handle) this.providerSettingsRenders.set(providerId, handle);
         frameSettingsGroups(providerContent);
@@ -677,154 +670,6 @@ export class ClaudianSettingTab extends PluginSettingTab {
     this.host.notifyProviderChatOptionsChanged(providerId);
     this.syncProviderEnablement?.(providerId);
     this.refreshTitleModelOptions?.();
-  }
-
-  private renderCustomContextLimits(container: HTMLElement, providerId: ProviderId): void {
-    container.empty();
-
-    const modelAliases = ProviderRegistry.getChatUIConfig(providerId).customModelAliases;
-    const uniqueModelIds = new Set<string>();
-    const envVars = parseEnvironmentVariables(
-      this.host.getActiveEnvironmentVariables(providerId),
-    );
-    for (const modelId of ProviderRegistry.getChatUIConfig(providerId).getCustomModelIds(envVars)) {
-      uniqueModelIds.add(modelId);
-    }
-
-    if (uniqueModelIds.size === 0) {
-      return;
-    }
-
-    const headerEl = container.createDiv({ cls: 'claudian-context-limits-header' });
-    headerEl.createSpan({
-      text: t('settings.customModelOverrides.name'),
-      cls: 'claudian-context-limits-label',
-    });
-
-    const descEl = container.createDiv({ cls: 'claudian-context-limits-desc' });
-    descEl.setText(t('settings.customModelOverrides.desc'));
-
-    const listEl = container.createDiv({ cls: 'claudian-context-limits-list' });
-
-    for (const modelId of uniqueModelIds) {
-      const aliasDraftKey = JSON.stringify([providerId, modelId]);
-      const limits = this.host.settings.customContextLimits ?? {};
-      const currentValue = Object.hasOwn(limits, modelId) ? limits[modelId] : undefined;
-      const currentAliases = modelAliases?.get(this.host.settings) ?? {};
-      const currentAlias = Object.hasOwn(currentAliases, modelId) ? currentAliases[modelId] : '';
-
-      const itemEl = listEl.createDiv({ cls: 'claudian-context-limits-item' });
-      const nameEl = itemEl.createDiv({ cls: 'claudian-context-limits-model' });
-      nameEl.setText(modelId);
-
-      const inputWrapper = itemEl.createDiv({ cls: 'claudian-context-limits-input-wrapper' });
-      const aliasInputEl = inputWrapper.createEl('input', {
-        type: 'text',
-        placeholder: t('settings.customModelAliases.placeholder'),
-        cls: 'claudian-context-alias-input',
-        value: this.customAliasDrafts.get(aliasDraftKey) ?? currentAlias,
-      });
-      aliasInputEl.setAttribute('aria-label', t('settings.customModelAliases.ariaLabel', { model: modelId }));
-      aliasInputEl.setAttribute('aria-description', t('settings.customModelAliases.ariaDescription'));
-
-      const inputEl = inputWrapper.createEl('input', {
-        type: 'text',
-        placeholder: '200k',
-        cls: 'claudian-context-limits-input',
-        value: currentValue ? formatContextLimit(currentValue) : '',
-      });
-      inputEl.setAttribute('aria-label', `Context window for ${modelId}`);
-
-      const validationEl = inputWrapper.createDiv({
-        cls: 'claudian-context-limit-validation claudian-hidden',
-        attr: { id: `claudian-context-validation-${++nextContextValidationId}`, role: 'alert' },
-      });
-      inputEl.setAttribute('aria-describedby', validationEl.id);
-      inputEl.setAttribute('aria-invalid', 'false');
-
-      const saveAlias = async (): Promise<void> => {
-        const draft = aliasInputEl.value;
-        const trimmed = draft.trim();
-        this.customAliasDrafts.set(aliasDraftKey, draft);
-
-        try {
-          await this.host.mutateSettings((settings) => {
-            const aliases = new Map(Object.entries(modelAliases?.get(settings) ?? {}));
-            if (trimmed) {
-              aliases.set(modelId, trimmed);
-            } else {
-              aliases.delete(modelId);
-            }
-            modelAliases?.update(settings, Object.fromEntries(aliases));
-          });
-          if (this.customAliasDrafts.get(aliasDraftKey) === draft) this.customAliasDrafts.delete(aliasDraftKey);
-          this.notifyProviderModelOptionsChanged(providerId);
-        } catch {
-          new Notice('Could not save model alias. Try again.');
-        }
-      };
-
-      const contextLimitNotices: CommittedControlNotices = {
-        committed: t('settings.customContextLimits.savedRefreshFailed'),
-        rejected: t('settings.customContextLimits.saveFailed'),
-      };
-      bindCommittedControl(
-        {
-          setValue(value: string) { inputEl.value = value; },
-          onChange(callback) {
-            inputEl.addEventListener('input', () => { void callback(inputEl.value); });
-          },
-        },
-        () => {
-          const limits = this.host.settings.customContextLimits ?? {};
-          const current = Object.hasOwn(limits, modelId) ? limits[modelId] : undefined;
-          return current ? formatContextLimit(current) : '';
-        },
-        async (raw) => {
-          const trimmed = raw.trim();
-          const parsed = trimmed ? parseContextLimit(trimmed) : null;
-          const message = trimmed && parsed === null ? t('settings.customContextLimits.invalid') : '';
-          validationEl.setText(message);
-          validationEl.toggleClass('claudian-hidden', !message);
-          inputEl.classList.toggle('claudian-input-error', Boolean(message));
-          inputEl.setAttribute('aria-invalid', String(Boolean(message)));
-          if (message) return false;
-
-          await this.host.mutateSettings((settings) => {
-            settings.customContextLimits ??= {};
-            if (!trimmed) {
-              delete settings.customContextLimits[modelId];
-            } else {
-              settings.customContextLimits = Object.fromEntries([
-                ...Object.entries(settings.customContextLimits),
-                [modelId, parsed!],
-              ]);
-            }
-          });
-        },
-        undefined,
-        contextLimitNotices,
-      );
-      aliasInputEl.addEventListener('blur', () => {
-        void saveAlias();
-      });
-      aliasInputEl.addEventListener('input', () => {
-        this.customAliasDrafts.set(aliasDraftKey, aliasInputEl.value);
-      });
-      aliasInputEl.addEventListener('keydown', (event) => {
-        if (event.isComposing) return;
-        if (event.key === 'Enter') {
-          event.preventDefault();
-          aliasInputEl.blur();
-        } else if (event.key === 'Escape') {
-          event.preventDefault();
-          const aliases = modelAliases?.get(this.host.settings) ?? {};
-          this.customAliasDrafts.delete(aliasDraftKey);
-          aliasInputEl.value = Object.hasOwn(aliases, modelId) ? aliases[modelId] : '';
-          aliasInputEl.blur();
-        }
-      });
-    }
   }
 
   private async restartServiceForPromptChange(): Promise<void> {

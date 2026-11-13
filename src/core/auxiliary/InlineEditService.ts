@@ -1,5 +1,6 @@
 import { appendContextFiles } from '@/core/prompt/promptContext';
 
+import { presentExecutionError } from '../execution/presentExecutionError';
 import {
   buildInlineEditPrompt,
   getInlineEditSystemPrompt,
@@ -9,6 +10,7 @@ import {
 } from '../prompt/inlineEdit';
 import type { AuxiliaryExecutionContext } from './AuxiliaryExecutionContext';
 import { AuxiliarySessionController } from './AuxiliarySessionController';
+import { AuxiliaryExecutionError } from './TextResponseCollector';
 
 const CONTINUITY_RESET_MESSAGE =
   'The provider environment changed. Start a new inline edit.';
@@ -97,6 +99,8 @@ export class InlineEditService {
 function toFailure(error: unknown): InlineEditResult {
   return {
     success: false,
-    error: error instanceof Error ? error.message : 'Unknown error',
+    error: error instanceof AuxiliaryExecutionError
+      ? presentExecutionError({ category: error.category, message: error.message }).message
+      : error instanceof Error ? error.message : 'Unknown error',
   };
 }

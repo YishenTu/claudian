@@ -166,7 +166,6 @@ export function createOpencodeSettingsTabRenderer(
         name: t('settings.opencode.environment.name'),
         desc: t('settings.opencode.environment.desc'),
         placeholder: 'OPENCODE_DB=/path/to/opencode.db',
-        renderCustomContextLimits: (target) => context.renderCustomContextLimits(target, 'opencode'),
       });
       return modelPicker;
     },

@@ -1,7 +1,6 @@
 import type { App } from 'obsidian';
 import { Notice, setIcon } from 'obsidian';
 
-import { parseEnvironmentVariables } from '@/core/process/env';
 import { AccessibleModal } from '@/shared/modals/AccessibleModal';
 import { AccessibleSetting } from '@/shared/settings/AccessibleSetting';
 
@@ -10,11 +9,9 @@ import {
   resolveEnvironmentSnippetScope,
 } from '../../core/providers/providerEnvironment';
 import type { ProviderHost } from '../../core/providers/ProviderHost';
-import { ProviderRegistry } from '../../core/providers/ProviderRegistry';
 import type { EnvironmentScope, EnvSnippet } from '../../core/types';
 import { t } from '../../i18n/i18n';
 import { confirmDelete } from '../modals/ConfirmModal';
-import { formatContextLimit, parseContextLimit } from './contextLimit';
 
 export class EnvSnippetModal extends AccessibleModal {
   plugin: ProviderHost;
@@ -45,9 +42,6 @@ export class EnvSnippetModal extends AccessibleModal {
     let nameEl: HTMLInputElement;
     let descEl: HTMLInputElement;
     let envVarsEl: HTMLTextAreaElement;
-    const contextLimitInputs: Map<string, HTMLInputElement> = new Map();
-    const modelAliasInputs: Map<string, HTMLInputElement> = new Map();
-    let contextLimitsContainer: HTMLElement | null = null;
 
     // !e.isComposing for IME support (Chinese, Japanese, Korean, etc.)
     let saving = false;
@@ -66,27 +60,6 @@ export class EnvSnippetModal extends AccessibleModal {
         return;
       }
 
-      const contextLimits = new Map<string, number>();
-      for (const [modelId, input] of contextLimitInputs) {
-        const value = input.value.trim();
-        if (value) {
-          const parsed = parseContextLimit(value);
-          if (parsed === null) {
-            new Notice(t('settings.customContextLimits.invalid'));
-            return;
-          }
-          contextLimits.set(modelId, parsed);
-        }
-      }
-
-      const modelAliases = new Map<string, string>();
-      for (const [modelId, input] of modelAliasInputs) {
-        const value = input.value.trim();
-        if (value) {
-          modelAliases.set(modelId, value);
-        }
-      }
-
       const snippet: EnvSnippet = {
         id: this.snippet?.id || `snippet-${Date.now()}`,
         name,
@@ -96,8 +69,8 @@ export class EnvSnippetModal extends AccessibleModal {
           envVarsEl.value,
           this.snippet?.scope ?? this.snippetScope,
         ),
-        contextLimits: contextLimits.size > 0 ? Object.fromEntries(contextLimits) : undefined,
-        modelAliases: modelAliasInputs.size > 0 ? Object.fromEntries(modelAliases) : undefined,
+        // Aliases saved by earlier versions are kept; the editor no longer derives them from the environment.
+        modelAliases: this.snippet?.modelAliases,
       };
 
       saving = true;
@@ -117,64 +90,6 @@ export class EnvSnippetModal extends AccessibleModal {
       } finally {
         saving = false;
         for (const control of controls) control.disabled = false;
-      }
-    };
-
-    const renderContextLimitFields = () => {
-      if (!contextLimitsContainer) return;
-      const draftLimits = new Map([...contextLimitInputs].map(([id, input]) => [id, input.value]));
-      const draftAliases = new Map([...modelAliasInputs].map(([id, input]) => [id, input.value]));
-      contextLimitsContainer.empty();
-      contextLimitInputs.clear();
-      modelAliasInputs.clear();
-
-      const envVars = parseEnvironmentVariables(envVarsEl.value);
-      const uniqueModelIds = ProviderRegistry.getCustomModelIds(envVars);
-
-      if (uniqueModelIds.size === 0) {
-        contextLimitsContainer.addClass('claudian-hidden');
-        return;
-      }
-
-      contextLimitsContainer.removeClass('claudian-hidden');
-
-      const existingLimits = this.snippet?.contextLimits ?? this.plugin.settings.customContextLimits ?? {};
-      const existingAliases = this.snippet?.modelAliases ?? (ProviderRegistry.getChatUIConfig('claude').customModelAliases?.get(this.plugin.settings) ?? {});
-
-      contextLimitsContainer.createDiv({
-        text: t('settings.customModelOverrides.name'),
-        cls: 'setting-item-name',
-      });
-      contextLimitsContainer.createDiv({
-        text: t('settings.customModelOverrides.desc'),
-        cls: 'setting-item-description',
-      });
-
-      for (const modelId of uniqueModelIds) {
-        const row = contextLimitsContainer.createDiv({ cls: 'claudian-snippet-limit-row' });
-        row.createSpan({ text: modelId, cls: 'claudian-snippet-limit-model' });
-        row.createSpan({ cls: 'claudian-snippet-limit-spacer' });
-
-        const aliasInput = row.createEl('input', {
-          type: 'text',
-          placeholder: t('settings.customModelAliases.placeholder'),
-          cls: 'claudian-snippet-alias-input',
-        });
-        aliasInput.value = draftAliases.get(modelId)
-          ?? (Object.prototype.hasOwnProperty.call(existingAliases, modelId) ? existingAliases[modelId] : '');
-        aliasInput.setAttribute('aria-label', `Alias for ${modelId}`);
-        aliasInput.setAttribute('aria-description', t('settings.customModelAliases.ariaDescription'));
-        modelAliasInputs.set(modelId, aliasInput);
-
-        const input = row.createEl('input', {
-          type: 'text',
-          placeholder: '200k',
-          cls: 'claudian-snippet-limit-input',
-        });
-        input.value = draftLimits.get(modelId)
-          ?? (Object.prototype.hasOwnProperty.call(existingLimits, modelId) ? formatContextLimit(existingLimits[modelId]) : '');
-        input.setAttribute('aria-label', `Context window for ${modelId}`);
-        contextLimitInputs.set(modelId, input);
       }
     };
 
@@ -207,13 +122,9 @@ export class EnvSnippetModal extends AccessibleModal {
         const envVarsToShow = this.snippet?.envVars ?? this.plugin.getEnvironmentVariablesForScope(this.snippetScope);
         text.setValue(envVarsToShow);
         text.inputEl.rows = 8;
-        text.inputEl.addEventListener('blur', () => renderContextLimitFields());
       });
     envVarsSetting.settingEl.addClass('claudian-env-snippet-setting');
     envVarsSetting.controlEl.addClass('claudian-env-snippet-control');
-
-    contextLimitsContainer = contentEl.createDiv({ cls: 'claudian-snippet-context-limits' });
-    renderContextLimitFields();
 
     const buttonContainer = contentEl.createDiv({ cls: 'claudian-snippet-buttons' });
 
@@ -245,18 +156,18 @@ export class EnvSnippetManager {
   private containerEl: HTMLElement;
   private plugin: ProviderHost;
   private scope: EnvironmentScope;
-  private onContextLimitsChange?: () => void;
+  private onEnvironmentApplied?: () => void;
 
   constructor(
     containerEl: HTMLElement,
     plugin: ProviderHost,
     scope: EnvironmentScope,
-    onContextLimitsChange?: () => void,
+    onEnvironmentApplied?: () => void,
   ) {
     this.containerEl = containerEl;
     this.plugin = plugin;
     this.scope = scope;
-    this.onContextLimitsChange = onContextLimitsChange;
+    this.onEnvironmentApplied = onEnvironmentApplied;
     this.render();
   }
 
@@ -390,34 +301,7 @@ export class EnvSnippetManager {
       await this.plugin.applyEnvironmentVariablesBatch(updates);
     }
 
-    await this.plugin.mutateSettings((settings) => {
-      if (snippet.contextLimits) {
-        settings.customContextLimits = {
-          ...settings.customContextLimits,
-          ...snippet.contextLimits,
-        };
-      }
-
-      // Explicit empty aliases clear the aliases for this snippet's model IDs.
-      if (snippet.modelAliases) {
-        const modelIds = ProviderRegistry.getCustomModelIds(parseEnvironmentVariables(snippet.envVars));
-        const modelAliases = ProviderRegistry.getChatUIConfig('claude').customModelAliases;
-        const nextAliases = new Map(Object.entries(modelAliases?.get(settings) ?? {}));
-        for (const modelId of modelIds) {
-          const alias = Object.prototype.hasOwnProperty.call(snippet.modelAliases, modelId)
-            ? snippet.modelAliases[modelId].trim() : undefined;
-          if (alias) {
-            nextAliases.set(modelId, alias);
-          } else {
-            nextAliases.delete(modelId);
-          }
-        }
-        modelAliases?.update(settings, Object.fromEntries(nextAliases));
-      }
-    });
-
-    this.onContextLimitsChange?.();
-    if (snippet.modelAliases) this.plugin.notifyProviderChatOptionsChanged('claude');
+    this.onEnvironmentApplied?.();
   }
 
   #editSnippet(snippet: EnvSnippet) {

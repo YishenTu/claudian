@@ -29,8 +29,6 @@ interface PersistedPiProviderSettings extends StoredInstallationSettings {
   environmentVariables: string;
   modelAliases: Record<string, string>;
   preferredThinkingByModel: Record<string, PiThinkingLevel>;
-  /** Fingerprint of location-affecting inputs; a change invalidates native bindings. */
-  sessionEnvironmentHash: string;
   visibleModels: string[];
 }
 
@@ -48,7 +46,6 @@ export const DEFAULT_PI_PROVIDER_SETTINGS: Readonly<PiProviderSettings> = Object
   environmentVariables: '',
   modelAliases: {},
   preferredThinkingByModel: {},
-  sessionEnvironmentHash: '',
   visibleModels: [],
 });
 
@@ -113,10 +110,6 @@ export function decodePiConfig(
       config.preferredThinkingByModel,
       discoveredModels,
       persistableIds,
-    ),
-    sessionEnvironmentHash: readStoredString(
-      config.sessionEnvironmentHash,
-      DEFAULT_PI_PROVIDER_SETTINGS.sessionEnvironmentHash,
     ),
     visibleModels,
   };
@@ -193,7 +186,6 @@ export function updatePiConfig(
     environmentVariables: next.environmentVariables,
     modelAliases: next.modelAliases,
     preferredThinkingByModel: next.preferredThinkingByModel,
-    sessionEnvironmentHash: next.sessionEnvironmentHash,
     visibleModels: next.visibleModels,
   });
 

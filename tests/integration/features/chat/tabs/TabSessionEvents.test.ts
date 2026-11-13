@@ -71,7 +71,6 @@ async function createCodexChildTab() {
       assertConversationExecutionAuthority: async () => undefined, recordConversationActivity: async () => undefined },
     interactionPort: { requestApproval: async () => { throw new Error('Unexpected approval'); },
       askUserQuestion: async () => { throw new Error('Unexpected question'); }, dismissInteraction: () => undefined }, workingDirectory: '/vault', createId: () => 'binding',
-    resolveMissingProviderSession: async () => 'not_found',
     onSessionEvent: (event, context) => events.enqueue(event, context),
     onBackgroundWorkChanged: working => workChanges.push(working),
   });

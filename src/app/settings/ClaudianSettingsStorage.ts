@@ -8,7 +8,7 @@ import {
   migrateHiddenCommands,
 } from '../../core/providers/commands/hiddenCommands';
 import { decodeModelAliases } from '../../core/providers/models/modelAliases';
-import { decodeProviderModelSelectionId, toProviderRuntimeModelId } from '../../core/providers/modelSelection';
+import { toProviderRuntimeModelId } from '../../core/providers/modelSelection';
 import {
   getSharedEnvironmentVariables
 } from '../../core/providers/providerEnvironment';
@@ -44,6 +44,8 @@ const RETIRED_SHARED_SETTING_FIELDS = [
   'maxWarmAgentProcesses',
   'projectSort',
   'showMessageTimestamps',
+  'pendingProviderSessionInvalidations',
+  'customContextLimits',
 ] as const;
 
 function getProviderSettingsAdapters() {
@@ -227,7 +229,6 @@ function projectPersistableProviderConfigs(settings: Record<string, unknown>): P
 function pruneDeselectedProviderProjections(settings: Record<string, unknown>): Record<string, unknown> {
   const cleaned = { ...settings };
   const configs = normalizeProviderConfigs(settings.providerConfigs);
-  const contextLimitMatchers: Array<(model: string) => boolean> = [];
   for (const providerId of ProviderRegistry.getRegisteredProviderIds()) {
     const selected = configs[providerId]?.visibleModels;
     if (!Array.isArray(selected)) continue;
@@ -236,16 +237,6 @@ function pruneDeselectedProviderProjections(settings: Record<string, unknown>): 
       ui.normalizeAvailableModelSelection?.(id, settings) ?? id,
       settings,
     ));
-    const normalizeContextModel = (id: string) => {
-      const normalized = normalize(id);
-      return normalized.toLowerCase();
-    };
-    const selectedContextModels = new Set(selected.filter((id): id is string => typeof id === 'string')
-      .map(normalizeContextModel));
-    contextLimitMatchers.push(model => {
-      const owner = decodeProviderModelSelectionId(model)?.providerId;
-      return (!owner || owner === providerId) && selectedContextModels.has(normalizeContextModel(model));
-    });
     const savedModels = settings.savedProviderModel as Record<string, unknown> | undefined;
     const model = savedModels?.[providerId];
     if (typeof model !== 'string') continue;
@@ -257,12 +248,6 @@ function pruneDeselectedProviderProjections(settings: Record<string, unknown>): 
       delete remaining[providerId];
       cleaned[key] = remaining;
     }
-  }
-  const limits = settings.customContextLimits;
-  if (limits && typeof limits === 'object' && !Array.isArray(limits)) {
-    const entries = Object.entries(limits);
-    const selected = entries.filter(([model]) => contextLimitMatchers.some(matches => matches(model)));
-    if (selected.length !== entries.length) cleaned.customContextLimits = Object.fromEntries(selected);
   }
   return cleaned;
 }
@@ -301,17 +286,6 @@ function isEnvironmentScope(value: unknown): value is EnvironmentScope {
   return value === 'shared' || (typeof value === 'string' && value.startsWith('provider:'));
 }
 
-function normalizeContextLimits(value: unknown): Record<string, number> | undefined {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    return undefined;
-  }
-
-  const entries = Object.entries(value).filter((entry): entry is [string, number] => (
-    typeof entry[1] === 'number' && Number.isFinite(entry[1]) && entry[1] > 0
-  ));
-  return entries.length > 0 ? Object.fromEntries(entries) : undefined;
-}
-
 function normalizeEnvSnippets(value: unknown): EnvSnippet[] {
   if (!Array.isArray(value)) {
     return [];
@@ -343,7 +317,6 @@ function normalizeEnvSnippets(value: unknown): EnvSnippet[] {
       description: candidate.description,
       envVars: candidate.envVars,
       scope: isEnvironmentScope(candidate.scope) ? candidate.scope : undefined,
-      contextLimits: normalizeContextLimits(candidate.contextLimits),
       modelAliases,
     });
   }
@@ -504,8 +477,7 @@ export class ClaudianSettingsStorage {
       ) || didNormalizeProviderSettings;
     }
     const pruned = pruneDeselectedProviderProjections(merged);
-    const didPruneDeselectedModels = pruned.savedProviderModel !== merged.savedProviderModel
-      || pruned.customContextLimits !== merged.customContextLimits;
+    const didPruneDeselectedModels = pruned.savedProviderModel !== merged.savedProviderModel;
     Object.assign(merged, pruned);
     const didNormalizeHostScopedProviderConfigs = hasHostScopedProviderConfigNormalization(
       providerConfigs,

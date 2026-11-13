@@ -1,4 +1,4 @@
-import type { Conversation, ForkSource } from '@/core/types';
+import type { ForkSource } from '@/core/types';
 
 /** A retired native session that remains readable history but is never resumed. */
 export interface OpencodePreviousSession {
@@ -60,44 +60,6 @@ export function getOpencodeState(
     }
   }
   return parsed;
-}
-
-/**
- * Retires the live native binding into history-only state. The next send starts
- * a fresh native session and replays Claudian history into it.
- */
-export function clearOpencodeResumeState(
-  conversation: Pick<Conversation, 'sessionId' | 'providerState'>,
-  options: { releaseDatabase: boolean },
-): boolean {
-  const state = getOpencodeState(conversation.providerState);
-  const sessionId = conversation.sessionId ?? state.sessionId;
-  const releasesDatabase = options.releaseDatabase && !!state.databasePath;
-  if (!sessionId && !state.forkSource && !releasesDatabase) return false;
-
-  const previousSessions = [...(state.previousSessions ?? [])];
-  // In-memory sessions leave no history to read.
-  if (sessionId && state.databasePath !== ':memory:' && !previousSessions.some(previous => (
-    previous.sessionId === sessionId && previous.databasePath === state.databasePath
-  ))) {
-    previousSessions.push({
-      sessionId,
-      ...(state.databasePath ? { databasePath: state.databasePath } : {}),
-    });
-  }
-
-  const providerState: Record<string, unknown> = {
-    ...conversation.providerState,
-    nativeConversationContextEstablished: false,
-  };
-  delete providerState.sessionId;
-  delete providerState.forkSource;
-  if (options.releaseDatabase) delete providerState.databasePath;
-  if (previousSessions.length > 0) providerState.previousSessions = previousSessions;
-  else delete providerState.previousSessions;
-  conversation.sessionId = null;
-  conversation.providerState = providerState;
-  return true;
 }
 
 function getPreviousSessions(value: unknown): OpencodePreviousSession[] {

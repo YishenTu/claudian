@@ -121,6 +121,11 @@ export class CodexExecutionSession
   private workspaceDependencyToolVersion: number | null;
   private sessionToolVersion: number | null;
   private nativeConversationContextEstablished: boolean;
+  /**
+   * A thread this session started whose first turn Codex has not accepted yet. Codex writes no
+   * rollout before that, so the thread stays out of the published binding until then.
+   */
+  private unacceptedThreadId: string | null = null;
 
   constructor(
     private readonly host: ProviderRuntimeHost,
@@ -132,13 +137,14 @@ export class CodexExecutionSession
       providerId: this.providerId,
       sessionInstanceId: this.sessionInstanceId,
       providerState: config.resumeSeed?.providerState,
-      readProviderSessionId: () => this.threadId,
+      readProviderSessionId: () => this.#publishedThreadId(),
       projectProviderState: state => this.#projectProviderState(state),
     });
     this.connection = new CodexSessionConnection({
       workingDirectory: config.workingDirectory,
       observer: {
         notification: (method, params) => this.handleNotification(method, params),
+        rootTurnStarted: threadId => this.#acceptStartedThread(threadId),
         serverRequest: (id, method, params) => this.serverRequestRouter.handleServerRequest(id, method, params),
         stop: () => this.dispose(),
         workChanged: () => this.#releaseRetiredConnection(),
@@ -159,6 +165,7 @@ export class CodexExecutionSession
           this.workspaceDependencyToolVersion = identity.workspaceDependencyToolVersion;
           this.sessionToolVersion = identity.sessionToolVersion;
           this.threadId = identity.threadId;
+          this.unacceptedThreadId = identity.threadId;
           this.sessionFilePath = identity.sessionFilePath;
           this.#retainUnboundTranscript();
           this.#publishNativeOwnershipSnapshot(active);
@@ -615,9 +622,24 @@ export class CodexExecutionSession
   #markNativeConversationContextEstablished(
     active: CodexActiveRun,
   ): void {
-    if (this.nativeConversationContextEstablished) return;
+    const acceptedStartedThread = this.unacceptedThreadId !== null;
+    this.unacceptedThreadId = null;
+    if (this.nativeConversationContextEstablished && !acceptedStartedThread) return;
     this.nativeConversationContextEstablished = true;
     this.#publishNativeOwnershipSnapshot(active);
+  }
+
+  /** A started turn proves Codex wrote the thread's rollout, even when its run already ended. */
+  #acceptStartedThread(threadId: string): void {
+    if (threadId !== this.unacceptedThreadId) return;
+    this.unacceptedThreadId = null;
+    this.nativeConversationContextEstablished = true;
+    this.state.bumpRevision();
+    this.#publishSnapshot();
+  }
+
+  #publishedThreadId(): string | null {
+    return this.threadId === this.unacceptedThreadId ? null : this.threadId;
   }
 
   private handleStreamChunk(active: CodexActiveRun, chunk: StreamChunk): void {
@@ -630,7 +652,6 @@ export class CodexExecutionSession
           : 'provider',
         chunk.content,
         chunk.code === 'provider_session_missing',
-        chunk.providerSessionId,
       );
       return;
     }
@@ -663,6 +684,7 @@ export class CodexExecutionSession
     target: CodexPendingForkTarget,
   ): void {
     this.threadId = target.threadId;
+    this.unacceptedThreadId = null;
     this.sessionFilePath = target.sessionFilePath ?? null;
     // Publishes the adopted target mid-run; the run keeps executing.
     this.state.bumpRevision();
@@ -726,7 +748,6 @@ export class CodexExecutionSession
     category: ProviderExecutionErrorCategory,
     message: string,
     recoverable: boolean,
-    missingProviderSessionId?: string,
   ): void {
     if (this.activeRun !== active || active.run.isTerminal) return;
     const invalidationReason: ProviderSessionInvalidation['reason'] | null =
@@ -748,7 +769,6 @@ export class CodexExecutionSession
       category,
       message,
       recoverable,
-      ...(missingProviderSessionId ? { missingProviderSessionId } : {}),
     });
     this.#releaseRun(active);
   }
@@ -789,7 +809,6 @@ export class CodexExecutionSession
         'provider-session-missing',
         message,
         true,
-        this.threadId ?? undefined,
       );
       return;
     }
@@ -895,6 +914,9 @@ export class CodexExecutionSession
   #projectProviderState(state: Record<string, unknown>): Record<string, unknown> {
     const pendingForkTarget = this.threads.pendingForkTarget;
     const transcriptRootPath = this.#resolveTranscriptRootHost();
+    if (this.threadId !== null && this.#publishedThreadId() === null) {
+      return { ...state, ...(transcriptRootPath ? { transcriptRootPath } : {}) };
+    }
     return {
       ...state,
       ...(this.threadId
@@ -1017,6 +1039,8 @@ function isMissingThreadError(message: string): boolean {
       normalized.includes('not found')
       || normalized.includes('does not exist')
       || normalized.includes('missing')
+      // `thread/resume` of a thread absent from the current CODEX_HOME.
+      || normalized.includes('no rollout found')
     )
   );
 }

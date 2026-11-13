@@ -3,110 +3,22 @@ import { parseEnvironmentVariables } from '@/core/process/env';
 import { resolveExecutionTarget } from '@/core/process/execution-target/ExecutionTargetResolver';
 
 import {
-  type CLIPathFingerprintInputs,
   createCLIPathFingerprintInputs,
   hasCLIPathFingerprintInputs,
 } from '../../../core/providers/cli/CLIPathFingerprintInputs';
 import { getRuntimeEnvironmentText } from '../../../core/providers/providerEnvironment';
-import {
-  compareScopedRuntimeInputFingerprints,
-  createRuntimeInputFingerprint,
-  isVersionedRuntimeInputFingerprint,
-  type ScopedRuntimeInputFingerprints,
-} from '../../../core/providers/settings/RuntimeInputFingerprint';
+import { createEnvironmentRuntimeInputFingerprint } from '../../../core/providers/settings/RuntimeInputFingerprint';
 import type {
   ProviderEnvironmentReconciliation,
   ProviderSettingsReconciler,
   ProviderSettingsReconciliationContext,
 } from '../../../core/providers/types';
-import type { Conversation } from '../../../core/types';
 import {
   getPiProviderSettings,
   updatePiProviderSettings
 } from '../settings';
-import { clearPiResumeState } from '../types';
-
-/**
- * Select the native config/session store; `PI_PACKAGE_DIR` can rename the default config dir.
- * Changes invalidate bindings.
- */
-const PI_SESSION_ENV_KEYS = [
-  'PI_CODING_AGENT_DIR',
-  'PI_CODING_AGENT_SESSION_DIR',
-  'PI_PACKAGE_DIR',
-] as const;
-
-const LEGACY_PI_ENV_HASH_KEYS = [
-  ...PI_SESSION_ENV_KEYS,
-  'PI_OFFLINE',
-  'PI_SKIP_VERSION_CHECK',
-  'PI_TELEMETRY',
-  'PI_CACHE_RETENTION',
-] as const;
-
-/**
- * Non-session keys and CLI paths only affect the launched process. Resume targets an absolute
- * session file whose identity is proved before input, so changes restart runtimes and keep bindings.
- */
-const PI_ENV_HASH_KEYS = [
-  ...LEGACY_PI_ENV_HASH_KEYS,
-  'PATH',
-] as const;
-
-function computePiFingerprints(
-  environmentText: string,
-  cliPathInputs: CLIPathFingerprintInputs,
-  targetInputs: Record<string, string | undefined> = {},
-): ScopedRuntimeInputFingerprints {
-  return {
-    runtime: createRuntimeInputFingerprint({
-      additionalInputs: { ...cliPathInputs, ...targetInputs },
-      environmentKeys: [...new Set([...PI_ENV_HASH_KEYS, ...Object.keys(parseEnvironmentVariables(environmentText))])],
-      environmentText,
-    }),
-    session: computePiSessionFingerprint(environmentText, targetInputs),
-  };
-}
-
-function computePiSessionFingerprint(environmentText: string, targetInputs: Record<string, string | undefined> = {}): string {
-  return createRuntimeInputFingerprint({
-    additionalInputs: targetInputs,
-    environmentKeys: targetInputs.method === 'wsl' ? [...PI_SESSION_ENV_KEYS, 'HOME'] : PI_SESSION_ENV_KEYS, environmentText,
-  });
-}
-
-function invalidatePiConversationSessions(conversations: Conversation[]): Conversation[] {
-  return conversations.filter(conversation => (
-    conversation.providerId === 'pi' && clearPiResumeState(conversation)
-  ));
-}
-
-function isCurrentLegacyPiFingerprint(
-  environmentText: string,
-  savedFingerprint: string,
-  cliPathInputs: CLIPathFingerprintInputs,
-): boolean {
-  if (
-    !savedFingerprint
-    || isVersionedRuntimeInputFingerprint(savedFingerprint)
-    || hasCLIPathFingerprintInputs(cliPathInputs)
-  ) {
-    return false;
-  }
-
-  const environment = parseEnvironmentVariables(environmentText);
-  const legacyFingerprint = LEGACY_PI_ENV_HASH_KEYS
-    .filter(key => environment[key])
-    .map(key => `${key}=${environment[key]}`)
-    .sort()
-    .join('|');
-  return savedFingerprint === legacyFingerprint;
-}
 
 export const piSettingsReconciler = {
-
-  invalidateConversationSessions: invalidatePiConversationSessions,
-
   reconcileModelWithEnvironment(settings: Record<string, unknown>, context?: ProviderSettingsReconciliationContext): ProviderEnvironmentReconciliation {
     const envText = getRuntimeEnvironmentText(settings, 'pi');
     const piSettings = getPiProviderSettings(settings);
@@ -114,58 +26,20 @@ export const piSettingsReconciler = {
       piSettings.cliPathsByHost[getInstallationKey()],
       piSettings.cliPath,
     );
-    const savedHash = piSettings.environmentHash;
     const target = resolveExecutionTarget({ settings: piSettings, hostVaultPath: context?.vaultPath });
     const targetInputs = target.method === 'wsl' ? { method: target.method, distroName: target.distroName } : {};
-
-    const environment = parseEnvironmentVariables(envText);
-    const hasFingerprintInputs = Boolean(
-      hasCLIPathFingerprintInputs(cliPathInputs)
+    const hasFingerprintInputs = hasCLIPathFingerprintInputs(cliPathInputs)
       || target.method === 'wsl'
-      || Object.keys(environment).length > 0
-    );
-    if (!savedHash && !hasFingerprintInputs) {
+      || Object.keys(parseEnvironmentVariables(envText)).length > 0;
+    if (!piSettings.environmentHash && !hasFingerprintInputs) {
       return { changed: false };
     }
-    const current = computePiFingerprints(envText, cliPathInputs, targetInputs);
-    const { changed, sessionPolicy } = compareScopedRuntimeInputFingerprints(
-      { environmentHash: savedHash, sessionEnvironmentHash: piSettings.sessionEnvironmentHash },
-      current,
-      computePiSessionFingerprint(''),
-    );
-    if (!changed) {
+    const environmentHash = createEnvironmentRuntimeInputFingerprint(envText, { ...cliPathInputs, ...targetInputs });
+    if (environmentHash === piSettings.environmentHash) {
       return { changed: false };
     }
 
-    updatePiProviderSettings(settings, {
-      environmentHash: current.runtime,
-      sessionEnvironmentHash: current.session,
-    });
-    return { changed: true, sessionPolicy };
-  },
-
-  normalizeModelVariantSettings(settings: Record<string, unknown>): boolean {
-    const piSettings = getPiProviderSettings(settings);
-    let changed = false;
-
-    const envText = getRuntimeEnvironmentText(settings, 'pi');
-    const cliPathInputs = createCLIPathFingerprintInputs(
-      piSettings.cliPathsByHost[getInstallationKey()],
-      piSettings.cliPath,
-    );
-    if (isCurrentLegacyPiFingerprint(
-      envText,
-      piSettings.environmentHash,
-      cliPathInputs,
-    )) {
-      const current = computePiFingerprints(envText, cliPathInputs);
-      updatePiProviderSettings(settings, {
-        environmentHash: current.runtime,
-        sessionEnvironmentHash: current.session,
-      });
-      changed = true;
-    }
-
-    return changed;
+    updatePiProviderSettings(settings, { environmentHash });
+    return { changed: true };
   },
 } satisfies ProviderSettingsReconciler;

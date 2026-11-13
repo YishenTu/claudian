@@ -5,7 +5,6 @@ import type {
   ProviderConversationHistoryService,
   ProviderHistoryInput,
   ProviderHistoryPathContext,
-  ProviderHistoryResult,
   ProviderHistoryState,
   ProviderHistoryUpdate,
 } from '../../../core/providers/types';
@@ -13,7 +12,7 @@ import type { ChatMessage } from '../../../core/types';
 import { decodeCodexConfig } from '../config';
 import { encodeCodexModelSelectionId } from '../modelSelection';
 import type { CodexPreviousSegment, CodexProviderState } from '../types';
-import { clearCodexResumeState, getCodexState } from '../types';
+import { getCodexState } from '../types';
 import {
   CODEX_HISTORY_LOOKUP_TIMEOUT_MS,
   type CodexHistoryPathContext,
@@ -465,36 +464,6 @@ export class CodexConversationHistoryService implements ProviderConversationHist
     if (!conversation) return null;
     const state = getCodexState(conversation.providerState);
     return state.threadId ?? conversation.sessionId ?? state.forkSource?.sessionId ?? null;
-  }
-
-  async resolveMissingConversationSession(
-    input: ProviderHistoryInput,
-    _vaultPath: string | null,
-    missingProviderSessionId?: string,
-  ): Promise<ProviderHistoryResult<'delete' | 'reset' | 'preserve'>> {
-    const conversation = copyProviderHistoryState(input);
-    const state = getCodexState(conversation.providerState);
-    const currentSessionId = state.pendingForkTarget?.threadId
-      ?? state.threadId
-      ?? conversation.sessionId
-      ?? null;
-    const liveSessionIds = [
-      state.pendingForkTarget?.threadId,
-      state.threadId,
-      conversation.sessionId,
-    ]
-      .filter((value): value is string => Boolean(value));
-    if (
-      !missingProviderSessionId
-      || !currentSessionId
-      || missingProviderSessionId !== currentSessionId
-      || liveSessionIds.some(sessionId => sessionId !== currentSessionId)
-    ) {
-      return { outcome: 'preserve' };
-    }
-
-    clearCodexResumeState(conversation);
-    return { outcome: 'reset', changes: conversation };
   }
 
   isPendingForkConversation(conversation: ProviderHistoryInput): boolean {

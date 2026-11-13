@@ -736,10 +736,33 @@ describe('ClaudianSettingsStorage', () => {
         description: '',
         envVars: 'PATH=/usr/local/bin\nANTHROPIC_MODEL=claude-custom',
         scope: 'shared',
-        contextLimits: undefined,
         modelAliases: undefined,
       }]);
       expect(writtenContent.envSnippets[0].scope).toBe('shared');
+    });
+
+    it('drops retired custom context limits from settings and snippets on load', async () => {
+      mockAdapter.exists.mockResolvedValue(true);
+      mockAdapter.read.mockResolvedValue(JSON.stringify({
+        customContextLimits: { 'custom-model': 128_000 },
+        envSnippets: [{
+          id: 'snippet-1',
+          name: 'Limited snippet',
+          description: '',
+          envVars: 'PATH=/usr/local/bin',
+          contextLimits: { 'custom-model': 64_000 },
+          modelAliases: { 'custom-model': 'Custom' },
+        }],
+      }));
+
+      const result = await storage.load();
+      const writtenContent = JSON.parse(mockAdapter.write.mock.calls[0][1]);
+
+      expect(result).not.toHaveProperty('customContextLimits');
+      expect(writtenContent).not.toHaveProperty('customContextLimits');
+      expect(result.envSnippets[0]).not.toHaveProperty('contextLimits');
+      expect(writtenContent.envSnippets[0]).not.toHaveProperty('contextLimits');
+      expect(writtenContent.envSnippets[0].modelAliases).toEqual({ 'custom-model': 'Custom' });
     });
 
     it('normalizes custom model aliases on load', async () => {
@@ -838,6 +861,30 @@ describe('ClaudianSettingsStorage', () => {
       expect(writtenContent.providerConfigs.codex.selectedModels).toEqual([TEST_CODEX_CATALOG[1]]);
       expect(writtenContent.providerConfigs.codex.visibleModels).toEqual(['gpt-5.4-mini']);
       expect(getCodexProviderSettings(settings).discoveredModels).toEqual(TEST_CODEX_CATALOG);
+    });
+
+    it('persists an env-seeded Claude selection once so it survives removing the model keys', async () => {
+      mockAdapter.exists.mockResolvedValue(true);
+      mockAdapter.read.mockResolvedValue(JSON.stringify({
+        providerConfigs: {
+          claude: {
+            customModels: 'manual-model',
+            environmentVariables: 'ANTHROPIC_MODEL=env-model\nANTHROPIC_DEFAULT_OPUS_MODEL=env-opus',
+            visibleModels: null,
+          },
+        },
+      }));
+
+      const loaded = await storage.load();
+
+      expect(getClaudeProviderSettings(loaded).visibleModels).toEqual(['env-model', 'env-opus', 'manual-model']);
+      const persisted = JSON.parse(mockAdapter.write.mock.calls.at(-1)![1]);
+      expect(persisted.providerConfigs.claude.visibleModels).toEqual(['env-model', 'env-opus', 'manual-model']);
+
+      persisted.providerConfigs.claude.environmentVariables = '';
+      mockAdapter.read.mockResolvedValue(JSON.stringify(persisted));
+      expect(getClaudeProviderSettings(await storage.load()).visibleModels)
+        .toEqual(['env-model', 'env-opus', 'manual-model']);
     });
 
     it('preserves Codex model aliases and catalog across restart', async () => {

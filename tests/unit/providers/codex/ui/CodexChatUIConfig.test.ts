@@ -564,23 +564,6 @@ describe('CodexChatUIConfig', () => {
     });
   });
 
-  describe('getCustomModelIds', () => {
-    it('does not expose environment models as custom options', () => {
-      const ids = codexChatUIConfig.getCustomModelIds({ OPENAI_MODEL: 'my-model' });
-      expect(ids.size).toBe(0);
-    });
-
-    it('should not include default models', () => {
-      const ids = codexChatUIConfig.getCustomModelIds({ OPENAI_MODEL: TEST_CODEX_MODEL });
-      expect(ids.size).toBe(0);
-    });
-
-    it('should return empty set when no OPENAI_MODEL', () => {
-      const ids = codexChatUIConfig.getCustomModelIds({});
-      expect(ids.size).toBe(0);
-    });
-  });
-
   describe('getServiceTierToggle', () => {
     it.each([
       'gpt-5.6-sol',

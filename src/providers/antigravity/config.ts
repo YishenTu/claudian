@@ -25,8 +25,6 @@ export interface PersistedAntigravityProviderSettings {
   environmentVariables: string;
   modelAliases: Record<string, string>;
   preferredReasoningByModel: Record<string, string>;
-  /** Fingerprint of the native store location; a change retires session bindings. */
-  sessionStoreHash: string;
   visibleModels: string[] | null;
 }
 
@@ -43,7 +41,6 @@ export const DEFAULT_ANTIGRAVITY_PROVIDER_SETTINGS: Readonly<PersistedAntigravit
   environmentVariables: '',
   modelAliases: {},
   preferredReasoningByModel: {},
-  sessionStoreHash: '',
   visibleModels: [],
 });
 
@@ -83,7 +80,6 @@ export function decodeAntigravityConfig(
     environmentVariables: typeof config.environmentVariables === 'string' ? config.environmentVariables : '',
     modelAliases: normalizeModelStringMap(config.modelAliases, allowed),
     preferredReasoningByModel: normalizeModelStringMap(config.preferredReasoningByModel, allowed),
-    sessionStoreHash: readTrimmedString(config.sessionStoreHash),
     visibleModels,
   };
 }
@@ -131,9 +127,6 @@ export function updateAntigravityConfig(
       updates.preferredReasoningByModel ?? current.preferredReasoningByModel,
       allowed,
     ),
-    sessionStoreHash: updates.sessionStoreHash !== undefined
-      ? readTrimmedString(updates.sessionStoreHash)
-      : current.sessionStoreHash,
     visibleModels,
   };
   replaceProviderConfig(config, next as unknown as Record<string, unknown>);

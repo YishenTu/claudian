@@ -124,6 +124,49 @@ it.each(['priority', 'default'])('correlates a persistent turn from native start
   expect(session.getSnapshot()).toMatchObject({ providerSessionId: 'thread-1', status: 'idle', revision: expect.any(Number) });
 });
 
+it('reports a thread the app-server has no rollout for as a missing session and keeps its binding', async () => {
+  mockNative.requestOverride = (process, request) => {
+    if (request.method !== 'thread/resume') return false;
+    // Native wording from codex-cli 0.167 for an unknown thread id.
+    process.respondError(request.id, `no rollout found for thread id ${request.params.threadId}`, -32600);
+    return true;
+  };
+  const session = createSession({ resumeSeed: { providerSessionId: 'existing', providerState: { threadId: 'existing' } } });
+
+  const events = await collect(session.execute(request).events);
+
+  expect(events.at(-1)).toMatchObject({ type: 'execution_error', category: 'provider-session-missing' });
+  expect(session.getSnapshot()).toMatchObject({ providerSessionId: 'existing', providerState: { threadId: 'existing' } });
+});
+
+it('binds a started thread only once Codex accepts its first turn', async () => {
+  // codex-cli 0.167 writes no rollout before a turn is accepted, so resuming such a thread fails.
+  mockNative.requestOverride = (process, request) => {
+    if (request.method !== 'turn/start') return false;
+    process.respondError(request.id, 'turn rejected', -32600);
+    return true;
+  };
+  const session = createSession();
+
+  const events = await collect(session.execute(request).events);
+
+  expect(mockNative.processes[0].requests.map(rpc => rpc.method)).toContain('thread/start');
+  expect(events.at(-1)).toMatchObject({ type: 'execution_error' });
+  const published = [
+    ...events.flatMap(event => event.type === 'session_state_changed' ? [event.snapshot] : []),
+    session.getSnapshot(),
+  ];
+  expect(published.map(snapshot => snapshot.providerSessionId ?? null)).toEqual(published.map(() => null));
+  expect(published.map(snapshot => snapshot.providerState?.threadId ?? null)).toEqual(published.map(() => null));
+
+  mockNative.requestOverride = null;
+  const retry = collect(session.execute(request).events);
+  await mockNative.waitForRequest('turn/start', 0, 2);
+  complete();
+  await retry;
+  expect(session.getSnapshot()).toMatchObject({ providerSessionId: 'thread-1', providerState: { threadId: 'thread-1' } });
+});
+
 it('resumes a fixed seed once and applies response-style changes on subsequent turns', async () => {
   const session = createSession({ resumeSeed: { providerSessionId: 'existing', providerState: { threadId: 'existing', sessionFilePath: '/tmp/existing.jsonl' } } });
   for (const [index, responseStyle] of ['pragmatic', 'none', 'friendly'].entries()) {

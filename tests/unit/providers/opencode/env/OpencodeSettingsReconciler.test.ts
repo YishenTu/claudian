@@ -1,11 +1,8 @@
-import { testDate } from '@test/helpers/testClock';
-
 import { getInstallationKey } from '@/core/device/InstallationKey';
-import { getProviderConfig } from '@/core/providers/providerConfig';
+import { getProviderConfig, setProviderConfig } from '@/core/providers/providerConfig';
 import { ProviderSettingsCoordinator } from '@/core/providers/ProviderSettingsCoordinator';
 import { registerProviderModules } from '@/core/providers/registerProviderModules';
 import { isVersionedRuntimeInputFingerprint } from '@/core/providers/settings/RuntimeInputFingerprint';
-import type { Conversation } from '@/core/types';
 import { claudeProviderRegistration } from '@/providers/claude/registration';
 import { getOpencodeDiscoveryState, updateOpencodeDiscoveryState } from '@/providers/opencode/discoveryState';
 import { opencodeSettingsReconciler } from '@/providers/opencode/env/OpencodeSettingsReconciler';
@@ -30,77 +27,43 @@ describe('coordinated OpenCode environment changes', () => {
 });
 
 describe('opencodeSettingsReconciler.reconcileModelWithEnvironment', () => {
-  it('keeps bindings on a recorded database and retires the rest when the runtime database/config env changes', () => {
-    const settings: Record<string, unknown> = {
-      providerConfigs: {
-        opencode: {
-          enabled: true,
-          environmentHash: 'OPENCODE_DB=/old/opencode.db',
-          environmentVariables: 'OPENCODE_DB=/new/opencode.db\nOPENCODE_CONFIG=/tmp/opencode.json',
-        },
-      },
-    };
-    const conversations = [
-      {
-        id: 'conv-opencode',
-        messages: [],
-        providerId: 'opencode',
-        providerState: { databasePath: '/old/opencode.db', nativeConversationContextEstablished: true },
-        sessionId: 'session-1',
-      },
-      {
-        id: 'conv-unrecorded',
-        messages: [],
-        providerId: 'opencode',
-        providerState: { nativeConversationContextEstablished: true },
-        sessionId: 'session-2',
-      },
-      {
-        id: 'conv-other',
-        messages: [],
-        providerId: 'claude',
-        providerState: { providerSessionId: 'claude-session' },
-        sessionId: 'claude-session',
-      },
-    ].map(conversation => ({ title: 'Test', createdAt: 1, lastActivityAt: 1, ...conversation }));
+  it('leaves a fresh install without runtime inputs unchanged', () => {
+    const settings: Record<string, unknown> = { providerConfigs: { opencode: { enabled: true } } };
 
-    const result = opencodeSettingsReconciler.reconcileModelWithEnvironment(settings);
-    const invalidated = opencodeSettingsReconciler.invalidateConversationSessions(conversations);
+    expect(opencodeSettingsReconciler.reconcileModelWithEnvironment(settings)).toEqual({ changed: false });
+    expect(getProviderConfig(settings, 'opencode').environmentHash ?? '').toBe('');
+  });
 
-    expect(result.changed).toBe(true);
-    // Native existence on the recorded database is decided later by `opencode serve`.
-    expect(conversations[0]).toMatchObject({
-      sessionId: 'session-1',
-      providerState: { databasePath: '/old/opencode.db', nativeConversationContextEstablished: true },
-    });
-    // Without a recorded database the binding would follow the new default, so it is retired.
-    expect(invalidated).toEqual([conversations[1]]);
-    expect(conversations[1].sessionId).toBeNull();
-    expect(conversations[1].providerState).toEqual({
-      nativeConversationContextEstablished: false,
-      previousSessions: [{ sessionId: 'session-2' }],
-    });
+  it.each([
+    ['OPENCODE_DB moving the database', { environmentVariables: 'OPENCODE_DB=/new/opencode.db\nSOME_CUSTOM_FLAG=1' }],
+    ['OPENCODE_DB being removed', { environmentVariables: 'SOME_CUSTOM_FLAG=1' }],
+    ['an arbitrary key', { environmentVariables: 'OPENCODE_DB=/old/opencode.db\nSOME_CUSTOM_FLAG=2' }],
+    ['the CLI path', { cliPath: '/new/opencode' }],
+    ['the host CLI path', { cliPathsByHost: { [getInstallationKey()]: '/host/opencode' } }],
+  ])('restarts the runtime when %s changes', (_label, change) => {
+    const settings: Record<string, unknown> = { providerConfigs: { opencode: {
+      enabled: true, cliPath: '/old/opencode', environmentVariables: 'OPENCODE_DB=/old/opencode.db\nSOME_CUSTOM_FLAG=1',
+    } } };
+    expect(opencodeSettingsReconciler.reconcileModelWithEnvironment(settings)).toEqual({ changed: true });
+    expect(opencodeSettingsReconciler.reconcileModelWithEnvironment(settings)).toEqual({ changed: false });
+    setProviderConfig(settings, 'opencode', { ...getProviderConfig(settings, 'opencode'), ...change });
+
+    expect(opencodeSettingsReconciler.reconcileModelWithEnvironment(settings)).toEqual({ changed: true });
     const fingerprint = getProviderConfig(settings, 'opencode').environmentHash;
     expect(isVersionedRuntimeInputFingerprint(fingerprint)).toBe(true);
-    expect(fingerprint).not.toContain('/new/opencode.db');
+    expect(fingerprint).not.toContain('opencode.db');
+    expect(opencodeSettingsReconciler.reconcileModelWithEnvironment(settings)).toEqual({ changed: false });
   });
 });
 
-it('reconciles vault-inferred distro changes and preserves recorded locators', () => {
+it('restarts the runtime on a vault-inferred distro change', () => {
   const platform = Object.getOwnPropertyDescriptor(process, 'platform')!;
   Object.defineProperty(process, 'platform', { ...platform, value: 'win32' });
   try {
     const key = getInstallationKey();
     const settings = { providerConfigs: { opencode: { enabled: true, installationMethodsByHost: { [key]: 'wsl' } } } };
-    expect(opencodeSettingsReconciler.reconcileModelWithEnvironment(settings, { vaultPath: '\\\\wsl$\\Ubuntu\\vault' }).changed).toBe(true);
-    expect(opencodeSettingsReconciler.reconcileModelWithEnvironment(settings, { vaultPath: '\\\\wsl$\\Ubuntu\\vault' }).changed).toBe(false);
-    expect(opencodeSettingsReconciler.reconcileModelWithEnvironment(settings, { vaultPath: '\\\\wsl$\\Debian\\vault' }).changed).toBe(true);
-    const databasePath = '\\\\wsl$\\Ubuntu\\home\\alice\\.local\\share\\opencode\\opencode.db';
-    const conversation: Conversation = {
-      id: 'conversation', providerId: 'opencode', title: 'WSL', messages: [], sessionId: 'native', providerState: { databasePath },
-      createdAt: testDate().getTime(), lastActivityAt: testDate().getTime(),
-    };
-    expect(opencodeSettingsReconciler.invalidateConversationSessions([conversation])).toEqual([]);
-    expect(opencodeProviderRegistration.historyService?.buildPersistedProviderState?.(conversation)).toMatchObject({ databasePath });
+    expect(opencodeSettingsReconciler.reconcileModelWithEnvironment(settings, { vaultPath: '\\\\wsl$\\Ubuntu\\vault' })).toEqual({ changed: true });
+    expect(opencodeSettingsReconciler.reconcileModelWithEnvironment(settings, { vaultPath: '\\\\wsl$\\Ubuntu\\vault' })).toEqual({ changed: false });
+    expect(opencodeSettingsReconciler.reconcileModelWithEnvironment(settings, { vaultPath: '\\\\wsl$\\Debian\\vault' })).toEqual({ changed: true });
   } finally { Object.defineProperty(process, 'platform', platform); }
 });

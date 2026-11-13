@@ -22,9 +22,9 @@ it.skipIf(process.platform === 'win32')('keeps a UNC-inferred Pi target when the
     ProviderSettingsCoordinator.reconcileProviders(settings, ['pi'], context);
     await distros.setOutput(Buffer.from('* Fedora    Running    2', 'utf16le'));
     expect(ProviderSettingsCoordinator.reconcileProviders(settings, ['pi'], context))
-      .toMatchObject({ changed: false, sessionInvalidationProviderIds: [] });
+      .toEqual({ changed: false, environmentChangedProviderIds: [] });
     expect(ProviderSettingsCoordinator.reconcileProviders(settings, ['pi'], {
       vaultPath: String.raw`\\wsl$\Alpine\home\alice\Vault`,
-    })).toMatchObject({ changed: true, sessionInvalidationProviderIds: ['pi'] });
+    })).toEqual({ changed: true, environmentChangedProviderIds: ['pi'] });
   } finally { Object.defineProperty(process, 'platform', platform); }
 });

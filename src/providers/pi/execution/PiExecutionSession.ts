@@ -89,7 +89,6 @@ import { buildPiSetModelPayload } from '../runtime/PiRPCPayloads';
 import { type PiRPCRecord, PiRPCResponseError } from '../runtime/PiRPCTransport';
 import { piHostPath, piTargetPath, samePiTargetPath } from '../runtime/piTargetPaths';
 import {
-  clearPiResumeState,
   getPiState,
   type PiProviderState,
   type PiTreeCursor,
@@ -854,11 +853,8 @@ implements ProviderExecutionSession, SteerableExecutionSession {
     const pathTarget = state.sessionFile
       ?? (isPiSessionPathReference(state.sessionId) ? state.sessionId : null);
     if (pathTarget) {
-      if (executionTarget.method === 'wsl') {
-        this.#retireNativeBinding();
-        throw new Error(`The Pi WSL session file is missing or outside the current session store: ${pathTarget}`);
-      }
-      const fallbackSessionId = state.sessionId
+      const fallbackSessionId = executionTarget.method !== 'wsl'
+        && state.sessionId
         && !isPiSessionPathReference(state.sessionId)
         ? state.sessionId
         : null;
@@ -1454,10 +1450,10 @@ implements ProviderExecutionSession, SteerableExecutionSession {
   ): void {
     if (!this.#isCurrentKernel(kernel, generation) || this.disposed) return;
     this.#abandonBackgroundTurn();
-    const missingProviderSessionId = getPiMissingSessionTarget(
+    const nativeSessionMissing = getPiMissingSessionTarget(
       kernel.launchSpec,
       kernel.getStderrSnapshot(),
-    );
+    ) !== null;
     this.kernel = null;
     this.kernelResumeValidationTarget = null;
     this.kernelSessionTargets.clear();
@@ -1474,10 +1470,7 @@ implements ProviderExecutionSession, SteerableExecutionSession {
       this.#finishError(
         active,
         runError,
-        missingProviderSessionId
-          ? 'provider-session-missing'
-          : 'process-exited',
-        missingProviderSessionId ?? undefined,
+        nativeSessionMissing ? 'provider-session-missing' : 'process-exited',
       );
     } else {
       this.state.invalidate({
@@ -1681,7 +1674,6 @@ implements ProviderExecutionSession, SteerableExecutionSession {
         getString(env.PI_CODING_AGENT_SESSION_DIR),
       );
     if (!sourceFile) {
-      if (executionTarget.method === 'wsl') this.#retireNativeBinding();
       throw new Error(`Pi fork source session not found: ${forkSource.sessionId}`);
     }
     const fork = await this.options.createForkSessionFile(
@@ -1714,19 +1706,14 @@ implements ProviderExecutionSession, SteerableExecutionSession {
     active: ActiveRun,
     error: unknown,
     category?: ProviderExecutionErrorCategory,
-    missingProviderSessionId?: string,
   ): void {
     if (active.run.isTerminal) return;
     active.terminalSignal.reject(
       error instanceof Error ? error : new Error('Pi execution failed.'),
     );
-    const confirmedMissingProviderSessionId = missingProviderSessionId
-      ?? (error instanceof PiProviderSessionMissingError
-        ? error.providerSessionId
-        : undefined);
     const details = classifyError(
       error,
-      category ?? (confirmedMissingProviderSessionId
+      category ?? (error instanceof PiProviderSessionMissingError
         ? 'provider-session-missing'
         : undefined),
       this.kernel?.getStderrSnapshot(),
@@ -1749,9 +1736,6 @@ implements ProviderExecutionSession, SteerableExecutionSession {
     this.#emitRequestedState(active);
     this.#finishRequested(active, {
       ...details,
-      ...(confirmedMissingProviderSessionId
-        ? { missingProviderSessionId: confirmedMissingProviderSessionId }
-        : {}),
       type: 'execution_error',
     });
   }
@@ -1894,22 +1878,6 @@ implements ProviderExecutionSession, SteerableExecutionSession {
   /** Records a persisted deletion only for keys this session actually held. */
   #deleteProviderStateValue(key: keyof PiProviderState): void {
     if (this.state.hasProviderStateValue(key)) this.state.deleteProviderStateValue(key);
-  }
-
-  #retireNativeBinding(): void {
-    const retired = { sessionId: this.providerSessionId, providerState: { ...this.state.providerState } };
-    clearPiResumeState(retired);
-    this.#removeNativeProviderState();
-    for (const key of ['bindingRetired', 'previousSessions'] as const) {
-      const value = retired.providerState?.[key];
-      if (value !== undefined) this.#setProviderStateValue(key, value);
-      else this.#deleteProviderStateValue(key);
-    }
-    this.providerSessionId = null;
-    this.nativeConversationContextEstablished = false;
-    this.resumeSeedNeedsValidation = false;
-    this.kernelSessionTargets.clear();
-    this.state.bumpRevision();
   }
 
   #removeNativeProviderState(): void {

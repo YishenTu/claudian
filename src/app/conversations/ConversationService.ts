@@ -72,13 +72,6 @@ export class ConversationService {
     this.notifyConversationListChanged();
   }
 
-  handleMissingProviderSession(
-    id: string,
-    missingProviderSessionId?: string,
-  ): Promise<'deleted' | 'reset' | 'preserved' | 'not_found'> {
-    return this.deps.repository.handleMissingProviderSession(id, missingProviderSessionId);
-  }
-
   async renameConversation(id: string, title: string): Promise<void> {
     await this.deps.repository.rename(id, title);
     this.notifyConversationListChanged();

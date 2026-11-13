@@ -5,6 +5,7 @@ import { FakeSideBackend, waitFor } from '@test/helpers/features/chat/SideChatSe
 
 import { ProviderExecutionLifecycleRegistry, type ProviderExecutionRequest, type ProviderSessionEvent } from '@/core/execution';
 import { SideChatSession } from '@/features/chat/side-chat/SideChatSession';
+import { t } from '@/i18n/i18n';
 
 function createSession(overrides: Partial<ConstructorParameters<typeof SideChatSession>[0]> = {}) {
   const backend = new FakeSideBackend();
@@ -290,7 +291,10 @@ describe('SideChatSession', () => {
     harness.backend.latest.establishChild('child-session');
     harness.backend.latest.fail('Child history is gone', 'provider-session-missing');
     const result = await running;
-    expect(result).toMatchObject({ status: 'missing-session' });
+    expect(result).toMatchObject({
+      status: 'error',
+      error: { category: 'provider-session-missing', message: t('chat.executionNotices.sessionUnavailable') },
+    });
     expect(harness.session.providerSessionId).toBe('child-session');
     expect(harness.buildChildResumeState).toHaveBeenCalledTimes(1);
     await harness.session.dispose();

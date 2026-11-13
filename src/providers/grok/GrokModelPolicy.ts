@@ -136,9 +136,6 @@ export const grokModelPolicy: ProviderModelPolicy = {
     return normalizeSelection(model);
   },
 
-  getCustomModelIds(): Set<string> {
-    return new Set();
-  },
 };
 
 function pushModelOption(

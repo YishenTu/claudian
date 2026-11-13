@@ -13,7 +13,6 @@ import { claudeCatalogFixture } from '@test/helpers/claudeModels';
 import { DesktopVault } from '@test/helpers/core/DesktopVault';
 import { createProviderRecoveryTestHarness } from '@test/helpers/features/chat/ProviderRecoveryTestHarness';
 import { createProviderHostFixture } from '@test/helpers/providerRuntimeHost';
-import { useClaudeSessionFiles } from '@test/helpers/providers/claudeHistory';
 import { testDate, testTime } from '@test/helpers/testClock';
 import type { Mock, Mocked } from 'vitest';
 
@@ -34,7 +33,6 @@ import type { Conversation } from '@/core/types';
 import { createClaudeWorkspaceServices } from '@/providers/claude/app/ClaudeWorkspaceServices';
 import { ClaudeExecutionBackend } from '@/providers/claude/execution/ClaudeExecutionBackend';
 import { ClaudeExecutionSession } from '@/providers/claude/execution/ClaudeExecutionSession';
-import { ClaudeConversationHistoryService } from '@/providers/claude/history/ClaudeConversationHistoryService';
 import * as historyStore from '@/providers/claude/history/ClaudeHistoryStore';
 import { claudeProviderRegistration } from '@/providers/claude/registration';
 import { assertClaudeModelAvailable } from '@/providers/claude/runtime/ClaudeModelAvailability';
@@ -170,7 +168,6 @@ async function collectEvents(
   return collected;
 }
 
-const writeNativeSession = useClaudeSessionFiles();
 beforeEach(() => {
   sdkMock.resetMockMessages();
 });
@@ -1996,7 +1993,7 @@ describe('ClaudeExecutionBackend', () => {
     await session.dispose();
   });
 
-  it('invalidates a missing native session and reports the missing ID as a terminal event', async () => {
+  it('invalidates a missing native session and reports it as a terminal event', async () => {
     const query = createThrowingPersistentQuery(
       new Error('No conversation found with session ID: missing-session'),
     );
@@ -2022,7 +2019,6 @@ describe('ClaudeExecutionBackend', () => {
     expect(events.at(-1)).toEqual(expect.objectContaining({
       type: 'execution_error',
       category: 'provider-session-missing',
-      missingProviderSessionId: 'missing-session',
       recoverable: true,
     }));
     const snapshot = session.getSnapshot();
@@ -2052,23 +2048,23 @@ describe('ClaudeExecutionBackend', () => {
     )).toEqual(initialProviderState);
   });
 
-  it('resets a missing native session through the coordinator before retrying', async () => {
-    const query = createThrowingPersistentQuery(
-      new Error('No conversation found with session ID: missing-session'),
-    );
+  it('fails every resume of a missing native session as an ordinary error and keeps its binding', async () => {
+    const resumeTargets: unknown[] = [];
+    const missingSessionQuery = (params: { prompt: AsyncIterable<sdkModule.SDKUserMessage>; options?: { resume?: string } }) => {
+      resumeTargets.push(params.options?.resume);
+      return receiveInput(createThrowingPersistentQuery(
+        new Error('Claude Code returned an error result: No conversation found with session ID: missing-session'),
+      ))(params);
+    };
     vi.spyOn(
       await import('@/providers/claude/loadClaudeAgentSDK'),
       'loadClaudeAgentQuery',
-    ).mockResolvedValueOnce(receiveInput(query) as never);
-    const transcript = writeNativeSession([
-      { type: 'user', uuid: 'earlier', timestamp: testTime(), message: { content: 'Earlier conversation' } },
-    ], `projects/${historyStore.encodeVaultPathForSDK('/vault')}/previous-session.jsonl`);
-    const pathContext = { environment: { CLAUDE_CONFIG_DIR: path.dirname(path.dirname(path.dirname(transcript))) } };
+    ).mockResolvedValue(missingSessionQuery as never);
     const backend = new ClaudeExecutionBackend((await createHost()).host.getRuntimeHost('claude'));
     const conversation: Conversation = {
-      id: 'claude-recovery',
+      id: 'claude-missing-session',
       providerId: 'claude',
-      title: 'Claude recovery',
+      title: 'Claude missing session',
       createdAt: 1,
       lastActivityAt: 1,
       sessionId: 'missing-session',
@@ -2078,63 +2074,54 @@ describe('ClaudeExecutionBackend', () => {
         providerSessionId: 'missing-session',
       },
     };
-    const historyService = new ClaudeConversationHistoryService();
+    const binding = structuredClone({ sessionId: conversation.sessionId, providerState: conversation.providerState });
     const harness = createProviderRecoveryTestHarness({
       backend,
       conversation,
       workingDirectory: '/vault',
       configuration: createRequest().configuration,
-      resolveMissingProviderSession: async (current, missingSessionId) => {
-        const resolution = await historyService.resolveMissingConversationSession(
-          current,
-          '/vault',
-          missingSessionId,
-          pathContext,
-        );
-        Object.assign(current, resolution.changes);
-        return resolution.outcome === 'delete' ? 'deleted' : resolution.outcome === 'preserve'
-          ? 'preserved'
-          : 'reset';
-      },
     });
 
-    await expect(harness.execute()).resolves.toMatchObject({
-      missingSessionResolution: 'reset',
-      status: 'missing-session',
-    });
-    expect(conversation.sessionId).toBeNull();
-    expect(conversation.providerState).toEqual({
-      bindingRetired: true,
-      previousProviderSessionIds: ['previous-session'],
-    });
-
-    await harness.coordinator.prepare();
-    expect(harness.createSessionSpy).toHaveBeenCalledTimes(2);
-    expect(harness.createSessionSpy.mock.calls[1]?.[0].resumeSeed).toBeUndefined();
+    for (const attempt of [1, 2]) {
+      await expect(harness.execute()).resolves.toMatchObject({
+        status: 'error',
+        error: {
+          category: 'provider-session-missing',
+          message: "This conversation's native session isn't available under the current CLI configuration. Start a new chat to continue.",
+        },
+      });
+      expect({ sessionId: conversation.sessionId, providerState: conversation.providerState }).toEqual(binding);
+      expect(resumeTargets).toHaveLength(attempt);
+      expect(resumeTargets.at(-1)).toBe('missing-session');
+    }
     await harness.coordinator.dispose();
   });
 
-  it('retains a provider-session deletion until a later native init sets the key again', async () => {
-    const failedQuery = createFailingPersistentQuery([
-      { type: 'system', subtype: 'init', session_id: 'stale-session' },
-    ], new Error('Claude transport closed'));
-    const recoveredQuery = createScriptedPersistentQuery([[
-      { type: 'system', subtype: 'init', session_id: 'current-session' },
-      { type: 'result', subtype: 'success' },
-      new Promise<null>(() => undefined),
-    ]]);
-    const loadQuery = vi.spyOn(
+  it('keeps the binding after a native failure and resumes it on the next send', async () => {
+    const resumeTargets: unknown[] = [];
+    const queries = [
+      createFailingPersistentQuery([
+        { type: 'system', subtype: 'init', session_id: 'stable-session' },
+      ], new Error('Claude transport closed')),
+      createScriptedPersistentQuery([[
+        { type: 'system', subtype: 'init', session_id: 'stable-session' },
+        { type: 'result', subtype: 'success' },
+        new Promise<null>(() => undefined),
+      ]]),
+    ];
+    vi.spyOn(
       await import('@/providers/claude/loadClaudeAgentSDK'),
       'loadClaudeAgentQuery',
-    )
-      .mockResolvedValueOnce((() => failedQuery) as never)
-      .mockResolvedValueOnce((() => recoveredQuery) as never);
+    ).mockImplementation(async () => ((params: { options?: { resume?: string } }) => {
+      resumeTargets.push(params.options?.resume);
+      return queries.shift()!;
+    }) as never);
     const session = new ClaudeExecutionBackend((await createHost()).host.getRuntimeHost('claude'))
       .createSession(createConfig({
         resumeSeed: {
-          providerSessionId: 'stale-session',
+          providerSessionId: 'stable-session',
           providerState: {
-            providerSessionId: 'stale-session',
+            providerSessionId: 'stable-session',
             unknownFutureField: { keep: true },
           },
         },
@@ -2148,42 +2135,52 @@ describe('ClaudeExecutionBackend', () => {
       type: 'execution_error',
       category: 'transport',
     }));
-    const invalidatedSnapshot = session.getSnapshot();
-    expect(invalidatedSnapshot.providerState).toEqual({
-      unknownFutureField: { keep: true },
-    });
-    expect(invalidatedSnapshot.providerStateDeletes).toEqual([
-      'providerSessionId',
-    ]);
-    expect(failedEvents).toContainEqual(expect.objectContaining({
-      type: 'session_state_changed',
-      snapshot: expect.objectContaining({
-        status: 'invalidated',
-        providerStateDeletes: ['providerSessionId'],
-      }),
+    expect(session.getSnapshot()).toEqual(expect.objectContaining({
+      status: 'invalidated',
+      providerSessionId: 'stable-session',
+      providerState: {
+        providerSessionId: 'stable-session',
+        unknownFutureField: { keep: true },
+      },
     }));
-    const repeatedSnapshot = session.getSnapshot();
-    expect(repeatedSnapshot.providerStateDeletes).toEqual([
-      'providerSessionId',
-    ]);
-    expect(repeatedSnapshot.providerStateDeletes).not.toBe(
-      invalidatedSnapshot.providerStateDeletes,
-    );
+    expect(session.getSnapshot().providerStateDeletes).toBeUndefined();
 
     await collectEvents(session.execute(createRequest()).events);
 
-    const recoveredSnapshot = session.getSnapshot();
-    expect(loadQuery).toHaveBeenCalledTimes(2);
-    expect(recoveredSnapshot).toEqual(expect.objectContaining({
+    expect(resumeTargets).toEqual(['stable-session', 'stable-session']);
+    expect(session.getSnapshot()).toEqual(expect.objectContaining({
       status: 'idle',
-      providerSessionId: 'current-session',
+      providerSessionId: 'stable-session',
       providerState: {
+        providerSessionId: 'stable-session',
         unknownFutureField: { keep: true },
-        previousProviderSessionIds: ['stale-session'],
-        providerSessionId: 'current-session',
       },
     }));
-    expect(recoveredSnapshot.providerStateDeletes).toBeUndefined();
+  });
+
+  it('keeps the binding when an idle persistent query ends', async () => {
+    const query = createScriptedPersistentQuery([[
+      { type: 'system', subtype: 'init', session_id: 'stable-session' },
+      { type: 'result', subtype: 'success' },
+    ]]);
+    vi.spyOn(
+      await import('@/providers/claude/loadClaudeAgentSDK'),
+      'loadClaudeAgentQuery',
+    ).mockResolvedValueOnce((() => query) as never);
+    const session = new ClaudeExecutionBackend((await createHost()).host.getRuntimeHost('claude'))
+      .createSession(createConfig({ resumeSeed: { providerSessionId: 'stable-session' } }));
+    const sessionEvents: ProviderSessionEvent[] = [];
+    session.onEvent(event => sessionEvents.push(event));
+
+    await collectEvents(session.execute(createRequest()).events);
+    await vi.waitFor(() => expect(sessionEvents).toContainEqual(expect.objectContaining({ type: 'session_error' })));
+
+    expect(session.getSnapshot()).toEqual(expect.objectContaining({
+      status: 'invalidated',
+      providerSessionId: 'stable-session',
+      providerState: { providerSessionId: 'stable-session' },
+    }));
+    expect(session.getSnapshot().providerStateDeletes).toBeUndefined();
   });
 
   it('previews and performs checkpoint rewind only from a resumable persistent seed', async () => {

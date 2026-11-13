@@ -11,6 +11,7 @@ import type { Conversation } from '@/core/types';
 import { opencodeSettingsReconciler } from '@/providers/opencode/env/OpencodeSettingsReconciler';
 import { OpencodeConversationHistoryService } from '@/providers/opencode/history/OpencodeConversationHistoryService';
 import { buildOpencodePrompt } from '@/providers/opencode/runtime/buildOpencodePrompt';
+import type { OpencodePreviousSession } from '@/providers/opencode/types';
 
 interface SeedMessage {
   role: 'user' | 'assistant';
@@ -18,7 +19,7 @@ interface SeedMessage {
   model?: { providerID: string; id: string };
 }
 
-describe('OpenCode history after runtime invalidation', () => {
+describe('OpenCode history across runtime changes', () => {
   const history = new OpencodeConversationHistoryService();
   const startedAt = testDate().getTime();
   let root: string;
@@ -54,7 +55,7 @@ describe('OpenCode history after runtime invalidation', () => {
     const conversation = createConversation();
 
     // The recorded database fixes where the session lives, whatever record format created it.
-    expect(changeRuntime(conversation)).toEqual([]);
+    changeRuntime();
 
     expect(history.resolveSessionIdForConversation(conversation)).toBe('session-original');
     expect(history.buildPersistedProviderState(conversation)).toEqual({ databasePath, nativeConversationContextEstablished: true });
@@ -68,11 +69,8 @@ describe('OpenCode history after runtime invalidation', () => {
   });
 
   it('renders earlier sessions before the replacement session without the replayed history', async () => {
-    const conversation = createConversation({});
-    changeRuntime(conversation);
+    const conversation = createPreviousSessionsConversation([{ sessionId: 'session-original' }]);
     Object.assign(conversation, await history.hydrateConversationHistory(conversation, root, { ...createProviderHistoryPathContext(settings, 'opencode', root), environment }));
-    // The replacement session has not seen this history, so the next send must replay it.
-    expect(conversation.providerState?.nativeConversationContextEstablished).toBe(false);
 
     // The next send starts a fresh native session seeded with the hydrated history.
     const prompt = buildOpencodePrompt({ text: 'Follow up' }, conversation.messages);
@@ -101,18 +99,12 @@ describe('OpenCode history after runtime invalidation', () => {
       undefined, undefined, 'session-next-message-0', 'session-next-message-1',
     ]);
 
-    // A later retirement keeps the replacement session after the original one.
-    Object.assign(conversation, (await history.resolveMissingConversationSession!(conversation, root, 'session-next')).changes);
-    expect(history.resolveSessionIdForConversation(conversation)).toBeNull();
-    expect(history.buildPersistedProviderState(conversation)).toEqual({
-      databasePath,
-      nativeConversationContextEstablished: false,
-      previousSessions: [
-        { sessionId: 'session-original' },
-        { sessionId: 'session-next', databasePath },
-      ],
-    });
-    const rehydrated = await history.hydrateConversationHistory(conversation, root, { ...createProviderHistoryPathContext(settings, 'opencode', root), environment });
+    // Both sessions retired by an earlier version read in order.
+    const retired = createPreviousSessionsConversation([
+      { sessionId: 'session-original' },
+      { sessionId: 'session-next', databasePath },
+    ]);
+    const rehydrated = await history.hydrateConversationHistory(retired, root, { ...createProviderHistoryPathContext(settings, 'opencode', root), environment });
     expect(rehydrated.messages?.map(message => message.content)).toEqual([
       'Original prompt', 'Original reply', 'Follow up', 'Next reply',
     ]);
@@ -131,13 +123,9 @@ describe('OpenCode history after runtime invalidation', () => {
       { role: 'assistant', text: 'Unrelated reply', model: { providerID: 'google', id: 'unrelated-model' } },
     ]);
     startWithoutXdg();
-    const conversation: Conversation = {
-      ...createConversation({ databasePath: oldDatabase }),
-      sessionId: 'session-old',
-    };
-    Object.assign(conversation, (await history.resolveMissingConversationSession!(conversation, root, 'session-old')).changes);
+    const conversation = createPreviousSessionsConversation([{ sessionId: 'session-old', databasePath: oldDatabase }]);
 
-    changeRuntime(conversation, `XDG_DATA_HOME=${environment.XDG_DATA_HOME}`);
+    changeRuntime(`XDG_DATA_HOME=${environment.XDG_DATA_HOME}`);
 
     // The old database is no longer trusted, so its history stays unreadable.
     expect(await history.recoverConversationModelSelection!(conversation, root, { ...createProviderHistoryPathContext(settings, 'opencode', root), environment })).toBeNull();
@@ -146,11 +134,8 @@ describe('OpenCode history after runtime invalidation', () => {
   });
 
   it('reads a session retired as missing once opencode serve reports it', async () => {
-    const conversation: Conversation = { ...createConversation(), sessionId: 'session-migrated' };
-
-    // A send found the session missing, so it became a recovery-only locator.
-    Object.assign(conversation, (await history.resolveMissingConversationSession!(conversation, root, 'session-migrated')).changes);
-    expect(history.resolveSessionIdForConversation(conversation)).toBeNull();
+    // An earlier version retired the session when a send found it missing.
+    const conversation = createPreviousSessionsConversation([{ sessionId: 'session-migrated', databasePath }]);
     expect((await history.hydrateConversationHistory(conversation, root, { ...createProviderHistoryPathContext(settings, 'opencode', root), environment })).messages ?? []).toEqual([]);
 
     seedSession('session-migrated', [
@@ -162,11 +147,10 @@ describe('OpenCode history after runtime invalidation', () => {
   });
 
   it('reads a retired session without a recorded database from the current database', async () => {
-    const conversation = createConversation({});
+    const conversation = createPreviousSessionsConversation([{ sessionId: 'session-original' }]);
 
     // Only launch configuration changes; the native store stays where it was.
-    expect(changeRuntime(conversation)).toEqual([conversation]);
-    expect(history.resolveSessionIdForConversation(conversation)).toBeNull();
+    changeRuntime();
 
     expect(await history.recoverConversationModelSelection!(conversation, root, { ...createProviderHistoryPathContext(settings, 'opencode', root), environment }))
       .toBe('opencode:google/gemini-3.5-flash');
@@ -178,20 +162,17 @@ describe('OpenCode history after runtime invalidation', () => {
     const oldDatabase = path.join(root, '.local', 'share', 'opencode', 'opencode.db');
     seedSession('session-old', [{ role: 'user', text: 'Old prompt' }], oldDatabase);
     startWithoutXdg();
-    const conversation: Conversation = { ...createConversation({}), sessionId: 'session-old' };
+    const conversation = createPreviousSessionsConversation([{ sessionId: 'session-old' }]);
 
-    changeRuntime(conversation, `XDG_DATA_HOME=${environment.XDG_DATA_HOME}`);
+    changeRuntime(`XDG_DATA_HOME=${environment.XDG_DATA_HOME}`);
 
     const hydrated = await history.hydrateConversationHistory(conversation, root, { ...createProviderHistoryPathContext(settings, 'opencode', root), environment });
     expect(hydrated.messages ?? []).toEqual([]);
   });
 
-  it('records the trusted database a live binding was read from so a runtime change keeps it', async () => {
+  it('records the trusted database a live binding was read from', async () => {
     const conversation = createConversation({});
     Object.assign(conversation, await history.hydrateConversationHistory(conversation, root, { ...createProviderHistoryPathContext(settings, 'opencode', root), environment }));
-    expect(conversation.providerState?.databasePath).toBe(databasePath);
-
-    expect(changeRuntime(conversation)).toEqual([]);
 
     expect(conversation.sessionId).toBe('session-original');
     expect(history.buildPersistedProviderState(conversation)).toEqual({ databasePath, nativeConversationContextEstablished: true });
@@ -217,14 +198,19 @@ describe('OpenCode history after runtime invalidation', () => {
     };
   }
 
-  function changeRuntime(
-    conversation: Conversation,
-    variable = `OPENCODE_CONFIG=${path.join(root, 'opencode.json')}`,
-  ): Conversation[] {
+  /** Earlier versions retired bindings into recovery-only `previousSessions`. */
+  function createPreviousSessionsConversation(previousSessions: OpencodePreviousSession[]): Conversation {
+    return {
+      ...createConversation({}),
+      providerState: { nativeConversationContextEstablished: false, previousSessions },
+      sessionId: null,
+    };
+  }
+
+  function changeRuntime(variable = `OPENCODE_CONFIG=${path.join(root, 'opencode.json')}`): void {
     const config = (settings.providerConfigs as Record<string, Record<string, unknown>>).opencode;
     config.environmentVariables = `${String(config.environmentVariables)}\n${variable}`;
     expect(opencodeSettingsReconciler.reconcileModelWithEnvironment(settings)).toEqual({ changed: true });
-    return opencodeSettingsReconciler.invalidateConversationSessions([conversation]);
   }
 
   function seedSession(sessionId: string, messages: SeedMessage[], target = databasePath): void {

@@ -701,9 +701,6 @@ ClaudeExecutionStrategySink {
       return;
     }
     const details = classifyClaudeError(error, this.resume.providerSessionId);
-    if (details.category !== 'provider-session-missing') {
-      this.resume.clearProviderSession();
-    }
     this.state.invalidate({
       reason: getClaudeInvalidationReason(details.category),
       recoverable: details.recoverable,
@@ -745,7 +742,6 @@ ClaudeExecutionStrategySink {
         );
       }
     } else if (!hadBackground) {
-      this.resume.clearProviderSession();
       this.state.invalidate({
         reason: 'transport-closed',
         recoverable: true,
@@ -1087,13 +1083,13 @@ ClaudeExecutionStrategySink {
   #finishError(
     active: ActiveRequestedRun,
     error: unknown,
-    missingProviderSessionId?: string,
+    explicitMissingSessionId?: string,
   ): void {
     if (active.run.isTerminal) return;
     const details = classifyClaudeError(
       error,
       this.resume.providerSessionId,
-      missingProviderSessionId,
+      explicitMissingSessionId,
     );
     if (
       details.category === 'configuration'
@@ -1101,9 +1097,6 @@ ClaudeExecutionStrategySink {
     ) {
       this.state.setStatus('idle');
     } else {
-      if (details.category !== 'provider-session-missing') {
-        this.resume.clearProviderSession();
-      }
       this.state.invalidate({
         reason: getClaudeInvalidationReason(details.category),
         recoverable: details.recoverable,

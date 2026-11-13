@@ -13,7 +13,6 @@ export interface ClaudeErrorDetails {
   category: ClaudeErrorCategory;
   message: string;
   recoverable: boolean;
-  missingProviderSessionId?: string;
 }
 
 /**
@@ -37,14 +36,7 @@ export function classifyClaudeError(
     explicitMissingSessionId
     || isSessionMissingError(error, expectedSessionId ?? undefined)
   ) {
-    return {
-      category: 'provider-session-missing',
-      message,
-      recoverable: true,
-      missingProviderSessionId: explicitMissingSessionId
-        ?? getMissingSessionId(error)
-        ?? undefined,
-    };
+    return { category: 'provider-session-missing', message, recoverable: true };
   }
   if (error instanceof ProviderModelUnavailableError) {
     return { category: 'configuration', message, recoverable: true };
@@ -76,6 +68,7 @@ function classifyErrorText(normalized: string): ClaudeErrorCategory {
     normalized.includes('authentication')
     || normalized.includes('unauthorized')
     || normalized.includes('api key')
+    || normalized.includes('not logged in')
   ) {
     return 'authentication';
   }

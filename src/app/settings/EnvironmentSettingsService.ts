@@ -33,7 +33,7 @@ export interface EnvironmentSettingsServiceDeps {
 
 /**
  * Applies environment and provider runtime settings. Each change quiesces the
- * affected providers, commits settings with their session invalidations, and
+ * affected providers, commits settings with their runtime fingerprints, and
  * only then publishes the change; updates are serialized in submission order.
  */
 export class EnvironmentSettingsService {
@@ -109,16 +109,12 @@ export class EnvironmentSettingsService {
         },
         {
           failureMessage: 'Environment change recovery failed.',
-          onInvalidationsPersisted: async (reconciliation) => {
+          onSettingsCommitted: async () => {
             if (affectedProviderIds.length === 0) {
               return;
             }
             await this.deps.onEnvironmentApplied(affectedProviderIds);
-
-            const noticeText = reconciliation.sessionInvalidationProviderIds.length > 0
-              ? 'Environment variables applied. Sessions will be rebuilt on next message.'
-              : 'Environment variables applied.';
-            new Notice(noticeText);
+            new Notice('Environment variables applied.');
           },
         },
       );

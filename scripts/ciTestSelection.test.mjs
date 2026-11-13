@@ -201,7 +201,7 @@ test('filesystem-read documentation, styles, and captured fixtures retain their 
           'tests/integration/providers/opencode/execution/OpencodeHTTPExecution.test.ts',
           'tests/integration/providers/opencode/history/OpencodeConversationHistoryService.test.ts',
           'tests/integration/providers/opencode/history/OpencodeConversationHistoryService.wsl.test.ts',
-          'tests/integration/providers/opencode/history/OpencodeInvalidatedHistory.test.ts',
+          'tests/integration/providers/opencode/history/OpencodeRuntimeChangeHistory.test.ts',
           'tests/integration/providers/opencode/http/OpencodeHTTPHistory.test.ts',
           'tests/integration/providers/opencode/http/OpencodeProcessRetention.test.ts',
           'tests/integration/providers/opencode/http/OpencodeSharedServer.ephemeral.test.ts',

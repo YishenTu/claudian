@@ -38,8 +38,6 @@ export interface ClaudeProviderSettings extends InstallationSettings, StoredInst
   environmentVariables: string;
   /** Fingerprint of every runtime input; a change restarts runtimes. */
   environmentHash: string;
-  /** Fingerprint of session-scope inputs; a change invalidates native bindings. */
-  sessionEnvironmentHash: string;
 }
 
 export const DEFAULT_CLAUDE_PROVIDER_SETTINGS: Readonly<ClaudeProviderSettings> = Object.freeze({
@@ -61,7 +59,6 @@ export const DEFAULT_CLAUDE_PROVIDER_SETTINGS: Readonly<ClaudeProviderSettings> 
   modelAliases: {},
   environmentVariables: '',
   environmentHash: '',
-  sessionEnvironmentHash: '',
 });
 
 export function decodeClaudeConfig(config: Readonly<Record<string, unknown>>): ClaudeProviderSettings {
@@ -106,10 +103,6 @@ export function decodeClaudeConfig(config: Readonly<Record<string, unknown>>): C
       config.environmentHash,
       DEFAULT_CLAUDE_PROVIDER_SETTINGS.environmentHash,
     ),
-    sessionEnvironmentHash: readStoredString(
-      config.sessionEnvironmentHash,
-      DEFAULT_CLAUDE_PROVIDER_SETTINGS.sessionEnvironmentHash,
-    ),
   };
 }
 
@@ -127,6 +120,8 @@ export function updateClaudeConfig(
     modelAliases: decodeModelAliases(updates.modelAliases ?? current.modelAliases),
   };
   const { installationMethod: _method, wslDistroOverride: _distro, ...stored } = next;
+  // A retired session-scope fingerprint written by earlier versions.
+  delete (stored as Record<string, unknown>).sessionEnvironmentHash;
   replaceProviderConfig(config, stored);
   return next;
 }

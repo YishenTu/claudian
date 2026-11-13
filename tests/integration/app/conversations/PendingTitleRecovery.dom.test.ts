@@ -10,10 +10,7 @@ import { fireEvent, waitFor, within } from '@testing-library/dom';
 
 import { ConversationRepository } from '@/app/conversations/ConversationRepository';
 import { SessionMetadataLoader } from '@/app/conversations/SessionMetadataLoader';
-import { RuntimeSettingsCoordinator } from '@/app/settings/RuntimeSettingsCoordinator';
-import { SettingsCoordinator } from '@/app/settings/SettingsCoordinator';
 import { ConversationPersistenceStore } from '@/app/storage/ConversationPersistenceStore';
-import { ProviderExecutionLifecycleRegistry } from '@/core/execution';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { ProviderSettingsCoordinator } from '@/core/providers/ProviderSettingsCoordinator';
 import type { TitleGenerationService } from '@/core/providers/types';
@@ -39,14 +36,8 @@ async function fixture() {
     getSettings: () => settings, getVaultPath: () => vault.root, persistence,
     onConversationDeleted: async () => undefined,
   });
-  const executionLifecycle = new ProviderExecutionLifecycleRegistry();
-  const runtimeSettings = new RuntimeSettingsCoordinator({
-    settings: new SettingsCoordinator(settings, async () => undefined), conversations: repository,
-    getSettings: () => settings, canCompleteInvalidations: () => false, executionLifecycle,
-  });
   const loader = new SessionMetadataLoader({
     sessions: persistence.metadataReader, conversations: repository,
-    providerSettings: ProviderSettingsCoordinator, runtimeSettings,
     isUnloading: () => false, whenLayoutReady: callback => callback(), onConversationListChanged: () => undefined,
   });
   const metadata: SessionMetadata = {
@@ -72,7 +63,7 @@ async function fixture() {
     getCurrentConversationId: () => null, getTitleGenerationService: () => service, onListChanged: render,
   } as unknown as SessionBrowserDeps);
   return { vault, persistence, repository, loader, metadata, container, browser, render,
-    dispose: async () => { browser.dispose(); await loader.dispose(); await executionLifecycle.dispose(); await vault.dispose(); } };
+    dispose: async () => { browser.dispose(); await loader.dispose(); await vault.dispose(); } };
 }
 
 it('offers and completes title retry after loading an interrupted job from disk', async () => {

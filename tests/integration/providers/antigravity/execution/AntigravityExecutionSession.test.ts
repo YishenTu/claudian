@@ -273,7 +273,6 @@ describe('AntigravityExecutionSession', () => {
     const first = await createSession({}, peer => { peer.resumeGate = () => { throw new Error(failure); }; });
     const failed = await collect(first.execute(request()).events);
     expect(failed.at(-1)).toMatchObject({ type: 'execution_error', recoverable: true, category: 'unknown' });
-    expect(failed.at(-1)).not.toHaveProperty('missingProviderSessionId');
     expect(first.getSnapshot().providerSessionId).toBe('session-new');
     expect(spawned[0].prompts).toHaveLength(0);
     spawned[0].resumeGate = () => {};
@@ -658,9 +657,9 @@ describe('AntigravityExecutionSession', () => {
 
     expect(events.at(-1)).toMatchObject({
       category: 'provider-session-missing',
-      missingProviderSessionId: 'session-gone',
       type: 'execution_error',
     });
+    expect(session.getSnapshot().providerSessionId).toBe('session-gone');
     expect(spawned[0].loadRequests).toEqual([]);
     expect(spawned[0].prompts).toHaveLength(0);
   });

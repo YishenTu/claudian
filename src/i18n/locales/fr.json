@@ -496,10 +496,7 @@
     "executionNotices": {
       "initializeFailed": "Impossible d’initialiser l’exécution de l’agent. Réessayez.",
       "unavailable": "L’exécution de l’agent n’est pas disponible. Rechargez le plugin.",
-      "missingDeleted": "La session du fournisseur n’existe plus. Son enregistrement dans Claudian a été supprimé. Renvoyez le message pour démarrer une nouvelle session.",
-      "missingReset": "La session du fournisseur n’existe plus. Claudian a conservé l’historique récupérable. Renvoyez le message pour reconstruire la session.",
-      "missingPreserved": "La session du fournisseur n’existe plus. Claudian a conservé son enregistrement, car l’historique restant n’a pas pu être vérifié.",
-      "missingNotFound": "La session du fournisseur n’existe plus. Renvoyez le message pour démarrer une nouvelle session.",
+      "sessionUnavailable": "La session native de cette conversation n'est pas disponible avec la configuration actuelle de la CLI. Démarrez une nouvelle discussion pour continuer.",
       "unsentFallback": "Le message n’a pas été envoyé. Réessayez."
     },
     "images": {
@@ -826,19 +823,9 @@
       "deleteConfirm": "Supprimer le snippet d'environnement « {name} » ?",
       "deleteFailed": "Impossible de supprimer le snippet"
     },
-    "customModelOverrides": {
-      "name": "Remplacements de modèles personnalisés",
-      "desc": "Définissez les alias dans le sélecteur de modèle et les tailles de fenêtre de contexte pour les modèles personnalisés."
-    },
     "customModelAliases": {
-      "placeholder": "Alias",
       "ariaLabel": "Alias pour {model}",
       "ariaDescription": "Libellé personnalisé affiché dans le sélecteur de modèle. Laissez vide pour utiliser la valeur par défaut."
-    },
-    "customContextLimits": {
-      "invalid": "Format invalide. Utilisez : 256k, 1m ou nombre exact (1000-10000000).",
-      "saveFailed": "Impossible d’enregistrer la fenêtre de contexte. Réessayez.",
-      "savedRefreshFailed": "Fenêtre de contexte enregistrée, mais l’actualisation des paramètres a échoué."
     },
     "enableChrome": {
       "name": "Activer l'extension Chrome",

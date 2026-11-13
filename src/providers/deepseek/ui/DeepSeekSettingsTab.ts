@@ -104,7 +104,7 @@ export function createDeepSeekSettingsTabRenderer(workspace: { cliResolver: Deep
       const refreshPreset = renderPresetPlugins(container, host, settings);
       renderEnvironmentSettingsSection({ container, plugin: host, scope: 'provider:deepseek', heading: t('settings.environment'), name: t('settings.deepseek.environment.name'),
         desc: t('settings.deepseek.environment.desc'),
-        placeholder: 'DSH_HOME=/path/to/.dsh', renderCustomContextLimits: target => context.renderCustomContextLimits(target, 'deepseek'),
+        placeholder: 'DSH_HOME=/path/to/.dsh',
       });
       return picker;
     },

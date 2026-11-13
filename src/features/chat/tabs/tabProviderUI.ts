@@ -84,21 +84,12 @@ export function applyProviderUIGating(
   tab.ui.permissionToggle.setVisible(hasPermissionToggle);
 
   tab.ui.imageContextManager.setEnabled(capabilities.supportsImageAttachments);
-  refreshTabContextUsage(tab, plugin);
+  refreshTabContextUsage(tab);
 }
 
-/** Renders the tab's raw usage through the shared reported-window/custom-limit projection. */
-export function refreshTabContextUsage(
-  tab: AssembledTabRuntime,
-  plugin: ChatFeatureHost,
-): void {
-  const conversation = tab.conversationId ? plugin.getConversationSummary(tab.conversationId) : null;
-  const settings = getSessionSettingsSnapshot(tab.session.runtime, plugin, conversation);
-  tab.ui.contextUsageMeter.update(projectContextUsageDisplay(tab.state.usage, {
-    providerId: getSessionProviderId(tab, plugin, conversation),
-    model: settings.model,
-    customContextLimits: settings.customContextLimits,
-  }));
+/** Renders the tab's raw usage through the shared reported-window projection. */
+export function refreshTabContextUsage(tab: AssembledTabRuntime): void {
+  tab.ui.contextUsageMeter.update(projectContextUsageDisplay(tab.state.usage));
 }
 
 export function refreshTabWorkspaceServices(

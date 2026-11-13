@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 
 import type {
   ProviderExecutionBackend,
+  ProviderExecutionErrorCategory,
   ProviderExecutionEvent,
   ProviderExecutionRequest,
   ProviderExecutionRun,
@@ -42,10 +43,10 @@ export class FakeAuxiliarySession implements ProviderExecutionSession {
     this.active = null;
   }
 
-  fail(message: string): void {
+  fail(message: string, category: ProviderExecutionErrorCategory = 'provider'): void {
     this.status = 'invalidated';
     this.active?.finish({
-      category: 'provider',
+      category,
       message,
       recoverable: true,
       type: 'execution_error',

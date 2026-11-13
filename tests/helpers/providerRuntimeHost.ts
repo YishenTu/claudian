@@ -27,14 +27,13 @@ export async function createProviderHostFixture(options: ProviderHostFixtureOpti
     { DesktopVault }, { DEFAULT_CLAUDIAN_SETTINGS }, { ClaudianSettingsStorage },
     { ClaudianProviderHost }, { ProviderExecutionLifecycleRegistry }, { LoopbackSessionToolServer },
     { getInstallationKey }, { EnvironmentSettingsService }, { RuntimeSettingsCoordinator },
-    { ConversationRepository }, { ConversationPersistenceStore }, { ProviderRegistry }, { ProviderSettingsCoordinator },
+    { ProviderRegistry }, { ProviderSettingsCoordinator },
   ] = await Promise.all([
     import('@test/helpers/core/DesktopVault'), import('@test/helpers/defaultSettings'),
     import('@/app/settings/ClaudianSettingsStorage'), import('@/composition/ClaudianProviderHost'),
     import('@/core/execution'), import('@/core/session-tools/LoopbackSessionToolServer'),
     import('@/core/device/InstallationKey'), import('@/app/settings/EnvironmentSettingsService'),
-    import('@/app/settings/RuntimeSettingsCoordinator'), import('@/app/conversations/ConversationRepository'),
-    import('@/app/storage/ConversationPersistenceStore'), import('@/core/providers/ProviderRegistry'),
+    import('@/app/settings/RuntimeSettingsCoordinator'), import('@/core/providers/ProviderRegistry'),
     import('@/core/providers/ProviderSettingsCoordinator'),
   ]);
   const vault = options.vault ?? await DesktopVault.create();
@@ -51,15 +50,8 @@ export async function createProviderHostFixture(options: ProviderHostFixtureOpti
   let environmentService: InstanceType<typeof EnvironmentSettingsService> | undefined;
   function environment() {
     if (environmentService) return environmentService;
-    const conversations = new ConversationRepository({
-      providers: ProviderRegistry, providerSettings: ProviderSettingsCoordinator,
-      getSettings: () => settings, getVaultPath: () => vault.root,
-      persistence: new ConversationPersistenceStore(vault.files, storage.installationKey),
-      onConversationDeleted: async () => undefined,
-    });
     const runtimeSettings = new RuntimeSettingsCoordinator({
-      settings: coordinator, conversations, executionLifecycle: lifecycle,
-      getSettings: () => settings, canCompleteInvalidations: () => true,
+      settings: coordinator, getSettings: () => settings,
     });
     environmentService = new EnvironmentSettingsService({
       getSettings: () => settings, runtimeSettings, executionLifecycle: lifecycle,

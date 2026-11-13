@@ -326,7 +326,7 @@ export class MainTurnExecution {
           finalAssistant.assistantMessageId = checkpoint;
         }
       }
-      const rolledBack = !result.accepted && turn.origin === 'session-message' && result.status !== 'missing-session';
+      const rolledBack = !result.accepted && turn.origin === 'session-message';
       if (rolledBack) {
         restoreUnsentInput(admittedTurnRequest);
         rollbackFailedTurn(assistantMsg);
@@ -344,39 +344,6 @@ export class MainTurnExecution {
       } else if (result.status === 'cancelled') {
         end = { kind: 'response', outcome: 'cancelled' };
       } else if (result.status === 'invalidated') {
-        end = { kind: 'invalidated' };
-      } else if (result.status === 'missing-session') {
-        const retryMessage = result.accepted || turn.assertBeforeHandoff || turn.origin === 'session-message'
-          ? null
-          : createQueuedMessage(displayContent, {
-            ...admittedTurnRequest,
-            images: imagesForMessage ?? admittedTurnRequest.images,
-          });
-        const resolution = result.missingSessionResolution ?? 'not_found';
-        if (!result.accepted && turn.origin === 'session-message') turn.onUnsent?.(resolution === 'deleted' ? 'deleted' : 'failed');
-        const { queue } = this.deps;
-        if (resolution === 'deleted') {
-          // The composer keeps its draft; the deleted session's tabs reset after this turn settles
-          // and carry the composer, so queued and unsent input must reach it first. Settling first
-          // sends steers that become definitely unsent later to the composer, not a dead queue.
-          this.deps.turns.settle();
-          queue.restoreToComposer();
-          queue.returnMessageToComposer(retryMessage, { merge: true });
-        } else if (!result.accepted) {
-          queue.returnMessageToComposer(retryMessage, { merge: true });
-          rollbackFailedTurn(assistantMsg);
-        }
-        if (result.accepted) {
-          this.#finishAcceptedMissingSession(streamGeneration);
-        }
-        const notice = resolution === 'deleted'
-            ? t('chat.executionNotices.missingDeleted')
-            : resolution === 'reset'
-              ? t('chat.executionNotices.missingReset')
-              : resolution === 'preserved'
-                ? t('chat.executionNotices.missingPreserved')
-                : t('chat.executionNotices.missingNotFound');
-        new Notice(notice);
         end = { kind: 'invalidated' };
       } else if (result.status === 'error' && result.error) {
         // A rolled-back unsent turn has no reply left to carry the error; its input returns for retry.
@@ -674,11 +641,6 @@ export class MainTurnExecution {
     state.messages = state.messages.filter((message) => message.id !== messageId);
     renderer?.removeMessage(messageId);
     state.resetStreamingPresentation();
-  }
-
-  #finishAcceptedMissingSession(streamGeneration: number): void {
-    if (this.deps.state.streamGeneration !== streamGeneration) return;
-    this.#resetTurnStreamingState();
   }
 
   #resetTurnStreamingState(): void {

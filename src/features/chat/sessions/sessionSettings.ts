@@ -34,7 +34,6 @@ const UNRESOLVED_TAB_UI: ProviderChatUIConfig = {
   isDefaultModel: () => false,
   applyModelDefaults: () => {},
   normalizeModelVariant: model => model,
-  getCustomModelIds: () => new Set(),
 };
 
 export type SessionSettingsSnapshot = Record<string, unknown> & {
@@ -42,7 +41,6 @@ export type SessionSettingsSnapshot = Record<string, unknown> & {
   effortLevel: string;
   serviceTier: string;
   permissionMode: string;
-  customContextLimits?: Record<string, number>;
 };
 
 export function getSessionCapabilities(

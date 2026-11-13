@@ -173,11 +173,6 @@ describe('ClaudianPlugin', () => {
     return chatHostOf(target).executionPersistence;
   }
 
-  /** The runtime settings coordinator wired into the plugin's session metadata loader. */
-  function runtimeSettingsOf(target: ClaudianPlugin = plugin) {
-    return target['sessionMetadata']['options'].runtimeSettings;
-  }
-
   function getConversationPersistence(
     target: ClaudianPlugin,
   ): ConversationPersistenceStore {
@@ -290,7 +285,6 @@ describe('ClaudianPlugin', () => {
       const change = chatHostOf(plugin).mutateSettings(settings => {
         settings.enableDualPane = !settings.enableDualPane;
         settings.hiddenCommands = ['test-command'];
-        settings.customContextLimits = { test: 1000 };
         settings.enableZenMode = !settings.enableZenMode;
       });
       await writing;
@@ -312,11 +306,11 @@ describe('ClaudianPlugin', () => {
       })).rejects.toThrow('disk unavailable');
       for (const view of views) expect(view.refreshDualPaneLayout).toHaveBeenCalledTimes(1);
       persist.mockResolvedValueOnce(undefined);
-      views[0].refreshModelSelector.mockImplementationOnce(() => { throw new Error('view detached'); });
-      await expect(chatHostOf(plugin).mutateSettings(settings => { settings.customContextLimits = { test: 2000 }; }))
+      views[0].updateHiddenCommands.mockImplementationOnce(() => { throw new Error('view detached'); });
+      await expect(chatHostOf(plugin).mutateSettings(settings => { settings.hiddenCommands = ['other-command']; }))
         .rejects.toThrow('post-commit');
-      expect(views[1].refreshModelSelector).toHaveBeenCalledTimes(2);
-      expect(chatHostOf(plugin).getCommittedSettings().customContextLimits).toEqual({ test: 2000 });
+      expect(views[1].updateHiddenCommands).toHaveBeenCalledTimes(2);
+      expect(chatHostOf(plugin).getCommittedSettings().hiddenCommands).toEqual(['other-command']);
     } finally {
       viewsSpy.mockRestore();
       zenReconcile.mockRestore();
@@ -327,7 +321,7 @@ describe('ClaudianPlugin', () => {
   function createPublishedViews() {
     return [0, 1].map(() => ({
       refreshDualPaneLayout: vi.fn(),
-      updateHiddenCommands: vi.fn(), refreshModelSelector: vi.fn(),
+      updateHiddenCommands: vi.fn(),
       notifyConversationListChanged: vi.fn(),
     }));
   }
@@ -681,18 +675,17 @@ describe('ClaudianPlugin', () => {
       recoverySpy.mockRestore();
     });
 
-    it('recovers models from original metadata before persisting session invalidation', async () => {
+    it('recovers models from the scanned metadata session state', async () => {
       const metadata = {
-        id: 'codex-model-before-invalidation',
+        id: 'codex-model-recovery-source',
         providerId: 'codex' as const,
-        title: 'Codex model before invalidation',
+        title: 'Codex model recovery source',
         createdAt: 1,
         lastActivityAt: 2,
-        sessionId: 'thread-before-invalidation',
-        providerState: { threadId: 'thread-before-invalidation' },
+        sessionId: 'thread-recovery-source',
+        providerState: { threadId: 'thread-recovery-source' },
       };
       await plugin.onload();
-      plugin.settings.pendingProviderSessionInvalidations.codex = 1;
       const scanSpy = vi.spyOn(SessionStorage.prototype, 'scan')
         .mockResolvedValue({
           records: deviceMetadataRecords(metadata),
@@ -710,41 +703,33 @@ describe('ClaudianPlugin', () => {
           registeredSources.push(...sources);
           originalRegister(sources);
         });
-      const events: string[] = [];
-      const persistedRecoverySources: unknown[] = [];
+      const recoverySources: unknown[] = [];
       const recoverySpy = vi.spyOn(repository, 'recoverMissingSelectedModels')
         .mockImplementation(async () => {
-          events.push('recover');
+          recoverySources.push(repository.getSync(metadata.id)?.modelRecoverySource);
           return [];
-        });
-      const persistSpy = vi.spyOn(repository, 'persistConversations')
-        .mockImplementation(async (...args: unknown[]) => {
-          const conversations = args[0] as readonly Conversation[];
-          events.push(`persist:${String(conversations[0]?.sessionId)}`);
-          persistedRecoverySources.push(conversations[0] ? repository.getSync(conversations[0].id)?.modelRecoverySource : undefined);
         });
 
       await plugin['sessionMetadata']['loadRemaining']();
 
       expect(registeredSources).toContainEqual(expect.objectContaining({
         id: metadata.id,
-        sessionId: 'thread-before-invalidation',
-        providerState: { threadId: 'thread-before-invalidation' },
+        sessionId: 'thread-recovery-source',
+        providerState: { threadId: 'thread-recovery-source' },
       }));
-      expect(events).toEqual(['recover', 'persist:null']);
-      expect(persistedRecoverySources).toEqual([{
-        sessionId: 'thread-before-invalidation',
-        providerState: { threadId: 'thread-before-invalidation' },
+      // Recovery reads the scanned metadata's original session state.
+      expect(recoverySources).toEqual([{
+        sessionId: 'thread-recovery-source',
+        providerState: { threadId: 'thread-recovery-source' },
       }]);
 
       scanSpy.mockRestore();
       loadSpy.mockRestore();
       registerSpy.mockRestore();
       recoverySpy.mockRestore();
-      persistSpy.mockRestore();
     });
 
-    it('invalidates restored and deferred sessions after a provider environment change', async () => {
+    it('keeps restored and deferred bindings when upgraded settings carry a changed environment', async () => {
       const restoredMetadata = {
         id: 'restored-environment-session',
         providerId: 'claude' as const,
@@ -770,11 +755,15 @@ describe('ClaudianPlugin', () => {
       ));
       mockApp.vault.adapter.read.mockImplementation(async (path: string) => {
         if (path === '.claudian/claudian-settings.json') {
+          // Pre-#1024 fingerprint, a scoped session fingerprint and a pending invalidation, all
+          // written by earlier versions, beside a moved native store.
           return JSON.stringify({
+            pendingProviderSessionInvalidations: { claude: 1 },
             providerConfigs: {
               claude: {
-                environmentHash: 'ANTHROPIC_BASE_URL=https://old.example.com',
-                environmentVariables: 'ANTHROPIC_BASE_URL=https://new.example.com',
+                environmentHash: 'CLAUDE_CONFIG_DIR=/old/claude-home',
+                sessionEnvironmentHash: 'runtime-input:v1:0000000000000000000000000000000000000000000000000000000000000000',
+                environmentVariables: 'CLAUDE_CONFIG_DIR=/new/claude-home',
               },
             },
           });
@@ -807,250 +796,15 @@ describe('ClaudianPlugin', () => {
       loadSourceSpy.mockRestore();
 
       expect(restored).toEqual(expect.objectContaining({
-        sessionId: null,
-        providerState: {
-          bindingRetired: true,
-          previousProviderSessionIds: ['restored-provider-session-id'],
-        },
+        sessionId: 'restored-session-id',
+        providerState: { providerSessionId: 'restored-provider-session-id' },
         resumeAtMessageId: 'restored-message-id',
       }));
       expect(deferred).toEqual(expect.objectContaining({
-        sessionId: null,
-        providerState: {
-          bindingRetired: true,
-          previousProviderSessionIds: ['deferred-provider-session-id'],
-        },
+        sessionId: 'deferred-session-id',
+        providerState: { providerSessionId: 'deferred-provider-session-id' },
         resumeAtMessageId: 'deferred-message-id',
       }));
-    });
-
-    it('preserves restored and deferred sessions for a reload-policy environment change', async () => {
-      const restoredMetadata = {
-        id: 'restored-reload-session',
-        providerId: 'claude' as const,
-        title: 'Restored reload session',
-        createdAt: 1,
-        lastActivityAt: 3,
-        sessionId: 'restored-session-id',
-        providerState: { providerSessionId: 'restored-provider-session-id' },
-      };
-      const deferredMetadata = {
-        id: 'deferred-reload-session',
-        providerId: 'claude' as const,
-        title: 'Deferred reload session',
-        createdAt: 1,
-        lastActivityAt: 2,
-        sessionId: 'deferred-session-id',
-        providerState: { providerSessionId: 'deferred-provider-session-id' },
-      };
-      const loadSpy = vi.spyOn(SessionStorage.prototype, 'loadMetadata')
-        .mockResolvedValue(restoredMetadata);
-      const listSpy = vi.spyOn(SessionStorage.prototype, 'scan')
-        .mockImplementation(async (options) => {
-          options?.onBatch?.(deviceMetadataRecords(restoredMetadata, deferredMetadata));
-          return {
-            records: deviceMetadataRecords(restoredMetadata, deferredMetadata),
-            complete: true,
-            invalidMetadataCount: 0,
-          };
-        });
-      const loadSourceSpy = mockMetadataSources(
-        restoredMetadata,
-        deferredMetadata,
-      );
-      const claudeReconciler = ProviderRegistry.getSettingsReconciler('claude');
-      const reconcileSpy = vi.spyOn(claudeReconciler, 'reconcileModelWithEnvironment')
-        .mockReturnValue({ changed: true, sessionPolicy: 'reload' });
-
-      try {
-        await plugin.onload();
-        await plugin['sessionMetadata']['loadRemaining']();
-      } finally {
-        reconcileSpy.mockRestore();
-        loadSpy.mockRestore();
-        listSpy.mockRestore();
-        loadSourceSpy.mockRestore();
-      }
-
-      expect(chatHostOf(plugin).getCachedConversation(restoredMetadata.id)).toEqual(expect.objectContaining({
-        sessionId: 'restored-session-id',
-        providerState: { providerSessionId: 'restored-provider-session-id' },
-      }));
-      expect(chatHostOf(plugin).getCachedConversation(deferredMetadata.id)).toEqual(expect.objectContaining({
-        sessionId: 'deferred-session-id',
-        providerState: { providerSessionId: 'deferred-provider-session-id' },
-      }));
-      expect(plugin.settings.pendingProviderSessionInvalidations.claude).toBeUndefined();
-    });
-
-    it('invalidates later metadata batches when the environment changes during the scan', async () => {
-      const firstMetadata = {
-        id: 'first-scanned-session',
-        providerId: 'claude' as const,
-        title: 'First scanned session',
-        createdAt: 1,
-        lastActivityAt: 2,
-        sessionId: 'first-session-id',
-        providerState: { providerSessionId: 'first-provider-session-id' },
-      };
-      const laterMetadata = {
-        id: 'later-scanned-session',
-        providerId: 'claude' as const,
-        title: 'Later scanned session',
-        createdAt: 1,
-        lastActivityAt: 1,
-        sessionId: 'later-session-id',
-        providerState: { providerSessionId: 'later-provider-session-id' },
-      };
-      let markFirstBatchPublished!: () => void;
-      const firstBatchPublished = new Promise<void>((resolve) => {
-        markFirstBatchPublished = resolve;
-      });
-      let releaseLaterBatch!: () => void;
-      const laterBatchRelease = new Promise<void>((resolve) => {
-        releaseLaterBatch = resolve;
-      });
-
-      await plugin.onload();
-      const listSpy = vi.spyOn(SessionStorage.prototype, 'scan')
-        .mockImplementation(async (options) => {
-          options?.onBatch?.(deviceMetadataRecords(firstMetadata));
-          markFirstBatchPublished();
-          await laterBatchRelease;
-          options?.onBatch?.(deviceMetadataRecords(laterMetadata));
-          return {
-            records: deviceMetadataRecords(firstMetadata, laterMetadata),
-            complete: true,
-            invalidMetadataCount: 0,
-          };
-        });
-      const loadSourceSpy = mockMetadataSources(firstMetadata, laterMetadata);
-
-      const load = plugin['sessionMetadata']['loadRemaining']();
-      await firstBatchPublished;
-      await plugin.providerHost.applyEnvironmentVariables(
-        'provider:claude',
-        'ANTHROPIC_BASE_URL=https://changed-during-scan.example.com',
-      );
-      const pendingGeneration = plugin.settings.pendingProviderSessionInvalidations.claude;
-      releaseLaterBatch();
-      await load;
-
-      const first = chatHostOf(plugin).getCachedConversation(firstMetadata.id);
-      const later = chatHostOf(plugin).getCachedConversation(laterMetadata.id);
-      listSpy.mockRestore();
-      loadSourceSpy.mockRestore();
-
-      expect(first?.sessionId).toBeNull();
-      expect(first?.providerState).toEqual({
-        bindingRetired: true,
-        previousProviderSessionIds: ['first-provider-session-id'],
-      });
-      expect(later?.sessionId).toBeNull();
-      expect(later?.providerState).toEqual({
-        bindingRetired: true,
-        previousProviderSessionIds: ['later-provider-session-id'],
-      });
-      expect(pendingGeneration).toEqual(expect.any(Number));
-      expect(plugin.settings.pendingProviderSessionInvalidations.claude)
-        .toBeUndefined();
-    });
-
-    it('keeps a pending provider invalidation after an incomplete metadata scan', async () => {
-      const settingsPath = '.claudian/claudian-settings.json';
-      const pendingGeneration = 11;
-      const deferredMetadata = {
-        id: 'incomplete-scan-session',
-        providerId: 'claude' as const,
-        title: 'Incomplete scan session',
-        createdAt: 1,
-        lastActivityAt: 2,
-        sessionId: 'incomplete-scan-session-id',
-        providerState: { providerSessionId: 'incomplete-scan-provider-session-id' },
-      };
-      const files = installVaultFiles({
-        [settingsPath]: JSON.stringify({
-          pendingProviderSessionInvalidations: { claude: pendingGeneration },
-          providerConfigs: {
-            claude: {
-              environmentHash: 'ANTHROPIC_BASE_URL=https://same.example.com',
-              environmentVariables: 'ANTHROPIC_BASE_URL=https://same.example.com',
-            },
-          },
-        }),
-      });
-
-      await plugin.onload();
-      const scanSpy = vi.spyOn(SessionStorage.prototype, 'scan')
-        .mockImplementation(async (options) => {
-          options?.onBatch?.(deviceMetadataRecords(deferredMetadata));
-          return {
-            records: deviceMetadataRecords(deferredMetadata),
-            complete: false,
-            invalidMetadataCount: 0,
-          };
-        });
-      plugin['sessionMetadata']['pendingScan'] = false;
-
-      await plugin['sessionMetadata']['loadRemaining']();
-
-      const persistedSettings = JSON.parse(files.get(settingsPath) ?? '{}');
-      scanSpy.mockRestore();
-
-      expect(persistedSettings.pendingProviderSessionInvalidations?.claude)
-        .toBe(pendingGeneration);
-      expect(plugin['sessionMetadata']['loadedAll']).toBe(false);
-    });
-
-    it('does not persist a background metadata shell deleted before reconciliation', async () => {
-      let finishScan!: () => void;
-      let markBatchPublished!: () => void;
-      const scanRelease = new Promise<void>((resolve) => {
-        finishScan = resolve;
-      });
-      const batchPublished = new Promise<void>((resolve) => {
-        markBatchPublished = resolve;
-      });
-      const backgroundMetadata = {
-        id: 'deleted-background-conversation',
-        providerId: 'claude' as const,
-        title: 'Deleted background conversation',
-        createdAt: 1,
-        lastActivityAt: 2,
-      };
-
-      await plugin.onload();
-      const listSpy = vi.spyOn(SessionStorage.prototype, 'scan').mockImplementation(async (options) => {
-        options?.onBatch?.(deviceMetadataRecords(backgroundMetadata));
-        markBatchPublished();
-        await scanRelease;
-        return {
-          records: deviceMetadataRecords(backgroundMetadata),
-          complete: true,
-          invalidMetadataCount: 0,
-        };
-      });
-      const invalidateSpy = vi.spyOn(
-        ProviderSettingsCoordinator,
-        'invalidateConversationSessions',
-      ).mockImplementation((conversations) => [...conversations]);
-      const saveMetadataSpy = vi.spyOn(getConversationPersistence(plugin), 'saveMetadata');
-
-      const load = plugin['sessionMetadata']['loadRemaining']();
-      await batchPublished;
-      await chatHostOf(plugin).deleteConversation(backgroundMetadata.id);
-      saveMetadataSpy.mockClear();
-      finishScan();
-      await load;
-      const invalidationCallCount = invalidateSpy.mock.calls.length;
-      const saveMetadataCallCount = saveMetadataSpy.mock.calls.length;
-      listSpy.mockRestore();
-      invalidateSpy.mockRestore();
-      saveMetadataSpy.mockRestore();
-
-      expect(invalidationCallCount).toBeGreaterThan(0);
-      expect(saveMetadataCallCount).toBe(0);
-      expect(chatHostOf(plugin).getCachedConversation(backgroundMetadata.id)).toBeNull();
     });
 
     it('suppresses metadata tombstoned after scanning but before source resolution', async () => {
@@ -1116,147 +870,6 @@ describe('ClaudianPlugin', () => {
 
       scanSpy.mockRestore();
       loadSpy.mockRestore();
-    });
-
-    it('retries a pending provider invalidation after unload and restart', async () => {
-      const settingsPath = '.claudian/claudian-settings.json';
-      const deferredMetadata = {
-        id: 'restart-deferred-session',
-        providerId: 'claude' as const,
-        title: 'Restart deferred session',
-        createdAt: 1,
-        lastActivityAt: 2,
-        sessionId: 'restart-session-id',
-        providerState: { providerSessionId: 'restart-provider-session-id' },
-      };
-      const files = installVaultFiles({
-        [settingsPath]: JSON.stringify({
-          providerConfigs: {
-            claude: {
-              environmentHash: 'ANTHROPIC_BASE_URL=https://old.example.com',
-              environmentVariables: 'ANTHROPIC_BASE_URL=https://new.example.com',
-            },
-          },
-        }),
-      });
-
-      await plugin.onload();
-      const firstRunSettings = JSON.parse(files.get(settingsPath) ?? '{}');
-      const pendingGeneration = firstRunSettings.pendingProviderSessionInvalidations?.claude;
-
-      expect(pendingGeneration).toEqual(expect.any(Number));
-
-      plugin.onunload();
-      const restartedPlugin = createPlugin();
-      (restartedPlugin.loadData as Mock).mockResolvedValue({});
-      const restartedSaveMetadataSpy = vi.spyOn(
-        ConversationPersistenceStore.prototype,
-        'saveMetadata',
-      );
-      const listSpy = vi.spyOn(SessionStorage.prototype, 'scan')
-        .mockImplementation(async (options) => {
-          options?.onBatch?.(deviceMetadataRecords(deferredMetadata));
-          return {
-            records: deviceMetadataRecords(deferredMetadata),
-            complete: true,
-            invalidMetadataCount: 0,
-          };
-        });
-      const loadSourceSpy = mockMetadataSources(deferredMetadata);
-
-      await restartedPlugin.onload();
-      await restartedPlugin['sessionMetadata']['loadRemaining']();
-
-      const restartedConversation = chatHostOf(restartedPlugin).getCachedConversation(deferredMetadata.id);
-      const persistedMetadata = JSON.parse(
-        files.get(
-          `${getDeviceSessionsPath(getHostnameKey())}/restart-deferred-session.meta.json`,
-        ) ?? '{}',
-      );
-      const restartedSettings = JSON.parse(files.get(settingsPath) ?? '{}');
-      const deferredInvalidationWrites = restartedSaveMetadataSpy.mock.calls.filter(
-        ([metadata]) => metadata.id === deferredMetadata.id,
-      );
-      listSpy.mockRestore();
-      loadSourceSpy.mockRestore();
-      restartedSaveMetadataSpy.mockRestore();
-
-      expect(restartedConversation?.sessionId).toBeNull();
-      expect(restartedConversation?.providerState).toEqual({
-        bindingRetired: true,
-        previousProviderSessionIds: ['restart-provider-session-id'],
-      });
-      expect(persistedMetadata.sessionId).toBeNull();
-      expect(persistedMetadata.providerState).toEqual({
-        bindingRetired: true,
-        previousProviderSessionIds: ['restart-provider-session-id'],
-      });
-      expect(restartedSettings.pendingProviderSessionInvalidations?.claude).toBeUndefined();
-      expect(deferredInvalidationWrites).toHaveLength(1);
-    });
-
-    it('keeps a pending provider invalidation when a metadata write fails', async () => {
-      const settingsPath = '.claudian/claudian-settings.json';
-      const pendingGeneration = 7;
-      const deferredMetadata = {
-        id: 'failed-write-session',
-        providerId: 'claude' as const,
-        title: 'Failed write session',
-        createdAt: 1,
-        lastActivityAt: 2,
-        sessionId: 'failed-write-session-id',
-        providerState: { providerSessionId: 'failed-write-provider-session-id' },
-      };
-      const files = installVaultFiles({
-        [settingsPath]: JSON.stringify({
-          pendingProviderSessionInvalidations: { claude: pendingGeneration },
-          providerConfigs: {
-            claude: {
-              environmentHash: 'ANTHROPIC_BASE_URL=https://same.example.com',
-              environmentVariables: 'ANTHROPIC_BASE_URL=https://same.example.com',
-            },
-          },
-        }),
-      });
-
-      await plugin.onload();
-      const listSpy = vi.spyOn(SessionStorage.prototype, 'scan')
-        .mockImplementation(async (options) => {
-          options?.onBatch?.(deviceMetadataRecords(deferredMetadata));
-          return {
-            records: deviceMetadataRecords(deferredMetadata),
-            complete: true,
-            invalidMetadataCount: 0,
-          };
-        });
-      const loadSourceSpy = mockMetadataSources(deferredMetadata);
-      const saveMetadataSpy = vi.spyOn(getConversationPersistence(plugin), 'saveMetadata')
-        .mockRejectedValueOnce(new Error('metadata write failed'));
-      plugin['sessionMetadata']['pendingScan'] = false;
-
-      let loadError: unknown;
-      try {
-        await plugin['sessionMetadata']['loadRemaining']();
-      } catch (error) {
-        loadError = error;
-      }
-      listSpy.mockRestore();
-      loadSourceSpy.mockRestore();
-      saveMetadataSpy.mockRestore();
-
-      expect(loadError).toEqual(new Error('metadata write failed'));
-      const persistedSettings = JSON.parse(files.get(settingsPath) ?? '{}');
-      expect(persistedSettings.pendingProviderSessionInvalidations?.claude)
-        .toBe(pendingGeneration);
-
-      await plugin.providerHost.applyEnvironmentVariables(
-        'provider:claude',
-        'ANTHROPIC_BASE_URL=https://next.example.com',
-      );
-
-      const settingsAfterEnvironmentChange = JSON.parse(files.get(settingsPath) ?? '{}');
-      expect(settingsAfterEnvironmentChange.pendingProviderSessionInvalidations?.claude)
-        .toEqual(expect.any(Number));
     });
 
   });
@@ -2156,12 +1769,8 @@ describe('ClaudianPlugin', () => {
         environmentVariables: 'GROK_PROFILE=old',
       });
       const publicationError = new Error('post-commit publication failed');
-      const invalidateSpy = vi.spyOn(
-        repositoryOf(plugin),
-        'invalidateProviderSessions',
-      ).mockImplementationOnce(() => {
-        throw publicationError;
-      });
+      const publishSpy = vi.spyOn(plugin['chatViews'], 'publishSettings')
+        .mockRejectedValueOnce(publicationError);
       const markStale = vi.fn();
       const unregister = plugin.executionLifecycleRegistry.registerTransitionHook('grok', {
         beforeTransition: () => markStale(),
@@ -2192,7 +1801,6 @@ describe('ClaudianPlugin', () => {
         expect(refreshModelSelector).toHaveBeenCalledTimes(1);
         expect(plugin.executionLifecycleRegistry.getProviderGeneration('grok'))
           .toBe(initialGeneration + 1);
-        expect(invalidateSpy).toHaveBeenCalledTimes(1);
         expect(firstError).toBe(publicationError);
 
         await plugin.providerHost.applyEnvironmentVariables('provider:grok', 'GROK_PROFILE=next');
@@ -2201,113 +1809,9 @@ describe('ClaudianPlugin', () => {
         expect(markStale).toHaveBeenCalledTimes(2);
         expect(plugin.executionLifecycleRegistry.getProviderGeneration('grok'))
           .toBe(initialGeneration + 2);
-        expect(invalidateSpy).toHaveBeenCalledTimes(2);
       } finally {
         unregister();
-        invalidateSpy.mockRestore();
-      }
-    });
-
-    it('retains a committed invalidation generation when publication fails before invalidation', async () => {
-      await plugin.onload();
-      plugin['sessionMetadata']['loadedAll'] = true;
-      const conversation = await chatHostOf(plugin).createConversation({
-        providerId: 'claude',
-        sessionId: 'pre-invalidation-session',
-      });
-      const publicationError = new Error('invalidation publication failed');
-      const invalidateSpy = vi.spyOn(
-        ProviderSettingsCoordinator,
-        'invalidateConversationSessions',
-      ).mockImplementationOnce(() => {
-        throw publicationError;
-      });
-      const initialGeneration = plugin.executionLifecycleRegistry
-        .getProviderGeneration('claude');
-
-      try {
-        await expect(plugin.providerHost.applyEnvironmentVariables(
-          'provider:claude',
-          'ANTHROPIC_BASE_URL=https://publication-failed.example.com',
-        )).rejects.toBe(publicationError);
-
-        const generation = plugin.settings.pendingProviderSessionInvalidations.claude;
-        expect(generation).toEqual(expect.any(Number));
-        expect(chatHostOf(plugin).getConversationSync(conversation.id)!.sessionId).toBe('pre-invalidation-session');
-        const persistedFailureSettings = JSON.parse(
-          [...mockApp.vault.adapter.write.mock.calls]
-            .reverse()
-            .find(([path]) => path === '.claudian/claudian-settings.json')?.[1]
-            ?? '{}',
-        );
-        expect(persistedFailureSettings.pendingProviderSessionInvalidations?.claude)
-          .toBe(generation);
-        expect(plugin.executionLifecycleRegistry.getProviderGeneration('claude'))
-          .toBe(initialGeneration + 1);
-
-        await plugin.providerHost.applyEnvironmentVariables(
-          'provider:claude',
-          'ANTHROPIC_BASE_URL=https://publication-retry.example.com',
-        );
-
-        expect(chatHostOf(plugin).getConversationSync(conversation.id)!.sessionId).toBeNull();
-        expect(plugin.settings.pendingProviderSessionInvalidations.claude).toBeUndefined();
-        expect(invalidateSpy).toHaveBeenCalledTimes(2);
-        expect(plugin.executionLifecycleRegistry.getProviderGeneration('claude'))
-          .toBe(initialGeneration + 2);
-      } finally {
-        invalidateSpy.mockRestore();
-      }
-    });
-
-    it('keeps invalidation pending until every invalidated metadata write succeeds', async () => {
-      await plugin.onload();
-      plugin['sessionMetadata']['loadedAll'] = true;
-      const first = await chatHostOf(plugin).createConversation({
-        providerId: 'claude',
-        sessionId: 'partial-write-first',
-      });
-      const second = await chatHostOf(plugin).createConversation({
-        providerId: 'claude',
-        sessionId: 'partial-write-second',
-      });
-      const metadataError = new Error('partial invalidation metadata write failed');
-      const saveMetadataSpy = vi.spyOn(getConversationPersistence(plugin), 'saveMetadata')
-        .mockResolvedValueOnce(undefined)
-        .mockRejectedValueOnce(metadataError);
-
-      try {
-        await expect(plugin.providerHost.applyEnvironmentVariables(
-          'provider:claude',
-          'ANTHROPIC_BASE_URL=https://partial-write.example.com',
-        )).rejects.toBe(metadataError);
-
-        const generation = plugin.settings.pendingProviderSessionInvalidations.claude;
-        expect(chatHostOf(plugin).getConversationSync(first.id)!.sessionId).toBeNull();
-        expect(chatHostOf(plugin).getConversationSync(second.id)!.sessionId).toBeNull();
-        expect(generation).toEqual(expect.any(Number));
-        const persistedFailureSettings = JSON.parse(
-          [...mockApp.vault.adapter.write.mock.calls]
-            .reverse()
-            .find(([path]) => path === '.claudian/claudian-settings.json')?.[1]
-            ?? '{}',
-        );
-        expect(persistedFailureSettings.pendingProviderSessionInvalidations?.claude)
-          .toBe(generation);
-
-        await plugin.providerHost.applyEnvironmentVariables(
-          'provider:claude',
-          'ANTHROPIC_BASE_URL=https://partial-write-retry.example.com',
-        );
-
-        const retriedMetadata = saveMetadataSpy.mock.calls.slice(2).map(([metadata]) => metadata);
-        expect(retriedMetadata).toEqual(expect.arrayContaining([
-          expect.objectContaining({ id: first.id, sessionId: null }),
-          expect.objectContaining({ id: second.id, sessionId: null }),
-        ]));
-        expect(plugin.settings.pendingProviderSessionInvalidations.claude).toBeUndefined();
-      } finally {
-        saveMetadataSpy.mockRestore();
+        publishSpy.mockRestore();
       }
     });
 
@@ -2366,159 +1870,6 @@ describe('ClaudianPlugin', () => {
       unregister();
     });
 
-    it('does not leak failed Claude invalidation into live or deferred conversations', async () => {
-      await plugin.onload();
-      const live = await chatHostOf(plugin).createConversation({
-        providerId: 'claude',
-        sessionId: 'live-session',
-      });
-      live.providerState = {
-        providerSessionId: 'live-provider-session',
-        previousProviderSessionIds: ['live-previous-session'],
-      };
-      live.resumeAtMessageId = 'live-resume-message';
-      await chatHostOf(plugin).updateConversation(live.id, { providerState: live.providerState, resumeAtMessageId: live.resumeAtMessageId });
-      const deferredMetadata = {
-        id: 'deferred-failed-environment',
-        providerId: 'claude' as const,
-        title: 'Deferred failed environment',
-        createdAt: 1,
-        lastActivityAt: 2,
-        sessionId: 'deferred-session',
-        providerState: {
-          providerSessionId: 'deferred-provider-session',
-          previousProviderSessionIds: ['deferred-previous-session'],
-        },
-        resumeAtMessageId: 'deferred-resume-message',
-      };
-      let markBatchPublished!: () => void;
-      const batchPublished = new Promise<void>(resolve => { markBatchPublished = resolve; });
-      let finishScan!: () => void;
-      const scanRelease = new Promise<void>(resolve => { finishScan = resolve; });
-      const scanSpy = vi.spyOn(storageOf(plugin).sessions, 'scan')
-        .mockImplementation(async (options) => {
-          options?.onBatch?.(deviceMetadataRecords(deferredMetadata));
-          markBatchPublished();
-          await scanRelease;
-          return {
-            complete: false,
-            invalidMetadataCount: 0,
-            records: deviceMetadataRecords(deferredMetadata),
-          };
-        });
-      const loadSourceSpy = mockMetadataSources(deferredMetadata);
-      const saveMetadataSpy = vi.spyOn(getConversationPersistence(plugin), 'saveMetadata');
-      let markWriteStarted!: () => void;
-      const writeStarted = new Promise<void>(resolve => { markWriteStarted = resolve; });
-      let rejectWrite!: (error: Error) => void;
-      const failedWrite = new Promise<void>((_resolve, reject) => { rejectWrite = reject; });
-      let shouldFailSettingsWrite = true;
-      mockApp.vault.adapter.write.mockImplementation(async (path: string) => {
-        if (path === '.claudian/claudian-settings.json' && shouldFailSettingsWrite) {
-          shouldFailSettingsWrite = false;
-          markWriteStarted();
-          await failedWrite;
-        }
-      });
-      let stateAtRelease: {
-        deferredSessionId: string | null | undefined;
-        liveSessionId: string | null;
-        pending: unknown;
-      } | null = null;
-      const afterTransition = vi.fn(() => {
-        stateAtRelease = {
-          deferredSessionId: chatHostOf(plugin).getCachedConversation(deferredMetadata.id)?.sessionId,
-          liveSessionId: chatHostOf(plugin).getConversationSync(live.id)!.sessionId,
-          pending: plugin.settings.pendingProviderSessionInvalidations.claude,
-        };
-      });
-      const unregister = plugin.executionLifecycleRegistry.registerTransitionHook('claude', {
-        afterTransition,
-      });
-
-      const writeError = new Error('environment settings write failed');
-      const apply = plugin.providerHost.applyEnvironmentVariables(
-        'provider:claude',
-        'ANTHROPIC_BASE_URL=https://failed.example.com',
-      ).catch(error => error);
-      await writeStarted;
-      const scan = plugin['sessionMetadata']['loadRemaining']();
-      await batchPublished;
-      rejectWrite(writeError);
-      expect(await apply).toBe(writeError);
-      finishScan();
-      await scan;
-
-      const deferred = chatHostOf(plugin).getCachedConversation(deferredMetadata.id);
-      expect(afterTransition).toHaveBeenCalledTimes(1);
-      expect(stateAtRelease).toEqual({
-        deferredSessionId: 'deferred-session',
-        liveSessionId: 'live-session',
-        pending: undefined,
-      });
-      expect(chatHostOf(plugin).getConversationSync(live.id)).toEqual(expect.objectContaining({
-        sessionId: 'live-session',
-        providerState: {
-          providerSessionId: 'live-provider-session',
-          previousProviderSessionIds: ['live-previous-session'],
-        },
-        resumeAtMessageId: 'live-resume-message',
-      }));
-      expect(deferred).toEqual(expect.objectContaining({
-        sessionId: 'deferred-session',
-        providerState: deferredMetadata.providerState,
-        resumeAtMessageId: 'deferred-resume-message',
-      }));
-      expect(plugin.settings.pendingProviderSessionInvalidations.claude).toBeUndefined();
-      expect(saveMetadataSpy).not.toHaveBeenCalledWith(expect.objectContaining({
-        id: deferredMetadata.id,
-        sessionId: null,
-      }));
-      expect(mockApp.vault.adapter.write.mock.calls.filter(
-        ([path]) => path === '.claudian/claudian-settings.json',
-      )).toHaveLength(1);
-
-      const invalidateSpy = vi.spyOn(
-        ProviderSettingsCoordinator,
-        'invalidateConversationSessions',
-      );
-      saveMetadataSpy.mockClear();
-      await plugin.providerHost.applyEnvironmentVariables(
-        'provider:claude',
-        'ANTHROPIC_BASE_URL=https://retry.example.com',
-      );
-
-      expect(invalidateSpy).toHaveBeenCalledTimes(1);
-      expect(chatHostOf(plugin).getConversationSync(live.id)?.sessionId).toBeNull();
-      expect(chatHostOf(plugin).getConversationSync(live.id)?.providerState).toEqual({
-        bindingRetired: true,
-        previousProviderSessionIds: [
-          'live-previous-session',
-          'live-provider-session',
-        ],
-      });
-      expect(live.resumeAtMessageId).toBe('live-resume-message');
-      expect(chatHostOf(plugin).getConversationSync(deferredMetadata.id)?.sessionId).toBeNull();
-      expect(chatHostOf(plugin).getConversationSync(deferredMetadata.id)?.providerState).toEqual({
-        bindingRetired: true,
-        previousProviderSessionIds: [
-          'deferred-previous-session',
-          'deferred-provider-session',
-        ],
-      });
-      expect(deferred?.resumeAtMessageId).toBe('deferred-resume-message');
-      expect(saveMetadataSpy.mock.calls.map(([metadata]) => metadata.id).sort()).toEqual([
-        deferredMetadata.id,
-        live.id,
-      ].sort());
-
-      invalidateSpy.mockRestore();
-      saveMetadataSpy.mockRestore();
-      scanSpy.mockRestore();
-      loadSourceSpy.mockRestore();
-      unregister();
-    });
-
     it('updates runtime env vars when changed', async () => {
       await plugin.onload();
 
@@ -2534,24 +1885,24 @@ describe('ClaudianPlugin', () => {
       expect(plugin.providerHost.getEnvironmentVariablesForScope('shared')).toBe(currentEnv);
     });
 
-    it('invalidates sessions when env hash changes', async () => {
+    it('keeps session bindings when an environment change moves the native store', async () => {
       await plugin.onload();
 
       const conv = await chatHostOf(plugin).createConversation({ sessionId: 'session-123' });
-      const saveMetadataSpy = vi.spyOn(getConversationPersistence(plugin), 'saveMetadata');
-      saveMetadataSpy.mockClear();
+      await chatHostOf(plugin).updateConversation(conv.id, { providerState: { providerSessionId: 'session-123' } });
 
-      await plugin.providerHost.applyEnvironmentVariables('provider:claude', 'ANTHROPIC_MODEL=claude-sonnet-4-5');
+      await plugin.providerHost.applyEnvironmentVariables('provider:claude', 'CLAUDE_CONFIG_DIR=/moved/claude-home');
 
       const updated = await chatHostOf(plugin).getConversationById(conv.id);
-      expect(updated?.sessionId).toBeNull();
-      expect(saveMetadataSpy).toHaveBeenCalled();
+      expect(updated).toEqual(expect.objectContaining({
+        sessionId: 'session-123',
+        providerState: { providerSessionId: 'session-123' },
+      }));
     });
 
-    it('serializes overlapping environment invalidation writes', async () => {
+    it('serializes overlapping environment writes', async () => {
       await plugin.onload();
-      plugin['sessionMetadata']['loadedAll'] = true;
-      await chatHostOf(plugin).createConversation({ sessionId: 'overlapping-session' });
+      const settingsPath = '.claudian/claudian-settings.json';
       let finishFirstWrite!: () => void;
       const firstWriteRelease = new Promise<void>((resolve) => {
         finishFirstWrite = resolve;
@@ -2560,15 +1911,15 @@ describe('ClaudianPlugin', () => {
       const firstWriteStarted = new Promise<void>((resolve) => {
         markFirstWriteStarted = resolve;
       });
-      let blockedFirstWrite = false;
-      const saveMetadataSpy = vi.spyOn(getConversationPersistence(plugin), 'saveMetadata')
-        .mockImplementation(async () => {
-          if (!blockedFirstWrite) {
-            blockedFirstWrite = true;
-            markFirstWriteStarted();
-            await firstWriteRelease;
-          }
-        });
+      const settingsWrites: string[] = [];
+      mockApp.vault.adapter.write.mockImplementation(async (path: string, content: string) => {
+        if (path !== settingsPath) return;
+        settingsWrites.push(JSON.parse(content).providerConfigs.claude.environmentVariables);
+        if (settingsWrites.length === 1) {
+          markFirstWriteStarted();
+          await firstWriteRelease;
+        }
+      });
 
       const firstUpdate = plugin.providerHost.applyEnvironmentVariables(
         'provider:claude',
@@ -2583,48 +1934,23 @@ describe('ClaudianPlugin', () => {
         secondUpdateSettled = true;
       });
       await new Promise(resolve => setTimeout(resolve, 1));
-      const markerWhileFirstWritePending =
-        plugin.settings.pendingProviderSessionInvalidations.claude;
+      const writesWhileFirstWritePending = [...settingsWrites];
       const secondSettledWhileFirstWritePending = secondUpdateSettled;
 
       finishFirstWrite();
       await Promise.all([firstUpdate, secondUpdate]);
-      saveMetadataSpy.mockRestore();
 
-      expect(markerWhileFirstWritePending).toEqual(expect.any(Number));
+      expect(writesWhileFirstWritePending).toEqual(['ANTHROPIC_BASE_URL=https://first-overlap.example.com']);
       expect(secondSettledWhileFirstWritePending).toBe(false);
-      expect(plugin.settings.pendingProviderSessionInvalidations.claude)
-        .toBeUndefined();
+      expect(settingsWrites).toEqual([
+        'ANTHROPIC_BASE_URL=https://first-overlap.example.com',
+        'ANTHROPIC_BASE_URL=https://second-overlap.example.com',
+      ]);
+      expect(plugin.providerHost.getEnvironmentVariablesForScope('provider:claude'))
+        .toBe('ANTHROPIC_BASE_URL=https://second-overlap.example.com');
     });
 
-    it('flushes already-invalidated sessions after an earlier environment write fails', async () => {
-      await plugin.onload();
-      plugin['sessionMetadata']['loadedAll'] = true;
-      await chatHostOf(plugin).createConversation({ sessionId: 'failed-overlap-session' });
-      const saveMetadataSpy = vi.spyOn(getConversationPersistence(plugin), 'saveMetadata')
-        .mockRejectedValueOnce(new Error('metadata write failed'));
-
-      await expect(plugin.providerHost.applyEnvironmentVariables(
-        'provider:claude',
-        'ANTHROPIC_BASE_URL=https://failed-write.example.com',
-      )).rejects.toThrow('metadata write failed');
-      await plugin.providerHost.applyEnvironmentVariables(
-        'provider:claude',
-        'ANTHROPIC_BASE_URL=https://retry-write.example.com',
-      );
-      const saveCallCount = saveMetadataSpy.mock.calls.length;
-      const retriedMetadata = saveMetadataSpy.mock.calls[1]?.[0];
-      saveMetadataSpy.mockRestore();
-
-      expect(saveCallCount).toBe(2);
-      expect(retriedMetadata).toEqual(expect.objectContaining({
-        sessionId: null,
-      }));
-      expect(plugin.settings.pendingProviderSessionInvalidations.claude)
-        .toBeUndefined();
-    });
-
-    it('invalidates provider executions through the lifecycle registry when env changes', async () => {
+    it('restarts provider executions through the lifecycle registry when env changes', async () => {
       await plugin.onload();
       const initialGeneration = plugin.executionLifecycleRegistry
         .getProviderGeneration('claude');
@@ -2669,99 +1995,6 @@ describe('ClaudianPlugin', () => {
 
       expect(first.getTabManager).not.toHaveBeenCalled();
       expect(second.getTabManager).not.toHaveBeenCalled();
-    });
-
-    it('invalidates Claude conversation metadata without inspecting tab execution state', async () => {
-      await plugin.onload();
-
-      const conversation = await chatHostOf(plugin).createConversation({
-        providerId: 'claude',
-        sessionId: 'session-123',
-      });
-      await chatHostOf(plugin).updateConversation(conversation.id, {
-        messages: [{
-          content: 'hi',
-          id: 'msg-1',
-          role: 'user',
-          timestamp: Date.now(),
-          userMessageId: 'msg-1',
-        }],
-      });
-
-      const mockView = createUnopenedView({
-        getTabManager: vi.fn(),
-        invalidateProviderCommandCaches: vi.fn(),
-        refreshModelSelector: vi.fn(),
-      });
-      vi.spyOn(viewsOf(plugin), 'getAllViews').mockReturnValue([createUnopenedView(mockView)]);
-
-      await plugin.providerHost.applyEnvironmentVariables('provider:claude', 'ANTHROPIC_MODEL=claude-sonnet-4-5');
-
-      expect(chatHostOf(plugin).getConversationSync(conversation.id)?.sessionId).toBeNull();
-      expect(mockView.getTabManager).not.toHaveBeenCalled();
-    });
-
-    it('reloads preserved sessions while resetting only invalidation-policy providers', async () => {
-      await plugin.onload();
-
-      const reloadConversation = await chatHostOf(plugin).createConversation({
-        providerId: 'claude',
-        sessionId: 'preserved-session',
-      });
-      await chatHostOf(plugin).updateConversation(reloadConversation.id, {
-        providerState: { providerSessionId: 'preserved-provider-session' },
-      });
-      const invalidatedConversation = await chatHostOf(plugin).createConversation({
-        providerId: 'codex',
-        sessionId: 'invalidated-session',
-      });
-      await chatHostOf(plugin).updateConversation(invalidatedConversation.id, {
-        providerState: { threadId: 'invalidated-thread' },
-      });
-
-      const claudeReconciler = ProviderRegistry.getSettingsReconciler('claude');
-      const reconcileSpy = vi.spyOn(claudeReconciler, 'reconcileModelWithEnvironment')
-        .mockReturnValue({ changed: true, sessionPolicy: 'reload' });
-      const stagePendingSpy = vi.spyOn(runtimeSettingsOf(plugin), 'stagePendingSessionInvalidations');
-      const getTabManager = vi.fn();
-      const mockView = createUnopenedView({
-        getTabManager,
-        invalidateProviderCommandCaches: vi.fn(),
-        refreshModelSelector: vi.fn(),
-      });
-      vi.spyOn(viewsOf(plugin), 'getAllViews').mockReturnValue([createUnopenedView(mockView)]);
-
-      try {
-        await plugin.providerHost.applyEnvironmentVariables(
-          'shared',
-          [
-            'ANTHROPIC_BASE_URL=https://reload.example.com',
-            'OPENAI_BASE_URL=https://invalidate.example.com',
-          ].join('\n'),
-        );
-      } finally {
-        reconcileSpy.mockRestore();
-      }
-
-      const preserved = await chatHostOf(plugin).getConversationById(reloadConversation.id);
-      const invalidated = await chatHostOf(plugin).getConversationById(invalidatedConversation.id);
-      expect(stagePendingSpy).toHaveBeenCalledWith(
-        expect.anything(),
-        ['codex'],
-      );
-      expect(stagePendingSpy).toHaveBeenCalledTimes(1);
-      expect(preserved).toEqual(expect.objectContaining({
-        sessionId: 'preserved-session',
-        providerState: { providerSessionId: 'preserved-provider-session' },
-      }));
-      expect(invalidated).toEqual(expect.objectContaining({
-        sessionId: null,
-        providerState: {
-          nativeConversationContextEstablished: false,
-          previousSegments: [{ threadId: 'invalidated-thread' }],
-        },
-      }));
-      expect(getTabManager).not.toHaveBeenCalled();
     });
 
     it('does not touch an initialized blank Grok tab during an environment transition', async () => {
@@ -2811,7 +2044,7 @@ describe('ClaudianPlugin', () => {
   });
 
   describe('applyProviderRuntimeSettings', () => {
-    it('persists a session-scope fingerprint and restart-safe session invalidation atomically', async () => {
+    it('persists the runtime fingerprint with runtime settings and keeps bindings across restart', async () => {
       const settingsPath = '.claudian/claudian-settings.json';
       const deferredMetadata = {
         id: 'runtime-settings-restart-session',
@@ -2837,7 +2070,6 @@ describe('ClaudianPlugin', () => {
       });
 
       await plugin.onload();
-      plugin['sessionMetadata']['loadedAll'] = false;
       const hostnameKey = getHostnameKey();
       await plugin.providerHost.applyProviderRuntimeSettings(['codex'], (settings) => {
         updateCodexProviderSettings(settings, {
@@ -2852,8 +2084,6 @@ describe('ClaudianPlugin', () => {
         [hostnameKey]: '/custom/codex',
       });
       expect(isVersionedRuntimeInputFingerprint(fingerprint)).toBe(true);
-      expect(firstRunSettings.pendingProviderSessionInvalidations?.codex)
-        .toEqual(expect.any(Number));
 
       plugin.onunload();
       const restartedPlugin = createPlugin();
@@ -2877,37 +2107,23 @@ describe('ClaudianPlugin', () => {
       await restartedPlugin['sessionMetadata']['loadRemaining']();
 
       const restartedConversation = chatHostOf(restartedPlugin).getCachedConversation(deferredMetadata.id);
-      const persistedMetadata = JSON.parse(
-        files.get(
-          `${getDeviceSessionsPath(getHostnameKey())}/runtime-settings-restart-session.meta.json`,
-        ) ?? '{}',
-      );
       const restartedSettings = JSON.parse(files.get(settingsPath) ?? '{}');
-      const invalidationWrites = saveMetadataSpy.mock.calls.filter(
+      const deferredWrites = saveMetadataSpy.mock.calls.filter(
         ([metadata]) => metadata.id === deferredMetadata.id,
       );
       listSpy.mockRestore();
       loadSourceSpy.mockRestore();
       saveMetadataSpy.mockRestore();
 
-      const historyOnlyState = {
-        nativeConversationContextEstablished: false,
-        previousSegments: [{ threadId: 'codex-thread-id' }],
-      };
       expect(restartedConversation).toEqual(expect.objectContaining({
-        sessionId: null,
-        providerState: historyOnlyState,
-      }));
-      expect(persistedMetadata).toEqual(expect.objectContaining({
-        sessionId: null,
-        providerState: historyOnlyState,
+        sessionId: 'codex-thread-id',
+        providerState: { threadId: 'codex-thread-id' },
       }));
       expect(restartedSettings.providerConfigs.codex.environmentHash).toBe(fingerprint);
-      expect(restartedSettings.pendingProviderSessionInvalidations?.codex).toBeUndefined();
-      expect(invalidationWrites).toHaveLength(1);
+      expect(deferredWrites).toEqual([]);
     });
 
-    it('advances the Grok fingerprint while preserving reload-policy sessions', async () => {
+    it('advances the Grok fingerprint while keeping session bindings', async () => {
       await plugin.onload();
       const conversation = await chatHostOf(plugin).createConversation({
         providerId: 'grok',
@@ -2934,16 +2150,8 @@ describe('ClaudianPlugin', () => {
       expect(ProviderSettingsCoordinator.reconcileProviders(plugin.settings, ['grok']).changed).toBe(false);
     });
 
-    it('finishes durable invalidation when a post-commit apply hook fails', async () => {
+    it('commits runtime settings before surfacing a failed post-commit apply hook', async () => {
       await plugin.onload();
-      plugin['sessionMetadata']['loadedAll'] = true;
-      const conversation = await chatHostOf(plugin).createConversation({
-        providerId: 'codex',
-        sessionId: 'post-commit-thread',
-      });
-      await chatHostOf(plugin).updateConversation(conversation.id, {
-        providerState: { threadId: 'post-commit-thread' },
-      });
       const hostnameKey = getHostnameKey();
 
       await expect(plugin.providerHost.applyProviderRuntimeSettings(
@@ -2966,14 +2174,6 @@ describe('ClaudianPlugin', () => {
       expect(isVersionedRuntimeInputFingerprint(
         codexSettings.environmentHash,
       )).toBe(true);
-      expect(chatHostOf(plugin).getConversationSync(conversation.id)).toEqual(expect.objectContaining({
-        sessionId: null,
-        providerState: {
-          nativeConversationContextEstablished: false,
-          previousSegments: [{ threadId: 'post-commit-thread' }],
-        },
-      }));
-      expect(plugin.settings.pendingProviderSessionInvalidations.codex).toBeUndefined();
     });
   });
 
@@ -3511,75 +2711,6 @@ describe('ClaudianPlugin', () => {
       expect(pool.get(conv.id)).toBeNull();
       expect(runtime.isDisposed).toBe(true);
       expect(chatHostOf(plugin).getConversationList().find(item => item.id === conv.id)).toBeUndefined();
-    });
-  });
-
-  describe('handleMissingProviderSession', () => {
-    it('preserves the record when the provider cannot verify a safe disposition', async () => {
-      await plugin.onload();
-      const conv = await chatHostOf(plugin).createConversation({
-        providerId: 'codex',
-        sessionId: 'unverified-provider-session',
-      });
-
-      await expect(chatHostOf(plugin).handleMissingProviderSession(
-        conv.id,
-        'different-reported-session',
-      )).resolves.toBe('preserved');
-      expect(chatHostOf(plugin).getConversationSync(conv.id)).toEqual(conv);
-    });
-
-    it('removes the record when every provider transcript segment is missing', async () => {
-      await plugin.onload();
-      const conv = await chatHostOf(plugin).createConversation({ sessionId: 'missing-current' });
-      vi.mocked(sdkSession.locateSDKSessions).mockResolvedValue(new Map([
-        ['missing-current', { availability: 'missing' }],
-      ]));
-
-      await expect(chatHostOf(plugin).handleMissingProviderSession(
-        conv.id,
-        'missing-current',
-      )).resolves.toBe('deleted');
-      expect(chatHostOf(plugin).getConversationList().find(item => item.id === conv.id)).toBeUndefined();
-    });
-
-    it('preserves the record and clears resume state when older history is inaccessible', async () => {
-      await plugin.onload();
-      const conv = await chatHostOf(plugin).createConversation({ sessionId: 'missing-current' });
-      await chatHostOf(plugin).updateConversation(conv.id, {
-        providerState: {
-          providerSessionId: 'missing-current',
-          previousProviderSessionIds: ['temporarily-inaccessible'],
-        },
-      });
-      vi.mocked(sdkSession.locateSDKSessions).mockResolvedValue(new Map([
-        ['temporarily-inaccessible', { availability: 'unknown' }],
-        ['missing-current', { availability: 'missing' }],
-      ]));
-
-      await expect(chatHostOf(plugin).handleMissingProviderSession(
-        conv.id,
-        'missing-current',
-      )).resolves.toBe('reset');
-
-      const preserved = chatHostOf(plugin).getConversationSync(conv.id);
-      expect(preserved?.sessionId).toBeNull();
-      expect(preserved?.providerState).toEqual({
-        bindingRetired: true,
-        previousProviderSessionIds: ['temporarily-inaccessible'],
-      });
-    });
-
-    it('preserves metadata when the missing-session disposition cannot be read', async () => {
-      await plugin.onload();
-      const conv = await chatHostOf(plugin).createConversation({ sessionId: 'missing-current' });
-      vi.mocked(sdkSession.locateSDKSessions).mockRejectedValueOnce(new Error('EACCES'));
-
-      await expect(chatHostOf(plugin).handleMissingProviderSession(
-        conv.id,
-        'missing-current',
-      )).resolves.toBe('preserved');
-      expect(chatHostOf(plugin).getConversationSync(conv.id)?.sessionId).toBe('missing-current');
     });
   });
 

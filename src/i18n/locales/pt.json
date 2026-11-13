@@ -496,10 +496,7 @@
     "executionNotices": {
       "initializeFailed": "Não foi possível inicializar a execução do agente. Tente novamente.",
       "unavailable": "A execução do agente não está disponível. Recarregue o plugin.",
-      "missingDeleted": "A sessão do provedor não existe mais. O registro dela no Claudian foi removido. Envie a mensagem novamente para iniciar uma nova sessão.",
-      "missingReset": "A sessão do provedor não existe mais. O Claudian preservou o histórico recuperável. Envie a mensagem novamente para reconstruir a sessão.",
-      "missingPreserved": "A sessão do provedor não existe mais. O Claudian manteve o registro porque não foi possível verificar o histórico restante.",
-      "missingNotFound": "A sessão do provedor não existe mais. Envie a mensagem novamente para iniciar uma nova sessão.",
+      "sessionUnavailable": "A sessão nativa desta conversa não está disponível na configuração atual da CLI. Inicie um novo chat para continuar.",
       "unsentFallback": "A mensagem não foi enviada. Tente novamente."
     },
     "images": {
@@ -826,19 +823,9 @@
       "deleteConfirm": "Excluir o snippet de ambiente \"{name}\"?",
       "deleteFailed": "Falha ao excluir o snippet"
     },
-    "customModelOverrides": {
-      "name": "Substituições de modelos personalizados",
-      "desc": "Defina aliases no seletor de modelos e tamanhos de janela de contexto para modelos personalizados."
-    },
     "customModelAliases": {
-      "placeholder": "Apelido",
       "ariaLabel": "Alias de {model}",
       "ariaDescription": "Rótulo personalizado exibido no seletor de modelos. Deixe vazio para usar o padrão."
-    },
-    "customContextLimits": {
-      "invalid": "Formato inválido. Use: 256k, 1m ou número exato (1000-10000000).",
-      "saveFailed": "Não foi possível salvar a janela de contexto. Tente novamente.",
-      "savedRefreshFailed": "A janela de contexto foi salva, mas a atualização das configurações falhou."
     },
     "enableChrome": {
       "name": "Habilitar extensão do Chrome",

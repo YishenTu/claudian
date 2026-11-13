@@ -5,13 +5,11 @@ import type {
   ProviderConversationHistoryService,
   ProviderHistoryEnvironment,
   ProviderHistoryInput,
-  ProviderHistoryResult,
   ProviderHistoryUpdate,
 } from '../../../core/providers/types';
 import {
   ANTIGRAVITY_PROVIDER_STATE_KEYS,
   buildPersistedAntigravityProviderState,
-  clearAntigravityResumeState,
   parseAntigravityProviderState,
 } from '../types';
 import { resolveAntigravityStoreRoot } from './AntigravityHistoryPaths';
@@ -57,18 +55,6 @@ export class AntigravityConversationHistoryService implements ProviderConversati
 
   resolveSessionIdForConversation(conversation: ProviderHistoryInput | null): string | null {
     return conversation?.sessionId ?? null;
-  }
-
-  async resolveMissingConversationSession(
-    input: ProviderHistoryInput,
-    _vaultPath: string | null,
-    missingProviderSessionId?: string,
-  ): Promise<ProviderHistoryResult<'delete' | 'reset' | 'preserve'>> {
-    const conversation = copyProviderHistoryState(input);
-    if (!conversation.sessionId || conversation.sessionId !== missingProviderSessionId) return { outcome: 'preserve' };
-    // agy keeps transcripts apart from the session database; keep the locator so surviving history still hydrates.
-    clearAntigravityResumeState(conversation);
-    return { changes: conversation, outcome: 'reset' };
   }
 
   isPendingForkConversation(): boolean {

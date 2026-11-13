@@ -5,7 +5,7 @@
 - Conversation, persisted tab identity, runtime tab, hydration, and provider execution have independent lifetimes. Layout/selection/hydration cannot create provider execution, rewrite durable identity, or cancel another tab's turn.
 - The main-owned session pool owns execution across tab rebind and view close. A detached draft is disposed when idle unless a presentation holds it (`holdDraft`) to reattach by its session key. Attachment is exclusive and reserved before awaiting hydration; detach uses the exact issued handle. Only Stop (including an admitted session-message interrupt, below) or plugin shutdown cancels admitted session work.
 - Idle release of provider resources runs independently of attachment. Detached main models release only after queued input, recovery, interactions, saves and auxiliary work settle; release repository history through its guarded cache API too. Compact selections and review attention survive model release.
-- A provider-reported missing session can delete its record from inside its own turn. Retire that session only after the turn settles, so queued and unsent input reaches the attached composer before the tab resets. The pool disposes a deleted conversation's session once it is detached and idle; unreachable detached recovery is discarded with it.
+- A conversation deleted from inside its own turn retires its session only after the turn settles, so queued and unsent input reaches the attached composer before the tab resets. The pool disposes a deleted conversation's session once it is detached and idle; unreachable detached recovery is discarded with it.
 
 ## Layout, restoration, and shutdown
 

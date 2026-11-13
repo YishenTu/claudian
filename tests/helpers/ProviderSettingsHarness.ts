@@ -13,7 +13,6 @@ export function mountProviderSettings(
   const handle = renderer.render(container, {
     plugin: host,
     notifyProviderModelOptionsChanged() {},
-    renderCustomContextLimits() {},
     ...context,
   });
   let disposed = false;

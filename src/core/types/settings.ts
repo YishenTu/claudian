@@ -19,7 +19,6 @@ export interface EnvSnippet {
   description: string;
   envVars: string;
   scope?: EnvironmentScope;
-  contextLimits?: Record<string, number>;  // Optional: context limits for custom models
   modelAliases?: Record<string, string>;   // Optional: display aliases for custom models
 }
 
@@ -131,7 +130,6 @@ export interface ClaudianSettings {
   // Environment
   sharedEnvironmentVariables: string;
   envSnippets: EnvSnippet[];
-  customContextLimits: Record<string, number>;
 
   // UI settings
   keyboardNavigation: KeyboardNavigationSettings;
@@ -152,9 +150,6 @@ export interface ClaudianSettings {
   savedProviderEffort: Partial<Record<string, string>>;
   savedProviderServiceTier: Partial<Record<string, string>>;
   savedProviderPermissionMode: Partial<Record<string, string>>;
-
-  // Internal lifecycle state. Entries remain until all affected session metadata is durable.
-  pendingProviderSessionInvalidations: Partial<Record<string, number>>;
 
   // UI preferences
   enableAutoScroll: boolean;

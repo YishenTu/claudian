@@ -458,7 +458,7 @@ export class SideChatRuntime {
       }
       if (result.status === 'cancelled') {
         interrupted = true;
-      } else if (result.status === 'error' || result.status === 'missing-session') {
+      } else if (result.status === 'error') {
         failed = true;
         this.#lastError = result.error?.message
           ?? 'The side chat provider session is no longer available.';

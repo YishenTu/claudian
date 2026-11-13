@@ -1,5 +1,3 @@
-import type { Conversation } from '@/core/types';
-
 export interface AntigravityProviderState {
   /** Recovery-only locator of a retired native session; never a resume seed. */
   historySessionId?: string;
@@ -27,19 +25,4 @@ export function buildPersistedAntigravityProviderState(
 ): AntigravityProviderState | undefined {
   const persisted = parseAntigravityProviderState(state);
   return Object.keys(persisted).length > 0 ? persisted : undefined;
-}
-
-/** Retires the resume binding while keeping its transcript readable as history. */
-export function clearAntigravityResumeState(
-  conversation: Pick<Conversation, 'sessionId' | 'providerState'>,
-): boolean {
-  const sessionId = conversation.sessionId;
-  if (!sessionId) return false;
-  conversation.providerState = {
-    ...conversation.providerState,
-    historySessionId: sessionId,
-    nativeConversationContextEstablished: false,
-  };
-  conversation.sessionId = null;
-  return true;
 }

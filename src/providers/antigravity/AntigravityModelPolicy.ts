@@ -109,10 +109,6 @@ export const antigravityModelPolicy: ProviderModelPolicy = {
   normalizeModelVariant(model): string {
     return normalizeSelection(model);
   },
-
-  getCustomModelIds(): Set<string> {
-    return new Set();
-  },
 };
 
 /** Only enabled models resolve; a selection missing from the catalog has no reasoning options. */
