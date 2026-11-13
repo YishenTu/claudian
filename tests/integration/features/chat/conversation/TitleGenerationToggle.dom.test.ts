@@ -56,7 +56,7 @@ it('hides failed-title retry while title generation is disabled and restores wor
   } as unknown as SessionBrowserDeps);
   const publisher = new ChatViewPublisher({
     views: { getAllViews: () => [{ notifyConversationListChanged: render } as never] },
-    zenMode: { reconcile() {} }, inactiveSessions: { request() {} }, hasLoadedAllSessionMetadata: () => true,
+    zenMode: { reconcile() {} }, fontScale: { reconcile() {} }, inactiveSessions: { request() {} }, hasLoadedAllSessionMetadata: () => true,
   });
   try {
     render();

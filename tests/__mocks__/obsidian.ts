@@ -9,6 +9,7 @@ import type {
   KeymapContext,
   Setting as ObsidianSetting,
   SettingGroup as ObsidianSettingGroup,
+  SliderComponent as ObsidianSliderComponent,
   ToggleComponent as ObsidianToggleComponent,
   ValueComponent as ObsidianValueComponent,
 } from 'obsidian';
@@ -299,6 +300,7 @@ export class App {
   ), {
     getActiveFile: (): TFile | null => null,
     getLeavesOfType: vi.fn().mockReturnValue([]),
+    iterateAllLeaves: (_callback: (leaf: WorkspaceLeaf) => unknown): void => {},
     getRightLeaf: vi.fn().mockReturnValue({
       setViewState: vi.fn().mockResolvedValue(undefined),
     }),
@@ -456,6 +458,58 @@ export class ToggleComponent extends ValueComponent<boolean> implements Obsidian
   onChange(callback: (value: boolean) => unknown): this { this.change = callback; return this; }
 }
 
+export class SliderComponent extends ValueComponent<number> implements ObsidianSliderComponent {
+  readonly sliderEl: HTMLInputElement;
+  private readonly valueEl: HTMLSpanElement;
+  private instant = false;
+  private change: ((value: number) => unknown) | undefined;
+  constructor(container: HTMLElement) {
+    super();
+    this.valueEl = container.appendChild(container.ownerDocument.createElement('span'));
+    this.valueEl.className = 'slider-value';
+    this.sliderEl = container.appendChild(container.ownerDocument.createElement('input'));
+    this.sliderEl.type = 'range';
+    this.sliderEl.className = 'slider';
+    // Obsidian commits on release unless the slider is instant.
+    this.sliderEl.addEventListener('input', () => {
+      this.updateDisplay();
+      if (this.instant) this.emit();
+    });
+    this.sliderEl.addEventListener('change', () => { if (!this.instant) this.emit(); });
+    this.updateDisplay();
+  }
+  private emit(): void {
+    if (this.change) runControlCallback(this.sliderEl, () => this.change!(this.getValue()));
+  }
+  private updateDisplay(): void { this.valueEl.textContent = this.getValuePretty(); }
+  setDisabled(value: boolean): this { this.disabled = this.sliderEl.disabled = value; return this; }
+  setInstant(instant: boolean): this { this.instant = instant; return this; }
+  setLimits(min: number | null, max: number | null, step: number | 'any'): this {
+    this.sliderEl.min = String(min);
+    this.sliderEl.max = String(max);
+    this.sliderEl.step = String(step);
+    this.updateDisplay();
+    return this;
+  }
+  getValue(): number { return this.sliderEl.valueAsNumber; }
+  setValue(value: number): this {
+    if (this.sliderEl.valueAsNumber !== value) {
+      this.sliderEl.valueAsNumber = value;
+      this.updateDisplay();
+      this.emit();
+    }
+    return this;
+  }
+  getValuePretty(): string {
+    const value = this.getValue();
+    return this.sliderEl.step === 'any' || Number.parseFloat(this.sliderEl.step) < 1 ? value.toFixed(2) : String(value);
+  }
+  // Obsidian 1.15 implements both as no-ops; the value label replaced the tooltip.
+  setDynamicTooltip(): this { return this; }
+  showTooltip(): void {}
+  onChange(callback: (value: number) => unknown): this { this.change = callback; return this; }
+}
+
 export class Setting implements ObsidianSetting {
   readonly components: BaseComponent[] = [];
   errorEl: HTMLElement | null = null;
@@ -500,7 +554,6 @@ export class Setting implements ObsidianSetting {
   addMomentFormat(): this { throw new Error('Obsidian fake does not model moment format controls'); }
   addColorPicker(): this { throw new Error('Obsidian fake does not model color pickers'); }
   addProgressBar(): this { throw new Error('Obsidian fake does not model progress bars'); }
-  addSlider(): this { throw new Error('Obsidian fake does not model sliders'); }
   setName(value: Parameters<ObsidianSetting['setName']>[0]): this { this.nameEl.replaceChildren(value); return this; }
   setDesc(value: Parameters<ObsidianSetting['setDesc']>[0]): this { this.descEl.replaceChildren(value); return this; }
   setClass(value: string): this { this.settingEl.classList.add(...value.split(' ').filter(Boolean)); return this; }
@@ -521,6 +574,10 @@ export class Setting implements ObsidianSetting {
   addToggle(callback: Parameters<ObsidianSetting['addToggle']>[0]): this {
     const control = new ToggleComponent(this.controlEl); this.components.push(control); callback(control);
     this.settingEl.classList.add('mod-toggle'); return this;
+  }
+  addSlider(callback: Parameters<ObsidianSetting['addSlider']>[0]): this {
+    const control = new SliderComponent(this.controlEl); this.components.push(control); callback(control);
+    return this;
   }
   addButton(callback: Parameters<ObsidianSetting['addButton']>[0]): this {
     const control = new ButtonComponent(this.controlEl); this.components.push(control); callback(control); return this;

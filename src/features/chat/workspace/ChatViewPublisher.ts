@@ -5,6 +5,7 @@ import type { ChatViewHost } from '@/features/chat/ChatFeatureHost';
 export interface ChatViewPublisherDeps {
   readonly views: { getAllViews(): readonly ChatViewHost[] };
   readonly zenMode: { reconcile(): void };
+  readonly fontScale: { reconcile(): void };
   readonly inactiveSessions: { request(): void };
   hasLoadedAllSessionMetadata(): boolean;
 }
@@ -37,6 +38,7 @@ export class ChatViewPublisher {
       }
     }
     if (settings.enableZenMode !== previous.enableZenMode) publish(() => this.deps.zenMode.reconcile());
+    if (settings.chatFontScale !== previous.chatFontScale) publish(() => this.deps.fontScale.reconcile());
     if (
       settings.sessionAutoArchiveAfter !== previous.sessionAutoArchiveAfter
       && this.deps.hasLoadedAllSessionMetadata()

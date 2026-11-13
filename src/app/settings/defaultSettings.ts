@@ -22,6 +22,7 @@ export const DEFAULT_CLAUDIAN_SETTINGS: ClaudianSettings = {
   titleGenerationLocale: '',
   titleGenerationModel: '',
   showTabTitlesByDefault: true,
+  chatFontScale: 100,
 
   excludedTags: [],
   mediaFolder: '',

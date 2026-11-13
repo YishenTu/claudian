@@ -21,12 +21,14 @@ const CHAT_STYLE_MODULES = readFileSync(path.resolve('src/style/index.css'), 'ut
 describe('Chat type scale', () => {
   it.each(CHAT_STYLE_MODULES)('sizes %s text relative to the note font size', (module) => {
     const css = readFileSync(path.resolve('src/style', module), 'utf8');
-    const fixedSizes = css.match(/(?:font-size|line-height):\s*(?:[0-9.]+px|var\(--font-ui-[a-z]+[^)]*\))/g) ?? [];
+    // Obsidian's note size token directly would bypass the user's chat font scale (#2222).
+    const fixedSizes = css.match(/(?:font-size|line-height):\s*(?:[0-9.]+px|var\(--font-(?:ui-[a-z]+|text-size)[^)]*\))/g) ?? [];
 
     expect(fixedSizes).toEqual([]);
   });
 
   // Session metadata popovers and inline-edit suggestions mount on document.body, outside chat containers.
+  // The user's chat font scale (#2222) multiplies the note-relative pixel.
   it('defines the scale on body beside the note font size', () => {
     const style = document.createElement('style');
     style.textContent = readFileSync(path.resolve('src/style/base/variables.css'), 'utf8');
@@ -34,7 +36,7 @@ describe('Chat type scale', () => {
 
     try {
       expect(window.getComputedStyle(document.body).getPropertyValue('--claudian-font-px').trim())
-        .toBe('calc(var(--font-text-size) / 16)');
+        .toBe('calc(var(--font-text-size) / 16 * var(--claudian-font-scale, 1))');
     } finally {
       style.remove();
     }

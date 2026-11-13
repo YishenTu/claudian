@@ -759,6 +759,10 @@
       "name": "Mostrar títulos de pestañas por defecto",
       "desc": "Las pestañas de chat nuevas muestran el título de la conversación en lugar de un número. Las pestañas abiertas conservan su visualización y cualquier pestaña puede cambiarse."
     },
+    "chatFontScale": {
+      "name": "Tamaño de fuente del chat",
+      "desc": "Escala el texto del chat respecto al tamaño de fuente de las notas. 100 % coincide con las notas."
+    },
     "autoTitle": {
       "name": "Generar automáticamente títulos de conversación",
       "desc": "Genera automáticamente títulos de conversación después del primer mensaje del usuario."

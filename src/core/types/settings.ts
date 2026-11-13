@@ -121,6 +121,8 @@ export interface ClaudianSettings {
   titleGenerationModel: string;
   /** New chat tabs start with their title shown instead of a number; open tabs keep their display. */
   showTabTitlesByDefault: boolean;
+  /** Chat text size as a percentage of the note font size. */
+  chatFontScale: number;
 
   // Content settings
   excludedTags: string[];

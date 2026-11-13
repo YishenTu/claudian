@@ -759,6 +759,10 @@
       "name": "Tab-Titel standardmäßig anzeigen",
       "desc": "Neue Chat-Tabs zeigen den Konversationstitel statt einer Nummer. Geöffnete Tabs behalten ihre Anzeige, und jeder Tab kann weiterhin umgestellt werden."
     },
+    "chatFontScale": {
+      "name": "Schriftgröße im Chat",
+      "desc": "Chat-Text relativ zur Schriftgröße der Notizen skalieren. 100 % entspricht den Notizen."
+    },
     "autoTitle": {
       "name": "Konversationstitel automatisch generieren",
       "desc": "Generiert automatisch Konversationstitel nach der ersten Nutzernachricht."

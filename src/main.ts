@@ -45,6 +45,7 @@ import {
 import { SessionMessagingService } from './features/chat/session-messaging/SessionMessagingService';
 import { createChatSessionRuntime } from './features/chat/sessions/createChatSessionRuntime';
 import { SessionRuntimePool } from './features/chat/sessions/SessionRuntimePool';
+import { ChatFontScale } from './features/chat/view/ChatFontScale';
 import { createChatFocusCommand } from './features/chat/workspace/ChatFocusCommand';
 import { createChatTabCommands } from './features/chat/workspace/ChatTabCommands';
 import { ChatViewPublisher } from './features/chat/workspace/ChatViewPublisher';
@@ -93,9 +94,14 @@ export default class ClaudianPlugin extends Plugin {
       void this.settingsCoordinator.mutate((draft) => { draft.zenModePosition = position; }).catch(() => undefined);
     },
   });
+  private readonly fontScale = new ChatFontScale({
+    workspace: this.app.workspace,
+    getPercent: () => this.settings.chatFontScale,
+  });
   private readonly chatViews = new ChatViewPublisher({
     views: this.views,
     zenMode: this.zenMode,
+    fontScale: this.fontScale,
     inactiveSessions: { request: () => this.inactiveSessionArchiver.request() },
     hasLoadedAllSessionMetadata: () => this.sessionMetadata.hasLoadedAll,
   });
@@ -120,6 +126,7 @@ export default class ClaudianPlugin extends Plugin {
       // Unloaded while loading: shutdown owns the domains just built, and nothing may register after cleanup ran.
       if (this.isUnloading) return;
       this.zenMode.start();
+      this.fontScale.start();
       // Provider workspace services are initialized lazily on first use.
 
       this.registerView(
@@ -204,6 +211,7 @@ export default class ClaudianPlugin extends Plugin {
     this.fenceLoadedDomains();
     // Return any zen presentation to its view before asynchronous shutdown.
     this.zenMode.dispose();
+    this.fontScale.dispose();
     if (this.sessionInputCleanupTimer !== null) {
       window.clearTimeout(this.sessionInputCleanupTimer);
       this.sessionInputCleanupTimer = null;

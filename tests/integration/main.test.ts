@@ -1,3 +1,4 @@
+/** @vitest-environment jsdom */
 import '@/providers';
 
 import { deferred } from '@test/helpers/ChatInputHarness';
@@ -267,6 +268,16 @@ describe('ClaudianPlugin', () => {
     // Create plugin instance with mocked app
     plugin = createPlugin();
     (plugin.loadData as Mock).mockResolvedValue({});
+  });
+
+  it('owns the chat font scale on the window body from load until unload', async () => {
+    const scale = () => mockApp.workspace.containerEl.ownerDocument.body.style.getPropertyValue('--claudian-font-scale');
+    await plugin.onload();
+    expect(scale()).toBe('1');
+    await chatHostOf(plugin).mutateSettings(settings => { settings.chatFontScale = 90; });
+    expect(scale()).toBe('0.9');
+    plugin.onunload();
+    expect(scale()).toBe('');
   });
 
   it('publishes committed presentation settings to every view after persistence', async () => {

@@ -148,11 +148,11 @@ describe('Message action row visibility', () => {
 });
 
 describe('Message text size', () => {
-  // Chat prose follows Obsidian's note text size, like its font family (#2052).
+  // Chat prose follows Obsidian's note text size (#2052), times the user's chat font scale (#2222).
   it.each([
     ['user', 'claudian-message-user'],
     ['assistant', 'claudian-message-assistant'],
-  ])('uses the note text size for %s message content', (_role, roleClass) => {
+  ])('uses the scaled note text size for %s message content', (_role, roleClass) => {
     const style = document.createElement('style');
     style.textContent = readFileSync(path.resolve('src/style/components/messages.css'), 'utf8');
     document.head.appendChild(style);
@@ -164,7 +164,7 @@ describe('Message text size', () => {
 
     try {
       const content = message.querySelector<HTMLElement>('.claudian-message-content')!;
-      expect(window.getComputedStyle(content).getPropertyValue('font-size')).toBe('var(--font-text-size)');
+      expect(window.getComputedStyle(content).getPropertyValue('font-size')).toBe('calc(16 * var(--claudian-font-px))');
     } finally {
       message.remove();
       style.remove();
