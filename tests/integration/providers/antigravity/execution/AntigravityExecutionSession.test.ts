@@ -1103,6 +1103,9 @@ describe('AntigravityExecutionSession', () => {
     // A transcript change seen by a poll restarts the quiet limit.
     await poll(20 * 60_000);
     await writeTranscript('session-new', delegation);
+    // Polls compare size and mtime; a same-size rewrite can land within the filesystem clock's tick.
+    const later = new Date((await stat(transcriptPath)).mtimeMs + 1_000);
+    await fs.utimes(transcriptPath, later, later);
     await poll(5_000);
     await poll(11 * 60_000);
     expect(session.blocksIdleRelease?.()).toBe(true);
