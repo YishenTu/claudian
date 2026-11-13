@@ -19,6 +19,9 @@ interface GrokQuestion {
   readonly question: string;
 }
 
+/** Grok's label for the typed answer every question offers. */
+const OTHER_LABEL = 'Other';
+
 export class GrokExecutionInteractionRouter {
   private sequence = 0;
   private readonly pending: PendingInteractionLedger;
@@ -60,6 +63,8 @@ export class GrokExecutionInteractionRouter {
           questions: request.questions.map((question, index) => ({
             header: `Q${index + 1}`,
             ...(question.id ? { id: question.id } : {}),
+            // Grok gives every question a typed "Other" answer.
+            isOther: true,
             multiSelect: question.multiSelect,
             options: question.options.map(option => ({
               description: option.description,
@@ -137,38 +142,34 @@ function parseQuestionRequest(
   };
 }
 
+/**
+ * Grok's accepted shape: selected option labels per question, with typed text in
+ * `annotations[question].notes` and a typed-only answer reported as `["Other"]`.
+ */
 function buildQuestionResponse(
   questions: readonly GrokQuestion[],
   rawAnswers: Record<string, string | string[]>,
 ): Record<string, unknown> {
   const answers: Record<string, string[]> = {};
-  const annotations: Record<string, { preview: string }> = {};
+  const annotations: Record<string, { notes?: string; preview?: string }> = {};
   for (const question of questions) {
     const answerKey = question.id ?? question.question;
     const values = (Object.hasOwn(rawAnswers, answerKey) ? rawAnswers[answerKey] : undefined)
       ?? (Object.hasOwn(rawAnswers, question.question) ? rawAnswers[question.question] : undefined);
     if (values === undefined) continue;
-    const normalized = (Array.isArray(values) ? values : [values]).filter(Boolean);
-    Object.defineProperty(answers, question.question, {
-      value: normalized.map(value => (
-        question.options.find(option => option.id === value || option.label === value)?.label ?? value
-      )),
-      enumerable: true,
-      writable: true,
-      configurable: true,
-    });
-    if (!question.multiSelect && normalized.length === 1) {
-      const selected = question.options.find(
-        option => option.id === normalized[0] || option.label === normalized[0],
-      );
-      if (selected?.preview) {
-        Object.defineProperty(annotations, question.question, {
-          value: { preview: selected.preview },
-          enumerable: true,
-          writable: true,
-          configurable: true,
-        });
-      }
+    const selected: GrokQuestionOption[] = [];
+    const typed: string[] = [];
+    for (const value of (Array.isArray(values) ? values : [values]).filter(Boolean)) {
+      const option = question.options.find(entry => entry.id === value || entry.label === value);
+      if (option) selected.push(option);
+      else typed.push(value);
+    }
+    if (selected.length === 0 && typed.length === 0) continue;
+    setOwn(answers, question.question, selected.length > 0 ? selected.map(option => option.label) : [OTHER_LABEL]);
+    const preview = !question.multiSelect && selected.length === 1 && typed.length === 0 ? selected[0].preview : undefined;
+    const notes = typed.join('\n');
+    if (preview || notes) {
+      setOwn(annotations, question.question, { ...(preview ? { preview } : {}), ...(notes ? { notes } : {}) });
     }
   }
   return {
@@ -176,6 +177,11 @@ function buildQuestionResponse(
     answers,
     outcome: 'accepted',
   };
+}
+
+/** Question text is native data and may be a prototype name such as `__proto__`. */
+function setOwn<T>(record: Record<string, T>, key: string, value: T): void {
+  Object.defineProperty(record, key, { value, enumerable: true, writable: true, configurable: true });
 }
 
 function matchesSession(value: unknown, sessionId: string | undefined): boolean {

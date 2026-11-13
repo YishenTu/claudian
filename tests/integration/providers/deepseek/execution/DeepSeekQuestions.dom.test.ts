@@ -94,6 +94,12 @@ it.each([
     sent: { id: 'native-color', selected: ['Blue'] },
   },
   {
+    // Native answers carry custom text for every question; its own UI offers it beside the options.
+    name: 'a typed answer to an option question', question: { id: 'native-shade', question: 'Which shade?', options: [{ label: 'Red' }, { label: 'Blue' }] },
+    respond: async () => fireEvent.input(await within(document.body).findByRole('textbox', { name: 'Which shade?' }), { target: { value: 'Teal' } }),
+    sent: { id: 'native-shade', selected: [], custom: 'Teal' },
+  },
+  {
     name: 'a literal own __proto__ ID answer', question: { id: '__proto__', question: 'Which colour?', options: [{ label: 'Red' }, { label: 'Blue' }] },
     respond: async () => fireEvent.click(await within(document.body).findByRole('button', { name: 'Blue' })),
     sent: { id: '__proto__', selected: ['Blue'] },

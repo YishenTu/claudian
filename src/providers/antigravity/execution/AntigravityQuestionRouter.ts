@@ -54,6 +54,7 @@ export class AntigravityQuestionRouter {
           questions: questions.map((question, index) => ({
             header: `Q${index + 1}`,
             id: question.fieldId,
+            isOther: Boolean(question.otherFieldId),
             multiSelect: question.multiSelect,
             options: question.options.map(option => ({
               description: '',

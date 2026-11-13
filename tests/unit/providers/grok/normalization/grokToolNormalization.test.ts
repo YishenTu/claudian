@@ -1,3 +1,5 @@
+import typedQuestion from '@test/fixtures/providers/grok/extensions/ask-user-question-typed.json';
+
 import {
   normalizeGrokToolCall,
   normalizeGrokToolName,
@@ -222,6 +224,29 @@ describe('grokToolNormalization', () => {
       { UserAnswered: { message: jsonAnswer } },
     )?.resolvedAnswers).toEqual({
       'How should we continue?': jsonAnswer,
+    });
+  });
+
+  it('shows typed "Other" answers from native structured answers, which the message reports only as notes', () => {
+    expect(normalizeGrokToolResultDetails(
+      'ask_user_question',
+      { questions: typedQuestion.request.params.questions },
+      typedQuestion.rawOutput,
+    )?.resolvedAnswers).toEqual({
+      'Favorite color?': 'Purple dragon (typed)',
+      'Pets?': ['Cats', 'Hamsters (typed)'],
+    });
+  });
+
+  it('shows typed "Other" notes from the answer message when native reports no structured answers', () => {
+    const { message } = typedQuestion.rawOutput.UserAnswered;
+    expect(normalizeGrokToolResultDetails(
+      'ask_user_question',
+      { questions: typedQuestion.request.params.questions },
+      { UserAnswered: { message }, type: 'AskUserQuestion' },
+    )?.resolvedAnswers).toEqual({
+      'Favorite color?': 'Purple dragon (typed)',
+      'Pets?': 'Cats, Hamsters (typed)',
     });
   });
 
