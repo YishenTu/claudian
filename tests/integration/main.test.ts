@@ -288,7 +288,6 @@ describe('ClaudianPlugin', () => {
     });
     try {
       const change = chatHostOf(plugin).mutateSettings(settings => {
-        settings.showMessageTimestamps = !settings.showMessageTimestamps;
         settings.enableDualPane = !settings.enableDualPane;
         settings.hiddenCommands = ['test-command'];
         settings.customContextLimits = { test: 1000 };
@@ -309,9 +308,9 @@ describe('ClaudianPlugin', () => {
       expect(zenReconcile).toHaveBeenCalledTimes(1);
       persist.mockRejectedValueOnce(new Error('disk unavailable'));
       await expect(chatHostOf(plugin).mutateSettings(settings => {
-        settings.showMessageTimestamps = !settings.showMessageTimestamps;
+        settings.enableDualPane = !settings.enableDualPane;
       })).rejects.toThrow('disk unavailable');
-      for (const view of views) expect(view.refreshMessageTimestamps).toHaveBeenCalledTimes(1);
+      for (const view of views) expect(view.refreshDualPaneLayout).toHaveBeenCalledTimes(1);
       persist.mockResolvedValueOnce(undefined);
       views[0].refreshModelSelector.mockImplementationOnce(() => { throw new Error('view detached'); });
       await expect(chatHostOf(plugin).mutateSettings(settings => { settings.customContextLimits = { test: 2000 }; }))
@@ -327,7 +326,7 @@ describe('ClaudianPlugin', () => {
 
   function createPublishedViews() {
     return [0, 1].map(() => ({
-      refreshMessageTimestamps: vi.fn(), refreshDualPaneLayout: vi.fn(),
+      refreshDualPaneLayout: vi.fn(),
       updateHiddenCommands: vi.fn(), refreshModelSelector: vi.fn(),
       notifyConversationListChanged: vi.fn(),
     }));

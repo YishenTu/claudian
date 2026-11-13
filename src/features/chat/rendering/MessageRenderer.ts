@@ -142,7 +142,7 @@ export class MessageRenderer {
       this.app, component, messagesEl, () => this.plugin.settings.mediaFolder,
       () => this.plugin.settings.pluginRenderedFenceLanguages,
     );
-    this.#actions = new MessageActions(plugin, messagesEl, this.getCapabilities, {
+    this.#actions = new MessageActions(messagesEl, this.getCapabilities, {
       rewind: rewindCallback,
       fork: forkCallback,
       branches: branchActions,
@@ -223,10 +223,6 @@ export class MessageRenderer {
 
   #resolveSubagentAdapter(toolName?: string) {
     return resolveSubagentAdapter(this.getCapabilities().providerId, toolName);
-  }
-
-  refreshMessageTimestamps(): void {
-    this.#actions.refreshTimestamps();
   }
 
   // ============================================

@@ -65,7 +65,7 @@ async function setup(providerId?: string, navigate: (id: string, target?: string
 }
 
 function renderedPrompts(messagesEl: HTMLElement): string[] {
-  return Array.from(messagesEl.querySelectorAll<HTMLElement>('[data-role="user"]'), el => el.textContent ?? '');
+  return Array.from(messagesEl.querySelectorAll<HTMLElement>('[data-role="user"] .claudian-message-content'), el => el.textContent ?? '');
 }
 
 afterEach(() => { vi.restoreAllMocks(); });

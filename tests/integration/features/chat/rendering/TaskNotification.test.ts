@@ -35,7 +35,7 @@ beforeEach(() => {
 it.each([false, true])('renders a native notification and its follow-up through session and chat (consumption echo: %s)', async echoed => {
   const { renderSessionTaskNotification, renderAutoTriggeredTurn } = await import('@/features/chat/turns/BackgroundTurnRenderer');
   const messagesEl = document.body.createDiv();
-  const plugin = await createChatFeatureHost({ settings: { mediaFolder: '', showMessageTimestamps: false } });
+  const plugin = await createChatFeatureHost({ settings: { mediaFolder: '' } });
   const renderer = new MessageRenderer(plugin,
     new Component(), messagesEl);
   const state = new ChatState();
@@ -95,7 +95,7 @@ it.each([false, true])('shows a session notification immediately with streaming=
   const { ChatExecutionCoordinator } = await import('@/features/chat/execution/ChatExecutionCoordinator');
   const { createTabMessageId } = await import('@test/helpers/features/chat/SessionEventsHarness');
   const messagesEl = document.body.createDiv();
-  const plugin = await createChatFeatureHost({ settings: { mediaFolder: '', showMessageTimestamps: false } });
+  const plugin = await createChatFeatureHost({ settings: { mediaFolder: '' } });
   const renderer = new MessageRenderer(plugin,
     new Component(), messagesEl);
   const state = new ChatState();
@@ -166,7 +166,7 @@ it.each([false, true])('shows a session notification immediately with streaming=
 it.each(['text', 'image', 'image-only'])('keeps preceding output before a %s prompt and isolates concurrent rendering', async kind => {
   const { renderAutoTriggeredTurn, reserveBackgroundTurn } = await import('@/features/chat/turns/BackgroundTurnRenderer');
   const messagesEl = document.body.createDiv();
-  const plugin = await createChatFeatureHost({ settings: { mediaFolder: '', showMessageTimestamps: false } });
+  const plugin = await createChatFeatureHost({ settings: { mediaFolder: '' } });
   const renderer = new MessageRenderer(plugin,
     new Component(), messagesEl);
   const state = new ChatState();
@@ -215,7 +215,7 @@ it.each(['text', 'image', 'image-only'])('keeps preceding output before a %s pro
 it.each([false, true])('flushes an automatic tool card before stream disposal with result=%s', async completed => {
   const { renderAutoTriggeredTurn } = await import('@/features/chat/turns/BackgroundTurnRenderer');
   const messagesEl = document.body.createDiv();
-  const plugin = await createChatFeatureHost({ settings: { mediaFolder: '', showMessageTimestamps: false } });
+  const plugin = await createChatFeatureHost({ settings: { mediaFolder: '' } });
   const renderer = new MessageRenderer(plugin,
     new Component(), messagesEl);
   const state = new ChatState();
@@ -241,7 +241,7 @@ it.each([false, true])('flushes an automatic tool card before stream disposal wi
 it.each([false, true])('keeps automatic Agent results across requested settlement with pending=%s', async pendingAgent => {
   const { renderAutoTriggeredTurn } = await import('@/features/chat/turns/BackgroundTurnRenderer');
   const messagesEl = document.body.createDiv();
-  const plugin = await createChatFeatureHost({ settings: { mediaFolder: '', showMessageTimestamps: false } });
+  const plugin = await createChatFeatureHost({ settings: { mediaFolder: '' } });
   const renderer = new MessageRenderer(plugin,
     new Component(), messagesEl);
   const state = new ChatState();
@@ -289,7 +289,7 @@ it.each([false, true])('keeps automatic Agent results across requested settlemen
 it.each([false, true])('matches task-notification grouping before and after replay with intervening input=%s', async interveningInput => {
   const { renderAutoTriggeredTurn, renderSessionTaskNotification } = await import('@/features/chat/turns/BackgroundTurnRenderer');
   const messagesEl = document.body.createDiv();
-  const plugin = await createChatFeatureHost({ settings: { mediaFolder: '', showMessageTimestamps: false } });
+  const plugin = await createChatFeatureHost({ settings: { mediaFolder: '' } });
   const renderer = new MessageRenderer(plugin,
     new Component(), messagesEl);
   const state = new ChatState();

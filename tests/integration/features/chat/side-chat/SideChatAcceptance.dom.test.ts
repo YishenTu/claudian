@@ -1,7 +1,6 @@
 /** @vitest-environment jsdom */
 import '@/providers';
 
-import { createClaudianView } from '@test/helpers/features/chat/ClaudianViewHarness';
 import { createProjectsFake, projectRecord } from '@test/helpers/features/chat/ProjectsFake';
 import {
   createHarness,
@@ -13,8 +12,6 @@ import { fireEvent, screen, waitFor } from '@testing-library/dom';
 
 import { buildSystemPrompt } from '@/core/prompt/mainAgent';
 import { renderProjectMemberInstructions } from '@/core/prompt/projectPrompt';
-import { MessageRenderer } from '@/features/chat/rendering/MessageRenderer';
-import { buildTabRuntimePorts } from '@/features/chat/tabs/runtime/TabRuntimePorts';
 
 afterEach(releaseSideChatHarnesses);
 
@@ -166,7 +163,7 @@ it('is safe to discard repeatedly and cannot be resurrected by late events', asy
 });
 
 it.each([false, true])('shows completed side work duration and the completion timestamp (compaction: %s)', async compaction => {
-  const harness = await createHarness({ settings: { showMessageTimestamps: true } });
+  const harness = await createHarness();
   const elapsed = vi.spyOn(performance, 'now').mockReturnValue(1000);
   const clock = vi.spyOn(Date, 'now').mockReturnValue(testDate().getTime());
   try {
@@ -185,41 +182,6 @@ it.each([false, true])('shows completed side work duration and the completion ti
   } finally {
     elapsed.mockRestore();
     clock.mockRestore();
-  }
-});
-
-it('refreshes side completion timestamps when the view timestamp setting changes', async () => {
-  const settings = { showMessageTimestamps: false };
-  const harness = await createHarness({ settings });
-  const mainRenderer = new MessageRenderer(harness.plugin, {} as never, document.createElement('div'));
-  const tab = buildTabRuntimePorts(
-    {} as never,
-    {} as never,
-    { controllers: { ...harness.tab.controllers, sideChatController: harness.controller }, renderer: mainRenderer },
-    harness.plugin,
-    () => { throw new Error('Timestamp refresh must not read the runtime'); },
-  );
-  const view = await createClaudianView({ tabManager: { getAllTabs: () => [Object.assign(harness.tab, tab)] } });
-  const clock = vi.spyOn(Date, 'now').mockReturnValue(testDate().getTime());
-  try {
-    const { started } = await startSideChat(harness);
-    harness.backend.latest.emitText('A side answer.');
-    const completedAt = testDate({ seconds: 3 });
-    clock.mockReturnValue(completedAt.getTime());
-    harness.backend.latest.complete();
-    await started;
-    harness.controller.collapse();
-    const label = completedAt.toLocaleString(undefined, { hourCycle: 'h23' });
-    expect(screen.queryByLabelText(label)).toBeNull();
-    harness.plugin.settings.showMessageTimestamps = true;
-    view.refreshMessageTimestamps();
-    expect(screen.getByLabelText(label)).toBeTruthy();
-    harness.plugin.settings.showMessageTimestamps = false;
-    view.refreshMessageTimestamps();
-    expect(screen.queryByLabelText(label)).toBeNull();
-  } finally {
-    clock.mockRestore();
-    mainRenderer.dispose();
   }
 });
 

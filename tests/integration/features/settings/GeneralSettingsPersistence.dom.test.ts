@@ -22,7 +22,6 @@ const cases = [
   ['dualPaneSide', 'settings.dualPaneSide.name', 'right', 'left'],
   ['restoreTabsOnStartup', 'settings.restoreTabsOnStartup.name', true, false],
   ['enableAutoScroll', 'settings.enableAutoScroll.name', true, false],
-  ['showMessageTimestamps', 'settings.showMessageTimestamps.name', false, true],
   ['deferMathRenderingDuringStreaming', 'settings.deferMathRenderingDuringStreaming.name', true, false],
   ['expandFileEditsByDefault', 'settings.expandFileEditsByDefault.name', false, true],
   ['showTabTitlesByDefault', 'settings.showTabTitlesByDefault.name', true, false],

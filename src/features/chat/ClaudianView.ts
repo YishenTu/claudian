@@ -536,12 +536,6 @@ export class ClaudianView extends ItemView implements ZenModeSource {
     return !this.layout.isWide && (this.tabManager?.getTabCount() ?? 0) >= 2;
   }
 
-  refreshMessageTimestamps(): void {
-    for (const tab of this.tabManager?.getAllTabs() ?? []) {
-      tab.refreshMessageTimestamps();
-    }
-  }
-
   refreshDualPaneLayout(): void {
     if (!this.viewContainerEl) return;
     this.presentation.updateChip();

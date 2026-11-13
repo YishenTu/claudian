@@ -43,7 +43,7 @@ it.each(['attached', 'detached', 'absent', 'late-text', 'late-thinking'] as cons
     const clock = testClock();
     const now = vi.spyOn(Date, 'now').mockImplementation(() => clock().getTime());
     const messagesEl = document.body.createDiv();
-    const plugin = await createChatFeatureHost({ settings: { mediaFolder: '', showMessageTimestamps: false } });
+    const plugin = await createChatFeatureHost({ settings: { mediaFolder: '' } });
     const renderer = new MessageRenderer(plugin, new Component(), messagesEl);
     const state = new ChatState();
     const subagents = new SubagentManager(() => undefined);
@@ -106,7 +106,7 @@ it.each([false, true])('replay places the second notification before automatic o
   const replay = await loadSDKSessionMessages('/vault', 'session', undefined, sessionPath);
   expect(replay.error).toBeUndefined();
   const messagesEl = document.body.createDiv();
-  const renderer = new MessageRenderer(await createChatFeatureHost({ settings: { mediaFolder: '', showMessageTimestamps: false } }), new Component(), messagesEl);
+  const renderer = new MessageRenderer(await createChatFeatureHost({ settings: { mediaFolder: '' } }), new Component(), messagesEl);
   try {
     replay.messages.forEach((message, index) => renderer.renderStoredMessage(message, replay.messages, index));
     await Promise.resolve();
@@ -355,7 +355,7 @@ it.each([
 
 async function createBackgroundChat(withInput = false) {
   const messagesEl = document.body.createDiv();
-  const plugin = await createChatFeatureHost({ settings: { mediaFolder: '', showMessageTimestamps: false } });
+  const plugin = await createChatFeatureHost({ settings: { mediaFolder: '' } });
   const renderer = new MessageRenderer(plugin,
     new Component(), messagesEl);
   const lifecycleRegistry = new ProviderExecutionLifecycleRegistry();
@@ -456,7 +456,7 @@ function visibleText(element: HTMLElement): string {
   const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
   const parts: string[] = [];
   for (let node = walker.nextNode(); node; node = walker.nextNode()) {
-    if (!node.parentElement?.closest('[hidden]') && node.textContent?.trim()) parts.push(node.textContent.trim());
+    if (!node.parentElement?.closest('[hidden], .claudian-message-timestamp') && node.textContent?.trim()) parts.push(node.textContent.trim());
   }
   return parts.join(' ');
 }
@@ -467,7 +467,7 @@ function visibleTranscript(root: HTMLElement): string {
 
 it.each([true, false])('folds a stopped automatic reply under Interrupted after its notification, live and on reload (output: %s)', async output => {
   const messagesEl = document.body.createDiv();
-  const plugin = await createChatFeatureHost({ settings: { mediaFolder: '', showMessageTimestamps: false } });
+  const plugin = await createChatFeatureHost({ settings: { mediaFolder: '' } });
   const renderer = new MessageRenderer(plugin, new Component(), messagesEl, undefined, vi.fn());
   const state = new ChatState();
   const manager = new SubagentManager(() => undefined);
@@ -546,7 +546,7 @@ it.each([true, false])('folds a stopped automatic reply under Interrupted after 
 
 async function createBackgroundSession() {
   const messagesEl = document.body.createDiv();
-  const plugin = await createChatFeatureHost({ settings: { mediaFolder: '', showMessageTimestamps: false } });
+  const plugin = await createChatFeatureHost({ settings: { mediaFolder: '' } });
   const renderer = new MessageRenderer(plugin, new Component(), messagesEl);
   const state = new ChatState();
   const manager = new SubagentManager(() => undefined);
@@ -764,7 +764,7 @@ it('keeps a completed Pi reply outside a later hidden-trigger interrupted disclo
     } },
   ].map(entry => JSON.stringify(entry)).join('\n'));
   const messagesEl = document.body.createDiv();
-  const renderer = new MessageRenderer(await createChatFeatureHost({ settings: { mediaFolder: '', showMessageTimestamps: false } }),
+  const renderer = new MessageRenderer(await createChatFeatureHost({ settings: { mediaFolder: '' } }),
     new Component(), messagesEl);
   try {
     renderer.renderMessages(messages, () => 'Welcome');

@@ -49,7 +49,7 @@ it.each(['claude', 'codex', 'opencode', 'pi', 'grok'] as const)('hides snapshot 
   }
   expect(messages).toHaveLength(1);
   const parent = document.body.createDiv();
-  const renderer = new MessageRenderer(await createChatFeatureHost({ settings: { mediaFolder: '', showMessageTimestamps: false } }), new Component(), parent);
+  const renderer = new MessageRenderer(await createChatFeatureHost({ settings: { mediaFolder: '' } }), new Component(), parent);
   try {
     renderer.renderStoredMessage(messages[0], messages, 0);
     await Promise.resolve();
@@ -90,7 +90,7 @@ it.each([
   expect(messages[0].content).toBe(body);
   expect(rows[0].text).toBe(nativePrompt);
   const parent = document.body.createDiv();
-  const renderer = new MessageRenderer(await createChatFeatureHost({ settings: { mediaFolder: '', showMessageTimestamps: false } }), new Component(), parent);
+  const renderer = new MessageRenderer(await createChatFeatureHost({ settings: { mediaFolder: '' } }), new Component(), parent);
   try {
     renderer.renderStoredMessage(messages[0], messages, 0);
     await waitFor(() => {

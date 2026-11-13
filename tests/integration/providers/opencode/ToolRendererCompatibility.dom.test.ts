@@ -77,7 +77,7 @@ async function restoreLiveV2(call: NativeToolCall): Promise<ToolCallInfo> {
 async function renderLiveEvents(output: readonly ProviderExecutionEvent[]): Promise<ToolCallInfo> {
   const messages = document.body.createDiv();
   const state = new ChatState();
-  const plugin = await createChatFeatureHost({ settings: { mediaFolder: '', showMessageTimestamps: false } });
+  const plugin = await createChatFeatureHost({ settings: { mediaFolder: '' } });
   const renderer = new MessageRenderer(plugin, new Component(), messages);
   const stream = new StreamController({ plugin, state, renderer,
     subagentManager: new SubagentManager(() => undefined), getMessagesEl: () => messages, updateQueueIndicator: () => undefined,

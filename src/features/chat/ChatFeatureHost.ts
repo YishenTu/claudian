@@ -36,7 +36,6 @@ export interface ChatViewRefreshHost {
   refreshModelSelector(providerId?: ProviderId): void;
   refreshTabControls(): void;
   refreshDualPaneLayout(): void;
-  refreshMessageTimestamps(): void;
   updateHiddenCommands(): void;
   invalidateProviderCommandCaches(providerIds?: ProviderId[]): void;
   invalidateProviderResources(providerIds: ProviderId[], generation: number): void;

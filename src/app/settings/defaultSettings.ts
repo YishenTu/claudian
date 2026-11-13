@@ -52,7 +52,6 @@ export const DEFAULT_CLAUDIAN_SETTINGS: ClaudianSettings = {
   pendingProviderSessionInvalidations: {},
 
   enableAutoScroll: true,
-  showMessageTimestamps: false,
   deferMathRenderingDuringStreaming: true,
   pluginRenderedFenceLanguages: [],
   expandFileEditsByDefault: false,

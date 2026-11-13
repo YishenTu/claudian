@@ -102,7 +102,7 @@ it.each([
   ]);
   const messagesEl = document.body.createDiv();
   const fork = vi.fn().mockResolvedValue(undefined);
-  renderer = new MessageRenderer(await createChatFeatureHost({ settings: { mediaFolder: '', showMessageTimestamps: true } }),
+  renderer = new MessageRenderer(await createChatFeatureHost({ settings: { mediaFolder: '' } }),
     new Component(), messagesEl, undefined, fork, () => ProviderRegistry.getCapabilities('deepseek'));
   renderer.renderMessages(messages, () => 'Hello');
   await waitFor(() => expect(within(messagesEl).getByText('Committed partial reply')).toBeDefined());

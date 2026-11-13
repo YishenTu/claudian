@@ -13,7 +13,6 @@ export interface TabRuntimePorts {
   readonly placement: TabPlacementPort;
   readonly zenPresentation: ZenPresentationPort;
   refreshProviderControls(): void;
-  refreshMessageTimestamps(): void;
 }
 
 /** Builds the host-view surface of a tab over its assembled UI, DOM, and controllers. */
@@ -41,10 +40,6 @@ export function buildTabRuntimePorts(
       ui.effortSelector.updateDisplay();
       ui.permissionToggle.updateDisplay();
       ui.serviceTierToggle.updateDisplay();
-    },
-    refreshMessageTimestamps: () => {
-      renderer.refreshMessageTimestamps();
-      controllers.sideChatController.runtime?.renderer?.refreshMessageTimestamps();
     },
   };
 }
