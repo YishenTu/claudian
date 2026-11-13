@@ -42,7 +42,7 @@ afterEach(() => {
 
 async function createSession(providerId?: ProviderId, promptText = 'Read the note') {
   const messagesEl = document.body.createDiv();
-  const plugin = await createChatFeatureHost({ settings: { mediaFolder: '', showMessageTimestamps: false } });
+  const plugin = await createChatFeatureHost({ settings: { mediaFolder: '' } });
   const renderer = new MessageRenderer(plugin, new Component(), messagesEl, undefined, undefined,
     providerId ? () => ProviderRegistry.getCapabilities(providerId) : undefined);
   const turns = new TurnCoordinator();
@@ -317,7 +317,7 @@ it('leaves file-annotation-like assistant text from other providers unchanged', 
 it.each(['retired-provider', '', 'constructor'])('keeps cached historical presentation readable without a registered formatter (%s)', async providerId => {
   const messagesEl = document.body.createDiv();
   const plugin = await createChatFeatureHost({
-    settings: { mediaFolder: '', showMessageTimestamps: false },
+    settings: { mediaFolder: '' },
     getConversationSummary: () => ({ id: 'cached-session', title: 'Cached', providerId, createdAt: 1, lastActivityAt: 1 }),
   });
   const identity = { conversationId: 'cached-session', providerId, draftModel: null };

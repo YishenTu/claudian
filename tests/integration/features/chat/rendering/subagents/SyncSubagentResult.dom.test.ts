@@ -44,7 +44,7 @@ it.each([
 ])('shows the sync agent answer from $source with structured output=$structured, plain answer=$plainAnswer', async ({ structured, source, plainAnswer }) => {
   document.body.replaceChildren();
   const messagesEl = document.body.createDiv();
-  const plugin = await createChatFeatureHost({ settings: { mediaFolder: '', showMessageTimestamps: false } });
+  const plugin = await createChatFeatureHost({ settings: { mediaFolder: '' } });
   const renderer = new MessageRenderer(plugin,
     new Component(), messagesEl);
   const state = new ChatState();

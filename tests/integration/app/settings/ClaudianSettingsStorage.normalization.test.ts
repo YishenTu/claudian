@@ -54,6 +54,7 @@ describe('ClaudianSettingsStorage', () => {
         persistentExternalContextPaths: ['/old/project'],
         maxWarmAgentProcesses: 7,
         projectSort: 'created',
+        showMessageTimestamps: true,
         userName: 'Ada',
         providerConfigs: { claude: { loadUserSettings: true } },
       }));
@@ -69,6 +70,8 @@ describe('ClaudianSettingsStorage', () => {
       expect(loaded).not.toHaveProperty('maxWarmAgentProcesses');
       expect(written).not.toHaveProperty('maxWarmAgentProcesses');
       expect(written).not.toHaveProperty('projectSort');
+      expect(loaded).not.toHaveProperty('showMessageTimestamps');
+      expect(written).not.toHaveProperty('showMessageTimestamps');
     });
 
     it('should parse valid JSON and merge with defaults', async () => {

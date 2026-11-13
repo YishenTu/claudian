@@ -48,7 +48,7 @@ async function createCodexLifecycleView() {
   const parent = document.body.createDiv();
   const manager = new SubagentManager(() => {}, NOOP_TASK_RESULT_INTERPRETER);
   const tools: ToolCallInfo[] = [];
-  const plugin = await createChatFeatureHost({ settings: { mediaFolder: '', showMessageTimestamps: false } });
+  const plugin = await createChatFeatureHost({ settings: { mediaFolder: '' } });
   const renderer = new MessageRenderer(plugin,
     new Component(), parent,
     undefined, undefined, () => ProviderRegistry.getCapabilities('codex'));
@@ -718,7 +718,7 @@ it.each([undefined, '', '   '])('hides an unavailable prompt (%s) and reveals a 
 async function createOpencodeView() {
   const parent = document.body.createDiv();
   const manager = new SubagentManager(() => {}, ProviderRegistry.getTaskResultInterpreter('opencode'));
-  const plugin = await createChatFeatureHost({ settings: { mediaFolder: '', showMessageTimestamps: false } });
+  const plugin = await createChatFeatureHost({ settings: { mediaFolder: '' } });
   const renderer = new MessageRenderer(plugin,
     new Component(), parent,
     undefined, undefined, () => ProviderRegistry.getCapabilities('opencode'));
@@ -771,7 +771,7 @@ it('shows previous runs of reused OpenCode subagents live and after reload', asy
 
 it.each(['sync', 'async', 'partial-sync'] as const)('records a %s task and its result without transcript elements', async mode => {
   const parent = document.body.createDiv();
-  const plugin = await createChatFeatureHost({ settings: { mediaFolder: '', showMessageTimestamps: false } });
+  const plugin = await createChatFeatureHost({ settings: { mediaFolder: '' } });
   const state = new ChatState();
   const manager = new SubagentManager(info => stream.subagents.onAsyncSubagentStateChange(info), new ClaudeTaskResultInterpreter());
   const renderer = new MessageRenderer(plugin, new Component(), parent);

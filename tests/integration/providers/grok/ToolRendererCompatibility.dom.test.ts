@@ -102,7 +102,7 @@ async function restoreLive(updates: NativeToolUpdates): Promise<ToolCallInfo> {
   const messages = document.body.createDiv();
   const state = new ChatState();
   // Vault refresh after file edits is an Obsidian boundary; this stub keeps it inert.
-  const plugin = await createChatFeatureHost({ settings: { mediaFolder: '', showMessageTimestamps: false } });
+  const plugin = await createChatFeatureHost({ settings: { mediaFolder: '' } });
   vi.spyOn(plugin.app.vault.adapter, 'list').mockImplementation(async () => ({ files: [], folders: [] }));
   const renderer = new MessageRenderer(plugin, new Component(), messages);
   const stream = new StreamController({ plugin, state, renderer,

@@ -51,7 +51,7 @@ describe.each(['live', 'history'] as const)('%s DeepSeek applied edit', mode => 
         const output = new DeepSeekOutput(event => events.push(event));
         for (const record of records) output.record(record);
         const state = new ChatState();
-        const plugin = await createChatFeatureHost({ settings: { mediaFolder: '', showMessageTimestamps: false } });
+        const plugin = await createChatFeatureHost({ settings: { mediaFolder: '' } });
         component = new Component();
         component.load();
         renderer = new MessageRenderer(plugin, component, messages);

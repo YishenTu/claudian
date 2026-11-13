@@ -35,13 +35,12 @@ let defaultHost: Awaited<ReturnType<typeof createChatFeatureHost>>;
 function setup(providerId = 'claude') {
   const messagesEl = document.body.createDiv();
   const fork = vi.fn().mockResolvedValue(undefined);
-  const settings = defaultHost.settings;
   const renderer = new MessageRenderer(
     defaultHost,
     new Component(),
     messagesEl, undefined, fork, () => ProviderRegistry.getCapabilities(providerId),
   );
-  return { renderer, messagesEl, fork, settings };
+  return { renderer, messagesEl, fork };
 }
 
 const messages: ChatMessage[] = [
@@ -67,7 +66,7 @@ function expectInterruptHeader(header: HTMLElement, history: HTMLElement): void 
 
 beforeEach(async () => {
   document.body.replaceChildren();
-  defaultHost = await createChatFeatureHost({ settings: { mediaFolder: '', showMessageTimestamps: true } });
+  defaultHost = await createChatFeatureHost({ settings: { mediaFolder: '' } });
   Object.defineProperty(navigator, 'clipboard', {
     configurable: true, value: { writeText: vi.fn().mockResolvedValue(undefined) },
   });
@@ -210,20 +209,14 @@ it('copies retired interruption markup as ordinary message text', async () => {
   renderer.dispose();
 });
 
-it('keeps separate completed turns and refreshes timestamps in their own action rows', () => {
-  const { renderer, messagesEl, settings } = setup();
+it('keeps separate completed turns with timestamps in their own action rows', () => {
+  const { renderer, messagesEl } = setup();
   renderer.renderMessages([...messages,
     { id: 'u2', role: 'user', content: 'Next', timestamp: 6 },
     { id: 'a3', role: 'assistant', content: 'Next answer', timestamp: 7, durationSeconds: 90, completedAt: 10 },
   ], () => 'Hello');
   const headers = within(messagesEl).getAllByRole('button', { name: /Worked for/ });
   expect(headers.map(header => header.textContent)).toEqual(['Worked for 01:05', 'Worked for 01:30']);
-  settings.showMessageTimestamps = false;
-  renderer.refreshMessageTimestamps();
-  expect(messagesEl.querySelectorAll('.claudian-message-timestamp')).toHaveLength(0);
-  settings.showMessageTimestamps = true;
-  renderer.refreshMessageTimestamps();
-  renderer.refreshMessageTimestamps();
   const times = messagesEl.querySelectorAll('.claudian-message-timestamp');
   expect(times).toHaveLength(4);
   for (const time of times) expect(time.parentElement!.lastElementChild).toBe(time);
@@ -540,26 +533,14 @@ it.each([
   renderer.dispose();
 });
 
-it('keeps time after throughput when timestamps are refreshed or toggled', () => {
-  const { renderer, messagesEl, settings } = setup();
+it('keeps time after throughput', () => {
+  const { renderer, messagesEl } = setup();
   renderer.renderMessages([messages[0], { ...messages[2], turnStats: { outputTokens: 158, durationMs: 10000 } }], () => 'Hello');
   const stat = within(messagesEl).getByText('15.8 tok/s');
   const toolbar = stat.parentElement!;
   const copy = within(toolbar).getByRole('button', { name: 'Copy message' });
   const fork = within(toolbar).getByRole('button', { name: 'Fork conversation' });
-  const expectOrder = () => {
-    expect(Array.from(toolbar.children)).toEqual([copy, fork, stat, toolbar.querySelector('.claudian-message-timestamp')]);
-  };
-  expectOrder();
-  renderer.refreshMessageTimestamps();
-  expectOrder();
-  settings.showMessageTimestamps = false;
-  renderer.refreshMessageTimestamps();
-  expect(Array.from(toolbar.children)).toEqual([copy, fork, stat]);
-  settings.showMessageTimestamps = true;
-  renderer.refreshMessageTimestamps();
-  renderer.refreshMessageTimestamps();
-  expectOrder();
+  expect(Array.from(toolbar.children)).toEqual([copy, fork, stat, toolbar.querySelector('.claudian-message-timestamp')]);
   renderer.dispose();
 });
 
@@ -700,7 +681,6 @@ it.each([true, false])('enables branches after switching and native history corr
 it('orders the Pi prompt toolbar as branches, tree, copy, time through live and replay refreshes', async () => {
   const messagesEl = document.body.createDiv();
   const fork = vi.fn().mockResolvedValue(undefined);
-  const settings = defaultHost.settings;
   let busy = true;
   const renderer = new MessageRenderer(defaultHost,
     new Component(),
@@ -742,14 +722,6 @@ it('orders the Pi prompt toolbar as branches, tree, copy, time through live and 
     expect(document.activeElement).toBe(within(promptEl).getByRole('button', { name }));
     assertOrder();
   }
-  renderer.refreshMessageTimestamps();
-  assertOrder();
-  settings.showMessageTimestamps = false;
-  renderer.refreshMessageTimestamps();
-  renderer.refreshBranchButtons(history);
-  settings.showMessageTimestamps = true;
-  renderer.refreshMessageTimestamps();
-  assertOrder();
   renderer.renderMessages(history, () => 'Hello');
   promptEl = messagesEl.querySelector<HTMLElement>('[data-message-id="second"]')!;
   assertOrder();

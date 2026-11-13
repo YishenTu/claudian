@@ -30,7 +30,7 @@ afterEach(() => {
 });
 
 async function createSession(providerId?: ProviderCapabilities['providerId']) {
-  const plugin = await createChatFeatureHost({ settings: { mediaFolder: '', showMessageTimestamps: false } });
+  const plugin = await createChatFeatureHost({ settings: { mediaFolder: '' } });
   const turns = new TurnCoordinator();
   const state = new ChatState({}, undefined, turns);
   const subagents = new SubagentManager(info => stream.subagents.onAsyncSubagentStateChange(info), new ClaudeTaskResultInterpreter());

@@ -14,7 +14,6 @@ import {
   TOOL_WAIT_AGENT,
   TOOL_WRITE_STDIN,
 } from '@/core/tools/toolNames';
-import type { ClaudianSettings } from '@/core/types';
 import type { ChatMessage, ImageAttachment, ToolCallInfo } from '@/core/types';
 import { MessageRenderer } from '@/features/chat/rendering/MessageRenderer';
 
@@ -69,11 +68,9 @@ function mockCapabilities(providerId: 'claude' | 'codex' | 'grok' = 'claude') {
 function createRenderer(
   messagesEl?: HTMLElement,
   providerId: 'claude' | 'codex' | 'grok' = 'claude',
-  settings: Partial<ClaudianSettings> = {},
 ) {
   const el = messagesEl ?? document.body.createDiv();
   const comp = createMockComponent();
-  Object.assign(plugin.settings, settings);
   return {
     renderer: trackRenderer(new MessageRenderer(
       plugin,
@@ -89,7 +86,7 @@ function createRenderer(
 
 describe('MessageRenderer', () => {
   beforeEach(async () => {
-    plugin = await createChatFeatureHost({ app: new App(), settings: { showMessageTimestamps: false } });
+    plugin = await createChatFeatureHost({ app: new App(), settings: {} });
     vi.clearAllMocks();
     Menu.instances.length = 0;
   });
@@ -133,9 +130,9 @@ describe('MessageRenderer', () => {
     expect(interruptedEl.textContent).toBe('Interrupted');
   });
 
-  it('renders timestamps when the setting is enabled', async () => {
+  it('renders timestamps', async () => {
     const messagesEl = document.body.createDiv();
-    const { renderer } = createRenderer(messagesEl, 'claude', { showMessageTimestamps: true });
+    const { renderer } = createRenderer(messagesEl);
     const timestamp = testDate().getTime();
 
     renderer.renderStoredMessage({
@@ -154,21 +151,6 @@ describe('MessageRenderer', () => {
       hourCycle: 'h23',
     }));
     expect(timestampEl!.getAttribute('aria-label')).toBe(new Date(timestamp).toLocaleString(undefined, { hourCycle: 'h23' }));
-  });
-
-  it('does not render timestamps when the setting is disabled', async () => {
-    const messagesEl = document.body.createDiv();
-    const { renderer } = createRenderer(messagesEl, 'claude', { showMessageTimestamps: false });
-
-    renderer.renderStoredMessage({
-      id: 'untimed-user',
-      role: 'user',
-      content: 'Hello',
-      timestamp: Date.now(),
-    });
-
-    const msgEl = messagesEl.children[0];
-    expect(msgEl.querySelector('.claudian-message-timestamp')).toBeNull();
   });
 
   it('renders persisted citation content blocks', async () => {

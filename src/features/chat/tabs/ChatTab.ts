@@ -131,7 +131,6 @@ export interface ChatTab {
   readonly zenPresentation: ZenPresentationPort;
   /** Re-renders model, mode, effort, permission, service-tier, and context-usage controls. */
   refreshProviderControls(): void;
-  refreshMessageTimestamps(): void;
 }
 
 /**

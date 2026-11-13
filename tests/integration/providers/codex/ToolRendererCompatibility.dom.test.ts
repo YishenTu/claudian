@@ -638,7 +638,7 @@ it.each([false, true].flatMap(lateNative => ['text', 'thinking'].map(boundary =>
   });
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
   const messagesEl = document.body.createDiv();
-  const plugin = await createChatFeatureHost({ settings: { mediaFolder: '', showMessageTimestamps: false } });
+  const plugin = await createChatFeatureHost({ settings: { mediaFolder: '' } });
   const vault = plugin.app.vault;
   vi.spyOn(vault, 'getAbstractFileByPath').mockReturnValue(null);
   vi.spyOn(vault.adapter, 'list').mockResolvedValue({ files: [], folders: [] });

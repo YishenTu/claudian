@@ -43,6 +43,7 @@ const RETIRED_SHARED_SETTING_FIELDS = [
   'hiddenProviderCommands',
   'maxWarmAgentProcesses',
   'projectSort',
+  'showMessageTimestamps',
 ] as const;
 
 function getProviderSettingsAdapters() {

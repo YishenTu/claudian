@@ -158,7 +158,6 @@ export interface ClaudianSettings {
 
   // UI preferences
   enableAutoScroll: boolean;
-  showMessageTimestamps?: boolean;
   deferMathRenderingDuringStreaming: boolean;
   /** Fence languages dispatched to registered plugin code block processors in chat. */
   pluginRenderedFenceLanguages: string[];

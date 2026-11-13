@@ -54,7 +54,7 @@ function visibleText(element: HTMLElement): string {
   const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
   const parts: string[] = [];
   for (let node = walker.nextNode(); node; node = walker.nextNode()) {
-    if (!node.parentElement?.closest('[hidden]') && node.textContent?.trim()) parts.push(node.textContent.trim());
+    if (!node.parentElement?.closest('[hidden], .claudian-message-timestamp') && node.textContent?.trim()) parts.push(node.textContent.trim());
   }
   return parts.join(' ');
 }
@@ -98,7 +98,7 @@ function expected(turn: Turn) {
 
 async function renderLive(turn: Turn): Promise<HTMLElement> {
   const messagesEl = document.body.createDiv();
-  const plugin = await createChatFeatureHost({ settings: { mediaFolder: '', showMessageTimestamps: false } });
+  const plugin = await createChatFeatureHost({ settings: { mediaFolder: '' } });
   const renderer = new MessageRenderer(plugin, new Component(), messagesEl);
   const turns = new TurnCoordinator();
   const state = new ChatState({}, undefined, turns);
@@ -214,7 +214,7 @@ async function renderClaudeReload(turn: Turn, promptIds = false): Promise<HTMLEl
   const assistants = replay.messages.filter(message => message.role === 'assistant');
   expect(assistants.map(message => message.isAutomaticResponse === true)).toEqual(assistants.map(() => turn.automatic));
   const messagesEl = document.body.createDiv();
-  const renderer = new MessageRenderer(await createChatFeatureHost({ settings: { mediaFolder: '', showMessageTimestamps: false } }),
+  const renderer = new MessageRenderer(await createChatFeatureHost({ settings: { mediaFolder: '' } }),
     new Component(), messagesEl);
   cleanups.push(() => renderer.dispose());
   renderer.renderMessages(replay.messages, () => 'Welcome');
@@ -274,7 +274,7 @@ it.each([true, false])('folds a turn a Stop hook continued after end_turn identi
   ]));
   expect(replay.error).toBeUndefined();
   const messagesEl = document.body.createDiv();
-  const renderer = new MessageRenderer(await createChatFeatureHost({ settings: { mediaFolder: '', showMessageTimestamps: false } }),
+  const renderer = new MessageRenderer(await createChatFeatureHost({ settings: { mediaFolder: '' } }),
     new Component(), messagesEl);
   cleanups.push(() => renderer.dispose());
   renderer.renderMessages(replay.messages, () => 'Welcome');
@@ -288,7 +288,7 @@ async function renderTranscript(records: unknown[]): Promise<HTMLElement> {
   const replay = await loadSDKSessionMessages('/vault', 'session', undefined, writeSession(records));
   expect(replay.error).toBeUndefined();
   const messagesEl = document.body.createDiv();
-  const renderer = new MessageRenderer(await createChatFeatureHost({ settings: { mediaFolder: '', showMessageTimestamps: false } }),
+  const renderer = new MessageRenderer(await createChatFeatureHost({ settings: { mediaFolder: '' } }),
     new Component(), messagesEl);
   cleanups.push(() => renderer.dispose());
   renderer.renderMessages(replay.messages, () => 'Welcome');

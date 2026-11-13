@@ -370,15 +370,6 @@ export class ClaudianSettingTab extends PluginSettingTab {
       });
 
     new AccessibleSetting(container)
-      .setName(t('settings.showMessageTimestamps.name'))
-      .setDesc(t('settings.showMessageTimestamps.desc'))
-      .addToggle((toggle) => {
-        bindCommittedControl(toggle, () => this.host.settings.showMessageTimestamps === true, async value => {
-          await this.host.mutateSettings(settings => { settings.showMessageTimestamps = value; });
-        });
-      });
-
-    new AccessibleSetting(container)
       .setName(t('settings.deferMathRenderingDuringStreaming.name'))
       .setDesc(t('settings.deferMathRenderingDuringStreaming.desc'))
       .addToggle((toggle) => {

@@ -205,7 +205,7 @@ describe.each(directoryTitleCases)('directory title: %s', (_name, rawText, expec
     messagesEl.replaceChildren();
     const msgEl = addUserPrompt(messagesEl, rawText);
     const actions = new MessageActions(
-      { settings: {} } as never, messagesEl, () => ({}) as ProviderCapabilities, {}, () => false,
+      messagesEl, () => ({}) as ProviderCapabilities, {}, () => false,
     );
     actions.applyTocTitle(msgEl, rawText);
 

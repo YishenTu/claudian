@@ -49,7 +49,7 @@ async function createCodexChildTab() {
   const inputEl = document.createElement('textarea');
   const saves: ChatMessage[][] = [];
   const plugin = await createChatFeatureHost({
-    settings: { mediaFolder: '', showMessageTimestamps: false },
+    settings: { mediaFolder: '' },
     updateConversation: vi.fn(async (_id: string, patch: ConversationMutablePatch) => {
       saves.push(structuredClone(patch.messages ?? []));
     }),

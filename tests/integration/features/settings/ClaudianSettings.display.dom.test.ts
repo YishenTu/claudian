@@ -136,22 +136,22 @@ it.each([false, true])('persists the tab-title default, on by default, with auto
   expect((await h.storage.load()).showTabTitlesByDefault).toBe(false);
 });
 
-it('publishes timestamp preferences only after persistence completes', async () => {
+it('publishes toggle preferences only after persistence completes', async () => {
   let finish!: () => void;
   const gate = new Promise<void>(resolve => { finish = resolve; });
   let started!: () => void;
   const writing = new Promise<void>(resolve => { started = resolve; });
-  const h = await createSettings({ showMessageTimestamps: false }, () => { started(); return gate; });
-  const toggle = within(h.container).getByRole('switch', { name: t('settings.showMessageTimestamps.name') });
+  const h = await createSettings({ expandFileEditsByDefault: false }, () => { started(); return gate; });
+  const toggle = within(h.container).getByRole('switch', { name: t('settings.expandFileEditsByDefault.name') });
   fireEvent.click(toggle);
   try {
     await writing;
     expect(h.persist).toHaveBeenCalledTimes(1);
-    expect(h.settings.showMessageTimestamps).toBe(false);
+    expect(h.settings.expandFileEditsByDefault).toBe(false);
   } finally { finish(); }
   await controlChangeSettled(toggle);
-  expect(h.settings.showMessageTimestamps).toBe(true);
-  expect((await h.storage.load()).showMessageTimestamps).toBe(true);
+  expect(h.settings.expandFileEditsByDefault).toBe(true);
+  expect((await h.storage.load()).expandFileEditsByDefault).toBe(true);
 });
 
 it('batches text changes and durably flushes the last draft on teardown', async () => {

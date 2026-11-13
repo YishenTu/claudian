@@ -34,7 +34,7 @@ function visibleText(element: HTMLElement): string {
   const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
   const parts: string[] = [];
   for (let node = walker.nextNode(); node; node = walker.nextNode()) {
-    if (!node.parentElement?.closest('[hidden], .claudian-hidden') && node.textContent?.trim()) parts.push(node.textContent.trim());
+    if (!node.parentElement?.closest('[hidden], .claudian-hidden, .claudian-message-timestamp') && node.textContent?.trim()) parts.push(node.textContent.trim());
   }
   // Line breaks within a text block read as spaces.
   return parts.join(' ').replace(/\s+/g, ' ');
@@ -62,7 +62,7 @@ async function stopTurn(events: readonly (UnscopedExecutionEvent | typeof notifi
   const messagesEl = document.body.createDiv();
   const session = createTestSession();
   const state = new ChatState({}, undefined, session.turns);
-  const plugin = await createChatFeatureHost({ settings: { mediaFolder: '', showMessageTimestamps: false } });
+  const plugin = await createChatFeatureHost({ settings: { mediaFolder: '' } });
   const renderer = new MessageRenderer(plugin, new Component(), messagesEl);
   const subagents = new SubagentManager(() => undefined);
   const streamController = new StreamController({ plugin, state, renderer, subagentManager: subagents,

@@ -87,7 +87,7 @@ export async function createManager(
     isTabBarVisible: () => manager.getTabCount() > 1, renameActiveTab: () => false,
     notifyConversationListChanged: () => undefined, refreshModelSelector: () => undefined,
     refreshTabControls: () => undefined, refreshDualPaneLayout: () => undefined,
-    refreshMessageTimestamps: () => undefined, updateHiddenCommands: () => undefined,
+    updateHiddenCommands: () => undefined,
     invalidateProviderCommandCaches: () => undefined, invalidateProviderResources: () => undefined,
   }, viewOverrides);
   const manager = new TabManager(plugin, root, view, callbacks, new VaultMentionDataProvider(plugin.app), layoutPolicy && {

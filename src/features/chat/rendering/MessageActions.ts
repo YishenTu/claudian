@@ -3,7 +3,6 @@ import { Menu, Notice, setIcon } from 'obsidian';
 import type { ChatRewindMode } from '@/core/execution';
 import type { ProviderCapabilities } from '@/core/providers/types';
 import type { ChatMessage } from '@/core/types';
-import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
 import { getResponseElementKind } from '@/features/chat/rendering/ResponseLayout';
 import { formatConversationDirectoryTitle } from '@/features/chat/utils/conversationDirectoryTitle';
 import { findRewindContext } from '@/features/chat/utils/rewind';
@@ -41,7 +40,6 @@ export class MessageActions {
   readonly #pendingLiveMessages = new Map<string, HTMLElement>();
 
   constructor(
-    private readonly plugin: Pick<ChatFeatureHost, 'settings'>,
     private readonly messagesEl: HTMLElement,
     private readonly getCapabilities: () => ProviderCapabilities,
     private readonly callbacks: MessageActionCallbacks,
@@ -119,13 +117,7 @@ export class MessageActions {
 
   appendTimestamp(msgEl: HTMLElement, timestampMs: number | undefined): void {
     if (timestampMs === undefined) return;
-    msgEl.setAttribute('data-message-timestamp', String(timestampMs));
     const toolbar = this.#getOrCreateToolbar(msgEl);
-    toolbar.querySelector<HTMLElement>('.claudian-message-timestamp')?.remove();
-    if (this.plugin.settings?.showMessageTimestamps !== true) {
-      return;
-    }
-
     const timestampEl = toolbar.createDiv({ cls: 'claudian-message-timestamp' });
     const timestamp = new Date(timestampMs);
     const label = timestamp.toLocaleTimeString(undefined, {
@@ -135,12 +127,6 @@ export class MessageActions {
     });
     timestampEl.setText(label);
     timestampEl.setAttribute('aria-label', timestamp.toLocaleString(undefined, { hourCycle: 'h23' }));
-  }
-
-  refreshTimestamps(): void {
-    for (const msgEl of this.messagesEl.querySelectorAll<HTMLElement>('[data-message-timestamp]')) {
-      this.appendTimestamp(msgEl, Number(msgEl.getAttribute('data-message-timestamp')));
-    }
   }
 
   applyTocTitle(msgEl: HTMLElement, text: string): void {
