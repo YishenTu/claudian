@@ -543,6 +543,30 @@ function buildCitationResults(value: unknown): WebSearchResultItem[] | undefined
   return urls.length > 0 ? urls.map(url => ({ title: url, url })) : undefined;
 }
 
+/**
+ * Native structured answers (`picked` labels plus the `typed` "Other" text). The message reports a
+ * typed answer only as "Other" with trailing notes, so it is the fallback for results without them.
+ */
+function readStructuredQuestionAnswers(value: unknown): AskUserAnswers | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const answers: AskUserAnswers = {};
+  for (const entry of value) {
+    if (!isRecord(entry) || typeof entry.question !== 'string' || !Array.isArray(entry.picked)) continue;
+    const values = [
+      ...entry.picked.filter((label): label is string => typeof label === 'string' && label !== ''),
+      ...(typeof entry.typed === 'string' && entry.typed ? [entry.typed] : []),
+    ];
+    if (values.length === 0) continue;
+    Object.defineProperty(answers, entry.question, {
+      value: entry.multiSelect === true ? values : values.join(', '),
+      enumerable: true,
+      writable: true,
+      configurable: true,
+    });
+  }
+  return Object.keys(answers).length > 0 ? answers : undefined;
+}
+
 function normalizeGrokQuestionAnswers(
   rawName: string,
   input: Record<string, unknown>,
@@ -556,6 +580,8 @@ function normalizeGrokQuestionAnswers(
     : isRecord(rawOutput.userAnswered)
       ? rawOutput.userAnswered
       : null;
+  const structured = readStructuredQuestionAnswers(userAnswered?.answers);
+  if (structured) return structured;
   const message = userAnswered && typeof userAnswered.message === 'string'
     ? userAnswered.message.trim()
     : '';

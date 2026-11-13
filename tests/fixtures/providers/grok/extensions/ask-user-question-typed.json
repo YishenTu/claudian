@@ -1,0 +1,99 @@
+{
+  "grokVersion": "1.0.77",
+  "request": {
+    "jsonrpc": "2.0",
+    "id": "<request-id>",
+    "method": "_x.ai/ask_user_question",
+    "params": {
+      "sessionId": "<session-id>",
+      "toolCallId": "<tool-call-id>",
+      "questions": [
+        {
+          "question": "Favorite color?",
+          "options": [
+            {
+              "label": "Red",
+              "description": "Choose Red"
+            },
+            {
+              "label": "Blue",
+              "description": "Choose Blue"
+            }
+          ],
+          "multiSelect": null
+        },
+        {
+          "question": "Pets?",
+          "options": [
+            {
+              "label": "Cats",
+              "description": "Choose Cats"
+            },
+            {
+              "label": "Dogs",
+              "description": "Choose Dogs"
+            }
+          ],
+          "multiSelect": true
+        }
+      ],
+      "mode": "default"
+    }
+  },
+  "acceptedResponse": {
+    "outcome": "accepted",
+    "answers": {
+      "Favorite color?": [
+        "Other"
+      ],
+      "Pets?": [
+        "Cats"
+      ]
+    },
+    "annotations": {
+      "Favorite color?": {
+        "notes": "Purple dragon (typed)"
+      },
+      "Pets?": {
+        "notes": "Hamsters (typed)"
+      }
+    }
+  },
+  "rawOutput": {
+    "type": "AskUserQuestion",
+    "UserAnswered": {
+      "message": "User has answered your questions: \"Favorite color?\"=\"Other\" user notes: Purple dragon (typed), \"Pets?\"=\"Cats\" user notes: Hamsters (typed). You can now continue with the user's answers in mind.",
+      "answers": [
+        {
+          "question": "Favorite color?",
+          "options": [
+            "Red",
+            "Blue"
+          ],
+          "descriptions": [
+            "Choose Red",
+            "Choose Blue"
+          ],
+          "picked": [],
+          "typed": "Purple dragon (typed)"
+        },
+        {
+          "question": "Pets?",
+          "options": [
+            "Cats",
+            "Dogs"
+          ],
+          "descriptions": [
+            "Choose Cats",
+            "Choose Dogs"
+          ],
+          "multiSelect": true,
+          "picked": [
+            "Cats"
+          ],
+          "typed": "Hamsters (typed)"
+        }
+      ]
+    }
+  }
+}

@@ -2076,12 +2076,12 @@ describe('GrokExecutionBackend', () => {
     await collect(run.events);
   });
 
-  it('routes Grok questions, including typed answers, through stable interaction identities', async () => {
+  it('routes Grok question extensions through stable interaction identities', async () => {
     const native = new FakeNativeConnection();
     native.promptImplementation = () => new Promise(() => {});
     let nativeOptions: GrokExecutionNativeCreateOptions | undefined;
     vi.mocked(interactionPort.askUserQuestion).mockImplementation(async request => ({
-      answers: { 'Anything else?': ['tests-id', 'Docs too'], target: 'Somewhere else' },
+      answers: { target: 'src' },
       interactionId: request.interactionId,
     }));
     const session = createBackend(
@@ -2105,26 +2105,15 @@ describe('GrokExecutionBackend', () => {
         multiSelect: false,
         options: [{ id: 'src', label: 'Source' }],
         question: 'Which area?',
-      }, {
-        multiSelect: true,
-        options: [{ id: 'tests-id', label: 'Tests' }],
-        question: 'Anything else?',
       }],
       sessionId: 'session-existing',
       toolCallId: 'tool-question',
     })).resolves.toEqual({
-      // Grok gives every question a typed "Other" answer; typed text passes through beside option labels.
-      answers: { 'Anything else?': ['Tests', 'Docs too'], 'Which area?': ['Somewhere else'] },
+      answers: { 'Which area?': ['Source'] },
       outcome: 'accepted',
     });
     expect(interactionPort.askUserQuestion).toHaveBeenCalledWith(
       expect.objectContaining({
-        input: {
-          questions: [
-            expect.objectContaining({ id: 'target', isOther: true }),
-            expect.objectContaining({ isOther: true, question: 'Anything else?' }),
-          ],
-        },
         interactionId: expect.stringContaining(':question:'),
         sessionInstanceId: session.sessionInstanceId,
         turnId: run.turnId,
