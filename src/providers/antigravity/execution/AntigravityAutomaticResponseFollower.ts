@@ -55,7 +55,7 @@ export class AntigravityAutomaticResponseFollower {
    * only those created from this request on can still report.
    */
   #processFirstRequest: number | undefined;
-  /** Counts ended processes, so a read that began under an earlier process does not set the current one's request. */
+  /** Counts ended processes, so a read that began under an earlier process affects only the boundary it recorded. */
   #processGeneration = 0;
   /** A settled prompt whose boundary the next scan records. */
   #unrecordedTurn = false;
@@ -171,7 +171,8 @@ export class AntigravityAutomaticResponseFollower {
       }
       if (boundary && generation === this.#processGeneration) this.#processFirstRequest ??= boundary.userInput;
     }
-    if (this.#phase.kind !== 'following') return;
+    // Following belongs to the current process; its own rescan follows a read begun under an earlier one.
+    if (generation !== this.#processGeneration || this.#phase.kind !== 'following') return;
     let unfinished = false;
     for (const response of readAntigravityAutomaticResponses(transcript, this.options.sessionId)) {
       if (!this.#isUnstreamed(response) || this.#published.has(response.message.id)) continue;

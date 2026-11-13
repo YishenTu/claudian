@@ -1104,6 +1104,9 @@ describe('AntigravityExecutionSession', () => {
     peer.finishPrompt();
     await collect(first.events);
     expect(session.blocksIdleRelease?.()).toBe(true);
+    // The read the first turn's end started returns only after the replacement process's turn has ended.
+    const read = holdTranscriptRead('session-new');
+    await read.reading;
 
     // Entering YOLO replaces agy's process, and sub-1 with it: it never reports.
     const second = session.execute(request('Delegate again', { permissionMode: 'yolo' }));
@@ -1120,6 +1123,9 @@ describe('AntigravityExecutionSession', () => {
     await writeTranscript('session-new', again);
     replacement.finishPrompt();
     await collect(second.events);
+    const reread = read.nextReadDone();
+    read.release();
+    await reread;
 
     const background = nextBackgroundTurn(session);
     await writeTranscript('session-new', [
