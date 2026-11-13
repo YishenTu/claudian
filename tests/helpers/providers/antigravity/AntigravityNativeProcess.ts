@@ -36,13 +36,25 @@ export function antigravitySessionModels(): ACPSessionModelState {
   return structuredClone(sessionModels);
 }
 
-export type CapturedAntigravityAgent = { readonly kind: 'default' } | {
+export type CapturedAntigravityAgent = ({ readonly kind: 'default' } | {
   readonly kind: 'custom';
   readonly body: string;
   readonly frontmatter: { name: string; description: string; mainAgent: boolean; subagent: boolean; excludeDefaultComponents: boolean; tools: string[] };
+}) & {
+  /** A `session/new` append is stored with the session; later resume appends add to it rather than replace it. */
+  readonly creationAppend?: string;
 };
 
+/** agy 1.5.7 reads `_meta.antigravity.systemPrompt.append`; any other shape is logged and ignored. */
+function readSystemPromptAppend(meta: unknown): string | undefined {
+  const append = (meta as { antigravity?: { systemPrompt?: { append?: unknown } } } | undefined)
+    ?.antigravity?.systemPrompt?.append;
+  return typeof append === 'string' ? append : undefined;
+}
+
 interface HeldPrompt {
+  /** System-prompt appends in effect at receipt: the stored creation append, then the latest resume append. */
+  readonly appendsAtReceipt: readonly string[];
   /** Snapshot at receipt, before any subsequent resume can install MCP servers. */
   readonly mcpServersAtReceipt: readonly ACPMCPServer[];
   readonly request: ACPPromptRequest;
@@ -67,6 +79,8 @@ export class AntigravityNativeProcess {
   /** Session ids `session/resume` can read; others fail as agy reports a missing session. */
   readonly knownSessions = new Set<string>(['session-existing']);
   readonly readyMCPServers = new Map<string, ACPMCPServer[]>();
+  /** Resume appends live in this process only and each resume append replaces the previous one. */
+  readonly resumeAppends = new Map<string, string>();
   resumeGate: (request: ACPResumeSessionRequest) => Promise<void> | void = () => {};
   /** Runs before agy answers session/new; tests hold it to interleave. */
   newSessionGate: (request: ACPNewSessionRequest) => Promise<void> | void = () => {};
@@ -93,6 +107,7 @@ export class AntigravityNativeProcess {
           this.initializeRequests.push(params as unknown as ACPInitializeRequest);
           return {
             agentCapabilities: {
+              _meta: { antigravity: { systemPrompt: { append: true } } },
               loadSession: true,
               promptCapabilities: { embeddedContext: true, image: true },
               sessionCapabilities: { close: {}, list: {}, resume: {} },
@@ -120,7 +135,10 @@ export class AntigravityNativeProcess {
               captured = { kind: 'custom', body: match[2], frontmatter: parse(match[1]) };
             }
           }
-          this.agents.set(sessionId, captured);
+          const creationAppend = readSystemPromptAppend(params._meta);
+          this.agents.set(sessionId, creationAppend === undefined ? captured : { ...captured, creationAppend });
+          // Verified on agy 1.5.7: only custom agents need a resume before ACP MCP servers become usable.
+          if (captured.kind === 'default') this.readyMCPServers.set(sessionId, (params as unknown as ACPNewSessionRequest).mcpServers);
           if (this.availableCommands.length > 0) {
             const update = { availableCommands: this.availableCommands, sessionUpdate: 'available_commands_update' };
             setImmediate(() => this.emit(update, sessionId));
@@ -135,6 +153,11 @@ export class AntigravityNativeProcess {
           }
           await this.resumeGate(request);
           this.readyMCPServers.set(request.sessionId, request.mcpServers);
+          const append = readSystemPromptAppend(request._meta);
+          if (append !== undefined) this.resumeAppends.set(request.sessionId, append);
+          else if (this.resumeAppends.has(request.sessionId)) {
+            throw new Error('Unmodeled: a resume without an append after a resume append in the same process.');
+          }
           if (this.availableCommands.length > 0) {
             this.emit({ availableCommands: this.availableCommands, sessionUpdate: 'available_commands_update' }, request.sessionId);
           }
@@ -179,7 +202,10 @@ export class AntigravityNativeProcess {
           return new Promise<ACPPromptResponse>(resolve => {
             const request = params as unknown as ACPPromptRequest;
             const previous = this.prompts.at(-1);
+            const creationAppend = this.agents.get(request.sessionId)?.creationAppend;
+            const resumeAppend = this.resumeAppends.get(request.sessionId);
             const held: HeldPrompt = {
+              appendsAtReceipt: [creationAppend, resumeAppend].filter(value => value !== undefined),
               mcpServersAtReceipt: structuredClone(this.readyMCPServers.get(request.sessionId) ?? []),
               request,
               resolve: response => {
@@ -219,7 +245,7 @@ export class AntigravityNativeProcess {
     this.child = this.peer.child;
   }
 
-  /** Native tools are frozen at creation, while MCP becomes available only after resume. */
+  /** Native tools are frozen at creation, while a custom agent's MCP becomes available only after resume. */
   async readContextFile(sessionId: string, file: string): Promise<string> {
     const agent = this.agents.get(sessionId);
     if (agent?.kind !== 'custom' || !agent.frontmatter.tools.includes('read_file')) throw new Error('read_file unavailable');
@@ -231,11 +257,6 @@ export class AntigravityNativeProcess {
     const server = this.readyMCPServers.get(sessionId)?.find(server => server.name === 'claudian_sessions');
     if (!server) throw new Error('MCP unavailable before resume');
     return this.#requestMCP(server, 'tools/call', { name, arguments: args });
-  }
-
-  /** A resume gate can wait for real tool discovery before marking its servers ready. */
-  async discoverMCPTools(servers: readonly ACPMCPServer[]): Promise<void> {
-    await Promise.all(servers.map(server => this.#requestMCP(server, 'tools/list', {})));
   }
 
   async #requestMCP(server: ACPMCPServer, method: string, params: Record<string, unknown>): Promise<unknown> {

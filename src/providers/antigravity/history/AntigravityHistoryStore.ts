@@ -59,8 +59,28 @@ const SYSTEM_REPORT_PATTERN = /<SYSTEM_MESSAGE>\n\[Message\][^\n]*?\bsender=(\S+
 const BACKGROUND_INSTRUCTIONS_PATTERN = /\s*YOU MUST TAKE ONE OF THE FOLLOWING TWO ACTIONS:[\s\S]*$/;
 const QUESTION_ANSWER_PATTERN = /^A(\d+): (.*)$/;
 
-/** Reads the first existing transcript; a missing or unreadable store yields no messages. */
-export async function loadAntigravityHistory(storeRoot: string, sessionId: string): Promise<ChatMessage[]> {
+/** A session's transcript steps, read from the first transcript file that exists. */
+export interface AntigravityTranscript {
+  /** Only the short transcript string-encodes tool arguments. */
+  readonly argumentsEncoded: boolean;
+  readonly steps: readonly TranscriptStep[];
+}
+
+/** agy's own response to a task report, which it runs without a client prompt and never streams. */
+export interface AntigravityAutomaticResponse {
+  readonly message: ChatMessage;
+  /** Step index of the user request it follows; undefined when no request precedes it. */
+  readonly afterUserInput: number | undefined;
+  /** When the step that started it was recorded (second precision). */
+  readonly startedAt: number;
+  /** False while it is the transcript's last response and has not ended. */
+  readonly complete: boolean;
+}
+
+const CREATED_SUBAGENT_PATTERN = /Created the following subagent:[\s\S]*?"conversationId":\s*"([^"]+)"/;
+
+/** Reads the first existing transcript; a missing store yields null. */
+export async function readAntigravityTranscript(storeRoot: string, sessionId: string): Promise<AntigravityTranscript | null> {
   for (const [index, transcriptPath] of resolveAntigravityTranscriptPaths(storeRoot, sessionId).entries()) {
     try {
       await fs.access(transcriptPath);
@@ -76,12 +96,59 @@ export async function loadAntigravityHistory(storeRoot: string, sessionId: strin
         // A partially written last line is skipped; the next read sees it complete.
       }
     });
-    // Only the short transcript string-encodes tool arguments.
-    const messages = parseAntigravityTranscript(steps, sessionId, index > 0);
-    await attachUploadedImages(messages, steps, storeRoot, sessionId);
-    return messages;
+    return { argumentsEncoded: index > 0, steps };
   }
-  return [];
+  return null;
+}
+
+/** Reads the first existing transcript; a missing or unreadable store yields no messages. */
+export async function loadAntigravityHistory(storeRoot: string, sessionId: string): Promise<ChatMessage[]> {
+  const transcript = await readAntigravityTranscript(storeRoot, sessionId);
+  if (!transcript) return [];
+  const messages = parseAntigravityTranscript(transcript.steps, sessionId, transcript.argumentsEncoded);
+  await attachUploadedImages(messages, transcript.steps, storeRoot, sessionId);
+  return messages;
+}
+
+/** Step index of the transcript's latest user request. */
+export function readAntigravityLatestUserInput(transcript: AntigravityTranscript): number | undefined {
+  for (let index = transcript.steps.length - 1; index >= 0; index -= 1) {
+    if (transcript.steps[index].type === 'USER_INPUT') return transcript.steps[index].step_index;
+  }
+  return undefined;
+}
+
+/** Whether a subagent the conversation created has not reported back yet (its id is the report's sender). */
+export function hasAntigravityOutstandingSubagents(transcript: AntigravityTranscript): boolean {
+  const outstanding = new Set<string>();
+  for (const step of transcript.steps) {
+    const created = step.type === 'GENERIC' ? CREATED_SUBAGENT_PATTERN.exec(step.content ?? '') : null;
+    if (created) outstanding.add(created[1]);
+    const report = step.type === 'SYSTEM_MESSAGE' ? SYSTEM_REPORT_PATTERN.exec(step.content ?? '') : null;
+    if (report) outstanding.delete(report[1]);
+  }
+  return outstanding.size > 0;
+}
+
+/** The responses agy started on its own, in transcript order, built exactly as history replays them. */
+export function readAntigravityAutomaticResponses(
+  transcript: AntigravityTranscript,
+  sessionId: string,
+): AntigravityAutomaticResponse[] {
+  const { steps } = transcript;
+  const starts = new Map<string, { afterUserInput: number | undefined; startedAt: number }>();
+  let afterUserInput: number | undefined;
+  for (const [index, step] of steps.entries()) {
+    if (step.type === 'USER_INPUT') afterUserInput = step.step_index;
+    starts.set(`${sessionId}:${String(step.step_index ?? index)}:assistant`, { afterUserInput, startedAt: parseTimestamp(step.created_at) });
+  }
+  const messages = parseAntigravityTranscript(steps, sessionId, transcript.argumentsEncoded);
+  const last = steps.at(-1);
+  const ended = last?.type === 'CHECKPOINT' ? last.status === 'DONE' : last?.type === 'PLANNER_RESPONSE' && !last.tool_calls?.length;
+  return messages.flatMap((message, index) => {
+    const start = message.isAutomaticResponse ? starts.get(message.id) : undefined;
+    return start ? [{ ...start, complete: index < messages.length - 1 || ended, message }] : [];
+  });
 }
 
 export async function readAntigravityHistoryRevision(storeRoot: string, sessionId: string): Promise<string | null> {

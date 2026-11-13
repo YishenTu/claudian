@@ -66,13 +66,13 @@ import {
   resolveAntigravityNativeMode,
   shouldAutoApproveAntigravityPermission,
 } from '../permissionModes';
-import {
-  ANTIGRAVITY_INLINE_EDIT_TOOLS,
-  ANTIGRAVITY_MAIN_TOOLS,
-  prepareAntigravityAgentFile,
-} from '../runtime/AntigravityAgentFiles';
+import { ANTIGRAVITY_INLINE_EDIT_TOOLS, prepareAntigravityAgentFile } from '../runtime/AntigravityAgentFiles';
 import { resolveAntigravityLaunchSpec } from '../runtime/AntigravityExecutionContext';
 import { parseAntigravityProviderState } from '../types';
+import {
+  AntigravityAutomaticResponseFollower,
+  buildAntigravityAutomaticResponseEvents,
+} from './AntigravityAutomaticResponseFollower';
 import { ANTIGRAVITY_ACP_ARGS, AntigravityNativeConnection } from './AntigravityNativeConnection';
 import { AntigravityQuestionRouter } from './AntigravityQuestionRouter';
 
@@ -112,13 +112,25 @@ interface ActiveExecution {
   readonly turn: ACPRequestedTurn;
 }
 
+/** The native session this process has resumed, with the system-prompt append that resume delivered. */
+interface LoadedNativeSession {
+  readonly sessionId: string;
+  /** Main-agent prompt in effect; undefined for auxiliary sessions, whose prompt is their custom agent body. */
+  readonly systemPromptAppend: string | undefined;
+}
+
+/** Which agent a process must run to create a session; undefined `agentName` is agy's default agent. */
+interface NativeCreationAgent {
+  readonly agentName: string | undefined;
+}
+
 interface NativeOwner {
   /** Latest filtered `available_commands_update` per native session; it can precede session capture. */
   readonly commandsBySession: Map<string, SlashCommand[]>;
   configOptions: ACPSessionConfigOption[];
   initialized: boolean;
-  loadedSessionId: string | null;
-  /** Agent selected by this process, checked only when creating a native session. */
+  loaded: LoadedNativeSession | null;
+  /** Agent selected by this process (`--agent`), checked only when creating a native session. */
   readonly creationAgentName?: string;
   readonly native: AntigravityNativeConnection;
   unsubscribe: () => void;
@@ -136,6 +148,8 @@ export class AntigravityExecutionSession implements ProviderExecutionSession, St
   readonly sessionInstanceId = randomUUID();
 
   private active: ActiveExecution | null = null;
+  /** Main-agent sessions only: publishes replies agy makes to subagent reports after a turn ended. */
+  private automaticResponses: AntigravityAutomaticResponseFollower | null = null;
   private cancellationFlight: Promise<void> | null = null;
   private disposalFlight: Promise<void> | null = null;
   private disposed = false;
@@ -210,6 +224,7 @@ export class AntigravityExecutionSession implements ProviderExecutionSession, St
       }),
     };
     this.active = active;
+    this.automaticResponses?.turnStarted();
     this.#updateSnapshot('executing');
     this.#emitCurrentSnapshot();
     run.attachAbortSignal(request.signal);
@@ -249,6 +264,7 @@ export class AntigravityExecutionSession implements ProviderExecutionSession, St
         if (this.cancellationFlight) await this.cancellationFlight;
         await this.nativeSlot.shutdown();
       } finally {
+        await this.automaticResponses?.dispose();
         const route = await this.sessionToolRoute?.catch(() => null);
         route?.dispose();
         this.interactionController.dispose();
@@ -272,7 +288,7 @@ export class AntigravityExecutionSession implements ProviderExecutionSession, St
     const sessionId = this.providerSessionId;
     if (
       !active || this.#isCancellationRequested(active) || request.signal.aborted
-      || active.latestPrompt === 0 || !owner?.initialized || owner.loadedSessionId !== sessionId || !sessionId
+      || active.latestPrompt === 0 || !owner?.initialized || owner.loaded?.sessionId !== sessionId || !sessionId
       // A settled latest prompt has ended the native turn; the run is only finishing its usage read.
       || active.prompts.get(active.latestPrompt)!.settled
     ) return false;
@@ -394,11 +410,12 @@ export class AntigravityExecutionSession implements ProviderExecutionSession, St
     }
   }
 
-  async #ensureNative(active: ActiveExecution, creationAgentName?: string): Promise<NativeOwner> {
+  /** Without `creation`, any live process can resume an existing session; creation needs the matching agent. */
+  async #ensureNative(active: ActiveExecution, creation?: NativeCreationAgent): Promise<NativeOwner> {
     const started = await this.nativeSlot.ensure(
       owner => owner.initialized && owner.native.isAlive()
-        && (creationAgentName === undefined || owner.creationAgentName === creationAgentName),
-      () => this.#startNative(active, creationAgentName),
+        && (!creation || owner.creationAgentName === creation.agentName),
+      () => this.#startNative(active, creation?.agentName),
     );
     this.#throwIfCancellationRequested(active);
     return started;
@@ -421,7 +438,7 @@ export class AntigravityExecutionSession implements ProviderExecutionSession, St
       commandsBySession: new Map(),
       configOptions: [],
       initialized: false,
-      loadedSessionId: null,
+      loaded: null,
       creationAgentName,
       native,
       unsubscribe: () => {},
@@ -442,24 +459,26 @@ export class AntigravityExecutionSession implements ProviderExecutionSession, St
   }
 
   async #ensureSession(active: ActiveExecution): Promise<NativeOwner> {
+    const instructions = active.request.configuration.systemInstructions;
+    const prompt = active.request.toolPolicy.kind === 'passive'
+      ? `${instructions.instructions}\n\n${PASSIVE_TOOL_INSTRUCTION}` : instructions.instructions;
+    // Main chat runs on agy's default agent; its prompt is a resume-only append, which agy does not store and each
+    // resume replaces, so every resume delivers the current text. Auxiliary sessions keep tool-restricted custom agents.
+    const systemPromptAppend = instructions.kind === 'main-agent' ? prompt : undefined;
     let owner: NativeOwner;
     if (this.providerSessionId) {
       // The saved session owns its agent. Restoration must not require or inspect any agent file.
       owner = await this.#ensureNative(active);
-      if (owner.loadedSessionId === this.providerSessionId) return owner;
+      const loaded = owner.loaded;
+      if (loaded?.sessionId === this.providerSessionId && loaded.systemPromptAppend === systemPromptAppend) return owner;
+    } else if (instructions.kind === 'main-agent') {
+      owner = await this.#ensureNative(active, { agentName: undefined });
     } else {
-      const instructions = active.request.configuration.systemInstructions;
-      const main = instructions.kind === 'main-agent';
-      const name = main
-        ? instructions.projectId ? `claudian-project-${instructions.projectId}` : 'claudian-main'
-        : `claudian-${instructions.purpose}`;
-      const tools = main ? ANTIGRAVITY_MAIN_TOOLS
-        : instructions.purpose === 'inline-edit' ? ANTIGRAVITY_INLINE_EDIT_TOOLS : [];
-      const body = active.request.toolPolicy.kind === 'passive'
-        ? `${instructions.instructions}\n\n${PASSIVE_TOOL_INSTRUCTION}` : instructions.instructions;
-      await prepareAntigravityAgentFile(this.config.workingDirectory, name, body, tools);
+      const name = `claudian-${instructions.purpose}`;
+      const tools = instructions.purpose === 'inline-edit' ? ANTIGRAVITY_INLINE_EDIT_TOOLS : [];
+      await prepareAntigravityAgentFile(this.config.workingDirectory, name, prompt, tools);
       this.#throwIfCancellationRequested(active);
-      owner = await this.#ensureNative(active, name);
+      owner = await this.#ensureNative(active, { agentName: name });
     }
     const mcpServers = await this.#getMCPServers();
     this.#throwIfCancellationRequested(active);
@@ -473,18 +492,24 @@ export class AntigravityExecutionSession implements ProviderExecutionSession, St
       this.#emitCurrentSnapshot();
       this.#throwIfCancellationRequested(active);
     }
-    // New custom agents need a same-process resume to install ACP MCP servers before the first prompt.
-    // Never use session/load: agy accepts unknown ids there and fails on their next prompt.
+    // A new session is resumed in the same process before its first prompt: that resume delivers the main-agent
+    // append (a session/new append would be stored and could never be replaced) and installs a custom agent's
+    // MCP servers. Never use session/load: agy accepts unknown ids there and fails on their next prompt.
     let response;
     try {
-      response = await owner.native.resumeSession({ ...request, sessionId: this.providerSessionId! });
+      response = await owner.native.resumeSession({
+        ...request,
+        sessionId: this.providerSessionId!,
+        ...(systemPromptAppend === undefined ? {} : { _meta: { antigravity: { systemPrompt: { append: systemPromptAppend } } } }),
+      });
     } catch (error) {
       if (creating) throw new AntigravitySessionPreparationError(error);
       throw error;
     }
     this.#throwIfCancellationRequested(active);
     this.#captureSessionId(response.sessionId ?? this.providerSessionId!);
-    owner.loadedSessionId = this.providerSessionId!;
+    owner.loaded = { sessionId: this.providerSessionId!, systemPromptAppend };
+    if (systemPromptAppend !== undefined) this.#followAutomaticResponses(owner, this.providerSessionId!);
     this.#adoptConfigOptions(owner, response.configOptions, response.models);
     this.#updateSnapshot(this.active ? 'executing' : 'idle');
     this.#emitCurrentSnapshot();
@@ -630,6 +655,7 @@ export class AntigravityExecutionSession implements ProviderExecutionSession, St
         return;
       case 'tool_call':
       case 'tool_call_update': {
+        if (update.sessionUpdate === 'tool_call' && update.name === 'invoke_subagent') this.automaticResponses?.subagentLaunched();
         active.turn.handleUpdate(withAntigravityToolTitle(update));
         return;
       }
@@ -755,6 +781,39 @@ export class AntigravityExecutionSession implements ProviderExecutionSession, St
     active.run.finish(terminal);
     active.turn.dispose();
     if (this.active === active) this.active = null;
+    if (!this.disposed && this.automaticResponses?.sessionId === this.providerSessionId) this.automaticResponses?.turnEnded();
+  }
+
+  #followAutomaticResponses(owner: NativeOwner, sessionId: string): void {
+    if (this.automaticResponses?.sessionId === sessionId) return;
+    void this.automaticResponses?.dispose();
+    const storeRoot = resolveAntigravityStoreRoot(owner.native.launch.env, process.platform);
+    this.automaticResponses = storeRoot ? new AntigravityAutomaticResponseFollower({
+      publish: message => this.#publishAutomaticResponse(message),
+      sessionId,
+      storeRoot,
+    }) : null;
+    // The run that loaded the session is under way; its end starts following.
+    this.automaticResponses?.turnStarted();
+  }
+
+  /** agy produced the reply in one native step; it arrives as one settled background turn. */
+  #publishAutomaticResponse(message: ChatMessage): void {
+    const turnId = `antigravity-automatic-${message.id}`;
+    let sequence = 0;
+    const scope = () => ({ kind: 'background' as const, sequence: ++sequence, sessionInstanceId: this.sessionInstanceId, turnId });
+    const providerSessionId = this.providerSessionId;
+    this.state.notify({ providerSessionId, scope: scope(), type: 'background_turn_started' });
+    for (const event of buildAntigravityAutomaticResponseEvents(message)) {
+      this.state.notify({ ...event, scope: scope() });
+    }
+    this.state.notify({
+      nativeAssistantId: message.assistantMessageId,
+      providerSessionId,
+      reason: 'completed',
+      scope: scope(),
+      type: 'background_turn_completed',
+    });
   }
 
   #isCancellationRequested(active: ActiveExecution): boolean {

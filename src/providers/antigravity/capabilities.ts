@@ -11,6 +11,5 @@ export const ANTIGRAVITY_PROVIDER_CAPABILITIES: Readonly<ProviderCapabilities> =
   supportsProviderCommands: true,
   supportsImageAttachments: true,
   supportsTurnSteer: true,
-  supportsCompaction: false,
   reasoningControl: 'effort',
 });

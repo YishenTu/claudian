@@ -201,7 +201,7 @@ it('delivers to a cold headless recipient with its current project and caller pr
   await waitFor(() => expect(h.backend.sessions[0]?.requests).toHaveLength(1));
   expect(decodeSessionMessage(requestText(h.backend.latest.requests[0]))).toEqual({ from: 'Research', sessionId: 'sender', text: 'Review this' });
   expect(h.backend.latest.requests[0].configuration.systemInstructions).toEqual({
-    kind: 'main-agent', projectId: record.id,
+    kind: 'main-agent',
     instructions: buildSystemPrompt({ vaultPath: '/vault', sessionInstructions: renderProjectMemberInstructions(record) }),
   });
   expect(h.backend.latest.config.sessionTools).toBeDefined();

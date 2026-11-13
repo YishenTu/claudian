@@ -4,10 +4,10 @@ import type { SlashCommand } from '@/core/types';
 
 /**
  * Built-in agy commands that cannot work over ACP: `plan` enters plan mode (Claudian has none);
- * `compact` is broken for custom agents since agy 1.5.2 (upstream #1472); the others delegate
- * to subagents or run later in the background, and agy streams neither back.
+ * the others delegate to subagents or swarm workers or run later in the background, and agy
+ * streams neither back.
  */
-export const ANTIGRAVITY_HIDDEN_COMMANDS: ReadonlySet<string> = new Set(['boost', 'browser', 'compact', 'plan', 'schedule', 'teamwork']);
+export const ANTIGRAVITY_HIDDEN_COMMANDS: ReadonlySet<string> = new Set(['boost', 'browser', 'plan', 'schedule', 'swarm', 'teamwork']);
 
 export function filterAntigravityCommands(commands: readonly SlashCommand[]): SlashCommand[] {
   return commands.filter(command => !ANTIGRAVITY_HIDDEN_COMMANDS.has(command.name.toLowerCase()));

@@ -16,11 +16,11 @@ describe('getBuiltInCommandsForDropdown - provider filtering', () => {
     expect(commands.map(c => c.name)).not.toContain('fast');
   });
 
-  it('omits compact from the Antigravity dropdown while retaining supported built-ins', () => {
+  it('offers compact in the Antigravity dropdown alongside its other supported built-ins', () => {
     const source = new SlashCommandSource({ providerId: 'antigravity' });
     try {
       const items = source.load({ atInputStart: true, end: 1, query: '', start: 0, trigger: '/' }, new AbortController().signal);
-      expect(items.map(item => item.label)).toEqual(['/new', '/sessions']);
+      expect(items.map(item => item.label)).toEqual(['/compact', '/new', '/sessions']);
     } finally {
       source.destroy();
     }
