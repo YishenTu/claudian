@@ -759,6 +759,10 @@
       "name": "Show tab titles by default",
       "desc": "New chat tabs show their conversation title instead of a number. Open tabs keep their display, and any tab can still switch."
     },
+    "chatFontScale": {
+      "name": "Chat font size",
+      "desc": "Scale chat text relative to the note font size. 100% matches notes."
+    },
     "autoTitle": {
       "name": "Auto-generate conversation titles",
       "desc": "Automatically generate conversation titles after the first user message is sent."

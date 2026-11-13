@@ -324,7 +324,7 @@
 }
 
 .claudian-message-content {
-  font-size: var(--font-text-size);
+  font-size: calc(16 * var(--claudian-font-px));
   line-height: 1.5;
   overflow-x: auto;
   user-select: text;

@@ -89,7 +89,7 @@ async function createHarness(options: HarnessOptions = {}) {
       { notifyConversationListChanged: () => surface.invalidate() },
       { notifyConversationListChanged: notifyOtherViews },
     ] as never },
-    zenMode: { reconcile: vi.fn() }, inactiveSessions: { request: vi.fn() },
+    zenMode: { reconcile: vi.fn() }, fontScale: { reconcile: vi.fn() }, inactiveSessions: { request: vi.fn() },
     hasLoadedAllSessionMetadata: () => true,
   });
   const sidebarEl = (options.doc ?? document).body.createDiv();

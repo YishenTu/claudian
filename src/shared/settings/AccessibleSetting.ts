@@ -31,6 +31,13 @@ export class AccessibleSetting extends Setting {
     });
   }
 
+  override addSlider(callback: Parameters<Setting['addSlider']>[0]): this {
+    return super.addSlider(control => {
+      callback(control);
+      this.nameControl(control.sliderEl);
+    });
+  }
+
   override addToggle(callback: Parameters<Setting['addToggle']>[0]): this {
     return super.addToggle(control => {
       const input = exposeToggleState(control);

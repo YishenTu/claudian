@@ -759,6 +759,10 @@
       "name": "Afficher les titres des onglets par défaut",
       "desc": "Les nouveaux onglets de chat affichent le titre de la conversation au lieu d'un numéro. Les onglets ouverts conservent leur affichage, et chaque onglet peut toujours basculer."
     },
+    "chatFontScale": {
+      "name": "Taille de police du chat",
+      "desc": "Ajuste le texte du chat par rapport à la taille de police des notes. 100 % correspond aux notes."
+    },
     "autoTitle": {
       "name": "Générer automatiquement les titres de conversation",
       "desc": "Génère automatiquement les titres de conversation après le premier message de l'utilisateur."

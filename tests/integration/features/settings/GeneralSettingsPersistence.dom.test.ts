@@ -17,6 +17,7 @@ afterEach(() => document.body.replaceChildren());
 
 const cases = [
   ['chatViewPlacement', 'settings.chatViewPlacement.name', 'right-sidebar', 'main-tab'],
+  ['chatFontScale', 'settings.chatFontScale.name', 100, 90],
   ['enableZenMode', 'settings.enableZenMode.name', true, false],
   ['enableDualPane', 'settings.enableDualPane.name', true, false],
   ['dualPaneSide', 'settings.dualPaneSide.name', 'right', 'left'],
@@ -45,10 +46,10 @@ describe.each(['persist-failure', 'publish-failure', 'success'] as const)('%s', 
     const tab = new ClaudianSettingTab(fixture.host.app, createObsidianPlugin(fixture.host.app), fixture.host);
     const dispose = mountSettingTab(tab, container);
     onTestFinished(dispose);
-    const role = typeof initial === 'boolean' ? 'switch' : 'combobox';
+    const role = typeof initial === 'boolean' ? 'switch' : typeof initial === 'number' ? 'slider' : 'combobox';
     const input = within(container).getByRole<HTMLInputElement | HTMLSelectElement>(role, { name: t(label) });
     if (typeof next === 'boolean') fireEvent.click(input);
-    else fireEvent.change(input, { target: { value: next } });
+    else fireEvent.change(input, { target: { value: String(next) } });
     const error = await controlChangeSettled(input).then(() => '', (failure: Error) => failure.message);
     expect(error).toBe(phase === 'persist-failure' ? 'Storage unavailable'
       : phase === 'publish-failure' ? 'Settings were persisted, but post-commit publication failed.' : '');
@@ -57,7 +58,9 @@ describe.each(['persist-failure', 'publish-failure', 'success'] as const)('%s', 
     expect(persist).toHaveBeenCalledTimes(1);
     expect((await fixture.settingsStorage.load())[key]).toBe(committed);
     const current = within(container).getByRole<HTMLInputElement | HTMLSelectElement>(role, { name: t(label) });
-    expect(typeof initial === 'boolean' ? (current as HTMLInputElement).checked : current.value).toBe(committed);
+    expect(typeof initial === 'boolean' ? (current as HTMLInputElement).checked : current.value).toBe(
+      typeof committed === 'number' ? String(committed) : committed,
+    );
     expect(await axe(current.closest<HTMLElement>('.setting-item')!)).toHaveNoViolations();
   });
 });
