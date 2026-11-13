@@ -48,7 +48,6 @@ export type ProviderSystemInstructions =
   | {
       /** The default Main Agent prompt, built by the shared core prompt builder. */
       readonly kind: 'main-agent';
-      readonly projectId?: string;
       readonly instructions: string;
     }
   | {

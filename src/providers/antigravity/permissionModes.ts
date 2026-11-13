@@ -10,8 +10,8 @@ export const ANTIGRAVITY_PERMISSION_MODE_POLICY: ProviderPermissionModePolicy = 
 
 /**
  * agy's native `mode` option for a Claudian permission mode. Native `plan` is never selected.
- * YOLO runs native `default`: `--dangerously-skip-permissions` would override every mode for the
- * process lifetime, so Claudian approves YOLO prompts itself and modes switch without restarts.
+ * YOLO runs native `default` in a main-chat process launched with `--dangerously-skip-permissions`,
+ * which overrides every mode until the process restarts; entering or leaving YOLO replaces the process.
  */
 export function resolveAntigravityNativeMode(permissionMode: string | undefined): 'accept-edits' | 'auto' | 'default' {
   if (permissionMode === 'auto') return 'auto';

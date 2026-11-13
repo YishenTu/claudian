@@ -1,12 +1,14 @@
 import { spawnSync } from 'node:child_process';
+import * as fsSync from 'node:fs';
 import * as fs from 'node:fs/promises';
-import { mkdir, readdir, readFile, stat, writeFile } from 'node:fs/promises';
+import { mkdir, readdir, readFile, rename, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { Readable } from 'node:stream';
 
 import { deferred } from '@test/helpers/ChatInputHarness';
 import { createProviderHostFixture } from '@test/helpers/providerRuntimeHost';
 import { AntigravityNativeProcess,type CapturedAntigravityAgent } from '@test/helpers/providers/antigravity/AntigravityNativeProcess';
-import { testDate } from '@test/helpers/testClock';
+import { testDate, testTime } from '@test/helpers/testClock';
 import spawn from 'cross-spawn';
 
 import { InlineEditService } from '@/core/auxiliary/InlineEditService';
@@ -18,6 +20,7 @@ import type {
   ProviderInteractionPort,
   ProviderQuestionInteractionRequest,
   ProviderSessionConfig,
+  ProviderSessionEvent,
   SteerableExecutionSession,
 } from '@/core/execution';
 import { ProviderExecutionLifecycleRegistry } from '@/core/execution';
@@ -30,6 +33,7 @@ import { updateAntigravityProviderSettings } from '@/providers/antigravity/setti
 vi.mock('cross-spawn', () => ({ default: vi.fn() }));
 // Forward the real filesystem, permitting faults only at its external I/O boundary.
 vi.mock('node:fs/promises', async importOriginal => ({ ...await importOriginal<typeof import('node:fs/promises')>() }));
+vi.mock('node:fs', async importOriginal => ({ ...await importOriginal<typeof import('node:fs')>() }));
 
 const sessions: ProviderExecutionSession[] = [];
 let spawned: AntigravityNativeProcess[] = [];
@@ -38,6 +42,7 @@ const agents = new Map<string, CapturedAntigravityAgent>();
 let spawnWaiters: Array<{ count: number; resolve: () => void }> = [];
 
 afterEach(async () => {
+  vi.useRealTimers();
   await Promise.all(sessions.splice(0).map(session => session.dispose()));
   spawned = [];
   agents.clear();
@@ -57,11 +62,78 @@ async function createHost(overrides: Partial<ProviderHost> = {}): Promise<Provid
   return host;
 }
 
-/** Writes agy's full transcript for a native session under the test HOME. */
+/** Writes agy's full transcript for a native session under the test HOME, atomically for watchers. */
 async function writeTranscript(sessionId: string, steps: readonly Record<string, unknown>[]): Promise<void> {
   const [transcriptPath] = resolveAntigravityTranscriptPaths(path.join(vault, '.gemini', 'antigravity-cli'), sessionId);
   await mkdir(path.dirname(transcriptPath), { recursive: true });
-  await writeFile(transcriptPath, steps.map(step => JSON.stringify(step)).join('\n') + '\n');
+  const temporary = `${transcriptPath}.tmp`;
+  await writeFile(temporary, steps.map(step => JSON.stringify(step)).join('\n') + '\n');
+  await rename(temporary, transcriptPath);
+}
+
+/** agy's transcript steps for a delegation: the subagent's id is the sender of its later report. */
+const transcriptSteps = {
+  user: (index: number, text: string, at: string) => ({ content: `<USER_REQUEST>\n${text}\n</USER_REQUEST>`, created_at: at, source: 'USER_EXPLICIT', status: 'DONE', step_index: index, type: 'USER_INPUT' }),
+  delegate: (index: number, at: string) => ({ created_at: at, status: 'DONE', step_index: index, tool_calls: [{ args: { Prompt: 'What is 17 * 23?', TypeName: 'self' }, name: 'invoke_subagent' }], type: 'PLANNER_RESPONSE' }),
+  created: (index: number, subagent: string, at: string) => ({ content: `Created At: ${at}\nCreated the following subagent:\n{\n  "conversationId":  "${subagent}"\n}`, created_at: at, status: 'DONE', step_index: index, type: 'GENERIC' }),
+  reply: (index: number, text: string, at: string) => ({ content: text, created_at: at, input_tokens: 100, status: 'DONE', step_index: index, type: 'PLANNER_RESPONSE' }),
+  report: (index: number, subagent: string, text: string, at: string) => ({
+    content: `The following is a <SYSTEM_MESSAGE> not actually sent by the user.\n\n<SYSTEM_MESSAGE>\n[Message] timestamp=${at} sender=${subagent} priority=MESSAGE_PRIORITY_HIGH content=${text}\n</SYSTEM_MESSAGE>`,
+    created_at: at, status: 'DONE', step_index: index, type: 'SYSTEM_MESSAGE',
+  }),
+};
+
+/** The live update agy streams when the model delegates to a subagent. */
+function invokeSubagent(toolCallId: string) {
+  const rawInput = { Prompt: 'What is 17 * 23?', TypeName: 'self' };
+  return { kind: 'other', name: 'invoke_subagent', rawInput, sessionUpdate: 'tool_call', status: 'in_progress', title: 'Run invoke_subagent', toolCallId };
+}
+
+/**
+ * Holds the next read of a session's transcript after it has taken its snapshot, until released. `nextReadDone`
+ * resolves once the read that starts after it is called has delivered the whole file.
+ */
+function holdTranscriptRead(sessionId: string) {
+  const [transcriptPath] = resolveAntigravityTranscriptPaths(path.join(vault, '.gemini', 'antigravity-cli'), sessionId);
+  const actual = fsSync.createReadStream;
+  const reading = deferred<void>();
+  const release = deferred<void>();
+  let held = false;
+  let readWaiters: Array<() => void> = [];
+  vi.spyOn(fsSync, 'createReadStream').mockImplementation(((file: fsSync.PathLike, options?: Parameters<typeof actual>[1]) => {
+    if (file !== transcriptPath) return actual(file, options);
+    if (held) {
+      const waiters = readWaiters;
+      readWaiters = [];
+      return actual(file, options).once('close', () => waiters.forEach(resolve => resolve()));
+    }
+    held = true;
+    const stream = new Readable({ read() {} });
+    stream.push(fsSync.readFileSync(transcriptPath));
+    reading.resolve();
+    void release.promise.then(() => stream.push(null));
+    // The reader consumes only the Readable surface of a file stream.
+    return stream as fsSync.ReadStream;
+  }) as typeof fsSync.createReadStream);
+  return {
+    nextReadDone: () => new Promise<void>(resolve => { readWaiters.push(resolve); }),
+    reading: reading.promise,
+    release: () => release.resolve(),
+  };
+}
+
+/** Resolves with the events of the next background turn the session publishes. */
+function nextBackgroundTurn(session: ProviderExecutionSession): Promise<ProviderSessionEvent[]> {
+  const events: ProviderSessionEvent[] = [];
+  return new Promise(resolve => {
+    const unsubscribe = session.onEvent(event => {
+      if (event.scope.kind !== 'background') return;
+      events.push(event);
+      if (event.type !== 'background_turn_completed') return;
+      unsubscribe();
+      resolve(events);
+    });
+  });
 }
 
 function createInteractionPort() {
@@ -114,6 +186,19 @@ function request(
   };
 }
 
+function titleRequest(instructions = 'Title only.'): ProviderExecutionRequest {
+  return {
+    ...request(),
+    configuration: { ...request().configuration, systemInstructions: { kind: 'explicit', purpose: 'title', instructions } },
+    toolPolicy: { kind: 'passive' },
+  };
+}
+
+/** The ACP session `_meta` agy 1.5.7 reads as a system-prompt append. */
+function appendMeta(append: string) {
+  return { antigravity: { systemPrompt: { append } } };
+}
+
 async function collect(events: AsyncIterable<ProviderExecutionEvent>): Promise<ProviderExecutionEvent[]> {
   const collected: ProviderExecutionEvent[] = [];
   for await (const event of events) collected.push(event);
@@ -142,26 +227,25 @@ function permissionRequest(name: string, sessionId = 'session-new'): ACPRequestP
 }
 
 describe('AntigravityExecutionSession', () => {
-  it('holds the first prompt until resume makes the MCP route usable', async () => {
+  it('holds the first prompt until the immediate resume delivers the system prompt', async () => {
     const entered = deferred<void>();
     const release = deferred<void>();
     const list = vi.fn(async () => ({ sessions: [] }));
     const session = await createSession({ sessionTools: { list, read: vi.fn(), send: vi.fn() } }, peer => {
-      peer.resumeGate = async request => {
+      peer.resumeGate = async () => {
         entered.resolve();
         await release.promise;
-        // Real endpoint discovery keeps readiness pending until the peer finishes connecting.
-        await peer.discoverMCPTools(request.mcpServers);
       };
     });
-    const run = session.execute(request());
+    const run = session.execute(request('hello', { instructions: 'Be exact.' }));
     const peer = await firstPeer();
     await entered.promise;
     expect(session.getSnapshot()).toMatchObject({ providerSessionId: 'session-new', providerState: { nativeConversationContextEstablished: false } });
-    await expect(peer.callMCP('session-new', 'claudian_list_destinations', {})).rejects.toThrow('MCP unavailable');
     expect(peer.prompts).toHaveLength(0);
     release.resolve();
     await peer.waitForPrompts(1);
+    // The first turn already runs under the prompt; a creation append would be stored and could not be replaced.
+    expect(peer.prompts[0].appendsAtReceipt).toEqual(['Be exact.']);
     expect(peer.prompts[0].mcpServersAtReceipt).toEqual(peer.newRequests[0].mcpServers);
     expect(peer.resumeRequests[0].mcpServers).toEqual(peer.newRequests[0].mcpServers);
     await peer.callMCP('session-new', 'claudian_list_destinations', {});
@@ -246,7 +330,7 @@ describe('AntigravityExecutionSession', () => {
     ['near-match description', 'Managed by Claudian. Do not edit. (customized)', 'Personal instructions.'],
     ['body-only marker', 'Someone else', 'Managed by Claudian. Do not edit.'],
   ].map(([label, description, body]) => [label, [
-    '---', 'name: claudian-main', `description: ${description}`, 'mainAgent: true',
+    '---', 'name: claudian-title', `description: ${description}`, 'mainAgent: true',
     'subagent: false', 'excludeDefaultComponents: true', 'tools: [read_file]', '---', body,
   ].join('\n')]).concat([
     ['malformed', '---\ndescription: [broken\n---\nbody'],
@@ -254,10 +338,10 @@ describe('AntigravityExecutionSession', () => {
     const session = await createSession({}, peer => {
       void peer.waitForPrompts(1).then(() => peer.finishPrompt());
     });
-    const file = path.join(vault, '.agents/agents/claudian-main/agent.md');
+    const file = path.join(vault, '.agents/agents/claudian-title/agent.md');
     await mkdir(path.dirname(file), { recursive: true });
     await writeFile(file, contents);
-    const events = await collect(session.execute(request()).events);
+    const events = await collect(session.execute(titleRequest()).events);
     expect(events.at(-1)).toMatchObject({ type: 'execution_error', message: expect.stringContaining(file) });
     expect(await readFile(file, 'utf8')).toBe(contents);
     expect(spawned.flatMap(peer => peer.newRequests)).toEqual([]);
@@ -269,13 +353,13 @@ describe('AntigravityExecutionSession', () => {
       void peer.waitForPrompts(1).then(() => peer.finishPrompt());
     }, {
       getResolvedProviderCliPath: async () => {
-        await fs.unlink(path.join(vault, '.agents/agents/claudian-main/agent.md'));
+        await fs.unlink(path.join(vault, '.agents/agents/claudian-title/agent.md'));
         return 'agy';
       },
     });
-    const events = await collect(session.execute(request()).events);
+    const events = await collect(session.execute(titleRequest()).events);
     expect(events.at(-1)).toMatchObject({ type: 'turn_completed' });
-    expect(spawned[0].agentName).toBe('claudian-main');
+    expect(spawned[0].agentName).toBe('claudian-title');
     expect(agents.get('session-new')).toEqual({ kind: 'default' });
     expect(spawned[0].newRequests).toHaveLength(1);
     expect(spawned[0].prompts).toHaveLength(1);
@@ -284,18 +368,18 @@ describe('AntigravityExecutionSession', () => {
   it.each(['readFile', 'mkdir', 'writeFile', 'rename'] as const)('preserves owned content and removes its temporary file on %s failure', async operation => {
     const first = await createSession();
     const cwd = vault;
-    const run = first.execute(request());
+    const run = first.execute(titleRequest());
     const peer = await firstPeer();
     await peer.waitForPrompts(1);
     peer.finishPrompt();
     await collect(run.events);
-    const file = path.join(cwd, '.agents/agents/claudian-main/agent.md');
+    const file = path.join(cwd, '.agents/agents/claudian-title/agent.md');
     const original = await readFile(file, 'utf8');
     await writeFile(path.join(path.dirname(file), 'user-note.md'), 'Keep this too.');
     const next = await createSession({ workingDirectory: cwd });
     const error = Object.assign(new Error(`Injected ${operation} failure`), { code: 'EACCES' });
     const fault = vi.spyOn(fs, operation).mockRejectedValueOnce(error);
-    const events = await collect(next.execute(request('hello', { instructions: 'Changed prompt.' })).events);
+    const events = await collect(next.execute(titleRequest('Changed prompt.')).events);
     expect(events.at(-1)).toMatchObject({ type: 'execution_error', message: expect.stringContaining(file) });
     expect(fault).toHaveBeenCalled();
     fault.mockRestore();
@@ -304,79 +388,30 @@ describe('AntigravityExecutionSession', () => {
     expect(spawned.flatMap(peer => peer.newRequests)).toHaveLength(1);
   });
 
-  it.each([
-    ['project-a', 'project-b'], ['project-a', undefined], [undefined, 'project-a'],
-  ])('keeps the creation agent across project move %s → %s and a fresh process', async (from, to) => {
-    const session = await createSession();
-    const cwd = vault;
-    const turn = (projectId: string | undefined, instructions: string): ProviderExecutionRequest => ({
-      ...request(), configuration: { ...request().configuration, systemInstructions: { kind: 'main-agent', projectId, instructions } },
-    });
-    const first = session.execute(turn(from, 'Original project text.'));
-    const peer = await firstPeer();
-    await peer.waitForPrompts(1);
-    peer.finishPrompt();
-    await collect(first.events);
-    const originalFile = path.join(vault, '.agents/agents', from ? `claudian-project-${from}` : 'claudian-main', 'agent.md');
-    const before = await stat(originalFile);
-    const second = session.execute(turn(to, 'Destination project text.'));
-    await peer.waitForPrompts(2);
-    expect(spawned).toHaveLength(1);
-    expect(peer.resumeRequests).toHaveLength(1);
-    expect(await stat(originalFile)).toMatchObject({ mtimeMs: before.mtimeMs, ino: before.ino });
-    expect(await readdir(path.join(vault, '.agents/agents'))).toEqual([peer.agentName]);
-    peer.finishPrompt();
-    await collect(second.events);
-    await session.dispose();
-    // An invalid creation file cannot prevent restoration; native state owns the frozen persona/tools.
-    await writeFile(originalFile, 'foreign replacement');
-    const reopened = await createSession({ workingDirectory: cwd, resumeSeed: { providerSessionId: 'session-new', providerState: {} } });
-    const third = reopened.execute(turn(to, 'Edited again.'));
-    const next = await spawnedProcess(2);
-    await next.waitForPrompts(1);
-    expect(next.agentName).toBeUndefined();
-    expect(next.agents.get('session-new')).toMatchObject({ kind: 'custom', body: 'Original project text.' });
-    expect(next.newRequests).toHaveLength(0);
-    expect(next.resumeRequests[0]._meta).toBeUndefined();
-    next.finishPrompt();
-    await collect(third.events);
-    const fresh = await createSession({ workingDirectory: cwd }, peer => { peer.newSessionId = 'fresh-destination'; });
-    const fourth = fresh.execute(turn(to, 'Latest destination instructions.'));
-    const freshPeer = await spawnedProcess(3);
-    await freshPeer.waitForPrompts(1);
-    expect(freshPeer.agents.get('fresh-destination')).toMatchObject({
-      body: 'Latest destination instructions.',
-      frontmatter: { name: to ? `claudian-project-${to}` : 'claudian-main' },
-    });
-    expect(await readFile(originalFile, 'utf8')).toBe('foreign replacement');
-    freshPeer.finishPrompt();
-    await collect(fourth.events);
-  });
-
   it('rewrites an owned file only for a changed new conversation', async () => {
     const first = await createSession();
     const cwd = vault;
-    const run = first.execute(request());
+    const run = first.execute(titleRequest('Be exact.'));
     const peer = await firstPeer();
     await peer.waitForPrompts(1);
     peer.finishPrompt();
     await collect(run.events);
-    const file = path.join(cwd, '.agents/agents/claudian-main/agent.md');
+    const file = path.join(cwd, '.agents/agents/claudian-title/agent.md');
     const initial = await stat(file);
     const stats = [];
     for (const [index, instructions] of ['Be exact.', 'New instructions.'].entries()) {
       const session = await createSession({ workingDirectory: cwd }, peer => { peer.newSessionId = `session-${index}`; });
-      const nextRun = session.execute(request('hello', { instructions }));
+      const nextRun = session.execute(titleRequest(instructions));
       const next = await spawnedProcess(index + 2);
       await next.waitForPrompts(1);
-      expect(next.agents.get(`session-${index}`)).toMatchObject({ kind: 'custom', body: instructions });
+      expect(next.agents.get(`session-${index}`)).toMatchObject({ kind: 'custom', body: expect.stringMatching(new RegExp(`^${instructions}\n`)) });
       stats.push(await stat(file));
       expect(await readdir(path.dirname(file))).toEqual(['agent.md']);
       next.finishPrompt();
       await collect(nextRun.events);
     }
     expect(stats[0]).toMatchObject({ mtimeMs: initial.mtimeMs, ino: initial.ino });
-    expect(agents.get('session-new')).toMatchObject({ kind: 'custom', body: 'Be exact.' });
+    expect(agents.get('session-new')).toMatchObject({ kind: 'custom', body: expect.stringMatching(/^Be exact\.\n/) });
   });
 
   it('gives title requests passive guidance and an empty native tool list and MCP list', async () => {
@@ -389,6 +424,8 @@ describe('AntigravityExecutionSession', () => {
     expect(agents.get('session-new')).toMatchObject({ body: expect.stringContaining('Do not use any tools'), frontmatter: { name: 'claudian-title', tools: [] } });
     expect(peer.newRequests[0].mcpServers).toEqual([]);
     expect(peer.resumeRequests[0].mcpServers).toEqual([]);
+    // Auxiliary sessions keep their prompt in the custom agent body, never in an append.
+    expect(peer.prompts[0].appendsAtReceipt).toEqual([]);
     await expect(peer.requestPermission(permissionRequest('run_command'))).resolves.toEqual({ outcome: { outcome: 'cancelled' } });
     peer.finishPrompt();
     await collect(run.events);
@@ -413,6 +450,7 @@ describe('AntigravityExecutionSession', () => {
     expect(agents.get('session-new')).toMatchObject({ body: expect.stringContaining('Never modify files through tools'), frontmatter: { name: 'claudian-inline-edit', tools: ['read_file', 'search_web', 'run_command'] } });
     expect(peer.newRequests[0].mcpServers).toEqual([]);
     expect(peer.resumeRequests[0].mcpServers).toEqual([]);
+    expect(peer.prompts[0].appendsAtReceipt).toEqual([]);
     const replacement = await peer.readContextFile('session-new', context);
     await expect(peer.requestPermission(permissionRequest('run_command'))).resolves.toEqual({ outcome: { outcome: 'selected', optionId: 'allow' } });
     for (const name of ['write_file', 'edit_file']) {
@@ -424,20 +462,18 @@ describe('AntigravityExecutionSession', () => {
   });
 
 
-  it('creates an owned main agent, immediately resumes and applies only changed settings', async () => {
+  it('creates a main session on agy\'s default agent, prompts under the append and applies only changed settings', async () => {
     const session = await createSession();
     const run = session.execute(request('hello', { instructions: 'Be exact.', reasoning: 'high' }));
     const peer = await firstPeer();
     await peer.waitForPrompts(1);
 
+    expect(peer.agentName).toBeUndefined();
+    expect(agents.get('session-new')).toEqual({ kind: 'default' });
+    await expect(stat(path.join(vault, '.agents'))).rejects.toMatchObject({ code: 'ENOENT' });
     expect(peer.newRequests[0]._meta).toBeUndefined();
-    expect(peer.resumeRequests).toEqual([{ cwd: vault, mcpServers: [], sessionId: 'session-new' }]);
-    expect(agents.get('session-new')).toEqual({ kind: 'custom', body: 'Be exact.', frontmatter: {
-      name: 'claudian-main', description: 'Managed by Claudian. Do not edit.',
-      mainAgent: true, subagent: false, excludeDefaultComponents: true,
-      tools: ['run_command', 'manage_task', 'read_file', 'write_file', 'edit_file', 'search_web',
-        'ask_question', 'generate_image'],
-    } });
+    expect(peer.resumeRequests).toEqual([{ _meta: appendMeta('Be exact.'), cwd: vault, mcpServers: [], sessionId: 'session-new' }]);
+    expect(peer.prompts[0].appendsAtReceipt).toEqual(['Be exact.']);
     // The model and mode already match the session; only the thinking level differs.
     expect(peer.configRequests).toEqual([{ configId: 'thought_level', sessionId: 'session-new', value: 'high' }]);
     expect(peer.prompts[0].request).toEqual({ prompt: [{ text: 'hello', type: 'text' }], sessionId: 'session-new' });
@@ -609,6 +645,9 @@ describe('AntigravityExecutionSession', () => {
     await peer.waitForPrompts(1);
     expect(peer.resumeRequests.map(entry => entry.sessionId)).toEqual(['session-existing']);
     expect(peer.newRequests).toHaveLength(0);
+    expect(peer.agentName).toBeUndefined();
+    // The resume append is not stored natively, so a restored session gets the current prompt.
+    expect(peer.prompts[0].appendsAtReceipt).toEqual(['Be exact.']);
     peer.finishPrompt();
     expect((await collect(run.events)).at(-1)?.type).toBe('turn_completed');
   });
@@ -626,26 +665,26 @@ describe('AntigravityExecutionSession', () => {
     expect(spawned[0].prompts).toHaveLength(0);
   });
 
-  it('keeps the loaded session when the requested system prompt changes', async () => {
+  it('rebinds the open session to a changed system prompt before the next prompt', async () => {
     const session = await createSession({ resumeSeed: { providerSessionId: 'session-existing', providerState: {} } });
     const first = session.execute(request('one', { instructions: 'First.' }));
     const peer = await firstPeer();
     await peer.waitForPrompts(1);
+    expect(peer.prompts[0].appendsAtReceipt).toEqual(['First.']);
     peer.finishPrompt();
     await collect(first.events);
 
     const second = session.execute(request('two', { instructions: 'Second.' }));
     await peer.waitForPrompts(2);
     expect(spawned).toHaveLength(1);
-    expect(peer.resumeRequests).toHaveLength(1);
-    expect(peer.resumeRequests[0]._meta).toBeUndefined();
-    expect(peer.agentName).toBeUndefined();
+    expect(peer.resumeRequests.map(entry => entry._meta)).toEqual([appendMeta('First.'), appendMeta('Second.')]);
+    expect(peer.prompts[1].appendsAtReceipt).toEqual(['Second.']);
     peer.finishPrompt();
     await collect(second.events);
 
     const third = session.execute(request('three', { instructions: 'Second.' }));
     await peer.waitForPrompts(3);
-    expect(peer.resumeRequests).toHaveLength(1);
+    expect(peer.resumeRequests).toHaveLength(2);
     peer.finishPrompt();
     await collect(third.events);
   });
@@ -720,7 +759,7 @@ describe('AntigravityExecutionSession', () => {
 
   it('publishes the live session command list without the hidden built-ins', async () => {
     const session = await createSession({}, peer => {
-      peer.availableCommands = ['goal', 'plan', 'teamwork', 'compact'].map(name => ({ description: name, name }));
+      peer.availableCommands = ['goal', 'plan', 'teamwork', 'compact', 'swarm'].map(name => ({ description: name, name }));
     });
     expect(session.getCommandSnapshot?.()).toBeUndefined();
     const changed = new Promise<void>(resolve => {
@@ -734,7 +773,7 @@ describe('AntigravityExecutionSession', () => {
     const peer = await firstPeer();
     await changed;
     await peer.waitForPrompts(1);
-    expect(session.getCommandSnapshot?.()?.map(command => command.name)).toEqual(['goal']);
+    expect(session.getCommandSnapshot?.()?.map(command => command.name)).toEqual(['goal', 'compact']);
     peer.finishPrompt();
     await collect(run.events);
   });
@@ -824,6 +863,314 @@ describe('AntigravityExecutionSession', () => {
       resultDetails: expect.objectContaining({ resolvedAnswers: { 'Color?': 'Blue', 'Pets?': ['Cats', 'Something else'] } }),
       toolCallId: 'tool-ask',
     }));
+  });
+
+  it('publishes agy\'s own reply to a subagent result that lands after the turn, but not a report answered mid-turn', async () => {
+    const session = await createSession();
+    const run = session.execute(request('Delegate both'));
+    const peer = await firstPeer();
+    await peer.waitForPrompts(1);
+    peer.emit(invokeSubagent('call-1'), 'session-new');
+    peer.emit(invokeSubagent('call-2'), 'session-new');
+    // A report that arrived while the turn ran was streamed with it, even though agy settled the prompt in the same
+    // second (agy 1.5.7 settles up to ~15 s after its last step); sub-2 is still out when the turn ends.
+    const turn = [
+      transcriptSteps.user(0, 'Delegate both', testTime({ minutes: -2 })),
+      transcriptSteps.delegate(1, testTime({ minutes: -2 })),
+      transcriptSteps.created(2, 'sub-1', testTime({ minutes: -2 })),
+      transcriptSteps.delegate(3, testTime({ minutes: -2 })),
+      transcriptSteps.created(4, 'sub-2', testTime({ minutes: -2 })),
+      transcriptSteps.reply(5, 'Waiting.', testTime({ minutes: -2 })),
+      transcriptSteps.report(6, 'sub-1', '17', testTime({ minutes: 5 })),
+      transcriptSteps.reply(7, 'First result: 17.', testTime({ minutes: 5 })),
+    ];
+    await writeTranscript('session-new', turn);
+    peer.finishPrompt({ stopReason: 'end_turn' });
+    await collect(run.events);
+
+    const background = nextBackgroundTurn(session);
+    await writeTranscript('session-new', [
+      ...turn,
+      transcriptSteps.report(8, 'sub-2', '391', testTime({ minutes: 5 })),
+      transcriptSteps.reply(9, 'SUB-RESULT=391', testTime({ minutes: 5 })),
+    ]);
+    const events = await background;
+    expect(events.map(event => event.type)).toEqual(['background_turn_started', 'task_notification', 'text_delta', 'background_turn_completed']);
+    expect(events[1]).toMatchObject({ content: '391' });
+    expect(events[2]).toMatchObject({ text: 'SUB-RESULT=391' });
+    expect(events.at(-1)).toMatchObject({ providerSessionId: 'session-new', reason: 'completed' });
+  });
+
+  it('publishes a late reply whose transcript write lands after the next turn started', async () => {
+    const session = await createSession();
+    const first = session.execute(request('Delegate'));
+    const peer = await firstPeer();
+    await peer.waitForPrompts(1);
+    peer.emit(invokeSubagent('call-1'), 'session-new');
+    const delegation = [
+      transcriptSteps.user(0, 'Delegate', testTime({ minutes: -2 })),
+      transcriptSteps.delegate(1, testTime({ minutes: -2 })),
+      transcriptSteps.created(2, 'sub-1', testTime({ minutes: -2 })),
+      transcriptSteps.reply(3, 'Waiting.', testTime({ minutes: -2 })),
+    ];
+    await writeTranscript('session-new', delegation);
+    peer.finishPrompt();
+    await collect(first.events);
+
+    const background = nextBackgroundTurn(session);
+    const second = session.execute(request('Meanwhile'));
+    await peer.waitForPrompts(2);
+    // agy answered the report between the turns, but flushed it only after the next turn began.
+    await writeTranscript('session-new', [
+      ...delegation,
+      transcriptSteps.report(4, 'sub-1', '391', testTime({ minutes: 5 })),
+      transcriptSteps.reply(5, 'SUB-RESULT=391', testTime({ minutes: 5 })),
+      transcriptSteps.user(6, 'Meanwhile', testTime({ minutes: 6 })),
+      transcriptSteps.reply(7, 'Sure.', testTime({ minutes: 6 })),
+    ]);
+    peer.finishPrompt();
+    await collect(second.events);
+    const events = await background;
+    expect(events.filter(event => event.type === 'text_delta')).toEqual([expect.objectContaining({ text: 'SUB-RESULT=391' })]);
+  });
+
+  it('keeps a late reply when the next request fails before it sends a prompt', async () => {
+    const session = await createSession();
+    const first = session.execute(request('Delegate', { instructions: 'First.' }));
+    const peer = await firstPeer();
+    await peer.waitForPrompts(1);
+    peer.emit(invokeSubagent('call-1'), 'session-new');
+    const delegation = [
+      transcriptSteps.user(0, 'Delegate', testTime({ minutes: -2 })),
+      transcriptSteps.delegate(1, testTime({ minutes: -2 })),
+      transcriptSteps.created(2, 'sub-1', testTime({ minutes: -2 })),
+      transcriptSteps.reply(3, 'Waiting.', testTime({ minutes: -2 })),
+    ];
+    await writeTranscript('session-new', delegation);
+    peer.finishPrompt();
+    await collect(first.events);
+
+    // The changed prompt re-resumes the session; agy finished its own reply before that resume failed.
+    const background = nextBackgroundTurn(session);
+    const resuming = deferred<void>();
+    const release = deferred<void>();
+    peer.resumeGate = async () => {
+      resuming.resolve();
+      await release.promise;
+      throw new Error('Resume temporarily rejected');
+    };
+    const second = session.execute(request('Meanwhile', { instructions: 'Second.' }));
+    await resuming.promise;
+    await writeTranscript('session-new', [
+      ...delegation,
+      transcriptSteps.report(4, 'sub-1', '391', testTime({ minutes: 5 })),
+      transcriptSteps.reply(5, 'SUB-RESULT=391', testTime({ minutes: 5 })),
+    ]);
+    release.resolve();
+    expect((await collect(second.events)).at(-1)).toMatchObject({ type: 'execution_error' });
+    expect(peer.prompts).toHaveLength(1);
+    const events = await background;
+    expect(events.filter(event => event.type === 'text_delta')).toEqual([expect.objectContaining({ text: 'SUB-RESULT=391' })]);
+  });
+
+  it('holds idle release while a subagent is out and releases it once agy\'s reply is published', async () => {
+    const session = await createSession();
+    const run = session.execute(request('Delegate'));
+    const peer = await firstPeer();
+    await peer.waitForPrompts(1);
+    expect(session.blocksIdleRelease?.()).toBe(false);
+    peer.emit(invokeSubagent('call-1'), 'session-new');
+    const delegation = [
+      transcriptSteps.user(0, 'Delegate', testTime({ minutes: -2 })),
+      transcriptSteps.delegate(1, testTime({ minutes: -2 })),
+      transcriptSteps.created(2, 'sub-1', testTime({ minutes: -2 })),
+      transcriptSteps.reply(3, 'Waiting.', testTime({ minutes: -2 })),
+    ];
+    await writeTranscript('session-new', delegation);
+    peer.finishPrompt();
+    await collect(run.events);
+    // Releasing the idle session would end agy's process and the subagent with it.
+    expect(session.blocksIdleRelease?.()).toBe(true);
+
+    const background = nextBackgroundTurn(session);
+    await writeTranscript('session-new', [
+      ...delegation,
+      transcriptSteps.report(4, 'sub-1', '391', testTime({ minutes: 5 })),
+      transcriptSteps.reply(5, 'SUB-RESULT=391', testTime({ minutes: 5 })),
+    ]);
+    await background;
+    expect(session.blocksIdleRelease?.()).toBe(false);
+  });
+
+  it('records the boundary of a turn that ends while an earlier transcript read is still running', async () => {
+    const session = await createSession();
+    const first = session.execute(request('Delegate'));
+    const peer = await firstPeer();
+    await peer.waitForPrompts(1);
+    peer.emit(invokeSubagent('call-1'), 'session-new');
+    const delegation = [
+      transcriptSteps.user(0, 'Delegate', testTime({ minutes: -2 })),
+      transcriptSteps.delegate(1, testTime({ minutes: -2 })),
+      transcriptSteps.created(2, 'sub-1', testTime({ minutes: -2 })),
+      transcriptSteps.reply(3, 'Waiting.', testTime({ minutes: -2 })),
+    ];
+    await writeTranscript('session-new', delegation);
+    peer.finishPrompt();
+    await collect(first.events);
+    // The read the first turn's end started has the first turn's transcript, and returns only after the next turn.
+    const read = holdTranscriptRead('session-new');
+    await read.reading;
+
+    const second = session.execute(request('Meanwhile'));
+    await peer.waitForPrompts(2);
+    const meanwhile = [
+      ...delegation,
+      transcriptSteps.user(4, 'Meanwhile', testTime({ minutes: -1 })),
+      transcriptSteps.reply(5, 'Sure.', testTime({ minutes: -1 })),
+    ];
+    await writeTranscript('session-new', meanwhile);
+    peer.finishPrompt();
+    await collect(second.events);
+    const reread = read.nextReadDone();
+    read.release();
+    await reread;
+
+    const background = nextBackgroundTurn(session);
+    await writeTranscript('session-new', [
+      ...meanwhile,
+      transcriptSteps.report(6, 'sub-1', '391', testTime({ minutes: 5 })),
+      transcriptSteps.reply(7, 'SUB-RESULT=391', testTime({ minutes: 5 })),
+    ]);
+    const events = await background;
+    expect(events.filter(event => event.type === 'text_delta')).toEqual([expect.objectContaining({ text: 'SUB-RESULT=391' })]);
+  });
+
+  it('gives up on a quiet subagent after half an hour when only polling can see the transcript', async () => {
+    const session = await createSession();
+    const [transcriptPath] = resolveAntigravityTranscriptPaths(path.join(vault, '.gemini', 'antigravity-cli'), 'session-new');
+    vi.spyOn(fsSync, 'watch').mockImplementation(() => { throw new Error('EMFILE: too many open files, watch'); });
+    let lastPoll: Promise<unknown> = Promise.resolve();
+    const stat = fs.stat;
+    vi.spyOn(fs, 'stat').mockImplementation((file, options) => {
+      const result = stat(file, options);
+      if (file === transcriptPath) lastPoll = result.catch(() => undefined);
+      return result;
+    });
+    const run = session.execute(request('Delegate'));
+    const peer = await firstPeer();
+    await peer.waitForPrompts(1);
+    peer.emit(invokeSubagent('call-1'), 'session-new');
+    const delegation = [
+      transcriptSteps.user(0, 'Delegate', testTime({ minutes: -2 })),
+      transcriptSteps.delegate(1, testTime({ minutes: -2 })),
+      transcriptSteps.created(2, 'sub-1', testTime({ minutes: -2 })),
+      transcriptSteps.reply(3, 'Waiting.', testTime({ minutes: -2 })),
+    ];
+    await writeTranscript('session-new', delegation);
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
+    peer.finishPrompt();
+    await collect(run.events);
+    const poll = async (ms: number) => {
+      await vi.advanceTimersByTimeAsync(ms);
+      await lastPoll;
+    };
+    await poll(5_000);
+    expect(session.blocksIdleRelease?.()).toBe(true);
+
+    // A transcript change seen by a poll restarts the quiet limit.
+    await poll(20 * 60_000);
+    await writeTranscript('session-new', delegation);
+    await poll(5_000);
+    await poll(11 * 60_000);
+    expect(session.blocksIdleRelease?.()).toBe(true);
+    // Polls that find the transcript unchanged do not.
+    await poll(20 * 60_000);
+    expect(session.blocksIdleRelease?.()).toBe(false);
+  });
+
+  it('stops waiting for a subagent that died with a replaced process once the later subagents report', async () => {
+    const session = await createSession({}, peer => { peer.knownSessions.add('session-new'); });
+    const first = session.execute(request('Delegate'));
+    const peer = await firstPeer();
+    await peer.waitForPrompts(1);
+    peer.emit(invokeSubagent('call-1'), 'session-new');
+    const delegation = [
+      transcriptSteps.user(0, 'Delegate', testTime({ minutes: -3 })),
+      transcriptSteps.delegate(1, testTime({ minutes: -3 })),
+      transcriptSteps.created(2, 'sub-1', testTime({ minutes: -3 })),
+      transcriptSteps.reply(3, 'Waiting.', testTime({ minutes: -3 })),
+    ];
+    await writeTranscript('session-new', delegation);
+    peer.finishPrompt();
+    await collect(first.events);
+    expect(session.blocksIdleRelease?.()).toBe(true);
+    // The read the first turn's end started returns only after the replacement process's turn has ended.
+    const read = holdTranscriptRead('session-new');
+    await read.reading;
+
+    // Entering YOLO replaces agy's process, and sub-1 with it: it never reports.
+    const second = session.execute(request('Delegate again', { permissionMode: 'yolo' }));
+    const replacement = await spawnedProcess(2);
+    await replacement.waitForPrompts(1);
+    replacement.emit(invokeSubagent('call-2'), 'session-new');
+    const again = [
+      ...delegation,
+      transcriptSteps.user(4, 'Delegate again', testTime({ minutes: -2 })),
+      transcriptSteps.delegate(5, testTime({ minutes: -2 })),
+      transcriptSteps.created(6, 'sub-2', testTime({ minutes: -2 })),
+      transcriptSteps.reply(7, 'Waiting again.', testTime({ minutes: -2 })),
+    ];
+    await writeTranscript('session-new', again);
+    replacement.finishPrompt();
+    await collect(second.events);
+    const reread = read.nextReadDone();
+    read.release();
+    await reread;
+
+    const background = nextBackgroundTurn(session);
+    await writeTranscript('session-new', [
+      ...again,
+      transcriptSteps.report(8, 'sub-2', '391', testTime({ minutes: 5 })),
+      transcriptSteps.reply(9, 'SUB-RESULT=391', testTime({ minutes: 5 })),
+    ]);
+    expect((await background).filter(event => event.type === 'text_delta')).toEqual([expect.objectContaining({ text: 'SUB-RESULT=391' })]);
+    expect(session.blocksIdleRelease?.()).toBe(false);
+  });
+
+  it('runs YOLO main chat with agy\'s skip-permissions flag and restarts the process when leaving or entering YOLO', async () => {
+    const session = await createSession({}, peer => { peer.knownSessions.add('session-new'); });
+    const launchArgs = () => vi.mocked(spawn).mock.calls.map(([, args]) => args);
+    for (const [index, [permissionMode, processes]] of ([['yolo', 1], ['yolo', 1], ['normal', 2], ['yolo', 3]] as const).entries()) {
+      const prompts = spawned.length === processes ? spawned[processes - 1].prompts.length : 0;
+      const run = session.execute(request(`turn ${index}`, { permissionMode }));
+      const peer = await spawnedProcess(processes);
+      await peer.waitForPrompts(prompts + 1);
+      peer.finishPrompt();
+      await collect(run.events);
+    }
+    // agy applies the flag to its whole process (subagents included), so changing YOLO replaces the process.
+    expect(launchArgs()).toEqual([
+      ['acp', '--dangerously-skip-permissions'],
+      ['acp'],
+      ['acp', '--dangerously-skip-permissions'],
+    ]);
+    expect(spawned.flatMap(peer => peer.newRequests)).toHaveLength(1);
+    expect(spawned.map(peer => peer.resumeRequests.map(entry => [entry.sessionId, entry._meta]))).toEqual([
+      [['session-new', appendMeta('Be exact.')]],
+      [['session-new', appendMeta('Be exact.')]],
+      [['session-new', appendMeta('Be exact.')]],
+    ]);
+  });
+
+  it('never gives auxiliary sessions the skip-permissions flag, even in YOLO', async () => {
+    const session = await createSession();
+    const run = session.execute({ ...titleRequest(), configuration: { ...titleRequest().configuration, permissionMode: 'yolo' } });
+    const peer = await firstPeer();
+    await peer.waitForPrompts(1);
+    expect(vi.mocked(spawn).mock.calls.map(([, args]) => args)).toEqual([['acp', '--agent', 'claudian-title']]);
+    await expect(peer.requestPermission(permissionRequest('run_command'))).resolves.toEqual({ outcome: { outcome: 'cancelled' } });
+    peer.finishPrompt();
+    await collect(run.events);
   });
 
   it('marks a completed /compact with a context boundary', async () => {

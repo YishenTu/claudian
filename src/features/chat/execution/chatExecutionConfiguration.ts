@@ -3,8 +3,6 @@ import { buildSystemPrompt } from '@/core/prompt/mainAgent';
 import type { ClaudianSettings } from '@/core/types';
 import type { FeatureHost } from '@/features/FeatureHost';
 
-import type { ResolvedProjectInstructions } from './projectInstructions';
-
 /** The host Vault root used for local filesystem operations and session configuration. */
 export function getChatWorkingDirectory(host: Pick<FeatureHost, 'providerHost'>): string {
   return host.providerHost.workingDirectory ?? '.';
@@ -17,17 +15,16 @@ export function getChatWorkingDirectory(host: Pick<FeatureHost, 'providerHost'>)
 export function resolveChatSystemInstructions(
   settings: Pick<ClaudianSettings, 'mediaFolder' | 'systemPrompt' | 'userName'>,
   workingDirectory: string,
-  project?: ResolvedProjectInstructions,
+  sessionInstructions?: string,
 ): ProviderSystemInstructions {
   return {
     kind: 'main-agent',
-    ...(project ? { projectId: project.projectId } : {}),
     instructions: buildSystemPrompt({
       customPrompt: settings.systemPrompt,
       mediaFolder: settings.mediaFolder,
       userName: settings.userName,
       vaultPath: workingDirectory,
-      sessionInstructions: project?.instructions,
+      sessionInstructions,
     }),
   };
 }

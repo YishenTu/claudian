@@ -18,9 +18,9 @@ import { readAntigravitySessionModels } from '@/providers/antigravity/models';
 
 vi.mock('cross-spawn', () => ({ default: vi.fn() }));
 
-/** The built-in list agy 1.5.0 publishes for a new session. */
+/** The built-in list agy 1.5.7 publishes for a new default-agent session. */
 const AGY_COMMANDS = ['goal', 'compact', 'schedule', 'browser', 'plan', 'grill-me', 'teamwork', 'learn', 'boost',
-  'agy-customizations', 'antigravity-guide'].map(name => ({ description: `${name} command`, name }));
+  'agy-customizations', 'antigravity-guide', 'swarm'].map(name => ({ description: `${name} command`, name }));
 
 let host: ProviderHost;
 let persist: Mock<() => Promise<void>>;
@@ -63,7 +63,7 @@ describe('Antigravity workspace metadata discovery', () => {
 
     if (result.status !== 'ready') throw new Error(`Expected ready commands, got ${result.status}`);
     expect(result.items.map(command => command.name)).toEqual([
-      'goal', 'grill-me', 'learn', 'agy-customizations', 'antigravity-guide',
+      'goal', 'compact', 'grill-me', 'learn', 'agy-customizations', 'antigravity-guide',
     ]);
     // The discovery session is closed without a prompt, so agy does not list it.
     expect(native.closeRequests).toEqual(['session-probe']);

@@ -18,6 +18,8 @@ import {
 } from '@/providers/acp';
 
 export const ANTIGRAVITY_ACP_ARGS = ['acp'] as const;
+/** agy applies it to the whole process, subagents included, until the process restarts. */
+export const ANTIGRAVITY_SKIP_PERMISSIONS_FLAG = '--dangerously-skip-permissions';
 
 export interface AntigravityNativeConnectionOptions {
   readonly launch: TargetLaunchSpec;
