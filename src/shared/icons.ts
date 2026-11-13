@@ -44,8 +44,8 @@ export const OPENCODE_PROVIDER_ICON: ProviderIconSvg = {
         transform: 'translate(30 0)',
       },
       children: [
-        { tag: 'path', attributes: { d: 'M180 240H60V120H180V240Z', fill: '#CFCECD' } },
-        { tag: 'path', attributes: { d: 'M180 60H60V240H180V60ZM240 300H0V0H240V300Z', fill: '#211E1E' } },
+        { tag: 'path', attributes: { d: 'M180 240H60V120H180V240Z', fill: '#D2D2D2' } },
+        { tag: 'path', attributes: { d: 'M180 60H60V240H180V60ZM240 300H0V0H240V300Z', fill: '#1F1F1F' } },
       ],
     },
     {
