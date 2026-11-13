@@ -60,6 +60,8 @@ export class GrokExecutionInteractionRouter {
           questions: request.questions.map((question, index) => ({
             header: `Q${index + 1}`,
             ...(question.id ? { id: question.id } : {}),
+            // Grok gives every question a typed "Other" answer; non-option answers pass through as text.
+            isOther: true,
             multiSelect: question.multiSelect,
             options: question.options.map(option => ({
               description: option.description,

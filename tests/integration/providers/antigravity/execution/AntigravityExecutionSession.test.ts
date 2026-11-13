@@ -834,6 +834,7 @@ describe('AntigravityExecutionSession', () => {
           q1_other: { title: 'Other', type: 'string' },
           q2: { items: { anyOf: [{ const: '1', title: 'Cats' }, { const: '2', title: 'Dogs' }] }, title: 'Pets?', type: 'array' },
           q2_other: { title: 'Other', type: 'string' },
+          q3: { oneOf: [{ const: 's', title: 'Small' }, { const: 'l', title: 'Large' }], title: 'Size?', type: 'string' },
         },
         type: 'object',
       },
@@ -843,8 +844,10 @@ describe('AntigravityExecutionSession', () => {
 
     expect(port.askUserQuestion.mock.calls[0][0].input).toEqual({
       questions: [
-        expect.objectContaining({ id: 'q1', multiSelect: false, question: 'Color?' }),
-        expect.objectContaining({ id: 'q2', multiSelect: true, question: 'Pets?' }),
+        // Only a field with an `_other` companion can carry a typed answer.
+        expect.objectContaining({ id: 'q1', isOther: true, multiSelect: false, question: 'Color?' }),
+        expect.objectContaining({ id: 'q2', isOther: true, multiSelect: true, question: 'Pets?' }),
+        expect.objectContaining({ id: 'q3', isOther: false, multiSelect: false, question: 'Size?' }),
       ],
     });
     expect(reply).toEqual({ action: 'accept', content: { q1: '2', q2: ['1'], q2_other: 'Something else' } });

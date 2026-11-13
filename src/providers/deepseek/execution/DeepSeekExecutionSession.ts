@@ -855,10 +855,9 @@ export class DeepSeekExecutionSession implements ProviderExecutionSession {
     const identity = { interactionId: eventId, sessionInstanceId: this.sessionInstanceId, turnId };
     const generation = this.generation;
     const nativeRequest = value.request as Record<string, unknown>;
+    // Native answers accept custom text for every question, beside any selected options.
     const questionInput = { ...nativeRequest,
-      questions: Array.isArray(nativeRequest.questions) ? nativeRequest.questions.filter(isRecord).map(question => ({
-        ...question, ...(!Array.isArray(question.options) || !question.options.length ? { isOther: true } : {}),
-      })) : [],
+      questions: Array.isArray(nativeRequest.questions) ? nativeRequest.questions.filter(isRecord).map(question => ({ ...question, isOther: true })) : [],
     };
     const reason = localizedReason(nativeRequest, this.host.locale);
     const presentation = call
