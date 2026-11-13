@@ -1,7 +1,9 @@
 import { spawnSync } from 'node:child_process';
+import * as fsSync from 'node:fs';
 import * as fs from 'node:fs/promises';
 import { mkdir, readdir, readFile, rename, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { Readable } from 'node:stream';
 
 import { deferred } from '@test/helpers/ChatInputHarness';
 import { createProviderHostFixture } from '@test/helpers/providerRuntimeHost';
@@ -31,6 +33,7 @@ import { updateAntigravityProviderSettings } from '@/providers/antigravity/setti
 vi.mock('cross-spawn', () => ({ default: vi.fn() }));
 // Forward the real filesystem, permitting faults only at its external I/O boundary.
 vi.mock('node:fs/promises', async importOriginal => ({ ...await importOriginal<typeof import('node:fs/promises')>() }));
+vi.mock('node:fs', async importOriginal => ({ ...await importOriginal<typeof import('node:fs')>() }));
 
 const sessions: ProviderExecutionSession[] = [];
 let spawned: AntigravityNativeProcess[] = [];
@@ -39,6 +42,7 @@ const agents = new Map<string, CapturedAntigravityAgent>();
 let spawnWaiters: Array<{ count: number; resolve: () => void }> = [];
 
 afterEach(async () => {
+  vi.useRealTimers();
   await Promise.all(sessions.splice(0).map(session => session.dispose()));
   spawned = [];
   agents.clear();
@@ -83,6 +87,39 @@ const transcriptSteps = {
 function invokeSubagent(toolCallId: string) {
   const rawInput = { Prompt: 'What is 17 * 23?', TypeName: 'self' };
   return { kind: 'other', name: 'invoke_subagent', rawInput, sessionUpdate: 'tool_call', status: 'in_progress', title: 'Run invoke_subagent', toolCallId };
+}
+
+/**
+ * Holds the next read of a session's transcript after it has taken its snapshot, until released. `nextReadDone`
+ * resolves once the read that starts after it is called has delivered the whole file.
+ */
+function holdTranscriptRead(sessionId: string) {
+  const [transcriptPath] = resolveAntigravityTranscriptPaths(path.join(vault, '.gemini', 'antigravity-cli'), sessionId);
+  const actual = fsSync.createReadStream;
+  const reading = deferred<void>();
+  const release = deferred<void>();
+  let held = false;
+  let readWaiters: Array<() => void> = [];
+  vi.spyOn(fsSync, 'createReadStream').mockImplementation(((file: fsSync.PathLike, options?: Parameters<typeof actual>[1]) => {
+    if (file !== transcriptPath) return actual(file, options);
+    if (held) {
+      const waiters = readWaiters;
+      readWaiters = [];
+      return actual(file, options).once('close', () => waiters.forEach(resolve => resolve()));
+    }
+    held = true;
+    const stream = new Readable({ read() {} });
+    stream.push(fsSync.readFileSync(transcriptPath));
+    reading.resolve();
+    void release.promise.then(() => stream.push(null));
+    // The reader consumes only the Readable surface of a file stream.
+    return stream as fsSync.ReadStream;
+  }) as typeof fsSync.createReadStream);
+  return {
+    nextReadDone: () => new Promise<void>(resolve => { readWaiters.push(resolve); }),
+    reading: reading.promise,
+    release: () => release.resolve(),
+  };
 }
 
 /** Resolves with the events of the next background turn the session publishes. */
@@ -962,6 +999,92 @@ describe('AntigravityExecutionSession', () => {
       transcriptSteps.reply(5, 'SUB-RESULT=391', testTime({ minutes: 5 })),
     ]);
     await background;
+    expect(session.blocksIdleRelease?.()).toBe(false);
+  });
+
+  it('records the boundary of a turn that ends while an earlier transcript read is still running', async () => {
+    const session = await createSession();
+    const first = session.execute(request('Delegate'));
+    const peer = await firstPeer();
+    await peer.waitForPrompts(1);
+    peer.emit(invokeSubagent('call-1'), 'session-new');
+    const delegation = [
+      transcriptSteps.user(0, 'Delegate', testTime({ minutes: -2 })),
+      transcriptSteps.delegate(1, testTime({ minutes: -2 })),
+      transcriptSteps.created(2, 'sub-1', testTime({ minutes: -2 })),
+      transcriptSteps.reply(3, 'Waiting.', testTime({ minutes: -2 })),
+    ];
+    await writeTranscript('session-new', delegation);
+    peer.finishPrompt();
+    await collect(first.events);
+    // The read the first turn's end started has the first turn's transcript, and returns only after the next turn.
+    const read = holdTranscriptRead('session-new');
+    await read.reading;
+
+    const second = session.execute(request('Meanwhile'));
+    await peer.waitForPrompts(2);
+    const meanwhile = [
+      ...delegation,
+      transcriptSteps.user(4, 'Meanwhile', testTime({ minutes: -1 })),
+      transcriptSteps.reply(5, 'Sure.', testTime({ minutes: -1 })),
+    ];
+    await writeTranscript('session-new', meanwhile);
+    peer.finishPrompt();
+    await collect(second.events);
+    const reread = read.nextReadDone();
+    read.release();
+    await reread;
+
+    const background = nextBackgroundTurn(session);
+    await writeTranscript('session-new', [
+      ...meanwhile,
+      transcriptSteps.report(6, 'sub-1', '391', testTime({ minutes: 5 })),
+      transcriptSteps.reply(7, 'SUB-RESULT=391', testTime({ minutes: 5 })),
+    ]);
+    const events = await background;
+    expect(events.filter(event => event.type === 'text_delta')).toEqual([expect.objectContaining({ text: 'SUB-RESULT=391' })]);
+  });
+
+  it('gives up on a quiet subagent after half an hour when only polling can see the transcript', async () => {
+    const session = await createSession();
+    const [transcriptPath] = resolveAntigravityTranscriptPaths(path.join(vault, '.gemini', 'antigravity-cli'), 'session-new');
+    vi.spyOn(fsSync, 'watch').mockImplementation(() => { throw new Error('EMFILE: too many open files, watch'); });
+    let lastPoll: Promise<unknown> = Promise.resolve();
+    const stat = fs.stat;
+    vi.spyOn(fs, 'stat').mockImplementation((file, options) => {
+      const result = stat(file, options);
+      if (file === transcriptPath) lastPoll = result.catch(() => undefined);
+      return result;
+    });
+    const run = session.execute(request('Delegate'));
+    const peer = await firstPeer();
+    await peer.waitForPrompts(1);
+    peer.emit(invokeSubagent('call-1'), 'session-new');
+    const delegation = [
+      transcriptSteps.user(0, 'Delegate', testTime({ minutes: -2 })),
+      transcriptSteps.delegate(1, testTime({ minutes: -2 })),
+      transcriptSteps.created(2, 'sub-1', testTime({ minutes: -2 })),
+      transcriptSteps.reply(3, 'Waiting.', testTime({ minutes: -2 })),
+    ];
+    await writeTranscript('session-new', delegation);
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
+    peer.finishPrompt();
+    await collect(run.events);
+    const poll = async (ms: number) => {
+      await vi.advanceTimersByTimeAsync(ms);
+      await lastPoll;
+    };
+    await poll(5_000);
+    expect(session.blocksIdleRelease?.()).toBe(true);
+
+    // A transcript change seen by a poll restarts the quiet limit.
+    await poll(20 * 60_000);
+    await writeTranscript('session-new', delegation);
+    await poll(5_000);
+    await poll(11 * 60_000);
+    expect(session.blocksIdleRelease?.()).toBe(true);
+    // Polls that find the transcript unchanged do not.
+    await poll(20 * 60_000);
     expect(session.blocksIdleRelease?.()).toBe(false);
   });
 

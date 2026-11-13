@@ -3,6 +3,7 @@ import path from 'node:path';
 
 import type { ProviderBackgroundOutputEvent, WithoutEventScope } from '@/core/execution';
 import type { ChatMessage, ToolResultDetails } from '@/core/types';
+import { readFileRevision } from '@/utils/fileRevision';
 
 import { resolveAntigravityTranscriptPaths } from '../history/AntigravityHistoryPaths';
 import {
@@ -142,10 +143,12 @@ export class AntigravityAutomaticResponseFollower {
   }
 
   async #runScan(): Promise<void> {
+    // Taken before reading: a turn that ends during this read is recorded by the rescan that reads after it.
+    const recordsTurn = this.#unrecordedTurn;
+    this.#unrecordedTurn = false;
     const transcript = await readAntigravityTranscript(this.options.storeRoot, this.options.sessionId);
     if (this.#disposed || !transcript) return;
-    if (this.#unrecordedTurn) {
-      this.#unrecordedTurn = false;
+    if (recordsTurn) {
       // agy flushes a turn's steps before settling its prompt, so the latest request is the turn that just ended.
       const boundary = readAntigravityTurnBoundary(transcript);
       if (boundary && !this.#turnBoundaries.has(boundary.userInput)) {
@@ -179,7 +182,14 @@ export class AntigravityAutomaticResponseFollower {
     const [transcriptPath] = resolveAntigravityTranscriptPaths(this.options.storeRoot, this.options.sessionId);
     let watcher: FSWatcher | null = null;
     let poll: number | undefined;
-    const startPolling = () => { poll ??= window.setInterval(onChange, POLL_INTERVAL_MS); };
+    // Only a changed file counts, so an unchanged transcript still reaches the quiet limit.
+    let revision: string | null | undefined;
+    const pollOnce = () => void readFileRevision(transcriptPath).then(next => {
+      if (next === revision) return;
+      revision = next;
+      onChange();
+    });
+    const startPolling = () => { poll ??= window.setInterval(pollOnce, POLL_INTERVAL_MS); };
     try {
       // The directory survives agy replacing the file.
       watcher = watch(path.dirname(transcriptPath), onChange);
