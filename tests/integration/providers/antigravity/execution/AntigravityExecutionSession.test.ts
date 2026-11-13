@@ -973,6 +973,29 @@ describe('AntigravityExecutionSession', () => {
     expect(events.filter(event => event.type === 'text_delta')).toEqual([expect.objectContaining({ text: 'SUB-RESULT=391' })]);
   });
 
+  it('drops the between-turn output agy replays before the next prompt\'s echo', async () => {
+    const session = await createSession();
+    const first = session.execute(request('Delegate'));
+    const peer = await firstPeer();
+    await peer.waitForPrompts(1);
+    peer.finishPrompt();
+    await collect(first.events);
+    // agy finished a background command and replied on its own after the turn; both reached only the transcript.
+    peer.betweenTurnOutput.push(
+      { content: [{ content: { text: 'Command output:\nBG-DONE', type: 'text' }, type: 'content' }], kind: 'execute',
+        sessionUpdate: 'tool_call_update', status: 'completed', title: 'sleep 25 && echo BG-DONE', toolCallId: 'call-earlier' },
+      { content: { text: 'The background task finished.', type: 'text' }, sessionUpdate: 'agent_message_chunk' },
+    );
+
+    const second = session.execute(request('Meanwhile'));
+    await peer.waitForPrompts(2);
+    peer.emit({ content: { text: 'Sure.', type: 'text' }, sessionUpdate: 'agent_message_chunk' }, 'session-new');
+    peer.finishPrompt();
+    const events = await collect(second.events);
+    expect(events.filter(event => event.type === 'text_delta')).toEqual([expect.objectContaining({ text: 'Sure.' })]);
+    expect(events.filter(event => event.type === 'tool_started' || event.type === 'tool_completed')).toEqual([]);
+  });
+
   it('holds idle release while a subagent is out and releases it once agy\'s reply is published', async () => {
     const session = await createSession();
     const run = session.execute(request('Delegate'));
