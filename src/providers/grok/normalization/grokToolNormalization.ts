@@ -567,6 +567,34 @@ function readStructuredQuestionAnswers(value: unknown): AskUserAnswers | undefin
   return Object.keys(answers).length > 0 ? answers : undefined;
 }
 
+const ANSWER_MESSAGE_PREFIX = 'User has answered your questions: ';
+const ANSWER_MESSAGE_SUFFIX = '. You can now continue with the user\'s answers in mind.';
+const ANSWER_NOTES_MARKER = ' user notes: ';
+const ENTRY_SEPARATOR = ', ';
+
+/**
+ * Grok's accepted-answer message: `"<question>"="<labels>"` entries joined by `, `, each optionally
+ * followed by ` selected preview:\n<preview>` and ` user notes: <typed text>`. A typed-only answer
+ * reads `"Other"` with the typed text in its notes. Unquoted notes are delimited by the next entry.
+ */
+function parseGrokAnswerMessage(message: string): AskUserAnswers | undefined {
+  if (!message.startsWith(ANSWER_MESSAGE_PREFIX)) return undefined;
+  const body = message.slice(ANSWER_MESSAGE_PREFIX.length, message.endsWith(ANSWER_MESSAGE_SUFFIX) ? -ANSWER_MESSAGE_SUFFIX.length : undefined);
+  const entries = [...body.matchAll(/"([^"]+)"="([^"]*)"/g)];
+  const answers: AskUserAnswers = {};
+  entries.forEach((entry, index) => {
+    const next = entries[index + 1];
+    // Entries are joined by the separator, so an entry's trailing text ends just before it.
+    const trailing = body.slice(entry.index + entry[0].length, next ? next.index - ENTRY_SEPARATOR.length : undefined);
+    const notesAt = trailing.indexOf(ANSWER_NOTES_MARKER);
+    const notes = notesAt < 0 ? '' : trailing.slice(notesAt + ANSWER_NOTES_MARKER.length).trim();
+    const labels = entry[2];
+    const value = !notes ? labels : labels === 'Other' ? notes : `${labels}, ${notes}`;
+    Object.defineProperty(answers, entry[1], { value, enumerable: true, writable: true, configurable: true });
+  });
+  return entries.length > 0 ? answers : undefined;
+}
+
 function normalizeGrokQuestionAnswers(
   rawName: string,
   input: Record<string, unknown>,
@@ -590,7 +618,7 @@ function normalizeGrokQuestionAnswers(
   const questions = Array.isArray(input.questions)
     ? input.questions.filter(isRecord)
     : [];
-  const parsed = extractResolvedAnswersFromResultText(message);
+  const parsed = parseGrokAnswerMessage(message) ?? extractResolvedAnswersFromResultText(message);
   if (parsed && questions.length !== 1) return parsed;
   if (questions.length !== 1) {
     return undefined;

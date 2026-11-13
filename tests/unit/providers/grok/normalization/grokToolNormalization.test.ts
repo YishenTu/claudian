@@ -238,6 +238,18 @@ describe('grokToolNormalization', () => {
     });
   });
 
+  it('shows typed "Other" notes from the answer message when native reports no structured answers', () => {
+    const { message } = typedQuestion.rawOutput.UserAnswered;
+    expect(normalizeGrokToolResultDetails(
+      'ask_user_question',
+      { questions: typedQuestion.request.params.questions },
+      { UserAnswered: { message }, type: 'AskUserQuestion' },
+    )?.resolvedAnswers).toEqual({
+      'Favorite color?': 'Purple dragon (typed)',
+      'Pets?': 'Cats, Hamsters (typed)',
+    });
+  });
+
   it('keeps own text and id __proto__ aliases for free-form answers', () => {
     const textAliased = normalizeGrokToolResultDetails(
       'ask_user_question',
