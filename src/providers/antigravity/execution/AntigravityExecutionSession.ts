@@ -73,7 +73,11 @@ import {
   AntigravityAutomaticResponseFollower,
   buildAntigravityAutomaticResponseEvents,
 } from './AntigravityAutomaticResponseFollower';
-import { ANTIGRAVITY_ACP_ARGS, AntigravityNativeConnection } from './AntigravityNativeConnection';
+import {
+  ANTIGRAVITY_ACP_ARGS,
+  ANTIGRAVITY_SKIP_PERMISSIONS_FLAG,
+  AntigravityNativeConnection,
+} from './AntigravityNativeConnection';
 import { AntigravityQuestionRouter } from './AntigravityQuestionRouter';
 
 export interface AntigravityLiveModelSink {
@@ -124,6 +128,14 @@ interface NativeCreationAgent {
   readonly agentName: string | undefined;
 }
 
+/** How the process must be launched for this run. */
+interface NativeLaunchRequirement {
+  /** Only for session/new: the agent the new session is created under. */
+  readonly creation?: NativeCreationAgent;
+  /** `--dangerously-skip-permissions`, which agy cannot change without restarting the process. */
+  readonly skipPermissions: boolean;
+}
+
 interface NativeOwner {
   /** Latest filtered `available_commands_update` per native session; it can precede session capture. */
   readonly commandsBySession: Map<string, SlashCommand[]>;
@@ -132,6 +144,7 @@ interface NativeOwner {
   loaded: LoadedNativeSession | null;
   /** Agent selected by this process (`--agent`), checked only when creating a native session. */
   readonly creationAgentName?: string;
+  readonly skipPermissions: boolean;
   readonly native: AntigravityNativeConnection;
   unsubscribe: () => void;
 }
@@ -244,6 +257,11 @@ export class AntigravityExecutionSession implements ProviderExecutionSession, St
 
   getSnapshot(): ProviderSessionSnapshot {
     return this.state.getSnapshot();
+  }
+
+  /** Releasing the idle session would end agy's process, and an outstanding subagent with it. */
+  blocksIdleRelease(): boolean {
+    return this.automaticResponses?.isFollowing ?? false;
   }
 
   getStatus(): ProviderSessionStatus {
@@ -411,20 +429,24 @@ export class AntigravityExecutionSession implements ProviderExecutionSession, St
   }
 
   /** Without `creation`, any live process can resume an existing session; creation needs the matching agent. */
-  async #ensureNative(active: ActiveExecution, creation?: NativeCreationAgent): Promise<NativeOwner> {
+  async #ensureNative(active: ActiveExecution, { creation, skipPermissions }: NativeLaunchRequirement): Promise<NativeOwner> {
     const started = await this.nativeSlot.ensure(
-      owner => owner.initialized && owner.native.isAlive()
+      owner => owner.initialized && owner.native.isAlive() && owner.skipPermissions === skipPermissions
         && (!creation || owner.creationAgentName === creation.agentName),
-      () => this.#startNative(active, creation?.agentName),
+      () => this.#startNative(active, creation?.agentName, skipPermissions),
     );
     this.#throwIfCancellationRequested(active);
     return started;
   }
 
-  async #startNative(active: ActiveExecution, creationAgentName?: string): Promise<NativeOwner> {
+  async #startNative(active: ActiveExecution, creationAgentName: string | undefined, skipPermissions: boolean): Promise<NativeOwner> {
     const previous = this.nativeSlot.current;
     if (previous) await this.nativeSlot.detach(previous);
-    const args = creationAgentName ? [...ANTIGRAVITY_ACP_ARGS, '--agent', creationAgentName] : ANTIGRAVITY_ACP_ARGS;
+    const args = [
+      ...ANTIGRAVITY_ACP_ARGS,
+      ...(creationAgentName ? ['--agent', creationAgentName] : []),
+      ...(skipPermissions ? [ANTIGRAVITY_SKIP_PERMISSIONS_FLAG] : []),
+    ];
     const launch = await resolveAntigravityLaunchSpec(this.host, args, this.config.workingDirectory);
     // A run cancelled during CLI lookup must not spawn a process that cancellation then waits on.
     this.#throwIfCancellationRequested(active);
@@ -440,6 +462,7 @@ export class AntigravityExecutionSession implements ProviderExecutionSession, St
       initialized: false,
       loaded: null,
       creationAgentName,
+      skipPermissions,
       native,
       unsubscribe: () => {},
     };
@@ -465,20 +488,26 @@ export class AntigravityExecutionSession implements ProviderExecutionSession, St
     // Main chat runs on agy's default agent; its prompt is a resume-only append, which agy does not store and each
     // resume replaces, so every resume delivers the current text. Auxiliary sessions keep tool-restricted custom agents.
     const systemPromptAppend = instructions.kind === 'main-agent' ? prompt : undefined;
+    // YOLO main chat lets agy approve everything itself: Claudian never receives a subagent's approval request, so
+    // client-side approval alone would leave subagents stalled. Auxiliary sessions rely on Claudian's denials.
+    const { permissionMode } = active.request.configuration;
+    const policy = active.request.toolPolicy.kind;
+    const skipPermissions = instructions.kind === 'main-agent' && shouldAutoApproveAntigravityPermission(permissionMode)
+      && (policy === 'provider-default' || policy === 'unrestricted');
     let owner: NativeOwner;
     if (this.providerSessionId) {
       // The saved session owns its agent. Restoration must not require or inspect any agent file.
-      owner = await this.#ensureNative(active);
+      owner = await this.#ensureNative(active, { skipPermissions });
       const loaded = owner.loaded;
       if (loaded?.sessionId === this.providerSessionId && loaded.systemPromptAppend === systemPromptAppend) return owner;
     } else if (instructions.kind === 'main-agent') {
-      owner = await this.#ensureNative(active, { agentName: undefined });
+      owner = await this.#ensureNative(active, { creation: { agentName: undefined }, skipPermissions });
     } else {
       const name = `claudian-${instructions.purpose}`;
       const tools = instructions.purpose === 'inline-edit' ? ANTIGRAVITY_INLINE_EDIT_TOOLS : [];
       await prepareAntigravityAgentFile(this.config.workingDirectory, name, prompt, tools);
       this.#throwIfCancellationRequested(active);
-      owner = await this.#ensureNative(active, { agentName: name });
+      owner = await this.#ensureNative(active, { creation: { agentName: name }, skipPermissions });
     }
     const mcpServers = await this.#getMCPServers();
     this.#throwIfCancellationRequested(active);
@@ -781,7 +810,9 @@ export class AntigravityExecutionSession implements ProviderExecutionSession, St
     active.run.finish(terminal);
     active.turn.dispose();
     if (this.active === active) this.active = null;
-    if (!this.disposed && this.automaticResponses?.sessionId === this.providerSessionId) this.automaticResponses?.turnEnded();
+    if (!this.disposed && this.automaticResponses?.sessionId === this.providerSessionId) {
+      this.automaticResponses?.turnEnded(active.latestPrompt > 0);
+    }
   }
 
   #followAutomaticResponses(owner: NativeOwner, sessionId: string): void {

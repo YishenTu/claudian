@@ -835,7 +835,8 @@ describe('AntigravityExecutionSession', () => {
     await peer.waitForPrompts(1);
     peer.emit(invokeSubagent('call-1'), 'session-new');
     peer.emit(invokeSubagent('call-2'), 'session-new');
-    // A report that arrived while the turn ran was streamed with it; sub-2 is still out when the turn ends.
+    // A report that arrived while the turn ran was streamed with it, even though agy settled the prompt in the same
+    // second (agy 1.5.7 settles up to ~15 s after its last step); sub-2 is still out when the turn ends.
     const turn = [
       transcriptSteps.user(0, 'Delegate both', testTime({ minutes: -2 })),
       transcriptSteps.delegate(1, testTime({ minutes: -2 })),
@@ -843,8 +844,8 @@ describe('AntigravityExecutionSession', () => {
       transcriptSteps.delegate(3, testTime({ minutes: -2 })),
       transcriptSteps.created(4, 'sub-2', testTime({ minutes: -2 })),
       transcriptSteps.reply(5, 'Waiting.', testTime({ minutes: -2 })),
-      transcriptSteps.report(6, 'sub-1', '17', testTime({ minutes: -1 })),
-      transcriptSteps.reply(7, 'First result: 17.', testTime({ minutes: -1 })),
+      transcriptSteps.report(6, 'sub-1', '17', testTime({ minutes: 5 })),
+      transcriptSteps.reply(7, 'First result: 17.', testTime({ minutes: 5 })),
     ];
     await writeTranscript('session-new', turn);
     peer.finishPrompt({ stopReason: 'end_turn' });
@@ -894,6 +895,110 @@ describe('AntigravityExecutionSession', () => {
     await collect(second.events);
     const events = await background;
     expect(events.filter(event => event.type === 'text_delta')).toEqual([expect.objectContaining({ text: 'SUB-RESULT=391' })]);
+  });
+
+  it('keeps a late reply when the next request fails before it sends a prompt', async () => {
+    const session = await createSession();
+    const first = session.execute(request('Delegate', { instructions: 'First.' }));
+    const peer = await firstPeer();
+    await peer.waitForPrompts(1);
+    peer.emit(invokeSubagent('call-1'), 'session-new');
+    const delegation = [
+      transcriptSteps.user(0, 'Delegate', testTime({ minutes: -2 })),
+      transcriptSteps.delegate(1, testTime({ minutes: -2 })),
+      transcriptSteps.created(2, 'sub-1', testTime({ minutes: -2 })),
+      transcriptSteps.reply(3, 'Waiting.', testTime({ minutes: -2 })),
+    ];
+    await writeTranscript('session-new', delegation);
+    peer.finishPrompt();
+    await collect(first.events);
+
+    // The changed prompt re-resumes the session; agy finished its own reply before that resume failed.
+    const background = nextBackgroundTurn(session);
+    const resuming = deferred<void>();
+    const release = deferred<void>();
+    peer.resumeGate = async () => {
+      resuming.resolve();
+      await release.promise;
+      throw new Error('Resume temporarily rejected');
+    };
+    const second = session.execute(request('Meanwhile', { instructions: 'Second.' }));
+    await resuming.promise;
+    await writeTranscript('session-new', [
+      ...delegation,
+      transcriptSteps.report(4, 'sub-1', '391', testTime({ minutes: 5 })),
+      transcriptSteps.reply(5, 'SUB-RESULT=391', testTime({ minutes: 5 })),
+    ]);
+    release.resolve();
+    expect((await collect(second.events)).at(-1)).toMatchObject({ type: 'execution_error' });
+    expect(peer.prompts).toHaveLength(1);
+    const events = await background;
+    expect(events.filter(event => event.type === 'text_delta')).toEqual([expect.objectContaining({ text: 'SUB-RESULT=391' })]);
+  });
+
+  it('holds idle release while a subagent is out and releases it once agy\'s reply is published', async () => {
+    const session = await createSession();
+    const run = session.execute(request('Delegate'));
+    const peer = await firstPeer();
+    await peer.waitForPrompts(1);
+    expect(session.blocksIdleRelease?.()).toBe(false);
+    peer.emit(invokeSubagent('call-1'), 'session-new');
+    const delegation = [
+      transcriptSteps.user(0, 'Delegate', testTime({ minutes: -2 })),
+      transcriptSteps.delegate(1, testTime({ minutes: -2 })),
+      transcriptSteps.created(2, 'sub-1', testTime({ minutes: -2 })),
+      transcriptSteps.reply(3, 'Waiting.', testTime({ minutes: -2 })),
+    ];
+    await writeTranscript('session-new', delegation);
+    peer.finishPrompt();
+    await collect(run.events);
+    // Releasing the idle session would end agy's process and the subagent with it.
+    expect(session.blocksIdleRelease?.()).toBe(true);
+
+    const background = nextBackgroundTurn(session);
+    await writeTranscript('session-new', [
+      ...delegation,
+      transcriptSteps.report(4, 'sub-1', '391', testTime({ minutes: 5 })),
+      transcriptSteps.reply(5, 'SUB-RESULT=391', testTime({ minutes: 5 })),
+    ]);
+    await background;
+    expect(session.blocksIdleRelease?.()).toBe(false);
+  });
+
+  it('runs YOLO main chat with agy\'s skip-permissions flag and restarts the process when leaving or entering YOLO', async () => {
+    const session = await createSession({}, peer => { peer.knownSessions.add('session-new'); });
+    const launchArgs = () => vi.mocked(spawn).mock.calls.map(([, args]) => args);
+    for (const [index, [permissionMode, processes]] of ([['yolo', 1], ['yolo', 1], ['normal', 2], ['yolo', 3]] as const).entries()) {
+      const prompts = spawned.length === processes ? spawned[processes - 1].prompts.length : 0;
+      const run = session.execute(request(`turn ${index}`, { permissionMode }));
+      const peer = await spawnedProcess(processes);
+      await peer.waitForPrompts(prompts + 1);
+      peer.finishPrompt();
+      await collect(run.events);
+    }
+    // agy applies the flag to its whole process (subagents included), so changing YOLO replaces the process.
+    expect(launchArgs()).toEqual([
+      ['acp', '--dangerously-skip-permissions'],
+      ['acp'],
+      ['acp', '--dangerously-skip-permissions'],
+    ]);
+    expect(spawned.flatMap(peer => peer.newRequests)).toHaveLength(1);
+    expect(spawned.map(peer => peer.resumeRequests.map(entry => [entry.sessionId, entry._meta]))).toEqual([
+      [['session-new', appendMeta('Be exact.')]],
+      [['session-new', appendMeta('Be exact.')]],
+      [['session-new', appendMeta('Be exact.')]],
+    ]);
+  });
+
+  it('never gives auxiliary sessions the skip-permissions flag, even in YOLO', async () => {
+    const session = await createSession();
+    const run = session.execute({ ...titleRequest(), configuration: { ...titleRequest().configuration, permissionMode: 'yolo' } });
+    const peer = await firstPeer();
+    await peer.waitForPrompts(1);
+    expect(vi.mocked(spawn).mock.calls.map(([, args]) => args)).toEqual([['acp', '--agent', 'claudian-title']]);
+    await expect(peer.requestPermission(permissionRequest('run_command'))).resolves.toEqual({ outcome: { outcome: 'cancelled' } });
+    peer.finishPrompt();
+    await collect(run.events);
   });
 
   it('marks a completed /compact with a context boundary', async () => {

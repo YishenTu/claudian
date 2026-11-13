@@ -9,14 +9,19 @@ import {
   type AntigravityAutomaticResponse,
   hasAntigravityOutstandingSubagents,
   readAntigravityAutomaticResponses,
-  readAntigravityLatestUserInput,
   readAntigravityTranscript,
+  readAntigravityTurnBoundary,
 } from '../history/AntigravityHistoryStore';
 
 /** Coalesces the bursts of change events one transcript write produces. */
 const RESCAN_DELAY_MS = 200;
 /** Used only where the transcript directory cannot be watched. */
 const POLL_INTERVAL_MS = 5_000;
+/**
+ * A subagent that needs approval outside Auto or YOLO never reports (agy does not relay its request over ACP), so
+ * following ends after this long without a transcript change and the session may be released again.
+ */
+const QUIET_LIMIT_MS = 30 * 60_000;
 
 export interface AntigravityAutomaticResponseFollowerOptions {
   readonly storeRoot: string;
@@ -27,7 +32,8 @@ export interface AntigravityAutomaticResponseFollowerOptions {
 /** A live turn streams its own output over ACP; between turns only the transcript records agy's work. */
 type FollowerPhase =
   | { readonly kind: 'turn' }
-  | { readonly kind: 'between-turns'; stopWatching: (() => void) | null };
+  | { readonly kind: 'between-turns' }
+  | { readonly kind: 'following'; readonly stopWatching: () => void; quietTimer: number };
 
 /**
  * agy answers a subagent's report on its own after `end_turn` and writes that reply only to its transcript. While a
@@ -35,13 +41,16 @@ type FollowerPhase =
  */
 export class AntigravityAutomaticResponseFollower {
   #phase: FollowerPhase = { kind: 'turn' };
-  /** When each live turn ended, keyed by its user request's step index; replies agy started later never streamed. */
-  readonly #turnEnds = new Map<number, number>();
+  /**
+   * The last step each live turn had recorded when its prompt settled, keyed by its user request's step index. agy
+   * records steps before streaming them, so later steps were never streamed. Each turn keeps its first boundary.
+   */
+  readonly #turnBoundaries = new Map<number, number>();
   readonly #published = new Set<string>();
   /** Set by a live subagent launch; cleared once a scan finds every subagent reported and every reply finished. */
   #expectingWork = false;
-  /** A turn end not yet matched to its user request (the next scan reads the request's step index). */
-  #unmatchedTurnEnd: number | null = null;
+  /** A settled prompt whose boundary the next scan records. */
+  #unrecordedTurn = false;
   #scan: Promise<void> | null = null;
   #rescanRequested = false;
   #rescanTimer: number | undefined;
@@ -53,41 +62,69 @@ export class AntigravityAutomaticResponseFollower {
     return this.options.sessionId;
   }
 
+  /** agy's process, and with it the subagent, must outlive idle release while a reply may still come. */
+  get isFollowing(): boolean {
+    return this.#phase.kind === 'following';
+  }
+
   /** A live turn launched a subagent, whose report agy may answer after the turn. */
   subagentLaunched(): void {
     this.#expectingWork = true;
   }
 
   turnStarted(): void {
-    this.#leaveBetweenTurns();
+    this.#stopFollowing();
     this.#phase = { kind: 'turn' };
   }
 
-  turnEnded(endedAt = Date.now()): void {
+  /** `prompted` is false for a run that ended before agy received its prompt; it bounds no turn. */
+  turnEnded(prompted: boolean): void {
     if (this.#disposed) return;
-    this.#leaveBetweenTurns();
-    this.#phase = { kind: 'between-turns', stopWatching: null };
+    this.#stopFollowing();
+    this.#phase = { kind: 'between-turns' };
     // Ordinary turns leave nothing for agy to answer later, so their transcript is not read.
     if (!this.#expectingWork) return;
-    this.#unmatchedTurnEnd = endedAt;
+    if (prompted) this.#unrecordedTurn = true;
+    // Watch before reading so a write during the first read is not missed.
+    this.#startFollowing();
     this.#requestScan();
   }
 
   /** Settles once no transcript read is left running. */
   async dispose(): Promise<void> {
     this.#disposed = true;
-    this.#leaveBetweenTurns();
+    this.#stopFollowing();
     this.#phase = { kind: 'turn' };
     await this.#scan;
   }
 
-  #leaveBetweenTurns(): void {
+  #startFollowing(): void {
+    const stopWatching = this.#watch();
+    this.#phase = { kind: 'following', quietTimer: window.setTimeout(() => this.#giveUp(), QUIET_LIMIT_MS), stopWatching };
+  }
+
+  #stopFollowing(): void {
     window.clearTimeout(this.#rescanTimer);
     this.#rescanTimer = undefined;
-    if (this.#phase.kind === 'between-turns') {
-      this.#phase.stopWatching?.();
-      this.#phase.stopWatching = null;
-    }
+    const phase = this.#phase;
+    if (phase.kind !== 'following') return;
+    window.clearTimeout(phase.quietTimer);
+    phase.stopWatching();
+    this.#phase = { kind: 'between-turns' };
+  }
+
+  #giveUp(): void {
+    this.#expectingWork = false;
+    this.#stopFollowing();
+  }
+
+  #onTranscriptChange(): void {
+    const phase = this.#phase;
+    if (phase.kind !== 'following') return;
+    window.clearTimeout(phase.quietTimer);
+    phase.quietTimer = window.setTimeout(() => this.#giveUp(), QUIET_LIMIT_MS);
+    window.clearTimeout(this.#rescanTimer);
+    this.#rescanTimer = window.setTimeout(() => this.#requestScan(), RESCAN_DELAY_MS);
   }
 
   #requestScan(): void {
@@ -106,14 +143,16 @@ export class AntigravityAutomaticResponseFollower {
 
   async #runScan(): Promise<void> {
     const transcript = await readAntigravityTranscript(this.options.storeRoot, this.options.sessionId);
-    if (this.#disposed) return;
-    const turnEnd = this.#unmatchedTurnEnd;
-    this.#unmatchedTurnEnd = null;
-    // agy flushes a turn's steps before settling its prompt, so the latest request is the turn that just ended.
-    const request = transcript ? readAntigravityLatestUserInput(transcript) : undefined;
-    if (turnEnd !== null && request !== undefined) this.#turnEnds.set(request, Math.floor(turnEnd / 1_000) * 1_000);
-    const phase = this.#phase;
-    if (phase.kind !== 'between-turns' || !transcript) return;
+    if (this.#disposed || !transcript) return;
+    if (this.#unrecordedTurn) {
+      this.#unrecordedTurn = false;
+      // agy flushes a turn's steps before settling its prompt, so the latest request is the turn that just ended.
+      const boundary = readAntigravityTurnBoundary(transcript);
+      if (boundary && !this.#turnBoundaries.has(boundary.userInput)) {
+        this.#turnBoundaries.set(boundary.userInput, boundary.lastStep);
+      }
+    }
+    if (this.#phase.kind !== 'following') return;
     let unfinished = false;
     for (const response of readAntigravityAutomaticResponses(transcript, this.options.sessionId)) {
       if (!this.#isUnstreamed(response) || this.#published.has(response.message.id)) continue;
@@ -124,25 +163,19 @@ export class AntigravityAutomaticResponseFollower {
       this.#published.add(response.message.id);
       this.options.publish(response.message);
     }
-    if (unfinished || hasAntigravityOutstandingSubagents(transcript)) {
-      phase.stopWatching ??= this.#watch();
-      return;
-    }
+    if (unfinished || hasAntigravityOutstandingSubagents(transcript)) return;
     this.#expectingWork = false;
-    this.#leaveBetweenTurns();
+    this.#stopFollowing();
   }
 
-  /** Started after the live turn it follows ended (transcript times have second precision). */
+  /** Started after the last step its live turn had recorded when that turn's prompt settled. */
   #isUnstreamed(response: AntigravityAutomaticResponse): boolean {
-    const turnEnd = response.afterUserInput === undefined ? undefined : this.#turnEnds.get(response.afterUserInput);
-    return turnEnd !== undefined && response.startedAt >= turnEnd;
+    const boundary = response.afterUserInput === undefined ? undefined : this.#turnBoundaries.get(response.afterUserInput);
+    return boundary !== undefined && response.startStep > boundary;
   }
 
   #watch(): () => void {
-    const onChange = () => {
-      window.clearTimeout(this.#rescanTimer);
-      this.#rescanTimer = window.setTimeout(() => this.#requestScan(), RESCAN_DELAY_MS);
-    };
+    const onChange = () => this.#onTranscriptChange();
     const [transcriptPath] = resolveAntigravityTranscriptPaths(this.options.storeRoot, this.options.sessionId);
     let watcher: FSWatcher | null = null;
     let poll: number | undefined;

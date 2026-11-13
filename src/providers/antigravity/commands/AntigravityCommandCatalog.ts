@@ -4,8 +4,8 @@ import type { SlashCommand } from '@/core/types';
 
 /**
  * Built-in agy commands that cannot work over ACP: `plan` enters plan mode (Claudian has none);
- * the others delegate to subagents or swarm workers or run later in the background, and agy
- * streams neither back.
+ * the others start delegated, scheduled or background work that agy does not stream back; only a
+ * live `invoke_subagent` arms transcript following, so their results surface only on reload.
  */
 export const ANTIGRAVITY_HIDDEN_COMMANDS: ReadonlySet<string> = new Set(['boost', 'browser', 'plan', 'schedule', 'swarm', 'teamwork']);
 

@@ -71,8 +71,8 @@ export interface AntigravityAutomaticResponse {
   readonly message: ChatMessage;
   /** Step index of the user request it follows; undefined when no request precedes it. */
   readonly afterUserInput: number | undefined;
-  /** When the step that started it was recorded (second precision). */
-  readonly startedAt: number;
+  /** Step index of the step that started it. */
+  readonly startStep: number;
   /** False while it is the transcript's last response and has not ended. */
   readonly complete: boolean;
 }
@@ -110,10 +110,14 @@ export async function loadAntigravityHistory(storeRoot: string, sessionId: strin
   return messages;
 }
 
-/** Step index of the transcript's latest user request. */
-export function readAntigravityLatestUserInput(transcript: AntigravityTranscript): number | undefined {
-  for (let index = transcript.steps.length - 1; index >= 0; index -= 1) {
-    if (transcript.steps[index].type === 'USER_INPUT') return transcript.steps[index].step_index;
+/** The latest user request and the last step recorded so far, by step index. */
+export function readAntigravityTurnBoundary(
+  transcript: AntigravityTranscript,
+): { readonly userInput: number; readonly lastStep: number } | undefined {
+  const { steps } = transcript;
+  for (let index = steps.length - 1; index >= 0; index -= 1) {
+    if (steps[index].type !== 'USER_INPUT') continue;
+    return { lastStep: stepIndexOf(steps.at(-1)!, steps.length - 1), userInput: stepIndexOf(steps[index], index) };
   }
   return undefined;
 }
@@ -136,11 +140,12 @@ export function readAntigravityAutomaticResponses(
   sessionId: string,
 ): AntigravityAutomaticResponse[] {
   const { steps } = transcript;
-  const starts = new Map<string, { afterUserInput: number | undefined; startedAt: number }>();
+  const starts = new Map<string, { afterUserInput: number | undefined; startStep: number }>();
   let afterUserInput: number | undefined;
   for (const [index, step] of steps.entries()) {
-    if (step.type === 'USER_INPUT') afterUserInput = step.step_index;
-    starts.set(`${sessionId}:${String(step.step_index ?? index)}:assistant`, { afterUserInput, startedAt: parseTimestamp(step.created_at) });
+    const stepIndex = stepIndexOf(step, index);
+    if (step.type === 'USER_INPUT') afterUserInput = stepIndex;
+    starts.set(`${sessionId}:${String(step.step_index ?? index)}:assistant`, { afterUserInput, startStep: stepIndex });
   }
   const messages = parseAntigravityTranscript(steps, sessionId, transcript.argumentsEncoded);
   const last = steps.at(-1);
@@ -440,6 +445,11 @@ function appendBlock(blocks: ContentBlock[], type: 'text' | 'thinking', content:
   const previous = blocks[blocks.length - 1];
   if (previous?.type === type) previous.content += `\n\n${content}`;
   else blocks.push({ content, type });
+}
+
+/** agy numbers every step; a step without a number takes its position. */
+function stepIndexOf(step: TranscriptStep, position: number): number {
+  return typeof step.step_index === 'number' ? step.step_index : position;
 }
 
 function parseTimestamp(value: string | undefined): number {
