@@ -81,3 +81,11 @@ This is a maintenance and product-quality boundary:
 You may open an issue to describe an unmet provider-related use case, but please do not submit a new-provider implementation. An issue does not imply that the provider will be added.
 
 Contributions that improve an existing provider are welcome when they follow the focused pull request requirements above and preserve the expected cross-provider experience.
+
+## Environment Settings Scope
+
+The environment settings, including environment snippets, are for short-term testing or for a configuration change you intend to keep. They are not designed for frequent switching between endpoints, accounts, models, or CLI configuration directories.
+
+Claudian passes the environment to the provider CLI and restarts the runtime when it changes. It does not manage native sessions across those changes: whether an existing conversation can continue is up to the provider CLI. If a conversation's native session is not available under the current configuration, that conversation cannot continue until the session is available again; start a new chat instead.
+
+Issues and pull requests that ask Claudian to migrate, repair, or switch native sessions when the environment changes are out of scope.

@@ -124,11 +124,6 @@ export class ClaudeResumeState {
     return true;
   }
 
-  clearProviderSession(): void {
-    this.liveProviderSessionId = null;
-    this.store.delete('providerSessionId');
-  }
-
   #markHistoryReplayPending(): void {
     this.replayHistoryOnNextTurn = true;
     this.store.set('historyReplayPending', true);

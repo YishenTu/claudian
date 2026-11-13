@@ -1,12 +1,4 @@
-import { toProviderRuntimeModelId } from '@/core/providers/modelSelection';
-import type { ProviderId } from '@/core/providers/types';
 import type { UsageInfo } from '@/core/types';
-
-export interface ContextUsageDisplayContext {
-  providerId: ProviderId | null;
-  model: string | null | undefined;
-  customContextLimits?: Record<string, number>;
-}
 
 export function isValidContextWindow(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value) && value > 0;
@@ -26,52 +18,13 @@ function withContextWindow(usage: UsageInfo, contextWindow: number): UsageInfo {
   };
 }
 
-function toRuntimeModelId(providerId: ProviderId | null, model: string): string {
-  const trimmed = model.trim();
-  return providerId ? toProviderRuntimeModelId(providerId, trimmed) : trimmed;
-}
-
-function resolveCustomContextLimit(
-  context: ContextUsageDisplayContext,
-): number | null {
-  const { providerId, model, customContextLimits: customLimits } = context;
-  if (!model || !customLimits) return null;
-
-  const exact = customLimits[model];
-  if (isValidContextWindow(exact)) return exact;
-
-  const runtimeModel = toRuntimeModelId(providerId, model);
-  const runtimeExact = customLimits[runtimeModel];
-  if (isValidContextWindow(runtimeExact)) return runtimeExact;
-
-  const normalize = (id: string): string => toRuntimeModelId(providerId, id).toLowerCase();
-  const normalizedModel = normalize(runtimeModel);
-  const matches = Object.entries(customLimits)
-    .filter(([key, limit]) =>
-      normalize(key) === normalizedModel
-      && isValidContextWindow(limit)
-    )
-    .map(([, limit]) => limit);
-  return matches.length === 1 ? matches[0] : null;
-}
-
 /**
- * Projects raw provider usage into the context meter's display value. A valid
- * provider-reported window wins; the reporting model's custom limit
- * is only a fallback. Returns null when the meter should stay hidden.
+ * Projects raw provider usage into the context meter's display value. Only a valid
+ * provider-reported window is shown; returns null when the meter should stay hidden.
  */
-export function projectContextUsageDisplay(
-  usage: UsageInfo | null,
-  context: ContextUsageDisplayContext,
-): UsageInfo | null {
-  if (!usage || usage.contextTokens <= 0) return null;
-
-  const reportedWindow = isValidContextWindow(usage.contextWindow)
-    ? usage.contextWindow
-    : null;
-  const contextWindow = reportedWindow
-    ?? resolveCustomContextLimit({ ...context, model: usage.model ?? context.model });
-  return contextWindow === null ? null : withContextWindow(usage, contextWindow);
+export function projectContextUsageDisplay(usage: UsageInfo | null): UsageInfo | null {
+  if (!usage || usage.contextTokens <= 0 || !isValidContextWindow(usage.contextWindow)) return null;
+  return withContextWindow(usage, usage.contextWindow);
 }
 
 /**

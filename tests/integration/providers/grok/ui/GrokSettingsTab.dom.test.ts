@@ -76,7 +76,7 @@ afterEach(async () => {
 
 async function render(): Promise<void> {
   const rendered = grokSettingsTabRenderer.render(container, {
-    plugin: fixture.host, notifyProviderModelOptionsChanged: notify, renderCustomContextLimits: () => undefined,
+    plugin: fixture.host, notifyProviderModelOptionsChanged: notify,
   });
   if (!rendered) throw new Error('Grok settings must expose cleanup');
   renderer = rendered;
@@ -286,7 +286,7 @@ describe('Windows installation method', () => {
     ['native-windows', 'wsl', 'accepted'], ['wsl', 'native-windows', 'accepted'],
     ['native-windows', 'wsl', 'committed-error'], ['wsl', 'native-windows', 'committed-error'],
   ] as const)('synchronizes %s → %s controls with settings after a %s save', async (initial, requested, outcome) => {
-    // Seed through the runtime path so the session-store baseline matches the initial target.
+    // Seed through the runtime path so the runtime baseline matches the initial target.
     await fixture.host.applyProviderRuntimeSettings(['grok'], settings => {
       updateGrokProviderSettings(settings, { installationMethod: initial, wslDistroOverride: 'Ubuntu' });
     });
@@ -303,10 +303,10 @@ describe('Windows installation method', () => {
     const failure = await controlChangeSettled(method).then(() => null, (error: unknown) => error);
     expect(failure instanceof Error ? failure.message : failure)
       .toBe({ accepted: null, rejected: 'Disk full', 'committed-error': 'Runtime reset failed' }[outcome]);
-    // The method change is written once, with its session invalidation; the only other write completes that invalidation.
+    // The method change is written once and records no conversation-session invalidation.
     expect(persist.mock.calls.map(([settings]) => [
-      getGrokProviderSettings(settings).installationMethod, settings.pendingProviderSessionInvalidations.grok !== undefined,
-    ])).toEqual(outcome === 'rejected' ? [[requested, true]] : [[requested, true], [requested, false]]);
+      getGrokProviderSettings(settings).installationMethod, Object.hasOwn(settings, 'pendingProviderSessionInvalidations'),
+    ])).toEqual([[requested, false]]);
     const expected = outcome === 'rejected' ? initial : requested;
     expect(getGrokProviderSettings(fixture.settings).installationMethod).toBe(expected);
     expect(getGrokProviderSettings(await fixture.settingsStorage.load()).installationMethod).toBe(expected);

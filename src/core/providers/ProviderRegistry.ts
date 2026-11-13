@@ -299,15 +299,6 @@ export class ProviderRegistry {
     return owners.length === 1 ? owners[0] : null;
   }
 
-  static getCustomModelIds(envVars: Record<string, string>): Set<string> {
-    const ids = new Set<string>();
-    for (const providerId of this.getRegisteredProviderIds()) {
-      for (const modelId of this.getModelPolicy(providerId).getCustomModelIds(envVars)) {
-        ids.add(modelId);
-      }
-    }
-    return ids;
-  }
 }
 
 const PASSIVE_AUXILIARY_INTERACTION_PORT: ProviderInteractionPort = {

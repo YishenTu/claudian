@@ -109,7 +109,6 @@ async function createPlugin(overrides: Omit<NonNullable<Parameters<typeof create
     getConversationSummary: (id: string): ReturnType<ChatFeatureHost['getConversationSummary']> => plugin.getConversationSync(id),
     getConversationSync: vi.fn().mockReturnValue(null),
     findConversationAcrossViews: vi.fn().mockReturnValue(null),
-    handleMissingProviderSession: vi.fn(),
   } satisfies Partial<ChatFeatureHost>;
   const plugin: Awaited<ReturnType<typeof createChatFeatureHost>> & typeof ports & { sessionRuntimes: SessionRuntimePool } = Object.assign(await createChatFeatureHost({
     ...ports,
@@ -346,14 +345,13 @@ describe('Tab provider execution ownership', () => {
     await manager.destroy();
   });
 
-  it('resets a tab after native deletion settles its turn, carrying the unsent and queued input', async () => {
+  it('resets a deleted conversation tab to a blank one that keeps the composer draft', async () => {
     const conversation = createConversation();
     let cached: Conversation | null = conversation;
     const plugin = await createPlugin({
       getCachedConversation: vi.fn(() => cached),
       getConversationById: vi.fn(async () => cached),
       getConversationSync: vi.fn(() => cached),
-      renameConversation: vi.fn().mockResolvedValue(undefined),
     });
     const manager = createTabManager(plugin);
     const view = await createClaudianView({ host: plugin, tabManager: manager });
@@ -364,48 +362,18 @@ describe('Tab provider execution ownership', () => {
       conversations: store,
       views: { getAllViews: () => [view] },
     });
-    plugin.handleMissingProviderSession.mockImplementation(async (id: string) => {
-      // The repository removes the record, then awaits the deletion callback.
-      cached = null;
-      await lifecycle.resetDeletedConversationTabs(id);
-      return 'deleted';
-    });
     const tab = (await manager.createTab(conversation.id))!;
     const runtime = tab.session.runtime;
-    const handoff = deferred<void>();
-    const executed = deferred<void>();
-    vi.spyOn(FakeSession.prototype, 'execute').mockImplementationOnce(function (this: FakeSession, request) {
-      executeSession.call(this, request);
-      const run = this.runs.at(-1)!;
-      executed.resolve();
-      void handoff.promise.then(() => {
-        run.events.push({ type: 'execution_error', category: 'provider-session-missing', recoverable: false,
-          message: 'Native session deleted', missingProviderSessionId: 'native-session', scope: requestedScope(this, run, 1) });
-        run.events.end();
-      });
-      return run;
-    });
-    tab.dom.inputEl.value = 'Unsent prompt';
-    const sending = tab.controllers.inputController.sendMessage();
-    try {
-      await executed.promise;
-      tab.dom.inputEl.value = 'Queued follow-up';
-      await tab.controllers.inputController.sendMessage();
-      tab.dom.inputEl.value = 'Composer draft';
-    } finally {
-      handoff.resolve();
-      await sending;
-    }
+    tab.dom.inputEl.value = 'Composer draft';
+    cached = null;
+
+    await lifecycle.resetDeletedConversationTabs(conversation.id);
     await waitForCondition(() => plugin.sessionRuntimes.get(conversation.id) === null);
 
     const current = manager.getActiveTab()!;
     expect(current.id).toBe(tab.id);
     expect(current.conversationId).toBeNull();
-    const draft = current.controllers.drafts.capture('main').content;
-    expect(draft).toContain('Unsent prompt');
-    expect(draft).toContain('Queued follow-up');
-    expect(draft).toContain('Composer draft');
-    expect(draft.match(/Composer draft/g)).toHaveLength(1);
+    expect(current.controllers.drafts.capture('main').content).toBe('Composer draft');
     expect(runtime.isDisposed).toBe(true);
     await manager.destroy();
   });

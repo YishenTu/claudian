@@ -1,17 +1,12 @@
-import { parseEnvironmentVariables } from '@/core/process/env';
-
 import type { ProviderUIOption } from '../../core/providers/types';
-import { getCustomModelIds } from './claudeModelEnv';
 import { decodeClaudeConfig } from './config';
 import { encodeClaudeModelSelectionId, toClaudeRuntimeModelId } from './modelSelection';
 import { type ClaudeModelTier, isClaudeModelTier } from './modelTiers';
 import { DEFAULT_CLAUDE_MODELS, type EffortLevel } from './types/models';
 
-/** The stored configuration and runtime environment Claude's model options derive from. */
+/** The stored configuration Claude's model options derive from. */
 export interface ClaudeModelSource {
   readonly config: Readonly<Record<string, unknown>>;
-  /** Shared plus Claude environment text; read only to seed selections from legacy configuration. */
-  readonly environmentText: string;
 }
 
 export interface ClaudeModelOption extends ProviderUIOption {
@@ -29,17 +24,10 @@ export function getClaudeModelCatalog(source: ClaudeModelSource): ClaudeModelOpt
   }));
 }
 
-/** Legacy configuration only seeds enablement; it never creates catalog entries. */
+/** Enabled identities; an unset selection enables the defaults. Selections never create catalog entries. */
 export function getClaudeVisibleModelIds(source: ClaudeModelSource): string[] {
-  const stored = source.config;
-  const config = decodeClaudeConfig(stored);
-  if (config.visibleModels !== null) return config.visibleModels.filter(isSelectableClaudeModel);
-  const environmentIds = [...getCustomModelIds(parseEnvironmentVariables(source.environmentText))];
-  const oldManualModels = stored.customModels;
-  return [...new Set([
-    ...(environmentIds.length ? environmentIds : DEFAULT_CLAUDE_MODELS.map(model => model.value)),
-    ...(typeof oldManualModels === 'string' ? oldManualModels.split(/\r?\n/).map(id => id.trim()).filter(Boolean) : []),
-  ])].filter(isSelectableClaudeModel);
+  const { visibleModels } = decodeClaudeConfig(source.config);
+  return (visibleModels ?? DEFAULT_CLAUDE_MODELS.map(model => model.value)).filter(isSelectableClaudeModel);
 }
 
 /** Exact identities win; a missing family member resolves to its highest reported version. */

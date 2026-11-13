@@ -1,4 +1,5 @@
 import { getProviderConfig, setProviderConfig } from '../../core/providers/providerConfig';
+import { getRuntimeEnvironmentText } from '../../core/providers/providerEnvironment';
 import { hasStoredConfigNormalization } from '../../core/providers/settings/storedSettings';
 import type { ProviderModule } from '../../core/providers/types';
 import { claudeWorkspaceRegistration, getClaudeWorkspaceServices } from './app/ClaudeWorkspaceServices';
@@ -8,6 +9,7 @@ import { claudeSettingsReconciler } from './env/ClaudeSettingsReconciler';
 import { ClaudeExecutionBackend } from './execution/ClaudeExecutionBackend';
 import { ClaudeConversationHistoryService } from './history/ClaudeConversationHistoryService';
 import { ClaudeSubagentHistoryService } from './history/ClaudeSubagentHistoryService';
+import { resolveLegacyClaudeVisibleModelIds } from './legacyVisibleModels';
 import {
   getClaudeModelCatalog,
   getClaudeVisibleModelIds,
@@ -50,7 +52,12 @@ export const claudeProviderRegistration: ProviderModule = {
       const storedSettings = getClaudeProviderSettings(stored);
       updateClaudeProviderSettings(target, {
         ...storedSettings,
-        visibleModels: getClaudeVisibleModelIds(getClaudeModelSource(stored)),
+        // An unset selection is persisted once from the legacy inputs that used to seed it.
+        visibleModels: getClaudeVisibleModelIds({ config: {
+          ...storedConfig,
+          visibleModels: storedSettings.visibleModels
+            ?? resolveLegacyClaudeVisibleModelIds(storedConfig, getRuntimeEnvironmentText(stored, 'claude')),
+        } }),
       });
       const targetConfig = getProviderConfig(target, 'claude');
       for (const key of RETIRED_CLAUDE_CONFIG_KEYS) delete targetConfig[key];

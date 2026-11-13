@@ -16,7 +16,6 @@ interface EnvironmentSettingsSectionOptions {
   name: string;
   desc: string;
   placeholder: string;
-  renderCustomContextLimits?: (container: HTMLElement) => void;
 }
 
 export function renderEnvironmentSettingsSection(
@@ -30,7 +29,6 @@ export function renderEnvironmentSettingsSection(
     name,
     desc,
     placeholder,
-    renderCustomContextLimits,
   } = options;
 
   if (heading) {
@@ -77,7 +75,6 @@ export function renderEnvironmentSettingsSection(
           try {
             await plugin.applyEnvironmentVariables(scope, text.inputEl.value);
             refreshInstallations();
-            renderCustomContextLimits?.(contextLimitsContainer);
             updateReviewWarning();
           } catch {
             new Notice('Could not complete environment update.');
@@ -89,12 +86,8 @@ export function renderEnvironmentSettingsSection(
 
   updateReviewWarning();
 
-  const contextLimitsContainer = container.createDiv({ cls: 'claudian-context-limits-container' });
-  renderCustomContextLimits?.(contextLimitsContainer);
-
   const envSnippetsContainer = container.createDiv({ cls: 'claudian-env-snippets-container' });
   new EnvSnippetManager(envSnippetsContainer, plugin, scope, () => {
     refreshInstallations();
-    renderCustomContextLimits?.(contextLimitsContainer);
   });
 }

@@ -28,95 +28,26 @@ describe('usageInfo', () => {
   });
 
   describe('projectContextUsageDisplay', () => {
-    const context = (customContextLimits: Record<string, number> = {}, model = 'model-a') => ({
-      providerId: 'codex' as const,
-      model,
-      customContextLimits,
+    it('shows a reported window', () => {
+      expect(projectContextUsageDisplay(usage({ contextWindow: 200_000 })))
+        .toMatchObject({ model: 'model-a', contextWindow: 200_000, contextTokens: 50_000, percentage: 25 });
     });
 
-    it('uses a reported window even when a custom limit exists', () => {
-      const display = projectContextUsageDisplay(
-        usage({ contextWindow: 200_000 }),
-        context({ 'model-a': 100_000 }),
-      );
-
-      expect(display).toMatchObject({ contextWindow: 200_000, contextTokens: 50_000, percentage: 25 });
-    });
-
-    it('falls back to the custom limit without a reported window', () => {
-      expect(projectContextUsageDisplay(usage(), context({ 'model-a': 100_000 })))
-        .toMatchObject({ contextWindow: 100_000, percentage: 50 });
-    });
-
-    it('hides the meter without a reported window or custom limit', () => {
-      expect(projectContextUsageDisplay(usage(), context())).toBeNull();
-    });
-
-    it('hides the meter without token usage', () => {
-      expect(projectContextUsageDisplay(
-        usage({ contextTokens: 0, contextWindow: 200_000 }),
-        context({ 'model-a': 100_000 }),
-      )).toBeNull();
-      expect(projectContextUsageDisplay(null, context({ 'model-a': 100_000 }))).toBeNull();
-    });
-
-    it('matches custom limits by runtime model id for provider selection ids', () => {
-      expect(projectContextUsageDisplay(
-        usage({ model: 'openai-codex/model-a' }),
-        context({ 'model-a': 100_000 }, 'openai-codex/model-a'),
-      )).toMatchObject({ contextWindow: 100_000, percentage: 50 });
-    });
-
-    it('matches custom limits by an unambiguous case-insensitive runtime id', () => {
-      const displayContext = {
-        ...context({ 'MODEL-A': 100_000 }, 'openai-codex/model-a'),
-      };
-
-      expect(projectContextUsageDisplay(usage(), displayContext))
-        .toMatchObject({ contextWindow: 100_000, percentage: 50 });
-      expect(projectContextUsageDisplay(usage({ contextWindow: 200_000 }), displayContext))
-        .toMatchObject({ contextWindow: 200_000, percentage: 25 });
-    });
-
-    it.each<Record<string, number>>([{}, { 'opencode:anthropic/claude-sonnet-5': 100_000 }])(
-      'uses the native OpenCode report with its selected model ID and fallback %j',
-      customContextLimits => {
-        const raw = usage({ model: 'anthropic/claude-sonnet-5', contextWindow: 200_000 });
-        const model = 'opencode:anthropic/claude-sonnet-5';
-        expect(projectContextUsageDisplay(raw, { providerId: 'opencode', model, customContextLimits }))
-          .toMatchObject({ contextWindow: 200_000, percentage: 25 });
-        expect(projectContextUsageDisplay(raw, { providerId: 'opencode', model: 'opencode:other/model' }))
-          .toMatchObject({ model: raw.model, contextWindow: 200_000, percentage: 25 });
-      },
-    );
-
-    it('ignores invalid custom limits and reported windows', () => {
+    it('hides the meter without a valid reported window', () => {
       for (const invalid of [0, -1, NaN, Infinity]) {
-        expect(projectContextUsageDisplay(
-          usage({ contextWindow: invalid }),
-          context({ 'model-a': invalid }),
-        )).toBeNull();
+        expect(projectContextUsageDisplay(usage({ contextWindow: invalid }))).toBeNull();
       }
     });
 
-    it('keeps the last report when selection changes', () => {
-      expect(projectContextUsageDisplay(
-        usage({ contextWindow: 200_000 }),
-        context({ 'model-b': 100_000 }, 'model-b'),
-      )).toMatchObject({ model: 'model-a', contextWindow: 200_000, percentage: 25 });
-      expect(projectContextUsageDisplay(usage({ contextWindow: 200_000 }), context({}, 'model-b')))
-        .toMatchObject({ model: 'model-a', contextWindow: 200_000, percentage: 25 });
-    });
-
-    it('uses the reported model for custom limits after selection changes', () => {
-      expect(projectContextUsageDisplay(usage(), context({ 'model-a': 200_000, 'model-b': 100_000 }, 'model-b')))
-        .toMatchObject({ model: 'model-a', contextWindow: 200_000, percentage: 25 });
+    it('hides the meter without token usage', () => {
+      expect(projectContextUsageDisplay(usage({ contextTokens: 0, contextWindow: 200_000 }))).toBeNull();
+      expect(projectContextUsageDisplay(null)).toBeNull();
     });
 
     it('keeps the raw usage unchanged', () => {
-      const raw = usage();
-      projectContextUsageDisplay(raw, context({ 'model-a': 100_000 }));
-      expect(raw).toEqual(usage());
+      const raw = usage({ contextWindow: 200_000 });
+      projectContextUsageDisplay(raw);
+      expect(raw).toEqual(usage({ contextWindow: 200_000 }));
     });
   });
 

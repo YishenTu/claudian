@@ -837,7 +837,7 @@ describe('PiExecutionBackend', () => {
     }
   });
 
-  it('retires an untrusted WSL file before a direct retry can resume it', async () => {
+  it('reports an untrusted WSL file as a missing session and keeps it bound across a retry', async () => {
     const platform = process.platform;
     Object.defineProperty(process, 'platform', { value: 'win32', configurable: true });
     const sessionFile = String.raw`\\wsl$\Ubuntu\tmp\untrusted.jsonl`;
@@ -851,14 +851,15 @@ describe('PiExecutionBackend', () => {
       environmentVariables: 'PI_CODING_AGENT_SESSION_DIR=/srv/sessions',
     });
     try {
-      const first = await collect(harness.session.execute(createRequest()).events);
-      const retired = harness.session.getSnapshot();
-      await collect(harness.session.execute(createRequest()).events);
-      expect(first.at(-1)).toMatchObject({ type: 'execution_error', category: 'provider' });
-      expect(retired.providerSessionId).toBeUndefined();
-      expect(retired.providerState).toEqual({ bindingRetired: true, previousSessions: [{ sessionFile, sessionId: 'session-untrusted' }] });
-      expect(harness.kernels.map(kernel => kernel.launchSpec.sessionTarget)).toEqual([null]);
-      expect(harness.session.getSnapshot().providerState).toMatchObject({ previousSessions: [{ sessionFile, sessionId: 'session-untrusted' }] });
+      for (let attempt = 1; attempt <= 2; attempt++) {
+        const events = await collect(harness.session.execute(createRequest()).events);
+        expect(events.at(-1)).toMatchObject({ type: 'execution_error', category: 'provider-session-missing' });
+        const snapshot = harness.session.getSnapshot();
+        expect(snapshot.providerSessionId).toBe('session-untrusted');
+        expect(snapshot.providerState).toEqual({ sessionFile, sessionId: 'session-untrusted' });
+      }
+      // Neither attempt starts Pi, so no other session can stand in for the bound one.
+      expect(harness.kernels).toEqual([]);
     } finally {
       await harness.session.dispose();
       Object.defineProperty(process, 'platform', { value: platform, configurable: true });
@@ -869,7 +870,7 @@ describe('PiExecutionBackend', () => {
     String.raw`\\wsl$\Debian\home\alice\.pi\agent\sessions\session.jsonl`,
     '/tmp/rejected.jsonl',
     '/home/alice/.pi/agent/sessions/missing.jsonl',
-  ])('retires rejected WSL locator %s through hydration, execution and retry', async sessionFile => {
+  ])('keeps rejected WSL locator %s bound through hydration, execution and retry', async sessionFile => {
     const platform = process.platform;
     Object.defineProperty(process, 'platform', { value: 'win32', configurable: true });
     const harness = await createHarness(createConfig({ workingDirectory: String.raw`C:\Vault` }), kernel => {
@@ -896,30 +897,25 @@ describe('PiExecutionBackend', () => {
     };
     const files = createWindowsHostFS({ fs: nodeFS, fsPromises: fs });
     for (const name of ['session-rejected', 'fresh']) await files.write(files.fromLinux(`/home/alice/.pi/agent/sessions/${name}.jsonl`), '');
+    const binding = structuredClone({ sessionId: conversation.sessionId, providerState: conversation.providerState });
     Object.assign(conversation, await new PiConversationHistoryService().hydrateConversationHistory(conversation, String.raw`C:\Vault`, {
       config: harness.host.settings.providerConfigs.pi, environment: { HOME: '/home/alice' }, environmentText: 'HOME=/home/alice', hostPlatform: 'win32',
     }));
-    const hydrated = structuredClone(conversation);
-    const resolveMissing = vi.fn(async () => 'reset' as const);
+    const bound = () => ({ sessionId: conversation.sessionId, providerState: conversation.providerState });
+    expect(bound()).toEqual(binding);
     const recovery = createProviderRecoveryTestHarness({
       backend: harness.backend, conversation, workingDirectory: String.raw`C:\Vault`,
-      configuration: createRequest().configuration, resolveMissingProviderSession: resolveMissing,
+      configuration: createRequest().configuration,
     });
     try {
       for (let attempt = 1; attempt <= 2; attempt++) {
-        const execution = recovery.execute().then(value => ({ value }), error => ({ error }));
-        await waitFor(() => harness.kernels.reduce((count, kernel) => count + getPromptMessages(kernel).length, 0) === attempt);
-        completeTurn(harness.kernels.at(-1)!);
-        await expect(execution).resolves.toMatchObject({ value: { status: 'completed' } });
+        await expect(recovery.execute()).resolves.toMatchObject({
+          status: 'error', error: { category: 'provider-session-missing' },
+        });
+        expect(bound()).toEqual(binding);
       }
-      expect(hydrated.sessionId).toBeNull();
-      expect(hydrated.providerState).toEqual({ bindingRetired: true, previousSessions: [{ sessionFile, sessionId: 'session-rejected' }] });
-      expect(resolveMissing).not.toHaveBeenCalled();
-      expect(harness.kernels[0].launchSpec.sessionTarget).toBeNull();
-      expect(harness.kernels.every(kernel => kernel.launchSpec.sessionTarget === null
-        || kernel.launchSpec.sessionTarget === '/home/alice/.pi/agent/sessions/fresh.jsonl')).toBe(true);
-      expect(conversation.sessionId).toBe('fresh-session');
-      expect(conversation.providerState).toMatchObject({ previousSessions: [{ sessionFile, sessionId: 'session-rejected' }] });
+      // Neither attempt starts Pi, so the current distro's same-ID session is never resumed.
+      expect(harness.kernels).toEqual([]);
     } finally {
       await recovery.coordinator.dispose();
       await harness.session.dispose();
@@ -1189,7 +1185,7 @@ describe('PiExecutionBackend', () => {
     await fs.rm(sessionDir, { force: true, recursive: true });
   });
 
-  it('retains a missing persisted session path until recovery resolves it', async () => {
+  it('keeps a missing persisted session path bound when execution reports it missing', async () => {
     const sessionDir = await fs.mkdtemp(path.join(os.tmpdir(), 'pi-missing-path-'));
     const missingSessionFile = path.join(sessionDir, 'missing.jsonl');
     const harness = (await createHarness(createConfig({
@@ -1210,7 +1206,6 @@ describe('PiExecutionBackend', () => {
 
     expect(events.at(-1)).toMatchObject({
       category: 'provider-session-missing',
-      missingProviderSessionId: missingSessionFile,
       type: 'execution_error',
     });
     expect(harness.kernels).toHaveLength(0);
@@ -1225,7 +1220,7 @@ describe('PiExecutionBackend', () => {
     await fs.rm(sessionDir, { force: true, recursive: true });
   });
 
-  it('resets a missing persisted path through the coordinator before retrying', async () => {
+  it('keeps a missing persisted path bound through the coordinator and a retry', async () => {
     const sessionDir = await fs.mkdtemp(path.join(os.tmpdir(), 'pi-coordinator-missing-'));
     const missingSessionFile = path.join(sessionDir, 'missing.jsonl');
     const harness = (await createHarness(createConfig({
@@ -1233,6 +1228,10 @@ describe('PiExecutionBackend', () => {
     })));
     harness.host.settings.providerConfigs.pi!.environmentVariables =
       `PI_CODING_AGENT_SESSION_DIR=${sessionDir}`;
+    const providerState = {
+      futureResumeCursor: { token: 'keep-me' },
+      sessionFile: missingSessionFile,
+    };
     const conversation: Conversation = {
       id: 'pi-recovery',
       providerId: 'pi',
@@ -1241,47 +1240,25 @@ describe('PiExecutionBackend', () => {
       lastActivityAt: 1,
       sessionId: missingSessionFile,
       messages: [],
-      providerState: {
-        futureResumeCursor: { token: 'keep-me' },
-        sessionFile: missingSessionFile,
-      },
+      providerState: structuredClone(providerState),
     };
-    const historyService = new PiConversationHistoryService();
     const recovery = createProviderRecoveryTestHarness({
       backend: harness.backend,
       conversation,
       workingDirectory: sessionDir,
       configuration: createRequest().configuration,
-      resolveMissingProviderSession: async (current, missingSessionId) => {
-        const resolution = await historyService.resolveMissingConversationSession(
-          current,
-          sessionDir,
-          missingSessionId,
-        );
-        Object.assign(current, resolution.changes);
-        return resolution.outcome === 'delete' ? 'deleted' : resolution.outcome === 'preserve'
-          ? 'preserved'
-          : 'reset';
-      },
     });
 
-    await expect(recovery.execute()).resolves.toMatchObject({
-      missingSessionResolution: 'reset',
-      status: 'missing-session',
-    });
-    expect(conversation.sessionId).toBeNull();
-    expect(conversation.providerState).toEqual({
-      bindingRetired: true,
-      futureResumeCursor: { token: 'keep-me' },
-      previousSessions: [{
-        sessionFile: missingSessionFile,
-        sessionId: missingSessionFile,
-      }],
-    });
-
-    await recovery.coordinator.prepare();
-    expect(recovery.createSessionSpy).toHaveBeenCalledTimes(2);
-    expect(recovery.createSessionSpy.mock.calls[1]?.[0].resumeSeed).toBeUndefined();
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      await expect(recovery.execute()).resolves.toMatchObject({
+        status: 'error',
+        error: { category: 'provider-session-missing' },
+      });
+      expect(conversation.sessionId).toBe(missingSessionFile);
+      // The session records its bound id in provider state; the locator itself is unchanged.
+      expect(conversation.providerState).toEqual({ ...providerState, sessionId: missingSessionFile });
+    }
+    expect(harness.kernels).toHaveLength(0);
     await recovery.coordinator.dispose();
     await fs.rm(sessionDir, { force: true, recursive: true });
   });
@@ -1437,7 +1414,6 @@ describe('PiExecutionBackend', () => {
     expect(harness.kernels[0].launchSpec.args).not.toContain(missingSessionFile);
     expect(events.at(-1)).toMatchObject({
       category: 'provider-session-missing',
-      missingProviderSessionId: 'missing-session-id',
       type: 'execution_error',
     });
     expect(harness.session.getSnapshot()).toMatchObject({
@@ -1480,7 +1456,6 @@ describe('PiExecutionBackend', () => {
 
     expect(events.at(-1)).toMatchObject({
       category: 'provider-session-missing',
-      missingProviderSessionId: outsideSessionFile,
       type: 'execution_error',
     });
     expect(harness.kernels).toHaveLength(0);

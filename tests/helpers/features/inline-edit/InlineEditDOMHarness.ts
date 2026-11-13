@@ -44,7 +44,6 @@ const createFakeModelPolicy = (
   isDefaultModel: () => true,
   applyModelDefaults: () => {},
   normalizeModelVariant: model => model,
-  getCustomModelIds: () => new Set(),
 });
 
 /**
@@ -73,7 +72,6 @@ export function registerFakeInlineEditProvider(
     settingsStorage: { normalizeStored: () => false },
     createExecutionBackend: () => backend,
     settingsReconciler: {
-      invalidateConversationSessions: unsupported,
       reconcileModelWithEnvironment: unsupported,
     },
     historyService: {

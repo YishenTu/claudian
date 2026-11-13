@@ -9,10 +9,10 @@
 - Preserve the conversation's trusted database path across session updates until a typed history/environment transition replaces it. Recovery locators cannot become live bindings.
 - Only OpenCode v2 runs; any other installed major is rejected. Claudian records carry no native version, and only `opencode serve` decides whether a session exists, never OpenCode's storage directly.
 - A recorded database never silently moves. History, model recovery, forks and execution resolve it through one policy (`OpencodeBindingDatabase`) that may refuse access (missing file, or neither in a trusted data root nor the configured `OPENCODE_DB`) but never rewrites the locator; only a binding without one, or with no session left to locate, starts on the current database.
-- Execution refuses to resume or fork on a refused database before launching any server: a resume reports the session missing, which retires it with its recorded database, and a deferred fork fails with its source kept.
+- Execution refuses to resume or fork on a refused database before launching any server: a resume reports the session missing and keeps the binding with its recorded database, and a deferred fork fails with its source kept.
 - A missing or refused session keeps its locator (live binding or previous session) so it reads again once accessible or migrated; retired sessions are read only from their recorded database.
 - Model/command probes may query native catalog endpoints with the native database to retain saved credentials, but must never create a session. Discovery must not create a real chat session for history-backed conversations lacking a native binding.
-- Environment/CLI fingerprint changes fence discovery publication; keep model catalog rows until explicit refresh. Invalidation preserves bindings with a recorded persistent database and lets old native work and cleanup drain before retiring its server. It retires bindings without one into recovery-only previous sessions; the next send replays history.
+- Environment/CLI fingerprint changes fence discovery publication; keep model catalog rows until explicit refresh. They keep every binding and let old native work and cleanup drain before retiring its server; a binding without a recorded database resumes against the current one. Previous sessions written by earlier versions stay recovery-only.
 - OpenCode keeps saved credentials in its native database, so executions that request in-memory storage run against the native database and delete their native session on disposal.
 
 ## Runtime, turns, and tools

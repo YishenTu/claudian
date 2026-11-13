@@ -29,7 +29,6 @@ export const DEFAULT_CLAUDIAN_SETTINGS: ClaudianSettings = {
 
   sharedEnvironmentVariables: '',
   envSnippets: [],
-  customContextLimits: {},
 
   keyboardNavigation: {
     scrollUpKey: 'w',
@@ -49,7 +48,6 @@ export const DEFAULT_CLAUDIAN_SETTINGS: ClaudianSettings = {
   savedProviderEffort: {},
   savedProviderServiceTier: {},
   savedProviderPermissionMode: {},
-  pendingProviderSessionInvalidations: {},
 
   enableAutoScroll: true,
   deferMathRenderingDuringStreaming: true,

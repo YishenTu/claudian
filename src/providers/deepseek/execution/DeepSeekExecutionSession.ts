@@ -1010,7 +1010,7 @@ export class DeepSeekExecutionSession implements ProviderExecutionSession {
     const mode = processEnded || this.observer?.failed ? 'release' : this.stopInProgress() ? 'stop' : 'retain';
     if (error instanceof DeepSeekReplayError) this.reloadError = error;
     const message = error instanceof Error ? error.message : 'DeepSeek execution failed.';
-    this.requested?.channel.finish({ type: 'execution_error', category, message, recoverable: true, ...(category === 'provider-session-missing' ? { missingProviderSessionId: this.nativeId } : {}) });
+    this.requested?.channel.finish({ type: 'execution_error', category, message, recoverable: true });
     this.snapshots.invalidate({ reason: category === 'process-exited' ? 'process-exited' : category === 'provider-session-missing' ? 'provider-session-missing' : 'transport-closed', recoverable: true, message });
     this.snapshots.emit({ type: 'session_error', category, message, recoverable: true });
     this.interactions.dismissAll('native-rejected');

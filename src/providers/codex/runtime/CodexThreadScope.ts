@@ -5,6 +5,8 @@ import type { CodexThreadClient, CodexThreadRelinquishResult } from './CodexThre
 
 export interface CodexThreadObserver {
   notification(method: string, params: unknown): void;
+  /** Codex started a turn on an owned root thread, even after this scope stopped delivering it. */
+  rootTurnStarted(threadId: string): void;
   serverRequest(id: string | number, method: string, params: unknown): Promise<unknown>;
   stop(): Promise<void>;
   workChanged(): void;
@@ -228,6 +230,7 @@ export class CodexThreadScope implements CodexThreadClient {
     const thread = id ? this.threads.get(id) : undefined;
     if (!thread) return;
     const turnId = data.turn?.id ?? data.turnId;
+    if (method === 'turn/started' && thread.parentId === null && !thread.abandoned) this.observer?.rootTurnStarted(thread.id);
     if (method === 'item/completed' && data.item?.type === 'subAgentActivity' && data.item.agentThreadId) {
       const child = this.#adopt(data.item.agentThreadId, thread.id);
       child.abandoned ||= thread.abandoned;

@@ -132,7 +132,7 @@ it('classifies a native session 404 separately from an authentication failure', 
     const session = f.createSession({ resumeSeed: { providerSessionId: 'saved', providerState: { databasePath: f.environment.OPENCODE_DB } } });
     try {
       const events = await watch(session.execute(turn('hello'))).done;
-      expect(events.at(-1)).toMatchObject({ type: 'execution_error', category: status === 404 ? 'provider-session-missing' : 'provider', ...(status === 404 ? { missingProviderSessionId: 'saved' } : {}) });
+      expect(events.at(-1)).toMatchObject({ type: 'execution_error', category: status === 404 ? 'provider-session-missing' : 'provider' });
       expect(session.getSnapshot()).toMatchObject({ providerSessionId: 'saved' });
     } finally { await session.dispose(); }
   }

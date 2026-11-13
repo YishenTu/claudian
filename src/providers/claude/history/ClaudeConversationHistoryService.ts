@@ -7,7 +7,6 @@ import type {
   ProviderConversationHistoryService,
   ProviderConversationSessionAvailability,
   ProviderHistoryInput,
-  ProviderHistoryResult,
   ProviderHistoryState,
   ProviderHistoryUpdate,
 } from '../../../core/providers/types';
@@ -44,7 +43,6 @@ import {
   locateSDKSession,
   locateSDKSessions,
   readSubagentToolUseIndex,
-  recoverSDKSessionIdByTime,
 } from './ClaudeHistoryStore';
 
 function chooseRicherResult(sdkResult?: string, cachedResult?: string): string | undefined {
@@ -680,7 +678,6 @@ export class ClaudeConversationHistoryService implements ProviderConversationHis
     state.previousProviderSessionIds = [
       ...new Set([...(state.previousProviderSessionIds || []), sessionId]),
     ];
-    state.bindingRetired = true;
     delete state.providerSessionId;
 
     if (state.forkSource?.sessionId === sessionId) {
@@ -691,51 +688,6 @@ export class ClaudeConversationHistoryService implements ProviderConversationHis
     conversation.sessionId = null;
     conversation.providerState = sanitizeProviderState(state);
     return conversation;
-  }
-
-  async resolveMissingConversationSession(
-    input: ProviderHistoryInput,
-    vaultPath: string | null,
-    missingProviderSessionId?: string,
-    pathContext?: ClaudeConfigDirContext,
-  ): Promise<ProviderHistoryResult<'delete' | 'reset' | 'preserve'>> {
-    const conversation = copyProviderHistoryState(input);
-    const currentSessionId = this.resolveSessionIdForConversation(conversation);
-    if (
-      !vaultPath
-      || !currentSessionId
-      || (missingProviderSessionId
-        && missingProviderSessionId.toLowerCase() !== currentSessionId.toLowerCase())
-    ) {
-      return { outcome: 'preserve' };
-    }
-
-    pathContext = await resolveClaudeHistoryContext(pathContext, vaultPath);
-    const sessionIds = this.#getConversationSessionIds(conversation);
-    const locations = await locateSDKSessions(vaultPath, sessionIds, pathContext);
-    const cache = this.#getSessionLocationCache(input, vaultPath, pathContext);
-    const preservedSessionIds = sessionIds.filter(
-      sessionId => locations.get(sessionId)?.availability !== 'missing',
-    );
-    if (preservedSessionIds.length === 0) {
-      cache.pending.clear();
-      cache.relocated.clear();
-      return { outcome: 'delete' };
-    }
-
-    const state = { ...getClaudeState(conversation.providerState) };
-    state.previousProviderSessionIds = preservedSessionIds;
-    state.bindingRetired = true;
-    delete state.providerSessionId;
-    if (state.forkSource?.sessionId === currentSessionId) {
-      conversation.resumeAtMessageId = state.forkSource.resumeAt;
-      delete state.forkSource;
-    }
-
-    conversation.sessionId = null;
-    conversation.providerState = sanitizeProviderState(state);
-    cache.pending.clear();
-    return { outcome: 'reset', changes: conversation };
   }
 
   isPendingForkConversation(conversation: ProviderHistoryInput): boolean {
@@ -834,73 +786,6 @@ export class ClaudeConversationHistoryService implements ProviderConversationHis
     };
   }
 
-  async recoverConversationSessionReference(
-    input: ProviderHistoryInput,
-    vaultPath: string | null,
-    pathContext?: ClaudeConfigDirContext,
-  ): Promise<ProviderHistoryUpdate | null> {
-    const conversation = copyProviderHistoryState(input);
-    if (!vaultPath || this.resolveSessionIdForConversation(conversation)) {
-      return null;
-    }
-    pathContext = await resolveClaudeHistoryContext(pathContext, vaultPath);
-    const state = getClaudeState(conversation.providerState);
-    // Retired sessions are exact locators; matching by time must never stand in for them.
-    if (state.previousProviderSessionIds?.length) {
-      // Retired-binding migration: return null here once the restore is removed.
-      return this.#restoreEarlierRetiredBinding(conversation, state, vaultPath, pathContext);
-    }
-    if (input.createdAt === undefined || input.lastActivityAt === undefined) {
-      return null;
-    }
-
-    const fingerprint = {
-      createdAt: input.createdAt,
-      lastActivityAt: input.lastActivityAt,
-    };
-    const recoveredSessionId = await recoverSDKSessionIdByTime(vaultPath, fingerprint, pathContext);
-    if (!recoveredSessionId) return null;
-
-    conversation.sessionId = recoveredSessionId;
-    conversation.providerState = sanitizeProviderState({
-      ...getClaudeState(conversation.providerState),
-      providerSessionId: recoveredSessionId,
-    });
-    return conversation;
-  }
-
-  /**
-   * Retired-binding migration (#1647, added 2026-10-16; remove after 2027-01-16).
-   * Earlier versions retired live bindings on launch-only changes without marking them. The latest
-   * session is restored once when its transcript is still in the configured store; a kept
-   * checkpoint may be a pending fork's, whose retired session belongs to the fork source.
-   */
-  async #restoreEarlierRetiredBinding(
-    conversation: ProviderHistoryState,
-    state: ClaudeProviderState,
-    vaultPath: string,
-    pathContext?: ClaudeConfigDirContext,
-  ): Promise<ProviderHistoryUpdate | null> {
-    if (state.bindingRetired) return null;
-    const previousSessionIds = state.previousProviderSessionIds ?? [];
-    const sessionId = previousSessionIds.at(-1)!;
-    const availability = conversation.resumeAtMessageId
-      ? 'missing'
-      : (await locateSDKSession(vaultPath, sessionId, pathContext)).availability;
-    if (availability === 'unknown') return null;
-    if (availability !== 'available') {
-      conversation.providerState = sanitizeProviderState({ ...state, bindingRetired: true });
-      return conversation;
-    }
-    conversation.sessionId = sessionId;
-    conversation.providerState = sanitizeProviderState({
-      ...state,
-      providerSessionId: sessionId,
-      previousProviderSessionIds: previousSessionIds.length > 1 ? previousSessionIds.slice(0, -1) : undefined,
-    });
-    return conversation;
-  }
-
   async hydrateConversationHistory(
     input: ProviderHistoryInput,
     vaultPath: string | null,
@@ -939,7 +824,6 @@ export class ClaudeConversationHistoryService implements ProviderConversationHis
     }
 
     pathContext = await resolveClaudeHistoryContext(pathContext, vaultPath);
-    Object.assign(conversation, await this.recoverConversationSessionReference(input, vaultPath, pathContext));
     const allSessionIds = this.#getConversationSessionIds(conversation);
 
     const state = getClaudeState(conversation.providerState);

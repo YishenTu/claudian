@@ -102,12 +102,9 @@ export interface ProviderSettingsStorageAdapter {
   ): boolean;
 }
 
-export type ProviderEnvironmentSessionPolicy = 'invalidate' | 'reload';
-
+/** A changed runtime fingerprint restarts the provider runtime; conversation bindings never change. */
 export interface ProviderEnvironmentReconciliation {
   changed: boolean;
-  /** How this change treats conversation bindings; `invalidate` when omitted. */
-  sessionPolicy?: ProviderEnvironmentSessionPolicy;
 }
 
 export interface ProviderSettingsReconciliationContext {
@@ -117,19 +114,6 @@ export interface ProviderSettingsReconciliationContext {
 
 export interface ProviderSettingsReconciler {
   handleEnvironmentChange?(settings: Record<string, unknown>): boolean;
-
-  /**
-   * Clears resumable native bindings only. History locators must survive as
-   * recovery-only state, readable while their native store remains trusted.
-   */
-  invalidateConversationSessions(conversations: Conversation[]): Conversation[];
-
-  /**
-   * Whether invalidation deliberately keeps this conversation's binding live (its native
-   * store is unaffected), so a session still running for it keeps its execution authority.
-   * `invalidateConversationSessions` must leave exactly these conversations untouched.
-   */
-  preservesConversationSession?(conversation: Conversation): boolean;
 
   reconcileModelWithEnvironment(settings: Record<string, unknown>, context?: ProviderSettingsReconciliationContext): ProviderEnvironmentReconciliation;
 
@@ -288,14 +272,6 @@ export interface ProviderModelPolicy {
     settings: Record<string, unknown>,
   ): string;
 
-  /** Extract custom model IDs from parsed environment variables. Used for per-model context limit UI. */
-  getCustomModelIds(envVars: Record<string, string>): Set<string>;
-
-  /** Provider-owned aliases for custom models configured through environment snippets. */
-  customModelAliases?: {
-    get(settings: Record<string, unknown>): Record<string, string>;
-    update(settings: Record<string, unknown>, aliases: Record<string, string>): void;
-  };
 
   /** Available service-tier choices and the currently resolved tier. */
   getServiceTierPolicy?(settings: Record<string, unknown>): ProviderServiceTierPolicy | null;
@@ -391,7 +367,6 @@ export interface ProviderSettingsTabRendererContext {
   plugin: ProviderHost;
   /** Publish provider model-option changes to every settings and chat consumer. */
   notifyProviderModelOptionsChanged(providerId: ProviderId): void;
-  renderCustomContextLimits(container: HTMLElement, providerId: ProviderId): void;
 }
 
 export interface ProviderSettingsTabRenderHandle {
@@ -449,12 +424,6 @@ export interface ProviderConversationHistoryService {
     vaultPath: string | null,
     pathContext?: ProviderHistoryPathContext,
   ): Promise<string | null>;
-  /** Recovers a missing provider-native session reference before history hydration. */
-  recoverConversationSessionReference?(
-    conversation: ProviderHistoryInput,
-    vaultPath: string | null,
-    pathContext?: ProviderHistoryPathContext,
-  ): Promise<ProviderHistoryUpdate | null>;
   /**
    * Reports whether the provider-native session needed to resume a persisted
    * conversation is still available. Providers that cannot distinguish a
@@ -471,13 +440,6 @@ export interface ProviderConversationHistoryService {
     vaultPath: string | null,
     pathContext?: ProviderHistoryPathContext,
   ): Promise<ProviderHistoryUpdate | null>;
-  /** Decides whether a confirmed missing resume session makes the whole record disposable. */
-  resolveMissingConversationSession?(
-    conversation: ProviderHistoryInput,
-    vaultPath: string | null,
-    missingProviderSessionId?: string,
-    pathContext?: ProviderHistoryPathContext,
-  ): Promise<ProviderHistoryResult<'delete' | 'reset' | 'preserve'>>;
   hydrateConversationHistory(
     conversation: ProviderHistoryInput,
     vaultPath: string | null,

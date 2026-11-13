@@ -11,7 +11,6 @@ const baseSettings: PiProviderSettings = {
   environmentVariables: '',
   modelAliases: {},
   preferredThinkingByModel: {},
-  sessionEnvironmentHash: '',
   visibleModels: [],
 };
 

@@ -79,9 +79,9 @@ import { waitForGrokCancelDelivery } from '../runtime/GrokCancelDelivery';
 import { resolveGrokExecutionContext } from '../runtime/GrokExecutionContext';
 import { assertGrokModelAvailable } from '../runtime/GrokModelAvailability';
 import type { GrokModelCatalogCoordinator } from '../runtime/GrokModelCatalogCoordinator';
-import { computeGrokRuntimeInputHash, computeGrokSessionEnvironmentHash } from '../runtime/GrokRuntimeEnvironment';
+import { computeGrokRuntimeInputHash } from '../runtime/GrokRuntimeEnvironment';
 import { GrokSessionNotificationMirrorDeduplicator } from '../runtime/GrokSessionNotificationMirrorDeduplicator';
-import { clearGrokResumeState, parseGrokProviderState } from '../types';
+import { parseGrokProviderState } from '../types';
 import type {
   GrokExecutionNativeConnection,
   GrokExecutionNativeFactory,
@@ -126,7 +126,6 @@ interface GrokNativeSession {
 }
 
 interface GrokNativeOwner {
-  readonly sessionStoreKey?: string;
   readonly launch: TargetLaunchSpec;
   readonly historyContext: GrokHistoryEnvironment;
   initialized: boolean;
@@ -401,9 +400,6 @@ RewindableExecutionSession {
       this.#endRun(active, {
         category,
         message: error instanceof Error ? error.message : String(error),
-        ...(category === 'provider-session-missing' && this.providerSessionId
-          ? { missingProviderSessionId: this.providerSessionId }
-          : {}),
         recoverable: true,
         type: 'execution_error',
       });
@@ -440,9 +436,6 @@ RewindableExecutionSession {
     if (context.target.method === 'wsl' && !resolveGrokSessionHome(historyContext.environment, process.platform, context.target)) {
       throw new Error('Could not determine the Grok WSL session store. Check Linux HOME/GROK_HOME and shell startup.');
     }
-    const sessionStoreKey = context.target.method === 'wsl'
-      ? computeGrokSessionEnvironmentHash('', context.target, historyContext.environment) : undefined;
-    this.#retireChangedSessionStore(sessionStoreKey);
     const native = this.options.nativeFactory.create({
       ...launch,
       cwd: launch.spawnCwd,
@@ -485,7 +478,7 @@ RewindableExecutionSession {
       version: this.host.clientVersion ?? '0.0.0',
     });
     const owner: GrokNativeOwner = {
-      launch, historyContext, sessionStoreKey,
+      launch, historyContext,
       initialized: false,
       loadedSessionConfigurationKey: null,
       loadedSessionId: null,
@@ -1035,25 +1028,11 @@ RewindableExecutionSession {
     };
   }
 
-  #retireChangedSessionStore(sessionStoreKey: string | undefined): void {
-    const previous = this.state.providerState.sessionStoreKey;
-    if (!previous || !sessionStoreKey || previous === sessionStoreKey) return;
-    const draft = { sessionId: this.providerSessionId ?? null, providerState: { ...this.state.providerState } };
-    if (!clearGrokResumeState(draft)) return;
-    this.providerSessionId = undefined;
-    for (const key of Object.keys(this.state.providerState)) {
-      if (!(key in draft.providerState)) this.state.deleteProviderStateValue(key);
-    }
-    for (const [key, value] of Object.entries(draft.providerState)) this.state.setProviderStateValue(key, value);
-    this.#setNativeConversationContextEstablished(false);
-  }
-
   #captureProviderSession(
     providerSessionId: string,
     persistedSessionDirectory: string | null | undefined,
   ): void {
     this.providerSessionId = providerSessionId;
-    if (this.nativeSlot.current?.sessionStoreKey) this.state.setProviderStateValue('sessionStoreKey', this.nativeSlot.current.sessionStoreKey);
     for (const key of ['historySessionId', 'historyResumeAt']) {
       if (key in this.state.providerState) this.state.deleteProviderStateValue(key);
     }

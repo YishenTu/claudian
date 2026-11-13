@@ -273,11 +273,12 @@ describe('Codex shared runtime', () => {
     expect(specs.filter((spec) => spec.namespace === 'claudian_sessions').map((spec) => spec.name))
       .toEqual(ported ? ['claudian_list_destinations', 'claudian_send_message', 'claudian_read_session'] : []);
     expect(specs.every((spec) => !('type' in spec))).toBe(true);
-    expect(session.getSnapshot().providerState?.sessionToolVersion).toBe(ported ? 4 : undefined);
     expect(await sessionToolCall(process, 'thread-1')).toMatchObject({ result: { success: ported } });
     expect(port.list.mock.calls).toHaveLength(ported ? 1 : 0);
     complete(process, 'thread-1');
     await output;
+    // The version is published with the thread once Codex accepts its first turn.
+    expect(session.getSnapshot().providerState?.sessionToolVersion).toBe(ported ? 4 : undefined);
     await session.dispose();
   });
 
@@ -482,7 +483,7 @@ describe('Codex shared runtime', () => {
   it.each([false, true])('retains native cleanup after retiring a requested turn (start acknowledged: %s)', async acknowledged => {
     mockNative.autoReconcile = true;
     const lease = await createRuntime().acquire();
-    const scope = lease.connection.createThreadScope({ notification: vi.fn(), serverRequest: vi.fn(), stop: vi.fn(), workChanged: vi.fn() });
+    const scope = lease.connection.createThreadScope({ notification: vi.fn(), rootTurnStarted: vi.fn(), serverRequest: vi.fn(), stop: vi.fn(), workChanged: vi.fn() });
     await scope.open('thread/start', {});
     let heldStart: number | undefined;
     mockNative.requestOverride = (_process, call) => {
@@ -613,7 +614,7 @@ describe('Codex shared runtime', () => {
     mockNative.autoReconcile = true;
     const runtime = createRuntime();
     const lease = await runtime.acquire();
-    const observer = () => ({ notification: vi.fn(), serverRequest: vi.fn(), stop: vi.fn(), workChanged: vi.fn() });
+    const observer = () => ({ notification: vi.fn(), rootTurnStarted: vi.fn(), serverRequest: vi.fn(), stop: vi.fn(), workChanged: vi.fn() });
     const source = lease.connection.createThreadScope(observer());
     const fork = lease.connection.createThreadScope(observer());
     const process = mockNative.processes[0];
@@ -642,7 +643,7 @@ describe('Codex shared runtime', () => {
     mockNative.autoReconcile = true;
     const lease = await createRuntime().acquire();
     const changed = new EventEmitter();
-    const observer = () => ({ notification: vi.fn(), serverRequest: vi.fn(), stop: vi.fn(), workChanged: () => { changed.emit('work'); } });
+    const observer = () => ({ notification: vi.fn(), rootTurnStarted: vi.fn(), serverRequest: vi.fn(), stop: vi.fn(), workChanged: () => { changed.emit('work'); } });
     const original = lease.connection.createThreadScope(observer());
     const reopened = lease.connection.createThreadScope(observer());
     const process = mockNative.processes[0];
@@ -667,7 +668,7 @@ describe('Codex shared runtime', () => {
   it('asks for a retry when a chat is reopened while its closed predecessor is still stopping', async () => {
     mockNative.autoReconcile = true;
     const lease = await createRuntime().acquire();
-    const observer = () => ({ notification: vi.fn(), serverRequest: vi.fn(), stop: vi.fn(), workChanged: vi.fn() });
+    const observer = () => ({ notification: vi.fn(), rootTurnStarted: vi.fn(), serverRequest: vi.fn(), stop: vi.fn(), workChanged: vi.fn() });
     const original = lease.connection.createThreadScope(observer());
     const reopened = lease.connection.createThreadScope(observer());
     const process = mockNative.processes[0];
@@ -696,7 +697,7 @@ describe('Codex shared runtime', () => {
   it('keeps turn inputs while a start fails without a native response', async () => {
     mockNative.autoReconcile = true;
     const lease = await createRuntime().acquire();
-    const scope = lease.connection.createThreadScope({ notification: vi.fn(), serverRequest: vi.fn(), stop: vi.fn(), workChanged: vi.fn() });
+    const scope = lease.connection.createThreadScope({ notification: vi.fn(), rootTurnStarted: vi.fn(), serverRequest: vi.fn(), stop: vi.fn(), workChanged: vi.fn() });
     await scope.open('thread/start', {});
     const process = mockNative.processes[0];
     mockNative.requestOverride = (_native, rpc) => rpc.method === 'turn/start';
@@ -717,7 +718,7 @@ describe('Codex shared runtime', () => {
     mockNative.autoReconcile = true;
     const runtime = createRuntime();
     const lease = await runtime.acquire();
-    const scope = lease.connection.createThreadScope({ notification: vi.fn(), serverRequest: vi.fn(), stop: vi.fn(), workChanged: vi.fn() });
+    const scope = lease.connection.createThreadScope({ notification: vi.fn(), rootTurnStarted: vi.fn(), serverRequest: vi.fn(), stop: vi.fn(), workChanged: vi.fn() });
     await scope.open('thread/start', {});
     await lease.release();
     const process = mockNative.processes[0];
@@ -1148,7 +1149,7 @@ describe('Codex shared runtime', () => {
     const output = collect(session.execute(request).events);
     const process = await waitForRequest('turn/start');
     const lease = await runtime.acquire();
-    const scope = lease.connection.createThreadScope({ notification: vi.fn(), serverRequest: vi.fn(), stop: vi.fn(), workChanged: vi.fn() });
+    const scope = lease.connection.createThreadScope({ notification: vi.fn(), rootTurnStarted: vi.fn(), serverRequest: vi.fn(), stop: vi.fn(), workChanged: vi.fn() });
     let creationId!: number;
     mockNative.requestOverride = (_process, rpc) => {
       if (rpc.method !== method) return false;

@@ -31,30 +31,19 @@ function conversation(overrides: Partial<ProviderHistoryInput>): ProviderHistory
 }
 
 describe('AntigravityConversationHistoryService', () => {
-  it('keeps a missing session recoverable from its surviving transcript', async () => {
+  it('reads a retired history locator without making it resumable', async () => {
     await installTranscript('session-lost');
-    const bound = conversation({ providerState: { unrelated: 'kept' }, sessionId: 'session-lost' });
-
-    const reset = await service.resolveMissingConversationSession(bound, null, 'session-lost');
-    expect(reset).toMatchObject({ outcome: 'reset' });
-    const changes = (reset as { changes: ProviderHistoryInput }).changes;
-    expect(changes.sessionId).toBeNull();
-    expect(changes.providerState).toEqual({
-      historySessionId: 'session-lost',
-      nativeConversationContextEstablished: false,
-      unrelated: 'kept',
+    // Earlier versions retired a missing binding into this history-only locator.
+    const retired = conversation({
+      providerState: { historySessionId: 'session-lost', nativeConversationContextEstablished: false, unrelated: 'kept' },
     });
 
     // A cold reload starts without messages and must still find the transcript.
-    const hydrated = await service.hydrateConversationHistory(conversation({ ...changes, messages: [] }), null, pathContext);
+    const hydrated = await service.hydrateConversationHistory(retired, null, pathContext);
     expect(hydrated.messages?.[0]).toMatchObject({ content: 'Uppercase alpha and beta in notes.md.', role: 'user' });
+    expect(service.resolveSessionIdForConversation(retired)).toBeNull();
     // Only the live binding has a changing native revision.
-    await expect(service.readNativeHistoryRevision(conversation(changes), null, pathContext)).resolves.toBeNull();
-  });
-
-  it('preserves the binding when a different session is reported missing', async () => {
-    await expect(service.resolveMissingConversationSession(conversation({ sessionId: 'session-live' }), null, 'session-old'))
-      .resolves.toEqual({ outcome: 'preserve' });
+    await expect(service.readNativeHistoryRevision(retired, null, pathContext)).resolves.toBeNull();
   });
 
   it('marks native context established when the bound session already has a transcript', async () => {

@@ -122,10 +122,6 @@ export const opencodeModelPolicy: ProviderModelPolicy = {
   },
 
   normalizeModelVariant: model => model,
-
-  getCustomModelIds(): Set<string> {
-    return new Set<string>();
-  }
 };
 
 function applyOpencodeModelDefaults(model: string, settings: unknown): void {

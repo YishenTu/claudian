@@ -14,7 +14,7 @@ import { renderProjectMemberInstructions } from '@/core/prompt/projectPrompt';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import type { ChatMessage, Conversation } from '@/core/types';
 import type { ImageAttachment } from '@/core/types';
-import { createQueuedMessage } from '@/features/chat/state/chatTurnRequest';
+import { t } from '@/i18n/i18n';
 
 const nativeCapabilities = ProviderRegistry.getCapabilities('claude');
 beforeEach(() => {
@@ -582,26 +582,9 @@ describe('MainTurnExecution', () => {
     expect(fixture.state.activity?.kind).not.toBe('error');
   });
 
-  it('restores pending input when the coordinator reports a missing session', async () => {
-    const fixture = (await createFixture());
-    fixture.input.value = 'retry me';
-    fixture.execution.missingSession.mockResolvedValueOnce('reset');
-    fixture.native.respond.mockImplementationOnce(run => {
-      run.emit({ type: 'turn_started', accepted: false });
-      run.emit({ type: 'execution_error', category: 'provider-session-missing', message: 'Session missing', recoverable: true });
-    });
-
-    await fixture.controller.sendMessage();
-
-    expect(fixture.input.value).toBe('retry me');
-    expect(fixture.state.messages).toEqual([]);
-    expect(fixture.plugin.updateConversation).not.toHaveBeenCalled();
-  });
-
-  it('keeps an accepted missing-session turn non-retryable while resetting recovery state', async () => {
+  it('renders a missing native session as an ordinary error and keeps the conversation', async () => {
     const fixture = (await createFixture());
     fixture.input.value = 'already handed off';
-    fixture.execution.missingSession.mockResolvedValueOnce('reset');
     fixture.native.respond.mockImplementationOnce(run => {
       run.emit({ type: 'turn_started', accepted: true });
       run.emit({ type: 'execution_error', category: 'provider-session-missing', message: 'Session missing', recoverable: true });
@@ -609,55 +592,22 @@ describe('MainTurnExecution', () => {
 
     await fixture.controller.sendMessage();
 
+    const messagesText = fixture.deps.getMessagesEl()?.textContent;
+    expect(messagesText).toContain(t('chat.executionNotices.sessionUnavailable'));
+    expect(messagesText).not.toContain('Session missing');
+    expect(Notice).not.toHaveBeenCalled();
     expect(fixture.input.value).toBe('');
-    expect(fixture.state.messages).toHaveLength(2);
     expect(fixture.state.isStreaming).toBe(false);
-    expect(fixture.deps.getMessagesEl()?.querySelectorAll('.claudian-message')).toHaveLength(2);
-    expect(fixture.plugin.updateConversation).not.toHaveBeenCalled();
-    expect(Notice).toHaveBeenCalledWith(
-      'The provider session no longer exists. Claudian preserved the recoverable history; send again to rebuild the session.',
-    );
-  });
+    expect(fixture.state.messages.map(({ role, content }) => ({ role, content }))).toEqual([
+      { role: 'user', content: 'already handed off' }, { role: 'assistant', content: '' },
+    ]);
+    expect(fixture.plugin.updateConversation).toHaveBeenCalled();
+    expect(fixture.native.disposeCalls).toBe(0);
 
-  it('does not restore accepted input after missing-session deletion recovery', async () => {
-    const fixture = (await createFixture());
-    fixture.input.value = 'accepted before deletion';
-    fixture.execution.missingSession.mockResolvedValueOnce('deleted');
-    fixture.native.respond.mockImplementationOnce(run => {
-      run.emit({ type: 'turn_started', accepted: true });
-      run.emit({ type: 'execution_error', category: 'provider-session-missing', message: 'Session missing', recoverable: true });
-    });
+    await fixture.controller.sendMessage({ content: 'try again' });
 
-    await fixture.controller.sendMessage();
-
-    expect(fixture.input.value).toBe('');
-    expect(fixture.deps.getMessagesEl()?.querySelectorAll('.claudian-message')).toHaveLength(2);
-    expect(fixture.plugin.updateConversation).not.toHaveBeenCalled();
-    expect(Notice).toHaveBeenCalledWith(
-      'The provider session no longer exists. Its Claudian record was removed; send again to start a new session.',
-    );
-  });
-
-  it('returns a steer that is definitely unsent after missing-session deletion to the composer', async () => {
-    const fixture = (await createFixture());
-    fixture.input.value = 'deleted turn';
-    const lateSteer = createQueuedMessage('late steer', { text: 'late steer' });
-    vi.mocked(Notice).mockImplementationOnce(function () {
-      // The steer's provider rejection arrives after the deletion recovery, before the turn ends.
-      fixture.controller.queue.returnUnsent(lateSteer);
-      return {} as Notice;
-    });
-    fixture.execution.missingSession.mockResolvedValueOnce('deleted');
-    fixture.native.respond.mockImplementationOnce(run => {
-      run.emit({ type: 'turn_started', accepted: false });
-      run.emit({ type: 'execution_error', category: 'provider-session-missing', message: 'Session missing', recoverable: true });
-    });
-
-    await fixture.controller.sendMessage();
-
-    expect(fixture.state.queuedMessage).toBeNull();
-    expect(fixture.input.value).toContain('late steer');
-    expect(fixture.input.value).toContain('deleted turn');
+    expect(fixture.native.requests).toHaveLength(2);
+    expect(fixture.native.disposeCalls).toBe(0);
   });
 
   it('keeps pending input intact when execution preparation fails', async () => {
@@ -697,7 +647,7 @@ describe('MainTurnExecution', () => {
     expect(onReviewableSettlement).toHaveBeenCalledTimes(1);
   });
 
-  it.each(['cancelled', 'invalidated', 'missing-session'] as const)(
+  it.each(['cancelled', 'invalidated'] as const)(
     'does not report a %s turn as reviewable',
     async (status) => {
       const onReviewableSettlement = vi.fn();
@@ -706,8 +656,7 @@ describe('MainTurnExecution', () => {
       const sending = fixture.controller.sendMessage({ content: 'finish this' });
       const run = await response.started;
       if (status === 'invalidated') await fixture.execution.registry.runTransition(['claude'], async () => undefined);
-      else if (status === 'cancelled') run.emit({ type: 'cancelled', reason: 'Stopped' });
-      else run.emit({ type: 'execution_error', category: 'provider-session-missing', message: 'Session missing', recoverable: true });
+      else run.emit({ type: 'cancelled', reason: 'Stopped' });
       await sending;
 
       expect(onReviewableSettlement).not.toHaveBeenCalled();

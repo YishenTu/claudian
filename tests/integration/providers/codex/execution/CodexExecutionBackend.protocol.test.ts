@@ -1718,10 +1718,9 @@ describe('CodexExecutionBackend', () => {
       { conversationHistory },
     )).events);
     const preHandoffSnapshot = session.getSnapshot();
-    expect(preHandoffSnapshot.providerState).toEqual(expect.objectContaining({
-      nativeConversationContextEstablished: false,
-      threadId: 'thread-retry',
-    }));
+    // Codex writes no rollout before it accepts a turn, so the started thread stays unbound.
+    expect(preHandoffSnapshot).not.toHaveProperty('providerSessionId');
+    expect(preHandoffSnapshot.providerState).not.toHaveProperty('threadId');
     await session.dispose();
 
     const replacement = createBackend(await createPlugin()).createSession(
@@ -1743,6 +1742,8 @@ describe('CodexExecutionBackend', () => {
     expect(turnRequests).toHaveLength(2);
     expect(turnRequests[0]).toContain('retry prior question');
     expect(turnRequests[1]).toContain('retry prior question');
+    expect(nativeRequest.mock.calls.filter(([method]) => method === 'thread/start')).toHaveLength(2);
+    expect(nativeRequest.mock.calls.some(([method]) => method === 'thread/resume')).toBe(false);
 
     await replacement.dispose();
   });
@@ -2017,7 +2018,7 @@ describe('CodexExecutionBackend', () => {
     await session.dispose();
   });
 
-  it('persists a new thread identity when cancellation races its acknowledgement', async () => {
+  it('leaves a thread whose start races cancellation unbound, so the next turn starts fresh', async () => {
     const controller = new AbortController();
     nativeRequest.mockImplementation(async (method: string) => {
       if (method === 'initialize') {
@@ -2053,20 +2054,14 @@ describe('CodexExecutionBackend', () => {
       controller.signal,
     )).events);
     await session.dispose();
-    expect([...cancelledEvents, ...sessionEvents]).toEqual(expect.arrayContaining([
-      expect.objectContaining({
-        snapshot: expect.objectContaining({
-          providerSessionId: 'thread-cancelled-start',
-          providerState: expect.objectContaining({
-            nativeConversationContextEstablished: false,
-            threadId: 'thread-cancelled-start',
-          }),
-        }),
-        type: 'session_state_changed',
-      }),
-    ]));
+    // Codex writes no rollout before it accepts a turn, so the started thread is never published.
+    const published = [...cancelledEvents, ...sessionEvents].flatMap(event =>
+      event.type === 'session_state_changed' ? [event.snapshot] : []);
+    expect(published.length).toBeGreaterThan(0);
+    expect(published.map(snapshot => snapshot.providerSessionId)).not.toContain('thread-cancelled-start');
+    expect(published.map(snapshot => snapshot.providerState?.threadId)).not.toContain('thread-cancelled-start');
     const cancelledSnapshot = session.getSnapshot();
-    expect(cancelledSnapshot.providerSessionId).toBe('thread-cancelled-start');
+    expect(cancelledSnapshot).not.toHaveProperty('providerSessionId');
     await session.dispose();
 
     const replacement = createBackend(await createPlugin()).createSession(
@@ -2081,15 +2076,58 @@ describe('CodexExecutionBackend', () => {
 
     expect(nativeRequest.mock.calls.filter(
       ([method]) => method === 'thread/start',
-    )).toHaveLength(1);
+    )).toHaveLength(2);
     expect(nativeRequest.mock.calls.filter(
       ([method]) => method === 'thread/resume',
-    )).toHaveLength(1);
+    )).toHaveLength(0);
 
     await replacement.dispose();
   });
 
-  it('publishes a late thread-start acknowledgement without resurrecting cancelled status', async () => {
+  it('binds the started thread once a turn whose acknowledgement was lost reports it started', async () => {
+    vi.useFakeTimers();
+    const turnStart = createDeferred<ReturnType<typeof createTurnResult>>();
+    nativeRequest.mockImplementation(async (method: string) => {
+      if (method === 'initialize') {
+        return {
+          userAgent: 'test',
+          codexHome: '/tmp/.codex',
+          platformFamily: 'unix',
+          platformOs: wslTarget ? 'linux' : 'macos',
+        };
+      }
+      if (method === 'thread/start') return createThreadResult('thread-lost-ack');
+      if (method === 'turn/start') return turnStart.promise;
+      if (method === 'turn/interrupt') return {};
+      throw new Error(`Unexpected method: ${method}`);
+    });
+    const session = createBackend(await createPlugin()).createSession(createSessionConfig());
+    const sessionEvents: ProviderSessionEvent[] = [];
+    session.onEvent(event => sessionEvents.push(event));
+    const run = collectEvents(session.execute(createRequest()).events);
+    await native.waitForRequest('turn/start');
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect((await run).at(-1)).toMatchObject({ type: 'execution_error' });
+    expect(session.getSnapshot()).not.toHaveProperty('providerSessionId');
+    const failedStatus = session.getSnapshot().status;
+
+    // Codex accepted the turn after all, so its rollout exists.
+    emitNotification('turn/started', { threadId: 'thread-lost-ack', turn: createTurnResult('turn-lost-ack').turn });
+    await nativeRoundTrip();
+
+    expect(session.getSnapshot()).toMatchObject({
+      providerSessionId: 'thread-lost-ack',
+      providerState: { threadId: 'thread-lost-ack' },
+      status: failedStatus,
+    });
+    expect(sessionEvents.at(-1)).toMatchObject({
+      type: 'session_state_changed',
+      snapshot: { providerSessionId: 'thread-lost-ack', status: failedStatus },
+    });
+    await session.dispose();
+  });
+
+  it('keeps a late thread-start acknowledgement unbound without resurrecting cancelled status', async () => {
     const threadStart = createDeferred<ReturnType<typeof createThreadResult>>();
     nativeRequest.mockImplementation(async (method: string) => {
       if (method === 'initialize') {
@@ -2118,24 +2156,13 @@ describe('CodexExecutionBackend', () => {
     threadStart.resolve(createThreadResult('thread-late-start-ack'));
     await nativeRoundTrip();
 
-    expect(session.getSnapshot()).toMatchObject({
-      providerSessionId: 'thread-late-start-ack',
-      providerState: {
-        nativeConversationContextEstablished: false,
-        threadId: 'thread-late-start-ack',
-      },
-      status: 'idle',
-    });
-    expect(sessionEvents).toEqual(expect.arrayContaining([
-      expect.objectContaining({
-        scope: expect.objectContaining({ kind: 'session' }),
-        snapshot: expect.objectContaining({
-          providerSessionId: 'thread-late-start-ack',
-          status: 'idle',
-        }),
-        type: 'session_state_changed',
-      }),
-    ]));
+    expect(nativeRequest.mock.calls.filter(([method]) => method === 'thread/start')).toHaveLength(1);
+    expect(session.getSnapshot().status).toBe('idle');
+    expect(session.getSnapshot()).not.toHaveProperty('providerSessionId');
+    expect(session.getSnapshot().providerState).not.toHaveProperty('threadId');
+    expect(sessionEvents.flatMap(event => event.type === 'session_state_changed' ? [event.snapshot] : [])
+      .map(snapshot => [snapshot.providerSessionId, snapshot.status]))
+      .not.toContainEqual(['thread-late-start-ack', expect.anything()]);
 
     unsubscribe();
     await session.dispose();

@@ -23,7 +23,7 @@ async function setup() {
   const container = document.body.createDiv();
   const render = () => createOpencodeSettingsTabRenderer({
     cliResolver: new OpencodeCLIResolver(), metadataService: service, modelCatalog: catalog,
-  }).render(container, { plugin: host, notifyProviderModelOptionsChanged: () => undefined, renderCustomContextLimits: () => undefined });
+  }).render(container, { plugin: host, notifyProviderModelOptionsChanged: () => undefined });
   return { fixture, catalog, container, render, async dispose() {
     await catalog.dispose();
     await service.dispose();

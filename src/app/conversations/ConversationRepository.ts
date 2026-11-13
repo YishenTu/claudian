@@ -149,11 +149,6 @@ export class ConversationRepository {
           this.#invalidateConversation(conversation.id);
         }
       },
-      invalidateSession: (conversation) => {
-        this.deps.providerSettings.invalidateConversationSessions([conversation], [conversation.providerId]);
-        this.hydratedConversationIds.delete(conversation.id);
-        this.#invalidateConversation(conversation.id);
-      },
     });
   }
 
@@ -492,54 +487,6 @@ export class ConversationRepository {
     await this.#finalizeDeletedConversation(id);
   }
 
-  async handleMissingProviderSession(
-    id: string,
-    missingProviderSessionId?: string,
-  ): Promise<'deleted' | 'reset' | 'preserved' | 'not_found'> {
-    const conversation = this.#getRecord(id);
-    if (!conversation) return 'not_found';
-    const generation = this.#getConversationGeneration(id);
-
-    const historyService = this.deps.providers.getConversationHistoryService(
-      conversation.providerId,
-    );
-    if (!historyService.resolveMissingConversationSession) return 'preserved';
-
-    const vaultPath = this.deps.getVaultPath();
-    let resolution: 'delete' | 'reset' | 'preserve';
-    let nativeReadCompleted = false;
-    try {
-      const outcome = await this.#readProviderHistory(conversation, async draft => {
-        const result = await historyService.resolveMissingConversationSession!(
-          draft,
-          vaultPath,
-          missingProviderSessionId,
-          this.#getHistoryPathContext(conversation.providerId, vaultPath),
-        );
-        nativeReadCompleted = true;
-        return result;
-      }, value => value === 'reset');
-      if (!outcome.current) return 'preserved';
-      resolution = outcome.value;
-    } catch (error) {
-      // Native inspection is best effort; a failed durable transition must surface.
-      if (nativeReadCompleted) throw error;
-      return 'preserved';
-    }
-    // Acceptance can supersede the native decision before this await continuation.
-    if (!this.#isConversationCurrent(conversation, generation)) return 'preserved';
-    if (resolution === 'delete') {
-      await this.delete(id);
-      return 'deleted';
-    }
-    if (resolution === 'reset') {
-      this.hydratedConversationIds.delete(id);
-      this.#invalidateConversation(id);
-      return 'reset';
-    }
-    return 'preserved';
-  }
-
   async rename(id: string, title: string): Promise<void> {
     await this.#mutateMetadata(id, () => ({
       title: title.trim() || this.#generateDefaultTitle(),
@@ -680,7 +627,7 @@ export class ConversationRepository {
         preserveProviderState: !('messages' in patch) && !this.hydratedConversationIds.has(id),
       });
       if (!this.#isConversationRetained(conversation)) return;
-      // Session invalidation cannot cancel an unrelated committed title or pin edit.
+      // A binding superseded during the write drops its session fields but keeps an unrelated title or pin edit.
       discardSupersededSessionFields();
       // update() already cloned caller input and #writeMetadata keeps only its own projection.
       Object.assign(conversation, patch);
@@ -689,37 +636,6 @@ export class ConversationRepository {
         this.#invalidateConversation(id);
       }
     });
-  }
-
-  invalidateProviderSessions(providerIds: ProviderId[]): Conversation[] {
-    if (providerIds.length === 0) return [];
-    const providers = new Set(providerIds);
-    const drafts = this.conversations
-      .filter(conversation => providers.has(conversation.providerId))
-      .map(conversation => cloneJSON(conversation));
-    // A session that outlives the transition, including one still creating its first native
-    // session, must not bind through a late snapshot. Bindings the provider preserves stay live.
-    for (const draft of drafts) {
-      if (!this.deps.providerSettings.preservesConversationSession(draft)) {
-        this.executionBindings.retire(draft.id);
-      }
-    }
-    const invalidated = this.deps.providerSettings.invalidateConversationSessions(drafts, providerIds);
-    return invalidated.flatMap(draft => {
-      const conversation = this.#getRecord(draft.id);
-      if (!conversation) return [];
-      conversation.sessionId = draft.sessionId;
-      conversation.providerState = draft.providerState;
-      conversation.resumeAtMessageId = draft.resumeAtMessageId;
-      this.hydratedConversationIds.delete(conversation.id);
-      this.#invalidateConversation(conversation.id);
-      return [this.#snapshot(conversation)];
-    });
-  }
-
-  async persistProviderSessionInvalidations(providerIds: ProviderId[]): Promise<void> {
-    const providers = new Set(providerIds);
-    await this.persistConversations(this.conversations.filter(conversation => providers.has(conversation.providerId)));
   }
 
   /**
@@ -1104,18 +1020,6 @@ export class ConversationRepository {
       conversation.providerId,
       vaultPath,
     );
-    if (historyService.recoverConversationSessionReference) {
-      try {
-        const outcome = await this.#readProviderHistory(conversation, async input => {
-          const changes = await historyService.recoverConversationSessionReference!(input, vaultPath, pathContext);
-          return { outcome: changes !== null, changes: changes ?? undefined };
-        }, changed => changed);
-        if (!outcome.current) return false;
-      } catch {
-        return true;
-      }
-    }
-
     if (!historyService.getConversationSessionAvailability) return true;
     try {
       const availability = await this.#readProviderHistory(conversation, async input => ({
@@ -1412,10 +1316,6 @@ export class ConversationRepository {
       + (previewText.length > 50 ? '...' : '')
     );
   }
-}
-
-function cloneJSON<T>(value: T): T {
-  return JSON.parse(JSON.stringify(value)) as T;
 }
 
 function toError(value: unknown): Error {

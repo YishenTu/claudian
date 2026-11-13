@@ -2,7 +2,6 @@ import { ProviderSettingsCoordinator } from '@/core/providers/ProviderSettingsCo
 import { registerProviderModules } from '@/core/providers/registerProviderModules';
 import { claudeProviderRegistration } from '@/providers/claude/registration';
 import { normalizePiVisibleModels } from '@/providers/pi/config';
-import { piSettingsReconciler } from '@/providers/pi/env/PiSettingsReconciler';
 import { piProviderRegistration } from '@/providers/pi/registration';
 import {
   getPiProviderSettings,
@@ -136,34 +135,6 @@ describe('Pi settings normalization', () => {
       titleGenerationModel: '',
     };
 
-    expect(getPiProviderSettings(settings).modelAliases).toEqual({
-      'pi:old-provider/old-model': 'Legacy model',
-    });
-    expect(getPiProviderSettings(settings).preferredThinkingByModel).toEqual({
-      'pi:old-provider/old-model': 'high',
-    });
-  });
-
-  it('preserves selected model metadata during model variant reconciliation when discovery is stale', () => {
-    const settings: Record<string, unknown> = {
-      model: 'pi:old-provider/old-model',
-      providerConfigs: {
-        pi: {
-          discoveredModels,
-          modelAliases: {
-            'pi:old-provider/old-model': 'Legacy model',
-          },
-          preferredThinkingByModel: {
-            'pi:old-provider/old-model': 'high',
-          },
-          visibleModels: ['pi:anthropic/claude-sonnet-4'],
-        },
-      },
-      savedProviderModel: {},
-      titleGenerationModel: '',
-    };
-
-    expect(piSettingsReconciler.normalizeModelVariantSettings(settings)).toBe(false);
     expect(getPiProviderSettings(settings).modelAliases).toEqual({
       'pi:old-provider/old-model': 'Legacy model',
     });

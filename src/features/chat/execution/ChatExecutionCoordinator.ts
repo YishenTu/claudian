@@ -28,6 +28,7 @@ import {
   isRewindableExecutionSession,
   isSteerableExecutionSession,
 } from '@/core/execution';
+import { presentExecutionError } from '@/core/execution/presentExecutionError';
 import type {
   ChatMessage,
   ForkSource,
@@ -111,12 +112,6 @@ export interface ChatExecutionPersistence {
   recordConversationActivity(conversationId: string, timestamp: number): Promise<void>;
 }
 
-export type MissingProviderSessionResolution =
-  | 'deleted'
-  | 'reset'
-  | 'preserved'
-  | 'not_found';
-
 export interface ChatExecutionEventContext {
   readonly conversationId: string;
   readonly bindingId: string;
@@ -144,10 +139,6 @@ export interface ChatExecutionCoordinatorDeps {
     context: ChatExecutionEventContext,
   ) => void | Promise<void>;
   readonly onBackgroundWorkChanged?: (isWorking: boolean) => void;
-  readonly resolveMissingProviderSession: (
-    conversationId: string,
-    missingProviderSessionId?: string,
-  ) => Promise<MissingProviderSessionResolution>;
   readonly onError?: (error: unknown) => void;
   /** Releases an idle provider session after this long; omitted keeps it until disposal. */
   readonly idleReleaseMs?: number;
@@ -161,14 +152,12 @@ export interface ChatExecutionResult {
     | 'completed'
     | 'cancelled'
     | 'error'
-    | 'missing-session'
     | 'invalidated';
   readonly accepted: boolean;
   readonly nativeUserMessageId?: string;
   readonly nativeAssistantMessageId?: string;
   readonly nativeCheckpointId?: string;
   readonly error?: Extract<ProviderExecutionEvent, { type: 'execution_error' }>;
-  readonly missingSessionResolution?: MissingProviderSessionResolution;
 }
 
 /**
@@ -919,10 +908,7 @@ export class ChatExecutionCoordinator {
         ? new ChatExecutionPreHandoffError(sinkFailure.value.error)
         : new ChatExecutionPreHandoffError(rejection, rejection.message);
     }
-    const unacceptedMissingSession = isUnacceptedMissingSession(terminal, accepted);
-    const missingSessionTerminal = terminal?.type === 'execution_error'
-      && terminal.category === 'provider-session-missing';
-    if (sinkFailure.value && !missingSessionTerminal) {
+    if (sinkFailure.value) {
       throw sinkFailure.value.error;
     }
 
@@ -953,66 +939,12 @@ export class ChatExecutionCoordinator {
         nativeAssistantMessageId,
       };
     }
-    if (terminal.category === 'provider-session-missing') {
-      let resolution: MissingProviderSessionResolution;
-      try {
-        resolution = await this.deps.resolveMissingProviderSession(
-          active.binding.conversation.conversationId,
-          terminal.missingProviderSessionId,
-        );
-      } catch (error) {
-        if (unacceptedMissingSession) {
-          throw new ChatExecutionPreHandoffError(error);
-        }
-        throw error;
-      }
-      if (
-        this.#conversation?.conversationId
-          !== active.binding.conversation.conversationId
-      ) {
-        if (sinkFailure.value) throw sinkFailure.value.error;
-        return createInterruptedResult('invalidated', accepted);
-      }
-      try {
-        if (this.#sessionBinding === active.binding) {
-          await this.#releaseSessionBinding();
-        }
-        if (resolution === 'deleted' || resolution === 'not_found') {
-          this.#conversation = null;
-        } else if (resolution === 'reset' && this.#conversation) {
-          this.#conversation = {
-            ...this.#conversation,
-            resumeSeed: undefined,
-          };
-        }
-        this.#stale = resolution !== 'deleted' && resolution !== 'not_found';
-      } catch (error) {
-        if (unacceptedMissingSession) {
-          throw new ChatExecutionPreHandoffError(error);
-        }
-        throw error;
-      }
-      if (sinkFailure.value) {
-        if (unacceptedMissingSession) {
-          throw new ChatExecutionPreHandoffError(sinkFailure.value.error);
-        }
-        throw sinkFailure.value.error;
-      }
-      return {
-        status: 'missing-session',
-        accepted,
-        nativeUserMessageId,
-        nativeAssistantMessageId,
-        error: terminal,
-        missingSessionResolution: resolution,
-      };
-    }
     return {
       status: 'error',
       accepted,
       nativeUserMessageId,
       nativeAssistantMessageId,
-      error: terminal,
+      error: presentExecutionError(terminal),
     };
   }
 
@@ -1315,18 +1247,4 @@ function definitePreHandoffRejection(
   return !accepted && terminal?.type === 'execution_error' && terminal.category === 'configuration'
     ? terminal
     : null;
-}
-
-function isUnacceptedMissingSession(
-  terminal: Extract<
-    ProviderExecutionEvent,
-    { type: 'turn_completed' | 'cancelled' | 'execution_error' }
-  > | undefined,
-  accepted: boolean,
-): boolean {
-  return (
-    !accepted
-    && terminal?.type === 'execution_error'
-    && terminal.category === 'provider-session-missing'
-  );
 }

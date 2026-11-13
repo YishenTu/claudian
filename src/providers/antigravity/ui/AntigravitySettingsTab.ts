@@ -122,7 +122,6 @@ export const antigravitySettingsTabRenderer: ProviderSettingsTabRenderer = {
       name: t('settings.antigravity.environment.name'),
       placeholder: 'GEMINI_API_KEY=your-key',
       plugin: context.plugin,
-      renderCustomContextLimits: target => context.renderCustomContextLimits(target, ANTIGRAVITY_PROVIDER_ID),
       scope: `provider:${ANTIGRAVITY_PROVIDER_ID}`,
     });
     return modelPicker;

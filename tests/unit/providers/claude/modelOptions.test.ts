@@ -1,4 +1,4 @@
-import { findClaudeModelOption, getClaudeModelOptions } from '@/providers/claude/modelOptions';
+import { findClaudeModelOption, getClaudeModelOptions, getClaudeVisibleModelIds } from '@/providers/claude/modelOptions';
 import { getClaudeModelSource } from '@/providers/claude/settings';
 
 const settings = (config: Record<string, unknown>) => getClaudeModelSource({ providerConfigs: { claude: config } });
@@ -60,6 +60,19 @@ describe('Claude SDK model catalog', () => {
       customModels: 'manual-model',
       environmentVariables: 'ANTHROPIC_MODEL=env-model',
     }))).toEqual([]);
+  });
+
+  it('never seeds an unset enabled list from model environment keys', () => {
+    const source = settings({
+      discoveredModels: [
+        { value: 'env-model', label: 'Env', description: '' },
+        { value: 'sonnet', label: 'Sonnet', description: '' },
+      ],
+      environmentVariables: 'ANTHROPIC_MODEL=env-model\nANTHROPIC_DEFAULT_SONNET_MODEL=env-model',
+      visibleModels: null,
+    });
+    expect(getClaudeVisibleModelIds(source)).toEqual(getClaudeVisibleModelIds(settings({ visibleModels: null })));
+    expect(getClaudeVisibleModelIds(source)).not.toContain('env-model');
   });
 
   it('omits the SDK default while preserving custom models and distinct variants', () => {

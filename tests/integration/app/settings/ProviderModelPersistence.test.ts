@@ -201,8 +201,6 @@ it.each(cases.flatMap(entry => [false, true].map(unavailable => ({ ...entry, una
     const selected = ProviderRegistry.getChatUIConfig(id).getModelOptions(settings)[0].value;
     settings.savedProviderModel = { [id]: selected };
     settings.savedProviderEffort = { [id]: 'low' };
-    settings.customContextLimits = { [selected]: 128_000, 'deselected-model': 32_000 };
-    const originalLimits = { ...settings.customContextLimits };
     if (unavailable) {
       const config = settings.providerConfigs[id]!;
       config.discoveredModels = [];
@@ -219,8 +217,6 @@ it.each(cases.flatMap(entry => [false, true].map(unavailable => ({ ...entry, una
     } as unknown as VaultFileAdapter, DEFAULT_CLAUDIAN_SETTINGS).save(settings);
     expect(JSON.parse(content).savedProviderModel[id]).toBe(selected);
     expect(JSON.parse(content).savedProviderEffort[id]).toBe('low');
-    expect(JSON.parse(content).customContextLimits).toEqual({ [selected]: 128_000 });
-    expect(settings.customContextLimits).toEqual(originalLimits);
   },
 );
 
@@ -243,55 +239,11 @@ it('keeps xHigh for an explicitly selected Grok model while its capabilities are
     .toEqual({ 'temporarily-unavailable': 'xhigh' });
 });
 
-it('cleans context overrides by provider identity while preserving resolved aliases and snippet templates', async () => {
-  const settings = structuredClone(DEFAULT_CLAUDIAN_SETTINGS);
-  for (const { populate } of cases) populate(settings);
-  settings.providerConfigs.claude = { enabled: true, visibleModels: ['claude-sonnet-resolved'],
-    discoveredModels: [{ value: 'sonnet', resolvedModel: 'claude-sonnet-resolved', label: 'Sonnet', description: '' }] };
-  settings.customContextLimits = {
-    'claude-sonnet-resolved': 128_000,
-    'claude-code/sonnet': 128_000,
-    Sonnet: 128_000,
-    selected: 128_000,
-    'grok/selected': 128_000,
-    'openai-codex/selected': 64_000,
-    'grok/gpt-5.5': 64_000,
-    removed: 32_000,
-  };
-  settings.envSnippets = [{ id: 'template', name: 'Template', description: '', envVars: '',
-    contextLimits: { removed: 32_000 }, modelAliases: { removed: 'Template model' } }];
-  const before = structuredClone(settings);
-  let content = '';
-  const storage = new ClaudianSettingsStorage({
-    exists: async () => Boolean(content),
-    read: async () => content,
-    write: async (_path: string, value: string) => { content = value; },
-    delete: async () => undefined,
-  } as unknown as VaultFileAdapter, DEFAULT_CLAUDIAN_SETTINGS);
-  await storage.save(settings);
-  const expected = {
-    'claude-sonnet-resolved': 128_000, 'claude-code/sonnet': 128_000,
-    Sonnet: 128_000, selected: 128_000, 'grok/selected': 128_000,
-  };
-  expect(JSON.parse(content).customContextLimits).toEqual(expected);
-  expect(JSON.parse(content).envSnippets).toEqual(settings.envSnippets);
-  expect(settings).toEqual(before);
-
-  // An otherwise normalized file still triggers cleanup when only this map is stale.
-  const saved = JSON.parse(content);
-  content = JSON.stringify({ ...saved, customContextLimits: { ...expected, removed: 32_000 } });
-  const restored = await storage.load();
-  expect(restored.customContextLimits).toEqual(expected);
-  expect(JSON.parse(content).customContextLimits).toEqual(expected);
-  expect(restored.envSnippets).toEqual(settings.envSnippets);
-});
-
 it('keeps a prefixed Antigravity selection and its projections on save', async () => {
   const settings = structuredClone(DEFAULT_CLAUDIAN_SETTINGS);
   settings.providerConfigs.antigravity = { enabled: true, visibleModels: ['gemini-4-argon'] };
   settings.savedProviderModel = { antigravity: 'antigravity/gemini-4-argon' };
   settings.savedProviderEffort = { antigravity: 'high' };
-  settings.customContextLimits = { 'antigravity/gemini-4-argon': 128_000, 'antigravity/removed': 64_000 };
   let content = '';
   const storage = new ClaudianSettingsStorage({
     exists: async () => Boolean(content), read: async () => content,
@@ -301,5 +253,4 @@ it('keeps a prefixed Antigravity selection and its projections on save', async (
   const saved = JSON.parse(content);
   expect(saved.savedProviderModel.antigravity).toBe('antigravity/gemini-4-argon');
   expect(saved.savedProviderEffort.antigravity).toBe('high');
-  expect(saved.customContextLimits).toEqual({ 'antigravity/gemini-4-argon': 128_000 });
 });

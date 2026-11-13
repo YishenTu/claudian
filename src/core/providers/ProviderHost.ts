@@ -43,10 +43,7 @@ export interface ProviderHost {
   applyEnvironmentVariablesBatch(
     updates: Array<{ scope: EnvironmentScope; envText: string }>,
   ): Promise<void>;
-  /**
-   * Persists runtime inputs, their reconciled fingerprints, and any durable
-   * session-invalidation marker in one settings transaction.
-   */
+  /** Persists runtime inputs and their reconciled fingerprints in one settings transaction. */
   applyProviderRuntimeSettings(
     providerIds: ProviderId[],
     mutation: (settings: ClaudianSettings) => void | Promise<void>,

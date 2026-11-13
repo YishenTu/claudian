@@ -1,5 +1,4 @@
 import { getProviderConfig, setProviderConfig } from '../../core/providers/providerConfig';
-import { getRuntimeEnvironmentText } from '../../core/providers/providerEnvironment';
 import { type ClaudeProviderSettings, decodeClaudeConfig, updateClaudeConfig } from './config';
 import type { ClaudeModelSource } from './modelOptions';
 
@@ -21,10 +20,7 @@ export function updateClaudeProviderSettings(
   return next;
 }
 
-/** The model-option inputs the settings document holds for Claude; the environment is read on demand. */
+/** The model-option inputs the settings document holds for Claude. */
 export function getClaudeModelSource(settings: Record<string, unknown>): ClaudeModelSource {
-  return {
-    config: getProviderConfig(settings, 'claude'),
-    get environmentText() { return getRuntimeEnvironmentText(settings, 'claude'); },
-  };
+  return { config: getProviderConfig(settings, 'claude') };
 }

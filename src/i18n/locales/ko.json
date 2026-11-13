@@ -496,10 +496,7 @@
     "executionNotices": {
       "initializeFailed": "에이전트 실행을 초기화하지 못했습니다. 다시 시도해 주세요.",
       "unavailable": "에이전트 실행을 사용할 수 없습니다. 플러그인을 다시 불러와 주세요.",
-      "missingDeleted": "공급자 세션이 더 이상 존재하지 않습니다. Claudian 기록이 삭제되었습니다. 새 세션을 시작하려면 메시지를 다시 보내 주세요.",
-      "missingReset": "공급자 세션이 더 이상 존재하지 않습니다. Claudian이 복구할 수 있는 기록을 보존했습니다. 세션을 다시 구성하려면 메시지를 다시 보내 주세요.",
-      "missingPreserved": "공급자 세션이 더 이상 존재하지 않습니다. 남은 대화 기록을 확인할 수 없어 Claudian이 세션 기록을 보존했습니다.",
-      "missingNotFound": "공급자 세션이 더 이상 존재하지 않습니다. 새 세션을 시작하려면 메시지를 다시 보내 주세요.",
+      "sessionUnavailable": "이 대화의 네이티브 세션은 현재 CLI 구성에서 사용할 수 없습니다. 계속하려면 새 채팅을 시작하세요.",
       "unsentFallback": "메시지가 전송되지 않았습니다. 다시 시도해 주세요."
     },
     "images": {
@@ -826,19 +823,9 @@
       "deleteConfirm": "환경 변수 스니펫 \"{name}\"을(를) 삭제할까요?",
       "deleteFailed": "스니펫을 삭제하지 못했습니다"
     },
-    "customModelOverrides": {
-      "name": "사용자 정의 모델 재정의",
-      "desc": "사용자 정의 모델의 모델 선택기 별칭과 컨텍스트 창 크기를 설정합니다."
-    },
     "customModelAliases": {
-      "placeholder": "별칭",
       "ariaLabel": "{model}의 별칭",
       "ariaDescription": "모델 선택기에 표시되는 사용자 지정 레이블입니다. 비워 두면 기본값을 사용합니다."
-    },
-    "customContextLimits": {
-      "invalid": "잘못된 형식입니다. 사용: 256k, 1m 또는 정확한 숫자(1000-10000000).",
-      "saveFailed": "컨텍스트 창을 저장할 수 없습니다. 다시 시도하세요.",
-      "savedRefreshFailed": "컨텍스트 창은 저장했지만 설정 새로 고침에 실패했습니다."
     },
     "enableChrome": {
       "name": "Chrome 확장 프로그램 활성화",

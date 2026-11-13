@@ -136,9 +136,6 @@ export const codexModelPolicy: ProviderModelPolicy = {
       ? encodeCodexModelSelectionId(runtimeModel) : model;
   },
 
-  getCustomModelIds(): Set<string> {
-    return new Set();
-  },
 
   getServiceTierPolicy(settings): ProviderServiceTierPolicy | null {
     const model = findCodexModel(

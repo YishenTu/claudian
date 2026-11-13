@@ -6,7 +6,6 @@ import type {
   ProviderWorkspaceServices,
 } from '../../../core/providers/types';
 import { OpencodeCommandCatalog } from '../commands/OpencodeCommandCatalog';
-import { preservesOpencodeConversationSession } from '../env/OpencodeSettingsReconciler';
 import { OpencodeExecutionSession } from '../execution/OpencodeExecutionSession';
 import { OpencodeServerService } from '../http/OpencodeServerService';
 import { OpencodeMetadataService } from '../metadata/OpencodeMetadataService';
@@ -31,17 +30,9 @@ export async function createOpencodeWorkspaceServices(
   const serverService = new OpencodeServerService(plugin.sessionToolEndpoint);
   const runtime = new OpencodeSharedRuntime(runtimeHost, serverService);
   const unregister = plugin.executionLifecycleRegistry.registerTransitionHook('opencode', {
-    preserveSessions: (session, { sessionsInvalidated }) => {
-      if (!getOpencodeProviderSettings(plugin.settings).enabled) return false;
-      if (!(session instanceof OpencodeExecutionSession)) return false;
-      if (!sessionsInvalidated) return true;
-      // Invalidation retires bindings the provider does not preserve; their sessions end with them.
-      const snapshot = session.getSnapshot();
-      return preservesOpencodeConversationSession({
-        sessionId: snapshot.providerSessionId ?? null,
-        providerState: snapshot.providerState,
-      });
-    },
+    preserveSessions: session => (
+      getOpencodeProviderSettings(plugin.settings).enabled && session instanceof OpencodeExecutionSession
+    ),
     beforeTransition: () => runtime.beginTransition(),
     afterTransition: () => runtime.endTransition(),
   });

@@ -1,5 +1,5 @@
 import {
-  compareScopedRuntimeInputFingerprints,
+  createEnvironmentRuntimeInputFingerprint,
   createRuntimeInputFingerprint,
   isVersionedRuntimeInputFingerprint,
   RUNTIME_INPUT_FINGERPRINT_VERSION,
@@ -79,19 +79,28 @@ describe('RuntimeInputFingerprint', () => {
     expect(changedFingerprint).not.toBe(fingerprint);
   });
 
-  it.each([
-    ['unchanged inputs', ['r1', 's1'], ['r1', 's1'], false, 'reload'],
-    ['a launch-only change', ['r1', 's1'], ['r2', 's1'], true, 'reload'],
-    ['a session-scope change', ['r1', 's1'], ['r2', 's2'], true, 'invalidate'],
-    ['a pre-split backfill with unchanged runtime', ['r1', ''], ['r1', 's1'], true, 'reload'],
-    ['a pre-split runtime change of unknown scope', ['r1', ''], ['r2', 's1'], true, 'invalidate'],
-    ['a first launch-only input after none was configured', ['', ''], ['r1', 'empty'], true, 'reload'],
-    ['a first session-scope input after none was configured', ['', ''], ['r1', 's1'], true, 'invalidate'],
-  ] as const)('classifies %s', (_label, [environmentHash, sessionEnvironmentHash], [runtime, session], changed, sessionPolicy) => {
-    expect(compareScopedRuntimeInputFingerprints(
-      { environmentHash, sessionEnvironmentHash },
-      { runtime, session },
-      'empty',
-    )).toEqual({ changed, sessionPolicy });
+  describe('createEnvironmentRuntimeInputFingerprint', () => {
+    const baseline = 'CONFIG_DIR=/store\nSOME_CUSTOM_FLAG=1';
+
+    it.each([
+      ['a changed store-moving key', 'CONFIG_DIR=/other-store\nSOME_CUSTOM_FLAG=1'],
+      ['a changed arbitrary key', 'CONFIG_DIR=/store\nSOME_CUSTOM_FLAG=2'],
+      ['a removed key', 'SOME_CUSTOM_FLAG=1'],
+      ['a key emptied in place', 'CONFIG_DIR=\nSOME_CUSTOM_FLAG=1'],
+      ['an added key', `${baseline}\nANOTHER_FLAG=1`],
+    ])('fingerprints every configured key, so %s changes it', (_label, environmentText) => {
+      expect(createEnvironmentRuntimeInputFingerprint(environmentText))
+        .not.toBe(createEnvironmentRuntimeInputFingerprint(baseline));
+    });
+
+    it('changes with additional launch inputs and ignores line order', () => {
+      const fingerprint = createEnvironmentRuntimeInputFingerprint(baseline, { cliPath: '/bin/provider' });
+
+      expect(createEnvironmentRuntimeInputFingerprint('SOME_CUSTOM_FLAG=1\nCONFIG_DIR=/store', { cliPath: '/bin/provider' }))
+        .toBe(fingerprint);
+      expect(createEnvironmentRuntimeInputFingerprint(baseline, { cliPath: '/custom/provider' }))
+        .not.toBe(fingerprint);
+      expect(createEnvironmentRuntimeInputFingerprint(baseline)).not.toBe(fingerprint);
+    });
   });
 });

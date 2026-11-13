@@ -12,6 +12,7 @@ import { fireEvent, screen, waitFor } from '@testing-library/dom';
 
 import { buildSystemPrompt } from '@/core/prompt/mainAgent';
 import { renderProjectMemberInstructions } from '@/core/prompt/projectPrompt';
+import { t } from '@/i18n/i18n';
 
 afterEach(releaseSideChatHarnesses);
 
@@ -94,7 +95,7 @@ it('keeps one composer mounted and the collapsed status bar visible for every st
   await started;
 
   expect(screen.getByRole('button', { name: 'Side chat' }).getAttribute('title'))
-    .toContain('Child history is gone');
+    .toContain(t('chat.executionNotices.sessionUnavailable'));
   // Errors never auto-expand the panel or change the destination.
   expect(harness.controller.destination).toBe('main');
   expect(composerCount()).toBe(1);

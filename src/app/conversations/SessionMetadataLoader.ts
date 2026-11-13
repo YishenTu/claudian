@@ -1,8 +1,6 @@
 import { StartupProfiler } from '../../core/performance/StartupProfiler';
-import type { ProviderSettingsCoordinator } from '../../core/providers/ProviderSettingsCoordinator';
 import { DEFAULT_CHAT_PROVIDER_ID } from '../../core/providers/types';
 import type { Conversation, SessionMetadata } from '../../core/types';
-import type { RuntimeSettingsCoordinator } from '../settings/RuntimeSettingsCoordinator';
 import type {
   SessionMetadataReader,
   SessionMetadataReadResult,
@@ -12,8 +10,6 @@ import type { ConversationRepository } from './ConversationRepository';
 export interface SessionMetadataLoaderOptions {
   sessions: SessionMetadataReader;
   conversations: ConversationRepository;
-  providerSettings: Pick<typeof ProviderSettingsCoordinator, 'invalidateConversationSessions'>;
-  runtimeSettings: RuntimeSettingsCoordinator;
   isUnloading(): boolean;
   whenLayoutReady(callback: () => void): void;
   onConversationListChanged(): void;
@@ -80,9 +76,8 @@ export class SessionMetadataLoader {
 
   private async loadRemaining(): Promise<void> {
     if (this.isStopped()) return;
-    const { conversations, runtimeSettings } = this.options;
+    const { conversations } = this.options;
     const addedConversations: Conversation[] = [];
-    const invalidatedConversations: Conversation[] = [];
     let didChangeConversationList = false;
     const publishBatch = (records: SessionMetadataReadResult[]): void => {
       if (this.isStopped() || records.length === 0) return;
@@ -100,14 +95,6 @@ export class SessionMetadataLoader {
         ));
       const shells = publishable.map(({ conversation }) => conversation);
       const publishedIds = new Set(shells.map(({ id }) => id));
-      const invalidatedShells = this.options.providerSettings
-        .invalidateConversationSessions(
-          shells,
-          runtimeSettings.getPendingProviderIds(),
-        );
-      const invalidatedIds = new Set(
-        invalidatedShells.map(({ id }) => id),
-      );
       const added = conversations.mergeMetadataConversations(
         shells,
         new Map(publishable.map(({ conversation, source }) => [
@@ -121,9 +108,6 @@ export class SessionMetadataLoader {
       if (added.length === 0) return;
 
       addedConversations.push(...added);
-      invalidatedConversations.push(
-        ...added.filter(({ id }) => invalidatedIds.has(id)),
-      );
       didChangeConversationList = true;
     };
     const scan = await this.options.sessions.scan({
@@ -160,14 +144,6 @@ export class SessionMetadataLoader {
       source,
     }));
     const shells = entries.map(({ conversation }) => conversation);
-    const invalidatedEntries = this.options.providerSettings
-      .invalidateConversationSessions(
-        shells,
-        runtimeSettings.getPendingProviderIds(),
-      );
-    const invalidatedIds = new Set(
-      invalidatedEntries.map(({ id }) => id),
-    );
     const existingIds = new Set(
       conversations.list().map(({ id }) => id),
     );
@@ -182,24 +158,11 @@ export class SessionMetadataLoader {
       .filter((conversation): conversation is Conversation => conversation !== null);
     if (adoptedConversations.length > 0) {
       addedConversations.push(...adoptedConversations);
-      invalidatedConversations.push(
-        ...adoptedConversations.filter(({ id }) => invalidatedIds.has(id)),
-      );
       didChangeConversationList = true;
     }
     const currentAddedConversations = addedConversations.filter((conversation) => (
       conversations.isCurrentSnapshot(conversation)
     ));
-    const currentInvalidatedConversations = invalidatedConversations.filter(
-      (conversation) => (
-        conversations.isCurrentSnapshot(conversation)
-      ),
-    );
-    const uniqueCurrentInvalidatedConversations = currentInvalidatedConversations.filter(
-      ({ id }, index, candidates) => (
-        candidates.findIndex(conversation => conversation.id === id) === index
-      ),
-    );
     StartupProfiler.recordCount('background-session-metadata-count', currentAddedConversations.length);
     const recoveredModels = await conversations
       .recoverMissingSelectedModels();
@@ -208,18 +171,11 @@ export class SessionMetadataLoader {
       recoveredModels.length,
     );
     if (this.isStopped()) return;
-    await conversations.persistConversations(
-      uniqueCurrentInvalidatedConversations,
-    );
-    if (this.isStopped()) return;
     if (didChangeConversationList || recoveredModels.length > 0) {
       this.options.onConversationListChanged();
     }
     if (scan.complete) {
       this.loadedAll = true;
-      await runtimeSettings.completePendingSessionInvalidations(
-        runtimeSettings.getPendingGenerations(),
-      );
       if (!this.isStopped()) this.options.onAllMetadataLoaded?.();
       if (!this.isStopped()) {
         StartupProfiler.recordCount(
@@ -251,7 +207,7 @@ export class SessionMetadataLoader {
   }
 
   private async loadConversations(conversationIds: readonly string[]): Promise<void> {
-    const { conversations, runtimeSettings } = this.options;
+    const { conversations } = this.options;
     const missingIds = Array.from(new Set(conversationIds)).filter(
       id => !conversations.getSummary(id),
     );
@@ -268,20 +224,9 @@ export class SessionMetadataLoader {
       source,
     }));
     const shells = entries.map(({ conversation }) => conversation);
-    const invalidatedIds = new Set(
-      this.options.providerSettings.invalidateConversationSessions(
-        shells,
-        runtimeSettings.getPendingProviderIds(),
-      ).map(({ id }) => id),
-    );
     await conversations.adoptMetadataConversations(entries);
     if (this.isStopped()) return;
     conversations.registerHistoricalModelRecoverySources(shells);
-    await conversations.persistConversations(
-      Array.from(invalidatedIds)
-        .map(id => conversations.getCachedConversation(id))
-        .filter((conversation): conversation is Conversation => conversation !== null),
-    );
   }
 
   createShell(meta: SessionMetadata): Conversation {

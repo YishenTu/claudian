@@ -103,10 +103,6 @@ export interface ChatFeatureHost extends FeatureHost {
   deleteConversation(id: string): Promise<void>;
   /** The single owner of user archive, restore, pin, and delete intents. */
   readonly conversationLifecycle: ConversationLifecycle;
-  handleMissingProviderSession(
-    id: string,
-    missingProviderSessionId?: string,
-  ): Promise<'deleted' | 'reset' | 'preserved' | 'not_found'>;
   renameConversation(id: string, title: string): Promise<void>;
   /** Completes generation atomically; null records failure. A changed title takes precedence. */
   completeConversationTitleGeneration(id: string, expectedTitle: string, title: string | null): Promise<void>;

@@ -1,7 +1,4 @@
-import { conversationRecord } from '@test/helpers/features/chat/ConversationFixture';
-
 import { getInstallationKey } from '@/core/device/InstallationKey';
-import { getProviderConfig, setProviderConfig } from '@/core/providers/providerConfig';
 import { ProviderSettingsCoordinator } from '@/core/providers/ProviderSettingsCoordinator';
 import { registerProviderModules } from '@/core/providers/registerProviderModules';
 import { isVersionedRuntimeInputFingerprint } from '@/core/providers/settings/RuntimeInputFingerprint';
@@ -12,214 +9,68 @@ import { getPiProviderSettings } from '@/providers/pi/settings';
 
 registerProviderModules([claudeProviderRegistration, piProviderRegistration]);
 
-interface PiFingerprintInputs {
-  cliPath?: string;
-  environment?: string;
-  hostCliPath?: string;
-}
+type PiSettingsDocument = Record<string, unknown> & { providerConfigs: { pi: Record<string, unknown> } };
 
-function toPiConfig({ cliPath = '', environment = '', hostCliPath }: PiFingerprintInputs) {
+function piSettings(inputs: Record<string, unknown> = {}): PiSettingsDocument {
   return {
-    enabled: true,
-    cliPath,
-    cliPathsByHost: hostCliPath ? { [getInstallationKey()]: hostCliPath } : {},
-    environmentVariables: environment,
+    settingsProvider: 'pi',
+    providerConfigs: {
+      pi: {
+        enabled: true,
+        cliPath: '/old/pi',
+        cliPathsByHost: {},
+        environmentVariables: 'PI_CODING_AGENT_DIR=/agent\nSOME_CUSTOM_FLAG=1',
+        ...inputs,
+      },
+    },
   };
 }
 
 describe('piSettingsReconciler', () => {
-  it('invalidates bindings on WSL distro changes and keeps them for process-only input changes', () => {
-    const platform = process.platform;
-    Object.defineProperty(process, 'platform', { value: 'win32', configurable: true });
-    const config = { ...toPiConfig({}), installationMethodsByHost: { [getInstallationKey()]: 'wsl' }, wslDistroOverridesByHost: { [getInstallationKey()]: 'Ubuntu' } };
-    const settings = { providerConfigs: { pi: config } };
-    try {
-      expect(piSettingsReconciler.reconcileModelWithEnvironment(settings)).toEqual({ changed: true, sessionPolicy: 'invalidate' });
-      settings.providerConfigs.pi.wslDistroOverridesByHost[getInstallationKey()] = 'Debian';
-      expect(piSettingsReconciler.reconcileModelWithEnvironment(settings)).toEqual({ changed: true, sessionPolicy: 'invalidate' });
-      settings.providerConfigs.pi.environmentVariables = 'CUSTOM_API_TOKEN=updated';
-      expect(piSettingsReconciler.reconcileModelWithEnvironment(settings)).toEqual({ changed: true, sessionPolicy: 'reload' });
-    } finally { Object.defineProperty(process, 'platform', { value: platform, configurable: true }); }
-  });
+  it('leaves a fresh install without runtime inputs unchanged', () => {
+    const settings = piSettings({ cliPath: '', environmentVariables: '' });
 
-  it.each(['PI_CODING_AGENT_DIR', 'PI_CODING_AGENT_SESSION_DIR', 'PI_PACKAGE_DIR'])(
-    'invalidates native bindings when location-affecting %s changes or is removed',
-    key => {
-      const settings: Record<string, unknown> = {
-        providerConfigs: { pi: toPiConfig({ environment: `${key}=/old\nPI_OFFLINE=1` }) },
-      };
-      piSettingsReconciler.reconcileModelWithEnvironment(settings);
-      for (const environment of [`${key}=/new\nPI_OFFLINE=1`, 'PI_OFFLINE=1']) {
-        setProviderConfig(settings, 'pi', { ...getProviderConfig(settings, 'pi'), environmentVariables: environment });
-        expect(piSettingsReconciler.reconcileModelWithEnvironment(settings))
-          .toEqual({ changed: true, sessionPolicy: 'invalidate' });
-      }
-    },
-  );
-
-  it.each<[string, PiFingerprintInputs, PiFingerprintInputs]>([
-    ['the CLI path', { cliPath: '/old/pi' }, { cliPath: '/new/pi' }],
-    ['the host CLI path', { hostCliPath: '/old/pi' }, { hostCliPath: '/new/pi' }],
-    ['PATH', { environment: 'PATH=/old/bin' }, { environment: 'PATH=/new/bin' }],
-    ['PI_OFFLINE', { environment: 'PI_OFFLINE=1' }, { environment: '' }],
-    ['PI_SKIP_VERSION_CHECK', { environment: '' }, { environment: 'PI_SKIP_VERSION_CHECK=1' }],
-    ['PI_TELEMETRY', { environment: 'PI_TELEMETRY=1' }, { environment: 'PI_TELEMETRY=0' }],
-    ['PI_CACHE_RETENTION', { environment: '' }, { environment: 'PI_CACHE_RETENTION=long' }],
-    ['a first CLI path without saved inputs', {}, { cliPath: '/new/pi' }],
-  ])('keeps native bindings and reloads when only %s changes', (label, before, after) => {
-    const sessionEnvironment = 'PI_CODING_AGENT_SESSION_DIR=/sessions';
-    const withSessionEnvironment = (inputs: PiFingerprintInputs): PiFingerprintInputs => (
-      label.startsWith('a first') ? inputs : {
-        ...inputs,
-        environment: [sessionEnvironment, inputs.environment].filter(Boolean).join('\n'),
-      }
-    );
-    const settings: Record<string, unknown> = {
-      settingsProvider: 'pi',
-      providerConfigs: { pi: toPiConfig(withSessionEnvironment(before)) },
-    };
-    piSettingsReconciler.reconcileModelWithEnvironment(settings);
-    (settings.providerConfigs as Record<string, unknown>).pi = {
-      ...getProviderConfig(settings, 'pi'),
-      ...toPiConfig(withSessionEnvironment(after)),
-    };
-
-    const result = ProviderSettingsCoordinator.reconcileProviders(settings, ['pi']);
-
-    expect(result).toMatchObject({
-      changed: true,
-      environmentChangedProviderIds: ['pi'],
-      sessionInvalidationProviderIds: [],
-    });
-    expect(piSettingsReconciler.reconcileModelWithEnvironment(settings)).toEqual({ changed: false });
+    expect(ProviderSettingsCoordinator.reconcileProviders(settings, ['pi']))
+      .toEqual({ changed: false, environmentChangedProviderIds: [] });
+    expect(getPiProviderSettings(settings).environmentHash).toBe('');
   });
 
   it.each([
-    ['backfills without invalidating when runtime inputs are unchanged', '/same/pi', 'reload'],
-    ['invalidates when runtime inputs also changed', '/new/pi', 'invalidate'],
-  ] as const)('pre-split session fingerprint %s', (_label, nextCliPath, sessionPolicy) => {
-    const settings: Record<string, unknown> = {
-      providerConfigs: {
-        pi: toPiConfig({ cliPath: '/same/pi', environment: 'PI_CODING_AGENT_DIR=/agent' }),
-      },
-    };
-    piSettingsReconciler.reconcileModelWithEnvironment(settings);
-    const config = getProviderConfig(settings, 'pi');
-    const runtimeFingerprint = config.environmentHash;
-    delete config.sessionEnvironmentHash;
-    config.cliPath = nextCliPath;
-    setProviderConfig(settings, 'pi', config);
+    ['PI_CODING_AGENT_DIR moving the store', { environmentVariables: 'PI_CODING_AGENT_DIR=/other\nSOME_CUSTOM_FLAG=1' }],
+    ['PI_CODING_AGENT_DIR being removed', { environmentVariables: 'SOME_CUSTOM_FLAG=1' }],
+    ['PI_CODING_AGENT_SESSION_DIR moving sessions', { environmentVariables: 'PI_CODING_AGENT_DIR=/agent\nSOME_CUSTOM_FLAG=1\nPI_CODING_AGENT_SESSION_DIR=/sessions' }],
+    ['an arbitrary key', { environmentVariables: 'PI_CODING_AGENT_DIR=/agent\nSOME_CUSTOM_FLAG=2' }],
+    ['the CLI path', { cliPath: '/new/pi' }],
+    ['the host CLI path', { cliPathsByHost: { [getInstallationKey()]: '/host/pi' } }],
+  ])('restarts the runtime when %s changes', (_label, change) => {
+    const settings = piSettings();
+    ProviderSettingsCoordinator.reconcileProviders(settings, ['pi']);
+    expect(piSettingsReconciler.reconcileModelWithEnvironment(settings)).toEqual({ changed: false });
+    const saved = getPiProviderSettings(settings).environmentHash;
+    Object.assign(settings.providerConfigs.pi, change);
 
-    const result = piSettingsReconciler.reconcileModelWithEnvironment(settings);
-
-    expect(result).toEqual({ changed: true, sessionPolicy });
-    expect(getPiProviderSettings(settings).sessionEnvironmentHash).toMatch(/^runtime-input:v1:/);
-    expect(getPiProviderSettings(settings).environmentHash === runtimeFingerprint)
-      .toBe(sessionPolicy === 'reload');
+    expect(ProviderSettingsCoordinator.reconcileProviders(settings, ['pi']))
+      .toEqual({ changed: true, environmentChangedProviderIds: ['pi'] });
+    const fingerprint = getPiProviderSettings(settings).environmentHash;
+    expect(isVersionedRuntimeInputFingerprint(fingerprint)).toBe(true);
+    expect(fingerprint).not.toBe(saved);
+    expect(fingerprint).not.toContain('/agent');
     expect(piSettingsReconciler.reconcileModelWithEnvironment(settings)).toEqual({ changed: false });
   });
 
-  it('invalidates when Pi session/config environment changes and retires only Pi bindings', () => {
-    const settings: Record<string, unknown> = {
-      providerConfigs: {
-        pi: {
-          enabled: true,
-          environmentHash: 'PI_CODING_AGENT_SESSION_DIR=/old',
-          environmentVariables: 'PI_CODING_AGENT_SESSION_DIR=/new\nPI_OFFLINE=1',
-        },
-      },
-    };
-    const piConversation = conversationRecord('conversation', {
-      id: 'pi-conversation',
-      messages: [],
-      providerId: 'pi',
-      providerState: {
-        futureResumeCursor: { token: 'keep-me' },
-        leafEntryId: 'assistant-1',
-        sessionFile: '/old/session.jsonl',
-      },
-      sessionId: 'session-1',
-    });
-    const claudeConversation = conversationRecord('conversation', {
-      id: 'claude-conversation',
-      messages: [],
-      providerId: 'claude',
-      providerState: { providerSessionId: 'claude-session' },
-      sessionId: 'claude-session',
-    });
-
-    expect(piSettingsReconciler.reconcileModelWithEnvironment(settings))
-      .toEqual({ changed: true, sessionPolicy: 'invalidate' });
-    expect(piSettingsReconciler.invalidateConversationSessions([piConversation, claudeConversation]))
-      .toEqual([piConversation]);
-    expect(piConversation.sessionId).toBeNull();
-    expect(piConversation.providerState).toEqual({
-      bindingRetired: true,
-      futureResumeCursor: { token: 'keep-me' },
-      previousSessions: [{
-        leafEntryId: 'assistant-1',
-        sessionFile: '/old/session.jsonl',
-        sessionId: 'session-1',
-      }],
-    });
-    expect(claudeConversation.sessionId).toBe('claude-session');
-    const fingerprint = getProviderConfig(settings, 'pi').environmentHash;
-    expect(isVersionedRuntimeInputFingerprint(fingerprint)).toBe(true);
-    expect(fingerprint).not.toContain('/new');
+  it('restarts the runtime on WSL target and distro changes', () => {
+    const platform = Object.getOwnPropertyDescriptor(process, 'platform')!;
+    Object.defineProperty(process, 'platform', { ...platform, value: 'win32' });
+    try {
+      const key = getInstallationKey();
+      const settings = piSettings({ installationMethodsByHost: { [key]: 'native-windows' }, wslDistroOverridesByHost: { [key]: 'Ubuntu' } });
+      piSettingsReconciler.reconcileModelWithEnvironment(settings);
+      Object.assign(settings.providerConfigs.pi, { installationMethodsByHost: { [key]: 'wsl' } });
+      expect(piSettingsReconciler.reconcileModelWithEnvironment(settings)).toEqual({ changed: true });
+      expect(piSettingsReconciler.reconcileModelWithEnvironment(settings)).toEqual({ changed: false });
+      Object.assign(settings.providerConfigs.pi, { wslDistroOverridesByHost: { [key]: 'Debian' } });
+      expect(piSettingsReconciler.reconcileModelWithEnvironment(settings)).toEqual({ changed: true });
+      expect(piSettingsReconciler.reconcileModelWithEnvironment(settings)).toEqual({ changed: false });
+    } finally { Object.defineProperty(process, 'platform', platform); }
   });
-
-  it('migrates a matching legacy environment fingerprint without reporting a change', () => {
-    const settings: Record<string, unknown> = {
-      providerConfigs: {
-        pi: {
-          enabled: true,
-          environmentHash: 'PI_OFFLINE=1',
-          environmentVariables: 'PI_OFFLINE=1',
-        },
-      },
-    };
-    expect(piSettingsReconciler.normalizeModelVariantSettings(settings)).toBe(true);
-    const result = ProviderSettingsCoordinator.reconcileProviders(settings, ['pi']);
-
-    expect(result).toMatchObject({
-      changed: false,
-      environmentChangedProviderIds: [],
-      sessionInvalidationProviderIds: [],
-    });
-    expect(isVersionedRuntimeInputFingerprint(
-      getProviderConfig(settings, 'pi').environmentHash,
-    )).toBe(true);
-  });
-
-  it('converts pending forks into replayable previous sessions idempotently', () => {
-    const conversation = conversationRecord('conversation', {
-      id: 'pi-pending-fork',
-      messages: [],
-      providerId: 'pi',
-      providerState: {
-        forkSource: {
-          resumeAt: 'assistant-1',
-          sessionId: 'source-session',
-        },
-        forkSourceSessionFile: '/sessions/source.jsonl',
-        futureResumeCursor: { token: 'keep-me' },
-      },
-      sessionId: null,
-    });
-
-    expect(piSettingsReconciler.invalidateConversationSessions([conversation])).toEqual([
-      conversation,
-    ]);
-    expect(conversation.providerState).toEqual({
-      bindingRetired: true,
-      futureResumeCursor: { token: 'keep-me' },
-      previousSessions: [{
-        leafEntryId: 'assistant-1',
-        sessionFile: '/sessions/source.jsonl',
-        sessionId: 'source-session',
-      }],
-    });
-    expect(piSettingsReconciler.invalidateConversationSessions([conversation])).toEqual([]);
-  });
-
 });

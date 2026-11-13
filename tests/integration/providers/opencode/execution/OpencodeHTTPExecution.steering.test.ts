@@ -156,7 +156,6 @@ describe('native steering', () => {
     const coordinator: ChatExecutionCoordinator = new ChatExecutionCoordinator({
       lifecycleRegistry: new ProviderExecutionLifecycleRegistry(), resolveBackend: () => backend,
       persistence: env.repository, workingDirectory: env.root, createId: () => `execution-${++ids}`,
-      resolveMissingProviderSession: async () => 'preserved',
       interactionPort: { requestApproval: async request => ({ interactionId: request.interactionId, decision: 'allow' }), askUserQuestion: async request => ({ interactionId: request.interactionId, answers: {} }), dismissInteraction() {} },
       onRequestedEvent: event => {
         events.push(event);

@@ -108,7 +108,6 @@ it.each([false, true])('shows a session notification immediately with streaming=
     lifecycleRegistry, resolveBackend: () => backend,
     persistence: { persistExecutionSnapshot: async () => true, registerExecutionBinding: () => undefined, releaseExecutionBinding: () => undefined, assertConversationExecutionAuthority: async () => undefined, recordConversationActivity: async () => undefined },
     interactionPort: { requestApproval: vi.fn(), askUserQuestion: vi.fn(), dismissInteraction: vi.fn() }, workingDirectory: '/vault', createId: () => 'binding',
-    resolveMissingProviderSession: async () => 'not_found',
     onSessionEvent: (event, context) => events.enqueue(event, context),
   });
   const session = createTabSession({ id: 'tab', conversationId: 'conversation', draftModel: null,

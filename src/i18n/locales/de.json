@@ -496,10 +496,7 @@
     "executionNotices": {
       "initializeFailed": "Agentenausführung konnte nicht initialisiert werden. Bitte versuche es erneut.",
       "unavailable": "Agentenausführung ist nicht verfügbar. Bitte lade das Plugin neu.",
-      "missingDeleted": "Die Sitzung des Anbieters existiert nicht mehr. Der zugehörige Claudian-Eintrag wurde entfernt. Sende die Nachricht erneut, um eine neue Sitzung zu starten.",
-      "missingReset": "Die Sitzung des Anbieters existiert nicht mehr. Claudian hat den wiederherstellbaren Verlauf behalten. Sende die Nachricht erneut, um die Sitzung wiederherzustellen.",
-      "missingPreserved": "Die Sitzung des Anbieters existiert nicht mehr. Claudian hat den Eintrag behalten, da der verbleibende Verlauf nicht überprüft werden konnte.",
-      "missingNotFound": "Die Sitzung des Anbieters existiert nicht mehr. Sende die Nachricht erneut, um eine neue Sitzung zu starten.",
+      "sessionUnavailable": "Die native Sitzung dieser Unterhaltung ist mit der aktuellen CLI-Konfiguration nicht verfügbar. Starte einen neuen Chat, um fortzufahren.",
       "unsentFallback": "Die Nachricht wurde nicht gesendet. Bitte versuche es erneut."
     },
     "images": {
@@ -826,19 +823,9 @@
       "deleteConfirm": "Umgebungs-Snippet \"{name}\" löschen?",
       "deleteFailed": "Snippet konnte nicht gelöscht werden"
     },
-    "customModelOverrides": {
-      "name": "Benutzerdefinierte Modellüberschreibungen",
-      "desc": "Legen Sie Aliasnamen in der Modellauswahl und Kontextfenstergrößen für benutzerdefinierte Modelle fest."
-    },
     "customModelAliases": {
-      "placeholder": "Aliasname",
       "ariaLabel": "Alias für {model}",
       "ariaDescription": "Benutzerdefinierte Bezeichnung in der Modellauswahl. Leer lassen, um die Standardbezeichnung zu verwenden."
-    },
-    "customContextLimits": {
-      "invalid": "Ungültiges Format. Verwenden Sie: 256k, 1m oder exakte Anzahl (1000-10000000).",
-      "saveFailed": "Kontextfenster konnte nicht gespeichert werden. Erneut versuchen.",
-      "savedRefreshFailed": "Kontextfenster wurde gespeichert, aber die Aktualisierung der Einstellungen ist fehlgeschlagen."
     },
     "enableChrome": {
       "name": "Chrome-Erweiterung aktivieren",

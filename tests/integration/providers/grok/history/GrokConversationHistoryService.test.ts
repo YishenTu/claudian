@@ -143,17 +143,19 @@ describe('GrokConversationHistoryService', () => {
   });
 
 
-  it('leaves messages unchanged and discards untrusted hints when history is unavailable', async () => {
+  it('leaves messages and the recorded locator unchanged when history is unavailable', async () => {
     const service = new GrokConversationHistoryService();
     const conversation = createConversation();
     conversation.sessionId = 'missing-session';
+    const providerState = structuredClone(conversation.providerState);
 
     Object.assign(conversation, await service.hydrateConversationHistory(conversation, vaultPath, {
       environment: { HOME: tempRoot },
     }));
 
     expect(conversation.messages).toEqual([]);
-    expect(conversation.providerState).toBeUndefined();
+    expect(conversation.sessionId).toBe('missing-session');
+    expect(conversation.providerState).toEqual(providerState);
   });
 
   it('treats a session without native updates as having no history', async () => {
@@ -217,59 +219,6 @@ describe('GrokConversationHistoryService', () => {
     });
   });
 
-  describe('resolveMissingConversationSession', () => {
-    it('clears a confirmed stale native binding while preserving unknown state', async () => {
-      const conversation = createConversation();
-      conversation.providerState = {
-        forkSource: { resumeAt: 'assistant-old', sessionId: 'source-old' },
-        forkSourceSessionDirectory: '/tmp/grok/source-old',
-        futureResumeCursor: { token: 'cursor-1' },
-        nativeConversationContextEstablished: true,
-        sessionDirectory,
-      };
-      const service = new GrokConversationHistoryService();
-
-      const update1 = await service.resolveMissingConversationSession(
-        conversation,
-        vaultPath,
-        'session-fixture',
-      );
-      expect(update1.outcome).toBe('reset');
-      Object.assign(conversation, update1.changes);
-
-      expect(conversation.sessionId).toBeNull();
-      expect(conversation.providerState).toEqual({
-        futureResumeCursor: { token: 'cursor-1' },
-      });
-      await expect(fs.readFile(updatesPath, 'utf8')).resolves.toBe(fixture);
-    });
-
-    it('preserves a newer native binding when the failure identifies another session', async () => {
-      const conversation = createConversation();
-      conversation.providerState = {
-        futureResumeCursor: { token: 'cursor-1' },
-        nativeConversationContextEstablished: true,
-        sessionDirectory,
-      };
-      const service = new GrokConversationHistoryService();
-
-      const update2 = await service.resolveMissingConversationSession(
-        conversation,
-        vaultPath,
-        'stale-session',
-      );
-      expect(update2.outcome).toBe('preserve');
-      Object.assign(conversation, update2.changes);
-
-      expect(conversation.sessionId).toBe('session-fixture');
-      expect(conversation.providerState).toEqual({
-        futureResumeCursor: { token: 'cursor-1' },
-        nativeConversationContextEstablished: true,
-        sessionDirectory,
-      });
-    });
-  });
-
   it('hydrates only from the configured home when the default home has the same session id', async () => {
     const customHome = path.join(tempRoot, 'custom-grok');
     const customSessionDirectory = path.join(
@@ -303,7 +252,7 @@ describe('GrokConversationHistoryService', () => {
     Object.assign(missingCustomConversation, await service.hydrateConversationHistory(missingCustomConversation, vaultPath, context));
 
     expect(missingCustomConversation.messages).toEqual([]);
-    expect(missingCustomConversation.providerState).toBeUndefined();
+    expect(missingCustomConversation.providerState).toEqual({ sessionDirectory });
   });
 
   it.each(['assistant-1', 'prompt-1'])('rehydrates a pending fork source prefix at checkpoint %s', async resumeAt => {

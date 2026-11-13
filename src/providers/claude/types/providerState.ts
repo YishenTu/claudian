@@ -5,12 +5,6 @@ import type { SubagentInfo } from '../../../core/types/tools';
 export interface ClaudeProviderState {
   providerSessionId?: string;
   previousProviderSessionIds?: string[];
-  /**
-   * Retired-binding migration (#1647, added 2026-10-16; remove after 2027-01-16). Set whenever Claudian retires the live
-   * binding, so only retirements left by earlier versions get the one-time restore. Remove this
-   * field, its writes, and every block tagged "Retired-binding migration" together.
-   */
-  bindingRetired?: boolean;
   historyReplayPending?: boolean;
   forkSource?: ForkSource;
   /** Only what native history lacks: full records without a native sidecar, otherwise async overlays. */
@@ -54,35 +48,4 @@ export function getClaudeConversationSessionIds(conversation: Pick<Conversation,
     ...(state.previousProviderSessionIds || []),
     state.providerSessionId ?? conversation.sessionId,
   ].filter((id): id is string => !!id))];
-}
-
-export function clearClaudeResumeState(conversation: Conversation): boolean {
-  const providerState = { ...getClaudeState(conversation.providerState) };
-  const pendingForkSource = getPendingForkSource(conversation);
-  const hadResumeState = conversation.sessionId != null
-    || typeof providerState.providerSessionId === 'string'
-    || providerState.forkSource !== undefined;
-  if (!hadResumeState) {
-    return false;
-  }
-
-  // Stop provider resume while retaining transcript segments for history replay.
-  const preservedSessionIds = getClaudeConversationSessionIds(conversation);
-  if (preservedSessionIds.length > 0) {
-    providerState.previousProviderSessionIds = preservedSessionIds;
-  } else {
-    delete providerState.previousProviderSessionIds;
-  }
-  if (pendingForkSource) {
-    conversation.resumeAtMessageId = pendingForkSource.resumeAt;
-  }
-
-  conversation.sessionId = null;
-  providerState.bindingRetired = true;
-  delete providerState.providerSessionId;
-  delete providerState.forkSource;
-  conversation.providerState = Object.keys(providerState).length > 0
-    ? providerState
-    : undefined;
-  return true;
 }

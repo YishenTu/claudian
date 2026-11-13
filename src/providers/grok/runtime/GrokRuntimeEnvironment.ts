@@ -6,7 +6,6 @@ import type { ExecutionTarget } from '@/core/process/execution-target/types';
 import { createCLIPathFingerprintInputs } from '../../../core/providers/cli/CLIPathFingerprintInputs';
 import { createRuntimeInputFingerprint } from '../../../core/providers/settings/RuntimeInputFingerprint';
 import type { GrokProviderSettings } from '../config';
-import { resolveGrokSessionHome } from '../history/GrokSessionStore';
 
 export function buildGrokRuntimeEnv(
   environmentText: string,
@@ -41,22 +40,5 @@ export function computeGrokRuntimeInputHash(
     additionalInputs: { ...cliPathInputs, target: JSON.stringify(target) },
     environmentKeys: environment.map(([key]) => key),
     environmentText,
-  });
-}
-
-/** Store selection changes retire resume identity; ordinary launch changes reload it. */
-export function computeGrokSessionEnvironmentHash(
-  environmentText: string, target: ExecutionTarget, resolvedEnvironment?: NodeJS.ProcessEnv,
-): string {
-  const configured = parseEnvironmentVariables(environmentText);
-  const environment = resolvedEnvironment ?? (target.method === 'wsl'
-    ? { GROK_HOME: configured.GROK_HOME ?? process.env.GROK_HOME, HOME: configured.HOME }
-    : { ...process.env, ...configured });
-  return createRuntimeInputFingerprint({
-    additionalInputs: {
-      target: JSON.stringify(target),
-      store: resolveGrokSessionHome(environment, process.platform, target) ?? undefined,
-    },
-    environmentKeys: [], environmentText: '',
   });
 }

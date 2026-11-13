@@ -983,9 +983,9 @@ describe('WSL installations', () => {
     expect(native.rewindCalls).toEqual([{ force: false, mode: 'conversation_only', sessionId: 'session-existing', targetPromptIndex: 4 }]);
   });
 
-  it.each(['execute', 'previewRewind', 'rewind'] as const)('retires a changed WSL store before %s and resumes within the same store', async operation => {
+  it.each(['execute', 'previewRewind', 'rewind'] as const)('keeps the binding across a changed WSL store for %s', async operation => {
     const host = await createWSLHost();
-    const natives = [new GrokNativeProcess(), new GrokNativeProcess(), new GrokNativeProcess()];
+    const natives = [new GrokNativeProcess(), new GrokNativeProcess()];
     // Rewind indexes come from the Linux store, which the test host cannot read through `\\wsl$`.
     const options = { resolvePromptIndex: async () => 0 };
     const config = { ...sessionConfig, workingDirectory: 'C:\\vault', resumeSeed: undefined };
@@ -1001,24 +1001,13 @@ describe('WSL installations', () => {
       resumeSeed: { providerSessionId: original.providerSessionId, providerState: { ...original.providerState, sessionDirectory } },
     });
     if (!isRewindableExecutionSession(second)) throw new Error('Expected Grok rewind capability.');
-    const preview = operation === 'execute' ? undefined : await second[operation]('user-target', 'assistant-target');
-    expect(preview?.canRewind).toBe(operation === 'execute' ? undefined : false);
+    if (operation === 'execute') await collect(second.execute(executionRequest()).events);
+    else await second[operation]('user-target', 'assistant-target');
     expect(natives[1].newRequests).toEqual([]);
-    expect(natives[1].loadRequests).toEqual([]);
-    expect(natives[1].rewindCalls).toEqual([]);
-    expect(second.getSnapshot().providerSessionId).toBe(operation === 'execute' ? original.providerSessionId : undefined);
-    expect(second.getSnapshot().providerState?.historySessionId).toBe(operation === 'execute' ? undefined : original.providerSessionId);
-    await collect(second.execute(executionRequest()).events);
-    expect(natives[1].loadRequests).toEqual([]);
-    expect(natives[1].newRequests).toHaveLength(1);
-    const changed = second.getSnapshot();
-    expect(changed.providerState?.sessionStoreKey).not.toBe(original.providerState?.sessionStoreKey);
+    expect(operation === 'execute' ? natives[1].loadRequests : natives[1].rewindCalls)
+      .toEqual([expect.objectContaining({ sessionId: original.providerSessionId })]);
+    expect(second.getSnapshot().providerSessionId).toBe(original.providerSessionId);
+    expect(second.getSnapshot().providerState).not.toHaveProperty('historySessionId');
     await second.dispose();
-    const third = createWSLBackend(host, [natives[2]], options).createSession({ ...config,
-      resumeSeed: { providerSessionId: changed.providerSessionId, providerState: changed.providerState },
-    });
-    await collect(third.execute(executionRequest()).events);
-    expect(natives[2].newRequests).toEqual([]);
-    expect(natives[2].loadRequests).toHaveLength(1);
   });
 });

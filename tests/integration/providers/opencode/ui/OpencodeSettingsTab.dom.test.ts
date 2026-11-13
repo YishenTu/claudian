@@ -53,7 +53,7 @@ async function setup(config: Record<string, unknown> = {}) {
     afterTransition: async () => { transitioning = false; },
   });
   const cliResolver = { reset: () => { resets.push({ paths: { ...getOpencodeProviderSettings(host.settings).cliPathsByHost }, transitioning }); } };
-  const context = { plugin: host, notifyProviderModelOptionsChanged: vi.fn(), renderCustomContextLimits: vi.fn() };
+  const context = { plugin: host, notifyProviderModelOptionsChanged: vi.fn() };
   const container = document.body.createDiv();
   const view = createOpencodeSettingsTabRenderer({ cliResolver, metadataService: service, modelCatalog: catalog }).render(container, context);
   await catalog.refresh();
@@ -192,7 +192,7 @@ describe('Windows installation method', () => {
     ['native-windows', 'wsl', 'accepted'], ['wsl', 'native-windows', 'accepted'],
     ['native-windows', 'wsl', 'committed-error'], ['wsl', 'native-windows', 'committed-error'],
   ] as const)('synchronizes %s → %s controls with settings after a %s save', async (initial, requested, outcome) => {
-    // Seed through the runtime path so the session-store baseline matches the initial target.
+    // Seed through the runtime path so the runtime baseline matches the initial target.
     await app.host.applyProviderRuntimeSettings(['opencode'], settings => {
       updateOpencodeProviderSettings(settings, { installationMethod: initial, wslDistroOverride: 'Ubuntu' });
     });
@@ -208,10 +208,10 @@ describe('Windows installation method', () => {
     const failure = await controlChangeSettled(method).then(() => null, (error: unknown) => error);
     expect(failure instanceof Error ? failure.message : failure)
       .toBe({ accepted: null, rejected: 'Disk full', 'committed-error': 'Runtime reset failed' }[outcome]);
-    // The method change is written once, with its session invalidation; the only other write completes that invalidation.
+    // The method change is written once and records no conversation-session invalidation.
     expect(persist.mock.calls.map(([settings]) => [
-      getOpencodeProviderSettings(settings).installationMethod, settings.pendingProviderSessionInvalidations.opencode !== undefined,
-    ])).toEqual(outcome === 'rejected' ? [[requested, true]] : [[requested, true], [requested, false]]);
+      getOpencodeProviderSettings(settings).installationMethod, Object.hasOwn(settings, 'pendingProviderSessionInvalidations'),
+    ])).toEqual([[requested, false]]);
     const expected = outcome === 'rejected' ? initial : requested;
     expect(getOpencodeProviderSettings(app.settings).installationMethod).toBe(expected);
     expect(getOpencodeProviderSettings(await app.settingsStorage.load()).installationMethod).toBe(expected);

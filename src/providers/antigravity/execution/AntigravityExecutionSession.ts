@@ -769,9 +769,6 @@ export class AntigravityExecutionSession implements ProviderExecutionSession, St
     this.#endRun(active, {
       category,
       message,
-      ...(category === 'provider-session-missing' && this.providerSessionId
-        ? { missingProviderSessionId: this.providerSessionId }
-        : {}),
       recoverable: true,
       type: 'execution_error',
     });

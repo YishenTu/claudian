@@ -496,10 +496,7 @@
     "executionNotices": {
       "initializeFailed": "Failed to initialize agent execution. Please try again.",
       "unavailable": "Agent execution is not available. Please reload the plugin.",
-      "missingDeleted": "The provider session no longer exists. Its Claudian record was removed; send again to start a new session.",
-      "missingReset": "The provider session no longer exists. Claudian preserved the recoverable history; send again to rebuild the session.",
-      "missingPreserved": "The provider session no longer exists. Claudian preserved its record because the remaining history could not be verified.",
-      "missingNotFound": "The provider session no longer exists. Send again to start a new session.",
+      "sessionUnavailable": "This conversation's native session isn't available under the current CLI configuration. Start a new chat to continue.",
       "unsentFallback": "Message was not sent. Please try again."
     },
     "images": {
@@ -826,19 +823,9 @@
       "deleteConfirm": "Delete environment snippet \"{name}\"?",
       "deleteFailed": "Failed to delete snippet"
     },
-    "customModelOverrides": {
-      "name": "Custom model overrides",
-      "desc": "Set model selector aliases and context window sizes for custom models."
-    },
     "customModelAliases": {
-      "placeholder": "Alias",
       "ariaLabel": "Alias for {model}",
       "ariaDescription": "Custom label shown in the model selector. Leave empty to use the default."
-    },
-    "customContextLimits": {
-      "invalid": "Invalid format. Use: 256k, 1m, or exact count (1000-10000000).",
-      "saveFailed": "Could not save context limit. Try again.",
-      "savedRefreshFailed": "Context limit was saved, but settings refresh failed."
     },
     "enableChrome": {
       "name": "Enable Chrome extension",

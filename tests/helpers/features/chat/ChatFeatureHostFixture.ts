@@ -33,7 +33,6 @@ Promise<ChatFeatureHost & { settings: ClaudianSettings }> {
     switchConversation: unconfiguredCapability,
     assignConversationToCurrentDevice: unconfiguredCapability,
     deleteConversation: unconfiguredCapability,
-    handleMissingProviderSession: unconfiguredCapability,
     renameConversation: unconfiguredCapability,
     completeConversationTitleGeneration: unconfiguredCapability,
     setLinkedContentPinned: unconfiguredCapability,

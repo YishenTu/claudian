@@ -3,13 +3,11 @@ import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import * as path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
-import { conversationRecord } from '@test/helpers/features/chat/ConversationFixture';
 import { createFixture, turn, waitFor } from '@test/helpers/providers/opencode/OpencodeSharedServerFixture';
 
 import { type ProviderExecutionEvent, type ProviderExecutionRequest } from '@/core/execution';
 import { normalizeProviderCommandDiscoveryItems } from '@/core/providers/commands/ProviderCommandDiscoveryResult';
 import { ProviderCommandDiscoveryStore } from '@/core/providers/commands/ProviderCommandDiscoveryStore';
-import { opencodeSettingsReconciler } from '@/providers/opencode/env/OpencodeSettingsReconciler';
 import { getOpencodeProviderSettings, updateOpencodeProviderSettings } from '@/providers/opencode/settings';
 import { SlashCommandSource } from '@/shared/composer-dropdown/SlashCommandSource';
 
@@ -38,14 +36,6 @@ it('releases the retained server through its stdin lease before disposal resolve
     await f.workspace.dispose?.();
     expect(readFileSync(`${f.log}.released`, 'utf8').trim().split('\n')).toEqual([String(pid)]);
   } finally { await f.dispose(); }
-});
-
-it('retains a v2 conversation database binding when runtime settings move to another database', () => {
-  const conversation = conversationRecord('test', { providerId: 'opencode', sessionId: 'original', providerState: { sessionId: 'original', databasePath: '/original.db' } });
-  const settings = { providerConfigs: { opencode: { enabled: true, environmentHash: 'old', environmentVariables: 'OPENCODE_DB=/replacement.db' } } };
-  expect(opencodeSettingsReconciler.reconcileModelWithEnvironment(settings)).toEqual({ changed: true });
-  expect(opencodeSettingsReconciler.invalidateConversationSessions([conversation])).toEqual([]);
-  expect(conversation).toMatchObject({ sessionId: 'original', providerState: { databasePath: '/original.db' } });
 });
 
 it('coalesces command discovery and reads command changes from the retained server', async () => {

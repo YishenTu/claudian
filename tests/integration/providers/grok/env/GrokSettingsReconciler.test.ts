@@ -7,7 +7,7 @@ import { grokSettingsReconciler } from '@/providers/grok/env/GrokSettingsReconci
 // The distro fixture is a POSIX executable standing in for wsl.exe.
 it.skipIf(process.platform === 'win32').each([
   ['UNC vault', '\\\\wsl$\\Ubuntu\\vault', { changed: false }],
-  ['drive vault', 'C:\\vault', { changed: true, sessionPolicy: 'invalidate' }],
+  ['drive vault', 'C:\\vault', { changed: true }],
 ] as const)('uses the effective distro when reconciling a %s', async (_name, vaultPath, defaultDistroChange) => {
   const distros = await createWSLDistroFixture(Buffer.from('* Debian  Running  2', 'utf16le'));
   const platform = Object.getOwnPropertyDescriptor(process, 'platform')!;
@@ -18,6 +18,6 @@ it.skipIf(process.platform === 'win32').each([
     await distros.setOutput(Buffer.from('* Fedora  Running  2', 'utf16le'));
     expect(grokSettingsReconciler.reconcileModelWithEnvironment(settings, { vaultPath })).toEqual(defaultDistroChange);
     expect(grokSettingsReconciler.reconcileModelWithEnvironment(settings, { vaultPath: '\\\\wsl$\\Debian\\vault' }))
-      .toEqual({ changed: true, sessionPolicy: 'invalidate' });
+      .toEqual({ changed: true });
   } finally { Object.defineProperty(process, 'platform', platform); }
 });

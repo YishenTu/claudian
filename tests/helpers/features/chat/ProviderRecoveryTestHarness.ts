@@ -13,7 +13,6 @@ import {
   ChatExecutionCoordinator,
   type ChatExecutionPersistence,
   type ChatExecutionResult,
-  type MissingProviderSessionResolution,
 } from '@/features/chat/execution/ChatExecutionCoordinator';
 
 
@@ -22,10 +21,6 @@ interface ProviderRecoveryTestHarnessOptions {
   readonly backend: ProviderExecutionBackend;
   readonly configuration: ProviderExecutionConfiguration;
   readonly conversation: Conversation;
-  readonly resolveMissingProviderSession: (
-    conversation: Conversation,
-    missingProviderSessionId?: string,
-  ) => Promise<MissingProviderSessionResolution>;
   readonly toolPolicy?: ProviderToolPolicy;
   readonly workingDirectory: string;
 }
@@ -69,12 +64,6 @@ export function createProviderRecoveryTestHarness(
     interactionPort,
     workingDirectory: options.workingDirectory,
     createId: () => `provider-recovery-${++nextId}`,
-    resolveMissingProviderSession: (_conversationId, missingProviderSessionId) => (
-      options.resolveMissingProviderSession(
-        options.conversation,
-        missingProviderSessionId,
-      )
-    ),
   });
 
   return {

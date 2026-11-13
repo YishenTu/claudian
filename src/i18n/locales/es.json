@@ -496,10 +496,7 @@
     "executionNotices": {
       "initializeFailed": "No se pudo inicializar la ejecución del agente. Inténtalo de nuevo.",
       "unavailable": "La ejecución del agente no está disponible. Vuelve a cargar el complemento.",
-      "missingDeleted": "La sesión del proveedor ya no existe. Se eliminó su registro de Claudian. Vuelve a enviar el mensaje para iniciar una sesión nueva.",
-      "missingReset": "La sesión del proveedor ya no existe. Claudian conservó el historial recuperable. Vuelve a enviar el mensaje para reconstruir la sesión.",
-      "missingPreserved": "La sesión del proveedor ya no existe. Claudian conservó su registro porque no se pudo verificar el historial restante.",
-      "missingNotFound": "La sesión del proveedor ya no existe. Vuelve a enviar el mensaje para iniciar una sesión nueva.",
+      "sessionUnavailable": "La sesión nativa de esta conversación no está disponible con la configuración actual de la CLI. Inicia un chat nuevo para continuar.",
       "unsentFallback": "No se envió el mensaje. Inténtalo de nuevo."
     },
     "images": {
@@ -826,19 +823,9 @@
       "deleteConfirm": "¿Eliminar el snippet de entorno \"{name}\"?",
       "deleteFailed": "No se pudo eliminar el snippet"
     },
-    "customModelOverrides": {
-      "name": "Anulaciones de modelos personalizados",
-      "desc": "Configure alias en el selector de modelos y tamaños de ventana de contexto para modelos personalizados."
-    },
     "customModelAliases": {
-      "placeholder": "Alias",
       "ariaLabel": "Alias de {model}",
       "ariaDescription": "Etiqueta personalizada que se muestra en el selector de modelos. Déjalo vacío para usar la predeterminada."
-    },
-    "customContextLimits": {
-      "invalid": "Formato inválido. Use: 256k, 1m o número exacto (1000-10000000).",
-      "saveFailed": "No se pudo guardar la ventana de contexto. Inténtalo de nuevo.",
-      "savedRefreshFailed": "La ventana de contexto se guardó, pero no se pudo actualizar la configuración."
     },
     "enableChrome": {
       "name": "Habilitar extensión de Chrome",

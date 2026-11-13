@@ -74,7 +74,7 @@ describe('getProviderForModel', () => {
       settingsProvider: 'claude',
       providerConfigs: {
         claude: {
-          environmentVariables: `ANTHROPIC_MODEL=${TEST_CODEX_MODEL}`,
+          visibleModels: [TEST_CODEX_MODEL],
         },
         codex: {
           enabled: false,

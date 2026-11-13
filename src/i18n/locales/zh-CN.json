@@ -496,10 +496,7 @@
     "executionNotices": {
       "initializeFailed": "无法初始化代理执行。请重试。",
       "unavailable": "代理执行不可用。请重新加载插件。",
-      "missingDeleted": "提供商会话已不存在。其 Claudian 记录已移除；请重新发送以开始新会话。",
-      "missingReset": "提供商会话已不存在。Claudian 已保留可恢复的历史；请重新发送以重建会话。",
-      "missingPreserved": "提供商会话已不存在。由于无法验证剩余历史，Claudian 保留了其记录。",
-      "missingNotFound": "提供商会话已不存在。请重新发送以开始新会话。",
+      "sessionUnavailable": "此对话的原生会话在当前 CLI 配置下不可用。请开始新的聊天以继续。",
       "unsentFallback": "消息未发送。请重试。"
     },
     "images": {
@@ -826,19 +823,9 @@
       "deleteConfirm": "删除环境变量片段“{name}”？",
       "deleteFailed": "删除片段失败"
     },
-    "customModelOverrides": {
-      "name": "自定义模型覆盖",
-      "desc": "为自定义模型设置模型选择器别名和上下文窗口大小。"
-    },
     "customModelAliases": {
-      "placeholder": "别名",
       "ariaLabel": "{model} 的别名",
       "ariaDescription": "显示在模型选择器中的自定义标签。留空则使用默认值。"
-    },
-    "customContextLimits": {
-      "invalid": "格式无效。使用：256k、1m 或精确数量（1000-10000000）。",
-      "saveFailed": "无法保存上下文窗口，请重试。",
-      "savedRefreshFailed": "上下文窗口已保存，但刷新设置失败。"
     },
     "enableChrome": {
       "name": "启用 Chrome 扩展",

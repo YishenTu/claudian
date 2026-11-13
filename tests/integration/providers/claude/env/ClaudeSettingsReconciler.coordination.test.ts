@@ -1,7 +1,4 @@
-import { conversationRecord } from '@test/helpers/features/chat/ConversationFixture';
-
 import { getInstallationKey } from '@/core/device/InstallationKey';
-import { getProviderConfig, setProviderConfig } from '@/core/providers/providerConfig';
 import { ProviderSettingsCoordinator } from '@/core/providers/ProviderSettingsCoordinator';
 import { registerProviderModules } from '@/core/providers/registerProviderModules';
 import { isVersionedRuntimeInputFingerprint } from '@/core/providers/settings/RuntimeInputFingerprint';
@@ -11,10 +8,43 @@ import { getClaudeProviderSettings } from '@/providers/claude/settings';
 
 registerProviderModules([claudeProviderRegistration]);
 
+type ClaudeSettingsDocument = Record<string, unknown> & { providerConfigs: { claude: Record<string, unknown> } };
+
 describe('claudeSettingsReconciler', () => {
-  it('invalidates on WSL target and distro changes but reloads for a CLI-only change', () => {
-    const platform = process.platform;
-    Object.defineProperty(process, 'platform', { value: 'win32' });
+  it('leaves a fresh install without runtime inputs unchanged', () => {
+    const settings: ClaudeSettingsDocument = { settingsProvider: 'claude', providerConfigs: { claude: { enabled: true } } };
+
+    expect(ProviderSettingsCoordinator.reconcileProviders(settings, ['claude']))
+      .toEqual({ changed: false, environmentChangedProviderIds: [] });
+    expect(getClaudeProviderSettings(settings).environmentHash).toBe('');
+  });
+
+  it.each([
+    ['CLAUDE_CONFIG_DIR moving the store', { environmentVariables: 'CLAUDE_CONFIG_DIR=/other/claude\nSOME_CUSTOM_FLAG=1' }],
+    ['CLAUDE_CONFIG_DIR being removed', { environmentVariables: 'SOME_CUSTOM_FLAG=1' }],
+    ['HOME moving the default store', { environmentVariables: 'CLAUDE_CONFIG_DIR=/data/claude\nSOME_CUSTOM_FLAG=1\nHOME=/home/other' }],
+    ['an arbitrary key', { environmentVariables: 'CLAUDE_CONFIG_DIR=/data/claude\nSOME_CUSTOM_FLAG=2' }],
+    ['the CLI path', { cliPath: '/new/claude' }],
+    ['the host CLI path', { cliPathsByHost: { [getInstallationKey()]: '/host/claude' } }],
+  ])('restarts the runtime when %s changes', (_label, change) => {
+    const settings: ClaudeSettingsDocument = {
+      settingsProvider: 'claude',
+      providerConfigs: {
+        claude: { enabled: true, cliPath: '/old/claude', environmentVariables: 'CLAUDE_CONFIG_DIR=/data/claude\nSOME_CUSTOM_FLAG=1' },
+      },
+    };
+    ProviderSettingsCoordinator.reconcileProviders(settings, ['claude']);
+    expect(claudeSettingsReconciler.reconcileModelWithEnvironment(settings)).toEqual({ changed: false });
+    Object.assign(settings.providerConfigs.claude, change);
+
+    expect(ProviderSettingsCoordinator.reconcileProviders(settings, ['claude']))
+      .toEqual({ changed: true, environmentChangedProviderIds: ['claude'] });
+    expect(claudeSettingsReconciler.reconcileModelWithEnvironment(settings)).toEqual({ changed: false });
+  });
+
+  it('restarts the runtime on WSL target and distro changes', () => {
+    const platform = Object.getOwnPropertyDescriptor(process, 'platform')!;
+    Object.defineProperty(process, 'platform', { ...platform, value: 'win32' });
     try {
       const key = getInstallationKey();
       const config = {
@@ -25,91 +55,12 @@ describe('claudeSettingsReconciler', () => {
       const settings = { providerConfigs: { claude: config } };
       claudeSettingsReconciler.reconcileModelWithEnvironment(settings);
       settings.providerConfigs.claude.installationMethodsByHost[key] = 'wsl';
-      expect(claudeSettingsReconciler.reconcileModelWithEnvironment(settings)).toEqual({ changed: true, sessionPolicy: 'invalidate' });
+      expect(claudeSettingsReconciler.reconcileModelWithEnvironment(settings)).toEqual({ changed: true });
+      expect(claudeSettingsReconciler.reconcileModelWithEnvironment(settings)).toEqual({ changed: false });
       settings.providerConfigs.claude.wslDistroOverridesByHost[key] = 'Debian';
-      expect(claudeSettingsReconciler.reconcileModelWithEnvironment(settings)).toEqual({ changed: true, sessionPolicy: 'invalidate' });
-      settings.providerConfigs.claude.cliPath = '/new/claude';
-      expect(claudeSettingsReconciler.reconcileModelWithEnvironment(settings)).toEqual({ changed: true, sessionPolicy: 'reload' });
-    } finally { Object.defineProperty(process, 'platform', { value: platform }); }
-  });
-
-  it.each([
-    'CLAUDE_CONFIG_DIR', 'HOME', 'USERPROFILE', 'HOMEDRIVE', 'HOMEPATH', 'ANTHROPIC_BASE_URL', 'ANTHROPIC_MODEL',
-  ])('invalidates native bindings when session-scope %s changes or is removed', key => {
-    const settings: Record<string, unknown> = {
-      providerConfigs: { claude: { enabled: true, environmentVariables: `${key}=/old-home` } },
-    };
-    claudeSettingsReconciler.reconcileModelWithEnvironment(settings);
-    for (const nextEnvironment of [`${key}=/new-home`, '']) {
-      setProviderConfig(settings, 'claude', { ...getProviderConfig(settings, 'claude'), environmentVariables: nextEnvironment });
-      expect(claudeSettingsReconciler.reconcileModelWithEnvironment(settings))
-        .toEqual({ changed: true, sessionPolicy: 'invalidate' });
-    }
-  });
-
-  it.each([
-    ['the CLI path', { cliPath: '/old/claude' }, { cliPath: '/new/claude' }],
-    ['the host CLI path', { hostCliPath: '/old/claude' }, { hostCliPath: '/new/claude' }],
-    ['PATH', { path: '/old/bin' }, { path: '/new/bin' }],
-    ['a first CLI path without saved inputs', { baseUrl: null }, { baseUrl: null, cliPath: '/new/claude' }],
-  ])('keeps native bindings and reloads when only %s changes', (_label, before, after) => {
-    type LaunchInputs = { baseUrl?: string | null; cliPath?: string; hostCliPath?: string; path?: string };
-    const toConfig = ({ baseUrl = 'https://api.example.com', cliPath = '', hostCliPath, path }: LaunchInputs) => ({
-      enabled: true,
-      cliPath,
-      cliPathsByHost: hostCliPath ? { [getInstallationKey()]: hostCliPath } : {},
-      environmentVariables: [
-        baseUrl ? `ANTHROPIC_BASE_URL=${baseUrl}` : '',
-        path ? `PATH=${path}` : '',
-      ].filter(Boolean).join('\n'),
-    });
-    const settings: Record<string, unknown> = {
-      settingsProvider: 'claude',
-      providerConfigs: { claude: toConfig(before) },
-    };
-    claudeSettingsReconciler.reconcileModelWithEnvironment(settings);
-    (settings.providerConfigs as Record<string, unknown>).claude = {
-      ...getProviderConfig(settings, 'claude'),
-      ...toConfig(after),
-    };
-
-    const result = ProviderSettingsCoordinator.reconcileProviders(settings, ['claude']);
-
-    expect(result).toMatchObject({
-      changed: true,
-      environmentChangedProviderIds: ['claude'],
-      sessionInvalidationProviderIds: [],
-    });
-    expect(claudeSettingsReconciler.reconcileModelWithEnvironment(settings)).toEqual({ changed: false });
-  });
-
-  it.each([
-    ['backfills without invalidating when runtime inputs are unchanged', '/same/claude', 'reload'],
-    ['invalidates when runtime inputs also changed', '/new/claude', 'invalidate'],
-  ] as const)('pre-split session fingerprint %s', (_label, nextCliPath, sessionPolicy) => {
-    const settings: Record<string, unknown> = {
-      providerConfigs: {
-        claude: {
-          enabled: true,
-          cliPath: '/same/claude',
-          environmentVariables: 'ANTHROPIC_BASE_URL=https://api.example.com',
-        },
-      },
-    };
-    claudeSettingsReconciler.reconcileModelWithEnvironment(settings);
-    const config = getProviderConfig(settings, 'claude');
-    const runtimeFingerprint = config.environmentHash;
-    delete config.sessionEnvironmentHash;
-    config.cliPath = nextCliPath;
-    setProviderConfig(settings, 'claude', config);
-
-    const result = claudeSettingsReconciler.reconcileModelWithEnvironment(settings);
-
-    expect(result).toEqual({ changed: true, sessionPolicy });
-    expect(getClaudeProviderSettings(settings).sessionEnvironmentHash).toMatch(/^runtime-input:v1:/);
-    expect(getClaudeProviderSettings(settings).environmentHash === runtimeFingerprint)
-      .toBe(sessionPolicy === 'reload');
-    expect(claudeSettingsReconciler.reconcileModelWithEnvironment(settings)).toEqual({ changed: false });
+      expect(claudeSettingsReconciler.reconcileModelWithEnvironment(settings)).toEqual({ changed: true });
+      expect(claudeSettingsReconciler.reconcileModelWithEnvironment(settings)).toEqual({ changed: false });
+    } finally { Object.defineProperty(process, 'platform', platform); }
   });
 
   describe('reconcileModelWithEnvironment', () => {
@@ -128,175 +79,11 @@ describe('claudeSettingsReconciler', () => {
 
       const result = claudeSettingsReconciler.reconcileModelWithEnvironment(settings);
 
-      expect(result).toEqual({ changed: true, sessionPolicy: 'invalidate' });
+      expect(result).toEqual({ changed: true });
       expect(settings.model).toBe('claude-opus-4-6');
       const fingerprint = getClaudeProviderSettings(settings).environmentHash;
       expect(isVersionedRuntimeInputFingerprint(fingerprint)).toBe(true);
       expect(fingerprint).not.toContain('https://api.example.com');
     });
-
-    it('preserves an unavailable saved model instead of choosing a fallback', () => {
-      const settings: Record<string, unknown> = {
-        settingsProvider: 'claude',
-        model: 'claude-opus-4-6',
-        providerConfigs: {
-          claude: {
-            customModels: '',
-            environmentVariables: 'ANTHROPIC_BASE_URL=https://api.example.com',
-            environmentHash: '',
-          },
-        },
-      };
-
-      const result = claudeSettingsReconciler.reconcileModelWithEnvironment(settings);
-
-      expect(result.changed).toBe(true);
-      expect(settings.model).toBe('claude-opus-4-6');
-    });
-
-  });
-
-  describe('invalidateConversationSessions', () => {
-    it('invalidates only Claude conversations and preserves Claude transcript references', () => {
-      const claudeConversation = conversationRecord('conversation', {
-        id: 'claude-conversation',
-        providerId: 'claude',
-        sessionId: 'legacy-session',
-        resumeAtMessageId: 'assistant-1',
-        providerState: {
-          providerSessionId: 'provider-session',
-          previousProviderSessionIds: ['previous-session'],
-          forkSource: { sessionId: 'source-session', resumeAt: 'assistant-0' },
-          subagentData: { task: { id: 'task' } },
-          uiMetadata: { keep: true },
-        },
-        messages: [{ id: 'message', role: 'user', content: 'Keep me', timestamp: 1 }],
-      });
-      const codexConversation = conversationRecord('conversation', {
-        id: 'codex-conversation',
-        providerId: 'codex',
-        sessionId: 'codex-session',
-        providerState: { threadId: 'codex-thread' },
-        messages: [],
-      });
-
-      const invalidated = claudeSettingsReconciler.invalidateConversationSessions(
-        [claudeConversation, codexConversation],
-      );
-
-      expect(invalidated).toEqual([claudeConversation]);
-      expect(claudeConversation.sessionId).toBeNull();
-      expect(claudeConversation.resumeAtMessageId).toBe('assistant-1');
-      expect(claudeConversation.providerState).toEqual({
-        bindingRetired: true,
-        previousProviderSessionIds: ['previous-session', 'provider-session'],
-        subagentData: { task: { id: 'task' } },
-        uiMetadata: { keep: true },
-      });
-      expect(claudeConversation.messages).toHaveLength(1);
-      expect(codexConversation).toMatchObject({
-        sessionId: 'codex-session',
-        providerState: { threadId: 'codex-thread' },
-      });
-    });
-
-    it('invalidates Claude provider resume state even when the generic session id is absent', () => {
-      const conversation = conversationRecord('conversation', {
-        id: 'claude-provider-state-only',
-        providerId: 'claude',
-        sessionId: null,
-        providerState: { providerSessionId: 'provider-session' },
-        messages: [],
-      });
-
-      expect(claudeSettingsReconciler.invalidateConversationSessions([conversation])).toEqual([conversation]);
-      expect(conversation.providerState).toEqual({
-        bindingRetired: true,
-        previousProviderSessionIds: ['provider-session'],
-      });
-    });
-
-    it('preserves transcript session ids when invalidating resumable Claude state', () => {
-      const conversation = conversationRecord('conversation', {
-        id: 'claude-history-backed',
-        providerId: 'claude',
-        sessionId: 'legacy-session',
-        resumeAtMessageId: 'assistant-checkpoint',
-        providerState: {
-          providerSessionId: 'current-provider-session',
-          previousProviderSessionIds: ['previous-provider-session'],
-          subagentData: { task: { id: 'task' } },
-        },
-        messages: [],
-      });
-
-      const first = claudeSettingsReconciler.invalidateConversationSessions([conversation]);
-      const second = claudeSettingsReconciler.invalidateConversationSessions([conversation]);
-
-      expect(first).toEqual([conversation]);
-      expect(second).toEqual([]);
-      expect(conversation).toMatchObject({
-        sessionId: null,
-        resumeAtMessageId: 'assistant-checkpoint',
-        providerState: {
-          previousProviderSessionIds: [
-            'previous-provider-session',
-            'current-provider-session',
-          ],
-          subagentData: { task: { id: 'task' } },
-        },
-      });
-      expect(conversation.providerState).not.toHaveProperty('providerSessionId');
-    });
-
-    it('converts a pending fork into replayable history at the fork checkpoint', () => {
-      const conversation = conversationRecord('conversation', {
-        id: 'pending-fork',
-        providerId: 'claude',
-        sessionId: null,
-        providerState: {
-          forkSource: {
-            sessionId: 'fork-source-session',
-            resumeAt: 'fork-source-checkpoint',
-          },
-        },
-        messages: [],
-      });
-
-      const invalidated = claudeSettingsReconciler.invalidateConversationSessions([conversation]);
-
-      expect(invalidated).toEqual([conversation]);
-      expect(conversation).toMatchObject({
-        sessionId: null,
-        resumeAtMessageId: 'fork-source-checkpoint',
-        providerState: {
-          previousProviderSessionIds: ['fork-source-session'],
-        },
-      });
-      expect(conversation.providerState).not.toHaveProperty('forkSource');
-    });
-
-  });
-
-  describe('normalizeModelVariantSettings', () => {
-    it('migrates a current legacy fingerprint without treating inputs as changed', () => {
-      const settings: Record<string, unknown> = {
-        model: 'sonnet',
-        providerConfigs: {
-          claude: {
-            environmentHash: 'ANTHROPIC_BASE_URL=https://same.example.com',
-            environmentVariables: 'ANTHROPIC_BASE_URL=https://same.example.com',
-          },
-        },
-      };
-
-      expect(claudeSettingsReconciler.normalizeModelVariantSettings(settings)).toBe(true);
-      expect(isVersionedRuntimeInputFingerprint(
-        getClaudeProviderSettings(settings).environmentHash,
-      )).toBe(true);
-      expect(claudeSettingsReconciler.reconcileModelWithEnvironment(settings)).toEqual({ changed: false });
-    });
-
-
   });
 });

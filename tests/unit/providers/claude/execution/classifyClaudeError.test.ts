@@ -17,6 +17,8 @@ describe('classifyClaudeError', () => {
     ['an unavailable model', new ProviderModelUnavailableError('Claude Code'), 'configuration'],
     ['an unresolved CLI', new Error('Claude Code CLI not found'), 'configuration'],
     ['an authentication failure', new Error('Invalid API key provided'), 'authentication'],
+    ['a logged-out CLI', new Error('Not logged in · Please run /login'), 'authentication'],
+    ['a logged-out SDK error result', new Error('Claude Code returned an error result: Not logged in · Please run /login'), 'authentication'],
     ['an SDK process exit', new Error('Claude Code process exited with code 1'), 'process-exited'],
     ['a broken stdin pipe', errnoError('EPIPE', 'write failed'), 'process-exited'],
     ['an SDK transport write before readiness', new Error('ProcessTransport is not ready for writing'), 'transport'],
@@ -26,22 +28,18 @@ describe('classifyClaudeError', () => {
     expect(classifyClaudeError(error, 'abc-1')).toMatchObject({ category, recoverable: true });
   });
 
-  it('reports the missing session from the message when no session is expected', () => {
+  it('classifies a missing session from the message when no session is expected', () => {
     expect(classifyClaudeError(
       new Error('No conversation found with session ID: session-123'),
       null,
-    )).toMatchObject({
-      category: 'provider-session-missing',
-      missingProviderSessionId: 'session-123',
-    });
+    )).toMatchObject({ category: 'provider-session-missing' });
   });
 
-  it('reports the explicit missing session over message evidence', () => {
+  it('classifies an explicitly reported missing session without message evidence', () => {
     expect(classifyClaudeError(new Error('Session gone'), 'abc-1', 'abc-2')).toEqual({
       category: 'provider-session-missing',
       message: 'Session gone',
       recoverable: true,
-      missingProviderSessionId: 'abc-2',
     });
   });
 

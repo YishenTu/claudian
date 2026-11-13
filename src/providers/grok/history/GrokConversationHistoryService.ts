@@ -7,7 +7,6 @@ import type {
   ProviderHistoryEnvironment,
   ProviderHistoryInput,
   ProviderHistoryPathContext,
-  ProviderHistoryResult,
   ProviderHistoryUpdate,
 } from '../../../core/providers/types';
 import {
@@ -50,13 +49,13 @@ export class GrokConversationHistoryService implements ProviderConversationHisto
         vaultPath,
         historyContext!,
       );
-      if (sourceSessionDirectory !== state.forkSourceSessionDirectory) {
+      if (sourceSessionDirectory && sourceSessionDirectory !== state.forkSourceSessionDirectory) {
         conversation.providerState = mergePersistedProviderState(
           conversation.providerState,
           GROK_PROVIDER_STATE_KEYS,
           buildPersistedGrokProviderState({
             ...state,
-            forkSourceSessionDirectory: sourceSessionDirectory ?? undefined,
+            forkSourceSessionDirectory: sourceSessionDirectory,
           }) as Record<string, unknown> | undefined,
         );
       }
@@ -87,13 +86,14 @@ export class GrokConversationHistoryService implements ProviderConversationHisto
       vaultPath,
       historyContext!,
     );
-    if (sessionDirectory !== state.sessionDirectory && (sessionDirectory || conversation.sessionId)) {
+    // An unresolved locator stays recorded: history reads never change the binding.
+    if (sessionDirectory && sessionDirectory !== state.sessionDirectory) {
       conversation.providerState = mergePersistedProviderState(
         conversation.providerState,
         GROK_PROVIDER_STATE_KEYS,
         buildPersistedGrokProviderState({
           ...state,
-          sessionDirectory: sessionDirectory ?? undefined,
+          sessionDirectory,
         }) as Record<string, unknown> | undefined,
       );
     }
@@ -146,29 +146,6 @@ export class GrokConversationHistoryService implements ProviderConversationHisto
     return conversation?.sessionId ?? state.forkSource?.sessionId ?? null;
   }
 
-  async resolveMissingConversationSession(
-    input: ProviderHistoryInput,
-    _vaultPath: string | null,
-    missingProviderSessionId?: string,
-  ): Promise<ProviderHistoryResult<'delete' | 'reset' | 'preserve'>> {
-    const conversation = copyProviderHistoryState(input);
-    if (
-      !conversation.sessionId
-      || !missingProviderSessionId
-      || conversation.sessionId !== missingProviderSessionId
-    ) {
-      return { outcome: 'preserve' };
-    }
-
-    const providerState = { ...conversation.providerState };
-    for (const key of GROK_PROVIDER_STATE_KEYS) delete providerState[key];
-    conversation.sessionId = null;
-    conversation.providerState = Object.keys(providerState).length > 0
-      ? providerState
-      : undefined;
-    return { outcome: 'reset', changes: conversation };
-  }
-
   isPendingForkConversation(conversation: ProviderHistoryInput): boolean {
     const state = parseGrokProviderState(conversation.providerState);
     return Boolean(state.forkSource && !conversation.sessionId);
@@ -182,7 +159,6 @@ export class GrokConversationHistoryService implements ProviderConversationHisto
     const sourceState = parseGrokProviderState(sourceProviderState);
     return (buildPersistedGrokProviderState({
       forkSource: { resumeAt, sessionId: sourceSessionId },
-      ...(sourceState.sessionStoreKey ? { sessionStoreKey: sourceState.sessionStoreKey } : {}),
       ...(sourceState.sessionDirectory || sourceState.forkSourceSessionDirectory
         ? {
           forkSourceSessionDirectory: sourceState.sessionDirectory

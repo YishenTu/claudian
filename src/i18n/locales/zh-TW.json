@@ -496,10 +496,7 @@
     "executionNotices": {
       "initializeFailed": "無法初始化代理程式執行。請重試。",
       "unavailable": "代理程式執行無法使用。請重新載入外掛。",
-      "missingDeleted": "供應商工作階段已不存在。其 Claudian 記錄已移除；請重新傳送以開始新的工作階段。",
-      "missingReset": "供應商工作階段已不存在。Claudian 已保留可復原的歷程記錄；請重新傳送以重建工作階段。",
-      "missingPreserved": "供應商工作階段已不存在。由於無法驗證剩餘的歷程記錄，Claudian 保留了其記錄。",
-      "missingNotFound": "供應商工作階段已不存在。請重新傳送以開始新的工作階段。",
+      "sessionUnavailable": "此對話的原生工作階段在目前的 CLI 設定下無法使用。請開始新的聊天以繼續。",
       "unsentFallback": "訊息未傳送。請重試。"
     },
     "images": {
@@ -826,19 +823,9 @@
       "deleteConfirm": "要刪除環境變數片段「{name}」嗎？",
       "deleteFailed": "無法刪除片段"
     },
-    "customModelOverrides": {
-      "name": "自訂模型覆寫",
-      "desc": "為自訂模型設定模型選擇器別名和上下文視窗大小。"
-    },
     "customModelAliases": {
-      "placeholder": "別名",
       "ariaLabel": "{model} 的別名",
       "ariaDescription": "顯示在模型選擇器中的自訂標籤。留空則使用預設值。"
-    },
-    "customContextLimits": {
-      "invalid": "格式無效。使用：256k、1m 或精確數量（1000-10000000）。",
-      "saveFailed": "無法儲存上下文視窗，請重試。",
-      "savedRefreshFailed": "上下文視窗已儲存，但重新整理設定失敗。"
     },
     "enableChrome": {
       "name": "啟用 Chrome 擴充功能",

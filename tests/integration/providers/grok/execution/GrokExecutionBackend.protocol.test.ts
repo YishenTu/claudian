@@ -2306,7 +2306,7 @@ describe('GrokExecutionBackend', () => {
     });
   });
 
-  it('identifies the stale native session when load reports it missing', async () => {
+  it('reports a missing native session when load fails and keeps its binding', async () => {
     const native = new FakeNativeConnection();
     native.loadImplementation = async () => {
       throw new Error('session not found');
@@ -2320,8 +2320,8 @@ describe('GrokExecutionBackend', () => {
 
     expect(events.at(-1)).toMatchObject({
       category: 'provider-session-missing',
-      missingProviderSessionId: 'session-existing',
       type: 'execution_error',
     });
+    expect(session.getSnapshot().providerSessionId).toBe('session-existing');
   });
 });

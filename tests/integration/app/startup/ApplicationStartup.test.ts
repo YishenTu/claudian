@@ -5,11 +5,11 @@ import { App } from 'obsidian';
 
 import { SettingsCoordinator } from '@/app/settings/SettingsCoordinator';
 import { type ApplicationDomains, startApplication } from '@/app/startup/ApplicationStartup';
-import { ProviderExecutionLifecycleRegistry } from '@/core/execution/ProviderExecutionLifecycleRegistry';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { ProviderSettingsCoordinator } from '@/core/providers/ProviderSettingsCoordinator';
 import { isVersionedRuntimeInputFingerprint } from '@/core/providers/settings/RuntimeInputFingerprint';
 import * as sdkSession from '@/providers/claude/history/ClaudeHistoryStore';
+import { getClaudeProviderSettings } from '@/providers/claude/settings';
 import { getCodexProviderSettings } from '@/providers/codex/settings';
 
 // Provider history readers touch the filesystem through Node's fs.
@@ -60,7 +60,6 @@ describe('startApplication', () => {
       defaultSettings: DEFAULT_CLAUDIAN_SETTINGS,
       providers: overrides.providers ?? ProviderRegistry,
       providerSettings: ProviderSettingsCoordinator,
-      executionLifecycle: new ProviderExecutionLifecycleRegistry(),
       isUnloading: () => false,
       publishCommittedSettings: async () => undefined,
       onConversationDeleted: async () => undefined,
@@ -175,7 +174,7 @@ describe('startApplication', () => {
   });
 
   describe('session metadata', () => {
-    it('migrates a legacy Codex fingerprint before reconciling persisted sessions', async () => {
+    it('keeps persisted Codex sessions when startup records a new runtime fingerprint', async () => {
       const timestamp = Date.now();
       const metadataPath = '.claudian/sessions/conv-codex-legacy.meta.json';
       const sessionMetadata = {
@@ -324,7 +323,7 @@ describe('startApplication', () => {
       expect(loaded?.title).toBe('Saved Chat');
     });
 
-    it('should clear session IDs when provider base URL changes', async () => {
+    it('keeps session IDs when the provider base URL changes', async () => {
       const timestamp = Date.now();
       const sessionMeta = JSON.stringify({
         id: 'conv-saved-1',
@@ -364,14 +363,13 @@ describe('startApplication', () => {
       const domains = await loadApplicationWithMetadata();
 
       const loaded = await domains.conversations.getConversationById('conv-saved-1');
-      expect(loaded?.sessionId).toBeNull();
-
-      const sessionWrite = mockApp.vault.adapter.write.mock.calls.find(
-        ([path]) => path === '.claudian/sessions/conv-saved-1.meta.json'
+      // The changed environment reached reconciliation and replaced the runtime fingerprint.
+      expect(getClaudeProviderSettings(domains.settings.getCommittedSettings()).environmentHash).not.toBe('old-hash');
+      expect(loaded?.sessionId).toBe('saved-session');
+      expect(mockApp.vault.adapter.write).not.toHaveBeenCalledWith(
+        '.claudian/sessions/conv-saved-1.meta.json',
+        expect.any(String),
       );
-      expect(sessionWrite).toBeDefined();
-      const meta = JSON.parse(sessionWrite?.[1] as string);
-      expect(meta.sessionId).toBeNull();
     });
 
     it('should ignore legacy activeConversationId when no sessions exist', async () => {

@@ -20,7 +20,6 @@ export interface GrokCatalogSnapshot {
 }
 
 export interface PersistedGrokProviderSettings extends StoredInstallationSettings {
-  sessionEnvironmentHash: string;
   enabled: boolean;
   cliPath: string;
   cliPathsByHost: HostnameCLIPaths;
@@ -39,7 +38,6 @@ export interface GrokProviderSettings extends PersistedGrokProviderSettings, Ins
 export const DEFAULT_GROK_PROVIDER_SETTINGS: Readonly<PersistedGrokProviderSettings> = Object.freeze({
   installationMethodsByHost: {},
   wslDistroOverridesByHost: {},
-  sessionEnvironmentHash: '',
   catalogsByHost: {},
   cliPath: '',
   cliPathsByHost: {},
@@ -116,7 +114,6 @@ export function decodeGrokConfig(
   return {
     ...installation,
     ...selectInstallationSettings(installation, currentHostKey),
-    sessionEnvironmentHash: readTrimmedString(config.sessionEnvironmentHash),
     catalogsByHost,
     cliPath: readTrimmedString(config.cliPath)
       || DEFAULT_GROK_PROVIDER_SETTINGS.cliPath,
@@ -191,7 +188,6 @@ export function updateGrokConfig(
   const next: PersistedGrokProviderSettings = {
     installationMethodsByHost: installation.installationMethodsByHost,
     wslDistroOverridesByHost: installation.wslDistroOverridesByHost,
-    sessionEnvironmentHash: updates.sessionEnvironmentHash ?? current.sessionEnvironmentHash,
     catalogsByHost,
     cliPath,
     cliPathsByHost,

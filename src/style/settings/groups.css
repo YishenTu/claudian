@@ -58,7 +58,6 @@
 
 .claudian-settings .setting-item-description,
 .claudian-settings .claudian-sp-item-desc,
-.claudian-settings .claudian-context-limits-desc,
 :is(.claudian-agent-skill-modal, .claudian-env-snippet-modal) .setting-item-description {
   margin-top: var(--size-4-1);
   font-size: var(--font-ui-smaller);
@@ -71,8 +70,7 @@
 .claudian-settings :is(
   .claudian-provider-model-picker-selected,
   .claudian-provider-model-picker-catalog,
-  .claudian-env-snippets-container,
-  .claudian-context-limits-container:not(:empty)
+  .claudian-env-snippets-container
 ) {
   min-width: 0;
   margin-top: var(--size-4-3);
@@ -84,7 +82,6 @@
 
 .claudian-settings :is(
   .claudian-snippet-label,
-  .claudian-context-limits-label,
   .claudian-provider-model-picker-selected-label,
   .claudian-provider-model-picker-catalog-summary,
   .claudian-provider-model-picker-catalog-title
@@ -98,18 +95,14 @@
 
 .claudian-settings :is(
   .claudian-sp-header,
-  .claudian-snippet-header,
-  .claudian-context-limits-header
+  .claudian-snippet-header
 ) {
   margin: 0 0 var(--size-4-3);
   padding: 0;
   gap: var(--size-4-3);
 }
 
-.claudian-settings :is(
-  .claudian-context-limits-desc,
-  .claudian-provider-model-picker-summary
-) {
+.claudian-settings .claudian-provider-model-picker-summary {
   padding-inline: 0;
 }
 
@@ -117,7 +110,6 @@
   .claudian-sp-item,
   .claudian-sp-empty-state,
   .claudian-snippet-item,
-  .claudian-context-limits-item,
   .claudian-provider-model-picker-selected-row,
   .claudian-provider-model-picker-list,
   .claudian-provider-model-picker-row,
@@ -125,8 +117,7 @@
 ),
 .claudian-settings :is(
   .claudian-sp-item,
-  .claudian-snippet-item,
-  .claudian-context-limits-item
+  .claudian-snippet-item
 ):hover {
   background: transparent;
 }
@@ -200,23 +191,6 @@
 
 .claudian-settings .claudian-settings-group-body > :last-child {
   margin-bottom: 0;
-}
-
-@container (max-width: 500px) {
-  .claudian-settings .claudian-context-limits-item {
-    flex-wrap: wrap;
-    gap: var(--size-4-2);
-  }
-
-  .claudian-settings .claudian-context-limits-input-wrapper {
-    flex-wrap: wrap;
-    min-width: 0;
-    margin-left: 0;
-  }
-
-  .claudian-settings .claudian-context-alias-input {
-    width: min(180px, 100%);
-  }
 }
 
 .claudian-settings .setting-item.claudian-settings-textarea {

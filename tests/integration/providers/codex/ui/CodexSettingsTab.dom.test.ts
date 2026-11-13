@@ -50,7 +50,7 @@ async function render(config: Record<string, unknown> = {}, workingDirectory?: s
   const container = document.body.createDiv();
   const notify = vi.fn();
   const control = fixture.services.settingsTabRenderer!.render(container, {
-    plugin: fixture.plugin, notifyProviderModelOptionsChanged: notify, renderCustomContextLimits() {},
+    plugin: fixture.plugin, notifyProviderModelOptionsChanged: notify,
   });
   if (control) controls.push(control);
   return { ...fixture, container, notify };

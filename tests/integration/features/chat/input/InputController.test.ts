@@ -7,6 +7,7 @@ import { Notice } from 'obsidian';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { decodeSessionMessage } from '@/core/session-tools/sessionMessageEnvelope';
 import type { ToolCallInfo } from '@/core/types';
+import { t } from '@/i18n/i18n';
 
 const nativeCapabilities = ProviderRegistry.getCapabilities('claude');
 beforeEach(() => {
@@ -228,7 +229,9 @@ describe('async question answer submission', () => {
     }));
     await expect(fixture.controller.answerQuestion(tool, { '0': 'Answer' }, 'conversation-1')).rejects.toThrow('not sent');
     expect(fixture.input.value).toBe('Keep my draft');
-    expect(fixture.state.messages).toHaveLength(1);
+    // The handoff is ambiguous, so the answer turn stays in the transcript carrying the ordinary error.
+    expect(fixture.state.messages.map(message => message.role)).toEqual(['assistant', 'user', 'assistant']);
+    expect(fixture.deps.getMessagesEl()?.textContent).toContain(t('chat.executionNotices.sessionUnavailable'));
     expect(fixture.state.queuedMessage).toBeNull();
   });
 

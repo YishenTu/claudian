@@ -55,7 +55,6 @@ it('keeps history, model recovery and forks on a trusted bound database after ch
     await f.plugin.executionLifecycleRegistry.runTransition(['opencode'], async () => {
       updateOpencodeProviderSettings(f.plugin.settings, { environmentVariables: getOpencodeProviderSettings(f.plugin.settings).environmentVariables + `\nOPENCODE_DB=${nextDatabase}` });
       opencodeSettingsReconciler.reconcileModelWithEnvironment(f.plugin.settings);
-      opencodeSettingsReconciler.invalidateConversationSessions([conversation]);
     });
     const context = { ...createProviderHistoryPathContext(f.plugin.settings, 'opencode', f.root), environment: buildOpencodeRuntimeEnv(f.plugin.getRuntimeHost('opencode').environmentText, f.cli), vaultPath: f.root };
     expect(context.environment.OPENCODE_DB).toBe(nextDatabase);
@@ -88,7 +87,6 @@ it.each(['custom path', 'missing file'] as const)('keeps the locator of an inacc
   const transition = (database: string) => f.plugin.executionLifecycleRegistry.runTransition(['opencode'], async () => {
     updateOpencodeProviderSettings(f.plugin.settings, { environmentVariables: getOpencodeProviderSettings(f.plugin.settings).environmentVariables + `\nOPENCODE_DB=${database}` });
     opencodeSettingsReconciler.reconcileModelWithEnvironment(f.plugin.settings);
-    opencodeSettingsReconciler.invalidateConversationSessions([conversation]);
   });
   const context = () => ({ ...createProviderHistoryPathContext(f.plugin.settings, 'opencode', f.root), environment: buildOpencodeRuntimeEnv(f.plugin.getRuntimeHost('opencode').environmentText, f.cli), vaultPath: f.root });
   const conversation = conversationRecord('test', { providerId: 'opencode', sessionId: 'ses_bound', messages: [], providerState: { sessionId: 'ses_bound', databasePath: bound } });
@@ -125,7 +123,7 @@ it.each(['custom path', 'missing file'] as const)('keeps the locator of an inacc
     // Execution refuses the resume and the deferred fork before acquiring any server.
     const before = f.processes().length;
     const resumed = await execute({ providerSessionId: 'ses_bound', providerState: conversation.providerState! });
-    expect(resumed.terminal).toMatchObject({ type: 'execution_error', category: 'provider-session-missing', missingProviderSessionId: 'ses_bound' });
+    expect(resumed.terminal).toMatchObject({ type: 'execution_error', category: 'provider-session-missing' });
     expect(resumed.snapshot).toMatchObject({ providerSessionId: 'ses_bound', providerState: { databasePath: bound } });
     const forked = await execute({ providerState: fork });
     expect(forked.terminal).toMatchObject({ type: 'execution_error', category: 'provider' });
@@ -146,7 +144,7 @@ it.each(['custom path', 'missing file'] as const)('keeps the locator of an inacc
   } finally { ProviderWorkspaceRegistry.setServices('opencode', undefined); await f.dispose(); }
 });
 
-it.each(['switch back', 'migrate later'] as const)('runs no execution against an untrusted bound database and recovers its retired session after a %s', async mode => {
+it.each(['switch back', 'migrate later'] as const)('runs no execution against an untrusted bound database and resumes the kept binding after a %s', async mode => {
   const f = await createFixture();
   const original = f.environment.OPENCODE_DB!;
   const replacement = path.join(f.root, 'replacement.db');
@@ -159,7 +157,6 @@ it.each(['switch back', 'migrate later'] as const)('runs no execution against an
   const transition = (database: string) => f.plugin.executionLifecycleRegistry.runTransition(['opencode'], async () => {
     updateOpencodeProviderSettings(f.plugin.settings, { environmentVariables: getOpencodeProviderSettings(f.plugin.settings).environmentVariables + `\nOPENCODE_DB=${database}` });
     opencodeSettingsReconciler.reconcileModelWithEnvironment(f.plugin.settings);
-    opencodeSettingsReconciler.invalidateConversationSessions([conversation]);
   });
   const context = () => ({ ...createProviderHistoryPathContext(f.plugin.settings, 'opencode', f.root), environment: buildOpencodeRuntimeEnv(f.plugin.getRuntimeHost('opencode').environmentText, f.cli), vaultPath: f.root });
   const execute = async () => {
@@ -175,31 +172,23 @@ it.each(['switch back', 'migrate later'] as const)('runs no execution against an
     conversation = { ...conversation, ...await history.hydrateConversationHistory(conversation, f.root, context()) };
     expect(conversation).toMatchObject({ sessionId: 'ses_legacy', providerState: { databasePath: original } });
 
-    // History and execution apply one policy: the untrusted database is never launched.
-    const missing = await execute();
-    expect(missing.terminal).toMatchObject({ type: 'execution_error', category: 'provider-session-missing', missingProviderSessionId: 'ses_legacy' });
-    expect(missing.snapshot.providerState).toMatchObject({ databasePath: original });
+    // History and execution apply one policy: the untrusted database is never launched, and the
+    // failed send keeps the binding rather than starting a fresh session on the current database.
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const missing = await execute();
+      expect(missing.terminal).toMatchObject({ type: 'execution_error', category: 'provider-session-missing' });
+      expect(missing.snapshot).toMatchObject({ providerSessionId: 'ses_legacy', providerState: { databasePath: original } });
+    }
     expect(f.processes().filter(process => process.db === original)).toEqual([]);
-    const retired = await history.resolveMissingConversationSession!(conversation, f.root, 'ses_legacy');
-    expect(retired.outcome).toBe('reset');
-    conversation = { ...conversation, ...(retired.outcome === 'reset' ? retired.changes : {}) };
-
-    // The next send starts a fresh session on the current database; the retired locator keeps the original.
-    const fresh = await execute();
-    expect(fresh.terminal).toMatchObject({ type: 'turn_completed' });
-    expect(fresh.snapshot).toMatchObject({ providerSessionId: expect.any(String), providerState: { databasePath: replacement, previousSessions: [{ sessionId: 'ses_legacy', databasePath: original }] } });
-    expect(f.processes().filter(process => process.db === original)).toEqual([]);
-    conversation = { ...conversation, sessionId: fresh.snapshot.providerSessionId ?? null, providerState: fresh.snapshot.providerState };
+    expect(f.processes().filter(process => process.db === replacement)).toEqual([]);
 
     if (mode === 'migrate later') migrate();
     await transition(original);
     const restored = await history.hydrateConversationHistory(conversation, f.root, context());
-    // The retired session reads from its recorded database; the live binding keeps its now-untrusted one.
-    expect(restored.messages).toEqual([
-      expect.objectContaining({ content: 'Source reply' }),
-      expect.objectContaining({ id: `opencode-hydration-error-session-${fresh.snapshot.providerSessionId}` }),
-    ]);
-    expect(restored.providerState).toMatchObject({ databasePath: replacement, previousSessions: [{ sessionId: 'ses_legacy', databasePath: original }] });
+    expect(restored.messages?.map(message => message.content)).toEqual(['Source reply']);
+    const resumed = await execute();
+    expect(resumed.terminal).toMatchObject({ type: 'turn_completed' });
+    expect(resumed.snapshot).toMatchObject({ providerSessionId: 'ses_legacy', providerState: { databasePath: original } });
   } finally { ProviderWorkspaceRegistry.setServices('opencode', undefined); await f.dispose(); }
 });
 

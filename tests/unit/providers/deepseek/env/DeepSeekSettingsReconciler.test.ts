@@ -1,5 +1,3 @@
-import { conversationRecord } from '@test/helpers/features/chat/ConversationFixture';
-
 import { getInstallationKey } from '@/core/device/InstallationKey';
 import { getProviderConfig, setProviderConfig } from '@/core/providers/providerConfig';
 import { isVersionedRuntimeInputFingerprint } from '@/core/providers/settings/RuntimeInputFingerprint';
@@ -8,7 +6,7 @@ import { getDeepSeekProviderSettings, updateDeepSeekProviderSettings } from '@/p
 
 const reconcile = (settings: Record<string, unknown>) => deepseekSettingsReconciler.reconcileModelWithEnvironment(settings);
 const unchanged = { changed: false };
-const changed = { changed: true, sessionPolicy: 'reload' };
+const changed = { changed: true };
 
 describe('DeepSeekSettingsReconciler', () => {
   it('leaves pristine defaults untouched during startup reconciliation', () => {
@@ -60,25 +58,24 @@ describe('DeepSeekSettingsReconciler', () => {
     expect(reconcile(settings)).toEqual(changed);
   });
 
-  it('declares reload and preserves every conversation binding', () => {
-    const conversation = conversationRecord('conversation', {
-      messages: [], providerId: 'deepseek', sessionId: 'session-1',
-      providerState: { schemaVersion: 1, home: '/home', profile: 'web', preset: 'claudian' },
-    });
+  it.each([
+    ['DSH_HOME moving the store', 'DSH_HOME=/other-home\nSOME_CUSTOM_FLAG=1'],
+    ['DSH_HOME being removed', 'SOME_CUSTOM_FLAG=1'],
+    ['an arbitrary key', 'DSH_HOME=/home\nSOME_CUSTOM_FLAG=2'],
+  ])('restarts the runtime when %s changes', (_label, environmentVariables) => {
     const settings: Record<string, unknown> = {
-      providerConfigs: { deepseek: { environmentHash: 'stale', environmentVariables: 'DSH_HOME=/home' } },
+      providerConfigs: { deepseek: { enabled: true, environmentVariables: 'DSH_HOME=/home\nSOME_CUSTOM_FLAG=1' } },
     };
+    expect(reconcile(settings)).toEqual(changed);
+    expect(reconcile(settings)).toEqual(unchanged);
 
-    expect(deepseekSettingsReconciler.invalidateConversationSessions([conversation])).toEqual([]);
-    expect(deepseekSettingsReconciler.reconcileModelWithEnvironment(settings)).toEqual(changed);
-    expect(conversation).toEqual(expect.objectContaining({
-      sessionId: 'session-1',
-      providerState: { schemaVersion: 1, home: '/home', profile: 'web', preset: 'claudian' },
-    }));
+    setProviderConfig(settings, 'deepseek', { ...getProviderConfig(settings, 'deepseek'), environmentVariables });
+    expect(reconcile(settings)).toEqual(changed);
+    expect(reconcile(settings)).toEqual(unchanged);
   });
 });
 
-it('reloads on a vault-inferred WSL distro change even without an explicit distro override', () => {
+it('restarts the runtime on a vault-inferred WSL distro change even without an explicit distro override', () => {
   const platform = Object.getOwnPropertyDescriptor(process, 'platform')!;
   Object.defineProperty(process, 'platform', { ...platform, value: 'win32' });
   try {

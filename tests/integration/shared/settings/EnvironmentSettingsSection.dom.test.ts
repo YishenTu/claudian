@@ -36,23 +36,22 @@ it.each([
   });
   const applyEnvironmentVariables = vi.spyOn(host, 'applyEnvironmentVariables');
   const applyEnvironmentVariablesBatch = vi.spyOn(host, 'applyEnvironmentVariablesBatch');
-  const mutateSettings = vi.spyOn(host, 'mutateSettings');
   const root = document.body.createDiv({ cls: 'claudian-settings' });
   const general = root.createDiv();
   const specific = root.createDiv();
-  const sharedRefresh = vi.fn();
-  const providerRefresh = vi.fn();
-  renderEnvironmentSettingsSection({ container: general, plugin: host, scope: 'shared', name: 'Shared environment', desc: '', placeholder: '', renderCustomContextLimits: sharedRefresh });
-  renderEnvironmentSettingsSection({ container: specific, plugin: host, scope: 'provider:claude', name: 'Claude environment', desc: '', placeholder: '', renderCustomContextLimits: providerRefresh });
+  renderEnvironmentSettingsSection({ container: general, plugin: host, scope: 'shared', name: 'Shared environment', desc: '', placeholder: '' });
+  renderEnvironmentSettingsSection({ container: specific, plugin: host, scope: 'provider:claude', name: 'Claude environment', desc: '', placeholder: '' });
   const originalWarning = within(general).queryByText(/^Review environment ownership/);
   expect(originalWarning?.textContent ?? null).toBe(initial.startsWith('MY_TOOL_SETTING') ? 'Review environment ownership for: MY_TOOL_SETTING' : null);
   const originalProviderWarning = within(specific).queryByText(/^Review environment ownership/);
   expect(originalProviderWarning?.textContent ?? null).toBe(legacy ? 'Review environment ownership for: PATH' : null);
   fireEvent.click(within(general).getByRole('button', { name: 'Insert' }));
-  await waitFor(() => expect(sharedRefresh).toHaveBeenCalledTimes(2));
+  // Insertion ends with its environment update; wait for that write to settle.
+  const apply = legacy ? applyEnvironmentVariablesBatch : applyEnvironmentVariables;
+  await waitFor(() => expect(apply).toHaveBeenCalledTimes(1));
+  await apply.mock.results[0].value;
   expect({ single: applyEnvironmentVariables.mock.calls.length, batch: applyEnvironmentVariablesBatch.mock.calls.length })
     .toEqual(legacy ? { single: 0, batch: 1 } : { single: 1, batch: 0 });
-  expect(mutateSettings).toHaveBeenCalledTimes(1);
   expect(getEnvironmentVariablesForScope(settings, 'shared')).toBe(shared);
   expect(getEnvironmentVariablesForScope(settings, 'provider:claude')).toBe(provider);
   expect(getEnvironmentVariablesForScope(JSON.parse(saved), 'shared')).toBe(shared);
@@ -158,7 +157,6 @@ it('recovers with a refreshed installation when a later environment update succe
   );
   let installation: CLIInstallation = { path: '/synthetic/cli-before', version: '1.0.0', source: 'auto' };
   const inspect = vi.fn(async () => installation);
-  const renderCustomContextLimits = vi.fn();
   const { host } = await createProviderHostFixture({ overrides: { applyEnvironmentVariables } });
 
   const root = document.body.createDiv({ cls: 'claudian-settings' });
@@ -170,7 +168,6 @@ it('recovers with a refreshed installation when a later environment update succe
     name: 'Environment',
     desc: '',
     placeholder: 'PATH=...',
-    renderCustomContextLimits,
   });
   const cli = root.createDiv();
   renderCLIInstallationSetting({
@@ -185,7 +182,6 @@ it('recovers with a refreshed installation when a later environment update succe
 
   await waitFor(() => expect(within(cli).getByText('/synthetic/cli-before')).toBeTruthy());
   expect(inspect).toHaveBeenCalledTimes(1);
-  expect(renderCustomContextLimits).toHaveBeenCalledTimes(1);
 
   const textbox = within(document.body).getByRole('textbox', { name: 'Environment' });
   fireEvent.input(textbox, { target: { value: 'PATH=/synthetic/attempt-one' } });
@@ -195,9 +191,6 @@ it('recovers with a refreshed installation when a later environment update succe
   await waitFor(() => expect(Notice).toHaveBeenCalledWith('Could not complete environment update.'));
   expect({ 'inspect call count after failed apply': inspect.mock.calls.length }).toEqual({
     'inspect call count after failed apply': 1,
-  });
-  expect({ 'custom-context callout count after failed apply': renderCustomContextLimits.mock.calls.length }).toEqual({
-    'custom-context callout count after failed apply': 1,
   });
   expect(within(cli).getByText('/synthetic/cli-before')).toBeTruthy();
 
@@ -209,9 +202,6 @@ it('recovers with a refreshed installation when a later environment update succe
 
   await waitFor(() => expect(within(cli).getByText('/synthetic/cli-after')).toBeTruthy());
   expect(within(cli).queryByText('/synthetic/cli-before')).toBeNull();
-  expect({ 'custom-context callout count after later success': renderCustomContextLimits.mock.calls.length }).toEqual({
-    'custom-context callout count after later success': 2,
-  });
 });
 
 const applyFailureCases = [

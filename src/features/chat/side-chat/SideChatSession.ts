@@ -14,6 +14,7 @@ import type {
   ProviderToolPolicy,
 } from '@/core/execution';
 import { isSteerableExecutionSession } from '@/core/execution';
+import { presentExecutionError } from '@/core/execution/presentExecutionError';
 import type { ChatMessage, ImageAttachment, ProviderId } from '@/core/types';
 import type { SessionToolBinding } from '@/features/chat/execution/ChatExecutionCoordinator';
 import { consumeExecutionEvents } from '@/features/chat/execution/consumeExecutionEvents';
@@ -26,8 +27,7 @@ export type SideChatTurnStatus =
   | 'completed'
   | 'cancelled'
   | 'error'
-  | 'invalidated'
-  | 'missing-session';
+  | 'invalidated';
 
 export interface SideChatTurnRequest {
   /** Revalidate transient interaction ownership after asynchronous preparation. */
@@ -340,11 +340,9 @@ export class SideChatSession {
     }
     return {
       accepted,
-      error: terminal,
+      error: presentExecutionError(terminal),
       nativeUserMessageId,
-      status: terminal.category === 'provider-session-missing'
-        ? 'missing-session'
-        : 'error',
+      status: 'error',
     };
   }
 

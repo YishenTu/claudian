@@ -8,7 +8,6 @@ import type { Conversation, ToolCallInfo } from '@/core/types';
 import { ClaudeConversationHistoryService } from '@/providers/claude/history/ClaudeConversationHistoryService';
 import type { SDKSessionLocation } from '@/providers/claude/history/ClaudeHistoryPathResolver';
 import * as historyStore from '@/providers/claude/history/ClaudeHistoryStore';
-import { clearClaudeResumeState } from '@/providers/claude/types/providerState';
 
 function createConversation(overrides: Partial<Conversation> = {}): Conversation {
   return {
@@ -121,7 +120,6 @@ describe('ClaudeConversationHistoryService', () => {
       expect(conversation.sessionId).toBeNull();
       expect(conversation.providerState).toEqual({
         previousProviderSessionIds: ['session-previous', 'session-1'],
-        bindingRetired: true,
       });
 
       locationSpy.mockRestore();
@@ -166,151 +164,39 @@ describe('ClaudeConversationHistoryService', () => {
     });
   });
 
-  describe('resolveMissingConversationSession', () => {
-    it('deletes only when every transcript segment is definitively missing', async () => {
-      const service = new ClaudeConversationHistoryService();
-      const conversation = createConversation();
-      const locationSpy = vi.spyOn(historyStore, 'locateSDKSessions')
-        .mockResolvedValue(new Map([['session-1', { availability: 'missing' }]]));
-
-      const update3 = await service.resolveMissingConversationSession(
-        conversation,
-        '/vault',
-        'session-1',
-      );
-      expect(update3.outcome).toBe('delete');
-      Object.assign(conversation, update3.changes);
-      expect(conversation.sessionId).toBe('session-1');
-
-      locationSpy.mockRestore();
-    });
-
-    it('resets the resume pointer when an older segment is inaccessible', async () => {
-      const service = new ClaudeConversationHistoryService();
-      const conversation = createConversation({
-        providerState: {
-          providerSessionId: 'session-1',
-          previousProviderSessionIds: ['session-previous'],
-        },
-      });
-      const locationSpy = vi.spyOn(historyStore, 'locateSDKSessions')
-        .mockResolvedValue(new Map([
-          ['session-previous', { availability: 'unknown' }],
-          ['session-1', { availability: 'missing' }],
-        ]));
-
-      const update4 = await service.resolveMissingConversationSession(
-        conversation,
-        '/vault',
-        'session-1',
-      );
-      expect(update4.outcome).toBe('reset');
-      Object.assign(conversation, update4.changes);
-      expect(conversation.sessionId).toBeNull();
-      expect(conversation.providerState).toEqual({
-        previousProviderSessionIds: ['session-previous'],
-        bindingRetired: true,
-      });
-
-      locationSpy.mockRestore();
-    });
-  });
-
-  // Retired-binding migration (#1647): delete this block after 2027-01-16.
-  describe('bindings retired by an earlier version', () => {
-    const retired = (overrides: Partial<Conversation> = {}): Conversation => createConversation({
-      sessionId: null,
-      providerState: { previousProviderSessionIds: ['session-0', 'session-1'] },
-      ...overrides,
-    });
-
-    async function recover(conversation: Conversation, sessionIds: string[]) {
+  describe('sessions retired by an earlier version', () => {
+    it('reads every retired session without restoring the latest one as the binding', async () => {
       const configDir = await fs.mkdtemp(path.join(os.tmpdir(), 'claudian-retired-binding-'));
       const vaultPath = path.join(configDir, 'vault');
       const pathContext = { environment: { CLAUDE_CONFIG_DIR: configDir }, vaultPath };
       const sessionDir = path.join(historyStore.getSDKProjectsPath(pathContext), historyStore.encodeVaultPathForSDK(vaultPath));
-      await fs.mkdir(sessionDir, { recursive: true });
-      await Promise.all(sessionIds.map(sessionId => fs.writeFile(
-        path.join(sessionDir, `${sessionId}.jsonl`),
-        JSON.stringify({ type: 'user', uuid: 'u1', sessionId, timestamp: testTime(), message: { content: 'Question' } }),
-      )));
-      // A transcript that matches the conversation's times must not stand in for a retired binding.
-      const timeRecovery = vi.spyOn(historyStore, 'recoverSDKSessionIdByTime').mockResolvedValue('session-1');
+      const providerState = { previousProviderSessionIds: ['session-0', 'session-1'] };
       try {
-        const update = await new ClaudeConversationHistoryService()
-          .recoverConversationSessionReference(conversation, vaultPath, pathContext);
-        expect(timeRecovery).not.toHaveBeenCalled();
-        return update;
+        await fs.mkdir(sessionDir, { recursive: true });
+        // Both transcripts are still in the configured store, which once restored the latest one.
+        await Promise.all(providerState.previousProviderSessionIds.map((sessionId, index) => fs.writeFile(
+          path.join(sessionDir, `${sessionId}.jsonl`),
+          JSON.stringify({
+            type: 'user', uuid: `u${index}`, sessionId, timestamp: testTime({ seconds: index }), message: { content: `Question ${index}` },
+          }),
+        )));
+
+        const update = await new ClaudeConversationHistoryService().hydrateConversationHistory(
+          createConversation({ sessionId: null, providerState: structuredClone(providerState) }),
+          vaultPath,
+          pathContext,
+        );
+
+        expect(update.messages?.map(message => message.content)).toEqual(['Question 0', 'Question 1']);
+        expect(update.sessionId).toBeNull();
+        expect(update.providerState).toEqual(providerState);
       } finally {
-        timeRecovery.mockRestore();
         await fs.rm(configDir, { recursive: true, force: true });
       }
-    }
-
-    it('restores the latest retired session when its transcript is still in the configured store', async () => {
-      expect(await recover(retired(), ['session-0', 'session-1'])).toMatchObject({
-        sessionId: 'session-1',
-        providerState: { providerSessionId: 'session-1', previousProviderSessionIds: ['session-0'] },
-      });
     });
-
-    it.each([
-      ['its transcript is missing', retired(), []],
-      // A pending fork retires into its source session and leaves its fork checkpoint behind.
-      ['the record kept a checkpoint', retired({ resumeAtMessageId: 'assistant-1' }), ['session-1']],
-    ])('records the retirement as final when %s', async (_case, conversation, sessionIds) => {
-      const update = await recover(conversation, sessionIds);
-      expect(update).toMatchObject({ sessionId: null, providerState: { bindingRetired: true } });
-      expect(update?.providerState).not.toHaveProperty('providerSessionId');
-    });
-
   });
 
   describe('hydrateConversationHistory', () => {
-
-    it('never matches a transcript by time for a record with retired sessions', async () => {
-      const conversation = createConversation();
-      clearClaudeResumeState(conversation);
-      // A transcript matching the conversation's times would be the deliberately retired session.
-      const timeRecovery = vi.spyOn(historyStore, 'recoverSDKSessionIdByTime').mockResolvedValue('session-1');
-      try {
-        expect(await new ClaudeConversationHistoryService()
-          .recoverConversationSessionReference(conversation, '/vault')).toBeNull();
-        expect(timeRecovery).not.toHaveBeenCalled();
-      } finally {
-        timeRecovery.mockRestore();
-      }
-    });
-
-    it('recovers an unlinked native transcript from the conversation timestamps', async () => {
-      const service = new ClaudeConversationHistoryService();
-      const conversation = createConversation({
-        sessionId: null,
-        providerState: undefined,
-        createdAt: 1_000,
-        lastActivityAt: 2_000,
-      });
-      const recoverySpy = vi.spyOn(historyStore, 'recoverSDKSessionIdByTime')
-        .mockResolvedValue('recovered-session');
-
-      const update5 = await service.recoverConversationSessionReference(
-        conversation,
-        '/vault',
-      );
-      expect(update5).not.toBeNull();
-      Object.assign(conversation, update5);
-
-      expect(recoverySpy).toHaveBeenCalledWith('/vault', {
-        createdAt: 1_000,
-        lastActivityAt: 2_000,
-      }, undefined);
-      expect(conversation).toMatchObject({
-        sessionId: 'recovered-session',
-        providerState: { providerSessionId: 'recovered-session' },
-      });
-
-      recoverySpy.mockRestore();
-    });
 
     it('replaces live turn projections with native history, keeping unconsumed notifications and the unconfirmed tail', async () => {
       const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'claudian-live-projection-'));
@@ -366,29 +252,6 @@ describe('ClaudeConversationHistoryService', () => {
       } finally {
         locationSpy.mockRestore();
         await fs.rm(directory, { recursive: true, force: true });
-      }
-    });
-
-    it('uses native recovery instead of old conversation backup headers', async () => {
-      const vaultPath = await fs.mkdtemp(path.join(os.tmpdir(), 'claudian-retired-backup-'));
-      const service = new ClaudeConversationHistoryService();
-      const conversation = createConversation({ sessionId: null, providerState: undefined });
-      const recoverySpy = vi.spyOn(historyStore, 'recoverSDKSessionIdByTime').mockResolvedValue(null);
-      try {
-        const folder = path.join(vaultPath, '.claude', 'sessions');
-        await fs.mkdir(folder, { recursive: true });
-        await fs.writeFile(path.join(folder, conversation.id + '.jsonl'), JSON.stringify({
-          type: 'meta', id: conversation.id, sessionId: 'retired-session',
-        }));
-        const update6 = await service.recoverConversationSessionReference(conversation, vaultPath);
-      expect(update6).toBeNull();
-      Object.assign(conversation, update6);
-        expect(recoverySpy).toHaveBeenCalled();
-        expect(conversation.sessionId).toBeNull();
-        expect(conversation.providerState).toBeUndefined();
-      } finally {
-        recoverySpy.mockRestore();
-        await fs.rm(vaultPath, { recursive: true, force: true });
       }
     });
 

@@ -6,18 +6,13 @@ import {
   decodeGrokModelId,
   encodeGrokModelId,
 } from '../models';
-import { computeGrokRuntimeInputHash, computeGrokSessionEnvironmentHash } from '../runtime/GrokRuntimeEnvironment';
+import { computeGrokRuntimeInputHash } from '../runtime/GrokRuntimeEnvironment';
 import {
   getGrokProviderSettings,
   updateGrokProviderSettings
 } from '../settings';
-import { clearGrokResumeState } from '../types';
 
 export const grokSettingsReconciler: ProviderSettingsReconciler = {
-  invalidateConversationSessions: conversations => conversations.filter(conversation => (
-    conversation.providerId === 'grok' && clearGrokResumeState(conversation)
-  )),
-
   reconcileModelWithEnvironment(settings, context) {
     if (!getGrokProviderSettings(settings).enabled) {
       return { changed: false };
@@ -27,17 +22,9 @@ export const grokSettingsReconciler: ProviderSettingsReconciler = {
     const target = resolveExecutionTarget({ settings: current, hostVaultPath: context?.vaultPath });
     const environmentText = getRuntimeEnvironmentText(settings, 'grok');
     const environmentHash = computeGrokRuntimeInputHash(current, environmentText, target);
-    const sessionEnvironmentHash = computeGrokSessionEnvironmentHash(environmentText, target);
-    if (current.environmentHash === environmentHash && current.sessionEnvironmentHash === sessionEnvironmentHash) {
-      return { changed: false };
-    }
-    // Existing native installations predate the scoped store fingerprint. Backfill
-    // without discarding their sessions. WSL is new and cannot resume that store.
-    const invalidate = current.sessionEnvironmentHash
-      ? current.sessionEnvironmentHash !== sessionEnvironmentHash
-      : target.method === 'wsl';
-    updateGrokProviderSettings(settings, { environmentHash, sessionEnvironmentHash });
-    return { changed: true, sessionPolicy: invalidate ? 'invalidate' : 'reload' };
+    if (current.environmentHash === environmentHash) return { changed: false };
+    updateGrokProviderSettings(settings, { environmentHash });
+    return { changed: true };
   },
 
   normalizeModelVariantSettings(settings): boolean {

@@ -128,7 +128,7 @@ describe('synchronous projection', () => {
     expect(getClaudeHistoryContextForProjection(base, vault)).toBeNull();
   });
 
-  it('forgets the store when Claude settings invalidate native sessions', async () => {
+  it('forgets the store when Claude runtime inputs change', async () => {
     // A configured CLI makes the runtime inputs fingerprinted, as in a real installation.
     const settings: { providerConfigs: { claude: Record<string, unknown> } } = { providerConfigs: { claude: { ...wslConfig(), cliPath: '/home/me/claude' } } };
     claudeSettingsReconciler.reconcileModelWithEnvironment(settings);
@@ -136,7 +136,7 @@ describe('synchronous projection', () => {
     await resolveClaudeHistoryContext(context, vault);
     expect(getClaudeHistoryContextForProjection(context, vault)).not.toBeNull();
     settings.providerConfigs.claude = { ...settings.providerConfigs.claude, environmentVariables: 'CLAUDE_CONFIG_DIR=/srv/claude' };
-    expect(claudeSettingsReconciler.reconcileModelWithEnvironment(settings).sessionPolicy).toBe('invalidate');
+    expect(claudeSettingsReconciler.reconcileModelWithEnvironment(settings)).toEqual({ changed: true });
     expect(getClaudeHistoryContextForProjection(context, vault)).toBeNull();
   });
 });

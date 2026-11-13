@@ -157,7 +157,7 @@ export function buildTabRuntimeControllers(
         ui.promptSuggestion.discard();
         options.onDraftModelChanged?.(tab, tab.draftModel);
         break;
-      case 'usage': refreshTabContextUsage(tab, plugin); break;
+      case 'usage': refreshTabContextUsage(tab); break;
       case 'work':
         renderer.refreshBranchButtonState();
         options.onWorkChanged?.(tab);

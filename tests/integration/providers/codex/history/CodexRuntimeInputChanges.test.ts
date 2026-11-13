@@ -59,7 +59,6 @@ async function fixture() {
   } });
   const { settings, lifecycle } = providerFixture;
   const persistence = new ConversationPersistenceStore(providerFixture.vault.files, providerFixture.storage.installationKey);
-  const saveMetadata = vi.spyOn(persistence, 'saveMetadata');
   const repository = new ConversationRepository({
     providers: ProviderRegistry, providerSettings: ProviderSettingsCoordinator,
     getSettings: () => settings, getVaultPath: () => providerFixture.vault.root,
@@ -67,10 +66,7 @@ async function fixture() {
   });
   const runtimeSettings = new RuntimeSettingsCoordinator({
     settings: providerFixture.coordinator,
-    conversations: repository,
-    executionLifecycle: lifecycle,
     getSettings: () => settings,
-    canCompleteInvalidations: () => false,
   });
   // Record the configured runtime before the closed conversations exist.
   runtimeSettings.reconcile(['codex']);
@@ -78,13 +74,65 @@ async function fixture() {
     closedConversation('conv-a', 'thread-a', 'Question A', 'Answer A'),
     closedConversation('conv-b', 'thread-b', 'Question B', 'Answer B'),
   ]);
-  return { lifecycle, repository, runtimeSettings, saveMetadata, settings, host: providerFixture.host };
+  return { lifecycle, repository, runtimeSettings, host: providerFixture.host };
+}
+
+type Fixture = Awaited<ReturnType<typeof fixture>>;
+
+/** A live Codex session for conv-a whose state changes the chat coordinator persists. */
+function startLiveSession({ lifecycle, repository }: Fixture, readThreadId: () => string | null) {
+  const live = new SessionSnapshotState({
+    providerId: 'codex',
+    sessionInstanceId: 'live-session',
+    providerState: repository.getCachedConversation('conv-a')!.providerState,
+    readProviderSessionId: readThreadId,
+  });
+  const persistedSnapshots: Array<Promise<boolean>> = [];
+  const supervisor = new ExecutionSessionSupervisor(lifecycle);
+  const { generation } = supervisor.acquire({
+    providerId: 'codex',
+    createSession: () => ({
+      onEvent: (listener: (event: ProviderSessionEvent) => void) => live.onEvent(listener),
+      getSnapshot: () => live.getSnapshot(),
+      dispose: async () => undefined,
+    }),
+  } as never, {} as never, () => undefined, (event) => {
+    if (event.type !== 'session_state_changed') return;
+    persistedSnapshots.push(repository.persistExecutionSnapshot('conv-a', 'binding-a', generation, event.snapshot));
+  });
+  repository.registerExecutionBinding('conv-a', 'binding-a', generation);
+  const emitSnapshot = (status: 'executing' | 'idle') => {
+    live.setStatus(status);
+    live.emit({ type: 'session_state_changed', snapshot: live.getSnapshot() } as never);
+    return Promise.all(persistedSnapshots);
+  };
+  return { emitSnapshot, live, supervisor };
 }
 
 async function visibleHistory(repository: ConversationRepository, id: string): Promise<string[]> {
   const conversation = await repository.ensureHydrated(id);
   return (conversation?.messages ?? []).map(message => message.content);
 }
+
+type CodexConfigChange = (codex: Record<string, unknown>) => void;
+
+// Each change with whether the recorded rollouts stay readable: history is read only under
+// the configured CODEX_HOME, so moving it hides them while the binding is kept.
+const runtimeInputChanges: Array<[string, CodexConfigChange, boolean]> = [
+  ['a CLI path change', (codex) => { codex.cliPath = '/opt/codex/bin/codex'; }, true],
+  ['an endpoint change', (codex) => {
+    codex.environmentVariables = `CODEX_HOME=${codexHome}\nOPENAI_BASE_URL=https://new.example.com/v1`;
+  }, true],
+  ['a CODEX_HOME change', (codex) => { codex.environmentVariables = `CODEX_HOME=${codexHome}-moved`; }, false],
+];
+
+// Running sessions survive every runtime-input change; disabling Codex ends them.
+const runningSessionChanges: Array<[string, CodexConfigChange, boolean, boolean]> = [
+  ...runtimeInputChanges.map(([label, change, readable]): [string, CodexConfigChange, boolean, boolean] => [label, change, readable, true]),
+  ['disabling Codex', (codex) => { codex.enabled = false; }, true, false],
+];
+
+const historyA = (readable: boolean) => (readable ? ['Question A', 'Answer A'] : []);
 
 describe('Codex runtime-input changes', () => {
   beforeEach(() => {
@@ -95,87 +143,30 @@ describe('Codex runtime-input changes', () => {
     fs.rmSync(codexHome, { recursive: true, force: true });
   });
 
-  it('keeps closed conversations bound and readable after a CLI path change', async () => {
+  it.each(runtimeInputChanges)('restarts the runtime and keeps closed conversations bound after %s', async (_change, change, readable) => {
     const { repository, runtimeSettings } = await fixture();
 
     const reconciliation = await runtimeSettings.commit(['codex'], (settings) => {
-      settings.providerConfigs.codex!.cliPath = '/opt/codex/bin/codex';
+      change(settings.providerConfigs.codex!);
     }, { failureMessage: 'Failed to save settings' });
 
-    expect(reconciliation).toMatchObject({
-      environmentChangedProviderIds: ['codex'],
-      sessionInvalidationProviderIds: [],
-    });
+    expect(reconciliation).toEqual({ changed: true, environmentChangedProviderIds: ['codex'] });
+    expect(await visibleHistory(repository, 'conv-a')).toEqual(historyA(readable));
+    expect(await visibleHistory(repository, 'conv-b')).toEqual(readable ? ['Question B', 'Answer B'] : []);
     for (const [id, threadId] of [['conv-a', 'thread-a'], ['conv-b', 'thread-b']]) {
       expect(repository.getCachedConversation(id)).toMatchObject({
         sessionId: threadId,
         providerState: { threadId, nativeConversationContextEstablished: true },
       });
     }
-    expect(await visibleHistory(repository, 'conv-a')).toEqual(['Question A', 'Answer A']);
-    expect(await visibleHistory(repository, 'conv-b')).toEqual(['Question B', 'Answer B']);
   });
 
-  it('invalidates bindings on an endpoint change while closed conversations stay readable', async () => {
-    const { repository, runtimeSettings, saveMetadata } = await fixture();
-
-    const reconciliation = await runtimeSettings.commit(['codex'], (settings) => {
-      settings.providerConfigs.codex!.environmentVariables
-        = `CODEX_HOME=${codexHome}\nOPENAI_BASE_URL=https://new.example.com/v1`;
-    }, { failureMessage: 'Failed to save settings' });
-
-    expect(reconciliation.sessionInvalidationProviderIds).toEqual(['codex']);
-    const persisted = saveMetadata.mock.calls.map(([conversation]) => conversation as Conversation);
-    expect(persisted.map(conversation => conversation.id).sort()).toEqual(['conv-a', 'conv-b']);
-    for (const conversation of persisted) {
-      expect(conversation.sessionId).toBeNull();
-      expect(conversation.providerState).not.toHaveProperty('threadId');
-      expect(conversation.providerState).toMatchObject({
-        nativeConversationContextEstablished: false,
-        previousSegments: [expect.objectContaining({ threadId: conversation.id.replace('conv', 'thread') })],
-      });
-    }
-    expect(await visibleHistory(repository, 'conv-a')).toEqual(['Question A', 'Answer A']);
-    expect(await visibleHistory(repository, 'conv-b')).toEqual(['Question B', 'Answer B']);
-  });
-
-  it.each([
-    ['an endpoint change', (codex: Record<string, unknown>) => {
-      codex.environmentVariables = `CODEX_HOME=${codexHome}\nOPENAI_BASE_URL=https://new.example.com/v1`;
-    }, false, null],
-    // Disabling stops execution but does not change where the thread lives.
-    ['disabling Codex', (codex: Record<string, unknown>) => { codex.enabled = false; }, false, 'thread-a'],
-    ['a CLI path change', (codex: Record<string, unknown>) => { codex.cliPath = '/opt/codex/bin/codex'; }, true, 'thread-a'],
-  ])('lets a running session outlive %s only when its binding stays valid', async (_change, change, preserved, binding) => {
-    const { lifecycle, repository, runtimeSettings, host } = await fixture();
+  it.each(runningSessionChanges)('keeps the binding of a session running through %s', async (_change, change, readable, preserved) => {
+    const context = await fixture();
+    const { lifecycle, repository, runtimeSettings, host } = context;
     const workspace = await createCodexWorkspaceServices(host);
-    const live = new SessionSnapshotState({
-      providerId: 'codex',
-      sessionInstanceId: 'live-session',
-      providerState: repository.getCachedConversation('conv-a')!.providerState,
-      readProviderSessionId: () => 'thread-a',
-    });
-    const persistedSnapshots: Array<Promise<boolean>> = [];
-    const supervisor = new ExecutionSessionSupervisor(lifecycle);
-    // The chat coordinator persists every session state change admitted by the supervisor.
-    const { generation } = supervisor.acquire({
-      providerId: 'codex',
-      createSession: () => ({
-        onEvent: (listener: (event: ProviderSessionEvent) => void) => live.onEvent(listener),
-        getSnapshot: () => live.getSnapshot(),
-        dispose: async () => undefined,
-      }),
-    } as never, {} as never, () => undefined, (event) => {
-      if (event.type !== 'session_state_changed') return;
-      persistedSnapshots.push(repository.persistExecutionSnapshot('conv-a', 'binding-a', generation, event.snapshot));
-    });
-    const emitSnapshot = (status: 'executing' | 'idle') => {
-      live.setStatus(status);
-      live.emit({ type: 'session_state_changed', snapshot: live.getSnapshot() } as never);
-      return Promise.all(persistedSnapshots);
-    };
+    const { emitSnapshot, supervisor } = startLiveSession(context, () => 'thread-a');
     try {
-      repository.registerExecutionBinding('conv-a', 'binding-a', generation);
       await emitSnapshot('executing');
 
       await lifecycle.runTransition(['codex'], async () => {
@@ -185,10 +176,9 @@ describe('Codex runtime-input changes', () => {
       });
       expect(supervisor.current !== null).toBe(preserved);
 
-      // A late completion from the draining process must not revive an invalidated binding.
       await emitSnapshot('idle');
-      expect(repository.getCachedConversation('conv-a')?.sessionId).toBe(binding);
-      expect(await visibleHistory(repository, 'conv-a')).toEqual(['Question A', 'Answer A']);
+      expect(await visibleHistory(repository, 'conv-a')).toEqual(historyA(readable));
+      expect(repository.getCachedConversation('conv-a')?.sessionId).toBe('thread-a');
     } finally {
       await supervisor.release();
       await workspace.dispose();
@@ -196,47 +186,16 @@ describe('Codex runtime-input changes', () => {
     }
   });
 
-  it.each([
-    ['an endpoint change', (codex: Record<string, unknown>) => {
-      codex.environmentVariables = `CODEX_HOME=${codexHome}\nOPENAI_BASE_URL=https://new.example.com/v1`;
-    }, false, null],
-    // Disabling stops execution but does not change where the thread lives.
-    ['disabling Codex', (codex: Record<string, unknown>) => { codex.enabled = false; }, false, 'thread-a'],
-    ['a CLI path change', (codex: Record<string, unknown>) => { codex.cliPath = '/opt/codex/bin/codex'; }, true, 'thread-a'],
-  ])('keeps a first thread adopted during %s as history only when its binding was retired', async (_change, change, preserved, binding) => {
-    const { lifecycle, repository, runtimeSettings, host } = await fixture();
+  it.each(runningSessionChanges)('binds a first thread adopted during %s', async (_change, change, readable, preserved) => {
+    const context = await fixture();
+    const { lifecycle, repository, runtimeSettings, host } = context;
     repository.replaceAll(['conv-a', 'conv-b'].map(id => repository.getCachedConversation(id)!).map(conversation => conversation.id === 'conv-a'
       ? { ...conversation, sessionId: null, providerState: undefined, messages: [] }
       : conversation));
     let adoptedThreadId: string | null = null;
     const workspace = await createCodexWorkspaceServices(host);
-    const live = new SessionSnapshotState({
-      providerId: 'codex',
-      sessionInstanceId: 'live-session',
-      providerState: repository.getCachedConversation('conv-a')!.providerState,
-      readProviderSessionId: () => adoptedThreadId,
-    });
-    const persistedSnapshots: Array<Promise<boolean>> = [];
-    const supervisor = new ExecutionSessionSupervisor(lifecycle);
-    // The chat coordinator persists every session state change admitted by the supervisor.
-    const { generation } = supervisor.acquire({
-      providerId: 'codex',
-      createSession: () => ({
-        onEvent: (listener: (event: ProviderSessionEvent) => void) => live.onEvent(listener),
-        getSnapshot: () => live.getSnapshot(),
-        dispose: async () => undefined,
-      }),
-    } as never, {} as never, () => undefined, (event) => {
-      if (event.type !== 'session_state_changed') return;
-      persistedSnapshots.push(repository.persistExecutionSnapshot('conv-a', 'binding-a', generation, event.snapshot));
-    });
-    const emitSnapshot = (status: 'executing' | 'idle') => {
-      live.setStatus(status);
-      live.emit({ type: 'session_state_changed', snapshot: live.getSnapshot() } as never);
-      return Promise.all(persistedSnapshots);
-    };
+    const { emitSnapshot, live, supervisor } = startLiveSession(context, () => adoptedThreadId);
     try {
-      repository.registerExecutionBinding('conv-a', 'binding-a', generation);
       await emitSnapshot('executing');
 
       await lifecycle.runTransition(['codex'], async () => {
@@ -253,10 +212,9 @@ describe('Codex runtime-input changes', () => {
       });
       expect(supervisor.current !== null).toBe(preserved);
 
-      // The adopted thread stays readable, but an invalidated binding never becomes live.
       await emitSnapshot('idle');
-      expect(repository.getCachedConversation('conv-a')?.sessionId).toBe(binding);
-      expect(await visibleHistory(repository, 'conv-a')).toEqual(['Question A', 'Answer A']);
+      expect(await visibleHistory(repository, 'conv-a')).toEqual(historyA(readable));
+      expect(repository.getCachedConversation('conv-a')?.sessionId).toBe('thread-a');
     } finally {
       await supervisor.release();
       await workspace.dispose();
@@ -264,8 +222,9 @@ describe('Codex runtime-input changes', () => {
     }
   });
 
-  it('keeps a fork child adopted during an endpoint change as one history segment', async () => {
-    const { lifecycle, repository, runtimeSettings, host } = await fixture();
+  it('binds a fork child adopted during an endpoint change and shows its history once', async () => {
+    const context = await fixture();
+    const { lifecycle, repository, runtimeSettings, host } = context;
     const sourcePath = repository.getCachedConversation('conv-a')!.providerState!.sessionFilePath as string;
     const childPath = sourcePath.replace('thread-a.jsonl', 'thread-child.jsonl');
     repository.replaceAll(['conv-a', 'conv-b'].map(id => repository.getCachedConversation(id)!).map(conversation => conversation.id === 'conv-a'
@@ -276,33 +235,8 @@ describe('Codex runtime-input changes', () => {
       : conversation));
     let adoptedThreadId: string | null = null;
     const workspace = await createCodexWorkspaceServices(host);
-    const live = new SessionSnapshotState({
-      providerId: 'codex',
-      sessionInstanceId: 'live-session',
-      providerState: repository.getCachedConversation('conv-a')!.providerState,
-      readProviderSessionId: () => adoptedThreadId,
-    });
-    const persistedSnapshots: Array<Promise<boolean>> = [];
-    const supervisor = new ExecutionSessionSupervisor(lifecycle);
-    // The chat coordinator persists every session state change admitted by the supervisor.
-    const { generation } = supervisor.acquire({
-      providerId: 'codex',
-      createSession: () => ({
-        onEvent: (listener: (event: ProviderSessionEvent) => void) => live.onEvent(listener),
-        getSnapshot: () => live.getSnapshot(),
-        dispose: async () => undefined,
-      }),
-    } as never, {} as never, () => undefined, (event) => {
-      if (event.type !== 'session_state_changed') return;
-      persistedSnapshots.push(repository.persistExecutionSnapshot('conv-a', 'binding-a', generation, event.snapshot));
-    });
-    const emitSnapshot = (status: 'executing' | 'idle') => {
-      live.setStatus(status);
-      live.emit({ type: 'session_state_changed', snapshot: live.getSnapshot() } as never);
-      return Promise.all(persistedSnapshots);
-    };
+    const { emitSnapshot, live, supervisor } = startLiveSession(context, () => adoptedThreadId);
     try {
-      repository.registerExecutionBinding('conv-a', 'binding-a', generation);
       await emitSnapshot('executing');
 
       await lifecycle.runTransition(['codex'], async () => {
@@ -325,11 +259,11 @@ describe('Codex runtime-input changes', () => {
           },
         });
       });
-      expect(supervisor.current).toBeNull();
+      expect(supervisor.current).not.toBeNull();
 
-      // The late fork child supersedes its pending segment instead of repeating the source prefix.
+      // The child replays the source prefix; it is shown once, not after a copy of the source.
       await emitSnapshot('idle');
-      expect(repository.getCachedConversation('conv-a')?.sessionId).toBeNull();
+      expect(repository.getCachedConversation('conv-a')?.sessionId).toBe('thread-child');
       expect(await visibleHistory(repository, 'conv-a')).toEqual(['Question A', 'Answer A']);
     } finally {
       await supervisor.release();

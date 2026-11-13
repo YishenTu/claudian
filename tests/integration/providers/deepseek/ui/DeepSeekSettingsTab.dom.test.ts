@@ -74,7 +74,7 @@ async function render(deepseekEnabled = true, resolvedPath: string | null = null
   vi.spyOn(cliResolver, 'reset');
   const modelCatalog = createDeepSeekModels(fixture.host.getRuntimeHost('deepseek'), async () => []);
   const container = document.body.createDiv();
-  const context = { plugin: fixture.host, notifyProviderModelOptionsChanged: vi.fn(), renderCustomContextLimits: vi.fn() };
+  const context = { plugin: fixture.host, notifyProviderModelOptionsChanged: vi.fn() };
   const view = createDeepSeekSettingsTabRenderer({ cliResolver, modelCatalog }).render(container, context);
   await modelCatalog.refresh();
   fixture.persist.mockClear(); fixture.mutationsInsideTransition.length = 0;

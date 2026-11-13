@@ -44,7 +44,6 @@ import {
   type SubagentRunWindow,
 } from './sdkSubagentSidecar';
 
-export { recoverSDKSessionIdByTime } from './ClaudeSessionRecovery';
 export {
   encodeVaultPathForSDK,
   getSDKProjectsPath,

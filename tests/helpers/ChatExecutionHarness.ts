@@ -2,7 +2,7 @@ import type { Mocked } from 'vitest';
 
 import { type BranchableExecutionSession, type ConversationBranchState, type ProviderExecutionBackend, type ProviderExecutionEvent, ProviderExecutionLifecycleRegistry, type ProviderExecutionRequest, type ProviderExecutionRun, type ProviderExecutionSession, type ProviderInteractionPort, type ProviderSessionConfig, type ProviderSessionEvent, type ProviderSessionSnapshot, type ProviderSessionStatus, type RewindableExecutionSession, type SteerableExecutionSession } from '@/core/execution';
 import type { ProviderId, SlashCommand } from '@/core/types';
-import { ChatExecutionCoordinator, type ChatExecutionCoordinatorDeps, type ChatExecutionEventContext, type ChatExecutionPersistence, type ChatTurnSubmission, type MissingProviderSessionResolution } from '@/features/chat/execution/ChatExecutionCoordinator';
+import { ChatExecutionCoordinator, type ChatExecutionCoordinatorDeps, type ChatExecutionEventContext, type ChatExecutionPersistence, type ChatTurnSubmission } from '@/features/chat/execution/ChatExecutionCoordinator';
 
 
 
@@ -330,7 +330,6 @@ export function createHarness(options: {
   };
   const sessionEvents: ProviderSessionEvent[] = [];
   const sessionEventContexts: ChatExecutionEventContext[] = [];
-  const missingSession = vi.fn<(...args: [string, string?]) => Promise<MissingProviderSessionResolution>>(async () => 'reset');
   let nextId = 0;
   const coordinator = new ChatExecutionCoordinator({
     lifecycleRegistry: registry,
@@ -355,7 +354,6 @@ export function createHarness(options: {
     },
     onBackgroundWorkChanged: options.onBackgroundWorkChanged,
     onError: options.onError,
-    resolveMissingProviderSession: missingSession,
     idleReleaseMs: options.idleReleaseMs,
     isOwnerIdle: options.isOwnerIdle,
     onIdleRelease: options.onIdleRelease,
@@ -370,7 +368,6 @@ export function createHarness(options: {
     requestedEvents, waitForRequestedEvent,
     sessionEvents,
     sessionEventContexts,
-    missingSession,
     coordinator,
   };
 }

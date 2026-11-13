@@ -104,23 +104,29 @@ test('a superseded native history read cannot overwrite the current conversation
   expect(repository.getCachedConversation(conversation.id)?.messages).toEqual(newMessages);
 });
 
-test('does not publish recovered identity after concurrent deletion', async () => {
+test('does not publish a relocated identity after concurrent deletion', async () => {
   const conversation = createConversation();
   const { repository, persistence } = createRepository(conversation);
+  // Deletion waits for the in-flight hydration, so the read starts it without awaiting it.
+  let deleting: Promise<void> | undefined;
   vi.spyOn(ProviderRegistry, 'getConversationHistoryService').mockReturnValue({
     hydrateConversationHistory: async () => ({}),
     readNativeHistoryRevision: async () => null,
     resolveSessionIdForConversation: value => value?.sessionId ?? null,
     isPendingForkConversation: () => false,
     buildForkProviderState: () => ({}),
-    recoverConversationSessionReference: async () => {
-      await repository.delete(conversation.id);
-      return { sessionId: 'recovered-session' };
+    getConversationSessionAvailability: async () => 'relocated',
+    prepareRelocatedConversationSession: async () => {
+      deleting = repository.delete(conversation.id);
+      return { sessionId: null, providerState: { previousProviderSessionIds: ['session-1'] } };
     },
   });
   expect(await repository.ensureHydrated(conversation.id)).toBeNull();
+  await deleting;
+  expect(deleting).toBeDefined();
   expect(repository.getCachedConversation(conversation.id)).toBeNull();
   expect(persistence.saveMetadata).not.toHaveBeenCalled();
+  expect(persistence.deleteCurrentMetadata).toHaveBeenCalledWith(conversation.id);
 });
 
 test('keeps relocated Claude history readable after its metadata save fails', async () => {
@@ -151,54 +157,4 @@ test('OpenCode hydrates a fresh projection after another projection was discarde
   ] };
   Object.assign(fresh, await service.hydrateConversationHistory(fresh, '/vault'));
   expect(fresh.messages.map(message => [message.id, message.content])).toEqual([['native-response', 'Native history']]);
-});
-
-test('restores the conversation when missing-session metadata removal fails', async () => {
-  const conversation = createConversation();
-  const { repository, persistence } = createRepository(conversation);
-  vi.spyOn(claudeHistory, 'locateSDKSessions').mockResolvedValue(new Map([
-    ['session-1', { availability: 'missing' as const }],
-  ]));
-  vi.spyOn(ProviderRegistry, 'getConversationHistoryService')
-    .mockReturnValue(new ClaudeConversationHistoryService());
-  persistence.deleteCurrentMetadata.mockRejectedValue(new Error('Metadata cleanup failed'));
-
-  await expect(repository.handleMissingProviderSession(conversation.id, 'session-1'))
-    .rejects.toThrow('Metadata cleanup failed');
-  expect(repository.getCachedConversation(conversation.id)).toMatchObject({ id: conversation.id });
-});
-
-test('surfaces a failed missing-session reset save while preserving live identity', async () => {
-  const conversation = { ...createConversation(), providerId: 'opencode' };
-  const { repository, persistence } = createRepository(conversation);
-  vi.spyOn(ProviderRegistry, 'getConversationHistoryService')
-    .mockReturnValue(new OpencodeConversationHistoryService());
-  persistence.saveMetadata.mockRejectedValue(new Error('Metadata save failed'));
-
-  await expect(repository.handleMissingProviderSession(conversation.id, 'session-1'))
-    .rejects.toThrow('Metadata save failed');
-  expect(repository.getCachedConversation(conversation.id)?.sessionId).toBe('session-1');
-});
-
-test('late accepted binding survives a missing-session decision', async () => {
-  const conversation = createConversation();
-  const { repository } = createRepository(conversation);
-  let updating: Promise<void> | undefined;
-  vi.spyOn(ProviderRegistry, 'getConversationHistoryService').mockReturnValue({
-    hydrateConversationHistory: async () => ({}),
-    readNativeHistoryRevision: async () => null,
-    resolveSessionIdForConversation: value => value?.sessionId ?? null,
-    isPendingForkConversation: () => false,
-    buildForkProviderState: () => ({}),
-    resolveMissingConversationSession: async () => {
-      queueMicrotask(() => queueMicrotask(() => queueMicrotask(() => {
-        updating = repository.update(conversation.id, { sessionId: 'new-session' });
-      })));
-      return { outcome: 'delete' };
-    },
-  });
-  const outcome = await repository.handleMissingProviderSession(conversation.id, 'session-1');
-  await updating;
-  expect(outcome).toBe('preserved');
-  expect(repository.getCachedConversation(conversation.id)?.sessionId).toBe('new-session');
 });
