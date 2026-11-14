@@ -167,6 +167,7 @@
     },
     "worked": "Gearbeitet",
     "taskNotification": "Aufgabenbenachrichtigung",
+    "stopHook": "Stop-Hook",
     "copyMessage": "Nachricht kopieren",
     "showEarlierMessages": "Frühere Nachrichten anzeigen",
     "renderFailed": "Nachrichteninhalt konnte nicht angezeigt werden.",

@@ -18,6 +18,7 @@ import {
   isInterruptedResponse,
   isInterruptMarker,
   markResponseElement,
+  renderStopHook,
 } from '@/features/chat/rendering/ResponseLayout';
 import { createSessionLink, registerSessionLinkHandler } from '@/features/chat/rendering/sessionLinks';
 import { resolveStoredTaskSubagent } from '@/features/chat/rendering/subagents/storedTaskSubagent';
@@ -535,6 +536,7 @@ export class MessageRenderer {
         if (block.type === 'citations' && block.citations.entries.length > 0) return true;
         if (block.type === 'context_compacted') return true;
         if (block.type === 'task_notification') return true;
+        if (block.type === 'stop_hook') return true;
         if (block.type === 'subagent') return true;
         if (block.type === 'tool_use') {
           const toolCall = msg.toolCalls?.find(tc => tc.id === block.toolId);
@@ -592,6 +594,8 @@ export class MessageRenderer {
           }
         } else if (block.type === 'task_notification') {
           this.#finalizer.renderTaskNotification(contentEl, block.content);
+        } else if (block.type === 'stop_hook') {
+          renderStopHook(contentEl, block.content, block.elapsedSeconds);
         } else if (block.type === 'context_compacted') {
           const boundaryEl = contentEl.createDiv({ cls: 'claudian-compact-boundary' });
           boundaryEl.createSpan({ cls: 'claudian-compact-boundary-label', text: 'Conversation compacted' });

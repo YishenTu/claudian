@@ -19,6 +19,8 @@ export function parseGrokSessionNotification(
   if (method !== GROK_WRAPPED_SESSION_NOTIFICATION_METHOD || !isRecord(params)) {
     return null;
   }
+  // Grok 1.0.77 sends the notification itself; earlier builds wrapped it in an exact envelope.
+  if (!('method' in params)) return parseSessionNotification(params);
   if (params.method !== GROK_WRAPPED_SESSION_NOTIFICATION_NAME) {
     return null;
   }

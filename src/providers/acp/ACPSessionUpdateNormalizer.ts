@@ -80,6 +80,11 @@ type MessageRole = 'assistant' | 'thinking' | 'user';
 // Sentinel key for anonymous (messageId-less) streams so we only emit one start per role.
 const ANONYMOUS_MESSAGE_KEY = '\u0000anonymous';
 
+/** Whether an update is one of the ACP session update kinds this client understands. */
+export function isKnownACPSessionUpdate(update: unknown): boolean {
+  return isPlainObject(update) && typeof update.sessionUpdate === 'string' && KNOWN_SESSION_UPDATES.has(update.sessionUpdate);
+}
+
 export class ACPSessionUpdateNormalizer {
   private readonly seenMessages = new Map<MessageRole, Set<string>>();
   private readonly toolCalls = new Map<string, ACPToolCallSnapshot>();
@@ -90,14 +95,10 @@ export class ACPSessionUpdateNormalizer {
   }
 
   normalizeUnknown(update: unknown): ACPNormalizedUpdate {
-    if (
-      !isPlainObject(update)
-      || typeof update.sessionUpdate !== 'string'
-      || !KNOWN_SESSION_UPDATES.has(update.sessionUpdate)
-    ) {
+    if (!isKnownACPSessionUpdate(update)) {
       return { type: 'unknown', update };
     }
-    return this.normalize(update as unknown as ACPSessionUpdate);
+    return this.normalize(update as ACPSessionUpdate);
   }
 
   normalize(update: ACPSessionUpdate): ACPNormalizedUpdate {

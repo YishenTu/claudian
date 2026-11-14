@@ -3,6 +3,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 
 import compactCompleted from '@test/fixtures/providers/grok/runtime/compaction-completed.json';
+import stopHookBlocked from '@test/fixtures/providers/grok/runtime/stop-hook-blocked.json';
 import {
   parseGrokHistoryContent,
   resolveGrokPromptIndexAfterAssistant,
@@ -27,6 +28,29 @@ describe('GrokHistoryStore', () => {
     expect(messages[0].sessionMessage).toEqual({ from: 'Sender & reviewer', sessionId: 'sender-id' });
     expect(extractUserDisplayContent(messages[0].content)).toBe('Please review.');
     expect(messages[1].toolCalls?.[0]).toMatchObject({ name: 'claudian_send_message', input: { text: 'Reviewed.' } });
+  });
+
+  // Grok 1.0.77's `updates.jsonl` keeps the live `hook_execution` record of a blocking Stop hook.
+  it('keeps a blocking Stop hook boundary inside the turn it continued', () => {
+    const blocked = stopHookBlocked.params.update;
+    const updates: Array<[number, Record<string, unknown>]> = [
+      [0, { sessionUpdate: 'user_message_chunk', content: { type: 'text', text: 'Explain X' } }],
+      [3, { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'Long answer.' } }],
+      [4, blocked],
+      [4, { sessionUpdate: 'hook_annotation', message: '↩ Stop blocked by project/stop, continuing: Now run: echo checked' }],
+      [9, { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'Follow-up.' } }],
+      [9, { ...blocked, runs: [{ name: blocked.runs[0].name, status: { status: 'success', elapsed_ms: 31 } }] }],
+      [10, { sessionUpdate: 'turn_completed', prompt_id: blocked.prompt_id, stop_reason: 'end_turn' }],
+    ];
+    const content = updates.map(([seconds, update]) => JSON.stringify({ timestamp: testDate({ seconds }).getTime(),
+      method: '_x.ai/session/update', params: { sessionId: 'session-fixture', update } })).join('\n');
+    const { messages } = parseGrokHistoryContent(content, 'session-fixture');
+    expect(messages.map(message => message.role)).toEqual(['user', 'assistant']);
+    expect(messages[1].contentBlocks).toEqual([
+      { type: 'text', content: 'Long answer.' },
+      { type: 'stop_hook', content: 'Now run: echo checked', elapsedSeconds: 4 },
+      { type: 'text', content: 'Follow-up.' },
+    ]);
   });
 
   it('hydrates complete turns while tolerating malformed, unknown, and incomplete tails', () => {

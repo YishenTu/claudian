@@ -21,3 +21,14 @@ export function extractClaudeTextContent(content: unknown): string {
     .map(block => block.text)
     .join('\n');
 }
+
+const STOP_HOOK_FEEDBACK_PREFIX = 'Stop hook feedback:';
+
+/**
+ * The feedback of a blocking Stop hook, which Claude adds to the conversation as user-role
+ * text under a fixed prefix (live as a synthetic message, in the transcript as a meta record).
+ */
+export function parseClaudeStopHookFeedback(content: unknown): string | null {
+  const text = extractClaudeTextContent(content);
+  return text.startsWith(STOP_HOOK_FEEDBACK_PREFIX) ? text.slice(STOP_HOOK_FEEDBACK_PREFIX.length).trim() : null;
+}

@@ -167,6 +167,7 @@
     },
     "worked": "작업 완료",
     "taskNotification": "작업 알림",
+    "stopHook": "Stop 훅",
     "copyMessage": "메시지 복사",
     "showEarlierMessages": "이전 메시지 표시",
     "renderFailed": "메시지 내용을 표시하지 못했습니다.",

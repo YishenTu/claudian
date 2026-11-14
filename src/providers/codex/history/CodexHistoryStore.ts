@@ -15,6 +15,7 @@ import { decodeSessionMessage } from '@/core/session-tools/sessionMessageEnvelop
 import type { NormalizedCodexToolCall } from '@/providers/codex/normalization/codexToolNormalization';
 import {
   extractCodexUserVisibleText,
+  getCodexStopHookFeedback,
   joinCodexUserTextParts,
   trimCodexUserText,
 } from '@/providers/codex/normalization/codexUserText';
@@ -127,6 +128,7 @@ interface PersistedEventPayload {
     status?: unknown;
     result?: unknown;
     error?: unknown;
+    fragments?: unknown;
   };
   type?: string;
   text?: string;
@@ -1168,6 +1170,17 @@ function processPersistedPayload(
 // event_msg processing
 // ---------------------------------------------------------------------------
 
+/** A blocking Stop hook continues the running turn: the reply before it and the work after it share one response. */
+function appendPersistedStopHook(fragments: unknown, timestamp: number, ctx: PersistedParseContext): void {
+  const feedback = getCodexStopHookFeedback(fragments);
+  if (feedback === null || !ctx.currentTurnId) return;
+  const turn = ctx.turns.get(ctx.currentTurnId);
+  if (!turn) return;
+  const elapsedMs = timestamp - turn.startedAt;
+  ensureAssistantBubble(turn, timestamp).contentBlocks.push({ type: 'stop_hook', content: feedback,
+    ...(turn.startedAt > 0 && elapsedMs >= 0 ? { elapsedSeconds: Math.floor(elapsedMs / 1_000) } : {}) });
+}
+
 function extractServerTurnId(payload: PersistedEventPayload): string | undefined {
   const turnId = (payload as Record<string, unknown>).turn_id;
   return typeof turnId === 'string' ? turnId : undefined;
@@ -1187,6 +1200,10 @@ function processEventMsg(
         pushPersistedNormalizedToolCall(activity.id, { name: 'spawn_agent', input: { task_name: activity.agentPath } }, timestamp, ctx);
       }
       const item = payload.item;
+      if (item?.type === 'HookPrompt') {
+        appendPersistedStopHook(item.fragments, timestamp, ctx);
+        break;
+      }
       if ((item?.type === 'Extension' && item.kind === 'web.search') || item?.type === 'CommandExecution' || item?.type === 'McpToolCall') {
         applyPersistedNativeExecItem(item, timestamp, ctx);
         break;

@@ -26,6 +26,7 @@ import {
   ACPToolStreamAdapter,
   type ACPUsage,
   buildACPUsageInfo,
+  isKnownACPSessionUpdate,
   mapACPApprovalDecision,
 } from '@/providers/acp';
 
@@ -65,6 +66,7 @@ import {
   normalizeGrokDiscoveredModels,
 } from '../models';
 import { mapGrokNativePaths } from '../normalization/grokNativePaths';
+import { getGrokStopHookFeedback } from '../normalization/grokStopHook';
 import {
   buildGrokToolProviderPayload,
   normalizeGrokToolInput,
@@ -792,6 +794,15 @@ RewindableExecutionSession {
       }
       return;
     }
+    const stopHookFeedback = getGrokStopHookFeedback(notification.update);
+    if (stopHookFeedback !== null) {
+      // A blocking Stop hook continues the same prompt: the reply before it ended the turn there.
+      if (active.turn.acceptingLiveOutput) {
+        active.turn.accept();
+        active.run.emit({ type: 'stop_hook', content: stopHookFeedback });
+      }
+      return;
+    }
     if (isTurnCompleted(notification.update)) {
       if (active.turn.acceptingLiveOutput) {
         active.promptUsage = parseGrokUsage((notification.update as unknown as { usage?: unknown }).usage)
@@ -801,6 +812,8 @@ RewindableExecutionSession {
       }
       return;
     }
+    // Grok's other xAI extension updates (model, response, hook and interaction progress) carry nothing Claudian shows.
+    if (source === 'extension' && !isKnownACPSessionUpdate(notification.update)) return;
     let update = mapGrokNativePaths(notification.update, this.nativeSlot.current?.launch.pathMapper);
     if (update.sessionUpdate === 'agent_message_chunk' || update.sessionUpdate === 'user_message_chunk') {
       const role = update.sessionUpdate === 'agent_message_chunk' ? 'assistant' : 'user';

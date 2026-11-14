@@ -69,12 +69,17 @@ export class GrokNativeProcess {
     this.child.on('exit', () => { this.shutdownCalls += 1; });
   }
 
+  /**
+   * Publishes a session update: `standard` over ACP, `extension` on the xAI update alias, and
+   * `notification` as Grok 1.0.77 sends its extension updates live, on `_x.ai/session_notification`
+   * with the session notification as its bare params.
+   */
   emit(
-    update: Record<string, unknown>, source: 'extension' | 'standard' = 'standard',
+    update: Record<string, unknown>, source: 'extension' | 'standard' | 'notification' = 'standard',
     metadata?: Record<string, unknown>, sessionId = 'session-existing',
   ): void {
     this.child.stdout.push(JSON.stringify({ jsonrpc: '2.0',
-      method: source === 'standard' ? 'session/update' : '_x.ai/session/update',
+      method: { standard: 'session/update', extension: '_x.ai/session/update', notification: '_x.ai/session_notification' }[source],
       params: { sessionId, update, ...(metadata ? { _meta: metadata } : {}) },
     }) + '\n');
   }

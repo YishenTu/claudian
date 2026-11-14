@@ -1178,6 +1178,34 @@ describe('ClaudeExecutionBackend', () => {
     ]);
   });
 
+  // Claude Code 2.1.322 sends a blocking Stop hook's feedback live as a synthetic user message; the same turn continues.
+  it('keeps a Stop hook\'s feedback inside the requested turn as a boundary between its replies', async () => {
+    sdkMock.setMockMessages([
+      { type: 'system', subtype: 'init', session_id: 'session-1' },
+      { type: 'assistant', parent_tool_use_id: null, message: { content: [{ type: 'text', text: 'Long answer.' }] } },
+      { type: 'user', parent_tool_use_id: null, isSynthetic: true,
+        message: { content: [{ type: 'text', text: 'Stop hook feedback:\n[/vault/.claude/check.sh]: Run the checks.\n' }] } },
+      { type: 'assistant', parent_tool_use_id: null,
+        message: { content: [{ type: 'tool_use', id: 'bash', name: 'Bash', input: { command: 'npm test' } }] } },
+      { type: 'user', parent_tool_use_id: null, tool_use_result: { stdout: 'ok' },
+        message: { content: [{ type: 'tool_result', tool_use_id: 'bash', content: 'ok' }] } },
+      { type: 'assistant', parent_tool_use_id: null, message: { content: [{ type: 'text', text: 'Follow-up.' }] } },
+      { type: 'result', subtype: 'success' },
+    ], { appendResult: false });
+    const session = new ClaudeExecutionBackend((await createHost()).host.getRuntimeHost('claude'))
+      .createSession(createConfig());
+
+    const events = await collectEvents(session.execute(createRequest()).events);
+
+    expect(events.filter(event => ['text_delta', 'stop_hook', 'tool_started', 'user_message_started', 'turn_completed']
+      .includes(event.type)).map(event => event.type === 'stop_hook' ? `stop_hook:${event.content}`
+      : event.type === 'text_delta' ? `text:${event.text}` : event.type)).toEqual([
+      // Only the request's own prompt starts a user message; the feedback starts none.
+      'user_message_started', 'text:Long answer.', 'stop_hook:[/vault/.claude/check.sh]: Run the checks.', 'tool_started', 'text:Follow-up.', 'turn_completed',
+    ]);
+    expect(events.find(event => event.type === 'stop_hook')?.scope).toMatchObject({ kind: 'requested' });
+  });
+
   it('uses the result model window without polling the autocompact threshold', async () => {
     // getContextUsage reports the autocompact window, which compaction policy can set below the
     // model window; result modelUsage reports the model window itself.

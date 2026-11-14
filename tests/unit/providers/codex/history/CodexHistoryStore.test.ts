@@ -2873,6 +2873,33 @@ describe('CodexHistoryStore', () => {
     });
   });
 
+  // Records of a Codex 0.167.2 rollout (probed) in which a blocking Stop hook continued the turn.
+  it('keeps a Stop hook boundary inside its turn instead of showing the hook prompt as a user message', () => {
+    const records = [
+      [0, { type: 'event_msg', payload: { type: 'task_started', turn_id: 'turn' } }],
+      [0, { type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'Explain X' }] } }],
+      [3, { type: 'response_item', payload: { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'ANSWER DONE' }] } }],
+      [4, { type: 'response_item', payload: { type: 'message', id: 'msg_hook', role: 'user', content: [{ type: 'input_text',
+        text: '<hook_prompt hook_run_id="stop:0:/&lt;session-flags&gt;/config.toml">Now run: echo checked</hook_prompt>' }] } }],
+      [4, { type: 'event_msg', payload: { type: 'item_completed', turn_id: 'turn', item: { type: 'HookPrompt', id: 'msg_hook',
+        fragments: [{ text: 'Now run: echo checked', hookRunId: 'stop:0:/<session-flags>/config.toml' }] } } }],
+      [6, { type: 'response_item', payload: { type: 'function_call', name: 'exec_command', call_id: 'cmd', arguments: '{"cmd":"echo checked"}' } }],
+      [7, { type: 'response_item', payload: { type: 'function_call_output', call_id: 'cmd', output: 'checked' } }],
+      [9, { type: 'response_item', payload: { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'checked' }] } }],
+      [10, { type: 'event_msg', payload: { type: 'task_complete', turn_id: 'turn' } }],
+    ] as const;
+    const content = records.map(([seconds, record]) => JSON.stringify({ timestamp: testTime({ seconds }), ...record })).join('\n');
+
+    const messages = parseCodexSessionContent(content);
+    expect(messages.map(message => message.role)).toEqual(['user', 'assistant']);
+    expect(messages[1].contentBlocks?.map(block => block.type === 'tool_use' ? { type: 'tool_use' } : block)).toEqual([
+      { type: 'text', content: 'ANSWER DONE' },
+      { type: 'stop_hook', content: 'Now run: echo checked', elapsedSeconds: 4 },
+      { type: 'tool_use' },
+      { type: 'text', content: 'checked' },
+    ]);
+  });
+
   describe('parseCodexSessionContent - context_compacted boundary', () => {
     it.each([false, true])('restores record-only compaction and deduplicates its event (event: %s)', (withEvent) => {
       const records = [

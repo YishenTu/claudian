@@ -97,7 +97,7 @@ export async function continueResponseAfterNotification(
   scope?: ProviderTurnEventScope,
 ): Promise<ChatMessage> {
   if ((chunk.type === 'text' || chunk.type === 'thinking') && chunk.content.length === 0) return message;
-  if (!['text', 'thinking', 'citations', 'tool_use', 'notice', 'error', 'context_compacted'].includes(chunk.type)) return message;
+  if (!['text', 'thinking', 'citations', 'tool_use', 'notice', 'error', 'context_compacted', 'stop_hook'].includes(chunk.type)) return message;
   // Repeated tool snapshots update the existing card instead of starting a new segment.
   if (chunk.type === 'tool_use' && host.state.messages.some(item => item.toolCalls?.some(tool => tool.id === chunk.id))) {
     return message;

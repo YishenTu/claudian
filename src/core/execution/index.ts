@@ -42,6 +42,7 @@ export {
   type ProviderSessionEvent,
   type ProviderSessionEventScope,
   type ProviderSessionStateChangedEvent,
+  type ProviderStopHookEvent,
   type ProviderSubagentProgressEvent,
   type ProviderSubagentUpdatedEvent,
   type ProviderTaskNotificationEvent,

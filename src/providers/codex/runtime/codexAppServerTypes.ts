@@ -88,7 +88,8 @@ export type ThreadItem =
   | CollabAgentToolCallItem
   | MCPToolCallItem
   | DynamicToolCallItem
-  | ContextCompactionItem;
+  | ContextCompactionItem
+  | HookPromptItem;
 
 export interface UserMessageItem {
   type: 'userMessage';
@@ -242,6 +243,13 @@ export interface DynamicToolCallItem {
   contentItems?: DynamicToolCallOutputContentItem[] | null;
   success?: boolean | null;
   durationMs?: number | null;
+}
+
+/** Feedback hooks sent back into the running turn, such as a blocking Stop hook's reason. */
+export interface HookPromptItem {
+  type: 'hookPrompt';
+  id: string;
+  fragments: Array<{ text: string; hookRunId: string }>;
 }
 
 export interface ContextCompactionItem {

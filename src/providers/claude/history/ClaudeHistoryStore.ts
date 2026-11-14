@@ -26,10 +26,10 @@ import {
   collectStructuredPatchResults,
   collectToolResults,
   getSDKUserMessageTimestamp,
+  getStopHookFeedback,
   hydrateStructuredToolResults,
   isCanonicalSDKUserMessage,
   isQueuedPromptAttachment,
-  isStopHookFeedback,
   isSystemInjectedMessage,
   mergeAssistantMessage,
   parseSDKMessageToChat,
@@ -228,7 +228,15 @@ export async function loadSDKSessionMessages(
       };
       continue;
     }
-    if (isStopHookFeedback(sdkMsg)) legacyTurnEnded = false;
+    const stopHookFeedback = getStopHookFeedback(sdkMsg);
+    if (stopHookFeedback !== null) {
+      legacyTurnEnded = false;
+      const hookAt = parseNativeTimestamp(sdkMsg.timestamp);
+      pendingAssistant?.contentBlocks?.push({ type: 'stop_hook', content: stopHookFeedback,
+        ...(turnStartedAt !== undefined && hookAt !== undefined && hookAt >= turnStartedAt
+          ? { elapsedSeconds: Math.floor((hookAt - turnStartedAt) / 1_000) } : {}) });
+      continue;
+    }
     if (isSystemInjectedMessage(sdkMsg)) continue;
 
     // Skip synthetic assistant messages (e.g., "No response requested." after /compact)

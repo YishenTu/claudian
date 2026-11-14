@@ -3855,6 +3855,59 @@ describe('CodexNotificationRouter', () => {
     ]);
   });
 
+  // Codex 0.167.2 (probed): a blocking Stop hook's feedback continues the same turn as a `hookPrompt` item,
+  // also echoed as a raw harness user message and replayed by completion recovery.
+  describe('Stop hook prompts', () => {
+    const hookRunId = 'stop:0:/<session-flags>/config.toml';
+    const answer = (id: string, text: string) => router.handleNotification('item/completed', {
+      threadId: 't1', turnId: 'turn1', item: { type: 'agentMessage', id, text, phase: 'final_answer' },
+    });
+    const hookPrompt = (method: string, fragments: unknown[]) => router.handleNotification(method, {
+      threadId: 't1', turnId: 'turn1', item: { type: 'hookPrompt', id: 'msg_hook', fragments },
+    });
+
+    it('marks the boundary once between the reply it sent back and the continued answer', () => {
+      router.beginTurn();
+      answer('first', 'ANSWER DONE');
+      router.handleNotification('hook/completed', { threadId: 't1', turnId: 'turn1', run: {
+        id: hookRunId, eventName: 'stop', scope: 'turn', status: 'blocked', entries: [{ kind: 'feedback', text: 'Now run: echo checked' }],
+      } });
+      router.handleNotification('rawResponseItem/completed', { threadId: 't1', turnId: 'turn1', item: {
+        type: 'message', id: 'msg_hook', role: 'user',
+        content: [{ type: 'input_text', text: '<hook_prompt hook_run_id="stop:0:/&lt;session-flags&gt;/config.toml">Now run: echo checked</hook_prompt>' }],
+      } });
+      const fragments = [{ text: 'Now run: echo checked', hookRunId }];
+      hookPrompt('item/started', fragments);
+      hookPrompt('item/completed', fragments);
+      // Completion recovery replays every item of the turn.
+      hookPrompt('item/completed', fragments);
+      answer('second', 'checked');
+
+      // The boundary closes the reply's message; the continued answer starts the next one.
+      expect(chunks).toEqual([
+        { type: 'assistant_message_start', itemId: 'first' },
+        { type: 'text', content: 'ANSWER DONE' },
+        { type: 'stop_hook', content: 'Now run: echo checked' },
+        { type: 'assistant_message_start', itemId: 'second' },
+        { type: 'text', content: 'checked' },
+      ]);
+    });
+
+    it('joins the feedback of every blocking Stop hook and ignores other hooks\' prompts', () => {
+      router.beginTurn();
+      hookPrompt('item/completed', [
+        { text: 'Run the tests.', hookRunId },
+        { text: 'Unrelated context.', hookRunId: 'user_prompt_submit:0:/hooks.json' },
+        { text: 'Update the changelog.', hookRunId: 'stop:1:/hooks.json' },
+      ]);
+      router.handleNotification('item/completed', { threadId: 't1', turnId: 'turn1', item: {
+        type: 'hookPrompt', id: 'other', fragments: [{ text: 'Only context.', hookRunId: 'session_start:0:/hooks.json' }],
+      } });
+
+      expect(chunks).toEqual([{ type: 'stop_hook', content: 'Run the tests.\n\nUpdate the changelog.' }]);
+    });
+  });
+
   describe('webSearch tool', () => {
     it.each([
       [{ type: 'openPage', url: 'https://example.com/page' }, { actionType: 'open_page', url: 'https://example.com/page' }],

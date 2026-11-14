@@ -3,6 +3,7 @@ import { createChatFeatureHost } from '@test/helpers/features/chat/ChatFeatureHo
 type WithoutScope<T> = T extends unknown ? Omit<T, 'scope'> : never;
 
 import { useClaudeSessionFiles } from '@test/helpers/providers/claudeHistory';
+import { buildSDKMessage } from '@test/helpers/sdkMessages';
 import { testDate } from '@test/helpers/testClock';
 import { fireEvent, within } from '@testing-library/dom';
 import { Component, MarkdownRenderer } from 'obsidian';
@@ -17,6 +18,7 @@ import { renderSessionTaskNotification } from '@/features/chat/turns/BackgroundT
 import { ResponseStream } from '@/features/chat/turns/ResponseStream';
 import { StreamController } from '@/features/chat/turns/StreamController';
 import { TurnCoordinator } from '@/features/chat/turns/TurnCoordinator';
+import { ClaudeExecutionEventNormalizer } from '@/providers/claude/execution/ClaudeExecutionEventNormalizer';
 import { loadSDKSessionMessages } from '@/providers/claude/history/ClaudeHistoryStore';
 import { claudeProviderRegistration } from '@/providers/claude/registration';
 
@@ -295,6 +297,117 @@ async function renderTranscript(records: unknown[]): Promise<HTMLElement> {
   await Promise.resolve();
   return messagesEl;
 }
+
+const HOOK = '[/vault/.claude/check.sh]: Run the checks.';
+/** Seconds into the turn at which each step happens, shared by the live run and its transcript. */
+const STOP_HOOK_TURN = [
+  { at: 1, live: { type: 'assistant', message: { content: [{ type: 'text', text: 'Let me check.' },
+    { type: 'tool_use', id: 'read', name: 'Read', input: { file_path: 'note.md' } }] } }, native: { stop_reason: 'tool_use' } },
+  { at: 2, live: { type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: 'read', content: 'The note.' }] },
+    tool_use_result: { content: 'The note.' } } },
+  { at: 3, live: { type: 'assistant', message: { content: [{ type: 'text', text: 'Long answer.' }] } }, native: { stop_reason: 'end_turn' } },
+  // Live, Claude Code 2.1.322 delivers the blocking hook's feedback as a synthetic user message; its transcript records it as meta.
+  { at: 4, live: { type: 'user', isSynthetic: true, message: { content: [{ type: 'text', text: `Stop hook feedback:\n${HOOK}\n` }] } } },
+  { at: 6, live: { type: 'assistant', message: { content: [{ type: 'tool_use', id: 'bash', name: 'Bash', input: { command: 'npm test' } }] } },
+    native: { stop_reason: 'tool_use' } },
+  { at: 8, live: { type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: 'bash', content: 'ok' }] },
+    tool_use_result: { stdout: 'ok' } } },
+  { at: 10, live: { type: 'assistant', message: { content: [{ type: 'text', text: 'Follow-up.' }] } }, native: { stop_reason: 'end_turn' } },
+] as const;
+
+/** What a reader sees with every fold collapsed, then each fold's body in transcript order. */
+function inspectFolds(root: HTMLElement) {
+  const headers = within(root).queryAllByRole('button', { name: /^Worked/ });
+  const folds = headers.map(header => {
+    const history = document.getElementById(header.getAttribute('aria-controls')!)!;
+    fireEvent.click(header);
+    const body = visibleText(history);
+    fireEvent.click(header);
+    return { header: header.textContent, body };
+  });
+  return { collapsed: Array.from(root.querySelectorAll<HTMLElement>('.claudian-message'), visibleText).filter(Boolean).join(' '), folds };
+}
+
+// A task notification the turn received between the reply and its Stop hook stays where it arrived.
+it.each([false, true])('keeps the reply a Stop hook sent back visible and folds each stretch of work in order, live and on reload (notification before the hook: %s)', async notifiedBeforeHook => {
+  const expectedView = {
+    collapsed: `Explain X Worked for 00:04 Long answer.${notifiedBeforeHook ? ' Task notification' : ''} Stop hook ${HOOK} Worked for 00:06 Follow-up.`,
+    folds: [
+      { header: 'Worked for 00:04', body: expect.stringMatching(/^Let me check\. Read/) },
+      { header: 'Worked for 00:06', body: expect.stringMatching(/^Bash/) },
+    ],
+  };
+
+  // Live: the native SDK messages through Claude's normalizer and the chat stream.
+  const now = vi.spyOn(performance, 'now');
+  const messagesEl = document.body.createDiv();
+  const plugin = await createChatFeatureHost({ settings: { mediaFolder: '' } });
+  const renderer = new MessageRenderer(plugin, new Component(), messagesEl);
+  const turnCoordinator = new TurnCoordinator();
+  const state = new ChatState({}, undefined, turnCoordinator);
+  const subagents = new SubagentManager(() => undefined);
+  const stream = new StreamController({ plugin, state, renderer, subagentManager: subagents,
+    getMessagesEl: () => messagesEl, updateQueueIndicator: () => undefined });
+  let nextId = 0;
+  const host = { state, renderer, stream, turns: turnCoordinator, createMessageId: () => `message-${++nextId}` };
+  cleanups.push(() => { now.mockRestore(); stream.dispose(); subagents.clear(); renderer.dispose(); });
+  const response = new ResponseStream(host);
+  const prompt = { id: 'prompt', role: 'user' as const, content: 'Explain X', timestamp: testDate().getTime() };
+  state.addMessage(prompt);
+  renderer.addMessage(prompt);
+  now.mockReturnValue(0);
+  response.start();
+  state.responseStartTime = 0;
+  const normalizer = new ClaudeExecutionEventNormalizer();
+  let sequence = 0;
+  const scope = () => ({ kind: 'requested' as const, sessionInstanceId: 'native', executionId: 'execution', turnId: 'turn', sequence: ++sequence });
+  for (const step of STOP_HOOK_TURN) {
+    now.mockReturnValue(step.at * 1_000);
+    if (notifiedBeforeHook && 'isSynthetic' in step.live) {
+      await response.handleEvent({ type: 'task_notification', content: 'Job finished.', scope: scope() });
+    }
+    for (const normalized of normalizer.normalize(buildSDKMessage(step.live as never), 'requested')) {
+      if (normalized.type !== 'output') continue;
+      await response.handleEvent({ ...normalized.event, scope: { kind: 'requested', sessionInstanceId: 'native',
+        executionId: 'execution', turnId: 'turn', sequence: ++sequence } } as ProviderExecutionEvent);
+    }
+  }
+  // Main turn execution stamps the reply complete before the stream finishes it.
+  response.active!.completedAt = testDate().getTime() + 10_000;
+  await response.finish(response.active!, { interrupted: false, failed: false });
+  await Promise.resolve();
+  const live = inspectFolds(messagesEl);
+  expect(live).toEqual(expectedView);
+  const answer = messagesEl.querySelector<HTMLElement>('.claudian-message-assistant:last-of-type')!;
+  Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: vi.fn().mockResolvedValue(undefined) } });
+  fireEvent.click(within(answer).getByRole('button', { name: 'Copy message' }));
+  expect(navigator.clipboard.writeText).toHaveBeenCalledWith('Long answer.\n\nFollow-up.');
+  renderer.renderMessages(state.messages, () => 'Welcome');
+  await Promise.resolve();
+  expect(inspectFolds(messagesEl)).toEqual(expectedView);
+  // Claude takes a notification in at its next model call, after the hook's feedback.
+  if (notifiedBeforeHook) return;
+
+  // Reload: the same turn as Claude Code's transcript records it.
+  const at = (seconds: number) => new Date(testDate().getTime() + seconds * 1_000).toISOString();
+  const records: unknown[] = [{ type: 'user', uuid: 'start', timestamp: at(0), message: { content: 'Explain X' } }];
+  STOP_HOOK_TURN.forEach((step, index) => {
+    const uuid = `step-${index}`;
+    if (step.live.type === 'assistant') {
+      records.push({ type: 'assistant', uuid, timestamp: at(step.at), message: { ...step.live.message, ...('native' in step ? step.native : {}) } });
+    } else if ('isSynthetic' in step.live) {
+      records.push(
+        { type: 'user', uuid, isMeta: true, timestamp: at(step.at), message: { content: `Stop hook feedback:\n${HOOK}\n` } },
+        { type: 'system', subtype: 'stop_hook_summary', uuid: `${uuid}-summary`, timestamp: at(step.at), hookCount: 1, hookInfos: [],
+          hookErrors: [`${HOOK}\n`], preventedContinuation: false, stopReason: '', hasOutput: true, level: 'suggestion' },
+      );
+    } else {
+      records.push({ type: 'user', uuid, timestamp: at(step.at), toolUseResult: step.live.tool_use_result, message: step.live.message });
+    }
+  });
+  const reload = inspectFolds(await renderTranscript(records));
+  expect(reload).toEqual(expectedView);
+});
 
 const notificationContent = '<task-notification><task-id>job</task-id><status>completed</status><summary>Job finished.</summary></task-notification>';
 
