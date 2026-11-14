@@ -744,6 +744,29 @@ describe('SessionManagerSurface history dropdown', () => {
     expect(h.historyMenu.hasClass('visible')).toBe(false);
   });
 
+  it.each([
+    { composer: 'short', anchorTop: 600, cap: '420px' },
+    { composer: 'tall', anchorTop: 250, cap: '244px' },
+  ])('fits the history drop-up inside the view above a $composer composer', async ({ anchorTop, cap }) => {
+    const h = await createHarness({ wide: false });
+    // Layout jsdom cannot compute: a 700px view whose input footer anchors the drop-up at `anchorTop`.
+    const viewEl = document.body.createDiv({ cls: 'claudian-container' });
+    const footerEl = viewEl.createDiv({ cls: 'claudian-input-footer' });
+    const historyContainer = h.historyButton.parentElement!;
+    footerEl.appendChild(historyContainer.parentElement!);
+    Object.defineProperty(viewEl, 'clientHeight', { configurable: true, value: 700 });
+    viewEl.getBoundingClientRect = () => new DOMRect(0, 0, 400, 700);
+    footerEl.getBoundingClientRect = () => new DOMRect(0, anchorTop, 400, 700 - anchorTop);
+    Object.defineProperty(historyContainer, 'offsetParent', { configurable: true, value: footerEl });
+    // The stylesheet's gap above the anchor and 1px border.
+    h.historyMenu.style.marginBottom = '4px';
+    h.historyMenu.style.border = '1px solid';
+
+    h.historyButton.click();
+
+    expect(h.historyMenu.style.getPropertyValue('--claudian-history-menu-max-height')).toBe(cap);
+  });
+
   it('switches the single-mode history menu between Sessions and Archived', async () => {
     const h = await createHarness({
       conversations: [conversation('active'), conversation('archived', { isArchived: true })],
