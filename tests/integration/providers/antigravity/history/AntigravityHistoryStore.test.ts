@@ -7,7 +7,7 @@ import { testClock } from '@test/helpers/testClock';
 
 import type { ChatMessage } from '@/core/types';
 import { isInterruptedResponse } from '@/features/chat/rendering/ResponseLayout';
-import { loadAntigravityHistory, readAntigravityContextTokens } from '@/providers/antigravity/history/AntigravityHistoryStore';
+import { loadAntigravityHistory } from '@/providers/antigravity/history/AntigravityHistoryStore';
 
 const FIXTURES = path.resolve('tests/fixtures/providers/antigravity/history');
 const SESSION_ID = 'session-fixture';
@@ -476,21 +476,5 @@ describe('loadAntigravityHistory', () => {
 
   it('returns no messages for a session without a transcript', async () => {
     await expect(loadAntigravityHistory(storeRoot, 'session-unknown')).resolves.toEqual([]);
-  });
-});
-
-describe('readAntigravityContextTokens', () => {
-  const measured = replyStep(1, { cache_read_tokens: 200_000, input_tokens: 40_000, output_tokens: 10 });
-  const checkpoint = { source: 'SYSTEM', status: 'DONE', step_index: 2, type: 'CHECKPOINT' };
-
-  it.each([
-    ['a compaction after the last measured call', [measured, checkpoint], null],
-    ['a model call without token counts after the last measured call', [measured, replyStep(2, {})], null],
-    ['a measured call after a compaction', [measured, checkpoint,
-      replyStep(3, { cache_read_tokens: 6_000, input_tokens: 2_000, output_tokens: 10 })], 8_000],
-  ])('measures %s', async (_name, steps, expected) => {
-    await installSteps([userStep(0, 'go'), ...steps]);
-
-    await expect(readAntigravityContextTokens(storeRoot, SESSION_ID)).resolves.toBe(expected);
   });
 });
