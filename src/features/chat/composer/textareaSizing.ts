@@ -1,5 +1,5 @@
 const TEXTAREA_MIN_MAX_HEIGHT = 150;
-const TEXTAREA_MAX_HEIGHT_PERCENT = 0.55;
+const TEXTAREA_MAX_HEIGHT_PERCENT = 0.4;
 
 function calculateTextareaMaxHeight(viewHeight: number): number {
   return Math.max(TEXTAREA_MIN_MAX_HEIGHT, viewHeight * TEXTAREA_MAX_HEIGHT_PERCENT);

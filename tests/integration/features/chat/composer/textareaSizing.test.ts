@@ -32,7 +32,7 @@ describe('textareaSizing', () => {
 
     installTextareaSizing(textarea);
 
-    expect(textarea.style.getPropertyValue('--claudian-textarea-max-height')).toBe('550px');
+    expect(textarea.style.getPropertyValue('--claudian-textarea-max-height')).toBe('400px');
     expect(observe).toHaveBeenCalledWith(container);
   });
 
@@ -56,7 +56,7 @@ describe('textareaSizing', () => {
       } as unknown as ResizeObserverEntry,
     ], {} as ResizeObserver);
 
-    expect(textarea.style.getPropertyValue('--claudian-textarea-max-height')).toBe('330px');
+    expect(textarea.style.getPropertyValue('--claudian-textarea-max-height')).toBe('240px');
     expect(readContainerHeight).not.toHaveBeenCalled();
   });
 

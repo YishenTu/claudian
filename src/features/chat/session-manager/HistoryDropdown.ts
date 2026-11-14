@@ -150,14 +150,31 @@ export class HistoryDropdown {
     if (this.searchBar) this.searchBar.input.value = '';
   }
 
-  /** Caps the drop-up at 60% of the chat view's height, measured as it opens. */
+  /**
+   * Caps the drop-up at 60% of the chat view's height and at the room above its anchor, measured as it
+   * opens, so a tall composer cannot push its top out of the view.
+   */
   private fitToView(menuEl: HTMLElement): void {
     const viewEl = menuEl.closest<HTMLElement>('.claudian-container');
     const height = viewEl?.clientHeight ?? 0;
     // An unmeasured view keeps the stylesheet's fallback cap.
-    menuEl.setCssProps({
-      '--claudian-history-menu-max-height': height > 0 ? `${Math.round(height * VIEW_HEIGHT_SHARE)}px` : '',
-    });
+    if (!viewEl || height <= 0) {
+      menuEl.setCssProps({ '--claudian-history-menu-max-height': '' });
+      return;
+    }
+    let maxHeight = Math.round(height * VIEW_HEIGHT_SHARE);
+    // The hidden menu has no offsetParent, so its always-rendered container finds the anchor.
+    const anchorEl = this.containerEl?.offsetParent;
+    const style = menuEl.ownerDocument.defaultView?.getComputedStyle(menuEl);
+    if (anchorEl && style) {
+      const chrome = [style.marginBottom, style.borderTopWidth, style.borderBottomWidth]
+        .reduce((sum, value) => sum + (parseFloat(value) || 0), 0);
+      // The chat panel clips the drop-up; Obsidian's view padding sits above it.
+      const clipEl = menuEl.closest<HTMLElement>('.claudian-chat-panel') ?? viewEl;
+      const room = anchorEl.getBoundingClientRect().top - clipEl.getBoundingClientRect().top - chrome;
+      maxHeight = Math.min(maxHeight, Math.max(0, Math.floor(room)));
+    }
+    menuEl.setCssProps({ '--claudian-history-menu-max-height': `${maxHeight}px` });
   }
 
   /** Hides the menu and abandons its in-flight render. */
