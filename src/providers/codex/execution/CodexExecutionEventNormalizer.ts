@@ -82,10 +82,11 @@ export function adaptCodexStreamChunk(chunk: StreamChunk): RequestedRunEvent | n
         ...(chunk.providerPayload ? { providerPayload: chunk.providerPayload } : {}),
         ...(chunk.resultDetails ? { resultDetails: chunk.resultDetails } : {}),
       };
+    case 'stop_hook':
+      return { type: 'stop_hook', content: chunk.content };
     case 'error':
     case 'done':
     case 'task_notification':
-    case 'stop_hook':
       return null;
   }
 }

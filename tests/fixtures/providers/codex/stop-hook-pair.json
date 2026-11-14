@@ -1,0 +1,990 @@
+{
+ "notifications": [
+  {
+   "method": "turn/started",
+   "params": {
+    "threadId": "thread",
+    "turn": {
+     "id": "turn",
+     "rootTurnId": "turn",
+     "items": [],
+     "itemsView": "notLoaded",
+     "status": "inProgress",
+     "error": null,
+     "startedAt": 1794667480,
+     "completedAt": null,
+     "durationMs": null
+    }
+   }
+  },
+  {
+   "method": "item/started",
+   "params": {
+    "item": {
+     "type": "userMessage",
+     "id": "01a1da84-9a9b-77c2-922d-f3eb527f9953",
+     "clientId": null,
+     "content": [
+      {
+       "type": "text",
+       "text": "Reply with exactly: ANSWER DONE. Use no tools.",
+       "text_elements": []
+      }
+     ],
+     "startedAtMs": 1794667485852,
+     "completedAtMs": null
+    },
+    "threadId": "thread",
+    "turnId": "turn",
+    "startedAtMs": 1794667485852
+   }
+  },
+  {
+   "method": "item/completed",
+   "params": {
+    "item": {
+     "type": "userMessage",
+     "id": "01a1da84-9a9b-77c2-922d-f3eb527f9953",
+     "clientId": null,
+     "content": [
+      {
+       "type": "text",
+       "text": "Reply with exactly: ANSWER DONE. Use no tools.",
+       "text_elements": []
+      }
+     ],
+     "startedAtMs": 1794667485852,
+     "completedAtMs": 1794667485852
+    },
+    "threadId": "thread",
+    "turnId": "turn",
+    "completedAtMs": 1794667485852
+   }
+  },
+  {
+   "method": "item/started",
+   "params": {
+    "item": {
+     "type": "agentMessage",
+     "id": "msg_036257f41dd336be016af873def8a087d096649f8a3edbddc8",
+     "text": "",
+     "phase": "final_answer",
+     "memoryCitation": null,
+     "delivery": null,
+     "questions": null,
+     "startedAtMs": 1794667487130,
+     "completedAtMs": null
+    },
+    "threadId": "thread",
+    "turnId": "turn",
+    "startedAtMs": 1794667487130
+   }
+  },
+  {
+   "method": "item/agentMessage/delta",
+   "params": {
+    "threadId": "thread",
+    "turnId": "turn",
+    "itemId": "msg_036257f41dd336be016af873def8a087d096649f8a3edbddc8",
+    "delta": "ANSWER"
+   }
+  },
+  {
+   "method": "item/agentMessage/delta",
+   "params": {
+    "threadId": "thread",
+    "turnId": "turn",
+    "itemId": "msg_036257f41dd336be016af873def8a087d096649f8a3edbddc8",
+    "delta": " DONE"
+   }
+  },
+  {
+   "method": "item/completed",
+   "params": {
+    "item": {
+     "type": "agentMessage",
+     "id": "msg_036257f41dd336be016af873def8a087d096649f8a3edbddc8",
+     "text": "ANSWER DONE",
+     "phase": "final_answer",
+     "memoryCitation": null,
+     "delivery": null,
+     "questions": null,
+     "startedAtMs": 1794667487130,
+     "completedAtMs": 1794667487201
+    },
+    "threadId": "thread",
+    "turnId": "turn",
+    "completedAtMs": 1794667487201
+   }
+  },
+  {
+   "method": "rawResponseItem/completed",
+   "params": {
+    "threadId": "thread",
+    "turnId": "turn",
+    "item": {
+     "type": "message",
+     "status": "completed",
+     "id": "msg_036257f41dd336be016af873def8a087d096649f8a3edbddc8",
+     "role": "assistant",
+     "content": [
+      {
+       "type": "output_text",
+       "text": "ANSWER DONE",
+       "annotations": [],
+       "logprobs": []
+      }
+     ],
+     "phase": "final_answer",
+     "internal_chat_message_metadata_passthrough": {
+      "turn_id": "turn",
+      "create_time": 1794667486.974067,
+      "content_item_kinds": [
+       "unknown"
+      ]
+     }
+    }
+   }
+  },
+  {
+   "method": "hook/started",
+   "params": {
+    "threadId": "thread",
+    "turnId": "turn",
+    "run": {
+     "id": "stop:0:/<session-flags>/config.toml",
+     "eventName": "stop",
+     "handlerType": "command",
+     "executionMode": "sync",
+     "scope": "turn",
+     "sourcePath": "/<session-flags>/config.toml",
+     "source": "sessionFlags",
+     "displayOrder": 0,
+     "status": "running",
+     "statusMessage": null,
+     "startedAt": 1794667487,
+     "completedAt": null,
+     "durationMs": null,
+     "entries": []
+    }
+   }
+  },
+  {
+   "method": "hook/completed",
+   "params": {
+    "threadId": "thread",
+    "turnId": "turn",
+    "run": {
+     "id": "stop:0:/<session-flags>/config.toml",
+     "eventName": "stop",
+     "handlerType": "command",
+     "executionMode": "sync",
+     "scope": "turn",
+     "sourcePath": "/<session-flags>/config.toml",
+     "source": "sessionFlags",
+     "displayOrder": 0,
+     "status": "blocked",
+     "statusMessage": null,
+     "startedAt": 1794667487,
+     "completedAt": 1794667487,
+     "durationMs": 277,
+     "entries": [
+      {
+       "kind": "feedback",
+       "text": "Now run: echo checked"
+      }
+     ]
+    }
+   }
+  },
+  {
+   "method": "rawResponseItem/completed",
+   "params": {
+    "threadId": "thread",
+    "turnId": "turn",
+    "item": {
+     "type": "message",
+     "id": "msg_01a1da84-a112-7661-b1f1-8a946f2dc5ee",
+     "role": "user",
+     "content": [
+      {
+       "type": "input_text",
+       "text": "<hook_prompt hook_run_id=\"stop:0:/&lt;session-flags&gt;/config.toml\">Now run: echo checked</hook_prompt>"
+      }
+     ],
+     "internal_chat_message_metadata_passthrough": {
+      "turn_id": "turn",
+      "create_time": 1794667487.50659,
+      "content_item_kinds": [
+       "unknown"
+      ],
+      "content_item_metadata": [
+       {
+        "provenance": {
+         "type": "harness",
+         "hook": true
+        }
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "method": "item/started",
+   "params": {
+    "item": {
+     "type": "hookPrompt",
+     "id": "msg_01a1da84-a112-7661-b1f1-8a946f2dc5ee",
+     "fragments": [
+      {
+       "text": "Now run: echo checked",
+       "hookRunId": "stop:0:/<session-flags>/config.toml"
+      }
+     ],
+     "startedAtMs": 1794667487507,
+     "completedAtMs": null
+    },
+    "threadId": "thread",
+    "turnId": "turn",
+    "startedAtMs": 1794667487507
+   }
+  },
+  {
+   "method": "item/completed",
+   "params": {
+    "item": {
+     "type": "hookPrompt",
+     "id": "msg_01a1da84-a112-7661-b1f1-8a946f2dc5ee",
+     "fragments": [
+      {
+       "text": "Now run: echo checked",
+       "hookRunId": "stop:0:/<session-flags>/config.toml"
+      }
+     ],
+     "startedAtMs": 1794667487507,
+     "completedAtMs": 1794667487507
+    },
+    "threadId": "thread",
+    "turnId": "turn",
+    "completedAtMs": 1794667487507
+   }
+  },
+  {
+   "method": "item/started",
+   "params": {
+    "item": {
+     "type": "reasoning",
+     "id": "rs_036257f41dd336be016af873e1f6d487d08ff24cf566c3aca7",
+     "summary": [],
+     "content": [],
+     "startedAtMs": 1794667490132,
+     "completedAtMs": null
+    },
+    "threadId": "thread",
+    "turnId": "turn",
+    "startedAtMs": 1794667490132
+   }
+  },
+  {
+   "method": "item/completed",
+   "params": {
+    "item": {
+     "type": "reasoning",
+     "id": "rs_036257f41dd336be016af873e1f6d487d08ff24cf566c3aca7",
+     "summary": [],
+     "content": [],
+     "startedAtMs": 1794667490132,
+     "completedAtMs": 1794667490133
+    },
+    "threadId": "thread",
+    "turnId": "turn",
+    "completedAtMs": 1794667490133
+   }
+  },
+  {
+   "method": "rawResponseItem/completed",
+   "params": {
+    "threadId": "thread",
+    "turnId": "turn",
+    "item": {
+     "type": "reasoning",
+     "id": "rs_036257f41dd336be016af873e1f6d487d08ff24cf566c3aca7",
+     "summary": [],
+     "encrypted_content": "<redacted>",
+     "internal_chat_message_metadata_passthrough": {
+      "turn_id": "turn"
+     }
+    }
+   }
+  },
+  {
+   "method": "rawResponseItem/completed",
+   "params": {
+    "threadId": "thread",
+    "turnId": "turn",
+    "item": {
+     "type": "custom_tool_call",
+     "id": "ctc_036257f41dd336be016af873e2373c87d0ae8ae0fee30761c5",
+     "status": "completed",
+     "call_id": "call_f2f796dc8ba7433093b8f8860c8ee548",
+     "name": "exec",
+     "input": "const r = await tools.exec_command({cmd:\"echo checked\"});\ntext(r.output);\n",
+     "internal_chat_message_metadata_passthrough": {
+      "turn_id": "turn",
+      "create_time": 1794667490.2177153
+     }
+    }
+   }
+  },
+  {
+   "method": "item/started",
+   "params": {
+    "item": {
+     "type": "commandExecution",
+     "id": "exec-fd164ce6-9e1a-4ea8-b887-e84b01f30985",
+     "pluginId": null,
+     "scriptPath": null,
+     "command": "/bin/zsh -lc 'echo checked'",
+     "cwd": "/vault",
+     "processId": "24594",
+     "source": "unifiedExecStartup",
+     "status": "inProgress",
+     "commandActions": [
+      {
+       "type": "unknown",
+       "command": "echo checked"
+      }
+     ],
+     "aggregatedOutput": null,
+     "exitCode": null,
+     "durationMs": null,
+     "startedAtMs": 1794667490850,
+     "completedAtMs": null
+    },
+    "threadId": "thread",
+    "turnId": "turn",
+    "startedAtMs": 1794667490850
+   }
+  },
+  {
+   "method": "item/completed",
+   "params": {
+    "item": {
+     "type": "commandExecution",
+     "id": "exec-fd164ce6-9e1a-4ea8-b887-e84b01f30985",
+     "pluginId": null,
+     "scriptPath": null,
+     "command": "/bin/zsh -lc 'echo checked'",
+     "cwd": "/vault",
+     "processId": "24594",
+     "source": "unifiedExecStartup",
+     "status": "completed",
+     "commandActions": [
+      {
+       "type": "unknown",
+       "command": "echo checked"
+      }
+     ],
+     "aggregatedOutput": "checked\n",
+     "exitCode": 0,
+     "durationMs": 0,
+     "startedAtMs": 1794667490850,
+     "completedAtMs": 1794667490850
+    },
+    "threadId": "thread",
+    "turnId": "turn",
+    "completedAtMs": 1794667490850
+   }
+  },
+  {
+   "method": "rawResponseItem/completed",
+   "params": {
+    "threadId": "thread",
+    "turnId": "turn",
+    "item": {
+     "type": "custom_tool_call_output",
+     "id": "ctco_01a1da84-ae25-78c0-b8df-15be23e7c6ff",
+     "call_id": "call_f2f796dc8ba7433093b8f8860c8ee548",
+     "output": [
+      {
+       "type": "input_text",
+       "text": "Script completed\nWall time 0.1 seconds\nOutput:\n"
+      },
+      {
+       "type": "input_text",
+       "text": "checked\n"
+      }
+     ],
+     "internal_chat_message_metadata_passthrough": {
+      "turn_id": "turn",
+      "create_time": 1794667490.853348
+     }
+    }
+   }
+  },
+  {
+   "method": "item/started",
+   "params": {
+    "item": {
+     "type": "agentMessage",
+     "id": "msg_036257f41dd336be016af873e3959887d0adaa6908e01f0890",
+     "text": "",
+     "phase": "final_answer",
+     "memoryCitation": null,
+     "delivery": null,
+     "questions": null,
+     "startedAtMs": 1794667491739,
+     "completedAtMs": null
+    },
+    "threadId": "thread",
+    "turnId": "turn",
+    "startedAtMs": 1794667491739
+   }
+  },
+  {
+   "method": "item/agentMessage/delta",
+   "params": {
+    "threadId": "thread",
+    "turnId": "turn",
+    "itemId": "msg_036257f41dd336be016af873e3959887d0adaa6908e01f0890",
+    "delta": "checked"
+   }
+  },
+  {
+   "method": "item/completed",
+   "params": {
+    "item": {
+     "type": "agentMessage",
+     "id": "msg_036257f41dd336be016af873e3959887d0adaa6908e01f0890",
+     "text": "checked",
+     "phase": "final_answer",
+     "memoryCitation": null,
+     "delivery": null,
+     "questions": null,
+     "startedAtMs": 1794667491739,
+     "completedAtMs": 1794667491820
+    },
+    "threadId": "thread",
+    "turnId": "turn",
+    "completedAtMs": 1794667491820
+   }
+  },
+  {
+   "method": "rawResponseItem/completed",
+   "params": {
+    "threadId": "thread",
+    "turnId": "turn",
+    "item": {
+     "type": "message",
+     "status": "completed",
+     "id": "msg_036257f41dd336be016af873e3959887d0adaa6908e01f0890",
+     "role": "assistant",
+     "content": [
+      {
+       "type": "output_text",
+       "text": "checked",
+       "annotations": [],
+       "logprobs": []
+      }
+     ],
+     "phase": "final_answer",
+     "internal_chat_message_metadata_passthrough": {
+      "turn_id": "turn",
+      "create_time": 1794667491.5884724,
+      "content_item_kinds": [
+       "unknown"
+      ]
+     }
+    }
+   }
+  },
+  {
+   "method": "hook/started",
+   "params": {
+    "threadId": "thread",
+    "turnId": "turn",
+    "run": {
+     "id": "stop:0:/<session-flags>/config.toml",
+     "eventName": "stop",
+     "handlerType": "command",
+     "executionMode": "sync",
+     "scope": "turn",
+     "sourcePath": "/<session-flags>/config.toml",
+     "source": "sessionFlags",
+     "displayOrder": 0,
+     "status": "running",
+     "statusMessage": null,
+     "startedAt": 1794667491,
+     "completedAt": null,
+     "durationMs": null,
+     "entries": []
+    }
+   }
+  },
+  {
+   "method": "hook/completed",
+   "params": {
+    "threadId": "thread",
+    "turnId": "turn",
+    "run": {
+     "id": "stop:0:/<session-flags>/config.toml",
+     "eventName": "stop",
+     "handlerType": "command",
+     "executionMode": "sync",
+     "scope": "turn",
+     "sourcePath": "/<session-flags>/config.toml",
+     "source": "sessionFlags",
+     "displayOrder": 0,
+     "status": "completed",
+     "statusMessage": null,
+     "startedAt": 1794667491,
+     "completedAt": 1794667491,
+     "durationMs": 28,
+     "entries": []
+    }
+   }
+  },
+  {
+   "method": "turn/completed",
+   "params": {
+    "threadId": "thread",
+    "turn": {
+     "id": "turn",
+     "rootTurnId": "turn",
+     "items": [
+      {
+       "type": "agentMessage",
+       "id": "msg_036257f41dd336be016af873e3959887d0adaa6908e01f0890",
+       "text": "checked",
+       "phase": "final_answer",
+       "memoryCitation": null,
+       "delivery": null,
+       "questions": null,
+       "startedAtMs": 1794667491739,
+       "completedAtMs": 1794667491820
+      }
+     ],
+     "itemsView": "summary",
+     "status": "completed",
+     "error": null,
+     "startedAt": 1794667480,
+     "completedAt": 1794667491,
+     "durationMs": 11428
+    }
+   }
+  }
+ ],
+ "rollout": [
+  {
+   "timestamp": "2026-11-14T14:44:40.466Z",
+   "ordinal": 1,
+   "type": "event_msg",
+   "payload": {
+    "type": "task_started",
+    "turn_attribution": {
+     "turn_id": "turn",
+     "turn_trigger": null,
+     "parent_turn_id": null,
+     "initiating_agent_path": null,
+     "root_turn_id": "turn"
+    },
+    "turn_id": "turn",
+    "root_turn_id": "turn",
+    "started_at": 1794667480,
+    "model_context_window": 258400,
+    "collaboration_mode_kind": "default"
+   }
+  },
+  {
+   "timestamp": "2026-11-14T14:44:45.851Z",
+   "ordinal": 12,
+   "type": "response_item",
+   "payload": {
+    "type": "message",
+    "id": "msg_01a1da84-9a9b-77c2-922d-f3d776262002",
+    "role": "user",
+    "content": [
+     {
+      "type": "input_text",
+      "text": "Reply with exactly: ANSWER DONE. Use no tools."
+     }
+    ],
+    "internal_chat_message_metadata_passthrough": {
+     "turn_id": "turn",
+     "create_time": 1794667485.85158,
+     "content_item_kinds": [
+      "user.text"
+     ],
+     "content_item_metadata": [
+      {
+       "provenance": {
+        "type": "user"
+       }
+      }
+     ]
+    }
+   },
+   "metadata": {
+    "retained_source": {
+     "id": {
+      "message_id": "msg_01a1da84-9a9b-77c2-922d-f3d776262002",
+      "turn_id": "turn",
+      "role": "user"
+     },
+     "revision": "retained_01a1da84-9a9b-77c2-922d-f3f4c3f49035",
+     "complete": true
+    },
+    "client_authored": false,
+    "user_input_order": 0,
+    "mcp_attribution": {
+     "status": "none"
+    }
+   }
+  },
+  {
+   "timestamp": "2026-11-14T14:44:45.852Z",
+   "ordinal": 13,
+   "type": "event_msg",
+   "payload": {
+    "type": "item_completed",
+    "thread_id": "thread",
+    "turn_id": "turn",
+    "item": {
+     "type": "UserMessage",
+     "id": "01a1da84-9a9b-77c2-922d-f3eb527f9953",
+     "content": [
+      {
+       "type": "text",
+       "text": "Reply with exactly: ANSWER DONE. Use no tools.",
+       "text_elements": []
+      }
+     ]
+    },
+    "started_at_ms": 1794667485852,
+    "completed_at_ms": 1794667485852
+   }
+  },
+  {
+   "timestamp": "2026-11-14T14:44:47.201Z",
+   "ordinal": 15,
+   "type": "event_msg",
+   "payload": {
+    "type": "item_completed",
+    "thread_id": "thread",
+    "turn_id": "turn",
+    "item": {
+     "type": "AgentMessage",
+     "id": "msg_036257f41dd336be016af873def8a087d096649f8a3edbddc8",
+     "content": [
+      {
+       "type": "Text",
+       "text": "ANSWER DONE"
+      }
+     ],
+     "phase": "final_answer"
+    },
+    "started_at_ms": 1794667487130,
+    "completed_at_ms": 1794667487201
+   }
+  },
+  {
+   "timestamp": "2026-11-14T14:44:47.202Z",
+   "ordinal": 16,
+   "type": "response_item",
+   "payload": {
+    "type": "message",
+    "status": "completed",
+    "id": "msg_036257f41dd336be016af873def8a087d096649f8a3edbddc8",
+    "role": "assistant",
+    "content": [
+     {
+      "type": "output_text",
+      "text": "ANSWER DONE",
+      "annotations": [],
+      "logprobs": []
+     }
+    ],
+    "phase": "final_answer",
+    "internal_chat_message_metadata_passthrough": {
+     "turn_id": "turn",
+     "create_time": 1794667486.974067,
+     "content_item_kinds": [
+      "unknown"
+     ]
+    }
+   },
+   "metadata": {
+    "retained_source": {
+     "id": {
+      "message_id": "msg_036257f41dd336be016af873def8a087d096649f8a3edbddc8",
+      "turn_id": "turn",
+      "role": "assistant"
+     },
+     "revision": "retained_01a1da84-9fe2-7df1-98d9-4948db7d9256",
+     "complete": true
+    },
+    "client_authored": false,
+    "user_input_order": 1
+   }
+  },
+  {
+   "timestamp": "2026-11-14T14:44:47.506Z",
+   "ordinal": 19,
+   "type": "response_item",
+   "payload": {
+    "type": "message",
+    "id": "msg_01a1da84-a112-7661-b1f1-8a946f2dc5ee",
+    "role": "user",
+    "content": [
+     {
+      "type": "input_text",
+      "text": "<hook_prompt hook_run_id=\"stop:0:/&lt;session-flags&gt;/config.toml\">Now run: echo checked</hook_prompt>"
+     }
+    ],
+    "internal_chat_message_metadata_passthrough": {
+     "turn_id": "turn",
+     "create_time": 1794667487.50659,
+     "content_item_kinds": [
+      "unknown"
+     ],
+     "content_item_metadata": [
+      {
+       "provenance": {
+        "type": "harness",
+        "hook": true
+       }
+      }
+     ]
+    }
+   },
+   "metadata": {
+    "retained_source": {
+     "id": {
+      "message_id": "msg_01a1da84-a112-7661-b1f1-8a946f2dc5ee",
+      "turn_id": "turn",
+      "role": "user"
+     },
+     "revision": "retained_01a1da84-a112-7661-b1f1-8aa4d499d18d",
+     "complete": false
+    },
+    "client_authored": false,
+    "user_input_order": 2
+   }
+  },
+  {
+   "timestamp": "2026-11-14T14:44:47.507Z",
+   "ordinal": 20,
+   "type": "event_msg",
+   "payload": {
+    "type": "item_completed",
+    "thread_id": "thread",
+    "turn_id": "turn",
+    "item": {
+     "type": "HookPrompt",
+     "id": "msg_01a1da84-a112-7661-b1f1-8a946f2dc5ee",
+     "fragments": [
+      {
+       "text": "Now run: echo checked",
+       "hookRunId": "stop:0:/<session-flags>/config.toml"
+      }
+     ]
+    },
+    "started_at_ms": 1794667487507,
+    "completed_at_ms": 1794667487507
+   }
+  },
+  {
+   "timestamp": "2026-11-14T14:44:50.133Z",
+   "ordinal": 21,
+   "type": "event_msg",
+   "payload": {
+    "type": "item_completed",
+    "thread_id": "thread",
+    "turn_id": "turn",
+    "item": {
+     "type": "Reasoning",
+     "id": "rs_036257f41dd336be016af873e1f6d487d08ff24cf566c3aca7",
+     "summary_text": [],
+     "raw_content": []
+    },
+    "started_at_ms": 1794667490132,
+    "completed_at_ms": 1794667490133
+   }
+  },
+  {
+   "timestamp": "2026-11-14T14:44:50.138Z",
+   "ordinal": 22,
+   "type": "response_item",
+   "payload": {
+    "type": "reasoning",
+    "id": "rs_036257f41dd336be016af873e1f6d487d08ff24cf566c3aca7",
+    "summary": [],
+    "encrypted_content": "<redacted>",
+    "internal_chat_message_metadata_passthrough": {
+     "turn_id": "turn"
+    }
+   }
+  },
+  {
+   "timestamp": "2026-11-14T14:44:50.698Z",
+   "ordinal": 23,
+   "type": "response_item",
+   "payload": {
+    "type": "custom_tool_call",
+    "id": "ctc_036257f41dd336be016af873e2373c87d0ae8ae0fee30761c5",
+    "status": "completed",
+    "call_id": "call_f2f796dc8ba7433093b8f8860c8ee548",
+    "name": "exec",
+    "input": "const r = await tools.exec_command({cmd:\"echo checked\"});\ntext(r.output);\n",
+    "internal_chat_message_metadata_passthrough": {
+     "turn_id": "turn",
+     "create_time": 1794667490.2177153
+    }
+   }
+  },
+  {
+   "timestamp": "2026-11-14T14:44:50.850Z",
+   "ordinal": 25,
+   "type": "event_msg",
+   "payload": {
+    "type": "item_completed",
+    "thread_id": "thread",
+    "turn_id": "turn",
+    "item": {
+     "type": "CommandExecution",
+     "id": "exec-fd164ce6-9e1a-4ea8-b887-e84b01f30985",
+     "process_id": "24594",
+     "command": [
+      "/bin/zsh",
+      "-lc",
+      "echo checked"
+     ],
+     "cwd": "file:///vault",
+     "parsed_cmd": [
+      {
+       "type": "unknown",
+       "cmd": "echo checked"
+      }
+     ],
+     "source": "unified_exec_startup",
+     "status": "completed",
+     "aggregated_output": "checked\n",
+     "exit_code": 0,
+     "duration": {
+      "secs": 0,
+      "nanos": 6833
+     }
+    },
+    "started_at_ms": 1794667490850,
+    "completed_at_ms": 1794667490850
+   }
+  },
+  {
+   "timestamp": "2026-11-14T14:44:50.853Z",
+   "ordinal": 26,
+   "type": "response_item",
+   "payload": {
+    "type": "custom_tool_call_output",
+    "id": "ctco_01a1da84-ae25-78c0-b8df-15be23e7c6ff",
+    "call_id": "call_f2f796dc8ba7433093b8f8860c8ee548",
+    "output": [
+     {
+      "type": "input_text",
+      "text": "Script completed\nWall time 0.1 seconds\nOutput:\n"
+     },
+     {
+      "type": "input_text",
+      "text": "checked\n"
+     }
+    ],
+    "internal_chat_message_metadata_passthrough": {
+     "turn_id": "turn",
+     "create_time": 1794667490.853348
+    }
+   },
+   "metadata": {
+    "client_authored": false,
+    "fallback_token_limit_override": 12000
+   }
+  },
+  {
+   "timestamp": "2026-11-14T14:44:51.820Z",
+   "ordinal": 28,
+   "type": "event_msg",
+   "payload": {
+    "type": "item_completed",
+    "thread_id": "thread",
+    "turn_id": "turn",
+    "item": {
+     "type": "AgentMessage",
+     "id": "msg_036257f41dd336be016af873e3959887d0adaa6908e01f0890",
+     "content": [
+      {
+       "type": "Text",
+       "text": "checked"
+      }
+     ],
+     "phase": "final_answer"
+    },
+    "started_at_ms": 1794667491739,
+    "completed_at_ms": 1794667491820
+   }
+  },
+  {
+   "timestamp": "2026-11-14T14:44:51.822Z",
+   "ordinal": 29,
+   "type": "response_item",
+   "payload": {
+    "type": "message",
+    "status": "completed",
+    "id": "msg_036257f41dd336be016af873e3959887d0adaa6908e01f0890",
+    "role": "assistant",
+    "content": [
+     {
+      "type": "output_text",
+      "text": "checked",
+      "annotations": [],
+      "logprobs": []
+     }
+    ],
+    "phase": "final_answer",
+    "internal_chat_message_metadata_passthrough": {
+     "turn_id": "turn",
+     "create_time": 1794667491.5884724,
+     "content_item_kinds": [
+      "unknown"
+     ]
+    }
+   },
+   "metadata": {
+    "retained_source": {
+     "id": {
+      "message_id": "msg_036257f41dd336be016af873e3959887d0adaa6908e01f0890",
+      "turn_id": "turn",
+      "role": "assistant"
+     },
+     "revision": "retained_01a1da84-b1ee-78b1-a612-a29f2774a041",
+     "complete": true
+    },
+    "client_authored": false,
+    "user_input_order": 3
+   }
+  },
+  {
+   "timestamp": "2026-11-14T14:44:51.881Z",
+   "ordinal": 32,
+   "type": "event_msg",
+   "payload": {
+    "type": "task_complete",
+    "root_turn_id": "turn",
+    "turn_id": "turn",
+    "last_agent_message": "checked",
+    "started_at": 1794667480,
+    "completed_at": 1794667491,
+    "duration_ms": 11428,
+    "time_to_first_token_ms": 6678
+   }
+  }
+ ]
+}

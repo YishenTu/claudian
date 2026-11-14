@@ -67,7 +67,11 @@ export class ResponseFinalizer {
         const el = this.findMessageEl(message.id);
         if (!el) return [];
         const previousContent = el.querySelector<HTMLElement>('.claudian-message-content');
-        return previousContent === workContentEl ? Array.from(previousContent.children) as HTMLElement[] : [el];
+        const previousChildren = previousContent ? Array.from(previousContent.children) as HTMLElement[] : [];
+        // A Stop hook inside an earlier message splits the turn there, keeping that message's reply in place.
+        return previousContent === workContentEl
+          || (!interrupted && previousChildren.some(child => getResponseElementKind(child) === 'hook'))
+          ? previousChildren : [el];
       });
       const children = Array.from(contentEl.children) as HTMLElement[];
       // An interrupted turn has no answer; its partial text and indicator fold too.
@@ -88,17 +92,23 @@ export class ResponseFinalizer {
           this.#fold(msg, workContentEl, before, folded, appendInterruptLabel);
         }
       } else {
-        for (const segment of splitAtStopHooks([...earlierEls, ...children], msg.durationSeconds)) {
+        const segments = splitAtStopHooks([...earlierEls, ...children], msg.durationSeconds);
+        segments.forEach((segment, index) => {
           // A reply that ended the turn before a Stop hook stays visible, as the final answer does.
           const answers = segment.next ? trailingAnswers(segment.els) : answerEls;
           const folded = segment.els.filter(el => !answers.has(el));
-          if (folded.length === 0 && segment.durationSeconds === undefined) continue;
+          if (folded.length === 0 && segment.durationSeconds === undefined) return;
           this.#collapsedResponses.add(msgEl);
           const label = segment.durationSeconds === undefined ? t('chat.worked')
             : t('chat.zen.workedFor', { duration: formatWorkDuration(segment.durationSeconds) });
-          const parent = segment.hook?.parentElement ?? workContentEl;
-          this.#fold(msg, parent, segment.hook ? segment.hook.nextSibling : workContentEl.firstChild, folded, label);
-        }
+          // Work after a Stop hook folds right after it; the first segment's work folds before its reply,
+          // which can sit in an earlier message than the final answer.
+          const before = segment.hook ? segment.hook.nextSibling
+            : segments.length > 1 ? segment.els.find(el => answers.has(el)) ?? segments[1].hook! : workContentEl.firstChild;
+          const parent = segment.hook?.parentElement
+            ?? (segments.length > 1 && before ? before.parentElement! : workContentEl);
+          this.#fold(msg, parent, before, folded, label);
+        });
       }
     }
 

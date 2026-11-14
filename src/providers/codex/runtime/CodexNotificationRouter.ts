@@ -8,6 +8,7 @@ import {
 } from '@/providers/codex/normalization/codexToolNormalization';
 import {
   extractCodexUserVisibleText,
+  getCodexStopHookFeedback,
   joinCodexUserTextParts,
 } from '@/providers/codex/normalization/codexUserText';
 
@@ -71,6 +72,8 @@ export class CodexNotificationRouter {
   #seenWebSearchIds = new Set<string>();
   #planUpdateCounter = 0;
   #startedUserMessageIds = new Set<string>();
+  /** Completion recovery replays a turn's items; each hook prompt marks its boundary once. */
+  #hookPromptIds = new Set<string>();
   readonly #ledger = new CodexToolLedger();
   readonly #assistantText: CodexAssistantTextTracker;
   readonly #commands: CodexCommandCorrelator;
@@ -169,6 +172,7 @@ export class CodexNotificationRouter {
 
   #resetTurn(): void {
     this.#startedUserMessageIds.clear();
+    this.#hookPromptIds.clear();
     this.#ledger.clear();
     this.#assistantText.reset();
     this.#commands.reset();
@@ -375,6 +379,14 @@ export class CodexNotificationRouter {
       case 'contextCompaction':
         this.#emit({ type: 'context_compacted' });
         break;
+
+      case 'hookPrompt': {
+        if (this.#hookPromptIds.has(item.id)) break;
+        this.#hookPromptIds.add(item.id);
+        const feedback = getCodexStopHookFeedback(item.fragments);
+        if (feedback !== null) this.#emit({ type: 'stop_hook', content: feedback });
+        break;
+      }
 
       default:
         if (itemId && rawResult) {

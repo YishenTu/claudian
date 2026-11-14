@@ -9,6 +9,7 @@ import * as fsPromises from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join, normalize, posix, sep } from 'node:path';
 
+import stopHookPair from '@test/fixtures/providers/codex/stop-hook-pair.json';
 import pair from '@test/fixtures/providers/codex/turn-stats-pair.json';
 import { capturedSelectionPrompt, capturedSelections } from '@test/helpers/capturedSelections';
 import { createFixture } from '@test/helpers/ChatInputHarness';
@@ -989,6 +990,25 @@ describe('CodexExecutionBackend', () => {
       expect(completion).toMatchObject({ type: 'turn_completed', turnStats: { outputTokens: 5, durationMs: 4862 } });
       expect(replay.at(-1)?.turnStats).toEqual({ outputTokens: 5, durationMs: 4862 });
       expect(completion).toMatchObject({ turnStats: replay.at(-1)?.turnStats });
+    } finally {
+      await session.dispose();
+    }
+  });
+
+  // Captured from Codex 0.167.2: a Stop hook blocked the turn's first end with "Now run: echo checked".
+  it('marks a blocking Stop hook between its turn\'s replies, live and in the rollout', async () => {
+    configureNativeTurn('thread', 'turn', () => ({}));
+    const { session, runEvents } = await createActiveSteerSession();
+    try {
+      for (const notification of stopHookPair.notifications) emitNotification(notification.method, notification.params);
+      const live = (await runEvents).flatMap(event => event.type === 'text_delta' ? ['text']
+        : event.type === 'stop_hook' ? [`stop_hook:${event.content}`] : event.type === 'tool_started' ? ['tool'] : []);
+      expect(live.filter((item, index) => item !== live[index - 1])).toEqual(['text', 'stop_hook:Now run: echo checked', 'tool', 'text']);
+
+      const replay = parseCodexSessionContent(stopHookPair.rollout.map(record => JSON.stringify(record)).join('\n'));
+      expect(replay.map(message => message.role)).toEqual(['user', 'assistant']);
+      expect(replay[1].contentBlocks?.map(block => block.type === 'stop_hook' ? `stop_hook:${block.content}` : block.type))
+        .toEqual(['text', 'stop_hook:Now run: echo checked', 'tool_use', 'text']);
     } finally {
       await session.dispose();
     }

@@ -127,6 +127,80 @@ it.each([
   expect(inspect(messagesEl)).toEqual(live);
 });
 
+// Codex 0.167.2 (probed) starts a new assistant message for each answer item, so a blocking Stop hook's
+// boundary sits in an earlier message of the turn than its final answer; its rollout keeps one response.
+it('keeps the reply a Stop hook sent back visible across assistant messages, live, on rerender and on Codex reload', async () => {
+  const messagesEl = document.body.createDiv();
+  const session = createTestSession();
+  const state = new ChatState({}, undefined, session.turns);
+  const plugin = await createChatFeatureHost({ settings: { mediaFolder: '' } });
+  const renderer = new MessageRenderer(plugin, new Component(), messagesEl);
+  const subagents = new SubagentManager(() => undefined);
+  const streamController = new StreamController({ plugin, state, renderer, subagentManager: subagents,
+    getMessagesEl: () => messagesEl, updateQueueIndicator: () => undefined });
+  cleanups.push(() => { streamController.dispose(); subagents.clear(); renderer.dispose(); });
+  const fixture = await createFixture({ session, state, renderer, streamController, getMessagesEl: () => messagesEl,
+    getTabProviderId: () => 'codex' });
+  const response = fixture.holdNextResponse();
+  const sending = fixture.controller.sendMessage({ content: 'Read the note' });
+  const run = await response.started;
+  const tool = (id: string, name: string, input: Record<string, unknown>, content: string) => [
+    { type: 'tool_started' as const, toolCallId: id, toolScope: { kind: 'main' as const }, name, input },
+    { type: 'tool_completed' as const, toolCallId: id, toolScope: { kind: 'main' as const }, content },
+  ];
+  for (const event of [
+    boundary, text('Let me check.'), ...tool('read', 'Read', { file_path: 'note.md' }, 'The note.'),
+    boundary, text('Long answer.'), { type: 'stop_hook' as const, content: 'Now run: echo checked' },
+    ...tool('bash', 'Bash', { command: 'echo checked' }, 'checked'),
+    boundary, text('Follow-up.'),
+  ]) await fixture.emit(run, event);
+  run.complete();
+  await sending;
+  await Promise.resolve();
+
+  /** What a reader sees with every fold collapsed, then each fold's body in transcript order. */
+  const inspectFolds = () => {
+    const headers = within(messagesEl).queryAllByRole('button', { name: /^Worked/ });
+    const folds = headers.map(header => {
+      fireEvent.click(header);
+      const body = visibleText(document.getElementById(header.getAttribute('aria-controls')!)!);
+      fireEvent.click(header);
+      return body;
+    });
+    return { collapsed: Array.from(messagesEl.querySelectorAll<HTMLElement>('.claudian-message'), visibleText).filter(Boolean).join(' ')
+      .replace(/Worked for \d\d:\d\d/g, 'Worked'), folds };
+  };
+  const expected = {
+    collapsed: 'Read the note Worked Long answer. Stop hook Now run: echo checked Worked Follow-up.',
+    folds: [expect.stringMatching(/^Let me check\. Read/), expect.stringMatching(/^Bash/)],
+  };
+  expect(inspectFolds()).toEqual(expected);
+
+  renderer.renderMessages(state.messages, () => 'Welcome');
+  await Promise.resolve();
+  expect(inspectFolds()).toEqual(expected);
+
+  const message = (role: string, value: string) => ({ type: 'response_item', payload: { type: 'message', role,
+    content: [{ type: role === 'user' ? 'input_text' : 'output_text', text: value }] } });
+  renderer.renderMessages(parseCodexSessionContent([
+    { type: 'event_msg', payload: { type: 'task_started', turn_id: 'turn' } },
+    message('user', 'Read the note'),
+    message('assistant', 'Let me check.'),
+    { type: 'response_item', payload: { type: 'function_call', name: 'read_file', call_id: 'read', arguments: '{"file_path":"note.md"}' } },
+    { type: 'response_item', payload: { type: 'function_call_output', call_id: 'read', output: 'The note.' } },
+    message('assistant', 'Long answer.'),
+    message('user', '<hook_prompt hook_run_id="stop:0:/hooks.json">Now run: echo checked</hook_prompt>'),
+    { type: 'event_msg', payload: { type: 'item_completed', turn_id: 'turn', item: { type: 'HookPrompt', id: 'hook',
+      fragments: [{ text: 'Now run: echo checked', hookRunId: 'stop:0:/hooks.json' }] } } },
+    { type: 'response_item', payload: { type: 'function_call', name: 'exec_command', call_id: 'bash', arguments: '{"cmd":"echo checked"}' } },
+    { type: 'response_item', payload: { type: 'function_call_output', call_id: 'bash', output: 'checked' } },
+    message('assistant', 'Follow-up.'),
+    { type: 'event_msg', payload: { type: 'task_complete', turn_id: 'turn' } },
+  ].map((record, seconds) => JSON.stringify({ timestamp: testTime({ seconds }), ...record })).join('\n')), () => 'Welcome');
+  await Promise.resolve();
+  expect(inspectFolds()).toEqual({ ...expected, folds: [expect.stringMatching(/^Let me check\./), expect.stringMatching(/checked/)] });
+});
+
 // A notification the turn received before any output ends it, whatever blank output followed.
 it.each([
   ['nothing after it', [], 'Task notification'],
