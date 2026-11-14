@@ -328,9 +328,10 @@ function inspectFolds(root: HTMLElement) {
   return { collapsed: Array.from(root.querySelectorAll<HTMLElement>('.claudian-message'), visibleText).filter(Boolean).join(' '), folds };
 }
 
-it('keeps the reply a Stop hook sent back visible and folds each stretch of work in order, live and on reload', async () => {
+// A task notification the turn received between the reply and its Stop hook stays where it arrived.
+it.each([false, true])('keeps the reply a Stop hook sent back visible and folds each stretch of work in order, live and on reload (notification before the hook: %s)', async notifiedBeforeHook => {
   const expectedView = {
-    collapsed: `Explain X Worked for 00:04 Long answer. Stop hook ${HOOK} Worked for 00:06 Follow-up.`,
+    collapsed: `Explain X Worked for 00:04 Long answer.${notifiedBeforeHook ? ' Task notification' : ''} Stop hook ${HOOK} Worked for 00:06 Follow-up.`,
     folds: [
       { header: 'Worked for 00:04', body: expect.stringMatching(/^Let me check\. Read/) },
       { header: 'Worked for 00:06', body: expect.stringMatching(/^Bash/) },
@@ -359,8 +360,12 @@ it('keeps the reply a Stop hook sent back visible and folds each stretch of work
   state.responseStartTime = 0;
   const normalizer = new ClaudeExecutionEventNormalizer();
   let sequence = 0;
+  const scope = () => ({ kind: 'requested' as const, sessionInstanceId: 'native', executionId: 'execution', turnId: 'turn', sequence: ++sequence });
   for (const step of STOP_HOOK_TURN) {
     now.mockReturnValue(step.at * 1_000);
+    if (notifiedBeforeHook && 'isSynthetic' in step.live) {
+      await response.handleEvent({ type: 'task_notification', content: 'Job finished.', scope: scope() });
+    }
     for (const normalized of normalizer.normalize(buildSDKMessage(step.live as never), 'requested')) {
       if (normalized.type !== 'output') continue;
       await response.handleEvent({ ...normalized.event, scope: { kind: 'requested', sessionInstanceId: 'native',
@@ -377,6 +382,11 @@ it('keeps the reply a Stop hook sent back visible and folds each stretch of work
   Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: vi.fn().mockResolvedValue(undefined) } });
   fireEvent.click(within(answer).getByRole('button', { name: 'Copy message' }));
   expect(navigator.clipboard.writeText).toHaveBeenCalledWith('Long answer.\n\nFollow-up.');
+  renderer.renderMessages(state.messages, () => 'Welcome');
+  await Promise.resolve();
+  expect(inspectFolds(messagesEl)).toEqual(expectedView);
+  // Claude takes a notification in at its next model call, after the hook's feedback.
+  if (notifiedBeforeHook) return;
 
   // Reload: the same turn as Claude Code's transcript records it.
   const at = (seconds: number) => new Date(testDate().getTime() + seconds * 1_000).toISOString();

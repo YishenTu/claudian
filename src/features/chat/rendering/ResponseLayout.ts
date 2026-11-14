@@ -82,6 +82,8 @@ function getStopHookAnswers(blocks: readonly ContentBlock[]): string[] {
   return blocks.flatMap((block, index) => {
     if (block.type !== 'stop_hook') return [];
     let start = index;
+    // A task notification that arrived after the reply does not end it.
+    while (start > 0 && blocks[start - 1].type === 'task_notification') start--;
     while (start > 0 && isAnswerBlock(blocks[start - 1])) start--;
     const text = joinText(blocks.slice(start, index));
     return text.trim() ? [text] : [];

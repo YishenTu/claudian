@@ -166,11 +166,16 @@ function isAnswerElement(element: HTMLElement): boolean {
   return kind === 'text' || kind === 'citations';
 }
 
-/** The text run ending a segment: the reply that ended the turn there. */
+/**
+ * The text run ending a segment: the reply that ended the turn there. A task notification
+ * that arrived after the reply stays visible with it, where it arrived.
+ */
 function trailingAnswers(elements: readonly HTMLElement[]): Set<HTMLElement> {
   let start = elements.length;
+  while (start > 0 && getResponseElementKind(elements[start - 1]) === 'notification') start--;
+  const notificationsStart = start;
   while (start > 0 && isAnswerElement(elements[start - 1])) start--;
-  return new Set(elements.slice(start));
+  return new Set(elements.slice(start === notificationsStart ? elements.length : start));
 }
 
 interface WorkSegment {
