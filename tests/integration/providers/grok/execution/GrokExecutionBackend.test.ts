@@ -4,6 +4,7 @@ import * as path from 'node:path';
 
 import askUserQuestion from '@test/fixtures/providers/grok/extensions/ask-user-question.json';
 import compactCompleted from '@test/fixtures/providers/grok/runtime/compaction-completed.json';
+import stopHookBlocked from '@test/fixtures/providers/grok/runtime/stop-hook-blocked.json';
 import turnCompleted from '@test/fixtures/providers/grok/runtime/turn-completed.json';
 import { capturedSelectionPrompt, capturedSelections } from '@test/helpers/capturedSelections';
 import { createProviderHostFixture } from '@test/helpers/providerRuntimeHost';
@@ -312,6 +313,40 @@ it.each(['notification', 'session notification', 'response', 'metadata'] as cons
     }
   },
 );
+
+// Grok 1.0.77 (probed) reports a blocking Stop hook live as a `hook_execution` session notification,
+// then continues the same prompt; the session-end Stop fire carries no prompt id.
+it('marks a blocking Stop hook between the reply it sent back and the continued answer', async () => {
+  const blocked = stopHookBlocked.params.update;
+  const native = new GrokNativeProcess();
+  native.promptImplementation = async () => {
+    native.emit({ sessionUpdate: 'model_changed', model_id: 'grok-4.5', reasoning_effort: 'high' }, 'notification');
+    native.emit({ content: { text: 'ANSWER DONE.', type: 'text' }, sessionUpdate: 'agent_message_chunk' });
+    native.emit({ sessionUpdate: 'response_completed', usage: { input_tokens: 13766, output_tokens: 20 } }, 'notification');
+    native.emit({ sessionUpdate: 'hook_run_started', event_name: 'stop', prompt_id: blocked.prompt_id, count: 1 }, 'notification');
+    native.emit(blocked, 'notification');
+    native.emit({ sessionUpdate: 'hook_annotation', message: '↩ Stop blocked by project/stop, continuing: Now run: echo checked' }, 'notification');
+    native.emit({ content: { text: 'checked', type: 'text' }, sessionUpdate: 'agent_message_chunk' });
+    native.emit({ ...blocked, runs: [{ name: blocked.runs[0].name, status: { status: 'success', elapsed_ms: 31 } }] }, 'notification');
+    const { prompt_id: _promptId, ...shutdownFire } = blocked;
+    native.emit(shutdownFire, 'notification');
+    return { stopReason: 'end_turn' };
+  };
+  const session = createBackend(await createGrokHost(), {
+    processFactory: { create: () => native },
+  }).createSession(sessionConfig);
+  try {
+    const events = await collect(session.execute(executionRequest()).events);
+    expect(events.flatMap(event => event.type === 'text_delta' ? [`text:${event.text}`]
+      : event.type === 'stop_hook' ? [`stop_hook:${event.content}`] : [])).toEqual([
+      'text:ANSWER DONE.', 'stop_hook:Now run: echo checked', 'text:checked',
+    ]);
+    // Grok's other extension updates carry nothing Claudian shows.
+    expect(events.filter(event => event.type === 'notice')).toEqual([]);
+  } finally {
+    await session.dispose();
+  }
+});
 
 it('loads the fixed native session, configures model/mode, and streams correlated ACP output', async () => {
   const native = new GrokNativeProcess();

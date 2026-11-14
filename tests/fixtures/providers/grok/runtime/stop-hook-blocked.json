@@ -1,0 +1,22 @@
+{
+  "method": "_x.ai/session_notification",
+  "params": {
+    "sessionId": "session-fixture",
+    "update": {
+      "sessionUpdate": "hook_execution",
+      "event_name": "stop",
+      "prompt_id": "prompt-fixture",
+      "runs": [
+        {
+          "name": "project/stop:stop[0].hooks[0]",
+          "status": {
+            "status": "failed",
+            "error": "blocked stop: Now run: echo checked",
+            "elapsed_ms": 367,
+            "blocked": true
+          }
+        }
+      ]
+    }
+  }
+}

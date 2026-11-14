@@ -18,6 +18,7 @@ import type {
   ToolResultDetails,
 } from '../../../core/types';
 import { mapGrokNativePaths } from '../normalization/grokNativePaths';
+import { getGrokStopHookFeedback } from '../normalization/grokStopHook';
 import {
   buildGrokToolProviderPayload,
   type GrokRawToolNameResolution,
@@ -167,6 +168,15 @@ export function createGrokHistoryParser(
           promptIndex: nextFallbackPromptIndex,
         });
         turnIndex += 1;
+      }
+      return;
+    }
+    const stopHookFeedback = getGrokStopHookFeedback(update);
+    if (stopHookFeedback !== null) {
+      if (pending) {
+        const elapsedMs = normalizeTimestamp(record.timestamp) - pending.startedAt;
+        pending.blocks.push({ type: 'stop_hook', content: stopHookFeedback,
+          ...(pending.startedAt > 0 && elapsedMs >= 0 ? { elapsedSeconds: Math.floor(elapsedMs / 1_000) } : {}) });
       }
       return;
     }

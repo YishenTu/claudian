@@ -66,6 +66,7 @@ import {
   normalizeGrokDiscoveredModels,
 } from '../models';
 import { mapGrokNativePaths } from '../normalization/grokNativePaths';
+import { getGrokStopHookFeedback } from '../normalization/grokStopHook';
 import {
   buildGrokToolProviderPayload,
   normalizeGrokToolInput,
@@ -790,6 +791,15 @@ RewindableExecutionSession {
       if (active.turn.acceptingLiveOutput) {
         active.turn.accept();
         active.run.emit({ type: 'context_compacted' });
+      }
+      return;
+    }
+    const stopHookFeedback = getGrokStopHookFeedback(notification.update);
+    if (stopHookFeedback !== null) {
+      // A blocking Stop hook continues the same prompt: the reply before it ended the turn there.
+      if (active.turn.acceptingLiveOutput) {
+        active.turn.accept();
+        active.run.emit({ type: 'stop_hook', content: stopHookFeedback });
       }
       return;
     }
