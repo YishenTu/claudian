@@ -267,4 +267,26 @@ describe('Claude panel model discovery', () => {
     expect(getClaudeModelOptions(getClaudeModelSource(settings))[0].label).toBe('SDK Sonnet');
     await catalog.dispose();
   });
+
+  it('enables every discovered model including older versions, and resets to the latest tiers', async () => {
+    const { settings, host } = await setup();
+    const probe = vi.fn().mockResolvedValue([
+      { value: 'opus', label: 'Opus', description: '' },
+      { value: 'sonnet', label: 'Sonnet', description: '' },
+      { value: 'haiku', label: 'Haiku', description: '' },
+      { value: 'fable', label: 'Fable', description: '' },
+      { value: 'claude-opus-4-6', label: 'Opus 4.6', description: '' },
+    ]);
+    const catalog = catalogFor(host, probe);
+    await catalog.refresh({ force: true });
+
+    expect(catalog.getSnapshot().defaultSelectedIds).toEqual(['haiku', 'sonnet', 'opus', 'fable']);
+
+    await catalog.changeSelection({ type: 'enableAll' });
+    expect(getClaudeProviderSettings(settings).visibleModels).toContain('claude-opus-4-6');
+
+    await catalog.changeSelection({ type: 'reset' });
+    expect(getClaudeProviderSettings(settings).visibleModels).toEqual(['haiku', 'sonnet', 'opus', 'fable']);
+    await catalog.dispose();
+  });
 });

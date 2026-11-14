@@ -437,3 +437,43 @@
   color: var(--text-muted);
   font-size: var(--font-ui-small);
 }
+
+/* Bulk enablement actions (enable all discovered / reset to latest) */
+.claudian-provider-model-picker-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 4px 0 10px;
+}
+
+.claudian-provider-model-picker-actions.claudian-hidden {
+  display: none;
+}
+
+.claudian-provider-model-picker-action-enable-all,
+.claudian-provider-model-picker-action-reset {
+  padding: 2px 10px;
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+  background: transparent;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 4px;
+  cursor: pointer;
+  box-shadow: none;
+}
+
+.claudian-provider-model-picker-action-enable-all:hover:not(:disabled),
+.claudian-provider-model-picker-action-reset:hover:not(:disabled) {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+
+.claudian-provider-model-picker-action-enable-all:disabled,
+.claudian-provider-model-picker-action-reset:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.claudian-provider-model-picker-action-reset.claudian-hidden {
+  display: none;
+}
