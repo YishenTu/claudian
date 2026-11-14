@@ -85,6 +85,7 @@ export function adaptCodexStreamChunk(chunk: StreamChunk): RequestedRunEvent | n
     case 'error':
     case 'done':
     case 'task_notification':
+    case 'stop_hook':
       return null;
   }
 }

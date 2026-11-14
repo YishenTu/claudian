@@ -51,7 +51,8 @@ export type ClaudeOutputChunk =
       | 'tool_use'
       | 'subagent_tool_use'
       | 'usage'
-      | 'context_compacted';
+      | 'context_compacted'
+      | 'stop_hook';
   }>
   | ClaudeToolResultChunk;
 

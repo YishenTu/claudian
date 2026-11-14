@@ -109,6 +109,7 @@ function isVisibleAutoTurnChunk(chunk: StreamChunk, hiddenToolIds: Set<string>):
     case 'error':
     case 'tool_output':
     case 'context_compacted':
+    case 'stop_hook':
     case 'task_notification':
     case 'subagent_tool_use':
     case 'subagent_tool_result':

@@ -1,10 +1,11 @@
-import type { ChatMessage } from '@/core/types';
+import type { ChatMessage, ContentBlock } from '@/core/types';
 import { getResponseSegments } from '@/features/chat/rendering/NotificationBoundaries';
 import { t } from '@/i18n/i18n';
 
 /** Semantic roles survive streaming updates and DOM reparenting without depending on CSS. */
-type ResponseElementKind = 'text' | 'citations' | 'notification' | 'interrupt' | 'work';
+type ResponseElementKind = 'text' | 'citations' | 'notification' | 'interrupt' | 'hook' | 'work';
 const elementKinds = new WeakMap<HTMLElement, ResponseElementKind>();
+const stopHookElapsed = new WeakMap<HTMLElement, number>();
 
 export function markResponseElement<T extends HTMLElement>(element: T, kind: ResponseElementKind): T {
   elementKinds.set(element, kind);
@@ -17,6 +18,23 @@ export function getResponseElementKind(element: HTMLElement): ResponseElementKin
 
 export function createResponseTextBlock(parent: HTMLElement): HTMLElement {
   return markResponseElement(parent.createDiv({ cls: 'claudian-text-block' }), 'text');
+}
+
+/**
+ * A Stop hook's feedback, shown between the reply it sent back and the work after it.
+ * Hook output is plain text, never Markdown.
+ */
+export function renderStopHook(parent: HTMLElement, content: string, elapsedSeconds?: number): HTMLElement {
+  const element = markResponseElement(parent.createDiv({ cls: 'claudian-stop-hook' }), 'hook');
+  element.createDiv({ cls: 'claudian-stop-hook-label', text: t('chat.stopHook') });
+  if (content) element.createDiv({ cls: 'claudian-stop-hook-content', text: content });
+  if (elapsedSeconds !== undefined) stopHookElapsed.set(element, elapsedSeconds);
+  return element;
+}
+
+/** The turn time at a rendered Stop hook, when known. */
+export function getStopHookElapsedSeconds(element: HTMLElement): number | undefined {
+  return stopHookElapsed.get(element);
 }
 
 /** The interrupt indicator's text, shared by its plain line and the interrupted turn's disclosure header. */
@@ -42,19 +60,43 @@ export function getAutomaticNotificationPredecessor(message: ChatMessage, messag
   return isStandaloneTaskNotification(previous) ? previous : undefined;
 }
 
+function isAnswerBlock(block: ContentBlock): boolean {
+  return block.type === 'text' || block.type === 'citations';
+}
+
+function joinText(blocks: readonly ContentBlock[]): string {
+  return blocks.flatMap(block => block.type === 'text' ? [block.content] : []).join('\n\n');
+}
+
 function getResponseBlocks(message: ChatMessage) {
   const blocks = message.contentBlocks?.length
     ? message.contentBlocks : [{ type: 'text' as const, content: message.content }];
   let finalStart = blocks.length;
-  while (finalStart > 0 && ['text', 'citations'].includes(blocks[finalStart - 1].type)) finalStart--;
+  while (finalStart > 0 && isAnswerBlock(blocks[finalStart - 1])) finalStart--;
   const finalBlocks = blocks.slice(finalStart);
-  const finalText = finalBlocks.flatMap(block => block.type === 'text' ? [block.content] : []).join('\n\n');
-  return { blocks, finalBlocks, finalText };
+  return { blocks, finalBlocks, finalText: joinText(finalBlocks) };
 }
 
-/** The final answer: the response's trailing text, after its work. */
+/** Each reply that ended the turn before a Stop hook sent it back: the text right before the hook. */
+function getStopHookAnswers(blocks: readonly ContentBlock[]): string[] {
+  return blocks.flatMap((block, index) => {
+    if (block.type !== 'stop_hook') return [];
+    let start = index;
+    while (start > 0 && isAnswerBlock(blocks[start - 1])) start--;
+    const text = joinText(blocks.slice(start, index));
+    return text.trim() ? [text] : [];
+  });
+}
+
+/** The answer: every reply that ended the turn, in order, each after its work. */
+function joinAnswers(blocks: readonly ContentBlock[], finalText: string): string {
+  return [...getStopHookAnswers(blocks), finalText].filter(text => text.trim()).join('\n\n');
+}
+
+/** The final answer: the response's trailing text, after its work, with any reply a Stop hook sent back before it. */
 export function getFinalResponseText(message: ChatMessage): string {
-  return getResponseBlocks(message).finalText;
+  const { blocks, finalText } = getResponseBlocks(message);
+  return joinAnswers(blocks, finalText);
 }
 
 /** The mm:ss duration of a finished response's work. */
@@ -175,8 +217,9 @@ export function getResponseLayout(message: ChatMessage, messages: ChatMessage[],
     automaticTurn = !turn.prompted;
     earlierMessages = turn.messages.slice(0, -1);
   }
+  const turnBlocks = [...earlierMessages.flatMap(item => item.contentBlocks ?? []), ...blocks];
   return {
-    blocks, finalText, canCollapse, interrupted, automaticTurn, notificationPredecessor, automaticNotification,
+    blocks, finalText, answer: joinAnswers(turnBlocks, finalText), canCollapse, interrupted, automaticTurn, notificationPredecessor, automaticNotification,
     earlierMessages, hasContinuation: interrupted ? earlierMessages.length > 0 : hasContinuation,
     finalBlockCount: finalBlocks.filter(block => block.type === 'citations'
       || (block.type === 'text' && block.content.trim())).length,

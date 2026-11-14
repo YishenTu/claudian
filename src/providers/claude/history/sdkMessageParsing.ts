@@ -18,7 +18,11 @@ import type {
 } from '../../../core/types';
 import { normalizeClaudeSessionToolName } from '../normalization/claudeSessionToolNames';
 import { extractXMLTag, parseClaudeTaskNotification } from '../normalization/claudeTaskNotification';
-import { extractClaudeTextContent, isClaudeNoContentPlaceholder } from '../normalization/claudeTextContent';
+import {
+  extractClaudeTextContent,
+  isClaudeNoContentPlaceholder,
+  parseClaudeStopHookFeedback,
+} from '../normalization/claudeTextContent';
 import { normalizeClaudeToolResultDetails } from '../normalization/claudeToolResultDetails';
 import type {
   AsyncSubagentResult,
@@ -337,10 +341,9 @@ export function isCanonicalSDKUserMessage(record: SDKNativeMessage): boolean {
   return !isInterruptSignalText(text) && !isRebuiltContextContent(text);
 }
 
-/** A blocking Stop hook's feedback, after which the same native turn continues. */
-export function isStopHookFeedback(sdkMsg: SDKNativeMessage): boolean {
-  return sdkMsg.type === 'user' && sdkMsg.isMeta === true
-    && extractClaudeTextContent(sdkMsg.message?.content)?.startsWith('Stop hook feedback:') === true;
+/** A blocking Stop hook's feedback, after which the same native turn continues; null for any other record. */
+export function getStopHookFeedback(sdkMsg: SDKNativeMessage): string | null {
+  return sdkMsg.type === 'user' && sdkMsg.isMeta === true ? parseClaudeStopHookFeedback(sdkMsg.message?.content) : null;
 }
 
 export function isSystemInjectedMessage(sdkMsg: SDKNativeMessage): boolean {

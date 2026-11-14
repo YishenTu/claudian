@@ -69,6 +69,8 @@ export function providerOutputEventToStreamChunk(
       return { type: 'context_compacted' };
     case 'task_notification':
       return { type: 'task_notification', content: event.content };
+    case 'stop_hook':
+      return { type: 'stop_hook', content: event.content };
     case 'notice':
       return {
         content: event.message,

@@ -688,6 +688,24 @@ button.claudian-work-header:disabled {
   white-space: nowrap;
 }
 
+/* A Stop hook's feedback sits between the reply it sent back and the work after it. */
+.claudian-stop-hook {
+  margin: 10px 0;
+  padding: 4px 0 4px 10px;
+  border-left: 2px solid var(--background-modifier-border);
+  color: var(--text-muted);
+  font-size: calc(12 * var(--claudian-font-px));
+}
+
+.claudian-stop-hook-label {
+  font-weight: var(--font-semibold);
+}
+
+.claudian-stop-hook-content {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 .claudian-earlier-messages {
   display: flex;
   justify-content: center;

@@ -5,6 +5,7 @@ import {
   formatWorkDuration,
   getResponseElementKind,
   getResponseLayout,
+  getStopHookElapsedSeconds,
   markResponseElement,
 } from '@/features/chat/rendering/ResponseLayout';
 import { t } from '@/i18n/i18n';
@@ -40,7 +41,7 @@ export class ResponseFinalizer {
   ): { answer: string | null } | null {
     if (this.#collapsedResponses.has(msgEl)) return null;
 
-    const { blocks, finalText, canCollapse, interrupted, automaticTurn, notificationPredecessor,
+    const { blocks, answer, canCollapse, interrupted, automaticTurn, notificationPredecessor,
       automaticNotification, earlierMessages, hasContinuation, finalBlockCount } = getResponseLayout(msg, messages, collapse, index);
     const precedingNotificationHistory = notificationPredecessor
       ? this.findMessageEl(notificationPredecessor.id)?.querySelector<HTMLElement>(
@@ -70,42 +71,58 @@ export class ResponseFinalizer {
       });
       const children = Array.from(contentEl.children) as HTMLElement[];
       // An interrupted turn has no answer; its partial text and indicator fold too.
-      const textEls = interrupted ? [] : children.filter(child => getResponseElementKind(child) === 'text'
-        || getResponseElementKind(child) === 'citations');
+      const textEls = interrupted ? [] : children.filter(child => isAnswerElement(child));
       const answerEls = new Set(textEls.slice(-finalBlockCount));
-      // Fallback tool calls can follow the answer in the DOM without belonging to the answer.
-      let folded = [...earlierEls, ...children.filter(child => !answerEls.has(child))];
-      // An automatic turn's triggering notification stays outside its fold, like a prompt.
-      if (automaticTurn) {
-        const trigger = folded.findIndex(el => el.parentElement !== workContentEl || getResponseElementKind(el) !== 'notification');
-        folded = folded.slice(trigger < 0 ? folded.length : trigger);
-      }
-      // A lone indicator stays visible, as a replayed marker without output does.
-      const hasWork = interrupted
-        ? folded.some(el => getResponseElementKind(el) !== 'interrupt')
-        : folded.length > 0 || msg.durationSeconds !== undefined;
-      if (hasWork) {
-        this.#collapsedResponses.add(msgEl);
-        const wrapper = workContentEl.createDiv({
-          cls: 'claudian-work', attr: { 'data-work-message-id': msg.id },
-        });
-        workContentEl.insertBefore(wrapper, automaticTurn
-          ? folded.find(el => el.parentElement === workContentEl) ?? null : workContentEl.firstChild);
-        // An interrupted turn's header is its interrupt indicator, which the body no longer repeats.
-        const label = interrupted ? appendInterruptLabel
-          : msg.durationSeconds === undefined ? t('chat.worked')
-            : t('chat.zen.workedFor', { duration: formatWorkDuration(msg.durationSeconds) });
-        const history = this.#createDisclosure(wrapper, 'claudian-work-history', label);
-        for (const el of folded) {
-          if (getResponseElementKind(el) === 'interrupt') el.remove();
-          else history.appendChild(el);
+      if (interrupted) {
+        // Fallback tool calls can follow the answer in the DOM without belonging to the answer.
+        let folded = [...earlierEls, ...children.filter(child => !answerEls.has(child))];
+        // An automatic turn's triggering notification stays outside its fold, like a prompt.
+        if (automaticTurn) {
+          const trigger = folded.findIndex(el => el.parentElement !== workContentEl || getResponseElementKind(el) !== 'notification');
+          folded = folded.slice(trigger < 0 ? folded.length : trigger);
+        }
+        // A lone indicator stays visible, as a replayed marker without output does.
+        if (folded.some(el => getResponseElementKind(el) !== 'interrupt')) {
+          this.#collapsedResponses.add(msgEl);
+          const before = automaticTurn ? folded.find(el => el.parentElement === workContentEl) ?? null : workContentEl.firstChild;
+          this.#fold(msg, workContentEl, before, folded, appendInterruptLabel);
+        }
+      } else {
+        for (const segment of splitAtStopHooks([...earlierEls, ...children], msg.durationSeconds)) {
+          // A reply that ended the turn before a Stop hook stays visible, as the final answer does.
+          const answers = segment.next ? trailingAnswers(segment.els) : answerEls;
+          const folded = segment.els.filter(el => !answers.has(el));
+          if (folded.length === 0 && segment.durationSeconds === undefined) continue;
+          this.#collapsedResponses.add(msgEl);
+          const label = segment.durationSeconds === undefined ? t('chat.worked')
+            : t('chat.zen.workedFor', { duration: formatWorkDuration(segment.durationSeconds) });
+          const parent = segment.hook?.parentElement ?? workContentEl;
+          this.#fold(msg, parent, segment.hook ? segment.hook.nextSibling : workContentEl.firstChild, folded, label);
         }
       }
     }
 
     if (interrupted) return { answer: null };
-    return { answer: canCollapse ? finalText
+    return { answer: canCollapse ? answer
       : blocks.filter(block => block.type === 'text').map(block => block.content).join('\n\n') || msg.content };
+  }
+
+  /** Moves elements into a collapsed disclosure placed before `before` in `parent`. */
+  #fold(
+    msg: ChatMessage,
+    parent: HTMLElement,
+    before: Node | null,
+    folded: readonly HTMLElement[],
+    label: string | ((header: HTMLElement) => void),
+  ): void {
+    const wrapper = parent.createDiv({ cls: 'claudian-work', attr: { 'data-work-message-id': msg.id } });
+    parent.insertBefore(wrapper, before);
+    const history = this.#createDisclosure(wrapper, 'claudian-work-history', label);
+    for (const el of folded) {
+      // An interrupted turn's header is its interrupt indicator, which the body no longer repeats.
+      if (getResponseElementKind(el) === 'interrupt') el.remove();
+      else history.appendChild(el);
+    }
   }
 
   /** A collapsed notification whose Markdown renders on first expansion. */
@@ -132,4 +149,51 @@ export class ResponseFinalizer {
     setupDisclosureButton(header, history, { onFirstExpand });
     return history;
   }
+}
+
+function isAnswerElement(element: HTMLElement): boolean {
+  const kind = getResponseElementKind(element);
+  return kind === 'text' || kind === 'citations';
+}
+
+/** The text run ending a segment: the reply that ended the turn there. */
+function trailingAnswers(elements: readonly HTMLElement[]): Set<HTMLElement> {
+  let start = elements.length;
+  while (start > 0 && isAnswerElement(elements[start - 1])) start--;
+  return new Set(elements.slice(start));
+}
+
+interface WorkSegment {
+  /** The Stop hook this segment's work followed; absent for the first segment. */
+  readonly hook?: HTMLElement;
+  readonly els: HTMLElement[];
+  /** Whether a later Stop hook ends this segment. */
+  next: boolean;
+  durationSeconds?: number;
+}
+
+/**
+ * Splits a completed turn's elements at each Stop hook, which stays visible between the
+ * segments. Each segment's time runs from the previous hook (or the turn's start) to its
+ * own end; it is unknown when the turn's duration or a bounding hook's time is.
+ */
+function splitAtStopHooks(elements: readonly HTMLElement[], totalSeconds: number | undefined): WorkSegment[] {
+  const segments: WorkSegment[] = [{ els: [], next: false }];
+  const bounds: Array<number | undefined> = [0];
+  for (const el of elements) {
+    if (getResponseElementKind(el) !== 'hook') {
+      segments[segments.length - 1].els.push(el);
+      continue;
+    }
+    segments[segments.length - 1].next = true;
+    segments.push({ hook: el, els: [], next: false });
+    bounds.push(getStopHookElapsedSeconds(el));
+  }
+  bounds.push(totalSeconds);
+  segments.forEach((segment, index) => {
+    const start = bounds[index];
+    const end = bounds[index + 1];
+    if (start !== undefined && end !== undefined) segment.durationSeconds = Math.max(0, end - start);
+  });
+  return segments;
 }

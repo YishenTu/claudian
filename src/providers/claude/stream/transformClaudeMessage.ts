@@ -16,7 +16,11 @@ import {
   getClaudeModelTierDefinition,
   isClaudeModelTier,
 } from '../modelTiers';
-import { extractClaudeTextContent, isClaudeNoContentPlaceholder } from '../normalization/claudeTextContent';
+import {
+  extractClaudeTextContent,
+  isClaudeNoContentPlaceholder,
+  parseClaudeStopHookFeedback,
+} from '../normalization/claudeTextContent';
 import type {
   ClaudeAsyncSubagentCompletionEvent,
   ClaudeStreamChunk,
@@ -599,6 +603,12 @@ export function* transformSDKMessage(
       const toolResultBlocks = Array.isArray(content)
         ? content.filter(block => block.type === 'tool_result')
         : [];
+      const stopHookFeedback = parentToolUseId === null && message.isSynthetic === true
+        ? parseClaudeStopHookFeedback(content) : null;
+      if (stopHookFeedback !== null) {
+        yield { type: 'stop_hook', content: stopHookFeedback };
+        break;
+      }
       const toolUseResult: unknown = message.tool_use_result ?? undefined;
       // A subagent frame's structured output belongs to its own tool_result block; only a frame
       // without one reports that output against the spawning tool call.

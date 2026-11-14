@@ -167,6 +167,7 @@
     },
     "worked": "Trabajo realizado",
     "taskNotification": "Notificación de tarea",
+    "stopHook": "Hook de parada",
     "copyMessage": "Copiar mensaje",
     "showEarlierMessages": "Mostrar mensajes anteriores",
     "renderFailed": "No se pudo mostrar el contenido del mensaje.",

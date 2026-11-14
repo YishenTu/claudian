@@ -167,6 +167,7 @@
     },
     "worked": "已完成工作",
     "taskNotification": "任务通知",
+    "stopHook": "Stop 钩子",
     "copyMessage": "复制消息",
     "showEarlierMessages": "显示更早的消息",
     "renderFailed": "消息内容渲染失败。",

@@ -14,7 +14,7 @@ import {
 import type { RenderContentOptions } from '@/features/chat/rendering/markdown/MarkdownContentRenderer';
 import { escapeRawHTMLTags } from '@/features/chat/rendering/markdown/markdownHTML';
 import type { LiveTranscriptOptions, MessageRenderer } from '@/features/chat/rendering/MessageRenderer';
-import { createResponseTextBlock } from '@/features/chat/rendering/ResponseLayout';
+import { createResponseTextBlock, renderStopHook } from '@/features/chat/rendering/ResponseLayout';
 import type { AsyncSubagentHistoryRecovery } from '@/features/chat/rendering/subagents/AsyncSubagentHistoryRecovery';
 import type { SubagentManager } from '@/features/chat/rendering/subagents/SubagentManager';
 import {
@@ -288,6 +288,17 @@ export class StreamController {
           this.deps.renderer?.renderTaskNotification(state.currentContentEl, chunk.content);
         }
         break;
+
+      case 'stop_hook': {
+        await this.#closeOpenBlocks(msg);
+        const elapsedSeconds = state.responseStartTime !== null
+          ? Math.floor((performance.now() - state.responseStartTime) / 1000) : undefined;
+        msg.contentBlocks = msg.contentBlocks || [];
+        msg.contentBlocks.push({ type: 'stop_hook', content: chunk.content,
+          ...(elapsedSeconds !== undefined ? { elapsedSeconds } : {}) });
+        if (state.currentContentEl) renderStopHook(state.currentContentEl, chunk.content, elapsedSeconds);
+        break;
+      }
 
       case 'context_compacted':
         await this.#closeOpenBlocks(msg);

@@ -7,6 +7,7 @@ import type {
   ProviderCitationsEvent,
   ProviderContextCompactedEvent,
   ProviderNoticeEvent,
+  ProviderStopHookEvent,
   ProviderTextDeltaEvent,
   ProviderThinkingDeltaEvent,
   ProviderToolCompletedEvent,
@@ -48,6 +49,7 @@ export type ClaudeNormalizedOutputEvent = WithoutScope<
   | ProviderToolCompletedEvent
   | ProviderUsageUpdatedEvent
   | ProviderContextCompactedEvent
+  | ProviderStopHookEvent
   | ProviderNoticeEvent
 >;
 
@@ -331,6 +333,8 @@ function toOutputEvent(
       return {
         type: 'context_compacted',
       };
+    case 'stop_hook':
+      return { type: 'stop_hook', content: chunk.content };
   }
 }
 

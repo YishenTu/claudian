@@ -167,6 +167,7 @@
     },
     "worked": "已完成工作",
     "taskNotification": "任務通知",
+    "stopHook": "Stop 鉤子",
     "copyMessage": "複製訊息",
     "showEarlierMessages": "顯示較早的訊息",
     "renderFailed": "訊息內容呈現失敗。",

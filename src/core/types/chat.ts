@@ -76,6 +76,12 @@ export type ContentBlock =
   | { type: 'subagent'; subagentId: string; mode?: SubagentMode }
   | { type: 'citations'; citations: CitationGroup }
   | { type: 'task_notification'; content: string }
+  /**
+   * A Stop hook blocked the turn's end: the reply before it had ended the turn,
+   * and the same turn continues after it. `elapsedSeconds` is the turn time at
+   * the hook, when known, so the work on each side keeps its own duration.
+   */
+  | { type: 'stop_hook'; content: string; elapsedSeconds?: number }
   | { type: 'context_compacted' };
 
 /** Authoritative main-agent output across a completed turn, including reasoning. */
@@ -329,6 +335,7 @@ export type StreamChunk =
   | { type: 'usage'; usage: UsageInfo; sessionId?: string | null }
   | { type: 'context_compacted' }
   | { type: 'task_notification'; content: string }
+  | { type: 'stop_hook'; content: string }
   | { type: 'subagent_tool_use'; subagentId: string; id: string; name: string; input: Record<string, unknown>; providerPayload?: ToolProviderPayload }
   | { type: 'subagent_tool_output'; subagentId: string; id: string; content: string }
   | {
