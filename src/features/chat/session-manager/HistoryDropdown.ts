@@ -169,7 +169,9 @@ export class HistoryDropdown {
     if (anchorEl && style) {
       const chrome = [style.marginBottom, style.borderTopWidth, style.borderBottomWidth]
         .reduce((sum, value) => sum + (parseFloat(value) || 0), 0);
-      const room = anchorEl.getBoundingClientRect().top - viewEl.getBoundingClientRect().top - chrome;
+      // The chat panel clips the drop-up; Obsidian's view padding sits above it.
+      const clipEl = menuEl.closest<HTMLElement>('.claudian-chat-panel') ?? viewEl;
+      const room = anchorEl.getBoundingClientRect().top - clipEl.getBoundingClientRect().top - chrome;
       maxHeight = Math.min(maxHeight, Math.max(0, Math.floor(room)));
     }
     menuEl.setCssProps({ '--claudian-history-menu-max-height': `${maxHeight}px` });
