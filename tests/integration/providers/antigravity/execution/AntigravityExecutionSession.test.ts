@@ -1,4 +1,3 @@
-import { spawnSync } from 'node:child_process';
 import * as fsSync from 'node:fs';
 import * as fs from 'node:fs/promises';
 import { mkdir, readdir, readFile, rename, stat, writeFile } from 'node:fs/promises';
@@ -478,13 +477,9 @@ describe('AntigravityExecutionSession', () => {
     expect(peer.prompts[0].request).toEqual({ prompt: [{ text: 'hello', type: 'text' }], sessionId: 'session-new' });
 
     peer.emit({ content: { text: 'Hi.', type: 'text' }, sessionUpdate: 'agent_message_chunk' }, 'session-new');
-    // agy flushes each model call to the transcript before settling the prompt.
-    await writeTranscript('session-new', [
-      { source: 'USER_EXPLICIT', step_index: 0, type: 'USER_INPUT' },
-      { cache_read_tokens: 0, input_tokens: 6_977, output_tokens: 55, step_index: 1, type: 'PLANNER_RESPONSE' },
-      { step_index: 2, type: 'VIEW_FILE' },
-      { cache_read_tokens: 5_073, input_tokens: 2_178, output_tokens: 55, step_index: 3, type: 'PLANNER_RESPONSE' },
-    ]);
+    // After each model call agy reports the context it fills and the model's window.
+    peer.emit({ sessionUpdate: 'usage_update', size: 1_048_576, used: 7_032 }, 'session-new');
+    peer.emit({ sessionUpdate: 'usage_update', size: 1_048_576, used: 7_306 }, 'session-new');
     // The response sums every model call in the turn.
     peer.finishPrompt({
       stopReason: 'end_turn',
@@ -493,30 +488,28 @@ describe('AntigravityExecutionSession', () => {
     const events = await collect(run.events);
 
     expect(events.filter(event => event.type === 'text_delta')).toEqual([expect.objectContaining({ text: 'Hi.' })]);
-    // The meter shows the last model call's context against agy's 256,000-token auto-compaction point.
-    expect(events).toContainEqual(expect.objectContaining({
-      type: 'usage_updated',
+    // The final meter shows agy's latest report rather than the turn's sum.
+    expect(events.filter(event => event.type === 'usage_updated').at(-1)).toEqual(expect.objectContaining({
       usage: expect.objectContaining({
-        contextTokens: 7_251, contextWindow: 256_000, inputTokens: 9_155, model: 'gemini-4-argon', percentage: 3,
+        contextTokens: 7_306, contextWindow: 1_048_576, inputTokens: 9_155, model: 'gemini-4-argon', percentage: 1,
       }),
     }));
     expect(events.at(-1)).toMatchObject({ reason: 'completed', type: 'turn_completed' });
     expect(session.getSnapshot().providerSessionId).toBe('session-new');
   });
 
-  it('hides the context meter when the transcript has no model call to measure', async () => {
+  it('hides the context meter when agy reports no context usage', async () => {
     const session = await createSession();
     const run = session.execute(request('hello'));
     const peer = await firstPeer();
     await peer.waitForPrompts(1);
-    await writeTranscript('session-new', [{ source: 'USER_EXPLICIT', step_index: 0, type: 'USER_INPUT' }]);
     peer.finishPrompt({ stopReason: 'end_turn', usage: { inputTokens: 900_000, outputTokens: 2, totalTokens: 900_002 } });
     const events = await collect(run.events);
 
-    // The summed usage is no measure of the context; reporting no context tokens hides the meter.
+    // The summed usage is no measure of the context; reporting no context tokens or window hides the meter.
     expect(events).toContainEqual(expect.objectContaining({
       type: 'usage_updated',
-      usage: expect.objectContaining({ contextTokens: 0, inputTokens: 900_000, percentage: 0 }),
+      usage: expect.objectContaining({ contextTokens: 0, contextWindow: 0, inputTokens: 900_000, percentage: 0 }),
     }));
     expect(events.at(-1)).toMatchObject({ reason: 'completed', type: 'turn_completed' });
   });
@@ -1203,12 +1196,18 @@ describe('AntigravityExecutionSession', () => {
     const run = session.execute(request('/compact keep the plan'));
     const peer = await firstPeer();
     await peer.waitForPrompts(1);
-    peer.finishPrompt();
+    // agy's report for a compaction measures the summarizing call over the old context.
+    peer.emit({ sessionUpdate: 'usage_update', size: 1_048_576, used: 14_506 }, 'session-new');
+    peer.finishPrompt({ stopReason: 'end_turn', usage: { inputTokens: 2_780, outputTokens: 421, totalTokens: 14_506 } });
     const events = await collect(run.events);
 
     expect(peer.prompts[0].request.prompt).toEqual([{ text: '/compact keep the plan', type: 'text' }]);
     expect(events.map(event => event.type).filter(type => type === 'context_compacted' || type === 'turn_completed'))
       .toEqual(['context_compacted', 'turn_completed']);
+    // The compacted context stays unmeasured until agy's next model call reports it.
+    expect(events.filter(event => event.type === 'usage_updated').at(-1)).toEqual(expect.objectContaining({
+      usage: expect.objectContaining({ contextTokens: 0, contextWindow: 1_048_576, percentage: 0 }),
+    }));
   });
 
   it('does not mark a cancelled /compact as compacted', async () => {
@@ -1248,30 +1247,6 @@ describe('AntigravityExecutionSession', () => {
     expect(events.filter(event => event.type === 'user_message_started').map(event => event.content))
       .toEqual(['first', 'also this']);
     expect(events.filter(event => event.type === 'turn_completed')).toHaveLength(1);
-  });
-
-  // A FIFO holds the transcript read open until the test writes it; Windows has no named pipes.
-  it.skipIf(process.platform === 'win32')('refuses a steer once the turn\'s final response has arrived', async () => {
-    const session = await createSession();
-    const run = session.execute(request('first'));
-    const peer = await firstPeer();
-    await peer.waitForPrompts(1);
-    const [transcriptPath] = resolveAntigravityTranscriptPaths(path.join(vault, '.gemini', 'antigravity-cli'), 'session-new');
-    await mkdir(path.dirname(transcriptPath), { recursive: true });
-    expect(spawnSync('mkfifo', [transcriptPath]).status).toBe(0);
-    peer.finishPrompt({ stopReason: 'end_turn', usage: { inputTokens: 10, outputTokens: 2, totalTokens: 12 } });
-    // Opening a FIFO for writing completes only once the session has opened it to read the turn's usage.
-    const writer = await fs.open(transcriptPath, 'w');
-
-    const steer = session.steer(request('also this'));
-    await writer.writeFile(`${JSON.stringify({ input_tokens: 10, step_index: 1, type: 'PLANNER_RESPONSE' })}\n`);
-    await writer.close();
-    const events = await collect(run.events);
-
-    await expect(steer).resolves.toBe(false);
-    expect(peer.prompts).toHaveLength(1);
-    expect(events.filter(event => event.type === 'user_message_started').map(event => event.content)).toEqual(['first']);
-    expect(events.at(-1)).toMatchObject({ reason: 'completed', type: 'turn_completed' });
   });
 
   it('recognizes a slash-command steer whose echo omits the command name', async () => {

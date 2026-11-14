@@ -46,7 +46,6 @@ import type { ProviderRuntimeHost } from '../../../core/providers/ProviderRuntim
 import type { ChatMessage, SlashCommand } from '../../../core/types';
 import { filterAntigravityCommands } from '../commands/AntigravityCommandCatalog';
 import { resolveAntigravityStoreRoot } from '../history/AntigravityHistoryPaths';
-import { readAntigravityContextTokens } from '../history/AntigravityHistoryStore';
 import {
   ANTIGRAVITY_MODE_CONFIG_ID,
   ANTIGRAVITY_MODEL_CONFIG_ID,
@@ -311,8 +310,6 @@ export class AntigravityExecutionSession implements ProviderExecutionSession, St
     if (
       !active || this.#isCancellationRequested(active) || request.signal.aborted
       || active.latestPrompt === 0 || !owner?.initialized || owner.loaded?.sessionId !== sessionId || !sessionId
-      // A settled latest prompt has ended the native turn; the run is only finishing its usage read.
-      || active.prompts.get(active.latestPrompt)!.settled
     ) return false;
     const previous = active.prompts.get(active.latestPrompt)!;
     const text = getInputText(request);
@@ -374,9 +371,8 @@ export class AntigravityExecutionSession implements ProviderExecutionSession, St
       if (this.#isCancellationRequested(active)) return;
       // agy reports compaction only in its transcript; a completed `/compact` prompt (not a steer that took
       // over its turn) has compacted the context.
-      if (compact && response.stopReason === 'end_turn' && active.latestPrompt === promptIndex) {
-        active.run.emit({ type: 'context_compacted' });
-      }
+      const compacted = compact !== null && response.stopReason === 'end_turn' && active.latestPrompt === promptIndex;
+      if (compacted) active.run.emit({ type: 'context_compacted' });
       // Completion confirms steers agy never echoed (image-only input), so they still need their boundary.
       if (response.stopReason !== 'cancelled') {
         for (const steer of active.steers) {
@@ -385,9 +381,7 @@ export class AntigravityExecutionSession implements ProviderExecutionSession, St
           active.run.emit({ content: steer.text, type: 'user_message_started' });
         }
       }
-      const contextTokens = await this.#readContextTokens(owner, response);
-      if (this.#isCancellationRequested(active)) return;
-      this.#finishCompleted(active, response, contextTokens);
+      this.#finishCompleted(active, response, compacted);
     } catch (error) {
       if (this.#isCancellationRequested(active)) return;
       this.#failRecoverable(active, error);
@@ -714,24 +708,19 @@ export class AntigravityExecutionSession implements ProviderExecutionSession, St
     active.run.emit({ content: steer.text, type: 'user_message_started' });
   }
 
-  /** The response's usage sums every model call in the turn; the transcript's latest call measures the context. */
-  async #readContextTokens(owner: NativeOwner, response: ACPPromptResponse): Promise<number | null> {
-    if (!response.usage) return null;
-    const storeRoot = resolveAntigravityStoreRoot(owner.native.launch.env, process.platform);
-    return storeRoot ? readAntigravityContextTokens(storeRoot, this.providerSessionId!) : null;
-  }
-
-  #finishCompleted(active: ActiveExecution, response: ACPPromptResponse, contextTokens: number | null): void {
+  #finishCompleted(active: ActiveExecution, response: ACPPromptResponse, compacted: boolean): void {
     // A successful response proves acceptance even when agy streamed no output for it.
     active.turn.accept();
     if (response.usage) {
       const model = active.request.configuration.model
         ? decodeAntigravityModelId(active.request.configuration.model) ?? undefined
         : undefined;
-      const windowSize = getAntigravityContextWindowWorkaround(model);
+      // The response sums every model call in the turn; agy's latest usage_update measures the context. A
+      // compaction's report measures the summarizing call over the old context, so it stays unmeasured until the
+      // next call. An unmeasured context or window reports none, which hides the meter.
+      const contextUsage = active.turn.contextUsage;
       const usage = buildACPUsageInfo({
-        // An unmeasured context reports none, which hides the meter rather than showing the turn's summed usage.
-        contextWindow: { size: windowSize ?? 0, used: contextTokens ?? 0 },
+        contextWindow: { size: contextUsage?.size ?? 0, used: compacted ? 0 : contextUsage?.used ?? 0 },
         model,
         promptUsage: response.usage,
       });
@@ -889,17 +878,6 @@ class AntigravitySessionPreparationError extends Error {
   constructor(cause: unknown) {
     super(`Could not prepare the new Antigravity session: ${cause instanceof Error ? cause.message : String(cause)}`, { cause });
   }
-}
-
-/**
- * Workaround: agy 1.5.1 reports no context window over ACP and auto-compacts Gemini's 1,048,576-token models at a
- * fixed 256,000 tokens (google-antigravity/antigravity-cli#1432), so Gemini models measure against that point
- * and other models leave the context meter hidden. Remove this once agy reports the limit.
- */
-const GEMINI_CONTEXT_WINDOW_WORKAROUND = 256_000;
-
-function getAntigravityContextWindowWorkaround(model: string | undefined): number | null {
-  return model?.startsWith('gemini-') ? GEMINI_CONTEXT_WINDOW_WORKAROUND : null;
 }
 
 class AntigravityExecutionCancellationError extends Error {
