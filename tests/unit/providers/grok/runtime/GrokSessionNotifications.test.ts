@@ -16,7 +16,9 @@ describe('GrokSessionNotifications', () => {
     },
   );
 
-  it('unwraps only the exact xAI session notification envelope', () => {
+  // Grok 1.0.77 sends the session notification as the bare params; earlier builds wrapped it in an envelope.
+  it('accepts the xAI session notification bare or in its exact envelope', () => {
+    expect(parseGrokSessionNotification('_x.ai/session_notification', notification)).toEqual(notification);
     expect(parseGrokSessionNotification('_x.ai/session_notification', {
       method: 'x.ai/session_notification',
       params: notification,
@@ -25,8 +27,6 @@ describe('GrokSessionNotifications', () => {
       method: '_x.ai/session_notification',
       params: notification,
     })).toBeNull();
-    expect(parseGrokSessionNotification('_x.ai/session_notification', notification))
-      .toBeNull();
   });
 
   it('rejects malformed and unrelated notifications', () => {

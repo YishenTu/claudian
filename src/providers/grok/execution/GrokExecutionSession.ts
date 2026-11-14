@@ -26,6 +26,7 @@ import {
   ACPToolStreamAdapter,
   type ACPUsage,
   buildACPUsageInfo,
+  isKnownACPSessionUpdate,
   mapACPApprovalDecision,
 } from '@/providers/acp';
 
@@ -801,6 +802,8 @@ RewindableExecutionSession {
       }
       return;
     }
+    // Grok's other xAI extension updates (model, response, hook and interaction progress) carry nothing Claudian shows.
+    if (source === 'extension' && !isKnownACPSessionUpdate(notification.update)) return;
     let update = mapGrokNativePaths(notification.update, this.nativeSlot.current?.launch.pathMapper);
     if (update.sessionUpdate === 'agent_message_chunk' || update.sessionUpdate === 'user_message_chunk') {
       const role = update.sessionUpdate === 'agent_message_chunk' ? 'assistant' : 'user';

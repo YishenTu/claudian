@@ -274,7 +274,7 @@ it.each(['notification', 'update'] as const)(
   },
 );
 
-it.each(['notification', 'response', 'metadata'] as const)(
+it.each(['notification', 'session notification', 'response', 'metadata'] as const)(
   'emits final Grok usage from %s with the streamed context window',
   async source => {
     const fixture = turnCompleted;
@@ -283,6 +283,12 @@ it.each(['notification', 'response', 'metadata'] as const)(
     native.promptImplementation = async () => {
       native.emit({ sessionUpdate: 'usage_update', size: 200_000, used: 12 });
       if (source === 'notification') native.emit(update, 'extension');
+      if (source === 'session notification') {
+        // Grok 1.0.77 also reports model and response progress Claudian does not show.
+        native.emit({ sessionUpdate: 'model_changed', model_id: 'grok-4.5', reasoning_effort: 'high' }, 'notification');
+        native.emit({ sessionUpdate: 'response_completed', usage: { input_tokens: 13766, output_tokens: 20 } }, 'notification');
+        native.emit(update, 'notification');
+      }
       return {
         stopReason: 'end_turn',
         ...(source === 'response' ? { usage: update.usage } : {}),
@@ -300,6 +306,7 @@ it.each(['notification', 'response', 'metadata'] as const)(
           contextWindow: 200_000, percentage: 5,
         },
       });
+      expect(events.filter(event => event.type === 'notice')).toEqual([]);
     } finally {
       await session.dispose();
     }
