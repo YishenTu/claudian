@@ -10,6 +10,7 @@ import {
 } from '../modelOptions';
 import { type ClaudeDiscoveredModel, decodeClaudeModels } from '../models';
 import { toClaudeRuntimeModelId } from '../modelSelection';
+import { DEFAULT_CLAUDE_MODELS } from '../types/models';
 import { type ClaudeRuntimeCatalog, probeClaudeCatalog } from './probeClaudeModels';
 
 export type ClaudeCatalogProbe = (host: ProviderRuntimeHost, signal: AbortSignal) => Promise<ClaudeRuntimeCatalog>;
@@ -131,6 +132,8 @@ export function createClaudeModels(
           selectedIds: resolveClaudeVisibleModels(source, models).map(({ id, option }) =>
             toClaudeRuntimeModelId(option?.value ?? id)),
           aliases: current.modelAliases,
+          // The latest tier aliases — what "reset" restores and the default enablement.
+          defaultSelectedIds: DEFAULT_CLAUDE_MODELS.map(model => model.value),
         };
       },
     }),

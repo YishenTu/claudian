@@ -20,6 +20,8 @@ export interface ProviderModelSelection {
 
 export interface ProviderModelCatalogSnapshot extends ProviderModelSelection {
   defaultModelId: string | null;
+  /** The provider's recommended default enablement, when it supplies one; drives the reset action. */
+  defaultSelectedIds?: string[];
   discoveredCount: number;
   status: 'idle' | 'loading' | 'ready' | 'failed';
   stale: boolean;
@@ -30,6 +32,8 @@ export type ProviderModelSelectionChange =
   | { type: 'set'; modelId: string; selected: boolean }
   | { type: 'move'; modelId: string; target: string; placement: 'before' | 'after' }
   | { type: 'move'; modelId: string; target: -1 | 1 }
+  | { type: 'enableAll' }
+  | { type: 'reset' }
   | { type: 'clear' };
 
 export interface ProviderModelCatalog {
@@ -44,6 +48,8 @@ export interface ProviderModelCatalog {
 
 export interface ProviderModelCatalogState extends ProviderModelSelection {
   enabled: boolean;
+  /** The provider's recommended default enablement; omitted when the provider has none. */
+  defaultSelectedIds?: string[];
 }
 
 export interface ProviderModelCatalogPatch {
@@ -144,6 +150,7 @@ export class ProviderModelCatalogController implements ProviderModelCatalog {
       error: this.discovery.status === 'failed' ? this.discovery.error : undefined,
       discoveredCount: state.models.length,
       defaultModelId: selectedIds.find(id => known.has(id) && known.get(id)?.isAvailable !== false) ?? null,
+      ...(state.defaultSelectedIds ? { defaultSelectedIds: normalizeSelectedModelIds(state.defaultSelectedIds) } : {}),
     };
   }
 
@@ -219,6 +226,18 @@ export class ProviderModelCatalogController implements ProviderModelCatalog {
       switch (change.type) {
         case 'clear':
           selectedIds = [];
+          break;
+        case 'enableAll': {
+          // Keep the current order, then append every discovered model not already enabled.
+          const discoveredIds = normalizeSelectedModelIds(current.models.map(model => model.id));
+          selectedIds = [...selectedIds, ...discoveredIds.filter(id => !selectedIds.includes(id))];
+          break;
+        }
+        case 'reset':
+          // Restore the provider's recommended default enablement; a provider without one keeps its selection.
+          selectedIds = current.defaultSelectedIds
+            ? normalizeSelectedModelIds(current.defaultSelectedIds)
+            : selectedIds;
           break;
         case 'set': {
           const modelId = change.modelId.trim();
