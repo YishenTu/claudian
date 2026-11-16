@@ -10,6 +10,7 @@ import { invokeSessionTool } from '@/core/session-tools/invokeSessionTool';
 import { SESSION_TOOL_ROUTE_HEADER, type SessionToolRoute } from '@/core/session-tools/SessionToolEndpoint';
 import { SESSION_TOOL_MCP_SERVER_NAME } from '@/core/session-tools/sessionToolMCP';
 import { isSessionTool } from '@/core/tools/toolNames';
+import { t } from '@/i18n/i18n';
 import {
   type ACPContentBlock,
   type ACPCreateElicitationRequest,
@@ -938,7 +939,7 @@ async function settleWithin(promise: Promise<unknown>, timeoutMs: number): Promi
 function describeError(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error);
   return /auth|sign[ -]?in|log[ -]?in|credential/i.test(message)
-    ? `${message}\nSign in by running \`agy acp --login\` in a terminal.`
+    ? `${message}\n${t('chat.executionNotices.antigravitySignIn', { command: 'agy acp --login' })}`
     : message;
 }
 

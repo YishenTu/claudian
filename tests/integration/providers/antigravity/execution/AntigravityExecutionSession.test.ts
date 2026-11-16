@@ -24,6 +24,7 @@ import type {
 } from '@/core/execution';
 import { ProviderExecutionLifecycleRegistry } from '@/core/execution';
 import type { ProviderHost } from '@/core/providers/ProviderHost';
+import { setLocale } from '@/i18n/i18n';
 import type { ACPRequestPermissionRequest } from '@/providers/acp';
 import { AntigravityExecutionBackend } from '@/providers/antigravity/execution/AntigravityExecutionBackend';
 import { resolveAntigravityTranscriptPaths } from '@/providers/antigravity/history/AntigravityHistoryPaths';
@@ -41,6 +42,7 @@ const agents = new Map<string, CapturedAntigravityAgent>();
 let spawnWaiters: Array<{ count: number; resolve: () => void }> = [];
 
 afterEach(async () => {
+  setLocale('en');
   vi.useRealTimers();
   await Promise.all(sessions.splice(0).map(session => session.dispose()));
   spawned = [];
@@ -628,6 +630,37 @@ describe('AntigravityExecutionSession', () => {
     const events = await collect(session.execute(request('hello', { model: 'antigravity/claude-opus' })).events);
     expect(events.at(-1)).toMatchObject({ category: 'configuration', type: 'execution_error' });
     expect(spawned[0].prompts).toHaveLength(0);
+  });
+
+  it.each([
+    ['en', 'Sign in by running `agy acp --login` in a terminal.'],
+    ['zh-CN', '请在终端运行 `agy acp --login` 登录。'],
+    ['zh-TW', '請在終端機執行 `agy acp --login` 登入。'],
+  ] as const)('shows the native authentication error and sign-in guidance in %s', async (locale, guidance) => {
+    setLocale(locale);
+    const nativeMessage = 'Authentication required';
+    const session = await createSession({}, peer => peer.failNextPrompt(nativeMessage));
+    const events = await collect(session.execute(request()).events);
+
+    expect(events.at(-1)).toMatchObject({
+      category: 'authentication',
+      message: `Error: ${nativeMessage}\n${guidance}`,
+      recoverable: true,
+      type: 'execution_error',
+    });
+  });
+
+  it('does not add sign-in guidance to a native non-authentication error', async () => {
+    setLocale('zh-CN');
+    const nativeMessage = 'Model temporarily unavailable';
+    const session = await createSession({}, peer => peer.failNextPrompt(nativeMessage));
+    const events = await collect(session.execute(request()).events);
+
+    expect(events.at(-1)).toMatchObject({
+      category: 'configuration',
+      message: `Error: ${nativeMessage}`,
+      type: 'execution_error',
+    });
   });
 
   it('resumes the persisted session', async () => {

@@ -495,6 +495,7 @@
     "removeItem": "Retirer {item}",
     "agent": "Agent : {agent}",
     "executionNotices": {
+      "antigravitySignIn": "Pour vous connecter, exécutez `{command}` dans un terminal.",
       "initializeFailed": "Impossible d’initialiser l’exécution de l’agent. Réessayez.",
       "unavailable": "L’exécution de l’agent n’est pas disponible. Rechargez le plugin.",
       "sessionUnavailable": "La session native de cette conversation n'est pas disponible avec la configuration actuelle de la CLI. Démarrez une nouvelle discussion pour continuer.",

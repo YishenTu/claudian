@@ -495,6 +495,7 @@
     "removeItem": "{item} 제거",
     "agent": "에이전트: {agent}",
     "executionNotices": {
+      "antigravitySignIn": "터미널에서 `{command}`를 실행해 로그인하세요.",
       "initializeFailed": "에이전트 실행을 초기화하지 못했습니다. 다시 시도해 주세요.",
       "unavailable": "에이전트 실행을 사용할 수 없습니다. 플러그인을 다시 불러와 주세요.",
       "sessionUnavailable": "이 대화의 네이티브 세션은 현재 CLI 구성에서 사용할 수 없습니다. 계속하려면 새 채팅을 시작하세요.",
