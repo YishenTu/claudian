@@ -249,7 +249,7 @@ export function parseAntigravityTranscript(
       case 'SYSTEM_MESSAGE': {
         const current = turn as TurnBuilder | null;
         const stopHookFeedback = step.source === 'SYSTEM' ? STOP_HOOK_MESSAGE_PATTERN.exec(step.content ?? '')?.[1].trim() : undefined;
-        if (stopHookFeedback) {
+        if (stopHookFeedback !== undefined) {
           if (current) {
             const startedAt = current.requestedAt;
             current.blocks.push({ type: 'stop_hook', content: stopHookFeedback,

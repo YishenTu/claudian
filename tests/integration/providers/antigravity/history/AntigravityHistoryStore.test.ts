@@ -43,6 +43,15 @@ function replyStep(index: number, extra: Record<string, unknown>): Record<string
   return { created_at: '2026-01-01T00:00:01Z', source: 'MODEL', status: 'DONE', step_index: index, type: 'PLANNER_RESPONSE', ...extra };
 }
 
+/** Captured from agy 1.5.9 over ACP with a one-shot Stop hook. */
+function stopHookStep(feedback: string, createdAt: string): Record<string, unknown> {
+  return {
+    content: 'The following is a <SYSTEM_MESSAGE> not actually sent by the user. It is provided by the system as important information to pay attention to.'
+      + `\n\n<SYSTEM_MESSAGE>\nStop hook blocked termination: ${feedback}\n</SYSTEM_MESSAGE>`,
+    created_at: createdAt, source: 'SYSTEM', status: 'DONE', step_index: 2, type: 'SYSTEM_MESSAGE',
+  };
+}
+
 function summarize(messages: ChatMessage[]) {
   return messages.map(message => ({
     automatic: message.isAutomaticResponse ?? false,
@@ -393,18 +402,13 @@ describe('loadAntigravityHistory', () => {
   });
 
   it('replays the answer before and after an agy Stop hook in the same response', async () => {
-    // Captured from agy 1.5.9 over ACP with a one-shot Stop hook. Paths and times have been rebased.
     const feedback = 'Read the probe.txt file with your file-reading tool, then reply with its contents only.';
     const hookAt = testTime({ seconds: 5 });
     const completedAt = testTime({ seconds: 10 });
     await installSteps([
       userStep(0, 'Reply with INITIAL_RESPONSE only, then finish.', { created_at: testTime() }),
       replyStep(1, { content: 'INITIAL_RESPONSE', created_at: testTime() }),
-      {
-        content: 'The following is a <SYSTEM_MESSAGE> not actually sent by the user. It is provided by the system as important information to pay attention to.'
-          + `\n\n<SYSTEM_MESSAGE>\nStop hook blocked termination: ${feedback}\n</SYSTEM_MESSAGE>`,
-        created_at: hookAt, source: 'SYSTEM', status: 'DONE', step_index: 2, type: 'SYSTEM_MESSAGE',
-      },
+      stopHookStep(feedback, hookAt),
       replyStep(3, { created_at: hookAt, tool_calls: [{ name: 'read_file', args: { Path: '/vault/probe.txt' } }] }),
       {
         content: `Created At: ${completedAt}\nCompleted At: ${completedAt}\nShowing lines 1-1 of 1\n1: FOLLOW_UP_FROM_PROBE`,
@@ -429,6 +433,23 @@ describe('loadAntigravityHistory', () => {
       toolCalls: [{ name: 'Read', result: 'Showing lines 1-1 of 1\n1: FOLLOW_UP_FROM_PROBE', status: 'completed' }],
     });
     expect(messages[1].isAutomaticResponse).toBeUndefined();
+  });
+
+  it('replays an agy Stop hook with no feedback before the continuation output arrives', async () => {
+    await installSteps([
+      userStep(0, 'Reply with INITIAL_RESPONSE only, then finish.', { created_at: testTime() }),
+      replyStep(1, { content: 'INITIAL_RESPONSE', created_at: testTime() }),
+      stopHookStep('', testTime({ seconds: 5 })),
+    ]);
+
+    const messages = await loadAntigravityHistory(storeRoot, SESSION_ID);
+
+    expect(messages).toHaveLength(2);
+    expect(messages[1].contentBlocks).toEqual([
+      { type: 'text', content: 'INITIAL_RESPONSE' },
+      { type: 'stop_hook', content: '', elapsedSeconds: 5 },
+    ]);
+    expect(isInterruptedResponse(messages[1], messages)).toBe(true);
   });
 
   it('shows background task reports, not agy system notices, as task notifications', async () => {
