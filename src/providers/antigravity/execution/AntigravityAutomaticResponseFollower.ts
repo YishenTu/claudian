@@ -241,6 +241,9 @@ export function buildAntigravityAutomaticResponseEvents(
       case 'context_compacted':
         events.push({ type: 'context_compacted' });
         break;
+      case 'stop_hook':
+        events.push({ content: block.content, type: 'stop_hook' });
+        break;
       case 'tool_use': {
         const call = calls.get(block.toolId);
         if (!call) break;

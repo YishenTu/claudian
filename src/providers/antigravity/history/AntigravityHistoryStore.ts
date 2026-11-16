@@ -53,6 +53,7 @@ const USER_REQUEST_PATTERN = /<USER_REQUEST>\n?([\s\S]*?)\n?<\/USER_REQUEST>/;
 const RESULT_HEADER_PATTERN = /^(?:(?:Created|Completed) At: [^\n]*\n)+/;
 /** A message agy injects into the conversation; `sender=system` marks its own notices, others are task reports. */
 const SYSTEM_REPORT_PATTERN = /<SYSTEM_MESSAGE>\n\[Message\][^\n]*?\bsender=(\S+)[^\n]*?\bcontent=([\s\S]*?)\n?<\/SYSTEM_MESSAGE>/;
+const STOP_HOOK_MESSAGE_PATTERN = /^(?:The following is a <SYSTEM_MESSAGE>[^\n]*\n\n)?<SYSTEM_MESSAGE>\nStop hook blocked termination:[ \t]*([\s\S]*?)\n<\/SYSTEM_MESSAGE>$/;
 /** agy appends instructions for the model to a command it moved to the background. */
 const BACKGROUND_INSTRUCTIONS_PATTERN = /\s*YOU MUST TAKE ONE OF THE FOLLOWING TWO ACTIONS:[\s\S]*$/;
 const QUESTION_ANSWER_PATTERN = /^A(\d+): (.*)$/;
@@ -246,10 +247,20 @@ export function parseAntigravityTranscript(
         break;
       }
       case 'SYSTEM_MESSAGE': {
+        const current = turn as TurnBuilder | null;
+        const stopHookFeedback = step.source === 'SYSTEM' ? STOP_HOOK_MESSAGE_PATTERN.exec(step.content ?? '')?.[1].trim() : undefined;
+        if (stopHookFeedback) {
+          if (current) {
+            const startedAt = current.requestedAt;
+            current.blocks.push({ type: 'stop_hook', content: stopHookFeedback,
+              ...(startedAt && timestamp >= startedAt ? { elapsedSeconds: Math.floor((timestamp - startedAt) / 1_000) } : {}) });
+            current.lastStep = step;
+          }
+          break;
+        }
         // Background task and subagent reports start a response without a user request. A notice before the
         // current turn has produced anything (agy's restart notice follows the next request) is only context, and
         // a report agy delivers at the start of a turn joins it without counting as its output.
-        const current = turn as TurnBuilder | null;
         const answered = current && (current.assistant.content || current.toolCalls.length > 0
           || current.blocks.some(block => block.type !== 'task_notification'));
         const target = !current || answered ? startTurn(stepId, timestamp, true) : current;
