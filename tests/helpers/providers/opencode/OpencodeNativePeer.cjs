@@ -183,6 +183,8 @@ let mcpAnswer;
 let ownedForms = [];
 /** @type {import('node:http').ServerResponse | undefined} */
 let waiter;
+// Like native idle, answers the current wait once; a later turn's wait must not reuse an ended response.
+const becomeIdle = () => { idle = true; waiter?.writeHead(204).end(); waiter = undefined; };
 /** @type {NativeMessage[]} */
 let messages = [];
 /** @type {(() => void) | undefined} */
@@ -336,14 +338,14 @@ const handle = async (req, res, url, body, route) => {
       }
       if (env.ECHO_AGENTS === '1' || env.ECHO_MODELS === '1') {
         emit('session.text.ended', { assistantMessageID, ordinal: 0, text: JSON.stringify(env.ECHO_MODELS === '1' ? selectedModels.at(-1) : selectedAgents) });
-        emit('session.execution.succeeded', {}); idle = true; waiter?.writeHead(204).end();
+        emit('session.execution.succeeded', {}); becomeIdle();
         return;
       }
       if (env.ECHO_PROMPT === '1') {
         // Native history is committed before idle; HTTP may arrive before the corresponding SSE events.
         messages = [{ id: assistantMessageID, type: 'assistant', content: [{ type: 'text', text: JSON.stringify({ route, body, ...(env.ECHO_CWD ? { cwd: process.cwd() } : {}) }) }] }];
         emit('session.text.ended', { assistantMessageID, ordinal: 0, text: JSON.stringify({ route, body, ...(env.ECHO_CWD ? { cwd: process.cwd() } : {}) }) });
-        emit('session.execution.succeeded', {}); idle = true; waiter?.writeHead(204).end();
+        emit('session.execution.succeeded', {}); becomeIdle();
         return;
       }
       if (body.text.startsWith('mcp-form')) {
@@ -388,6 +390,8 @@ const handle = async (req, res, url, body, route) => {
         emit('session.execution.succeeded', {}); idle = true;
         return;
       }
+      // Each turn asks afresh; an earlier turn's replies must not answer this one.
+      permission = undefined; form = undefined;
       emit('permission.asked', { id: 'per_test', action: 'shell', resources: ['echo test'] });
       if (body.text === 'question-wording') {
         emit('form.created', { form: { id: 'frm_test', sessionID: 'ses_test', title: 'Questions', metadata: { kind: 'question' }, fields: [{ key: 'q0', type: 'string', title: 'Color', description: 'Which color should the report use?', custom: true, options: [{ value: 'blue', label: 'Blue' }] }] } });
@@ -445,7 +449,7 @@ const handle = async (req, res, url, body, route) => {
       emit('session.step.ended', { tokens: { input: 100, output: 30, reasoning: 5, cache: { read: 20, write: 10 } } });
       // Native history keeps earlier turns; each turn completes 1234ms after its user entry.
       messages.push(userMessage, { id: assistantMessageID, type: 'assistant', time: { created: userMessage.time.created + 1, completed: userMessage.time.created + 1234 }, finish: 'stop', tokens: { input: 100, output: 30, reasoning: 5, cache: { read: 20, write: 10 } }, content: [{ type: 'text', text: 'Finished review' }] });
-      emit('session.execution.succeeded', {}); idle = true; waiter?.writeHead(204).end();
+      emit('session.execution.succeeded', {}); becomeIdle();
     }); return;
   }
   res.writeHead(404).end();
