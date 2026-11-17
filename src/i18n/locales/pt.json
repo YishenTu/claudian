@@ -1067,7 +1067,8 @@
       "environment": {
         "name": "Variáveis de ambiente do Antigravity",
         "desc": "Variáveis de ambiente passadas apenas ao Antigravity (agy), como GEMINI_API_KEY."
-      }
+      },
+      "updateReminder": "O Claudian só é compatível com a versão mais recente do agy, que muda rapidamente. Mantenha-o atualizado:"
     },
     "deepseek": {
       "installation": {

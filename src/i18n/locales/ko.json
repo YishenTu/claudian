@@ -1067,7 +1067,8 @@
       "environment": {
         "name": "Antigravity 환경 변수",
         "desc": "Antigravity(agy)에만 전달되는 환경 변수입니다(예: GEMINI_API_KEY)."
-      }
+      },
+      "updateReminder": "Claudian은 agy의 최신 릴리스만 지원하며 agy는 빠르게 변경됩니다. 항상 최신 상태로 유지하세요:"
     },
     "deepseek": {
       "installation": {

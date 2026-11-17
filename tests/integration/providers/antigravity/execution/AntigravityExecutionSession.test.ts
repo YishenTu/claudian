@@ -122,18 +122,46 @@ function holdTranscriptRead(sessionId: string) {
   };
 }
 
-/** Resolves with the events of the next background turn the session publishes. */
-function nextBackgroundTurn(session: ProviderExecutionSession): Promise<ProviderSessionEvent[]> {
+/**
+ * Collects the next background turn the session publishes. `reached` resolves once it has `count` events of `type`;
+ * `completed` resolves with all its events when it completes.
+ */
+function backgroundTurn(session: ProviderExecutionSession) {
   const events: ProviderSessionEvent[] = [];
-  return new Promise(resolve => {
-    const unsubscribe = session.onEvent(event => {
-      if (event.scope.kind !== 'background') return;
-      events.push(event);
-      if (event.type !== 'background_turn_completed') return;
-      unsubscribe();
-      resolve(events);
-    });
+  const waiters: Array<{ count: number; resolve: () => void; type: ProviderSessionEvent['type'] }> = [];
+  const countOf = (type: ProviderSessionEvent['type']) => events.filter(event => event.type === type).length;
+  let resolveCompleted!: (events: ProviderSessionEvent[]) => void;
+  const completed = new Promise<ProviderSessionEvent[]>(resolve => { resolveCompleted = resolve; });
+  const unsubscribe = session.onEvent(event => {
+    if (event.scope.kind !== 'background') return;
+    events.push(event);
+    for (const waiter of waiters.filter(entry => countOf(entry.type) >= entry.count)) {
+      waiters.splice(waiters.indexOf(waiter), 1);
+      waiter.resolve();
+    }
+    if (event.type !== 'background_turn_completed') return;
+    unsubscribe();
+    resolveCompleted(events);
   });
+  return {
+    completed,
+    events,
+    reached: (type: ProviderSessionEvent['type'], count = 1) => (countOf(type) >= count
+      ? Promise.resolve()
+      : new Promise<void>(resolve => { waiters.push({ count, resolve, type }); })),
+  };
+}
+
+/**
+ * Lets a transcript read whose stream has closed finish its scan. Nothing signals a scan that changes no state, so
+ * this only bounds it.
+ */
+async function settleScan(): Promise<void> {
+  await new Promise<void>(resolve => { setImmediate(resolve); });
+}
+
+function textOf(events: readonly (ProviderSessionEvent | ProviderExecutionEvent)[]): string[] {
+  return events.flatMap(event => (event.type === 'text_delta' ? [event.text] : []));
 }
 
 function createInteractionPort() {
@@ -858,138 +886,402 @@ describe('AntigravityExecutionSession', () => {
     }));
   });
 
-  it('publishes agy\'s own reply to a subagent result that lands after the turn, but not a report answered mid-turn', async () => {
+  it('streams what agy does after a turn as a background turn, including a background command it launched in the turn', async () => {
     const session = await createSession();
-    const run = session.execute(request('Delegate both'));
+    const run = session.execute(request('Start the build'));
     const peer = await firstPeer();
     await peer.waitForPrompts(1);
-    peer.emit(invokeSubagent('call-1'), 'session-new');
-    peer.emit(invokeSubagent('call-2'), 'session-new');
-    // A report that arrived while the turn ran was streamed with it, even though agy settled the prompt in the same
-    // second (agy 1.5.7 settles up to ~15 s after its last step); sub-2 is still out when the turn ends.
-    const turn = [
-      transcriptSteps.user(0, 'Delegate both', testTime({ minutes: -2 })),
-      transcriptSteps.delegate(1, testTime({ minutes: -2 })),
-      transcriptSteps.created(2, 'sub-1', testTime({ minutes: -2 })),
-      transcriptSteps.delegate(3, testTime({ minutes: -2 })),
-      transcriptSteps.created(4, 'sub-2', testTime({ minutes: -2 })),
-      transcriptSteps.reply(5, 'Waiting.', testTime({ minutes: -2 })),
-      transcriptSteps.report(6, 'sub-1', '17', testTime({ minutes: 5 })),
-      transcriptSteps.reply(7, 'First result: 17.', testTime({ minutes: 5 })),
-    ];
-    await writeTranscript('session-new', turn);
-    peer.finishPrompt({ stopReason: 'end_turn' });
+    const build = { kind: 'execute', name: 'run_command', rawInput: { CommandLine: 'sleep 25 && echo BG-DONE' }, title: 'sleep 25 && echo BG-DONE', toolCallId: 'call-bg' };
+    peer.emit({ ...build, sessionUpdate: 'tool_call', status: 'in_progress' }, 'session-new');
+    peer.finishPrompt();
+    await collect(run.events);
+    expect(session.blocksIdleRelease?.()).toBe(false);
+
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const background = backgroundTurn(session);
+    // agy 1.5.10: the command's completion and the reply it wakes agy for stream after `end_turn`.
+    peer.emit({ ...build, content: [{ content: { text: 'Command output:\nBG-DONE', type: 'text' }, type: 'content' }], sessionUpdate: 'tool_call_update', status: 'completed' }, 'session-new');
+    peer.emit({ content: { text: 'The build finished.', type: 'text' }, sessionUpdate: 'agent_message_chunk' }, 'session-new');
+    peer.emit({ sessionUpdate: 'usage_update', size: 1_048_576, used: 9_000 }, 'session-new');
+    await background.reached('usage_updated');
+    // Releasing the session would end agy's process mid-reply.
+    expect(session.blocksIdleRelease?.()).toBe(true);
+    expect(session.getStatus()).toBe('executing');
+    await vi.advanceTimersByTimeAsync(1_000);
+    const events = await background.completed;
+
+    expect(events.map(event => event.type)).toEqual([
+      'background_turn_started', 'tool_started', 'tool_completed', 'assistant_message_started', 'text_delta', 'usage_updated',
+      'background_turn_completed',
+    ]);
+    expect(events[1]).toMatchObject({ input: { command: 'sleep 25 && echo BG-DONE' }, name: 'Bash', toolCallId: 'call-bg' });
+    expect(events[2]).toMatchObject({ content: expect.stringContaining('BG-DONE'), isError: false, toolCallId: 'call-bg' });
+    expect(events[4]).toMatchObject({ text: 'The build finished.' });
+    expect(events.at(-1)).toMatchObject({ providerSessionId: 'session-new', reason: 'completed' });
+    expect(session.blocksIdleRelease?.()).toBe(false);
+    expect(session.getStatus()).toBe('idle');
+  });
+
+  it('keeps a background turn open across a model call that continues with a tool', async () => {
+    const session = await createSession();
+    const run = session.execute(request('Delegate'));
+    const peer = await firstPeer();
+    await peer.waitForPrompts(1);
+    peer.finishPrompt();
     await collect(run.events);
 
-    const background = nextBackgroundTurn(session);
-    await writeTranscript('session-new', [
-      ...turn,
-      transcriptSteps.report(8, 'sub-2', '391', testTime({ minutes: 5 })),
-      transcriptSteps.reply(9, 'SUB-RESULT=391', testTime({ minutes: 5 })),
-    ]);
-    const events = await background;
-    expect(events.map(event => event.type)).toEqual(['background_turn_started', 'task_notification', 'text_delta', 'background_turn_completed']);
-    expect(events[1]).toMatchObject({ content: '391' });
-    expect(events[2]).toMatchObject({ text: 'SUB-RESULT=391' });
-    expect(events.at(-1)).toMatchObject({ providerSessionId: 'session-new', reason: 'completed' });
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const background = backgroundTurn(session);
+    const read = { kind: 'read', name: 'read_file', rawInput: { AbsolutePath: '/vault/a.md' }, title: 'read_file', toolCallId: 'call-read' };
+    peer.emit({ content: { text: 'Checking.', type: 'text' }, sessionUpdate: 'agent_message_chunk' }, 'session-new');
+    // agy ends each model call with usage_update and streams the call's tools right after it.
+    peer.emit({ sessionUpdate: 'usage_update', size: 1_048_576, used: 9_000 }, 'session-new');
+    peer.emit({ ...read, sessionUpdate: 'tool_call', status: 'in_progress' }, 'session-new');
+    await background.reached('tool_started');
+    await vi.advanceTimersByTimeAsync(5_000);
+    peer.emit({ ...read, sessionUpdate: 'tool_call_update', status: 'completed' }, 'session-new');
+    peer.emit({ content: { text: 'Done.', type: 'text' }, sessionUpdate: 'agent_message_chunk' }, 'session-new');
+    peer.emit({ sessionUpdate: 'usage_update', size: 1_048_576, used: 9_100 }, 'session-new');
+    await background.reached('text_delta', 2);
+    await vi.advanceTimersByTimeAsync(1_000);
+
+    expect(textOf(await background.completed)).toEqual(['Checking.', 'Done.']);
   });
 
-  it('publishes a late reply whose transcript write lands after the next turn started', async () => {
+  it.each([
+    ['normal', true, { optionId: 'allow', outcome: 'selected' }],
+    ['yolo', false, { optionId: 'allow', outcome: 'selected' }],
+  ] as const)('decides approvals agy asks for after a %s turn under that turn\'s mode', async (permissionMode, asks, outcome) => {
+    const port = createInteractionPort();
+    port.requestApproval.mockImplementation(async (approval: ProviderApprovalInteractionRequest) => ({
+      decision: 'allow', interactionId: approval.interactionId,
+    }));
+    const session = await createSession({ interactionPort: port });
+    const run = session.execute(request('Start the build', { permissionMode }));
+    const peer = await firstPeer();
+    await peer.waitForPrompts(1);
+    peer.finishPrompt();
+    await collect(run.events);
+
+    const background = backgroundTurn(session);
+    peer.emit({ kind: 'edit', name: 'write_file', rawInput: {}, sessionUpdate: 'tool_call', status: 'pending', title: 'write_file', toolCallId: 'tool-1' }, 'session-new');
+    await background.reached('tool_started');
+    // Before agy 1.5.10 sent these, Claudian answered every request between runs with `cancelled`.
+    await expect(peer.requestPermission(permissionRequest('write_file'))).resolves.toEqual({ outcome });
+    // The approval belongs to the background turn, whose closing supersedes it.
+    const [started] = background.events;
+    const turnId = started.scope.kind === 'background' ? started.scope.turnId : 'none';
+    const asked = port.requestApproval.mock.calls.map(([approval]) => ({ kind: approval.kind, toolName: approval.toolName, turnId: approval.turnId }));
+    expect(asked).toEqual(asks ? [{ kind: 'approval', toolName: 'Write', turnId }] : []);
+  });
+
+  it('ends the background turn when a denied tool fails, since agy does nothing more after a denial', async () => {
+    const port = createInteractionPort();
+    port.requestApproval.mockImplementation(async (approval: ProviderApprovalInteractionRequest) => ({
+      decision: 'deny', interactionId: approval.interactionId,
+    }));
+    const session = await createSession({ interactionPort: port });
+    const run = session.execute(request('Start the build'));
+    const peer = await firstPeer();
+    await peer.waitForPrompts(1);
+    peer.finishPrompt();
+    await collect(run.events);
+
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const background = backgroundTurn(session);
+    const write = { kind: 'edit', name: 'write_file', rawInput: {}, title: 'write_file', toolCallId: 'tool-1' };
+    peer.emit({ sessionUpdate: 'usage_update', size: 1_048_576, used: 9_000 }, 'session-new');
+    peer.emit({ ...write, sessionUpdate: 'tool_call', status: 'pending' }, 'session-new');
+    await expect(peer.requestPermission(permissionRequest('write_file'))).resolves.toEqual({ outcome: { optionId: 'reject', outcome: 'selected' } });
+    // agy 1.5.10: the denied call fails and agy's reply ends there, with no usage_update.
+    peer.emit({ ...write, sessionUpdate: 'tool_call_update', status: 'failed' }, 'session-new');
+    await background.reached('tool_completed');
+    await vi.advanceTimersByTimeAsync(1_000);
+
+    expect((await background.completed).at(-1)).toMatchObject({ reason: 'completed', type: 'background_turn_completed' });
+    expect(session.blocksIdleRelease?.()).toBe(false);
+  });
+
+  it('denies what agy asks after an auxiliary request, without a background turn', async () => {
+    const port = createInteractionPort();
+    const session = await createSession({ interactionPort: port });
+    const run = session.execute(titleRequest());
+    const peer = await firstPeer();
+    await peer.waitForPrompts(1);
+    peer.finishPrompt();
+    await collect(run.events);
+    const events: ProviderSessionEvent[] = [];
+    session.onEvent(event => events.push(event));
+
+    peer.emit({ kind: 'edit', name: 'write_file', rawInput: {}, sessionUpdate: 'tool_call', status: 'pending', title: 'write_file', toolCallId: 'tool-1' }, 'session-new');
+    await expect(peer.requestPermission(permissionRequest('write_file'))).resolves.toEqual({ outcome: { outcome: 'cancelled' } });
+    expect(port.requestApproval).not.toHaveBeenCalled();
+    expect(events.filter(event => event.scope.kind === 'background')).toEqual([]);
+  });
+
+  it('sends the next prompt only once agy\'s own reply has settled, so a fast answer stays in its run', async () => {
     const session = await createSession();
     const first = session.execute(request('Delegate'));
     const peer = await firstPeer();
     await peer.waitForPrompts(1);
-    peer.emit(invokeSubagent('call-1'), 'session-new');
-    const delegation = [
-      transcriptSteps.user(0, 'Delegate', testTime({ minutes: -2 })),
-      transcriptSteps.delegate(1, testTime({ minutes: -2 })),
-      transcriptSteps.created(2, 'sub-1', testTime({ minutes: -2 })),
-      transcriptSteps.reply(3, 'Waiting.', testTime({ minutes: -2 })),
-    ];
-    await writeTranscript('session-new', delegation);
     peer.finishPrompt();
     await collect(first.events);
 
-    const background = nextBackgroundTurn(session);
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const background = backgroundTurn(session);
+    peer.emit({ content: { text: 'Late part one. ', type: 'text' }, sessionUpdate: 'agent_message_chunk' }, 'session-new');
+    await background.reached('text_delta');
+    // agy finishes its own reply before it answers a prompt, then answers at once.
+    const answered = peer.waitForPrompts(2).then(() => {
+      peer.emit({ content: { text: 'Sure.', type: 'text' }, sessionUpdate: 'agent_message_chunk' }, 'session-new');
+    });
     const second = session.execute(request('Meanwhile'));
-    await peer.waitForPrompts(2);
-    // agy answered the report between the turns, but flushed it only after the next turn began.
-    await writeTranscript('session-new', [
-      ...delegation,
-      transcriptSteps.report(4, 'sub-1', '391', testTime({ minutes: 5 })),
-      transcriptSteps.reply(5, 'SUB-RESULT=391', testTime({ minutes: 5 })),
-      transcriptSteps.user(6, 'Meanwhile', testTime({ minutes: 6 })),
-      transcriptSteps.reply(7, 'Sure.', testTime({ minutes: 6 })),
-    ]);
-    peer.finishPrompt();
-    await collect(second.events);
-    const events = await background;
-    expect(events.filter(event => event.type === 'text_delta')).toEqual([expect.objectContaining({ text: 'SUB-RESULT=391' })]);
-  });
-
-  it('keeps a late reply when the next request fails before it sends a prompt', async () => {
-    const session = await createSession();
-    const first = session.execute(request('Delegate', { instructions: 'First.' }));
-    const peer = await firstPeer();
-    await peer.waitForPrompts(1);
-    peer.emit(invokeSubagent('call-1'), 'session-new');
-    const delegation = [
-      transcriptSteps.user(0, 'Delegate', testTime({ minutes: -2 })),
-      transcriptSteps.delegate(1, testTime({ minutes: -2 })),
-      transcriptSteps.created(2, 'sub-1', testTime({ minutes: -2 })),
-      transcriptSteps.reply(3, 'Waiting.', testTime({ minutes: -2 })),
-    ];
-    await writeTranscript('session-new', delegation);
-    peer.finishPrompt();
-    await collect(first.events);
-
-    // The changed prompt re-resumes the session; agy finished its own reply before that resume failed.
-    const background = nextBackgroundTurn(session);
-    const resuming = deferred<void>();
-    const release = deferred<void>();
-    peer.resumeGate = async () => {
-      resuming.resolve();
-      await release.promise;
-      throw new Error('Resume temporarily rejected');
-    };
-    const second = session.execute(request('Meanwhile', { instructions: 'Second.' }));
-    await resuming.promise;
-    await writeTranscript('session-new', [
-      ...delegation,
-      transcriptSteps.report(4, 'sub-1', '391', testTime({ minutes: 5 })),
-      transcriptSteps.reply(5, 'SUB-RESULT=391', testTime({ minutes: 5 })),
-    ]);
-    release.resolve();
-    expect((await collect(second.events)).at(-1)).toMatchObject({ type: 'execution_error' });
-    expect(peer.prompts).toHaveLength(1);
-    const events = await background;
-    expect(events.filter(event => event.type === 'text_delta')).toEqual([expect.objectContaining({ text: 'SUB-RESULT=391' })]);
-  });
-
-  it('drops the between-turn output agy replays before the next prompt\'s echo', async () => {
-    const session = await createSession();
-    const first = session.execute(request('Delegate'));
-    const peer = await firstPeer();
-    await peer.waitForPrompts(1);
-    peer.finishPrompt();
-    await collect(first.events);
-    // agy finished a background command and replied on its own after the turn; both reached only the transcript.
-    peer.betweenTurnOutput.push(
-      { content: [{ content: { text: 'Command output:\nBG-DONE', type: 'text' }, type: 'content' }], kind: 'execute',
-        sessionUpdate: 'tool_call_update', status: 'completed', title: 'sleep 25 && echo BG-DONE', toolCallId: 'call-earlier' },
-      { content: { text: 'The background task finished.', type: 'text' }, sessionUpdate: 'agent_message_chunk' },
-    );
-
-    const second = session.execute(request('Meanwhile'));
-    await peer.waitForPrompts(2);
-    peer.emit({ content: { text: 'Sure.', type: 'text' }, sessionUpdate: 'agent_message_chunk' }, 'session-new');
+    peer.emit({ content: { text: 'Late part two.', type: 'text' }, sessionUpdate: 'agent_message_chunk' }, 'session-new');
+    peer.emit({ sessionUpdate: 'usage_update', size: 1_048_576, used: 9_000 }, 'session-new');
+    await background.reached('usage_updated');
+    await vi.advanceTimersByTimeAsync(1_000);
+    await background.completed;
+    await answered;
     peer.finishPrompt();
     const events = await collect(second.events);
-    expect(events.filter(event => event.type === 'text_delta')).toEqual([expect.objectContaining({ text: 'Sure.' })]);
-    expect(events.filter(event => event.type === 'tool_started' || event.type === 'tool_completed')).toEqual([]);
+
+    expect(textOf(background.events)).toEqual(['Late part one. ', 'Late part two.']);
+    expect(textOf(events)).toEqual(['Sure.']);
   });
 
-  it('holds idle release while a subagent is out and releases it once agy\'s reply is published', async () => {
+  it('still closes agy\'s settled reply when the next run changes a setting before prompting', async () => {
+    const session = await createSession();
+    const first = session.execute(request('Delegate', { reasoning: 'high' }));
+    const peer = await firstPeer();
+    await peer.waitForPrompts(1);
+    peer.finishPrompt();
+    await collect(first.events);
+
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const background = backgroundTurn(session);
+    peer.emit({ content: { text: 'Late reply.', type: 'text' }, sessionUpdate: 'agent_message_chunk' }, 'session-new');
+    peer.emit({ sessionUpdate: 'usage_update', size: 1_048_576, used: 9_000 }, 'session-new');
+    await background.reached('usage_updated');
+    // The new effort reaches agy, which reports the change as a config_option_update.
+    const configured = deferred<void>();
+    peer.configGate = () => { configured.resolve(); };
+    const second = session.execute(request('Meanwhile', { reasoning: 'low' }));
+    await configured.promise;
+    // agy's stream is ordered, so the session has handled that update once it reports this later one.
+    const commandsChanged = new Promise<void>(resolve => {
+      const unsubscribe = session.onEvent(event => {
+        if (event.type !== 'commands_changed') return;
+        unsubscribe();
+        resolve();
+      });
+    });
+    peer.emit({ availableCommands: [{ description: 'Review', name: 'review' }], sessionUpdate: 'available_commands_update' }, 'session-new');
+    await commandsChanged;
+    await vi.advanceTimersByTimeAsync(1_000);
+    await background.completed;
+    await peer.waitForPrompts(2);
+    peer.finishPrompt();
+
+    expect((await collect(second.events)).at(-1)).toMatchObject({ type: 'turn_completed' });
+  });
+
+  it('stops agy\'s own reply and dismisses its pending approval when the next run is cancelled', async () => {
+    const port = createInteractionPort();
+    const asked = deferred<AbortSignal>();
+    port.requestApproval.mockImplementation((_approval, signal) => {
+      asked.resolve(signal);
+      return new Promise((_resolve, reject) => { signal.addEventListener('abort', () => reject(new Error('dismissed'))); });
+    });
+    const session = await createSession({ interactionPort: port });
+    const first = session.execute(request('Start the build'));
+    const peer = await firstPeer();
+    await peer.waitForPrompts(1);
+    peer.finishPrompt();
+    await collect(first.events);
+
+    const background = backgroundTurn(session);
+    peer.emit({ kind: 'edit', name: 'write_file', rawInput: {}, sessionUpdate: 'tool_call', status: 'pending', title: 'write_file', toolCallId: 'tool-1' }, 'session-new');
+    void peer.requestPermission(permissionRequest('write_file'));
+    const signal = await asked.promise;
+    const second = session.execute(request('Meanwhile'));
+    second.cancel();
+    expect((await collect(second.events)).at(-1)).toMatchObject({ type: 'cancelled' });
+
+    expect(signal.aborted).toBe(true);
+    expect((await background.completed).at(-1)).toMatchObject({ reason: 'interrupted', type: 'background_turn_completed' });
+    expect(peer.prompts).toHaveLength(1);
+  });
+
+  it('interrupts the background turn and dismisses its approval when the session is disposed', async () => {
+    const port = createInteractionPort();
+    const asked = deferred<AbortSignal>();
+    port.requestApproval.mockImplementation((_approval, signal) => {
+      asked.resolve(signal);
+      return new Promise((_resolve, reject) => { signal.addEventListener('abort', () => reject(new Error('dismissed'))); });
+    });
+    const session = await createSession({ interactionPort: port });
+    const run = session.execute(request('Start the build'));
+    const peer = await firstPeer();
+    await peer.waitForPrompts(1);
+    peer.finishPrompt();
+    await collect(run.events);
+
+    const background = backgroundTurn(session);
+    peer.emit({ kind: 'edit', name: 'write_file', rawInput: {}, sessionUpdate: 'tool_call', status: 'pending', title: 'write_file', toolCallId: 'tool-1' }, 'session-new');
+    // Disposal ends agy's process, so agy never sees the answer; the prompt must still go away.
+    void peer.requestPermission(permissionRequest('write_file'));
+    const signal = await asked.promise;
+    expect(signal.aborted).toBe(false);
+    await session.dispose();
+
+    expect(signal.aborted).toBe(true);
+    expect((await background.completed).at(-1)).toMatchObject({ reason: 'interrupted', type: 'background_turn_completed' });
+  });
+
+  it('stops agy\'s own reply when the user stops background work', async () => {
+    const session = await createSession();
+    const run = session.execute(request('Start the build'));
+    const peer = await firstPeer();
+    await peer.waitForPrompts(1);
+    peer.finishPrompt();
+    await collect(run.events);
+    expect(peer.cancelRequests).toEqual([]);
+
+    const background = backgroundTurn(session);
+    const sleep = { kind: 'execute', name: 'run_command', rawInput: { CommandLine: 'sleep 40' }, title: 'sleep 40', toolCallId: 'call-sleep' };
+    peer.emit({ content: { text: 'Waiting for the build.', type: 'text' }, sessionUpdate: 'agent_message_chunk' }, 'session-new');
+    peer.emit({ ...sleep, sessionUpdate: 'tool_call', status: 'in_progress' }, 'session-new');
+    await background.reached('tool_started');
+    session.cancel();
+
+    expect(peer.cancelRequests).toEqual(['session-new']);
+    expect((await background.completed).at(-1)).toMatchObject({ reason: 'interrupted', type: 'background_turn_completed' });
+    // agy 1.5.10 then reports the calls its cancel ended, including a background command from an earlier turn.
+    const later = backgroundTurn(session);
+    peer.emit({ ...sleep, sessionUpdate: 'tool_call_update', status: 'failed' }, 'session-new');
+    peer.emit({ kind: 'execute', name: 'run_command', sessionUpdate: 'tool_call_update', status: 'failed', title: 'npm run dev', toolCallId: 'call-dev' }, 'session-new');
+    // agy's stream is ordered, so the session has handled both updates once it reports this later one.
+    const commandsChanged = new Promise<void>(resolve => {
+      const unsubscribe = session.onEvent(event => {
+        if (event.type !== 'commands_changed') return;
+        unsubscribe();
+        resolve();
+      });
+    });
+    peer.emit({ availableCommands: [{ description: 'Review', name: 'review' }], sessionUpdate: 'available_commands_update' }, 'session-new');
+    await commandsChanged;
+    expect(later.events).toEqual([]);
+    expect(session.getStatus()).toBe('idle');
+    expect(session.blocksIdleRelease?.()).toBe(false);
+  });
+
+  it('asks agy\'s questions after a turn in its background turn', async () => {
+    const port = createInteractionPort();
+    port.askUserQuestion.mockImplementation(async (question: ProviderQuestionInteractionRequest) => ({
+      answers: { q1: '1' }, interactionId: question.interactionId,
+    }));
+    const session = await createSession({ interactionPort: port });
+    const run = session.execute(request('Start the build'));
+    const peer = await firstPeer();
+    await peer.waitForPrompts(1);
+    peer.finishPrompt();
+    await collect(run.events);
+
+    const background = backgroundTurn(session);
+    const args = { questions: [{ is_multi_select: false, options: ['Ship', 'Wait'], question: 'Ship it?' }] };
+    peer.emit({ args, kind: 'other', name: 'ask_question', rawInput: args, sessionUpdate: 'tool_call', status: 'in_progress', title: 'Run ask_question', toolCallId: 'tool-ask' }, 'session-new');
+    await background.reached('tool_started');
+    const reply = await peer.createElicitation({
+      message: 'Answer this',
+      mode: 'form',
+      requestedSchema: {
+        properties: { q1: { oneOf: [{ const: '1', title: 'Ship' }, { const: '2', title: 'Wait' }], title: 'Ship it?', type: 'string' } },
+        type: 'object',
+      },
+      sessionId: 'session-new',
+      toolCallId: 'tool-ask',
+    });
+
+    expect(reply).toEqual({ action: 'accept', content: { q1: '1' } });
+    const [started] = background.events;
+    expect(port.askUserQuestion.mock.calls.map(([question]) => question.turnId))
+      .toEqual([started.scope.kind === 'background' ? started.scope.turnId : 'none']);
+  });
+
+  it('runs a session tool agy calls in its background turn', async () => {
+    const list = vi.fn(async () => ({ sessions: [] }));
+    const session = await createSession({ sessionTools: { list, read: vi.fn(), send: vi.fn() } });
+    const run = session.execute(request('Start the build'));
+    const peer = await firstPeer();
+    await peer.waitForPrompts(1);
+    peer.finishPrompt();
+    await collect(run.events);
+
+    const background = backgroundTurn(session);
+    peer.emit({ kind: 'other', name: 'claudian_list_destinations', rawInput: {}, sessionUpdate: 'tool_call', status: 'in_progress', title: 'claudian_list_destinations', toolCallId: 'tool-mcp' }, 'session-new');
+    await background.reached('tool_started');
+    await peer.callMCP('session-new', 'claudian_list_destinations', {});
+    expect(list).toHaveBeenCalledTimes(1);
+  });
+
+  it('interrupts the background turn and dismisses its approval when agy exits between runs', async () => {
+    const port = createInteractionPort();
+    const asked = deferred<AbortSignal>();
+    port.requestApproval.mockImplementation((_approval, signal) => {
+      asked.resolve(signal);
+      return new Promise((_resolve, reject) => { signal.addEventListener('abort', () => reject(new Error('dismissed'))); });
+    });
+    const session = await createSession({ interactionPort: port });
+    const run = session.execute(request('Start the build'));
+    const peer = await firstPeer();
+    await peer.waitForPrompts(1);
+    peer.finishPrompt();
+    await collect(run.events);
+
+    const background = backgroundTurn(session);
+    peer.emit({ kind: 'edit', name: 'write_file', rawInput: {}, sessionUpdate: 'tool_call', status: 'pending', title: 'write_file', toolCallId: 'tool-1' }, 'session-new');
+    void peer.requestPermission(permissionRequest('write_file'));
+    const signal = await asked.promise;
+    peer.child.kill();
+
+    expect((await background.completed).at(-1)).toMatchObject({ reason: 'interrupted', type: 'background_turn_completed' });
+    expect(signal.aborted).toBe(true);
+    expect(session.blocksIdleRelease?.()).toBe(false);
+  });
+
+  it('holds idle release for a subagent agy launches in its background turn', async () => {
+    const session = await createSession();
+    const run = session.execute(request('Start the build'));
+    const peer = await firstPeer();
+    await peer.waitForPrompts(1);
+    peer.finishPrompt();
+    await collect(run.events);
+
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const background = backgroundTurn(session);
+    peer.emit(invokeSubagent('call-1'), 'session-new');
+    const delegation = [
+      transcriptSteps.user(0, 'Start the build', testTime({ minutes: -2 })),
+      transcriptSteps.reply(1, 'Started.', testTime({ minutes: -2 })),
+      transcriptSteps.delegate(2, testTime({ minutes: -1 })),
+      transcriptSteps.created(3, 'sub-1', testTime({ minutes: -1 })),
+      transcriptSteps.reply(4, 'Delegated.', testTime({ minutes: -1 })),
+    ];
+    await writeTranscript('session-new', delegation);
+    peer.emit({ sessionUpdate: 'usage_update', size: 1_048_576, used: 9_000 }, 'session-new');
+    await background.reached('usage_updated');
+    await vi.advanceTimersByTimeAsync(1_000);
+    await background.completed;
+    vi.useRealTimers();
+    await settleScan();
+    // Releasing the idle session would end agy's process and the subagent with it.
+    expect(session.blocksIdleRelease?.()).toBe(true);
+
+    await writeTranscript('session-new', [...delegation, transcriptSteps.report(5, 'sub-1', '391', testTime({ minutes: 5 }))]);
+    await vi.waitFor(() => expect(session.blocksIdleRelease?.()).toBe(false));
+  });
+
+  it('holds idle release while a subagent is out and releases it once the subagent reports', async () => {
     const session = await createSession();
     const run = session.execute(request('Delegate'));
     const peer = await firstPeer();
@@ -1008,17 +1300,12 @@ describe('AntigravityExecutionSession', () => {
     // Releasing the idle session would end agy's process and the subagent with it.
     expect(session.blocksIdleRelease?.()).toBe(true);
 
-    const background = nextBackgroundTurn(session);
-    await writeTranscript('session-new', [
-      ...delegation,
-      transcriptSteps.report(4, 'sub-1', '391', testTime({ minutes: 5 })),
-      transcriptSteps.reply(5, 'SUB-RESULT=391', testTime({ minutes: 5 })),
-    ]);
-    await background;
-    expect(session.blocksIdleRelease?.()).toBe(false);
+    await writeTranscript('session-new', [...delegation, transcriptSteps.report(4, 'sub-1', '391', testTime({ minutes: 5 }))]);
+    // Nothing signals the watcher's give-up; polling only bounds it.
+    await vi.waitFor(() => expect(session.blocksIdleRelease?.()).toBe(false));
   });
 
-  it('records the boundary of a turn that ends while an earlier transcript read is still running', async () => {
+  it('counts a subagent from the process\'s first turn when that turn\'s read returns after the next turn', async () => {
     const session = await createSession();
     const first = session.execute(request('Delegate'));
     const peer = await firstPeer();
@@ -1050,18 +1337,15 @@ describe('AntigravityExecutionSession', () => {
     const reread = read.nextReadDone();
     read.release();
     await reread;
+    await settleScan();
+    // Recording the second turn's request as the process's first would drop sub-1 and release agy too early.
+    expect(session.blocksIdleRelease?.()).toBe(true);
 
-    const background = nextBackgroundTurn(session);
-    await writeTranscript('session-new', [
-      ...meanwhile,
-      transcriptSteps.report(6, 'sub-1', '391', testTime({ minutes: 5 })),
-      transcriptSteps.reply(7, 'SUB-RESULT=391', testTime({ minutes: 5 })),
-    ]);
-    const events = await background;
-    expect(events.filter(event => event.type === 'text_delta')).toEqual([expect.objectContaining({ text: 'SUB-RESULT=391' })]);
+    await writeTranscript('session-new', [...meanwhile, transcriptSteps.report(6, 'sub-1', '391', testTime({ minutes: 5 }))]);
+    await vi.waitFor(() => expect(session.blocksIdleRelease?.()).toBe(false));
   });
 
-  it('keeps following a subagent and publishes its reply after the read at the turn\'s end fails', async () => {
+  it('keeps waiting for a subagent after the read at the turn\'s end fails', async () => {
     const session = await createSession();
     const run = session.execute(request('Delegate'));
     const peer = await firstPeer();
@@ -1083,15 +1367,11 @@ describe('AntigravityExecutionSession', () => {
     // A later transcript change reads the transcript again before agy's reply lands.
     await writeTranscript('session-new', delegation);
     await reread;
+    await settleScan();
+    expect(session.blocksIdleRelease?.()).toBe(true);
 
-    const background = nextBackgroundTurn(session);
-    await writeTranscript('session-new', [
-      ...delegation,
-      transcriptSteps.report(4, 'sub-1', '391', testTime({ minutes: 5 })),
-      transcriptSteps.reply(5, 'SUB-RESULT=391', testTime({ minutes: 5 })),
-    ]);
-    const events = await background;
-    expect(events.filter(event => event.type === 'text_delta')).toEqual([expect.objectContaining({ text: 'SUB-RESULT=391' })]);
+    await writeTranscript('session-new', [...delegation, transcriptSteps.report(4, 'sub-1', '391', testTime({ minutes: 5 }))]);
+    await vi.waitFor(() => expect(session.blocksIdleRelease?.()).toBe(false));
   });
 
   it('gives up on a quiet subagent after half an hour when only polling can see the transcript', async () => {
@@ -1179,14 +1459,10 @@ describe('AntigravityExecutionSession', () => {
     read.release();
     await reread;
 
-    const background = nextBackgroundTurn(session);
-    await writeTranscript('session-new', [
-      ...again,
-      transcriptSteps.report(8, 'sub-2', '391', testTime({ minutes: 5 })),
-      transcriptSteps.reply(9, 'SUB-RESULT=391', testTime({ minutes: 5 })),
-    ]);
-    expect((await background).filter(event => event.type === 'text_delta')).toEqual([expect.objectContaining({ text: 'SUB-RESULT=391' })]);
-    expect(session.blocksIdleRelease?.()).toBe(false);
+    await settleScan();
+    expect(session.blocksIdleRelease?.()).toBe(true);
+    await writeTranscript('session-new', [...again, transcriptSteps.report(8, 'sub-2', '391', testTime({ minutes: 5 }))]);
+    await vi.waitFor(() => expect(session.blocksIdleRelease?.()).toBe(false));
   });
 
   it('runs YOLO main chat with agy\'s skip-permissions flag and restarts the process when leaving or entering YOLO', async () => {
@@ -1255,20 +1531,14 @@ describe('AntigravityExecutionSession', () => {
     expect(events.some(event => event.type === 'context_compacted')).toBe(false);
   });
 
-  it('confirms a steer only when agy injects it into the running turn', async () => {
+  it('confirms a steer once agy hands the running turn to it, before the steer\'s output', async () => {
     const session = await createSession();
     const run = session.execute(request('first'));
     const peer = await firstPeer();
     await peer.waitForPrompts(1);
 
-    let confirmed = false;
-    const steer = session.steer(request('also this')).then(result => { confirmed = true; return result; });
-    await peer.waitForPrompts(2);
-    // agy has handed the turn to the steer prompt but has not injected it yet.
-    await new Promise<void>(resolve => { setImmediate(resolve); });
-    expect(confirmed).toBe(false);
-    peer.emit({ content: { text: 'also this', type: 'text' }, sessionUpdate: 'user_message_chunk' }, 'session-new');
-    await expect(steer).resolves.toBe(true);
+    // agy echoes no steer; it answers the prompt the steer takes over.
+    await expect(session.steer(request('also this'))).resolves.toBe(true);
     peer.emit({ content: { text: 'Done.', type: 'text' }, sessionUpdate: 'agent_message_chunk' }, 'session-new');
     peer.finishPrompt();
     const events = await collect(run.events);
@@ -1280,22 +1550,9 @@ describe('AntigravityExecutionSession', () => {
     // The chat consumer treats the first boundary as the turn's own input, so the steer needs its own second one.
     expect(events.filter(event => event.type === 'user_message_started').map(event => event.content))
       .toEqual(['first', 'also this']);
+    const types = events.map(event => event.type);
+    expect(types.lastIndexOf('user_message_started')).toBeLessThan(types.indexOf('text_delta'));
     expect(events.filter(event => event.type === 'turn_completed')).toHaveLength(1);
-  });
-
-  it('recognizes a slash-command steer whose echo omits the command name', async () => {
-    const session = await createSession();
-    const run = session.execute(request('first'));
-    const peer = await firstPeer();
-    await peer.waitForPrompts(1);
-    const steer = session.steer(request('/goal Reply with DONE'));
-    await peer.waitForPrompts(2);
-    peer.emit({ content: { text: ' Reply with DONE', type: 'text' }, sessionUpdate: 'user_message_chunk' }, 'session-new');
-    await expect(steer).resolves.toBe(true);
-    peer.finishPrompt();
-    const events = await collect(run.events);
-    expect(events.filter(event => event.type === 'user_message_started').map(event => event.content))
-      .toEqual(['first', '/goal Reply with DONE']);
   });
 
   it('handles two overlapping steers with one terminal', async () => {
@@ -1304,9 +1561,6 @@ describe('AntigravityExecutionSession', () => {
     const peer = await firstPeer();
     await peer.waitForPrompts(1);
     const steers = Promise.all([session.steer(request('one')), session.steer(request('two'))]);
-    await peer.waitForPrompts(3);
-    peer.emit({ content: { text: 'one', type: 'text' }, sessionUpdate: 'user_message_chunk' }, 'session-new');
-    peer.emit({ content: { text: 'two', type: 'text' }, sessionUpdate: 'user_message_chunk' }, 'session-new');
     await expect(steers).resolves.toEqual([true, true]);
     peer.finishPrompt();
     const events = await collect(run.events);
@@ -1337,10 +1591,7 @@ describe('AntigravityExecutionSession', () => {
     await peer.waitForPrompts(1);
     peer.failNextPrompt('Prompt rejected');
     await expect(session.steer(request('one'))).resolves.toBe(false);
-    const accepted = session.steer(request('two'));
-    await peer.waitForPrompts(2);
-    peer.emit({ content: { text: 'two', type: 'text' }, sessionUpdate: 'user_message_chunk' }, 'session-new');
-    await expect(accepted).resolves.toBe(true);
+    await expect(session.steer(request('two'))).resolves.toBe(true);
     peer.failNextPrompt('Prompt rejected');
     await expect(session.steer(request('three'))).resolves.toBe(false);
     peer.finishPrompt();
@@ -1350,37 +1601,16 @@ describe('AntigravityExecutionSession', () => {
     expect(events.at(-1)).toMatchObject({ reason: 'completed', type: 'turn_completed' });
   });
 
-  it('publishes a steer agy does not echo once the turn it joined completes', async () => {
+  it('keeps a steer agy took over when the turn is cancelled afterwards', async () => {
     const session = await createSession();
     const run = session.execute(request('first'));
     const peer = await firstPeer();
     await peer.waitForPrompts(1);
-    const image: ProviderExecutionRequest = { ...request(''), input: [{ image: {
-      data: 'iVBORw0KGgo=', id: 'image-1', mediaType: 'image/png', name: 'square.png', size: 8, source: 'paste',
-    }, type: 'image' }] };
-    const steer = session.steer(image);
-    await peer.waitForPrompts(2);
-    // agy does not echo image-only input.
-    peer.emit({ content: { text: 'A blue square.', type: 'text' }, sessionUpdate: 'agent_message_chunk' }, 'session-new');
-    peer.finishPrompt();
-    const events = await collect(run.events);
-
-    await expect(steer).resolves.toBe(true);
-    const types = events.map(event => event.type);
-    expect(events.filter(event => event.type === 'user_message_started')).toHaveLength(2);
-    expect(types.lastIndexOf('user_message_started')).toBeLessThan(types.indexOf('turn_completed'));
-  });
-
-  it('rejects a steer whose disposition is unknown when the turn is cancelled after handoff', async () => {
-    const session = await createSession();
-    const run = session.execute(request('first'));
-    const peer = await firstPeer();
-    await peer.waitForPrompts(1);
-    const steer = session.steer(request('also this'));
-    await peer.waitForPrompts(2);
+    await expect(session.steer(request('also this'))).resolves.toBe(true);
     session.cancel();
-    await expect(steer).rejects.toThrow();
-    expect((await collect(run.events)).at(-1)).toMatchObject({ type: 'cancelled' });
+    const events = await collect(run.events);
+    expect(events.filter(event => event.type === 'user_message_started').map(event => event.content)).toEqual(['first', 'also this']);
+    expect(events.at(-1)).toMatchObject({ type: 'cancelled' });
   });
 
   it('cancels the native turn and keeps the process when agy settles it', async () => {
@@ -1393,6 +1623,8 @@ describe('AntigravityExecutionSession', () => {
     const events = await collect(run.events);
 
     expect(peer.cancelRequests).toEqual(['session-new']);
+    // agy answered the cancelled prompt, so it has it even though it streamed nothing; no echo confirms it earlier.
+    expect(events.filter(event => event.type === 'turn_started')).toEqual([expect.objectContaining({ accepted: true })]);
     expect(events.at(-1)).toMatchObject({ type: 'cancelled' });
     expect(peer.child.killed).toBe(false);
   });

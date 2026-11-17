@@ -64,17 +64,6 @@ export interface AntigravityTranscript {
   readonly steps: readonly TranscriptStep[];
 }
 
-/** agy's own response to a task report, which it runs without a client prompt and never streams. */
-export interface AntigravityAutomaticResponse {
-  readonly message: ChatMessage;
-  /** Step index of the user request it follows; undefined when no request precedes it. */
-  readonly afterUserInput: number | undefined;
-  /** Step index of the step that started it. */
-  readonly startStep: number;
-  /** False while it is the transcript's last response and has not ended. */
-  readonly complete: boolean;
-}
-
 const CREATED_SUBAGENT_PATTERN = /Created the following subagent:[\s\S]*?"conversationId":\s*"([^"]+)"/;
 
 /** Reads the first existing transcript; a missing store yields null. */
@@ -108,14 +97,11 @@ export async function loadAntigravityHistory(storeRoot: string, sessionId: strin
   return messages;
 }
 
-/** The latest user request and the last step recorded so far, by step index. */
-export function readAntigravityTurnBoundary(
-  transcript: AntigravityTranscript,
-): { readonly userInput: number; readonly lastStep: number } | undefined {
+/** Step index of the latest user request. */
+export function readAntigravityLatestRequest(transcript: AntigravityTranscript): number | undefined {
   const { steps } = transcript;
   for (let index = steps.length - 1; index >= 0; index -= 1) {
-    if (steps[index].type !== 'USER_INPUT') continue;
-    return { lastStep: stepIndexOf(steps.at(-1)!, steps.length - 1), userInput: stepIndexOf(steps[index], index) };
+    if (steps[index].type === 'USER_INPUT') return stepIndexOf(steps[index], index);
   }
   return undefined;
 }
@@ -134,28 +120,6 @@ export function hasAntigravityOutstandingSubagents(transcript: AntigravityTransc
     if (report) outstanding.delete(report[1]);
   }
   return outstanding.size > 0;
-}
-
-/** The responses agy started on its own, in transcript order, built exactly as history replays them. */
-export function readAntigravityAutomaticResponses(
-  transcript: AntigravityTranscript,
-  sessionId: string,
-): AntigravityAutomaticResponse[] {
-  const { steps } = transcript;
-  const starts = new Map<string, { afterUserInput: number | undefined; startStep: number }>();
-  let afterUserInput: number | undefined;
-  for (const [index, step] of steps.entries()) {
-    const stepIndex = stepIndexOf(step, index);
-    if (step.type === 'USER_INPUT') afterUserInput = stepIndex;
-    starts.set(`${sessionId}:${String(step.step_index ?? index)}:assistant`, { afterUserInput, startStep: stepIndex });
-  }
-  const messages = parseAntigravityTranscript(steps, sessionId, transcript.argumentsEncoded);
-  const last = steps.at(-1);
-  const ended = last?.type === 'CHECKPOINT' ? last.status === 'DONE' : last?.type === 'PLANNER_RESPONSE' && !last.tool_calls?.length;
-  return messages.flatMap((message, index) => {
-    const start = message.isAutomaticResponse ? starts.get(message.id) : undefined;
-    return start ? [{ ...start, complete: index < messages.length - 1 || ended, message }] : [];
-  });
 }
 
 export async function readAntigravityHistoryRevision(storeRoot: string, sessionId: string): Promise<string | null> {

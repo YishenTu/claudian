@@ -68,16 +68,14 @@ import {
 import { ANTIGRAVITY_INLINE_EDIT_TOOLS, prepareAntigravityAgentFile } from '../runtime/AntigravityAgentFiles';
 import { resolveAntigravityLaunchSpec } from '../runtime/AntigravityExecutionContext';
 import { parseAntigravityProviderState } from '../types';
-import {
-  AntigravityAutomaticResponseFollower,
-  buildAntigravityAutomaticResponseEvents,
-} from './AntigravityAutomaticResponseFollower';
+import { ANTIGRAVITY_REPLY_OUTPUT_KINDS, AntigravityBackgroundTurn } from './AntigravityBackgroundTurn';
 import {
   ANTIGRAVITY_ACP_ARGS,
   ANTIGRAVITY_SKIP_PERMISSIONS_FLAG,
   AntigravityNativeConnection,
 } from './AntigravityNativeConnection';
 import { AntigravityQuestionRouter } from './AntigravityQuestionRouter';
+import { AntigravitySubagentWatcher } from './AntigravitySubagentWatcher';
 
 export interface AntigravityLiveModelSink {
   mergeLiveModels(models: AntigravityModel[], defaultModelId: string | null): Promise<unknown>;
@@ -87,11 +85,19 @@ export interface AntigravityExecutionSessionOptions {
   readonly modelSink?: AntigravityLiveModelSink;
 }
 
+/** What agy does on its own between runs. */
+type LateWork =
+  | { readonly phase: 'idle' }
+  /**
+   * agy is replying on its own. The turn keeps the updates it receives until the reply settles, even after a new run
+   * starts: agy finishes that reply before it answers the new prompt.
+   */
+  | { readonly phase: 'replying'; readonly turn: AntigravityBackgroundTurn }
+  /** Stopped between runs: agy then reports the calls its cancel ended, which open no turn, until the next run. */
+  | { readonly phase: 'stopped' };
+
 interface PendingSteer {
   applied: boolean;
-  /** Echo prefixes that identify this steer; agy strips a leading slash-command name. */
-  readonly echoPrefixes: readonly string[];
-  readonly resolveEcho: () => void;
   readonly text: string;
 }
 
@@ -104,11 +110,6 @@ interface PromptRecord {
 
 interface ActiveExecution {
   readonly abortController: AbortController;
-  /**
-   * Until agy echoes this run's prompt, its output is a replay of what agy did between turns (its own replies to
-   * subagent and background-task reports), which the transcript and the automatic-response follower already cover.
-   */
-  awaitingEcho: boolean;
   /** Set once the run starts native work; cancelling before any prompt then retires the process. */
   nativeTouched: boolean;
   /** Prompts sent for this run; only the latest one's response ends it (earlier ones hand off). */
@@ -117,6 +118,8 @@ interface ActiveExecution {
   readonly request: ProviderExecutionRequest;
   readonly run: RequestedRunChannel;
   readonly steers: PendingSteer[];
+  /** Tool calls this run has streamed; see `asToolCallWhenUnseen`. */
+  readonly toolCallIds: Set<string>;
   readonly turn: ACPRequestedTurn;
 }
 
@@ -160,8 +163,12 @@ export class AntigravityExecutionSession implements ProviderExecutionSession, St
   readonly sessionInstanceId = randomUUID();
 
   private active: ActiveExecution | null = null;
-  /** Main-agent sessions only: publishes replies agy makes to subagent reports after a turn ended. */
-  private automaticResponses: AntigravityAutomaticResponseFollower | null = null;
+  /** Main-agent sessions only: what agy does on its own between runs. */
+  private lateWork: LateWork = { phase: 'idle' };
+  /** The latest run's request: its configuration is what agy runs under, so it decides approvals between runs. */
+  private latestRequest: ProviderExecutionRequest | null = null;
+  /** Main-agent sessions only: holds idle release while a subagent has not reported. */
+  private subagents: AntigravitySubagentWatcher | null = null;
   private cancellationFlight: Promise<void> | null = null;
   private disposalFlight: Promise<void> | null = null;
   private disposed = false;
@@ -169,7 +176,8 @@ export class AntigravityExecutionSession implements ProviderExecutionSession, St
   private readonly nativeSlot = new ACPNativeOwnerSlot<NativeOwner>(async (owner, wasCurrent) => {
     if (wasCurrent) {
       owner.unsubscribe();
-      this.automaticResponses?.processEnded();
+      this.subagents?.processEnded();
+      this.#closeBackground('interrupted');
     }
     await owner.native.shutdown();
   });
@@ -196,7 +204,7 @@ export class AntigravityExecutionSession implements ProviderExecutionSession, St
       this.providerSessionId && providerState.nativeConversationContextEstablished !== false,
     );
     this.interactionController = new ACPInteractionController({
-      getTurnId: () => this.active?.run.turnId ?? null,
+      getTurnId: () => this.#interactionTurnId(),
       interactionPort: config.interactionPort,
       presentPermission: request => {
         const name = normalizeAntigravityToolName(readNativeToolName(request) ?? request.toolCall.title ?? 'tool', request.toolCall.rawInput);
@@ -207,7 +215,7 @@ export class AntigravityExecutionSession implements ProviderExecutionSession, St
     this.questionRouter = new AntigravityQuestionRouter(
       config.interactionPort,
       this.sessionInstanceId,
-      () => this.active?.run.turnId ?? null,
+      () => this.#interactionTurnId(),
       () => this.providerSessionId,
     );
   }
@@ -221,13 +229,13 @@ export class AntigravityExecutionSession implements ProviderExecutionSession, St
     });
     const active: ActiveExecution = {
       abortController: new AbortController(),
-      awaitingEcho: false,
       latestPrompt: 0,
       nativeTouched: false,
       prompts: new Map(),
       request,
       run,
       steers: [],
+      toolCallIds: new Set(),
       turn: new ACPRequestedTurn({
         onAccept: () => {
           if (this.nativeConversationContextEstablished) return;
@@ -240,7 +248,9 @@ export class AntigravityExecutionSession implements ProviderExecutionSession, St
       }),
     };
     this.active = active;
-    this.automaticResponses?.turnStarted();
+    this.latestRequest = request;
+    if (this.lateWork.phase === 'stopped') this.lateWork = { phase: 'idle' };
+    this.subagents?.turnStarted();
     this.#updateSnapshot('executing');
     this.#emitCurrentSnapshot();
     run.attachAbortSignal(request.signal);
@@ -248,8 +258,17 @@ export class AntigravityExecutionSession implements ProviderExecutionSession, St
     return run;
   }
 
+  /** Cancels the active run, or else stops what agy is doing on its own between runs. */
   cancel(): void {
-    this.active?.run.cancel();
+    if (this.active) {
+      this.active.run.cancel();
+      return;
+    }
+    const sessionId = this.providerSessionId;
+    if (this.lateWork.phase !== 'replying' || !sessionId) return;
+    // agy's cancel stops its own reply and the background tasks and subagents behind it.
+    this.nativeSlot.current?.native.cancel(sessionId);
+    this.#closeBackground('interrupted', 'stopped');
   }
 
   getCommandSnapshot(): readonly SlashCommand[] | undefined {
@@ -262,9 +281,9 @@ export class AntigravityExecutionSession implements ProviderExecutionSession, St
     return this.state.getSnapshot();
   }
 
-  /** Releasing the idle session would end agy's process, and an outstanding subagent with it. */
+  /** Releasing the idle session would end agy's process, and the work it is still doing with it. */
   blocksIdleRelease(): boolean {
-    return this.automaticResponses?.isFollowing ?? false;
+    return this.lateWork.phase === 'replying' || (this.subagents?.isWatching ?? false);
   }
 
   getStatus(): ProviderSessionStatus {
@@ -285,7 +304,8 @@ export class AntigravityExecutionSession implements ProviderExecutionSession, St
         if (this.cancellationFlight) await this.cancellationFlight;
         await this.nativeSlot.shutdown();
       } finally {
-        await this.automaticResponses?.dispose();
+        this.#closeBackground('interrupted');
+        await this.subagents?.dispose();
         const route = await this.sessionToolRoute?.catch(() => null);
         route?.dispose();
         this.interactionController.dispose();
@@ -299,8 +319,8 @@ export class AntigravityExecutionSession implements ProviderExecutionSession, St
 
   /**
    * agy steers by accepting another prompt during a running turn: the earlier prompt request
-   * resolves at once and the turn continues under the new one. The steer is accepted when agy
-   * echoes it into the turn, or when the turn it joined completes; it was definitely not handed
+   * resolves at once and the turn continues under the new one. The steer is accepted when that
+   * earlier prompt settles, or when the turn it joined completes; it was definitely not handed
    * off only if agy rejects it while the earlier prompt is still running.
    */
   async steer(request: ProviderExecutionRequest): Promise<boolean> {
@@ -312,17 +332,24 @@ export class AntigravityExecutionSession implements ProviderExecutionSession, St
       || active.latestPrompt === 0 || !owner?.initialized || owner.loaded?.sessionId !== sessionId || !sessionId
     ) return false;
     const previous = active.prompts.get(active.latestPrompt)!;
-    const text = getInputText(request);
-    let resolveEcho!: () => void;
-    const echoed = new Promise<'echo'>(resolve => { resolveEcho = () => resolve('echo'); });
-    const steer: PendingSteer = { applied: false, echoPrefixes: buildSteerEchoPrefixes(text), resolveEcho, text };
+    const steer: PendingSteer = { applied: false, text: getInputText(request) };
     active.steers.push(steer);
     const index = this.#sendPrompt(active, owner.native, sessionId, buildPromptBlocks(request));
     const ownPrompt = active.prompts.get(index)!.response;
+    // agy echoes no steer; it answers the prompt it takes over once the steer joins the turn.
+    const pending = new Promise<never>(() => {});
+    const handedOff = previous.response.then(
+      response => (response.stopReason === 'cancelled' ? pending : 'handoff' as const),
+      () => pending,
+    );
     try {
-      const ownRejection = ownPrompt.then(() => new Promise<never>(() => {}));
-      const outcome = await Promise.race([echoed, ownRejection, this.#waitForLatestPrompt(active)]);
-      if (outcome !== 'echo' && outcome.stopReason === 'cancelled' && !steer.applied) {
+      const ownRejection = ownPrompt.then(() => pending);
+      const outcome = await Promise.race([handedOff, ownRejection, this.#waitForLatestPrompt(active)]);
+      if (outcome === 'handoff') {
+        this.#applySteer(active, steer);
+        return true;
+      }
+      if (outcome.stopReason === 'cancelled' && !steer.applied) {
         throw new Error('The Antigravity turn was cancelled before the steer was confirmed.');
       }
       return true;
@@ -349,6 +376,13 @@ export class AntigravityExecutionSession implements ProviderExecutionSession, St
       if (this.#isCancellationRequested(active)) return;
       await this.#applyConfiguration(owner, active);
       if (this.#isCancellationRequested(active)) return;
+      // agy finishes its own reply before it answers a prompt; holding the prompt until that reply settles keeps a
+      // fast answer from joining the reply's turn. A pending approval in the reply holds it too, as it holds agy.
+      const late = this.#backgroundTurn();
+      if (late) {
+        await Promise.race([late.closed, whenAborted(active.abortController.signal)]);
+        if (this.#isCancellationRequested(active)) return;
+      }
       const sessionId = this.providerSessionId!;
       const compact = parseCompactCommand(getInputText(active.request));
       if (compact && !this.nativeConversationContextEstablished && active.request.conversationHistory?.length) {
@@ -361,11 +395,8 @@ export class AntigravityExecutionSession implements ProviderExecutionSession, St
       const blocks = compact
         ? [{ text: `/compact${compact.instructions ? ` ${compact.instructions}` : ''}`, type: 'text' as const }]
         : buildPromptBlocks(active.request, !this.nativeConversationContextEstablished);
-      // agy echoes a prompt's text, but not `/compact` or an image-only prompt.
-      active.awaitingEcho = !compact && hasEchoedText(blocks);
       const promptIndex = this.#sendPrompt(active, owner.native, sessionId, blocks);
-      // Consumers treat the first user boundary as the turn's own input; only later ones mark steers. agy's
-      // echo of this prompt is not a reliable boundary (`/compact` and images are not echoed).
+      // Consumers treat the first user boundary as the turn's own input; only later ones mark steers.
       active.run.emit({ content: getInputText(active.request), type: 'user_message_started' });
       const response = await Promise.race([closed, this.#waitForLatestPrompt(active)]);
       if (this.#isCancellationRequested(active)) return;
@@ -373,13 +404,9 @@ export class AntigravityExecutionSession implements ProviderExecutionSession, St
       // over its turn) has compacted the context.
       const compacted = compact !== null && response.stopReason === 'end_turn' && active.latestPrompt === promptIndex;
       if (compacted) active.run.emit({ type: 'context_compacted' });
-      // Completion confirms steers agy never echoed (image-only input), so they still need their boundary.
+      // Completion confirms steers whose handoff it raced, so they still need their boundary.
       if (response.stopReason !== 'cancelled') {
-        for (const steer of active.steers) {
-          if (steer.applied) continue;
-          steer.applied = true;
-          active.run.emit({ content: steer.text, type: 'user_message_started' });
-        }
+        for (const steer of active.steers) this.#applySteer(active, steer);
       }
       this.#finishCompleted(active, response, compacted);
     } catch (error) {
@@ -468,9 +495,19 @@ export class AntigravityExecutionSession implements ProviderExecutionSession, St
     };
     this.nativeSlot.install(owner);
     try {
-      owner.unsubscribe = native.onNotification(notification => {
+      const unsubscribeNotifications = native.onNotification(notification => {
         if (this.#isCurrentOwner(owner)) this.#handleNotification(owner, notification);
       });
+      // agy can exit between runs, ending its own reply and subagents with it.
+      const unsubscribeClose = native.onClose(() => {
+        if (!this.#isCurrentOwner(owner)) return;
+        this.subagents?.processEnded();
+        this.#closeBackground('interrupted');
+      });
+      owner.unsubscribe = () => {
+        unsubscribeNotifications();
+        unsubscribeClose();
+      };
       await native.initialize();
       if (this.disposed || !this.#isCurrentOwner(owner)) throw new AntigravityExecutionCancellationError();
       owner.initialized = true;
@@ -538,7 +575,7 @@ export class AntigravityExecutionSession implements ProviderExecutionSession, St
     this.#throwIfCancellationRequested(active);
     this.#captureSessionId(response.sessionId ?? this.providerSessionId!);
     owner.loaded = { sessionId: this.providerSessionId!, systemPromptAppend };
-    if (systemPromptAppend !== undefined) this.#followAutomaticResponses(owner, this.providerSessionId!);
+    if (systemPromptAppend !== undefined) this.#watchSubagents(owner, this.providerSessionId!);
     this.#adoptConfigOptions(owner, response.configOptions, response.models);
     this.#updateSnapshot(this.active ? 'executing' : 'idle');
     this.#emitCurrentSnapshot();
@@ -606,12 +643,17 @@ export class AntigravityExecutionSession implements ProviderExecutionSession, St
   async #getMCPServers(): Promise<ACPMCPServer[]> {
     if (!this.config.sessionTools) return [];
     this.sessionToolRoute ??= this.host.sessionToolEndpoint.registerMCPRoute(call => {
-      // Capture ownership before dispatch: a pending call must never adopt a later run.
+      // Capture ownership before dispatch: a pending call must never adopt a later turn. A call agy makes in its own
+      // reply belongs to the background turn, under the configuration agy last ran with.
+      const background = this.#backgroundTurn();
       const active = this.active;
+      const owner = background
+        ? { signal: background.abortController.signal, toolPolicy: this.latestRequest?.toolPolicy }
+        : active ? { signal: active.abortController.signal, toolPolicy: active.request.toolPolicy } : null;
       return invokeSessionTool(call.name, call.args, {
         port: this.config.sessionTools,
-        signal: active ? AbortSignal.any([active.abortController.signal, call.signal]) : AbortSignal.abort(),
-        toolPolicy: active?.request.toolPolicy,
+        signal: owner ? AbortSignal.any([owner.signal, call.signal]) : AbortSignal.abort(),
+        toolPolicy: owner?.toolPolicy,
       });
     }).then(route => {
       if (this.disposed) {
@@ -633,13 +675,31 @@ export class AntigravityExecutionSession implements ProviderExecutionSession, St
   }
 
   #handlePermission(request: ACPRequestPermissionRequest): Promise<ACPRequestPermissionResponse> {
-    const active = this.active;
     const cancelled: ACPRequestPermissionResponse = { outcome: { outcome: 'cancelled' } };
-    if (!active || this.#isCancellationRequested(active) || request.sessionId !== this.providerSessionId) {
-      return Promise.resolve(cancelled);
+    if (request.sessionId !== this.providerSessionId) return Promise.resolve(cancelled);
+    const background = this.#backgroundFor(request.sessionId);
+    if (background) {
+      // Fail closed: approvals between runs follow the configuration agy last ran under.
+      if (!this.latestRequest) return Promise.resolve(cancelled);
+      background.interactionStarted();
+      return this.#decidePermission(request, this.latestRequest, background.abortController.signal).then(response => {
+        if (!grantsPermission(request, response)) background.toolDenied(request.toolCall.toolCallId);
+        return response;
+      });
     }
+    const active = this.active;
+    if (!active || this.#isCancellationRequested(active)) return Promise.resolve(cancelled);
+    return this.#decidePermission(request, active.request, active.abortController.signal);
+  }
+
+  #decidePermission(
+    request: ACPRequestPermissionRequest,
+    policyRequest: ProviderExecutionRequest,
+    signal: AbortSignal,
+  ): Promise<ACPRequestPermissionResponse> {
+    const cancelled: ACPRequestPermissionResponse = { outcome: { outcome: 'cancelled' } };
     const toolName = normalizeAntigravityToolName(readNativeToolName(request) ?? request.toolCall.title ?? '', request.toolCall.rawInput);
-    const policy = active.request.toolPolicy.kind;
+    const policy = policyRequest.toolPolicy.kind;
     if (policy === 'passive') return Promise.resolve(cancelled);
     if (policy === 'read-only') {
       return Promise.resolve(readNativeToolName(request) === 'run_command'
@@ -648,13 +708,18 @@ export class AntigravityExecutionSession implements ProviderExecutionSession, St
     if (isSessionTool(toolName)) {
       return Promise.resolve(this.config.sessionTools ? mapACPApprovalDecision('allow', request.options) : cancelled);
     }
-    if (policy === 'unrestricted' || shouldAutoApproveAntigravityPermission(active.request.configuration.permissionMode)) {
+    if (policy === 'unrestricted' || shouldAutoApproveAntigravityPermission(policyRequest.configuration.permissionMode)) {
       return Promise.resolve(mapACPApprovalDecision('allow', request.options));
     }
-    return this.interactionController.requestPermission(request, active.abortController.signal);
+    return this.interactionController.requestPermission(request, signal);
   }
 
   #handleElicitation(request: ACPCreateElicitationRequest): Promise<ACPCreateElicitationResponse> {
+    const background = this.#backgroundFor(request.sessionId);
+    if (background) {
+      background.interactionStarted();
+      return this.questionRouter.handle(request, background.abortController.signal);
+    }
     const active = this.active;
     if (!active || this.#isCancellationRequested(active)) return Promise.resolve({ action: 'cancel' });
     return this.questionRouter.handle(request, active.abortController.signal);
@@ -669,43 +734,88 @@ export class AntigravityExecutionSession implements ProviderExecutionSession, St
       if (notification.sessionId === this.providerSessionId) this.state.emit({ type: 'commands_changed' });
       return;
     }
-    const active = this.active;
-    if (!active || this.#isCancellationRequested(active) || notification.sessionId !== this.providerSessionId) return;
+    if (notification.sessionId !== this.providerSessionId) return;
     const update = notification.update as ACPSessionNotification['update'] & { name?: unknown };
-    if (active.awaitingEcho && REPLAYED_UPDATE_KINDS.has(update.sessionUpdate)) return;
     switch (update.sessionUpdate) {
+      // Claudian emits its own user boundaries and owns conversation titles.
       case 'user_message_chunk':
-        active.awaitingEcho = false;
-        // agy echoes prompts it accepts; only a steer's echo marks a new user message (the turn's own
-        // boundary is emitted when its prompt is sent).
-        if (active.turn.acceptingLiveOutput) active.turn.accept();
-        this.#applySteerEcho(active, update.content);
-        return;
       case 'session_info_update':
-        // Claudian owns conversation titles.
         return;
-      case 'tool_call':
-      case 'tool_call_update': {
-        if (update.sessionUpdate === 'tool_call' && update.name === 'invoke_subagent') this.automaticResponses?.subagentLaunched();
-        active.turn.handleUpdate(withAntigravityToolTitle(update));
-        return;
-      }
-      default: {
-        const metadata = active.turn.handleUpdate(update);
-        if (metadata?.type === 'config_options') this.#adoptConfigOptions(owner, metadata.configOptions);
-      }
+      default:
+        break;
     }
+    // After a Stop between runs, agy reports the calls the cancel ended; they belong to the interrupted turn.
+    const opens = ANTIGRAVITY_REPLY_OUTPUT_KINDS.has(update.sessionUpdate)
+      && !(this.lateWork.phase === 'stopped' && update.sessionUpdate === 'tool_call_update');
+    const background = this.#backgroundFor(notification.sessionId, opens);
+    if (background) {
+      const metadata = background.handleUpdate(this.#normalizeToolUpdate(background.toolCallIds, update));
+      if (metadata?.type === 'config_options') this.#adoptConfigOptions(owner, metadata.configOptions);
+      return;
+    }
+    const active = this.active;
+    if (!active || this.#isCancellationRequested(active)) return;
+    const metadata = active.turn.handleUpdate(this.#normalizeToolUpdate(active.toolCallIds, update));
+    if (metadata?.type === 'config_options') this.#adoptConfigOptions(owner, metadata.configOptions);
   }
 
-  #applySteerEcho(active: ActiveExecution, content: ACPContentBlock): void {
-    const text = content.type === 'text' ? content.text.trim() : '';
-    const steer = active.steers.find(entry => !entry.applied && entry.echoPrefixes.some(prefix => (
-      prefix ? text.startsWith(prefix) : !text
-    )));
-    if (!steer) return;
+  /** Native tool names, and an update for a call a turn has not seen presented as that call. */
+  #normalizeToolUpdate<T extends ACPSessionNotification['update'] & { name?: unknown }>(seen: Set<string>, update: T): T {
+    if (update.sessionUpdate !== 'tool_call' && update.sessionUpdate !== 'tool_call_update') return update;
+    if (update.sessionUpdate === 'tool_call' && update.name === 'invoke_subagent') this.subagents?.subagentLaunched();
+    const unseen = !seen.has(update.toolCallId);
+    seen.add(update.toolCallId);
+    // A background command a turn launched completes in a later one, as an update for a call that turn never saw.
+    return withAntigravityToolTitle(unseen && update.sessionUpdate === 'tool_call_update'
+      ? { ...update, sessionUpdate: 'tool_call' } : update);
+  }
+
+  #applySteer(active: ActiveExecution, steer: PendingSteer): void {
+    if (steer.applied) return;
     steer.applied = true;
-    steer.resolveEcho();
     active.run.emit({ content: steer.text, type: 'user_message_started' });
+  }
+
+  /**
+   * The open background turn, or, when `open` is set, a new one for main-agent work agy starts while no run is active.
+   * Auxiliary sessions never have one: their policies depend on Claudian denying what agy asks outside a run.
+   */
+  #backgroundFor(sessionId: string, open = true): AntigravityBackgroundTurn | null {
+    const current = this.#backgroundTurn();
+    if (current || !open || this.active || this.disposed || sessionId !== this.providerSessionId) return current;
+    if (this.nativeSlot.current?.loaded?.systemPromptAppend === undefined) return null;
+    const background = new AntigravityBackgroundTurn({
+      notify: event => this.state.notify(event),
+      onSettled: () => { if (this.#backgroundTurn() === background) this.#closeBackground('completed'); },
+      providerSessionId: this.providerSessionId,
+      sessionInstanceId: this.sessionInstanceId,
+      takeAnswers: toolCallId => this.questionRouter.takeAnswers(toolCallId),
+    });
+    this.lateWork = { phase: 'replying', turn: background };
+    this.subagents?.turnStarted();
+    this.#updateSnapshot('executing');
+    this.#emitCurrentSnapshot();
+    return background;
+  }
+
+  #closeBackground(reason: 'completed' | 'interrupted', next: 'idle' | 'stopped' = 'idle'): void {
+    const background = this.#backgroundTurn();
+    if (!background) return;
+    this.lateWork = { phase: next };
+    background.close(reason);
+    // agy's reply may have launched subagents; an interruption (Stop, exit) ended them with it.
+    if (reason === 'completed') this.subagents?.turnEnded(true);
+    if (this.active || this.disposed) return;
+    this.#updateSnapshot('idle');
+    this.#emitCurrentSnapshot();
+  }
+
+  #backgroundTurn(): AntigravityBackgroundTurn | null {
+    return this.lateWork.phase === 'replying' ? this.lateWork.turn : null;
+  }
+
+  #interactionTurnId(): string | null {
+    return this.#backgroundTurn()?.turnId ?? this.active?.run.turnId ?? null;
   }
 
   #finishCompleted(active: ActiveExecution, response: ACPPromptResponse, compacted: boolean): void {
@@ -726,7 +836,7 @@ export class AntigravityExecutionSession implements ProviderExecutionSession, St
       });
       if (usage) active.run.emit({ type: 'usage_updated', usage });
     }
-    this.#updateSnapshot('idle');
+    this.#updateSnapshot(this.lateWork.phase === 'replying' ? 'executing' : 'idle');
     this.#emitCurrentSnapshot();
     active.abortController.abort();
     this.#endRun(active, {
@@ -770,6 +880,8 @@ export class AntigravityExecutionSession implements ProviderExecutionSession, St
     this.#updateSnapshot('cancelling');
     this.#emitCurrentSnapshot();
     active.abortController.abort();
+    // agy's cancel also stops what it was doing between prompts.
+    this.#closeBackground('interrupted');
     this.interactionController.dismissAll('cancelled');
     this.questionRouter.dismissAll('cancelled');
     const owner = this.nativeSlot.current;
@@ -782,6 +894,8 @@ export class AntigravityExecutionSession implements ProviderExecutionSession, St
           // agy settles a cancelled prompt at once; a process that does not is replaced.
           const settled = await settleWithin(latest, CANCEL_SETTLE_TIMEOUT_MS);
           if (!settled) await this.nativeSlot.shutdown();
+          // An answered prompt reached agy, even one cancelled before any output (agy echoes no prompt).
+          else if (await latest.then(() => true, () => false)) active.turn.accept();
         } else if (active.nativeTouched) {
           // Startup, resume or configuration was interrupted; its native outcome is unknown.
           await this.nativeSlot.shutdown();
@@ -804,41 +918,18 @@ export class AntigravityExecutionSession implements ProviderExecutionSession, St
     active.run.finish(terminal);
     active.turn.dispose();
     if (this.active === active) this.active = null;
-    if (!this.disposed && this.automaticResponses?.sessionId === this.providerSessionId) {
-      this.automaticResponses?.turnEnded(active.latestPrompt > 0);
+    if (!this.disposed && this.subagents?.sessionId === this.providerSessionId) {
+      this.subagents?.turnEnded(active.latestPrompt > 0);
     }
   }
 
-  #followAutomaticResponses(owner: NativeOwner, sessionId: string): void {
-    if (this.automaticResponses?.sessionId === sessionId) return;
-    void this.automaticResponses?.dispose();
+  #watchSubagents(owner: NativeOwner, sessionId: string): void {
+    if (this.subagents?.sessionId === sessionId) return;
+    void this.subagents?.dispose();
     const storeRoot = resolveAntigravityStoreRoot(owner.native.launch.env, process.platform);
-    this.automaticResponses = storeRoot ? new AntigravityAutomaticResponseFollower({
-      publish: message => this.#publishAutomaticResponse(message),
-      sessionId,
-      storeRoot,
-    }) : null;
-    // The run that loaded the session is under way; its end starts following.
-    this.automaticResponses?.turnStarted();
-  }
-
-  /** agy produced the reply in one native step; it arrives as one settled background turn. */
-  #publishAutomaticResponse(message: ChatMessage): void {
-    const turnId = `antigravity-automatic-${message.id}`;
-    let sequence = 0;
-    const scope = () => ({ kind: 'background' as const, sequence: ++sequence, sessionInstanceId: this.sessionInstanceId, turnId });
-    const providerSessionId = this.providerSessionId;
-    this.state.notify({ providerSessionId, scope: scope(), type: 'background_turn_started' });
-    for (const event of buildAntigravityAutomaticResponseEvents(message)) {
-      this.state.notify({ ...event, scope: scope() });
-    }
-    this.state.notify({
-      nativeAssistantId: message.assistantMessageId,
-      providerSessionId,
-      reason: 'completed',
-      scope: scope(),
-      type: 'background_turn_completed',
-    });
+    this.subagents = storeRoot ? new AntigravitySubagentWatcher({ sessionId, storeRoot }) : null;
+    // The run that loaded the session is under way; its end starts watching.
+    this.subagents?.turnStarted();
   }
 
   #isCancellationRequested(active: ActiveExecution): boolean {
@@ -892,18 +983,16 @@ function readNativeToolName(request: ACPRequestPermissionRequest): string | unde
   return typeof name === 'string' && name.trim() ? name.trim() : undefined;
 }
 
-/** Output kinds agy replays from between turns at the start of the next prompt. */
-const REPLAYED_UPDATE_KINDS = new Set(['agent_message_chunk', 'agent_thought_chunk', 'plan', 'tool_call', 'tool_call_update']);
-
-function hasEchoedText(prompt: readonly ACPContentBlock[]): boolean {
-  return prompt.some(block => block.type === 'text' && block.text.trim().replace(/^\/\S+\s*/, '') !== '');
+function whenAborted(signal: AbortSignal): Promise<void> {
+  return signal.aborted ? Promise.resolve() : new Promise(resolve => { signal.addEventListener('abort', () => resolve(), { once: true }); });
 }
 
-function buildSteerEchoPrefixes(text: string): string[] {
-  const trimmed = text.trim();
-  const withoutCommand = trimmed.replace(/^\/\S+\s*/, '');
-  return withoutCommand === trimmed ? [trimmed] : [trimmed, withoutCommand];
+function grantsPermission(request: ACPRequestPermissionRequest, response: ACPRequestPermissionResponse): boolean {
+  const { outcome } = response;
+  return outcome.outcome === 'selected'
+    && request.options.some(option => option.optionId === outcome.optionId && option.kind.startsWith('allow'));
 }
+
 
 function getInputText(request: ProviderExecutionRequest): string {
   return request.input.filter(block => block.type === 'text').map(block => block.text).join('\n');

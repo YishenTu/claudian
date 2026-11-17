@@ -1067,7 +1067,8 @@
       "environment": {
         "name": "Переменные окружения Antigravity",
         "desc": "Переменные окружения, передаваемые только Antigravity (agy), например GEMINI_API_KEY."
-      }
+      },
+      "updateReminder": "Claudian поддерживает только последнюю версию agy, а agy быстро меняется. Обновляйте его:"
     },
     "deepseek": {
       "installation": {
