@@ -18,6 +18,7 @@ import {
 import type { AskUserAnswers, ToolProviderPayload } from '@/core/types';
 import {
   type ACPResolvedToolRawName,
+  type ACPSessionNotification,
   ACPToolStreamAdapter,
 } from '@/providers/acp';
 
@@ -135,9 +136,20 @@ export function buildAntigravityToolProviderPayload(
   };
 }
 
-/** agy sends its tool name in a non-standard `name` field; the ACP title is display text. */
-export function withAntigravityToolTitle<T extends { name?: unknown; title?: unknown }>(update: T): T {
-  return typeof update.name === 'string' && update.name.trim() ? { ...update, title: update.name.trim() } : update;
+/**
+ * A session update as one turn presents it. agy sends its tool name in a non-standard `name` field (the ACP title is
+ * display text), and a background command an earlier turn launched completes in a later one, as an update for a call
+ * that turn never saw; it is presented as that call. `seen` holds the turn's tool call ids.
+ */
+export function presentAntigravityUpdate<T extends ACPSessionNotification['update'] & { name?: unknown }>(
+  seen: Set<string>,
+  update: T,
+): T {
+  if (update.sessionUpdate !== 'tool_call' && update.sessionUpdate !== 'tool_call_update') return update;
+  const unseen = !seen.has(update.toolCallId);
+  seen.add(update.toolCallId);
+  const presented = unseen && update.sessionUpdate === 'tool_call_update' ? { ...update, sessionUpdate: 'tool_call' as const } : update;
+  return typeof update.name === 'string' && update.name.trim() ? { ...presented, title: update.name.trim() } : presented;
 }
 
 /** `takeAnswers` returns the answers the user gave to a question tool; agy's result does not report them. */

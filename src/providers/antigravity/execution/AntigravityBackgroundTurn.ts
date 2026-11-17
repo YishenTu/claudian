@@ -8,11 +8,12 @@ import {
   buildACPUsageInfo,
 } from '@/providers/acp';
 
-import { createAntigravityToolStreamAdapter } from '../normalization/antigravityToolNormalization';
+import { createAntigravityToolStreamAdapter, presentAntigravityUpdate } from '../normalization/antigravityToolNormalization';
 
 /**
  * agy ends every model call with `usage_update` and streams that call's tool calls within milliseconds of it, so a
- * reply is over once nothing follows its `usage_update` for this long. A denial ends agy's reply at the denied call's
+ * reply is over once nothing follows its `usage_update` for this long. A tool call keeps the reply open until the next
+ * `usage_update`, including while it waits for an approval or answer (agy asks only after streaming the call). A denial ends agy's reply at the denied call's
  * failure, with no `usage_update`. A turn closed early only splits the reply: later output opens another background
  * turn.
  */
@@ -38,24 +39,16 @@ export interface AntigravityBackgroundTurnOptions {
  */
 export class AntigravityBackgroundTurn {
   readonly turnId = randomUUID();
-  /** Aborted when the turn closes, dismissing approvals and questions it still shows. */
-  readonly abortController = new AbortController();
+  readonly #closed = new AbortController();
   /** Tool calls this turn has streamed. */
-  readonly toolCallIds = new Set<string>();
+  readonly #toolCallIds = new Set<string>();
   /** Calls whose approval was not granted; agy's reply ends when one fails. */
   readonly #deniedToolCallIds = new Set<string>();
   readonly #normalizer: ACPExecutionEventNormalizer;
-  /** Resolves once the turn has closed. */
-  readonly closed: Promise<void>;
-  readonly #resolveClosed: () => void;
   #sequence = 0;
   #settleTimer: number | undefined;
-  #closed = false;
 
   constructor(private readonly options: AntigravityBackgroundTurnOptions) {
-    let resolveClosed!: () => void;
-    this.closed = new Promise(resolve => { resolveClosed = resolve; });
-    this.#resolveClosed = resolveClosed;
     this.#normalizer = new ACPExecutionEventNormalizer({
       mapUsage: usage => buildACPUsageInfo({ contextWindow: usage }),
       scope: { kind: 'background', sessionInstanceId: options.sessionInstanceId, turnId: this.turnId },
@@ -64,11 +57,16 @@ export class AntigravityBackgroundTurn {
     options.notify({ providerSessionId: options.providerSessionId, scope: this.#nextScope(), type: 'background_turn_started' });
   }
 
-  handleUpdate(update: ACPSessionNotification['update']): ACPNormalizedUpdate | undefined {
-    if (this.#closed) return undefined;
+  /** Aborts once the turn has closed, dismissing approvals and questions it still shows. */
+  get signal(): AbortSignal {
+    return this.#closed.signal;
+  }
+
+  handleUpdate(update: ACPSessionNotification['update'] & { name?: unknown }): ACPNormalizedUpdate | undefined {
+    if (this.signal.aborted) return undefined;
     // A settings change the next run makes is not agy replying.
     if (ANTIGRAVITY_REPLY_OUTPUT_KINDS.has(update.sessionUpdate)) window.clearTimeout(this.#settleTimer);
-    const { events, metadata } = this.#normalizer.normalize(update);
+    const { events, metadata } = this.#normalizer.normalize(presentAntigravityUpdate(this.#toolCallIds, update));
     // The turn's start and completion share its sequence, so it numbers the normalized events itself.
     for (const event of events) this.options.notify({ ...event, scope: this.#nextScope() });
     const deniedCallFailed = update.sessionUpdate === 'tool_call_update' && update.status === 'failed'
@@ -84,16 +82,10 @@ export class AntigravityBackgroundTurn {
     this.#deniedToolCallIds.add(toolCallId);
   }
 
-  /** A pending approval or question keeps the reply open until it is answered. */
-  interactionStarted(): void {
-    window.clearTimeout(this.#settleTimer);
-  }
-
   close(reason: ProviderBackgroundTurnCompletionReason): void {
-    if (this.#closed) return;
-    this.#closed = true;
+    if (this.signal.aborted) return;
     window.clearTimeout(this.#settleTimer);
-    this.abortController.abort();
+    this.#closed.abort();
     this.#normalizer.dispose();
     this.options.notify({
       providerSessionId: this.options.providerSessionId,
@@ -101,7 +93,6 @@ export class AntigravityBackgroundTurn {
       scope: this.#nextScope(),
       type: 'background_turn_completed',
     });
-    this.#resolveClosed();
   }
 
   #nextScope() {

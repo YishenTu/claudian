@@ -1281,6 +1281,62 @@ describe('AntigravityExecutionSession', () => {
     await vi.waitFor(() => expect(session.blocksIdleRelease?.()).toBe(false));
   });
 
+  it('holds idle release for a subagent the next run launches while agy\'s own reply held its prompt', async () => {
+    const session = await createSession();
+    const first = session.execute(request('Delegate'));
+    const peer = await firstPeer();
+    await peer.waitForPrompts(1);
+    peer.emit(invokeSubagent('call-1'), 'session-new');
+    const delegation = [
+      transcriptSteps.user(0, 'Delegate', testTime({ minutes: -3 })),
+      transcriptSteps.delegate(1, testTime({ minutes: -3 })),
+      transcriptSteps.created(2, 'sub-1', testTime({ minutes: -3 })),
+      transcriptSteps.reply(3, 'Waiting.', testTime({ minutes: -3 })),
+    ];
+    await writeTranscript('session-new', delegation);
+    peer.finishPrompt();
+    await collect(first.events);
+
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const background = backgroundTurn(session);
+    peer.emit({ content: { text: 'Still waiting.', type: 'text' }, sessionUpdate: 'agent_message_chunk' }, 'session-new');
+    await background.reached('text_delta');
+    // agy's reply holds this run's prompt until it settles.
+    const second = session.execute(request('Delegate again'));
+    peer.emit({ sessionUpdate: 'usage_update', size: 1_048_576, used: 9_000 }, 'session-new');
+    await background.reached('usage_updated');
+    await vi.advanceTimersByTimeAsync(1_000);
+    await background.completed;
+    vi.useRealTimers();
+    await peer.waitForPrompts(2);
+
+    // The run launches sub-2; sub-1 reports before agy records sub-2's creation.
+    peer.emit(invokeSubagent('call-2'), 'session-new');
+    const reported = [
+      ...delegation,
+      transcriptSteps.user(4, 'Delegate again', testTime({ minutes: -2 })),
+      transcriptSteps.delegate(5, testTime({ minutes: -2 })),
+      transcriptSteps.report(6, 'sub-1', '391', testTime({ minutes: -2 })),
+    ];
+    await writeTranscript('session-new', reported);
+    // A watcher left running through the run would read this transcript, find nothing outstanding and stop.
+    await vi.waitFor(() => expect(session.blocksIdleRelease?.()).toBe(false));
+    const created = [
+      ...reported,
+      transcriptSteps.created(7, 'sub-2', testTime({ minutes: -1 })),
+      transcriptSteps.reply(8, 'Delegated.', testTime({ minutes: -1 })),
+    ];
+    await writeTranscript('session-new', created);
+    peer.finishPrompt();
+    await collect(second.events);
+    await settleScan();
+    // Releasing the idle session would end agy's process and sub-2 with it.
+    expect(session.blocksIdleRelease?.()).toBe(true);
+
+    await writeTranscript('session-new', [...created, transcriptSteps.report(9, 'sub-2', '782', testTime({ minutes: 5 }))]);
+    await vi.waitFor(() => expect(session.blocksIdleRelease?.()).toBe(false));
+  });
+
   it('holds idle release while a subagent is out and releases it once the subagent reports', async () => {
     const session = await createSession();
     const run = session.execute(request('Delegate'));
