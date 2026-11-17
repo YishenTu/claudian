@@ -96,7 +96,7 @@ function holdTranscriptRead(sessionId: string) {
   const [transcriptPath] = resolveAntigravityTranscriptPaths(path.join(vault, '.gemini', 'antigravity-cli'), sessionId);
   const actual = fsSync.createReadStream;
   const reading = deferred<void>();
-  const release = deferred<void>();
+  const release = deferred<Error | undefined>();
   let held = false;
   let readWaiters: Array<() => void> = [];
   vi.spyOn(fsSync, 'createReadStream').mockImplementation(((file: fsSync.PathLike, options?: Parameters<typeof actual>[1]) => {
@@ -110,14 +110,15 @@ function holdTranscriptRead(sessionId: string) {
     const stream = new Readable({ read() {} });
     stream.push(fsSync.readFileSync(transcriptPath));
     reading.resolve();
-    void release.promise.then(() => stream.push(null));
+    void release.promise.then(failure => failure ? stream.destroy(failure) : stream.push(null));
     // The reader consumes only the Readable surface of a file stream.
     return stream as fsSync.ReadStream;
   }) as typeof fsSync.createReadStream);
   return {
     nextReadDone: () => new Promise<void>(resolve => { readWaiters.push(resolve); }),
+    fail: (failure: Error) => release.resolve(failure),
     reading: reading.promise,
-    release: () => release.resolve(),
+    release: () => release.resolve(undefined),
   };
 }
 
@@ -1055,6 +1056,39 @@ describe('AntigravityExecutionSession', () => {
       ...meanwhile,
       transcriptSteps.report(6, 'sub-1', '391', testTime({ minutes: 5 })),
       transcriptSteps.reply(7, 'SUB-RESULT=391', testTime({ minutes: 5 })),
+    ]);
+    const events = await background;
+    expect(events.filter(event => event.type === 'text_delta')).toEqual([expect.objectContaining({ text: 'SUB-RESULT=391' })]);
+  });
+
+  it('keeps following a subagent and publishes its reply after the read at the turn\'s end fails', async () => {
+    const session = await createSession();
+    const run = session.execute(request('Delegate'));
+    const peer = await firstPeer();
+    await peer.waitForPrompts(1);
+    peer.emit(invokeSubagent('call-1'), 'session-new');
+    const delegation = [
+      transcriptSteps.user(0, 'Delegate', testTime({ minutes: -2 })),
+      transcriptSteps.delegate(1, testTime({ minutes: -2 })),
+      transcriptSteps.created(2, 'sub-1', testTime({ minutes: -2 })),
+      transcriptSteps.reply(3, 'Waiting.', testTime({ minutes: -2 })),
+    ];
+    await writeTranscript('session-new', delegation);
+    peer.finishPrompt();
+    await collect(run.events);
+    const read = holdTranscriptRead('session-new');
+    await read.reading;
+    const reread = read.nextReadDone();
+    read.fail(new Error('EIO: i/o error, read'));
+    // A later transcript change reads the transcript again before agy's reply lands.
+    await writeTranscript('session-new', delegation);
+    await reread;
+
+    const background = nextBackgroundTurn(session);
+    await writeTranscript('session-new', [
+      ...delegation,
+      transcriptSteps.report(4, 'sub-1', '391', testTime({ minutes: 5 })),
+      transcriptSteps.reply(5, 'SUB-RESULT=391', testTime({ minutes: 5 })),
     ]);
     const events = await background;
     expect(events.filter(event => event.type === 'text_delta')).toEqual([expect.objectContaining({ text: 'SUB-RESULT=391' })]);

@@ -8,6 +8,7 @@ import { readFileRevision } from '@/utils/fileRevision';
 import { resolveAntigravityTranscriptPaths } from '../history/AntigravityHistoryPaths';
 import {
   type AntigravityAutomaticResponse,
+  type AntigravityTranscript,
   hasAntigravityOutstandingSubagents,
   readAntigravityAutomaticResponses,
   readAntigravityTranscript,
@@ -158,7 +159,14 @@ export class AntigravityAutomaticResponseFollower {
     const recordsTurn = this.#unrecordedTurn;
     const generation = this.#processGeneration;
     this.#unrecordedTurn = false;
-    const transcript = await readAntigravityTranscript(this.options.storeRoot, this.options.sessionId);
+    let transcript: AntigravityTranscript | null;
+    try {
+      transcript = await readAntigravityTranscript(this.options.storeRoot, this.options.sessionId);
+    } catch (error) {
+      // A failed read records nothing; the current process's next read records the turn instead.
+      if (recordsTurn && generation === this.#processGeneration) this.#unrecordedTurn = true;
+      throw error;
+    }
     if (this.#disposed || !transcript) return;
     if (recordsTurn) {
       // agy flushes a turn's steps before settling its prompt, so the latest request is the turn that just ended.
