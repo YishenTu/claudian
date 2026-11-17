@@ -522,7 +522,6 @@
       "fromLabel": "Из сеанса:"
     },
     "lifecycleFeedback": {
-      "runningArchive": "Нельзя архивировать выполняющиеся сеансы",
       "archiveSkippedOne": "Открытый или выполняющийся сеанс пропущен ({count})",
       "archiveSkippedOther": "Открытые или выполняющиеся сеансы пропущены ({count})",
       "runningDelete": "Нельзя удалять выполняющиеся сеансы",

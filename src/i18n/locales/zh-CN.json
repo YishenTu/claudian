@@ -522,7 +522,6 @@
       "fromLabel": "来自会话："
     },
     "lifecycleFeedback": {
-      "runningArchive": "无法归档正在运行的会话",
       "archiveSkippedOne": "已跳过 {count} 个已打开或正在运行的会话",
       "archiveSkippedOther": "已跳过 {count} 个已打开或正在运行的会话",
       "runningDelete": "无法删除正在运行的会话",

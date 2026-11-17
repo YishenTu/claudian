@@ -522,7 +522,6 @@
       "fromLabel": "Von Sitzung:"
     },
     "lifecycleFeedback": {
-      "runningArchive": "Laufende Sitzungen können nicht archiviert werden",
       "archiveSkippedOne": "{count} geöffnete oder laufende Sitzung übersprungen",
       "archiveSkippedOther": "{count} geöffnete oder laufende Sitzungen übersprungen",
       "runningDelete": "Laufende Sitzungen können nicht gelöscht werden",

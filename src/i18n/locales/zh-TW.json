@@ -522,7 +522,6 @@
       "fromLabel": "來自工作階段："
     },
     "lifecycleFeedback": {
-      "runningArchive": "無法封存執行中的工作階段",
       "archiveSkippedOne": "已跳過 {count} 個已開啟或執行中的工作階段",
       "archiveSkippedOther": "已跳過 {count} 個已開啟或執行中的工作階段",
       "runningDelete": "無法刪除執行中的工作階段",

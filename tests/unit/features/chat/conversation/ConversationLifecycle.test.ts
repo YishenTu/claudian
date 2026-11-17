@@ -197,17 +197,53 @@ describe('ConversationLifecycle', () => {
         .toBeLessThan(conversations.archiveConversationsIf.mock.invocationCallOrder[0]);
     });
 
-    it('does not archive or close anything while any bound tab is working', async () => {
-      const idle = createManager([{ id: 'idle-tab', conversationId: 'conversation-1' }]);
-      const running = createManager([{ id: 'running-tab', conversationId: 'conversation-1', isWorking: true }]);
-      const { lifecycle, conversations } = createLifecycle(idle, running);
+    it('archives a running session whose bound tabs are idle and closes them first', async () => {
+      const manager = createManager([{ id: 'idle-tab', conversationId: 'conversation-1' }]);
+      const conversations = createStore();
+      const lifecycle = new ConversationLifecycle({
+        conversations,
+        projects: createProjects(),
+        sessions: { get: () => null, isRunning: id => id === 'conversation-1', retire: async () => undefined, whenSettled: async () => true },
+        views: { getAllViews: () => [{ getTabManager: () => manager } as never] },
+      });
 
       await lifecycle.setArchived('conversation-1', true);
 
-      expect(idle.closeTab).not.toHaveBeenCalled();
-      expect(running.closeTab).not.toHaveBeenCalled();
-      expect(conversations.setConversationArchived).not.toHaveBeenCalled();
-      expect(Notice).toHaveBeenCalledWith('Running sessions cannot be archived');
+      expect(manager.closeTab).toHaveBeenCalledWith('idle-tab');
+      expect(conversations.archiveConversationsIf).toHaveBeenCalledWith(['conversation-1'], expect.any(Function));
+      const shouldArchive = conversations.archiveConversationsIf.mock.calls[0][1];
+      expect(shouldArchive({ id: 'conversation-1' } as never)).toBe(true);
+      expect(Notice).not.toHaveBeenCalled();
+    });
+
+    it('skips a single archive whose only bound tab is mid-work and says so', async () => {
+      const manager = createManager([{ id: 'busy-tab', conversationId: 'conversation-1', isWorking: true }]);
+      const { lifecycle, conversations } = createLifecycle(manager);
+
+      await lifecycle.setArchived('conversation-1', true);
+
+      expect(manager.closeTab).not.toHaveBeenCalled();
+      expect(conversations.archiveConversationsIf).toHaveBeenCalledWith(['conversation-1'], expect.any(Function));
+      const shouldArchive = conversations.archiveConversationsIf.mock.calls[0][1];
+      expect(shouldArchive({ id: 'conversation-1' } as never)).toBe(false);
+      expect(Notice).toHaveBeenCalledWith('Skipped 1 session that is open or running');
+    });
+
+    it('archives a session running without any view or tab', async () => {
+      const manager = createManager([]);
+      const conversations = createStore();
+      const lifecycle = new ConversationLifecycle({
+        conversations,
+        projects: createProjects(),
+        sessions: { get: () => null, isRunning: id => id === 'conversation-1', retire: async () => undefined, whenSettled: async () => true },
+        views: { getAllViews: () => [{ getTabManager: () => manager } as never] },
+      });
+
+      await lifecycle.setArchived('conversation-1', true);
+
+      expect(manager.closeTab).not.toHaveBeenCalled();
+      expect(conversations.archiveConversationsIf).toHaveBeenCalledWith(['conversation-1'], expect.any(Function));
+      expect(Notice).not.toHaveBeenCalled();
     });
 
     it('restores an archived session without opening or closing a tab', async () => {
@@ -220,7 +256,7 @@ describe('ConversationLifecycle', () => {
       expect(manager.closeTab).not.toHaveBeenCalled();
     });
 
-    it('archives a batch after closing idle tabs and skips running sessions', async () => {
+    it('archives a batch after closing idle tabs, leaving busy-tab sessions out of the write', async () => {
       const manager = createManager([
         { id: 'open-tab', conversationId: 'conversation-1' },
         { id: 'running-tab', conversationId: 'conversation-3', isWorking: true },
@@ -233,7 +269,9 @@ describe('ConversationLifecycle', () => {
       expect(manager.closeTab).toHaveBeenCalledWith('open-tab');
       expect(conversations.archiveConversationsIf).toHaveBeenCalledTimes(1);
       expect(conversations.archiveConversationsIf)
-        .toHaveBeenCalledWith(['conversation-1', 'conversation-2'], expect.any(Function));
+        .toHaveBeenCalledWith(['conversation-1', 'conversation-2', 'conversation-3'], expect.any(Function));
+      const shouldArchive = conversations.archiveConversationsIf.mock.calls[0][1];
+      expect(shouldArchive({ id: 'conversation-3' } as never)).toBe(false);
       expect(Notice).toHaveBeenCalledWith('Skipped 1 session that is open or running');
     });
 

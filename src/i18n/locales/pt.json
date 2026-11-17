@@ -522,7 +522,6 @@
       "fromLabel": "Da sessão:"
     },
     "lifecycleFeedback": {
-      "runningArchive": "Não é possível arquivar sessões em execução",
       "archiveSkippedOne": "{count} sessão aberta ou em execução foi ignorada",
       "archiveSkippedOther": "{count} sessões abertas ou em execução foram ignoradas",
       "runningDelete": "Não é possível excluir sessões em execução",

@@ -522,7 +522,6 @@
       "fromLabel": "送信元セッション:"
     },
     "lifecycleFeedback": {
-      "runningArchive": "実行中のセッションはアーカイブできません",
       "archiveSkippedOne": "開いているか実行中のセッションを {count} 件スキップしました",
       "archiveSkippedOther": "開いているか実行中のセッションを {count} 件スキップしました",
       "runningDelete": "実行中のセッションは削除できません",
