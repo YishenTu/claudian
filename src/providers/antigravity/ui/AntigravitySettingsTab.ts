@@ -31,6 +31,9 @@ import {
 
 const DISPLAY_NAME = 'Antigravity';
 
+/** A shell command, not UI text. */
+const AGY_UPDATE_COMMAND = 'agy update';
+
 export const antigravitySettingsTabRenderer: ProviderSettingsTabRenderer = {
   render(container, context) {
     const settingsBag = context.plugin.settings as unknown as Record<string, unknown>;
@@ -107,6 +110,11 @@ export const antigravitySettingsTabRenderer: ProviderSettingsTabRenderer = {
       placeholder: process.platform === 'win32'
         ? 'C:\\Users\\you\\AppData\\Local\\agy\\agy.exe'
         : '~/.local/bin/agy',
+      // agy changes quickly and Claudian drops workarounds once agy fixes what they covered.
+      renderDetails: details => {
+        const reminder = details.createEl('p', { cls: 'setting-item-description', text: `${t('settings.antigravity.updateReminder')} ` });
+        reminder.createEl('code', { text: AGY_UPDATE_COMMAND });
+      },
       validate: validateCLIPath,
     });
 

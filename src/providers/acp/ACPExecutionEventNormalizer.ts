@@ -1,5 +1,6 @@
 import type {
   ProviderAssistantMessageStartedEvent,
+  ProviderBackgroundEventScope,
   ProviderNoticeEvent,
   ProviderRequestedEventScope,
   ProviderTextDeltaEvent,
@@ -21,7 +22,8 @@ import type { ACPToolStreamAdapter } from './ACPToolStreamAdapter';
 import type { ACPUsageUpdate } from './types';
 
 export interface ACPExecutionEventNormalizerOptions {
-  readonly scope: Omit<ProviderRequestedEventScope, 'sequence'>;
+  /** A requested run's turn, or a turn the agent started on its own between requests. */
+  readonly scope: Omit<ProviderRequestedEventScope, 'sequence'> | Omit<ProviderBackgroundEventScope, 'sequence'>;
   readonly mapUsage?: (usage: ACPUsageUpdate) => UsageInfo | null;
   readonly toolStreamAdapter?: ACPToolStreamAdapter;
 }
