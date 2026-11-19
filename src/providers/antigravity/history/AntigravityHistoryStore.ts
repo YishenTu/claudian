@@ -3,19 +3,21 @@ import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { normalizeImageMediaType } from '@/core/execution/imageAttachment';
+import type { ExecutionPathMapper } from '@/core/process/execution-target/types';
 import { resolveToolDiffData } from '@/core/tools/toolDiff';
 import { isWriteEditTool } from '@/core/tools/toolNames';
 import type { AskUserAnswers, ChatMessage, ContentBlock, ImageAttachment, ToolCallInfo } from '@/core/types';
 import { readFileRevision } from '@/utils/fileRevision';
 import { forEachJSONLLine } from '@/utils/jsonlFile';
 
+import { mapAntigravityArgumentPaths } from '../normalization/antigravityNativePaths';
 import {
   buildAntigravityToolProviderPayload,
   normalizeAntigravityToolInput,
   normalizeAntigravityToolName,
   normalizeAntigravityToolResult,
 } from '../normalization/antigravityToolNormalization';
-import { resolveAntigravityTranscriptPaths } from './AntigravityHistoryPaths';
+import { antigravityStorePaths, resolveAntigravityTranscriptPaths } from './AntigravityHistoryPaths';
 
 interface TranscriptStep {
   content?: string;
@@ -88,12 +90,19 @@ export async function readAntigravityTranscript(storeRoot: string, sessionId: st
   return null;
 }
 
-/** Reads the first existing transcript; a missing or unreadable store yields no messages. */
-export async function loadAntigravityHistory(storeRoot: string, sessionId: string): Promise<ChatMessage[]> {
+/**
+ * Reads the first existing transcript; a missing or unreadable store yields no messages. `pathMapper` presents the
+ * Linux paths a WSL agy recorded as host paths.
+ */
+export async function loadAntigravityHistory(
+  storeRoot: string,
+  sessionId: string,
+  pathMapper?: ExecutionPathMapper,
+): Promise<ChatMessage[]> {
   const transcript = await readAntigravityTranscript(storeRoot, sessionId);
   if (!transcript) return [];
-  const messages = parseAntigravityTranscript(transcript.steps, sessionId, transcript.argumentsEncoded);
-  await attachUploadedImages(messages, transcript.steps, storeRoot, sessionId);
+  const messages = parseAntigravityTranscript(transcript.steps, sessionId, transcript.argumentsEncoded, pathMapper);
+  await attachUploadedImages(messages, transcript.steps, storeRoot, sessionId, pathMapper);
   return messages;
 }
 
@@ -138,6 +147,7 @@ export function parseAntigravityTranscript(
   steps: readonly TranscriptStep[],
   sessionId: string,
   argumentsEncoded = false,
+  pathMapper?: ExecutionPathMapper,
 ): ChatMessage[] {
   const messages: ChatMessage[] = [];
   let turn: TurnBuilder | null = null;
@@ -239,7 +249,7 @@ export function parseAntigravityTranscript(
         }
         for (const [index, toolCall] of (step.tool_calls ?? []).entries()) {
           const rawName = typeof toolCall.name === 'string' ? toolCall.name : 'tool';
-          const rawInput = decodeArguments(toolCall.args, argumentsEncoded);
+          const rawInput = mapAntigravityArgumentPaths(decodeArguments(toolCall.args, argumentsEncoded), pathMapper);
           const call: ToolCallInfo = {
             id: `${sessionId}:${stepId}:tool:${index}`,
             input: normalizeAntigravityToolInput(rawName, rawInput),
@@ -324,8 +334,10 @@ async function attachUploadedImages(
   steps: readonly TranscriptStep[],
   storeRoot: string,
   sessionId: string,
+  pathMapper?: ExecutionPathMapper,
 ): Promise<void> {
-  const uploads = path.join(storeRoot, 'brain', sessionId, '.user_uploaded') + path.sep;
+  const paths = antigravityStorePaths(storeRoot);
+  const uploads = paths.join(storeRoot, 'brain', sessionId, '.user_uploaded') + paths.sep;
   for (const step of steps) {
     if (step.type !== 'USER_INPUT' || !Array.isArray(step.media)) continue;
     const message = messages.find(entry => entry.id === `${sessionId}:${String(step.step_index)}:user`);
@@ -334,8 +346,8 @@ async function attachUploadedImages(
     for (const [index, media] of step.media.entries()) {
       const mediaType = normalizeImageMediaType(media?.mime_type);
       if (!mediaType || typeof media.uri !== 'string') continue;
-      const file = path.resolve(media.uri.startsWith('file:') ? fileURLToPath(media.uri) : media.uri);
-      if (!file.startsWith(uploads)) continue;
+      const file = resolveUploadPath(media.uri, paths, pathMapper);
+      if (!file?.startsWith(uploads)) continue;
       let data: Buffer;
       try {
         data = await fs.readFile(file);
@@ -346,13 +358,34 @@ async function attachUploadedImages(
         data: data.toString('base64'),
         id: `${sessionId}:${String(step.step_index)}:image:${index}`,
         mediaType,
-        name: path.basename(file),
+        name: paths.basename(file),
         size: data.length,
         source: 'file',
       });
     }
     if (images.length > 0) message.images = images;
   }
+}
+
+/** The host path of an upload agy recorded: a WSL agy records Linux paths, read through the distro's share. */
+function resolveUploadPath(uri: string, paths: typeof path.posix, pathMapper?: ExecutionPathMapper): string | null {
+  try {
+    if (pathMapper?.target.method !== 'wsl') return paths.resolve(uri.startsWith('file:') ? fileURLToPath(uri) : uri);
+    const linuxPath = uri.startsWith('file:') ? readLinuxFileURLPath(uri) : uri;
+    // Windows reads a backslash in a Linux name as a separator, so such a name has no faithful host path.
+    if (!path.posix.isAbsolute(linuxPath) || linuxPath.includes('\\')) return null;
+    const hostPath = pathMapper.toHostPath(path.posix.resolve(linuxPath));
+    return hostPath ? paths.resolve(hostPath) : null;
+  } catch {
+    return null;
+  }
+}
+
+/** A local file URL's POSIX path, decoded independently of the host's path rules; throws for a remote host. */
+function readLinuxFileURLPath(uri: string): string {
+  const url = new URL(uri);
+  if (url.protocol !== 'file:' || (url.hostname && url.hostname !== 'localhost')) throw new Error('Not a local file URL');
+  return decodeURIComponent(url.pathname);
 }
 
 function extractUserRequest(content: string): string {

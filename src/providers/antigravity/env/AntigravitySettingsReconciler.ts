@@ -1,3 +1,5 @@
+import { resolveExecutionTarget } from '@/core/process/execution-target/ExecutionTargetResolver';
+
 import { getRuntimeEnvironmentText } from '../../../core/providers/providerEnvironment';
 import type { ProviderSettingsReconciler } from '../../../core/providers/types';
 import { decodeAntigravityModelId, encodeAntigravityModelId } from '../models';
@@ -9,11 +11,12 @@ import {
 } from '../settings';
 
 export const antigravitySettingsReconciler: ProviderSettingsReconciler = {
-  reconcileModelWithEnvironment(settings) {
+  reconcileModelWithEnvironment(settings, context) {
     const current = getAntigravityProviderSettings(settings);
     if (!current.enabled) return { changed: false };
     const environmentText = getRuntimeEnvironmentText(settings, ANTIGRAVITY_PROVIDER_ID);
-    const environmentHash = computeAntigravityRuntimeInputHash(current, environmentText);
+    const target = resolveExecutionTarget({ settings: current, hostVaultPath: context?.vaultPath });
+    const environmentHash = computeAntigravityRuntimeInputHash(current, environmentText, target);
     if (current.environmentHash === environmentHash) return { changed: false };
     updateAntigravityProviderSettings(settings, { environmentHash });
     return { changed: true };

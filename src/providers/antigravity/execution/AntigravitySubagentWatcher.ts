@@ -1,19 +1,18 @@
 import { type FSWatcher, watch } from 'node:fs';
 import path from 'node:path';
 
-import { readFileRevision } from '@/utils/fileRevision';
-
 import { resolveAntigravityTranscriptPaths } from '../history/AntigravityHistoryPaths';
 import {
   type AntigravityTranscript,
   hasAntigravityOutstandingSubagents,
+  readAntigravityHistoryRevision,
   readAntigravityLatestRequest,
   readAntigravityTranscript,
 } from '../history/AntigravityHistoryStore';
 
 /** Coalesces the bursts of change events one transcript write produces. */
 const RESCAN_DELAY_MS = 200;
-/** Used only where the transcript directory cannot be watched. */
+/** Used only where the transcript directory cannot be watched or its watch is unreliable. */
 const POLL_INTERVAL_MS = 5_000;
 /**
  * A subagent that needs approval outside Auto or YOLO never reports (agy does not relay its request over ACP), so
@@ -22,6 +21,8 @@ const POLL_INTERVAL_MS = 5_000;
 const QUIET_LIMIT_MS = 30 * 60_000;
 
 export interface AntigravitySubagentWatcherOptions {
+  /** Polls instead of watching, for stores whose change notifications are unreliable. */
+  readonly poll?: boolean;
   readonly storeRoot: string;
   readonly sessionId: string;
 }
@@ -177,12 +178,17 @@ export class AntigravitySubagentWatcher {
     let poll: number | undefined;
     // Only a changed file counts, so an unchanged transcript still reaches the quiet limit.
     let revision: string | null | undefined;
-    const pollOnce = () => void readFileRevision(transcriptPath).then(next => {
+    // Either transcript file may be the one agy appends to.
+    const pollOnce = () => void readAntigravityHistoryRevision(this.options.storeRoot, this.options.sessionId).then(next => {
       if (next === revision) return;
       revision = next;
       onChange();
     });
     const startPolling = () => { poll ??= window.setInterval(pollOnce, POLL_INTERVAL_MS); };
+    if (this.options.poll) {
+      startPolling();
+      return () => window.clearInterval(poll);
+    }
     try {
       // The directory survives agy replacing the file.
       watcher = watch(path.dirname(transcriptPath), onChange);

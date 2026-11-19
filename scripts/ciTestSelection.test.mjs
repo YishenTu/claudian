@@ -510,6 +510,7 @@ test('WSL suites run only for changes to WSL-related code or WSL test infrastruc
   const opencode = 'tests/integration/providers/opencode/runtime/OpencodeWSL.windows.test.ts';
   const codex = 'tests/integration/providers/codex/runtime/CodexWSL.windows.test.ts';
   const grok = 'tests/integration/providers/grok/runtime/GrokWSL.windows.test.ts';
+  const antigravity = 'tests/integration/providers/antigravity/runtime/AntigravityWSL.windows.test.ts';
   const claude = 'tests/integration/core/process/execution-target/ClaudeWSL.windows.test.ts';
   // Source that launches, targets, maps paths or chooses the installation method for WSL keeps its declared suites.
   for (const [file, suite] of [
@@ -523,6 +524,8 @@ test('WSL suites run only for changes to WSL-related code or WSL test infrastruc
     ['src/providers/deepseek/ui/DeepSeekSettingsTab.ts', deepseek],
     ['src/providers/grok/runtime/GrokExecutionContext.ts', relay],
     ['src/providers/grok/history/GrokConversationHistoryService.ts', grok],
+    ['src/providers/antigravity/runtime/AntigravityExecutionContext.ts', antigravity],
+    ['src/providers/antigravity/history/AntigravityHistoryEnvironment.ts', antigravity],
     ['src/providers/opencode/runtime/OpencodeExecutionTarget.ts', opencode],
     ['src/providers/opencode/ui/OpencodeSettingsTab.ts', opencode],
     ['src/providers/codex/runtime/CodexLaunchSpecBuilder.ts', codex],
@@ -547,10 +550,12 @@ test('WSL suites run only for changes to WSL-related code or WSL test infrastruc
   }
   // WSL suites, helpers and fixtures change what the native job runs.
   for (const [file, suite] of [
-    [wsl, wsl], [relay, relay], [deepseek, deepseek], [opencode, opencode], [codex, codex], [grok, grok], [claude, claude],
+    [wsl, wsl], [relay, relay], [deepseek, deepseek], [opencode, opencode], [codex, codex], [grok, grok],
+    [antigravity, antigravity], [claude, claude],
     ['tests/fixtures/providers/deepseek/runtime/FakeDeepSeekWSLHost.mjs', deepseek],
     ['tests/fixtures/providers/pi/PiSessionProcess.mjs', wsl],
     ['tests/helpers/providers/codex/CodexWSLPeer.ts', codex],
+    ['tests/helpers/providers/antigravity/AntigravityWSLPeer.ts', antigravity],
   ]) assert.ok(select([file]).wslSuites.includes(suite), `${file} must select ${suite}`);
   for (const [helper, suite] of [['tests/helpers/WSLNativeTarget.ts', relay], ['tests/helpers/WSLNativePeer.ts', grok], ['tests/helpers/WSLClaudeFixture.ts', claude]]) {
     assert.ok(select([helper], [suite]).wslSuites.includes(suite), `${helper} must select ${suite}`);

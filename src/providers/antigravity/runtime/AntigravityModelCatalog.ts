@@ -1,11 +1,13 @@
 import { getInstallationKey } from '@/core/device/InstallationKey';
-import { runProcessProbe } from '@/core/process/ProcessProbe';
+import { resolveExecutionTarget } from '@/core/process/execution-target/ExecutionTargetResolver';
+import { runProcessProbe, WSL_PROCESS_PROBE_TIMEOUT_MS } from '@/core/process/ProcessProbe';
 import { t } from '@/i18n/i18n';
 
 import type { ProviderRuntimeHost } from '../../../core/providers/ProviderRuntimeHost';
 import type { ProviderModelCatalogRefreshResult } from '../../../core/providers/types';
 import {
   type AntigravityCatalogSnapshot,
+  type AntigravityProviderSettings,
   decodeAntigravityConfig,
   updateAntigravityConfig,
 } from '../config';
@@ -29,7 +31,10 @@ export class AntigravityModelCatalog {
     let output: string | null = null;
     if (this.liveReport?.contextKey !== contextKey) {
       const launch = await resolveAntigravityLaunchSpec(this.host, ['models']);
-      output = await runProcessProbe({ ...launch, cwd: launch.spawnCwd, signal });
+      output = await runProcessProbe(
+        { ...launch, cwd: launch.spawnCwd, signal },
+        launch.target.method === 'wsl' ? WSL_PROCESS_PROBE_TIMEOUT_MS : undefined,
+      );
     }
     if (signal.aborted) return { changed: false };
     // A session may have supplied a complete catalog while the standalone command was running.
@@ -65,7 +70,7 @@ export class AntigravityModelCatalog {
     await this.host.updateConfig((config, selection) => {
       const current = decodeAntigravityConfig(config, selection);
       // Reports from a superseded CLI or environment must not overwrite the current catalog.
-      if (this.disposed || signal?.aborted || computeAntigravityRuntimeInputHash(current, this.host.environmentText) !== contextKey) {
+      if (this.disposed || signal?.aborted || this.#contextKeyOf(current) !== contextKey) {
         return false;
       }
       // A probe started before a live report must not replace it when it finishes later.
@@ -89,9 +94,15 @@ export class AntigravityModelCatalog {
   }
 
   #getContextKey(): string {
+    return this.#contextKeyOf(decodeAntigravityConfig(this.host.config, this.host.selection));
+  }
+
+  /** The launch inputs, including the distro agy runs in, which a WSL vault path can select. */
+  #contextKeyOf(settings: AntigravityProviderSettings): string {
     return computeAntigravityRuntimeInputHash(
-      decodeAntigravityConfig(this.host.config, this.host.selection),
+      settings,
       this.host.environmentText,
+      resolveExecutionTarget({ settings, hostVaultPath: this.host.workingDirectory }),
     );
   }
 }

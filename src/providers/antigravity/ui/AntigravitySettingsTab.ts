@@ -2,12 +2,13 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 
 import { normalizeConfiguredCLIPath } from '@/core/process/cliPath';
-import { resolveExecutionTarget } from '@/core/process/execution-target/ExecutionTargetResolver';
+import { resolveExecutionTargetAsync } from '@/core/process/execution-target/ExecutionTargetResolver';
 import { probeTargetCLIInstallation } from '@/core/providers/cli/TargetCLIInstallationProbe';
 import { getRuntimeEnvironmentText } from '@/core/providers/providerEnvironment';
 import { ANTIGRAVITY_PROVIDER_ICON } from '@/shared/icons';
 import { AccessibleSetting } from '@/shared/settings/AccessibleSetting';
 import { renderCLIInstallationSetting } from '@/shared/settings/CLIInstallationSetting';
+import { renderExecutionTargetSettings, validateExecutionTargetCLIPath } from '@/shared/settings/ExecutionTargetSettings';
 
 import { ProviderSettingsCoordinator } from '../../../core/providers/ProviderSettingsCoordinator';
 import { ProviderWorkspaceRegistry } from '../../../core/providers/ProviderWorkspaceRegistry';
@@ -22,7 +23,9 @@ import {
 } from '../../../shared/settings/ProviderModelEnablementWarning';
 import { renderProviderModelsSection } from '../../../shared/settings/ProviderModelsSection';
 import type { AntigravityWorkspaceServices } from '../app/AntigravityWorkspaceServices';
+import { resolveAntigravityWSLCLIPath } from '../runtime/antigravityCLIReference';
 import { buildAntigravityRuntimeEnv } from '../runtime/AntigravityRuntimeEnvironment';
+import { getAntigravityWSLForwardedEnvironment } from '../runtime/antigravityWSLEnvironment';
 import {
   ANTIGRAVITY_PROVIDER_ID,
   getAntigravityProviderSettings,
@@ -33,6 +36,10 @@ const DISPLAY_NAME = 'Antigravity';
 
 /** A shell command, not UI text. */
 const AGY_UPDATE_COMMAND = 'agy update';
+
+function nativeCLIPlaceholder(): string {
+  return process.platform === 'win32' ? 'C:\\Users\\you\\AppData\\Local\\agy\\agy.exe' : '~/.local/bin/agy';
+}
 
 export const antigravitySettingsTabRenderer: ProviderSettingsTabRenderer = {
   render(container, context) {
@@ -73,7 +80,8 @@ export const antigravitySettingsTabRenderer: ProviderSettingsTabRenderer = {
       providerName: DISPLAY_NAME,
     });
 
-    renderCLIInstallationSetting({
+    const usesWSL = () => process.platform === 'win32' && getAntigravityProviderSettings(settingsBag).installationMethod === 'wsl';
+    const cliPathControl = renderCLIInstallationSetting({
       cliName: DISPLAY_NAME,
       container: installationContainer,
       enablement,
@@ -85,14 +93,21 @@ export const antigravitySettingsTabRenderer: ProviderSettingsTabRenderer = {
       inspect: async () => {
         const settings = context.plugin.settings as unknown as Record<string, unknown>;
         const config = getAntigravityProviderSettings(settings);
-        const command = await context.plugin.getResolvedProviderCliPath(ANTIGRAVITY_PROVIDER_ID);
+        const hostCwd = context.plugin.workingDirectory ?? process.cwd();
+        const target = await resolveExecutionTargetAsync({ settings: config, hostVaultPath: hostCwd });
+        const command = target.method === 'wsl'
+          ? resolveAntigravityWSLCLIPath(config)
+          : await context.plugin.getResolvedProviderCliPath(ANTIGRAVITY_PROVIDER_ID);
+        const environmentText = getRuntimeEnvironmentText(settings, ANTIGRAVITY_PROVIDER_ID);
+        const env = buildAntigravityRuntimeEnv(environmentText, command ?? '', target);
         return probeTargetCLIInstallation({
           args: ['--version'],
           command,
           configuredPath: config.cliPathsByHost[hostnameKey] || config.cliPath,
-          env: buildAntigravityRuntimeEnv(getRuntimeEnvironmentText(settings, ANTIGRAVITY_PROVIDER_ID), command ?? ''),
-          hostCwd: context.plugin.workingDirectory ?? process.cwd(),
-          target: resolveExecutionTarget({ settings: { installationMethod: 'native-windows', wslDistroOverride: '' } }),
+          env,
+          forwardEnvironment: getAntigravityWSLForwardedEnvironment(env, environmentText),
+          hostCwd,
+          target,
         });
       },
       name: t('settings.cliPath.genericName'),
@@ -107,15 +122,33 @@ export const antigravitySettingsTabRenderer: ProviderSettingsTabRenderer = {
         );
         modelWarning.context.notifyProviderModelOptionsChanged(ANTIGRAVITY_PROVIDER_ID);
       },
-      placeholder: process.platform === 'win32'
-        ? 'C:\\Users\\you\\AppData\\Local\\agy\\agy.exe'
-        : '~/.local/bin/agy',
+      placeholder: usesWSL() ? 'agy' : nativeCLIPlaceholder(),
       // agy changes quickly and Claudian drops workarounds once agy fixes what they covered.
       renderDetails: details => {
         const reminder = details.createEl('p', { cls: 'setting-item-description', text: `${t('settings.antigravity.updateReminder')} ` });
         reminder.createEl('code', { text: AGY_UPDATE_COMMAND });
       },
-      validate: validateCLIPath,
+      validate: value => usesWSL()
+        ? validateExecutionTargetCLIPath(value, getAntigravityProviderSettings(settingsBag))
+        : validateCLIPath(value),
+    });
+
+    renderExecutionTargetSettings({
+      container,
+      getValue: () => getAntigravityProviderSettings(settingsBag),
+      onChange: async updates => {
+        await context.plugin.applyProviderRuntimeSettings(
+          [ANTIGRAVITY_PROVIDER_ID],
+          settings => { updateAntigravityProviderSettings(settings, updates); },
+          () => workspace.cliResolver.reset(),
+        );
+      },
+      onRefresh: () => {
+        cliPathControl.setPlaceholder(usesWSL() ? 'agy' : nativeCLIPlaceholder());
+        cliPathControl.revalidate();
+        void cliPathControl.refresh();
+      },
+      providerName: DISPLAY_NAME,
     });
 
     new AccessibleSetting(container).setName('Models').setHeading();

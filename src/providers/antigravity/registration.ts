@@ -12,6 +12,7 @@ import { getAntigravityMigratedVisibleModelIds } from './config';
 import { antigravitySettingsReconciler } from './env/AntigravitySettingsReconciler';
 import { AntigravityExecutionBackend } from './execution/AntigravityExecutionBackend';
 import { AntigravityConversationHistoryService } from './history/AntigravityConversationHistoryService';
+import { resolveAntigravityExecutionWorkingDirectory } from './runtime/AntigravityExecutionContext';
 import {
   ANTIGRAVITY_PROVIDER_ID,
   getAntigravityProviderSettings,
@@ -33,10 +34,16 @@ export const antigravityProviderRegistration: ProviderModule = {
   historyService: new AntigravityConversationHistoryService(),
   isEnabled: settings => getAntigravityProviderSettings(settings).enabled,
   modelPolicy: antigravityModelPolicy,
+  resolveExecutionWorkingDirectory: (plugin, workingDirectory) => resolveAntigravityExecutionWorkingDirectory(
+    plugin.getRuntimeHost(ANTIGRAVITY_PROVIDER_ID),
+    workingDirectory,
+  ),
   setEnabled: (settings, enabled) => updateAntigravityProviderSettings(settings, { enabled }),
   settingsReconciler: antigravitySettingsReconciler,
   settingsStorage: {
-    hostScopedFields: ['cliPathsByHost', 'catalogsByHost', 'selectedModelsByHost'],
+    hostScopedFields: [
+      'installationMethodsByHost', 'wslDistroOverridesByHost', 'cliPathsByHost', 'catalogsByHost', 'selectedModelsByHost',
+    ],
     normalizeStored(target, stored) {
       const storedConfig = getProviderConfig(stored, ANTIGRAVITY_PROVIDER_ID);
       const current = getAntigravityProviderSettings(stored);

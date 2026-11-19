@@ -14,6 +14,7 @@ export const wslTests = [
   'tests/integration/providers/opencode/runtime/OpencodeWSL.windows.test.ts',
   'tests/integration/providers/codex/runtime/CodexWSL.windows.test.ts',
   'tests/integration/providers/grok/runtime/GrokWSL.windows.test.ts',
+  'tests/integration/providers/antigravity/runtime/AntigravityWSL.windows.test.ts',
 ];
 const fullSelection = {
   testFiles: null, scriptTests: null, crossPlatformTests: null,

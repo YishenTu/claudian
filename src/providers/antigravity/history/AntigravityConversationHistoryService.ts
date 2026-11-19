@@ -5,6 +5,7 @@ import type {
   ProviderConversationHistoryService,
   ProviderHistoryEnvironment,
   ProviderHistoryInput,
+  ProviderHistoryPathContext,
   ProviderHistoryUpdate,
 } from '../../../core/providers/types';
 import {
@@ -12,21 +13,22 @@ import {
   buildPersistedAntigravityProviderState,
   parseAntigravityProviderState,
 } from '../types';
-import { resolveAntigravityStoreRoot } from './AntigravityHistoryPaths';
+import { resolveAntigravityNativeStore } from './AntigravityHistoryEnvironment';
 import { loadAntigravityHistory, readAntigravityHistoryRevision } from './AntigravityHistoryStore';
 
 /** Native history is agy's full transcript; ACP replay drops tool results. */
 export class AntigravityConversationHistoryService implements ProviderConversationHistoryService {
   async hydrateConversationHistory(
     input: ProviderHistoryInput,
-    _vaultPath: string | null,
-    pathContext?: ProviderHistoryEnvironment,
+    vaultPath: string | null,
+    pathContext?: ProviderHistoryEnvironment & Partial<ProviderHistoryPathContext>,
   ): Promise<ProviderHistoryUpdate> {
     const conversation = copyProviderHistoryState(input);
     const sessionId = conversation.sessionId ?? parseAntigravityProviderState(conversation.providerState).historySessionId;
-    const storeRoot = pathContext ? resolveAntigravityStoreRoot(pathContext.environment, pathContext.hostPlatform) : null;
-    if (!sessionId || !storeRoot) return conversation;
-    const messages = await loadAntigravityHistory(storeRoot, sessionId);
+    if (!sessionId || !pathContext) return conversation;
+    const store = await resolveAntigravityNativeStore({ ...pathContext, vaultPath });
+    if (!store) return conversation;
+    const messages = await loadAntigravityHistory(store.root, sessionId, store.pathMapper);
     if (messages.length === 0) return conversation;
     conversation.messages = messages;
     const state = parseAntigravityProviderState(conversation.providerState);
@@ -44,13 +46,13 @@ export class AntigravityConversationHistoryService implements ProviderConversati
 
   async readNativeHistoryRevision(
     conversation: ProviderHistoryInput,
-    _vaultPath: string | null,
-    pathContext?: ProviderHistoryEnvironment,
+    vaultPath: string | null,
+    pathContext?: ProviderHistoryEnvironment & Partial<ProviderHistoryPathContext>,
   ): Promise<string | null> {
     // Only a live binding changes; a retired locator's history is frozen.
     if (!conversation.sessionId || !pathContext) return null;
-    const storeRoot = resolveAntigravityStoreRoot(pathContext.environment, pathContext.hostPlatform);
-    return storeRoot ? readAntigravityHistoryRevision(storeRoot, conversation.sessionId) : null;
+    const store = await resolveAntigravityNativeStore({ ...pathContext, vaultPath });
+    return store ? readAntigravityHistoryRevision(store.root, conversation.sessionId) : null;
   }
 
   resolveSessionIdForConversation(conversation: ProviderHistoryInput | null): string | null {
