@@ -1,44 +1,46 @@
 import { getInstallationKey } from '@/core/device/InstallationKey';
+import { runProcessProbe } from '@/core/process/ProcessProbe';
+import { t } from '@/i18n/i18n';
 
 import type { ProviderRuntimeHost } from '../../../core/providers/ProviderRuntimeHost';
 import type { ProviderModelCatalogRefreshResult } from '../../../core/providers/types';
-import type { AntigravityMetadata } from '../app/AntigravityMetadataProbe';
 import {
   type AntigravityCatalogSnapshot,
   decodeAntigravityConfig,
   updateAntigravityConfig,
 } from '../config';
-import type { AntigravityModel } from '../models';
+import { type AntigravityModel, readAntigravityModelList } from '../models';
+import { resolveAntigravityLaunchSpec } from './AntigravityExecutionContext';
 import { computeAntigravityRuntimeInputHash } from './AntigravityRuntimeEnvironment';
 
-/**
- * Sole writer of the discovered catalog. Each session/new or resume report lists every model and
- * its thinking levels, so a newer report replaces the catalog instead of merging into it. Live sessions are preferred: the
- * prompt-less discovery probe leaves a native session directory behind, so it runs only while no
- * live session has reported models for the current CLI and environment.
- */
+/** Live session reports supply canonical model metadata and take precedence over standalone discovery. */
 export class AntigravityModelCatalog {
   private disposed = false;
   /** Latest live report, retained so an unsuccessful settings write can be retried without probing. */
   private liveReport: { contextKey: string; models: AntigravityModel[]; defaultModelId: string | null } | null = null;
 
-  constructor(
-    private readonly host: ProviderRuntimeHost,
-    private readonly discover: (signal: AbortSignal) => Promise<AntigravityMetadata>,
-  ) {}
+  constructor(private readonly host: ProviderRuntimeHost) {}
 
   async refresh(signal: AbortSignal): Promise<ProviderModelCatalogRefreshResult> {
     if (this.disposed || signal.aborted || !decodeAntigravityConfig(this.host.config, this.host.selection).enabled) {
       return { changed: false };
     }
     const contextKey = this.#getContextKey();
+    let output: string | null = null;
+    if (this.liveReport?.contextKey !== contextKey) {
+      const launch = await resolveAntigravityLaunchSpec(this.host, ['models']);
+      output = await runProcessProbe({ ...launch, cwd: launch.spawnCwd, signal });
+    }
+    if (signal.aborted) return { changed: false };
+    // A session may have supplied a complete catalog while the standalone command was running.
     const live = this.liveReport;
     if (live?.contextKey === contextKey) return this.#persist(live.models, live.defaultModelId, contextKey, 'live', signal);
-    const metadata = await this.discover(signal);
-    if (metadata.models.length === 0) {
+    if (output === null) return { changed: false, diagnostics: t('settings.antigravity.listModelsFailed') };
+    const models = readAntigravityModelList(output);
+    if (models.length === 0) {
       return { changed: false, diagnostics: 'Antigravity reported no available models.' };
     }
-    return this.#persist(metadata.models, metadata.currentModelId, contextKey, 'probe', signal);
+    return this.#persist(models, null, contextKey, 'probe', signal);
   }
 
   mergeLiveModels(models: AntigravityModel[], defaultModelId: string | null): Promise<ProviderModelCatalogRefreshResult> {

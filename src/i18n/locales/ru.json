@@ -1068,6 +1068,7 @@
         "name": "Переменные окружения Antigravity",
         "desc": "Переменные окружения, передаваемые только Antigravity (agy), например GEMINI_API_KEY."
       },
+      "listModelsFailed": "Не удалось получить список моделей Antigravity. Запустите agy models в терминале, чтобы узнать подробности. Для входа выполните agy acp --login.",
       "updateReminder": "Claudian поддерживает только последнюю версию agy, а agy быстро меняется. Обновляйте его:"
     },
     "deepseek": {

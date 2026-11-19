@@ -1068,6 +1068,7 @@
         "name": "Antigravity 环境变量",
         "desc": "仅传递给 Antigravity（agy）的环境变量，例如 GEMINI_API_KEY。"
       },
+      "listModelsFailed": "无法获取 Antigravity 模型列表。在终端运行 agy models 查看详情。如需登录，请运行 agy acp --login。",
       "updateReminder": "Claudian 仅支持 agy 的最新版本，且 agy 变化很快。请保持更新："
     },
     "deepseek": {

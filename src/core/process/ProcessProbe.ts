@@ -14,13 +14,15 @@ const NATIVE_PROCESS_PROBE_TIMEOUT_MS = 15_000;
 
 /** Runs a bounded, read-only command without sharing a chat process. */
 export async function runProcessProbe(
-  options: ManagedStdioProcessOptions,
+  options: ManagedStdioProcessOptions & { signal?: AbortSignal },
   timeoutMs = NATIVE_PROCESS_PROBE_TIMEOUT_MS,
 ): Promise<string | null> {
+  if (options.signal?.aborted) return null;
   const process = new ManagedStdioProcess(options);
   const output: Buffer[] = [];
   let outputBytes = 0;
   let timer: number | undefined;
+  let onAbort: (() => void) | undefined;
   try {
     return await new Promise<string | null>((resolve) => {
       let settled = false;
@@ -30,6 +32,8 @@ export async function runProcessProbe(
         window.clearTimeout(timer);
         resolve(value);
       };
+      onAbort = () => finish(null);
+      options.signal?.addEventListener('abort', onAbort, { once: true });
       process.onError(() => finish(null));
       process.onClose(({ code, error }) => finish(
         code === 0 && !error ? Buffer.concat(output).toString('utf8') : null,
@@ -51,6 +55,7 @@ export async function runProcessProbe(
   } catch {
     return null;
   } finally {
+    if (onAbort) options.signal?.removeEventListener('abort', onAbort);
     window.clearTimeout(timer);
     await process.shutdown();
   }

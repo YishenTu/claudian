@@ -22,6 +22,7 @@ import {
   ACPRequestedTurn,
   type ACPRequestPermissionRequest,
   type ACPRequestPermissionResponse,
+  type ACPResumeSessionResponse,
   type ACPSessionConfigOption,
   type ACPSessionModelState,
   type ACPSessionNotification,
@@ -130,8 +131,9 @@ interface ActiveExecution {
   readonly turn: ACPRequestedTurn;
 }
 
-/** The native session this process has resumed, with the system-prompt append that resume delivered. */
+/** The session ready for prompting in this process. */
 interface LoadedNativeSession {
+  readonly models: ACPSessionModelState | null | undefined;
   readonly sessionId: string;
   /** Main-agent prompt in effect; undefined for auxiliary sessions, whose prompt is their custom agent body. */
   readonly systemPromptAppend: string | undefined;
@@ -556,32 +558,31 @@ export class AntigravityExecutionSession implements ProviderExecutionSession, St
     const mcpServers = await this.#getMCPServers();
     this.#throwIfCancellationRequested(active);
     const request = { cwd: owner.native.launch.targetCwd, mcpServers };
-    const creating = !this.providerSessionId;
-    if (creating) {
-      const response = await owner.native.newSession(request);
+    const created = this.providerSessionId ? undefined : await owner.native.newSession(request);
+    if (created) {
       // Publish the recoverable locator before MCP readiness, including when cancellation won the race.
-      this.#captureSessionId(response.sessionId);
+      this.#captureSessionId(created.sessionId);
       this.#setNativeConversationContextEstablished(false);
       this.#emitCurrentSnapshot();
       this.#throwIfCancellationRequested(active);
     }
-    // A new session is resumed in the same process before its first prompt: that resume delivers the main-agent
-    // append (a session/new append would be stored and could never be replaced) and installs a custom agent's
-    // MCP servers. Never use session/load: agy accepts unknown ids there and fails on their next prompt.
-    let response;
-    try {
-      response = await owner.native.resumeSession({
-        ...request,
-        sessionId: this.providerSessionId!,
-        ...(systemPromptAppend === undefined ? {} : { _meta: { antigravity: { systemPrompt: { append: systemPromptAppend } } } }),
-      });
-    } catch (error) {
-      if (creating) throw new AntigravitySessionPreparationError(error);
-      throw error;
+    // Creation already loads an auxiliary agent's body and tools. Only a main append or custom MCP setup needs a resume.
+    let response: ACPResumeSessionResponse | undefined = created;
+    if (!response || systemPromptAppend !== undefined || mcpServers.length > 0) {
+      try {
+        response = await owner.native.resumeSession({
+          ...request,
+          sessionId: this.providerSessionId!,
+          ...(systemPromptAppend === undefined ? {} : { _meta: { antigravity: { systemPrompt: { append: systemPromptAppend } } } }),
+        });
+      } catch (error) {
+        if (created) throw new AntigravitySessionPreparationError(error);
+        throw error;
+      }
     }
     this.#throwIfCancellationRequested(active);
     this.#captureSessionId(response.sessionId ?? this.providerSessionId!);
-    owner.loaded = { sessionId: this.providerSessionId!, systemPromptAppend };
+    owner.loaded = { sessionId: this.providerSessionId!, systemPromptAppend, models: response.models };
     if (systemPromptAppend !== undefined) this.#watchSubagents(owner, this.providerSessionId!);
     this.#adoptConfigOptions(owner, response.configOptions, response.models);
     this.#updateSnapshot(this.active ? 'executing' : 'idle');
@@ -598,14 +599,16 @@ export class AntigravityExecutionSession implements ProviderExecutionSession, St
     const sessionId = this.providerSessionId!;
     const { configuration } = active.request;
     const rawModel = configuration.model ? decodeAntigravityModelId(configuration.model) : null;
-    if (rawModel) {
-      const { models } = readAntigravitySessionModels(owner.configOptions);
-      if (models.length > 0 && !models.some(model => model.rawId === rawModel)) {
+    const reasoning = configuration.reasoning?.trim();
+    if (rawModel && rawModel !== readAntigravityConfigValue(owner.configOptions, ANTIGRAVITY_MODEL_CONFIG_ID)) {
+      const { models } = readAntigravitySessionModels(owner.configOptions, owner.loaded?.models);
+      const selected = models.find(model => model.rawId === rawModel);
+      if (models.length > 0 && !selected) {
         throw new Error(`Antigravity model "${rawModel}" is not available in this session.`);
       }
-      await this.#setConfigOption(owner, active, sessionId, ANTIGRAVITY_MODEL_CONFIG_ID, rawModel);
+      const variant = reasoning && selected?.reasoningEfforts.some(effort => effort.value === reasoning);
+      await this.#setConfigOption(owner, active, sessionId, ANTIGRAVITY_MODEL_CONFIG_ID, variant ? `${rawModel}-${reasoning}` : rawModel);
     }
-    const reasoning = configuration.reasoning?.trim();
     // agy offers no thinking level for fixed-effort models (GPT-OSS runs at medium).
     const efforts = readAntigravityThinkingLevels(owner.configOptions);
     if (reasoning && efforts.length > 0) {

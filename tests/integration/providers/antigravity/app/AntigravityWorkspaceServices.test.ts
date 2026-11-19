@@ -40,7 +40,7 @@ beforeEach(async () => {
   native = new AntigravityNativeProcess();
   native.newSessionId = 'session-probe';
   native.availableCommands = AGY_COMMANDS;
-  vi.mocked(spawn).mockReturnValue(native.child);
+  vi.mocked(spawn).mockImplementation((_command, args) => args?.[0] === 'models' ? native.listModels() : native.child);
   services = await createAntigravityWorkspaceServices(host);
 });
 
@@ -70,12 +70,20 @@ describe('Antigravity workspace metadata discovery', () => {
     expect(native.prompts).toHaveLength(0);
   });
 
-  it('publishes the models and thinking levels the session reports', async () => {
+  it('publishes models and thinking levels without creating an ACP session', async () => {
     await services.modelCatalog!.refresh({ force: true });
 
-    expect(services.modelCatalog!.getSnapshot().models.map(model => model.id)).toEqual(['gemini-4-argon', 'gemini-3.8-flash', 'claude-opus-5-5', 'claude-sonnet-5-5', 'gpt-oss-120b-medium']);
+    expect(native.newRequests).toEqual([]);
+    expect(services.modelCatalog!.getSnapshot().models.map(model => model.id)).toEqual([
+      'gemini-4-neon', 'gemini-4-argon', 'gemini-4-hydrogen', 'gemini-pro-orchestrator-neon',
+      'gemini-pro-orchestrator-g1-pro', 'gemini-3.8-flash', 'claude-opus-5-5', 'claude-sonnet-5-5', 'gpt-oss-120b-medium',
+    ]);
     expect(antigravityModelPolicy.getModelOptions(host.settings)).toEqual([
+      { label: 'Gemini 4 Neon', value: 'antigravity/gemini-4-neon' },
       { label: 'Gemini 4 Argon', value: 'antigravity/gemini-4-argon' },
+      { label: 'Gemini 4 Hydrogen', value: 'antigravity/gemini-4-hydrogen' },
+      { label: 'Orchestrator (Neon)', value: 'antigravity/gemini-pro-orchestrator-neon' },
+      { label: 'Orchestrator (Argon)', value: 'antigravity/gemini-pro-orchestrator-g1-pro' },
       { label: 'Gemini 3.8 Flash', value: 'antigravity/gemini-3.8-flash' },
       { label: 'Claude Opus 5.5', value: 'antigravity/claude-opus-5-5' },
       { label: 'Claude Sonnet 5.5', value: 'antigravity/claude-sonnet-5-5' },
@@ -89,9 +97,13 @@ describe('Antigravity workspace metadata discovery', () => {
     expect(antigravityModelPolicy.getDefaultReasoningValue('antigravity/gemini-4-argon', host.settings)).toBe('high');
   });
 
-  it('reads every model\'s thinking levels from the session report without switching models', async () => {
+  it('reads every model\'s thinking levels from the standalone list', async () => {
     await services.modelCatalog!.refresh({ force: true });
 
+    expect(levels('gemini-4-neon')).toEqual(['low', 'medium', 'high', 'xhigh']);
+    expect(levels('gemini-4-hydrogen')).toEqual(['low', 'medium', 'high', 'xhigh']);
+    expect(levels('gemini-pro-orchestrator-neon')).toEqual([]);
+    expect(levels('gemini-pro-orchestrator-g1-pro')).toEqual([]);
     expect(levels('gemini-4-argon')).toEqual(['low', 'medium', 'high']);
     expect(levels('claude-opus-5-5')).toEqual(['low', 'medium', 'high']);
     // GPT-OSS runs at a fixed medium effort, so agy offers no thinking level for it.
@@ -151,11 +163,12 @@ describe('Antigravity workspace metadata discovery', () => {
     expect(persist).toHaveBeenCalledTimes(1);
   });
 
-  it('keeps the live report when a discovery started earlier finishes later', async () => {
+  it.each([0, 1])('keeps the live report when an earlier discovery exits with %i', async exitCode => {
+    native.modelListExitCode = exitCode;
     let release!: () => void;
     let entered!: () => void;
     const started = new Promise<void>(resolve => { entered = resolve; });
-    native.newSessionGate = () => { entered(); return new Promise<void>(resolve => { release = resolve; }); };
+    native.modelListGate = () => { entered(); return new Promise<void>(resolve => { release = resolve; }); };
     const refresh = services.modelCatalog!.refresh({ force: true });
     await started;
     const live = readAntigravitySessionModels(antigravityConfigOptions());
@@ -164,7 +177,9 @@ describe('Antigravity workspace metadata discovery', () => {
     release();
     await refresh;
 
-    expect(services.modelCatalog!.getSnapshot().defaultModelId).toBe('gemini-3.8-flash');
+    expect(services.modelCatalog!.getSnapshot()).toMatchObject({ defaultModelId: 'gemini-3.8-flash', status: 'ready' });
+    // This live report omitted Sonnet's efforts, while the pending standalone list supplies three.
+    expect(levels('claude-sonnet-5-5')).toEqual([]);
   });
 
   it('keeps every model\'s thinking levels when a live session is on a fixed-effort model', async () => {

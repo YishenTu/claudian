@@ -72,7 +72,7 @@ export function readAntigravitySessionModels(
   const currentModelId = modelOption.currentValue || null;
   const sessionLevels = readAntigravityThinkingLevels(configOptions);
   const baseIds = flattenSelectOptions(modelOption.options).map(option => option.value);
-  const levelsByModel = sessionModels ? groupLevelsByModel(baseIds, sessionModels, sessionLevels) : null;
+  const levelsByModel = sessionModels ? groupLevelsByModel(baseIds, sessionModels.availableModels ?? [], sessionLevels) : null;
   return {
     currentModelId,
     models: normalizeAntigravityModels(flattenSelectOptions(modelOption.options).map(option => ({
@@ -81,6 +81,32 @@ export function readAntigravitySessionModels(
       reasoningEfforts: levelsByModel?.get(option.value) ?? (option.value === currentModelId ? sessionLevels : []),
     }))),
   };
+}
+
+/** agy models prints tab-separated variants. A lone suffix can be part of a fixed model's ID. */
+export function readAntigravityModelList(output: string): AntigravityModel[] {
+  const rows = new Map<string, string>();
+  for (const line of output.split(/\r?\n/)) {
+    const match = /^(\S+)\t+(.+)$/.exec(line.trim());
+    if (match) rows.set(match[1], match[2].trim());
+  }
+  const candidates = new Map<string, { id: string; name: string }>();
+  const counts = new Map<string, number>();
+  for (const [id, name] of rows) {
+    const match = /^(.+) \((low|medium|high|xhigh|max)\)$/i.exec(name);
+    if (!match || !id.endsWith(`-${match[2].toLowerCase()}`)) continue;
+    const base = id.slice(0, -(match[2].length + 1));
+    candidates.set(id, { id: base, name: match[1] });
+    counts.set(base, (counts.get(base) ?? 0) + 1);
+  }
+  const models = new Map<string, string>();
+  for (const [id, name] of rows) {
+    const base = candidates.get(id);
+    if (base && (counts.get(base.id)! > 1 || rows.has(base.id))) models.set(base.id, rows.get(base.id) ?? base.name);
+    else models.set(id, name);
+  }
+  const levels = groupLevelsByModel([...models.keys()], [...rows.keys()].map(modelId => ({ modelId })), []);
+  return [...models].map(([rawId, displayName]) => ({ rawId, displayName, reasoningEfforts: levels.get(rawId)! }));
 }
 
 /** Thinking levels the session offers for its current model; none for a fixed-effort model. */
@@ -94,12 +120,12 @@ export function readAntigravityThinkingLevels(
 /** Files each `<model>-<effort>` id under the longest base id it extends, ordered as agy orders its levels. */
 function groupLevelsByModel(
   baseIds: readonly string[],
-  sessionModels: ACPSessionModelState,
+  variants: readonly { modelId?: string }[],
   sessionLevels: readonly AntigravityReasoningEffort[],
 ): Map<string, AntigravityReasoningEffort[]> {
   const byLength = [...baseIds].sort((left, right) => right.length - left.length);
   const levels = new Map<string, Set<string>>(baseIds.map(id => [id, new Set<string>()]));
-  for (const { modelId } of sessionModels.availableModels ?? []) {
+  for (const { modelId } of variants) {
     if (typeof modelId !== 'string') continue;
     const base = byLength.find(id => modelId === id || modelId.startsWith(`${id}-`));
     if (base && modelId !== base) levels.get(base)!.add(modelId.slice(base.length + 1));

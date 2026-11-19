@@ -450,7 +450,7 @@ describe('AntigravityExecutionSession', () => {
     await peer.waitForPrompts(1);
     expect(agents.get('session-new')).toMatchObject({ body: expect.stringContaining('Do not use any tools'), frontmatter: { name: 'claudian-title', tools: [] } });
     expect(peer.newRequests[0].mcpServers).toEqual([]);
-    expect(peer.resumeRequests[0].mcpServers).toEqual([]);
+    expect(peer.resumeRequests).toEqual([]);
     // Auxiliary sessions keep their prompt in the custom agent body, never in an append.
     expect(peer.prompts[0].appendsAtReceipt).toEqual([]);
     await expect(peer.requestPermission(permissionRequest('run_command'))).resolves.toEqual({ outcome: { outcome: 'cancelled' } });
@@ -476,7 +476,7 @@ describe('AntigravityExecutionSession', () => {
     expect(peer.prompts[0].request.prompt).toEqual([expect.objectContaining({ text: expect.stringContaining('context.md') })]);
     expect(agents.get('session-new')).toMatchObject({ body: expect.stringContaining('Never modify files through tools'), frontmatter: { name: 'claudian-inline-edit', tools: ['read_file', 'search_web', 'run_command'] } });
     expect(peer.newRequests[0].mcpServers).toEqual([]);
-    expect(peer.resumeRequests[0].mcpServers).toEqual([]);
+    expect(peer.resumeRequests).toEqual([]);
     expect(peer.prompts[0].appendsAtReceipt).toEqual([]);
     const replacement = await peer.readContextFile('session-new', context);
     await expect(peer.requestPermission(permissionRequest('run_command'))).resolves.toEqual({ outcome: { outcome: 'selected', optionId: 'allow' } });
@@ -611,6 +611,20 @@ describe('AntigravityExecutionSession', () => {
       ['res-1', '', false],
       ['mcp-1', '{"hits":1}', false],
     ]);
+  });
+
+  it('applies an advertised model and explicit effort together before prompting', async () => {
+    const session = await createSession();
+    const run = session.execute(request('hello', { model: 'antigravity/claude-sonnet-5-5', reasoning: 'high' }));
+    const peer = await firstPeer();
+    await peer.waitForPrompts(1);
+    peer.finishPrompt();
+    expect((await collect(run.events)).at(-1)).toMatchObject({ type: 'turn_completed' });
+    expect(peer.configRequests.map(change => [change.configId, change.value])).toEqual([['model', 'claude-sonnet-5-5-high']]);
+    expect(peer.configOptions).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: 'model', currentValue: 'claude-sonnet-5-5' }),
+      expect.objectContaining({ id: 'thought_level', currentValue: 'high' }),
+    ]));
   });
 
   it('runs a model that has no thinking level without setting one', async () => {

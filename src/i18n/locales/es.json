@@ -1068,6 +1068,7 @@
         "name": "Variables de entorno de Antigravity",
         "desc": "Variables de entorno que solo se pasan a Antigravity (agy), como GEMINI_API_KEY."
       },
+      "listModelsFailed": "No se pudieron listar los modelos de Antigravity. Ejecuta agy models en una terminal para ver los detalles. Para iniciar sesión, ejecuta agy acp --login.",
       "updateReminder": "Claudian solo es compatible con la versión más reciente de agy, que cambia con rapidez. Mantenlo actualizado:"
     },
     "deepseek": {

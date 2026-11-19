@@ -2,6 +2,7 @@ import type { ChildProcessWithoutNullStreams } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 
+import modelList from '@test/fixtures/providers/antigravity/runtime/model-list.json';
 import sessionConfigOptions from '@test/fixtures/providers/antigravity/runtime/session-config-options.json';
 import sessionModels from '@test/fixtures/providers/antigravity/runtime/session-models.json';
 import { createNativeRPCPeer, type NativeRPCPeer } from '@test/helpers/providers/NativeRPCTestProcess';
@@ -85,6 +86,8 @@ export class AntigravityNativeProcess {
   /** Runs before agy answers session/new; tests hold it to interleave. */
   newSessionGate: (request: ACPNewSessionRequest) => Promise<void> | void = () => {};
   configOptions = antigravityConfigOptions();
+  modelListExitCode = 0;
+  modelListGate: () => Promise<void> | void = () => {};
   newSessionId = 'session-new';
   /** Published in `available_commands_update` right after agy answers session/new. */
   availableCommands: Array<{ description: string; name: string }> = [];
@@ -174,19 +177,26 @@ export class AntigravityNativeProcess {
           const request = params as unknown as ACPSetSessionConfigOptionRequest;
           this.configRequests.push(request);
           const target = this.configOptions.find(option => option.id === request.configId);
-          if (target?.type !== 'select' || !target.options.some(option => 'value' in option && option.value === request.value)) {
+          const value = String(request.value);
+          const base = request.configId === 'model' && target?.type === 'select' && antigravitySessionModels().availableModels.some(m => m.modelId === value)
+            ? target.options.find(o => 'value' in o && value.startsWith(o.value + '-')) : undefined;
+          const selected = base && 'value' in base ? base.value : value;
+          if (target?.type !== 'select' || !target.options.some(option => 'value' in option && option.value === selected)) {
             throw new Error(`Unknown ${request.configId}: ${String(request.value)}`);
           }
           this.configOptions = this.configOptions.map(option => (
             option.id === request.configId && option.type === 'select'
-              ? { ...option, currentValue: String(request.value) }
+              ? { ...option, currentValue: selected }
               : option
           ));
           if (request.configId === 'model') {
             // agy offers a thinking level only for models whose effort can change, at its default for a newly selected model.
-            const thinking = antigravityConfigOptions().find(option => option.id === 'thought_level')!;
+            const thinking = antigravityConfigOptions().find(option => option.type === 'select' && option.id === 'thought_level')!;
+            if (thinking.type !== 'select') throw new Error('Expected a thinking level selector');
             this.configOptions = this.configOptions.filter(option => option.id !== 'thought_level');
-            if (!MODELS_WITHOUT_THINKING.has(String(request.value))) this.configOptions.splice(1, 0, thinking);
+            if (!MODELS_WITHOUT_THINKING.has(selected)) {
+              this.configOptions.splice(1, 0, selected === value ? thinking : { ...thinking, currentValue: value.slice(selected.length + 1) });
+            }
           }
           this.emit({ configOptions: this.configOptions, sessionUpdate: 'config_option_update' }, request.sessionId);
           if (this.availableCommands.length > 0) {
@@ -241,6 +251,19 @@ export class AntigravityNativeProcess {
     const agent = this.agents.get(sessionId);
     if (agent?.kind !== 'custom' || !agent.frontmatter.tools.includes('read_file')) throw new Error('read_file unavailable');
     return readFile(file, 'utf8');
+  }
+
+  /** A standalone agy models subprocess prints variant IDs and labels, then exits. */
+  listModels(): ChildProcessWithoutNullStreams {
+    setImmediate(async () => {
+      await this.modelListGate();
+      if (this.modelListExitCode === 0) {
+        this.child.stdout.push(modelList.join('\n') + '\n');
+      }
+      this.child.emit('exit', this.modelListExitCode, null);
+      this.child.emit('close', this.modelListExitCode, null);
+    });
+    return this.child;
   }
 
   /** Exercise the actual MCP route supplied by the client after resume. */

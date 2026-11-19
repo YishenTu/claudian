@@ -40,6 +40,16 @@ describe('process probe bounds', () => {
     expect(await result).toBe('x'.repeat(prefixLength) + 'é');
   });
 
+  it('terminates an in-flight probe when its owner aborts', async () => {
+    const child = childProcess();
+    vi.mocked(spawn).mockReturnValueOnce(child as never);
+    const controller = new AbortController();
+    const result = runProcessProbe({ command: 'test', args: [], cwd: '/tmp', env: {}, signal: controller.signal });
+    controller.abort();
+    expect(await result).toBeNull();
+    expect(child.kill).toHaveBeenCalledWith('SIGTERM');
+  });
+
   it('terminates a command that does not finish within the deadline', async () => {
     vi.useFakeTimers();
     const child = childProcess();
