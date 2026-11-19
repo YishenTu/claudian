@@ -15,6 +15,7 @@ import {
   createAntigravityWorkspaceServices,
 } from '@/providers/antigravity/app/AntigravityWorkspaceServices';
 import { readAntigravitySessionModels } from '@/providers/antigravity/models';
+import { updateAntigravityProviderSettings } from '@/providers/antigravity/settings';
 
 vi.mock('cross-spawn', () => ({ default: vi.fn() }));
 
@@ -193,5 +194,26 @@ describe('Antigravity workspace metadata discovery', () => {
     expect(levels('gemini-4-argon')).toEqual(['low', 'medium', 'high']);
     expect(levels('claude-sonnet-5-5')).toEqual(['low', 'medium', 'high']);
     expect(levels('gpt-oss-120b-medium')).toEqual([]);
+  });
+});
+
+describe('Antigravity catalog for a WSL installation', () => {
+  const platform = Object.getOwnPropertyDescriptor(process, 'platform')!;
+  afterEach(() => { Object.defineProperty(process, 'platform', platform); });
+
+  it('keeps a live report when clearing a distro override leaves agy in the same distro', async () => {
+    Object.defineProperty(process, 'platform', { ...platform, value: 'win32' });
+    // Without an override, a vault on a distro's share runs agy in that distro.
+    Object.defineProperty(host, 'workingDirectory', { value: '\\\\wsl$\\Debian\\vault' });
+    updateAntigravityProviderSettings(host.settings, { installationMethod: 'wsl', wslDistroOverride: 'Debian' });
+    const live = readAntigravitySessionModels(antigravityConfigOptions());
+    await services.modelCatalogOwner.mergeLiveModels(live.models, live.currentModelId);
+    updateAntigravityProviderSettings(host.settings, { wslDistroOverride: '' });
+
+    await services.modelCatalog!.refresh({ force: true });
+
+    // A discovery session would mean the live report was attributed to another distro.
+    expect(spawn).not.toHaveBeenCalled();
+    expect(services.modelCatalog!.getSnapshot().models.map(model => model.id)).toContain('gemini-4-argon');
   });
 });

@@ -10,7 +10,7 @@ import { buildTargetLaunchSpec } from '@/core/process/execution-target/TargetLau
 import { runProcessProbe } from '@/core/process/ProcessProbe';
 
 /** Bundle the provider's existing native peer for the real Linux Node installed by CI. */
-export async function provisionWSLPeer(provider: 'codex' | 'grok', location: 'drive' | 'distro', entry: string) {
+export async function provisionWSLPeer(provider: 'antigravity' | 'codex' | 'grok', location: 'drive' | 'distro', entry: string) {
   const target = await resolveExecutionTargetAsync({ settings: { installationMethod: 'wsl', wslDistroOverride: '' } });
   if (!target.distroName) throw new Error('Native WSL fixture requires a resolved distro');
   const prefix = location === 'drive' ? tmpdir() : `\\\\wsl$\\${target.distroName}\\tmp`;

@@ -36,3 +36,26 @@ describe('antigravitySettingsReconciler', () => {
     expect(reconcile(settings)).toEqual({ changed: false });
   });
 });
+
+describe('antigravitySettingsReconciler on a Windows host', () => {
+  const platform = Object.getOwnPropertyDescriptor(process, 'platform')!;
+  beforeEach(() => { Object.defineProperty(process, 'platform', { ...platform, value: 'win32' }); });
+  afterEach(() => { Object.defineProperty(process, 'platform', platform); });
+
+  it.each([
+    ['the installation method', { installationMethodsByHost: { [getInstallationKey()]: 'native-windows' } }],
+    ['the WSL distro', { wslDistroOverridesByHost: { [getInstallationKey()]: 'Debian' } }],
+  ])('restarts the runtime when %s changes', (_label, change) => {
+    const settings = settingsWith({
+      enabled: true,
+      installationMethodsByHost: { [getInstallationKey()]: 'wsl' },
+      wslDistroOverridesByHost: { [getInstallationKey()]: 'Ubuntu' },
+    });
+    expect(reconcile(settings)).toEqual({ changed: true });
+    expect(reconcile(settings)).toEqual({ changed: false });
+    Object.assign(settings.providerConfigs.antigravity, change);
+
+    expect(reconcile(settings)).toEqual({ changed: true });
+    expect(reconcile(settings)).toEqual({ changed: false });
+  });
+});

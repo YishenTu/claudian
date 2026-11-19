@@ -1,3 +1,4 @@
+import { EventEmitter } from 'node:events';
 import * as fsSync from 'node:fs';
 import * as fs from 'node:fs/promises';
 import { mkdir, readdir, readFile, rename, stat, writeFile } from 'node:fs/promises';
@@ -8,6 +9,9 @@ import { deferred } from '@test/helpers/ChatInputHarness';
 import { createProviderHostFixture } from '@test/helpers/providerRuntimeHost';
 import { AntigravityNativeProcess,type CapturedAntigravityAgent } from '@test/helpers/providers/antigravity/AntigravityNativeProcess';
 import { testDate, testTime } from '@test/helpers/testClock';
+import { createWindowsHostFS } from '@test/helpers/WindowsHostFS';
+import { readWSLExec } from '@test/helpers/WSLLaunch';
+import { WSLProcessFixture } from '@test/helpers/WSLProcessFixture';
 import spawn from 'cross-spawn';
 
 import { InlineEditService } from '@/core/auxiliary/InlineEditService';
@@ -1697,5 +1701,181 @@ describe('AntigravityExecutionSession', () => {
     expect(events.filter(event => event.type === 'turn_started')).toEqual([expect.objectContaining({ accepted: true })]);
     expect(events.at(-1)).toMatchObject({ type: 'cancelled' });
     expect(peer.child.killed).toBe(false);
+  });
+});
+
+/** Counts an observed event and resolves waiters once it has happened `count` times. */
+function settledCounter() {
+  let count = 0;
+  const waiters: Array<{ count: number; resolve: () => void }> = [];
+  return {
+    get count() { return count; },
+    record: () => {
+      count += 1;
+      for (const waiter of waiters.splice(0)) {
+        if (count >= waiter.count) waiter.resolve();
+        else waiters.push(waiter);
+      }
+    },
+    reached: (target: number) => new Promise<void>(resolve => {
+      if (count >= target) resolve();
+      else waiters.push({ count: target, resolve });
+    }),
+  };
+}
+
+// `\\wsl$` UNC paths exist only on Windows hosts, so the host filesystem is the external boundary.
+describe.skipIf(path.sep === '\\')('Antigravity WSL installations', () => {
+  const platform = Object.getOwnPropertyDescriptor(process, 'platform')!;
+  const STORE = '/home/alice/.gemini/antigravity-cli';
+  let wsl: WSLProcessFixture;
+  beforeEach(() => {
+    wsl = new WSLProcessFixture();
+    wsl.environment = { HOME: '/home/alice' };
+    vi.stubEnv('SystemRoot', 'C:\\Windows');
+  });
+  afterEach(() => { Object.defineProperty(process, 'platform', platform); vi.unstubAllEnvs(); });
+
+  /** wsl.exe runs agy as the shared native peer; Linux probes go to the WSL process fixture. */
+  async function createWSLSession(overrides: Partial<ProviderSessionConfig> = {}) {
+    const launches: string[][] = [];
+    vi.mocked(spawn).mockImplementation((command, args = [], options = {}) => {
+      if (readWSLExec({ args: [...args] }).args[3] !== 'agy') return wsl.spawn(command, args, options);
+      launches.push([...args]);
+      const peer = new AntigravityNativeProcess(undefined, agents);
+      spawned.push(peer);
+      spawnWaiters = spawnWaiters.filter(waiter => (spawned.length >= waiter.count ? (waiter.resolve(), false) : true));
+      return peer.child;
+    });
+    const { host } = await createProviderHostFixture({ settings: { providerConfigs: { antigravity: { enabled: true } } } });
+    Object.defineProperty(process, 'platform', { ...platform, value: 'win32' });
+    updateAntigravityProviderSettings(host.settings, { installationMethod: 'wsl', wslDistroOverride: 'Ubuntu' });
+    const session = new AntigravityExecutionBackend(host.getRuntimeHost('antigravity')).createSession({
+      interactionPort: createInteractionPort(),
+      lifecycle: 'persistent',
+      nativePersistence: 'enabled',
+      workingDirectory: 'C:\\vault',
+      ...overrides,
+    }) as ProviderExecutionSession & SteerableExecutionSession;
+    sessions.push(session);
+    return { launches, session };
+  }
+
+  it('runs agy in the distro with the Linux vault, a stdio session-tool relay and host tool paths', async () => {
+    const sessionTools = { list: vi.fn(async () => ({ sessions: [] })), read: vi.fn(), send: vi.fn() };
+    const { launches, session } = await createWSLSession({ sessionTools });
+    const run = session.execute(request('Edit notes'));
+    const peer = await firstPeer();
+    await peer.waitForPrompts(1);
+    peer.emit({
+      kind: 'read', locations: [{ path: '/mnt/c/vault/notes.md' }], name: 'read_file', rawInput: { Path: '/mnt/c/vault/notes.md' },
+      sessionUpdate: 'tool_call', status: 'in_progress', title: 'File notes.md', toolCallId: 'read',
+    }, 'session-new');
+    peer.emit({
+      content: [{ newText: 'new', oldText: 'old', path: '/mnt/c/vault/note.md', type: 'diff' }],
+      kind: 'edit', name: 'edit_file', rawInput: { Path: '/mnt/c/vault/note.md', Replacement: 'new', Target: 'old' },
+      sessionUpdate: 'tool_call', status: 'completed', title: 'Edit note.md', toolCallId: 'edit',
+    }, 'session-new');
+    // A user MCP server's arguments are opaque: a `path` there is not a Linux file path.
+    peer.emit({
+      kind: 'other', name: 'call_mcp_tool', rawInput: { Arguments: { path: '/api/tickets' }, ServerName: 'tickets', ToolName: 'get' },
+      sessionUpdate: 'tool_call', status: 'in_progress', title: 'Run call_mcp_tool', toolCallId: 'mcp',
+    }, 'session-new');
+    peer.finishPrompt();
+    const events = await collect(run.events);
+
+    expect(events).toContainEqual(expect.objectContaining({ input: expect.objectContaining({ file_path: 'C:\\vault\\notes.md' }), type: 'tool_started' }));
+    expect(events).toContainEqual(expect.objectContaining({ input: { path: '/api/tickets' }, name: 'mcp__tickets__get', type: 'tool_started' }));
+    expect(events).toContainEqual(expect.objectContaining({
+      resultDetails: expect.objectContaining({ diff: expect.objectContaining({ filePath: 'C:\\vault\\note.md' }) }), type: 'tool_completed',
+    }));
+    expect([peer.newRequests[0].cwd, peer.resumeRequests[0].cwd]).toEqual(['/mnt/c/vault', '/mnt/c/vault']);
+    const [server] = peer.resumeRequests[0].mcpServers;
+    if (!('command' in server)) throw new Error('Expected a stdio relay server');
+    expect(server).toMatchObject({ command: '/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe', name: 'claudian_sessions' });
+    expect(server).not.toHaveProperty('url');
+    const routeId = server.env?.find(variable => variable.name === 'CLAUDIAN_SESSION_TOOL_ROUTE')?.value;
+    expect(routeId).toBeTruthy();
+    expect(JSON.stringify(server.args)).not.toContain(routeId);
+    expect(JSON.stringify(wsl.requests.map(entry => [entry.args, entry.options.env]))).not.toContain(routeId);
+    expect(launches).toHaveLength(1);
+    expect(launches[0]).toEqual(expect.arrayContaining(['--distribution', 'Ubuntu', '--cd', '/mnt/c/vault']));
+    expect(readWSLExec({ args: launches[0] }).args.slice(3)).toEqual(['agy', 'acp']);
+  });
+
+  it('does not start agy when the distro reports no Linux home for its store', async () => {
+    wsl.environment = {};
+    const { launches, session } = await createWSLSession();
+
+    const events = await collect(session.execute(request()).events);
+
+    expect(events.at(-1)).toMatchObject({ message: expect.stringContaining('Antigravity WSL session store'), type: 'execution_error' });
+    // The probe reached the distro; agy itself never launched.
+    expect(wsl.requests.map(entry => entry.executable)).toEqual(['/usr/bin/awk']);
+    expect(launches).toEqual([]);
+  });
+
+  it.each(['transcript_full.jsonl', 'transcript.jsonl'])('holds idle release for a subagent by polling %s in the Linux store', async file => {
+    const files = createWindowsHostFS({ fs: fsSync, fsPromises: fs });
+    const transcriptPath = files.fromLinux(`${STORE}/brain/session-new/.system_generated/logs/${file}`);
+    // The short transcript string-encodes tool arguments.
+    const encode = (step: Record<string, unknown>) => (file === 'transcript.jsonl' && Array.isArray(step.tool_calls)
+      ? { ...step, tool_calls: step.tool_calls.map((call: { args: unknown }) => ({ ...call, args: JSON.stringify(call.args) })) }
+      : step);
+    const writeLinuxTranscript = (steps: readonly Record<string, unknown>[]) => files.write(
+      transcriptPath, steps.map(step => JSON.stringify(encode(step))).join('\n') + '\n',
+    );
+    // A watch over the distro share can attach without ever reporting a change made inside Linux.
+    vi.spyOn(fsSync, 'watch').mockImplementation(() => Object.assign(new EventEmitter(), { close: () => undefined }) as unknown as fsSync.FSWatcher);
+    // Settled stats (polls) and completed reads of the transcript, so the test knows which reads could see the report.
+    const stats = settledCounter();
+    const reads = settledCounter();
+    const createReadStream = fsSync.createReadStream;
+    vi.spyOn(fsSync, 'createReadStream').mockImplementation(((path: fsSync.PathLike, options?: Parameters<typeof createReadStream>[1]) => {
+      const stream = createReadStream(path, options);
+      if (path === transcriptPath) stream.once('close', reads.record);
+      return stream;
+    }) as typeof createReadStream);
+    const stat = fs.stat;
+    vi.spyOn(fs, 'stat').mockImplementation((path, options) => {
+      const result = stat(path, options);
+      if (path === transcriptPath) void result.catch(() => undefined).then(stats.record);
+      return result;
+    });
+    const { session } = await createWSLSession();
+    const run = session.execute(request('Delegate'));
+    const peer = await firstPeer();
+    await peer.waitForPrompts(1);
+    peer.emit(invokeSubagent('call-1'), 'session-new');
+    const delegation = [
+      transcriptSteps.user(0, 'Delegate', testTime({ minutes: -2 })),
+      transcriptSteps.delegate(1, testTime({ minutes: -2 })),
+      transcriptSteps.created(2, 'sub-1', testTime({ minutes: -2 })),
+      transcriptSteps.reply(3, 'Waiting.', testTime({ minutes: -2 })),
+    ];
+    await writeLinuxTranscript(delegation);
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
+    peer.finishPrompt();
+    await collect(run.events);
+    // A poll that finds a changed transcript schedules a rescan, which reads it.
+    const pollAndRescan = async () => {
+      const polled = stats.count;
+      const read = reads.count;
+      await vi.advanceTimersByTimeAsync(5_000);
+      await stats.reached(polled + 1);
+      await vi.advanceTimersByTimeAsync(1_000);
+      await reads.reached(read + 1);
+    };
+    // The turn's own read, then the first poll, which sees the transcript as new; once that rescan finished, only a
+    // later poll can see the report.
+    await reads.reached(1);
+    await pollAndRescan();
+    // Releasing the idle session would end agy's process and the subagent with it.
+    expect(session.blocksIdleRelease?.()).toBe(true);
+
+    await writeLinuxTranscript([...delegation, transcriptSteps.report(4, 'sub-1', '391', testTime({ minutes: 5 }))]);
+    await pollAndRescan();
+    // The read has finished; the scan's result follows on its own continuation.
+    await vi.waitFor(() => expect(session.blocksIdleRelease?.()).toBe(false));
   });
 });

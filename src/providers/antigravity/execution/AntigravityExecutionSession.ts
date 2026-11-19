@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
 import { parseCompactCommand } from '@/core/commands/compactCommand';
+import { buildTargetLaunchSpec } from '@/core/process/execution-target/TargetLaunchSpec';
 import {
   buildContextFromHistory,
   buildPromptWithHistoryContext,
@@ -9,6 +10,7 @@ import { appendExecutionContext } from '@/core/prompt/promptContext';
 import { invokeSessionTool } from '@/core/session-tools/invokeSessionTool';
 import { SESSION_TOOL_ROUTE_HEADER, type SessionToolRoute } from '@/core/session-tools/SessionToolEndpoint';
 import { SESSION_TOOL_MCP_SERVER_NAME } from '@/core/session-tools/sessionToolMCP';
+import { createWSLSessionToolRelay } from '@/core/session-tools/WSLSessionToolRelay';
 import { isSessionTool } from '@/core/tools/toolNames';
 import {
   type ACPContentBlock,
@@ -47,7 +49,7 @@ import {
 import type { ProviderRuntimeHost } from '../../../core/providers/ProviderRuntimeHost';
 import type { ChatMessage, SlashCommand } from '../../../core/types';
 import { filterAntigravityCommands } from '../commands/AntigravityCommandCatalog';
-import { resolveAntigravityStoreRoot } from '../history/AntigravityHistoryPaths';
+import { type AntigravityNativeStore, resolveAntigravityNativeStore } from '../history/AntigravityHistoryEnvironment';
 import {
   ANTIGRAVITY_MODE_CONFIG_ID,
   ANTIGRAVITY_MODEL_CONFIG_ID,
@@ -58,6 +60,7 @@ import {
   readAntigravitySessionModels,
   readAntigravityThinkingLevels,
 } from '../models';
+import { mapAntigravityToolCallPaths } from '../normalization/antigravityNativePaths';
 import {
   createAntigravityToolStreamAdapter,
   normalizeAntigravityToolName,
@@ -68,7 +71,7 @@ import {
   shouldAutoApproveAntigravityPermission,
 } from '../permissionModes';
 import { ANTIGRAVITY_INLINE_EDIT_TOOLS, prepareAntigravityAgentFile } from '../runtime/AntigravityAgentFiles';
-import { resolveAntigravityLaunchSpec } from '../runtime/AntigravityExecutionContext';
+import { resolveAntigravityExecutionContext } from '../runtime/AntigravityExecutionContext';
 import { parseAntigravityProviderState } from '../types';
 import { ANTIGRAVITY_REPLY_OUTPUT_KINDS, AntigravityBackgroundTurn } from './AntigravityBackgroundTurn';
 import {
@@ -157,6 +160,8 @@ interface NativeOwner {
   readonly creationAgentName?: string;
   readonly skipPermissions: boolean;
   readonly native: AntigravityNativeConnection;
+  /** The store this process writes, as a host path; null where it cannot be located. */
+  readonly store: AntigravityNativeStore | null;
   unsubscribe: () => void;
 }
 
@@ -483,13 +488,22 @@ export class AntigravityExecutionSession implements ProviderExecutionSession, St
       ...(creationAgentName ? ['--agent', creationAgentName] : []),
       ...(skipPermissions ? [ANTIGRAVITY_SKIP_PERMISSIONS_FLAG] : []),
     ];
-    const launch = await resolveAntigravityLaunchSpec(this.host, args, this.config.workingDirectory);
+    const context = await resolveAntigravityExecutionContext(this.host, this.config.workingDirectory);
+    const launch = buildTargetLaunchSpec({ ...context, args });
+    const store = await resolveAntigravityNativeStore({
+      environment: context.env, environmentText: this.host.environmentText, hostPlatform: process.platform, vaultPath: context.hostCwd,
+    }, context.target);
     // A run cancelled during CLI lookup must not spawn a process that cancellation then waits on.
     this.#throwIfCancellationRequested(active);
+    if (context.target.method === 'wsl' && !store) {
+      throw new Error('Could not determine the Antigravity WSL session store. Check the Linux HOME and shell startup.');
+    }
     const native = new AntigravityNativeConnection({
       createElicitation: request => this.#handleElicitation(request),
       launch,
-      requestPermission: request => this.#handlePermission(request),
+      requestPermission: request => this.#handlePermission({
+        ...request, toolCall: mapAntigravityToolCallPaths(request.toolCall, store?.pathMapper),
+      }),
       version: this.host.clientVersion ?? '0.0.0',
     });
     const owner: NativeOwner = {
@@ -500,6 +514,7 @@ export class AntigravityExecutionSession implements ProviderExecutionSession, St
       creationAgentName,
       skipPermissions,
       native,
+      store,
       unsubscribe: () => {},
     };
     this.nativeSlot.install(owner);
@@ -676,6 +691,19 @@ export class AntigravityExecutionSession implements ProviderExecutionSession, St
       throw error;
     });
     const route = await this.sessionToolRoute;
+    const launch = this.nativeSlot.current?.native.launch;
+    if (launch?.target.method === 'wsl') {
+      // Linux cannot reach the host loopback under WSL's default NAT; Windows interop relays MCP over stdio instead.
+      const relay = await createWSLSessionToolRelay({
+        env: launch.env, hostCwd: launch.spawnCwd, mode: 'mcp', route, target: launch.target,
+      });
+      return [{
+        args: relay.args,
+        command: relay.command,
+        env: Object.entries(relay.env).map(([name, value]) => ({ name, value })),
+        name: SESSION_TOOL_MCP_SERVER_NAME,
+      }];
+    }
     return [{
       headers: [{ name: SESSION_TOOL_ROUTE_HEADER, value: route.routeId }],
       name: SESSION_TOOL_MCP_SERVER_NAME,
@@ -739,7 +767,10 @@ export class AntigravityExecutionSession implements ProviderExecutionSession, St
       return;
     }
     if (notification.sessionId !== this.providerSessionId) return;
-    const update = notification.update as ACPSessionNotification['update'] & { name?: unknown };
+    const reported = notification.update;
+    const update = (reported.sessionUpdate === 'tool_call' || reported.sessionUpdate === 'tool_call_update'
+      ? mapAntigravityToolCallPaths(reported, owner.store?.pathMapper)
+      : reported) as ACPSessionNotification['update'] & { name?: unknown };
     switch (update.sessionUpdate) {
       // Claudian emits its own user boundaries and owns conversation titles.
       case 'user_message_chunk':
@@ -921,8 +952,11 @@ export class AntigravityExecutionSession implements ProviderExecutionSession, St
   #watchSubagents(owner: NativeOwner, sessionId: string): void {
     if (this.subagents?.sessionId === sessionId) return;
     void this.subagents?.dispose();
-    const storeRoot = resolveAntigravityStoreRoot(owner.native.launch.env, process.platform);
-    this.subagents = storeRoot ? new AntigravitySubagentWatcher({ sessionId, storeRoot }) : null;
+    const store = owner.store;
+    // Change notifications over a WSL distro's share are not reliable for writes made inside Linux; poll instead.
+    this.subagents = store
+      ? new AntigravitySubagentWatcher({ poll: store.pathMapper !== undefined, sessionId, storeRoot: store.root })
+      : null;
     // The run that loaded the session is under way; its end starts watching.
     this.subagents?.turnStarted();
   }

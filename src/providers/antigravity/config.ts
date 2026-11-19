@@ -1,4 +1,11 @@
 import { getInstallationKey } from '@/core/device/InstallationKey';
+import {
+  decodeInstallationSettings,
+  type InstallationSettings,
+  selectInstallationSettings,
+  type StoredInstallationSettings,
+  updateInstallationSettings,
+} from '@/core/providers/settings/InstallationSettings';
 
 import { replaceProviderConfig } from '../../core/providers/providerConfig';
 import type { ProviderSelectionInputs } from '../../core/providers/ProviderRuntimeHost';
@@ -16,7 +23,7 @@ export interface AntigravityCatalogSnapshot {
   refreshedAt: number;
 }
 
-export interface PersistedAntigravityProviderSettings {
+export interface PersistedAntigravityProviderSettings extends StoredInstallationSettings {
   catalogsByHost: Record<string, AntigravityCatalogSnapshot>;
   cliPath: string;
   cliPathsByHost: HostnameCLIPaths;
@@ -28,7 +35,7 @@ export interface PersistedAntigravityProviderSettings {
   visibleModels: string[] | null;
 }
 
-export interface AntigravityProviderSettings extends PersistedAntigravityProviderSettings {
+export interface AntigravityProviderSettings extends PersistedAntigravityProviderSettings, InstallationSettings {
   currentCatalog: AntigravityCatalogSnapshot | null;
 }
 
@@ -39,9 +46,11 @@ export const DEFAULT_ANTIGRAVITY_PROVIDER_SETTINGS: Readonly<PersistedAntigravit
   enabled: false,
   environmentHash: '',
   environmentVariables: '',
+  installationMethodsByHost: {},
   modelAliases: {},
   preferredReasoningByModel: {},
   visibleModels: [],
+  wslDistroOverridesByHost: {},
 });
 
 /** Explicit selection order wins; an unset selection shows the catalog with its default first. */
@@ -70,7 +79,10 @@ export function decodeAntigravityConfig(
   const currentCatalog = catalogsByHost[getInstallationKey()] ?? null;
   const visibleModels = normalizeVisibleModels(config.visibleModels);
   const allowed = collectAllowedModelIds(currentCatalog, visibleModels, selection);
+  const installation = decodeInstallationSettings(config);
   return {
+    ...installation,
+    ...selectInstallationSettings(installation, getInstallationKey()),
     catalogsByHost,
     cliPath: readTrimmedString(config.cliPath),
     cliPathsByHost: normalizeHostnameStringMap(config.cliPathsByHost),
@@ -113,6 +125,7 @@ export function updateAntigravityConfig(
     ? normalizeVisibleModels(updates.visibleModels)
     : current.visibleModels;
   const allowed = collectAllowedModelIds(currentCatalog, visibleModels, selection);
+  const installation = updateInstallationSettings(current, updates, hostKey);
   const next: PersistedAntigravityProviderSettings = {
     catalogsByHost,
     cliPath,
@@ -122,15 +135,17 @@ export function updateAntigravityConfig(
       ? readTrimmedString(updates.environmentHash)
       : current.environmentHash,
     environmentVariables: updates.environmentVariables ?? current.environmentVariables,
+    installationMethodsByHost: installation.installationMethodsByHost,
     modelAliases: normalizeModelStringMap(updates.modelAliases ?? current.modelAliases, allowed),
     preferredReasoningByModel: normalizeModelStringMap(
       updates.preferredReasoningByModel ?? current.preferredReasoningByModel,
       allowed,
     ),
     visibleModels,
+    wslDistroOverridesByHost: installation.wslDistroOverridesByHost,
   };
   replaceProviderConfig(config, next as unknown as Record<string, unknown>);
-  return { ...next, currentCatalog };
+  return { ...next, ...selectInstallationSettings(next, hostKey), currentCatalog };
 }
 
 export function normalizeAntigravityCatalogSnapshot(value: unknown): AntigravityCatalogSnapshot | null {
