@@ -5,14 +5,7 @@ import type { SlashCommand } from '@/core/types';
 import { type ACPSessionNotification, normalizeACPAvailableCommands } from '@/providers/acp';
 
 import { ANTIGRAVITY_ACP_ARGS, AntigravityNativeConnection } from '../execution/AntigravityNativeConnection';
-import { type AntigravityModel, readAntigravitySessionModels } from '../models';
 import { resolveAntigravityLaunchSpec } from '../runtime/AntigravityExecutionContext';
-
-export interface AntigravityMetadata {
-  readonly commands: SlashCommand[];
-  readonly currentModelId: string | null;
-  readonly models: AntigravityModel[];
-}
 
 const ABORT_MESSAGE = 'Antigravity metadata probe aborted';
 const DISPOSED_MESSAGE = 'Antigravity metadata probe is disposed.';
@@ -20,12 +13,12 @@ const DISPOSED_MESSAGE = 'Antigravity metadata probe is disposed.';
 const COMMANDS_WAIT_MS = 3_000;
 
 /**
- * Reads models and commands from a prompt-less session that is closed at once. agy does not
+ * Reads commands from a prompt-less session that is closed at once. agy does not
  * list such sessions, so discovery leaves no visible conversation behind.
  */
 export class AntigravityMetadataProbe {
   private disposeFlight: Promise<void> | null = null;
-  private inFlight: Promise<AntigravityMetadata> | null = null;
+  private inFlight: Promise<SlashCommand[]> | null = null;
   private readonly probes = new OwnedProbeRegistry<AntigravityNativeConnection>({
     abortMessage: ABORT_MESSAGE,
     dispose: native => native.shutdown(),
@@ -36,7 +29,7 @@ export class AntigravityMetadataProbe {
   constructor(private readonly host: ProviderRuntimeHost) {}
 
   /** Concurrent callers share one probe. */
-  async load(signal?: AbortSignal): Promise<AntigravityMetadata> {
+  async load(signal?: AbortSignal): Promise<SlashCommand[]> {
     if (this.transitionFence.isUnavailable()) {
       const available = await this.transitionFence.waitUntilAvailable(signal);
       if (!available) throw new Error(DISPOSED_MESSAGE);
@@ -62,7 +55,7 @@ export class AntigravityMetadataProbe {
     }
   }
 
-  #probe(): Promise<AntigravityMetadata> {
+  #probe(): Promise<SlashCommand[]> {
     return this.probes.run({
       create: async (ownedSignal) => {
         const launch = await resolveAntigravityLaunchSpec(this.host, ANTIGRAVITY_ACP_ARGS);
@@ -99,8 +92,7 @@ export class AntigravityMetadataProbe {
           ]).finally(() => window.clearTimeout(timer));
           ownedSignal.throwIfAborted();
           await native.closeSession(response.sessionId).catch(() => undefined);
-          const { currentModelId, models } = readAntigravitySessionModels(response.configOptions, response.models);
-          return { commands, currentModelId, models };
+          return commands;
         } finally {
           unsubscribe();
         }

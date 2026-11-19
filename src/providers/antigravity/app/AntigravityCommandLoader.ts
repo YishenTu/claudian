@@ -27,7 +27,7 @@ export class AntigravityCommandLoader implements ProviderCommandLoader {
   loadCommands(context: ProviderCommandLoaderContext): Promise<ProviderCommandDiscoveryResult<SlashCommand>> {
     return loadRuntimeCommands({
       allowIsolatedMetadataCreation: context.allowIsolatedMetadataCreation,
-      discover: async signal => (await this.metadataProbe.load(signal)).commands,
+      discover: signal => this.metadataProbe.load(signal),
       errorMessage: 'Could not load Antigravity commands.',
       projectItems: commands => filterAntigravityCommands(commands),
       readyCommandSnapshot: context.readyCommandSnapshot,

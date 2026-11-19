@@ -1068,6 +1068,7 @@
         "name": "Antigravity 환경 변수",
         "desc": "Antigravity(agy)에만 전달되는 환경 변수입니다(예: GEMINI_API_KEY)."
       },
+      "listModelsFailed": "Antigravity 모델 목록을 가져오지 못했습니다. 터미널에서 agy models를 실행하여 자세한 내용을 확인하세요. 로그인하려면 agy acp --login을 실행하세요.",
       "updateReminder": "Claudian은 agy의 최신 릴리스만 지원하며 agy는 빠르게 변경됩니다. 항상 최신 상태로 유지하세요:"
     },
     "deepseek": {
