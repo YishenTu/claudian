@@ -119,7 +119,9 @@ export function readAntigravityLatestRequest(transcript: AntigravityTranscript):
  * Whether a subagent the conversation created at or after `sinceStep` has not reported back yet (its id is the
  * report's sender).
  */
-export function hasAntigravityOutstandingSubagents(transcript: AntigravityTranscript, sinceStep: number): boolean {
+export async function hasAntigravityOutstandingSubagents(
+  transcript: AntigravityTranscript, sinceStep: number, storeRoot: string, sessionId: string,
+): Promise<boolean> {
   const outstanding = new Set<string>();
   for (const [index, step] of transcript.steps.entries()) {
     const created = step.type === 'GENERIC' && stepIndexOf(step, index) >= sinceStep
@@ -128,7 +130,20 @@ export function hasAntigravityOutstandingSubagents(transcript: AntigravityTransc
     const report = step.type === 'SYSTEM_MESSAGE' ? SYSTEM_REPORT_PATTERN.exec(step.content ?? '') : null;
     if (report) outstanding.delete(report[1]);
   }
-  return outstanding.size > 0;
+  const paths = antigravityStorePaths(storeRoot);
+  for (const childId of outstanding) {
+    if (!/^[\w-]+$/.test(childId) || !/^[\w-]+$/.test(sessionId)) return true;
+    const recordPath = paths.join(storeRoot, 'brain', sessionId, '.system_generated', 'subagents', childId + '.json');
+    try {
+      const record: unknown = JSON.parse(await fs.readFile(recordPath, 'utf8'));
+      if (!record || typeof record !== 'object'
+        || !('conversationId' in record) || record.conversationId !== childId
+        || !('state' in record) || record.state !== 'SUBAGENT_STATE_KILLED') return true;
+    } catch {
+      return true;
+    }
+  }
+  return false;
 }
 
 export async function readAntigravityHistoryRevision(storeRoot: string, sessionId: string): Promise<string | null> {

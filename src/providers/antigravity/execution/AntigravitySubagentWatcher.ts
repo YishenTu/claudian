@@ -167,8 +167,11 @@ export class AntigravitySubagentWatcher {
     if (request !== undefined && generation === this.#processGeneration) this.#processFirstRequest ??= request;
     // Watching belongs to the current process; its own rescan follows a read begun under an earlier one.
     if (generation !== this.#processGeneration || !this.#watching) return;
-    if (this.#processFirstRequest !== undefined && hasAntigravityOutstandingSubagents(transcript, this.#processFirstRequest)) return;
-    this.#giveUp();
+    const watching = this.#watching;
+    if (this.#processFirstRequest !== undefined && await hasAntigravityOutstandingSubagents(
+      transcript, this.#processFirstRequest, this.options.storeRoot, this.options.sessionId,
+    )) return;
+    if (watching === this.#watching) this.#giveUp();
   }
 
   #watch(): () => void {

@@ -18,6 +18,8 @@ import { createAntigravityToolStreamAdapter, presentAntigravityUpdate } from '..
  * turn.
  */
 const SETTLE_AFTER_USAGE_MS = 1_000;
+/** Some replies go silent without usage. Only release them once tools and client requests have settled. */
+const SETTLE_WITHOUT_USAGE_MS = 120_000;
 
 /** Reply output: it opens a background turn and shows agy is still replying. Metadata (usage, config) does neither. */
 export const ANTIGRAVITY_REPLY_OUTPUT_KINDS: ReadonlySet<string> = new Set([
@@ -45,6 +47,7 @@ export class AntigravityBackgroundTurn {
   /** Calls whose approval was not granted; agy's reply ends when one fails. */
   readonly #deniedToolCallIds = new Set<string>();
   readonly #normalizer: ACPExecutionEventNormalizer;
+  #pendingRequests = 0;
   #sequence = 0;
   #settleTimer: number | undefined;
 
@@ -64,18 +67,39 @@ export class AntigravityBackgroundTurn {
 
   handleUpdate(update: ACPSessionNotification['update'] & { name?: unknown }): ACPNormalizedUpdate | undefined {
     if (this.signal.aborted) return undefined;
-    // A settings change the next run makes is not agy replying.
-    if (ANTIGRAVITY_REPLY_OUTPUT_KINDS.has(update.sessionUpdate)) window.clearTimeout(this.#settleTimer);
     const { events, metadata } = this.#normalizer.normalize(presentAntigravityUpdate(this.#toolCallIds, update));
     // The turn's start and completion share its sequence, so it numbers the normalized events itself.
-    for (const event of events) this.options.notify({ ...event, scope: this.#nextScope() });
+    for (const event of events) {
+      this.options.notify({ ...event, scope: this.#nextScope() });
+    }
     const deniedCallFailed = update.sessionUpdate === 'tool_call_update' && update.status === 'failed'
       && this.#deniedToolCallIds.has(update.toolCallId);
     if (metadata?.type === 'usage' || deniedCallFailed) {
-      window.clearTimeout(this.#settleTimer);
-      this.#settleTimer = window.setTimeout(() => this.options.onSettled(), SETTLE_AFTER_USAGE_MS);
+      this.#scheduleSettlement(SETTLE_AFTER_USAGE_MS);
+    } else if (ANTIGRAVITY_REPLY_OUTPUT_KINDS.has(update.sessionUpdate)) {
+      this.#scheduleSettlement(SETTLE_WITHOUT_USAGE_MS);
     }
     return metadata;
+  }
+
+  async holdForRequest<T>(request: Promise<T>): Promise<T> {
+    window.clearTimeout(this.#settleTimer);
+    this.#pendingRequests++;
+    try {
+      return await request;
+    } finally {
+      this.#pendingRequests--;
+      this.#scheduleSettlement(SETTLE_WITHOUT_USAGE_MS);
+    }
+  }
+
+  #scheduleSettlement(delay: number): void {
+    window.clearTimeout(this.#settleTimer);
+    if (this.signal.aborted || this.#pendingRequests > 0) return;
+    this.#settleTimer = window.setTimeout(() => {
+      if (delay === SETTLE_WITHOUT_USAGE_MS && this.#normalizer.hasOpenTools) return;
+      this.options.onSettled();
+    }, delay);
   }
 
   toolDenied(toolCallId: string): void {
