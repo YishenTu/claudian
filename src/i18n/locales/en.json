@@ -574,6 +574,9 @@
       "fastActive": "fast mode on",
       "fast": "Fast",
       "fastLabel": "Fast mode: {label}",
+      "speed": "Speed",
+      "speedActive": "speed {label}",
+      "standard": "Standard",
       "changeTierFailed": "Failed to change service tier"
     },
     "navigation": {

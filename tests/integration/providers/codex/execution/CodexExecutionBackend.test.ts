@@ -91,8 +91,12 @@ it('preserves a pre-spawn failure in the execution error and cleans up exactly o
   expect(disposeTransport).toHaveBeenCalledTimes(1);
 });
 
-it.each(['priority', 'default'])('correlates a persistent turn from native startup through output with explicit %s tier', async serviceTier => {
-  settings.providerConfigs.codex!.discoveredModels = TEST_CODEX_CATALOG.map(model => ({ ...model, defaultServiceTier: 'priority' }));
+it.each(['priority', 'ultrafast', 'default'])('correlates a persistent turn from native startup through output with explicit %s tier', async serviceTier => {
+  settings.providerConfigs.codex!.discoveredModels = TEST_CODEX_CATALOG.map(model => ({
+    ...model,
+    serviceTiers: [...model.serviceTiers, { id: 'ultrafast', name: 'Ultrafast', description: '' }],
+    defaultServiceTier: 'priority',
+  }));
   const session = createSession();
   const run = session.execute({ ...request, configuration: { ...request.configuration, serviceTier } });
   const output = collect(run.events);

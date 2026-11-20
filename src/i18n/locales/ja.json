@@ -574,6 +574,9 @@
       "fastActive": "高速モード有効",
       "fast": "高速",
       "fastLabel": "高速モード：{label}",
+      "speed": "速度",
+      "speedActive": "速度 {label}",
+      "standard": "標準",
       "changeTierFailed": "サービス階層を変更できませんでした"
     },
     "navigation": {

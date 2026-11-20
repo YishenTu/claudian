@@ -574,6 +574,9 @@
       "fastActive": "Schnellmodus aktiviert",
       "fast": "Schnell",
       "fastLabel": "Schnellmodus: {label}",
+      "speed": "Geschwindigkeit",
+      "speedActive": "Geschwindigkeit {label}",
+      "standard": "Standard",
       "changeTierFailed": "Servicestufe konnte nicht geändert werden"
     },
     "navigation": {

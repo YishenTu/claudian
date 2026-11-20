@@ -33,7 +33,9 @@ function mountToolbar(toolbarEl: HTMLElement): void {
       getDefaultReasoningValue: () => 'low',
       getPermissionModeOptions: () => [{ value: 'normal', label: 'Safe' }, { value: 'yolo', label: 'YOLO', bypassesApprovals: true }],
       getServiceTierToggle: () => ({
-        inactiveValue: 'default', inactiveLabel: 'Standard', activeValue: 'fast', activeLabel: 'Fast', isActive: true,
+        options: [{ value: 'default', label: 'Standard' }, { value: 'fast', label: 'Fast' }],
+        selectedValue: 'fast',
+        fastValue: 'fast',
       }),
     }),
     getCapabilities: () => ({ reasoningControl: 'effort' }),

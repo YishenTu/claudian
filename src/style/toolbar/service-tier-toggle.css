@@ -1,4 +1,4 @@
-/* Fast mode: an indicator on the model chip and a switch row at the foot of the model popover's last column. */
+/* Speed: an indicator on the model chip and, at the foot of the model popover's last column, a Fast switch or a tier list. */
 
 /* The indicator only shows while fast mode is on, so it reads at full strength rather than muted. */
 .claudian-service-tier-indicator {
@@ -76,4 +76,68 @@
 
 .claudian-toggle-switch.active::after {
   transform: translateX(11px);
+}
+
+/* Several accelerated tiers: one row of zap-count segments in the switch's slot, so the popover keeps its height. */
+.claudian-service-tiers {
+  display: flex;
+  gap: 2px;
+}
+
+.claudian-toolbar-popover button.claudian-service-tier,
+.claudian-toolbar-popover button.claudian-service-tier:is(:hover, :focus, :focus-visible, :active) {
+  position: relative;
+  flex: 1 1 0;
+  justify-content: center;
+  min-width: 0;
+  min-height: 26px;
+  padding: 0 4px;
+}
+
+.claudian-toolbar-popover button.claudian-service-tier {
+  color: var(--text-faint);
+}
+
+.claudian-toolbar-popover button.claudian-service-tier:is(:hover, :focus-visible) {
+  color: var(--text-normal);
+}
+
+/* The name is the segment's accessible name and tooltip; the glyph alone shows. */
+.claudian-service-tier .claudian-toolbar-popover-option-label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.claudian-service-tier-glyph {
+  display: inline-flex;
+}
+
+.claudian-service-tier-glyph > span {
+  display: inline-flex;
+}
+
+.claudian-service-tier-glyph svg {
+  width: 12px;
+  height: 12px;
+}
+
+.claudian-service-tier-glyph > span + span {
+  margin-inline-start: -3px;
+}
+
+/* The chosen tier takes fast mode's amber wash, as the switch does when on; Standard stays neutral. */
+.claudian-toolbar-popover button.claudian-service-tier.selected,
+.claudian-toolbar-popover button.claudian-service-tier.selected:is(:hover, :focus, :focus-visible, :active) {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+
+.claudian-toolbar-popover button.claudian-service-tier.selected:not(:first-child),
+.claudian-toolbar-popover button.claudian-service-tier.selected:not(:first-child):is(:hover, :focus, :focus-visible, :active) {
+  background: color-mix(in srgb, var(--claudian-fast-mode) 10%, transparent);
+  color: var(--claudian-fast-mode);
 }

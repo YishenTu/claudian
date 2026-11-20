@@ -574,6 +574,9 @@
       "fastActive": "빠른 모드 켜짐",
       "fast": "빠름",
       "fastLabel": "빠른 모드: {label}",
+      "speed": "속도",
+      "speedActive": "속도 {label}",
+      "standard": "표준",
       "changeTierFailed": "서비스 등급을 변경하지 못했습니다"
     },
     "navigation": {

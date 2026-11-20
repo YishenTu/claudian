@@ -33,9 +33,12 @@ interface FixtureOptions {
   reasoningControl?: string;
   permissionToggle?: boolean;
   permissionModes?: readonly ProviderPermissionModeOption[];
-  serviceTier?: boolean;
+  /** Accelerated tiers after Standard; the first is Fast. */
+  serviceTiers?: Array<{ value: string; label: string; description?: string }>;
   providerIcon?: Record<string, unknown>;
 }
+
+const FAST_TIER = [{ value: 'fast', label: 'Fast', description: '1.5x speed, 2x credits' }];
 
 function renderToolbar(fixture: FixtureOptions = {}) {
   const settings: Record<string, unknown> = {
@@ -58,14 +61,15 @@ function renderToolbar(fixture: FixtureOptions = {}) {
       { value: 'normal', label: 'Safe' },
       { value: 'yolo', label: 'YOLO', bypassesApprovals: true },
     ]),
-    getServiceTierToggle: (current: Record<string, unknown>) => (fixture.serviceTier ? {
-      inactiveValue: 'default',
-      inactiveLabel: 'Standard',
-      activeValue: 'fast',
-      activeLabel: 'Fast',
-      isActive: current.serviceTier === 'fast',
-      description: '1.5x speed, 2x credits',
-    } : null),
+    getServiceTierToggle: (current: Record<string, unknown>) => {
+      if (!fixture.serviceTiers) return null;
+      const options = [{ value: 'default', label: 'Standard' }, ...fixture.serviceTiers];
+      return {
+        options,
+        selectedValue: options.some(option => option.value === current.serviceTier) ? current.serviceTier as string : 'default',
+        fastValue: fixture.serviceTiers[0]?.value ?? null,
+      };
+    },
   };
   const callbacks = {
     onModelChange: vi.fn(async (model: string) => { settings.model = model; }),
@@ -144,7 +148,7 @@ describe('model button', () => {
   });
 
   it('moves through every control with Up and Down, keeping Home and End inside each list', () => {
-    const { ui } = renderToolbar({ serviceTier: true });
+    const { ui } = renderToolbar({ serviceTiers: FAST_TIER });
     const button = ui.getByRole('button', { name: /^Model: Sonnet/ });
     fireEvent.keyDown(button, { key: 'ArrowDown' });
     const dialog = ui.getByRole('dialog', { name: 'Model options' });
@@ -322,7 +326,7 @@ describe('model button', () => {
   });
 
   it('shows fast mode on the button and switches it from the model menu', async () => {
-    const { callbacks, toolbar, ui, settings } = renderToolbar({ serviceTier: true });
+    const { callbacks, toolbar, ui, settings } = renderToolbar({ serviceTiers: FAST_TIER });
     const button = ui.getByRole('button', { name: 'Model: Sonnet, effort High' });
     expect(button.querySelector('.claudian-service-tier-indicator')?.classList.contains('claudian-hidden')).toBe(true);
     fireEvent.click(button);
@@ -354,9 +358,53 @@ describe('model button', () => {
     expect(withoutTier.callbacks.onServiceTierChange).not.toHaveBeenCalled();
   });
 
+  it('lists every tier when the provider offers more than Fast, and /fast returns to Standard', async () => {
+    const { callbacks, host, toolbar, ui } = renderToolbar({
+      serviceTiers: [
+        ...FAST_TIER,
+        { value: 'ultrafast', label: 'Ultrafast', description: 'Lowest latency' },
+      ],
+    });
+    const button = ui.getByRole('button', { name: 'Model: Sonnet, effort High' });
+    fireEvent.click(button);
+    expect(ui.queryByRole('switch')).toBeNull();
+    const speed = ui.getByRole('listbox', { name: 'Speed' });
+    expect(speed.getAttribute('aria-orientation')).toBe('horizontal');
+    expect(within(speed).getAllByRole('option').map(option => option.textContent)).toEqual(['Standard', 'Fast', 'Ultrafast']);
+    expect(within(speed).getByRole('option', { name: 'Ultrafast' }).getAttribute('title')).toBe('Ultrafast\nLowest latency');
+    // Left and Right step between the segments, as Up and Down do through the popover.
+    const standardSegment = within(speed).getByRole('option', { name: 'Standard' });
+    standardSegment.focus();
+    fireEvent.keyDown(standardSegment, { key: 'ArrowRight' });
+    expect(document.activeElement).toBe(within(speed).getByRole('option', { name: 'Fast' }));
+    fireEvent.keyDown(document.activeElement!, { key: 'ArrowLeft' });
+    expect(document.activeElement).toBe(standardSegment);
+    // They wrap within the row rather than leaving it for the popover's other controls.
+    fireEvent.keyDown(standardSegment, { key: 'ArrowLeft' });
+    expect(document.activeElement).toBe(within(speed).getByRole('option', { name: 'Ultrafast' }));
+    fireEvent.keyDown(document.activeElement!, { key: 'ArrowRight' });
+    expect(document.activeElement).toBe(standardSegment);
+    expect(within(speed).getByRole('option', { name: 'Standard' }).getAttribute('aria-selected')).toBe('true');
+    expect(within(speed).getByRole('option', { name: 'Ultrafast' }).getAttribute('aria-description')).toBe('Lowest latency');
+
+    fireEvent.click(within(speed).getByRole('option', { name: 'Ultrafast' }));
+    await flush();
+    expect(callbacks.onServiceTierChange).toHaveBeenCalledWith('ultrafast');
+    expect(ui.getByRole('option', { name: 'Ultrafast' }).getAttribute('aria-selected')).toBe('true');
+    expect(ui.getByRole('option', { name: 'Standard' }).getAttribute('aria-selected')).toBe('false');
+    expect(ui.getByRole('button', { name: 'Model: Sonnet, effort High, speed Ultrafast' })).toBe(button);
+    expect(button.querySelector('.claudian-service-tier-indicator')?.classList.contains('claudian-hidden')).toBe(false);
+    expect((await axe(host)).violations).toEqual([]);
+
+    await expect(toolbar.serviceTierToggle.toggle()).resolves.toBe(true);
+    expect(callbacks.onServiceTierChange).toHaveBeenLastCalledWith('default');
+    expect(ui.getByRole('button', { name: 'Model: Sonnet, effort High' })).toBe(button);
+    expect(button.querySelector('.claudian-service-tier-indicator')?.classList.contains('claudian-hidden')).toBe(true);
+  });
+
   it('offers fast mode only while the list shows the model in use, as for a model without it', () => {
     const { ui } = renderToolbar({
-      serviceTier: true,
+      serviceTiers: FAST_TIER,
       models: [
         { value: 'sonnet', label: 'Sonnet', providerId: 'claude', providerLabel: 'Claude' },
         { value: 'pi-model', label: 'Pi Model', providerId: 'pi', providerLabel: 'Pi' },
@@ -575,7 +623,7 @@ describe('localized model menu', () => {
   beforeEach(() => { setLocale('zh-CN'); });
 
   it('localizes the operated model, thinking and fast sections while preserving native values', async () => {
-    const { callbacks, host, settings, ui } = renderToolbar({ serviceTier: true });
+    const { callbacks, host, settings, ui } = renderToolbar({ serviceTiers: FAST_TIER });
     const button = ui.getByRole('button', { name: '模型：Sonnet, 思考强度 High' });
     fireEvent.click(button);
     expect(ui.getByRole('dialog', { name: '模型选项' })).toBeDefined();
@@ -632,7 +680,7 @@ describe('localized model menu', () => {
     ['effort', 'onEffortLevelChange', 'option', 'Low', '无法更改思考强度'],
     ['tier', 'onServiceTierChange', 'switch', '快速', '无法更改服务层级'],
   ] as const)('reports a rejected %s action without changing the current choice', async (_case, callback, role, name, message) => {
-    const { callbacks, settings, ui } = renderToolbar({ serviceTier: true });
+    const { callbacks, settings, ui } = renderToolbar({ serviceTiers: FAST_TIER });
     vi.mocked(callbacks[callback]).mockRejectedValueOnce(new Error('external settings rejected'));
     const button = ui.getByRole('button', { name: '模型：Sonnet, 思考强度 High' });
     fireEvent.click(button);

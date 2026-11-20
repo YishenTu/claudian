@@ -301,14 +301,24 @@ export class ToolbarMenu {
     (item ?? this.menuEl).focus();
   }
 
-  /** Up and Down step through every control. */
+  /** Up and Down step through every control; Left and Right step within a horizontal list. */
   #moveFocus(event: KeyboardEvent): boolean {
     const target = event.target as HTMLElement;
     const items = this.#items();
     const current = items.indexOf(target);
     if (current < 0) return false;
+    const row = target.closest<HTMLElement>('[aria-orientation="horizontal"]');
 
     switch (event.key) {
+      case 'ArrowRight':
+      case 'ArrowLeft': {
+        if (!row) return false;
+        // Left and Right wrap within the row; Up and Down leave it.
+        const rowItems = this.#items(row);
+        const step = event.key === 'ArrowRight' ? 1 : -1;
+        rowItems[(rowItems.indexOf(target) + step + rowItems.length) % rowItems.length].focus();
+        return true;
+      }
       case 'ArrowDown':
         items[(current + 1) % items.length].focus();
         return true;

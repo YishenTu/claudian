@@ -574,6 +574,9 @@
       "fastActive": "快速模式已开启",
       "fast": "快速",
       "fastLabel": "快速模式：{label}",
+      "speed": "速度",
+      "speedActive": "速度 {label}",
+      "standard": "标准",
       "changeTierFailed": "无法更改服务层级"
     },
     "navigation": {

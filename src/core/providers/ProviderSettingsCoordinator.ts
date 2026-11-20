@@ -97,10 +97,7 @@ function normalizeServiceTier(
   uiConfig: ProviderModelPolicy,
   settings: Record<string, unknown>,
 ): void {
-  const toggle = uiConfig.getServiceTierPolicy?.(settings) ?? null;
-  settings.serviceTier = toggle
-    ? (toggle.isActive ? toggle.activeValue : toggle.inactiveValue)
-    : 'default';
+  settings.serviceTier = uiConfig.getServiceTierPolicy?.(settings)?.selectedValue ?? 'default';
 }
 
 function normalizeModelDependentSettings(
@@ -338,7 +335,7 @@ export class ProviderSettingsCoordinator {
       }
     }
 
-    const serviceTierToggle = uiConfig.getServiceTierPolicy?.({
+    const serviceTierPolicy = uiConfig.getServiceTierPolicy?.({
       ...settings,
       ...(model ? { model } : {}),
     }) ?? null;
@@ -368,7 +365,7 @@ export class ProviderSettingsCoordinator {
     } else if (canReuseCurrentProjection && currentServiceTier !== undefined) {
       settings.serviceTier = currentServiceTier;
     } else {
-      settings.serviceTier = serviceTierToggle?.inactiveValue ?? 'default';
+      settings.serviceTier = serviceTierPolicy?.options[0]?.value ?? 'default';
     }
 
     const permissionPolicy = uiConfig.permissionModes ?? null;

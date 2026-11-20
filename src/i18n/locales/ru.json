@@ -574,6 +574,9 @@
       "fastActive": "быстрый режим включён",
       "fast": "Быстрый",
       "fastLabel": "Быстрый режим: {label}",
+      "speed": "Скорость",
+      "speedActive": "скорость {label}",
+      "standard": "Стандартная",
       "changeTierFailed": "Не удалось изменить уровень обслуживания"
     },
     "navigation": {

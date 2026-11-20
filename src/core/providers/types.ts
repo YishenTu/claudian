@@ -210,15 +210,14 @@ export interface ProviderPermissionModeOption extends ProviderUIOption {
   bypassesApprovals?: boolean;
 }
 
-/** Provider-reported service-tier choices, labels and resolved selection. */
+/** Provider-reported service-tier choices and the resolved selection. */
 export interface ProviderServiceTierPolicy {
-  inactiveValue: string;
-  inactiveLabel: string;
-  activeValue: string;
-  activeLabel: string;
-  /** Whether the provider will use the active tier for the next request. */
-  isActive: boolean;
-  description?: string;
+  /** Choices in menu order; the first is the standard tier, which turns acceleration off. */
+  options: ProviderUIOption[];
+  /** The option the provider will use for the next request. */
+  selectedValue: string;
+  /** The option `/fast` switches to from the standard tier; null when the provider has no Fast tier. */
+  fastValue: string | null;
 }
 
 export type ProviderServiceTierToggleConfig = ProviderServiceTierPolicy;
