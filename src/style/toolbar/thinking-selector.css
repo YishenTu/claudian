@@ -41,7 +41,7 @@
   font-weight: 500;
 }
 
-/* A four-bar strength glyph, rising with the level. */
+/* A strength glyph of at least four bars, rising with the level; each bar's rise runs from 0 to 1. */
 .claudian-thinking-strength {
   display: inline-flex;
   flex: 0 0 auto;
@@ -52,14 +52,10 @@
 
 .claudian-thinking-strength > span {
   width: 3px;
+  height: calc(4px + 8px * var(--claudian-strength-rise, 1));
   border-radius: 1px;
   background: var(--background-modifier-border-hover);
 }
-
-.claudian-thinking-strength > span:nth-child(1) { height: 4px; }
-.claudian-thinking-strength > span:nth-child(2) { height: 6.5px; }
-.claudian-thinking-strength > span:nth-child(3) { height: 9px; }
-.claudian-thinking-strength > span:nth-child(4) { height: 12px; }
 
 .claudian-thinking-strength > span.is-filled {
   background: var(--text-muted);

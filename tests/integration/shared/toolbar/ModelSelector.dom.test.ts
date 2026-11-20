@@ -241,3 +241,29 @@ it('lists a new session\'s providers in their own column and shows one provider\
   expect(tab('Codex').getAttribute('aria-selected')).toBe('true');
   expect(within(modelList()).getByRole('option', { name: 'GPT-5.5', selected: true })).toBe(document.activeElement);
 });
+
+it.each([
+  { levels: ['Low', 'High'], bars: [4, 2] },
+  { levels: ['Low', 'Medium', 'High', 'X-High'], bars: [4, 3, 2, 1] },
+  { levels: ['Low', 'Medium', 'High', 'X-High', 'Max'], bars: [5, 4, 3, 2, 1] },
+])('gives each of $levels.length thinking levels its own strength glyph, deepest on top', ({ levels, bars }) => {
+  const host = document.body.createDiv();
+  const callbacks = {
+    getSettings: () => ({ model: 'opus', reasoning: levels[0] }),
+    getUIConfig: () => ({
+      getModelOptions: () => [{ value: 'opus', label: 'opus' }],
+      getReasoningOptions: () => levels.map(label => ({ value: label, label })),
+      getDefaultReasoningValue: () => levels[0],
+    }),
+    getCapabilities: () => ({ reasoningControl: 'effort' }),
+  } as unknown as ToolbarCallbacks;
+  new EffortSelector(new ModelSelector(host, callbacks), callbacks);
+  fireEvent.click(within(host).getByRole('button', { name: /^Model: opus/ }));
+
+  const rows = within(within(host).getByRole('listbox', { name: 'Thinking' })).getAllByRole('option');
+  expect(rows.map(row => row.textContent)).toEqual([...levels].reverse());
+  // Every glyph has the same number of bars; only the filled count tells the levels apart.
+  const glyphs = rows.map(row => [...row.querySelectorAll('.claudian-thinking-strength > span')]);
+  expect(new Set(glyphs.map(glyph => glyph.length))).toEqual(new Set([Math.max(4, levels.length)]));
+  expect(glyphs.map(glyph => glyph.filter(bar => bar.classList.contains('is-filled')).length)).toEqual(bars);
+});
