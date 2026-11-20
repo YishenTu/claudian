@@ -11,6 +11,7 @@ import { setLocale } from '@/i18n/i18n';
 import { claudeChatUIConfig } from '@/providers/claude/ui/ClaudeChatUIConfig';
 import { updateCodexProviderSettings } from '@/providers/codex/settings';
 import { codexChatUIConfig } from '@/providers/codex/ui/CodexChatUIConfig';
+import { createProviderIconSvg } from '@/shared/icons';
 import { EffortSelector } from '@/shared/toolbar/EffortSelector';
 import { ModelSelector } from '@/shared/toolbar/ModelSelector';
 import { getProviderPickerModelOptions } from '@/shared/toolbar/providerPickerModelOptions';
@@ -112,6 +113,27 @@ it('renders saved model order top-to-bottom through the real provider UI config'
   config.visibleModels = ['sonnet', 'opus', 'haiku'];
   selector.renderOptions();
   expect(labels()).toEqual(['sonnet', 'opus', 'haiku']);
+});
+
+it('keeps the session provider\'s icon on an unavailable model in a new session\'s picker', () => {
+  const host = document.body.createDiv();
+  const settings = {
+    model: 'openai-codex/retired',
+    providerConfigs: {
+      claude: { enabled: true, discoveredModels: [{ value: 'opus', label: 'opus', description: '' }], visibleModels: ['opus'] },
+      codex: { enabled: true, discoveredModels: [], visibleModels: [] },
+    },
+  };
+  new ModelSelector(host, {
+    getSettings: () => settings,
+    getUIConfig: () => ({
+      ...codexChatUIConfig,
+      getModelOptions: (options: Record<string, unknown>) => getProviderPickerModelOptions(() => options),
+    }),
+  } as unknown as ToolbarCallbacks);
+  const button = within(host).getByRole('button', { name: 'Model unavailable' });
+  const expected = createProviderIconSvg(codexChatUIConfig.getProviderIcon!()!, { parent: document.createElement('div') });
+  expect(button.querySelector('svg')!.innerHTML).toBe(expected.innerHTML);
 });
 
 it('hides the parts column while none of its parts is shown', () => {

@@ -122,9 +122,10 @@ export class ModelSelector {
     const models = this.#getAvailableModels();
     const modelInfo = models.find(m => m.value === currentModel);
 
-    const displayModel = modelInfo || models[0];
-    const icon = displayModel?.providerIcon
-      ?? this.callbacks.getUIConfig().getProviderIcon?.();
+    // An unavailable model keeps its session's provider icon rather than the list's first provider.
+    const icon = modelInfo?.providerIcon
+      ?? this.callbacks.getUIConfig().getProviderIcon?.()
+      ?? models[0]?.providerIcon;
 
     this.iconSlotEl.empty();
     if (icon) {
