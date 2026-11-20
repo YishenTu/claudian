@@ -106,13 +106,21 @@ describe('ProviderSettingsCoordinator', () => {
         defaultServiceTier: 'priority',
         expectedServiceTier: 'default',
       },
+      {
+        caseName: 'an advertised tier beyond Fast',
+        storedServiceTier: 'ultrafast',
+        defaultServiceTier: null,
+        extraServiceTiers: [{ id: 'ultrafast', name: 'Ultrafast', description: 'Lowest latency' }],
+        expectedServiceTier: 'ultrafast',
+      },
     ])('canonicalizes $caseName for a model snapshot', ({
       storedServiceTier,
       defaultServiceTier,
+      extraServiceTiers = [],
       expectedServiceTier,
     }) => {
       const discoveredModels = TEST_CODEX_CATALOG.map(model => model.model === TEST_CODEX_MODEL
-        ? { ...model, defaultServiceTier }
+        ? { ...model, defaultServiceTier, serviceTiers: [...model.serviceTiers, ...extraServiceTiers] }
         : model);
       const settings: Record<string, unknown> = {
         settingsProvider: 'codex',

@@ -574,6 +574,9 @@
       "fastActive": "modo rápido activado",
       "fast": "Rápido",
       "fastLabel": "Modo rápido: {label}",
+      "speed": "Velocidad",
+      "speedActive": "velocidad {label}",
+      "standard": "Estándar",
       "changeTierFailed": "No se pudo cambiar el nivel de servicio"
     },
     "navigation": {

@@ -7,6 +7,7 @@ import type {
   ProviderServiceTierPolicy,
   ProviderUIOption,
 } from '../../core/providers/types';
+import { t } from '../../i18n/i18n';
 import { getVisibleCodexModelIds } from './config';
 import { getCodexModelOptions } from './modelOptions';
 import {
@@ -33,8 +34,6 @@ const EFFORT_LEVELS: ProviderUIOption[] = [
   ...CODEX_FALLBACK_REASONING_EFFORT_VALUES,
 ].map(value => ({ value, label: formatReasoningValueLabel(value) }));
 
-
-const DEFAULT_SERVICE_TIER_LABEL = 'Standard';
 
 
 function getVisibleDiscoveredModels(settings: Record<string, unknown>) {
@@ -146,18 +145,23 @@ export const codexModelPolicy: ProviderModelPolicy = {
       return null;
     }
 
-    const tier = getCodexFastServiceTier(model);
-    if (!tier) {
+    const fastTier = getCodexFastServiceTier(model);
+    // Fast leads the accelerated tiers, whatever the catalog order, so the toolbar gives it one zap.
+    const tiers = model.serviceTiers.filter(tier => tier.id !== CODEX_DEFAULT_SERVICE_TIER && tier !== fastTier);
+    const options: ProviderUIOption[] = [
+      { value: CODEX_DEFAULT_SERVICE_TIER, label: t('chat.modelPicker.standard') },
+      ...(fastTier ? [fastTier, ...tiers] : tiers)
+        .map(tier => ({ value: tier.id, label: tier.name, description: tier.description || undefined })),
+    ];
+    if (options.length < 2) {
       return null;
     }
 
+    const resolved = resolveCodexModelServiceTier(model, settings.serviceTier);
     return {
-      inactiveValue: CODEX_DEFAULT_SERVICE_TIER,
-      inactiveLabel: DEFAULT_SERVICE_TIER_LABEL,
-      activeValue: tier.id,
-      activeLabel: tier.name,
-      isActive: resolveCodexModelServiceTier(model, settings.serviceTier) === tier.id,
-      description: tier.description || undefined,
+      options,
+      selectedValue: options.find(option => option.value === resolved)?.value ?? CODEX_DEFAULT_SERVICE_TIER,
+      fastValue: fastTier?.id ?? null,
     };
   }
 };
