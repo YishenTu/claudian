@@ -6,7 +6,7 @@ import { nextToolbarId, runToolbarAction } from '@/shared/toolbar/ToolbarMenu';
 import type { ModelPickerCallbacks } from '@/shared/toolbar/types';
 
 /** Bars in each level's strength glyph, however many levels the provider reports. */
-const STRENGTH_BARS = 4;
+const MIN_STRENGTH_BARS = 4;
 
 /** Effort: a level on the model button, a list of levels in its popover. */
 export class EffortSelector {
@@ -77,6 +77,8 @@ export class EffortSelector {
     const chosen = this.part.showsCurrentModel() ? current : null;
     const tabStop = [chosen, defaultValue].find(value => options.some(option => option.value === value))
       ?? options[options.length - 1].value;
+    // One bar per level beyond the minimum, so no two levels round onto the same glyph.
+    const bars = Math.max(MIN_STRENGTH_BARS, options.length);
     for (let index = options.length - 1; index >= 0; index--) {
       const option = options[index];
       const selected = option.value === chosen;
@@ -98,9 +100,10 @@ export class EffortSelector {
       if (option.description) itemEl.setAttribute('aria-description', option.description);
 
       const barsEl = itemEl.createSpan({ cls: 'claudian-thinking-strength', attr: { 'aria-hidden': 'true' } });
-      const filled = Math.max(1, Math.round(((index + 1) / options.length) * STRENGTH_BARS));
-      for (let bar = 0; bar < STRENGTH_BARS; bar++) {
-        barsEl.createSpan({ cls: bar < filled ? 'is-filled' : '' });
+      const filled = Math.round(((index + 1) / options.length) * bars);
+      for (let bar = 0; bar < bars; bar++) {
+        const barEl = barsEl.createSpan({ cls: bar < filled ? 'is-filled' : '' });
+        barEl.setCssProps({ '--claudian-strength-rise': String(bar / (bars - 1)) });
       }
       itemEl.prepend(barsEl);
     }
