@@ -101,7 +101,7 @@ function resolveBlankTabFallback(
  * changes; null for bound tabs or when the current selection stands.
  */
 export function resolveBlankTabReselection(
-  tab: Readonly<TabIdentity>,
+  tab: Readonly<Pick<TabIdentity, 'conversationId' | 'providerId' | 'draftModel'>>,
   plugin: ChatFeatureHost,
 ): BlankTabSelection | null {
   if (tab.conversationId !== null) return null;
