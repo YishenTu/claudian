@@ -1116,7 +1116,7 @@ describe('Tab provider execution ownership', () => {
     expect(next.providerId).toBe('claude');
   });
 
-  it('keeps an explicit blank-tab selection through loading and changed catalog publications', async () => {
+  it('keeps a blank-tab selection while the catalog loads and moves it once a published catalog excludes it', async () => {
     const plugin = await createPlugin();
     const uiConfig = ProviderRegistry.getChatUIConfig('claude');
     plugin.settings.lastSelectedChatModel = { providerId: 'claude', model: 'claude-default' };
@@ -1128,16 +1128,14 @@ describe('Tab provider execution ownership', () => {
     (uiConfig.getModelOptions as Mock).mockReturnValue([{ value: 'claude-alternate', label: 'Alternate' }]);
     (uiConfig.getDefaultModel as Mock).mockReturnValue('claude-alternate');
     onProviderAvailabilityChanged(tab, plugin);
-    expect(tab.draftModel).toBe('claude-default');
+    expect([tab.providerId, tab.draftModel]).toEqual(['claude', 'claude-alternate']);
   });
 
-  it('preserves an unavailable last-selected model when creating a blank tab and publishing availability', async () => {
+  it('opens a blank tab on the last-selected provider\'s default when its model was disabled', async () => {
     const plugin = await createPlugin();
     plugin.settings.lastSelectedChatModel = { providerId: 'claude', model: 'retired' };
     const tab = await createTestTab({ plugin, containerEl: document.createElement('div') });
-    onProviderAvailabilityChanged(tab, plugin);
-    expect(tab.providerId).toBe('claude');
-    expect(tab.draftModel).toBe('retired');
+    expect([tab.providerId, tab.draftModel]).toEqual(['claude', 'claude-default']);
   });
 
   it('restores a draft on its recorded provider even when model ownership is unresolved', async () => {

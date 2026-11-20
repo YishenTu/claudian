@@ -855,6 +855,37 @@ it('leaves sealed tab identities untouched when provider availability changes af
   expect(onTabProviderChanged).not.toHaveBeenCalled();
 });
 
+it('moves blank drafts off a disabled model to their provider\'s first enabled model', async () => {
+  const { manager, root } = await createManager();
+  const draft = { conversationId: null, draftModel: 'claude-alternate', providerId: 'claude' };
+  await manager.restoreState({ openTabs: [{ tabId: 'active', ...draft }, { tabId: 'inactive', ...draft }], activeTabId: 'active' });
+  expect(manager.getTab('inactive')).toBeNull();
+
+  registerChatTestProvider('claude', { models: [{ value: 'claude-top', label: 'Top' }, { value: 'claude-default', label: 'Claude' }] });
+  manager.reconcileProviderAvailability();
+  expect(manager.getPersistedState().openTabs).toEqual([
+    expect.objectContaining({ tabId: 'active', providerId: 'claude', draftModel: 'claude-top' }),
+    expect.objectContaining({ tabId: 'inactive', providerId: 'claude', draftModel: 'claude-top' }),
+  ]);
+  expect(within(root).getByRole('button', { name: translate('chat.modelPicker.modelLabel', { label: 'Top' }) })).toBeTruthy();
+});
+
+it('moves a draft parked while wide off a disabled model before it reattaches', async () => {
+  const { manager, root } = await createManager();
+  const blank = (await manager.createTab())!;
+  blank.session.selectDraft('claude', 'claude-alternate');
+  await manager.viewerSlot.enter();
+  await manager.viewerSlot.show('conversation-1');
+  expect(manager.getTab(blank.id)).toBeNull();
+
+  registerChatTestProvider('claude', { models: [{ value: 'claude-top', label: 'Top' }, { value: 'claude-default', label: 'Claude' }] });
+  manager.reconcileProviderAvailability();
+  await manager.viewerSlot.release();
+  await manager.switchToTab(blank.id);
+  expect([manager.getActiveTab()!.providerId, manager.getActiveTab()!.draftModel]).toEqual(['claude', 'claude-top']);
+  expect(within(root).getByRole('button', { name: translate('chat.modelPicker.modelLabel', { label: 'Top' }) })).toBeTruthy();
+});
+
 it('drains in-flight conversation navigation before sealing shutdown state', async () => {
   const { manager, plugin, root } = await createManager();
   const tab = (await manager.createTab())!;

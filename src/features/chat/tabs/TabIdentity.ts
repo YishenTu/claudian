@@ -101,7 +101,7 @@ function resolveBlankTabFallback(
  * changes; null for bound tabs or when the current selection stands.
  */
 export function resolveBlankTabReselection(
-  tab: Readonly<TabIdentity>,
+  tab: Readonly<Pick<TabIdentity, 'conversationId' | 'providerId' | 'draftModel'>>,
   plugin: ChatFeatureHost,
 ): BlankTabSelection | null {
   if (tab.conversationId !== null) return null;
@@ -112,8 +112,10 @@ export function resolveBlankTabReselection(
   let draftModel = tab.draftModel;
 
   if (tab.draftModel) {
+    // A disabled draft model yields to its provider's first enabled model; with none, it stays.
     const availableDraftModel = tab.providerId && enabledProviderIds.includes(tab.providerId)
       ? findProviderModelOption(tab.providerId, tab.draftModel, settingsSnapshot)
+        ?? resolveProviderDefaultModel(tab.providerId, settingsSnapshot)
       : null;
     if (availableDraftModel) draftModel = availableDraftModel;
   } else {

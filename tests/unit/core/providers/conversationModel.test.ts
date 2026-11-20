@@ -57,11 +57,11 @@ describe('conversation model resolution', () => {
       ));
   });
 
-  it('preserves an unavailable last-selected model', () => {
+  it('moves a disabled last-selected model to its own provider\'s default', () => {
     expect(resolveNewConversationModel({
-      enabledProviders: ['claude', 'codex'], displayOrder: ['claude', 'codex'],
+      enabledProviders: ['codex', 'claude'], displayOrder: ['codex', 'claude'],
       lastSelectedChatModel: { providerId: 'claude', model: 'retired' },
-    })).toEqual({ providerId: 'claude', model: 'retired', source: 'last-selected' });
+    })).toEqual({ providerId: 'claude', model: 'opus', source: 'provider-default' });
   });
 
   afterEach(() => {
@@ -103,21 +103,21 @@ describe('conversation model resolution', () => {
       providers.claude.normalizations = undefined;
     });
 
-    it('preserves the unavailable last selected model', () => {
+    it('preserves the unavailable last selected model while its provider has no models', () => {
       const result = resolveNewConversationModel({
-        displayOrder: ['claude', 'codex'],
-        enabledProviders: ['claude', 'codex'],
-        lastSelectedChatModel: { providerId: 'codex', model: 'codex/retired' },
+        displayOrder: ['claude', 'empty'],
+        enabledProviders: ['claude', 'empty'],
+        lastSelectedChatModel: { providerId: 'empty', model: 'empty/retired' },
       });
 
       expect(result).toEqual({
-        model: 'codex/retired',
-        providerId: 'codex',
+        model: 'empty/retired',
+        providerId: 'empty',
         source: 'last-selected',
       });
     });
 
-    it('preserves the unavailable last selected model over variant defaults', () => {
+    it('replaces an unavailable last selected model with the provider default, not a variant fallback', () => {
       providers.codex.defaultModel = 'codex/gpt-ordered';
       providers.codex.options = ['codex/gpt-ordered', 'codex/gpt-native'];
       providers.codex.variantFallback = 'codex/gpt-native';
@@ -127,9 +127,9 @@ describe('conversation model resolution', () => {
         enabledProviders: ['codex'],
         lastSelectedChatModel: { providerId: 'codex', model: 'codex/retired' },
       })).toEqual({
-        model: 'codex/retired',
+        model: 'codex/gpt-ordered',
         providerId: 'codex',
-        source: 'last-selected',
+        source: 'provider-default',
       });
     });
 

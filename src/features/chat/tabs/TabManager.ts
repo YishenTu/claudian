@@ -614,8 +614,13 @@ export class TabManager implements TabManagerInterface {
       if (runtime) {
         changed = onProviderAvailabilityChanged(runtime, this.plugin);
       } else {
-        const selection = resolveBlankTabReselection(identity, this.plugin);
-        if (selection) membership.selectDraft(identity.id, selection);
+        // An unloaded tab's held draft session owns its draft and is what reattaches.
+        const held = this.draftHolds.get(identity.id)?.runtime;
+        const selection = resolveBlankTabReselection(held ?? identity, this.plugin);
+        if (selection) {
+          held?.selectDraft(selection.providerId, selection.draftModel);
+          membership.selectDraft(identity.id, selection);
+        }
         changed = selection !== null;
       }
       if (changed) {

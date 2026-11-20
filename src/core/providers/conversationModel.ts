@@ -101,6 +101,11 @@ export function resolveNewConversationModel(
         source: 'last-selected',
       };
     }
+    // A disabled model yields to its provider's first enabled model; with none, it stays.
+    const providerDefault = resolveProviderDefaultModel(lastSelected.providerId, settings);
+    if (providerDefault) {
+      return { providerId: lastSelected.providerId, model: providerDefault, source: 'provider-default' };
+    }
 
     return { ...lastSelected, source: 'last-selected' };
   }
