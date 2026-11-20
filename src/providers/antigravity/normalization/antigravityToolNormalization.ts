@@ -17,6 +17,7 @@ import {
 } from '@/core/tools/toolNames';
 import type { AskUserAnswers, ToolProviderPayload } from '@/core/types';
 import {
+  type ACPPermissionOption,
   type ACPResolvedToolRawName,
   type ACPSessionNotification,
   ACPToolStreamAdapter,
@@ -203,6 +204,16 @@ function withAliases(input: Record<string, unknown>, aliases: Record<string, unk
     if (next[key] === undefined && value !== undefined) next[key] = value;
   }
   return next;
+}
+
+export function antigravityPermissionWarning(option: ACPPermissionOption): string | undefined {
+  if (option.kind !== 'allow_always') return undefined;
+  const warning = option._meta?.['agy.security.warning'];
+  if (!isRecord(warning)) return undefined;
+  for (const text of [warning.message, warning.title]) {
+    if (typeof text === 'string' && text.trim()) return text.trim();
+  }
+  return undefined;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

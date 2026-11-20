@@ -460,6 +460,7 @@ export type ACPPermissionOptionKind =
   | 'reject_always';
 
 export interface ACPPermissionOption {
+  _meta?: ACPMetadata | null;
   kind: ACPPermissionOptionKind;
   name: string;
   optionId: ACPPermissionOptionId;

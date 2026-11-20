@@ -89,6 +89,13 @@ export class ACPSessionUpdateNormalizer {
   private readonly seenMessages = new Map<MessageRole, Set<string>>();
   private readonly toolCalls = new Map<string, ACPToolCallSnapshot>();
 
+  get hasOpenTools(): boolean {
+    for (const tool of this.toolCalls.values()) {
+      if (tool.status !== 'completed' && tool.status !== 'failed') return true;
+    }
+    return false;
+  }
+
   reset(): void {
     this.seenMessages.clear();
     this.toolCalls.clear();

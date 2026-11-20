@@ -36,6 +36,7 @@ export function mapACPApprovalDecision(
 
 export function buildACPApprovalDecisionOptions(
   options: readonly ACPPermissionOption[],
+  describeOption?: (option: ACPPermissionOption) => string | undefined,
 ): ProviderApprovalDecisionOption[] {
   return options.map((option) => ({
     ...(option.kind === 'allow_once'
@@ -43,6 +44,7 @@ export function buildACPApprovalDecisionOptions(
       : option.kind === 'allow_always'
       ? { decision: 'allow-always' as const }
       : {}),
+    ...(describeOption ? { description: describeOption(option) } : {}),
     label: option.name,
     value: option.optionId,
   }));

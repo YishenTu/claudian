@@ -62,6 +62,7 @@ import {
 } from '../models';
 import { mapAntigravityToolCallPaths } from '../normalization/antigravityNativePaths';
 import {
+  antigravityPermissionWarning,
   createAntigravityToolStreamAdapter,
   normalizeAntigravityToolName,
   presentAntigravityUpdate,
@@ -219,6 +220,7 @@ export class AntigravityExecutionSession implements ProviderExecutionSession, St
       this.providerSessionId && providerState.nativeConversationContextEstablished !== false,
     );
     this.interactionController = new ACPInteractionController({
+      describePermissionOption: antigravityPermissionWarning,
       getTurnId: () => this.#interactionTurnId(),
       interactionPort: config.interactionPort,
       presentPermission: request => {
@@ -675,11 +677,12 @@ export class AntigravityExecutionSession implements ProviderExecutionSession, St
       const owner = background
         ? { signal: background.signal, toolPolicy: this.latestPolicy?.toolPolicy }
         : active ? { signal: active.abortController.signal, toolPolicy: active.request.toolPolicy } : null;
-      return invokeSessionTool(call.name, call.args, {
+      const result = invokeSessionTool(call.name, call.args, {
         port: this.config.sessionTools,
         signal: owner ? AbortSignal.any([owner.signal, call.signal]) : AbortSignal.abort(),
         toolPolicy: owner?.toolPolicy,
       });
+      return background ? background.holdForRequest(result) : result;
     }).then(route => {
       if (this.disposed) {
         route.dispose();
@@ -718,7 +721,7 @@ export class AntigravityExecutionSession implements ProviderExecutionSession, St
     if (background) {
       // Fail closed: approvals between runs follow the configuration agy last ran under.
       if (!this.latestPolicy) return Promise.resolve(CANCELLED_PERMISSION);
-      return this.#decidePermission(request, this.latestPolicy, background.signal).then(response => {
+      return background.holdForRequest(this.#decidePermission(request, this.latestPolicy, background.signal)).then(response => {
         if (!grantsPermission(request, response)) background.toolDenied(request.toolCall.toolCallId);
         return response;
       });
@@ -751,7 +754,7 @@ export class AntigravityExecutionSession implements ProviderExecutionSession, St
 
   #handleElicitation(request: ACPCreateElicitationRequest): Promise<ACPCreateElicitationResponse> {
     const background = this.#backgroundFor(request.sessionId);
-    if (background) return this.questionRouter.handle(request, background.signal);
+    if (background) return background.holdForRequest(this.questionRouter.handle(request, background.signal));
     const active = this.active;
     if (!active || this.#isCancellationRequested(active)) return Promise.resolve({ action: 'cancel' });
     return this.questionRouter.handle(request, active.abortController.signal);

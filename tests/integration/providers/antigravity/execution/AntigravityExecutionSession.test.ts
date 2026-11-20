@@ -843,9 +843,15 @@ describe('AntigravityExecutionSession', () => {
     const peer = await firstPeer();
     await peer.waitForPrompts(1);
 
-    await expect(peer.requestPermission(permissionRequest('write_file'))).resolves.toEqual({ outcome });
+    const permission = permissionRequest('write_file');
+    const always = { _meta: { 'agy.security.warning': { message: 'Future shell calls may run without asking.' } },
+      kind: 'allow_always' as const, name: 'Always allow', optionId: 'always' };
+    permission.options.push(always);
+    await expect(peer.requestPermission(permission)).resolves.toEqual({ outcome });
     expect(port.requestApproval).toHaveBeenCalledWith(
-      expect.objectContaining({ kind: 'approval', toolName: 'Write' }),
+      expect.objectContaining({ decisionOptions: expect.arrayContaining([{
+        decision: 'allow-always', description: 'Future shell calls may run without asking.', label: 'Always allow', value: 'always',
+      }]), kind: 'approval', toolName: 'Write' }),
       expect.any(AbortSignal),
     );
     peer.finishPrompt();
@@ -956,7 +962,8 @@ describe('AntigravityExecutionSession', () => {
     peer.emit({ sessionUpdate: 'usage_update', size: 1_048_576, used: 9_000 }, 'session-new');
     peer.emit({ ...read, sessionUpdate: 'tool_call', status: 'in_progress' }, 'session-new');
     await background.reached('tool_started');
-    await vi.advanceTimersByTimeAsync(5_000);
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(background.events.at(-1)?.type).toBe('tool_started');
     peer.emit({ ...read, sessionUpdate: 'tool_call_update', status: 'completed' }, 'session-new');
     peer.emit({ content: { text: 'Done.', type: 'text' }, sessionUpdate: 'agent_message_chunk' }, 'session-new');
     peer.emit({ sessionUpdate: 'usage_update', size: 1_048_576, used: 9_100 }, 'session-new');
@@ -1037,7 +1044,7 @@ describe('AntigravityExecutionSession', () => {
     expect(events.filter(event => event.scope.kind === 'background')).toEqual([]);
   });
 
-  it('sends the next prompt only once agy\'s own reply has settled, so a fast answer stays in its run', async () => {
+  it.each([true, false])('sends the next prompt only once agy\'s own reply has settled, so a fast answer stays in its run (usage update %s)', async reportsUsage => {
     const session = await createSession();
     const first = session.execute(request('Delegate'));
     const peer = await firstPeer();
@@ -1054,10 +1061,18 @@ describe('AntigravityExecutionSession', () => {
       peer.emit({ content: { text: 'Sure.', type: 'text' }, sessionUpdate: 'agent_message_chunk' }, 'session-new');
     });
     const second = session.execute(request('Meanwhile'));
+    await vi.advanceTimersByTimeAsync(110_000);
     peer.emit({ content: { text: 'Late part two.', type: 'text' }, sessionUpdate: 'agent_message_chunk' }, 'session-new');
-    peer.emit({ sessionUpdate: 'usage_update', size: 1_048_576, used: 9_000 }, 'session-new');
-    await background.reached('usage_updated');
-    await vi.advanceTimersByTimeAsync(1_000);
+    await background.reached('text_delta', 2);
+    if (reportsUsage) {
+      peer.emit({ sessionUpdate: 'usage_update', size: 1_048_576, used: 9_000 }, 'session-new');
+      await background.reached('usage_updated');
+    }
+    const delay = reportsUsage ? 1_000 : 120_000;
+    await vi.advanceTimersByTimeAsync(delay - 1);
+    expect(peer.prompts).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(background.events.at(-1)?.type).toBe('background_turn_completed');
     await background.completed;
     await answered;
     peer.finishPrompt();
@@ -1117,11 +1132,16 @@ describe('AntigravityExecutionSession', () => {
     peer.finishPrompt();
     await collect(first.events);
 
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     const background = backgroundTurn(session);
     peer.emit({ kind: 'edit', name: 'write_file', rawInput: {}, sessionUpdate: 'tool_call', status: 'pending', title: 'write_file', toolCallId: 'tool-1' }, 'session-new');
+    await background.reached('tool_started');
     void peer.requestPermission(permissionRequest('write_file'));
     const signal = await asked.promise;
     const second = session.execute(request('Meanwhile'));
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(signal.aborted).toBe(false);
+    expect(peer.prompts).toHaveLength(1);
     second.cancel();
     expect((await collect(second.events)).at(-1)).toMatchObject({ type: 'cancelled' });
 
@@ -1355,7 +1375,7 @@ describe('AntigravityExecutionSession', () => {
     await vi.waitFor(() => expect(session.blocksIdleRelease?.()).toBe(false));
   });
 
-  it('holds idle release while a subagent is out and releases it once the subagent reports', async () => {
+  it.each(['reports', 'is killed'])('holds idle release while a subagent is out and releases it once the subagent %s', async outcome => {
     const session = await createSession();
     const run = session.execute(request('Delegate'));
     const peer = await firstPeer();
@@ -1374,7 +1394,14 @@ describe('AntigravityExecutionSession', () => {
     // Releasing the idle session would end agy's process and the subagent with it.
     expect(session.blocksIdleRelease?.()).toBe(true);
 
-    await writeTranscript('session-new', [...delegation, transcriptSteps.report(4, 'sub-1', '391', testTime({ minutes: 5 }))]);
+    if (outcome === 'is killed') {
+      const directory = path.join(vault, '.gemini', 'antigravity-cli', 'brain', 'session-new', '.system_generated', 'subagents');
+      await mkdir(directory, { recursive: true });
+      await writeFile(path.join(directory, 'sub-1.json'), JSON.stringify({ conversationId: 'sub-1', state: 'SUBAGENT_STATE_KILLED' }));
+      await writeTranscript('session-new', [...delegation, transcriptSteps.reply(4, 'Killed.', testTime({ minutes: 5 }))]);
+    } else {
+      await writeTranscript('session-new', [...delegation, transcriptSteps.report(4, 'sub-1', '391', testTime({ minutes: 5 }))]);
+    }
     // Nothing signals the watcher's give-up; polling only bounds it.
     await vi.waitFor(() => expect(session.blocksIdleRelease?.()).toBe(false));
   });

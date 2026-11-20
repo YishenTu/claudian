@@ -8,6 +8,7 @@ import {
   mapACPApprovalDecision,
 } from './ACPPermissionAdapter';
 import type {
+  ACPPermissionOption,
   ACPRequestPermissionRequest,
   ACPRequestPermissionResponse,
 } from './types';
@@ -24,6 +25,7 @@ export interface ACPPermissionPresentation {
 }
 
 export interface ACPInteractionControllerOptions {
+  readonly describePermissionOption?: (option: ACPPermissionOption) => string | undefined;
   readonly getTurnId: () => string | null;
   readonly interactionPort: ProviderInteractionPort;
   readonly presentPermission?: (
@@ -69,7 +71,7 @@ export class ACPInteractionController {
         ...(presentation.blockedPath
           ? { blockedPath: presentation.blockedPath }
           : {}),
-        decisionOptions: buildACPApprovalDecisionOptions(request.options),
+        decisionOptions: buildACPApprovalDecisionOptions(request.options, this.options.describePermissionOption),
         ...(presentation.decisionReason
           ? { decisionReason: presentation.decisionReason }
           : {}),
