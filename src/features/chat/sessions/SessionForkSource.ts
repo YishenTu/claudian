@@ -163,15 +163,19 @@ export async function handleForkRequest<T extends ForkSourceOwner>(
     return;
   }
 
-  if (state.isStreaming) {
-    new Notice(t('chat.fork.unavailableStreaming'));
-    return;
-  }
   if (state.isRewinding) {
     new Notice(t('chat.rewind.inProgress'));
     return;
   }
+  // Checkpoint forks are safe mid-turn, but a provider whose unresolved fork retires the
+  // shared host (ending the source turn) still declines them via its capability flag.
+  if (state.isStreaming && getSessionCapabilities(tab, plugin).supportsForkDuringTurn === false) {
+    new Notice(t('chat.fork.unavailableStreaming'));
+    return;
+  }
 
+  // Snapshot the settled prefix before any await: a transcript-rewriting turn may
+  // otherwise desync this slice from the checkpoint resolved below.
   const msgs = state.messages;
   const assistantIdx = msgs.findIndex(message => message.id === assistantMessageId && message.role === 'assistant');
   if (assistantIdx === -1) {
@@ -184,6 +188,7 @@ export async function handleForkRequest<T extends ForkSourceOwner>(
     new Notice(t('chat.fork.unavailableNoUuid'));
     return;
   }
+  const settledMessages = deepCloneMessages(msgs.slice(0, assistantIdx + 1));
 
   const source = await resolveForkSource(tab, plugin, checkpoint);
   if (!source) {
@@ -193,7 +198,7 @@ export async function handleForkRequest<T extends ForkSourceOwner>(
   if (!isRuntimeLive(tab) || tab.conversationId !== sourceConversationId) return;
 
   await forkRequestCallback({
-    messages: deepCloneMessages(msgs.slice(0, assistantIdx + 1)),
+    messages: settledMessages,
     providerId: source.providerId,
     sourceConversationId,
     sourceSessionId: source.sourceSessionId,
@@ -201,7 +206,7 @@ export async function handleForkRequest<T extends ForkSourceOwner>(
     sourceSelectedModel: source.sourceSelectedModel,
     resumeAt: checkpoint,
     sourceTitle: source.sourceTitle,
-    forkAtUserMessage: msgs.slice(0, assistantIdx + 1).filter(isCanonicalUserMessage).length + 1,
+    forkAtUserMessage: settledMessages.filter(isCanonicalUserMessage).length + 1,
     linkedContentPath: source.linkedContentPath,
     projectId: source.projectId,
   });

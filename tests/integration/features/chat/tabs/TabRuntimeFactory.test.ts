@@ -224,6 +224,13 @@ async function createTestTab(
   return tab;
 }
 
+/** Starts a real in-flight turn so ChatState.isStreaming derives true, without touching the provider. */
+async function holdStart(tab: Awaited<ReturnType<typeof createTestTab>>) {
+  const release = holdResponse(tab.session.turns);
+  await vi.waitFor(() => { if (!tab.state.isStreaming) throw new Error('turn not in flight'); });
+  return release;
+}
+
 function createConversation(): Conversation {
   return {
     id: 'conversation-1',
@@ -2073,6 +2080,83 @@ describe('Tab provider execution ownership', () => {
       expect(coordinatorInstances[0].dispose).not.toHaveBeenCalled();
     } finally { await release(); }
   });
+
+  it('forks a streaming conversation at the chosen settled checkpoint without stopping the source turn', async () => {
+    const conversation = createConversation();
+    const forkRequest = vi.fn().mockResolvedValue(undefined);
+    const plugin = await createPlugin({
+      getConversationSync: vi.fn().mockReturnValue(conversation),
+    });
+    const tab = await createTestTab({
+      plugin,
+      containerEl: document.createElement('div'),
+      conversation,
+    }, { forkRequestCallback: forkRequest });
+    plugin.getConversationSync.mockReturnValue(createConversation());
+    const releaseTurn = await holdStart(tab);
+    try {
+      tab.state.messages = [
+        {
+          content: 'A',
+          id: 'user-a',
+          role: 'user',
+          timestamp: 1,
+          userMessageId: 'native-user-a',
+        },
+        {
+          assistantMessageId: 'assistant-a',
+          content: 'reply A',
+          id: 'assistant-a',
+          role: 'assistant',
+          timestamp: 2,
+        },
+      ];
+
+      await handleForkRequest(tab, plugin, 'assistant-a', forkRequest, runtime => runtime.lifecycleState !== 'closing');
+
+      expect(tab.state.isStreaming).toBe(true);
+      expect(forkRequest).toHaveBeenCalledTimes(1);
+      expect(forkRequest.mock.calls[0][0]).toMatchObject({
+        resumeAt: 'assistant-a',
+        sourceConversationId: conversation.id,
+        sourceSessionId: 'native-session',
+      });
+      expect(forkRequest.mock.calls[0][0].messages.map((message: { id: string }) => message.id)).toEqual([
+        'user-a', 'assistant-a',
+      ]);
+    } finally { await releaseTurn(); }
+  });
+
+  it('still rejects a streaming fork whose latest assistant checkpoint has no settled assistant message', async () => {
+    const conversation = createConversation();
+    const forkRequest = vi.fn().mockResolvedValue(undefined);
+    const plugin = await createPlugin({
+      getConversationSync: vi.fn().mockReturnValue(conversation),
+    });
+    const tab = await createTestTab({
+      plugin,
+      containerEl: document.createElement('div'),
+      conversation,
+    }, { forkRequestCallback: forkRequest });
+    plugin.getConversationSync.mockReturnValue(createConversation());
+    const releaseTurn = await holdStart(tab);
+    try {
+      tab.state.messages = [
+        {
+          content: 'A',
+          id: 'user-a',
+          role: 'user',
+          timestamp: 1,
+          userMessageId: 'native-user-a',
+        },
+      ];
+
+      await handleForkRequest(tab, plugin, 'assistant-a', forkRequest, runtime => runtime.lifecycleState !== 'closing');
+
+      expect(forkRequest).not.toHaveBeenCalled();
+    } finally { await releaseTurn(); }
+  });
+
 
   it('numbers a fork from canonical user turns while retaining non-canonical history and the source project', async () => {
     const conversation = { ...createConversation(), projectId: 'project-1' };

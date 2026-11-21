@@ -522,7 +522,6 @@
       "fromLabel": "보낸 세션:"
     },
     "lifecycleFeedback": {
-      "runningArchive": "실행 중인 세션은 보관할 수 없습니다",
       "archiveSkippedOne": "열려 있거나 실행 중인 세션 {count}개를 건너뛰었습니다",
       "archiveSkippedOther": "열려 있거나 실행 중인 세션 {count}개를 건너뛰었습니다",
       "runningDelete": "실행 중인 세션은 삭제할 수 없습니다",

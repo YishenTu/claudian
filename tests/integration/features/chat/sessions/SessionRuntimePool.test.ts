@@ -57,7 +57,9 @@ describe('session ownership across presentations', () => {
     const lifecycle = new ConversationLifecycle({ sessions: pool, conversations: store, projects: { get: () => null, setArchived: async () => undefined }, views: { getAllViews: () => [] } });
     await lifecycle.setArchived('created', true);
     await lifecycle.delete(['created']);
-    expect(store.archiveConversationsIf).not.toHaveBeenCalled();
+    // A running session archives without its own tab work being interrupted,
+    // but deletion still skips it until the runtime settles.
+    expect(store.archiveConversationsIf).toHaveBeenCalledTimes(1);
     expect(store.deleteConversation).not.toHaveBeenCalled();
 
     const second = pool.acquire({ conversationId: 'created', providerId: 'claude', draftModel: null }, owner);

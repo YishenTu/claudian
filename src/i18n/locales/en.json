@@ -522,7 +522,6 @@
       "fromLabel": "From session:"
     },
     "lifecycleFeedback": {
-      "runningArchive": "Running sessions cannot be archived",
       "archiveSkippedOne": "Skipped {count} session that is open or running",
       "archiveSkippedOther": "Skipped {count} sessions that are open or running",
       "runningDelete": "Running sessions cannot be deleted",

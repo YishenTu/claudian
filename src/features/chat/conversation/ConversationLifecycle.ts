@@ -80,12 +80,12 @@ export class ConversationLifecycle {
       await this.deps.conversations.setConversationArchived(conversationId, false);
       return;
     }
-    if (!await this.#closeTabsBeforeArchive(conversationId)) {
-      new Notice(t('chat.lifecycleFeedback.runningArchive'));
-      return;
+    await this.#closeTabsBeforeArchive(conversationId);
+    const archivedCount = await this.#archiveAndClear([conversationId], conversation =>
+      this.#boundTabs(conversation.id).every(({ manager, tabId }) => !manager.isTabWorking(tabId)));
+    if (archivedCount === 0) {
+      new Notice(t('chat.lifecycleFeedback.archiveSkippedOne', { count: 1 }));
     }
-    await this.#archiveAndClear([conversationId], conversation =>
-      !this.isRunning(conversation.id) && this.#boundTabs(conversation.id).length === 0);
   }
 
   /** Archives a batch, skipping sessions that are running or reopened before their write. */
@@ -114,14 +114,15 @@ export class ConversationLifecycle {
   async #archiveClosing(conversationIds: readonly string[]): Promise<number> {
     const closedIds: string[] = [];
     for (const conversationId of conversationIds) {
-      if (await this.#closeTabsBeforeArchive(conversationId)) closedIds.push(conversationId);
+      await this.#closeTabsBeforeArchive(conversationId);
+      closedIds.push(conversationId);
     }
     // A session can be reopened while later tabs close; recheck at each archive write.
     const archivedCount = closedIds.length === 0
       ? 0
       : await this.#archiveAndClear(
           closedIds,
-          conversation => !this.isRunning(conversation.id) && this.#boundTabs(conversation.id).length === 0,
+          conversation => this.#boundTabs(conversation.id).every(({ manager, tabId }) => !manager.isTabWorking(tabId)),
         );
     const skippedCount = conversationIds.length - archivedCount;
     if (skippedCount > 0) {
@@ -226,18 +227,19 @@ export class ConversationLifecycle {
     }
   }
 
-  /** Closes every tab showing the session; returns false without closing anything when it is running. */
-  async #closeTabsBeforeArchive(conversationId: string): Promise<boolean> {
+  /**
+   * Closes every idle tab showing the session. A running session still archives as long as
+   * none of its bound tabs is mid-work; the busy tab stays open so its turn keeps running
+   * and any detached work is unaffected. Throws when an idle tab refuses to close.
+   */
+  async #closeTabsBeforeArchive(conversationId: string): Promise<void> {
     const boundTabs = this.#boundTabs(conversationId);
-    // Running sessions cannot be archived, including detached main and side work.
-    if (this.isRunning(conversationId)) return false;
-
     for (const { manager, tabId } of boundTabs) {
+      if (manager.isTabWorking(tabId)) continue;
       if (!await manager.closeTab(tabId)) {
         throw new Error('Failed to close the session before archiving');
       }
     }
-    return true;
   }
 
   #boundTabs(conversationId: string): BoundTab[] {
