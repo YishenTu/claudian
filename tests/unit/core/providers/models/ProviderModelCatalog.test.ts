@@ -179,6 +179,41 @@ it.each<{ change: ProviderModelSelectionChange; expected: string[] }>([
   await catalog.dispose();
 });
 
+it('enables every discovered model on enableAll while keeping the current order', async () => {
+  const models = [{ id: 'a', name: 'A' }, { id: 'b', name: 'B' }, { id: 'c', name: 'C' }];
+  const state = { enabled: true, models, selectedIds: ['b'], aliases: {} };
+  const catalog = new ProviderModelCatalogController({
+    providerName: 'Example', store: memoryStore(state), discover: async () => ({ changed: false }),
+  });
+  await catalog.changeSelection({ type: 'enableAll' });
+  expect(state.selectedIds).toEqual(['b', 'a', 'c']);
+  await catalog.dispose();
+});
+
+it('resets the selection to the provider default enablement, and keeps it when there is none', async () => {
+  const withDefault: ProviderModelCatalogState = { enabled: true, models: [{ id: 'a', name: 'A' }, { id: 'b', name: 'B' }], selectedIds: ['a', 'b'], aliases: {}, defaultSelectedIds: ['a'] };
+  const withoutDefault: ProviderModelCatalogState = { enabled: true, models: [], selectedIds: ['a', 'b'], aliases: {} };
+  const reset = async (state: ProviderModelCatalogState) => {
+    const catalog = new ProviderModelCatalogController({
+      providerName: 'Example', store: memoryStore(state), discover: async () => ({ changed: false }),
+    });
+    await catalog.changeSelection({ type: 'reset' });
+    await catalog.dispose();
+  };
+  await reset(withDefault);
+  await reset(withoutDefault);
+  expect(withDefault.selectedIds).toEqual(['a']);
+  expect(withoutDefault.selectedIds).toEqual(['a', 'b']);
+});
+
+it('exposes the provider default enablement in the snapshot', () => {
+  const state = { enabled: true, models: [{ id: 'a', name: 'A' }], selectedIds: ['a'], aliases: {}, defaultSelectedIds: ['a'] };
+  const catalog = new ProviderModelCatalogController({
+    providerName: 'Example', store: memoryStore(state), discover: async () => ({ changed: false }),
+  });
+  expect(catalog.getSnapshot().defaultSelectedIds).toEqual(['a']);
+});
+
 it('creates an own __proto__ alias through the shared catalog writer', async () => {
   const state = { enabled: true, models: [], selectedIds: [], aliases: { other: 'Keep' } as Record<string, string> };
   const catalog = new ProviderModelCatalogController({

@@ -46,6 +46,27 @@ export function renderProviderModelPicker(
   });
 
   const summaryEl = pickerEl.createDiv({ cls: 'claudian-provider-model-picker-summary' });
+
+  const actionsEl = pickerEl.createDiv({ cls: 'claudian-provider-model-picker-actions' });
+  const enableAllButton = actionsEl.createEl('button', {
+    cls: 'claudian-provider-model-picker-action-enable-all',
+    text: t('settings.modelPicker.enableAll'),
+  });
+  enableAllButton.setAttribute('type', 'button');
+  enableAllButton.setAttribute('aria-label', t('settings.modelPicker.enableAllLabel', { provider: options.providerName }));
+  enableAllButton.addEventListener('click', () => {
+    void persistSelection({ type: 'enableAll' });
+  });
+  const resetButton = actionsEl.createEl('button', {
+    cls: 'claudian-provider-model-picker-action-reset',
+    text: t('settings.modelPicker.resetDefaults'),
+  });
+  resetButton.setAttribute('type', 'button');
+  resetButton.setAttribute('aria-label', t('settings.modelPicker.resetDefaultsLabel', { provider: options.providerName }));
+  resetButton.addEventListener('click', () => {
+    void persistSelection({ type: 'reset' });
+  });
+
   const selectedEl = pickerEl.createDiv({ cls: 'claudian-provider-model-picker-selected' });
   const catalogEl = pickerEl.createEl('details', { cls: 'claudian-provider-model-picker-catalog' });
   catalogEl.open = options.getState().selectedIds.length === 0;
@@ -130,6 +151,24 @@ export function renderProviderModelPicker(
         ? t('common.refresh')
         : t('settings.modelPicker.discover'),
     );
+  };
+
+  const arraysEqual = (left: readonly string[], right: readonly string[]): boolean =>
+    left.length === right.length && left.every((value, index) => value === right[index]);
+
+  const renderActions = (): void => {
+    const state = options.getState();
+    const discoveredIds = state.models.map(model => model.id);
+    const hasModels = discoveredIds.length > 0 && !isLoading();
+    actionsEl.toggleClass('claudian-hidden', !hasModels);
+    if (!hasModels) return;
+
+    const allSelected = discoveredIds.every(id => state.selectedIds.includes(id));
+    enableAllButton.disabled = allSelected;
+
+    const defaults = state.defaultSelectedIds;
+    resetButton.toggleClass('claudian-hidden', !defaults || defaults.length === 0);
+    resetButton.disabled = Boolean(defaults) && arraysEqual(state.selectedIds, defaults!);
   };
 
   const persistAlias = async (modelId: string, value: string): Promise<void> => {
@@ -449,6 +488,7 @@ export function renderProviderModelPicker(
   const renderAll = (): void => {
     if (disposed) return;
     renderSummary();
+    renderActions();
     renderSelected();
     renderProviderSelect();
     renderList();
