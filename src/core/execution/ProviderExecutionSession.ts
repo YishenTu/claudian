@@ -46,6 +46,12 @@ export interface ProviderExecutionSession {
   /** Native work that dies with the session, such as a background shell, prevents idle release without making the conversation busy. */
   blocksIdleRelease?(): boolean;
   /**
+   * Whether native history moving from revision `from` to `to` (tokens of the provider's
+   * `readNativeHistoryRevision`) holds only writes the session's own live native work made, such as a background
+   * task's report written before its reply streams. Mixed, unknown or unverifiable changes answer false.
+   */
+  ownsNativeHistoryChange?(from: string, to: string): Promise<boolean>;
+  /**
    * Current native query commands; undefined means no authoritative snapshot is available.
    * Reading never starts provider work. Implementations emit commands_changed when it changes or clears.
    */

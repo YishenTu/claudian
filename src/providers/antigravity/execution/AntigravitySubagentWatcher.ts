@@ -4,9 +4,11 @@ import path from 'node:path';
 import { resolveAntigravityTranscriptPaths } from '../history/AntigravityHistoryPaths';
 import {
   type AntigravityTranscript,
-  hasAntigravityOutstandingSubagents,
+  areAntigravitySubagentReports,
+  readAntigravityAppendedSteps,
   readAntigravityHistoryRevision,
   readAntigravityLatestRequest,
+  readAntigravitySubagentProgress,
   readAntigravityTranscript,
 } from '../history/AntigravityHistoryStore';
 
@@ -19,6 +21,11 @@ const POLL_INTERVAL_MS = 5_000;
  * watching ends after this long without a transcript change and the session may be released again.
  */
 const QUIET_LIMIT_MS = 30 * 60_000;
+/**
+ * agy writes a report seconds before anything of its reply to it streams. A reply that has not started after this
+ * long (the same bound a started reply gets without a closing usage update) is not waited for any longer.
+ */
+const REPLY_WAIT_MS = 120_000;
 
 export interface AntigravitySubagentWatcherOptions {
   /** Polls instead of watching, for stores whose change notifications are unreliable. */
@@ -27,21 +34,23 @@ export interface AntigravitySubagentWatcherOptions {
   readonly sessionId: string;
 }
 
-/** Watching the transcript between turns until every subagent has reported. */
-interface Watching {
-  readonly stopWatching: () => void;
-  quietTimer: number;
-  rescanTimer?: number;
-}
+/**
+ * Holding idle release between turns: reading the transcript on every change until every subagent has reported,
+ * then waiting for agy's reply to the last report to start.
+ */
+type Watching =
+  | { readonly phase: 'scanning'; readonly stopWatching: () => void; quietTimer: number; rescanTimer?: number }
+  | { readonly phase: 'awaitingReply'; readonly replyTimer: number };
 
 /**
  * A subagent a live turn launched keeps working after `end_turn` and lives only as long as agy's process. agy reports
- * no subagent lifecycle over ACP, so this watches the transcript between turns until every such subagent has reported,
- * and the session holds idle release meanwhile. agy streams its reply to each report live.
+ * no subagent lifecycle over ACP, so this watches the transcript between turns until every such subagent has reported
+ * and agy's reply to the last report has started, and the session holds idle release meanwhile. agy streams its reply
+ * to each report live, as a turn that holds release itself.
  */
 export class AntigravitySubagentWatcher {
   #watching: Watching | null = null;
-  /** Set by a live subagent launch; cleared once a scan finds every subagent reported. */
+  /** Set by a live subagent launch; cleared once every subagent has reported and agy answered, or watching gave up. */
   #expectingWork = false;
   /**
    * The user request of the first turn recorded since agy's process started. Subagents die with their process, so
@@ -62,7 +71,7 @@ export class AntigravitySubagentWatcher {
     return this.options.sessionId;
   }
 
-  /** agy's process, and with it the subagent, must outlive idle release while a subagent may still report. */
+  /** agy's process, and with it the subagent, must outlive idle release while a subagent may still report or be answered. */
   get isWatching(): boolean {
     return this.#watching !== null;
   }
@@ -98,6 +107,23 @@ export class AntigravitySubagentWatcher {
     this.#requestScan();
   }
 
+  /**
+   * Whether the transcript moved from revision `from` to `to` only by reports from subagents agy's current process
+   * launched: agy's own write, not a change made outside Claudian.
+   */
+  async ownsHistoryChange(from: string, to: string): Promise<boolean> {
+    // The scan a turn's end started may still be recording which request the process began with.
+    if (this.#processFirstRequest === undefined) await this.#scan;
+    const since = this.#processFirstRequest;
+    const generation = this.#processGeneration;
+    if (since === undefined || this.#disposed) return false;
+    const { sessionId, storeRoot } = this.options;
+    const appended = await readAntigravityAppendedSteps(storeRoot, sessionId, from, to);
+    if (!appended) return false;
+    const transcript = await readAntigravityTranscript(storeRoot, sessionId);
+    return !!transcript && generation === this.#processGeneration && areAntigravitySubagentReports(transcript, appended, since);
+  }
+
   /** Settles once no transcript read is left running. */
   async dispose(): Promise<void> {
     this.#disposed = true;
@@ -107,16 +133,26 @@ export class AntigravitySubagentWatcher {
 
   #startWatching(): void {
     const stopWatching = this.#watch();
-    this.#watching = { quietTimer: window.setTimeout(() => this.#giveUp(), QUIET_LIMIT_MS), stopWatching };
+    this.#watching = { phase: 'scanning', quietTimer: window.setTimeout(() => this.#giveUp(), QUIET_LIMIT_MS), stopWatching };
   }
 
   #stopWatching(): void {
     const watching = this.#watching;
     if (!watching) return;
-    window.clearTimeout(watching.quietTimer);
-    window.clearTimeout(watching.rescanTimer);
-    watching.stopWatching();
+    if (watching.phase === 'awaitingReply') {
+      window.clearTimeout(watching.replyTimer);
+    } else {
+      window.clearTimeout(watching.quietTimer);
+      window.clearTimeout(watching.rescanTimer);
+      watching.stopWatching();
+    }
     this.#watching = null;
+  }
+
+  /** Every subagent has finished; the transcript has nothing more to show until agy's reply starts a turn. */
+  #awaitReply(): void {
+    this.#stopWatching();
+    this.#watching = { phase: 'awaitingReply', replyTimer: window.setTimeout(() => this.#giveUp(), REPLY_WAIT_MS) };
   }
 
   /** Nothing more is expected until a live turn launches another subagent. */
@@ -127,7 +163,7 @@ export class AntigravitySubagentWatcher {
 
   #onTranscriptChange(): void {
     const watching = this.#watching;
-    if (!watching) return;
+    if (watching?.phase !== 'scanning') return;
     window.clearTimeout(watching.quietTimer);
     watching.quietTimer = window.setTimeout(() => this.#giveUp(), QUIET_LIMIT_MS);
     window.clearTimeout(watching.rescanTimer);
@@ -166,12 +202,15 @@ export class AntigravitySubagentWatcher {
     const request = recordsTurn ? readAntigravityLatestRequest(transcript) : undefined;
     if (request !== undefined && generation === this.#processGeneration) this.#processFirstRequest ??= request;
     // Watching belongs to the current process; its own rescan follows a read begun under an earlier one.
-    if (generation !== this.#processGeneration || !this.#watching) return;
     const watching = this.#watching;
-    if (this.#processFirstRequest !== undefined && await hasAntigravityOutstandingSubagents(
-      transcript, this.#processFirstRequest, this.options.storeRoot, this.options.sessionId,
-    )) return;
-    if (watching === this.#watching) this.#giveUp();
+    if (generation !== this.#processGeneration || watching?.phase !== 'scanning') return;
+    const since = this.#processFirstRequest;
+    const progress = since === undefined ? undefined : await readAntigravitySubagentProgress(
+      transcript, since, this.options.storeRoot, this.options.sessionId,
+    );
+    if (watching !== this.#watching || progress?.outstanding) return;
+    if (progress?.unanswered) this.#awaitReply();
+    else this.#giveUp();
   }
 
   #watch(): () => void {

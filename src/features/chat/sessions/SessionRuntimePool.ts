@@ -69,13 +69,25 @@ interface SessionRecord {
 }
 
 /**
- * How long a revision read may take. Sends wait on the check, so a provider that does not answer (a hung
- * `opencode serve`) is treated as unknown: after a known revision that counts as changed and reloads.
+ * How long a revision read, or the provider's answer whether its own work made a change, may take. Sends wait on
+ * the check, so a provider that does not answer (a hung `opencode serve`) is treated as unknown: after a known
+ * revision that counts as changed and reloads.
  */
 export const NATIVE_REVISION_READ_TIMEOUT_MS = 5_000;
 
 function readStatus(runtime: ChatSessionRuntime): SessionStatus {
   return { conversationId: runtime.conversationId, isWorking: runtime.isWorking, isMainWorking: runtime.isMainWorking, attention: runtime.statusAttention };
+}
+
+/** A read's answer, or `fallback` once it has taken longer than the read limit. */
+async function withReadTimeout<T>(read: Promise<T>, fallback: T): Promise<T> {
+  let timer: number | undefined;
+  const timeout = new Promise<T>(resolve => { timer = window.setTimeout(() => resolve(fallback), NATIVE_REVISION_READ_TIMEOUT_MS); });
+  try {
+    return await Promise.race([read, timeout]);
+  } finally {
+    window.clearTimeout(timer);
+  }
 }
 
 export class SessionRuntimePool {
@@ -185,7 +197,14 @@ export class SessionRuntimePool {
       const current = await this.readNativeRevision(conversationId);
       // A newer baseline supersedes this comparison. Main work that started during the read owns it instead:
       // its own check, or for provider-started work the read after it, may already include that work's writes.
-      if (current === baseline.revision || record.freshness !== baseline || record.revisionRead || record.runtime.isMainWorking) return false;
+      const superseded = () => record.freshness !== baseline || !!record.revisionRead || record.runtime.isMainWorking;
+      if (current === baseline.revision || superseded()) return false;
+      const own = !!current && await this.ownsChange(record, baseline.revision, current);
+      if (superseded()) return false;
+      if (own) {
+        record.freshness = { state: 'current', revision: current };
+        return false;
+      }
       record.freshness = { state: 'stale', reloadRevision: null };
     }
     // Every check of a stale record marks its provider session, even one busy now: an idle session is
@@ -258,12 +277,18 @@ export class SessionRuntimePool {
     // Work the provider started itself (a task notification) has already written its native history when it
     // is observed, so a read now would count those writes as an outside change; the read after it absorbs them.
     if (!record.runtime.hasActiveTurn && record.runtime.hasMainBackgroundWork) return;
-    record.ownWorkCheck = this.readNativeRevision(id).then(revision => {
+    record.ownWorkCheck = this.readNativeRevision(id).then(async revision => {
       // As in any check, a revision that cannot be read after one was known counts as changed.
-      if (record.freshness === baseline && revision !== baseline.revision) {
-        record.freshness = { state: 'stale', reloadRevision: null };
-      }
+      if (record.freshness !== baseline || revision === baseline.revision) return;
+      // The read after this work absorbs what the provider's own earlier work wrote.
+      if (revision && await this.ownsChange(record, baseline.revision, revision)) return;
+      if (record.freshness === baseline) record.freshness = { state: 'stale', reloadRevision: null };
     });
+  }
+
+  /** Whether the provider session's own live work, not a client outside Claudian, made this change. */
+  private ownsChange(record: SessionRecord, from: string, to: string): Promise<boolean> {
+    return withReadTimeout(record.runtime.executionCoordinator.ownsNativeHistoryChange(from, to), false);
   }
 
   private async observeHydratedRevision(record: SessionRecord): Promise<void> {
@@ -281,14 +306,7 @@ export class SessionRuntimePool {
 
   private async readNativeRevision(id: string): Promise<string | null> {
     const read = this.deps.readNativeHistoryRevision?.(id).catch(() => null);
-    if (!read) return null;
-    let timer: number | undefined;
-    const timeout = new Promise<null>(resolve => { timer = window.setTimeout(() => resolve(null), NATIVE_REVISION_READ_TIMEOUT_MS); });
-    try {
-      return await Promise.race([read, timeout]);
-    } finally {
-      window.clearTimeout(timer);
-    }
+    return read ? withReadTimeout(read, null) : null;
   }
 
   /**

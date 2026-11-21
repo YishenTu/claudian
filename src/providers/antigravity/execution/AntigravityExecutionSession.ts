@@ -303,6 +303,11 @@ export class AntigravityExecutionSession implements ProviderExecutionSession, St
     return this.lateWork.phase === 'replying' || (this.subagents?.isWatching ?? false);
   }
 
+  /** A report from a subagent agy's current process launched is agy's own write. */
+  ownsNativeHistoryChange(from: string, to: string): Promise<boolean> {
+    return this.subagents?.ownsHistoryChange(from, to) ?? Promise.resolve(false);
+  }
+
   getStatus(): ProviderSessionStatus {
     return this.state.status;
   }
