@@ -495,6 +495,7 @@
     "removeItem": "移除{item}",
     "agent": "代理：{agent}",
     "executionNotices": {
+      "antigravitySignIn": "請在終端機執行 `{command}` 登入。",
       "initializeFailed": "無法初始化代理程式執行。請重試。",
       "unavailable": "代理程式執行無法使用。請重新載入外掛。",
       "sessionUnavailable": "此對話的原生工作階段在目前的 CLI 設定下無法使用。請開始新的聊天以繼續。",

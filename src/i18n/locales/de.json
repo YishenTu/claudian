@@ -495,6 +495,7 @@
     "removeItem": "{item} entfernen",
     "agent": "Agent: {agent}",
     "executionNotices": {
+      "antigravitySignIn": "Führe `{command}` in einem Terminal aus, um dich anzumelden.",
       "initializeFailed": "Agentenausführung konnte nicht initialisiert werden. Bitte versuche es erneut.",
       "unavailable": "Agentenausführung ist nicht verfügbar. Bitte lade das Plugin neu.",
       "sessionUnavailable": "Die native Sitzung dieser Unterhaltung ist mit der aktuellen CLI-Konfiguration nicht verfügbar. Starte einen neuen Chat, um fortzufahren.",
