@@ -24,6 +24,12 @@ export class FakeSideSession implements ProviderExecutionSession {
   cancelCalls = 0;
   /** A native task that outlives its turn (Claude background shell), which the provider keeps the process for. */
   liveNativeTask = false;
+  /** Native history changes (`from -> to` revisions) the provider's own live work wrote, such as a task's report. */
+  readonly ownedHistoryChanges = new Set<string>();
+  /** Every question whether a change is the provider's own, in order. */
+  readonly historyChangeQuestions: string[] = [];
+  /** How the provider fails to answer that question, if it does. */
+  historyChangeFailure: 'rejects' | 'never answers' | undefined;
   private active: FakeRun | null = null;
   private lastBackgroundScope?: ProviderBackgroundEventScope;
   private latestRun: FakeRun | null = null;
@@ -41,6 +47,13 @@ export class FakeSideSession implements ProviderExecutionSession {
   ) {}
 
   blocksIdleRelease(): boolean { return this.liveNativeTask; }
+
+  ownsNativeHistoryChange(from: string, to: string): Promise<boolean> {
+    this.historyChangeQuestions.push(`${from} -> ${to}`);
+    if (this.historyChangeFailure === 'rejects') return Promise.reject(new Error('EIO: i/o error, read'));
+    if (this.historyChangeFailure === 'never answers') return new Promise(() => undefined);
+    return Promise.resolve(this.ownedHistoryChanges.has(`${from} -> ${to}`));
+  }
 
   execute(request: ProviderExecutionRequest): ProviderExecutionRun {
     if (this.active) throw new Error('A side execution is already active');

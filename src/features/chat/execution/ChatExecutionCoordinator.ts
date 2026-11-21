@@ -817,6 +817,17 @@ export class ChatExecutionCoordinator {
     });
   }
 
+  /** Whether the bound provider session's own live native work wrote this native history change. */
+  async ownsNativeHistoryChange(from: string, to: string): Promise<boolean> {
+    const session = this.#sessionBinding?.session;
+    if (!session?.ownsNativeHistoryChange) return false;
+    try {
+      return await session.ownsNativeHistoryChange(from, to);
+    } catch {
+      return false;
+    }
+  }
+
   /**
    * A session kept for a native task when its history changed is replaced before the next turn, resuming
    * from the stored binding: the conversation may have gained its native session after this one bound.

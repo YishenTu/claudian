@@ -31,6 +31,7 @@ import type { ProviderHost } from '@/core/providers/ProviderHost';
 import type { ACPRequestPermissionRequest } from '@/providers/acp';
 import { AntigravityExecutionBackend } from '@/providers/antigravity/execution/AntigravityExecutionBackend';
 import { resolveAntigravityTranscriptPaths } from '@/providers/antigravity/history/AntigravityHistoryPaths';
+import { readAntigravityHistoryRevision } from '@/providers/antigravity/history/AntigravityHistoryStore';
 import { updateAntigravityProviderSettings } from '@/providers/antigravity/settings';
 
 vi.mock('cross-spawn', () => ({ default: vi.fn() }));
@@ -1315,7 +1316,7 @@ describe('AntigravityExecutionSession', () => {
     // Releasing the idle session would end agy's process and the subagent with it.
     expect(session.blocksIdleRelease?.()).toBe(true);
 
-    await writeTranscript('session-new', [...delegation, transcriptSteps.report(5, 'sub-1', '391', testTime({ minutes: 5 }))]);
+    await writeTranscript('session-new', [...delegation, transcriptSteps.report(5, 'sub-1', '391', testTime({ minutes: 5 })), transcriptSteps.reply(6, 'SUB-RESULT=391', testTime({ minutes: 5 }))]);
     await vi.waitFor(() => expect(session.blocksIdleRelease?.()).toBe(false));
   });
 
@@ -1371,11 +1372,11 @@ describe('AntigravityExecutionSession', () => {
     // Releasing the idle session would end agy's process and sub-2 with it.
     expect(session.blocksIdleRelease?.()).toBe(true);
 
-    await writeTranscript('session-new', [...created, transcriptSteps.report(9, 'sub-2', '782', testTime({ minutes: 5 }))]);
+    await writeTranscript('session-new', [...created, transcriptSteps.report(9, 'sub-2', '782', testTime({ minutes: 5 })), transcriptSteps.reply(10, 'SUB-RESULT=782', testTime({ minutes: 5 }))]);
     await vi.waitFor(() => expect(session.blocksIdleRelease?.()).toBe(false));
   });
 
-  it.each(['reports', 'is killed'])('holds idle release while a subagent is out and releases it once the subagent %s', async outcome => {
+  it.each(['reports and agy answers', 'is killed'])('holds idle release while a subagent is out and releases it once the subagent %s', async outcome => {
     const session = await createSession();
     const run = session.execute(request('Delegate'));
     const peer = await firstPeer();
@@ -1400,10 +1401,175 @@ describe('AntigravityExecutionSession', () => {
       await writeFile(path.join(directory, 'sub-1.json'), JSON.stringify({ conversationId: 'sub-1', state: 'SUBAGENT_STATE_KILLED' }));
       await writeTranscript('session-new', [...delegation, transcriptSteps.reply(4, 'Killed.', testTime({ minutes: 5 }))]);
     } else {
-      await writeTranscript('session-new', [...delegation, transcriptSteps.report(4, 'sub-1', '391', testTime({ minutes: 5 }))]);
+      await writeTranscript('session-new', [...delegation, transcriptSteps.report(4, 'sub-1', '391', testTime({ minutes: 5 })), transcriptSteps.reply(5, 'SUB-RESULT=391', testTime({ minutes: 5 }))]);
     }
     // Nothing signals the watcher's give-up; polling only bounds it.
     await vi.waitFor(() => expect(session.blocksIdleRelease?.()).toBe(false));
+  });
+
+  /** A delegation whose subagent has reported, before agy's reply to the report starts. */
+  async function awaitReplyToReport() {
+    const session = await createSession();
+    const store = path.join(vault, '.gemini', 'antigravity-cli');
+    const [transcriptPath] = resolveAntigravityTranscriptPaths(store, 'session-new');
+    // The test delivers the transcript's change events, so the debounced rescan runs on the fake clock.
+    let changed: (() => void) | undefined;
+    vi.spyOn(fsSync, 'watch').mockImplementation(((_directory: fsSync.PathLike, listener: () => void) => {
+      changed = listener;
+      return Object.assign(new EventEmitter(), { close: () => undefined });
+    }) as unknown as typeof fsSync.watch);
+    const reads = settledCounter();
+    const createReadStream = fsSync.createReadStream;
+    vi.spyOn(fsSync, 'createReadStream').mockImplementation(((file: fsSync.PathLike, options?: Parameters<typeof createReadStream>[1]) => {
+      const stream = createReadStream(file, options);
+      if (file === transcriptPath) stream.once('close', reads.record);
+      return stream;
+    }) as typeof createReadStream);
+    const run = session.execute(request('Delegate'));
+    const peer = await firstPeer();
+    await peer.waitForPrompts(1);
+    peer.emit(invokeSubagent('call-1'), 'session-new');
+    const delegation = [
+      transcriptSteps.user(0, 'Delegate', testTime({ minutes: -2 })),
+      transcriptSteps.delegate(1, testTime({ minutes: -2 })),
+      transcriptSteps.created(2, 'sub-1', testTime({ minutes: -2 })),
+      transcriptSteps.reply(3, 'Waiting.', testTime({ minutes: -2 })),
+    ];
+    await writeTranscript('session-new', delegation);
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    peer.finishPrompt();
+    await collect(run.events);
+    await reads.reached(1);
+
+    // agy writes the report seconds before anything of its reply reaches Claudian.
+    const reported = [...delegation, transcriptSteps.report(4, 'sub-1', '391', testTime({ minutes: 5 }))];
+    await writeTranscript('session-new', reported);
+    changed?.();
+    await vi.advanceTimersByTimeAsync(200);
+    await reads.reached(2);
+    await settleScan();
+    // Releasing the idle session now would end agy's process before it answers.
+    expect(session.blocksIdleRelease?.()).toBe(true);
+    return { peer, reads, reported, session };
+  }
+
+  it('holds idle release from a subagent\'s report for at most two minutes without agy\'s reply', async () => {
+    const { session } = await awaitReplyToReport();
+    await vi.advanceTimersByTimeAsync(119_000);
+    expect(session.blocksIdleRelease?.()).toBe(true);
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(session.blocksIdleRelease?.()).toBe(false);
+  });
+
+  it('holds idle release from a subagent\'s report until agy\'s reply to it ends', async () => {
+    const { peer, reads, reported, session } = await awaitReplyToReport();
+    await vi.advanceTimersByTimeAsync(60_000);
+    const background = backgroundTurn(session);
+    peer.emit({ content: { text: 'SUB-RESULT=391', type: 'text' }, sessionUpdate: 'agent_message_chunk' }, 'session-new');
+    await background.reached('text_delta');
+    // The reply holds release itself until it ends, past the bound on waiting for it to start.
+    await vi.advanceTimersByTimeAsync(61_000);
+    expect(session.blocksIdleRelease?.()).toBe(true);
+    await writeTranscript('session-new', [...reported, transcriptSteps.reply(5, 'SUB-RESULT=391', testTime({ minutes: 5 }))]);
+    peer.emit({ sessionUpdate: 'usage_update', size: 1_048_576, used: 9_000 }, 'session-new');
+    await background.reached('usage_updated');
+    await vi.advanceTimersByTimeAsync(1_000);
+    await background.completed;
+    await reads.reached(3);
+    await settleScan();
+    expect(session.blocksIdleRelease?.()).toBe(false);
+  });
+
+  it('claims a transcript change made only of reports from subagents its process launched', async () => {
+    const session = await createSession();
+    const store = path.join(vault, '.gemini', 'antigravity-cli');
+    const [transcriptPath] = resolveAntigravityTranscriptPaths(store, 'session-new');
+    const reads = settledCounter();
+    const createReadStream = fsSync.createReadStream;
+    vi.spyOn(fsSync, 'createReadStream').mockImplementation(((file: fsSync.PathLike, options?: Parameters<typeof createReadStream>[1]) => {
+      const stream = createReadStream(file, options);
+      if (file === transcriptPath) stream.once('close', reads.record);
+      return stream;
+    }) as typeof createReadStream);
+    const run = session.execute(request('Delegate'));
+    const peer = await firstPeer();
+    await peer.waitForPrompts(1);
+    peer.emit(invokeSubagent('call-1'), 'session-new');
+    peer.emit(invokeSubagent('call-2'), 'session-new');
+    const delegation = [
+      transcriptSteps.user(0, 'Delegate', testTime({ minutes: -2 })),
+      transcriptSteps.delegate(1, testTime({ minutes: -2 })),
+      transcriptSteps.created(2, 'sub-1', testTime({ minutes: -2 })),
+      transcriptSteps.created(3, 'sub-2', testTime({ minutes: -2 })),
+      transcriptSteps.reply(4, 'Waiting.', testTime({ minutes: -2 })),
+    ];
+    await writeTranscript('session-new', delegation);
+    peer.finishPrompt();
+    await collect(run.events);
+    await reads.reached(1);
+    const before = (await readAntigravityHistoryRevision(store, 'session-new'))!;
+    const revisionAfter = async (steps: readonly Record<string, unknown>[]) => {
+      await writeTranscript('session-new', [...delegation, ...steps]);
+      return (await readAntigravityHistoryRevision(store, 'session-new'))!;
+    };
+    const claims = (to: string) => session.ownsNativeHistoryChange?.(before, to) ?? Promise.resolve(false);
+
+    const reports = await revisionAfter([
+      transcriptSteps.report(5, 'sub-1', '391', testTime({ minutes: 5 })),
+      transcriptSteps.report(6, 'sub-2', '782', testTime({ minutes: 5 })),
+    ]);
+    expect(await claims(reports)).toBe(true);
+    // A third report lands between Claudian's revision read and its question.
+    const second = await revisionAfter([transcriptSteps.report(5, 'sub-1', '391', testTime({ minutes: 5 }))]);
+    await writeTranscript('session-new', [
+      ...delegation,
+      transcriptSteps.report(5, 'sub-1', '391', testTime({ minutes: 5 })),
+      transcriptSteps.report(6, 'sub-2', '782', testTime({ minutes: 5 })),
+    ]);
+    expect(await claims(second)).toBe(true);
+    // The user also continued the conversation in agy's own client.
+    const mixed = await revisionAfter([
+      transcriptSteps.report(5, 'sub-1', '391', testTime({ minutes: 5 })),
+      transcriptSteps.user(6, 'From the CLI', testTime({ minutes: 6 })),
+    ]);
+    expect(await claims(mixed)).toBe(false);
+    // Another process's subagent: this one did not launch it.
+    const foreign = await revisionAfter([transcriptSteps.report(5, 'sub-9', '1', testTime({ minutes: 5 }))]);
+    expect(await claims(foreign)).toBe(false);
+
+    const ownAgain = await revisionAfter([transcriptSteps.report(5, 'sub-1', '391', testTime({ minutes: 5 }))]);
+    expect(await claims(ownAgain)).toBe(true);
+    // The subagents died with agy's process, so a later report cannot be its own.
+    peer.child.kill();
+    await vi.waitFor(() => expect(session.blocksIdleRelease?.()).toBe(false));
+    expect(await claims(ownAgain)).toBe(false);
+  });
+
+  it('claims a subagent\'s report asked about before the read at the turn\'s end has recorded the turn', async () => {
+    const session = await createSession();
+    const store = path.join(vault, '.gemini', 'antigravity-cli');
+    const run = session.execute(request('Delegate'));
+    const peer = await firstPeer();
+    await peer.waitForPrompts(1);
+    peer.emit(invokeSubagent('call-1'), 'session-new');
+    const delegation = [
+      transcriptSteps.user(0, 'Delegate', testTime({ minutes: -2 })),
+      transcriptSteps.delegate(1, testTime({ minutes: -2 })),
+      transcriptSteps.created(2, 'sub-1', testTime({ minutes: -2 })),
+      transcriptSteps.reply(3, 'Waiting.', testTime({ minutes: -2 })),
+    ];
+    await writeTranscript('session-new', delegation);
+    const read = holdTranscriptRead('session-new');
+    peer.finishPrompt();
+    await collect(run.events);
+    await read.reading;
+    const before = (await readAntigravityHistoryRevision(store, 'session-new'))!;
+    await writeTranscript('session-new', [...delegation, transcriptSteps.report(4, 'sub-1', '391', testTime({ minutes: 5 }))]);
+    const after = (await readAntigravityHistoryRevision(store, 'session-new'))!;
+
+    const claimed = session.ownsNativeHistoryChange?.(before, after);
+    read.release();
+    expect(await claimed).toBe(true);
   });
 
   it('counts a subagent from the process\'s first turn when that turn\'s read returns after the next turn', async () => {
@@ -1442,7 +1608,7 @@ describe('AntigravityExecutionSession', () => {
     // Recording the second turn's request as the process's first would drop sub-1 and release agy too early.
     expect(session.blocksIdleRelease?.()).toBe(true);
 
-    await writeTranscript('session-new', [...meanwhile, transcriptSteps.report(6, 'sub-1', '391', testTime({ minutes: 5 }))]);
+    await writeTranscript('session-new', [...meanwhile, transcriptSteps.report(6, 'sub-1', '391', testTime({ minutes: 5 })), transcriptSteps.reply(7, 'SUB-RESULT=391', testTime({ minutes: 5 }))]);
     await vi.waitFor(() => expect(session.blocksIdleRelease?.()).toBe(false));
   });
 
@@ -1471,7 +1637,7 @@ describe('AntigravityExecutionSession', () => {
     await settleScan();
     expect(session.blocksIdleRelease?.()).toBe(true);
 
-    await writeTranscript('session-new', [...delegation, transcriptSteps.report(4, 'sub-1', '391', testTime({ minutes: 5 }))]);
+    await writeTranscript('session-new', [...delegation, transcriptSteps.report(4, 'sub-1', '391', testTime({ minutes: 5 })), transcriptSteps.reply(5, 'SUB-RESULT=391', testTime({ minutes: 5 }))]);
     await vi.waitFor(() => expect(session.blocksIdleRelease?.()).toBe(false));
   });
 
@@ -1562,7 +1728,7 @@ describe('AntigravityExecutionSession', () => {
 
     await settleScan();
     expect(session.blocksIdleRelease?.()).toBe(true);
-    await writeTranscript('session-new', [...again, transcriptSteps.report(8, 'sub-2', '391', testTime({ minutes: 5 }))]);
+    await writeTranscript('session-new', [...again, transcriptSteps.report(8, 'sub-2', '391', testTime({ minutes: 5 })), transcriptSteps.reply(9, 'SUB-RESULT=391', testTime({ minutes: 5 }))]);
     await vi.waitFor(() => expect(session.blocksIdleRelease?.()).toBe(false));
   });
 
@@ -1900,7 +2066,7 @@ describe.skipIf(path.sep === '\\')('Antigravity WSL installations', () => {
     // Releasing the idle session would end agy's process and the subagent with it.
     expect(session.blocksIdleRelease?.()).toBe(true);
 
-    await writeLinuxTranscript([...delegation, transcriptSteps.report(4, 'sub-1', '391', testTime({ minutes: 5 }))]);
+    await writeLinuxTranscript([...delegation, transcriptSteps.report(4, 'sub-1', '391', testTime({ minutes: 5 })), transcriptSteps.reply(5, 'SUB-RESULT=391', testTime({ minutes: 5 }))]);
     await pollAndRescan();
     // The read has finished; the scan's result follows on its own continuation.
     await vi.waitFor(() => expect(session.blocksIdleRelease?.()).toBe(false));
