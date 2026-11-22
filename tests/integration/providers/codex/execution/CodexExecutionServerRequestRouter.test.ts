@@ -5,7 +5,7 @@ import type {
   ProviderQuestionInteractionResponse,
   ProviderToolPolicy,
 } from '@/core/execution';
-import { setLocale } from '@/i18n/i18n';
+import { setLocale, t } from '@/i18n/i18n';
 import { type ActiveInteractionTurn, CodexExecutionServerRequestRouter } from '@/providers/codex/execution/CodexExecutionServerRequestRouter';
 import { CodexDynamicToolRegistry } from '@/providers/codex/runtime/CodexDynamicToolRegistry';
 import { createCodexSessionTools } from '@/providers/codex/runtime/CodexSessionTools';
@@ -136,7 +136,11 @@ describe('CodexExecutionServerRequestRouter', () => {
   });
 
   it.each(['en', 'zh-CN'] as const)('leaves localized confirmation pending until the user explicitly submits a choice (%s)', async locale => {
+    setLocale('en');
+    const englishServerLabel = t('chat.approval.mcpServer', { server: 'cua_repl' });
     setLocale(locale);
+    const serverLabel = t('chat.approval.mcpServer', { server: 'cua_repl' });
+    expect(serverLabel !== englishServerLabel).toBe(locale !== 'en');
     const question = createPendingQuestion();
     const router = createRouter(question.askUserQuestion, { kind: 'unrestricted' });
     const result = router.handleServerRequest('pending', 'mcpServer/elicitation/request', confirmationRequest);
@@ -147,13 +151,13 @@ describe('CodexExecutionServerRequestRouter', () => {
     expect(settled).toBe(false);
     expect(request.input).toMatchObject({
       questions: [{
-        question: `${locale === 'en' ? 'MCP server:' : 'MCP 服务器：'} cua_repl\n\nAllow Computer Use to use "Obsidian"?`,
+        question: `${serverLabel}\n\nAllow Computer Use to use "Obsidian"?`,
         multiSelect: false,
         isOther: false,
         options: [
-          expect.objectContaining({ value: 'cancel', label: locale === 'en' ? 'Cancel' : '取消' }),
-          expect.objectContaining({ value: 'decline', label: locale === 'en' ? 'Decline' : '拒绝' }),
-          expect.objectContaining({ value: 'accept', label: locale === 'en' ? 'Allow' : '允许' }),
+          expect.objectContaining({ value: 'cancel', label: t('common.cancel') }),
+          expect.objectContaining({ value: 'decline', label: t('chat.approval.decline') }),
+          expect.objectContaining({ value: 'accept', label: t('chat.approval.allow') }),
         ],
       }],
     });
@@ -382,7 +386,11 @@ describe('CodexExecutionServerRequestRouter', () => {
 
 
 it('localizes Codex command approval labels without changing native decisions', async () => {
+  setLocale('en');
+  const englishDescription = t('chat.approval.execute', { command: 'npm test' });
   setLocale('zh-CN');
+  const expectedDescription = t('chat.approval.execute', { command: 'npm test' });
+  expect(expectedDescription).not.toBe(englishDescription);
   const requestApproval = vi.fn(async (request: ProviderApprovalInteractionRequest) => ({
     interactionId: request.interactionId, decision: 'allow' as const,
   }));
@@ -397,9 +405,11 @@ it('localizes Codex command approval labels without changing native decisions', 
       threadId: 'thread-confirmation', turnId: 'turn-confirmation', itemId: 'command-item', command: 'npm test',
     })).resolves.toEqual({ decision: 'accept' });
     const [request] = requestApproval.mock.calls[0];
-    expect(request.description).toBe('执行：npm test');
+    expect(request.description).toBe(expectedDescription);
     expect(request.decisionOptions?.map(option => [option.label, option.value])).toEqual([
-      ['允许一次', 'allow-once'], ['始终允许', 'allow-always'], ['拒绝', 'deny'],
+      [t('chat.approval.allowOnce'), 'allow-once'],
+      [t('chat.approval.alwaysAllow'), 'allow-always'],
+      [t('chat.approval.deny'), 'deny'],
     ]);
   } finally {
     setLocale('en');

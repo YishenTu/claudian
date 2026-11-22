@@ -7,7 +7,7 @@ import { TEST_CODEX_CATALOG } from '@test/helpers/codexModels';
 import { fireEvent, waitFor, within } from '@testing-library/dom';
 
 import type { ToolbarCallbacks } from '@/features/chat/composer/toolbar/types';
-import { setLocale } from '@/i18n/i18n';
+import { setLocale, t } from '@/i18n/i18n';
 import { claudeChatUIConfig } from '@/providers/claude/ui/ClaudeChatUIConfig';
 import { updateCodexProviderSettings } from '@/providers/codex/settings';
 import { codexChatUIConfig } from '@/providers/codex/ui/CodexChatUIConfig';
@@ -52,8 +52,9 @@ it.each([
   },
 ])('renders persisted Codex $name in the named toolbar and options', async ({ aliases, labels, ...fixture }) => {
   const chinese = 'locale' in fixture;
+  const englishButtonName = t('chat.modelPicker.modelLabel', { label: labels[1] });
   if (chinese) setLocale('zh-CN');
-  const prefix = chinese ? '模型：' : 'Model: ';
+  expect(t('chat.modelPicker.modelLabel', { label: labels[1] }) !== englishButtonName).toBe(chinese);
   let settings: Record<string, unknown> = { model: 'openai-codex/__proto__' };
   updateCodexProviderSettings(settings, {
     discoveredModels: [
@@ -80,7 +81,7 @@ it.each([
     onModelChange: async (model: string) => { settings.model = model; },
   } as unknown as ToolbarCallbacks, menus);
 
-  fireEvent.click(within(host).getByRole('button', { name: `${prefix}${labels[1]}` }));
+  fireEvent.click(within(host).getByRole('button', { name: t('chat.modelPicker.modelLabel', { label: labels[1] }) }));
   expect(within(host).getAllByRole('option').map(node => node.textContent)).toEqual(labels);
   expect(within(host).getByRole('option', { name: labels[1] }).getAttribute('aria-selected')).toBe('true');
   expect((await axe(host)).violations).toEqual([]);
@@ -90,7 +91,7 @@ it.each([
     fireEvent.click(within(host).getByRole('option', { name: label }));
     await waitFor(() => {
       expect(settings.model).toBe(values[index]);
-      expect(within(host).getByRole('button', { name: `${prefix}${label}` }).textContent).toBe(label);
+      expect(within(host).getByRole('button', { name: t('chat.modelPicker.modelLabel', { label }) }).textContent).toBe(label);
     });
   }
 });

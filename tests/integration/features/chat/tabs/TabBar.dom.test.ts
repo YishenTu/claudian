@@ -8,7 +8,7 @@ import type { Mock } from 'vitest';
 
 import type { TabBarItem } from '@/features/chat/tabs/ChatTab';
 import { TabBar } from '@/features/chat/tabs/TabBar';
-import { setLocale } from '@/i18n/i18n';
+import { setLocale, t } from '@/i18n/i18n';
 
 
 
@@ -116,24 +116,19 @@ describe('TabBar tab labels', () => {
       item({ title: 'Archive' }),
       item({ title: 'Archive', label: '新建 · working', isActive: true }),
     ];
-    const english = [
-      'working, active',
-      'Archive, needs your input',
-      'working, working',
-      'Archive, stopped with an error, ready to review',
-      'New Chat, finished, ready to review',
-      'Archive, idle',
-      '新建 · working (Archive), active',
+    const expectedNames = () => [
+      t('chat.tabNavigation.badge', { title: 'working', status: t('chat.tabNavigation.active') }),
+      t('chat.tabNavigation.badge', { title: 'Archive', status: t('chat.tabNavigation.needsInput') }),
+      t('chat.tabNavigation.badge', { title: 'working', status: t('chat.tabNavigation.working') }),
+      t('chat.tabNavigation.badge', { title: 'Archive', status: t('chat.tabNavigation.errorReview') }),
+      t('chat.tabNavigation.badge', { title: 'New Chat', status: t('chat.tabNavigation.finishedReview') }),
+      t('chat.tabNavigation.badge', { title: 'Archive', status: t('chat.tabNavigation.idle') }),
+      t('chat.tabNavigation.namedBadge', { label: '新建 · working', title: 'Archive', status: t('chat.tabNavigation.active') }),
     ];
-    const chinese = [
-      'working，当前',
-      'Archive，需要您输入',
-      'working，工作中',
-      'Archive，因错误而停止，可供查看',
-      'New Chat，已完成，可供查看',
-      'Archive，空闲',
-      '新建 · working（Archive），当前',
-    ];
+    const english = expectedNames();
+    setLocale('zh-CN');
+    const chinese = expectedNames();
+    expect(chinese).not.toEqual(english);
     for (const [locale, names] of [['en', english], ['zh-CN', chinese], ['en', english]] as const) {
       setLocale(locale);
       const { tabBar, container, ui } = setup([]);
@@ -152,19 +147,27 @@ describe('TabBar tab labels', () => {
   });
 
   it('renames, resets, toggles and closes through the localized menu', async () => {
+    const englishRename = t('chat.tabNavigation.renameTab');
     setLocale('zh-CN');
+    expect(t('chat.tabNavigation.renameTab')).not.toBe(englishRename);
     const { container, callbacks, tabBar, ui } = setup([item({ title: 'New Chat' })]);
     try {
-      const badge = ui.getByRole('button', { name: 'New Chat，空闲' });
+      const badge = ui.getByRole('button', {
+        name: t('chat.tabNavigation.badge', { title: 'New Chat', status: t('chat.tabNavigation.idle') }),
+      });
       expect(badge.getAttribute('type')).toBe('button');
       const menu = openMenu(badge);
-      expect(menuTitles(menu)).toEqual(['重命名标签页…', '显示标题', '关闭标签页']);
-      chooseMenuItem(menu, '显示标题');
+      expect(menuTitles(menu)).toEqual([
+        t('chat.tabNavigation.renameTab'),
+        t('chat.tabNavigation.showTitle'),
+        t('chat.tabNavigation.closeTab'),
+      ]);
+      chooseMenuItem(menu, t('chat.tabNavigation.showTitle'));
       expect(badge.textContent).toBe('New Chat');
-      chooseMenuItem(openMenu(badge), '显示编号');
+      chooseMenuItem(openMenu(badge), t('chat.tabNavigation.showNumber'));
       expect(badge.textContent).toBe('1');
-      chooseMenuItem(openMenu(badge), '重命名标签页…');
-      const input = ui.getByRole<HTMLInputElement>('textbox', { name: '标签页名称' });
+      chooseMenuItem(openMenu(badge), t('chat.tabNavigation.renameTab'));
+      const input = ui.getByRole<HTMLInputElement>('textbox', { name: t('chat.tabNavigation.tabName') });
       expect(input.value).toBe('');
       expect(input.placeholder).toBe('New Chat');
       expect(document.activeElement).toBe(input);
@@ -173,18 +176,25 @@ describe('TabBar tab labels', () => {
       fireEvent.input(input, { target: { value: '  Archive / 研究  ' } });
       fireEvent.keyDown(input, { key: 'Enter' });
       expect(callbacks.onTabLabelChange).toHaveBeenCalledWith('tab-1', 'Archive / 研究');
-      const named = ui.getByRole('button', { name: 'Archive / 研究（New Chat），空闲' });
+      const named = ui.getByRole('button', {
+        name: t('chat.tabNavigation.namedBadge', { label: 'Archive / 研究', title: 'New Chat', status: t('chat.tabNavigation.idle') }),
+      });
       expect(document.activeElement).toBe(named);
       expect(named.textContent).toBe('Archive / 研究');
       expect(named.getAttribute('data-title-expanded')).toBe('true');
-      chooseMenuItem(openMenu(named), '显示编号');
+      chooseMenuItem(openMenu(named), t('chat.tabNavigation.showNumber'));
       const namedMenu = openMenu(named);
-      expect(menuTitles(namedMenu)).toEqual(['重命名标签页…', '重置标签页名称', '显示名称', '关闭标签页']);
-      chooseMenuItem(namedMenu, '显示名称');
+      expect(menuTitles(namedMenu)).toEqual([
+        t('chat.tabNavigation.renameTab'),
+        t('chat.tabNavigation.resetName'),
+        t('chat.tabNavigation.showName'),
+        t('chat.tabNavigation.closeTab'),
+      ]);
+      chooseMenuItem(namedMenu, t('chat.tabNavigation.showName'));
       expect(named.textContent).toBe('Archive / 研究');
-      chooseMenuItem(openMenu(named), '重置标签页名称');
+      chooseMenuItem(openMenu(named), t('chat.tabNavigation.resetName'));
       expect(callbacks.onTabLabelChange).toHaveBeenLastCalledWith('tab-1', null);
-      chooseMenuItem(openMenu(named), '关闭标签页');
+      chooseMenuItem(openMenu(named), t('chat.tabNavigation.closeTab'));
       expect(callbacks.onTabClose).toHaveBeenCalledExactlyOnceWith('tab-1');
     } finally {
       tabBar.destroy();

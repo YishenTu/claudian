@@ -1,6 +1,6 @@
 import { CODEX_SPARK_MODEL, TEST_CODEX_MODEL } from '@test/helpers/codexModels';
 
-import { setLocale } from '@/i18n/i18n';
+import { setLocale, t } from '@/i18n/i18n';
 import type { CodexDiscoveredModel } from '@/providers/codex/models';
 import { codexChatUIConfig } from '@/providers/codex/ui/CodexChatUIConfig';
 
@@ -670,8 +670,11 @@ describe('CodexChatUIConfig', () => {
     });
 
     it('localizes the Standard choice while keeping native tier names', () => {
+      const englishStandard = t('chat.modelPicker.standard');
       setLocale('ja');
       try {
+        const localizedStandard = t('chat.modelPicker.standard');
+        expect(localizedStandard).not.toBe(englishStandard);
         const settings = withDiscoveredModels({ model: TEST_CODEX_MODEL });
         settings.providerConfigs.codex.discoveredModels[1] = {
           ...settings.providerConfigs.codex.discoveredModels[1],
@@ -679,7 +682,7 @@ describe('CodexChatUIConfig', () => {
         };
 
         expect(codexChatUIConfig.getServiceTierToggle!(settings)?.options.map(option => option.label))
-          .toEqual(['標準', 'Fast']);
+          .toEqual([localizedStandard, 'Fast']);
       } finally {
         setLocale('en');
       }

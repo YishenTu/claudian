@@ -16,7 +16,7 @@ import { renderQueueStrip } from '@/features/chat/composer/QueueStrip';
 import { destroyTab } from '@/features/chat/tabs/TabLifecycle';
 import { createTabRuntime } from '@/features/chat/tabs/TabRuntimeFactory';
 import type { AssembledTabRuntime } from '@/features/chat/tabs/types';
-import { setLocale } from '@/i18n/i18n';
+import { setLocale, t } from '@/i18n/i18n';
 import { VaultMentionDataProvider } from '@/shared/mention/VaultMentionDataProvider';
 
 afterEach(async () => {
@@ -128,7 +128,9 @@ it('attaches localized queued follow-ups above the input and preserves composer 
     expect(tab.dom.inputEl.value).toBe('also add a created date');
 
     tab.controllers.drafts.consume('main');
+    const englishQueued = t('chat.queue.queued');
     setLocale('zh-CN');
+    expect(t('chat.queue.queued')).not.toBe(englishQueued);
     const image: ImageAttachment = {
       id: 'image', name: 'image.png', mediaType: 'image/png', data: 'aGVsbG8=', size: 5, source: 'paste',
     };
@@ -137,16 +139,16 @@ it('attaches localized queued follow-ups above the input and preserves composer 
       content, turnRequest: { text: content, images: [image] },
     });
     const queue = within(strip);
-    expect(queue.getByText('排队中')).toBeDefined();
-    expect(queue.getByText('User [images] stays literal [图片]')).toBeDefined();
-    expect(queue.getByRole('button', { name: '立即引导' })).toBeDefined();
-    expect(queue.getByRole('button', { name: '丢弃排队消息' })).toBeDefined();
+    expect(queue.getByText(t('chat.queue.queued'))).toBeDefined();
+    expect(queue.getByText(`${content} ${t('chat.queue.images')}`)).toBeDefined();
+    expect(queue.getByRole('button', { name: t('chat.queue.steerNow') })).toBeDefined();
+    expect(queue.getByRole('button', { name: t('chat.queue.discard') })).toBeDefined();
     expect(await axe(strip)).toHaveNoViolations();
 
-    fireEvent.click(queue.getByRole('button', { name: '编辑排队消息' }));
+    fireEvent.click(queue.getByRole('button', { name: t('chat.queue.edit') }));
     expect(tab.state.queuedMessage).toBeNull();
     expect(strip.classList.contains('claudian-hidden')).toBe(true);
-    expect(queue.queryByRole('button', { name: '编辑排队消息' })).toBeNull();
+    expect(queue.queryByRole('button', { name: t('chat.queue.edit') })).toBeNull();
     expect(tab.dom.inputEl.value).toBe(content);
     expect(tab.controllers.drafts.capture('main').images).toEqual([image]);
 
@@ -154,8 +156,8 @@ it('attaches localized queued follow-ups above the input and preserves composer 
     tab.controllers.inputController.queue.enqueue({
       content: longContent, turnRequest: { text: longContent, images: [image] },
     });
-    expect(queue.getByText('[images] 1234567890123456789012345678901... [图片]')).toBeDefined();
-    fireEvent.click(queue.getByRole('button', { name: '丢弃排队消息' }));
+    expect(queue.getByText(`[images] 1234567890123456789012345678901... ${t('chat.queue.images')}`)).toBeDefined();
+    fireEvent.click(queue.getByRole('button', { name: t('chat.queue.discard') }));
     expect(tab.state.queuedMessage).toBeNull();
     expect(strip.classList.contains('claudian-hidden')).toBe(true);
     expect(backend.latest.getStatus()).toBe('executing');
@@ -172,13 +174,14 @@ it('attaches localized queued follow-ups above the input and preserves composer 
   }
 });
 
-it.each([
-  ['zh-CN', '引导中'],
-  ['en', 'Steering'],
-] as const)('renders the %s steering label without queued actions', (locale, label) => {
+it.each(['zh-CN', 'en'] as const)('renders the %s steering label without queued actions', locale => {
   const strip = document.body.appendChild(document.createElement('div'));
   try {
+    setLocale('en');
+    const englishLabel = t('chat.queue.steering');
     setLocale(locale);
+    const label = t('chat.queue.steering');
+    expect(label !== englishLabel).toBe(locale !== 'en');
     renderQueueStrip(strip, {
       kind: 'steering', message: { content: 'User [images] stays literal', turnRequest: { text: 'follow-up' } },
     }, { steer() {}, edit() {}, discard() {} });

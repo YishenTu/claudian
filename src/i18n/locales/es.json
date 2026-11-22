@@ -5,7 +5,7 @@
     "cancel": "Cancelar",
     "delete": "Eliminar",
     "edit": "Editar",
-    "add": "Agregar",
+    "add": "Añadir",
     "clearAll": "Limpiar todo",
     "error": "Error",
     "confirm": "Confirmar",
@@ -28,8 +28,8 @@
     "changedOutsideWithBackgroundTask": "Este chat continuó fuera de Claudian mientras una tarea en segundo plano de su sesión anterior sigue en ejecución. Detén la tarea o espera a que termine y vuelve a enviar.",
     "selectAvailableTitleModel": "Selecciona un modelo de títulos disponible en los ajustes de Claudian.",
     "rewind": {
-      "confirmMessage": "¿Rebobinar a este punto? Los cambios de archivos posteriores a este mensaje podrían sobrescribirse o eliminarse. Esta acción no se puede deshacer.",
-      "confirmMessageConflicts": "¿Rebobinar a este punto? Se sobrescribirán {count} archivo(s) modificados fuera del agente:\n{files}",
+      "confirmMessage": "¿Rebobinar hasta este punto? Los cambios de archivos posteriores a este mensaje podrían sobrescribirse o eliminarse. Esta acción no se puede deshacer.",
+      "confirmMessageConflicts": "¿Rebobinar hasta este punto? Se sobrescribirán {count} archivo(s) modificado(s) fuera del agente:\n{files}",
       "confirmMessageConversationOnly": "¿Rebobinar la conversación hasta este punto? Se conservarán los cambios de archivos.",
       "confirmButton": "Rebobinar",
       "inProgress": "Espera a que termine el rebobinado actual.",
@@ -50,8 +50,8 @@
       "chooseTarget": "Bifurcar conversación",
       "targetNewTab": "Nueva pestaña",
       "targetCurrentTab": "Pestaña actual",
-      "notice": "Bifurcado a nueva pestaña",
-      "noticeCurrentTab": "Bifurcado en pestaña actual",
+      "notice": "Bifurcada en una nueva pestaña",
+      "noticeCurrentTab": "Bifurcada en la pestaña actual",
       "failed": "Error al bifurcar: {error}",
       "unavailableStreaming": "No se puede bifurcar durante la transmisión",
       "unavailableNoUuid": "No se puede bifurcar: faltan identificadores de mensaje",
@@ -82,13 +82,13 @@
       "statusActionRequired": "Requiere una respuesta",
       "placeholder": "Pregunta algo más en el chat lateral",
       "composerLabel": "Mensaje del chat lateral",
-      "needsPrompt": "Añade una consigna después de /side para iniciar un chat lateral.",
+      "needsPrompt": "Añade una instrucción después de /side para iniciar un chat lateral.",
       "unsupportedProvider": "Este proveedor no admite el chat lateral.",
       "unavailableBusy": "El chat lateral necesita una respuesta completada. Espera a que termine el turno actual.",
-      "unavailableNoCheckpoint": "Completa primero una respuesta en esta conversación.",
-      "unavailableNoSession": "No se pudo resolver la sesión del proveedor de esta conversación.",
+      "unavailableNoCheckpoint": "El chat lateral necesita primero una respuesta completada en esta conversación.",
+      "unavailableNoSession": "El chat lateral no pudo resolver la sesión del proveedor de esta conversación.",
       "alreadyExists": "Ya existe un chat lateral para esta conversación. Descártalo para iniciar otro.",
-      "nestedUnavailable": "Un chat lateral no puede iniciar otro. Contráelo al principal primero.",
+      "nestedUnavailable": "Un chat lateral no puede iniciar otro. Contráelo primero para volver al chat principal.",
       "mainOnlyCommand": "/{command} solo está disponible en el chat principal.",
       "startFailed": "No se pudo iniciar el chat lateral: {error}",
       "queued": "Añadido a la cola del chat lateral.",
@@ -138,11 +138,11 @@
       "fridayFeeling": "Ese ambiente de viernes",
       "fridayFeelingNamed": "Ese ambiente de viernes, {name}",
       "weekend": "Bienvenido al fin de semana",
-      "weekendNamed": "{name}, bienvenido al fin de semana",
+      "weekendNamed": "Bienvenido al fin de semana, {name}",
       "sundaySession": "¿Una sesión de domingo?",
       "morning": "Buenos días",
       "morningNamed": "Buenos días, {name}",
-      "coffee": "¿Hora de un café y de {brand}?",
+      "coffee": "¿Hora de un café y {brand}?",
       "afternoon": "Buenas tardes",
       "afternoonNamed": "Buenas tardes, {name}",
       "hey": "Hola",
@@ -151,8 +151,8 @@
       "howGoingNamed": "¿Qué tal va todo, {name}?",
       "evening": "Buenas noches",
       "eveningNamed": "Buenas noches, {name}",
-      "eveningShort": "Ya es de noche",
-      "eveningShortNamed": "{name}, ya es de noche",
+      "eveningShort": "Buenas",
+      "eveningShortNamed": "Buenas, {name}",
       "howDay": "¿Cómo fue tu día?",
       "howDayNamed": "¿Cómo fue tu día, {name}?",
       "nightOwl": "Hola, ave nocturna",
@@ -189,9 +189,9 @@
       "label": "Contenido vinculado:",
       "choices": "Opciones de contenido vinculado",
       "noMatch": "No hay archivos o carpetas coincidentes",
-      "missing": "Contenido ausente",
+      "missing": "Contenido faltante",
       "path": "Contenido vinculado: {path}",
-      "missingPath": "Contenido vinculado: {path}. Contenido ausente",
+      "missingPath": "Contenido vinculado: {path}. Contenido faltante",
       "noContent": "Sin contenido vinculado",
       "missingNotice": "Falta el contenido vinculado: {path}",
       "openFailed": "No se pudo abrir el contenido vinculado: {error}"
@@ -222,7 +222,7 @@
       "unsupportedReply": "Esta pregunta no puede aceptar esa respuesta.",
       "uncertainDelivery": "No se pudo confirmar la entrega de la respuesta. No se volvió a poner en cola para evitar enviarla dos veces.",
       "differentConversation": "Esta pregunta pertenece a otra conversación.",
-      "sideUnavailable": "Esta conversación lateral ya no está disponible."
+      "sideUnavailable": "Este chat lateral ya no está disponible."
     },
     "tools": {
       "calls": "Llamadas a herramientas",
@@ -330,7 +330,7 @@
         "acceptEdits": "Aceptar ediciones",
         "yolo": "YOLO",
         "autoDesc": "Claude decide los permisos",
-        "manualDesc": "Preguntar siempre antes de cambiar",
+        "manualDesc": "Preguntar siempre antes de hacer cambios",
         "acceptEditsDesc": "Aceptar automáticamente todas las ediciones de archivos",
         "yoloDesc": "Aceptar todos los permisos sin preguntar"
       },
@@ -340,7 +340,7 @@
         "yolo": "Acceso completo",
         "autoReviewDesc": "Revisar automáticamente el acceso adicional.",
         "readOnlyDesc": "Preguntar antes de editar o usar internet.",
-        "normalDesc": "Preguntar antes del acceso adicional.",
+        "normalDesc": "Preguntar antes de conceder acceso adicional.",
         "yoloDesc": "Acceso sin restricciones a archivos e internet."
       }
     },
@@ -357,9 +357,9 @@
         "analyzing": "Analizando…",
         "considering": "Considerando…",
         "workingOnIt": "Trabajando en ello…",
-        "vibing": "Cogiendo ritmo…",
+        "vibing": "Entrando en sintonía…",
         "oneMoment": "Un momento…",
-        "onIt": "Ya me pongo…",
+        "onIt": "En ello…",
         "ruminating": "Dándole vueltas…",
         "contemplating": "Contemplando…",
         "reflecting": "Reflexionando…",
@@ -390,7 +390,7 @@
         "settlingIn": "Acomodándome…",
         "makingTea": "Preparando té…",
         "grabbingASnack": "Picando algo…",
-        "parsing": "Interpretando la sintaxis…",
+        "parsing": "Analizando la sintaxis…",
         "compilingThoughts": "Compilando pensamientos…",
         "runningInference": "Ejecutando la inferencia…",
         "queryingTheVoid": "Consultando al vacío…",
@@ -496,7 +496,7 @@
     "agent": "Agente: {agent}",
     "executionNotices": {
       "initializeFailed": "No se pudo inicializar la ejecución del agente. Inténtalo de nuevo.",
-      "unavailable": "La ejecución del agente no está disponible. Vuelve a cargar el complemento.",
+      "unavailable": "La ejecución del agente no está disponible. Vuelve a cargar el plugin.",
       "sessionUnavailable": "La sesión nativa de esta conversación no está disponible con la configuración actual de la CLI. Inicia un chat nuevo para continuar.",
       "unsentFallback": "No se envió el mensaje. Inténtalo de nuevo."
     },
@@ -514,8 +514,8 @@
       "closePreview": "Cerrar vista previa de imagen"
     },
     "pi": {
-      "extension": "Extensión Pi",
-      "notification": "Notificación de la extensión Pi."
+      "extension": "Extensión de Pi",
+      "notification": "Notificación de la extensión de Pi."
     },
     "sessionMessage": {
       "undelivered": "No se pudieron entregar los mensajes de {senders}.",
@@ -543,7 +543,7 @@
       "reasoning": "Razonamiento",
       "message": "Mensaje",
       "openSession": "Abrir la sesión {sessionId}",
-      "openProviderSession": "Abrir la sesión de {provider} {sessionId}",
+      "openProviderSession": "Abrir la sesión {sessionId} de {provider}",
       "sessionMissing": "Esa sesión ya no existe.",
       "openFailed": "No se pudo abrir la sesión: {message}",
       "openUnavailable": "Las sesiones no se pueden abrir desde aquí.",
@@ -554,7 +554,7 @@
       "turnRange": "{from}–{to} de {total}",
       "noTurns": "Ninguno aún",
       "mode": "Entrega",
-      "modeSteer": "Dirigir el turno en curso",
+      "modeSteer": "Reorientar el turno en curso",
       "modeInterrupt": "Interrumpir el trabajo actual"
     },
     "modelPicker": {
@@ -607,7 +607,7 @@
       "namedBadge": "{label} ({title}), {status}",
       "newTab": "Nueva pestaña",
       "newConversation": "Nueva conversación",
-      "showWideFailed": "No se pudo mostrar la sesión en el diseño ancho",
+      "showWideFailed": "No se pudo mostrar la sesión en el diseño amplio",
       "createTabFailed": "No se pudo crear la pestaña",
       "createConversationFailed": "No se pudo crear la conversación",
       "startConversationFailed": "No se pudo iniciar una conversación nueva",
@@ -660,7 +660,7 @@
         "titleNew": "Nuevo proyecto",
         "titleEdit": "Editar proyecto",
         "name": "Nombre",
-        "nameDesc": "Se muestra en el gestor de sesiones y en las sesiones miembro.",
+        "nameDesc": "Se muestra en el gestor de sesiones y en las sesiones del proyecto.",
         "namePlaceholder": "Nombre del proyecto",
         "iconButton": "Icono del proyecto: {icon}",
         "iconDefault": "Carpeta predeterminada",
@@ -668,12 +668,12 @@
         "iconSearch": "Buscar iconos",
         "iconNoMatches": "Ningún icono coincide.",
         "instructions": "Instrucciones",
-        "instructionsDesc": "Se añaden al prompt del sistema de cada sesión miembro a partir de su siguiente turno.",
+        "instructionsDesc": "Se añaden al prompt del sistema de cada sesión del proyecto a partir de su siguiente turno.",
         "memoryPath": "Archivo de memoria",
         "memoryPathDesc": "Ruta en la bóveda del archivo de memoria del proyecto. Si falta la extensión .md, se añade. Cambiarla mueve el archivo.",
         "memoryPathPlaceholder": "Carpeta/MEMORY.md",
         "memoryPathInvalid": "Introduce una ruta de archivo dentro de la bóveda, como Projects/MEMORY.md.",
-        "memoryPathTaken": "{path} ya lo usa un archivo u otro proyecto.",
+        "memoryPathTaken": "{path} ya está en uso por un archivo u otro proyecto.",
         "openMemory": "Abrir",
         "nameRequired": "Introduce un nombre de proyecto."
       },
@@ -744,8 +744,8 @@
     "responses": "Respuestas",
     "experimental": "Experimental",
     "userName": {
-      "name": "¿Cómo debería Claudian llamarte?",
-      "desc": "Tu nombre para saludos personalizados (dejar vacío para saludos genéricos)"
+      "name": "¿Cómo debería llamarte Claudian?",
+      "desc": "Tu nombre para saludos personalizados (déjalo vacío para saludos genéricos)"
     },
     "excludedTags": {
       "name": "Etiquetas excluidas",
@@ -753,11 +753,11 @@
     },
     "mediaFolder": {
       "name": "Carpeta de medios",
-      "desc": "Carpeta que contiene archivos adjuntos/imagenes. Cuando las notas usan ![[image.jpg]], Claude buscará aquí. Dejar vacío para la raíz del depósito."
+      "desc": "Carpeta que contiene archivos adjuntos e imágenes. Cuando las notas usan ![[image.jpg]], Claude buscará aquí. Déjala vacía para usar la raíz de la bóveda."
     },
     "systemPrompt": {
-      "name": "Prompt de sistema personalizado",
-      "desc": "Instrucciones adicionales añadidas al prompt de sistema por defecto"
+      "name": "Prompt del sistema personalizado",
+      "desc": "Instrucciones adicionales añadidas al prompt del sistema predeterminado"
     },
     "showTabTitlesByDefault": {
       "name": "Mostrar títulos de pestañas por defecto",
@@ -806,13 +806,13 @@
     },
     "customVariables": {
       "name": "Variables personalizadas",
-      "desc": "Solo variables de ejecución propiedad de Claude Code. Úsalo para ANTHROPIC_* y opciones específicas de Claude Code."
+      "desc": "Variables de ejecución exclusivas de Claude Code. Úsalo para ANTHROPIC_* y opciones específicas de Claude Code."
     },
     "envSnippets": {
       "name": "Fragmentos",
       "addBtn": "Añadir fragmento",
       "saveCurrent": "Guardar el entorno actual como fragmento",
-      "nameRequired": "Por favor ingrese un nombre para el fragmento",
+      "nameRequired": "Introduce un nombre para el fragmento",
       "insert": "Insertar",
       "modal": {
         "titleEdit": "Editar fragmento",
@@ -822,14 +822,14 @@
         "description": "Descripción",
         "descPlaceholder": "Descripción opcional",
         "envVars": "Variables de entorno",
-        "envVarsPlaceholder": "Formato KEY=VALUE, una por línea (prefijo export soportado)",
+        "envVarsPlaceholder": "Formato KEY=VALUE, una por línea (se admite el prefijo export)",
         "save": "Guardar",
         "update": "Actualizar",
         "cancel": "Cancelar"
       },
-      "insertFailed": "No se pudo insertar el snippet",
-      "deleteConfirm": "¿Eliminar el snippet de entorno \"{name}\"?",
-      "deleteFailed": "No se pudo eliminar el snippet"
+      "insertFailed": "No se pudo insertar el fragmento",
+      "deleteConfirm": "¿Eliminar el fragmento de entorno \"{name}\"?",
+      "deleteFailed": "No se pudo eliminar el fragmento"
     },
     "customModelAliases": {
       "ariaLabel": "Alias de {model}",
@@ -837,7 +837,7 @@
     },
     "enableChrome": {
       "name": "Habilitar extensión de Chrome",
-      "desc": "Permitir que Claude Code interactúe con Chrome a través de la extensión claude-in-chrome. Requiere que la extensión esté instalada. Requiere reinicio de sesión."
+      "desc": "Permite que Claude Code interactúe con Chrome a través de la extensión claude-in-chrome. Requiere que la extensión esté instalada y reiniciar la sesión."
     },
     "enableDualPane": {
       "name": "Activar modo de panel doble",
@@ -863,11 +863,11 @@
       "right": "Derecha"
     },
     "enableAutoScroll": {
-      "name": "Desplazamiento automático durante streaming",
-      "desc": "Desplazarse automáticamente hacia abajo mientras Claude transmite respuestas. Desactivar para quedarse arriba y leer desde el principio."
+      "name": "Desplazamiento automático durante la transmisión",
+      "desc": "Desplazarse automáticamente hacia abajo mientras Claude transmite respuestas. Desactívalo para quedarte arriba y leer desde el principio."
     },
     "deferMathRenderingDuringStreaming": {
-      "name": "Diferir renderizado matemático durante streaming",
+      "name": "Diferir el renderizado matemático durante la transmisión",
       "desc": "Mostrar LaTeX sin procesar mientras se transmite la respuesta y renderizar las fórmulas una vez al completar cada bloque de texto."
     },
     "pluginRenderedFenceLanguages": {
@@ -876,7 +876,7 @@
     },
     "expandFileEditsByDefault": {
       "name": "Expandir ediciones de archivo por defecto",
-      "desc": "Mostrar los diffs de Write y Edit expandidos cuando aparecen por primera vez."
+      "desc": "Mostrar expandidas las diferencias de Write y Edit cuando aparecen por primera vez."
     },
     "chatViewPlacement": {
       "name": "Abrir Claudian en",
@@ -891,13 +891,13 @@
     },
     "cliInstallation": {
       "disclosure": "Instalación de {name}",
-      "description": "Ruta CLI opcional para este equipo. Déjala vacía para detectar automáticamente.",
-      "checking": "Comprobando CLI…",
+      "description": "Ruta de la CLI opcional para este equipo. Déjala vacía para detectarla automáticamente.",
+      "checking": "Comprobando la CLI…",
       "versionUnavailable": "Versión no disponible",
       "notFound": "No encontrado",
       "custom": "Ruta personalizada",
       "auto": "Detectado automáticamente",
-      "checkFailed": "No se pudo comprobar el CLI",
+      "checkFailed": "No se pudo comprobar la CLI",
       "saveFailed": "No se pudo guardar la ruta. Inténtalo de nuevo."
     },
     "cliPath": {
@@ -918,7 +918,7 @@
     },
     "providerEnablement": {
       "name": "Activar {provider}",
-      "lastProviderWarning": "Debe haber al menos un proveedor habilitado para que Claudian funcione.",
+      "lastProviderWarning": "Debe haber al menos un proveedor activado para que Claudian funcione.",
       "noModelsWarning": "No hay modelos de {provider} activados. Ve a Modelos más abajo y activa al menos uno."
     },
     "modelPicker": {
@@ -946,7 +946,7 @@
       "aliasLabel": "Alias (opcional)",
       "removeLabel": "Quitar {model}",
       "noMatch": "Ningún modelo coincide con tu filtro.",
-      "emptyCatalog": "{provider} no ha informado de ningún modelo. Revisa tu configuración y haz clic en Descubrir.",
+      "emptyCatalog": "{provider} no ha devuelto ningún modelo. Revisa tu configuración y haz clic en Descubrir.",
       "loadingCatalog": "Cargando modelos de {provider}…",
       "stale": "El catálogo de modelos de {provider} está desactualizado. Haz clic en Descubrir para actualizarlo."
     },
@@ -958,14 +958,14 @@
       "configuration": "Configuración",
       "responseStyle": {
         "name": "Estilo de respuesta",
-        "desc": "Estilo de salida de Claude Code para las respuestas, incluidos los estilos personalizados. «Configuración de Claude Code» sigue tu configuración de Claude Code. La lista se actualiza al refrescar los modelos o al iniciar un chat.",
+        "desc": "Estilo de salida de Claude Code para las respuestas, incluidos los estilos personalizados. «Configuración de Claude Code» sigue tu configuración de Claude Code. La lista se actualiza al actualizar los modelos o al iniciar un chat.",
         "default": "Predeterminado",
         "inherit": "Configuración de Claude Code"
       }
     },
     "codex": {
       "cliPath": {
-        "name": "Ruta de Codex CLI"
+        "name": "Ruta de la CLI de Codex"
       },
       "safeMode": {
         "workspaceWrite": "Escritura en espacio de trabajo",
@@ -1000,7 +1000,7 @@
       },
       "environment": {
         "name": "Entorno de Codex",
-        "desc": "Solo variables de ejecución propiedad de Codex. Úsalo para ajustes OPENAI_* y CODEX_*. Si la autodetección de Codex necesita ayuda, añade su directorio de instalación al PATH compartido en lugar de esta sección del proveedor."
+        "desc": "Variables de ejecución exclusivas de Codex. Úsalo para ajustes OPENAI_* y CODEX_*. Si la detección automática de Codex necesita ayuda, añade su directorio de instalación al PATH compartido en lugar de a esta sección del proveedor."
       }
     },
     "agentSkills": {
@@ -1028,11 +1028,11 @@
         "nameDesc": "Letras minúsculas y números separados por guiones simples",
         "namePlaceholder": "code-reviewer",
         "description": "Descripción",
-        "descriptionDesc": "Descripción portable obligatoria que usan los proveedores para seleccionar el skill",
+        "descriptionDesc": "Descripción portátil obligatoria que usan los proveedores para seleccionar el skill",
         "descriptionPlaceholder": "Revisa el código para comprobar su corrección y mantenibilidad",
         "instructions": "Instrucciones",
         "instructionsDesc": "Instrucciones de SKILL.md obligatorias",
-        "instructionsPlaceholder": "Revisa el código proporcionado e informa de hallazgos accionables..."
+        "instructionsPlaceholder": "Revisa el código proporcionado e informa de hallazgos aplicables..."
       },
       "delete": {
         "title": "Eliminar skill compartido",
@@ -1041,7 +1041,7 @@
       }
     },
     "opencode": {
-      "emptyModels": "El servidor OpenCode no devolvió modelos habilitados para esta bóveda. Revise .opencode/opencode.json en la bóveda y los registros de OpenCode (opencode debug paths muestra su ubicación). En OpenCode v2, los plugins V1 configurados pueden ser incompatibles. Compare con opencode models --standalone en la bóveda y vuelva a descubrir modelos.",
+      "emptyModels": "El servidor de OpenCode no devolvió modelos habilitados para esta bóveda. Revisa .opencode/opencode.json en la bóveda y los registros de OpenCode (ejecuta opencode debug paths para localizarlos). En OpenCode v2, los plugins de la v1 configurados pueden ser incompatibles. Compáralo con opencode models --standalone en la bóveda y luego haz clic en Descubrir.",
       "environment": {
         "name": "Variables de entorno de OpenCode",
         "desc": "Variables de entorno adicionales que se pasan a OpenCode."
@@ -1057,7 +1057,7 @@
         "desc": "Variables de entorno que se pasan solo a Pi."
       },
       "models": {
-        "desc": "Claudian mantiene su propia lista de modelos, independiente de enabledModels de Pi. Discover muestra todos los modelos que Pi puede autenticar en su entorno actual, agrupados por la ruta de proveedor que Pi usará. La ruta determina las credenciales y la facturación."
+        "desc": "Claudian mantiene su propia lista de modelos, independiente de enabledModels de Pi. Descubrir muestra todos los modelos que Pi puede autenticar en su entorno actual, agrupados por la ruta de proveedor que Pi usará. La ruta determina las credenciales y la facturación."
       }
     },
     "grok": {
@@ -1086,12 +1086,12 @@
       },
       "presetPlugins": {
         "name": "Plugins adicionales del preset",
-        "desc": "Avanzado. Una lista YAML (formato de dsh) de filas de plugins nativos de dsh que se añaden al preset de chat de Claudian, cada una con su propio \"id\" y \"name\". Las filas no pueden reemplazar las de Claudian. Guardar reinicia DeepSeek Harness, lo que detiene los turnos en curso. Los plugins sin interfaz en Claudian, como el modo plan, pueden no funcionar."
+        "desc": "Avanzado. Una lista YAML (formato de dsh) de filas de plugins nativos de dsh que se añaden al preset de chat de Claudian, cada una con su propio \"id\" y \"name\". Las filas no pueden reemplazar las de Claudian. Al guardar se reinicia DeepSeek Harness, lo que detiene los turnos en curso. Los plugins sin interfaz en Claudian, como el modo de planificación, pueden no funcionar."
       },
       "presetPreview": "Vista previa del preset",
       "environment": {
         "name": "Variables de entorno de DeepSeek Harness",
-        "desc": "Variables de entorno pasadas solo a DeepSeek Harness. Usa el perfil nativo web o Desktop seleccionado, tus credenciales, modelos y servidores MCP."
+        "desc": "Variables de entorno que se pasan solo a DeepSeek Harness. Usa el perfil nativo Web o Desktop seleccionado, tus credenciales, modelos y servidores MCP."
       }
     },
     "skills": {
@@ -1170,7 +1170,7 @@
         "repairBody": ".claude/skills se reemplazará por un enlace a .agents/skills. La carpeta a la que apunta ahora no se modifica.",
         "linkBody": "Crea .claude/skills como enlace a .agents/skills para que Claude Code use los skills compartidos. No se mueve ningún archivo.",
         "linkWithItemsBody": "Los comandos se convierten en skills y luego .claude/skills se crea como enlace a .agents/skills. Esta acción no se puede deshacer.",
-        "devicesWarning": "¿Sincronizas este vault entre dispositivos? Puede que el enlace no se sincronice; sincroniza en cada dispositivo.",
+        "devicesWarning": "¿Sincronizas esta bóveda entre dispositivos? Puede que el enlace no se sincronice; ejecuta Sincronizar en cada dispositivo.",
         "confirm": "Sincronizar y enlazar",
         "partial": "La sincronización se detuvo antes de enlazar. Corrige los elementos siguientes y vuelve a sincronizar.",
         "failed": "Error de sincronización: {message}",

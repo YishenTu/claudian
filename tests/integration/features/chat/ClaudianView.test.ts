@@ -22,7 +22,7 @@ import { TabManager } from '@/features/chat/tabs/TabManager';
 import type { TabLayoutPolicy } from '@/features/chat/tabs/types';
 import { ViewerSlot } from '@/features/chat/tabs/ViewerSlot';
 import { createChatTabCommands } from '@/features/chat/workspace/ChatTabCommands';
-import { setLocale } from '@/i18n/i18n';
+import { setLocale, t } from '@/i18n/i18n';
 
 beforeEach(() => {
   useNextTaskAnimationFrames();
@@ -366,11 +366,13 @@ describe('ClaudianView provider and presentation wiring', () => {
 });
 
 describe('ClaudianView tab controls and layout', () => {
-  it.each([
-    ['en', 'New tab', 'New conversation'],
-    ['zh-CN', '新建标签页', '新建对话'],
-  ] as const)('uses native %s navigation buttons, creates and focuses a real tab, and opens history', async (locale, newTabName, newConversationName) => {
+  it.each(['en', 'zh-CN'] as const)('uses native %s navigation buttons, creates and focuses a real tab, and opens history', async locale => {
+    setLocale('en');
+    const englishNewTab = t('chat.tabNavigation.newTab');
     setLocale(locale);
+    const newTabName = t('chat.tabNavigation.newTab');
+    const newConversationName = t('chat.tabNavigation.newConversation');
+    expect(newTabName !== englishNewTab).toBe(locale !== 'en');
     const { view, manager, contentEl } = await openView({ host: { settings: { locale } } });
     await manager.openConversation('one');
     const first = manager.getActiveTab()!;
@@ -401,11 +403,23 @@ describe('ClaudianView tab controls and layout', () => {
     expect(view.getSharedSelectionFocusScopeEls!()).toEqual([navRow]);
   });
 
-  it.each([
-    ['en', 'Tab name', 'New', 'Replace current conversation', 'Close current tab', 'Rename current tab'],
-    ['zh-CN', '标签页名称', '新建', '替换当前对话', '关闭当前标签页', '重命名当前标签页'],
-  ] as const)('runs the %s palette commands through the real compact navigation and persists a rename', async (locale, inputName, newName, replaceName, closeName, renameName) => {
+  it.each(['en', 'zh-CN'] as const)('runs the %s palette commands through the real compact navigation and persists a rename', async locale => {
+    setLocale('en');
+    const englishCommandNames = [
+      t('chat.tabNavigation.commandNew'),
+      t('chat.tabNavigation.commandReplace'),
+      t('chat.tabNavigation.commandClose'),
+      t('chat.tabNavigation.commandRename'),
+    ];
     setLocale(locale);
+    const inputName = t('chat.tabNavigation.tabName');
+    const commandNames = [
+      t('chat.tabNavigation.commandNew'),
+      t('chat.tabNavigation.commandReplace'),
+      t('chat.tabNavigation.commandClose'),
+      t('chat.tabNavigation.commandRename'),
+    ];
+    expect(commandNames.some((commandName, index) => commandName !== englishCommandNames[index])).toBe(locale !== 'en');
     const { view, manager, contentEl, records } = await openView({ host: { settings: { locale } } }, workspaceState());
     records[0].title = 'Archive';
     await manager.openConversation('one');
@@ -420,7 +434,7 @@ describe('ClaudianView tab controls and layout', () => {
     expect([create.id, replace.id, close.id, rename.id]).toEqual([
       'new-tab', 'new-session', 'close-current-tab', 'rename-current-tab',
     ]);
-    expect([create.name, replace.name, close.name, rename.name]).toEqual([newName, replaceName, closeName, renameName]);
+    expect([create.name, replace.name, close.name, rename.name]).toEqual(commandNames);
     const before = structuredClone(view.getState());
     const start = vi.spyOn(view, 'startNewConversation');
     const replacement = vi.spyOn(manager, 'createNewConversation');
@@ -472,17 +486,19 @@ describe('ClaudianView tab controls and layout', () => {
     expect(rename.checkCallback!(true)).toBe(false);
     expect(contentEl.querySelector('.claudian-tab-bar-container')?.classList.contains('claudian-hidden')).toBe(true);
     setLocale('en');
-    expect(commands().map(command => command.name)).toEqual([
-      'New', 'Replace current conversation', 'Close current tab', 'Rename current tab',
-    ]);
+    expect(commands().map(command => command.name)).toEqual(englishCommandNames);
   });
 
   it.each([
-    [400, 'en', 'New'],
-    [640, 'en', 'New'],
-    [640, 'zh-CN', '新建'],
-  ] as const)('starts %s px %s New through the correct owner', async (width, locale, name) => {
+    [400, 'en'],
+    [640, 'en'],
+    [640, 'zh-CN'],
+  ] as const)('starts %s px %s New through the correct owner', async (width, locale) => {
+    setLocale('en');
+    const englishName = t('chat.tabNavigation.commandNew');
     setLocale(locale);
+    const name = t('chat.tabNavigation.commandNew');
+    expect(name !== englishName).toBe(locale !== 'en');
     const { view, manager, contentEl } = await openView({ width, host: { settings: { locale } } });
     if (width === 640) await manager.viewerSlot.show('two');
     else await manager.openConversation('two');
@@ -512,7 +528,11 @@ describe('ClaudianView tab controls and layout', () => {
   });
 
   it('reports the localized switch failure and keeps the previous tab when its restored peer cannot be loaded', async () => {
+    setLocale('en');
+    const englishSwitchFailed = t('chat.tabNavigation.switchFailed');
     setLocale('zh-CN');
+    const switchFailed = t('chat.tabNavigation.switchFailed');
+    expect(switchFailed).not.toBe(englishSwitchFailed);
     const record = conversationRecord('one');
     let lookupFailed = false;
     const getCachedConversation = vi.fn((id: string) => {
@@ -535,7 +555,7 @@ describe('ClaudianView tab controls and layout', () => {
     vi.mocked(Notice).mockClear();
     lookupFailed = true;
     fireEvent.click(target);
-    await waitFor(() => expect(Notice).toHaveBeenCalledExactlyOnceWith('无法切换标签页'));
+    await waitFor(() => expect(Notice).toHaveBeenCalledExactlyOnceWith(switchFailed));
     expect(getCachedConversation).toHaveBeenCalledWith('one');
     expect(manager.getActiveTab()).toBe(previous);
     expect(view.getState()).toEqual(before);

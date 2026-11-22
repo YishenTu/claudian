@@ -25,7 +25,7 @@ import { SessionMessagingService } from '@/features/chat/session-messaging/Sessi
 import { ChatState } from '@/features/chat/state/ChatState';
 import { destroyTab } from '@/features/chat/tabs/TabLifecycle';
 import { createTabRuntime } from '@/features/chat/tabs/TabRuntimeFactory';
-import { setLocale } from '@/i18n/i18n';
+import { setLocale, t } from '@/i18n/i18n';
 import { mapOpencodeNativeMessages } from '@/providers/opencode/history/OpencodeHistoryStore';
 import { piProviderRegistration } from '@/providers/pi/registration';
 import { VaultMentionDataProvider } from '@/shared/mention/VaultMentionDataProvider';
@@ -831,12 +831,15 @@ it('reuses created message elements instead of searching the growing history for
 });
 
 it.each([65, undefined])('localizes completed work disclosures (duration: %s)', async durationSeconds => {
+  const englishLabel = durationSeconds === undefined ? t('chat.worked') : t('chat.zen.workedFor', { duration: '01:05' });
   setLocale('zh-CN');
   const { renderer, messagesEl } = setup();
   try {
+    const expectedLabel = durationSeconds === undefined ? t('chat.worked') : t('chat.zen.workedFor', { duration: '01:05' });
+    expect(expectedLabel).not.toBe(englishLabel);
     renderer.renderMessages([...messages.slice(0, 2), { ...messages[2], durationSeconds }], () => 'Hello');
     await Promise.resolve();
-    const header = within(messagesEl).getByRole('button', { name: durationSeconds === undefined ? '已完成工作' : '工作了 01:05' });
+    const header = within(messagesEl).getByRole('button', { name: expectedLabel });
     expect(header.getAttribute('aria-expanded')).toBe('false');
     fireEvent.click(header);
     expect(header.getAttribute('aria-expanded')).toBe('true');
@@ -848,9 +851,11 @@ it.each([65, undefined])('localizes completed work disclosures (duration: %s)', 
 });
 
 it('localizes task notifications and thinking while preserving message content', async () => {
+  const englishTaskNotification = t('chat.taskNotification');
   setLocale('zh-CN');
   const { renderer, messagesEl } = setup();
   try {
+    expect(t('chat.taskNotification')).not.toBe(englishTaskNotification);
     renderer.renderMessages([{
       id: 'notification', role: 'assistant', isAutomaticResponse: true,
       content: 'Task completed.', timestamp: testDate().getTime(),
@@ -861,9 +866,9 @@ it('localizes task notifications and thinking while preserving message content',
       ],
     }], () => 'Hello');
     await Promise.resolve();
-    fireEvent.click(within(messagesEl).getByRole('button', { name: '任务通知' }));
+    fireEvent.click(within(messagesEl).getByRole('button', { name: t('chat.taskNotification') }));
     expect(within(messagesEl).getByText('Background command completed.')).toBeDefined();
-    expect(within(messagesEl).getByRole('button', { name: '思考过程' })).toBeDefined();
+    expect(within(messagesEl).getByRole('button', { name: t('chat.thinking.label') })).toBeDefined();
     expect(within(messagesEl).getByText('Task completed.')).toBeDefined();
   } finally {
     renderer.dispose();
@@ -872,9 +877,12 @@ it('localizes task notifications and thinking while preserving message content',
 });
 
 it.each(['pending', 'expired'] as const)('localizes async question card chrome (%s)', async questionStatus => {
+  const statusKey = questionStatus === 'pending' ? 'chat.questions.answerBelow' : 'chat.questions.expired';
+  const englishStatus = t(statusKey);
   setLocale('zh-CN');
   const { renderer, messagesEl } = setup('codex');
   try {
+    expect(t(statusKey)).not.toBe(englishStatus);
     const tool: ToolCallInfo = {
       id: 'async-question', name: 'AskUserQuestion', status: 'completed', questionStatus,
       input: { replyMode: 'user-message', questions: [{ question: 'Which check?', options: [{ label: 'Lint' }] }] },
@@ -883,7 +891,7 @@ it.each(['pending', 'expired'] as const)('localizes async question card chrome (
       id: 'question-message', role: 'assistant', content: '', timestamp: testDate().getTime(), toolCalls: [tool],
     });
     await Promise.resolve();
-    expect(within(messagesEl).getByText(questionStatus === 'pending' ? '请在下方的问题面板中回答。' : '问题已过期。')).toBeDefined();
+    expect(within(messagesEl).getByText(t(statusKey))).toBeDefined();
     expect(within(messagesEl).getByText('Which check?')).toBeDefined();
     expect(within(messagesEl).getByText('Lint')).toBeDefined();
   } finally {
@@ -893,20 +901,23 @@ it.each(['pending', 'expired'] as const)('localizes async question card chrome (
 });
 
 it('localizes citation disclosure names through expansion and collapse', async () => {
+  const englishMemoryUsed = t('chat.citations.memoryUsed');
   setLocale('zh-CN');
   const { renderer, messagesEl } = setup('codex');
   try {
+    expect(t('chat.citations.memoryUsed')).not.toBe(englishMemoryUsed);
     renderer.renderStoredMessage({
       id: 'cited', role: 'assistant', content: '', timestamp: testDate().getTime(),
       contentBlocks: [{ type: 'citations', citations: { kind: 'memory', entries: [{ path: 'MEMORY.md', lineStart: 1, lineEnd: 1, note: 'Provider note' }] } }],
     });
     await Promise.resolve();
-    const header = within(messagesEl).getByRole('button', { name: '引用的记忆, 1 个来源 - 点击展开' });
+    const baseLabel = `${t('chat.citations.memoryUsed')}, ${t('chat.citations.source', { count: 1 })}`;
+    const header = within(messagesEl).getByRole('button', { name: t('chat.disclosure.expand', { label: baseLabel }) });
     fireEvent.click(header);
-    expect(within(messagesEl).getByRole('button', { name: '引用的记忆, 1 个来源 - 点击折叠' })).toBe(header);
+    expect(within(messagesEl).getByRole('button', { name: t('chat.disclosure.collapse', { label: baseLabel }) })).toBe(header);
     expect(within(messagesEl).getByText('MEMORY.md:1')).toBeDefined();
     fireEvent.click(header);
-    expect(within(messagesEl).getByRole('button', { name: '引用的记忆, 1 个来源 - 点击展开' })).toBe(header);
+    expect(within(messagesEl).getByRole('button', { name: t('chat.disclosure.expand', { label: baseLabel }) })).toBe(header);
     expect(await axe(messagesEl)).toHaveNoViolations();
   } finally {
     renderer.dispose();

@@ -1,11 +1,11 @@
 {
   "common": {
     "inputSuggestions": "輸入建議",
-    "save": "保存",
+    "save": "儲存",
     "cancel": "取消",
     "delete": "刪除",
     "edit": "編輯",
-    "add": "添加",
+    "add": "新增",
     "clearAll": "清除全部",
     "error": "錯誤",
     "confirm": "確認",
@@ -28,33 +28,33 @@
     "changedOutsideWithBackgroundTask": "此對話在 Claudian 之外繼續進行，而先前工作階段的背景任務仍在執行。請停止該任務或等待其完成，然後重新傳送。",
     "selectAvailableTitleModel": "請在 Claudian 設定中選擇可用的標題產生模型。",
     "rewind": {
-      "confirmMessage": "回退到此處？此訊息之後的檔案變更可能被覆寫或刪除。此操作無法復原。",
+      "confirmMessage": "確定要回退到此處嗎？此訊息之後的檔案變更可能會被覆寫或移除，且無法復原。",
       "confirmMessageConflicts": "回退到此處？偵測到 {count} 個檔案在代理之外被修改，繼續操作將覆寫這些變更：\n{files}",
-      "confirmMessageConversationOnly": "將對話回退到此處？檔案變更將保留。",
+      "confirmMessageConversationOnly": "確定要將對話回退到此處嗎？檔案變更將會保留。",
       "confirmButton": "回退",
       "inProgress": "請等待目前的回退操作完成。",
       "ariaLabel": "回退到此處",
       "menuConversationOnly": "僅回退對話",
       "menuCodeAndConversation": "回退程式碼 + 對話",
-      "notice": "已回退：還原了 {count} 個檔案",
+      "notice": "已回退：已還原 {count} 個檔案",
       "noticeConversationOnly": "已回退對話；檔案變更已保留",
-      "noticeSaveFailed": "已回退：還原了 {count} 個檔案，但無法儲存狀態：{error}",
-      "noticeConversationOnlySaveFailed": "已回退對話，但無法儲存狀態：{error}",
+      "noticeSaveFailed": "已回退：已還原 {count} 個檔案，但儲存狀態失敗：{error}",
+      "noticeConversationOnlySaveFailed": "已回退對話，但儲存狀態失敗：{error}",
       "failed": "回退失敗：{error}",
       "cannot": "無法回退：{error}",
       "unavailableStreaming": "串流回應中無法回退",
       "unavailableNoUuid": "無法回退：缺少訊息識別碼"
     },
     "fork": {
-      "ariaLabel": "分叉對話",
-      "chooseTarget": "分叉對話",
+      "ariaLabel": "分支對話",
+      "chooseTarget": "分支對話",
       "targetNewTab": "新分頁",
       "targetCurrentTab": "目前分頁",
-      "notice": "已分叉到新分頁",
-      "noticeCurrentTab": "已在目前分頁分叉",
-      "failed": "分叉失敗：{error}",
-      "unavailableStreaming": "串流回應中無法分叉",
-      "unavailableNoUuid": "無法分叉：缺少訊息識別碼",
+      "notice": "已分支至新分頁",
+      "noticeCurrentTab": "已在目前分頁建立分支",
+      "failed": "分支失敗：{error}",
+      "unavailableStreaming": "串流回應中無法建立分支",
+      "unavailableNoUuid": "無法建立分支：缺少訊息識別碼",
       "errorMessageNotFound": "找不到訊息",
       "errorNoSession": "沒有可用的工作階段 ID",
       "errorNoActiveTab": "沒有使用中的分頁"
@@ -86,13 +86,13 @@
       "unsupportedProvider": "此提供者不支援側邊對話。",
       "unavailableBusy": "側邊對話需要一則已完成的回覆。請等待目前回合結束。",
       "unavailableNoCheckpoint": "請先在此對話中完成一次回覆，再開始側邊對話。",
-      "unavailableNoSession": "無法解析此對話的提供者工作階段。",
-      "alreadyExists": "此對話已有側邊對話。請先捨棄後再新建。",
+      "unavailableNoSession": "側邊對話無法解析此對話的提供者工作階段。",
+      "alreadyExists": "此對話已有側邊對話。請先捨棄現有的側邊對話，再開始新的。",
       "nestedUnavailable": "側邊對話中無法再開啟側邊對話。請先收合回到主對話。",
       "mainOnlyCommand": "/{command} 僅能在主對話中使用。",
       "startFailed": "側邊對話啟動失敗：{error}",
-      "queued": "已加入側聊佇列。",
-      "busySide": "側邊對話仍在回覆，請稍候。"
+      "queued": "已加入側邊對話佇列。",
+      "busySide": "側邊對話仍在回覆中，請稍候。"
     },
     "zen": {
       "regionLabel": "Claudian 聊天",
@@ -101,8 +101,8 @@
       "working": "處理中…",
       "thinking": "思考中…",
       "interrupted": "已中斷",
-      "workedFor": "工作了 {duration}",
-      "workedForResult": "工作了 {duration} · {result}",
+      "workedFor": "已處理 {duration}",
+      "workedForResult": "已處理 {duration} · {result}",
       "actionRequired": "需要你的輸入",
       "error": "錯誤：{message}",
       "toolRunning": "{tool} · 執行中",
@@ -111,9 +111,9 @@
       "toolBlocked": "{tool} · 已封鎖"
     },
     "composer": {
-      "placeholder": "請求修改、@提及檔案、執行 /命令",
+      "placeholder": "請輸入修改需求、以 @ 提及檔案，或執行 /指令",
       "message": "訊息",
-      "dropImage": "將圖片拖到這裡",
+      "dropImage": "將圖片拖曳至此",
       "moreContext": "顯示另外 {count} 項上下文",
       "showLess": "收合",
       "moreItems": "+{count} 項"
@@ -139,22 +139,22 @@
       "fridayFeelingNamed": "週五的感覺真好，{name}",
       "weekend": "週末到了",
       "weekendNamed": "{name}，週末到了",
-      "sundaySession": "週日來一場？",
+      "sundaySession": "週日來開工？",
       "morning": "早安",
       "morningNamed": "早安，{name}",
-      "coffee": "喝杯咖啡，開始用 {brand}？",
+      "coffee": "來杯咖啡，配點 {brand}？",
       "afternoon": "午安",
       "afternoonNamed": "午安，{name}",
       "hey": "嗨，你好",
       "heyNamed": "嗨，{name}",
-      "howGoing": "最近怎麼樣？",
-      "howGoingNamed": "{name}，最近怎麼樣？",
-      "evening": "晚上好",
-      "eveningNamed": "晚上好，{name}",
+      "howGoing": "最近好嗎？",
+      "howGoingNamed": "{name}，最近好嗎？",
+      "evening": "晚安",
+      "eveningNamed": "晚安，{name}",
       "eveningShort": "晚安呀",
       "eveningShortNamed": "晚安呀，{name}",
-      "howDay": "今天過得怎麼樣？",
-      "howDayNamed": "{name}，今天過得怎麼樣？",
+      "howDay": "今天過得如何？",
+      "howDayNamed": "{name}，今天過得如何？",
       "nightOwl": "你好，夜貓子",
       "hiHow": "嗨，你好嗎？",
       "hiHowNamed": "{name}，你好嗎？",
@@ -165,9 +165,9 @@
       "returnsNamed": "{name} 回來了！",
       "right": "你說得完全正確！"
     },
-    "worked": "已完成工作",
+    "worked": "處理完成",
     "taskNotification": "任務通知",
-    "stopHook": "Stop 鉤子",
+    "stopHook": "Stop 掛鉤",
     "copyMessage": "複製訊息",
     "showEarlierMessages": "顯示較早的訊息",
     "renderFailed": "訊息內容呈現失敗。",
@@ -204,14 +204,14 @@
     },
     "questions": {
       "title": "問題",
-      "submit": "提交",
+      "submit": "送出",
       "review": "檢查你的回答",
-      "ready": "準備提交回答了嗎？",
+      "ready": "準備好送出回答了嗎？",
       "sending": "正在傳送…",
-      "submitAnswers": "提交回答",
+      "submitAnswers": "送出回答",
       "notAnswered": "未回答",
       "customAnswer": "輸入你的回答…",
-      "secret": "輸入私密內容…",
+      "secret": "輸入機密內容…",
       "editAnswer": "修改「{question}」的回答",
       "waiting": "等待回答…",
       "noOptions": "未記錄選項",
@@ -219,7 +219,7 @@
       "answerBelow": "請在下方的問題面板中回答。",
       "expired": "問題已過期。",
       "notSent": "回答未傳送，請重試。",
-      "unsupportedReply": "此問題無法接受該回答。",
+      "unsupportedReply": "此問題不接受這種回答。",
       "uncertainDelivery": "無法確認回答是否送達。為避免重複傳送，未將其重新加入佇列。",
       "differentConversation": "此問題屬於另一段對話。",
       "sideUnavailable": "此側邊對話已無法使用。"
@@ -240,7 +240,7 @@
         "completed": "狀態：已完成",
         "error": "狀態：錯誤",
         "cancelled": "狀態：已取消",
-        "blocked": "狀態：已阻擋"
+        "blocked": "狀態：已封鎖"
       },
       "inProgress": "狀態：進行中",
       "writing": "正在寫入…",
@@ -266,7 +266,7 @@
       "listAgents": "列出代理",
       "interruptAgent": "中斷代理",
       "allAgents": "所有代理",
-      "commandPlaceholder": "命令",
+      "commandPlaceholder": "指令",
       "filesPlaceholder": "檔案",
       "patternPlaceholder": "比對模式",
       "toolsPlaceholder": "工具",
@@ -286,7 +286,7 @@
       "runningInBackground": "背景執行中",
       "running": "執行中",
       "orphanedResult": "對話在任務完成前已結束",
-      "lastTool": "最近工具：{name}",
+      "lastTool": "最後使用的工具：{name}",
       "toolUse": "{count} 次工具呼叫",
       "toolUses": "{count} 次工具呼叫",
       "tokens": "{value} 個 token",
@@ -305,10 +305,10 @@
       "urlUnavailable": "網址無法使用",
       "clickLink": "點擊連結 {id}",
       "pattern": "比對模式：{pattern}",
-      "query": "搜尋詞：{query}",
-      "altQuery": "備選搜尋詞：{query}",
+      "query": "查詢：{query}",
+      "altQuery": "替代查詢：{query}",
       "search": "搜尋網頁",
-      "moreQueries": "…還有 {count} 個搜尋詞",
+      "moreQueries": "…還有 {count} 個查詢",
       "clickInPage": "在 {url} 中點擊連結 {id}",
       "open": "開啟 {url}",
       "find": "尋找「{pattern}」",
@@ -322,7 +322,7 @@
       "changeFailed": "切換權限模式失敗",
       "antigravity": {
         "auto": "自動",
-        "autoDesc": "核准工作區編輯和沙盒命令；審查額外存取"
+        "autoDesc": "核准工作區編輯與沙盒指令；審查額外存取權限"
       },
       "claude": {
         "auto": "自動",
@@ -335,17 +335,17 @@
         "yoloDesc": "無須詢問，允許所有操作"
       },
       "codex": {
-        "autoReview": "代我審批",
-        "normal": "請求審批",
+        "autoReview": "代我核准",
+        "normal": "要求核准",
         "yolo": "完整存取",
-        "autoReviewDesc": "自動審核額外存取權限。",
-        "readOnlyDesc": "編輯或連網前詢問。",
-        "normalDesc": "額外存取前詢問。",
+        "autoReviewDesc": "自動審查額外存取權限。",
+        "readOnlyDesc": "編輯或連線至網路前先詢問。",
+        "normalDesc": "需要額外存取權限前先詢問。",
         "yoloDesc": "不限制檔案和網路存取。"
       }
     },
     "thinking": {
-      "active": "思考中，已用時 {seconds} 秒…",
+      "active": "思考中（{seconds} 秒）…",
       "completed": "思考了 {seconds} 秒",
       "label": "思考過程"
     },
@@ -358,8 +358,8 @@
         "considering": "考量中…",
         "workingOnIt": "正在處理…",
         "vibing": "漸入佳境…",
-        "oneMoment": "稍等片刻…",
-        "onIt": "馬上著手…",
+        "oneMoment": "稍等一下…",
+        "onIt": "馬上處理…",
         "ruminating": "反覆推敲中…",
         "contemplating": "沉思中…",
         "reflecting": "反思中…",
@@ -372,29 +372,29 @@
         "gatheringThoughts": "整理思緒中…",
         "brewingIdeas": "醞釀點子中…",
         "connectingDots": "串連線索中…",
-        "assemblingThoughts": "拼組想法中…",
+        "assemblingThoughts": "彙整想法中…",
         "spinningUpNeurons": "啟動神經元中…",
         "loadingBrilliance": "載入靈感中…",
         "consultingTheOracle": "向神諭請教…",
         "summoningKnowledge": "召喚知識中…",
-        "crunchingThoughts": "運轉腦筋中…",
-        "dustingOffNeurons": "清掃神經元中…",
+        "crunchingThoughts": "腦力全開中…",
+        "dustingOffNeurons": "喚醒神經元中…",
         "wranglingIdeas": "梳理點子中…",
         "herdingThoughts": "收攏思緒中…",
-        "jugglingConcepts": "玩轉概念中…",
-        "untanglingThis": "理清頭緒中…",
-        "piecingItTogether": "拼合思路中…",
+        "jugglingConcepts": "在腦中拋接概念…",
+        "untanglingThis": "釐清頭緒中…",
+        "piecingItTogether": "拼湊線索中…",
         "sippingCoffee": "喝口咖啡…",
         "warmingUp": "暖身中…",
         "gettingCozyWithThis": "慢慢進入狀態…",
         "settlingIn": "安頓思緒中…",
         "makingTea": "泡杯茶…",
-        "grabbingASnack": "拿點零食…",
-        "parsing": "剖析中…",
+        "grabbingASnack": "吃點小點心…",
+        "parsing": "解析中…",
         "compilingThoughts": "編譯思緒中…",
         "runningInference": "推論運算中…",
         "queryingTheVoid": "向虛空查詢…",
-        "defragmentingBrain": "整理大腦碎片中…",
+        "defragmentingBrain": "重組大腦磁區中…",
         "allocatingMemory": "配置記憶體中…",
         "optimizing": "最佳化中…",
         "indexing": "建立索引中…",
@@ -403,14 +403,14 @@
         "findingClarity": "尋找清晰思路…",
         "channelingFocus": "集中注意力…",
         "centering": "凝神靜心…",
-        "aligningChakras": "調整能量中…",
+        "aligningChakras": "調整脈輪中…",
         "meditatingOnThis": "靜心思考中…",
         "askingTheStars": "向星辰提問…",
-        "readingTeaLeaves": "解讀茶葉圖案…",
+        "readingTeaLeaves": "解讀茶葉占卜…",
         "shakingTheMagic8Ball": "搖一搖魔法八號球…",
         "consultingAncientScrolls": "查閱古老卷軸…",
         "decodingTheMatrix": "解碼矩陣中…",
-        "communingWithTheEther": "與乙太交流…",
+        "communingWithTheEther": "感應以太中…",
         "peeringIntoTheAbyss": "凝望深淵中…",
         "channelingTheCosmos": "連結宇宙靈感…",
         "divingIn": "深入探索中…",
@@ -420,10 +420,10 @@
         "onTheCase": "正在追查…",
         "investigating": "探究中…",
         "exploring": "探索中…",
-        "diggingDeeper": "深挖線索中…",
+        "diggingDeeper": "深入追查中…",
         "bearWithMe": "請稍候…",
-        "hangTight": "耐心等一下…",
-        "justASec": "只需片刻…",
+        "hangTight": "稍等一下喔…",
+        "justASec": "馬上就好…",
         "workingMyMagic": "施展魔法中…",
         "almostThere": "快好了…",
         "giveMeAMoment": "給我一點時間…"
@@ -440,11 +440,11 @@
       "noMatches": "無符合項目",
       "loadFailed": "無法載入建議",
       "retryHint": "再次輸入以重試",
-      "providerLoading": "正在載入供應商命令…",
-      "providerRetry": "重新尋找供應商命令",
+      "providerLoading": "正在載入提供者指令…",
+      "providerRetry": "重新偵測提供者指令",
       "builtInDescriptions": {
         "new": "開始新對話",
-        "compact": "壓縮對話歷史",
+        "compact": "壓縮對話紀錄",
         "sessions": "繼續先前的對話",
         "fast": "切換快速模式",
         "side": "根據最新回覆提出臨時問題"
@@ -457,7 +457,7 @@
       "allowOnce": "允許一次",
       "alwaysAllow": "一律允許",
       "mcpRequest": "MCP 請求",
-      "mcpServer": "MCP 伺服器： {server}",
+      "mcpServer": "MCP 伺服器：{server}",
       "decline": "拒絕",
       "allow": "允許",
       "cancelRequest": "取消此請求。",
@@ -469,17 +469,17 @@
       "permissionReason": "權限請求：{reason}",
       "networkAccess": "允許透過 {protocol} 存取 {host}",
       "execute": "執行：{command}",
-      "executeCommand": "執行命令",
-      "allowSimilar": "允許類似命令",
-      "execPolicy": "核准並儲存執行策略變更。",
+      "executeCommand": "執行指令",
+      "allowSimilar": "允許類似指令",
+      "execPolicy": "核准並儲存執行原則變更。",
       "host": "主機",
       "allowHost": "在此工作階段中允許 {host}",
       "denyHost": "在此工作階段中拒絕 {host}",
       "allowRule": "對 {host} 套用允許規則。",
       "denyRule": "對 {host} 套用拒絕規則。",
-      "details": "{tool} 授權詳情",
+      "details": "{tool} 授權詳細資訊",
       "unexpectedSelection": "非預期的授權選項：「{value}」",
-      "runCommand": "執行命令：{pattern}",
+      "runCommand": "執行指令：{pattern}",
       "readFile": "讀取檔案：{pattern}",
       "writeFile": "寫入檔案：{pattern}",
       "editFile": "編輯檔案：{pattern}",
@@ -501,7 +501,7 @@
       "unsentFallback": "訊息未傳送。請重試。"
     },
     "images": {
-      "unsupportedProvider": "此供應商不支援圖片附件。",
+      "unsupportedProvider": "此提供者不支援圖片附件。",
       "tooLarge": "圖片超過 {size} 的大小限制。",
       "unsupportedType": "不支援的圖片格式。",
       "attachFailed": "新增圖片附件失敗。",
@@ -550,22 +550,22 @@
       "providersIncluded": "已包含可用的提供者和模型",
       "newSession": "新工作階段",
       "session": "工作階段",
-      "turns": "輪次",
+      "turns": "回合",
       "turnRange": "{from}–{to}，共 {total}",
       "noTurns": "尚無",
       "mode": "傳遞方式",
-      "modeSteer": "插入進行中的輪次",
+      "modeSteer": "引導進行中的回合",
       "modeInterrupt": "中斷目前工作"
     },
     "modelPicker": {
       "options": "模型選項",
-      "provider": "提供商",
+      "provider": "提供者",
       "modelLabel": "模型：{label}",
       "unavailable": "模型無法使用",
       "setup": "設定模型",
-      "guidance": "請在提供商設定中選擇已啟用的模型。如果探索失敗，請重新整理模型清單。",
+      "guidance": "請在提供者設定中選擇已啟用的模型。若探索失敗，請重新整理模型清單。",
       "model": "模型",
-      "empty": "沒有可用模型。請檢查提供商設定；如果探索失敗，請重新整理模型清單。",
+      "empty": "沒有可用模型。請檢查提供者設定；若探索失敗，請重新整理模型清單。",
       "changeModelFailed": "無法切換模型",
       "defaultEffort": "預設",
       "effortLabel": "思考強度 {label}",
@@ -598,8 +598,8 @@
       "moveRight": "向右移動",
       "closeTab": "關閉分頁",
       "active": "目前",
-      "needsInput": "需要您輸入",
-      "working": "工作中",
+      "needsInput": "需要你輸入",
+      "working": "處理中",
       "errorReview": "因錯誤而停止，可供檢閱",
       "finishedReview": "已完成，可供檢閱",
       "idle": "閒置",
@@ -607,7 +607,7 @@
       "namedBadge": "{label}（{title}），{status}",
       "newTab": "新增分頁",
       "newConversation": "新增對話",
-      "showWideFailed": "無法在雙欄配置中顯示工作階段",
+      "showWideFailed": "無法在寬版配置中顯示工作階段",
       "createTabFailed": "無法建立分頁",
       "createConversationFailed": "無法建立對話",
       "startConversationFailed": "無法開始新對話",
@@ -660,7 +660,7 @@
         "titleNew": "新增專案",
         "titleEdit": "編輯專案",
         "name": "名稱",
-        "nameDesc": "顯示在工作階段管理器和成員工作階段中。",
+        "nameDesc": "顯示在工作階段管理員和成員工作階段中。",
         "namePlaceholder": "專案名稱",
         "iconButton": "專案圖示：{icon}",
         "iconDefault": "預設資料夾",
@@ -670,9 +670,9 @@
         "instructions": "指示",
         "instructionsDesc": "從下一輪起加入每個成員工作階段的系統提示詞。",
         "memoryPath": "記憶檔案",
-        "memoryPathDesc": "專案記憶檔案在儲存庫中的路徑。缺少 .md 副檔名時會自動加上。變更後會移動該檔案。",
+        "memoryPathDesc": "專案記憶檔案在保管庫中的路徑。若缺少 .md 副檔名會自動補上；變更路徑將會移動該檔案。",
         "memoryPathPlaceholder": "資料夾/MEMORY.md",
-        "memoryPathInvalid": "請輸入儲存庫內的檔案路徑，例如 Projects/MEMORY.md。",
+        "memoryPathInvalid": "請輸入保管庫內的檔案路徑，例如 Projects/MEMORY.md。",
         "memoryPathTaken": "{path} 已被某個檔案或其他專案使用。",
         "openMemory": "開啟",
         "nameRequired": "請輸入專案名稱。"
@@ -690,12 +690,12 @@
         "saveFailed": "儲存專案記憶失敗",
         "saved": "專案記憶已儲存",
         "loading": "載入中…",
-        "updated": "{time}更新",
-        "changedOutside": "記憶檔案已在此視窗之外被更新，可能是代理所為。",
+        "updated": "更新於 {time}",
+        "changedOutside": "記憶檔案已在此視窗之外被更新，可能是由代理修改的。",
         "keepMine": "保留我的編輯",
-        "discardConfirm": "放棄對專案記憶的未儲存變更？",
-        "discard": "放棄",
-        "emptyHint": "代理會隨著專案推進填寫這裡。"
+        "discardConfirm": "要捨棄專案記憶中未儲存的變更嗎？",
+        "discard": "捨棄",
+        "emptyHint": "代理會隨著專案進展自動填寫此處。"
       }
     }
   },
@@ -706,14 +706,14 @@
     "applied": "已套用編輯",
     "editorUnavailable": "行內編輯無法使用：無法存取目前的編輯器。請試著重新開啟筆記。",
     "stale": "來源文件或選取範圍已變更，未套用行內編輯。",
-    "initialProviderFailed": "行內編輯無法使用：無法啟動 {provider} 供應商。",
-    "vaultFailed": "無法載入儲存庫檔案。儲存庫的 @ 提及功能可能無法使用。",
+    "initialProviderFailed": "行內編輯無法使用：無法啟動 {provider} 提供者。",
+    "vaultFailed": "無法載入保管庫檔案。保管庫的 @ 提及功能可能無法使用。",
     "editLabel": "編輯指令",
     "insertLabel": "插入指令",
     "editPlaceholder": "編輯指令…",
     "insertPlaceholder": "插入指令…",
     "modelUnavailable": "請在 Claudian 設定中選取可用的模型。",
-    "providerFailed": "無法啟動 {provider} 供應商。",
+    "providerFailed": "無法啟動 {provider} 提供者。",
     "actionsLabel": "行內編輯操作",
     "lineOne": "行",
     "lineOther": "行",
@@ -723,7 +723,7 @@
     "acceptLabel": "接受行內編輯",
     "retryFallback": "發生錯誤，請重試",
     "replyPlaceholder": "回覆以繼續…",
-    "noResponseFallback": "代理未傳回回應",
+    "noResponseFallback": "代理未回覆",
     "followUpPlaceholder": "提出修改要求，或按 Enter 接受"
   },
   "settings": {
@@ -744,16 +744,16 @@
     "responses": "回覆",
     "experimental": "實驗性功能",
     "userName": {
-      "name": "Claudian 應該如何稱呼您？",
-      "desc": "用於個人化問候的使用者名稱（留空使用通用問候）"
+      "name": "希望 Claudian 如何稱呼你？",
+      "desc": "用於個人化問候的名稱（留空則使用一般問候）"
     },
     "excludedTags": {
       "name": "排除的標籤",
-      "desc": "包含這些標籤的筆記不會自動載入為上下文（每行一個，不帶 #）"
+      "desc": "包含這些標籤的筆記不會自動載入為上下文（每行一個，不需加 #）"
     },
     "mediaFolder": {
       "name": "媒體資料夾",
-      "desc": "存放附件/圖片的資料夾。當筆記使用 ![[image.jpg]] 時，Claude 會在此查找。留空使用儲存庫根目錄。"
+      "desc": "存放附件/圖片的資料夾。當筆記使用 ![[image.jpg]] 時，Claude 會在此尋找。留空則使用保管庫根目錄。"
     },
     "systemPrompt": {
       "name": "自訂系統提示詞",
@@ -761,30 +761,30 @@
     },
     "showTabTitlesByDefault": {
       "name": "預設顯示分頁標題",
-      "desc": "新開的聊天分頁顯示對話標題而不是數字。已開啟的分頁保持目前顯示，任何分頁仍可切換。"
+      "desc": "新開啟的聊天分頁將顯示對話標題而非編號。已開啟的分頁維持原本顯示方式，且所有分頁仍可隨時切換。"
     },
     "chatFontScale": {
       "name": "聊天字型大小",
       "desc": "依筆記字型大小的比例縮放聊天文字。100% 與筆記相同。"
     },
     "autoTitle": {
-      "name": "自動生成對話標題",
-      "desc": "在使用者送出第一則訊息後自動生成對話標題。"
+      "name": "自動產生對話標題",
+      "desc": "在使用者送出第一則訊息後自動產生對話標題。"
     },
     "titleLanguage": {
-      "name": "標題生成語言",
-      "desc": "自動生成對話標題時使用的語言。",
-      "followInterface": "跟隨介面語言"
+      "name": "標題產生語言",
+      "desc": "自動產生對話標題時使用的語言。",
+      "followInterface": "與介面語言相同"
     },
     "titleModel": {
-      "name": "標題生成模型",
-      "desc": "用於自動生成對話標題的模型。",
+      "name": "標題產生模型",
+      "desc": "用於自動產生對話標題的模型。",
       "select": "選擇模型",
-      "unavailableWarning": "自動標題已暫停。請選擇一個可用的標題模型。"
+      "unavailableWarning": "自動產生標題已暫停。請選擇一個可用的標題模型。"
     },
     "navMappings": {
-      "name": "Vim 風格導航映射",
-      "desc": "每行一個映射。格式：\"map <鍵> <動作>\"（動作：scrollUp, scrollDown, focusInput）。"
+      "name": "Vim 風格導覽對應",
+      "desc": "每行一個對應。格式：\"map <鍵> <動作>\"（動作：scrollUp、scrollDown、focusInput）。"
     },
     "requireCommandOrControlEnterToSend": {
       "name": "需要 Command/Ctrl+Enter 才能傳送",
@@ -793,11 +793,11 @@
     "safety": "安全",
     "loadUserSettings": {
       "name": "載入使用者 Claude Code 設定",
-      "desc": "從 ~/.claude 載入使用者層級 Claude Code 設定：settings.json、技能、指令、代理程式和外掛。停用時僅能使用儲存庫層級設定。啟用後，使用者的權限規則可能繞過安全模式。"
+      "desc": "從 ~/.claude 載入使用者層級的 Claude Code 設定：settings.json、技能、指令、代理程式與外掛。停用時僅使用保管庫層級設定。啟用後，使用者的權限規則可能會繞過安全模式。"
     },
     "codexSandbox": {
       "name": "沙盒",
-      "desc": "代我審批 和 請求審批 模式下的檔案存取權限。唯讀模式會在每次編輯前請求確認；完整存取 會忽略此設定。"
+      "desc": "「代我核准」與「要求核准」模式下的檔案存取權限。「唯讀」會在每次編輯前詢問確認；「完整存取」會忽略此設定。"
     },
     "environment": "環境",
     "sharedEnvironment": {
@@ -806,24 +806,24 @@
     },
     "customVariables": {
       "name": "自訂變數",
-      "desc": "僅限 Claude Code 擁有的執行階段變數。用於 ANTHROPIC_* 和 Claude Code 專屬開關。"
+      "desc": "僅限 Claude Code 使用的執行階段變數，用於 ANTHROPIC_* 及 Claude Code 專屬設定。"
     },
     "envSnippets": {
       "name": "片段",
       "addBtn": "新增片段",
-      "saveCurrent": "將當前環境保存為片段",
+      "saveCurrent": "將目前環境儲存為片段",
       "nameRequired": "請輸入片段名稱",
       "insert": "插入",
       "modal": {
         "titleEdit": "編輯片段",
-        "titleSave": "保存片段",
+        "titleSave": "儲存片段",
         "name": "名稱",
-        "namePlaceholder": "此配置的描述性名稱",
+        "namePlaceholder": "此環境設定的描述名稱",
         "description": "描述",
-        "descPlaceholder": "可選描述",
+        "descPlaceholder": "選填描述",
         "envVars": "環境變數",
         "envVarsPlaceholder": "KEY=VALUE 格式，每行一個（支援 export 前綴）",
-        "save": "保存",
+        "save": "儲存",
         "update": "更新",
         "cancel": "取消"
       },
@@ -841,14 +841,14 @@
     },
     "enableDualPane": {
       "name": "啟用雙欄模式",
-      "desc": "當檢視寬度至少為 600 像素時，自動在聊天旁顯示工作階段管理器。"
+      "desc": "當檢視寬度至少為 600 像素時，自動在聊天旁顯示工作階段管理員。"
     },
     "restoreTabsOnStartup": {
       "name": "啟動時還原分頁",
       "desc": "單欄模式下重新開啟所有分頁，雙欄模式下僅重新開啟上次使用的分頁。"
     },
     "sessionAutoArchiveAfter": {
-      "name": "自動封存不活躍的工作階段",
+      "name": "自動封存閒置的工作階段",
       "desc": "封存在所選期間內沒有活動的未釘選工作階段。已開啟和正在執行的工作階段會被略過。",
       "multiSelectHint": "按住 Option 鍵（Windows 和 Linux 上為 Alt 鍵）點選工作階段可多選，然後按右鍵即可釘選或封存。",
       "off": "關閉",
@@ -858,17 +858,17 @@
     },
     "dualPaneSide": {
       "name": "雙欄位置",
-      "desc": "選擇工作階段管理器顯示在聊天的哪一側。",
+      "desc": "選擇工作階段管理員顯示在聊天的哪一側。",
       "left": "左側",
       "right": "右側"
     },
     "enableAutoScroll": {
-      "name": "串流傳輸時自動捲動",
-      "desc": "在 Claude 串流傳輸回應時自動捲動到底部。停用後將停留在頂部，從頭開始閱讀。"
+      "name": "串流回應時自動捲動",
+      "desc": "在 Claude 串流回應時自動捲動至底部。停用後將停留在頂部，方便從頭閱讀。"
     },
     "deferMathRenderingDuringStreaming": {
-      "name": "串流傳輸時延遲渲染數學公式",
-      "desc": "回應串流傳輸時顯示原始 LaTeX，並在每個文字區塊完成後只渲染一次數學公式。"
+      "name": "串流回應時延遲渲染數學公式",
+      "desc": "回應串流時顯示原始 LaTeX，待每個文字區塊完成後再一次性渲染數學公式。"
     },
     "pluginRenderedFenceLanguages": {
       "name": "由外掛渲染的程式碼區塊語言",
@@ -876,11 +876,11 @@
     },
     "expandFileEditsByDefault": {
       "name": "預設展開檔案編輯",
-      "desc": "Write 和 Edit diff 首次出現時以展開狀態顯示。"
+      "desc": "首次顯示 Write 與 Edit 的差異（diff）時預設展開。"
     },
     "chatViewPlacement": {
       "name": "Claudian 開啟位置",
-      "desc": "選擇新建聊天面板時的開啟位置",
+      "desc": "選擇建立新聊天面板時的開啟位置",
       "rightSidebar": "右側邊欄",
       "leftSidebar": "左側邊欄",
       "mainTab": "主編輯器分頁"
@@ -894,7 +894,7 @@
       "description": "此電腦的選用 CLI 路徑。留空以自動偵測。",
       "checking": "正在偵測 CLI…",
       "versionUnavailable": "版本未知",
-      "notFound": "未找到",
+      "notFound": "找不到",
       "custom": "自訂路徑",
       "auto": "自動偵測",
       "checkFailed": "無法偵測 CLI",
@@ -914,7 +914,7 @@
     },
     "language": {
       "name": "語言",
-      "desc": "更改插件介面的顯示語言"
+      "desc": "變更外掛介面的顯示語言"
     },
     "providerEnablement": {
       "name": "啟用 {provider}",
@@ -926,16 +926,16 @@
       "desc": "選擇在聊天選擇器中可用的模型。拖曳即可調整順序；提供者會將第一個目前可用的模型作為預設模型。至少選擇一個模型才能使用此提供者。",
       "browse": "瀏覽模型",
       "filterLabel": "篩選 {provider} 模型",
-      "searchPlaceholder": "依模型、提供者或 ID 篩選...",
+      "searchPlaceholder": "依模型、提供者或 ID 篩選…",
       "providerFilterLabel": "篩選模型提供者",
       "allProviders": "所有提供者（{count}）",
       "discover": "探索",
-      "visible": "顯示: ",
+      "visible": "顯示：",
       "ofDiscovered": " / 已探索到 {count} 個",
       "oneProvider": " | 1 個提供者",
       "manyProviders": " | {count} 個提供者",
-      "loadingModels": "正在載入模型...",
-      "loading": "正在載入...",
+      "loadingModels": "正在載入模型…",
+      "loading": "正在載入…",
       "available": "{count} 個可用",
       "noneDiscovered": "尚未探索到任何模型",
       "selected": "已選取（{count}）",
@@ -953,12 +953,12 @@
     "claude": {
       "promptSuggestions": {
         "name": "提示詞建議",
-        "desc": "在空白輸入框中顯示 Claude 預測的下一條提示詞。每則建議都會在每輪對話後額外發出一次 Claude 請求，可能更快耗盡用量額度。"
+        "desc": "在空白輸入框中顯示 Claude 預測的下一則提示詞。每則建議都會在每輪對話後額外發送一次 Claude 請求，可能會更快耗盡用量額度。"
       },
-      "configuration": "組態",
+      "configuration": "設定",
       "responseStyle": {
         "name": "回覆風格",
-        "desc": "Claude Code 回覆所用的輸出風格，包括自訂風格。「Claude Code 設定」沿用你的 Claude Code 配置。重新整理模型或開始聊天時會更新清單。",
+        "desc": "Claude Code 回覆使用的輸出風格，包含自訂風格。「Claude Code 設定」會沿用你的 Claude Code 設定。重新整理模型或開始聊天時會更新清單。",
         "default": "預設",
         "inherit": "Claude Code 設定"
       }
@@ -1000,16 +1000,16 @@
       },
       "environment": {
         "name": "Codex 環境",
-        "desc": "僅限 Codex 擁有的執行階段變數。用於 OPENAI_* 和 CODEX_* 設定。如果 Codex 自動偵測需要協助，請把安裝目錄新增到共享 PATH，而不是此提供者環境。"
+        "desc": "僅限 Codex 使用的執行階段變數，用於 OPENAI_* 與 CODEX_* 設定。若 Codex 自動偵測需要協助，請將安裝目錄加入共用 PATH，而非此提供者環境。"
       }
     },
     "agentSkills": {
-      "sharedExpectation": "為相容的供應商管理 .agents/skills/ 中的共用技能。",
+      "sharedExpectation": "為相容的提供者管理 .agents/skills/ 中的共用技能。",
       "noSkills": "尚未設定共用技能。點擊 + 建立一個。",
       "skillBadge": "技能",
       "diagnosticsTitle": "需要處理的技能",
       "loadFailed": "無法載入共用技能。",
-      "savedRefreshFailed": "已儲存，但重新整理供應商失敗。",
+      "savedRefreshFailed": "已儲存，但重新整理提供者失敗。",
       "validationFailed": "技能無效：{message}",
       "collisionFailed": "名為「{name}」的技能已存在。",
       "saveFailed": "無法儲存共用技能：{message}",
@@ -1028,11 +1028,11 @@
         "nameDesc": "小寫字母與數字，以單一連字號分隔",
         "namePlaceholder": "code-reviewer",
         "description": "描述",
-        "descriptionDesc": "必填的通用描述，供供應商選擇技能時使用",
+        "descriptionDesc": "必填的通用描述，供提供者選擇技能時使用",
         "descriptionPlaceholder": "審查程式碼的正確性與可維護性",
         "instructions": "指示",
         "instructionsDesc": "必填的 SKILL.md 指示",
-        "instructionsPlaceholder": "審查提供的程式碼並回報可採取行動的發現..."
+        "instructionsPlaceholder": "審查提供的程式碼並回報具體可行的改進建議…"
       },
       "delete": {
         "title": "刪除共用技能",
@@ -1041,14 +1041,14 @@
       }
     },
     "opencode": {
-      "emptyModels": "OpenCode 伺服器未為此儲存庫傳回已啟用的模型。請檢查儲存庫的 .opencode/opencode.json 與 OpenCode 日誌（執行 opencode debug paths 查看位置）。使用 OpenCode v2 時，設定的 V1 外掛可能不相容。請在儲存庫中執行 opencode models --standalone 比較，然後按「探索」。",
+      "emptyModels": "OpenCode 伺服器未針對此保管庫傳回任何已啟用的模型。請檢查保管庫中的 .opencode/opencode.json 與 OpenCode 記錄檔（可執行 opencode debug paths 查看位置）。使用 OpenCode v2 時，既有的 V1 外掛可能不相容。請在保管庫中執行 opencode models --standalone 進行比對，然後點擊「探索」。",
       "environment": {
         "name": "OpenCode 環境變數",
         "desc": "傳遞給 OpenCode 的額外環境變數。"
       },
       "migrationNotice": {
         "text": "OpenCode v1 已不再受支援。請更新至 OpenCode v2 以在 Claudian 中使用。",
-        "link": "遷移至 OpenCode v2"
+        "link": "移轉至 OpenCode v2"
       }
     },
     "pi": {
@@ -1057,13 +1057,13 @@
         "desc": "僅傳遞給 Pi 的環境變數。"
       },
       "models": {
-        "desc": "Claudian 維護獨立於 Pi enabledModels 的模型清單。Discover 會列出 Pi 在目前環境中可驗證的所有模型，並依 Pi 實際呼叫的供應商路由分組。路由決定憑證與計費。"
+        "desc": "Claudian 維護獨立於 Pi enabledModels 的模型清單。「探索」會列出 Pi 在目前環境中可驗證的所有模型，並依 Pi 實際呼叫的提供者路由分組。路由決定憑證與計費方式。"
       }
     },
     "grok": {
       "environment": {
         "name": "Grok Build 環境變數",
-        "desc": "僅傳遞給 Grok Build 的環境變數。自訂模型的密鑰保留在此提供者範圍內，並在原生設定中透過 env_key 參照。"
+        "desc": "僅傳遞給 Grok Build 的環境變數。自訂模型的金鑰保留在此提供者範圍內，並在原生設定中透過 env_key 參照。"
       }
     },
     "antigravity": {
@@ -1085,10 +1085,10 @@
         "desc": "從每個對話的下一輪開始生效，包括既有對話。模型透過原生 run_code 程式呼叫工具，而非直接呼叫。"
       },
       "presetPlugins": {
-        "name": "附加預設外掛",
-        "desc": "進階。附加到 Claudian 聊天預設的原生 dsh 外掛列 YAML 清單（dsh 格式），每列需有自己的 \"id\" 與 \"name\"。這些列不能取代 Claudian 自己的列。儲存會重新啟動 DeepSeek Harness，並停止進行中的回合。Claudian 沒有介面支援的外掛（例如計畫模式）可能無法正常運作。"
+        "name": "附加預設集外掛",
+        "desc": "進階設定。以 YAML 清單（dsh 格式）列出要附加至 Claudian 聊天預設集的原生 dsh 外掛項目，每個項目都必須包含 \"id\" 與 \"name\"，且不可取代 Claudian 內建項目。儲存後會重新啟動 DeepSeek Harness，並中止進行中的回合。Claudian 尚未提供介面支援的外掛（例如規劃模式）可能無法正常運作。"
       },
-      "presetPreview": "預設預覽",
+      "presetPreview": "預設集預覽",
       "environment": {
         "name": "DeepSeek Harness 環境變數",
         "desc": "僅傳遞給 DeepSeek Harness 的環境變數。使用所選的原生 Web 或 Desktop 設定檔、憑證、模型與 MCP 伺服器。"
@@ -1097,12 +1097,12 @@
     "skills": {
       "subTabs": {
         "claude": "Claude Code",
-        "shared": "其他供應商"
+        "shared": "其他提供者"
       },
       "claudeHelp": ".claude/skills/ 中的 Claude Code 技能與 .claude/commands/ 中的指令。",
       "sharedHelp": ".agents/skills/ 中供 Codex、OpenCode、Pi、Grok Build 與 DeepSeek Harness 使用的共用技能。",
       "status": {
-        "error": "無法讀取技能資料夾:{message}"
+        "error": "無法讀取技能資料夾：{message}"
       },
       "synced": "已同步",
       "actions": {
@@ -1117,7 +1117,7 @@
         "convert": "轉換為技能",
         "editTitle": "編輯指令",
         "convertTitle": "將指令轉換為技能",
-        "nameDesc": ".claude/commands 下不含 .md 的路徑;巢狀指令使用 /",
+        "nameDesc": ".claude/commands 下不含 .md 副檔名的路徑；巢狀指令請使用 / 分隔",
         "descriptionDesc": "顯示在指令選單中的選用描述",
         "updated": "已更新指令「{name}」。",
         "converted": "已將指令轉換為技能「{name}」。",
@@ -1126,24 +1126,24 @@
         "deleteDescription": "指令檔案將移至垃圾桶。",
         "collisionFailed": "名為「{name}」的指令已存在。"
       },
-      "droppedFrontmatterWarning": "儲存後僅保留名稱與描述。以下鍵將被移除,供應商的行為可能改變:{keys}",
+      "droppedFrontmatterWarning": "儲存後僅保留 name 與 description。以下欄位將被移除，提供者的行為可能會改變：{keys}",
       "hidden": {
         "name": "隱藏的指令與技能",
-        "desc": "在所有供應商的指令選單中隱藏指令與技能。輸入不含前導斜線的確切名稱,每行一個(Pi 技能使用 skill:名稱)。",
+        "desc": "在所有提供者的指令選單中隱藏指定的指令與技能。請輸入不含開頭斜線的確切名稱，每行一個（Pi 技能請使用 skill:name）。",
         "placeholder": "commit\ncompact\nskill:review"
       },
       "sync": {
         "title": "同步技能",
         "repairTitle": "修復技能連結",
-        "loading": "正在檢查技能資料夾...",
-        "intro": "同步會把 Claude Code 的技能與指令合併到 .agents/skills,並將 .claude/skills 連結到那裡。",
+        "loading": "正在檢查技能資料夾…",
+        "intro": "同步會將 Claude Code 的技能與指令合併至 .agents/skills，並將 .claude/skills 連結至該資料夾。",
         "pros": {
-          "oneList": "所有供應商共用一個列表。",
-          "newSkills": "新技能在所有地方可用。"
+          "oneList": "所有提供者共用同一份清單。",
+          "newSkills": "新增的技能在所有提供者中皆可使用。"
         },
         "cons": {
-          "dropped": "僅保留名稱與描述;供應商專屬的設定會被移除,行為可能改變。",
-          "claudeSyntax": "僅 Claude Code 支援的語法在其他供應商中無效:{names}"
+          "dropped": "僅保留 name 與 description；提供者專屬設定將會移除，行為可能會改變。",
+          "claudeSyntax": "僅 Claude Code 支援的語法無法在其他提供者中運作：{names}"
         },
         "attentionTitle": "需要處理",
         "nothingNeedsAttention": "沒有需要處理的項目。",
@@ -1156,25 +1156,25 @@
           "instructions": "沒有指示。請在檔案中補上後重新同步。",
           "unreadable": "無法讀取其 frontmatter。請修正檔案後重新同步。",
           "sharedConflict": "名為「{name}」的共用技能已存在。",
-          "itemConflict": "另一個項目也叫「{name}」。"
+          "itemConflict": "已有另一個名為「{name}」的項目。"
         },
         "options": {
           "fix": "修正",
           "replace": "取代共用技能",
-          "discard": "捨棄(移至垃圾桶)",
+          "discard": "捨棄（移至垃圾桶）",
           "keep": "保留為指令"
         },
         "continue": "繼續",
-        "confirmTitle": "以連結取代 .claude/skills?",
+        "confirmTitle": "確定要以連結取代 .claude/skills 嗎？",
         "confirmBody": ".claude/skills 將被取代為指向 .agents/skills 的連結。此動作無法復原。",
         "repairBody": ".claude/skills 將被取代為指向 .agents/skills 的連結。它目前指向的資料夾不會被修改。",
-        "linkBody": "將 .claude/skills 建立為指向 .agents/skills 的連結,讓 Claude Code 使用共用技能。不會移動任何檔案。",
-        "linkWithItemsBody": "指令將變成技能,接著 .claude/skills 被建立為指向 .agents/skills 的連結。此動作無法復原。",
-        "devicesWarning": "此儲存庫在多台裝置間同步?連結可能不會同步,請在每台裝置上執行同步。",
+        "linkBody": "將 .claude/skills 建立為指向 .agents/skills 的連結，讓 Claude Code 使用共用技能。此動作不會移動任何檔案。",
+        "linkWithItemsBody": "指令將轉換為技能，接著會將 .claude/skills 建立為指向 .agents/skills 的連結。此動作無法復原。",
+        "devicesWarning": "正在多台裝置間同步此保管庫嗎？連結可能不會一併同步，請在每台裝置上各自執行一次同步。",
         "confirm": "同步並連結",
         "partial": "同步在建立連結前停止。請修正以下項目後重新同步。",
-        "failed": "同步失敗:{message}",
-        "summary": "已移動 {moved},已轉換 {converted},已移至垃圾桶 {trashed},已移除 {unlinked} 個連結。"
+        "failed": "同步失敗：{message}",
+        "summary": "已移動 {moved} 項、已轉換 {converted} 項、已移至垃圾桶 {trashed} 項、已移除 {unlinked} 個連結。"
       }
     },
     "executionTarget": {
@@ -1186,9 +1186,9 @@
       },
       "wslDistroOverride": {
         "name": "WSL 發行版覆寫",
-        "desc": "可選進階覆寫。留空時會盡可能從 WSL 工作區路徑推斷發行版，否則使用預設 WSL 發行版。"
+        "desc": "選填進階覆寫。留空時會盡可能從 WSL 工作區路徑推斷發行版，否則使用預設的 WSL 發行版。"
       },
-      "wslWindowsPath": "WSL 模式需要 Linux 命令或 Linux 絕對路徑，而不是 Windows 可執行檔路徑。"
+      "wslWindowsPath": "WSL 模式需要 Linux 指令或 Linux 絕對路徑，而非 Windows 可執行檔路徑。"
     }
   }
 }

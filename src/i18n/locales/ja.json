@@ -22,25 +22,25 @@
       "discard": "待機中のメッセージを破棄",
       "images": "[画像]"
     },
-    "promptSuggestionHint": "Tab で採用",
+    "promptSuggestionHint": "Tab で確定",
     "selectAvailableModel": "送信する前に利用可能なモデルを選択してください。",
     "reloadingHistory": "このチャットは Claudian の外で変更されたため再読み込み中です。完了したら再送信してください。",
     "changedOutsideWithBackgroundTask": "このチャットは、以前のセッションのバックグラウンドタスクが実行中のまま Claudian の外で続行されました。タスクを停止するか完了を待ってから、再送信してください。",
-    "selectAvailableTitleModel": "Claudianの設定で利用可能なタイトル生成モデルを選択してください。",
+    "selectAvailableTitleModel": "Claudian の設定で利用可能なタイトル生成モデルを選択してください。",
     "rewind": {
       "confirmMessage": "この時点に巻き戻しますか？このメッセージ以降のファイル変更は上書きまたは削除される可能性があります。この操作は元に戻せません。",
-      "confirmMessageConflicts": "この時点に巻き戻しますか？エージェント外で変更された {count} 個のファイルが上書きされます：\n{files}",
+      "confirmMessageConflicts": "この時点に巻き戻しますか？エージェント以外で変更された {count} 個のファイルが上書きされます：\n{files}",
       "confirmMessageConversationOnly": "会話をこの時点に巻き戻しますか？ファイル変更は保持されます。",
       "confirmButton": "巻き戻す",
       "inProgress": "現在の巻き戻しが完了するまでお待ちください。",
       "ariaLabel": "ここに巻き戻す",
       "menuConversationOnly": "会話のみ巻き戻す",
-      "menuCodeAndConversation": "コード + 会話を巻き戻す",
+      "menuCodeAndConversation": "コードと会話を巻き戻す",
       "notice": "巻き戻し完了：{count} 個のファイルを復元",
       "noticeConversationOnly": "会話を巻き戻しました。ファイル変更は保持されました",
       "noticeSaveFailed": "巻き戻し完了：{count} 個のファイルを復元しましたが、状態を保存できませんでした：{error}",
       "noticeConversationOnlySaveFailed": "会話を巻き戻しましたが、状態を保存できませんでした：{error}",
-      "failed": "巻き戻しに失敗：{error}",
+      "failed": "巻き戻しに失敗しました：{error}",
       "cannot": "巻き戻しできません：{error}",
       "unavailableStreaming": "ストリーミング中は巻き戻しできません",
       "unavailableNoUuid": "巻き戻しできません：メッセージ識別子がありません"
@@ -52,7 +52,7 @@
       "targetCurrentTab": "現在のタブ",
       "notice": "新しいタブに分岐しました",
       "noticeCurrentTab": "現在のタブで分岐しました",
-      "failed": "分岐に失敗：{error}",
+      "failed": "分岐に失敗しました：{error}",
       "unavailableStreaming": "ストリーミング中は分岐できません",
       "unavailableNoUuid": "分岐できません：メッセージ識別子がありません",
       "errorMessageNotFound": "メッセージが見つかりません",
@@ -73,7 +73,7 @@
     "sideChat": {
       "title": "サイドチャット",
       "collapse": "折りたたむ",
-      "fullHeight": "全高表示",
+      "fullHeight": "最大表示",
       "discard": "破棄",
       "statusPreparing": "準備中",
       "statusQueued": "{count} 件待機中",
@@ -86,12 +86,12 @@
       "unsupportedProvider": "このプロバイダーはサイドチャットに対応していません。",
       "unavailableBusy": "サイドチャットには完了した返信が必要です。現在のターンの終了をお待ちください。",
       "unavailableNoCheckpoint": "先にこの会話で返信を完了してからサイドチャットを開始してください。",
-      "unavailableNoSession": "この会話のプロバイダーセッションを解決できませんでした。",
+      "unavailableNoSession": "この会話のプロバイダーセッションを取得できませんでした。",
       "alreadyExists": "この会話にはすでにサイドチャットがあります。破棄してから新しく開始してください。",
-      "nestedUnavailable": "サイドチャットから別のサイドチャットは開始できません。先にメインへ折りたたんでください。",
+      "nestedUnavailable": "サイドチャットから別のサイドチャットは開始できません。先に折りたたんでメインチャットに戻ってください。",
       "mainOnlyCommand": "/{command} はメインチャットでのみ使用できます。",
       "startFailed": "サイドチャットを開始できませんでした：{error}",
-      "queued": "サイドチャットのキューに追加しました。",
+      "queued": "サイドチャットの待機列に追加しました。",
       "busySide": "サイドチャットが応答中です。完了までお待ちください。"
     },
     "zen": {
@@ -104,14 +104,14 @@
       "workedFor": "{duration} 作業しました",
       "workedForResult": "{duration} 作業しました · {result}",
       "actionRequired": "入力が必要です",
-      "error": "エラー: {message}",
+      "error": "エラー：{message}",
       "toolRunning": "{tool} · 実行中",
       "toolCompleted": "{tool} · 完了",
       "toolFailed": "{tool} · 失敗",
-      "toolBlocked": "{tool} · ブロック"
+      "toolBlocked": "{tool} · ブロック済み"
     },
     "composer": {
-      "placeholder": "変更を依頼、@でファイルを指定、/コマンドを実行",
+      "placeholder": "変更を依頼、@ でファイルを指定、/ でコマンドを実行",
       "message": "メッセージ",
       "dropImage": "ここに画像をドロップ",
       "moreContext": "他 {count} 件のコンテキストを表示",
@@ -135,8 +135,8 @@
       "saturdayNamed": "{name}さん、よい土曜日を",
       "backAtIt": "また始めましょう！",
       "backAtItNamed": "{name}さん、また始めましょう",
-      "fridayFeeling": "金曜日はいい気分",
-      "fridayFeelingNamed": "{name}さん、金曜日はいい気分ですね",
+      "fridayFeeling": "金曜日は気分が上がりますね",
+      "fridayFeelingNamed": "{name}さん、金曜日は気分が上がりますね",
       "weekend": "週末がやってきました",
       "weekendNamed": "{name}さん、週末がやってきました",
       "sundaySession": "日曜日もひと作業？",
@@ -145,8 +145,8 @@
       "coffee": "コーヒーと {brand} の時間？",
       "afternoon": "こんにちは",
       "afternoonNamed": "{name}さん、こんにちは",
-      "hey": "やあ",
-      "heyNamed": "{name}さん、やあ",
+      "hey": "どうも！",
+      "heyNamed": "{name}さん、どうも！",
       "howGoing": "調子はどうですか？",
       "howGoingNamed": "{name}さん、調子はどうですか？",
       "evening": "こんばんは",
@@ -160,9 +160,9 @@
       "hiHowNamed": "{name}さん、お元気ですか？",
       "welcomeBack": "おかえりなさい！",
       "welcomeBackNamed": "{name}さん、おかえりなさい！",
-      "whatsNew": "何か新しいことは？",
-      "whatsNewNamed": "{name}さん、何か新しいことは？",
-      "returnsNamed": "{name}さんが戻ってきました！",
+      "whatsNew": "最近はいかがですか？",
+      "whatsNewNamed": "{name}さん、最近はいかがですか？",
+      "returnsNamed": "{name}さん、また会えましたね！",
       "right": "まったくその通りです！"
     },
     "worked": "作業完了",
@@ -171,7 +171,7 @@
     "copyMessage": "メッセージをコピー",
     "showEarlierMessages": "以前のメッセージを表示",
     "renderFailed": "メッセージの表示に失敗しました。",
-    "interruptedHint": "· Claudian は代わりに何をすべきですか？",
+    "interruptedHint": "· Claudian に代わりに何をしてほしいですか？",
     "sessions": {
       "empty": "会話がありません",
       "noMatch": "一致するセッションがありません",
@@ -211,7 +211,7 @@
       "submitAnswers": "回答を送信",
       "notAnswered": "未回答",
       "customAnswer": "回答を入力…",
-      "secret": "秘密情報を入力…",
+      "secret": "シークレットを入力…",
       "editAnswer": "「{question}」への回答を編集",
       "waiting": "回答を待機中…",
       "noOptions": "選択肢の記録がありません",
@@ -220,7 +220,7 @@
       "expired": "質問の有効期限が切れました。",
       "notSent": "回答が送信されませんでした。再試行してください。",
       "unsupportedReply": "この質問はその回答を受け付けられません。",
-      "uncertainDelivery": "回答の送信を確認できませんでした。重複送信を避けるため、再キューイングしませんでした。",
+      "uncertainDelivery": "回答の送信を確認できませんでした。重複送信を防ぐため、待機列には戻していません。",
       "differentConversation": "この質問は別の会話に属しています。",
       "sideUnavailable": "このサイドチャットは利用できなくなりました。"
     },
@@ -255,13 +255,13 @@
       "patch": "パッチ",
       "files": "{count} 個のファイル",
       "file": "ファイル",
-      "enteringPlan": "計画モードに移行中",
-      "planComplete": "計画完了",
+      "enteringPlan": "プランモードに移行中",
+      "planComplete": "プラン完了",
       "messageAgent": "エージェントにメッセージを送信",
       "listDestinations": "送信先を一覧表示",
       "messageSession": "セッションにメッセージを送信",
       "stopSession": "セッションを停止",
-      "readSession": "セッションを読む",
+      "readSession": "セッションを読み取る",
       "continueAgent": "エージェントを継続",
       "listAgents": "エージェント一覧",
       "interruptAgent": "エージェントを中断",
@@ -296,8 +296,8 @@
     },
     "citations": {
       "memoryUsed": "使用したメモリ",
-      "source": "{count} 件のソース",
-      "sources": "{count} 件のソース"
+      "source": "{count} 件の出典",
+      "sources": "{count} 件の出典"
     },
     "web": {
       "findInPage": "ページ内を検索",
@@ -307,13 +307,13 @@
       "pattern": "パターン：{pattern}",
       "query": "検索語：{query}",
       "altQuery": "別の検索語：{query}",
-      "search": "ウェブを検索",
+      "search": "Web を検索",
       "moreQueries": "…他 {count} 件の検索語",
       "clickInPage": "{url} のリンク {id} をクリック",
       "open": "{url} を開く",
       "find": "「{pattern}」を検索",
       "inPage": "{url} で{action}",
-      "operations": "{count} 件のウェブ操作",
+      "operations": "{count} 件の Web 操作",
       "searchTerm": "検索"
     },
     "permissionMode": {
@@ -339,14 +339,14 @@
         "normal": "承認を求める",
         "yolo": "フルアクセス",
         "autoReviewDesc": "追加アクセスを自動審査。",
-        "readOnlyDesc": "編集やインターネット利用前に確認。",
+        "readOnlyDesc": "編集やインターネットアクセス前に確認。",
         "normalDesc": "追加アクセス前に確認。",
         "yoloDesc": "ファイルとインターネットへの無制限アクセス。"
       }
     },
     "thinking": {
-      "active": "思考中 {seconds}秒…",
-      "completed": "{seconds}秒間思考しました",
+      "active": "思考中 {seconds} 秒…",
+      "completed": "{seconds} 秒間思考しました",
       "label": "思考"
     },
     "busyIndicator": {
@@ -407,7 +407,7 @@
         "meditatingOnThis": "静かに思いを巡らせています…",
         "askingTheStars": "星に尋ねています…",
         "readingTeaLeaves": "茶葉で占っています…",
-        "shakingTheMagic8Ball": "マジック8ボールを振っています…",
+        "shakingTheMagic8Ball": "マジック 8 ボールを振っています…",
         "consultingAncientScrolls": "古い巻物をひもといています…",
         "decodingTheMatrix": "マトリックスを解読しています…",
         "communingWithTheEther": "エーテルと交信しています…",
@@ -423,7 +423,7 @@
         "diggingDeeper": "さらに掘り下げています…",
         "bearWithMe": "もう少しお待ちください…",
         "hangTight": "しばらくお待ちください…",
-        "justASec": "ほんの一瞬です…",
+        "justASec": "ちょっと待ってください…",
         "workingMyMagic": "魔法をかけています…",
         "almostThere": "もうすぐです…",
         "giveMeAMoment": "少しだけ時間をください…"
@@ -432,7 +432,7 @@
     },
     "contextUsage": {
       "label": "コンテキスト使用量",
-      "details": "コンテキスト使用量: {details}",
+      "details": "コンテキスト使用量：{details}",
       "nearLimit": "（上限に近づいています。続行するには {command} を実行してください）"
     },
     "suggestions": {
@@ -458,11 +458,11 @@
       "alwaysAllow": "常に許可",
       "mcpRequest": "MCP リクエスト",
       "mcpServer": "MCP サーバー：{server}",
-      "decline": "辞退",
+      "decline": "許可しない",
       "allow": "許可",
-      "cancelRequest": "このリクエストをキャンセル。",
-      "declineRequest": "このリクエストを辞退。",
-      "acceptRequest": "このリクエストを許可。",
+      "cancelRequest": "このリクエストをキャンセルします。",
+      "declineRequest": "このリクエストを却下します。",
+      "acceptRequest": "このリクエストを許可します。",
       "fileChange": "ファイル変更",
       "fileChangeReason": "ファイル変更：{reason}",
       "permissionRequest": "権限リクエスト",
@@ -471,14 +471,14 @@
       "execute": "実行：{command}",
       "executeCommand": "コマンドを実行",
       "allowSimilar": "同様のコマンドを許可",
-      "execPolicy": "実行ポリシーの変更を承認して保存。",
+      "execPolicy": "実行ポリシーの変更を承認して保存します。",
       "host": "ホスト",
       "allowHost": "このセッションで {host} を許可",
       "denyHost": "このセッションで {host} を拒否",
-      "allowRule": "{host} に許可ルールを適用。",
-      "denyRule": "{host} に拒否ルールを適用。",
+      "allowRule": "{host} に許可ルールを適用します。",
+      "denyRule": "{host} に拒否ルールを適用します。",
       "details": "{tool} の承認詳細",
-      "unexpectedSelection": "予期しない承認選択：「{value}」",
+      "unexpectedSelection": "予期しない選択です：「{value}」",
       "runCommand": "コマンドを実行：{pattern}",
       "readFile": "ファイルを読み込み：{pattern}",
       "writeFile": "ファイルに書き込み：{pattern}",
@@ -519,7 +519,7 @@
     },
     "sessionMessage": {
       "undelivered": "{senders} からのメッセージを配信できませんでした。",
-      "fromLabel": "送信元セッション:"
+      "fromLabel": "送信元セッション："
     },
     "lifecycleFeedback": {
       "runningArchive": "実行中のセッションはアーカイブできません",
@@ -545,7 +545,7 @@
       "openSession": "セッション {sessionId} を開く",
       "openProviderSession": "{provider} のセッション {sessionId} を開く",
       "sessionMissing": "そのセッションはもう存在しません。",
-      "openFailed": "セッションを開けませんでした: {message}",
+      "openFailed": "セッションを開けませんでした：{message}",
       "openUnavailable": "ここからはセッションを開けません。",
       "providersIncluded": "利用可能なプロバイダーとモデルを含めました",
       "newSession": "新しいセッション",
@@ -554,7 +554,7 @@
       "turnRange": "{from}–{to} / {total}",
       "noTurns": "まだありません",
       "mode": "配信",
-      "modeSteer": "実行中のターンに追加",
+      "modeSteer": "実行中のターンに指示を追加",
       "modeInterrupt": "現在の作業を中断"
     },
     "modelPicker": {
@@ -577,7 +577,7 @@
       "speed": "速度",
       "speedActive": "速度 {label}",
       "standard": "標準",
-      "changeTierFailed": "サービス階層を変更できませんでした"
+      "changeTierFailed": "サービスティアを変更できませんでした"
     },
     "navigation": {
       "scrollToTop": "最上部へスクロール",
@@ -600,8 +600,8 @@
       "active": "アクティブ",
       "needsInput": "入力が必要",
       "working": "作業中",
-      "errorReview": "エラーで停止しました、確認できます",
-      "finishedReview": "完了しました、確認できます",
+      "errorReview": "エラーで停止（要確認）",
+      "finishedReview": "完了（確認可能）",
       "idle": "待機中",
       "badge": "{title}、{status}",
       "namedBadge": "{label}（{title}）、{status}",
@@ -626,7 +626,7 @@
       "newSessionIn": "{name} で新しいセッション",
       "actionsFor": "{name} の操作",
       "newProjectAction": "新規プロジェクト",
-      "chipLabel": "プロジェクト: {name}",
+      "chipLabel": "プロジェクト：{name}",
       "noProject": "プロジェクトなし",
       "menu": {
         "edit": "プロジェクトを編集",
@@ -643,7 +643,7 @@
         "removeSelectionFromPlural": "{count} 件のセッションをプロジェクトから外す",
         "newProject": "新規プロジェクト…"
       },
-      "deleteConfirm": "プロジェクト「{name}」を削除し、メモリファイルをゴミ箱に移動しますか？セッションはプロジェクトなしで残ります。",
+      "deleteConfirm": "プロジェクト「{name}」を削除し、メモリファイルをゴミ箱に移動しますか？含まれるセッションは削除されず、プロジェクト未所属として残ります。",
       "errors": {
         "create": "プロジェクトの作成に失敗しました",
         "update": "プロジェクトの更新に失敗しました",
@@ -660,25 +660,25 @@
         "titleNew": "新規プロジェクト",
         "titleEdit": "プロジェクトを編集",
         "name": "名前",
-        "nameDesc": "セッションマネージャーとメンバーのセッションに表示されます。",
+        "nameDesc": "セッションマネージャーおよびこのプロジェクトのセッションに表示されます。",
         "namePlaceholder": "プロジェクト名",
-        "iconButton": "プロジェクトアイコン: {icon}",
-        "iconDefault": "既定のフォルダー",
+        "iconButton": "プロジェクトアイコン：{icon}",
+        "iconDefault": "デフォルトのフォルダー",
         "iconPicker": "プロジェクトアイコンを選択",
         "iconSearch": "アイコンを検索",
         "iconNoMatches": "一致するアイコンはありません。",
         "instructions": "指示",
-        "instructionsDesc": "次のターンから、各メンバーセッションのシステムプロンプトに追加されます。",
+        "instructionsDesc": "次のターンから、このプロジェクトに属する各セッションのシステムプロンプトに追加されます。",
         "memoryPath": "メモリファイル",
-        "memoryPathDesc": "プロジェクトメモリファイルの保管庫内のパス。拡張子 .md がなければ追加されます。変更するとファイルを移動します。",
+        "memoryPathDesc": "プロジェクトメモリファイルの保管庫内のパスです。拡張子 .md がない場合は自動で追加されます。パスを変更するとファイルも移動します。",
         "memoryPathPlaceholder": "フォルダー/MEMORY.md",
-        "memoryPathInvalid": "保管庫内のファイルパスを入力してください（例: Projects/MEMORY.md）。",
-        "memoryPathTaken": "{path} は既にファイルまたは別のプロジェクトで使われています。",
+        "memoryPathInvalid": "保管庫内のファイルパスを入力してください（例：Projects/MEMORY.md）。",
+        "memoryPathTaken": "{path} はすでに他のファイルまたは別のプロジェクトで使用されています。",
         "openMemory": "開く",
         "nameRequired": "プロジェクト名を入力してください。"
       },
       "memory": {
-        "title": "プロジェクトメモリ: {name}",
+        "title": "プロジェクトメモリ：{name}",
         "reload": "再読み込み",
         "overwrite": "上書き",
         "recreate": "テンプレートから再作成",
@@ -690,7 +690,7 @@
         "saveFailed": "プロジェクトメモリの保存に失敗しました",
         "saved": "プロジェクトメモリを保存しました",
         "loading": "読み込み中…",
-        "updated": "{time}に更新",
+        "updated": "{time} に更新",
         "changedOutside": "メモリファイルがこのウィンドウの外で更新されました（おそらくエージェントによるものです）。",
         "keepMine": "自分の編集を保持",
         "discardConfirm": "プロジェクトメモリへの未保存の変更を破棄しますか？",
@@ -734,7 +734,7 @@
     },
     "providerSettings": {
       "unavailable": "プロバイダー設定を利用できません。",
-      "loadFailed": "プロバイダー設定を読み込めませんでした: {message}"
+      "loadFailed": "プロバイダー設定を読み込めませんでした：{message}"
     },
     "display": "表示",
     "conversations": "会話",
@@ -744,23 +744,23 @@
     "responses": "回答",
     "experimental": "実験的機能",
     "userName": {
-      "name": "Claudian はどのように呼びますか？",
-      "desc": "パーソナライズされた挨拶に使用する名前（空欄で一般の挨拶）"
+      "name": "Claudian からの呼び方",
+      "desc": "挨拶メッセージに表示する名前です（空欄の場合は通常の挨拶になります）。"
     },
     "excludedTags": {
       "name": "除外タグ",
-      "desc": "これらのタグを含むノートは自動的にコンテキストとして読み込まれません（1行に1つ、#なし）"
+      "desc": "これらのタグが付いたノートはコンテキストとして自動読み込みされません（1 行に 1 つ、# なし）。"
     },
     "mediaFolder": {
-      "name": "メディアフォルダ",
-      "desc": "添付ファイル/画像を格納するフォルダ。ノートが ![[image.jpg]] を使用する場合、Claude はここで探します。空欄でリポジトリのルートを使用。"
+      "name": "メディアフォルダー",
+      "desc": "添付ファイルや画像を格納するフォルダーです。ノートに ![[image.jpg]] がある場合、Claude はこのフォルダー内を検索します。空欄の場合は保管庫のルートを使用します。"
     },
     "systemPrompt": {
       "name": "カスタムシステムプロンプト",
-      "desc": "デフォルトのシステムプロンプトに追加される追加指示"
+      "desc": "デフォルトのシステムプロンプトの末尾に追加する指示です。"
     },
     "showTabTitlesByDefault": {
-      "name": "タブのタイトルを既定で表示",
+      "name": "タブのタイトルをデフォルトで表示",
       "desc": "新しいチャットタブに番号の代わりに会話のタイトルを表示します。開いているタブの表示は変わらず、各タブは引き続き切り替えられます。"
     },
     "chatFontScale": {
@@ -773,40 +773,40 @@
     },
     "titleLanguage": {
       "name": "タイトル生成言語",
-      "desc": "自動生成される会話タイトルに使用する言語。",
+      "desc": "自動生成される会話タイトルに使用する言語です。",
       "followInterface": "インターフェース言語と同じ"
     },
     "titleModel": {
       "name": "タイトル生成モデル",
-      "desc": "会話タイトルを自動生成するために使用されるモデル。",
+      "desc": "会話タイトルの自動生成に使用するモデルです。",
       "select": "モデルを選択",
-      "unavailableWarning": "タイトルの自動生成は一時停止中です。利用可能なタイトル用モデルを選択してください。"
+      "unavailableWarning": "タイトルの自動生成は一時停止中です。利用可能なタイトル生成モデルを選択してください。"
     },
     "navMappings": {
-      "name": "Vimスタイルナビゲーションマッピング",
-      "desc": "1行に1つのマッピング。形式：\"map <キー> <アクション>\"（アクション：scrollUp, scrollDown, focusInput）。"
+      "name": "Vim スタイルのナビゲーションマッピング",
+      "desc": "1 行に 1 つずつ記述します。形式：\"map <キー> <アクション>\"（アクション：scrollUp、scrollDown、focusInput）。"
     },
     "requireCommandOrControlEnterToSend": {
-      "name": "送信に Command/Ctrl+Enter を必須にする",
+      "name": "Command/Ctrl+Enter で送信する",
       "desc": "有効にすると、Enter は改行を挿入します。macOS では Command+Enter、Windows と Linux では Ctrl+Enter で送信します。"
     },
     "safety": "セキュリティ",
     "loadUserSettings": {
       "name": "ユーザーの Claude Code 設定を読み込む",
-      "desc": "~/.claude からユーザーレベルの Claude Code 設定（settings.json、スキル、コマンド、エージェント、プラグイン）を読み込みます。無効にすると、Vault レベルの設定のみ利用できます。有効にすると、ユーザーの許可ルールがセキュリティモードをバイパスする可能性があります。"
+      "desc": "~/.claude からユーザーレベルの Claude Code 設定（settings.json、スキル、コマンド、エージェント、プラグイン）を読み込みます。無効にすると、保管庫レベルの設定のみ利用できます。有効にすると、ユーザーの許可ルールがセーフモードをバイパスする可能性があります。"
     },
     "codexSandbox": {
       "name": "サンドボックス",
-      "desc": "承認を任せる と 承認を求める モードでのファイルアクセスです。読み取り専用では編集のたびに確認します。フルアクセス では無視されます。"
+      "desc": "「承認を任せる」および「承認を求める」モードでのファイルアクセス設定です。「読み取り専用」では編集のたびに確認します。「フルアクセス」ではこの設定は無視されます。"
     },
     "environment": "環境",
     "sharedEnvironment": {
       "name": "共有環境",
-      "desc": "すべてのプロバイダーで共有される、プロバイダー非依存のランタイム変数。PATH、プロキシ、証明書、一時ディレクトリの変数に使用します。"
+      "desc": "すべてのプロバイダーで共有される、プロバイダー非依存のランタイム変数です。PATH、プロキシ、証明書、一時ディレクトリなどの変数に使用します。"
     },
     "customVariables": {
       "name": "カスタム変数",
-      "desc": "Claude Code が所有するランタイム変数のみ。ANTHROPIC_* と Claude Code 固有の切り替えに使用します。"
+      "desc": "Claude Code 専用のランタイム変数です。ANTHROPIC_* や Claude Code 固有の設定に使用します。"
     },
     "envSnippets": {
       "name": "スニペット",
@@ -822,13 +822,13 @@
         "description": "説明",
         "descPlaceholder": "任意の説明",
         "envVars": "環境変数",
-        "envVarsPlaceholder": "KEY=VALUE形式、1行に1つ（exportプレフィックス対応）",
+        "envVarsPlaceholder": "KEY=VALUE 形式、1 行に 1 つ（export プレフィックス対応）",
         "save": "保存",
         "update": "更新",
         "cancel": "キャンセル"
       },
       "insertFailed": "スニペットの挿入に失敗しました",
-      "deleteConfirm": "環境変数スニペット「{name}」を削除しますか?",
+      "deleteConfirm": "環境変数スニペット「{name}」を削除しますか？",
       "deleteFailed": "スニペットの削除に失敗しました"
     },
     "customModelAliases": {
@@ -836,8 +836,8 @@
       "ariaDescription": "モデルセレクターに表示されるカスタムラベル。空欄の場合はデフォルトを使用します。"
     },
     "enableChrome": {
-      "name": "Chrome拡張機能を有効化",
-      "desc": "claude-in-chrome 拡張機能を通じて Claude Code が Chrome と連携できるようにします。拡張機能のインストールが必要です。セッションの再起動が必要です。"
+      "name": "Chrome 拡張機能を有効化",
+      "desc": "claude-in-chrome 拡張機能を通じて Claude Code が Chrome と連携できるようにします。拡張機能のインストールとセッションの再起動が必要です。"
     },
     "enableDualPane": {
       "name": "デュアルペインモードを有効化",
@@ -864,7 +864,7 @@
     },
     "enableAutoScroll": {
       "name": "ストリーミング中の自動スクロール",
-      "desc": "Claudeが応答をストリーミングしている間、自動的に下にスクロールします。無効にすると上部に留まり、最初から読むことができます。"
+      "desc": "Claude が応答をストリーミングしている間、自動的に最下部へスクロールします。無効にすると上部に留まり、最初から読むことができます。"
     },
     "deferMathRenderingDuringStreaming": {
       "name": "ストリーミング中の数式レンダリングを遅延",
@@ -872,7 +872,7 @@
     },
     "pluginRenderedFenceLanguages": {
       "name": "プラグインで描画するコードブロック言語",
-      "desc": "1 行に 1 つずつ指定したコードブロック言語を、ノートで描画するプラグインに渡します（例: vega-lite）。応答の完了後に描画されます。その他のコードブロックは常にコードとして表示されます。"
+      "desc": "1 行に 1 つずつ指定したコードブロック言語を、ノートで描画するプラグインに渡します（例：vega-lite）。応答の完了後に描画されます。その他のコードブロックは常にコードとして表示されます。"
     },
     "expandFileEditsByDefault": {
       "name": "ファイル編集をデフォルトで展開",
@@ -880,10 +880,10 @@
     },
     "chatViewPlacement": {
       "name": "Claudian を開く場所",
-      "desc": "チャットパネルを作成するときに開く場所を選択します",
+      "desc": "チャットパネルを新しく開く場所を選択します。",
       "rightSidebar": "右サイドバー",
       "leftSidebar": "左サイドバー",
-      "mainTab": "メインエディタタブ"
+      "mainTab": "メインエディタータブ"
     },
     "enableZenMode": {
       "name": "Zen モードを有効化",
@@ -891,21 +891,21 @@
     },
     "cliInstallation": {
       "disclosure": "{name} のインストール",
-      "description": "このコンピューター用の任意の CLI パス。空欄で自動検出します。",
+      "description": "このコンピューター用の CLI パス（任意）です。空欄の場合は自動検出します。",
       "checking": "CLI を確認中…",
       "versionUnavailable": "バージョンを取得できません",
       "notFound": "見つかりません",
       "custom": "カスタムパス",
       "auto": "自動検出",
-      "checkFailed": "CLI を確認できません",
-      "saveFailed": "パスを保存できません。再試行してください。"
+      "checkFailed": "CLI を確認できませんでした",
+      "saveFailed": "パスを保存できませんでした。再試行してください。"
     },
     "cliPath": {
       "name": "Claude Code CLI パス",
       "genericName": "CLI パス",
       "validation": {
         "notExist": "パスが存在しません",
-        "isDirectory": "パスはディレクトリでファイルではありません",
+        "isDirectory": "指定されたパスはファイルではなくディレクトリです",
         "mustBeAbsolute": "パスは絶対パスである必要があります",
         "notFile": "パスはファイルを指している必要があります",
         "notAccessible": "パスにアクセスできません",
@@ -914,36 +914,36 @@
     },
     "language": {
       "name": "言語",
-      "desc": "プラグインインターフェースの表示言語を変更"
+      "desc": "プラグインの表示言語を変更します。"
     },
     "providerEnablement": {
       "name": "{provider} を有効化",
       "lastProviderWarning": "Claudian を使用するには、少なくとも 1 つのプロバイダーを有効にする必要があります。",
-      "noModelsWarning": "有効な {provider} モデルがありません。下の「モデル」で少なくとも1つのモデルを有効にしてください。"
+      "noModelsWarning": "有効な {provider} モデルがありません。下の「モデル」で少なくとも 1 つのモデルを有効にしてください。"
     },
     "modelPicker": {
       "name": "表示するモデル",
-      "desc": "チャットのセレクターで利用できるモデルを選択します。ドラッグして並べ替えられます。プロバイダーは現在利用可能な最初のモデルをデフォルトとして使用します。このプロバイダーを使うには少なくとも1つのモデルを選択してください。",
+      "desc": "チャットのセレクターで利用できるモデルを選択します。ドラッグして並べ替えられます。プロバイダーは現在利用可能な最初のモデルをデフォルトとして使用します。このプロバイダーを使うには少なくとも 1 つのモデルを選択してください。",
       "browse": "モデルを参照",
       "filterLabel": "{provider} モデルを絞り込む",
-      "searchPlaceholder": "モデル、プロバイダー、ID で絞り込み...",
+      "searchPlaceholder": "モデル、プロバイダー、ID で絞り込み…",
       "providerFilterLabel": "モデルプロバイダーを絞り込む",
-      "allProviders": "すべてのプロバイダー ({count})",
+      "allProviders": "すべてのプロバイダー（{count}）",
       "discover": "検出",
-      "visible": "表示: ",
+      "visible": "表示：",
       "ofDiscovered": " / 検出 {count}",
       "oneProvider": " | 1 プロバイダー",
       "manyProviders": " | {count} プロバイダー",
-      "loadingModels": "モデルを読み込んでいます...",
-      "loading": "読み込み中...",
+      "loadingModels": "モデルを読み込んでいます…",
+      "loading": "読み込み中…",
       "available": "{count} 件利用可能",
       "noneDiscovered": "まだモデルが検出されていません",
-      "selected": "選択済み ({count})",
+      "selected": "選択済み（{count}）",
       "clearAllLabel": "選択したすべての {provider} モデルをクリア",
       "reorderLabel": "{model} を並べ替え。ドラッグするか上下の矢印キーを使用します",
       "default": "デフォルト",
       "unavailable": "利用不可",
-      "aliasLabel": "エイリアス(任意)",
+      "aliasLabel": "エイリアス（任意）",
       "removeLabel": "{model} を削除",
       "noMatch": "フィルターに一致するモデルはありません。",
       "emptyCatalog": "{provider} からモデルが報告されていません。設定を確認して「検出」をクリックしてください。",
@@ -1000,7 +1000,7 @@
       },
       "environment": {
         "name": "Codex 環境",
-        "desc": "Codex が所有するランタイム変数のみ。OPENAI_* と CODEX_* 設定に使用します。Codex の自動検出に補助が必要な場合は、このプロバイダー環境ではなく共有 PATH にインストールディレクトリを追加してください。"
+        "desc": "Codex 専用のランタイム変数です。OPENAI_* や CODEX_* の設定に使用します。Codex の自動検出がうまくいかない場合は、ここではなく共有環境の PATH にインストールディレクトリを追加してください。"
       }
     },
     "agentSkills": {
@@ -1010,10 +1010,10 @@
       "diagnosticsTitle": "確認が必要なスキル",
       "loadFailed": "共有スキルを読み込めませんでした。",
       "savedRefreshFailed": "保存しましたが、プロバイダーの更新に失敗しました。",
-      "validationFailed": "無効なスキル: {message}",
+      "validationFailed": "無効なスキル：{message}",
       "collisionFailed": "「{name}」という名前のスキルはすでに存在します。",
-      "saveFailed": "共有スキルの保存に失敗しました: {message}",
-      "deleteFailed": "共有スキルをゴミ箱に移動できませんでした: {message}",
+      "saveFailed": "共有スキルの保存に失敗しました：{message}",
+      "deleteFailed": "共有スキルをゴミ箱に移動できませんでした：{message}",
       "staleConflict": "このスキルは別の場所で変更されました。保存する前に更新してください。",
       "created": "共有スキル「{name}」を作成しました。",
       "updated": "共有スキル「{name}」を更新しました。",
@@ -1025,14 +1025,14 @@
         "titleAdd": "共有スキルを追加",
         "titleFix": "スキルを修正",
         "name": "スキル名",
-        "nameDesc": "小文字と数字を単一のハイフンで区切ったもの",
+        "nameDesc": "英小文字と数字を単一のハイフンで区切って指定します",
         "namePlaceholder": "code-reviewer",
         "description": "説明",
-        "descriptionDesc": "プロバイダーがスキルを選択するために使う、移植可能な必須の説明",
+        "descriptionDesc": "プロバイダーがスキルを選択するために使用する共通の説明（必須）",
         "descriptionPlaceholder": "コードの正確性と保守性をレビューします",
         "instructions": "指示",
-        "instructionsDesc": "SKILL.md の必須の指示",
-        "instructionsPlaceholder": "提供されたコードをレビューし、対応可能な指摘を報告してください..."
+        "instructionsDesc": "SKILL.md に記述する指示（必須）",
+        "instructionsPlaceholder": "提供されたコードをレビューし、具体的な改善点を報告してください…"
       },
       "delete": {
         "title": "共有スキルを削除",
@@ -1041,10 +1041,10 @@
       }
     },
     "opencode": {
-      "emptyModels": "OpenCode サーバーから、この保管庫で有効なモデルが返されませんでした。保管庫の .opencode/opencode.json と OpenCode ログを確認してください（opencode debug paths で場所を確認できます）。OpenCode v2 では、設定された V1 プラグインに互換性がない場合があります。保管庫で opencode models --standalone を実行して比較し、再度検出してください。",
+      "emptyModels": "OpenCode サーバーから、この保管庫で有効なモデルが返されませんでした。保管庫の .opencode/opencode.json と OpenCode ログを確認してください（opencode debug paths で場所を確認できます）。OpenCode v2 では、設定された V1 プラグインに互換性がない場合があります。保管庫で opencode models --standalone を実行して比較し、「検出」をクリックしてください。",
       "environment": {
         "name": "OpenCode 環境変数",
-        "desc": "OpenCode に渡す追加の環境変数。"
+        "desc": "OpenCode に渡す追加の環境変数です。"
       },
       "migrationNotice": {
         "text": "OpenCode v1 はサポートされなくなりました。Claudian で使用するには OpenCode v2 に更新してください。",
@@ -1054,22 +1054,22 @@
     "pi": {
       "environment": {
         "name": "Pi 環境変数",
-        "desc": "Pi にのみ渡す環境変数。"
+        "desc": "Pi にのみ渡す環境変数です。"
       },
       "models": {
-        "desc": "Claudian は Pi の enabledModels とは別に独自のモデル一覧を保持します。Discover は Pi が現在の環境で認証できるすべてのモデルを、Pi が呼び出すプロバイダールートごとに表示します。ルートによって認証情報と課金が決まります。"
+        "desc": "Claudian は Pi の enabledModels とは別に独自のモデル一覧を保持します。「検出」では、Pi が現在の環境で認証できるすべてのモデルを、Pi が呼び出すプロバイダールートごとに一覧表示します。ルートによって認証情報と課金が決まります。"
       }
     },
     "grok": {
       "environment": {
         "name": "Grok Build 環境変数",
-        "desc": "Grok Build にのみ渡す環境変数。カスタムモデルのシークレットはこのプロバイダーのスコープ内に留まり、ネイティブ設定からは env_key で参照されます。"
+        "desc": "Grok Build にのみ渡す環境変数です。カスタムモデルのシークレットはこのプロバイダーのスコープ内に留まり、ネイティブ設定からは env_key で参照されます。"
       }
     },
     "antigravity": {
       "environment": {
-        "name": "Antigravity の環境変数",
-        "desc": "Antigravity（agy）にのみ渡す環境変数です（例: GEMINI_API_KEY）。"
+        "name": "Antigravity 環境変数",
+        "desc": "Antigravity（agy）にのみ渡す環境変数です（例：GEMINI_API_KEY）。"
       },
       "listModelsFailed": "Antigravity のモデル一覧を取得できませんでした。詳細を確認するにはターミナルで agy models を、ログインするには agy acp --login を実行してください。",
       "updateReminder": "Claudian は agy の最新リリースのみをサポートしており、agy は頻繁に変更されます。常に最新の状態に保ってください："
@@ -1091,7 +1091,7 @@
       "presetPreview": "プリセットのプレビュー",
       "environment": {
         "name": "DeepSeek Harness 環境変数",
-        "desc": "DeepSeek Harness にのみ渡される環境変数。選択したネイティブの Web または Desktop プロファイル、認証情報、モデル、MCP サーバーを使用します。"
+        "desc": "DeepSeek Harness にのみ渡す環境変数です。選択したネイティブの Web または Desktop プロファイル、認証情報、モデル、MCP サーバーを使用します。"
       }
     },
     "skills": {
@@ -1099,10 +1099,10 @@
         "claude": "Claude Code",
         "shared": "その他のプロバイダー"
       },
-      "claudeHelp": ".claude/skills/ の Claude Code スキルと .claude/commands/ のコマンド。",
-      "sharedHelp": "Codex、OpenCode、Pi、Grok Build、DeepSeek Harness 用の .agents/skills/ にある共有スキル。",
+      "claudeHelp": ".claude/skills/ の Claude Code スキルと .claude/commands/ のコマンドを管理します。",
+      "sharedHelp": "Codex、OpenCode、Pi、Grok Build、DeepSeek Harness 向けの共有スキル（.agents/skills/）を管理します。",
       "status": {
-        "error": "スキルフォルダーを読み取れませんでした: {message}"
+        "error": "スキルフォルダーを読み取れませんでした：{message}"
       },
       "synced": "同期済み",
       "actions": {
@@ -1117,7 +1117,7 @@
         "convert": "スキルに変換",
         "editTitle": "コマンドを編集",
         "convertTitle": "コマンドをスキルに変換",
-        "nameDesc": ".claude/commands 内のパス(.md なし)。入れ子のコマンドは / を使います",
+        "nameDesc": ".claude/commands 内のパス（.md なし）。入れ子のコマンドは / を使います",
         "descriptionDesc": "コマンドメニューに表示される任意の説明",
         "updated": "コマンド「{name}」を更新しました。",
         "converted": "コマンドをスキル「{name}」に変換しました。",
@@ -1126,24 +1126,24 @@
         "deleteDescription": "コマンドファイルはゴミ箱に移動されます。",
         "collisionFailed": "「{name}」という名前のコマンドはすでに存在します。"
       },
-      "droppedFrontmatterWarning": "保存すると名前と説明だけが残ります。次のキーは削除され、プロバイダーの動作が変わる可能性があります: {keys}",
+      "droppedFrontmatterWarning": "保存すると名前と説明のみが残ります。次のキーは削除され、プロバイダーの動作が変わる可能性があります：{keys}",
       "hidden": {
         "name": "非表示のコマンドとスキル",
-        "desc": "すべてのプロバイダーのコマンドメニューからコマンドとスキルを非表示にします。先頭のスラッシュを付けずに正確な名前を 1 行に 1 つずつ入力してください(Pi のスキルは skill:名前)。",
+        "desc": "すべてのプロバイダーのコマンドメニューからコマンドとスキルを非表示にします。先頭のスラッシュを付けずに正確な名前を 1 行に 1 つずつ入力してください（Pi のスキルは skill:name 形式）。",
         "placeholder": "commit\ncompact\nskill:review"
       },
       "sync": {
         "title": "スキルを同期",
         "repairTitle": "スキルのリンクを修復",
-        "loading": "スキルフォルダーを確認しています...",
+        "loading": "スキルフォルダーを確認しています…",
         "intro": "同期すると、Claude Code のスキルとコマンドを .agents/skills にまとめ、.claude/skills をそこへのリンクにします。",
         "pros": {
-          "oneList": "すべてのプロバイダーで 1 つのリスト。",
+          "oneList": "すべてのプロバイダーで 1 つの一覧を共有できます。",
           "newSkills": "新しいスキルはどこでも使えます。"
         },
         "cons": {
-          "dropped": "名前と説明だけが残ります。プロバイダー固有の設定は削除され、動作が変わる可能性があります。",
-          "claudeSyntax": "Claude Code 専用の構文は他のプロバイダーでは動作しません: {names}"
+          "dropped": "名前と説明のみが残ります。プロバイダー固有の設定は削除され、動作が変わる可能性があります。",
+          "claudeSyntax": "Claude Code 専用の構文は他のプロバイダーでは動作しません：{names}"
         },
         "attentionTitle": "確認が必要",
         "nothingNeedsAttention": "確認が必要な項目はありません。",
@@ -1151,7 +1151,7 @@
         "descriptionField": "説明",
         "ready": "準備完了",
         "problems": {
-          "name": "無効な名前です。小文字、数字、ハイフンを使ってください。",
+          "name": "無効な名前です。英小文字、数字、ハイフンを使用してください。",
           "description": "説明がありません。",
           "instructions": "指示がありません。ファイルに追加してから再度同期してください。",
           "unreadable": "フロントマターを読み取れません。ファイルを修正してから再度同期してください。",
@@ -1161,32 +1161,32 @@
         "options": {
           "fix": "修正",
           "replace": "共有スキルを置き換える",
-          "discard": "破棄(ゴミ箱へ移動)",
+          "discard": "破棄（ゴミ箱へ移動）",
           "keep": "コマンドのまま残す"
         },
         "continue": "続行",
-        "confirmTitle": ".claude/skills をリンクに置き換えますか?",
+        "confirmTitle": ".claude/skills をリンクに置き換えますか？",
         "confirmBody": ".claude/skills は .agents/skills へのリンクに置き換えられます。この操作は元に戻せません。",
         "repairBody": ".claude/skills は .agents/skills へのリンクに置き換えられます。現在のリンク先のフォルダーは変更されません。",
         "linkBody": ".claude/skills を .agents/skills へのリンクとして作成し、Claude Code が共有スキルを使えるようにします。ファイルは移動しません。",
         "linkWithItemsBody": "コマンドがスキルになり、その後 .claude/skills が .agents/skills へのリンクとして作成されます。この操作は元に戻せません。",
-        "devicesWarning": "この保管庫を複数のデバイスで同期していますか? リンクは同期されない可能性があるため、各デバイスで同期してください。",
+        "devicesWarning": "この保管庫を複数のデバイスで同期していますか？リンクは同期されない可能性があるため、各デバイスで同期を実行してください。",
         "confirm": "同期してリンク",
         "partial": "リンクの作成前に同期が停止しました。以下の項目を修正して、もう一度同期してください。",
-        "failed": "同期に失敗しました: {message}",
+        "failed": "同期に失敗しました：{message}",
         "summary": "移動 {moved}、変換 {converted}、ゴミ箱 {trashed}、リンク削除 {unlinked}。"
       }
     },
     "executionTarget": {
       "installationMethod": {
         "name": "インストール方式",
-        "desc": "Windows で Claudian が {provider} を起動する方法。ネイティブ Windows は Windows 実行ファイルパスを使い、WSL は選択したディストリビューション内で Linux CLI を起動します。",
+        "desc": "Windows で Claudian が {provider} を起動する方法です。ネイティブ Windows は Windows の実行ファイルパスを使用し、WSL は選択したディストリビューション内で Linux CLI を起動します。",
         "nativeWindows": "ネイティブ Windows",
         "wsl": "WSL"
       },
       "wslDistroOverride": {
         "name": "WSL ディストリビューション上書き",
-        "desc": "任意の詳細上書き。空欄の場合、可能なら WSL ワークスペースパスから推測し、それ以外は既定の WSL ディストリビューションを使用します。"
+        "desc": "任意の詳細設定です。空欄の場合は、可能であれば WSL ワークスペースパスからディストリビューションを推測し、それ以外はデフォルトの WSL ディストリビューションを使用します。"
       },
       "wslWindowsPath": "WSL モードでは Windows 実行ファイルパスではなく、Linux コマンドまたは Linux 絶対パスが必要です。"
     }

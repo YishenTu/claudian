@@ -5,7 +5,7 @@ import { within } from '@testing-library/dom';
 
 import type { UsageInfo } from '@/core/types';
 import { ContextUsageMeter } from '@/features/chat/composer/toolbar/ContextUsageMeter';
-import { setLocale } from '@/i18n/i18n';
+import { setLocale, t } from '@/i18n/i18n';
 
 // The visibility utility from styles, so role queries skip a hidden meter.
 const hiddenStyle = document.head.appendChild(document.createElement('style'));
@@ -60,18 +60,25 @@ it.each([null, { contextTokens: 0, contextWindow: 200000, percentage: 0 } as Usa
 );
 
 it('localizes the context meter name and hint while preserving reported values and visibility', async () => {
+  setLocale('en');
+  const englishLabel = t('chat.contextUsage.label');
+  const englishNearLimit = t('chat.contextUsage.nearLimit', { command: '`/compact`' });
   setLocale('zh-CN');
+  const label = t('chat.contextUsage.label');
+  const nearLimit = t('chat.contextUsage.nearLimit', { command: '`/compact`' });
+  expect(label).not.toBe(englishLabel);
+  expect(nearLimit).not.toBe(englishNearLimit);
+  const detailsName = (details: string) => t('chat.contextUsage.details', { details });
   const host = document.body.createDiv();
   const meter = new ContextUsageMeter(host);
   const usage = { contextTokens: 170000, contextWindow: 200000, percentage: 85 } as UsageInfo;
   expect(within(host).queryByRole('progressbar')).toBeNull();
   meter.setVisible(true);
-  const gauge = within(host).getByRole('progressbar', { name: '上下文用量' });
+  const gauge = within(host).getByRole('progressbar', { name: label });
 
+  const warningName = detailsName(`85% · 170k / 200k${nearLimit}`);
   meter.update(usage);
-  expect(within(host).getByRole('progressbar', {
-    name: '上下文用量：85% · 170k / 200k（接近上限，运行 `/compact` 以继续）',
-  })).toBe(gauge);
+  expect(within(host).getByRole('progressbar', { name: warningName })).toBe(gauge);
   expect(gauge.hasAttribute('data-tooltip')).toBe(false);
   expect(gauge.hasAttribute('title')).toBe(false);
   expect(gauge.getAttribute('aria-valuenow')).toBe('85');
@@ -83,21 +90,21 @@ it('localizes the context meter name and hint while preserving reported values a
   expect((await axe(host)).violations).toEqual([]);
 
   meter.update({ ...usage, contextTokens: 50000, percentage: 25 });
-  expect(within(host).getByRole('progressbar', { name: '上下文用量：25% · 50k / 200k' })).toBe(gauge);
+  expect(within(host).getByRole('progressbar', { name: detailsName('25% · 50k / 200k') })).toBe(gauge);
   expect(gauge.getAttribute('aria-valuenow')).toBe('25');
   expect(gauge.getAttribute('aria-valuetext')).toBe('50k / 200k');
   expect(within(gauge).getByText('25%')).toBeDefined();
   expect(gauge.classList.contains('warning')).toBe(false);
 
   meter.update({ ...usage, contextTokens: 160000, percentage: 80 });
-  expect(within(host).getByRole('progressbar', { name: '上下文用量：80% · 160k / 200k' })).toBe(gauge);
+  expect(within(host).getByRole('progressbar', { name: detailsName('80% · 160k / 200k') })).toBe(gauge);
   expect(gauge.getAttribute('aria-valuenow')).toBe('80');
   expect(gauge.getAttribute('aria-valuetext')).toBe('160k / 200k');
   expect(within(gauge).getByText('80%')).toBeDefined();
   expect(gauge.classList.contains('warning')).toBe(false);
 
   meter.update({ ...usage, contextTokens: 500, percentage: 0 });
-  expect(within(host).getByRole('progressbar', { name: '上下文用量：0% · 500 / 200k' })).toBe(gauge);
+  expect(within(host).getByRole('progressbar', { name: detailsName('0% · 500 / 200k') })).toBe(gauge);
   expect(gauge.getAttribute('aria-valuenow')).toBe('0');
   expect(gauge.getAttribute('aria-valuetext')).toBe('500 / 200k');
   expect(within(gauge).getByText('0%')).toBeDefined();
@@ -105,9 +112,7 @@ it('localizes the context meter name and hint while preserving reported values a
   meter.update(null);
   expect(within(host).queryByRole('progressbar')).toBeNull();
   meter.update(usage);
-  expect(within(host).getByRole('progressbar', {
-    name: '上下文用量：85% · 170k / 200k（接近上限，运行 `/compact` 以继续）',
-  })).toBe(gauge);
+  expect(within(host).getByRole('progressbar', { name: warningName })).toBe(gauge);
   meter.update({ ...usage, contextTokens: 0, percentage: 0 });
   expect(within(host).queryByRole('progressbar')).toBeNull();
 });

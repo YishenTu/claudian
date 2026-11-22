@@ -23,7 +23,7 @@ import { MainChatComposerDropdown } from '@/features/chat/composer/MainChatCompo
 import { CanvasSelectionController } from '@/features/chat/input/CanvasSelectionController';
 import { LinkedContentChip } from '@/features/chat/linked-content/LinkedContentChip';
 import { sendTabInputMessageFromExplicitEnterShortcut } from '@/features/chat/tabs/TabInputEvents';
-import { setLocale } from '@/i18n/i18n';
+import { setLocale, t } from '@/i18n/i18n';
 import type { Locale } from '@/i18n/types';
 import { CodexCommandCatalog } from '@/providers/codex/commands/CodexCommandCatalog';
 import type { CodexAppServerRuntime } from '@/providers/codex/runtime/CodexAppServerRuntime';
@@ -152,36 +152,43 @@ it.each(['delete', 'destroy', 'parent unload'] as const)(
   },
 );
 
-it.each<[string, Locale, string]>([
-  ['click', 'en', 'Input suggestions'],
-  ['Enter', 'en', 'Input suggestions'],
-  ['Tab', 'en', 'Input suggestions'],
-  ['click', 'de', 'Eingabevorschl\u00e4ge'],
-])('inserts and renders a picker wikilink using %s in %s', async (method, locale, menuName) => {
+it.each<[string, Locale]>([
+  ['click', 'en'],
+  ['Enter', 'en'],
+  ['Tab', 'en'],
+  ['click', 'de'],
+])('inserts and renders a picker wikilink using %s in %s', async (method, locale) => {
+  setLocale('en');
+  const englishMenuName = t('common.inputSuggestions');
+  const englishMessageLabel = t('chat.composer.message');
   setLocale(locale);
+  const menuName = t('common.inputSuggestions');
+  const messageLabel = t('chat.composer.message');
   const parent = document.body.createDiv();
   const app = createApp();
   const editor = new ComposerEditor(parent, app, new Component());
   const files = new FileContextManager(new VaultMentionDataProvider(app));
   const dropdown = new ComposerDropdownController(parent, editor.element, [files.getMentionSource()]);
   try {
+    expect(menuName !== englishMenuName).toBe(locale !== 'en');
+    expect(messageLabel !== englishMessageLabel).toBe(locale !== 'en');
     editor.element.value = 'Read @A today';
     editor.element.selectionStart = editor.element.selectionEnd = 7;
     dropdown.handleInputChange();
     await waitFor(() => within(parent).getByRole('option', { name: 'Notes/A note.md' }));
-    expect(within(parent).getAllByRole('textbox', { name: locale === 'de' ? 'Nachricht' : 'Message' })).toEqual([editor.element]);
-    expect(within(parent).getByRole('textbox', { name: locale === 'de' ? 'Nachricht' : 'Message' }).getAttribute('aria-multiline')).toBe('true');
+    expect(within(parent).getAllByRole('textbox', { name: messageLabel })).toEqual([editor.element]);
+    expect(within(parent).getByRole('textbox', { name: messageLabel }).getAttribute('aria-multiline')).toBe('true');
     expect(await axe(parent, { runOnly: ['aria-allowed-attr'] })).toHaveNoViolations();
     editor.element.focus();
-    expect(within(parent).getAllByRole('textbox', { name: locale === 'de' ? 'Nachricht' : 'Message' })).toHaveLength(1);
-    expect(within(parent).getByRole('textbox', { name: locale === 'de' ? 'Nachricht' : 'Message' }).getAttribute('aria-multiline')).toBe('true');
+    expect(within(parent).getAllByRole('textbox', { name: messageLabel })).toHaveLength(1);
+    expect(within(parent).getByRole('textbox', { name: messageLabel }).getAttribute('aria-multiline')).toBe('true');
     expect(await axe(parent, { runOnly: ['aria-allowed-attr'] })).toHaveNoViolations();
     dropdown.hide();
     dropdown.handleInputChange();
     const option = await waitFor(() => within(parent).getByRole('option', { name: 'Notes/A note.md' }));
     const listbox = within(parent).getByRole('listbox');
-    expect(within(parent).getAllByRole('textbox', { name: locale === 'de' ? 'Nachricht' : 'Message' })).toHaveLength(1);
-    expect(within(parent).getByRole('textbox', { name: locale === 'de' ? 'Nachricht' : 'Message' }).getAttribute('aria-multiline')).toBe('true');
+    expect(within(parent).getAllByRole('textbox', { name: messageLabel })).toHaveLength(1);
+    expect(within(parent).getByRole('textbox', { name: messageLabel }).getAttribute('aria-multiline')).toBe('true');
     expect(await axe(listbox)).toHaveNoViolations();
     expect(await axe(parent, { runOnly: ['aria-allowed-attr'] })).toHaveNoViolations();
     expect(within(parent).getByRole('listbox', { name: menuName })).toBe(listbox);
@@ -1065,15 +1072,21 @@ it('leaves Resume picker relationships intact when an inactive completion contro
 
 
 it('localizes the default composer hint before and after CodeMirror mounts', () => {
+  setLocale('en');
+  const englishHint = t('chat.composer.placeholder');
+  const englishMessage = t('chat.composer.message');
   setLocale('zh-CN');
   const parent = document.body.createDiv();
   const editor = createEditor(parent);
   try {
-    const hint = '请求修改、@提及文件、运行 /命令';
+    const hint = t('chat.composer.placeholder');
+    const messageLabel = t('chat.composer.message');
+    expect(hint).not.toBe(englishHint);
+    expect(messageLabel).not.toBe(englishMessage);
     expect(editor.element.placeholder).toBe(hint);
-    expect(within(parent).getByRole('textbox', { name: '消息' }).getAttribute('data-placeholder')).toBe(hint);
+    expect(within(parent).getByRole('textbox', { name: messageLabel }).getAttribute('data-placeholder')).toBe(hint);
     editor.element.focus();
-    expect(within(parent).getByRole('textbox', { name: '消息' })).toBeDefined();
+    expect(within(parent).getByRole('textbox', { name: messageLabel })).toBeDefined();
     expect(within(parent).getByText(hint)).toBeDefined();
   } finally {
     editor.destroy();
@@ -1084,14 +1097,18 @@ it('localizes the default composer hint before and after CodeMirror mounts', () 
 
 
 it('localizes the linked content removal button through the info row', async () => {
+  setLocale('en');
+  const englishRemoveLabel = t('chat.removeItem', { item: t('chat.linkedContent.path', { path: 'Notes/A.md' }) });
   setLocale('zh-CN');
   const parent = document.body.createDiv();
   const row = new ComposerInfoRow(parent);
   const remove = vi.fn();
   const chip = new LinkedContentChip(row, vi.fn(), remove);
   try {
+    const removeLabel = t('chat.removeItem', { item: t('chat.linkedContent.path', { path: 'Notes/A.md' }) });
+    expect(removeLabel).not.toBe(englishRemoveLabel);
     chip.render({ path: 'Notes/A.md', kind: 'file', label: 'A', icon: 'file-text', missing: false, target: null }, true);
-    const button = within(parent).getByRole('button', { name: '移除关联内容：Notes/A.md' });
+    const button = within(parent).getByRole('button', { name: removeLabel });
     expect(await axe(parent)).toHaveNoViolations();
     fireEvent.click(button);
     expect(remove).toHaveBeenCalledTimes(1);
@@ -1105,19 +1122,23 @@ it('localizes the linked content removal button through the info row', async () 
 
 
 it('localizes image attachment labels and removal controls', async () => {
+  setLocale('en');
+  const englishAttachment = t('chat.images.attachment', { name: 'photo.png', size: '500 B' });
   setLocale('zh-CN');
   const parent = document.body.createDiv();
   const editor = createEditor(parent);
   const images = new ImageContextManager({ pushScope: vi.fn(), popScope: vi.fn() }, parent, editor.element, {});
   try {
+    const attachmentLabel = t('chat.images.attachment', { name: 'photo.png', size: '500 B' });
+    expect(attachmentLabel).not.toBe(englishAttachment);
     images.setImages([{ id: 'image', name: 'photo.png', mediaType: 'image/png', data: 'dGVzdA==', size: 500, source: 'paste' }]);
-    fireEvent.click(within(parent).getByRole('button', { name: '图片附件：photo.png · 500 B' }));
-    const preview = within(document.body).getByRole('dialog', { name: '图片预览：photo.png' });
+    fireEvent.click(within(parent).getByRole('button', { name: attachmentLabel }));
+    const preview = within(document.body).getByRole('dialog', { name: t('chat.images.preview', { name: 'photo.png' }) });
     expect(within(preview).getByRole('img', { name: 'photo.png' })).toBeDefined();
     expect(await axe(preview)).toHaveNoViolations();
-    fireEvent.click(within(preview).getByRole('button', { name: '关闭图片预览' }));
-    expect(within(parent).getByText('图片')).toBeDefined();
-    const remove = within(parent).getByRole('button', { name: '移除图片附件：photo.png · 500 B' });
+    fireEvent.click(within(preview).getByRole('button', { name: t('chat.images.closePreview') }));
+    expect(within(parent).getByText(t('chat.images.label'))).toBeDefined();
+    const remove = within(parent).getByRole('button', { name: t('chat.removeItem', { item: attachmentLabel }) });
     expect(await axe(remove)).toHaveNoViolations();
     fireEvent.click(remove);
     expect(images.getAttachedImages()).toEqual([]);
@@ -1131,6 +1152,8 @@ it('localizes image attachment labels and removal controls', async () => {
 
 
 it('localizes image overflow controls and updates their accessible names on expansion', async () => {
+  setLocale('en');
+  const englishMoreContext = t('chat.composer.moreContext', { count: 2 });
   setLocale('zh-CN');
   const parent = document.body.createDiv();
   // jsdom has no layout engine or host stylesheet; supply row metrics and host visibility semantics.
@@ -1140,6 +1163,11 @@ it('localizes image overflow controls and updates their accessible names on expa
   const tray = new ComposerContextTray(trayEl);
   const images = new ImageContextManager({ pushScope: vi.fn(), popScope: vi.fn() }, parent, editor.element, {}, undefined, tray);
   try {
+    const moreContext = t('chat.composer.moreContext', { count: 2 });
+    const moreItems = t('chat.composer.moreItems', { count: 2 });
+    const showLess = t('chat.composer.showLess');
+    const photo3Label = t('chat.images.attachment', { name: 'photo-3.png', size: '500 B' });
+    expect(moreContext).not.toBe(englishMoreContext);
     images.setImages(Array.from({ length: 4 }, (_, index) => ({
       id: `image-${index}`, name: `photo-${index}.png`, mediaType: 'image/png' as const,
       data: 'dGVzdA==', size: 500, source: 'paste' as const,
@@ -1150,19 +1178,19 @@ it('localizes image overflow controls and updates their accessible names on expa
       offsetTop: { configurable: true, value: top }, offsetHeight: { configurable: true, value: 20 },
     }));
     tray.refreshLayout();
-    const more = within(trayEl).getByRole('button', { name: '显示另外 2 项上下文' });
-    expect(more.textContent).toBe('+2 项');
+    const more = within(trayEl).getByRole('button', { name: moreContext });
+    expect(more.textContent).toBe(moreItems);
     fireEvent.click(more);
-    const less = within(trayEl).getByRole('button', { name: '收起' });
+    const less = within(trayEl).getByRole('button', { name: showLess });
     expect(less).toBe(more);
-    expect(less.textContent).toBe('收起');
+    expect(less.textContent).toBe(showLess);
     expect(less.getAttribute('aria-expanded')).toBe('true');
-    expect(within(trayEl).getByRole('button', { name: '图片附件：photo-3.png · 500 B' })).toBeDefined();
+    expect(within(trayEl).getByRole('button', { name: photo3Label })).toBeDefined();
     expect(await axe(trayEl)).toHaveNoViolations();
     fireEvent.click(less);
-    expect(within(trayEl).getByRole('button', { name: '显示另外 2 项上下文' })).toBe(more);
+    expect(within(trayEl).getByRole('button', { name: moreContext })).toBe(more);
     expect(more.getAttribute('aria-expanded')).toBe('false');
-    expect(within(trayEl).queryByRole('button', { name: '图片附件：photo-3.png · 500 B' })).toBeNull();
+    expect(within(trayEl).queryByRole('button', { name: photo3Label })).toBeNull();
   } finally {
     images.destroy(); tray.destroy(); editor.destroy(); style.remove(); parent.remove(); setLocale('en');
   }
@@ -1170,6 +1198,8 @@ it('localizes image overflow controls and updates their accessible names on expa
 
 
 it.each(['loading', 'error'] as const)('localizes provider command %s wrappers through the real dropdown', async status => {
+  setLocale('en');
+  const englishLabel = t(status === 'loading' ? 'chat.suggestions.providerLoading' : 'chat.suggestions.providerRetry');
   setLocale('zh-CN');
   const parent = document.body.createDiv();
   const editor = createEditor(parent);
@@ -1182,13 +1212,15 @@ it.each(['loading', 'error'] as const)('localizes provider command %s wrappers t
     },
   });
   try {
+    const localizedLabel = t(status === 'loading' ? 'chat.suggestions.providerLoading' : 'chat.suggestions.providerRetry');
+    expect(localizedLabel).not.toBe(englishLabel);
     editor.element.value = '/';
     editor.element.selectionStart = editor.element.selectionEnd = 1;
     dropdown.handleInputChange();
     const expectedTexts = status === 'loading'
-      ? ['正在加载提供商命令…'] : ['重新查找提供商命令', 'Native discovery failure'];
+      ? [localizedLabel] : [localizedLabel, 'Native discovery failure'];
     await waitFor(() => expect(expectedTexts.map(text => within(parent).getByText(text).textContent)).toEqual(expectedTexts));
-    const optionName = status === 'loading' ? '正在加载提供商命令…' : /重试/;
+    const optionName = status === 'loading' ? localizedLabel : new RegExp(t('common.retry'));
     expect(within(parent).getByRole('option', { name: optionName })).toBeDefined();
   } finally {
     dropdown.destroy(); files.destroy(); editor.destroy(); parent.remove(); setLocale('en');

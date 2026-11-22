@@ -4,7 +4,7 @@ import { axe } from '@test/helpers/accessibility';
 import { fireEvent, waitFor, within } from '@testing-library/dom';
 import { App } from 'obsidian';
 
-import { setLocale } from '@/i18n/i18n';
+import { setLocale, t } from '@/i18n/i18n';
 import { PiExtensionUIBridge } from '@/providers/pi/runtime/PiExtensionUIBridge';
 import type { PiRPCTransport } from '@/providers/pi/runtime/PiRPCTransport';
 import { ObsidianPiExtensionUIRenderer } from '@/providers/pi/ui/ObsidianPiExtensionUIRenderer';
@@ -79,16 +79,20 @@ it.each(['input', 'editor'] as const)('closes an active %s dialog when its reque
 });
 
 it.each(['input', 'editor'] as const)('localizes fallback %s titles and controls without altering submitted text', async method => {
+  setLocale('en');
+  const englishTitle = t('chat.pi.extension');
   setLocale('zh-CN');
+  const localizedTitle = t('chat.pi.extension');
+  expect(localizedTitle).not.toBe(englishTitle);
   const controller = new AbortController();
   const renderer = new ObsidianPiExtensionUIRenderer(new App());
   const result = renderer[method]({ id: 'localized', defaultValue: 'Provider text' }, controller.signal);
   try {
     const region = within(document.body).getByRole('dialog');
-    expect(within(document.body).getByRole('dialog', { name: 'Pi 扩展' })).toBeDefined();
-    expect(within(region).getByRole('textbox', { name: 'Pi 扩展' })).toHaveProperty('value', 'Provider text');
-    expect(within(region).getByRole('button', { name: '取消' })).toBeDefined();
-    fireEvent.click(within(region).getByRole('button', { name: '提交' }));
+    expect(within(document.body).getByRole('dialog', { name: localizedTitle })).toBeDefined();
+    expect(within(region).getByRole('textbox', { name: localizedTitle })).toHaveProperty('value', 'Provider text');
+    expect(within(region).getByRole('button', { name: t('common.cancel') })).toBeDefined();
+    fireEvent.click(within(region).getByRole('button', { name: t('chat.questions.submit') }));
     await expect(result).resolves.toEqual({ value: 'Provider text' });
   } finally {
     controller.abort();

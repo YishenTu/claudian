@@ -21,7 +21,7 @@ import { SubagentManager } from '@/features/chat/rendering/subagents/SubagentMan
 import { createAsyncSubagentBlock, createSubagentBlock, updateAsyncSubagentBlock, updateSubagentBlock } from '@/features/chat/rendering/subagents/SubagentRenderer';
 import { ChatState } from '@/features/chat/state/ChatState';
 import { StreamController } from '@/features/chat/turns/StreamController';
-import { setLocale } from '@/i18n/i18n';
+import { setLocale, t } from '@/i18n/i18n';
 import { ClaudeTaskResultInterpreter } from '@/providers/claude/runtime/ClaudeTaskResultInterpreter';
 import { CodexSubagentTracker } from '@/providers/codex/execution/CodexSubagentTracker';
 import { codexSubagentLifecycleAdapter } from '@/providers/codex/normalization/codexSubagentNormalization';
@@ -869,84 +869,97 @@ it.each(['sync', 'async'] as const)('opens and closes managed %s task details by
 
 
 it('localizes managed task controls and progress while preserving native content', async () => {
+  const englishTask = t('chat.subagentUI.taskLabel', { description: 'Native task', status: t('chat.tools.status.running') });
   setLocale('zh-CN');
+  const runningTask = t('chat.subagentUI.taskLabel', { description: 'Native task', status: t('chat.tools.status.running') });
+  const completedTask = t('chat.subagentUI.taskLabel', { description: 'Native task', status: t('chat.tools.status.completed') });
+  expect(runningTask).not.toBe(englishTask);
   const parent = document.body.createDiv();
   const manager = new SubagentManager(() => undefined, new ClaudeTaskResultInterpreter());
   cleanups.push(() => manager.clear());
   manager.handleTaskToolUse('localized', { description: 'Native task', prompt: 'Native prompt', run_in_background: false }, parent);
   const ui = within(parent);
-  const header = ui.getByRole('button', { name: '子代理任务：Native task - 状态：运行中 - 点击展开' });
+  const header = ui.getByRole('button', { name: t('chat.disclosure.expand', { label: runningTask }) });
   fireEvent.click(header);
-  fireEvent.keyDown(ui.getByRole('button', { name: '提示词 - 点击展开' }), { key: 'Enter' });
+  fireEvent.keyDown(ui.getByRole('button', { name: t('chat.disclosure.expand', { label: t('chat.subagentUI.prompt') }) }), { key: 'Enter' });
   expect(ui.getByText('Native prompt')).toBeDefined();
   const child: ToolCallInfo = { id: 'native-read', name: 'Read', input: { file_path: 'native.md' }, status: 'running' };
   manager.addSyncToolCall('localized', child);
   const read = ui.getByRole('button', { name: /^Read.*native.md/ });
   fireEvent.click(read);
-  expect(ui.getByText('运行中…')).toBeDefined();
+  expect(ui.getByText(t('chat.tools.running'))).toBeDefined();
   manager.updateSyncToolResult('localized', child.id, { ...child, status: 'completed', result: 'Native child output' });
   expect(ui.getByText('Native child output')).toBeDefined();
   manager.applyProgress({ toolCallId: 'localized', lastToolName: 'Read', toolUses: 1, totalTokens: 999, durationMs: 1500 });
-  expect(ui.getByText('最近工具：Read')).toBeDefined();
-  expect(ui.getByText('1 次工具调用 · 999 个 token · 2s')).toBeDefined();
+  expect(ui.getByText(t('chat.subagentUI.lastTool', { name: 'Read' }))).toBeDefined();
+  expect(ui.getByText(`${t('chat.subagentUI.toolUse', { count: 1 })} · ${t('chat.subagentUI.tokens', { value: 999 })} · 2s`)).toBeDefined();
   manager.applyProgress({ toolCallId: 'localized', toolUses: 2, totalTokens: 1000 });
-  expect(ui.getByText('2 次工具调用 · 1k 个 token · 2s')).toBeDefined();
+  expect(ui.getByText(`${t('chat.subagentUI.toolUses', { count: 2 })} · ${t('chat.subagentUI.compactTokens', { value: 1 })} · 2s`)).toBeDefined();
   manager.applyProgress({ toolCallId: 'localized', totalTokens: 100000, summary: 'Native summary' });
   expect(ui.getByText('Native summary')).toBeDefined();
-  expect(ui.getByText('2 次工具调用 · 100k 个 token · 2s')).toBeDefined();
+  expect(ui.getByText(`${t('chat.subagentUI.toolUses', { count: 2 })} · ${t('chat.subagentUI.compactTokens', { value: 100 })} · 2s`)).toBeDefined();
   const info = manager.finalizeSyncSubagent('localized', 'Native result', false);
   expect(info).toMatchObject({ description: 'Native task', prompt: 'Native prompt', result: 'Native result' });
-  expect(header.getAttribute('aria-label')).toBe('子代理任务：Native task - 状态：已完成 - 点击折叠');
-  fireEvent.keyDown(ui.getByRole('button', { name: '结果 - 点击展开' }), { key: ' ' });
+  expect(header.getAttribute('aria-label')).toBe(t('chat.disclosure.collapse', { label: completedTask }));
+  fireEvent.keyDown(ui.getByRole('button', { name: t('chat.disclosure.expand', { label: t('chat.subagentUI.result') }) }), { key: ' ' });
   expect(ui.getByText('Native result')).toBeDefined();
   expect(await axe(parent)).toHaveNoViolations();
 });
 
 it.each([
-  ['completed', undefined, '已完成'], ['completed', 'DONE', 'DONE'],
-  ['error', undefined, '错误'], ['error', 'ERROR', 'ERROR'],
-] as const)('localizes only absent sync %s results (%s)', async (status, result, expected) => {
+  ['completed', undefined, 'chat.tools.done'], ['completed', 'DONE', undefined],
+  ['error', undefined, 'chat.tools.errorResult'], ['error', 'ERROR', undefined],
+] as const)('localizes only absent sync %s results (%s)', async (status, result, expectedKey) => {
+  const englishStatus = t(`chat.tools.status.${status}`);
   setLocale('zh-CN');
+  expect(t(`chat.tools.status.${status}`)).not.toBe(englishStatus);
   const parent = document.body.createDiv();
   const info: SubagentInfo = { id: 'localized-sync', description: 'Native task', status, result, isExpanded: false, toolCalls: [] };
   createSubagentBlock(parent, info);
-  fireEvent.click(within(parent).getByRole('button', { name: status === 'completed'
-    ? '子代理任务：Native task - 状态：已完成 - 点击展开' : '子代理任务：Native task - 状态：错误 - 点击展开' }));
-  fireEvent.click(within(parent).getByRole('button', { name: '结果 - 点击展开' }));
-  expect(within(parent).getByText(expected)).toBeDefined();
+  const taskLabel = t('chat.subagentUI.taskLabel', { description: 'Native task', status: t(`chat.tools.status.${status}`) });
+  fireEvent.click(within(parent).getByRole('button', { name: t('chat.disclosure.expand', { label: taskLabel }) }));
+  fireEvent.click(within(parent).getByRole('button', { name: t('chat.disclosure.expand', { label: t('chat.subagentUI.result') }) }));
+  expect(within(parent).getByText(expectedKey ? t(expectedKey) : result!)).toBeDefined();
   expect(info.result).toBe(result);
   expect(await axe(parent)).toHaveNoViolations();
 });
 
 it('localizes background status updates and keeps supplied results as native data', async () => {
+  const englishInit = t('chat.subagentUI.initializing');
   setLocale('zh-CN');
+  expect(t('chat.subagentUI.initializing')).not.toBe(englishInit);
   const parent = document.body.createDiv();
   const info: SubagentInfo = { id: 'localized-async', description: 'Native task', mode: 'async',
     status: 'running', asyncStatus: 'pending', isExpanded: false, toolCalls: [] };
   const state = createAsyncSubagentBlock(parent, info);
   const ui = within(parent);
-  fireEvent.click(ui.getByRole('button', { name: '后台任务：Native task - 初始化中 - 点击展开' }));
-  expect(state.statusTextEl.textContent).toBe('初始化中');
-  expect(state.statusEl.getAttribute('aria-label')).toBe('状态：初始化中');
-  for (const [asyncStatus, label] of [['running', '后台运行中'], ['completed', '已完成']] as const) {
+  const bgLabel = (statusText: string) => t('chat.subagentUI.backgroundTaskLabel', { description: 'Native task', status: statusText });
+  const initText = t('chat.subagentUI.initializing');
+  fireEvent.click(ui.getByRole('button', { name: t('chat.disclosure.expand', { label: bgLabel(initText) }) }));
+  expect(state.statusTextEl.textContent).toBe(initText);
+  expect(state.statusEl.getAttribute('aria-label')).toBe(t('chat.subagentUI.statusLabel', { status: initText }));
+  for (const [asyncStatus, labelKey] of [['running', 'chat.subagentUI.runningInBackground'], ['completed', 'chat.subagentUI.completed']] as const) {
+    const label = t(labelKey);
     updateAsyncSubagentBlock(state, { ...info, asyncStatus, status: asyncStatus });
     expect(state.statusTextEl.textContent).toBe('');
-    expect(ui.getByRole('button', { name: `后台任务：Native task - ${label} - 点击折叠` })).toBeDefined();
-    expect(state.statusEl.getAttribute('aria-label')).toBe(`状态：${label}`);
+    expect(ui.getByRole('button', { name: t('chat.disclosure.collapse', { label: bgLabel(label) }) })).toBeDefined();
+    expect(state.statusEl.getAttribute('aria-label')).toBe(t('chat.subagentUI.statusLabel', { status: label }));
   }
-  expect(state.resultBodyEl!.textContent).toBe('已完成');
+  expect(state.resultBodyEl!.textContent).toBe(t('chat.tools.done'));
+  const errorText = t('chat.subagentUI.error');
   updateAsyncSubagentBlock(state, { ...info, asyncStatus: 'error', status: 'error' });
-  expect(ui.getByRole('button', { name: '后台任务：Native task - 错误 - 点击折叠' })).toBeDefined();
-  expect(state.statusTextEl.textContent).toBe('错误');
-  expect(state.statusEl.getAttribute('aria-label')).toBe('状态：错误');
-  fireEvent.click(ui.getByRole('button', { name: '结果 - 点击展开' }));
-  expect(within(state.resultBodyEl!).getByText('错误')).toBeDefined();
+  expect(ui.getByRole('button', { name: t('chat.disclosure.collapse', { label: bgLabel(errorText) }) })).toBeDefined();
+  expect(state.statusTextEl.textContent).toBe(errorText);
+  expect(state.statusEl.getAttribute('aria-label')).toBe(t('chat.subagentUI.statusLabel', { status: errorText }));
+  fireEvent.click(ui.getByRole('button', { name: t('chat.disclosure.expand', { label: t('chat.subagentUI.result') }) }));
+  expect(within(state.resultBodyEl!).getByText(t('chat.tools.errorResult'))).toBeDefined();
+  const orphanedText = t('chat.subagentUI.orphaned');
   for (const result of [undefined, 'Conversation ended before task completed', '   ']) {
     updateAsyncSubagentBlock(state, { ...info, asyncStatus: 'orphaned', status: 'error', result });
-    expect(ui.getByRole('button', { name: '后台任务：Native task - 未完成 - 点击折叠' })).toBeDefined();
-    expect(state.statusTextEl.textContent).toBe('未完成');
-    expect(state.statusEl.getAttribute('aria-label')).toBe('状态：未完成');
-    expect(state.resultBodyEl!.textContent).toBe(result || '对话在任务完成前已结束');
+    expect(ui.getByRole('button', { name: t('chat.disclosure.collapse', { label: bgLabel(orphanedText) }) })).toBeDefined();
+    expect(state.statusTextEl.textContent).toBe(orphanedText);
+    expect(state.statusEl.getAttribute('aria-label')).toBe(t('chat.subagentUI.statusLabel', { status: orphanedText }));
+    expect(state.resultBodyEl!.textContent).toBe(result || t('chat.subagentUI.orphanedResult'));
   }
   for (const [asyncStatus, result] of [['completed', 'DONE'], ['error', 'ERROR']] as const) {
     updateAsyncSubagentBlock(state, { ...info, asyncStatus, status: asyncStatus, result });
@@ -956,7 +969,9 @@ it('localizes background status updates and keeps supplied results as native dat
 });
 
 it('localizes lazy previous runs without copying current or unrelated results', async () => {
+  const englishPreviousRuns = t('chat.subagentUI.previousRuns', { count: 1 });
   setLocale('zh-CN');
+  expect(t('chat.subagentUI.previousRuns', { count: 1 })).not.toBe(englishPreviousRuns);
   const view = await createCodexLifecycleView();
   const tool = (id: string, agentId: string): ToolCallInfo => ({
     id, name: 'spawn_agent', input: {}, status: 'completed',
@@ -971,11 +986,12 @@ it('localizes lazy previous runs without copying current or unrelated results', 
   const saved = JSON.stringify(messages);
   view.renderer.renderMessages(messages, () => 'Hello');
   const current = view.parent.querySelector<HTMLElement>('[data-message-id="current"]')!;
-  expandButton(current, /^子代理任务：/);
-  const history = within(current).getByRole('button', { name: '之前的运行（1）' });
+  const taskPrefix = t('chat.subagentUI.taskLabel', { description: 'Native task', status: t('chat.tools.status.completed') });
+  expandButton(current, new RegExp(`^${taskPrefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
+  const history = within(current).getByRole('button', { name: t('chat.subagentUI.previousRuns', { count: 1 }) });
   expect(within(current).queryByText('first result')).toBeNull();
   fireEvent.click(history);
-  const run = within(current).getByRole('button', { name: '第 1 次运行 · 已完成' });
+  const run = within(current).getByRole('button', { name: t('chat.subagentUI.runLabel', { number: 1, status: t('chat.subagentUI.completed') }) });
   expect(within(current).queryByText('first result')).toBeNull();
   fireEvent.click(run);
   const body = document.getElementById(run.getAttribute('aria-controls')!)!;

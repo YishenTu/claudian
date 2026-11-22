@@ -8,7 +8,7 @@ import { setIcon } from 'obsidian';
 import type { ProviderCapabilities } from '@/core/providers/types';
 import type { ChatMessage } from '@/core/types';
 import { MessageActions } from '@/features/chat/rendering/MessageActions';
-import { setLocale } from '@/i18n/i18n';
+import { setLocale, t } from '@/i18n/i18n';
 
 const COPY_FEEDBACK_MS = 1_500;
 const USER_MESSAGE: ChatMessage = { id: 'u1', role: 'user', content: 'user prompt', timestamp: testDate().getTime() };
@@ -87,18 +87,24 @@ describe.each(copyButtonSources)('%s copy button', (_name, copiedText, render) =
   });
 
   it('localizes copy feedback and the accessible name', async () => {
+    const englishCopyLabel = t('chat.copyMessage');
+    const englishCopied = t('chat.codeBlock.copied');
     setLocale('zh-CN');
+    const copyLabel = t('chat.copyMessage');
+    const copied = t('chat.codeBlock.copied');
+    expect(copyLabel).not.toBe(englishCopyLabel);
+    expect(copied).not.toBe(englishCopied);
     const writeText = writeTextReturning(() => Promise.resolve());
     const { messagesEl, actions } = setup();
     render(actions, messagesEl);
-    const button = within(messagesEl).getByRole('button', { name: '复制消息' });
+    const button = within(messagesEl).getByRole('button', { name: copyLabel });
     fireEvent.click(button);
     await vi.advanceTimersByTimeAsync(0);
     expect(writeText).toHaveBeenCalledWith(copiedText);
-    expect(button.textContent).toBe('已复制！');
-    expect(within(messagesEl).getByRole('button', { name: '已复制！' })).toBe(button);
+    expect(button.textContent).toBe(copied);
+    expect(within(messagesEl).getByRole('button', { name: copied })).toBe(button);
     await vi.advanceTimersByTimeAsync(COPY_FEEDBACK_MS);
-    expect(within(messagesEl).getByRole('button', { name: '复制消息' })).toBe(button);
+    expect(within(messagesEl).getByRole('button', { name: copyLabel })).toBe(button);
   });
 
   it('shows no success feedback and arms no timer when the clipboard write is rejected', async () => {
