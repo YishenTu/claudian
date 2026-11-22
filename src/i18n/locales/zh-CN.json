@@ -19,7 +19,7 @@
       "steering": "引导中",
       "steerNow": "立即引导",
       "edit": "编辑排队中的消息",
-      "discard": "放弃排队中的消息",
+      "discard": "丢弃排队中的消息",
       "images": "[图片]"
     },
     "promptSuggestionHint": "按 Tab 接受",
@@ -101,8 +101,8 @@
       "working": "处理中…",
       "thinking": "思考中…",
       "interrupted": "已中断",
-      "workedFor": "已处理 {duration}",
-      "workedForResult": "已处理 {duration} · {result}",
+      "workedFor": "耗时 {duration}",
+      "workedForResult": "耗时 {duration} · {result}",
       "actionRequired": "需要你的输入",
       "error": "错误：{message}",
       "toolRunning": "{tool} · 运行中",
@@ -165,7 +165,7 @@
       "returnsNamed": "{name} 回来啦！",
       "right": "你说得完全正确！"
     },
-    "worked": "已处理",
+    "worked": "已完成",
     "taskNotification": "任务通知",
     "stopHook": "Stop 钩子",
     "copyMessage": "复制消息",
@@ -478,7 +478,7 @@
       "allowRule": "对 {host} 应用允许规则。",
       "denyRule": "对 {host} 应用拒绝规则。",
       "details": "{tool} 授权详情",
-      "unexpectedSelection": "无效的授权选项：“{value}”",
+      "unexpectedSelection": "意外的授权选项：“{value}”",
       "runCommand": "运行命令：{pattern}",
       "readFile": "读取文件：{pattern}",
       "writeFile": "写入文件：{pattern}",
@@ -563,7 +563,7 @@
       "modelLabel": "模型：{label}",
       "unavailable": "模型不可用",
       "setup": "设置模型",
-      "guidance": "请在提供商设置中启用模型。如果模型发现失败，请刷新模型列表。",
+      "guidance": "请在提供商设置中选择已启用的模型。如果模型发现失败，请刷新模型列表。",
       "model": "模型",
       "empty": "没有可用模型。请检查提供商设置，如果模型发现失败，请刷新模型列表。",
       "changeModelFailed": "无法切换模型",
@@ -787,7 +787,7 @@
       "desc": "每行一个映射。格式：\"map <键> <动作>\"（可用动作：scrollUp、scrollDown、focusInput）。"
     },
     "requireCommandOrControlEnterToSend": {
-      "name": "使用 Command/Ctrl+Enter 发送",
+      "name": "仅用 Command/Ctrl+Enter 发送",
       "desc": "启用后，Enter 会插入换行。macOS 使用 Command+Enter 发送；Windows 和 Linux 使用 Ctrl+Enter 发送。"
     },
     "safety": "安全",
@@ -1032,7 +1032,7 @@
         "descriptionPlaceholder": "审查代码的正确性和可维护性",
         "instructions": "指令",
         "instructionsDesc": "必填的 SKILL.md 指令",
-        "instructionsPlaceholder": "审查提供的代码并报告可落地的改进建议…"
+        "instructionsPlaceholder": "审查提供的代码并报告需要处理的问题…"
       },
       "delete": {
         "title": "删除共享技能",
@@ -1156,7 +1156,7 @@
           "instructions": "没有指令。请在文件中补充后重新同步。",
           "unreadable": "无法读取其 frontmatter。请修正文件后重新同步。",
           "sharedConflict": "名为“{name}”的共享技能已存在。",
-          "itemConflict": "已存在另一个同名为“{name}”的项目。"
+          "itemConflict": "另一个条目也名为“{name}”。"
         },
         "options": {
           "fix": "修复",
@@ -1170,7 +1170,7 @@
         "repairBody": ".claude/skills 将被替换为指向 .agents/skills 的链接。它当前指向的文件夹不会被修改。",
         "linkBody": "将 .claude/skills 创建为指向 .agents/skills 的链接，使 Claude Code 使用共享技能。不会移动任何文件。",
         "linkWithItemsBody": "命令将转换为技能，随后 .claude/skills 会被创建为指向 .agents/skills 的链接。此操作无法撤销。",
-        "devicesWarning": "是否在多台设备间同步此仓库？符号链接可能无法同步，请在每台设备上分别执行同步。",
+        "devicesWarning": "如果在多台设备间同步此仓库，符号链接可能无法同步，请在每台设备上分别执行同步。",
         "confirm": "同步并链接",
         "partial": "同步在创建链接前停止。请修复以下项目后重新同步。",
         "failed": "同步失败：{message}",

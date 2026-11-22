@@ -918,8 +918,8 @@
     },
     "providerEnablement": {
       "name": "Activar {provider}",
-      "lastProviderWarning": "Debe haber al menos un proveedor activado para que Claudian funcione.",
-      "noModelsWarning": "No hay modelos de {provider} activados. Ve a Modelos más abajo y activa al menos uno."
+      "lastProviderWarning": "Debe haber al menos un proveedor habilitado para que Claudian funcione.",
+      "noModelsWarning": "No hay modelos de {provider} habilitados. Ve a Modelos más abajo y habilita al menos uno."
     },
     "modelPicker": {
       "name": "Modelos visibles",
@@ -958,7 +958,7 @@
       "configuration": "Configuración",
       "responseStyle": {
         "name": "Estilo de respuesta",
-        "desc": "Estilo de salida de Claude Code para las respuestas, incluidos los estilos personalizados. «Configuración de Claude Code» sigue tu configuración de Claude Code. La lista se actualiza al actualizar los modelos o al iniciar un chat.",
+        "desc": "Estilo de salida de Claude Code para las respuestas, incluidos los estilos personalizados. «Configuración de Claude Code» sigue tu configuración de Claude Code. La lista se actualiza al recargar los modelos o al iniciar un chat.",
         "default": "Predeterminado",
         "inherit": "Configuración de Claude Code"
       }
@@ -1028,11 +1028,11 @@
         "nameDesc": "Letras minúsculas y números separados por guiones simples",
         "namePlaceholder": "code-reviewer",
         "description": "Descripción",
-        "descriptionDesc": "Descripción portátil obligatoria que usan los proveedores para seleccionar el skill",
+        "descriptionDesc": "Descripción portable obligatoria que usan los proveedores para seleccionar el skill",
         "descriptionPlaceholder": "Revisa el código para comprobar su corrección y mantenibilidad",
         "instructions": "Instrucciones",
         "instructionsDesc": "Instrucciones de SKILL.md obligatorias",
-        "instructionsPlaceholder": "Revisa el código proporcionado e informa de hallazgos aplicables..."
+        "instructionsPlaceholder": "Revisa el código proporcionado e informa de los problemas concretos que haya que corregir..."
       },
       "delete": {
         "title": "Eliminar skill compartido",

@@ -29,7 +29,7 @@
     "selectAvailableTitleModel": "Claudian の設定で利用可能なタイトル生成モデルを選択してください。",
     "rewind": {
       "confirmMessage": "この時点に巻き戻しますか？このメッセージ以降のファイル変更は上書きまたは削除される可能性があります。この操作は元に戻せません。",
-      "confirmMessageConflicts": "この時点に巻き戻しますか？エージェント以外で変更された {count} 個のファイルが上書きされます：\n{files}",
+      "confirmMessageConflicts": "この時点に巻き戻しますか？エージェント外で変更された {count} 個のファイルが上書きされます：\n{files}",
       "confirmMessageConversationOnly": "会話をこの時点に巻き戻しますか？ファイル変更は保持されます。",
       "confirmButton": "巻き戻す",
       "inProgress": "現在の巻き戻しが完了するまでお待ちください。",
@@ -73,7 +73,7 @@
     "sideChat": {
       "title": "サイドチャット",
       "collapse": "折りたたむ",
-      "fullHeight": "最大表示",
+      "fullHeight": "高さを最大化",
       "discard": "破棄",
       "statusPreparing": "準備中",
       "statusQueued": "{count} 件待機中",
@@ -145,7 +145,7 @@
       "coffee": "コーヒーと {brand} の時間？",
       "afternoon": "こんにちは",
       "afternoonNamed": "{name}さん、こんにちは",
-      "hey": "どうも！",
+      "hey": "こんにちは！",
       "heyNamed": "{name}さん、どうも！",
       "howGoing": "調子はどうですか？",
       "howGoingNamed": "{name}さん、調子はどうですか？",
@@ -458,7 +458,7 @@
       "alwaysAllow": "常に許可",
       "mcpRequest": "MCP リクエスト",
       "mcpServer": "MCP サーバー：{server}",
-      "decline": "許可しない",
+      "decline": "却下",
       "allow": "許可",
       "cancelRequest": "このリクエストをキャンセルします。",
       "declineRequest": "このリクエストを却下します。",
@@ -787,7 +787,7 @@
       "desc": "1 行に 1 つずつ記述します。形式：\"map <キー> <アクション>\"（アクション：scrollUp、scrollDown、focusInput）。"
     },
     "requireCommandOrControlEnterToSend": {
-      "name": "Command/Ctrl+Enter で送信する",
+      "name": "Command/Ctrl+Enter でのみ送信",
       "desc": "有効にすると、Enter は改行を挿入します。macOS では Command+Enter、Windows と Linux では Ctrl+Enter で送信します。"
     },
     "safety": "セキュリティ",
@@ -1032,7 +1032,7 @@
         "descriptionPlaceholder": "コードの正確性と保守性をレビューします",
         "instructions": "指示",
         "instructionsDesc": "SKILL.md に記述する指示（必須）",
-        "instructionsPlaceholder": "提供されたコードをレビューし、具体的な改善点を報告してください…"
+        "instructionsPlaceholder": "提供されたコードをレビューし、対応が必要な指摘を報告してください…"
       },
       "delete": {
         "title": "共有スキルを削除",

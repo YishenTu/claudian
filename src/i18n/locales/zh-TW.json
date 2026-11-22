@@ -101,14 +101,14 @@
       "working": "處理中…",
       "thinking": "思考中…",
       "interrupted": "已中斷",
-      "workedFor": "已處理 {duration}",
-      "workedForResult": "已處理 {duration} · {result}",
+      "workedFor": "耗時 {duration}",
+      "workedForResult": "耗時 {duration} · {result}",
       "actionRequired": "需要你的輸入",
       "error": "錯誤：{message}",
       "toolRunning": "{tool} · 執行中",
       "toolCompleted": "{tool} · 已完成",
       "toolFailed": "{tool} · 失敗",
-      "toolBlocked": "{tool} · 已封鎖"
+      "toolBlocked": "{tool} · 已阻擋"
     },
     "composer": {
       "placeholder": "請輸入修改需求、以 @ 提及檔案，或執行 /指令",
@@ -240,7 +240,7 @@
         "completed": "狀態：已完成",
         "error": "狀態：錯誤",
         "cancelled": "狀態：已取消",
-        "blocked": "狀態：已封鎖"
+        "blocked": "狀態：已阻擋"
       },
       "inProgress": "狀態：進行中",
       "writing": "正在寫入…",
@@ -303,13 +303,13 @@
       "findInPage": "在頁面中尋找",
       "openPage": "開啟頁面",
       "urlUnavailable": "網址無法使用",
-      "clickLink": "點擊連結 {id}",
+      "clickLink": "點選連結 {id}",
       "pattern": "比對模式：{pattern}",
       "query": "查詢：{query}",
       "altQuery": "替代查詢：{query}",
       "search": "搜尋網頁",
       "moreQueries": "…還有 {count} 個查詢",
-      "clickInPage": "在 {url} 中點擊連結 {id}",
+      "clickInPage": "在 {url} 中點選連結 {id}",
       "open": "開啟 {url}",
       "find": "尋找「{pattern}」",
       "inPage": "在 {url} 中{action}",
@@ -389,7 +389,7 @@
         "gettingCozyWithThis": "慢慢進入狀態…",
         "settlingIn": "安頓思緒中…",
         "makingTea": "泡杯茶…",
-        "grabbingASnack": "吃點小點心…",
+        "grabbingASnack": "吃個點心…",
         "parsing": "解析中…",
         "compilingThoughts": "編譯思緒中…",
         "runningInference": "推論運算中…",
@@ -406,7 +406,7 @@
         "aligningChakras": "調整脈輪中…",
         "meditatingOnThis": "靜心思考中…",
         "askingTheStars": "向星辰提問…",
-        "readingTeaLeaves": "解讀茶葉占卜…",
+        "readingTeaLeaves": "茶葉占卜中…",
         "shakingTheMagic8Ball": "搖一搖魔法八號球…",
         "consultingAncientScrolls": "查閱古老卷軸…",
         "decodingTheMatrix": "解碼矩陣中…",
@@ -489,8 +489,8 @@
       "deepseekRequest": "DeepSeek 請求授權。"
     },
     "disclosure": {
-      "expand": "{label} - 點擊展開",
-      "collapse": "{label} - 點擊收合"
+      "expand": "{label} - 點選展開",
+      "collapse": "{label} - 點選收合"
     },
     "removeItem": "移除{item}",
     "agent": "代理：{agent}",
@@ -670,9 +670,9 @@
         "instructions": "指示",
         "instructionsDesc": "從下一輪起加入每個成員工作階段的系統提示詞。",
         "memoryPath": "記憶檔案",
-        "memoryPathDesc": "專案記憶檔案在保管庫中的路徑。若缺少 .md 副檔名會自動補上；變更路徑將會移動該檔案。",
+        "memoryPathDesc": "專案記憶檔案在儲存庫中的路徑。若缺少 .md 副檔名會自動補上；變更路徑將會移動該檔案。",
         "memoryPathPlaceholder": "資料夾/MEMORY.md",
-        "memoryPathInvalid": "請輸入保管庫內的檔案路徑，例如 Projects/MEMORY.md。",
+        "memoryPathInvalid": "請輸入儲存庫內的檔案路徑，例如 Projects/MEMORY.md。",
         "memoryPathTaken": "{path} 已被某個檔案或其他專案使用。",
         "openMemory": "開啟",
         "nameRequired": "請輸入專案名稱。"
@@ -707,7 +707,7 @@
     "editorUnavailable": "行內編輯無法使用：無法存取目前的編輯器。請試著重新開啟筆記。",
     "stale": "來源文件或選取範圍已變更，未套用行內編輯。",
     "initialProviderFailed": "行內編輯無法使用：無法啟動 {provider} 提供者。",
-    "vaultFailed": "無法載入保管庫檔案。保管庫的 @ 提及功能可能無法使用。",
+    "vaultFailed": "無法載入儲存庫檔案。儲存庫的 @ 提及功能可能無法使用。",
     "editLabel": "編輯指令",
     "insertLabel": "插入指令",
     "editPlaceholder": "編輯指令…",
@@ -753,7 +753,7 @@
     },
     "mediaFolder": {
       "name": "媒體資料夾",
-      "desc": "存放附件/圖片的資料夾。當筆記使用 ![[image.jpg]] 時，Claude 會在此尋找。留空則使用保管庫根目錄。"
+      "desc": "存放附件/圖片的資料夾。當筆記使用 ![[image.jpg]] 時，Claude 會在此尋找。留空則使用儲存庫根目錄。"
     },
     "systemPrompt": {
       "name": "自訂系統提示詞",
@@ -793,7 +793,7 @@
     "safety": "安全",
     "loadUserSettings": {
       "name": "載入使用者 Claude Code 設定",
-      "desc": "從 ~/.claude 載入使用者層級的 Claude Code 設定：settings.json、技能、指令、代理程式與外掛。停用時僅使用保管庫層級設定。啟用後，使用者的權限規則可能會繞過安全模式。"
+      "desc": "從 ~/.claude 載入使用者層級的 Claude Code 設定：settings.json、技能、指令、代理程式與外掛。停用時僅使用儲存庫層級設定。啟用後，使用者的權限規則可能會繞過安全模式。"
     },
     "codexSandbox": {
       "name": "沙盒",
@@ -946,19 +946,19 @@
       "aliasLabel": "別名（選用）",
       "removeLabel": "移除 {model}",
       "noMatch": "沒有符合篩選條件的模型。",
-      "emptyCatalog": "{provider} 未回報任何模型。請檢查設定並點擊「探索」。",
+      "emptyCatalog": "{provider} 未回報任何模型。請檢查設定並點選「探索」。",
       "loadingCatalog": "正在載入 {provider} 模型…",
-      "stale": "{provider} 模型目錄已過時。點擊「探索」以重新整理。"
+      "stale": "{provider} 模型目錄已過時。點選「探索」以重新整理。"
     },
     "claude": {
       "promptSuggestions": {
         "name": "提示詞建議",
         "desc": "在空白輸入框中顯示 Claude 預測的下一則提示詞。每則建議都會在每輪對話後額外發送一次 Claude 請求，可能會更快耗盡用量額度。"
       },
-      "configuration": "設定",
+      "configuration": "組態",
       "responseStyle": {
         "name": "回覆風格",
-        "desc": "Claude Code 回覆使用的輸出風格，包含自訂風格。「Claude Code 設定」會沿用你的 Claude Code 設定。重新整理模型或開始聊天時會更新清單。",
+        "desc": "Claude Code 回覆使用的輸出風格，包含自訂風格。「Claude Code 設定」會沿用你的 Claude Code 組態。重新整理模型或開始聊天時會更新清單。",
         "default": "預設",
         "inherit": "Claude Code 設定"
       }
@@ -1005,7 +1005,7 @@
     },
     "agentSkills": {
       "sharedExpectation": "為相容的提供者管理 .agents/skills/ 中的共用技能。",
-      "noSkills": "尚未設定共用技能。點擊 + 建立一個。",
+      "noSkills": "尚未設定共用技能。點選 + 建立一個。",
       "skillBadge": "技能",
       "diagnosticsTitle": "需要處理的技能",
       "loadFailed": "無法載入共用技能。",
@@ -1032,7 +1032,7 @@
         "descriptionPlaceholder": "審查程式碼的正確性與可維護性",
         "instructions": "指示",
         "instructionsDesc": "必填的 SKILL.md 指示",
-        "instructionsPlaceholder": "審查提供的程式碼並回報具體可行的改進建議…"
+        "instructionsPlaceholder": "審查提供的程式碼並回報需要處理的問題…"
       },
       "delete": {
         "title": "刪除共用技能",
@@ -1041,7 +1041,7 @@
       }
     },
     "opencode": {
-      "emptyModels": "OpenCode 伺服器未針對此保管庫傳回任何已啟用的模型。請檢查保管庫中的 .opencode/opencode.json 與 OpenCode 記錄檔（可執行 opencode debug paths 查看位置）。使用 OpenCode v2 時，既有的 V1 外掛可能不相容。請在保管庫中執行 opencode models --standalone 進行比對，然後點擊「探索」。",
+      "emptyModels": "OpenCode 伺服器未針對此儲存庫傳回任何已啟用的模型。請檢查儲存庫中的 .opencode/opencode.json 與 OpenCode 記錄檔（可執行 opencode debug paths 查看位置）。使用 OpenCode v2 時，既有的 V1 外掛可能不相容。請在儲存庫中執行 opencode models --standalone 進行比對，然後點選「探索」。",
       "environment": {
         "name": "OpenCode 環境變數",
         "desc": "傳遞給 OpenCode 的額外環境變數。"
@@ -1170,7 +1170,7 @@
         "repairBody": ".claude/skills 將被取代為指向 .agents/skills 的連結。它目前指向的資料夾不會被修改。",
         "linkBody": "將 .claude/skills 建立為指向 .agents/skills 的連結，讓 Claude Code 使用共用技能。此動作不會移動任何檔案。",
         "linkWithItemsBody": "指令將轉換為技能，接著會將 .claude/skills 建立為指向 .agents/skills 的連結。此動作無法復原。",
-        "devicesWarning": "正在多台裝置間同步此保管庫嗎？連結可能不會一併同步，請在每台裝置上各自執行一次同步。",
+        "devicesWarning": "正在多台裝置間同步此儲存庫嗎？連結可能不會一併同步，請在每台裝置上各自執行一次同步。",
         "confirm": "同步並連結",
         "partial": "同步在建立連結前停止。請修正以下項目後重新同步。",
         "failed": "同步失敗：{message}",

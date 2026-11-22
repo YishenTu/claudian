@@ -151,11 +151,11 @@
       "howGoingNamed": "{name}님, 어떻게 지내세요?",
       "evening": "좋은 저녁이에요",
       "eveningNamed": "{name}님, 좋은 저녁이에요",
-      "eveningShort": "편안한 저녁이에요",
-      "eveningShortNamed": "{name}님, 편안한 저녁이에요",
+      "eveningShort": "좋은 저녁이에요",
+      "eveningShortNamed": "{name}님, 좋은 저녁이에요",
       "howDay": "오늘 하루는 어땠나요?",
       "howDayNamed": "{name}님, 오늘 하루는 어땠나요?",
-      "nightOwl": "안녕하세요, 밤 올빼미님",
+      "nightOwl": "안녕하세요, 올빼미족님",
       "hiHow": "안녕하세요, 잘 지내세요?",
       "hiHowNamed": "{name}님, 잘 지내세요?",
       "welcomeBack": "다시 오신 걸 환영해요!",
@@ -787,7 +787,7 @@
       "desc": "한 줄에 하나씩 입력하세요. 형식: \"map <키> <동작>\" (동작: scrollUp, scrollDown, focusInput)."
     },
     "requireCommandOrControlEnterToSend": {
-      "name": "Command/Ctrl+Enter로 전송",
+      "name": "Command/Ctrl+Enter로만 전송",
       "desc": "활성화하면 Enter 키로 줄을 바꿉니다. macOS에서는 Command+Enter, Windows와 Linux에서는 Ctrl+Enter로 전송합니다."
     },
     "safety": "보안",
@@ -818,7 +818,7 @@
         "titleEdit": "스니펫 편집",
         "titleSave": "스니펫 저장",
         "name": "이름",
-        "namePlaceholder": "이 환경 구성을 알아보기 쉬운 이름",
+        "namePlaceholder": "이 환경 구성을 쉽게 알아볼 수 있는 이름",
         "description": "설명",
         "descPlaceholder": "설명 (선택)",
         "envVars": "환경 변수",
@@ -875,7 +875,7 @@
       "desc": "한 줄에 하나씩 지정한 코드 블록 언어를 노트에서 렌더링하는 플러그인에 전달합니다(예: vega-lite). 응답이 완료된 후 렌더링됩니다. 다른 코드 블록은 항상 코드로 표시됩니다."
     },
     "expandFileEditsByDefault": {
-      "name": "파일 편집 기본 펼치기",
+      "name": "파일 편집 기본으로 펼치기",
       "desc": "Write 및 Edit 변경 내역(diff)이 처음 표시될 때 펼친 상태로 보여줍니다."
     },
     "chatViewPlacement": {
@@ -1032,7 +1032,7 @@
         "descriptionPlaceholder": "코드의 정확성과 유지보수성을 검토합니다",
         "instructions": "지침",
         "instructionsDesc": "필수 SKILL.md 지침입니다.",
-        "instructionsPlaceholder": "제공된 코드를 검토하고 개선이 필요한 사항을 정리해 주세요…"
+        "instructionsPlaceholder": "제공된 코드를 검토하고 조치가 필요한 사항을 정리해 주세요…"
       },
       "delete": {
         "title": "공유 스킬 삭제",
