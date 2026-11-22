@@ -295,8 +295,10 @@ export class ProviderSettingsCoordinator {
     if (serviceTierToggle && typeof settings.serviceTier === 'string') {
       savedServiceTier[providerId] = settings.serviceTier;
     }
-    if (typeof settings.permissionMode === 'string' && uiConfig.permissionModes) {
-      savedPermissionMode[providerId] = settings.permissionMode;
+    // Saved modes change only through commitProviderSettingsChange; the top-level mode is their projection and may
+    // be stale until projected, so it only seeds a provider with no saved mode (pre-map settings).
+    if (uiConfig.permissionModes && savedPermissionMode[providerId] === undefined && typeof settings.permissionMode === 'string') {
+      savedPermissionMode[providerId] = resolvePermissionMode(uiConfig.permissionModes, settings.permissionMode);
     }
   }
 
@@ -423,9 +425,6 @@ export class ProviderSettingsCoordinator {
 
       if (providerId !== settingsProvider) {
         this.projectProviderState(targetSettings, providerId);
-      } else {
-        // Persisting below saves the top-level mode, which can be stale until the saved mode is projected.
-        this.projectPermissionMode(settings, providerId, ProviderRegistry.getModelPolicy(providerId), true);
       }
 
       const { changed } = reconciler.reconcileModelWithEnvironment(targetSettings, context);

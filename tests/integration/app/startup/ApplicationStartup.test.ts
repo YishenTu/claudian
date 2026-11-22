@@ -1,3 +1,4 @@
+import { TEST_CODEX_CATALOG, TEST_CODEX_MODEL } from '@test/helpers/codexModels';
 import { DesktopVault } from '@test/helpers/core/DesktopVault';
 import { DEFAULT_CLAUDIAN_SETTINGS } from '@test/helpers/defaultSettings';
 import { createObsidianPlugin } from '@test/helpers/ObsidianSettingsHost';
@@ -172,28 +173,57 @@ describe('startApplication', () => {
       expect(saveSpy).toHaveBeenCalled();
     });
 
-    it('fails a malformed saved permission mode closed while applying environment configuration', async () => {
+    function loadSettingsFile(settingsFile: Record<string, unknown>): void {
       mockApp.vault.adapter.exists.mockImplementation(async (path: string) => path === '.claudian/claudian-settings.json');
       mockApp.vault.adapter.read.mockImplementation(async (path: string) => (
-        path === '.claudian/claudian-settings.json'
-          ? JSON.stringify({
-            settingsProvider: 'claude',
-            permissionMode: 'yolo',
-            savedProviderPermissionMode: { claude: false },
-            providerConfigs: { claude: { environmentHash: 'old-hash', environmentVariables: 'ANTHROPIC_MODEL=custom-model' } },
-          })
-          : ''
+        path === '.claudian/claudian-settings.json' ? JSON.stringify(settingsFile) : ''
       ));
+    }
 
-      const domains = await loadApplication();
-
-      expect(domains.settings.getCommittedSettings().permissionMode).toBe('manual');
-      const written = mockApp.vault.adapter.write.mock.calls
+    function lastWrittenSettings(): Record<string, unknown> | undefined {
+      return mockApp.vault.adapter.write.mock.calls
         .filter(([path]) => path === '.claudian/claudian-settings.json')
         .map(([, content]) => JSON.parse(content) as Record<string, unknown>)
         .at(-1);
-      // The changed environment made startup save the settings document.
-      expect(written).toMatchObject({ permissionMode: 'manual', savedProviderPermissionMode: { claude: 'manual' } });
+    }
+
+    // A stale top-level mode must not reach the saved preference through any startup step that saves.
+    it.each([
+      {
+        name: 'a malformed Claude mode while applying environment configuration',
+        settingsFile: {
+          settingsProvider: 'claude', permissionMode: 'yolo', savedProviderPermissionMode: { claude: false },
+          providerConfigs: { claude: { environmentHash: 'old-hash', environmentVariables: 'ANTHROPIC_MODEL=custom-model' } },
+        },
+        providerId: 'claude', expected: 'manual',
+      },
+      {
+        name: 'a saved Codex mode while qualifying the model ID',
+        settingsFile: {
+          settingsProvider: 'codex', model: TEST_CODEX_MODEL, permissionMode: 'yolo', savedProviderPermissionMode: { codex: 'normal' },
+          providerConfigs: { codex: { enabled: true, discoveredModels: TEST_CODEX_CATALOG } },
+        },
+        providerId: 'codex', expected: 'normal',
+      },
+      {
+        name: 'a malformed Codex mode while qualifying the model ID',
+        settingsFile: {
+          settingsProvider: 'codex', model: TEST_CODEX_MODEL, permissionMode: 'yolo', savedProviderPermissionMode: { codex: false },
+          providerConfigs: { codex: { enabled: true, discoveredModels: TEST_CODEX_CATALOG } },
+        },
+        providerId: 'codex', expected: 'normal',
+      },
+    ])('keeps $name instead of a stale YOLO', async ({ settingsFile, providerId, expected }) => {
+      loadSettingsFile(settingsFile);
+
+      const domains = await loadApplication();
+
+      expect(domains.settings.getCommittedSettings().permissionMode).toBe(expected);
+      // The step under test changed settings, so startup saved the settings document.
+      expect(lastWrittenSettings()).toMatchObject({
+        permissionMode: expected,
+        savedProviderPermissionMode: { [providerId]: expected },
+      });
     });
   });
 
