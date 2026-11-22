@@ -4,6 +4,7 @@ import '@/providers';
 import { axe } from '@test/helpers/accessibility';
 import { deferred } from '@test/helpers/ChatInputHarness';
 import { createTestSession } from '@test/helpers/ConversationPorts';
+import { approvalDecisionOptions } from '@test/helpers/features/chat/approvalDecisionOptions';
 import { createHarness, releaseSideChatHarnesses, startSideChat } from '@test/helpers/features/chat/SideChatDOMHarness';
 import { fireEvent, screen, waitFor } from '@testing-library/dom';
 import { Component, MarkdownRenderer, Notice } from 'obsidian';
@@ -34,6 +35,7 @@ it('keeps a child turn and detached approval alive, then restores the completed 
   native.emitText('detachment.');
   await waitFor(() => expect(runtime.state.currentTextContent).toBe('Before detachment.'));
   const pending = native.config.interactionPort.requestApproval({
+    decisionOptions: approvalDecisionOptions(),
     interactionId: 'detached-approval', sessionInstanceId: native.sessionInstanceId,
     turnId: native.activeTurnId, kind: 'approval', toolName: 'Read', input: {}, description: 'Read while detached',
   }, new AbortController().signal);
@@ -46,7 +48,7 @@ it('keeps a child turn and detached approval alive, then restores the completed 
   const messagesEl = root.createDiv();
   runtime.attachPresentation({ component: new Component(), messagesEl, getPromptParentEl: () => root });
   fireEvent.click(screen.getByRole('button', { name: 'Allow once' }));
-  await expect(pending).resolves.toMatchObject({ decision: 'allow' });
+  await expect(pending).resolves.toMatchObject({ value: 'Allow once' });
   native.emitText(' Reattached.');
   native.complete();
   await started;
@@ -71,6 +73,7 @@ it('keeps replacement approval attention after a dismissed prompt with the same 
   const native = harness.backend.latest;
   const port = native.config.interactionPort;
   const request = (description: string) => port.requestApproval({
+    decisionOptions: approvalDecisionOptions(),
     interactionId: 'reused', sessionInstanceId: native.sessionInstanceId, turnId: native.activeTurnId,
     kind: 'approval', toolName: 'Read', description, input: {},
   }, new AbortController().signal);
@@ -82,7 +85,7 @@ it('keeps replacement approval attention after a dismissed prompt with the same 
   expect(screen.getByText('Replacement request')).toBeTruthy();
   expect(harness.controller.runtime!.state.requiresAction).toBe(true);
   fireEvent.click(screen.getByText('Allow once', { exact: true }));
-  await expect(replacement).resolves.toMatchObject({ decision: 'allow' });
+  await expect(replacement).resolves.toMatchObject({ value: 'Allow once' });
   expect(harness.controller.runtime!.state.requiresAction).toBe(false);
   native.complete();
   await started;
@@ -97,7 +100,7 @@ it.each(['approval', 'question'] as const)('dismisses only the named overlapping
   const request = (interactionId: string) => {
     const common = { interactionId, sessionInstanceId: native.sessionInstanceId, turnId: native.activeTurnId };
     return kind === 'approval'
-      ? port.requestApproval({ ...common, kind, toolName: interactionId, description: `${interactionId} details`, input: {} }, new AbortController().signal)
+      ? port.requestApproval({ ...common, kind, decisionOptions: approvalDecisionOptions(), toolName: interactionId, description: `${interactionId} details`, input: {} }, new AbortController().signal)
       : port.askUserQuestion({ ...common, kind, input: { questions: [{ question: `${interactionId} question`, options: [{ label: 'Yes', description: '' }] }] } }, new AbortController().signal);
   };
   const first = request('first').catch(() => null);
@@ -120,6 +123,7 @@ it('completing one approval leaves the other reachable for cancellation', async 
   const native = harness.backend.latest;
   const port = native.config.interactionPort;
   const request = (interactionId: string) => port.requestApproval({
+    decisionOptions: approvalDecisionOptions(),
     interactionId, sessionInstanceId: native.sessionInstanceId, turnId: native.activeTurnId,
     kind: 'approval', toolName: interactionId, description: `${interactionId} details`, input: {},
   }, new AbortController().signal);
@@ -129,7 +133,7 @@ it('completing one approval leaves the other reachable for cancellation', async 
   const prompt = screen.getByRole('region', { name: 'first approval details' }).closest<HTMLElement>('.claudian-ask-question-inline')!;
   expect(await axe(prompt)).toHaveNoViolations();
   fireEvent.click(screen.getAllByText('Allow once', { exact: true })[0]);
-  await expect(first).resolves.toMatchObject({ decision: 'allow', interactionId: 'first' });
+  await expect(first).resolves.toMatchObject({ value: 'Allow once', interactionId: 'first' });
   port.dismissInteraction('second', 'cancelled');
   expect(screen.queryByRole('region', { name: 'second approval details' })).toBeNull();
   await second;

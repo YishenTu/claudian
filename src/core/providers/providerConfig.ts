@@ -74,8 +74,9 @@ export function getProviderSelectionInputs(
   settings: Readonly<Record<string, unknown>>,
   providerId: ProviderId,
 ): ProviderSelectionInputs {
+  const { permissionMode: _otherProvidersMode, ...selection } = getProviderSelectionDefaults(settings);
   return {
-    ...getProviderSelectionDefaults(settings),
+    ...selection,
     referencedModelIds: [settings.model, settings.titleGenerationModel, getProviderSavedSelection(settings, providerId).model]
       .filter((id): id is string => typeof id === 'string'),
   };

@@ -1,6 +1,7 @@
 /** @vitest-environment jsdom */
 import '@/providers';
 
+import { approvalDecisionOptions } from '@test/helpers/features/chat/approvalDecisionOptions';
 import { createProjectsFake, projectRecord } from '@test/helpers/features/chat/ProjectsFake';
 import {
   createHarness,
@@ -108,6 +109,7 @@ it('surfaces a collapsed side approval without changing the composer destination
 
   const native = harness.backend.latest;
   const approval = native.config.interactionPort.requestApproval({
+    decisionOptions: approvalDecisionOptions(),
     description: 'Write a note', input: {}, interactionId: 'side-approval-1',
     kind: 'approval', sessionInstanceId: native.sessionInstanceId,
     toolName: 'Write', turnId: native.activeTurnId,
@@ -122,7 +124,7 @@ it('surfaces a collapsed side approval without changing the composer destination
   harness.controller.expand();
   const allow = await screen.findByText('Allow once');
   fireEvent.click(allow);
-  await expect(approval).resolves.toMatchObject({ decision: 'allow' });
+  await expect(approval).resolves.toMatchObject({ value: 'Allow once' });
 
   native.complete();
   await started;

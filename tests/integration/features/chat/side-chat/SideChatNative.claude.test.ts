@@ -4,6 +4,7 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 
 import * as sdk from '@anthropic-ai/claude-agent-sdk';
+import { answerApproval } from '@test/helpers/features/chat/approvalDecisionOptions';
 import { createForkTestEnvironment, type ForkTestEnvironment } from '@test/helpers/features/chat/ProviderForkTestHarness';
 
 import { ClaudeExecutionBackend } from '@/providers/claude/execution/ClaudeExecutionBackend';
@@ -192,7 +193,7 @@ describe('Claude side-chat native child', () => {
       interactionPort: {
         askUserQuestion: async () => { throw new Error('Unexpected question'); },
         dismissInteraction: () => undefined,
-        requestApproval: async request => ({ decision: 'allow', interactionId: request.interactionId }),
+        requestApproval: async request => answerApproval(request, 'allow'),
       },
     });
     const turn = await child!.send('Write a note');
@@ -215,7 +216,7 @@ describe('Claude side-chat native child', () => {
       interactionPort: {
         askUserQuestion: async () => { throw new Error('Unexpected question'); },
         dismissInteraction: () => undefined,
-        requestApproval: async request => ({ decision: 'deny', interactionId: request.interactionId }),
+        requestApproval: async request => answerApproval(request, 'deny'),
       },
     });
     const turn = await child!.send('Write a note');

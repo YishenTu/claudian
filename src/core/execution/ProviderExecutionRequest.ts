@@ -76,13 +76,6 @@ export type ProviderToolPolicy =
     }
   | {
       readonly kind: 'provider-default';
-    }
-  | {
-      readonly kind: 'unrestricted';
-    }
-  | {
-      readonly kind: 'allow-list';
-      readonly names: readonly string[];
     };
 
 /**

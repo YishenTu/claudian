@@ -1,3 +1,4 @@
+import { answerApproval } from '@test/helpers/features/chat/approvalDecisionOptions';
 import type { Mocked } from 'vitest';
 
 import { type BranchableExecutionSession, type ConversationBranchState, type ProviderExecutionBackend, type ProviderExecutionEvent, ProviderExecutionLifecycleRegistry, type ProviderExecutionRequest, type ProviderExecutionRun, type ProviderExecutionSession, type ProviderInteractionPort, type ProviderSessionConfig, type ProviderSessionEvent, type ProviderSessionSnapshot, type ProviderSessionStatus, type RewindableExecutionSession, type SteerableExecutionSession } from '@/core/execution';
@@ -303,10 +304,7 @@ export function createHarness(options: {
   ]);
   const repository = createExecutionPersistence();
   const interactionPort: Mocked<ProviderInteractionPort> = {
-    requestApproval: vi.fn(async ({ interactionId }) => ({
-      interactionId,
-      decision: 'allow',
-    })),
+    requestApproval: vi.fn(async request => answerApproval(request, 'allow')),
     askUserQuestion: vi.fn(async ({ interactionId }) => ({
       interactionId,
       answers: null,

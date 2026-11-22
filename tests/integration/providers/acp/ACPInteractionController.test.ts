@@ -1,3 +1,4 @@
+import { answerApproval } from '@test/helpers/features/chat/approvalDecisionOptions';
 import type { Mocked } from 'vitest';
 
 import type { ProviderInteractionPort } from '@/core/execution';
@@ -32,7 +33,7 @@ function createPort(): Mocked<ProviderInteractionPort> {
 describe('ACPInteractionController', () => {
   it.each(['caller-abort', 'cancel', 'dispose'] as const)('rejects an already-fulfilled approval after %s', reason => {
     const port = createPort();
-    port.requestApproval.mockImplementation(async request => ({ decision: 'allow', interactionId: request.interactionId }));
+    port.requestApproval.mockImplementation(async request => answerApproval(request, 'allow'));
     const controller = new ACPInteractionController({
       getTurnId: () => 'turn-1', interactionPort: port, sessionInstanceId: 'session-1',
     });
@@ -46,10 +47,7 @@ describe('ACPInteractionController', () => {
 
   it('routes ACP permissions with stable local identity and validates the echoed response', async () => {
     const port = createPort();
-    port.requestApproval.mockImplementation(async (request) => ({
-      decision: 'allow',
-      interactionId: request.interactionId,
-    }));
+    port.requestApproval.mockImplementation(async (request) => answerApproval(request, 'allow'));
     const controller = new ACPInteractionController({
       getTurnId: () => 'turn-1',
       interactionPort: port,
@@ -87,41 +85,49 @@ describe('ACPInteractionController', () => {
 
   it('allows a provider-owned permission presentation without changing ACP decisions', async () => {
     const port = createPort();
-    port.requestApproval.mockImplementation(async (request) => ({
-      decision: 'allow',
-      interactionId: request.interactionId,
-    }));
+    port.requestApproval.mockImplementation(async (request) => answerApproval(request, 'allow'));
     const controller = new ACPInteractionController({
       getTurnId: () => 'turn-1',
       interactionPort: port,
       presentPermission: (_request, input) => ({
-        blockedPath: String(input.path),
-        decisionReason: 'Path is outside the session working directory',
-        description: 'Provider wants to access an external path.',
-        toolName: 'External Directory',
+        description: `Provider wants to read ${String(input.path)}.`,
+        toolName: 'Read',
       }),
       sessionInstanceId: 'session-instance-1',
     });
 
-    await controller.requestPermission(PERMISSION_REQUEST);
+    await expect(controller.requestPermission(PERMISSION_REQUEST)).resolves.toEqual({
+      outcome: { optionId: 'allow-once', outcome: 'selected' },
+    });
 
     expect(port.requestApproval).toHaveBeenCalledWith(
       expect.objectContaining({
-        blockedPath: 'README.md',
-        decisionReason: 'Path is outside the session working directory',
-        description: 'Provider wants to access an external path.',
+        description: 'Provider wants to read README.md.',
         input: { path: 'README.md' },
-        toolName: 'External Directory',
+        toolName: 'Read',
       }),
       expect.any(AbortSignal),
     );
   });
 
+  it.each([
+    ['the option the user picked', 'reject', { outcome: { optionId: 'reject', outcome: 'selected' } }],
+    ['a dismissal', null, { outcome: { outcome: 'cancelled' } }],
+    ['an option ACP did not offer', 'reject-always', { outcome: { outcome: 'cancelled' } }],
+  ])('answers %s with that native outcome', async (_name, value, outcome) => {
+    const port = createPort();
+    port.requestApproval.mockImplementation(async ({ interactionId }) => ({ interactionId, value }));
+    const controller = new ACPInteractionController({
+      getTurnId: () => 'turn-1', interactionPort: port, sessionInstanceId: 'session-instance-1',
+    });
+    await expect(controller.requestPermission(PERMISSION_REQUEST)).resolves.toEqual(outcome);
+  });
+
   it('cancels stale or cross-turn resolutions instead of applying them', async () => {
     let turnId = 'turn-1';
     let resolveApproval!: (value: {
-      decision: 'allow';
       interactionId: string;
+      value: string;
     }) => void;
     const port = createPort();
     port.requestApproval.mockImplementation((request) => new Promise((resolve) => {
@@ -138,8 +144,8 @@ describe('ACPInteractionController', () => {
     await Promise.resolve();
     turnId = 'turn-2';
     resolveApproval({
-      decision: 'allow',
       interactionId: 'session-instance-1:approval:1',
+      value: 'allow-once',
     });
 
     await expect(pending).resolves.toEqual({

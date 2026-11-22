@@ -73,8 +73,6 @@ class FakeKernel implements OpencodeSessionKernel {
 
   async setModel(): Promise<void> {}
 
-  setAutoApprove(): void {}
-
   async prompt(sessionId: string, input: OpencodePrompt): Promise<typeof this.promptResult> {
     this.prompts.push({ sessionId, ...input });
     return new Promise((resolve) => {
@@ -136,7 +134,7 @@ function createConfig(overrides: Partial<ProviderSessionConfig> = {}): ProviderS
   const interactionPort: ProviderInteractionPort = {
     requestApproval: vi.fn(async ({ interactionId }) => ({
       interactionId,
-      decision: 'allow' as const,
+      value: 'Allow once',
     })),
     askUserQuestion: vi.fn(),
     dismissInteraction: vi.fn(),

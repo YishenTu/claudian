@@ -376,7 +376,8 @@ const handle = async (req, res, url, body, route) => {
         }
         emit('session.tool.input.started', { sessionID: 'ses_grand', assistantMessageID, id: 'tool_shell', name: 'shell' });
         emit('session.tool.called', { sessionID: 'ses_grand', assistantMessageID, id: 'tool_shell', input: { command: 'pwd' } });
-        emit('permission.asked', { sessionID: 'ses_grand', id: 'per_grand', action: 'shell', resources: ['pwd'] });
+        // Native shell requests save the command's arity prefix for Always allow.
+        emit('permission.asked', { sessionID: 'ses_grand', id: 'per_grand', action: 'shell', resources: ['pwd'], save: ['pwd *'] });
         await waitForInteraction(() => grandApproval !== undefined);
         emit(grandApproval === 'once' ? 'session.execution.succeeded' : 'session.execution.failed', { error: { message: 'Nested approval was not answered' } });
         return;
@@ -392,7 +393,7 @@ const handle = async (req, res, url, body, route) => {
       }
       // Each turn asks afresh; an earlier turn's replies must not answer this one.
       permission = undefined; form = undefined;
-      emit('permission.asked', { id: 'per_test', action: 'shell', resources: ['echo test'] });
+      emit('permission.asked', { id: 'per_test', action: 'shell', resources: ['echo test'], save: ['echo *'] });
       if (body.text === 'question-wording') {
         emit('form.created', { form: { id: 'frm_test', sessionID: 'ses_test', title: 'Questions', metadata: { kind: 'question' }, fields: [{ key: 'q0', type: 'string', title: 'Color', description: 'Which color should the report use?', custom: true, options: [{ value: 'blue', label: 'Blue' }] }] } });
       }
@@ -408,9 +409,15 @@ const handle = async (req, res, url, body, route) => {
         emit('session.tool.called', { sessionID: 'ses_child', assistantMessageID: 'msg_child', id: 'tool_read', input: { path: '/workspace/notes.md' } });
         emit('session.tool.success', { sessionID: 'ses_child', assistantMessageID: 'msg_child', id: 'tool_read', content: [{ type: 'text', text: 'Child read result' }] });
         emit('session.step.ended', { sessionID: 'ses_child', assistantMessageID: 'msg_child', tokens: { input: 900, output: 200, reasoning: 100, cache: { read: 300, write: 0 } } });
-        if (body.text === 'background-overlap') {
-          lateChild = () => {
+        if (body.text.startsWith('background-overlap')) {
+          lateChild = async () => {
             lateChild = undefined;
+            if (body.text === 'background-overlap-approval') {
+              permission = undefined;
+              emit('permission.asked', { sessionID: 'ses_child', id: 'per_test', action: 'shell', resources: ['echo late'], save: ['echo *'] });
+              await waitForInteraction(() => permission !== undefined);
+              if (permission !== 'once') return;
+            }
             emit('session.tool.input.started', { sessionID: 'ses_child', assistantMessageID: 'msg_child', id: 'late_read', name: 'read' });
             emit('session.tool.called', { sessionID: 'ses_child', assistantMessageID: 'msg_child', id: 'late_read', input: { path: '/workspace/late.md' } });
             emit('session.tool.success', { sessionID: 'ses_child', assistantMessageID: 'msg_child', id: 'late_read', content: [{ type: 'text', text: 'Late child result' }] });
@@ -427,7 +434,7 @@ const handle = async (req, res, url, body, route) => {
               emit('session.execution.succeeded', { sessionID: 'ses_child' });
             }
             permission = undefined; form = undefined;
-            emit('permission.asked', { sessionID: interactionSession, id: 'per_test', action: 'shell', resources: ['echo child'] });
+            emit('permission.asked', { sessionID: interactionSession, id: 'per_test', action: 'shell', resources: ['echo child'], save: ['echo *'] });
             emit('form.created', { form: { id: 'frm_test', sessionID: interactionSession, title: 'Child color', fields: [{ key: 'q0', type: 'string', title: 'Pick a child color', options: [{ value: 'blue', label: 'Blue' }] }] } });
             await waitForInteraction(() => permission !== undefined && form !== undefined);
             if (permission !== 'once' || readForm()?.q0 !== 'blue') return;
@@ -436,6 +443,26 @@ const handle = async (req, res, url, body, route) => {
           emit('session.text.ended', { sessionID: 'ses_child', assistantMessageID: 'msg_child', ordinal: 0, text: 'Child result' });
           emit('session.execution.succeeded', { sessionID: 'ses_child' });
           emit('session.execution.started', {});
+          if (body.text === 'background-auto-child-approval') {
+            // The automatic reply launches its own child, which asks outside any requested run.
+            emit('session.tool.input.started', { assistantMessageID: 'msg_background', id: 'tool_auto_child', name: 'subagent' });
+            emit('session.tool.called', { assistantMessageID: 'msg_background', id: 'tool_auto_child', input: { agent: 'worker' } });
+            emit('session.tool.progress', { assistantMessageID: 'msg_background', id: 'tool_auto_child', metadata: { sessionID: 'ses_auto_child', status: 'running' } });
+            permission = undefined;
+            emit('permission.asked', { sessionID: 'ses_auto_child', id: 'per_auto_child', action: 'shell', resources: ['echo auto child'], save: ['echo *'] });
+            await waitForInteraction(() => permission !== undefined);
+            // Only an approval lets the work finish; a rejection leaves the reply unfinished and the test waiting.
+            if (permission !== 'once') return;
+            emit('session.execution.succeeded', { sessionID: 'ses_auto_child' });
+            emit('session.tool.success', { assistantMessageID: 'msg_background', id: 'tool_auto_child', content: [{ type: 'text', text: 'Auto child done' }], metadata: { sessionID: 'ses_auto_child', status: 'completed' } });
+          }
+          if (body.text === 'background-auto-approval') {
+            // OpenCode's automatic reply to a finished child asks outside any requested run.
+            permission = undefined;
+            emit('permission.asked', { id: 'per_auto', action: 'shell', resources: ['echo auto'], save: ['echo *'] });
+            await waitForInteraction(() => permission !== undefined);
+            if (permission !== 'once') return;
+          }
           emit('session.text.ended', { assistantMessageID: 'msg_background', ordinal: 0, text: 'Automatic reply' });
           // A stopped automatic reply stays open until the client interrupts it.
           if (body.text !== 'background-stop') emit('session.execution.succeeded', {});

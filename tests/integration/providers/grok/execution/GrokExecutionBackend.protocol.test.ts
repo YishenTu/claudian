@@ -4,6 +4,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 
 import { capturedSelectionPrompt, capturedSelections } from '@test/helpers/capturedSelections';
+import { answerApproval } from '@test/helpers/features/chat/approvalDecisionOptions';
 import { createProviderHostFixture } from '@test/helpers/providerRuntimeHost';
 import { readGrokCatalog, writeGrokCatalog } from '@test/helpers/providers/grokSettings';
 import { testDate } from '@test/helpers/testClock';
@@ -461,7 +462,7 @@ describe('GrokExecutionBackend', () => {
     await session.dispose();
   });
 
-  it.each(['provider-default', 'unrestricted', 'passive', 'read-only'] as const)(
+  it.each(['provider-default', 'passive', 'read-only'] as const)(
     'checks %s policy at MCP call time', async kind => {
       const fixture = (await sessionToolFixture());
       const native = new FakeNativeConnection();
@@ -477,7 +478,7 @@ describe('GrokExecutionBackend', () => {
       expect(fixture.registerMCPRoute).toHaveBeenCalledTimes(1);
       const handler = fixture.registerMCPRoute.mock.calls[0][0];
       const result = await handler({ name: 'claudian_send_message', args: { text: 'hello' }, signal: new AbortController().signal });
-      const allowed = kind === 'provider-default' || kind === 'unrestricted';
+      const allowed = kind === 'provider-default';
       expect(result.isError).toBe(!allowed);
       expect(fixture.port.send).toHaveBeenCalledTimes(allowed ? 1 : 0);
       expect(result.text).toEqual(allowed
@@ -983,8 +984,8 @@ describe('GrokExecutionBackend', () => {
       native.promptImplementation = () => new Promise(() => {});
       let nativeOptions!: GrokExecutionNativeCreateOptions;
       const requestApproval = vi.fn(async (request: { interactionId: string }) => ({
-        decision: 'deny' as const,
         interactionId: request.interactionId,
+        value: 'reject-once',
       }));
       const session = createBackend((await createGrokHost()), {
         nativeFactory: { create: options => { nativeOptions = options; return native; } },
@@ -1923,7 +1924,7 @@ describe('GrokExecutionBackend', () => {
       ...sessionConfig,
       interactionPort: {
         ...interactionPort,
-        requestApproval: async request => ({ interactionId: request.interactionId, decision: 'allow' }),
+        requestApproval: async request => answerApproval(request, 'allow'),
       },
     });
     const run = session.execute(executionRequest());
@@ -2223,58 +2224,6 @@ describe('GrokExecutionBackend', () => {
     expect(JSON.stringify(inherited)).toBe('{"answers":{},"outcome":"accepted"}');
     run.cancel();
     await collect(run.events);
-  });
-
-  it.each(['read_file', 'claudian_send_message'])('fails closed before native startup for allow-list containing %s', async name => {
-    const fixture = (await sessionToolFixture());
-    const nativeFactory: GrokExecutionNativeFactory = {
-      create: vi.fn(() => new FakeNativeConnection()),
-    };
-    const session = createBackend(
-      fixture.host,
-      { nativeFactory },
-    ).createSession({ ...sessionConfig, sessionTools: fixture.port });
-    const request: ProviderExecutionRequest = {
-      ...executionRequest(),
-      toolPolicy: { kind: 'allow-list', names: [name] },
-    };
-
-    const events = await collect(session.execute(request).events);
-
-    expect(nativeFactory.create).not.toHaveBeenCalled();
-    expect(fixture.registerMCPRoute).not.toHaveBeenCalled();
-    expect(fixture.port.send).not.toHaveBeenCalled();
-    expect(events).toEqual([
-      expect.objectContaining({
-        snapshot: expect.objectContaining({
-          status: 'executing',
-        }),
-        type: 'session_state_changed',
-      }),
-      expect.objectContaining({
-        snapshot: expect.objectContaining({
-          invalidation: expect.objectContaining({
-            reason: 'configuration-changed',
-            recoverable: false,
-          }),
-          status: 'invalidated',
-        }),
-        type: 'session_state_changed',
-      }),
-      expect.objectContaining({
-        category: 'configuration',
-        message: expect.stringContaining('allow-list'),
-        recoverable: false,
-        type: 'execution_error',
-      }),
-    ]);
-    expect(session.getSnapshot()).toMatchObject({
-      invalidation: {
-        reason: 'configuration-changed',
-        recoverable: false,
-      },
-      status: 'invalidated',
-    });
   });
 
   it('emits invalidated provider state before a terminal execution failure', async () => {

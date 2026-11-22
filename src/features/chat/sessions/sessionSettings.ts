@@ -3,6 +3,7 @@ import {
   normalizeProviderModelSelection,
   resolveConversationModel,
 } from '@/core/providers/conversationModel';
+import { resolvePermissionMode } from '@/core/providers/permissionModes';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { ProviderSettingsCoordinator } from '@/core/providers/ProviderSettingsCoordinator';
 import type { ProviderCapabilities, ProviderChatUIConfig } from '@/core/providers/types';
@@ -80,6 +81,12 @@ export function getSessionSettingsSnapshot(
     tab.providerSelections.set(providerId, selections);
   }
   Object.assign(snapshot, selections);
+  // A session selection is applied as its provider would run it: unknown modes fail closed.
+  snapshot.permissionMode = resolvePermissionMode(
+    ProviderRegistry.getModelPolicy(providerId).permissionModes,
+    snapshot.permissionMode,
+    snapshot,
+  );
   if (snapshot.reasoning !== null) {
     const key = reasoningSelectionKey(providerId, snapshot.model);
     const uiConfig = ProviderRegistry.getChatUIConfig(providerId);

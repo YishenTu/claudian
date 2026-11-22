@@ -1,12 +1,38 @@
-import type { ProviderPermissionModePolicy } from '../../core/providers/types';
+import {
+  buildPermissionModeOptions,
+  createPermissionModePolicy,
+  type ProviderPermissionModeDefinition,
+} from '../../core/providers/permissionModes';
+import type { ProviderPermissionModeOption } from '../../core/providers/types';
 
-export const ANTIGRAVITY_PERMISSION_MODES = ['normal', 'acceptEdits', 'auto', 'yolo'] as const;
+const ANTIGRAVITY_PERMISSION_MODES: readonly ProviderPermissionModeDefinition[] = Object.freeze([
+  { value: 'normal', label: 'Ask', description: 'Ask before edits and commands' },
+  {
+    value: 'acceptEdits',
+    label: 'Accept edits',
+    description: 'Approve file edits in the workspace without asking',
+  },
+  {
+    value: 'auto',
+    label: 'Auto',
+    description: { key: 'chat.permissionMode.antigravity.autoDesc' },
+  },
+  {
+    value: 'yolo',
+    label: 'YOLO',
+    description: 'Accept all permissions without asking',
+    bypassesApprovals: true,
+  },
+]);
 
-export const ANTIGRAVITY_PERMISSION_MODE_POLICY: ProviderPermissionModePolicy = Object.freeze({
-  values: ANTIGRAVITY_PERMISSION_MODES,
+export const ANTIGRAVITY_PERMISSION_MODE_POLICY = createPermissionModePolicy(ANTIGRAVITY_PERMISSION_MODES, {
   fallbackValue: 'normal',
   defaultValue: 'normal',
 });
+
+export function getAntigravityPermissionModeOptions(): ProviderPermissionModeOption[] {
+  return buildPermissionModeOptions(ANTIGRAVITY_PERMISSION_MODES);
+}
 
 /**
  * agy's native `mode` option for a Claudian permission mode. Native `plan` is never selected.

@@ -4,6 +4,7 @@
 import { createFixture, request } from '@test/helpers/providers/opencode/OpencodeHTTPExecutionFixture';
 
 import { type ProviderExecutionEvent } from '@/core/execution';
+import { TOOL_BASH } from '@/core/tools/toolNames';
 
 it('runs YOLO with automatic native approvals while still answering questions, then asks again', async () => {
   const f = await createFixture();
@@ -74,7 +75,11 @@ it('routes grandchild approvals and tools through the owning descendant chain', 
     const events: ProviderExecutionEvent[] = [];
     for await (const event of f.session.execute(request('nested')).events) events.push(event);
     expect(events.at(-1)).toMatchObject({ type: 'turn_completed' });
-    expect(f.approvals).toEqual([expect.objectContaining({ toolName: 'bash', description: 'shell: pwd' })]);
+    expect(f.approvals).toEqual([expect.objectContaining({ toolName: TOOL_BASH, description: 'shell: pwd', decisionOptions: [
+      expect.objectContaining({ value: 'Allow once', decision: 'allow' }),
+      expect.objectContaining({ value: 'Always allow', decision: 'allow-always', description: expect.stringContaining('pwd *') }),
+      expect.objectContaining({ value: 'Deny', decision: 'deny' }),
+    ] })]);
     expect(events).toEqual(expect.arrayContaining([expect.objectContaining({
       type: 'tool_started', toolCallId: 'ses_grand:tool_shell', parentToolCallId: 'ses_worker:tool_nested',
       toolScope: { kind: 'subagent', subagentId: 'ses_worker:tool_nested' },

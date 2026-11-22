@@ -16,6 +16,14 @@
   outline: none;
 }
 
+/* The prompt takes focus with no option active (approvals); keyboard users still need to see it. */
+.claudian-ask-question-inline:focus-visible {
+  outline-width: 2px;
+  outline-style: solid;
+  outline-color: var(--claudian-ask-accent);
+  outline-offset: 2px;
+}
+
 /* The flex display above would otherwise defeat the widget's hidden attribute. */
 .claudian-ask-question-inline[hidden] {
   display: none;
@@ -438,12 +446,6 @@ button.claudian-ask-action.claudian-ask-action--primary .claudian-ask-item-label
   border-radius: 4px;
   margin-bottom: 6px;
   word-break: break-all;
-}
-
-.claudian-ask-approval-agent {
-  color: var(--text-muted);
-  font-size: calc(12 * var(--claudian-font-px));
-  margin-bottom: 6px;
 }
 
 .claudian-ask-approval-desc {

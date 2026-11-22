@@ -321,23 +321,15 @@
       "current": "权限模式：{mode}",
       "changeFailed": "切换权限模式失败",
       "antigravity": {
-        "auto": "自动",
         "autoDesc": "自动批准工作区编辑和沙盒命令；额外访问需确认"
       },
       "claude": {
-        "auto": "自动",
-        "manual": "手动",
-        "acceptEdits": "接受编辑",
-        "yolo": "YOLO",
         "autoDesc": "由 Claude 决定是否授权",
         "manualDesc": "修改前始终询问",
         "acceptEditsDesc": "自动接受所有文件编辑",
         "yoloDesc": "无需询问，允许所有操作"
       },
       "codex": {
-        "autoReview": "代我审批",
-        "normal": "请求审批",
-        "yolo": "完全访问",
         "autoReviewDesc": "自动审核额外访问权限。",
         "readOnlyDesc": "编辑或联网前询问。",
         "normalDesc": "请求额外访问前询问。",
@@ -456,6 +448,8 @@
       "deny": "拒绝",
       "allowOnce": "允许一次",
       "alwaysAllow": "始终允许",
+      "alwaysAllowActionInProject": "在此项目中始终允许 {action}。",
+      "alwaysAllowPatternsInProject": "在此项目中始终允许以下模式：{patterns}",
       "mcpRequest": "MCP 请求",
       "mcpServer": "MCP 服务器：{server}",
       "decline": "拒绝",
@@ -467,16 +461,29 @@
       "fileChangeReason": "文件修改：{reason}",
       "permissionRequest": "权限请求",
       "permissionReason": "权限请求：{reason}",
+      "permissionRead": "读取：{paths}",
+      "permissionWrite": "写入：{paths}",
+      "permissionDenyRead": "禁止读取：{paths}",
+      "permissionNetwork": "网络访问",
+      "permissionFullDisk": "整个文件系统",
+      "permissionMinimalPaths": "最少系统路径",
+      "permissionProjectRoots": "项目根目录",
+      "permissionProjectRootsSubpath": "项目根目录中的 {subpath}",
       "networkAccess": "允许通过 {protocol} 访问 {host}",
       "execute": "执行：{command}",
       "executeCommand": "执行命令",
       "allowSimilar": "允许类似命令",
       "execPolicy": "批准并保存执行策略变更。",
       "host": "主机",
-      "allowHost": "在此会话中允许 {host}",
-      "denyHost": "在此会话中拒绝 {host}",
+      "allowHost": "始终允许 {host}",
+      "denyHost": "始终阻止 {host}",
       "allowRule": "对 {host} 应用允许规则。",
       "denyRule": "对 {host} 应用拒绝规则。",
+      "allowForTurn": "在本轮次中允许",
+      "allowForSession": "在此会话中允许",
+      "allowFilesForSession": "在此会话中允许更改这些文件",
+      "denyAndStop": "拒绝并停止本轮次",
+      "execPolicyPrefix": "保存规则，允许以下列内容开头的命令：{prefix}",
       "details": "{tool} 授权详情",
       "unexpectedSelection": "意外的授权选项：“{value}”",
       "runCommand": "运行命令：{pattern}",
@@ -486,7 +493,8 @@
       "searchFiles": "搜索匹配的文件：{pattern}",
       "searchContent": "搜索匹配的内容：{pattern}",
       "unknownPattern": "（未知）",
-      "deepseekRequest": "DeepSeek 请求授权。"
+      "deepseekRequest": "DeepSeek 请求授权。",
+      "deepseekTool": "DeepSeek 工具"
     },
     "disclosure": {
       "expand": "{label} - 点击展开",
@@ -793,11 +801,11 @@
     "safety": "安全",
     "loadUserSettings": {
       "name": "加载用户 Claude Code 设置",
-      "desc": "从 ~/.claude 加载用户级 Claude Code 配置（包括 settings.json、技能、命令、代理和插件）。禁用时仅使用仓库级配置。启用后，用户权限规则可能会绕过安全模式。"
+      "desc": "从 ~/.claude 加载用户级 Claude Code 配置（包括 settings.json、技能、命令、代理和插件）。禁用时仅使用仓库级配置。启用后，用户权限规则也会生效，可能无需询问即允许操作。"
     },
     "codexSandbox": {
       "name": "沙盒",
-      "desc": "“代我审批”和“请求审批”模式下的文件访问权限。“只读”模式会在每次编辑前请求确认；“完全访问”模式会忽略此设置。"
+      "desc": "“Approve for me”和“Ask for approval”模式下的文件访问权限。“只读”模式会在每次编辑前请求确认；“Full access”模式会忽略此设置。"
     },
     "environment": "环境",
     "sharedEnvironment": {

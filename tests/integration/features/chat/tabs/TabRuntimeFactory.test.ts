@@ -2,6 +2,7 @@
 import { FakeSession, requestedScope } from '@test/helpers/ChatExecutionHarness';
 import { holdResponse } from '@test/helpers/ConversationPorts';
 import { followsGrowth } from '@test/helpers/dom/transcriptGeometry';
+import { approvalDecisionOptions } from '@test/helpers/features/chat/approvalDecisionOptions';
 import { createChatFeatureHost } from '@test/helpers/features/chat/ChatFeatureHostFixture';
 import { registerChatTestProvider } from '@test/helpers/features/chat/ChatProviderFixture';
 import { createClaudianView } from '@test/helpers/features/chat/ClaudianViewHarness';
@@ -1759,6 +1760,7 @@ describe('Tab provider execution ownership', () => {
     const session = await nativeSession();
     session.emit({ type: 'background_turn_started', scope: { kind: 'background', sessionInstanceId: session.sessionInstanceId, sequence: 1, turnId: 'turn-1' } });
     const request = claude.createSession.mock.calls.at(-1)![0].interactionPort.requestApproval({
+      decisionOptions: approvalDecisionOptions(),
       description: 'Read note',
       input: { path: 'note.md' },
       interactionId: 'interaction-1',
@@ -1770,11 +1772,7 @@ describe('Tab provider execution ownership', () => {
 
     await Promise.resolve();
     expect(handleApprovalRequest).toHaveBeenCalledWith(
-      'interaction-1',
-      'Read',
-      { path: 'note.md' },
-      'Read note',
-      {},
+      expect.objectContaining({ interactionId: 'interaction-1', toolName: 'Read', description: 'Read note' }),
       expect.any(AbortSignal),
     );
     expect(tab.state.requiresAction).toBe(true);
@@ -1782,8 +1780,8 @@ describe('Tab provider execution ownership', () => {
 
     tab.controllers.inlinePrompts.dismiss('interaction-1');
     await expect(request).resolves.toEqual({
-      decision: 'cancel',
       interactionId: 'interaction-1',
+      value: null,
     });
 
     expect(tab.state.attention).toBeNull();
@@ -2261,6 +2259,25 @@ describe('Tab provider execution ownership', () => {
     });
 
     expect(plugin.settings.permissionMode).toBe(permissionMode === 'normal' ? 'acceptEdits' : 'yolo');
+  });
+
+  it('keeps the saved default when a native event repeats a tab\'s own mode', async () => {
+    const plugin = await createPlugin();
+    const yoloTab = await createTestTab({ plugin, containerEl: document.createElement('div') });
+    const manualTab = await createTestTab({ plugin, containerEl: document.createElement('div') });
+    await updateTabPermissionMode(yoloTab, plugin, 'yolo');
+    await updateTabPermissionMode(manualTab, plugin, 'manual');
+    expect(plugin.settings.permissionMode).toBe('manual');
+
+    await emitSessionEvent({
+      type: 'permission_mode_changed',
+      permissionMode: 'yolo',
+      scope: { kind: 'session', sessionInstanceId: 'session-instance-1', sequence: 1 },
+      snapshot: { providerId: 'claude', revision: 1, status: 'idle' },
+    });
+
+    expect(plugin.settings.permissionMode).toBe('manual');
+    expect(yoloTab.session.runtime.providerSelections.get('claude')?.permissionMode).toBe('yolo');
   });
 
   it('updates permission settings for an unbound tab', async () => {

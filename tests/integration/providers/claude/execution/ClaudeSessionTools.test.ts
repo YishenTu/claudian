@@ -109,8 +109,7 @@ describe('Claude session tools', () => {
   });
 
   it.each([
-    { kind: 'provider-default' }, { kind: 'unrestricted' }, { kind: 'passive' }, { kind: 'read-only' },
-    { kind: 'allow-list', names: ['claudian_list_destinations', nativeName] },
+    { kind: 'provider-default' }, { kind: 'passive' }, { kind: 'read-only' },
   ] satisfies ProviderExecutionRequest['toolPolicy'][])('checks $kind policy when the native tool actually calls', async policy => {
     const end = deferred<unknown>();
     sdk.setMockMessages([tool('call'), end.promise], { appendResult: false });
@@ -124,7 +123,7 @@ describe('Claude session tools', () => {
       await until(() => outputs.some(event => (event as { type: string }).type === 'tool_started'));
       client = await connect();
       const response = await call(client, 'call');
-      const allowed = policy.kind === 'provider-default' || policy.kind === 'unrestricted';
+      const allowed = policy.kind === 'provider-default';
       expect(response.isError).toBe(!allowed);
       expect(list).toHaveBeenCalledTimes(allowed ? 1 : 0);
     } finally {

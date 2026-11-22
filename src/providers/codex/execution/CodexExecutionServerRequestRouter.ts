@@ -1,12 +1,13 @@
 import {
   type PendingInteraction,
   PendingInteractionLedger,
+  type ProviderApprovalChoice,
   type ProviderApprovalDecisionOption,
   type ProviderInteractionDismissReason,
   type ProviderInteractionPort,
   type ProviderToolPolicy,
+  resolveApprovalChoice,
 } from '@/core/execution';
-import type { ApprovalDecision } from '@/core/types';
 import { t } from '@/i18n/i18n';
 import { normalizeCodexToolName } from '@/providers/codex/normalization/codexToolNormalization';
 import type {
@@ -18,11 +19,14 @@ import type {
   FileChangeApprovalDecision,
   FileChangeApprovalRequest,
   FileChangeApprovalResponse,
+  FileSystemPath,
+  FileSystemSpecialPath,
   MCPElicitationRequest,
   MCPElicitationResponse,
   PermissionsApprovalRequest,
   PermissionsApprovalResponse,
   RequestId,
+  RequestPermissionProfile,
   UserInputRequest,
   UserInputResponse,
 } from '@/providers/codex/runtime/codexAppServerTypes';
@@ -128,7 +132,7 @@ export class CodexExecutionServerRequestRouter {
     const turn = this.#requireActiveTurn(params.threadId, params.turnId);
     if (
       !this.dynamicToolRegistry
-      || (!isCodexSessionTool(params.namespace, params.tool) && !isDynamicToolAllowed(turn.toolPolicy, params))
+      || (!isCodexSessionTool(params.namespace, params.tool) && !isDynamicToolAllowed(turn.toolPolicy))
     ) {
       throw new Error(`Unsupported dynamic tool: ${qualifiedToolName(params)}`);
     }
@@ -159,6 +163,7 @@ export class CodexExecutionServerRequestRouter {
       proposedExecpolicyAmendment: params.proposedExecpolicyAmendment ?? null,
       proposedNetworkPolicyAmendments: params.proposedNetworkPolicyAmendments ?? null,
     };
+    const choices = buildCommandApprovalChoices(params);
     const pending = this.#createPending(requestId, params.threadId);
     try {
       const response = await this.interactionPort.requestApproval({
@@ -170,7 +175,7 @@ export class CodexExecutionServerRequestRouter {
         input,
         description: describeCommandApproval(params),
         ...(params.reason ? { decisionReason: params.reason } : {}),
-        decisionOptions: buildCommandApprovalDecisionOptions(params),
+        decisionOptions: choices.map(choice => choice.option),
         nativeContext: {
           requestId,
           threadId: params.threadId,
@@ -180,7 +185,7 @@ export class CodexExecutionServerRequestRouter {
       }, pending.interaction.signal);
       return {
         decision: response.interactionId === pending.interaction.interactionId
-          ? mapCommandApprovalDecision(response.decision)
+          ? resolveApprovalChoice(choices, response.value) ?? unofferedDecisionReply(response.value)
           : 'decline',
       };
     } finally {
@@ -197,6 +202,7 @@ export class CodexExecutionServerRequestRouter {
       return { decision: 'decline' };
     }
 
+    const choices = buildFileChangeApprovalChoices();
     const pending = this.#createPending(requestId, params.threadId);
     try {
       const response = await this.interactionPort.requestApproval({
@@ -210,6 +216,7 @@ export class CodexExecutionServerRequestRouter {
           grantRoot: params.grantRoot ?? null,
         },
         description: params.reason ? t('chat.approval.fileChangeReason', { reason: params.reason }) : t('chat.approval.fileChange'),
+        decisionOptions: choices.map(choice => choice.option),
         nativeContext: {
           requestId,
           threadId: params.threadId,
@@ -219,7 +226,7 @@ export class CodexExecutionServerRequestRouter {
       }, pending.interaction.signal);
       return {
         decision: response.interactionId === pending.interaction.interactionId
-          ? mapFileChangeApprovalDecision(response.decision)
+          ? resolveApprovalChoice(choices, response.value) ?? unofferedDecisionReply(response.value)
           : 'decline',
       };
     } finally {
@@ -236,6 +243,7 @@ export class CodexExecutionServerRequestRouter {
       return { permissions: {}, scope: 'turn' };
     }
 
+    const choices = buildPermissionsApprovalChoices(params);
     const pending = this.#createPending(requestId, params.threadId);
     try {
       const response = await this.interactionPort.requestApproval({
@@ -245,10 +253,9 @@ export class CodexExecutionServerRequestRouter {
         kind: 'approval',
         toolName: 'permissions',
         input: params.permissions as Readonly<Record<string, unknown>>,
-        description: params.reason
-          ? t('chat.approval.permissionReason', { reason: params.reason })
-          : t('chat.approval.permissionRequest'),
+        description: describePermissionsApproval(params),
         ...(params.reason ? { decisionReason: params.reason } : {}),
+        decisionOptions: choices.map(choice => choice.option),
         nativeContext: {
           requestId,
           threadId: params.threadId,
@@ -256,16 +263,10 @@ export class CodexExecutionServerRequestRouter {
           itemId: params.itemId,
         },
       }, pending.interaction.signal);
-      if (response.interactionId !== pending.interaction.interactionId) {
-        return { permissions: {}, scope: 'turn' };
-      }
-      if (response.decision === 'allow') {
-        return { permissions: params.permissions, scope: 'turn' };
-      }
-      if (response.decision === 'allow-always') {
-        return { permissions: params.permissions, scope: 'session' };
-      }
-      return { permissions: {}, scope: 'turn' };
+      const granted = response.interactionId === pending.interaction.interactionId
+        ? resolveApprovalChoice(choices, response.value)
+        : undefined;
+      return granted ?? { permissions: {}, scope: 'turn' };
     } finally {
       this.#removePending(pending);
     }
@@ -473,37 +474,57 @@ function qualifiedToolName(params: DynamicToolCallParams): string {
 }
 
 function shouldRouteApproval(policy: ProviderToolPolicy): boolean {
-  return policy.kind === 'provider-default' || policy.kind === 'unrestricted';
+  return policy.kind === 'provider-default';
 }
 
-function isDynamicToolAllowed(
-  policy: ProviderToolPolicy,
-  params: DynamicToolCallParams,
-): boolean {
-  if (policy.kind === 'provider-default' || policy.kind === 'unrestricted') {
-    return true;
-  }
-  if (policy.kind !== 'allow-list') return false;
-  const qualifiedName = qualifiedToolName(params);
-  return policy.names.includes(params.tool) || policy.names.includes(qualifiedName);
+function isDynamicToolAllowed(policy: ProviderToolPolicy): boolean {
+  return policy.kind === 'provider-default';
 }
 
+/** The panel shows only this text and the reason, so it states any extra access the command requests. */
 function describeCommandApproval(params: CommandApprovalRequest): string {
-  if (params.networkApprovalContext) {
-    return t('chat.approval.networkAccess', { protocol: params.networkApprovalContext.protocol, host: params.networkApprovalContext.host });
-  }
-  return params.command ? t('chat.approval.execute', { command: params.command }) : t('chat.approval.executeCommand');
+  const subject = params.networkApprovalContext
+    ? t('chat.approval.networkAccess', { protocol: params.networkApprovalContext.protocol, host: params.networkApprovalContext.host })
+    : params.command ? t('chat.approval.execute', { command: params.command }) : t('chat.approval.executeCommand');
+  return [subject, ...describeRequestedAccess(params.additionalPermissions)].join(' · ');
 }
 
-function buildCommandApprovalDecisionOptions(
+/** Dismissal answers `cancel` even when Codex offered no cancel option; anything else unoffered declines. */
+function unofferedDecisionReply(value: string | null): 'cancel' | 'decline' {
+  return value === null ? 'cancel' : 'decline';
+}
+
+function buildCommandApprovalChoices(
   params: CommandApprovalRequest,
-): ProviderApprovalDecisionOption[] {
-  const available = params.availableDecisions
-    ?? ['accept', 'acceptForSession', 'decline'];
-  return available.map(decision => mapDecisionOption(decision, params));
+): ProviderApprovalChoice<CommandExecutionApprovalDecision>[] {
+  const available = params.availableDecisions ?? evidencedCommandDecisions(params);
+  return available.map(decision => ({
+    option: mapCommandDecisionOption(decision, params),
+    reply: decision,
+  }));
 }
 
-function mapDecisionOption(
+/** Codex 0.171's own menu for an omitted list (`default_available_decisions`, tui/src/approval_events.rs). */
+function evidencedCommandDecisions(params: CommandApprovalRequest): CommandExecutionApprovalDecision[] {
+  if (params.networkApprovalContext) {
+    const allow = params.proposedNetworkPolicyAmendments?.find(amendment => amendment.action === 'allow');
+    return [
+      'accept',
+      'acceptForSession',
+      ...(allow ? [{ applyNetworkPolicyAmendment: { network_policy_amendment: allow } }] : []),
+      'cancel',
+    ];
+  }
+  if (params.additionalPermissions) return ['accept', 'cancel'];
+  const execPolicy = params.proposedExecpolicyAmendment;
+  return [
+    'accept',
+    ...(execPolicy ? [{ acceptWithExecpolicyAmendment: { execpolicy_amendment: execPolicy } }] : []),
+    'cancel',
+  ];
+}
+
+function mapCommandDecisionOption(
   decision: CommandExecutionApprovalDecision,
   params: CommandApprovalRequest,
 ): ProviderApprovalDecisionOption {
@@ -512,7 +533,7 @@ function mapDecisionOption(
   }
   if (decision === 'acceptForSession') {
     return {
-      label: t('chat.approval.alwaysAllow'),
+      label: t('chat.approval.allowForSession'),
       value: 'allow-always',
       decision: 'allow-always',
     };
@@ -521,12 +542,15 @@ function mapDecisionOption(
     return { label: t('chat.approval.deny'), value: 'deny', decision: 'deny' };
   }
   if (decision === 'cancel') {
-    return { label: t('common.cancel'), value: 'cancel', decision: 'cancel' };
+    return { label: t('chat.approval.denyAndStop'), value: 'cancel', decision: 'cancel' };
   }
   if ('acceptWithExecpolicyAmendment' in decision) {
+    const prefix = decision.acceptWithExecpolicyAmendment.execpolicy_amendment.map(quoteShellToken).join(' ');
     return {
       label: t('chat.approval.allowSimilar'),
-      description: t('chat.approval.execPolicy'),
+      description: prefix
+        ? t('chat.approval.execPolicyPrefix', { prefix })
+        : t('chat.approval.execPolicy'),
       value: JSON.stringify(decision),
     };
   }
@@ -540,33 +564,91 @@ function mapDecisionOption(
   };
 }
 
-function mapCommandApprovalDecision(
-  decision: ApprovalDecision,
-): CommandExecutionApprovalDecision {
-  if (decision === 'allow') return 'accept';
-  if (decision === 'allow-always') return 'acceptForSession';
-  if (decision === 'cancel') return 'cancel';
-  if (
-    typeof decision === 'object'
-    && decision !== null
-    && decision.type === 'select-option'
-  ) {
-    try {
-      return JSON.parse(decision.value) as CommandExecutionApprovalDecision;
-    } catch {
-      return 'decline';
-    }
-  }
-  return 'decline';
+function buildFileChangeApprovalChoices(): ProviderApprovalChoice<FileChangeApprovalDecision>[] {
+  return [
+    { option: { label: t('chat.approval.allowOnce'), value: 'allow-once', decision: 'allow' }, reply: 'accept' },
+    {
+      option: { label: t('chat.approval.allowFilesForSession'), value: 'allow-always', decision: 'allow-always' },
+      reply: 'acceptForSession',
+    },
+    // Codex's own file-change menu has no decline that lets the turn continue (tui/src/bottom_pane/approval_overlay.rs).
+    { option: { label: t('chat.approval.denyAndStop'), value: 'cancel', decision: 'cancel' }, reply: 'cancel' },
+  ];
 }
 
-function mapFileChangeApprovalDecision(
-  decision: ApprovalDecision,
-): FileChangeApprovalDecision {
-  if (decision === 'allow') return 'accept';
-  if (decision === 'allow-always') return 'acceptForSession';
-  if (decision === 'cancel') return 'cancel';
-  return 'decline';
+/** States the access a grant would echo back; the panel shows only this text and the reason. */
+function describePermissionsApproval(params: PermissionsApprovalRequest): string {
+  return [
+    params.reason ? t('chat.approval.permissionReason', { reason: params.reason }) : t('chat.approval.permissionRequest'),
+    ...describeRequestedAccess(params.permissions),
+  ].join(' · ');
+}
+
+function describeRequestedAccess(profile: RequestPermissionProfile | null | undefined): string[] {
+  const read = new Set(profile?.fileSystem?.read ?? []);
+  const write = new Set(profile?.fileSystem?.write ?? []);
+  // Deny entries grant nothing but narrow what the grant allows, so Codex lists them too.
+  const denied = new Set<string>();
+  for (const entry of profile?.fileSystem?.entries ?? []) {
+    const path = describeFileSystemPath(entry.path);
+    if (entry.access === 'read') read.add(path);
+    else if (entry.access === 'write') write.add(path);
+    else denied.add(path);
+  }
+  return [
+    ...(read.size > 0 ? [t('chat.approval.permissionRead', { paths: [...read].join(', ') })] : []),
+    ...(write.size > 0 ? [t('chat.approval.permissionWrite', { paths: [...write].join(', ') })] : []),
+    ...(denied.size > 0 ? [t('chat.approval.permissionDenyRead', { paths: [...denied].join(', ') })] : []),
+    ...(profile?.network?.enabled === true ? [t('chat.approval.permissionNetwork')] : []),
+  ];
+}
+
+/** Keeps argument boundaries visible: a rule for `npm run 'build docs'` differs from `npm run build docs`. */
+function quoteShellToken(token: string): string {
+  return /^[\w@%+=:,./-]+$/.test(token) ? token : `'${token.replace(/'/g, `'\\''`)}'`;
+}
+
+function describeFileSystemPath(path: FileSystemPath): string {
+  switch (path.type) {
+    case 'path': return path.path;
+    case 'glob_pattern': return path.pattern;
+    case 'special': return describeSpecialPath(path.value);
+    default: return JSON.stringify(path);
+  }
+}
+
+function describeSpecialPath(value: FileSystemSpecialPath): string {
+  switch (value.kind) {
+    case 'root': return t('chat.approval.permissionFullDisk');
+    case 'minimal': return t('chat.approval.permissionMinimalPaths');
+    case 'project_roots':
+      return value.subpath
+        ? t('chat.approval.permissionProjectRootsSubpath', { subpath: value.subpath })
+        : t('chat.approval.permissionProjectRoots');
+    case 'tmpdir': return '$TMPDIR';
+    case 'slash_tmp': return '/tmp';
+    case 'unknown': return value.subpath ? `${value.path}/${value.subpath}` : value.path;
+    default: return JSON.stringify(value);
+  }
+}
+
+function buildPermissionsApprovalChoices(
+  params: PermissionsApprovalRequest,
+): ProviderApprovalChoice<PermissionsApprovalResponse>[] {
+  return [
+    {
+      option: { label: t('chat.approval.allowForTurn'), value: 'allow-turn', decision: 'allow' },
+      reply: { permissions: params.permissions, scope: 'turn' },
+    },
+    {
+      option: { label: t('chat.approval.allowForSession'), value: 'allow-session', decision: 'allow-always' },
+      reply: { permissions: params.permissions, scope: 'session' },
+    },
+    {
+      option: { label: t('chat.approval.deny'), value: 'deny', decision: 'deny' },
+      reply: { permissions: {}, scope: 'turn' },
+    },
+  ];
 }
 
 function isSameTurn(current: ActiveInteractionTurn | null, turn: ActiveInteractionTurn): boolean {

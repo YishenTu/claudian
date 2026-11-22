@@ -1,21 +1,19 @@
-import type {
-  ProviderPermissionModeOption,
-  ProviderPermissionModePolicy,
-} from '../../core/providers/types';
+import {
+  buildPermissionModeOptions,
+  createPermissionModePolicy,
+  type ProviderPermissionModeDefinition,
+} from '../../core/providers/permissionModes';
+import type { ProviderPermissionModeOption } from '../../core/providers/types';
 
-/** Stored values; `normal` (ask) and `yolo` (always-approve) predate the full native set. */
-export const GROK_PERMISSION_MODES = ['auto', 'normal', 'acceptEdits', 'yolo'] as const;
-
-export const GROK_PERMISSION_MODE_POLICY: ProviderPermissionModePolicy = Object.freeze({
-  values: GROK_PERMISSION_MODES,
-  fallbackValue: 'normal',
-  defaultValue: 'auto',
-});
-
-export const GROK_PERMISSION_MODE_OPTIONS: readonly ProviderPermissionModeOption[] = Object.freeze([
+/** Stored values in menu order; `normal` (ask) and `yolo` (always-approve) predate the full native set. */
+const GROK_PERMISSION_MODES: readonly ProviderPermissionModeDefinition[] = Object.freeze([
   { value: 'auto', label: 'Auto', description: 'Grok reviews actions and blocks risky ones' },
   { value: 'normal', label: 'Ask', description: 'Ask before edits and commands' },
-  { value: 'acceptEdits', label: 'Accept edits', description: 'Automatically accept file edits' },
+  {
+    value: 'acceptEdits',
+    label: 'Accept edits',
+    description: 'Automatically accept file edits',
+  },
   {
     value: 'yolo',
     label: 'YOLO',
@@ -23,6 +21,15 @@ export const GROK_PERMISSION_MODE_OPTIONS: readonly ProviderPermissionModeOption
     bypassesApprovals: true,
   },
 ]);
+
+export const GROK_PERMISSION_MODE_POLICY = createPermissionModePolicy(GROK_PERMISSION_MODES, {
+  fallbackValue: 'normal',
+  defaultValue: 'auto',
+});
+
+export function getGrokPermissionModeOptions(): ProviderPermissionModeOption[] {
+  return buildPermissionModeOptions(GROK_PERMISSION_MODES);
+}
 
 /**
  * ACP session metadata reaches only Grok's auto and always-approve modes, so

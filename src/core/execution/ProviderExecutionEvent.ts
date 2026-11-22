@@ -203,6 +203,11 @@ export type ProviderSessionStateChangedEvent = ProviderEventBase<
     readonly snapshot: ProviderSessionSnapshot;
   };
 
+/**
+ * The native side changed the permission mode on its own. Never emitted for a mode Claudian applied
+ * or launched with: the consumer stores it as the user's pick, so an echo could overwrite a newer one.
+ * Publish the snapshot of a self-applied change with `session_state_changed` instead.
+ */
 export type ProviderPermissionModeChangedEvent = ProviderEventBase<
   'permission_mode_changed',
   ProviderExecutionEventScope

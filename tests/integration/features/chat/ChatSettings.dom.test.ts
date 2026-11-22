@@ -226,18 +226,15 @@ it.each(modelCatalogCases.flatMap(entry => [true, false].map(advertisesHigh => (
 
 it.each(['en', 'zh-CN'] as const)('defaults Codex to automatic review and persists and submits each permission selection in %s', async locale => {
   setLocale('en');
-  const englishAutoReview = t('chat.permissionMode.current', { mode: t('chat.permissionMode.codex.autoReview') });
+  // Mode names stay English in every locale; the surrounding copy follows it.
+  const labels = ProviderRegistry.getChatUIConfig('codex').getPermissionModeOptions!({})!.map(option => option.label);
+  const englishAutoReview = t('chat.permissionMode.current', { mode: labels[0] });
   const entry = modelCatalogCases.find(({ id }) => id === 'codex')!;
   const settings = createSettings(entry);
   const initialPermissionMode = settings.permissionMode;
   const { createTab, sessions, tabs } = (await createChatHarness(settings, entry.id, entry.selected));
   try {
     setLocale(locale);
-    const labels = [
-      t('chat.permissionMode.codex.autoReview'),
-      t('chat.permissionMode.codex.normal'),
-      t('chat.permissionMode.codex.yolo'),
-    ];
     const buttonName = (label: string) => t('chat.permissionMode.current', { mode: label });
     expect(buttonName(labels[0]) !== englishAutoReview).toBe(locale !== 'en');
     const tab = await createTab();
@@ -259,6 +256,30 @@ it.each(['en', 'zh-CN'] as const)('defaults Codex to automatic review and persis
     expect(settings.permissionMode).toBe(initialPermissionMode);
   } finally {
     setLocale('en');
+    for (const tab of tabs) await destroyTab(tab);
+  }
+});
+
+it.each(['claude', 'codex', 'grok'] as const)('shows and submits the %s fail-closed mode for an unknown session permission', async id => {
+  const entry = modelCatalogCases.find(candidate => candidate.id === id)!;
+  const { createTab, sessions, tabs, plugin } = (await createChatHarness(createSettings(entry), id, entry.selected));
+  try {
+    const tab = await createTab();
+    const { fallbackValue } = ProviderRegistry.getModelPolicy(id).permissionModes!;
+    const options = ProviderRegistry.getChatUIConfig(id).getPermissionModeOptions!({})!;
+    // The first option differs from the fallback, so showing it would not fail closed.
+    expect(options[0].value).not.toBe(fallbackValue);
+    const fallback = options.find(option => option.value === fallbackValue)!;
+    await updateSessionProviderSettings(tab.session.runtime, plugin, snapshot => {
+      snapshot.permissionMode = 'retired-mode';
+    });
+    refreshTabProviderUI(tab);
+    expect(within(tab.dom.inputComposerEl).getByRole('button', {
+      name: t('chat.permissionMode.current', { mode: fallback.label }),
+    })).toBeDefined();
+    await expectSubmission(tab, sessions, getChatSettingsSnapshot(plugin.settings, id, entry.selected).model, 'high');
+    expect(sessions.at(-1)?.requests.at(-1)?.configuration.permissionMode).toBe(fallbackValue);
+  } finally {
     for (const tab of tabs) await destroyTab(tab);
   }
 });

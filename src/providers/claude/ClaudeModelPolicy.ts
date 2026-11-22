@@ -1,8 +1,8 @@
+import { createPermissionModePolicy } from '../../core/providers/permissionModes';
 import { getProviderConfig } from '../../core/providers/providerConfig';
 import { formatReasoningValueLabel } from '../../core/providers/reasoning';
 import type {
   ProviderModelPolicy,
-  ProviderPermissionModePolicy,
   ProviderUIOption,
 } from '../../core/providers/types';
 import {
@@ -15,7 +15,11 @@ import {
 } from './modelOptions';
 import { isClaudeModelSelectionId, toClaudeRuntimeModelId } from './modelSelection';
 import { CLAUDE_MODEL_TIER_PATTERN, isClaudeModelTier } from './modelTiers';
-import { CLAUDE_PERMISSION_MODES, type ClaudePermissionMode } from './permissionModes';
+import {
+  CLAUDE_FALLBACK_PERMISSION_MODE,
+  CLAUDE_PERMISSION_MODE_DEFINITIONS,
+  type ClaudePermissionMode,
+} from './permissionModes';
 import { getClaudeModelSource } from './settings';
 import {
   isDefaultClaudeModel,
@@ -31,9 +35,8 @@ const LEGACY_SAFE_MODES: Readonly<Record<string, ClaudePermissionMode>> = {
   acceptEdits: 'acceptEdits',
 };
 
-const CLAUDE_PERMISSION_MODE_POLICY: ProviderPermissionModePolicy = Object.freeze({
-  values: CLAUDE_PERMISSION_MODES,
-  fallbackValue: 'manual',
+const CLAUDE_PERMISSION_MODE_POLICY = createPermissionModePolicy(CLAUDE_PERMISSION_MODE_DEFINITIONS, {
+  fallbackValue: CLAUDE_FALLBACK_PERMISSION_MODE,
   defaultValue: 'auto',
   migrateValue(value: string, settings: Record<string, unknown>): string | undefined {
     if (value !== 'normal') return undefined;

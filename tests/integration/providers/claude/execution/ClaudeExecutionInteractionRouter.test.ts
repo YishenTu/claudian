@@ -1,4 +1,5 @@
 import type { CanUseTool } from '@anthropic-ai/claude-agent-sdk';
+import { answerApproval } from '@test/helpers/features/chat/approvalDecisionOptions';
 import type { Mock, Mocked } from 'vitest';
 
 import type { ProviderInteractionPort } from '@/core/execution';
@@ -7,10 +8,7 @@ import { ClaudeExecutionInteractionRouter } from '@/providers/claude/execution/C
 
 function createPort(): Mocked<ProviderInteractionPort> {
   return {
-    requestApproval: vi.fn().mockImplementation(async (request) => ({
-      interactionId: request.interactionId,
-      decision: 'allow-always',
-    })),
+    requestApproval: vi.fn().mockImplementation(async (request) => answerApproval(request, 'allow-always')),
     askUserQuestion: vi.fn().mockImplementation(async (request) => ({
       interactionId: request.interactionId,
       answers: { answer: 'yes' },
@@ -119,23 +117,34 @@ describe('ClaudeExecutionInteractionRouter', () => {
     },
   ])('limits approval to this invocation when suggestions are $label', async ({ suggestions, suppressAlwaysAllowRule }) => {
     const port = createPort();
+    port.requestApproval.mockImplementation(async request => answerApproval(request, 'allow'));
     const handler = createHandler(port);
     const input = { content: 'note' };
+    const native = { ...nativeOptions, suggestions, suppressAlwaysAllowRule };
 
-    const result = await handler('mcp__connector__write', input, {
-      ...nativeOptions,
-      suggestions,
-      suppressAlwaysAllowRule,
-    });
+    const result = await handler('mcp__connector__write', input, native);
 
     const request = port.requestApproval.mock.calls[0][0];
-    expect(request.decisionOptions?.map(option => option.decision)).toEqual(['deny', 'allow']);
-    // The port deliberately returns allow-always even though that choice was not offered.
+    expect(request.decisionOptions.map(option => option.decision)).toEqual(['deny', 'allow']);
     expect(result).toEqual({
       behavior: 'allow',
       updatedInput: input,
       decisionClassification: 'user_temporary',
     });
+
+    // An answer naming the Always allow Claude did not offer never persists suggestions.
+    const onToolBlocked = vi.fn();
+    port.requestApproval.mockImplementation(async ({ interactionId }) => ({ interactionId, value: 'allow-always' }));
+    await expect(createHandler(port, onToolBlocked)('mcp__connector__write', input, native)).resolves
+      .toEqual({ behavior: 'deny', message: 'User denied this action.', interrupt: false });
+    expect(onToolBlocked).toHaveBeenCalledWith(nativeOptions.toolUseID);
+  });
+
+  it('interrupts the turn when the approval is dismissed', async () => {
+    const port = createPort();
+    port.requestApproval.mockImplementation(async ({ interactionId }) => ({ interactionId, value: null }));
+    await expect(createHandler(port)('Bash', { command: 'ls' }, nativeOptions)).resolves
+      .toEqual({ behavior: 'deny', message: 'User interrupted.', interrupt: true });
   });
 
 
@@ -163,7 +172,7 @@ describe('ClaudeExecutionInteractionRouter', () => {
     handler.dismissAll('cancelled');
     resolveApproval({
       interactionId: 'claude:session-local:native-tool-1',
-      decision: 'allow',
+      value: 'allow',
     });
 
     const result = await pending;
@@ -187,7 +196,7 @@ describe('ClaudeExecutionInteractionRouter', () => {
     const duplicate = await handler('Edit', {}, nativeOptions);
     resolveApproval({
       interactionId: 'wrong-interaction',
-      decision: 'allow',
+      value: 'allow',
     });
 
     expect(duplicate).toEqual(expect.objectContaining({

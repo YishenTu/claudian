@@ -6,6 +6,7 @@ import * as path from 'node:path';
 
 import { DesktopVault } from '@test/helpers/core/DesktopVault';
 import { DEFAULT_CLAUDIAN_SETTINGS } from '@test/helpers/defaultSettings';
+import { answerApproval } from '@test/helpers/features/chat/approvalDecisionOptions';
 import { createObsidianPlugin } from '@test/helpers/ObsidianSettingsHost';
 import { createProviderHostFixture } from '@test/helpers/providerRuntimeHost';
 import { testDate, testTime } from '@test/helpers/testClock';
@@ -158,7 +159,7 @@ test('execution snapshots avoid history payload serialization while persistence 
   const session = new ClaudeExecutionBackend(host.getRuntimeHost('claude')).createSession({
     lifecycle: 'persistent', nativePersistence: 'enabled', workingDirectory: root,
     resumeSeed: { providerSessionId: 'native-1', providerState },
-    interactionPort: { dismissInteraction() {}, requestApproval: async ({ interactionId }) => ({ interactionId, decision: 'deny' }),
+    interactionPort: { dismissInteraction() {}, requestApproval: async request => answerApproval(request, 'deny'),
       askUserQuestion: async ({ interactionId }) => ({ interactionId, answers: null }) },
   });
   const repository = createRepository();

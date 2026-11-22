@@ -321,23 +321,15 @@
       "current": "Berechtigungsmodus: {mode}",
       "changeFailed": "Berechtigungsmodus konnte nicht geändert werden",
       "antigravity": {
-        "auto": "Automatisch",
         "autoDesc": "Änderungen im Arbeitsbereich und Befehle in der Sandbox genehmigen; zusätzliche Zugriffe prüfen"
       },
       "claude": {
-        "auto": "Automatisch",
-        "manual": "Manuell",
-        "acceptEdits": "Änderungen akzeptieren",
-        "yolo": "YOLO",
         "autoDesc": "Claude entscheidet über Berechtigungen",
         "manualDesc": "Vor Änderungen immer fragen",
         "acceptEditsDesc": "Alle Dateiänderungen automatisch akzeptieren",
         "yoloDesc": "Alle Berechtigungen ohne Nachfrage erteilen"
       },
       "codex": {
-        "autoReview": "Für mich genehmigen",
-        "normal": "Genehmigung anfragen",
-        "yolo": "Vollzugriff",
         "autoReviewDesc": "Zusätzlichen Zugriff automatisch prüfen.",
         "readOnlyDesc": "Vor Änderungen oder Internetzugriff fragen.",
         "normalDesc": "Vor zusätzlichem Zugriff fragen.",
@@ -456,6 +448,8 @@
       "deny": "Ablehnen",
       "allowOnce": "Einmal erlauben",
       "alwaysAllow": "Immer erlauben",
+      "alwaysAllowActionInProject": "{action} in diesem Projekt immer erlauben.",
+      "alwaysAllowPatternsInProject": "Diese Muster in diesem Projekt immer erlauben: {patterns}",
       "mcpRequest": "MCP-Anfrage",
       "mcpServer": "MCP-Server: {server}",
       "decline": "Ablehnen",
@@ -467,16 +461,29 @@
       "fileChangeReason": "Dateiänderung: {reason}",
       "permissionRequest": "Berechtigungsanfrage",
       "permissionReason": "Berechtigungsanfrage: {reason}",
+      "permissionRead": "Lesen: {paths}",
+      "permissionWrite": "Schreiben: {paths}",
+      "permissionDenyRead": "Lesen verweigert: {paths}",
+      "permissionNetwork": "Netzwerkzugriff",
+      "permissionFullDisk": "gesamtes Dateisystem",
+      "permissionMinimalPaths": "minimale Systempfade",
+      "permissionProjectRoots": "Projektstammverzeichnisse",
+      "permissionProjectRootsSubpath": "{subpath} in den Projektstammverzeichnissen",
       "networkAccess": "{protocol}-Zugriff auf {host} erlauben",
       "execute": "Ausführen: {command}",
       "executeCommand": "Befehl ausführen",
       "allowSimilar": "Ähnliche Befehle erlauben",
       "execPolicy": "Änderung der Ausführungsrichtlinie genehmigen und speichern.",
       "host": "Host",
-      "allowHost": "{host} für diese Sitzung erlauben",
-      "denyHost": "{host} für diese Sitzung ablehnen",
+      "allowHost": "{host} immer erlauben",
+      "denyHost": "{host} immer blockieren",
       "allowRule": "Eine Zulassungsregel für {host} anwenden.",
       "denyRule": "Eine Ablehnungsregel für {host} anwenden.",
+      "allowForTurn": "Für diese Runde erlauben",
+      "allowForSession": "Für diese Sitzung erlauben",
+      "allowFilesForSession": "Änderungen an diesen Dateien für diese Sitzung erlauben",
+      "denyAndStop": "Ablehnen und Runde beenden",
+      "execPolicyPrefix": "Regel speichern, die Befehle mit diesem Anfang erlaubt: {prefix}",
       "details": "Genehmigungsdetails für {tool}",
       "unexpectedSelection": "Unerwartete Genehmigungsauswahl: „{value}“",
       "runCommand": "Befehl ausführen: {pattern}",
@@ -486,7 +493,8 @@
       "searchFiles": "Passende Dateien suchen: {pattern}",
       "searchContent": "Passende Inhalte suchen: {pattern}",
       "unknownPattern": "(unbekannt)",
-      "deepseekRequest": "DeepSeek fordert eine Berechtigung an."
+      "deepseekRequest": "DeepSeek fordert eine Berechtigung an.",
+      "deepseekTool": "DeepSeek-Werkzeug"
     },
     "disclosure": {
       "expand": "{label} – zum Ausklappen klicken",
@@ -793,11 +801,11 @@
     "safety": "Sicherheit",
     "loadUserSettings": {
       "name": "Claude-Code-Benutzereinstellungen laden",
-      "desc": "Lädt die Claude-Code-Konfiguration auf Benutzerebene aus ~/.claude: settings.json, Skills, Befehle, Agenten und Plugins. Wenn deaktiviert, ist nur die Konfiguration auf Vault-Ebene verfügbar. Wenn aktiviert, können Benutzer-Berechtigungsregeln den Sicherheitsmodus umgehen."
+      "desc": "Lädt die Claude-Code-Konfiguration auf Benutzerebene aus ~/.claude: settings.json, Skills, Befehle, Agenten und Plugins. Wenn deaktiviert, ist nur die Konfiguration auf Vault-Ebene verfügbar. Wenn aktiviert, gelten auch die Berechtigungsregeln des Benutzers und können Aktionen ohne Nachfrage erlauben."
     },
     "codexSandbox": {
       "name": "Sandbox",
-      "desc": "Dateizugriff in den Modi „Für mich genehmigen“ und „Genehmigung anfragen“. „Nur lesen“ fragt vor jeder Änderung; „Vollzugriff“ ignoriert diese Einstellung."
+      "desc": "Dateizugriff in den Modi „Approve for me“ und „Ask for approval“. „Nur lesen“ fragt vor jeder Änderung; „Full access“ ignoriert diese Einstellung."
     },
     "environment": "Umgebung",
     "sharedEnvironment": {

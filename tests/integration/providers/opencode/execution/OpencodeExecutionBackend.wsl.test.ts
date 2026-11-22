@@ -81,13 +81,13 @@ describe.skipIf(path.sep === '\\')('OpenCode sessions in a WSL distro', () => {
     const runtimeHost = app.host.getRuntimeHost('opencode');
     const session = new OpencodeExecutionBackend(runtimeHost, workspace).createSession({
       workingDirectory: vault, lifecycle: 'persistent', nativePersistence: 'provider-default',
-      interactionPort: { requestApproval: async r => ({ interactionId: r.interactionId, decision: 'deny' }), askUserQuestion: async r => ({ interactionId: r.interactionId, answers: null }), dismissInteraction() {} },
+      interactionPort: { requestApproval: async r => ({ interactionId: r.interactionId, value: 'Deny' }), askUserQuestion: async r => ({ interactionId: r.interactionId, answers: null }), dismissInteraction() {} },
     });
     onTestFinished(() => session.dispose());
     const createSession = (resumeSeed?: { providerSessionId: string; providerState: Record<string, unknown> }) => new OpencodeExecutionBackend(runtimeHost, workspace).createSession({
       ...(resumeSeed ? { resumeSeed } : {}),
       workingDirectory: vault, lifecycle: 'persistent', nativePersistence: 'provider-default',
-      interactionPort: { requestApproval: async r => ({ interactionId: r.interactionId, decision: 'deny' }), askUserQuestion: async r => ({ interactionId: r.interactionId, answers: null }), dismissInteraction() {} },
+      interactionPort: { requestApproval: async r => ({ interactionId: r.interactionId, value: 'Deny' }), askUserQuestion: async r => ({ interactionId: r.interactionId, answers: null }), dismissInteraction() {} },
     });
     return { cli, vault, native, workspace, runtimeHost, session, createSession };
   }

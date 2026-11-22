@@ -247,6 +247,21 @@ describe('ProviderSettingsCoordinator', () => {
       expect(settings.settingsProvider).toBe('claude');
     });
 
+    it('does not save the previous provider\'s permission mode as the new provider\'s choice', () => {
+      const settings: Record<string, unknown> = {
+        settingsProvider: 'codex',
+        permissionMode: 'yolo',
+        savedProviderPermissionMode: { claude: 'manual', codex: 'yolo' },
+        providerConfigs: { codex: { enabled: false } },
+      };
+
+      ProviderSettingsCoordinator.normalizeProviderSelection(settings);
+      ProviderSettingsCoordinator.persistProjectedProviderState(settings);
+
+      expect(settings.permissionMode).toBe('manual');
+      expect(settings.savedProviderPermissionMode).toEqual({ claude: 'manual', codex: 'yolo' });
+    });
+
     it('returns false when already normalized (no-op)', () => {
       const settings: Record<string, unknown> = {
         settingsProvider: 'claude',
@@ -328,6 +343,7 @@ describe('ProviderSettingsCoordinator', () => {
         model: 'sonnet',
         effortLevel: 'high',
         serviceTier: 'default',
+        permissionMode: 'yolo',
         titleGenerationModel: 'sonnet',
         savedProviderModel: { codex: TEST_CODEX_MODEL },
         savedProviderEffort: { codex: 'medium' },
@@ -351,6 +367,9 @@ describe('ProviderSettingsCoordinator', () => {
       expect(ProviderRegistry.isEnabled('claude', settings)).toBe(false);
       expect(settings.settingsProvider).toBe('codex');
       expect(settings.model).toBe(`openai-codex/${TEST_CODEX_MODEL}`);
+      // Claude's YOLO stays Claude's; Codex never chose a mode, so it starts at its default.
+      expect(settings.permissionMode).toBe('auto-review');
+      expect(settings.savedProviderPermissionMode).toEqual({ claude: 'yolo' });
       expect(settings.titleGenerationModel).toBe('sonnet');
     });
   });

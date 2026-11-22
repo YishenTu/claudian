@@ -783,7 +783,6 @@ implements ProviderExecutionSession, SteerableExecutionSession {
       envText,
       noSession: this.#shouldDisableNativePersistence(),
       noTools: toolProfile.noTools,
-      tools: toolProfile.tools,
       providerState: getPiState(this.state.providerState),
       readOnlyTools: toolProfile.readOnlyTools,
       settings,
@@ -1962,16 +1961,12 @@ function resolveThinkingLevel(
 function resolveToolProfile(policy: ProviderToolPolicy): {
   noTools: boolean;
   readOnlyTools?: boolean;
-  tools?: readonly string[];
 } {
   if (policy.kind === 'passive') {
     return { noTools: true };
   }
   if (policy.kind === 'read-only') {
     return { noTools: false, readOnlyTools: true };
-  }
-  if (policy.kind === 'allow-list') {
-    return { noTools: policy.names.length === 0, tools: policy.names };
   }
   return { noTools: false };
 }

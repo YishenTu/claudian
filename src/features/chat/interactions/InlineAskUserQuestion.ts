@@ -4,6 +4,8 @@ import { QuestionInteractionState } from '@/features/chat/interactions/QuestionI
 import { t } from '@/i18n/i18n';
 
 const CHECK_GLYPH = '\u2713';
+/** `focusedItemIndex` value while no item is active; arrow keys then start at the first item. */
+const NO_FOCUSED_ITEM = -1;
 
 export type QuestionAnswerHandler = (answers: AskUserAnswers) => Promise<void>;
 
@@ -80,6 +82,9 @@ export class InlineAskUserQuestion {
     if (this.config.immediateSelect && this.questions.length !== 1) {
       this.config.immediateSelect = false;
     }
+    // Immediate-select (approval) options keep the provider's native order, often allow-first, so
+    // nothing is active until the user picks one; a stray Enter after the panel takes focus does nothing.
+    if (this.config.immediateSelect) this.focusedItemIndex = NO_FOCUSED_ITEM;
 
     for (let i = 0; i < this.questions.length; i++) {
       if (!this.state.answers.has(i)) this.state.answers.set(i, new Set());
@@ -561,7 +566,7 @@ export class InlineAskUserQuestion {
       if (e.key === 'Enter') {
         e.preventDefault();
         e.stopPropagation();
-        if (this.focusedItemIndex <= maxIdx) {
+        if (this.focusedItemIndex !== NO_FOCUSED_ITEM && this.focusedItemIndex <= maxIdx) {
           this.selectOption(this.state.activeTabIndex, q.options[this.focusedItemIndex]);
         }
       }

@@ -2,6 +2,7 @@
 import '@/providers';
 
 import { axe } from '@test/helpers/accessibility';
+import { approvalDecisionOptions } from '@test/helpers/features/chat/approvalDecisionOptions';
 import { createEvent, fireEvent, waitFor, within } from '@testing-library/dom';
 import { Notice } from 'obsidian';
 
@@ -10,6 +11,7 @@ import { deliverAsyncQuestion } from '@/features/chat/interactions/asyncQuestion
 import { createInteractionPromptPort } from '@/features/chat/interactions/interactionPromptPort';
 import { SessionInteractions } from '@/features/chat/interactions/SessionInteractions';
 import { setLocale, t } from '@/i18n/i18n';
+import { ACPInteractionController } from '@/providers/acp/ACPInteractionController';
 import { ClaudeExecutionInteractionRouter } from '@/providers/claude/execution/ClaudeExecutionInteractionRouter';
 import { CodexExecutionServerRequestRouter } from '@/providers/codex/execution/CodexExecutionServerRequestRouter';
 
@@ -19,7 +21,9 @@ it('makes long approval details a named keyboard-scrollable region', async () =>
   const parent = document.body.createDiv();
   const suppressed = parent.createDiv();
   const prompts = new SessionInteractions({ getPromptParentEl: () => parent, getSuppressedEl: () => suppressed });
-  const pending = prompts.requestApproval('approval-id', 'Bash', {}, 'A long command description');
+  const pending = prompts.requestApproval({
+    interactionId: 'approval-id', toolName: 'Bash', description: 'A long command description', decisionOptions: approvalDecisionOptions(),
+  });
   const details = within(parent).getByRole('region', { name: 'Bash approval details' });
   details.focus();
   expect(document.activeElement).toBe(details);
@@ -34,6 +38,75 @@ it('makes long approval details a named keyboard-scrollable region', async () =>
   expect(await axe(parent)).toHaveNoViolations();
   prompts.dismiss('approval-id');
   await pending;
+});
+
+it('ignores Enter on a fresh allow-first approval until the user moves to an option', async () => {
+  const parent = document.body.createDiv();
+  const prompts = new SessionInteractions({ getPromptParentEl: () => parent });
+  // Native order as Codex and ACP providers send it: allow first.
+  const decision = prompts.requestApproval({ interactionId: 'approval', toolName: 'Bash', description: 'Run the check', decisionOptions: [
+    { decision: 'allow', label: 'Allow once', value: 'allow_once' },
+    { decision: 'deny', label: 'Deny', value: 'reject_once' },
+  ] });
+  const region = within(parent).getByRole('region', { name: t('chat.approval.title') });
+  await waitFor(() => expect(document.activeElement).toBe(region));
+  expect(within(region).getAllByRole('button').map(button => button.getAttribute('aria-label'))).toEqual(['Allow once', 'Deny']);
+
+  // A stray Enter, e.g. from the composer whose focus the panel just took.
+  fireEvent.keyDown(region, { key: 'Enter' });
+  expect(region.isConnected).toBe(true);
+  expect(await axe(parent)).toHaveNoViolations();
+
+  fireEvent.keyDown(region, { key: 'ArrowDown' });
+  fireEvent.keyDown(region, { key: 'ArrowDown' });
+  fireEvent.keyDown(region, { key: 'Enter' });
+  await expect(decision).resolves.toBe('reject_once');
+});
+
+it('replies with the exact ACP option the user picks when several share a kind', async () => {
+  const parent = document.body.createDiv();
+  const prompts = new SessionInteractions({ getPromptParentEl: () => parent });
+  const controller = new ACPInteractionController({
+    getTurnId: () => 'turn', interactionPort: createInteractionPromptPort(() => prompts), sessionInstanceId: 'acp',
+  });
+  const reply = controller.requestPermission({
+    options: [
+      { kind: 'allow_once', name: 'Allow this file', optionId: 'allow-file' },
+      { kind: 'allow_once', name: 'Allow this folder', optionId: 'allow-folder' },
+      { kind: 'reject_once', name: 'Reject', optionId: 'reject' },
+    ],
+    sessionId: 'session', toolCall: { kind: 'edit', title: 'notes.md', toolCallId: 'tool' },
+  });
+  const region = within(parent).getByRole('region', { name: t('chat.approval.title') });
+  expect(within(region).getAllByRole('button').map(button => button.getAttribute('aria-label')))
+    .toEqual(['Allow this file', 'Allow this folder', 'Reject']);
+  // Scripts still see each option's documented decision.
+  expect(prompts.listPending()[0].questions[0].options.map(option => [option.value, option.decision]))
+    .toEqual([['allow-file', 'allow'], ['allow-folder', 'allow'], ['reject', undefined]]);
+  fireEvent.click(within(region).getByRole('button', { name: 'Allow this folder' }));
+  await expect(reply).resolves.toEqual({ outcome: { outcome: 'selected', optionId: 'allow-folder' } });
+});
+
+it('accepts a scripted answer naming an offered option whose native id is blank', async () => {
+  const parent = document.body.createDiv();
+  const prompts = new SessionInteractions({ getPromptParentEl: () => parent });
+  const controller = new ACPInteractionController({
+    getTurnId: () => 'turn', interactionPort: createInteractionPromptPort(() => prompts), sessionInstanceId: 'acp',
+  });
+  const reply = controller.requestPermission({
+    options: [
+      { kind: 'allow_once', name: 'Allow', optionId: '' },
+      { kind: 'reject_once', name: 'Reject', optionId: 'reject' },
+    ],
+    sessionId: 'session', toolCall: { kind: 'edit', title: 'notes.md', toolCallId: 'tool' },
+  });
+  const [pending] = prompts.listPending();
+  const question = pending.questions[0];
+  const offered = question.options.find(option => option.label === 'Allow')!;
+
+  await prompts.answer(pending.interactionId, { [question.id ?? question.question]: offered.value });
+
+  await expect(reply).resolves.toEqual({ outcome: { outcome: 'selected', optionId: '' } });
 });
 
 it('resumes the newest response when an older generation prompt settles last', async () => {
@@ -63,7 +136,9 @@ it('keeps an approval requested without a view pending until the user answers af
   let parent: HTMLElement | null = null;
   const prompts = new SessionInteractions({ getPromptParentEl: () => parent });
   let settled = false;
-  const pending = prompts.requestApproval('approval', 'Bash', {}, 'Run the check').finally(() => { settled = true; });
+  const pending = prompts.requestApproval({
+    interactionId: 'approval', toolName: 'Bash', description: 'Run the check', decisionOptions: approvalDecisionOptions(),
+  }).finally(() => { settled = true; });
   void pending.catch(() => undefined);
   await Promise.resolve();
   await Promise.resolve();
@@ -71,7 +146,7 @@ it('keeps an approval requested without a view pending until the user answers af
   parent = document.body.createDiv();
   prompts.setActive(true);
   fireEvent.click(within(parent).getByRole('button', { name: 'Allow once' }));
-  await expect(pending).resolves.toBe('allow');
+  await expect(pending).resolves.toBe('Allow once');
 });
 
 it('keeps answer drafts and an in-flight submission across presentation disposal', async () => {

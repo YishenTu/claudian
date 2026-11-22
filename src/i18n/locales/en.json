@@ -321,23 +321,15 @@
       "current": "Permission mode: {mode}",
       "changeFailed": "Failed to change permission mode",
       "antigravity": {
-        "auto": "Auto",
         "autoDesc": "Approve workspace edits and sandboxed commands; review extra access"
       },
       "claude": {
-        "auto": "Auto",
-        "manual": "Manual",
-        "acceptEdits": "Accept edits",
-        "yolo": "YOLO",
         "autoDesc": "Claude handles permission decisions",
         "manualDesc": "Always ask before making changes",
         "acceptEditsDesc": "Automatically accept all file edits",
         "yoloDesc": "Accept all permissions without asking"
       },
       "codex": {
-        "autoReview": "Approve for me",
-        "normal": "Ask for approval",
-        "yolo": "Full access",
         "autoReviewDesc": "Auto-review extra access.",
         "readOnlyDesc": "Ask before edits or internet.",
         "normalDesc": "Ask before extra access.",
@@ -456,6 +448,8 @@
       "deny": "Deny",
       "allowOnce": "Allow once",
       "alwaysAllow": "Always allow",
+      "alwaysAllowActionInProject": "Always allow {action} in this project.",
+      "alwaysAllowPatternsInProject": "Always allow these patterns in this project: {patterns}",
       "mcpRequest": "MCP request",
       "mcpServer": "MCP server: {server}",
       "decline": "Decline",
@@ -467,16 +461,29 @@
       "fileChangeReason": "File change: {reason}",
       "permissionRequest": "Permission request",
       "permissionReason": "Permission request: {reason}",
+      "permissionRead": "Read: {paths}",
+      "permissionWrite": "Write: {paths}",
+      "permissionDenyRead": "Deny read: {paths}",
+      "permissionNetwork": "Network access",
+      "permissionFullDisk": "entire filesystem",
+      "permissionMinimalPaths": "minimal system paths",
+      "permissionProjectRoots": "project roots",
+      "permissionProjectRootsSubpath": "{subpath} in project roots",
       "networkAccess": "Allow {protocol} access to {host}",
       "execute": "Execute: {command}",
       "executeCommand": "Execute command",
       "allowSimilar": "Allow similar commands",
       "execPolicy": "Approve and store an exec policy amendment.",
       "host": "host",
-      "allowHost": "Allow {host} for this session",
-      "denyHost": "Deny {host} for this session",
+      "allowHost": "Always allow {host}",
+      "denyHost": "Always block {host}",
       "allowRule": "Apply an allow rule for {host}.",
       "denyRule": "Apply a deny rule for {host}.",
+      "allowForTurn": "Allow for this turn",
+      "allowForSession": "Allow for this session",
+      "allowFilesForSession": "Allow changes to these files for this session",
+      "denyAndStop": "Deny and stop the turn",
+      "execPolicyPrefix": "Save a rule allowing commands that start with: {prefix}",
       "details": "{tool} approval details",
       "unexpectedSelection": "Unexpected approval selection: \"{value}\"",
       "runCommand": "Run command: {pattern}",
@@ -486,7 +493,8 @@
       "searchFiles": "Search files matching: {pattern}",
       "searchContent": "Search content matching: {pattern}",
       "unknownPattern": "(unknown)",
-      "deepseekRequest": "DeepSeek requests permission."
+      "deepseekRequest": "DeepSeek requests permission.",
+      "deepseekTool": "DeepSeek tool"
     },
     "disclosure": {
       "expand": "{label} - click to expand",
@@ -793,7 +801,7 @@
     "safety": "Safety",
     "loadUserSettings": {
       "name": "Load user Claude Code settings",
-      "desc": "Load user-level Claude Code configuration from ~/.claude: settings.json, skills, commands, agents, and plugins. When disabled, only vault-level configuration is available. When enabled, user permission rules may bypass Safe mode."
+      "desc": "Load user-level Claude Code configuration from ~/.claude: settings.json, skills, commands, agents, and plugins. When disabled, only vault-level configuration is available. When enabled, user permission rules also apply and may allow actions without asking."
     },
     "codexSandbox": {
       "name": "Sandbox",

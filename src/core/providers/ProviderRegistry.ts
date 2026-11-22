@@ -303,8 +303,8 @@ export class ProviderRegistry {
 
 const PASSIVE_AUXILIARY_INTERACTION_PORT: ProviderInteractionPort = {
   requestApproval: async request => ({
-    decision: 'cancel',
     interactionId: request.interactionId,
+    value: null,
   }),
   askUserQuestion: async request => ({
     answers: null,

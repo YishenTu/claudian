@@ -178,7 +178,7 @@ it('disables without deadlocking cleanup for an ephemeral session whose original
   await f.workspace.startRuntime?.();
   await f.workspace.metadataService.loadCatalog();
   const config: ProviderSessionConfig = { workingDirectory: f.root, lifecycle: 'ephemeral', nativePersistence: 'disabled-if-supported',
-    interactionPort: { requestApproval: async r => ({ interactionId: r.interactionId, decision: 'deny' }), askUserQuestion: async r => ({ interactionId: r.interactionId, answers: null }), dismissInteraction() {} } };
+    interactionPort: { requestApproval: async r => ({ interactionId: r.interactionId, value: 'Deny' }), askUserQuestion: async r => ({ interactionId: r.interactionId, answers: null }), dismissInteraction() {} } };
   const owned = f.plugin.executionLifecycleRegistry.acquire(f.backend, config, 'chat');
   let disabling: Promise<void> | undefined;
   try {

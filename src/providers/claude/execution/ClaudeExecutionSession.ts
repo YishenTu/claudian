@@ -553,8 +553,10 @@ ClaudeExecutionStrategySink {
         this.state.bumpRevision();
         this.resume.capture(event.sessionId, this.activeRun?.nativeFork);
         this.#emitStateForCurrentTurn();
+        // Init reports the mode Claudian launched with; only a different mode is a native change.
+        // Echoing the launched mode could otherwise overwrite a newer selection made while Claude started.
         const permissionMode = fromClaudeSDKPermissionMode(event.permissionMode);
-        if (permissionMode) {
+        if (permissionMode && event.permissionMode !== this.lastEncodedRequest?.sdkPermissionMode) {
           this.#emitPermissionModeForCurrentTurn(permissionMode);
         }
         continue;

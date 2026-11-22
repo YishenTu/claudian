@@ -7,8 +7,6 @@ it.each<{ policy: ProviderToolPolicy; agent: string }>([
   { policy: { kind: 'passive' }, agent: 'claudian-title' },
   { policy: { kind: 'read-only' }, agent: 'claudian-inline-edit' },
   { policy: { kind: 'provider-default' }, agent: 'build' },
-  { policy: { kind: 'unrestricted' }, agent: 'build' },
-  { policy: { kind: 'allow-list', names: ['custom-approved-tool'] }, agent: 'claudian-title' },
 ])('executes $policy.kind with the native $agent policy', async ({ policy, agent }) => {
   const f = await createFixture();
   const managed = policy.kind === 'provider-default';

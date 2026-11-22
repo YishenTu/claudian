@@ -4,12 +4,13 @@ import { existsSync, readFileSync } from 'node:fs';
 
 import { TEST_CODEX_CATALOG, TEST_CODEX_MODEL } from '@test/helpers/codexModels';
 import { DesktopVault } from '@test/helpers/core/DesktopVault';
+import { answerApproval } from '@test/helpers/features/chat/approvalDecisionOptions';
 import { createProviderHostFixture } from '@test/helpers/providerRuntimeHost';
 import { type CodexNativeRequest, type CodexNativeTestProcess as FakeProcess,CodexRuntimeHarness } from '@test/helpers/providers/codex/CodexRuntimeHarness';
 import { testClock } from '@test/helpers/testClock';
 import spawn from 'cross-spawn';
 
-import type { ProviderExecutionEvent, ProviderExecutionRequest, ProviderSessionConfig, ProviderSessionToolPort, ProviderToolPolicy } from '@/core/execution';
+import type { ProviderExecutionEvent, ProviderExecutionRequest, ProviderInteractionPort, ProviderSessionConfig, ProviderSessionToolPort, ProviderToolPolicy } from '@/core/execution';
 import type { ProviderHost } from '@/core/providers/ProviderHost';
 import type { ProviderRuntimeHost } from '@/core/providers/ProviderRuntimeHost';
 import { createCodexWorkspaceServices } from '@/providers/codex/app/CodexWorkspaceServices';
@@ -841,7 +842,7 @@ describe('Codex shared runtime', () => {
   it('routes a native approval exclusively to its owning chat', async () => {
     mockNative.autoReconcile = true;
     const backend = createBackend(plugin, createRuntime());
-    const approval = () => vi.fn(async interaction => ({ interactionId: interaction.interactionId, decision: 'allow' as const }));
+    const approval = () => vi.fn<ProviderInteractionPort['requestApproval']>(async interaction => answerApproval(interaction, 'allow'));
     const firstApproval = approval();
     const secondApproval = approval();
     const first = backend.createSession({ ...config, interactionPort: { ...config.interactionPort, requestApproval: firstApproval } });

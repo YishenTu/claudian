@@ -1,6 +1,7 @@
 import '@/providers';
 
 import { deferred } from '@test/helpers/ChatInputHarness';
+import { approvalDecisionOptions } from '@test/helpers/features/chat/approvalDecisionOptions';
 import { FakeSideBackend, waitFor } from '@test/helpers/features/chat/SideChatSessionHarness';
 
 import { ProviderExecutionLifecycleRegistry, type ProviderExecutionRequest, type ProviderSessionEvent } from '@/core/execution';
@@ -83,8 +84,8 @@ describe('SideChatSession', () => {
   });
 
   it('keeps a replacement interaction pending when a dismissed request with the same id settles late', async () => {
-    const firstReply = deferred<{ interactionId: string; decision: 'allow' }>();
-    const nextReply = deferred<{ interactionId: string; decision: 'allow' }>();
+    const firstReply = deferred<{ interactionId: string; value: string }>();
+    const nextReply = deferred<{ interactionId: string; value: string }>();
     const requestApproval = vi.fn().mockReturnValueOnce(firstReply.promise).mockReturnValueOnce(nextReply.promise);
     const harness = createSession({ interactionPort: {
       askUserQuestion: async () => { throw new Error('unexpected'); }, dismissInteraction: vi.fn(), requestApproval,
@@ -94,14 +95,14 @@ describe('SideChatSession', () => {
     const native = harness.backend.latest;
     const port = native.config.interactionPort;
     const request = { kind: 'approval' as const, interactionId: 'reused', sessionInstanceId: native.sessionInstanceId,
-      turnId: native.activeTurnId, toolName: 'Read', input: {}, description: 'Read note' };
+      turnId: native.activeTurnId, toolName: 'Read', input: {}, description: 'Read note', decisionOptions: approvalDecisionOptions() };
     const first = port.requestApproval(request, new AbortController().signal);
     port.dismissInteraction(request.interactionId, 'superseded');
     const next = port.requestApproval(request, new AbortController().signal);
-    firstReply.resolve({ interactionId: 'reused', decision: 'allow' });
+    firstReply.resolve({ interactionId: 'reused', value: 'Allow once' });
     await expect(first).rejects.toThrow(/stale/i);
-    nextReply.resolve({ interactionId: 'reused', decision: 'allow' });
-    await expect(next).resolves.toMatchObject({ decision: 'allow' });
+    nextReply.resolve({ interactionId: 'reused', value: 'Allow once' });
+    await expect(next).resolves.toMatchObject({ value: 'Allow once' });
     native.complete();
     await running;
     await harness.session.dispose();
@@ -333,13 +334,13 @@ describe('SideChatSession', () => {
 
   it('resolves its own approvals and dismisses them when its turn is cancelled', async () => {
     const dismissals: Array<{ interactionId: string; reason: string }> = [];
-    let resolveApproval: ((value: { decision: 'allow'; interactionId: string }) => void) | null = null;
+    let resolveApproval: ((value: { interactionId: string; value: string }) => void) | null = null;
     const harness = createSession({
       interactionPort: {
         askUserQuestion: async () => { throw new Error('unexpected'); },
         dismissInteraction: (interactionId, reason) => { dismissals.push({ interactionId, reason }); },
         requestApproval: request => new Promise(resolve => {
-          resolveApproval = () => resolve({ decision: 'allow', interactionId: request.interactionId });
+          resolveApproval = () => resolve({ interactionId: request.interactionId, value: 'Allow once' });
         }),
       },
     });
@@ -348,16 +349,18 @@ describe('SideChatSession', () => {
     const native = harness.backend.latest;
     const port = native.config.interactionPort;
     const approval = port.requestApproval({
+      decisionOptions: approvalDecisionOptions(),
       description: 'Write a note', input: {}, interactionId: 'side-approval-1',
       kind: 'approval', sessionInstanceId: native.sessionInstanceId,
       toolName: 'Write', turnId: native.activeTurnId,
     }, new AbortController().signal);
     await waitFor(() => resolveApproval !== null);
-    resolveApproval!({ decision: 'allow', interactionId: 'side-approval-1' });
-    await expect(approval).resolves.toMatchObject({ decision: 'allow' });
+    resolveApproval!({ interactionId: 'side-approval-1', value: 'Allow once' });
+    await expect(approval).resolves.toMatchObject({ value: 'Allow once' });
 
     resolveApproval = null;
     const pending = port.requestApproval({
+      decisionOptions: approvalDecisionOptions(),
       description: 'Write another note', input: {}, interactionId: 'side-approval-2',
       kind: 'approval', sessionInstanceId: native.sessionInstanceId, toolName: 'Write',
       turnId: native.activeTurnId,
@@ -366,7 +369,7 @@ describe('SideChatSession', () => {
     harness.session.cancel();
     await running;
     expect(dismissals).toEqual([{ interactionId: 'side-approval-2', reason: 'cancelled' }]);
-    resolveApproval!({ decision: 'allow', interactionId: 'side-approval-2' });
+    resolveApproval!({ interactionId: 'side-approval-2', value: 'Allow once' });
     await expect(pending).rejects.toThrow(/stale/i);
     await harness.session.dispose();
   });

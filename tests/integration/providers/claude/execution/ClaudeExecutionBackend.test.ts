@@ -11,6 +11,7 @@ import * as sdkModule from '@anthropic-ai/claude-agent-sdk';
 import { capturedSelectionPrompt, capturedSelections } from '@test/helpers/capturedSelections';
 import { claudeCatalogFixture } from '@test/helpers/claudeModels';
 import { DesktopVault } from '@test/helpers/core/DesktopVault';
+import { answerApproval } from '@test/helpers/features/chat/approvalDecisionOptions';
 import { createProviderRecoveryTestHarness } from '@test/helpers/features/chat/ProviderRecoveryTestHarness';
 import { createProviderHostFixture } from '@test/helpers/providerRuntimeHost';
 import { testDate, testTime } from '@test/helpers/testClock';
@@ -83,10 +84,7 @@ const sdkMock = sdkModule as unknown as {
 
 function createInteractionPort(): Mocked<ProviderInteractionPort> {
   return {
-    requestApproval: vi.fn().mockImplementation(async (request) => ({
-      interactionId: request.interactionId,
-      decision: 'allow',
-    })),
+    requestApproval: vi.fn().mockImplementation(async (request) => answerApproval(request, 'allow')),
     askUserQuestion: vi.fn().mockImplementation(async (request) => ({
       interactionId: request.interactionId,
       answers: { choice: 'yes' },
@@ -471,19 +469,22 @@ describe('ClaudeExecutionBackend', () => {
   });
 
   it.each([
-    ['bypassPermissions', 'yolo'],
-    ['default', 'manual'],
-    ['acceptEdits', 'acceptEdits'],
-    ['auto', 'auto'],
-  ])('normalizes native permission %o to %s in execution events', async (nativeMode, permissionMode) => {
+    ['bypassPermissions', 'yolo', 'manual'],
+    ['default', 'manual', 'acceptEdits'],
+    ['acceptEdits', 'acceptEdits', 'manual'],
+    ['auto', 'auto', 'manual'],
+  ])('normalizes native permission %o to %s in execution events', async (nativeMode, permissionMode, launchedMode) => {
     sdkMock.setMockMessages([
       { type: 'system', subtype: 'init', session_id: 'session-1', permissionMode: nativeMode },
       { type: 'result', subtype: 'success' },
     ], { appendResult: false });
     const session = new ClaudeExecutionBackend((await createHost()).host.getRuntimeHost('claude'))
       .createSession(createConfig());
+    const request = createRequest();
 
-    const events = await collectEvents(session.execute(createRequest()).events);
+    const events = await collectEvents(session.execute({
+      ...request, configuration: { ...request.configuration, permissionMode: launchedMode },
+    }).events);
 
     expect(events).toContainEqual(expect.objectContaining({
       type: 'permission_mode_changed',
@@ -491,6 +492,28 @@ describe('ClaudeExecutionBackend', () => {
       scope: expect.objectContaining({ kind: 'requested', sessionInstanceId: session.sessionInstanceId }),
       snapshot: expect.objectContaining({ providerId: 'claude', providerSessionId: 'session-1' }),
     }));
+  });
+
+  it.each([
+    ['yolo', 'bypassPermissions'],
+    ['manual', 'default'],
+    ['acceptEdits', 'acceptEdits'],
+    ['auto', 'auto'],
+  ])('reports no change when native init echoes the launched %s mode', async (permissionMode, nativeMode) => {
+    sdkMock.setMockMessages([
+      { type: 'system', subtype: 'init', session_id: 'session-1', permissionMode: nativeMode },
+      { type: 'result', subtype: 'success' },
+    ], { appendResult: false });
+    const session = new ClaudeExecutionBackend((await createHost()).host.getRuntimeHost('claude'))
+      .createSession(createConfig());
+    const request = createRequest();
+
+    const events = await collectEvents(session.execute({
+      ...request, configuration: { ...request.configuration, permissionMode },
+    }).events);
+
+    expect(sdkMock.getLastOptions()?.permissionMode).toBe(nativeMode);
+    expect(events).not.toContainEqual(expect.objectContaining({ type: 'permission_mode_changed' }));
   });
 
   it.each(['dontAsk', 'delegate', 'plan', 'future-mode', 'yolo', '', null, false])(
@@ -1028,7 +1051,6 @@ describe('ClaudeExecutionBackend', () => {
       configuration: {
         systemInstructions: { kind: 'main-agent' as const, instructions: 'Main Agent prompt.' },
       },
-      toolPolicy: { kind: 'allow-list', names: ['Read', 'Grep'] },
     })).events);
 
     expect(getNativeInputs()).toHaveLength(1);
@@ -1044,7 +1066,6 @@ describe('ClaudeExecutionBackend', () => {
     ]);
     expect(sdkMock.getLastOptions()).toEqual(expect.objectContaining({
       cwd: '/vault',
-      tools: ['Read', 'Grep'],
     }));
     expect(sdkMock.getLastOptions()?.mcpServers).toBeUndefined();
   });
@@ -1372,7 +1393,11 @@ describe('ClaudeExecutionBackend', () => {
     }));
   });
 
-  it('enforces read-only policy through both tool exposure and the native hook', async () => {
+  // MCP servers from the user's setting sources survive `tools`, which limits built-in tools only.
+  it.each([
+    ['read-only', ['Read', 'Grep', 'Glob', 'LS', 'WebSearch', 'WebFetch']],
+    ['passive', []],
+  ] as const)('enforces %s policy through both tool exposure and the native hook', async (kind, tools) => {
     sdkMock.setMockMessages([
       { type: 'result', subtype: 'success' },
     ], { appendResult: false });
@@ -1384,34 +1409,29 @@ describe('ClaudeExecutionBackend', () => {
       }));
 
     await collectEvents(session.execute(createRequest({
-      toolPolicy: { kind: 'read-only' },
+      toolPolicy: { kind },
     })).events);
 
     const options = sdkMock.getLastOptions();
-    expect(options?.tools).toEqual([
-      'Read',
-      'Grep',
-      'Glob',
-      'LS',
-      'WebSearch',
-      'WebFetch',
-    ]);
+    expect(options?.tools).toEqual(tools);
     const hook = options?.hooks?.PreToolUse?.[0].hooks[0];
-    await expect(hook?.({
-      hook_event_name: 'PreToolUse',
-      tool_name: 'Edit',
-      tool_input: {},
-      cwd: '/vault',
-      session_id: 'session',
-      transcript_path: '',
-    } as never, 'tool-1', {
-      signal: new AbortController().signal,
-    } as never)).resolves.toEqual(expect.objectContaining({
-      continue: false,
-      hookSpecificOutput: expect.objectContaining({
-        permissionDecision: 'deny',
-      }),
-    }));
+    for (const toolName of ['Edit', 'mcp__user-server__write']) {
+      await expect(hook?.({
+        hook_event_name: 'PreToolUse',
+        tool_name: toolName,
+        tool_input: {},
+        cwd: '/vault',
+        session_id: 'session',
+        transcript_path: '',
+      } as never, 'tool-1', {
+        signal: new AbortController().signal,
+      } as never)).resolves.toEqual(expect.objectContaining({
+        continue: false,
+        hookSpecificOutput: expect.objectContaining({
+          permissionDecision: 'deny',
+        }),
+      }));
+    }
     await expect(options?.canUseTool?.('Edit', {}, {
       signal: new AbortController().signal,
       toolUseID: 'tool-1',
@@ -1792,7 +1812,8 @@ describe('ClaudeExecutionBackend', () => {
         type: 'system',
         subtype: 'init',
         session_id: 'replacement-session',
-        permissionMode: 'default',
+        // Differs from the launched mode, so init reports a native change.
+        permissionMode: 'acceptEdits',
       },
       queryEndBarrier.promise,
     ]]);
@@ -2499,7 +2520,7 @@ describe('ClaudeExecutionBackend', () => {
     vi.spyOn(await import('@/providers/claude/loadClaudeAgentSDK'), 'loadClaudeAgentQuery')
       .mockResolvedValueOnce(((params: { prompt: AsyncIterable<sdkModule.SDKUserMessage>; options: sdkModule.Options }) => { options = params.options; return receiveInput(query)(params); }) as never);
     const interactionPort = createInteractionPort();
-    interactionPort.requestApproval.mockImplementation(async request => ({ interactionId: request.interactionId, decision: 'deny' }));
+    interactionPort.requestApproval.mockImplementation(async request => answerApproval(request, 'deny'));
     const session = new ClaudeExecutionBackend((await createHost()).host.getRuntimeHost('claude')).createSession(createConfig({ interactionPort }));
     const background: ProviderSessionEvent[] = [];
     session.onEvent(event => background.push(event));
@@ -4043,7 +4064,7 @@ it.each(['allow', 'deny', 'question'] as const)('routes a native %s interaction 
     ? { questions: [{ question: 'Continue?', header: 'Choice', options: [], multiSelect: false }] }
     : { command: 'ls /external/path' };
   const port = createInteractionPort();
-  port.requestApproval.mockImplementation(async request => ({ interactionId: request.interactionId, decision: decision === 'deny' ? 'deny' : 'allow' }));
+  port.requestApproval.mockImplementation(async request => answerApproval(request, decision === 'deny' ? 'deny' : 'allow'));
   port.askUserQuestion.mockImplementation(async request => ({ interactionId: request.interactionId, answers: { answer: 'yes' } }));
   sdkMock.setMockMessages([
     { type: 'system', subtype: 'init', session_id: 'interaction-session' },

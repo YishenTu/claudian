@@ -69,7 +69,7 @@ input.once('line', async line => {
   await mkdir(env.HOME);
   // Seeded before any consumer reads the settings; the relay route is only known once the host exists.
   Object.assign(fixture.settings.providerConfigs, { opencode: { enabled: true, environmentVariables: Object.entries(env).map(([key, value]) => `${key}=${value}`).join('\n') } });
-  const config: ProviderSessionConfig = { workingDirectory: root, lifecycle: 'persistent', nativePersistence: 'provider-default', interactionPort: { requestApproval: async request => ({ interactionId: request.interactionId, decision: 'allow' }), askUserQuestion: async request => ({ interactionId: request.interactionId, answers: {} }), dismissInteraction() {} } };
+  const config: ProviderSessionConfig = { workingDirectory: root, lifecycle: 'persistent', nativePersistence: 'provider-default', interactionPort: { requestApproval: async request => ({ interactionId: request.interactionId, value: 'Allow once' }), askUserQuestion: async request => ({ interactionId: request.interactionId, answers: {} }), dismissInteraction() {} } };
   const kernel = new OpencodeHTTPSessionKernel({ host, config, getActiveTurnId: () => 'native-test', sessionInstanceId: 'native-test', onClosed: error => outputs.push(error), onNativeOutput: event => outputs.push(event) }, service, new OpencodeSessionPersistence(config));
   try {
     await kernel.connect({ profile: 'managed', systemPrompt: 'Call the session tool then finish.' });
@@ -81,8 +81,7 @@ input.once('line', async line => {
       expect(await control.request(`/api/session/${session.sessionId}`)).toMatchObject({ data: { location: { directory: root } } });
     } finally { await control.dispose(); }
     await kernel.setModel(session.sessionId, 'fake/fake');
-    kernel.setAutoApprove(true);
-    await kernel.prompt(session.sessionId, { text: 'List sessions', files: [], userText: null }, { toolPolicy: { kind: 'provider-default' }, signal: AbortSignal.timeout(25_000) });
+    await kernel.prompt(session.sessionId, { text: 'List sessions', files: [], userText: null }, { toolPolicy: { kind: 'provider-default' }, signal: AbortSignal.timeout(25_000), autoApprove: true });
     expect(callers).toEqual([session.sessionId]);
     expect(requests.flatMap(request => request.tools ?? [])).toEqual(expect.arrayContaining([expect.objectContaining({ function: expect.objectContaining({ name: 'claudian_list_destinations' }) })]));
     expect(requests.flatMap(request => request.messages ?? [])).toEqual(expect.arrayContaining([expect.objectContaining({ role: 'tool', content: expect.stringContaining('verified relay 中文') })]));

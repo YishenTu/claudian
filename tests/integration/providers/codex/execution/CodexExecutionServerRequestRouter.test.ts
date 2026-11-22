@@ -1,4 +1,5 @@
 import type {
+  ProviderApprovalDecisionOption,
   ProviderApprovalInteractionRequest,
   ProviderInteractionPort,
   ProviderQuestionInteractionRequest,
@@ -58,22 +59,27 @@ function createPendingQuestion() {
 describe('CodexExecutionServerRequestRouter', () => {
   afterEach(() => setLocale('en'));
 
-  it.each(['claudian_list_destinations', 'claudian_sessions.claudian_list_destinations'])(
-    'denies session tools even when the allow-list names %s, while ordinary named tools still work', async name => {
+  it.each(['provider-default', 'passive', 'read-only'] as const)(
+    'checks the %s policy when a session or ordinary dynamic tool is called', async kind => {
       const port = { list: vi.fn(async () => ({ sessions: [] })), send: vi.fn(), read: vi.fn() };
-      const router = createRouter(vi.fn(), { kind: 'allow-list', names: [name, 'ordinary'] });
+      const ordinary = vi.fn(async () => ({ success: true, contentItems: [] }));
+      const router = createRouter(vi.fn(), { kind });
       const registry = new CodexDynamicToolRegistry();
       for (const registration of createCodexSessionTools(port)) registry.register(registration);
-      registry.register({ includeInThreadStart: true, tool: { type: 'function', name: 'ordinary', description: '', inputSchema: {} }, handler: async () => ({ success: true, contentItems: [] }) });
+      registry.register({ includeInThreadStart: true, tool: { type: 'function', name: 'ordinary', description: '', inputSchema: {} }, handler: ordinary });
       router.setDynamicToolRegistry(registry);
       const params = { threadId: 'thread-confirmation', turnId: 'turn-confirmation', callId: 'call', arguments: {} };
-      await expect(router.handleServerRequest('session', 'item/tool/call', { ...params, namespace: 'claudian_sessions', tool: 'claudian_list_destinations' })).resolves.toMatchObject({ success: false });
-      expect(port.list).not.toHaveBeenCalled();
-      await expect(router.handleServerRequest('ordinary', 'item/tool/call', { ...params, namespace: null, tool: 'ordinary' })).resolves.toMatchObject({ success: true });
+      const allowed = kind === 'provider-default';
+      await expect(router.handleServerRequest('session', 'item/tool/call', { ...params, namespace: 'claudian_sessions', tool: 'claudian_list_destinations' })).resolves.toMatchObject({ success: allowed });
+      expect(port.list).toHaveBeenCalledTimes(allowed ? 1 : 0);
+      const ordinaryCall = await router.handleServerRequest('ordinary', 'item/tool/call', { ...params, namespace: null, tool: 'ordinary' })
+        .catch((error: unknown) => error instanceof Error ? error.message : error);
+      expect(ordinaryCall).toEqual(allowed ? { success: true, contentItems: [] } : 'Unsupported dynamic tool: ordinary');
+      expect(ordinary).toHaveBeenCalledTimes(allowed ? 1 : 0);
     },
   );
 
-  it('requires an explicit answer for the captured Computer Use confirmation, even with unrestricted tools', async () => {
+  it('requires an explicit answer for the captured Computer Use confirmation', async () => {
     const askUserQuestion = vi.fn(async (request: ProviderQuestionInteractionRequest) => ({
       interactionId: request.interactionId,
       answers: { 'mcp-elicitation-confirmation': 'accept' },
@@ -96,7 +102,7 @@ describe('CodexExecutionServerRequestRouter', () => {
       localTurnId: 'local-turn',
       nativeThreadId: 'thread-confirmation',
       nativeTurnId: 'turn-confirmation',
-      toolPolicy: { kind: 'unrestricted' },
+      toolPolicy: { kind: 'provider-default' },
     };
 
     // Captured app-server payload, with native identities replaced by test values.
@@ -142,7 +148,7 @@ describe('CodexExecutionServerRequestRouter', () => {
     const serverLabel = t('chat.approval.mcpServer', { server: 'cua_repl' });
     expect(serverLabel !== englishServerLabel).toBe(locale !== 'en');
     const question = createPendingQuestion();
-    const router = createRouter(question.askUserQuestion, { kind: 'unrestricted' });
+    const router = createRouter(question.askUserQuestion);
     const result = router.handleServerRequest('pending', 'mcpServer/elicitation/request', confirmationRequest);
     const [request] = question.askUserQuestion.mock.calls[0];
     let settled = false;
@@ -385,33 +391,249 @@ describe('CodexExecutionServerRequestRouter', () => {
 });
 
 
-it('localizes Codex command approval labels without changing native decisions', async () => {
-  setLocale('en');
-  const englishDescription = t('chat.approval.execute', { command: 'npm test' });
-  setLocale('zh-CN');
-  const expectedDescription = t('chat.approval.execute', { command: 'npm test' });
-  expect(expectedDescription).not.toBe(englishDescription);
-  const requestApproval = vi.fn(async (request: ProviderApprovalInteractionRequest) => ({
-    interactionId: request.interactionId, decision: 'allow' as const,
-  }));
+const approvalScope = { threadId: 'thread-confirmation', turnId: 'turn-confirmation' };
+// Token boundaries matter: a rule for `npm run 'build docs'` differs from one for `npm run build docs`.
+const execPolicyAmendment = { acceptWithExecpolicyAmendment: { execpolicy_amendment: ['npm', 'run', 'build docs'] } };
+const networkAmendment = {
+  applyNetworkPolicyAmendment: { network_policy_amendment: { host: 'registry.npmjs.org', action: 'deny' as const } },
+};
+const requestedPermissions = { network: { enabled: true }, fileSystem: { read: null, write: ['/tmp/out'] } };
+const allowExampleAmendment = {
+  applyNetworkPolicyAmendment: { network_policy_amendment: { host: 'example.com', action: 'allow' as const } },
+};
+/** Codex 0.171 sandbox entries: legacy and entry paths overlap, deny entries grant nothing, and disabled network is not access. */
+const entryPermissions = {
+  network: { enabled: false },
+  fileSystem: {
+    read: ['/vault/notes'],
+    write: null,
+    entries: [
+      { path: { type: 'path', path: '/vault/notes' }, access: 'read' },
+      { path: { type: 'glob_pattern', pattern: '**/*.md' }, access: 'read' },
+      { path: { type: 'special', value: { kind: 'root' } }, access: 'read' },
+      { path: { type: 'special', value: { kind: 'minimal' } }, access: 'read' },
+      { path: { type: 'special', value: { kind: 'project_roots', subpath: null } }, access: 'read' },
+      { path: { type: 'special', value: { kind: 'unknown', path: ':future', subpath: 'docs' } }, access: 'read' },
+      { path: { type: 'special', value: { kind: 'project_roots', subpath: 'build' } }, access: 'write' },
+      { path: { type: 'special', value: { kind: 'tmpdir' } }, access: 'write' },
+      { path: { type: 'special', value: { kind: 'slash_tmp' } }, access: 'write' },
+      { path: { type: 'path', path: '/vault/.secrets' }, access: 'deny' },
+    ],
+  },
+};
+
+function createApprovalRouter(answer: (request: ProviderApprovalInteractionRequest) => string | null) {
+  const offered: ProviderApprovalInteractionRequest[] = [];
+  const activeTurn: ActiveInteractionTurn = { localTurnId: 'local-turn', nativeThreadId: 'thread-confirmation', nativeTurnId: 'turn-confirmation', toolPolicy: { kind: 'provider-default' }, cancellation: new AbortController() };
   const router = new CodexExecutionServerRequestRouter('session-confirmation', {
-    requestApproval,
-    askUserQuestion: async request => ({ interactionId: request.interactionId, answers: {} }),
+    requestApproval: async request => {
+      offered.push(request);
+      return { interactionId: request.interactionId, value: answer(request) };
+    },
+    askUserQuestion: async () => {
+      throw new Error('Approvals must use the approval port');
+    },
     dismissInteraction: () => undefined,
   }, () => true, () => activeTurn);
-  const activeTurn: ActiveInteractionTurn = { localTurnId: 'local-turn', nativeThreadId: 'thread-confirmation', nativeTurnId: 'turn-confirmation', toolPolicy: { kind: 'provider-default' }, cancellation: new AbortController() };
-  try {
-    await expect(router.handleServerRequest('command', 'item/commandExecution/requestApproval', {
-      threadId: 'thread-confirmation', turnId: 'turn-confirmation', itemId: 'command-item', command: 'npm test',
-    })).resolves.toEqual({ decision: 'accept' });
-    const [request] = requestApproval.mock.calls[0];
-    expect(request.description).toBe(expectedDescription);
-    expect(request.decisionOptions?.map(option => [option.label, option.value])).toEqual([
-      [t('chat.approval.allowOnce'), 'allow-once'],
-      [t('chat.approval.alwaysAllow'), 'allow-always'],
-      [t('chat.approval.deny'), 'deny'],
-    ]);
-  } finally {
+  return { offered, router };
+}
+
+type ApprovalChoice = readonly [option: ProviderApprovalDecisionOption, nativeReply: unknown];
+
+describe('Codex native approval choices', () => {
+  afterEach(() => setLocale('en'));
+
+  it.each<{
+    name: string;
+    method: string;
+    params: Record<string, unknown>;
+    description: () => string;
+    choices: () => ApprovalChoice[];
+    dismissed: unknown;
+  }>([
+    {
+      name: 'command with Codex-offered decisions',
+      method: 'item/commandExecution/requestApproval',
+      params: {
+        ...approvalScope, itemId: 'command-item', command: 'npm test',
+        availableDecisions: ['accept', 'acceptForSession', execPolicyAmendment, networkAmendment, 'decline', 'cancel'],
+      },
+      description: () => t('chat.approval.execute', { command: 'npm test' }),
+      choices: () => [
+        [{ label: t('chat.approval.allowOnce'), value: 'allow-once', decision: 'allow' }, { decision: 'accept' }],
+        [{ label: t('chat.approval.allowForSession'), value: 'allow-always', decision: 'allow-always' }, { decision: 'acceptForSession' }],
+        [{
+          label: t('chat.approval.allowSimilar'),
+          description: t('chat.approval.execPolicyPrefix', { prefix: "npm run 'build docs'" }),
+          value: JSON.stringify(execPolicyAmendment),
+        }, { decision: execPolicyAmendment }],
+        [{
+          label: t('chat.approval.denyHost', { host: 'registry.npmjs.org' }),
+          description: t('chat.approval.denyRule', { host: 'registry.npmjs.org' }),
+          value: JSON.stringify(networkAmendment),
+        }, { decision: networkAmendment }],
+        [{ label: t('chat.approval.deny'), value: 'deny', decision: 'deny' }, { decision: 'decline' }],
+        [{ label: t('chat.approval.denyAndStop'), value: 'cancel', decision: 'cancel' }, { decision: 'cancel' }],
+      ],
+      dismissed: { decision: 'cancel' },
+    },
+    {
+      // Without `availableDecisions`, Codex 0.171 presents `default_available_decisions` (tui/src/approval_events.rs).
+      name: 'command without offered decisions',
+      method: 'item/commandExecution/requestApproval',
+      params: { ...approvalScope, itemId: 'command-item', command: 'npm test' },
+      description: () => t('chat.approval.execute', { command: 'npm test' }),
+      choices: () => [
+        [{ label: t('chat.approval.allowOnce'), value: 'allow-once', decision: 'allow' }, { decision: 'accept' }],
+        [{ label: t('chat.approval.denyAndStop'), value: 'cancel', decision: 'cancel' }, { decision: 'cancel' }],
+      ],
+      dismissed: { decision: 'cancel' },
+    },
+    {
+      name: 'command with proposed amendments but no offered decisions',
+      method: 'item/commandExecution/requestApproval',
+      params: {
+        ...approvalScope, itemId: 'command-item', command: 'npm test',
+        proposedExecpolicyAmendment: ['npm', 'run', 'build docs'],
+        proposedNetworkPolicyAmendments: [{ host: 'registry.npmjs.org', action: 'deny' }],
+      },
+      description: () => t('chat.approval.execute', { command: 'npm test' }),
+      choices: () => [
+        [{ label: t('chat.approval.allowOnce'), value: 'allow-once', decision: 'allow' }, { decision: 'accept' }],
+        [{
+          label: t('chat.approval.allowSimilar'),
+          description: t('chat.approval.execPolicyPrefix', { prefix: "npm run 'build docs'" }),
+          value: JSON.stringify(execPolicyAmendment),
+        }, { decision: execPolicyAmendment }],
+        [{ label: t('chat.approval.denyAndStop'), value: 'cancel', decision: 'cancel' }, { decision: 'cancel' }],
+      ],
+      dismissed: { decision: 'cancel' },
+    },
+    {
+      name: 'network command without offered decisions',
+      method: 'item/commandExecution/requestApproval',
+      params: {
+        ...approvalScope, itemId: 'command-item', command: 'curl example.com',
+        networkApprovalContext: { host: 'example.com', protocol: 'https' },
+        proposedNetworkPolicyAmendments: [
+          { host: 'registry.npmjs.org', action: 'deny' }, { host: 'example.com', action: 'allow' }, { host: 'other.test', action: 'allow' },
+        ],
+      },
+      description: () => t('chat.approval.networkAccess', { protocol: 'https', host: 'example.com' }),
+      choices: () => [
+        [{ label: t('chat.approval.allowOnce'), value: 'allow-once', decision: 'allow' }, { decision: 'accept' }],
+        [{ label: t('chat.approval.allowForSession'), value: 'allow-always', decision: 'allow-always' }, { decision: 'acceptForSession' }],
+        [{
+          label: t('chat.approval.allowHost', { host: 'example.com' }),
+          description: t('chat.approval.allowRule', { host: 'example.com' }),
+          value: JSON.stringify(allowExampleAmendment),
+        }, { decision: allowExampleAmendment }],
+        [{ label: t('chat.approval.denyAndStop'), value: 'cancel', decision: 'cancel' }, { decision: 'cancel' }],
+      ],
+      dismissed: { decision: 'cancel' },
+    },
+    {
+      name: 'command with additional permissions and no offered decisions',
+      method: 'item/commandExecution/requestApproval',
+      params: {
+        ...approvalScope, itemId: 'command-item', command: 'npm run build',
+        additionalPermissions: { fileSystem: { write: ['/outside/build'] }, network: null },
+      },
+      description: () => [
+        t('chat.approval.execute', { command: 'npm run build' }),
+        t('chat.approval.permissionWrite', { paths: '/outside/build' }),
+      ].join(' · '),
+      choices: () => [
+        [{ label: t('chat.approval.allowOnce'), value: 'allow-once', decision: 'allow' }, { decision: 'accept' }],
+        [{ label: t('chat.approval.denyAndStop'), value: 'cancel', decision: 'cancel' }, { decision: 'cancel' }],
+      ],
+      dismissed: { decision: 'cancel' },
+    },
+    {
+      name: 'file change',
+      method: 'item/fileChange/requestApproval',
+      params: { ...approvalScope, itemId: 'file-item', reason: 'Write outside the vault' },
+      description: () => t('chat.approval.fileChangeReason', { reason: 'Write outside the vault' }),
+      choices: () => [
+        [{ label: t('chat.approval.allowOnce'), value: 'allow-once', decision: 'allow' }, { decision: 'accept' }],
+        [{ label: t('chat.approval.allowFilesForSession'), value: 'allow-always', decision: 'allow-always' }, { decision: 'acceptForSession' }],
+        // Codex's own file-change menu offers no decline that continues the turn (tui/src/bottom_pane/approval_overlay.rs).
+        [{ label: t('chat.approval.denyAndStop'), value: 'cancel', decision: 'cancel' }, { decision: 'cancel' }],
+      ],
+      dismissed: { decision: 'cancel' },
+    },
+    {
+      name: 'permissions',
+      method: 'item/permissions/requestApproval',
+      params: { ...approvalScope, itemId: 'permission-item', reason: 'Fetch dependencies', permissions: requestedPermissions },
+      description: () => [
+        t('chat.approval.permissionReason', { reason: 'Fetch dependencies' }),
+        t('chat.approval.permissionWrite', { paths: '/tmp/out' }),
+        t('chat.approval.permissionNetwork'),
+      ].join(' · '),
+      choices: () => [
+        [{ label: t('chat.approval.allowForTurn'), value: 'allow-turn', decision: 'allow' }, { permissions: requestedPermissions, scope: 'turn' }],
+        [{ label: t('chat.approval.allowForSession'), value: 'allow-session', decision: 'allow-always' }, { permissions: requestedPermissions, scope: 'session' }],
+        [{ label: t('chat.approval.deny'), value: 'deny', decision: 'deny' }, { permissions: {}, scope: 'turn' }],
+      ],
+      dismissed: { permissions: {}, scope: 'turn' },
+    },
+    {
+      name: 'permissions without a reason, as sandbox entries',
+      method: 'item/permissions/requestApproval',
+      params: { ...approvalScope, itemId: 'permission-item', reason: null, permissions: entryPermissions },
+      description: () => [
+        t('chat.approval.permissionRequest'),
+        t('chat.approval.permissionRead', { paths: [
+          '/vault/notes', '**/*.md', t('chat.approval.permissionFullDisk'), t('chat.approval.permissionMinimalPaths'),
+          t('chat.approval.permissionProjectRoots'), ':future/docs',
+        ].join(', ') }),
+        t('chat.approval.permissionWrite', { paths: [
+          t('chat.approval.permissionProjectRootsSubpath', { subpath: 'build' }), '$TMPDIR', '/tmp',
+        ].join(', ') }),
+        // Exclusions narrow what the grant allows; Codex shows them too.
+        t('chat.approval.permissionDenyRead', { paths: '/vault/.secrets' }),
+      ].join(' · '),
+      choices: () => [
+        [{ label: t('chat.approval.allowForTurn'), value: 'allow-turn', decision: 'allow' }, { permissions: entryPermissions, scope: 'turn' }],
+        [{ label: t('chat.approval.allowForSession'), value: 'allow-session', decision: 'allow-always' }, { permissions: entryPermissions, scope: 'session' }],
+        [{ label: t('chat.approval.deny'), value: 'deny', decision: 'deny' }, { permissions: {}, scope: 'turn' }],
+      ],
+      dismissed: { permissions: {}, scope: 'turn' },
+    },
+  ])('offers the native $name choices, localized, and replies with the chosen one', async ({ method, params, description, choices, dismissed }) => {
     setLocale('en');
-  }
+    const englishDescription = description();
+    setLocale('zh-CN');
+    expect(description()).not.toBe(englishDescription);
+    let choose: (request: ProviderApprovalInteractionRequest) => string | null = () => null;
+    const { offered, router } = createApprovalRouter(request => choose(request));
+    const expected = choices();
+
+    for (const [index, [, nativeReply]] of expected.entries()) {
+      choose = request => request.decisionOptions[index].value;
+      await expect(router.handleServerRequest(`choice-${index}`, method, params)).resolves.toEqual(nativeReply);
+    }
+    choose = () => null;
+    await expect(router.handleServerRequest('dismissed', method, params)).resolves.toEqual(dismissed);
+
+    expect(offered).toHaveLength(expected.length + 1);
+    for (const request of offered) {
+      expect(request.description).toBe(description());
+      expect(request.decisionOptions).toEqual(expected.map(([option]) => option));
+    }
+  });
+
+  it.each<[string, Record<string, unknown>, string]>([
+    ['a forged amendment', {}, JSON.stringify(execPolicyAmendment)],
+    ['malformed JSON', {}, '{"acceptWithExecpolicyAmendment"'],
+    ['a session grant Codex did not offer', { availableDecisions: ['accept', 'decline'] }, 'allow-always'],
+    ['a session grant the request does not evidence', {}, 'allow-always'],
+  ])('declines a command reply naming %s', async (_name, offeredDecisions, value) => {
+    const { offered, router } = createApprovalRouter(() => value);
+    await expect(router.handleServerRequest('forged', 'item/commandExecution/requestApproval', {
+      ...approvalScope, itemId: 'command-item', command: 'npm test', ...offeredDecisions,
+    })).resolves.toEqual({ decision: 'decline' });
+    expect(offered).toHaveLength(1);
+  });
 });

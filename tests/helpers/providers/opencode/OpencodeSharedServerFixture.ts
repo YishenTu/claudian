@@ -63,7 +63,7 @@ async function createFixture(version = '2.0.14') {
   const backend = new OpencodeExecutionBackend(runtimeHost, workspace);
   const createSession = (config: Partial<ProviderSessionConfig> = {}) => backend.createSession({
     workingDirectory: root, lifecycle: 'persistent', nativePersistence: 'provider-default', ...config,
-    interactionPort: { requestApproval: async r => ({ interactionId: r.interactionId, decision: 'deny' }), askUserQuestion: async r => ({ interactionId: r.interactionId, answers: null }), dismissInteraction() {} },
+    interactionPort: { requestApproval: async r => ({ interactionId: r.interactionId, value: 'Deny' }), askUserQuestion: async r => ({ interactionId: r.interactionId, answers: null }), dismissInteraction() {} },
   });
   return { root, cli, log, plugin, workspace, backend, createSession, register,
     environment: buildOpencodeRuntimeEnv(runtimeHost.environmentText, cli),
@@ -89,7 +89,7 @@ async function createSideFixture() {
     providerId: 'opencode', ephemeral: capabilities.supportsEphemeralFork ?? capabilities.supportsEphemeralSessions,
     lifecycleRegistry: f.plugin.executionLifecycleRegistry, resolveBackend: () => f.backend,
     workingDirectory: f.root,
-    interactionPort: { requestApproval: async r => ({ interactionId: r.interactionId, decision: 'deny' }), askUserQuestion: async r => ({ interactionId: r.interactionId, answers: null }), dismissInteraction() {} },
+    interactionPort: { requestApproval: async r => ({ interactionId: r.interactionId, value: 'Deny' }), askUserQuestion: async r => ({ interactionId: r.interactionId, answers: null }), dismissInteraction() {} },
     buildChildResumeState: () => Promise.resolve(history.buildForkProviderState(source.data.id, 'msg_source', sourceState, f.root,
       { ...createProviderHistoryPathContext(f.plugin.settings, 'opencode', f.root), environment: f.environment, vaultPath: f.root }, { lifecycle: 'ephemeral' })),
   });

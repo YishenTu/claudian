@@ -38,16 +38,16 @@ export class PermissionToggle {
 
   updateDisplay() {
     const options = this.#getOptions();
-    if (!this.visible || options.length === 0) {
+    const mode = this.callbacks.getSettings().permissionMode;
+    // Settings arrive resolved against the provider's policy; never show a mode that would not run.
+    const current = options.find(option => option.value === mode);
+    if (!this.visible || !current) {
       this.menu.close(false);
       this.menu.anchorEl.addClass('claudian-hidden');
       return;
     }
 
     this.menu.anchorEl.removeClass('claudian-hidden');
-    const mode = this.callbacks.getSettings().permissionMode;
-    // The projection normalizes the stored mode; the first option only covers a transient mismatch.
-    const current = options.find(option => option.value === mode) ?? options[0];
     const bypasses = current.bypassesApprovals === true;
     this.labelEl.setText(current.label);
     this.iconEl.empty();

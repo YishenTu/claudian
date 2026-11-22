@@ -91,7 +91,7 @@ it('commits enablement through the real lifecycle and refreshes model options wi
   const f = await setup({ enabled: false });
   const session = new OpencodeExecutionBackend(f.runtimeHost, { serverService: f.servers }).createSession({
     workingDirectory: f.fixture.root, lifecycle: 'persistent', nativePersistence: 'provider-default',
-    interactionPort: { requestApproval: async r => ({ interactionId: r.interactionId, decision: 'deny' }), askUserQuestion: async r => ({ interactionId: r.interactionId, answers: null }), dismissInteraction() {} },
+    interactionPort: { requestApproval: async r => ({ interactionId: r.interactionId, value: 'Deny' }), askUserQuestion: async r => ({ interactionId: r.interactionId, answers: null }), dismissInteraction() {} },
   });
   f.registry.acquire({ providerId: 'opencode', createSession: () => session }, {} as never, 'chat');
   vi.mocked(spawn).mockClear();

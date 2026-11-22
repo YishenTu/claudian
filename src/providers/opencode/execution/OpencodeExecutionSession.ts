@@ -388,7 +388,9 @@ export class OpencodeExecutionSession implements ProviderExecutionSession, Steer
         ? { text: text.trim(), files: [], userText: null }
         : buildPrompt(request, !this.nativeConversationContextEstablished);
       const startedAt = Date.now();
-      const response = await kernel.prompt(native.sessionId, prompt, request);
+      const response = await kernel.prompt(native.sessionId, prompt, {
+        toolPolicy: request.toolPolicy, signal: request.signal, autoApprove: request.configuration.permissionMode === 'yolo',
+      });
       this.#markNativeConversationContextEstablished(active);
       if (!this.#isRunCurrent(active, generation)) return;
       active.nativeCompleted = response.stopReason !== 'cancelled';
@@ -497,7 +499,6 @@ export class OpencodeExecutionSession implements ProviderExecutionSession, Steer
       native.sessionId,
       profile === 'managed' ? OPENCODE_BUILD_AGENT_ID : AUX_AGENT_IDS[profile],
     );
-    kernel.setAutoApprove(request.configuration.permissionMode === 'yolo');
   }
 
   #resolveSelectedRawModelId(explicit?: string): string | null {
@@ -717,10 +718,7 @@ function isAcceptingLiveOutput(active: OpencodeActiveRun): boolean {
 }
 
 function resolveProfile(request: ProviderExecutionRequest): OpencodeExecutionProfile {
-  if (
-    request.toolPolicy.kind === 'passive'
-    || request.toolPolicy.kind === 'allow-list'
-  ) return 'passive';
+  if (request.toolPolicy.kind === 'passive') return 'passive';
   if (request.toolPolicy.kind === 'read-only') return 'readonly';
   return 'managed';
 }

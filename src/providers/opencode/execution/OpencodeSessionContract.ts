@@ -51,6 +51,14 @@ export interface OpencodeSessionKernelOptions {
   readonly sessionInstanceId: string;
 }
 
+export interface OpencodePromptRun extends Pick<ProviderExecutionRequest, 'toolPolicy' | 'signal'> {
+  /**
+   * Replies `once` to managed permission requests of this run and the children it launches,
+   * like OpenCode's `--auto`; `deny` rules never ask.
+   */
+  readonly autoApprove: boolean;
+}
+
 export interface OpencodeSessionKernel {
   readonly hasNativeWork: boolean;
   whenIdle(): Promise<void>;
@@ -60,10 +68,8 @@ export interface OpencodeSessionKernel {
   setAgent(sessionId: string, agent: string): Promise<void>;
   /** Selects `<providerID>/<id>`; an omitted variant selects the model's native default. */
   setModel(sessionId: string, rawModelId: string, variant?: string): Promise<void>;
-  /** Replies `once` to managed permission requests, like OpenCode's `--auto`; `deny` rules never ask. */
-  setAutoApprove(enabled: boolean): void;
   /** The prompt's `userText` locates typed input whose native mentions the kernel may resolve. */
-  prompt(sessionId: string, input: OpencodePrompt, run?: Pick<ProviderExecutionRequest, 'toolPolicy' | 'signal'>): Promise<OpencodePromptResult>;
+  prompt(sessionId: string, input: OpencodePrompt, run?: OpencodePromptRun): Promise<OpencodePromptResult>;
   /** Reads a completed turn's statistics from native history, when it reports them. */
   readTurnStats(sessionId: string, turn: OpencodeTurnSelector): Promise<TurnStats | undefined>;
   /** Hands input to the running requested prompt under the neutral steer contract. */

@@ -1,16 +1,12 @@
-import type {
-  ProviderPermissionModeOption,
-  ProviderPermissionModePolicy,
-} from '../../core/providers/types';
+import {
+  buildPermissionModeOptions,
+  createPermissionModePolicy,
+  type ProviderPermissionModeDefinition,
+} from '../../core/providers/permissionModes';
+import type { ProviderPermissionModeOption } from '../../core/providers/types';
 
 /** OpenCode's native client modes: prompt for `ask` rules, or accept them (`--auto`). */
-export const OPENCODE_PERMISSION_MODE_POLICY: ProviderPermissionModePolicy = Object.freeze({
-  values: Object.freeze(['normal', 'yolo']),
-  fallbackValue: 'normal',
-  defaultValue: 'normal',
-});
-
-export const OPENCODE_PERMISSION_MODE_OPTIONS: readonly ProviderPermissionModeOption[] = Object.freeze([
+const OPENCODE_PERMISSION_MODES: readonly ProviderPermissionModeDefinition[] = Object.freeze([
   { value: 'normal', label: 'Ask', description: 'Ask when OpenCode permission rules require it' },
   {
     value: 'yolo',
@@ -19,3 +15,12 @@ export const OPENCODE_PERMISSION_MODE_OPTIONS: readonly ProviderPermissionModeOp
     bypassesApprovals: true,
   },
 ]);
+
+export const OPENCODE_PERMISSION_MODE_POLICY = createPermissionModePolicy(OPENCODE_PERMISSION_MODES, {
+  fallbackValue: 'normal',
+  defaultValue: 'normal',
+});
+
+export function getOpencodePermissionModeOptions(): ProviderPermissionModeOption[] {
+  return buildPermissionModeOptions(OPENCODE_PERMISSION_MODES);
+}

@@ -1,6 +1,7 @@
 // @test-ci {"native":true}
 // @vitest-environment jsdom
 import { DesktopVault } from '@test/helpers/core/DesktopVault';
+import { answerApproval } from '@test/helpers/features/chat/approvalDecisionOptions';
 
 import { codexProviderRegistration } from '@/providers/codex/registration';
 const actualModule0 = await import('node:fs');
@@ -217,10 +218,7 @@ async function createPlugin(): Promise<MutableTestHost> {
 
 function createInteractionPort(): ProviderInteractionPort {
   return {
-    requestApproval: vi.fn().mockImplementation(async request => ({
-      interactionId: request.interactionId,
-      decision: 'allow',
-    })),
+    requestApproval: vi.fn().mockImplementation(async request => answerApproval(request, 'allow')),
     askUserQuestion: vi.fn().mockImplementation(async request => ({
       interactionId: request.interactionId,
       answers: { choice: 'yes' },
@@ -421,8 +419,10 @@ describe('CodexExecutionBackend', () => {
     ['yolo', 'danger-full-access', 'never', 'user', { type: 'dangerFullAccess' }, 'workspace-write'],
     ['auto-review', 'read-only', 'on-request', 'auto_review', undefined, 'read-only'],
     ['invalid', 'read-only', 'on-request', 'user', undefined, 'corrupt'],
+    // An unset mode uses Codex's own default, never the current selection made for another provider.
+    [undefined, 'workspace-write', 'on-request', 'auto_review', undefined, 'workspace-write', { settingsProvider: 'claude', permissionMode: 'yolo' }],
   ])('sends the %s preset on thread start, resume, and every turn', async (
-    permissionMode, sandbox, approvalPolicy, approvalsReviewer, sandboxPolicy, safeMode,
+    permissionMode, sandbox, approvalPolicy, approvalsReviewer, sandboxPolicy, safeMode, currentSelection: Record<string, string> = {},
   ) => {
     let turn = 0;
     let nativeSandbox: unknown;
@@ -444,6 +444,7 @@ describe('CodexExecutionBackend', () => {
     });
     const plugin = await createPlugin();
     plugin.settings.providerConfigs.codex!.safeMode = safeMode;
+    Object.assign(plugin.settings, currentSelection);
     const session = createBackend(plugin).createSession(createSessionConfig());
     for (const instructions of ['First instructions.', 'Updated instructions.']) {
       const request = createRequest();
@@ -3085,51 +3086,6 @@ describe('CodexExecutionBackend', () => {
       await session.dispose();
     },
   );
-
-  it('fails closed before native startup when exact allow-list enforcement is unavailable', async () => {
-    nativeRequest.mockImplementation(async (method: string) => {
-      if (method === 'initialize') {
-        return {
-          userAgent: 'test',
-          codexHome: '/tmp/.codex',
-          platformFamily: 'unix',
-          platformOs: wslTarget ? 'linux' : 'macos',
-        };
-      }
-      if (method === 'thread/start') return createThreadResult('thread-allow-list');
-      if (method === 'turn/start') {
-        queueMicrotask(() => completeTurn('thread-allow-list', 'turn-allow-list'));
-        return createTurnResult('turn-allow-list');
-      }
-      throw new Error(`Unexpected method: ${method}`);
-    });
-    const session = createBackend(await createPlugin())
-      .createSession(createSessionConfig());
-
-    const events = await collectEvents(session.execute(createRequest(
-      new AbortController().signal,
-      {
-        toolPolicy: {
-          kind: 'allow-list',
-          names: ['codex_app.load_workspace_dependencies'],
-        },
-      },
-    )).events);
-
-    expect(resolveCliPath).not.toHaveBeenCalled();
-    expect(mockProcessStart).not.toHaveBeenCalled();
-    expect(nativeRequest).not.toHaveBeenCalled();
-    expect(events).toEqual(expect.arrayContaining([
-      expect.objectContaining({
-        category: 'configuration',
-        message: expect.stringContaining('allow-list'),
-        recoverable: false,
-        type: 'execution_error',
-      }),
-    ]));
-
-    await session.dispose();
-  });
 
   it('quarantines a cancelled turn before its start response and fences its late events from retry', async () => {
     const firstTurnStart = createDeferred<ReturnType<typeof createTurnResult>>();

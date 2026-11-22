@@ -1,11 +1,12 @@
 import { randomUUID } from 'node:crypto';
 
 import { parseCompactCommand } from '@/core/commands/compactCommand';
-import { PendingInteractionLedger } from '@/core/execution';
+import { PendingInteractionLedger, type ProviderApprovalChoice, resolveApprovalChoice } from '@/core/execution';
 import type { ExecutionTarget } from '@/core/process/execution-target/types';
 import type { SessionToolInvocation } from '@/core/session-tools/invokeSessionTool';
 import { isSessionTool } from '@/core/tools/toolNames';
 import type { TurnStats } from '@/core/types';
+import { t } from '@/i18n/i18n';
 import { filterMarkdownTextTokens } from '@/utils/markdownTextTokens';
 
 import { forkOpencodeHTTPSession } from '../history/OpencodeSessionFork';
@@ -25,13 +26,14 @@ import {
   type OpencodeNativeOutput,
   type OpencodeNativeSessionInfo,
   type OpencodePromptResult,
+  type OpencodePromptRun,
   type OpencodeSessionKernel,
   type OpencodeSessionKernelOptions,
   OpencodeSessionMissingError,
 } from './OpencodeSessionContract';
 import type { OpencodeSessionPersistence } from './OpencodeSessionPersistence';
 
-type PendingPrompt = { sessionTools?: SessionToolInvocation; toolController: AbortController; resolve: (value: { stopReason: 'end_turn' | 'cancelled'; userMessageId?: string }) => void; reject: (error: Error) => void; kind: 'prompt' | 'command' | 'compact'; error?: Error; userMessageId?: string; inputId?: string; announced: boolean; started: boolean; steerable: boolean; idle: boolean };
+type PendingPrompt = { sessionTools?: SessionToolInvocation; autoApprove: boolean; toolController: AbortController; resolve: (value: { stopReason: 'end_turn' | 'cancelled'; userMessageId?: string }) => void; reject: (error: Error) => void; kind: 'prompt' | 'command' | 'compact'; error?: Error; userMessageId?: string; inputId?: string; announced: boolean; started: boolean; steerable: boolean; idle: boolean };
 /** Admitted inputs stay owned until native delivery or recall, including compaction controls. */
 type PendingInboxInput = { admission: Promise<InboxAdmission>; recall: Promise<void> | null } & (
   | { kind: 'steer'; text: string; resolve: (delivered: boolean) => void; reject: (error: Error) => void }
@@ -39,15 +41,16 @@ type PendingInboxInput = { admission: Promise<InboxAdmission>; recall: Promise<v
 );
 type InboxAdmission = 'admitted' | 'refused' | 'unknown';
 interface NativeModelSelection { providerID: string; id: string; variant?: string }
-interface NativeChild { sessionTools?: SessionToolInvocation; toolController: AbortController; outputSessionId: string; toolCallId: string; turnId: string; interactionTurnId: string; background: boolean; text: Map<string, string>; progress: { startedAt: number; toolUses: number; totalTokens: number; lastToolName?: string } }
+interface NativeChild { sessionTools?: SessionToolInvocation; autoApprove: boolean; toolController: AbortController; outputSessionId: string; toolCallId: string; turnId: string; interactionTurnId: string; background: boolean; text: Map<string, string>; progress: { startedAt: number; toolUses: number; totalTokens: number; lastToolName?: string } }
 interface NativeTool { name: string; input: Record<string, unknown>; sessionId: string; output: string | null; shell?: OpencodeShellOutput }
 
 /** One execution's native HTTP session: its server lease, events, interactions and inbox. */
 export class OpencodeHTTPSessionKernel implements OpencodeSessionKernel {
   private client: OpencodeServerLease | null = null;
   private disposed = false;
-  private autoApprove = false;
   private readonly controller = new AbortController();
+  /** OpenCode's automatic replies run outside any requested run; their approvals follow the latest run's mode. */
+  private latestRunAutoApprove = false;
   private sessionId: string | null = null;
   private databasePath: string | null = null;
   private model: NativeModelSelection | null = null;
@@ -172,16 +175,11 @@ export class OpencodeHTTPSessionKernel implements OpencodeSessionKernel {
     await this.requireClient().request(`/api/session/${encodeURIComponent(sessionId)}/model`, { method: 'POST', body: { model: this.model } });
   }
 
-  setAutoApprove(enabled: boolean): void {
-    this.requireClient();
-    this.autoApprove = this.profile === 'managed' && enabled;
-  }
-
   readTurnStats(sessionId: string, turn: OpencodeTurnSelector): Promise<TurnStats | undefined> {
     return readOpencodeTurnStats(this.requireClient(), sessionId, turn);
   }
 
-  async prompt(sessionId: string, input: OpencodePrompt, run?: Parameters<OpencodeSessionKernel['prompt']>[2]): Promise<OpencodePromptResult> {
+  async prompt(sessionId: string, input: OpencodePrompt, run?: OpencodePromptRun): Promise<OpencodePromptResult> {
     if (this.pending) throw new Error('OpenCode already has an active request.');
     const { text, files, userText } = input;
     const compact = parseCompactCommand(text);
@@ -201,7 +199,10 @@ export class OpencodeHTTPSessionKernel implements OpencodeSessionKernel {
     const completion = new Promise<{ stopReason: 'end_turn' | 'cancelled'; userMessageId?: string }>((yes, no) => { resolve = yes; reject = no; });
     const toolController = new AbortController();
     const sessionTools = run ? { toolPolicy: run.toolPolicy, port: this.options.config.sessionTools, signal: AbortSignal.any([run.signal, toolController.signal, this.controller.signal]) } : undefined;
-    const pending: PendingPrompt = { sessionTools, toolController, resolve, reject, kind, ...(kind !== 'command' ? { inputId: nativeMessageId() } : {}), announced: false, started: false, steerable: false, idle: false };
+    // The approval policy is captured at admission: a later send never answers this run's requests.
+    const autoApprove = this.profile === 'managed' && run?.autoApprove === true;
+    if (run) this.latestRunAutoApprove = autoApprove;
+    const pending: PendingPrompt = { sessionTools, autoApprove, toolController, resolve, reject, kind, ...(kind !== 'command' ? { inputId: nativeMessageId() } : {}), announced: false, started: false, steerable: false, idle: false };
     this.pending = pending;
     this.previewStops.delete(sessionId);
     // A native error may arrive before the admission request resolves.
@@ -417,7 +418,7 @@ export class OpencodeHTTPSessionKernel implements OpencodeSessionKernel {
       case 'session.inbox.cancelled': this.settleInboxInput(String(data.inboxID), false); break;
       case 'session.execution.interrupted': if (!this.pending || this.pending.started) this.finish('cancelled'); break;
       case 'session.execution.failed': this.fail(new Error(errorText(data.error))); break;
-      case 'permission.asked': void this.interact(data, false, child?.interactionTurnId).catch(error => this.fail(error)); break;
+      case 'permission.asked': void this.interact(data, false, child?.interactionTurnId, this.autoApproveFor(child)).catch(error => this.fail(error)); break;
       case 'form.created': if (form) void this.interact(form, true, child?.interactionTurnId).catch(error => this.fail(error)); break;
       case 'session.step.started': {
         const id = String(data.assistantMessageID);
@@ -459,10 +460,11 @@ export class OpencodeHTTPSessionKernel implements OpencodeSessionKernel {
         if (tool?.name === 'subagent' && typeof metadata.sessionID === 'string' && turnId && !this.children.has(metadata.sessionID)) {
           const background = tool.input.run_in_background === true;
           const interactionTurnId = (background ? this.options.onNativeTaskStarted?.(metadata.sessionID, turnId) : undefined) ?? child?.interactionTurnId ?? turnId;
-          const owner = child ? child.sessionTools : this.pending?.sessionTools;
+          // Children keep their launching run's tool and approval policy, never a later run's.
+          const owner = child ?? this.pending;
           const toolController = new AbortController();
-          const sessionTools = owner ? { ...owner, signal: AbortSignal.any([owner.signal, toolController.signal]) } : undefined;
-          this.children.set(metadata.sessionID, { sessionTools, toolController, outputSessionId: background ? metadata.sessionID : child?.outputSessionId ?? metadata.sessionID, toolCallId: identity.toolCallId, turnId, interactionTurnId, background, text: new Map(), progress: { startedAt: Date.now(), toolUses: 0, totalTokens: 0 } });
+          const sessionTools = owner?.sessionTools ? { ...owner.sessionTools, signal: AbortSignal.any([owner.sessionTools.signal, toolController.signal]) } : undefined;
+          this.children.set(metadata.sessionID, { sessionTools, autoApprove: this.autoApproveFor(child), toolController, outputSessionId: background ? metadata.sessionID : child?.outputSessionId ?? metadata.sessionID, toolCallId: identity.toolCallId, turnId, interactionTurnId, background, text: new Map(), progress: { startedAt: Date.now(), toolUses: 0, totalTokens: 0 } });
         }
         if (tool && !this.previewStops.has(nativeSessionId) && tool.output !== null && typeof metadata.shellID === 'string') {
           tool.shell ??= new OpencodeShellOutput(this.requireClient(), metadata.shellID, content => {
@@ -528,7 +530,12 @@ export class OpencodeHTTPSessionKernel implements OpencodeSessionKernel {
     }
   }
 
-  private async interact(data: Record<string, unknown>, question: boolean, childTurnId?: string): Promise<void> {
+  /** The approval mode of the run that owns native work: its child, the requested run, or for an automatic reply the latest run. */
+  private autoApproveFor(child: NativeChild | undefined): boolean {
+    return (child ?? this.pending)?.autoApprove ?? this.latestRunAutoApprove;
+  }
+
+  private async interact(data: Record<string, unknown>, question: boolean, childTurnId?: string, autoApprove = false): Promise<void> {
     const id = String(data.id);
     const turnId = childTurnId ?? this.options.getActiveTurnId();
     const pending = turnId ? this.interactions.begin(id) : null;
@@ -568,15 +575,23 @@ export class OpencodeHTTPSessionKernel implements OpencodeSessionKernel {
         }
         await this.requireClient().request(`${route}/reply`, { method: 'POST', body: { answer } });
       } else {
-        if (this.autoApprove || isSessionTool(normalizeOpencodeToolName(String(data.action)))) {
+        const action = typeof data.action === 'string' ? data.action : undefined;
+        const toolName = normalizeOpencodeToolName(action);
+        if (autoApprove || isSessionTool(toolName)) {
           await this.requireClient().request(`${route}/reply`, { method: 'POST', body: { decision: 'once' } });
           return;
         }
+        const resources = Array.isArray(data.resources) ? data.resources.filter(resource => typeof resource === 'string') : [];
+        const description = typeof data.message === 'string' ? data.message
+          : action !== undefined ? `${action}: ${resources.join(', ')}`
+            : resources.length > 0 ? t('chat.approval.permissionReason', { reason: resources.join(', ') }) : t('chat.approval.permissionRequest');
+        const choices = opencodePermissionChoices(action, Array.isArray(data.save) ? data.save.filter(pattern => typeof pattern === 'string') : []);
         const response = await this.options.config.interactionPort.requestApproval({
-          ...identity, kind: 'approval', toolName: data.action === 'shell' ? 'bash' : String(data.action), input: { resources: data.resources, ...(isRecord(data.metadata) ? data.metadata : {}) }, description: typeof data.message === 'string' ? data.message : `${typeof data.action === 'string' ? data.action : 'Unknown action'}: ${Array.isArray(data.resources) ? data.resources.join(', ') : ''}`,
+          ...identity, kind: 'approval', toolName, input: { ...(isRecord(data.metadata) ? data.metadata : {}), resources: data.resources }, description,
+          decisionOptions: choices.map(choice => choice.option),
         }, signal);
         if (signal.aborted) return;
-        const reply = response.interactionId === id && response.decision === 'allow' ? 'once' : response.interactionId === id && response.decision === 'allow-always' ? 'always' : 'reject';
+        const reply = (response.interactionId === id ? resolveApprovalChoice(choices, response.value) : undefined) ?? 'reject';
         await this.requireClient().request(`${route}/reply`, { method: 'POST', body: { decision: reply } });
       }
     } catch (error) {
@@ -707,6 +722,31 @@ interface NativeSkillMention {
 
 function nativeMessageId(): string {
   return `msg_${randomUUID().replaceAll('-', '')}`;
+}
+
+/**
+ * The native permission choices, in native order. Native `always` saves the request's
+ * `save` patterns for the project and, without any, allows only once, so it is offered
+ * only with patterns. Values stay stable for scripted answers.
+ */
+function opencodePermissionChoices(
+  action: string | undefined,
+  save: readonly string[],
+): ProviderApprovalChoice<'once' | 'always' | 'reject'>[] {
+  const always: ProviderApprovalChoice<'always'>[] = save.length === 0 ? [] : [{
+    option: {
+      label: t('chat.approval.alwaysAllow'), value: 'Always allow', decision: 'allow-always',
+      description: action !== undefined && save.length === 1 && save[0] === '*'
+        ? t('chat.approval.alwaysAllowActionInProject', { action })
+        : t('chat.approval.alwaysAllowPatternsInProject', { patterns: save.join(', ') }),
+    },
+    reply: 'always',
+  }];
+  return [
+    { option: { label: t('chat.approval.allowOnce'), value: 'Allow once', decision: 'allow' }, reply: 'once' },
+    ...always,
+    { option: { label: t('chat.approval.deny'), value: 'Deny', decision: 'deny' }, reply: 'reject' },
+  ];
 }
 
 function count(value: unknown): number {

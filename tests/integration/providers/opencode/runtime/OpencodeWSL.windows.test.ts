@@ -109,7 +109,7 @@ describe.skipIf(!available || !cli)('native OpenCode WSL adoption', () => {
     const workspace = await createOpencodeWorkspaceServices(fixture.providerHost);
     const service = workspace.serverService;
     const host = fixture.providerHost.getRuntimeHost('opencode');
-    const config: ProviderSessionConfig = { workingDirectory: root, lifecycle: 'persistent', nativePersistence: 'provider-default', interactionPort: { requestApproval: async request => ({ interactionId: request.interactionId, decision: 'allow' }), askUserQuestion: async request => ({ interactionId: request.interactionId, answers: {} }), dismissInteraction() {} }, sessionTools: { list, read: async () => { throw new Error('unused'); }, send: async () => { throw new Error('unused'); } } };
+    const config: ProviderSessionConfig = { workingDirectory: root, lifecycle: 'persistent', nativePersistence: 'provider-default', interactionPort: { requestApproval: async request => ({ interactionId: request.interactionId, value: 'Allow once' }), askUserQuestion: async request => ({ interactionId: request.interactionId, answers: {} }), dismissInteraction() {} }, sessionTools: { list, read: async () => { throw new Error('unused'); }, send: async () => { throw new Error('unused'); } } };
     const output: unknown[] = [];
     const kernel = new OpencodeHTTPSessionKernel({ host, config, getActiveTurnId: () => 'wsl', sessionInstanceId: 'wsl', onClosed: error => output.push(error), onNativeOutput: event => output.push(event) }, service, new OpencodeSessionPersistence(config));
     let serverURL: string | undefined;
@@ -132,8 +132,7 @@ describe.skipIf(!available || !cli)('native OpenCode WSL adoption', () => {
       expect(serverURL).toMatch(/^http:\/\/127\.0\.0\.1:\d+/u);
       expect([401, 403]).toContain((await fetch(new URL('/api/info', serverURL))).status);
       await kernel.setModel(session.sessionId, 'fake/fake');
-      kernel.setAutoApprove(true);
-      await kernel.prompt(session.sessionId, { text: 'List sessions', files: [], userText: null }, { toolPolicy: { kind: 'provider-default' }, signal: AbortSignal.timeout(40_000) });
+      await kernel.prompt(session.sessionId, { text: 'List sessions', files: [], userText: null }, { toolPolicy: { kind: 'provider-default' }, signal: AbortSignal.timeout(40_000), autoApprove: true });
       expect(list).toHaveBeenCalledTimes(1);
       expect(output).toEqual(expect.arrayContaining([expect.objectContaining({ type: 'tool_completed', isError: false, content: expect.stringContaining('WSL relay 中文') })]));
       const environment = await service.targetEnvironment.resolve(target, root, environmentText, cli!);

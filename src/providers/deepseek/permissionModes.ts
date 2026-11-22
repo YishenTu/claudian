@@ -1,14 +1,25 @@
-import type { ProviderPermissionModeOption, ProviderPermissionModePolicy } from '@/core/providers/types';
+import {
+  buildPermissionModeOptions,
+  createPermissionModePolicy,
+  type ProviderPermissionModeDefinition,
+} from '@/core/providers/permissionModes';
+import type { ProviderPermissionModeOption } from '@/core/providers/types';
 
-export const DEEPSEEK_PERMISSION_MODES = ['normal', 'yolo'] as const;
+const DEEPSEEK_PERMISSION_MODES: readonly ProviderPermissionModeDefinition[] = Object.freeze([
+  { value: 'normal', label: 'Workspace write', description: 'Ask before extra access.' },
+  {
+    value: 'yolo',
+    label: 'Full access',
+    description: 'Unrestricted files and internet.',
+    bypassesApprovals: true,
+  },
+]);
 
-export const DEEPSEEK_PERMISSION_MODE_POLICY: ProviderPermissionModePolicy = Object.freeze({
-  values: DEEPSEEK_PERMISSION_MODES,
+export const DEEPSEEK_PERMISSION_MODE_POLICY = createPermissionModePolicy(DEEPSEEK_PERMISSION_MODES, {
   defaultValue: 'normal',
   fallbackValue: 'normal',
 });
 
-export const DEEPSEEK_PERMISSION_MODE_OPTIONS: readonly ProviderPermissionModeOption[] = Object.freeze([
-  { value: 'normal', label: 'Workspace write', description: 'Ask before extra access.' },
-  { value: 'yolo', label: 'Full access', description: 'Unrestricted files and internet.', bypassesApprovals: true },
-]);
+export function getDeepSeekPermissionModeOptions(): ProviderPermissionModeOption[] {
+  return buildPermissionModeOptions(DEEPSEEK_PERMISSION_MODES);
+}

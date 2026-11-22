@@ -28,7 +28,11 @@ import type { ImageAttachment } from '../../../core/types';
 import { decodeClaudeConfig } from '../config';
 import { findEnabledClaudeModelOption } from '../modelOptions';
 import { toClaudeRuntimeModelId } from '../modelSelection';
-import { isClaudePermissionMode, toClaudeSDKPermissionMode } from '../permissionModes';
+import {
+  CLAUDE_FALLBACK_PERMISSION_MODE,
+  isClaudePermissionMode,
+  toClaudeSDKPermissionMode,
+} from '../permissionModes';
 import { buildClaudeLaunchOptions } from '../runtime/probeClaudeRuntime';
 import {
   DISABLED_BUILTIN_SUBAGENTS,
@@ -117,7 +121,7 @@ export class ClaudeExecutionRequestEncoder {
       throw new Error(`Claude model "${model}" does not support reasoning effort "${request.configuration.reasoning}".`);
     }
     const sdkPermissionMode = toClaudeSDKPermissionMode(
-      isClaudePermissionMode(selection.permissionMode) ? selection.permissionMode : 'manual',
+      isClaudePermissionMode(selection.permissionMode) ? selection.permissionMode : CLAUDE_FALLBACK_PERMISSION_MODE,
     );
     const compact = parseCompactCommand(getRequestInputText(request));
     if (compact && replayConversationHistory && request.conversationHistory?.length) {
@@ -289,9 +293,13 @@ function resolveToolPolicy(request: ProviderExecutionRequest): {
   allowedTools: ReadonlySet<string> | null;
 } {
   switch (request.toolPolicy.kind) {
+    // `tools` limits built-in tools only; the hook also stops MCP tools, whatever the permission mode.
     case 'passive':
       return {
         tools: [],
+        hooks: {
+          PreToolUse: [createToolGateHook(() => false, 'Passive')],
+        },
         allowedTools: new Set(),
       };
     case 'read-only': {
@@ -299,33 +307,25 @@ function resolveToolPolicy(request: ProviderExecutionRequest): {
       return {
         tools: [...READ_ONLY_TOOLS],
         hooks: {
-          PreToolUse: [createReadOnlyHook()],
+          PreToolUse: [createToolGateHook(isReadOnlyTool, 'Read-only')],
         },
         allowedTools,
       };
     }
-    case 'allow-list': {
-      const names = uniqueStrings(request.toolPolicy.names);
-      return {
-        tools: names,
-        allowedTools: new Set(names),
-      };
-    }
     case 'provider-default':
-    case 'unrestricted':
       return {
         allowedTools: null,
       };
   }
 }
 
-function createReadOnlyHook(): HookCallbackMatcher {
+function createToolGateHook(isAllowed: (toolName: string) => boolean, policyLabel: string): HookCallbackMatcher {
   return {
     hooks: [async (hookInput) => {
       const toolName = hookInput.hook_event_name === 'PreToolUse'
         ? hookInput.tool_name
         : '';
-      if (isReadOnlyTool(toolName)) {
+      if (isAllowed(toolName)) {
         return { continue: true };
       }
       return {
@@ -334,13 +334,9 @@ function createReadOnlyHook(): HookCallbackMatcher {
           hookEventName: 'PreToolUse' as const,
           permissionDecision: 'deny' as const,
           permissionDecisionReason:
-            `Read-only execution: tool "${toolName}" is not allowed.`,
+            `${policyLabel} execution: tool "${toolName}" is not allowed.`,
         },
       };
     }],
   };
-}
-
-function uniqueStrings(values: readonly string[]): string[] {
-  return [...new Set(values.filter((value) => value.trim().length > 0))];
 }

@@ -1,5 +1,6 @@
 import type { FakeRun } from '@test/helpers/ChatExecutionHarness';
 import { beginExecution, createHarness, createSubmission, deferred, FakeSession, requestedScope } from '@test/helpers/ChatExecutionHarness';
+import { approvalDecisionOptions } from '@test/helpers/features/chat/approvalDecisionOptions';
 import { testDate } from '@test/helpers/testClock';
 import type { Mock, MockedFunction } from 'vitest';
 
@@ -1384,6 +1385,7 @@ describe('ChatExecutionCoordinator', () => {
     const port = harness.backends.get('claude')!.configs[0].interactionPort;
 
     await expect(port.requestApproval({
+      decisionOptions: approvalDecisionOptions(),
       kind: 'approval',
       interactionId: 'approval-1',
       sessionInstanceId: session.sessionInstanceId,

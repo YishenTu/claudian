@@ -1,6 +1,7 @@
 /** @vitest-environment jsdom */
 
 import { axe } from '@test/helpers/accessibility';
+import { approvalDecisionOptions } from '@test/helpers/features/chat/approvalDecisionOptions';
 import { fireEvent, waitFor, within } from '@testing-library/dom';
 
 import { InlineAskUserQuestion } from '@/features/chat/interactions/InlineAskUserQuestion';
@@ -167,16 +168,17 @@ it('localizes plugin-owned approval prompts and returns stable decisions', async
   const parent = document.body.createDiv();
   const interactions = new SessionInteractions({ getPromptParentEl: () => parent });
   try {
-    const decision = interactions.requestApproval('approval', 'Bash', {}, 'Execute: npm test', { agentID: 'agent-1' });
+    const decision = interactions.requestApproval({
+      interactionId: 'approval', toolName: 'Bash', description: 'Execute: npm test', decisionOptions: approvalDecisionOptions(),
+    });
     const region = within(parent).getByRole('region', { name: localizedTitle });
     expect(within(region).getByText(t('chat.approval.question'))).toBeDefined();
     expect(within(region).getByRole('region', { name: t('chat.approval.details', { tool: 'Bash' }) }).textContent).toBe('Execute: npm test');
-    expect(within(region).getByText(t('chat.agent', { agent: 'agent-1' }))).toBeDefined();
     expect(within(region).getByRole('button', { name: t('chat.approval.deny') })).toBeDefined();
     expect(within(region).getByRole('button', { name: t('chat.approval.alwaysAllow') })).toBeDefined();
     expect(await axe(region)).toHaveNoViolations();
     fireEvent.click(within(region).getByRole('button', { name: t('chat.approval.allowOnce') }));
-    await expect(decision).resolves.toBe('allow');
+    await expect(decision).resolves.toBe('Allow once');
   } finally {
     interactions.dismiss('approval');
     parent.remove();

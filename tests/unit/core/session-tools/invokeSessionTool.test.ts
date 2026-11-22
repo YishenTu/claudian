@@ -51,7 +51,7 @@ describe('invokeSessionTool', () => {
     const result = await invokeSessionTool(
       'claudian_send_message',
       { sessionId: 'conv-2', text: 'Hi', model: null },
-      { port, toolPolicy: { kind: 'unrestricted' }, signal },
+      { port, toolPolicy: allowed, signal },
     );
 
     expect(result).toEqual({ isError: false, text: JSON.stringify({ sessionId: 'conv-2', title: 'Review', provider: 'codex', status: 'queued' }) });
@@ -61,7 +61,6 @@ describe('invokeSessionTool', () => {
   it.each<[string, ProviderToolPolicy | undefined, boolean]>([
     ['passive', { kind: 'passive' }, true],
     ['read-only', { kind: 'read-only' }, true],
-    ['an allow-list naming the tool', { kind: 'allow-list', names: ['claudian_send_message', 'claudian_list_destinations'] }, true],
     ['no owning run', undefined, true],
     ['an unbound port', allowed, false],
   ])('denies calls under %s without reaching the port', async (_label, toolPolicy, bound) => {

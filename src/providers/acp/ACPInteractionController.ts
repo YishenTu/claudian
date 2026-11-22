@@ -2,10 +2,11 @@ import {
   PendingInteractionLedger,
   type ProviderInteractionDismissReason,
   type ProviderInteractionPort,
+  resolveApprovalChoice,
 } from '../../core/execution';
 import {
-  buildACPApprovalDecisionOptions,
-  mapACPApprovalDecision,
+  buildACPApprovalChoices,
+  CANCELLED_ACP_PERMISSION_RESPONSE,
 } from './ACPPermissionAdapter';
 import type {
   ACPPermissionOption,
@@ -13,13 +14,7 @@ import type {
   ACPRequestPermissionResponse,
 } from './types';
 
-const CANCELLED_RESPONSE: ACPRequestPermissionResponse = {
-  outcome: { outcome: 'cancelled' },
-};
-
 export interface ACPPermissionPresentation {
-  readonly blockedPath?: string;
-  readonly decisionReason?: string;
   readonly description: string;
   readonly toolName: string;
 }
@@ -50,7 +45,7 @@ export class ACPInteractionController {
   ): Promise<ACPRequestPermissionResponse> {
     const turnId = this.options.getTurnId();
     if (this.disposed || !turnId || signal?.aborted) {
-      return CANCELLED_RESPONSE;
+      return CANCELLED_ACP_PERMISSION_RESPONSE;
     }
 
     const interactionId = [
@@ -59,7 +54,7 @@ export class ACPInteractionController {
       ++this.interactionSequence,
     ].join(':');
     const pending = this.pending.begin(interactionId, signal);
-    if (!pending) return CANCELLED_RESPONSE;
+    if (!pending) return CANCELLED_ACP_PERMISSION_RESPONSE;
 
     try {
       const input = normalizeToolInput(request.toolCall.rawInput);
@@ -67,14 +62,9 @@ export class ACPInteractionController {
         description: request.toolCall.title || 'ACP permission request',
         toolName: request.toolCall.title || request.toolCall.kind || 'tool',
       };
+      const choices = buildACPApprovalChoices(request.options, this.options.describePermissionOption);
       const response = await this.options.interactionPort.requestApproval({
-        ...(presentation.blockedPath
-          ? { blockedPath: presentation.blockedPath }
-          : {}),
-        decisionOptions: buildACPApprovalDecisionOptions(request.options, this.options.describePermissionOption),
-        ...(presentation.decisionReason
-          ? { decisionReason: presentation.decisionReason }
-          : {}),
+        decisionOptions: choices.map(choice => choice.option),
         description: presentation.description,
         input,
         interactionId,
@@ -88,21 +78,21 @@ export class ACPInteractionController {
         turnId,
       }, pending.signal);
 
-      if (this.disposed || pending.signal.aborted) return CANCELLED_RESPONSE;
+      if (this.disposed || pending.signal.aborted) return CANCELLED_ACP_PERMISSION_RESPONSE;
       if (this.pending.isStaleResponse(pending, response)) {
         this.pending.settle(pending, 'native-rejected');
-        return CANCELLED_RESPONSE;
+        return CANCELLED_ACP_PERMISSION_RESPONSE;
       }
       if (this.options.getTurnId() !== turnId) {
         this.pending.settle(pending, 'superseded');
-        return CANCELLED_RESPONSE;
+        return CANCELLED_ACP_PERMISSION_RESPONSE;
       }
 
       this.pending.settle(pending, 'resolved');
-      return mapACPApprovalDecision(response.decision, request.options);
+      return resolveApprovalChoice(choices, response.value) ?? CANCELLED_ACP_PERMISSION_RESPONSE;
     } catch {
       this.pending.settle(pending, 'cancelled');
-      return CANCELLED_RESPONSE;
+      return CANCELLED_ACP_PERMISSION_RESPONSE;
     } finally {
       this.pending.release(pending);
     }

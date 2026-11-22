@@ -321,23 +321,15 @@
       "current": "Mode d’autorisation : {mode}",
       "changeFailed": "Impossible de modifier le mode d’autorisation",
       "antigravity": {
-        "auto": "Auto",
         "autoDesc": "Autoriser les modifications de l’espace de travail et les commandes isolées ; examiner les accès supplémentaires"
       },
       "claude": {
-        "auto": "Automatique",
-        "manual": "Manuel",
-        "acceptEdits": "Accepter les modifications",
-        "yolo": "YOLO",
         "autoDesc": "Claude décide des autorisations",
         "manualDesc": "Toujours demander avant de modifier",
         "acceptEditsDesc": "Accepter automatiquement toutes les modifications de fichiers",
         "yoloDesc": "Accorder toutes les autorisations sans demander"
       },
       "codex": {
-        "autoReview": "Approuver pour moi",
-        "normal": "Demander l’approbation",
-        "yolo": "Accès complet",
         "autoReviewDesc": "Examiner automatiquement les accès supplémentaires.",
         "readOnlyDesc": "Demander avant toute modification ou accès à Internet.",
         "normalDesc": "Demander avant tout accès supplémentaire.",
@@ -456,6 +448,8 @@
       "deny": "Refuser",
       "allowOnce": "Autoriser une fois",
       "alwaysAllow": "Toujours autoriser",
+      "alwaysAllowActionInProject": "Toujours autoriser {action} dans ce projet.",
+      "alwaysAllowPatternsInProject": "Toujours autoriser ces motifs dans ce projet : {patterns}",
       "mcpRequest": "Requête MCP",
       "mcpServer": "Serveur MCP : {server}",
       "decline": "Refuser",
@@ -467,16 +461,29 @@
       "fileChangeReason": "Modification de fichier : {reason}",
       "permissionRequest": "Demande d’autorisation",
       "permissionReason": "Demande d’autorisation : {reason}",
+      "permissionRead": "Lecture : {paths}",
+      "permissionWrite": "Écriture : {paths}",
+      "permissionDenyRead": "Lecture refusée : {paths}",
+      "permissionNetwork": "Accès réseau",
+      "permissionFullDisk": "tout le système de fichiers",
+      "permissionMinimalPaths": "chemins système minimaux",
+      "permissionProjectRoots": "racines du projet",
+      "permissionProjectRootsSubpath": "{subpath} dans les racines du projet",
       "networkAccess": "Autoriser l’accès {protocol} à {host}",
       "execute": "Exécuter : {command}",
       "executeCommand": "Exécuter une commande",
       "allowSimilar": "Autoriser les commandes similaires",
       "execPolicy": "Approuver et enregistrer une modification de la politique d’exécution.",
       "host": "hôte",
-      "allowHost": "Autoriser {host} pour cette session",
-      "denyHost": "Refuser {host} pour cette session",
+      "allowHost": "Toujours autoriser {host}",
+      "denyHost": "Toujours bloquer {host}",
       "allowRule": "Appliquer une règle d’autorisation pour {host}.",
       "denyRule": "Appliquer une règle de refus pour {host}.",
+      "allowForTurn": "Autoriser pour ce tour",
+      "allowForSession": "Autoriser pour cette session",
+      "allowFilesForSession": "Autoriser les modifications de ces fichiers pour cette session",
+      "denyAndStop": "Refuser et arrêter le tour",
+      "execPolicyPrefix": "Enregistrer une règle autorisant les commandes qui commencent par : {prefix}",
       "details": "Détails de l’autorisation de {tool}",
       "unexpectedSelection": "Choix d’autorisation inattendu : « {value} »",
       "runCommand": "Exécuter la commande : {pattern}",
@@ -486,7 +493,8 @@
       "searchFiles": "Rechercher les fichiers correspondant à : {pattern}",
       "searchContent": "Rechercher le contenu correspondant à : {pattern}",
       "unknownPattern": "(inconnu)",
-      "deepseekRequest": "DeepSeek demande une autorisation."
+      "deepseekRequest": "DeepSeek demande une autorisation.",
+      "deepseekTool": "Outil DeepSeek"
     },
     "disclosure": {
       "expand": "{label} - cliquer pour développer",
@@ -793,11 +801,11 @@
     "safety": "Sécurité",
     "loadUserSettings": {
       "name": "Charger les paramètres utilisateur de Claude Code",
-      "desc": "Charge la configuration Claude Code au niveau utilisateur depuis ~/.claude : settings.json, skills, commandes, agents et plugins. Si cette option est désactivée, seule la configuration au niveau du coffre est disponible. Si elle est activée, les règles d’autorisation utilisateur peuvent contourner le mode sécurisé."
+      "desc": "Charge la configuration Claude Code au niveau utilisateur depuis ~/.claude : settings.json, skills, commandes, agents et plugins. Si cette option est désactivée, seule la configuration au niveau du coffre est disponible. Si elle est activée, les règles d’autorisation utilisateur s’appliquent aussi et peuvent autoriser des actions sans demander."
     },
     "codexSandbox": {
       "name": "Sandbox",
-      "desc": "Accès aux fichiers dans les modes Approuver pour moi et Demander l’approbation. Lecture seule demande une confirmation avant chaque modification ; Accès complet ignore ce paramètre."
+      "desc": "Accès aux fichiers dans les modes Approve for me et Ask for approval. Lecture seule demande une confirmation avant chaque modification ; Full access ignore ce paramètre."
     },
     "environment": "Environnement",
     "sharedEnvironment": {

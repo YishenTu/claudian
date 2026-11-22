@@ -142,22 +142,15 @@ describe('claudeChatUIConfig', () => {
 });
 
 
-it('resolves permission labels at request time without changing provider mode values', () => {
+it('resolves permission descriptions at request time without changing mode names or values', () => {
   const english = claudeChatUIConfig.getPermissionModeOptions!() ?? [];
   setLocale('zh-CN');
   try {
-    const expectedLabels = [
-      t('chat.permissionMode.claude.auto'),
-      t('chat.permissionMode.claude.manual'),
-      t('chat.permissionMode.claude.acceptEdits'),
-      t('chat.permissionMode.claude.yolo'),
-    ];
     const expectedAutoDesc = t('chat.permissionMode.claude.autoDesc');
-    expect(expectedLabels).not.toEqual(english.map(option => option.label));
     expect(expectedAutoDesc).not.toBe(english[0].description);
 
     const translated = claudeChatUIConfig.getPermissionModeOptions!() ?? [];
-    expect(translated.map(option => option.label)).toEqual(expectedLabels);
+    expect(translated.map(option => option.label)).toEqual(english.map(option => option.label));
     expect(translated.map(option => option.value)).toEqual(english.map(option => option.value));
     expect(translated[0].description).toBe(expectedAutoDesc);
     expect(translated[3].bypassesApprovals).toBe(true);
