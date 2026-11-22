@@ -282,8 +282,12 @@ export class SessionModel {
   /** `reloading` lasts until a load of the dropped history succeeds. */
   private historyRefresh: 'checking' | 'reloading' | null = null;
 
-  /** Applies native permission changes through the same owner as toolbar selections. */
+  /**
+   * Applies native permission changes through the same owner as toolbar selections. A report of the
+   * mode this session already runs is not a change and must not overwrite another tab's later pick.
+   */
   async updatePermissionMode(mode: string): Promise<void> {
+    if (getSessionSettingsSnapshot(this.session, this.plugin).permissionMode === mode) return;
     await updateSessionProviderSettings(this.session, this.plugin, settings => {
       settings.permissionMode = mode;
     });

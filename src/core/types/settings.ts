@@ -1,16 +1,10 @@
 
-export interface ApprovalSelectionDecision {
-  type: 'select-option';
-  value: string;
-}
-
-/** User decision from the approval modal. */
+/** What an approval option decides, as documented scripting metadata; answers name the option's value. */
 export type ApprovalDecision =
   | 'allow'
   | 'allow-always'
   | 'deny'
-  | 'cancel'
-  | ApprovalSelectionDecision;
+  | 'cancel';
 
 /** Saved environment variable configuration. */
 export interface EnvSnippet {

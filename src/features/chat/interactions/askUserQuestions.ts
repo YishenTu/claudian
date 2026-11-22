@@ -58,8 +58,9 @@ export function validateAskUserAnswers(
     const optionValues = new Set(question.options.map(askOptionValue));
     let custom = 0;
     for (const value of values) {
+      // An offered option is valid whatever its value; only free text must be non-blank.
+      if (typeof value === 'string' && optionValues.has(value)) continue;
       if (typeof value !== 'string' || !value.trim()) return `Answer for "${key}" must be a non-empty string`;
-      if (optionValues.has(value)) continue;
       if (!allowCustom || !question.isOther || ++custom > 1) return `"${value}" is not an option for "${key}"`;
     }
   }

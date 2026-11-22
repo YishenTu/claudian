@@ -6,6 +6,7 @@ import { deferred } from '@test/helpers/ChatInputHarness';
 import { claudeCatalogFixture } from '@test/helpers/claudeModels';
 import { DEFAULT_CLAUDIAN_SETTINGS } from '@test/helpers/defaultSettings';
 import { triggerResize } from '@test/helpers/dom/ResizeObserver';
+import { approvalDecisionOptions } from '@test/helpers/features/chat/approvalDecisionOptions';
 import { createChatFeatureHost } from '@test/helpers/features/chat/ChatFeatureHostFixture';
 import { createProjectsFake, projectRecord } from '@test/helpers/features/chat/ProjectsFake';
 import { createSessionRuntimePool, type RuntimePoolFixtureOptions } from '@test/helpers/features/chat/SessionRuntimePoolHarness';
@@ -113,6 +114,7 @@ it('continues a requested response with no tab, then restores a pending approval
   await destroyTab(first);
   native.emitText(' While detached.');
   const approval = native.config.interactionPort.requestApproval({
+    decisionOptions: approvalDecisionOptions(),
     interactionId: 'approval', sessionInstanceId: native.sessionInstanceId, turnId: native.activeTurnId,
     kind: 'approval', toolName: 'Read', input: {}, description: 'Read note',
   }, new AbortController().signal);
@@ -123,7 +125,7 @@ it('continues a requested response with no tab, then restores a pending approval
   expect(second.session.runtime).toBe(first.session.runtime);
   await waitFor(() => expect(second.dom.messagesEl.textContent).toContain('Before detach. While detached.'));
   fireEvent.click(within(second.dom.contentEl).getByRole('button', { name: 'Allow once' }));
-  await expect(approval).resolves.toMatchObject({ decision: 'allow' });
+  await expect(approval).resolves.toMatchObject({ value: 'Allow once' });
   native.emitText(' After reattach.');
   native.complete();
   await sending;

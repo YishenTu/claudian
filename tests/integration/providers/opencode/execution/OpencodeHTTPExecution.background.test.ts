@@ -69,7 +69,7 @@ it.each(['background-approval', 'background-nested', 'mcp-form-late'])('keeps %s
     interactionPort: {
       requestApproval: async request => {
         if (request.description?.includes('echo child')) { interactions.push('approval'); await gate; }
-        return { interactionId: request.interactionId, decision: 'allow' };
+        return { interactionId: request.interactionId, value: 'Allow once' };
       },
       askUserQuestion: async request => {
         if (Array.isArray(request.input.questions) && ['Child color', 'probe is requesting input'].includes(request.input.questions[0]?.header)) { interactions.push('question'); childAsked(); await gate; }
@@ -186,5 +186,51 @@ it.each(['configuration', 'prompt'])('keeps an earlier child in its own scope du
       scope: expect.objectContaining({ kind: 'background' }),
     })]));
     expect(foreground.filter(event => event.type === 'tool_completed' && event.content === 'Late child result')).toEqual([]);
+  } finally { await f.dispose(); }
+});
+
+it.each([
+  { launching: 'normal', later: 'yolo', prompts: 1 },
+  { launching: 'yolo', later: 'normal', prompts: 0 },
+])('answers a background child launched under $launching by its own mode during a later $later turn', async ({ launching, later, prompts }) => {
+  const f = await createFixture(false, undefined, 'LATE_CHILD_STAGE=prompt');
+  let completed!: () => void;
+  const childCompleted = new Promise<void>(resolve => { completed = resolve; });
+  f.session.onEvent(event => { if (event.type === 'async_subagent_completed') completed(); });
+  const withMode = (text: string, permissionMode: string) => {
+    const turn = request(text);
+    return { ...turn, configuration: { ...turn.configuration, permissionMode } };
+  };
+  try {
+    for await (const event of f.session.execute(withMode('background-overlap-approval', launching)).events) {
+      if (event.type === 'execution_error') throw new Error(event.message);
+    }
+    const run = f.session.execute(withMode('cancel', later));
+    const consume = (async () => { for await (const event of run.events) void event; })();
+    // The child completes only after its approval request has been answered.
+    await childCompleted;
+    run.cancel();
+    await consume;
+    expect(f.approvals.filter(approval => (approval as { description?: string }).description === 'shell: echo late')).toHaveLength(prompts);
+  } finally { await f.dispose(); }
+});
+
+it.each([
+  { text: 'background-auto-approval', description: 'shell: echo auto', mode: 'yolo', prompts: 0 },
+  { text: 'background-auto-approval', description: 'shell: echo auto', mode: 'normal', prompts: 1 },
+  { text: 'background-auto-child-approval', description: 'shell: echo auto child', mode: 'yolo', prompts: 0 },
+  { text: 'background-auto-child-approval', description: 'shell: echo auto child', mode: 'normal', prompts: 1 },
+])('answers $text by the latest $mode run', async ({ text, description, mode, prompts }) => {
+  const f = await createFixture();
+  let completed!: () => void;
+  const background = new Promise<void>(resolve => { completed = resolve; });
+  f.session.onEvent(event => { if (event.type === 'background_turn_completed') completed(); });
+  try {
+    const turn = request(text);
+    for await (const event of f.session.execute({ ...turn, configuration: { ...turn.configuration, permissionMode: mode } }).events) {
+      if (event.type === 'execution_error') throw new Error(event.message);
+    }
+    await background;
+    expect(f.approvals.filter(approval => (approval as { description?: string }).description === description)).toHaveLength(prompts);
   } finally { await f.dispose(); }
 });

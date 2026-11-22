@@ -40,7 +40,6 @@ it('settles calls before connection without native work', async () => {
   expect(() => kernel.cancel('ses')).not.toThrow();
   await expect(kernel.openSession()).rejects.toThrow('OpenCode session is not connected');
   await expect(kernel.prompt('ses', prompt)).rejects.toThrow('OpenCode session is not connected');
-  expect(() => kernel.setAutoApprove(true)).toThrow('OpenCode session is not connected');
   expect(lease.request).not.toHaveBeenCalled();
 });
 

@@ -929,11 +929,14 @@ describe('InlineAskUserQuestion - immediateSelect mode', () => {
   });
 
   describe('keyboard navigation', () => {
-    it('ArrowDown/Up navigates focus', () => {
+    it('ArrowDown/Up navigates focus from no active option', () => {
       const input = makeInput([{ question: 'Pick', options: ['A', 'B', 'C'] }]);
       const { container } = renderImmediateWidget(input);
       const root = findRoot(container);
+      expect(findItems(container).some(item => item.hasClass('is-focused'))).toBe(false);
 
+      fireKeyDown(root, 'ArrowDown');
+      expect(findItems(container)[0]?.hasClass('is-focused')).toBe(true);
       fireKeyDown(root, 'ArrowDown');
       const items = findItems(container);
       expect(items[1]?.hasClass('is-focused')).toBe(true);
@@ -949,6 +952,7 @@ describe('InlineAskUserQuestion - immediateSelect mode', () => {
       const root = findRoot(container);
 
       // Move to second option and press Enter
+      fireKeyDown(root, 'ArrowDown');
       fireKeyDown(root, 'ArrowDown');
       fireKeyDown(root, 'Enter');
 
@@ -969,6 +973,7 @@ describe('InlineAskUserQuestion - immediateSelect mode', () => {
       const { container, resolve } = renderImmediateWidget(input);
       const root = findRoot(container);
 
+      fireKeyDown(root, 'ArrowDown');
       fireKeyDown(root, 'ArrowDown');
       expect(findItems(container)[1]?.hasClass('is-focused')).toBe(true);
       fireKeyDown(root, 'Tab');

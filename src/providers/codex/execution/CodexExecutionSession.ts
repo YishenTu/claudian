@@ -67,7 +67,6 @@ import {
   resolveCodexTurnSettings,
 } from './codexTurnConfig';
 
-const CODEX_SUPPORTS_EXACT_BUILT_IN_TOOL_ALLOW_LIST = false;
 const CODEX_CONSUMED_FORK_STATE_KEYS = [
   'forkSource',
   'forkSourceSessionFilePath',
@@ -375,19 +374,6 @@ export class CodexExecutionSession
         return;
       }
       let effort = resolveCodexTurnReasoningEffort(request, settings, model);
-
-      if (
-        request.toolPolicy.kind === 'allow-list'
-        && !CODEX_SUPPORTS_EXACT_BUILT_IN_TOOL_ALLOW_LIST
-      ) {
-        this.#finishError(
-          active,
-          'configuration',
-          'Codex app-server does not support exact allow-list enforcement for provider built-in tools.',
-          false,
-        );
-        return;
-      }
 
       const compact = parseCompactCommand(request.input.filter(block => block.type === 'text').map(block => block.text).join('\n\n'));
       if (

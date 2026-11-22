@@ -6,6 +6,7 @@ import path from 'node:path';
 import { Readable } from 'node:stream';
 
 import { deferred } from '@test/helpers/ChatInputHarness';
+import { answerApproval } from '@test/helpers/features/chat/approvalDecisionOptions';
 import { createProviderHostFixture } from '@test/helpers/providerRuntimeHost';
 import { AntigravityNativeProcess,type CapturedAntigravityAgent } from '@test/helpers/providers/antigravity/AntigravityNativeProcess';
 import { testDate, testTime } from '@test/helpers/testClock';
@@ -831,13 +832,13 @@ describe('AntigravityExecutionSession', () => {
 
   it.each([
     ['normal', 'allow', { optionId: 'allow', outcome: 'selected' }],
-    ['normal', 'deny', { optionId: 'reject', outcome: 'selected' }],
+    ['normal', 'reject', { optionId: 'reject', outcome: 'selected' }],
     ['auto', 'allow', { optionId: 'allow', outcome: 'selected' }],
-    ['auto', 'deny', { optionId: 'reject', outcome: 'selected' }],
-  ] as const)('asks before a tool runs in %s mode and answers %s', async (permissionMode, decision, outcome) => {
+    ['auto', 'reject', { optionId: 'reject', outcome: 'selected' }],
+  ] as const)('asks before a tool runs in %s mode and answers %s', async (permissionMode, value, outcome) => {
     const port = createInteractionPort();
     port.requestApproval.mockImplementation(async (approval: ProviderApprovalInteractionRequest) => ({
-      decision, interactionId: approval.interactionId,
+      interactionId: approval.interactionId, value,
     }));
     const session = await createSession({ interactionPort: port });
     const run = session.execute(request('edit', { permissionMode }));
@@ -979,9 +980,7 @@ describe('AntigravityExecutionSession', () => {
     ['yolo', false, { optionId: 'allow', outcome: 'selected' }],
   ] as const)('decides approvals agy asks for after a %s turn under that turn\'s mode', async (permissionMode, asks, outcome) => {
     const port = createInteractionPort();
-    port.requestApproval.mockImplementation(async (approval: ProviderApprovalInteractionRequest) => ({
-      decision: 'allow', interactionId: approval.interactionId,
-    }));
+    port.requestApproval.mockImplementation(async (approval: ProviderApprovalInteractionRequest) => answerApproval(approval, 'allow'));
     const session = await createSession({ interactionPort: port });
     const run = session.execute(request('Start the build', { permissionMode }));
     const peer = await firstPeer();
@@ -1004,7 +1003,7 @@ describe('AntigravityExecutionSession', () => {
   it('ends the background turn when a denied tool fails, since agy does nothing more after a denial', async () => {
     const port = createInteractionPort();
     port.requestApproval.mockImplementation(async (approval: ProviderApprovalInteractionRequest) => ({
-      decision: 'deny', interactionId: approval.interactionId,
+      interactionId: approval.interactionId, value: 'reject',
     }));
     const session = await createSession({ interactionPort: port });
     const run = session.execute(request('Start the build'));

@@ -1,6 +1,6 @@
 import {
-  buildACPApprovalDecisionOptions,
-  mapACPApprovalDecision,
+  allowACPPermission,
+  buildACPApprovalChoices,
 } from '@/providers/acp/ACPPermissionAdapter';
 import type { ACPPermissionOption } from '@/providers/acp/types';
 
@@ -12,55 +12,27 @@ const OPTIONS: ACPPermissionOption[] = [
 ];
 
 describe('AcpPermissionAdapter', () => {
-  it('maps allow decisions to the best matching ACP option', () => {
-    expect(mapACPApprovalDecision('allow', OPTIONS)).toEqual({
+  it('allows with the one-time option, falling back to the persistent one', () => {
+    expect(allowACPPermission(OPTIONS)).toEqual({
       outcome: { optionId: 'allow-once', outcome: 'selected' },
     });
-    expect(mapACPApprovalDecision('allow-always', OPTIONS)).toEqual({
+    expect(allowACPPermission([OPTIONS[1], OPTIONS[2]])).toEqual({
       outcome: { optionId: 'allow-always', outcome: 'selected' },
     });
   });
 
-  it('maps deny decisions and explicit reject selections', () => {
-    expect(mapACPApprovalDecision('deny', OPTIONS)).toEqual({
-      outcome: { optionId: 'reject-once', outcome: 'selected' },
-    });
-    expect(mapACPApprovalDecision(
-      { type: 'select-option', value: 'reject-always' },
-      OPTIONS,
-    )).toEqual({
-      outcome: { optionId: 'reject-always', outcome: 'selected' },
-    });
-  });
-
-  it('falls back within the same decision family', () => {
-    expect(mapACPApprovalDecision('allow', [OPTIONS[1]])).toEqual({
-      outcome: { optionId: 'allow-always', outcome: 'selected' },
-    });
-    expect(mapACPApprovalDecision('deny', [OPTIONS[3]])).toEqual({
-      outcome: { optionId: 'reject-always', outcome: 'selected' },
-    });
-  });
-
-  it('returns cancelled when no valid option represents the decision', () => {
-    expect(mapACPApprovalDecision('allow', OPTIONS.slice(2))).toEqual({
-      outcome: { outcome: 'cancelled' },
-    });
-    expect(mapACPApprovalDecision(
-      { type: 'select-option', value: 'missing' },
-      OPTIONS,
-    )).toEqual({ outcome: { outcome: 'cancelled' } });
-    expect(mapACPApprovalDecision('cancel', OPTIONS)).toEqual({
+  it('cancels an automatic allow when no option allows', () => {
+    expect(allowACPPermission(OPTIONS.slice(2))).toEqual({
       outcome: { outcome: 'cancelled' },
     });
   });
 
-  it('preserves all ACP choices for the approval UI', () => {
-    expect(buildACPApprovalDecisionOptions(OPTIONS)).toEqual([
-      { decision: 'allow', label: 'Allow once', value: 'allow-once' },
-      { decision: 'allow-always', label: 'Always allow', value: 'allow-always' },
-      { label: 'Reject once', value: 'reject-once' },
-      { label: 'Always reject', value: 'reject-always' },
+  it('preserves all ACP choices for the approval UI, each replying with its own option', () => {
+    expect(buildACPApprovalChoices(OPTIONS)).toEqual([
+      { option: { decision: 'allow', label: 'Allow once', value: 'allow-once' }, reply: { outcome: { optionId: 'allow-once', outcome: 'selected' } } },
+      { option: { decision: 'allow-always', label: 'Always allow', value: 'allow-always' }, reply: { outcome: { optionId: 'allow-always', outcome: 'selected' } } },
+      { option: { label: 'Reject once', value: 'reject-once' }, reply: { outcome: { optionId: 'reject-once', outcome: 'selected' } } },
+      { option: { label: 'Always reject', value: 'reject-always' }, reply: { outcome: { optionId: 'reject-always', outcome: 'selected' } } },
     ]);
   });
 });

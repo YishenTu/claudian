@@ -10,11 +10,7 @@ export function createInteractionPromptPort(
   return {
     requestApproval: async (request, signal) => ({
       interactionId: request.interactionId,
-      decision: await getPrompts().requestApproval(request.interactionId, request.toolName, { ...request.input }, request.description, {
-        ...(request.decisionReason ? { decisionReason: request.decisionReason } : {}),
-        ...(request.blockedPath ? { blockedPath: request.blockedPath } : {}),
-        ...(request.decisionOptions ? { decisionOptions: request.decisionOptions.map(option => ({ ...option })) } : {}),
-      }, signal),
+      value: await getPrompts().requestApproval(request, signal),
     }),
     askUserQuestion: async (request, signal) => ({
       interactionId: request.interactionId,

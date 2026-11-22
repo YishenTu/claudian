@@ -4,6 +4,7 @@ import '@/providers';
 import { deferred } from '@test/helpers/ChatInputHarness';
 import { claudeCatalogFixture } from '@test/helpers/claudeModels';
 import { DEFAULT_CLAUDIAN_SETTINGS } from '@test/helpers/defaultSettings';
+import { approvalDecisionOptions } from '@test/helpers/features/chat/approvalDecisionOptions';
 import { createChatFeatureHost } from '@test/helpers/features/chat/ChatFeatureHostFixture';
 import { createProjectsFake, projectRecord } from '@test/helpers/features/chat/ProjectsFake';
 import { createSessionRuntimePool } from '@test/helpers/features/chat/SessionRuntimePoolHarness';
@@ -782,6 +783,7 @@ describe('outside-client API', () => {
     const { api, native, port } = await startTurn(h);
     const requested = h.nextSignal(isInteraction('approve', true));
     const approval = port.requestApproval({
+      decisionOptions: approvalDecisionOptions(),
       interactionId: 'approve', sessionInstanceId: native.sessionInstanceId, turnId: native.activeTurnId, kind: 'approval',
       toolName: 'Bash', input: { command: 'ls' }, description: 'ls', blockedPath: '/outside',
     }, new AbortController().signal);
@@ -799,7 +801,7 @@ describe('outside-client API', () => {
     await expect(api.answerInteraction('recipient', 'approve', { [key]: 'Not an option' })).rejects.toThrow();
     expect(api.getPendingInteractions('recipient')).toHaveLength(1);
     await api.answerInteraction('recipient', 'approve', { [key]: always.value });
-    expect(await approval).toEqual({ interactionId: 'approve', decision: 'allow-always' });
+    expect(await approval).toEqual({ interactionId: 'approve', value: always.value });
     expect(api.getPendingInteractions('recipient')).toEqual([]);
     expect(interactionSignals(h)).toEqual([
       { sessionId: 'recipient', type: 'interaction', interactionId: 'approve', pending: true },

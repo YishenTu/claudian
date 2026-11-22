@@ -600,6 +600,39 @@ describe('permission button', () => {
     }
   });
 
+  it.each([
+    ['Antigravity', antigravityChatUIConfig, 'auto'],
+    ['Claude', claudeChatUIConfig, 'auto'],
+    ['Codex', codexChatUIConfig, 'auto-review'],
+  ] as const)('names the %s permission modes in English under another locale', (_provider, config, mode) => {
+    const english = config.getPermissionModeOptions!({})!;
+    const { toolbar, ui, uiConfig } = renderToolbar({ settings: { permissionMode: mode } });
+    uiConfig.getPermissionModeOptions = () => config.getPermissionModeOptions!({})!;
+    setLocale('zh-CN');
+    try {
+      toolbar.permissionToggle.updateDisplay();
+      const current = english.find(option => option.value === mode)!;
+      const button = ui.getByRole('button', { name: t('chat.permissionMode.current', { mode: current.label }) });
+      fireEvent.click(button);
+      const items = within(ui.getByRole('menu')).getAllByRole('menuitemradio');
+      expect(items.map(item => item.querySelector('.claudian-toolbar-popover-option-label')?.textContent))
+        .toEqual(english.map(option => option.label));
+    } finally {
+      setLocale('en');
+    }
+  });
+
+  it('shows no mode rather than guessing one when the setting matches no option', () => {
+    const { settings, toolbar, ui } = renderToolbar({
+      settings: { permissionMode: 'manual' },
+      permissionModes: claudeChatUIConfig.getPermissionModeOptions?.() ?? undefined,
+    });
+    expect(ui.getByRole('button', { name: 'Permission mode: Manual' })).toBeDefined();
+    settings.permissionMode = 'retired-mode';
+    toolbar.permissionToggle.updateDisplay();
+    expect(ui.queryByRole('button', { name: /^Permission mode/ })).toBeNull();
+  });
+
   it('is absent when the provider has no permission toggle', () => {
     const { ui } = renderToolbar({ permissionToggle: false });
     expect(ui.queryByRole('button', { name: /^Permission mode/ })).toBeNull();

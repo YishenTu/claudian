@@ -2,12 +2,14 @@ import { randomUUID } from 'node:crypto';
 
 import {
   PendingInteractionLedger,
+  type ProviderApprovalChoice,
   type ProviderExecutionRequest,
   type ProviderExecutionRun,
   type ProviderExecutionSession,
   type ProviderSessionConfig,
   type ProviderSessionEvent,
   RequestedRunChannel,
+  resolveApprovalChoice,
   SessionSnapshotState,
   type WithoutEventScope,
 } from '@/core/execution';
@@ -271,7 +273,6 @@ export class DeepSeekExecutionSession implements ProviderExecutionSession {
     if (this.reloadError) throw new AdmissionError(this.reloadError.message);
     this.assertRequest(requested);
     const input = requested.input;
-    if (input.toolPolicy.kind === 'allow-list') throw new AdmissionError('DeepSeek does not support arbitrary tool allow-lists.');
     if (this.stopTask) throw new AdmissionError('DeepSeek is stopping background work. Wait for Stop to finish before sending.');
     const prompt = await this.bind(requested);
     this.assertRequest(requested);
@@ -292,7 +293,8 @@ export class DeepSeekExecutionSession implements ProviderExecutionSession {
       if (!observer.permissionBoundaryAvailable()) throw new AdmissionError('DeepSeek cannot change permissions while a turn, tool, or question is active. Use Stop, then resend your draft.');
       this.permission = await applyDeepSeekPermission(lease.client, this.nativeId!, desired);
       this.snapshots.bumpRevision();
-      requested.channel.emit({ type: 'permission_mode_changed', permissionMode: desired, snapshot: this.getSnapshot() });
+      // Claudian chose this mode; reporting it as a native change could overwrite a newer pick made meanwhile.
+      requested.channel.emit({ type: 'session_state_changed', snapshot: this.getSnapshot() });
     }
     this.assertRequest(requested);
     await this.selectModel(input);
@@ -862,9 +864,11 @@ export class DeepSeekExecutionSession implements ProviderExecutionSession {
     const reason = localizedReason(nativeRequest, this.host.locale);
     const presentation = call
       ? { toolName: call.name, input: { ...call.input }, description: getActionDescription(call.name, call.input), ...(reason ? { decisionReason: reason } : {}) }
-      : { toolName: typeof nativeRequest.toolName === 'string' ? deepseekToolName(nativeRequest.toolName) : 'DeepSeek tool', input: {}, description: reason ?? t('chat.approval.deepseekRequest') };
+      : { toolName: typeof nativeRequest.toolName === 'string' ? deepseekToolName(nativeRequest.toolName) : t('chat.approval.deepseekTool'), input: {}, description: reason ?? t('chat.approval.deepseekRequest') };
+    const choices = deepseekApprovalChoices();
     const response = value.event === 'approval/request'
-      ? this.config.interactionPort.requestApproval({ ...identity, kind: 'approval', ...presentation, decisionOptions: [{ label: t('chat.approval.allowOnce'), value: 'allow', decision: 'allow' }, { label: t('chat.approval.deny'), value: 'deny', decision: 'deny' }] }, pending.signal).then(answer => ({ answer, value: answer.decision === 'allow' || answer.decision === 'allow-always' ? 'allowed-once' : answer.decision === 'cancel' ? 'cancelled' : 'rejected' }))
+      ? this.config.interactionPort.requestApproval({ ...identity, kind: 'approval', ...presentation, decisionOptions: choices.map(choice => choice.option) }, pending.signal)
+        .then(answer => ({ answer, value: answer.value === null ? 'cancelled' : resolveApprovalChoice(choices, answer.value) ?? 'rejected' }))
       : this.config.interactionPort.askUserQuestion({ ...identity, kind: 'question', input: questionInput }, pending.signal).then(answer => ({ answer, value: questionAnswers(nativeRequest, answer.answers) }));
     void response.then(async ({ answer, value: result }) => {
       if (generation !== this.generation || this.interactions.isStaleResponse(pending, answer)) return;
@@ -1118,8 +1122,15 @@ export class DeepSeekExecutionSession implements ProviderExecutionSession {
   }
 }
 
+/** The choices a native approval offers, each paired with the native result it sends. */
+function deepseekApprovalChoices(): ProviderApprovalChoice<'allowed-once' | 'rejected'>[] {
+  return [
+    { option: { label: t('chat.approval.allowOnce'), value: 'allow', decision: 'allow' }, reply: 'allowed-once' },
+    { option: { label: t('chat.approval.deny'), value: 'deny', decision: 'deny' }, reply: 'rejected' },
+  ];
+}
+
 function permissionFor(input: ProviderExecutionRequest): DeepSeekPermission {
-  if (input.toolPolicy.kind === 'unrestricted') return 'yolo';
   if (input.toolPolicy.kind === 'read-only' || input.toolPolicy.kind === 'passive') return 'read-only';
   const mode = input.configuration.permissionMode ?? 'normal';
   if (mode !== 'normal' && mode !== 'yolo') throw new AdmissionError('Unsupported DeepSeek permission mode. Choose Workspace write or Full access.');

@@ -1,4 +1,4 @@
-import { isSessionToolPolicyAllowed, type ProviderToolPolicy } from '@/core/execution';
+import type { ProviderToolPolicy } from '@/core/execution';
 import type {
   Thread,
   ThreadForkResult,
@@ -172,10 +172,9 @@ export class CodexThreadBinder {
       };
     }
 
+    // Only provider-default threads get dynamic tools, session tools included.
     const dynamicTools = shouldExposeDynamicTools(request.toolPolicy)
-      ? this.connection.dynamicToolRegistry.getThreadStartSpecs().filter(spec =>
-        isThreadStartToolAllowed(request.toolPolicy, spec.namespace, spec.name)
-      )
+      ? this.connection.dynamicToolRegistry.getThreadStartSpecs()
       : [];
     const result = await scope.open<ThreadStartResult>(
       'thread/start',
@@ -432,25 +431,7 @@ function withLegacyToolInstructions(baseInstructions: string): string {
 }
 
 function shouldExposeDynamicTools(policy: ProviderToolPolicy): boolean {
-  return (
-    policy.kind === 'provider-default'
-    || policy.kind === 'unrestricted'
-    || policy.kind === 'allow-list'
-  );
-}
-
-function isThreadStartToolAllowed(
-  policy: ProviderToolPolicy,
-  namespace: string | null | undefined,
-  name: string,
-): boolean {
-  if (isCodexSessionTool(namespace, name)) return isSessionToolPolicyAllowed(policy);
-  if (policy.kind === 'provider-default' || policy.kind === 'unrestricted') {
-    return true;
-  }
-  if (policy.kind !== 'allow-list') return false;
-  const qualified = namespace ? `${namespace}.${name}` : name;
-  return policy.names.includes(name) || policy.names.includes(qualified);
+  return policy.kind === 'provider-default';
 }
 
 function normalizeString(value: unknown): string | null {

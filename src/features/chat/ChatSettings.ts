@@ -1,4 +1,5 @@
 import { getProviderSettingsSnapshotWithModel } from '@/core/providers/conversationModel';
+import { resolvePermissionMode } from '@/core/providers/permissionModes';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import type { ProviderId } from '@/core/providers/types';
 
@@ -27,7 +28,7 @@ export function getChatSettingsSnapshot<T extends Record<string, unknown>>(
     ...snapshot,
     model: selectedModel,
     reasoning,
-    permissionMode: typeof snapshot.permissionMode === 'string' ? snapshot.permissionMode : 'normal',
+    permissionMode: resolvePermissionMode(ProviderRegistry.getModelPolicy(providerId).permissionModes, snapshot.permissionMode),
     serviceTier: typeof snapshot.serviceTier === 'string' ? snapshot.serviceTier : 'default',
   };
 }

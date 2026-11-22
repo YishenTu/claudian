@@ -321,23 +321,15 @@
       "current": "權限模式：{mode}",
       "changeFailed": "切換權限模式失敗",
       "antigravity": {
-        "auto": "自動",
         "autoDesc": "核准工作區編輯與沙盒指令；審查額外存取權限"
       },
       "claude": {
-        "auto": "自動",
-        "manual": "手動",
-        "acceptEdits": "接受編輯",
-        "yolo": "YOLO",
         "autoDesc": "由 Claude 決定是否授權",
         "manualDesc": "修改前一律詢問",
         "acceptEditsDesc": "自動接受所有檔案編輯",
         "yoloDesc": "無須詢問，允許所有操作"
       },
       "codex": {
-        "autoReview": "代我核准",
-        "normal": "要求核准",
-        "yolo": "完整存取",
         "autoReviewDesc": "自動審查額外存取權限。",
         "readOnlyDesc": "編輯或連線至網路前先詢問。",
         "normalDesc": "需要額外存取權限前先詢問。",
@@ -456,6 +448,8 @@
       "deny": "拒絕",
       "allowOnce": "允許一次",
       "alwaysAllow": "一律允許",
+      "alwaysAllowActionInProject": "在此專案中一律允許 {action}。",
+      "alwaysAllowPatternsInProject": "在此專案中一律允許以下模式：{patterns}",
       "mcpRequest": "MCP 請求",
       "mcpServer": "MCP 伺服器：{server}",
       "decline": "拒絕",
@@ -467,16 +461,29 @@
       "fileChangeReason": "檔案修改：{reason}",
       "permissionRequest": "權限請求",
       "permissionReason": "權限請求：{reason}",
+      "permissionRead": "讀取：{paths}",
+      "permissionWrite": "寫入：{paths}",
+      "permissionDenyRead": "禁止讀取：{paths}",
+      "permissionNetwork": "網路存取",
+      "permissionFullDisk": "整個檔案系統",
+      "permissionMinimalPaths": "最少系統路徑",
+      "permissionProjectRoots": "專案根目錄",
+      "permissionProjectRootsSubpath": "專案根目錄中的 {subpath}",
       "networkAccess": "允許透過 {protocol} 存取 {host}",
       "execute": "執行：{command}",
       "executeCommand": "執行指令",
       "allowSimilar": "允許類似指令",
       "execPolicy": "核准並儲存執行原則變更。",
       "host": "主機",
-      "allowHost": "在此工作階段中允許 {host}",
-      "denyHost": "在此工作階段中拒絕 {host}",
+      "allowHost": "一律允許 {host}",
+      "denyHost": "一律封鎖 {host}",
       "allowRule": "對 {host} 套用允許規則。",
       "denyRule": "對 {host} 套用拒絕規則。",
+      "allowForTurn": "在此回合中允許",
+      "allowForSession": "在此工作階段中允許",
+      "allowFilesForSession": "在此工作階段中允許變更這些檔案",
+      "denyAndStop": "拒絕並停止此回合",
+      "execPolicyPrefix": "儲存規則，允許以下列內容開頭的指令：{prefix}",
       "details": "{tool} 授權詳細資訊",
       "unexpectedSelection": "非預期的授權選項：「{value}」",
       "runCommand": "執行指令：{pattern}",
@@ -486,7 +493,8 @@
       "searchFiles": "搜尋符合的檔案：{pattern}",
       "searchContent": "搜尋符合的內容：{pattern}",
       "unknownPattern": "（未知）",
-      "deepseekRequest": "DeepSeek 請求授權。"
+      "deepseekRequest": "DeepSeek 請求授權。",
+      "deepseekTool": "DeepSeek 工具"
     },
     "disclosure": {
       "expand": "{label} - 點選展開",
@@ -793,11 +801,11 @@
     "safety": "安全",
     "loadUserSettings": {
       "name": "載入使用者 Claude Code 設定",
-      "desc": "從 ~/.claude 載入使用者層級的 Claude Code 設定：settings.json、技能、指令、代理程式與外掛。停用時僅使用儲存庫層級設定。啟用後，使用者的權限規則可能會繞過安全模式。"
+      "desc": "從 ~/.claude 載入使用者層級的 Claude Code 設定：settings.json、技能、指令、代理程式與外掛。停用時僅使用儲存庫層級設定。啟用後，使用者的權限規則也會生效，可能無須詢問即允許操作。"
     },
     "codexSandbox": {
       "name": "沙盒",
-      "desc": "「代我核准」與「要求核准」模式下的檔案存取權限。「唯讀」會在每次編輯前詢問確認；「完整存取」會忽略此設定。"
+      "desc": "「Approve for me」與「Ask for approval」模式下的檔案存取權限。「唯讀」會在每次編輯前詢問確認；「Full access」會忽略此設定。"
     },
     "environment": "環境",
     "sharedEnvironment": {

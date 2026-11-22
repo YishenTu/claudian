@@ -14,8 +14,16 @@ export interface ProviderInteractionIdentity {
 export interface ProviderApprovalDecisionOption {
   readonly label: string;
   readonly description?: string;
+  /** Identifies the option in the answer; unique within a request. */
   readonly value: string;
+  /** Scripting metadata (docs/plugin-api.md); routers decode the answer by `value`, never by this tag. */
   readonly decision?: ApprovalDecision;
+}
+
+/** An offered option paired with the native reply it sends. */
+export interface ProviderApprovalChoice<Reply> {
+  readonly option: ProviderApprovalDecisionOption;
+  readonly reply: Reply;
 }
 
 export interface ProviderApprovalInteractionRequest
@@ -26,12 +34,14 @@ export interface ProviderApprovalInteractionRequest
   readonly description: string;
   readonly decisionReason?: string;
   readonly blockedPath?: string;
-  readonly decisionOptions?: readonly ProviderApprovalDecisionOption[];
+  /** The native choices, in native order; Claudian invents none for a provider. */
+  readonly decisionOptions: readonly ProviderApprovalDecisionOption[];
 }
 
 export interface ProviderApprovalInteractionResponse {
   readonly interactionId: string;
-  readonly decision: ApprovalDecision;
+  /** The selected option's `value`; null when the request was dismissed or cancelled. */
+  readonly value: string | null;
 }
 
 export interface ProviderQuestionInteractionRequest
@@ -73,4 +83,12 @@ export interface ProviderInteractionPort {
     interactionId: string,
     reason: ProviderInteractionDismissReason,
   ): void;
+}
+
+/** The reply of the offered option an answer selects; undefined for a dismissal or a value nothing offered. */
+export function resolveApprovalChoice<Reply>(
+  choices: readonly ProviderApprovalChoice<Reply>[],
+  value: string | null,
+): Reply | undefined {
+  return value === null ? undefined : choices.find(choice => choice.option.value === value)?.reply;
 }

@@ -4,6 +4,7 @@ import '@/providers';
 import { axe } from '@test/helpers/accessibility';
 import { ControlledResizeObserver, triggerResize } from '@test/helpers/dom/ResizeObserver';
 import { useTranscriptGeometry } from '@test/helpers/dom/transcriptGeometry';
+import { approvalDecisionOptions } from '@test/helpers/features/chat/approvalDecisionOptions';
 import {
   cleanups,
   createChatWorkspaceFixture,
@@ -338,6 +339,7 @@ it('gives a pending approval priority over the waiting status and resumes it aft
   await waitForFlavor(tab);
 
   const approval = session.config.interactionPort.requestApproval({
+    decisionOptions: approvalDecisionOptions(),
     description: 'Write a note', input: {}, interactionId: 'approval-1',
     kind: 'approval', sessionInstanceId: session.sessionInstanceId,
     toolName: 'Write', turnId: session.activeTurnId,
@@ -354,7 +356,7 @@ it('gives a pending approval priority over the waiting status and resumes it aft
   expect(preview()).toBe('Needs your input');
 
   fireEvent.click(await within(zenPanel()!).findByText('Allow once'));
-  await expect(approval).resolves.toMatchObject({ decision: 'allow' });
+  await expect(approval).resolves.toMatchObject({ value: 'Allow once' });
   await waitForFlavor(tab);
   await waitFor(() => expect(preview()).toBe('Write · running'));
 
@@ -372,6 +374,7 @@ it('keeps explicit compaction status across a prompt', async () => {
   await waitFor(() => expectZenPreview('Compacting...'));
 
   const approval = session.config.interactionPort.requestApproval({
+    decisionOptions: approvalDecisionOptions(),
     description: 'Approve action', input: {}, interactionId: 'approval-compact',
     kind: 'approval', sessionInstanceId: session.sessionInstanceId,
     toolName: 'Write', turnId: session.activeTurnId,
@@ -409,6 +412,7 @@ it('leaves no waiting indicator behind when plugin shutdown dismisses a pending 
   const session = await sendFromZen(tab, sessions, 'Write a note');
   await waitForFlavor(tab);
   const approval = session.config.interactionPort.requestApproval({
+    decisionOptions: approvalDecisionOptions(),
     description: 'Write a note', input: {}, interactionId: 'approval-1',
     kind: 'approval', sessionInstanceId: session.sessionInstanceId,
     toolName: 'Write', turnId: session.activeTurnId,
@@ -1104,6 +1108,7 @@ it('keeps a pending approval actionable while history is collapsed', async () =>
   const session = await sendFromZen(tab, sessions, 'Write a note');
 
   const approval = session.config.interactionPort.requestApproval({
+    decisionOptions: approvalDecisionOptions(),
     description: 'Write a note', input: {}, interactionId: 'approval-1',
     kind: 'approval', sessionInstanceId: session.sessionInstanceId,
     toolName: 'Write', turnId: session.activeTurnId,
@@ -1114,7 +1119,7 @@ it('keeps a pending approval actionable while history is collapsed', async () =>
   expect(within(panel).getByRole('status').textContent).toBe('Needs your input');
   expect(within(panel).getByRole('button', { name: 'Show conversation' }).getAttribute('aria-expanded')).toBe('false');
   fireEvent.click(await within(panel).findByText('Allow once'));
-  await expect(approval).resolves.toMatchObject({ decision: 'allow' });
+  await expect(approval).resolves.toMatchObject({ value: 'Allow once' });
   await waitFor(() => expect(preview()).not.toBe('Needs your input'));
   session.complete();
 });

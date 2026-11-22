@@ -2,9 +2,11 @@ import { createProviderHostFixture } from '@test/helpers/providerRuntimeHost';
 import { createOpencodeKernelLease } from '@test/helpers/providers/opencode/OpencodeKernelFixture';
 import type { Mock } from 'vitest';
 
-import type { ProviderSessionConfig, ProviderSessionToolPort } from '@/core/execution';
+import type { ProviderInteractionPort, ProviderSessionConfig, ProviderSessionToolPort } from '@/core/execution';
 import type { ProviderToolPolicy } from '@/core/execution';
 import { invokeSessionTool, type SessionToolInvocation } from '@/core/session-tools/invokeSessionTool';
+import { TOOL_BASH, TOOL_WEB_FETCH } from '@/core/tools/toolNames';
+import { t } from '@/i18n/i18n';
 import { OpencodeHTTPSessionKernel } from '@/providers/opencode/execution/OpencodeHTTPSessionKernel';
 import type { OpencodeNativeOutput } from '@/providers/opencode/execution/OpencodeSessionContract';
 import { OpencodeSessionPersistence } from '@/providers/opencode/execution/OpencodeSessionPersistence';
@@ -231,17 +233,17 @@ const callSessionTool = async (id = 'ses_main') => invokeSessionTool('claudian_l
   resolveCaller?.(id) ?? {port:undefined,toolPolicy:undefined,signal:new AbortController().signal});
 const startToolRun = async (policy: ProviderToolPolicy = {kind:'provider-default'}) => {
   // The third parameter is the captured execution request, forwarded only by the HTTP path.
-  const completion = kernel.prompt('ses_main', {text:'work',files:[],userText:null}, {toolPolicy:policy,signal:new AbortController().signal});
+  const completion = kernel.prompt('ses_main', {text:'work',files:[],userText:null}, {toolPolicy:policy,signal:new AbortController().signal,autoApprove:false});
   void completion.catch(() => undefined);
   await vi.advanceTimersByTimeAsync(0);
   event('session.execution.started');
   return {completion};
 };
-it.each<ProviderToolPolicy>([{kind:'provider-default'},{kind:'unrestricted'},{kind:'read-only'},{kind:'passive'},{kind:'allow-list',names:['claudian_list_destinations']}])('dispatches session tools with the owning policy %j', async policy => {
+it.each<ProviderToolPolicy>([{kind:'provider-default'},{kind:'read-only'},{kind:'passive'}])('dispatches session tools with the owning policy %j', async policy => {
   const list = vi.fn<ProviderSessionToolPort['list']>().mockResolvedValue({ sessions: [] });
   sessionConfig.sessionTools = { list, send: vi.fn(() => { throw new Error('Unexpected send'); }), read: vi.fn(() => { throw new Error('Unexpected read'); }) };
   const {completion} = await startToolRun(policy);
-  const allowed = ['provider-default','unrestricted'].includes(policy.kind);
+  const allowed = policy.kind === 'provider-default';
   expect((await callSessionTool()).isError).toBe(!allowed);
   expect(list).toHaveBeenCalledTimes(allowed ? 1 : 0);
   expect((await callSessionTool('unknown')).isError).toBe(true);
@@ -295,10 +297,58 @@ it.each(['cancel', 'completion', 'failure'])('aborts an in-flight child session-
 });
 
 it('auto-approves native session-tool permission requests without opening approval UI', async () => {
-  sessionConfig.interactionPort.requestApproval = vi.fn().mockResolvedValue({ interactionId: 'tool_shell', decision: 'deny' });
+  sessionConfig.interactionPort.requestApproval = vi.fn().mockResolvedValue({ interactionId: 'tool_shell', value: 'Deny' });
   event('permission.asked', { action: 'claudian_send_message', resources: ['*'] });
   await vi.advanceTimersByTimeAsync(0);
   expect(sessionConfig.interactionPort.requestApproval).not.toHaveBeenCalled();
   expect(requests).toContain('/api/session/ses_main/permission/tool_shell/reply');
   expect(bodies).toContainEqual({ decision: 'once' });
+});
+
+const askPermission = async (data: Record<string, unknown>, value: string | null = 'Deny') => {
+  const requestApproval = vi.fn<ProviderInteractionPort['requestApproval']>().mockResolvedValue({ interactionId: 'per_ask', value });
+  sessionConfig.interactionPort.requestApproval = requestApproval;
+  event('permission.asked', { id: 'per_ask', ...data });
+  await vi.advanceTimersByTimeAsync(0);
+  expect(requestApproval).toHaveBeenCalledOnce();
+  return requestApproval.mock.calls[0][0];
+};
+
+it.each([
+  ['Allow once', 'once'], ['Always allow', 'always'], ['Deny', 'reject'], [null, 'reject'],
+] as const)('offers the native permission choices with the patterns Always allow saves, replying %s as %s', async (value, reply) => {
+  const request = await askPermission({
+    action: 'shell', resources: ['git status --short'], save: ['git status *', 'git diff *'],
+    metadata: { command: 'git status --short', resources: 'from metadata' },
+  }, value);
+  expect(request).toMatchObject({ toolName: TOOL_BASH, input: { command: 'git status --short', resources: ['git status --short'] } });
+  // Native order and the stable values external scripts answer with.
+  expect(request.decisionOptions?.map(option => [option.value, option.decision])).toEqual([
+    ['Allow once', 'allow'], ['Always allow', 'allow-always'], ['Deny', 'deny'],
+  ]);
+  const always = request.decisionOptions?.[1].description;
+  expect(always).toEqual(expect.stringContaining('git status *'));
+  expect(always).toEqual(expect.stringContaining('git diff *'));
+  expect(request.decisionOptions?.filter(option => option.description)).toHaveLength(1);
+  expect(requests.at(-1)).toBe('/api/session/ses_main/permission/per_ask/reply');
+  expect(bodies.at(-1)).toEqual({ decision: reply });
+});
+
+it('names the native action an unrestricted Always allow saves for the project', async () => {
+  const request = await askPermission({ action: 'webfetch', resources: ['https://example.com'], save: ['*'] });
+  expect(request.toolName).toBe(TOOL_WEB_FETCH);
+  // The saved rule is keyed on the raw native action, not the normalized tool name.
+  expect(request.decisionOptions?.[1]).toMatchObject({ value: 'Always allow', description: expect.stringContaining('webfetch') });
+});
+
+it('omits Always allow when the native request saves nothing, since native always then allows only once', async () => {
+  // A reply naming the omitted option is not one of the offered choices, so it rejects.
+  const request = await askPermission({ action: 'external_directory', resources: ['/outside/*'] }, 'Always allow');
+  expect(request.decisionOptions.map(option => option.value)).toEqual(['Allow once', 'Deny']);
+  expect(bodies.at(-1)).toEqual({ decision: 'reject' });
+});
+
+it('describes a permission request without a native action through translated text', async () => {
+  const request = await askPermission({ resources: ['/outside/*'] });
+  expect(request.description).toBe(t('chat.approval.permissionReason', { reason: '/outside/*' }));
 });

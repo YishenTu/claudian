@@ -10,8 +10,12 @@ export interface ProviderSelectionDefaults {
   readonly serviceTier?: string;
 }
 
-/** The application's current selections, as inputs to provider configuration decoding. */
-export interface ProviderSelectionInputs extends ProviderSelectionDefaults {
+/**
+ * The application's current selections, as inputs to provider configuration decoding. The
+ * permission mode is omitted: the current one may belong to another provider, so providers read
+ * their own through `providerSelection`.
+ */
+export interface ProviderSelectionInputs extends Omit<ProviderSelectionDefaults, 'permissionMode'> {
   /** Model ids the current, title-generation and saved selections reference; their metadata is kept. */
   readonly referencedModelIds: readonly string[];
 }
@@ -29,8 +33,8 @@ export interface ProviderRuntimeHost {
   readonly selection: ProviderSelectionInputs;
   /**
    * The selections the settings projection shows for this provider: each saved preference,
-   * else a current selection this provider can reuse, else its default, normalized and
-   * migrated by its model and permission policies.
+   * else a current selection this provider can reuse, else its default, normalized by its
+   * model and permission policies.
    */
   readonly providerSelection: ProviderSelectionDefaults;
   /**

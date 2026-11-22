@@ -4,6 +4,7 @@ import { normalize } from 'node:path';
 import { capturedSelections } from '@test/helpers/capturedSelections';
 import { TEST_CODEX_CATALOG, TEST_CODEX_MODEL } from '@test/helpers/codexModels';
 import { DesktopVault } from '@test/helpers/core/DesktopVault';
+import { answerApproval } from '@test/helpers/features/chat/approvalDecisionOptions';
 import { createProviderHostFixture } from '@test/helpers/providerRuntimeHost';
 import { CodexRuntimeHarness } from '@test/helpers/providers/codex/CodexRuntimeHarness';
 import { parseCodexSessionContent } from '@test/helpers/providers/codex/parseCodexSessionContent';
@@ -236,7 +237,7 @@ it.each(['cancel', 'dispose'] as const)('rejects concurrent runs and %s interrup
 
 it('routes approvals, questions and MCP confirmations with local identities and native replies', async () => {
   const interactionPort = {
-    requestApproval: vi.fn<ProviderInteractionPort['requestApproval']>(async query => ({ interactionId: query.interactionId, decision: 'allow' as const })),
+    requestApproval: vi.fn<ProviderInteractionPort['requestApproval']>(async query => answerApproval(query, 'allow')),
     askUserQuestion: vi.fn<ProviderInteractionPort['askUserQuestion']>(async query => {
       const confirmation = Array.isArray(query.input.questions)
         && query.input.questions.some((question: unknown) => typeof question === 'object' && question !== null && 'id' in question && question.id === 'mcp-elicitation-confirmation');

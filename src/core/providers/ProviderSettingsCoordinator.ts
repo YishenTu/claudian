@@ -1,4 +1,5 @@
 import { toProviderRuntimeModelId } from './modelSelection';
+import { resolvePermissionMode } from './permissionModes';
 import { ProviderRegistry } from './ProviderRegistry';
 import {
   ensureProviderProjectionMap,
@@ -30,31 +31,40 @@ function cloneProviderSettings(settings: Record<string, unknown>): Record<string
     savedProviderModel: normalizeProviderProjectionMap(settings.savedProviderModel),
     savedProviderEffort: normalizeProviderProjectionMap(settings.savedProviderEffort),
     savedProviderServiceTier: normalizeProviderProjectionMap(settings.savedProviderServiceTier),
-    savedProviderPermissionMode: normalizeProviderProjectionMap(settings.savedProviderPermissionMode),
+    savedProviderPermissionMode: normalizeSavedPermissionModes(settings.savedProviderPermissionMode),
   };
 }
 
-/** Keeps a known value, migrates a retired one, and fails any other stored value closed. */
+/**
+ * Saved modes per provider. A malformed entry is still a saved choice, so it becomes its provider's
+ * fail-closed fallback instead of disappearing and letting the current mode (possibly YOLO) through.
+ */
+function normalizeSavedPermissionModes(value: unknown): ProviderProjectionMap {
+  const normalized = normalizeProviderProjectionMap(value);
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return normalized;
+  const registered = ProviderRegistry.getRegisteredProviderIds();
+  for (const [providerId, saved] of Object.entries(value)) {
+    if (typeof saved === 'string' || !registered.includes(providerId)) continue;
+    const fallback = ProviderRegistry.getModelPolicy(providerId).permissionModes?.fallbackValue;
+    if (fallback !== undefined) normalized[providerId] = fallback;
+  }
+  return normalized;
+}
+
+/** Normalizes a saved projection map in place and returns it for writing. */
+function ensureSavedProjectionMap(settings: Record<string, unknown>, key: ProviderProjectionKey): ProviderProjectionMap {
+  if (key !== 'savedProviderPermissionMode') return ensureProviderProjectionMap(settings, key);
+  const normalized = normalizeSavedPermissionModes(settings[key]);
+  settings[key] = normalized;
+  return normalized;
+}
+
+/** Keeps a known value and fails any other stored value closed; a missing value stays missing. */
 function normalizeStoredPermissionMode(
   policy: ProviderPermissionModePolicy,
   value: unknown,
-  settings: Record<string, unknown>,
 ): string | undefined {
-  if (value === undefined) return undefined;
-  if (typeof value === 'string' && policy.values.includes(value)) return value;
-  const migrated = typeof value === 'string' ? policy.migrateValue?.(value, settings) : undefined;
-  return migrated !== undefined && policy.values.includes(migrated) ? migrated : policy.fallbackValue;
-}
-
-function normalizeToggleValue(
-  value: unknown,
-  allowedValues: Set<string>,
-): string | undefined {
-  if (typeof value !== 'string') {
-    return undefined;
-  }
-
-  return allowedValues.has(value) ? value : undefined;
+  return value === undefined ? undefined : resolvePermissionMode(policy, value);
 }
 
 function mergeProviderSettings(
@@ -174,7 +184,14 @@ export class ProviderSettingsCoordinator {
       return false;
     }
 
+    const switchesProvider = typeof settings.settingsProvider === 'string';
     settings.settingsProvider = next;
+    // The projected mode is the previous provider's choice; carrying it could hand another provider YOLO.
+    const policy = switchesProvider ? ProviderRegistry.getModelPolicy(next).permissionModes : undefined;
+    if (policy) {
+      const saved = normalizeSavedPermissionModes(settings.savedProviderPermissionMode)[next];
+      settings.permissionMode = resolvePermissionMode(policy, saved ?? policy.defaultValue);
+    }
     return true;
   }
 
@@ -232,7 +249,7 @@ export class ProviderSettingsCoordinator {
     } as const;
     for (const [field, savedKey] of Object.entries(fields)) {
       if (before[field] === after[field]) continue;
-      const saved = ensureProviderProjectionMap(settings, savedKey);
+      const saved = ensureSavedProjectionMap(settings, savedKey);
       if (typeof after[field] === 'string') saved[providerId] = after[field];
       else delete saved[providerId];
     }
@@ -255,7 +272,7 @@ export class ProviderSettingsCoordinator {
     const savedModel = ensureProviderProjectionMap(settings, 'savedProviderModel');
     const savedEffort = ensureProviderProjectionMap(settings, 'savedProviderEffort');
     const savedServiceTier = ensureProviderProjectionMap(settings, 'savedProviderServiceTier');
-    const savedPermissionMode = ensureProviderProjectionMap(settings, 'savedProviderPermissionMode');
+    const savedPermissionMode = ensureSavedProjectionMap(settings, 'savedProviderPermissionMode');
     const uiConfig = ProviderRegistry.getModelPolicy(providerId);
     const normalizedModel = normalizeProviderModel(
       uiConfig,
@@ -278,8 +295,10 @@ export class ProviderSettingsCoordinator {
     if (serviceTierToggle && typeof settings.serviceTier === 'string') {
       savedServiceTier[providerId] = settings.serviceTier;
     }
-    if (typeof settings.permissionMode === 'string' && uiConfig.permissionModes) {
-      savedPermissionMode[providerId] = settings.permissionMode;
+    // Saved modes change only through commitProviderSettingsChange; the top-level mode is their projection and may
+    // be stale until projected, so it only seeds a provider with no saved mode (pre-map settings).
+    if (uiConfig.permissionModes && savedPermissionMode[providerId] === undefined && typeof settings.permissionMode === 'string') {
+      savedPermissionMode[providerId] = resolvePermissionMode(uiConfig.permissionModes, settings.permissionMode);
     }
   }
 
@@ -294,7 +313,6 @@ export class ProviderSettingsCoordinator {
     const savedModel = projection('savedProviderModel');
     const savedEffort = projection('savedProviderEffort');
     const savedServiceTier = projection('savedProviderServiceTier');
-    const savedPermissionMode = projection('savedProviderPermissionMode');
 
     const shouldPreferCurrentProjection = providerId === getSettingsProviderId(settings);
     const currentModelRaw = typeof settings.model === 'string' ? settings.model : '';
@@ -368,26 +386,26 @@ export class ProviderSettingsCoordinator {
       settings.serviceTier = serviceTierPolicy?.options[0]?.value ?? 'default';
     }
 
-    const permissionPolicy = uiConfig.permissionModes ?? null;
-    if (!permissionPolicy) {
-      return;
-    }
+    this.projectPermissionMode(settings, providerId, uiConfig, shouldPreferCurrentProjection);
+  }
 
-    const currentPermissionMode = normalizeStoredPermissionMode(permissionPolicy, settings.permissionMode, settings);
-    const savedPermissionModeValue = normalizeStoredPermissionMode(
-      permissionPolicy,
-      savedPermissionMode?.[providerId],
-      settings,
-    );
-
-    const projectedPermissionMode = savedPermissionModeValue
-      ?? (shouldPreferCurrentProjection || settings.settingsProvider === providerId ? currentPermissionMode : undefined)
-      ?? normalizeToggleValue(permissionPolicy.defaultValue, new Set(permissionPolicy.values))
-      ?? currentPermissionMode;
-
-    if (projectedPermissionMode !== undefined) {
-      settings.permissionMode = projectedPermissionMode;
-    }
+  /** The saved mode, else the current mode when it is this provider's own, else the default; invalid values fail closed. */
+  private static projectPermissionMode(
+    settings: Record<string, unknown>,
+    providerId: ProviderId,
+    uiConfig: ProviderModelPolicy,
+    isSettingsProvider: boolean,
+  ): void {
+    const permissionPolicy = uiConfig.permissionModes;
+    if (!permissionPolicy) return;
+    const savedPermissionMode = normalizeSavedPermissionModes(settings.savedProviderPermissionMode);
+    // The current mode is reused only when it is this provider's own; another provider's could be YOLO.
+    const ownsCurrentPermissionMode = isSettingsProvider || settings.settingsProvider === providerId;
+    settings.permissionMode = normalizeStoredPermissionMode(permissionPolicy, savedPermissionMode[providerId])
+      ?? (ownsCurrentPermissionMode
+        ? normalizeStoredPermissionMode(permissionPolicy, settings.permissionMode)
+        : undefined)
+      ?? resolvePermissionMode(permissionPolicy, permissionPolicy.defaultValue);
   }
 
   static reconcileProviders(

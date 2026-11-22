@@ -1,67 +1,40 @@
-import type { ProviderApprovalDecisionOption } from '../../core/execution';
-import type { ApprovalDecision } from '../../core/types';
+import type { ProviderApprovalChoice } from '../../core/execution';
 import type {
   ACPPermissionOption,
-  ACPPermissionOptionKind,
   ACPRequestPermissionResponse,
 } from './types';
 
-const CANCELLED_RESPONSE: ACPRequestPermissionResponse = {
+export const CANCELLED_ACP_PERMISSION_RESPONSE: ACPRequestPermissionResponse = {
   outcome: { outcome: 'cancelled' },
 };
 
-export function mapACPApprovalDecision(
-  decision: ApprovalDecision,
+/** Claudian's own approval: the native one-time allow, else the persistent one, else cancelled. */
+export function allowACPPermission(
   options: readonly ACPPermissionOption[],
 ): ACPRequestPermissionResponse {
-  if (decision === 'allow') {
-    return selectPermissionOption(options, ['allow_once', 'allow_always']);
-  }
-
-  if (decision === 'allow-always') {
-    return selectPermissionOption(options, ['allow_always', 'allow_once']);
-  }
-
-  if (decision === 'deny') {
-    return selectPermissionOption(options, ['reject_once', 'reject_always']);
-  }
-
-  if (typeof decision === 'object' && decision.type === 'select-option') {
-    const option = options.find((entry) => entry.optionId === decision.value);
-    return option ? selectedResponse(option) : CANCELLED_RESPONSE;
-  }
-
-  return CANCELLED_RESPONSE;
+  const option = options.find(entry => entry.kind === 'allow_once')
+    ?? options.find(entry => entry.kind === 'allow_always');
+  return option ? selectedResponse(option) : CANCELLED_ACP_PERMISSION_RESPONSE;
 }
 
-export function buildACPApprovalDecisionOptions(
+/** Every native option in native order, each answering with its own optionId. */
+export function buildACPApprovalChoices(
   options: readonly ACPPermissionOption[],
   describeOption?: (option: ACPPermissionOption) => string | undefined,
-): ProviderApprovalDecisionOption[] {
+): ProviderApprovalChoice<ACPRequestPermissionResponse>[] {
   return options.map((option) => ({
-    ...(option.kind === 'allow_once'
-      ? { decision: 'allow' as const }
-      : option.kind === 'allow_always'
-      ? { decision: 'allow-always' as const }
-      : {}),
-    ...(describeOption ? { description: describeOption(option) } : {}),
-    label: option.name,
-    value: option.optionId,
+    option: {
+      ...(option.kind === 'allow_once'
+        ? { decision: 'allow' as const }
+        : option.kind === 'allow_always'
+        ? { decision: 'allow-always' as const }
+        : {}),
+      ...(describeOption ? { description: describeOption(option) } : {}),
+      label: option.name,
+      value: option.optionId,
+    },
+    reply: selectedResponse(option),
   }));
-}
-
-function selectPermissionOption(
-  options: readonly ACPPermissionOption[],
-  preferredKinds: readonly ACPPermissionOptionKind[],
-): ACPRequestPermissionResponse {
-  for (const kind of preferredKinds) {
-    const option = options.find((entry) => entry.kind === kind);
-    if (option) {
-      return selectedResponse(option);
-    }
-  }
-
-  return CANCELLED_RESPONSE;
 }
 
 function selectedResponse(option: ACPPermissionOption): ACPRequestPermissionResponse {

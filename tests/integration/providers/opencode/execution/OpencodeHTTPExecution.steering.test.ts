@@ -156,7 +156,7 @@ describe('native steering', () => {
     const coordinator: ChatExecutionCoordinator = new ChatExecutionCoordinator({
       lifecycleRegistry: new ProviderExecutionLifecycleRegistry(), resolveBackend: () => backend,
       persistence: env.repository, workingDirectory: env.root, createId: () => `execution-${++ids}`,
-      interactionPort: { requestApproval: async request => ({ interactionId: request.interactionId, decision: 'allow' }), askUserQuestion: async request => ({ interactionId: request.interactionId, answers: {} }), dismissInteraction() {} },
+      interactionPort: { requestApproval: async request => ({ interactionId: request.interactionId, value: 'Allow once' }), askUserQuestion: async request => ({ interactionId: request.interactionId, answers: {} }), dismissInteraction() {} },
       onRequestedEvent: event => {
         events.push(event);
         if (event.type === 'text_delta' && event.text === 'Working') steered ??= coordinator.steer(turn('user-steer', 'Also check tests'));

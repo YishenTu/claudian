@@ -210,7 +210,7 @@ describe('Pi session tools through the generated extension', () => {
     await drained;
   });
 
-  it.each<ProviderToolPolicy>([{ kind: 'read-only' }, { kind: 'passive' }, { kind: 'allow-list', names: ['claudian_send_message'] }])('denies calls under $kind even when the tool is named', async toolPolicy => {
+  it.each<ProviderToolPolicy>([{ kind: 'read-only' }, { kind: 'passive' }])('denies calls under $kind even when the tool is named', async toolPolicy => {
     await createSession();
     // The fixture can call registered tools despite native filtering, exercising the call-time guard.
     const { run, drained } = await openRun(toolPolicy);

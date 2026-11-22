@@ -70,7 +70,7 @@ async function createFixture(resume = false, approval?: (signal: AbortSignal) =>
     ...(resume ? { resumeSeed: { providerSessionId: 'ses_test' } } : {}),
     workingDirectory: root, lifecycle: 'ephemeral', nativePersistence: 'disabled-if-supported',
     interactionPort: {
-      requestApproval: async (request, signal) => { approvals.push(request); await approval?.(signal); return { interactionId: request.interactionId, decision: 'allow' }; },
+      requestApproval: async (request, signal) => { approvals.push(request); await approval?.(signal); return { interactionId: request.interactionId, value: 'Allow once' }; },
       askUserQuestion: async request => { questions.push(request); const questionsInput = request.input.questions; return { interactionId: request.interactionId, answers: resolveAnswers ? resolveAnswers(questionsInput) : { q0: Array.isArray(questionsInput) ? questionsInput[0].options[0].value : '' } }; },
       dismissInteraction() {},
     },

@@ -1858,16 +1858,12 @@ describe('PiExecutionBackend', () => {
     await harness.session.dispose();
   });
 
-  it('maps an explicit allow-list exactly and falls back to provider model settings', async () => {
+  it('falls back to provider model settings when the request names no model', async () => {
     const harness = (await createHarness());
     const run = harness.session.execute(createRequest({
       configuration: {
         reasoning: 'high',
         systemInstructions: { kind: 'main-agent' as const, instructions: 'Main Agent prompt.' },
-      },
-      toolPolicy: {
-        kind: 'allow-list',
-        names: ['read', 'grep'],
       },
     }));
     const eventsPromise = collect(run.events);
@@ -1877,10 +1873,6 @@ describe('PiExecutionBackend', () => {
     harness.kernels[0].emit({ type: 'agent_settled' });
     await eventsPromise;
 
-    expect(harness.kernels[0].launchSpec.args).toEqual(expect.arrayContaining([
-      '--tools',
-      'read,grep',
-    ]));
     expect(harness.kernels[0].requests).toContainEqual({
       payload: {
         modelId: 'claude-sonnet-4',

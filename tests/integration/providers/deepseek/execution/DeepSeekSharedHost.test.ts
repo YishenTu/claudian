@@ -531,13 +531,13 @@ it('routes session tools through one Host route to the claimed root, denying unk
   expect(endpoint.route.dispose).toHaveBeenCalledTimes(1);
 });
 
-it.each(['passive', 'read-only', 'allow-list'] as const)('denies %s at call time even when the native Agent has session tools', async kind => {
+it.each(['passive', 'read-only'] as const)('denies %s at call time even when the native Agent has session tools', async kind => {
   const endpoint = sessionToolEndpoint();
   const list = vi.fn(async () => ({ sessions: [] }));
   const input = request('Prompt');
   const turn = await startSessionToolTurn(open(port(), undefined, 'persistent', { list, send: vi.fn(), read: vi.fn() }), 'alpha', input);
   // Native retains a chat preset; policy must be checked by the dispatcher, independently of native permissions.
-  Object.assign(input.toolPolicy, { kind, ...(kind === 'allow-list' ? { names: ['claudian_list_destinations'] } : {}) });
+  Object.assign(input.toolPolicy, { kind });
   expect(await endpoint.call('alpha')).toMatchObject({ isError: true });
   expect(list).not.toHaveBeenCalled();
   emit('alpha', 'turn/end', { turn: seq, reason: { kind: 'completed' } });

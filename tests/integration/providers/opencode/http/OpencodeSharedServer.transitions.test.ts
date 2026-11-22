@@ -30,7 +30,7 @@ it('retains the current server after launch changes while disabled and re-enabli
 it('keeps old native work through a launch transition, drains it, and resumes on the replacement', async () => {
   const f = await createFixture();
   const config: ProviderSessionConfig = { workingDirectory: f.root, lifecycle: 'persistent', nativePersistence: 'provider-default',
-    interactionPort: { requestApproval: async r => ({ interactionId: r.interactionId, decision: 'deny' }), askUserQuestion: async r => ({ interactionId: r.interactionId, answers: null }), dismissInteraction() {} } };
+    interactionPort: { requestApproval: async r => ({ interactionId: r.interactionId, value: 'Deny' }), askUserQuestion: async r => ({ interactionId: r.interactionId, answers: null }), dismissInteraction() {} } };
   await f.workspace.metadataService.loadCatalog();
   const owned = f.plugin.executionLifecycleRegistry.acquire(f.backend, config, 'chat');
   const events: ProviderExecutionEvent[] = [];
@@ -70,7 +70,7 @@ it('keeps old native work through a launch transition, drains it, and resumes on
 it('fences a new turn on a retained idle session until the settings transition commits', async () => {
   const f = await createFixture();
   const config: ProviderSessionConfig = { workingDirectory: f.root, lifecycle: 'persistent', nativePersistence: 'provider-default',
-    interactionPort: { requestApproval: async r => ({ interactionId: r.interactionId, decision: 'deny' }), askUserQuestion: async r => ({ interactionId: r.interactionId, answers: null }), dismissInteraction() {} } };
+    interactionPort: { requestApproval: async r => ({ interactionId: r.interactionId, value: 'Deny' }), askUserQuestion: async r => ({ interactionId: r.interactionId, answers: null }), dismissInteraction() {} } };
   const owned = f.plugin.executionLifecycleRegistry.acquire(f.backend, config, 'chat');
   let release!: () => void;
   const hold = new Promise<void>(resolve => { release = resolve; });
@@ -116,7 +116,7 @@ it('rejects an installed OpenCode v1 CLI for chat, discovery and forks while the
     });
     owned = f.plugin.executionLifecycleRegistry.acquire(f.backend, {
       workingDirectory: f.root, lifecycle: 'persistent', nativePersistence: 'provider-default',
-      interactionPort: { requestApproval: async r => ({ interactionId: r.interactionId, decision: 'deny' }), askUserQuestion: async r => ({ interactionId: r.interactionId, answers: null }), dismissInteraction() {} },
+      interactionPort: { requestApproval: async r => ({ interactionId: r.interactionId, value: 'Deny' }), askUserQuestion: async r => ({ interactionId: r.interactionId, answers: null }), dismissInteraction() {} },
     } satisfies ProviderSessionConfig, 'chat');
     const events: ProviderExecutionEvent[] = [];
     for await (const event of owned.session.execute(turn('v1')).events) events.push(event);

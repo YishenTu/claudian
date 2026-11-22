@@ -603,9 +603,30 @@ export interface FileChangeApprovalResponse {
 // -- Permissions approval (item/permissions/requestApproval) -----------------
 
 export interface AdditionalFileSystemPermissions {
+  /** Codex 0.171 deprecates `read`/`write` in favor of `entries`. */
   read?: string[] | null;
   write?: string[] | null;
+  globScanMaxDepth?: number | null;
+  entries?: FileSystemSandboxEntry[] | null;
 }
+
+export interface FileSystemSandboxEntry {
+  path: FileSystemPath;
+  access: 'read' | 'write' | 'deny';
+}
+
+export type FileSystemPath =
+  | { type: 'path'; path: string }
+  | { type: 'glob_pattern'; pattern: string }
+  | { type: 'special'; value: FileSystemSpecialPath };
+
+export type FileSystemSpecialPath =
+  | { kind: 'root' }
+  | { kind: 'minimal' }
+  | { kind: 'project_roots'; subpath: string | null }
+  | { kind: 'tmpdir' }
+  | { kind: 'slash_tmp' }
+  | { kind: 'unknown'; path: string; subpath: string | null };
 
 export interface AdditionalNetworkPermissions {
   enabled?: boolean | null;

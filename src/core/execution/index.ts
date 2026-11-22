@@ -86,6 +86,7 @@ export {
   type ProviderExecutionSession,
 } from './ProviderExecutionSession';
 export {
+  type ProviderApprovalChoice,
   type ProviderApprovalDecisionOption,
   type ProviderApprovalInteractionRequest,
   type ProviderApprovalInteractionResponse,
@@ -94,6 +95,7 @@ export {
   type ProviderInteractionPort,
   type ProviderQuestionInteractionRequest,
   type ProviderQuestionInteractionResponse,
+  resolveApprovalChoice,
 } from './ProviderInteractionPort';
 export {
   type ProviderSessionInvalidation,

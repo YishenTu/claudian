@@ -25,9 +25,10 @@ import {
   type ACPSessionNotification,
   ACPToolStreamAdapter,
   type ACPUsage,
+  allowACPPermission,
   buildACPUsageInfo,
+  CANCELLED_ACP_PERMISSION_RESPONSE,
   isKnownACPSessionUpdate,
-  mapACPApprovalDecision,
 } from '@/providers/acp';
 
 import {
@@ -332,22 +333,6 @@ RewindableExecutionSession {
   }
 
   async #performExecution(active: ActiveExecution): Promise<void> {
-    if (active.request.toolPolicy.kind === 'allow-list') {
-      this.#updateSnapshot('invalidated', {
-        message: 'Exact Grok Build tool allow-list enforcement is unavailable.',
-        reason: 'configuration-changed',
-        recoverable: false,
-      });
-      this.#emitCurrentSnapshot();
-      active.abortController.abort();
-      this.#endRun(active, {
-        category: 'configuration',
-        message: 'Grok Build does not support reliable exact allow-list enforcement.',
-        recoverable: false,
-        type: 'execution_error',
-      });
-      return;
-    }
     let unsubscribeClose: (() => void) | undefined;
     try {
       assertGrokModelAvailable(this.host, active.request.configuration.model);
@@ -449,13 +434,13 @@ RewindableExecutionSession {
         if (isSessionTool(sessionTool)) {
           return Promise.resolve(
             !active || !this.config.sessionTools || signal?.aborted || this.#isCancellationRequested(active)
-              ? { outcome: { outcome: 'cancelled' } }
-              : mapACPApprovalDecision('allow', request.options),
+              ? CANCELLED_ACP_PERMISSION_RESPONSE
+              : allowACPPermission(request.options),
           );
         }
         const policy = this.active?.request.toolPolicy.kind;
         if (policy === 'passive' || policy === 'read-only') {
-          return Promise.resolve({ outcome: { outcome: 'cancelled' } });
+          return Promise.resolve(CANCELLED_ACP_PERMISSION_RESPONSE);
         }
         if (active && shouldAutoApproveGrokPermission(
           active.request.configuration.permissionMode,
@@ -463,8 +448,8 @@ RewindableExecutionSession {
         )) {
           return Promise.resolve(
             signal?.aborted || this.#isCancellationRequested(active)
-              ? { outcome: { outcome: 'cancelled' } }
-              : mapACPApprovalDecision('allow', request.options),
+              ? CANCELLED_ACP_PERMISSION_RESPONSE
+              : allowACPPermission(request.options),
           );
         }
         return this.interactionController.requestPermission(
@@ -1262,8 +1247,7 @@ function buildSessionMeta(
 function resolveGrokPermissionMeta(
   request: ProviderExecutionRequest,
 ): { autoMode: boolean; yoloMode: boolean } {
-  const yoloMode = request.configuration.permissionMode === 'yolo'
-    || request.toolPolicy.kind === 'unrestricted';
+  const yoloMode = request.configuration.permissionMode === 'yolo';
   return {
     autoMode: !yoloMode && request.configuration.permissionMode === 'auto',
     yoloMode,

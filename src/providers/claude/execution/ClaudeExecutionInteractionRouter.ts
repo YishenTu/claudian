@@ -8,9 +8,10 @@ import { t } from '@/i18n/i18n';
 import {
   type PendingInteraction,
   PendingInteractionLedger,
-  type ProviderApprovalDecisionOption,
+  type ProviderApprovalChoice,
   type ProviderInteractionDismissReason,
   type ProviderInteractionPort,
+  resolveApprovalChoice,
 } from '../../../core/execution';
 import { getActionDescription } from '../../../core/security/approvalRules';
 import {
@@ -105,13 +106,16 @@ export class ClaudeExecutionInteractionRouter {
       }
 
       const canPersistApproval = !options.suppressAlwaysAllowRule && Boolean(options.suggestions?.length);
-      const decisionOptions: ProviderApprovalDecisionOption[] = [
-        { label: t('chat.approval.deny'), value: 'deny', decision: 'deny' },
-        { label: t('chat.approval.allowOnce'), value: 'allow', decision: 'allow' },
+      const choices: ProviderApprovalChoice<'deny' | 'allow' | 'allow-always'>[] = [
+        { option: { label: t('chat.approval.deny'), value: 'deny', decision: 'deny' }, reply: 'deny' },
+        { option: { label: t('chat.approval.allowOnce'), value: 'allow', decision: 'allow' }, reply: 'allow' },
       ];
       // Claude Code owns how suggested permission updates are persisted.
       if (canPersistApproval) {
-        decisionOptions.push({ label: t('chat.approval.alwaysAllow'), value: 'allow-always', decision: 'allow-always' });
+        choices.push({
+          option: { label: t('chat.approval.alwaysAllow'), value: 'allow-always', decision: 'allow-always' },
+          reply: 'allow-always',
+        });
       }
       const response = await this.deps.interactionPort.requestApproval({
         ...identity,
@@ -121,26 +125,26 @@ export class ClaudeExecutionInteractionRouter {
         description: getActionDescription(toolName, input),
         decisionReason: options.decisionReason,
         blockedPath: options.blockedPath,
-        decisionOptions,
+        decisionOptions: choices.map(choice => choice.option),
       }, options.signal);
       this.#assertCurrentResponse(pending, response.interactionId);
       dismissReason = 'resolved';
-      const decision = response.decision;
-      if (decision === 'cancel') {
+      if (response.value === null) {
         return {
           behavior: 'deny',
           message: 'User interrupted.',
           interrupt: true,
         };
       }
-      if (decision === 'allow' || (decision === 'allow-always' && !canPersistApproval)) {
+      const reply = resolveApprovalChoice(choices, response.value);
+      if (reply === 'allow') {
         return {
           behavior: 'allow',
           updatedInput: input,
           decisionClassification: 'user_temporary',
         };
       }
-      if (decision === 'allow-always') {
+      if (reply === 'allow-always') {
         return {
           behavior: 'allow',
           updatedInput: input,

@@ -18,7 +18,6 @@ export interface BuildPiLaunchSpecParams {
   noSession?: boolean;
   noTools?: boolean;
   readOnlyTools?: boolean;
-  tools?: readonly string[];
   providerState?: PiProviderState | null;
   settings: PiProviderSettings;
   systemPrompt?: string;
@@ -64,8 +63,6 @@ export function buildPiLaunchSpec(params: BuildPiLaunchSpecParams): PiLaunchSpec
 
   if (params.noTools) {
     args.push('--no-tools');
-  } else if (params.tools) {
-    args.push('--tools', [...new Set([...params.tools, ...(params.enableSessionTools ? SESSION_TOOLS : [])])].join(','));
   } else if (params.readOnlyTools) {
     args.push('--tools', [READONLY_TOOLS, ...(params.enableSessionTools ? SESSION_TOOLS : [])].join(','));
   }

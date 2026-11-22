@@ -3,6 +3,7 @@ import '@/providers';
 
 import { axe } from '@test/helpers/accessibility';
 import { claudeCatalogFixture } from '@test/helpers/claudeModels';
+import { approvalDecisionOptions } from '@test/helpers/features/chat/approvalDecisionOptions';
 import { createChatFeatureHost } from '@test/helpers/features/chat/ChatFeatureHostFixture';
 import { createProjectsFake } from '@test/helpers/features/chat/ProjectsFake';
 import { createSessionRuntimePool } from '@test/helpers/features/chat/SessionRuntimePoolHarness';
@@ -98,6 +99,7 @@ it('badges the tab and notifies the tab bar while its side chat awaits approval'
     expect(manager.getTabBarItems()[0].attention).toBeNull();
 
     const approval = native.config.interactionPort.requestApproval({
+      decisionOptions: approvalDecisionOptions(),
       interactionId: 'side-approval', sessionInstanceId: native.sessionInstanceId, turnId: native.activeTurnId,
       kind: 'approval', toolName: 'Read', input: {}, description: 'Read note',
     }, new AbortController().signal);

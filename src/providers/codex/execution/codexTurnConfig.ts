@@ -4,6 +4,7 @@ import type { ProviderExecutionRequest } from '@/core/execution';
 import { buildContextFromHistory } from '@/core/prompt/historyContext';
 import { appendExecutionContext } from '@/core/prompt/promptContext';
 import { buildRecoveryPrompt } from '@/core/prompt/recoveryPrompt';
+import { resolvePermissionMode } from '@/core/providers/permissionModes';
 import type { ProviderRuntimeHost, ProviderSelectionDefaults } from '@/core/providers/ProviderRuntimeHost';
 import type { ChatMessage } from '@/core/types';
 import { type CodexProviderSettings, type CodexSafeMode, decodeCodexConfig } from '@/providers/codex/config';
@@ -15,6 +16,7 @@ import {
   resolveCodexReasoningEffort,
 } from '@/providers/codex/models';
 import { toCodexRuntimeModelId } from '@/providers/codex/modelSelection';
+import { CODEX_PERMISSION_MODE_POLICY } from '@/providers/codex/permissionModes';
 import type { ConfigReadResult, SandboxPolicy } from '@/providers/codex/runtime/codexAppServerTypes';
 
 const PASSIVE_INSTRUCTIONS =
@@ -31,12 +33,12 @@ export interface CodexPolicy {
 /** The inputs a Codex turn resolves against when its request leaves a field unset. */
 interface CodexTurnSettings {
   readonly codex: CodexProviderSettings;
-  /** Saved Codex preferences, else the current selections. */
+  /** Saved Codex preferences, else the current selections; the permission mode is Codex's projected one. */
   readonly selection: ProviderSelectionDefaults;
 }
 
 export function resolveCodexTurnSettings(
-  host: Pick<ProviderRuntimeHost, 'config' | 'savedSelection' | 'selection'>,
+  host: Pick<ProviderRuntimeHost, 'config' | 'providerSelection' | 'savedSelection' | 'selection'>,
 ): CodexTurnSettings {
   const { savedSelection: saved, selection: current } = host;
   return {
@@ -45,7 +47,9 @@ export function resolveCodexTurnSettings(
       model: saved.model ?? current.model,
       effortLevel: saved.effortLevel ?? current.effortLevel,
       serviceTier: saved.serviceTier ?? current.serviceTier,
-      permissionMode: saved.permissionMode ?? current.permissionMode,
+      // The current selection may belong to another provider; the projection never carries it over.
+      // Read only when a request leaves its mode unset.
+      get permissionMode() { return host.providerSelection.permissionMode; },
     },
   };
 }
@@ -111,7 +115,7 @@ export function resolveCodexTurnPolicy(
   settings: CodexTurnSettings,
 ): CodexPolicy {
   const toolPolicy = request.toolPolicy;
-  if (toolPolicy.kind === 'passive' || toolPolicy.kind === 'read-only' || toolPolicy.kind === 'allow-list') {
+  if (toolPolicy.kind === 'passive' || toolPolicy.kind === 'read-only') {
     return {
       approvalPolicy: 'never',
       approvalsReviewer: 'user',
@@ -119,19 +123,11 @@ export function resolveCodexTurnPolicy(
       sandboxPolicy: strictReadOnlySandbox(),
     };
   }
-  if (toolPolicy.kind === 'unrestricted') {
-    return {
-      approvalPolicy: 'never',
-      approvalsReviewer: 'user',
-      sandbox: 'danger-full-access',
-      sandboxPolicy: { type: 'dangerFullAccess' },
-    };
-  }
 
-  const permissionMode =
-    normalizeString(request.configuration.permissionMode)
-    ?? normalizeString(settings.selection.permissionMode)
-    ?? 'auto-review';
+  const permissionMode = resolvePermissionMode(
+    CODEX_PERMISSION_MODE_POLICY,
+    normalizeString(request.configuration.permissionMode) ?? settings.selection.permissionMode,
+  );
   const safeMode = settings.codex.safeMode;
   const sandboxConfig = resolveCodexSandboxConfig(permissionMode, safeMode);
   return sandboxConfig.sandbox === 'danger-full-access'

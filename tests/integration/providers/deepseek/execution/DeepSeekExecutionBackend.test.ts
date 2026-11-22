@@ -1669,13 +1669,16 @@ it('verifies permission once per binding and after mode changes rather than read
     await collect(session.execute({ ...input, configuration: { ...input.configuration, permissionMode: mode } }).events, events);
     expect(events.at(-1)?.type).toBe('turn_completed');
     await until(() => !session.hasBackgroundWork?.());
+    return events;
   };
   await execute('normal');
   const initialPages = peer.calls.filter(c => c.method === 'session/page').length;
   expect(initialPages).toBeGreaterThan(0);
   await execute('normal');
   expect(peer.calls.filter(c => c.method === 'session/page')).toHaveLength(initialPages);
-  await execute('yolo');
+  const applied = await execute('yolo');
+  // The mode Claudian applied is not a native change: reporting it could overwrite a newer pick made meanwhile.
+  expect(applied).not.toContainEqual(expect.objectContaining({ type: 'permission_mode_changed' }));
   const changedPages = peer.calls.filter(c => c.method === 'session/page').length;
   expect(changedPages).toBeGreaterThan(initialPages);
   expect(peer.calls.filter(c => c.method === 'commands/execute')).toMatchObject([{ args: { line: '/permission danger-full-access' } }]);
@@ -1719,8 +1722,6 @@ const resumedProjection = (values: Record<string, unknown>) => (_args: Record<st
   });
 
 it.each<AdmissionCase>([
-  { name: 'an arbitrary tool allow-list', input: input => ({ ...input, toolPolicy: { kind: 'allow-list', names: ['Read'] } }),
-    error: { category: 'configuration', message: expect.stringContaining('allow-lists') }, sends: 0, status: 'idle' },
   { name: 'an unsupported permission mode', input: withConfiguration({ permissionMode: 'plan' }),
     error: { category: 'configuration', message: expect.stringContaining('Unsupported DeepSeek permission mode') }, sends: 0, status: 'idle' },
   { name: 'reasoning without a model', input: withConfiguration({ reasoning: 'high' }),

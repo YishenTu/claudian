@@ -1,5 +1,6 @@
 /** @vitest-environment jsdom */
 import { useNextTaskAnimationFrames } from '@test/helpers/dom/animationFrames';
+import { approvalDecisionOptions } from '@test/helpers/features/chat/approvalDecisionOptions';
 import type { ChatFeatureHostOverrides } from '@test/helpers/features/chat/ChatFeatureHostFixture';
 import { registerChatTestProvider } from '@test/helpers/features/chat/ChatProviderFixture';
 import { conversationRecord, createManager, createPlugin, deferred, holdHistory } from '@test/helpers/features/chat/TabManagerIntegrationHarness';
@@ -626,7 +627,9 @@ async function makeBusy(tab: AssembledTabRuntime, kind: 'turn' | 'background' | 
   }
   if (kind === 'interaction') {
     const abort = new AbortController();
-    const pending = tab.session.runtime.model.inlinePrompts.requestApproval('waiting', 'Read', {}, 'Read note', undefined, abort.signal);
+    const pending = tab.session.runtime.model.inlinePrompts.requestApproval({
+      interactionId: 'waiting', toolName: 'Read', description: 'Read note', decisionOptions: approvalDecisionOptions(),
+    }, abort.signal);
     expect(tab.session.runtime.hasPendingInteraction).toBe(true);
     return async () => { abort.abort(); await pending; };
   }

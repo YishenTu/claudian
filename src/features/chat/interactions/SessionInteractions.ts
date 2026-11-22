@@ -1,5 +1,6 @@
 import { Notice } from 'obsidian';
 
+import type { ProviderApprovalInteractionRequest } from '@/core/execution';
 import { TOOL_ASK_USER_QUESTION } from '@/core/tools/toolNames';
 import type { ApprovalDecision, AskUserAnswers, ToolCallInfo } from '@/core/types';
 import { askOptionValue, parseAskUserQuestions, validateAskUserAnswers } from '@/features/chat/interactions/askUserQuestions';
@@ -8,27 +9,11 @@ import { QuestionInteractionState } from '@/features/chat/interactions/QuestionI
 import { setToolIcon } from '@/features/chat/rendering/tools/toolContentPrimitives';
 import { t } from '@/i18n/i18n';
 
-export interface InlineApprovalDecisionOption {
-  label: string;
-  description?: string;
-  value: string;
-  decision?: ApprovalDecision;
-}
-
-export interface InlineApprovalOptions {
-  decisionReason?: string;
-  blockedPath?: string;
-  agentID?: string;
-  decisionOptions?: InlineApprovalDecisionOption[];
-}
-
-function getDefaultApprovalDecisionOptions(): InlineApprovalDecisionOption[] {
-  return [
-    { decision: 'deny', label: t('chat.approval.deny'), value: 'Deny' },
-    { decision: 'allow', label: t('chat.approval.allowOnce'), value: 'Allow once' },
-    { decision: 'allow-always', label: t('chat.approval.alwaysAllow'), value: 'Always allow' },
-  ];
-}
+/** What the approval prompt shows; the answer is the selected option's value. */
+export type ApprovalPromptRequest = Pick<
+  ProviderApprovalInteractionRequest,
+  'interactionId' | 'toolName' | 'description' | 'decisionReason' | 'blockedPath' | 'decisionOptions'
+>;
 
 export interface SessionInteractionsDeps {
   /** Element that receives the inline prompt. */
@@ -68,15 +53,7 @@ export interface PendingInteractionSnapshot {
   readonly description?: string;
   readonly decisionReason?: string;
   readonly blockedPath?: string;
-  readonly agentId?: string;
   readonly questions: readonly PendingInteractionQuestion[];
-}
-
-interface ApprovalRequestInfo {
-  readonly toolName: string;
-  readonly description: string;
-  readonly options: InlineApprovalOptions | undefined;
-  readonly decisions: ReadonlyMap<string, ApprovalDecision>;
 }
 
 interface AsyncQuestionDelivery {
@@ -84,18 +61,24 @@ interface AsyncQuestionDelivery {
   onChange(tool: ToolCallInfo): void;
 }
 
-interface PendingPrompt {
+/** What a pending prompt asks for; each kind carries only its own data. */
+type PendingPromptKind =
+  | { readonly kind: 'question' }
+  | { readonly kind: 'async-question'; readonly asyncQuestion: { tool: ToolCallInfo; readonly abort: AbortController } }
+  | { readonly kind: 'approval'; readonly approval: ApprovalPromptRequest };
+
+type InlinePromptOptions = PendingPromptKind & {
   readonly input: Record<string, unknown>;
-  readonly state: QuestionInteractionState;
-  readonly config?: InlineAskQuestionConfig;
-  readonly createHeader?: (parent: HTMLElement) => HTMLElement;
-  readonly resolve: (answers: Record<string, string | string[]> | null) => void;
   readonly signal?: AbortSignal;
+  readonly config?: InlineAskQuestionConfig;
+};
+
+type PendingPrompt = InlinePromptOptions & {
+  readonly state: QuestionInteractionState;
+  readonly resolve: (answers: Record<string, string | string[]> | null) => void;
   readonly abort: () => void;
   inline: InlineAskUserQuestion | null;
-  readonly asyncQuestion?: { tool: ToolCallInfo; abort: AbortController };
-  readonly approval?: ApprovalRequestInfo;
-}
+};
 
 /** Session-owned requests, answer drafts and delivery; widgets are optional presentation. */
 export class SessionInteractions {
@@ -124,7 +107,7 @@ export class SessionInteractions {
     const id = `async-question:${tool.id}`;
     const current = this.pending.get(id);
     const expired = tool.questionStatus === 'expired' || tool.status === 'error' || tool.status === 'blocked';
-    if (current?.asyncQuestion) {
+    if (current?.kind === 'async-question') {
       current.asyncQuestion.tool = tool;
       if (expired || tool.resolvedAnswers) this.dismiss(id);
       return;
@@ -135,110 +118,61 @@ export class SessionInteractions {
     const question = { tool, abort: new AbortController() };
     tool.questionStatus = 'pending';
     delivery.onChange(tool);
-    void this.#showInline(id, tool.input, question.abort.signal, {
-      onSubmit: async answers => {
-        if (question.abort.signal.aborted) throw new Error(t('chat.questions.expired'));
-        await delivery.answer(question.tool, answers, question.abort.signal);
-        if (!question.abort.signal.aborted) question.tool.resolvedAnswers = answers;
+    void this.#showInline(id, {
+      kind: 'async-question',
+      asyncQuestion: question,
+      input: tool.input,
+      signal: question.abort.signal,
+      config: {
+        onSubmit: async answers => {
+          if (question.abort.signal.aborted) throw new Error(t('chat.questions.expired'));
+          await delivery.answer(question.tool, answers, question.abort.signal);
+          if (!question.abort.signal.aborted) question.tool.resolvedAnswers = answers;
+        },
       },
-    }, undefined, question);
+    });
   }
 
   /** Stop withdraws submitted answers; questions still waiting for input remain open. */
   cancelAsyncSubmissions(): void {
     for (const [id, entry] of this.pending) {
-      if (entry.asyncQuestion && entry.state.submitting) this.dismiss(id);
+      if (entry.kind === 'async-question' && entry.state.submitting) this.dismiss(id);
     }
   }
 
   expireAsyncQuestions(): void {
     for (const [id, entry] of this.pending) {
-      if (entry.asyncQuestion) this.dismiss(id);
+      if (entry.kind === 'async-question') this.dismiss(id);
     }
   }
 
-  async requestApproval(
-    interactionId: string,
-    toolName: string,
-    _input: Record<string, unknown>,
-    description: string,
-    approvalOptions?: InlineApprovalOptions,
-    signal?: AbortSignal,
-  ): Promise<ApprovalDecision> {
-    const createHeader = (parentEl: HTMLElement): HTMLElement => {
-      const headerEl = parentEl.createDiv({ cls: 'claudian-ask-approval-info' });
-      headerEl.remove();
-
-      const toolEl = headerEl.createDiv({ cls: 'claudian-ask-approval-tool' });
-      const iconEl = toolEl.createSpan({ cls: 'claudian-ask-approval-icon' });
-      iconEl.setAttribute('aria-hidden', 'true');
-      setToolIcon(iconEl, toolName);
-      toolEl.createSpan({ cls: 'claudian-ask-approval-tool-name', text: toolName });
-
-      if (approvalOptions?.decisionReason) {
-        headerEl.createDiv({ cls: 'claudian-ask-approval-reason', text: approvalOptions.decisionReason });
-      }
-      if (approvalOptions?.blockedPath) {
-        headerEl.createDiv({ cls: 'claudian-ask-approval-blocked-path', text: approvalOptions.blockedPath });
-      }
-      if (approvalOptions?.agentID) {
-        headerEl.createDiv({ cls: 'claudian-ask-approval-agent', text: t('chat.agent', { agent: approvalOptions.agentID }) });
-      }
-
-      const descriptionEl = headerEl.createDiv({
-        cls: 'claudian-ask-approval-desc',
-        text: description,
-      });
-      descriptionEl.setAttribute('aria-label', t('chat.approval.details', { tool: toolName }));
-      descriptionEl.setAttribute('role', 'region');
-      descriptionEl.setAttribute('tabindex', '0');
-      descriptionEl.addEventListener('keydown', (event) => {
-        if (
-          event.key === 'ArrowDown'
-          || event.key === 'ArrowUp'
-          || event.key === 'Enter'
-        ) {
-          event.stopPropagation();
-        }
-      });
-
-      return headerEl;
-    };
-
-    const decisionOptions = approvalOptions?.decisionOptions ?? getDefaultApprovalDecisionOptions();
-    const optionDecisionMap = new Map<string, ApprovalDecision>();
-    const questionOptions = decisionOptions.map((option, index) => {
-      const value = option.value || `approval-option-${index}`;
-      if (option.decision) {
-        optionDecisionMap.set(value, option.decision);
-      }
-      return {
-        description: option.description ?? '',
-        label: option.label,
-        value,
-      };
+  /** Resolves with the selected option's value, or null when the prompt is dismissed. */
+  async requestApproval(request: ApprovalPromptRequest, signal?: AbortSignal): Promise<string | null> {
+    const result = await this.#showInline(request.interactionId, {
+      kind: 'approval',
+      approval: request,
+      input: { questions: [{
+        isOther: false,
+        isSecret: false,
+        options: request.decisionOptions.map(option => ({
+          description: option.description ?? '',
+          label: option.label,
+          value: option.value,
+        })),
+        question: t('chat.approval.question'),
+      }] },
+      signal,
+      config: { immediateSelect: true, showCustomInput: false, title: t('chat.approval.title') },
     });
 
-    const result = await this.#showInline(
-      interactionId,
-      { questions: [{ isOther: false, isSecret: false, options: questionOptions, question: t('chat.approval.question') }] },
-      signal,
-      { immediateSelect: true, showCustomInput: false, title: t('chat.approval.title') },
-      createHeader,
-      undefined,
-      { toolName, description, options: approvalOptions, decisions: optionDecisionMap },
-    );
-
-    if (!result) return 'cancel';
+    if (!result) return null;
     const selected = Object.values(result)[0];
     const selectedValue = Array.isArray(selected) ? selected[0] : selected;
     if (typeof selectedValue !== 'string') {
       new Notice(t('chat.approval.unexpectedSelection', { value: String(selectedValue) }));
-      return 'cancel';
+      return null;
     }
-
-    return optionDecisionMap.get(selectedValue)
-      ?? { type: 'select-option', value: selectedValue };
+    return selectedValue;
   }
 
   askUserQuestion(
@@ -247,12 +181,7 @@ export class SessionInteractions {
     signal?: AbortSignal,
     config?: InlineAskQuestionConfig,
   ): Promise<Record<string, string | string[]> | null> {
-    return this.#showInline(
-      interactionId,
-      input,
-      signal,
-      config,
-    );
+    return this.#showInline(interactionId, { kind: 'question', input, signal, config });
   }
 
   get pendingCount(): number { return this.pending.size; }
@@ -268,7 +197,7 @@ export class SessionInteractions {
    */
   async answer(interactionId: string, answers: AskUserAnswers): Promise<void> {
     const entry = this.pending.get(interactionId);
-    if (!entry || entry.state.resolved || entry.state.submitting) {
+    if (!entry?.state.acceptsAnswer) {
       throw new Error(`Interaction "${interactionId}" is not awaiting an answer`);
     }
     const error = validateAskUserAnswers(parseAskUserQuestions(entry.input), answers, entry.config?.showCustomInput !== false);
@@ -276,15 +205,12 @@ export class SessionInteractions {
     const result = structuredClone(answers);
     const submit = entry.config?.onSubmit;
     if (submit) {
-      entry.state.submitting = true;
-      entry.state.submissionError = '';
+      entry.state.beginSubmit();
       entry.state.onChange?.();
       try {
         await submit(result);
       } catch (submitError) {
-        if (this.pending.get(interactionId) === entry) {
-          entry.state.submitting = false;
-          entry.state.submissionError = submitError instanceof Error ? submitError.message : t('chat.questions.sendFailed');
+        if (entry.state.failSubmit(submitError instanceof Error ? submitError.message : t('chat.questions.sendFailed'))) {
           entry.state.onChange?.();
         }
         throw submitError;
@@ -322,19 +248,15 @@ export class SessionInteractions {
 
   #showInline(
     interactionId: string,
-    input: Record<string, unknown>,
-    signal?: AbortSignal,
-    config?: InlineAskQuestionConfig,
-    createHeader?: (parent: HTMLElement) => HTMLElement,
-    asyncQuestion?: PendingPrompt['asyncQuestion'],
-    approval?: ApprovalRequestInfo,
+    options: InlinePromptOptions,
   ): Promise<Record<string, string | string[]> | null> {
+    const { signal } = options;
     if (signal?.aborted) return Promise.resolve(null);
     if (this.pending.has(interactionId)) return Promise.reject(new Error(`Duplicate inline interaction: ${interactionId}`));
-    const snapshot = structuredClone(input);
+    const input = structuredClone(options.input);
     return new Promise(resolve => {
       const entry: PendingPrompt = {
-        input: snapshot, state: new QuestionInteractionState(), config, createHeader, resolve, signal, asyncQuestion, approval,
+        ...options, input, state: new QuestionInteractionState(), resolve,
         abort: () => this.#finish(interactionId, entry, null), inline: null,
       };
       entry.state.onChange = () => entry.inline?.refresh();
@@ -353,7 +275,7 @@ export class SessionInteractions {
     this.#restorePresentation = this.deps.onBeforeShow?.();
     const inline = new InlineAskUserQuestion(parent, entry.input,
       result => this.#finish(id, entry, result), undefined,
-      { ...entry.config, state: entry.state, ...(entry.createHeader ? { headerEl: entry.createHeader(parent) } : {}) });
+      { ...entry.config, state: entry.state, ...(entry.kind === 'approval' ? { headerEl: createApprovalHeader(parent, entry.approval) } : {}) });
     entry.inline = inline;
     try {
       inline.render();
@@ -369,12 +291,12 @@ export class SessionInteractions {
   #finish(id: string, entry: PendingPrompt, result: Record<string, string | string[]> | null): void {
     if (this.pending.get(id) !== entry) return;
     this.pending.delete(id);
-    entry.state.resolved = true;
+    entry.state.resolve();
     entry.state.onChange = undefined;
     entry.signal?.removeEventListener('abort', entry.abort);
     entry.inline?.disposePresentation();
     entry.inline = null;
-    if (entry.asyncQuestion) {
+    if (entry.kind === 'async-question') {
       const { tool, abort } = entry.asyncQuestion;
       abort.abort();
       tool.questionStatus = tool.resolvedAnswers ? undefined : 'expired';
@@ -399,15 +321,53 @@ export class SessionInteractions {
   }
 }
 
+function createApprovalHeader(parentEl: HTMLElement, request: ApprovalPromptRequest): HTMLElement {
+  const { toolName } = request;
+  const headerEl = parentEl.createDiv({ cls: 'claudian-ask-approval-info' });
+  headerEl.remove();
+
+  const toolEl = headerEl.createDiv({ cls: 'claudian-ask-approval-tool' });
+  const iconEl = toolEl.createSpan({ cls: 'claudian-ask-approval-icon' });
+  iconEl.setAttribute('aria-hidden', 'true');
+  setToolIcon(iconEl, toolName);
+  toolEl.createSpan({ cls: 'claudian-ask-approval-tool-name', text: toolName });
+
+  if (request.decisionReason) {
+    headerEl.createDiv({ cls: 'claudian-ask-approval-reason', text: request.decisionReason });
+  }
+  if (request.blockedPath) {
+    headerEl.createDiv({ cls: 'claudian-ask-approval-blocked-path', text: request.blockedPath });
+  }
+
+  const descriptionEl = headerEl.createDiv({
+    cls: 'claudian-ask-approval-desc',
+    text: request.description,
+  });
+  descriptionEl.setAttribute('aria-label', t('chat.approval.details', { tool: toolName }));
+  descriptionEl.setAttribute('role', 'region');
+  descriptionEl.setAttribute('tabindex', '0');
+  descriptionEl.addEventListener('keydown', (event) => {
+    if (
+      event.key === 'ArrowDown'
+      || event.key === 'ArrowUp'
+      || event.key === 'Enter'
+    ) {
+      event.stopPropagation();
+    }
+  });
+
+  return headerEl;
+}
+
 function snapshotPending(interactionId: string, entry: PendingPrompt): PendingInteractionSnapshot {
-  const approval = entry.approval;
+  const approval = entry.kind === 'approval' ? entry.approval : undefined;
   const questions = parseAskUserQuestions(entry.input).map((question): PendingInteractionQuestion => ({
     ...(question.id !== undefined ? { id: question.id } : {}),
     header: question.header,
     question: question.question,
     options: question.options.map((option): PendingInteractionOption => {
       const value = askOptionValue(option);
-      const decision = approval?.decisions.get(value);
+      const decision = approval?.decisionOptions.find(candidate => candidate.value === value)?.decision;
       return { label: option.label, value, description: option.description, ...(decision ? { decision } : {}) };
     }),
     multiSelect: question.multiSelect,
@@ -415,15 +375,13 @@ function snapshotPending(interactionId: string, entry: PendingPrompt): PendingIn
     isSecret: question.isSecret === true,
   }));
   if (!approval) return { interactionId, kind: 'question', questions };
-  const options = approval.options;
   return {
     interactionId,
     kind: 'approval',
     toolName: approval.toolName,
     description: approval.description,
-    ...(options?.decisionReason ? { decisionReason: options.decisionReason } : {}),
-    ...(options?.blockedPath ? { blockedPath: options.blockedPath } : {}),
-    ...(options?.agentID ? { agentId: options.agentID } : {}),
+    ...(approval.decisionReason ? { decisionReason: approval.decisionReason } : {}),
+    ...(approval.blockedPath ? { blockedPath: approval.blockedPath } : {}),
     questions,
   };
 }

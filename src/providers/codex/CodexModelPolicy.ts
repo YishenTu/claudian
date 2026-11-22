@@ -25,6 +25,7 @@ import {
   looksLikeCodexModel,
   toCodexRuntimeModelId
 } from './modelSelection';
+import { CODEX_PERMISSION_MODE_POLICY } from './permissionModes';
 import {
   applyCodexModelDefaults,
   getCodexProviderSettings,
@@ -49,9 +50,7 @@ function getVisibleDiscoveredModels(settings: Record<string, unknown>) {
 }
 
 export const codexModelPolicy: ProviderModelPolicy = {
-  permissionModes: {
-    values: ['normal', 'auto-review', 'yolo'], fallbackValue: 'normal', defaultValue: 'auto-review',
-  },
+  permissionModes: CODEX_PERMISSION_MODE_POLICY,
   getModelOptions(settings: Record<string, unknown>): ProviderUIOption[] {
     return getCodexModelOptions(getCodexProviderSettings(settings));
   },

@@ -22,11 +22,7 @@ export interface ProviderSessionToolPort {
   read(args: SessionToolReadSessionArgs, signal: AbortSignal): Promise<SessionToolReadSessionResult>;
 }
 
-/**
- * Session tools are callable only under the default or unrestricted request
- * policy. An allow-list naming them is still denied, whatever the native
- * approval mode.
- */
+/** Session tools are callable only under the default request policy, whatever the native approval mode. */
 export function isSessionToolPolicyAllowed(policy: ProviderToolPolicy | undefined): boolean {
-  return policy?.kind === 'provider-default' || policy?.kind === 'unrestricted';
+  return policy?.kind === 'provider-default';
 }

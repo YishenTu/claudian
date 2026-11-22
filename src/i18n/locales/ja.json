@@ -321,23 +321,15 @@
       "current": "権限モード：{mode}",
       "changeFailed": "権限モードの変更に失敗しました",
       "antigravity": {
-        "auto": "自動",
         "autoDesc": "ワークスペース内の編集とサンドボックス内のコマンドを許可し、追加アクセスを審査"
       },
       "claude": {
-        "auto": "自動",
-        "manual": "手動",
-        "acceptEdits": "編集を許可",
-        "yolo": "YOLO",
         "autoDesc": "Claude が権限を判断",
         "manualDesc": "変更前に毎回確認",
         "acceptEditsDesc": "すべてのファイル編集を自動許可",
         "yoloDesc": "確認せずすべての権限を許可"
       },
       "codex": {
-        "autoReview": "承認を任せる",
-        "normal": "承認を求める",
-        "yolo": "フルアクセス",
         "autoReviewDesc": "追加アクセスを自動審査。",
         "readOnlyDesc": "編集やインターネットアクセス前に確認。",
         "normalDesc": "追加アクセス前に確認。",
@@ -456,6 +448,8 @@
       "deny": "拒否",
       "allowOnce": "今回のみ許可",
       "alwaysAllow": "常に許可",
+      "alwaysAllowActionInProject": "このプロジェクトで {action} を常に許可します。",
+      "alwaysAllowPatternsInProject": "このプロジェクトで次のパターンを常に許可します: {patterns}",
       "mcpRequest": "MCP リクエスト",
       "mcpServer": "MCP サーバー：{server}",
       "decline": "却下",
@@ -467,16 +461,29 @@
       "fileChangeReason": "ファイル変更：{reason}",
       "permissionRequest": "権限リクエスト",
       "permissionReason": "権限リクエスト：{reason}",
+      "permissionRead": "読み取り：{paths}",
+      "permissionWrite": "書き込み：{paths}",
+      "permissionDenyRead": "読み取り拒否：{paths}",
+      "permissionNetwork": "ネットワークアクセス",
+      "permissionFullDisk": "ファイルシステム全体",
+      "permissionMinimalPaths": "最小限のシステムパス",
+      "permissionProjectRoots": "プロジェクトルート",
+      "permissionProjectRootsSubpath": "プロジェクトルート内の {subpath}",
       "networkAccess": "{host} への {protocol} アクセスを許可",
       "execute": "実行：{command}",
       "executeCommand": "コマンドを実行",
       "allowSimilar": "同様のコマンドを許可",
       "execPolicy": "実行ポリシーの変更を承認して保存します。",
       "host": "ホスト",
-      "allowHost": "このセッションで {host} を許可",
-      "denyHost": "このセッションで {host} を拒否",
+      "allowHost": "{host} を常に許可",
+      "denyHost": "{host} を常にブロック",
       "allowRule": "{host} に許可ルールを適用します。",
       "denyRule": "{host} に拒否ルールを適用します。",
+      "allowForTurn": "このターンで許可",
+      "allowForSession": "このセッションで許可",
+      "allowFilesForSession": "このセッションでこれらのファイルの変更を許可",
+      "denyAndStop": "拒否してターンを停止",
+      "execPolicyPrefix": "次で始まるコマンドを許可するルールを保存します: {prefix}",
       "details": "{tool} の承認詳細",
       "unexpectedSelection": "予期しない選択です：「{value}」",
       "runCommand": "コマンドを実行：{pattern}",
@@ -486,7 +493,8 @@
       "searchFiles": "一致するファイルを検索：{pattern}",
       "searchContent": "一致する内容を検索：{pattern}",
       "unknownPattern": "（不明）",
-      "deepseekRequest": "DeepSeek が権限を要求しています。"
+      "deepseekRequest": "DeepSeek が権限を要求しています。",
+      "deepseekTool": "DeepSeek ツール"
     },
     "disclosure": {
       "expand": "{label} - クリックして展開",
@@ -793,11 +801,11 @@
     "safety": "セキュリティ",
     "loadUserSettings": {
       "name": "ユーザーの Claude Code 設定を読み込む",
-      "desc": "~/.claude からユーザーレベルの Claude Code 設定（settings.json、スキル、コマンド、エージェント、プラグイン）を読み込みます。無効にすると、保管庫レベルの設定のみ利用できます。有効にすると、ユーザーの許可ルールがセーフモードをバイパスする可能性があります。"
+      "desc": "~/.claude からユーザーレベルの Claude Code 設定（settings.json、スキル、コマンド、エージェント、プラグイン）を読み込みます。無効にすると、保管庫レベルの設定のみ利用できます。有効にすると、ユーザーの許可ルールも適用され、確認なしで操作が許可される場合があります。"
     },
     "codexSandbox": {
       "name": "サンドボックス",
-      "desc": "「承認を任せる」および「承認を求める」モードでのファイルアクセス設定です。「読み取り専用」では編集のたびに確認します。「フルアクセス」ではこの設定は無視されます。"
+      "desc": "「Approve for me」および「Ask for approval」モードでのファイルアクセス設定です。「読み取り専用」では編集のたびに確認します。「Full access」ではこの設定は無視されます。"
     },
     "environment": "環境",
     "sharedEnvironment": {

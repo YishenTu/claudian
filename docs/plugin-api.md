@@ -100,7 +100,6 @@ interface PendingInteraction {
   description?: string;
   decisionReason?: string;
   blockedPath?: string;
-  agentId?: string;
   questions: Array<{
     id?: string;
     header: string;
@@ -109,7 +108,7 @@ interface PendingInteraction {
       label: string;
       value: string;
       description?: string;
-      /** Approvals: 'allow', 'allow-always', 'deny'; absent for provider-specific options. */
+      /** Approvals: 'allow', 'allow-always', 'deny', 'cancel' (deny and stop the turn); absent for provider-specific options. */
       decision?: string;
     }>;
     multiSelect: boolean;

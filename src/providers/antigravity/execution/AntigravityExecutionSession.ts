@@ -28,8 +28,9 @@ import {
   type ACPSessionConfigOption,
   type ACPSessionModelState,
   type ACPSessionNotification,
+  allowACPPermission,
   buildACPUsageInfo,
-  mapACPApprovalDecision,
+  CANCELLED_ACP_PERMISSION_RESPONSE,
   normalizeACPAvailableCommands,
 } from '@/providers/acp';
 
@@ -167,7 +168,6 @@ interface NativeOwner {
 }
 
 const CANCEL_SETTLE_TIMEOUT_MS = 2_000;
-const CANCELLED_PERMISSION: ACPRequestPermissionResponse = { outcome: { outcome: 'cancelled' } };
 
 const PASSIVE_TOOL_INSTRUCTION = [
   'Do not use any tools for this request.',
@@ -384,10 +384,6 @@ export class AntigravityExecutionSession implements ProviderExecutionSession, St
   }
 
   async #performExecution(active: ActiveExecution): Promise<void> {
-    if (active.request.toolPolicy.kind === 'allow-list') {
-      this.#failUnrecoverable(active, 'Antigravity does not support exact tool allow-lists.');
-      return;
-    }
     let unsubscribeClose: (() => void) | undefined;
     try {
       if (this.cancellationFlight) await this.cancellationFlight;
@@ -561,7 +557,7 @@ export class AntigravityExecutionSession implements ProviderExecutionSession, St
     const { permissionMode } = active.request.configuration;
     const policy = active.request.toolPolicy.kind;
     const skipPermissions = instructions.kind === 'main-agent' && shouldAutoApproveAntigravityPermission(permissionMode)
-      && (policy === 'provider-default' || policy === 'unrestricted');
+      && policy === 'provider-default';
     let owner: NativeOwner;
     if (this.providerSessionId) {
       // The saved session owns its agent. Restoration must not require or inspect any agent file.
@@ -721,18 +717,18 @@ export class AntigravityExecutionSession implements ProviderExecutionSession, St
   }
 
   #handlePermission(request: ACPRequestPermissionRequest): Promise<ACPRequestPermissionResponse> {
-    if (request.sessionId !== this.providerSessionId) return Promise.resolve(CANCELLED_PERMISSION);
+    if (request.sessionId !== this.providerSessionId) return Promise.resolve(CANCELLED_ACP_PERMISSION_RESPONSE);
     const background = this.#backgroundFor(request.sessionId);
     if (background) {
       // Fail closed: approvals between runs follow the configuration agy last ran under.
-      if (!this.latestPolicy) return Promise.resolve(CANCELLED_PERMISSION);
+      if (!this.latestPolicy) return Promise.resolve(CANCELLED_ACP_PERMISSION_RESPONSE);
       return background.holdForRequest(this.#decidePermission(request, this.latestPolicy, background.signal)).then(response => {
         if (!grantsPermission(request, response)) background.toolDenied(request.toolCall.toolCallId);
         return response;
       });
     }
     const active = this.active;
-    if (!active || this.#isCancellationRequested(active)) return Promise.resolve(CANCELLED_PERMISSION);
+    if (!active || this.#isCancellationRequested(active)) return Promise.resolve(CANCELLED_ACP_PERMISSION_RESPONSE);
     return this.#decidePermission(request, approvalPolicyOf(active.request), active.abortController.signal);
   }
 
@@ -743,16 +739,16 @@ export class AntigravityExecutionSession implements ProviderExecutionSession, St
   ): Promise<ACPRequestPermissionResponse> {
     const toolName = normalizeAntigravityToolName(readNativeToolName(request) ?? request.toolCall.title ?? '', request.toolCall.rawInput);
     const policy = toolPolicy.kind;
-    if (policy === 'passive') return Promise.resolve(CANCELLED_PERMISSION);
+    if (policy === 'passive') return Promise.resolve(CANCELLED_ACP_PERMISSION_RESPONSE);
     if (policy === 'read-only') {
       return Promise.resolve(readNativeToolName(request) === 'run_command'
-        ? mapACPApprovalDecision('allow', request.options) : CANCELLED_PERMISSION);
+        ? allowACPPermission(request.options) : CANCELLED_ACP_PERMISSION_RESPONSE);
     }
     if (isSessionTool(toolName)) {
-      return Promise.resolve(this.config.sessionTools ? mapACPApprovalDecision('allow', request.options) : CANCELLED_PERMISSION);
+      return Promise.resolve(this.config.sessionTools ? allowACPPermission(request.options) : CANCELLED_ACP_PERMISSION_RESPONSE);
     }
-    if (policy === 'unrestricted' || shouldAutoApproveAntigravityPermission(permissionMode)) {
-      return Promise.resolve(mapACPApprovalDecision('allow', request.options));
+    if (shouldAutoApproveAntigravityPermission(permissionMode)) {
+      return Promise.resolve(allowACPPermission(request.options));
     }
     return this.interactionController.requestPermission(request, signal);
   }
@@ -878,13 +874,6 @@ export class AntigravityExecutionSession implements ProviderExecutionSession, St
       reason: response.stopReason === 'max_tokens' ? 'max-tokens' : response.stopReason === 'end_turn' ? 'completed' : 'provider-ended',
       type: 'turn_completed',
     });
-  }
-
-  #failUnrecoverable(active: ActiveExecution, message: string): void {
-    this.#updateSnapshot('invalidated', { message, reason: 'configuration-changed', recoverable: false });
-    this.#emitCurrentSnapshot();
-    active.abortController.abort();
-    this.#endRun(active, { category: 'configuration', message, recoverable: false, type: 'execution_error' });
   }
 
   #failRecoverable(active: ActiveExecution, error: unknown): void {
