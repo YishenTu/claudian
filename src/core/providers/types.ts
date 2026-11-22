@@ -200,8 +200,6 @@ export interface ProviderPermissionModePolicy {
   readonly fallbackValue: string;
   /** Initial choice when no permission has been selected for this provider. */
   readonly defaultValue: string;
-  /** Maps a retired stored value to a current one; unmapped values use the fallback. */
-  migrateValue?(value: string, settings: Record<string, unknown>): string | undefined;
 }
 
 /** One toolbar permission-mode choice, in menu order. */

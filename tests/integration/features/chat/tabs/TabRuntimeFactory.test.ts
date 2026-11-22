@@ -2258,7 +2258,8 @@ describe('Tab provider execution ownership', () => {
       snapshot: { providerId: 'claude', revision: 1, status: 'idle' },
     });
 
-    expect(plugin.settings.permissionMode).toBe(permissionMode === 'normal' ? 'acceptEdits' : 'yolo');
+    // The retired Safe value fails closed.
+    expect(plugin.settings.permissionMode).toBe(permissionMode === 'normal' ? 'manual' : 'yolo');
   });
 
   it('keeps the saved default when a native event repeats a tab\'s own mode', async () => {
@@ -2289,6 +2290,6 @@ describe('Tab provider execution ownership', () => {
 
     await updateTabPermissionMode(tab, plugin, 'normal');
 
-    expect(plugin.settings.permissionMode).toBe('acceptEdits');
+    expect(plugin.settings.permissionMode).toBe('manual');
   });
 });

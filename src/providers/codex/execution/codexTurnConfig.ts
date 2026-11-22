@@ -127,7 +127,6 @@ export function resolveCodexTurnPolicy(
   const permissionMode = resolvePermissionMode(
     CODEX_PERMISSION_MODE_POLICY,
     normalizeString(request.configuration.permissionMode) ?? settings.selection.permissionMode,
-    {},
   );
   const safeMode = settings.codex.safeMode;
   const sandboxConfig = resolveCodexSandboxConfig(permissionMode, safeMode);

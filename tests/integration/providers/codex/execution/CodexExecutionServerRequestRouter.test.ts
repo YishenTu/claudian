@@ -510,6 +510,35 @@ describe('Codex native approval choices', () => {
       dismissed: { decision: 'cancel' },
     },
     {
+      // Codex's menu hides a prefix rule that renders across lines (exec_options, tui/src/bottom_pane/approval_overlay.rs).
+      name: 'command with a multiline proposed prefix and no offered decisions',
+      method: 'item/commandExecution/requestApproval',
+      params: {
+        ...approvalScope, itemId: 'command-item', command: 'echo hi',
+        proposedExecpolicyAmendment: ['bash', '-lc', 'echo hi\nrm -rf build'],
+      },
+      description: () => t('chat.approval.execute', { command: 'echo hi' }),
+      choices: () => [
+        [{ label: t('chat.approval.allowOnce'), value: 'allow-once', decision: 'allow' }, { decision: 'accept' }],
+        [{ label: t('chat.approval.denyAndStop'), value: 'cancel', decision: 'cancel' }, { decision: 'cancel' }],
+      ],
+      dismissed: { decision: 'cancel' },
+    },
+    {
+      name: 'command with an offered carriage-return prefix',
+      method: 'item/commandExecution/requestApproval',
+      params: {
+        ...approvalScope, itemId: 'command-item', command: 'echo hi',
+        availableDecisions: ['accept', { acceptWithExecpolicyAmendment: { execpolicy_amendment: ['printf', 'a\rb'] } }, 'cancel'],
+      },
+      description: () => t('chat.approval.execute', { command: 'echo hi' }),
+      choices: () => [
+        [{ label: t('chat.approval.allowOnce'), value: 'allow-once', decision: 'allow' }, { decision: 'accept' }],
+        [{ label: t('chat.approval.denyAndStop'), value: 'cancel', decision: 'cancel' }, { decision: 'cancel' }],
+      ],
+      dismissed: { decision: 'cancel' },
+    },
+    {
       name: 'network command without offered decisions',
       method: 'item/commandExecution/requestApproval',
       params: {

@@ -35,16 +35,13 @@ export function buildPermissionModeOptions(
 }
 
 /**
- * The mode a provider runs and displays for a stored or selected value: a known value, a migrated
- * retired one, else the policy's fail-closed fallback. Without a policy the value passes through.
+ * The mode a provider runs and displays for a stored or selected value: a known value, else the
+ * policy's fail-closed fallback. Without a policy the value passes through.
  */
 export function resolvePermissionMode(
   policy: ProviderPermissionModePolicy | undefined,
   value: unknown,
-  settings: Record<string, unknown>,
 ): string {
   if (!policy) return typeof value === 'string' ? value : '';
-  if (typeof value === 'string' && policy.values.includes(value)) return value;
-  const migrated = typeof value === 'string' ? policy.migrateValue?.(value, settings) : undefined;
-  return migrated !== undefined && policy.values.includes(migrated) ? migrated : policy.fallbackValue;
+  return typeof value === 'string' && policy.values.includes(value) ? value : policy.fallbackValue;
 }

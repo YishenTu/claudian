@@ -1,5 +1,4 @@
 import { createPermissionModePolicy } from '../../core/providers/permissionModes';
-import { getProviderConfig } from '../../core/providers/providerConfig';
 import { formatReasoningValueLabel } from '../../core/providers/reasoning';
 import type {
   ProviderModelPolicy,
@@ -18,7 +17,6 @@ import { CLAUDE_MODEL_TIER_PATTERN, isClaudeModelTier } from './modelTiers';
 import {
   CLAUDE_FALLBACK_PERMISSION_MODE,
   CLAUDE_PERMISSION_MODE_DEFINITIONS,
-  type ClaudePermissionMode,
 } from './permissionModes';
 import { getClaudeModelSource } from './settings';
 import {
@@ -28,22 +26,9 @@ import {
 
 const VERSIONED_CLAUDE_MODEL = new RegExp(`^claude-(?:${CLAUDE_MODEL_TIER_PATTERN})-`);
 
-/** Retired Safe-toggle targets, stored as `providerConfigs.claude.safeMode`. */
-const LEGACY_SAFE_MODES: Readonly<Record<string, ClaudePermissionMode>> = {
-  auto: 'auto',
-  default: 'manual',
-  acceptEdits: 'acceptEdits',
-};
-
 const CLAUDE_PERMISSION_MODE_POLICY = createPermissionModePolicy(CLAUDE_PERMISSION_MODE_DEFINITIONS, {
   fallbackValue: CLAUDE_FALLBACK_PERMISSION_MODE,
   defaultValue: 'auto',
-  migrateValue(value: string, settings: Record<string, unknown>): string | undefined {
-    if (value !== 'normal') return undefined;
-    // The retired Safe toggle ran the configured safe mode, which defaulted to acceptEdits.
-    const safeMode = getProviderConfig(settings, 'claude').safeMode;
-    return safeMode === undefined ? 'acceptEdits' : typeof safeMode === 'string' ? LEGACY_SAFE_MODES[safeMode] : undefined;
-  },
 });
 
 export const claudeModelPolicy: ProviderModelPolicy = {

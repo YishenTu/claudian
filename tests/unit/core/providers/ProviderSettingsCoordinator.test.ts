@@ -262,6 +262,19 @@ describe('ProviderSettingsCoordinator', () => {
       expect(settings.savedProviderPermissionMode).toEqual({ claude: 'manual', codex: 'yolo' });
     });
 
+    it('fails a malformed saved permission mode closed when switching to that provider', () => {
+      const settings: Record<string, unknown> = {
+        settingsProvider: 'codex',
+        permissionMode: 'yolo',
+        savedProviderPermissionMode: { claude: false, codex: 'yolo' },
+        providerConfigs: { codex: { enabled: false } },
+      };
+
+      ProviderSettingsCoordinator.normalizeProviderSelection(settings);
+
+      expect(settings.permissionMode).toBe('manual');
+    });
+
     it('returns false when already normalized (no-op)', () => {
       const settings: Record<string, unknown> = {
         settingsProvider: 'claude',
@@ -695,23 +708,41 @@ describe('ProviderSettingsCoordinator', () => {
       expect(snapshot.permissionMode).toBe(mode);
     });
 
-    it.each([
-      [undefined, 'acceptEdits'],
-      ['default', 'manual'],
-      ['acceptEdits', 'acceptEdits'],
-      ['auto', 'auto'],
-      [['auto'], 'manual'],
-    ])('migrates a legacy Claude Safe selection with safe mode %o to %s', (safeMode, expected) => {
-      const providerConfigs = safeMode ? { claude: { safeMode } } : {};
+    it.each([undefined, { safeMode: 'acceptEdits' }])('fails the retired Claude Safe selection closed with config %o', (claudeConfig) => {
       for (const saved of [{ claude: 'normal' }, {}]) {
         const snapshot = ProviderSettingsCoordinator.getProviderSettingsSnapshot({
           settingsProvider: 'claude',
           permissionMode: 'normal',
           savedProviderPermissionMode: saved,
-          providerConfigs,
+          providerConfigs: claudeConfig ? { claude: claudeConfig } : {},
         }, 'claude');
-        expect(snapshot.permissionMode).toBe(expected);
+        expect(snapshot.permissionMode).toBe('manual');
       }
+    });
+
+    it.each([false, null, {}, 1])('fails a malformed saved Claude permission mode %o closed instead of reusing YOLO', (saved) => {
+      const settings: Record<string, unknown> = {
+        settingsProvider: 'claude',
+        permissionMode: 'yolo',
+        savedProviderPermissionMode: { claude: saved },
+      };
+
+      expect(ProviderSettingsCoordinator.getProviderSettingsSnapshot(settings, 'claude').permissionMode).toBe('manual');
+      ProviderSettingsCoordinator.projectActiveProviderState(settings);
+      expect(settings.permissionMode).toBe('manual');
+    });
+
+    it('keeps a malformed saved permission mode failing closed after another provider persists', () => {
+      const settings: Record<string, unknown> = {
+        settingsProvider: 'codex',
+        permissionMode: 'normal',
+        savedProviderPermissionMode: { claude: false },
+        providerConfigs: { codex: { enabled: true } },
+      };
+
+      ProviderSettingsCoordinator.persistProjectedProviderState(settings, 'codex');
+
+      expect(ProviderSettingsCoordinator.getProviderSettingsSnapshot(settings, 'claude').permissionMode).toBe('manual');
     });
 
     it('projects saved model and effort for the settings provider', () => {

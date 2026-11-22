@@ -85,7 +85,6 @@ export function getSessionSettingsSnapshot(
   snapshot.permissionMode = resolvePermissionMode(
     ProviderRegistry.getModelPolicy(providerId).permissionModes,
     snapshot.permissionMode,
-    snapshot,
   );
   if (snapshot.reasoning !== null) {
     const key = reasoningSelectionKey(providerId, snapshot.model);

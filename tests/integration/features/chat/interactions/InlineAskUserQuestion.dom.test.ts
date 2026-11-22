@@ -245,3 +245,23 @@ it.each(['textarea', 'select', 'contenteditable'] as const)('leaves navigation s
     }
   } finally { navigation.dispose(); messages.remove(); composer.remove(); }
 });
+
+it('describes each choice with its visible description', () => {
+  const panel = new InlineAskUserQuestion(document.body.createDiv(), {
+    questions: [{
+      question: 'Allow this command?', header: 'Permission',
+      options: [
+        { label: 'Allow once' },
+        { label: 'Allow similar commands', description: 'Save a rule allowing commands that start with: npm run build' },
+      ],
+    }],
+  }, vi.fn(), undefined, { immediateSelect: true, showCustomInput: false });
+  panel.render();
+
+  const view = within(document.body);
+  expect(view.getByRole('button', {
+    name: 'Allow similar commands',
+    description: 'Save a rule allowing commands that start with: npm run build',
+  })).toBeTruthy();
+  expect(view.getByRole('button', { name: 'Allow once', description: '' })).toBeTruthy();
+});

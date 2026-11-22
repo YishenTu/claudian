@@ -497,11 +497,18 @@ function unofferedDecisionReply(value: string | null): 'cancel' | 'decline' {
 function buildCommandApprovalChoices(
   params: CommandApprovalRequest,
 ): ProviderApprovalChoice<CommandExecutionApprovalDecision>[] {
-  const available = params.availableDecisions ?? evidencedCommandDecisions(params);
+  const available = (params.availableDecisions ?? evidencedCommandDecisions(params)).filter(isPresentableCommandDecision);
   return available.map(decision => ({
     option: mapCommandDecisionOption(decision, params),
     reply: decision,
   }));
+}
+
+/** Codex's own menu hides a prefix rule that renders across lines (`exec_options`, tui/src/bottom_pane/approval_overlay.rs). */
+function isPresentableCommandDecision(decision: CommandExecutionApprovalDecision): boolean {
+  return typeof decision === 'string'
+    || !('acceptWithExecpolicyAmendment' in decision)
+    || !decision.acceptWithExecpolicyAmendment.execpolicy_amendment.some(token => /[\r\n]/.test(token));
 }
 
 /** Codex 0.171's own menu for an omitted list (`default_available_decisions`, tui/src/approval_events.rs). */

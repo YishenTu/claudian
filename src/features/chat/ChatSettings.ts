@@ -28,7 +28,7 @@ export function getChatSettingsSnapshot<T extends Record<string, unknown>>(
     ...snapshot,
     model: selectedModel,
     reasoning,
-    permissionMode: resolvePermissionMode(ProviderRegistry.getModelPolicy(providerId).permissionModes, snapshot.permissionMode, snapshot),
+    permissionMode: resolvePermissionMode(ProviderRegistry.getModelPolicy(providerId).permissionModes, snapshot.permissionMode),
     serviceTier: typeof snapshot.serviceTier === 'string' ? snapshot.serviceTier : 'default',
   };
 }

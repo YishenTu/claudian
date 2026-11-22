@@ -33,8 +33,8 @@ export interface ProviderRuntimeHost {
   readonly selection: ProviderSelectionInputs;
   /**
    * The selections the settings projection shows for this provider: each saved preference,
-   * else a current selection this provider can reuse, else its default, normalized and
-   * migrated by its model and permission policies.
+   * else a current selection this provider can reuse, else its default, normalized by its
+   * model and permission policies.
    */
   readonly providerSelection: ProviderSelectionDefaults;
   /**

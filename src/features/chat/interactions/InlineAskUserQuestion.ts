@@ -6,6 +6,7 @@ import { t } from '@/i18n/i18n';
 const CHECK_GLYPH = '\u2713';
 /** `focusedItemIndex` value while no item is active; arrow keys then start at the first item. */
 const NO_FOCUSED_ITEM = -1;
+let optionDescriptionSequence = 0;
 
 export type QuestionAnswerHandler = (answers: AskUserAnswers) => Promise<void>;
 
@@ -237,7 +238,10 @@ export class InlineAskUserQuestion {
       labelRow.createSpan({ text: option.label, cls: 'claudian-ask-item-label' });
 
       if (option.description) {
-        labelBlock.createSpan({ text: option.description, cls: 'claudian-ask-item-desc' });
+        // The label replaces the button's content as its name, so the description must be linked to be announced.
+        const descriptionId = `claudian-ask-item-desc-${++optionDescriptionSequence}`;
+        labelBlock.createSpan({ text: option.description, cls: 'claudian-ask-item-desc', attr: { id: descriptionId } });
+        row.setAttribute('aria-describedby', descriptionId);
       }
 
       row.addEventListener('click', () => {
