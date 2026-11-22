@@ -508,6 +508,33 @@ export class ChatExecutionCoordinator {
     this.#sessionBinding?.session.cancel();
   }
 
+  /** Picker operations belong to the session and never create a turn or a steer boundary. */
+  async approveRecentDenial(): Promise<'approved' | 'empty' | 'dismissed'> {
+    return this.#runProtectedOperation(async () => {
+      const binding = this.#sessionBinding;
+      const denials = binding?.session.getReviewDenials?.();
+      if (!binding || !denials?.length) return 'empty';
+      const isCurrent = () => this.#isBindingCurrent(binding);
+      const interactionId = this.deps.createId();
+      try {
+        const response = await this.#interactions.requestApproval({
+          interactionId, sessionInstanceId: binding.session.sessionInstanceId, turnId: interactionId,
+          kind: 'approval', toolName: '/approve', description: t('chat.approval.review.chooseRetry'), input: {},
+          decisionOptions: denials.map(({ value, label, description }) => ({ value, label, description })),
+        }, new AbortController().signal, isCurrent);
+        const selected = denials.find(option => option.value === response.value);
+        if (!selected) return 'dismissed';
+        await this.deps.persistence.assertConversationExecutionAuthority(
+          binding.conversation.conversationId, binding.bindingId, binding.generation,
+        );
+        return isCurrent() && await selected.approve() ? 'approved' : 'dismissed';
+      } catch (error) {
+        if (error instanceof ChatExecutionInteractionStaleError) return 'dismissed';
+        throw error;
+      }
+    });
+  }
+
   async steer(submission: ChatTurnSubmission, signal?: AbortSignal): Promise<ChatSteerOutcome> {
     const controller = new AbortController();
     const sources = [signal, this.#foreground?.controller.signal];

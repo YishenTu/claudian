@@ -1,7 +1,7 @@
 // Local protocol subset for Codex app-server stdio JSON-RPC.
 // Field names match the wire format (camelCase).
-// Validated against the generated codex-cli 0.144.5 schema on 2026-07-16.
-// `thread/revert` (which replaced `thread/rollback`) validated against codex-cli 0.163.0 on 2026-10-19.
+// Validated against codex-cli 0.171.0 generate-json-schema --experimental.
+// Includes only consumed fields, plus legacy shapes accepted on older threads.
 
 // ---------------------------------------------------------------------------
 // JSON-RPC base
@@ -28,7 +28,7 @@ export interface Thread {
   id: string;
   preview: string;
   ephemeral: boolean;
-  path: string;
+  path: string | null;
   cwd: string;
   cliVersion: string;
   status: ThreadStatus;
@@ -39,7 +39,7 @@ export interface Thread {
   modelProvider: string;
   model?: string | null;
   reasoningEffort?: string | null;
-  source: string | { subAgent: string | { thread_spawn: { parent_thread_id: string } } };
+  source: string | { custom: string } | { subAgent: string | { other: string } | { thread_spawn: { parent_thread_id: string } } };
   parentThreadId?: string | null;
   agentNickname: string | null;
   agentRole: string | null;
@@ -52,9 +52,9 @@ export interface ThreadStatus {
 }
 
 export interface GitInfo {
-  sha: string;
-  branch: string;
-  originUrl: string;
+  sha: string | null;
+  branch: string | null;
+  originUrl: string | null;
 }
 
 export interface Turn {
@@ -67,7 +67,7 @@ export interface Turn {
 
 export interface TurnError {
   message: string;
-  codexErrorInfo: string | Record<string, unknown>;
+  codexErrorInfo: string | Record<string, unknown> | null;
   additionalDetails: string | null;
 }
 
@@ -89,7 +89,8 @@ export type ThreadItem =
   | MCPToolCallItem
   | DynamicToolCallItem
   | ContextCompactionItem
-  | HookPromptItem;
+  | HookPromptItem
+  | { type: 'functionCallOutput' | 'sleep' | 'imageGeneration' | 'enteredReviewMode' | 'exitedReviewMode'; id: string };
 
 export interface UserMessageItem {
   type: 'userMessage';
@@ -137,7 +138,7 @@ export interface CommandExecutionItem {
   id: string;
   command: string;
   cwd: string;
-  processId: string;
+  processId: string | null;
   source: string;
   status: string;
   commandActions: CommandAction[];
@@ -187,11 +188,11 @@ export interface WebSearchItem {
   pattern?: string;
   action?: {
     type?: string;
-    query?: string;
-    queries?: string[];
-    url?: string;
-    pattern?: string;
-  };
+    query?: string | null;
+    queries?: string[] | null;
+    url?: string | null;
+    pattern?: string | null;
+  } | null;
   /** Opaque structured sources, e.g. `{ title, url, snippet }` text results. */
   results?: unknown[] | null;
   status?: string;
@@ -217,7 +218,7 @@ export interface CollabAgentToolCallItem {
   prompt?: string | null;
   model?: string | null;
   reasoningEffort?: string | null;
-  agentsStates?: Record<string, { status: string; message: string | null }>;
+  agentsStates?: Partial<Record<string, { status: string; message: string | null }>>;
 }
 
 export interface MCPToolCallItem {
@@ -228,7 +229,7 @@ export interface MCPToolCallItem {
   status?: string;
   /** JSON value; some servers report the raw argument string. */
   arguments?: unknown;
-  result?: { content?: Array<{ type?: string; text?: string }>; structuredContent?: unknown } | null;
+  result?: { content?: unknown[]; structuredContent?: unknown } | null;
   error?: { message: string } | string | null;
   durationMs?: number | null;
 }
@@ -284,7 +285,9 @@ export interface MentionInput {
   path: string;
 }
 
-export type UserInput = TextInput | LocalImageInput | SkillInput | MentionInput;
+export type UserInput = TextInput | LocalImageInput | SkillInput | MentionInput
+  | { type: 'localAudio'; path: string }
+  | ({ type: 'image' | 'audio' } & ({ url: string } | { fileId: string }));
 
 // ---------------------------------------------------------------------------
 // skills/list
@@ -345,7 +348,7 @@ export interface AppServerModel {
   hidden: boolean;
   supportedReasoningEfforts: ModelReasoningEffortOption[];
   defaultReasoningEffort: string;
-  inputModalities?: Array<'text' | 'image'>;
+  inputModalities?: Array<'text' | 'image' | 'audio'>;
   supportsPersonality?: boolean;
   serviceTiers?: ModelServiceTier[];
   defaultServiceTier?: string | null;
@@ -408,7 +411,8 @@ export interface DynamicToolCallParams {
 
 export type DynamicToolCallOutputContentItem =
   | { type: 'inputText'; text: string }
-  | { type: 'inputImage'; imageUrl: string };
+  | { type: 'inputImage'; imageUrl: string }
+  | { type: 'inputAudio'; audioUrl: string };
 
 export interface DynamicToolCallResponse {
   success: boolean;
@@ -421,10 +425,13 @@ export interface ThreadStartResult {
   modelProvider: string;
   serviceTier: string | null;
   cwd: string;
-  approvalPolicy: string;
+  approvalPolicy: string | { granular: {
+    sandbox_approval: boolean; rules: boolean; skill_approval: boolean;
+    request_permissions: boolean; mcp_elicitations: boolean;
+  } };
   approvalsReviewer: string;
   sandbox: SandboxPolicy;
-  reasoningEffort: string;
+  reasoningEffort: string | null;
 }
 
 export interface ThreadReadResult {
@@ -495,6 +502,35 @@ export interface ItemCompletedNotification {
   turnId: string;
 }
 
+export type GuardianReviewAction =
+  | { type: 'command'; source: 'shell' | 'unifiedExec'; command: string; cwd: string }
+  | { type: 'execve'; source: 'shell' | 'unifiedExec'; program: string; argv: string[]; cwd: string }
+  | { type: 'writeStdin'; approvalId: string; processId: string; stdin: string; cwd: string }
+  | { type: 'applyPatch'; cwd: string; files: string[] }
+  | { type: 'networkAccess'; target: string; host: string; protocol: 'http' | 'https' | 'socks5Tcp' | 'socks5Udp'; port: number }
+  | { type: 'mcpToolCall'; server: string; toolName: string; connectorId: string | null; connectorName: string | null; toolTitle: string | null }
+  | { type: 'requestPermissions'; reason: string | null; permissions: RequestPermissionProfile };
+
+export interface GuardianReviewStarted {
+  threadId: string;
+  turnId: string;
+  startedAtMs: number;
+  reviewId: string;
+  targetItemId: string | null;
+  action: GuardianReviewAction;
+  review: {
+    status: 'inProgress' | 'approved' | 'denied' | 'timedOut' | 'aborted';
+    riskLevel: 'low' | 'medium' | 'high' | 'critical' | null;
+    userAuthorization: 'unknown' | 'low' | 'medium' | 'high' | null;
+    rationale: string | null;
+  };
+}
+
+export interface GuardianReviewCompleted extends GuardianReviewStarted {
+  completedAtMs: number;
+  decisionSource: 'agent';
+}
+
 export interface TokenUsage {
   totalTokens: number;
   inputTokens: number;
@@ -509,7 +545,7 @@ export interface TokenUsageUpdatedNotification {
   tokenUsage: {
     total: TokenUsage;
     last: TokenUsage;
-    modelContextWindow: number;
+    modelContextWindow: number | null;
   };
 }
 
@@ -549,8 +585,11 @@ export interface CommandApprovalRequest {
   threadId: string;
   turnId: string;
   itemId: string;
-  command: string | null;
-  cwd: string | null;
+  kind?: 'command' | 'humanCommand' | 'writeStdin';
+  startedAtMs?: number;
+  environmentId?: string | null;
+  command?: string | null;
+  cwd?: string | null;
   reason?: string | null;
   commandActions?: CommandAction[] | null;
   approvalId?: string | null;
@@ -583,6 +622,7 @@ export interface CommandExecutionApprovalResponse {
 // -- File change approval (item/fileChange/requestApproval) ------------------
 
 export interface FileChangeApprovalRequest {
+  startedAtMs?: number;
   threadId: string;
   turnId: string;
   itemId: string;
@@ -651,6 +691,9 @@ export interface GrantedPermissionProfile {
 export type PermissionGrantScope = 'turn' | 'session';
 
 export interface PermissionsApprovalRequest {
+  startedAtMs?: number;
+  environmentId?: string | null;
+  cwd?: string;
   threadId: string;
   turnId: string;
   itemId: string;
@@ -660,16 +703,27 @@ export interface PermissionsApprovalRequest {
 
 export interface PermissionsApprovalResponse {
   permissions: GrantedPermissionProfile;
-  scope?: PermissionGrantScope;
+  scope: PermissionGrantScope;
+  strictAutoReview?: boolean;
 }
 
 // -- MCP elicitation (mcpServer/elicitation/request) -------------------------
 
-export interface MCPElicitationRequest {
+export type MCPElicitationRequest = {
   threadId: string;
   turnId: string | null;
   serverName: string;
-  mode: 'form' | 'openai/form' | 'url';
+  mode: 'openai/userVerification';
+  title: string;
+  description: string;
+  challenge: string;
+} | MCPMessageElicitationRequest;
+
+export interface MCPMessageElicitationRequest {
+  threadId: string;
+  turnId: string | null;
+  serverName: string;
+  mode: 'form' | 'openai/form' | 'openaiForm' | 'url';
   message: string;
   requestedSchema?: unknown;
 }

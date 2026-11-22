@@ -46,6 +46,13 @@ export class CodexSessionConnection {
     return this.#attachment?.connection.transport ?? null;
   }
 
+  // Codex 0.124 added both strict turn grants and thread/approveGuardianDeniedAction.
+  get supportsReviewGrants(): boolean {
+    const agent = this.#attachment?.runtimeContext.initializeResult.userAgent ?? '';
+    const version = /^\S+?\/(\d+)\.(\d+)\.\d+/.exec(agent);
+    return !!version && (Number(version[1]) > 0 || Number(version[2]) >= 124);
+  }
+
   get scope(): CodexThreadScope | null {
     return this.#attachment?.scope ?? null;
   }

@@ -12,6 +12,7 @@ import type { ProviderCapabilities, ProviderId } from '../providers/types';
 
 export type BuiltInCommandAction =
   | 'clear'
+  | 'approve'
   | 'compact'
   | 'resume'
   | 'fast'
@@ -19,7 +20,8 @@ export type BuiltInCommandAction =
 type BuiltInCommandCapability =
   | 'supportsNativeHistory'
   | 'supportsFork'
-  | 'supportsFastMode';
+  | 'supportsFastMode'
+  | 'supportsAutoReviewOverride';
 type BuiltInCommandCapabilityContext =
   Partial<Pick<ProviderCapabilities, BuiltInCommandCapability>>
   & Partial<Pick<ProviderCapabilities, 'providerId'>>;
@@ -48,6 +50,12 @@ export const BUILT_IN_COMMANDS: BuiltInCommand[] = [
     aliases: ['clear'],
     descriptionKey: 'chat.suggestions.builtInDescriptions.new',
     action: 'clear',
+  },
+  {
+    name: 'approve',
+    descriptionKey: 'chat.approval.review.chooseRetry',
+    action: 'approve',
+    requiredCapability: 'supportsAutoReviewOverride',
   },
   {
     name: 'compact',
@@ -164,8 +172,9 @@ export function detectSideChatCommand(input: string): SideChatCommandMatch | nul
  * they are the side feature's own controls. Compaction keeps its provider
  * execution path on either destination.
  */
-export function detectMainOnlyBuiltInCommand(input: string): BuiltInCommand | null {
+export function detectMainOnlyBuiltInCommand(input: string, context?: BuiltInCommandSupportContext): BuiltInCommand | null {
   const parsed = parseLeadingBuiltInCommand(input);
+  if (parsed?.command.action === 'approve' && !isBuiltInCommandSupported(parsed.command, context)) return null;
   return parsed && parsed.command.action !== 'side' && parsed.command.action !== 'compact'
     ? parsed.command : null;
 }

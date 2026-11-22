@@ -40,6 +40,7 @@ export interface ProviderCapabilities {
   supportsImageAttachments: boolean;
   supportsTurnSteer?: boolean;
   supportsFastMode?: boolean;
+  supportsAutoReviewOverride?: boolean;
   /** Can report authoritative main-agent output tokens and elapsed turn time. */
   supportsResponseThroughput?: boolean;
   reasoningControl: 'effort' | 'none';

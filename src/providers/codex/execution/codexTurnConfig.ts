@@ -128,6 +128,9 @@ export function resolveCodexTurnPolicy(
     CODEX_PERMISSION_MODE_POLICY,
     normalizeString(request.configuration.permissionMode) ?? settings.selection.permissionMode,
   );
+  // Keep the sandbox fields: the alternative named 'permissions' profile is exclusive with
+  // sandboxPolicy, and a built-in profile can replace the user's workspace roots and network settings.
+  // Both forms still require a separate approval policy and reviewer.
   const safeMode = settings.codex.safeMode;
   const sandboxConfig = resolveCodexSandboxConfig(permissionMode, safeMode);
   return sandboxConfig.sandbox === 'danger-full-access'
@@ -137,7 +140,7 @@ export function resolveCodexTurnPolicy(
 
 /**
  * The sandbox policy a turn must override, given the mode already in effect on the loaded
- * thread. turn/start cannot select a mode, and resuming a loaded thread ignores one, so a
+ * thread. turn/start cannot select a legacy sandbox mode, and resuming a loaded thread ignores one, so a
  * mode switch must restore the policy Codex derives from the user's config for that mode.
  */
 export async function resolveCodexTurnSandboxPolicy(

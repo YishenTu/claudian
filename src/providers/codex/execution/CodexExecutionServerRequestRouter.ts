@@ -21,8 +21,8 @@ import type {
   FileChangeApprovalResponse,
   FileSystemPath,
   FileSystemSpecialPath,
-  MCPElicitationRequest,
   MCPElicitationResponse,
+  MCPMessageElicitationRequest,
   PermissionsApprovalRequest,
   PermissionsApprovalResponse,
   RequestId,
@@ -61,6 +61,7 @@ export class CodexExecutionServerRequestRouter {
     private readonly observeNativeTurn: NativeTurnObserver,
     /** The run's bound native turn; the run owns it, and its cancellation ends it for this router. */
     private readonly readActiveTurn: () => ActiveInteractionTurn | null,
+    private readonly supportsStrictReview: () => boolean = () => false,
   ) {
     this.interactions = new PendingInteractionLedger(interactionPort);
   }
@@ -243,7 +244,7 @@ export class CodexExecutionServerRequestRouter {
       return { permissions: {}, scope: 'turn' };
     }
 
-    const choices = buildPermissionsApprovalChoices(params);
+    const choices = buildPermissionsApprovalChoices(params, this.supportsStrictReview());
     const pending = this.#createPending(requestId, params.threadId);
     try {
       const response = await this.interactionPort.requestApproval({
@@ -446,13 +447,13 @@ function isPlainRecord(value: unknown): value is Record<string, unknown> {
   return prototype === Object.prototype || prototype === null;
 }
 
-function isMCPElicitationRequest(value: unknown): value is MCPElicitationRequest {
+function isMCPElicitationRequest(value: unknown): value is MCPMessageElicitationRequest {
   return isPlainRecord(value)
     && typeof value.threadId === 'string' && value.threadId.length > 0
     && (value.turnId === null || (typeof value.turnId === 'string' && value.turnId.length > 0))
     && typeof value.serverName === 'string' && value.serverName.trim().length > 0
     && typeof value.message === 'string'
-    && (value.mode === 'form' || value.mode === 'openai/form' || value.mode === 'url');
+    && (value.mode === 'form' || value.mode === 'openai/form' || value.mode === 'openaiForm' || value.mode === 'url');
 }
 
 function isEmptyConfirmationSchema(value: unknown): boolean {
@@ -641,12 +642,17 @@ function describeSpecialPath(value: FileSystemSpecialPath): string {
 
 function buildPermissionsApprovalChoices(
   params: PermissionsApprovalRequest,
+  supportsStrictReview: boolean,
 ): ProviderApprovalChoice<PermissionsApprovalResponse>[] {
   return [
     {
       option: { label: t('chat.approval.allowForTurn'), value: 'allow-turn', decision: 'allow' },
       reply: { permissions: params.permissions, scope: 'turn' },
     },
+    ...(supportsStrictReview ? [{
+      option: { label: t('chat.approval.allowStrictTurn'), value: 'allow-strict-turn', decision: 'allow' as const },
+      reply: { permissions: params.permissions, scope: 'turn' as const, strictAutoReview: true },
+    }] : []),
     {
       option: { label: t('chat.approval.allowForSession'), value: 'allow-session', decision: 'allow-always' },
       reply: { permissions: params.permissions, scope: 'session' },

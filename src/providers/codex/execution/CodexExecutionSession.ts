@@ -28,6 +28,7 @@ import type { CodexAppServerRuntime } from '@/providers/codex/runtime/CodexAppSe
 import type {
   ConfigReadParams,
   ConfigReadResult,
+  GuardianReviewCompleted,
   ItemCompletedNotification,
   ServerRequestResolvedNotification,
   ThreadCompactStartResult,
@@ -40,6 +41,7 @@ import type {
 import { assertCodexModelAvailable } from '@/providers/codex/runtime/CodexModelAvailability';
 import { CodexNotificationRouter } from '@/providers/codex/runtime/CodexNotificationRouter';
 import { CodexRPCResponseError } from '@/providers/codex/runtime/CodexRPCTransport';
+import { describeAutoReview, guardianOverrideParams, reviewPickerLabel } from '@/providers/codex/runtime/notifications/codexAutoReview';
 import {
   clearCodexResumeState,
   type CodexPendingForkTarget,
@@ -93,6 +95,7 @@ export class CodexExecutionSession
   private readonly threads: CodexThreadBinder;
   private readonly completionRecovery: CodexCompletionRecovery;
   private readonly turn: CodexTurnBinding;
+  private recentDenials: GuardianReviewCompleted[] = [];
 
   private activeRun: CodexActiveRun | null = null;
   private disposePromise: Promise<void> | null = null;
@@ -153,6 +156,7 @@ export class CodexExecutionSession
       onRelease: () => {
         this.serverRequestRouter.abortAll('session-disposed');
         this.subagents.clear();
+        this.recentDenials = [];
         this.threads.unload();
         this.serverRequestRouter.setDynamicToolRegistry(null);
       },
@@ -213,6 +217,7 @@ export class CodexExecutionSession
           toolPolicy: active.toolPolicy,
         };
       },
+      () => this.connection.supportsReviewGrants,
     );
     this.completionRecovery = new CodexCompletionRecovery({
       transport: () => this.connection.transport,
@@ -443,6 +448,10 @@ export class CodexExecutionSession
       this.turn.begin(new CodexNotificationRouter(
         chunk => this.handleStreamChunk(active, chunk),
         this.connection.targetWorkingDirectory(),
+        false,
+        event => {
+          if ('completedAtMs' in event) active.run.emit({ type: 'notice', message: this.#reviewMessage(event) });
+        },
       ));
 
       assertCodexModelAvailable(this.host, request.configuration.model);
@@ -526,6 +535,40 @@ export class CodexExecutionSession
     }
   }
 
+  get #canApproveReview(): boolean {
+    return this.connection.supportsReviewGrants && (!this.activeRun || this.activeRun.toolPolicy.kind === 'provider-default');
+  }
+
+  #reviewMessage(event: GuardianReviewCompleted): string {
+    const denied = this.#canApproveReview && event.review.status === 'denied';
+    if (denied) this.#rememberDenial(event);
+    return describeAutoReview(event, denied);
+  }
+
+  #rememberDenial(event: GuardianReviewCompleted): void {
+    const others = this.recentDenials.filter(entry => entry.threadId !== event.threadId || entry.reviewId !== event.reviewId);
+    this.recentDenials = [event, ...others].slice(0, 10);
+  }
+
+  getReviewDenials() {
+    if (!this.#canApproveReview) return [];
+    return this.recentDenials.filter(event => event.threadId === this.threadId).map(event => ({
+      value: event.reviewId, label: reviewPickerLabel(event.action), description: event.review.rationale ?? undefined,
+      approve: async (): Promise<boolean> => {
+        const transport = this.connection.transport;
+        if (!transport || !this.#canApproveReview || event.threadId !== this.threadId || !this.recentDenials.includes(event)) return false;
+        this.recentDenials = this.recentDenials.filter(entry => entry !== event);
+        try {
+          await transport.request('thread/approveGuardianDeniedAction', guardianOverrideParams(event));
+        } catch (error) {
+          if (transport === this.connection.transport && event.threadId === this.threadId) this.#rememberDenial(event);
+          throw error;
+        }
+        return true;
+      },
+    }));
+  }
+
   async #ensureConnection(generation: number, signal: AbortSignal): Promise<void> {
     await this.connection.settleRelease();
     await this.connection.scope?.waitUntilReady();
@@ -581,6 +624,8 @@ export class CodexExecutionSession
       }
       return;
     }
+    // Guardian warnings carry a thread but no turn, including on child threads.
+    if (method === 'guardianWarning' && (params as { threadId: string }).threadId !== this.threadId) return;
     if (method === 'serverRequest/resolved') {
       const resolved = params as ServerRequestResolvedNotification;
       this.serverRequestRouter.resolveNativeRequest(

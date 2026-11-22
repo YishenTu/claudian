@@ -1,7 +1,10 @@
+import { t } from '@/i18n/i18n';
+
 import type { StreamChunk, SubagentInfo } from '../../../core/types';
 import { applyCodexSubagentActivity } from '../normalization/codexSubagentActivity';
 import type { SubAgentActivityItem, Thread, Turn } from '../runtime/codexAppServerTypes';
 import { CodexNotificationRouter } from '../runtime/CodexNotificationRouter';
+import { describeAutoReview, describeReviewAction } from '../runtime/notifications/codexAutoReview';
 
 interface TrackedAgent {
   info: SubagentInfo;
@@ -138,7 +141,17 @@ export class CodexSubagentTracker {
   }
 
   private routerFor(agent: TrackedAgent): CodexNotificationRouter {
-    return agent.router ??= new CodexNotificationRouter(chunk => this.applyToolChunk(agent, chunk), this.workingDirectory?.(), true);
+    return agent.router ??= new CodexNotificationRouter(
+      chunk => this.applyToolChunk(agent, chunk), this.workingDirectory?.(), true, event => {
+        const id = `auto-review:${event.reviewId}`;
+        const action = describeReviewAction(event.action);
+        const description = 'completedAtMs' in event ? action : t('chat.approval.review.inProgress', { action });
+        this.applyToolChunk(agent, { type: 'tool_use', id, name: 'auto_review', input: { description } });
+        if ('completedAtMs' in event) {
+          this.applyToolChunk(agent, { type: 'tool_result', id, content: describeAutoReview(event, false), isError: event.review.status !== 'approved' });
+        }
+      },
+    );
   }
 
   private applyToolChunk(agent: TrackedAgent, chunk: StreamChunk): void {

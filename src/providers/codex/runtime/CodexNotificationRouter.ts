@@ -1,5 +1,6 @@
 import { unwrapRecoveryPrompt } from '@/core/prompt/recoveryPrompt';
 import type { StreamChunk } from '@/core/types';
+import { t } from '@/i18n/i18n';
 import { parseCodexQuestionReply } from '@/providers/codex/normalization/codexQuestionNormalization';
 import {
   CODEX_ASYNC_QUESTION_RESULT,
@@ -31,6 +32,7 @@ import type {
   WebSearchItem,
 } from './codexAppServerTypes';
 import { CodexAssistantTextTracker } from './notifications/CodexAssistantTextTracker';
+import { describeAutoReview, type GuardianReviewEvent } from './notifications/codexAutoReview';
 import { CodexCommandCorrelator } from './notifications/CodexCommandCorrelator';
 import { CodexDeferredExecCorrelator } from './notifications/CodexDeferredExecCorrelator';
 import {
@@ -84,6 +86,7 @@ export class CodexNotificationRouter {
     private readonly emitChunk: ChunkEmitter,
     private readonly workingDirectory?: string,
     streamRawExecCalls = false,
+    private readonly onReview?: (event: GuardianReviewEvent) => void,
   ) {
     const sink: CodexToolChunkSink = {
       emit: chunk => this.#emit(chunk),
@@ -156,6 +159,22 @@ export class CodexNotificationRouter {
         this.#emit({ type: 'usage', usage: projectTokenUsage(usageParams), sessionId: usageParams.threadId });
         break;
       }
+      case 'item/autoApprovalReview/started':
+      case 'item/autoApprovalReview/completed': {
+        const event = params as GuardianReviewEvent;
+        if (this.onReview) this.onReview(event);
+        else if ('completedAtMs' in event) this.#emit({ type: 'notice', content: describeAutoReview(event, false) });
+        break;
+      }
+      case 'guardianWarning': {
+        const { message } = params as { message: string };
+        // The TUI suppresses this legacy duplicate of the structured approval decision.
+        if (!message.startsWith('Automatic approval review approved (')) this.#emit({ type: 'notice', level: 'warning', content: message });
+        break;
+      }
+      case 'autoApprovalReview/strictReviewRequired':
+        this.#emit({ type: 'notice', content: t('chat.approval.review.strictRequired') });
+        break;
       case 'turn/plan/updated':
         this.#onPlanUpdated(params as TurnPlanUpdatedNotification);
         break;
