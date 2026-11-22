@@ -177,7 +177,7 @@ export class InlineAskUserQuestion {
   }
 
   #switchTab(index: number): void {
-    if (this.state.submitting || this.state.resolved) return;
+    if (!this.state.acceptsAnswer) return;
     const clamped = Math.max(0, Math.min(index, this.questions.length));
     if (clamped === this.state.activeTabIndex) return;
     this.state.activeTabIndex = clamped;
@@ -356,8 +356,9 @@ export class InlineAskUserQuestion {
       this.#handleResolve(null);
     });
     this.currentItems.push(cancelRow);
-    if (this.state.submissionError) {
-      this.contentArea.createDiv({ text: this.state.submissionError, cls: 'claudian-ask-error', attr: { role: 'alert' } });
+    const { phase } = this.state;
+    if (phase.kind === 'failed') {
+      this.contentArea.createDiv({ text: phase.error, cls: 'claudian-ask-error', attr: { role: 'alert' } });
     }
   }
 
@@ -372,7 +373,7 @@ export class InlineAskUserQuestion {
   }
 
   private selectOption(qIdx: number, option: AskUserQuestionOption): void {
-    if (this.state.submitting || this.state.resolved) return;
+    if (!this.state.acceptsAnswer) return;
     const q = this.questions[qIdx];
     const selected = this.state.answers.get(qIdx)!;
     const isMulti = q.multiSelect;
@@ -618,7 +619,7 @@ export class InlineAskUserQuestion {
   }
 
   private handleSubmit(): void {
-    if (this.state.submitting || this.state.resolved) return;
+    if (!this.state.acceptsAnswer) return;
     const allAnswered = this.questions.every((_, i) => this.#isQuestionAnswered(i));
     if (!allAnswered) return;
 
@@ -648,20 +649,19 @@ export class InlineAskUserQuestion {
   }
 
   async #submitAsync(result: AskUserAnswers): Promise<void> {
-    this.state.submitting = true;
-    this.state.submissionError = '';
-    if (this.state.onChange) this.state.onChange();
-    else this.refresh();
+    if (!this.state.beginSubmit()) return;
+    this.#notifyChange();
     try {
       await this.config.onSubmit!(result);
       this.#handleResolve(result);
     } catch (error) {
-      if (this.state.resolved) return;
-      this.state.submissionError = error instanceof Error ? error.message : t('chat.questions.sendFailed');
-      this.state.submitting = false;
-      if (this.state.onChange) this.state.onChange();
-      else this.refresh();
+      if (this.state.failSubmit(error instanceof Error ? error.message : t('chat.questions.sendFailed'))) this.#notifyChange();
     }
+  }
+
+  #notifyChange(): void {
+    if (this.state.onChange) this.state.onChange();
+    else this.refresh();
   }
 
   #canShowCustomInputForQuestion(question: AskUserQuestionItem): boolean {
@@ -678,8 +678,7 @@ export class InlineAskUserQuestion {
   }
 
   #handleResolve(result: Record<string, string | string[]> | null): void {
-    if (!this.state.resolved) {
-      this.state.resolved = true;
+    if (this.state.resolve()) {
       this.disposePresentation();
       this.resolveCallback(result);
     }

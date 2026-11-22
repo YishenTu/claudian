@@ -197,7 +197,7 @@ export class SessionInteractions {
    */
   async answer(interactionId: string, answers: AskUserAnswers): Promise<void> {
     const entry = this.pending.get(interactionId);
-    if (!entry || entry.state.resolved || entry.state.submitting) {
+    if (!entry?.state.acceptsAnswer) {
       throw new Error(`Interaction "${interactionId}" is not awaiting an answer`);
     }
     const error = validateAskUserAnswers(parseAskUserQuestions(entry.input), answers, entry.config?.showCustomInput !== false);
@@ -205,15 +205,12 @@ export class SessionInteractions {
     const result = structuredClone(answers);
     const submit = entry.config?.onSubmit;
     if (submit) {
-      entry.state.submitting = true;
-      entry.state.submissionError = '';
+      entry.state.beginSubmit();
       entry.state.onChange?.();
       try {
         await submit(result);
       } catch (submitError) {
-        if (this.pending.get(interactionId) === entry) {
-          entry.state.submitting = false;
-          entry.state.submissionError = submitError instanceof Error ? submitError.message : t('chat.questions.sendFailed');
+        if (entry.state.failSubmit(submitError instanceof Error ? submitError.message : t('chat.questions.sendFailed'))) {
           entry.state.onChange?.();
         }
         throw submitError;
@@ -294,7 +291,7 @@ export class SessionInteractions {
   #finish(id: string, entry: PendingPrompt, result: Record<string, string | string[]> | null): void {
     if (this.pending.get(id) !== entry) return;
     this.pending.delete(id);
-    entry.state.resolved = true;
+    entry.state.resolve();
     entry.state.onChange = undefined;
     entry.signal?.removeEventListener('abort', entry.abort);
     entry.inline?.disposePresentation();
