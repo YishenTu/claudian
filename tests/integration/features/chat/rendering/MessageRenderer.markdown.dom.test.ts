@@ -235,6 +235,25 @@ it('opens an image embedded in a reply in the zoomable preview from a native but
   expect(document.activeElement).toBe(trigger);
 });
 
+it('leaves an embedded image inside an authored link to the link', async () => {
+  // Obsidian renders `[![[photo.png]]](https://example.org)` as a link around the injected image.
+  vi.spyOn(MarkdownRenderer, 'render').mockImplementationOnce(async (...args) => {
+    await renderObsidianHTML(...args);
+    const link = args[2].ownerDocument.createElement('a');
+    link.href = 'https://example.org/';
+    link.append(...args[2].childNodes);
+    args[2].append(link);
+  });
+  settings.mediaFolder = 'Media';
+  await renderer.renderContent(host, '![[photo.png]]');
+
+  const link = within(host).getByRole('link');
+  expect(within(link).getByRole('img', { name: 'photo' })).toBeDefined();
+  expect(within(host).queryByRole('button')).toBeNull();
+  fireEvent.click(within(link).getByRole('img', { name: 'photo' }));
+  expect(within(document.body).queryByRole('dialog')).toBeNull();
+});
+
 it('skips the file-link DOM pass for content without wikilinks', async () => {
   const processLinks = vi.spyOn(fileLinks, 'processFileLinks');
   await renderer.renderContent(host, 'Plain text without links');

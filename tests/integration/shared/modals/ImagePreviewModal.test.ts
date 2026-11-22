@@ -182,6 +182,36 @@ describe('ImagePreviewModal', () => {
     expect(screen.queryByRole('dialog')).toBeNull();
   });
 
+  it('stops panning at the edges of a zoomed image', () => {
+    const { image } = openLoaded();
+    fireEvent.dblClick(image, { clientX: 200, clientY: 150 });
+
+    // At 4× a 400×300 fit size in a 400×300 stage, the center may move ±(1600 - 400) / 2 by ±(1200 - 300) / 2.
+    fireEvent.mouseDown(image, { button: 0, clientX: 200, clientY: 150 });
+    fireEvent.mouseMove(document, { clientX: 5200, clientY: 5150 });
+    expect(placement(image)).toEqual({ x: 600, y: 450, scale: 4 });
+    fireEvent.mouseMove(document, { clientX: -4800, clientY: -4850 });
+    expect(placement(image)).toEqual({ x: -600, y: -450, scale: 4 });
+    fireEvent.mouseUp(document);
+  });
+
+  it('keeps a zoomed image on screen and its level current when the window resizes', () => {
+    const { dialog, image } = openLoaded();
+    fireEvent.dblClick(image, { clientX: 200, clientY: 150 });
+    fireEvent.mouseDown(image, { button: 0, clientX: 200, clientY: 150 });
+    fireEvent.mouseMove(document, { clientX: -4800, clientY: -4850 });
+    fireEvent.mouseUp(document);
+
+    // The window halves: CSS refits the image to 200×150 inside a 200×150 stage.
+    vi.mocked(dialog.getBoundingClientRect).mockReturnValue(DOMRect.fromRect({ x: 0, y: 0, width: 200, height: 150 }));
+    Object.defineProperty(image, 'clientWidth', { configurable: true, value: 200 });
+    Object.defineProperty(image, 'clientHeight', { configurable: true, value: 150 });
+    window.dispatchEvent(new Event('resize'));
+
+    expect(placement(image)).toEqual({ x: -300, y: -225, scale: 4 });
+    expect(zoomLevel(dialog)).toBe('50%');
+  });
+
   it('does not pan an image at fit size', () => {
     const { dialog, image } = openLoaded();
 
@@ -203,5 +233,17 @@ describe('ImagePreviewModal', () => {
 
     const removed = removeListener.mock.calls.map(([type]) => type);
     expect(removed).toEqual(expect.arrayContaining(['mousemove', 'mouseup']));
+  });
+
+  it('stops following window resizes once closed', () => {
+    const { modal, dialog, image } = openLoaded();
+    modal.close();
+    const measure = vi.mocked(dialog.getBoundingClientRect);
+    measure.mockClear();
+
+    window.dispatchEvent(new Event('resize'));
+
+    expect(measure).not.toHaveBeenCalled();
+    expect(image.isConnected).toBe(false);
   });
 });

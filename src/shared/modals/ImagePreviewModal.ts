@@ -61,6 +61,8 @@ class ImageZoom {
     stage.addEventListener('wheel', this.onWheel, { passive: false });
     stage.addEventListener('mousedown', this.onMouseDown);
     image.addEventListener('dblclick', this.onDoubleClick);
+    // The stage fills the window, and CSS refits the image when the window resizes.
+    ownerDocument.defaultView?.addEventListener('resize', this.onResize);
   }
 
   /** Fit-to-natural ratio, or null while the image has no decoded size or layout yet. */
@@ -110,7 +112,10 @@ class ImageZoom {
 
   dispose(): void {
     this.endDrag();
+    this.ownerDocument.defaultView?.removeEventListener('resize', this.onResize);
   }
+
+  private readonly onResize = (): void => this.render();
 
   private render(): void {
     const naturalScale = this.naturalScale();

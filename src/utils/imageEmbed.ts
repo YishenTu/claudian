@@ -172,6 +172,8 @@ export function replaceImageEmbedsWithHTML(
  */
 export function makeEmbeddedImagesPreviewable(container: HTMLElement, label: (name: string) => string): void {
   for (const image of container.querySelectorAll<HTMLImageElement>('.claudian-embedded-image > img')) {
+    // An authored link around the image keeps its own action; controls must not nest.
+    if (image.closest('a')) continue;
     // The generated wrapper holds only the image, so appending keeps its position.
     const button = image.parentElement!.createEl('button', {
       cls: EMBEDDED_IMAGE_BUTTON_CLASS,
