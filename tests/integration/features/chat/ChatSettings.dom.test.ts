@@ -27,7 +27,7 @@ import { destroyTab } from '@/features/chat/tabs/TabLifecycle';
 import { refreshTabProviderUI } from '@/features/chat/tabs/tabProviderUI';
 import { createTabRuntime } from '@/features/chat/tabs/TabRuntimeFactory';
 import type { AssembledTabRuntime } from '@/features/chat/tabs/types';
-import { setLocale } from '@/i18n/i18n';
+import { setLocale, t } from '@/i18n/i18n';
 import { getCodexProviderSettings, updateCodexProviderSettings } from '@/providers/codex/settings';
 import { VaultMentionDataProvider } from '@/shared/mention/VaultMentionDataProvider';
 
@@ -225,28 +225,37 @@ it.each(modelCatalogCases.flatMap(entry => [true, false].map(advertisesHigh => (
 );
 
 it.each(['en', 'zh-CN'] as const)('defaults Codex to automatic review and persists and submits each permission selection in %s', async locale => {
-  setLocale(locale);
-  const prefix = locale === 'en' ? 'Permission mode:' : '权限模式：';
-  const labels = locale === 'en' ? ['Approve for me', 'Ask for approval', 'Full access'] : ['代我审批', '请求审批', '完全访问'];
+  setLocale('en');
+  const englishAutoReview = t('chat.permissionMode.current', { mode: t('chat.permissionMode.codex.autoReview') });
   const entry = modelCatalogCases.find(({ id }) => id === 'codex')!;
   const settings = createSettings(entry);
   const initialPermissionMode = settings.permissionMode;
   const { createTab, sessions, tabs } = (await createChatHarness(settings, entry.id, entry.selected));
   try {
+    setLocale(locale);
+    const labels = [
+      t('chat.permissionMode.codex.autoReview'),
+      t('chat.permissionMode.codex.normal'),
+      t('chat.permissionMode.codex.yolo'),
+    ];
+    const buttonName = (label: string) => t('chat.permissionMode.current', { mode: label });
+    expect(buttonName(labels[0]) !== englishAutoReview).toBe(locale !== 'en');
     const tab = await createTab();
     const ui = within(tab.dom.inputComposerEl);
-    expect(ui.getByRole('button', { name: `${prefix}${locale === 'en' ? ' ' : ''}${labels[0]}` })).toBeDefined();
+    let currentLabel = labels[0];
+    expect(ui.getByRole('button', { name: buttonName(currentLabel) })).toBeDefined();
     for (const [label, mode] of [
       [labels[1], 'normal'], [labels[2], 'yolo'], [labels[0], 'auto-review'],
     ]) {
-      fireEvent.click(ui.getByRole('button', { name: new RegExp(`^${prefix}`) }));
+      fireEvent.click(ui.getByRole('button', { name: buttonName(currentLabel) }));
       fireEvent.click(ui.getByRole('menuitemradio', { name: new RegExp(`^${label}`) }));
       await waitFor(() => expect(settings.savedProviderPermissionMode.codex).toBe(mode));
+      currentLabel = label;
       await expectSubmission(tab, sessions, getChatSettingsSnapshot(settings, entry.id, entry.selected).model, 'high');
       expect(sessions.at(-1)?.requests.at(-1)?.configuration.permissionMode).toBe(mode);
     }
     const reopened = await createTab();
-    expect(within(reopened.dom.inputComposerEl).getByRole('button', { name: `${prefix}${locale === 'en' ? ' ' : ''}${labels[0]}` })).toBeDefined();
+    expect(within(reopened.dom.inputComposerEl).getByRole('button', { name: buttonName(labels[0]) })).toBeDefined();
     expect(settings.permissionMode).toBe(initialPermissionMode);
   } finally {
     setLocale('en');

@@ -6,7 +6,7 @@ import { fireEvent, waitFor, within } from '@testing-library/dom';
 import { InlineAskUserQuestion } from '@/features/chat/interactions/InlineAskUserQuestion';
 import { SessionInteractions } from '@/features/chat/interactions/SessionInteractions';
 import { NavigationController } from '@/features/chat/navigation/NavigationController';
-import { setLocale } from '@/i18n/i18n';
+import { setLocale, t } from '@/i18n/i18n';
 
 beforeEach(() => document.body.replaceChildren());
 
@@ -131,7 +131,10 @@ it('delivers a custom scalar answer through the async onSubmit path', async () =
 
 
 it('localizes question chrome while submitting provider-authored options unchanged', async () => {
+  const englishTitle = t('chat.questions.title');
   setLocale('zh-CN');
+  const localizedTitle = t('chat.questions.title');
+  expect(localizedTitle).not.toBe(englishTitle);
   const resolve = vi.fn();
   const parent = document.body.createDiv();
   const panel = new InlineAskUserQuestion(parent, {
@@ -139,14 +142,14 @@ it('localizes question chrome while submitting provider-authored options unchang
   }, resolve);
   try {
     panel.render();
-    const region = within(parent).getByRole('region', { name: '问题' });
-    expect(within(region).getByPlaceholderText('输入你的回答…')).toBeDefined();
+    const region = within(parent).getByRole('region', { name: localizedTitle });
+    expect(within(region).getByPlaceholderText(t('chat.questions.customAnswer'))).toBeDefined();
     fireEvent.click(within(region).getByRole('button', { name: 'Lint' }));
-    fireEvent.click(within(region).getByRole('button', { name: '提交' }));
-    expect(within(region).getByText('准备提交回答了吗？')).toBeDefined();
-    expect(within(region).getByRole('button', { name: '取消' })).toBeDefined();
+    fireEvent.click(within(region).getByRole('button', { name: t('chat.questions.submit') }));
+    expect(within(region).getByText(t('chat.questions.ready'))).toBeDefined();
+    expect(within(region).getByRole('button', { name: t('common.cancel') })).toBeDefined();
     expect(await axe(region)).toHaveNoViolations();
-    fireEvent.click(within(region).getByRole('button', { name: '提交回答' }));
+    fireEvent.click(within(region).getByRole('button', { name: t('chat.questions.submitAnswers') }));
     expect(resolve).toHaveBeenCalledWith({ 'Which checks?': 'Lint' });
   } finally {
     panel.destroy();
@@ -157,19 +160,22 @@ it('localizes question chrome while submitting provider-authored options unchang
 
 
 it('localizes plugin-owned approval prompts and returns stable decisions', async () => {
+  const englishTitle = t('chat.approval.title');
   setLocale('zh-CN');
+  const localizedTitle = t('chat.approval.title');
+  expect(localizedTitle).not.toBe(englishTitle);
   const parent = document.body.createDiv();
   const interactions = new SessionInteractions({ getPromptParentEl: () => parent });
   try {
     const decision = interactions.requestApproval('approval', 'Bash', {}, 'Execute: npm test', { agentID: 'agent-1' });
-    const region = within(parent).getByRole('region', { name: '需要授权' });
-    expect(within(region).getByText('允许此操作吗？')).toBeDefined();
-    expect(within(region).getByRole('region', { name: 'Bash 授权详情' }).textContent).toBe('Execute: npm test');
-    expect(within(region).getByText('代理：agent-1')).toBeDefined();
-    expect(within(region).getByRole('button', { name: '拒绝' })).toBeDefined();
-    expect(within(region).getByRole('button', { name: '始终允许' })).toBeDefined();
+    const region = within(parent).getByRole('region', { name: localizedTitle });
+    expect(within(region).getByText(t('chat.approval.question'))).toBeDefined();
+    expect(within(region).getByRole('region', { name: t('chat.approval.details', { tool: 'Bash' }) }).textContent).toBe('Execute: npm test');
+    expect(within(region).getByText(t('chat.agent', { agent: 'agent-1' }))).toBeDefined();
+    expect(within(region).getByRole('button', { name: t('chat.approval.deny') })).toBeDefined();
+    expect(within(region).getByRole('button', { name: t('chat.approval.alwaysAllow') })).toBeDefined();
     expect(await axe(region)).toHaveNoViolations();
-    fireEvent.click(within(region).getByRole('button', { name: '允许一次' }));
+    fireEvent.click(within(region).getByRole('button', { name: t('chat.approval.allowOnce') }));
     await expect(decision).resolves.toBe('allow');
   } finally {
     interactions.dismiss('approval');

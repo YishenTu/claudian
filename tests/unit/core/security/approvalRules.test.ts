@@ -1,4 +1,4 @@
-import { setLocale } from '@/i18n/i18n';
+import { setLocale, t } from '@/i18n/i18n';
 
 import {
   getActionDescription,
@@ -76,20 +76,23 @@ describe('getActionDescription', () => {
 });
 
 
-it.each([
-  ['Bash', { command: 'git status' }, '运行命令：git status'],
-  ['Read', { file_path: '/file.md' }, '读取文件：/file.md'],
-  ['Write', { file_path: '/file.md' }, '写入文件：/file.md'],
-  ['Edit', { file_path: '/file.md' }, '编辑文件：/file.md'],
-  ['Glob', { pattern: '*.md' }, '搜索匹配的文件：*.md'],
-  ['Grep', { pattern: 'TODO' }, '搜索匹配的内容：TODO'],
-  ['Read', {}, '读取文件：（未知）'],
-  ['Custom', { text: 'Native content' }, 'Custom: {"text":"Native content"}'],
-])('localizes %s descriptions without changing action patterns', (tool, input, expected) => {
+it.each<readonly [string, Record<string, unknown>, () => string, boolean]>([
+  ['Bash', { command: 'git status' }, () => t('chat.approval.runCommand', { pattern: 'git status' }), true],
+  ['Read', { file_path: '/file.md' }, () => t('chat.approval.readFile', { pattern: '/file.md' }), true],
+  ['Write', { file_path: '/file.md' }, () => t('chat.approval.writeFile', { pattern: '/file.md' }), true],
+  ['Edit', { file_path: '/file.md' }, () => t('chat.approval.editFile', { pattern: '/file.md' }), true],
+  ['Glob', { pattern: '*.md' }, () => t('chat.approval.searchFiles', { pattern: '*.md' }), true],
+  ['Grep', { pattern: 'TODO' }, () => t('chat.approval.searchContent', { pattern: 'TODO' }), true],
+  ['Read', {}, () => t('chat.approval.readFile', { pattern: t('chat.approval.unknownPattern') }), true],
+  ['Custom', { text: 'Native content' }, () => 'Custom: {"text":"Native content"}', false],
+])('localizes %s descriptions without changing action patterns', (tool, input, expected, differsFromEnglish) => {
   const pattern = getActionPattern(tool, input);
+  const english = expected();
   setLocale('zh-CN');
   try {
-    expect(getActionDescription(tool, input)).toBe(expected);
+    const localized = expected();
+    expect(localized !== english).toBe(differsFromEnglish);
+    expect(getActionDescription(tool, input)).toBe(localized);
     expect(getActionPattern(tool, input)).toBe(pattern);
   } finally { setLocale('en'); }
 });

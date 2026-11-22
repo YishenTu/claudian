@@ -5,7 +5,7 @@ import { Notice } from 'obsidian';
 import type { Mock } from 'vitest';
 
 import { DualPaneLayout, type DualPaneLayoutSettings } from '@/features/chat/view/DualPaneLayout';
-import { setLocale } from '@/i18n/i18n';
+import { setLocale, t } from '@/i18n/i18n';
 function deferred<T = void>() {
   let resolve!: (value: T) => void;
   let reject!: (error: Error) => void;
@@ -183,11 +183,12 @@ describe('DualPaneLayout', () => {
     expect(harness.containerEl.hasClass('claudian-wide-session-layout')).toBe(true);
   });
 
-  it.each([
-    ['en', 'Failed to close the provisional session preview'],
-    ['zh-CN', '无法关闭临时会话预览'],
-  ] as const)('reports one %s failure when overlapping compact transitions share a failed preview cleanup', async (locale, message) => {
+  it.each(['en', 'zh-CN'] as const)('reports one %s failure when overlapping compact transitions share a failed preview cleanup', async locale => {
+    setLocale('en');
+    const englishMessage = t('chat.tabNavigation.previewCloseFailed');
     setLocale(locale);
+    const message = t('chat.tabNavigation.previewCloseFailed');
+    expect(message !== englishMessage).toBe(locale !== 'en');
     const sharedCleanup = deferred();
     const harness = createLayoutHarness({
       width: 900,
@@ -274,11 +275,12 @@ describe('DualPaneLayout', () => {
     );
   });
 
-  it.each([
-    ['en', 'Resize conversation sessions'],
-    ['zh-CN', '调整对话会话区域大小'],
-  ] as const)('clamps the session column through the %s separator', async (locale, name) => {
+  it.each(['en', 'zh-CN'] as const)('clamps the session column through the %s separator', async locale => {
+    setLocale('en');
+    const englishName = t('chat.tabNavigation.resize');
     setLocale(locale);
+    const name = t('chat.tabNavigation.resize');
+    expect(name !== englishName).toBe(locale !== 'en');
     const harness = createLayoutHarness({ width: 700 });
     document.body.append(harness.containerEl);
     harness.containerEl.append(harness.resizerEl, harness.sidebarEl);

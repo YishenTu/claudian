@@ -1,7 +1,7 @@
 import { testDate } from '@test/helpers/testClock';
 
 import { pickWelcomeGreeting } from '@/features/chat/rendering/WelcomeRenderer';
-import { setLocale } from '@/i18n/i18n';
+import { setLocale, t } from '@/i18n/i18n';
 
 beforeEach(() => { setLocale('en'); });
 afterEach(() => { setLocale('en'); vi.restoreAllMocks(); });
@@ -113,25 +113,27 @@ describe('pickWelcomeGreeting', () => {
 
   it('uses the current language on each call and keeps names verbatim', () => {
     const monday = localTime(1, 9);
-    expect(pickWelcomeGreeting('Archive', monday, 0)).toBe('Happy Monday, Archive');
+    const englishMonday = pickWelcomeGreeting('Archive', monday, 0);
+    expect(englishMonday).toBe('Happy Monday, Archive');
     expect(pickWelcomeGreeting('  ', monday, 0)).toBe('Happy Monday,   ');
     expect(pickWelcomeGreeting('  ', monday, 9.5 / 11)).toBe('   returns!');
     expect(setLocale('zh-CN')).toBe(true);
-    expect(pickWelcomeGreeting("Archive", localTime(1, 9), 0.5 / 11)).toBe("周一快乐，Archive");
-    expect(pickWelcomeGreeting("Archive", localTime(1, 9), 1.5 / 11)).toBe("Archive，继续加油！");
-    expect(pickWelcomeGreeting("Archive", localTime(1, 9), 2.5 / 11)).toBe("早上好，Archive");
-    expect(pickWelcomeGreeting("Archive", localTime(1, 9), 3.5 / 11)).toBe("喝杯咖啡，开始用 Claudian？");
-    expect(pickWelcomeGreeting("Archive", localTime(1, 9), 5.5 / 11)).toBe("Archive，你好吗？");
-    expect(pickWelcomeGreeting("Archive", localTime(1, 9), 9.5 / 11)).toBe("Archive 回来了！");
-    expect(pickWelcomeGreeting(undefined, localTime(1, 9), 1.5 / 10)).toBe("继续加油！");
-    expect(pickWelcomeGreeting("", localTime(1, 9), 1.5 / 10)).toBe("继续加油！");
-    expect(pickWelcomeGreeting("Archive", localTime(6, 9), 1.5 / 11)).toBe("Archive，周末到了");
-    expect(pickWelcomeGreeting("Archive", localTime(0, 9), 1.5 / 12)).toBe("周日来一场？");
-    expect(pickWelcomeGreeting("Archive", localTime(0, 9), 2.5 / 12)).toBe("周末到了");
-    expect(pickWelcomeGreeting("Archive", localTime(0, 23), 3.5 / 12)).toBe("你好，夜猫子");
-    expect(pickWelcomeGreeting("Welcome back", localTime(1, 9), 0.5 / 11)).toBe("周一快乐，Welcome back");
-    expect(pickWelcomeGreeting("Archive?!", localTime(1, 9), 5.5 / 11)).toBe("Archive?!，你好吗？");
-    expect(pickWelcomeGreeting("  ", localTime(1, 9), 9.5 / 11)).toBe("   回来了！");
+    expect(t('chat.welcome.mondayNamed', { name: 'Archive' })).not.toBe(englishMonday);
+    expect(pickWelcomeGreeting('Archive', localTime(1, 9), 0.5 / 11)).toBe(t('chat.welcome.mondayNamed', { name: 'Archive' }));
+    expect(pickWelcomeGreeting('Archive', localTime(1, 9), 1.5 / 11)).toBe(t('chat.welcome.backAtItNamed', { name: 'Archive' }));
+    expect(pickWelcomeGreeting('Archive', localTime(1, 9), 2.5 / 11)).toBe(t('chat.welcome.morningNamed', { name: 'Archive' }));
+    expect(pickWelcomeGreeting('Archive', localTime(1, 9), 3.5 / 11)).toBe(t('chat.welcome.coffee', { brand: 'Claudian' }));
+    expect(pickWelcomeGreeting('Archive', localTime(1, 9), 5.5 / 11)).toBe(t('chat.welcome.hiHowNamed', { name: 'Archive' }));
+    expect(pickWelcomeGreeting('Archive', localTime(1, 9), 9.5 / 11)).toBe(t('chat.welcome.returnsNamed', { name: 'Archive' }));
+    expect(pickWelcomeGreeting(undefined, localTime(1, 9), 1.5 / 10)).toBe(t('chat.welcome.backAtIt'));
+    expect(pickWelcomeGreeting('', localTime(1, 9), 1.5 / 10)).toBe(t('chat.welcome.backAtIt'));
+    expect(pickWelcomeGreeting('Archive', localTime(6, 9), 1.5 / 11)).toBe(t('chat.welcome.weekendNamed', { name: 'Archive' }));
+    expect(pickWelcomeGreeting('Archive', localTime(0, 9), 1.5 / 12)).toBe(t('chat.welcome.sundaySession'));
+    expect(pickWelcomeGreeting('Archive', localTime(0, 9), 2.5 / 12)).toBe(t('chat.welcome.weekend'));
+    expect(pickWelcomeGreeting('Archive', localTime(0, 23), 3.5 / 12)).toBe(t('chat.welcome.nightOwl'));
+    expect(pickWelcomeGreeting('Welcome back', localTime(1, 9), 0.5 / 11)).toBe(t('chat.welcome.mondayNamed', { name: 'Welcome back' }));
+    expect(pickWelcomeGreeting('Archive?!', localTime(1, 9), 5.5 / 11)).toBe(t('chat.welcome.hiHowNamed', { name: 'Archive?!' }));
+    expect(pickWelcomeGreeting('  ', localTime(1, 9), 9.5 / 11)).toBe(t('chat.welcome.returnsNamed', { name: '  ' }));
     expect(setLocale('en')).toBe(true);
     expect(pickWelcomeGreeting('Archive', monday, 0)).toBe('Happy Monday, Archive');
     expect(pickWelcomeGreeting('Archive', monday, 1.5 / 11)).toBe('Back at it, Archive');

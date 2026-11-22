@@ -24,26 +24,26 @@
     },
     "promptSuggestionHint": "Tab으로 수락",
     "selectAvailableModel": "전송하기 전에 사용 가능한 모델을 선택하세요.",
-    "reloadingHistory": "이 채팅이 Claudian 외부에서 변경되어 다시 불러오는 중입니다. 완료되면 다시 보내세요.",
-    "changedOutsideWithBackgroundTask": "이전 세션의 백그라운드 작업이 아직 실행 중인 상태에서 이 채팅이 Claudian 외부에서 계속되었습니다. 작업을 중지하거나 완료될 때까지 기다린 후 다시 보내세요.",
+    "reloadingHistory": "이 채팅이 Claudian 외부에서 변경되어 다시 불러오고 있습니다. 완료되면 다시 보내 주세요.",
+    "changedOutsideWithBackgroundTask": "이전 세션의 백그라운드 작업이 아직 실행 중인 상태에서 이 채팅이 Claudian 외부에서 이어졌습니다. 작업을 중지하거나 완료될 때까지 기다린 후 다시 보내 주세요.",
     "selectAvailableTitleModel": "Claudian 설정에서 사용 가능한 제목 생성 모델을 선택하세요.",
     "rewind": {
-      "confirmMessage": "이 시점으로 되감으시겠습니까? 이 메시지 이후의 파일 변경 사항이 덮어쓰이거나 삭제될 수 있습니다. 이 작업은 실행 취소할 수 없습니다.",
-      "confirmMessageConflicts": "이 시점으로 되감으시겠습니까? 에이전트 외부에서 수정된 파일 {count}개를 덮어씁니다:\n{files}",
-      "confirmMessageConversationOnly": "대화를 이 시점으로 되감으시겠습니까? 파일 변경 사항은 유지됩니다.",
+      "confirmMessage": "이 시점으로 되감을까요? 이 메시지 이후의 파일 변경 사항이 덮어쓰이거나 삭제될 수 있으며, 되돌릴 수 없습니다.",
+      "confirmMessageConflicts": "이 시점으로 되감을까요? 에이전트 외부에서 수정된 파일 {count}개를 덮어쓰게 됩니다:\n{files}",
+      "confirmMessageConversationOnly": "대화를 이 시점으로 되감을까요? 파일 변경 사항은 유지됩니다.",
       "confirmButton": "되감기",
       "inProgress": "현재 되감기가 완료될 때까지 기다려 주세요.",
       "ariaLabel": "여기로 되감기",
       "menuConversationOnly": "대화만 되감기",
       "menuCodeAndConversation": "코드 + 대화 되감기",
-      "notice": "되감기 완료: {count}개 파일 복원됨",
-      "noticeConversationOnly": "대화를 되감았습니다. 파일 변경 사항은 유지되었습니다",
-      "noticeSaveFailed": "되감기 완료: {count}개 파일 복원됨, 하지만 상태를 저장하지 못했습니다: {error}",
+      "notice": "되감기 완료: 파일 {count}개 복원됨",
+      "noticeConversationOnly": "대화를 되감았습니다. 파일 변경 사항은 유지됩니다",
+      "noticeSaveFailed": "되감기 완료: 파일 {count}개를 복원했지만 상태를 저장하지 못했습니다: {error}",
       "noticeConversationOnlySaveFailed": "대화를 되감았지만 상태를 저장하지 못했습니다: {error}",
       "failed": "되감기 실패: {error}",
       "cannot": "되감기 불가: {error}",
-      "unavailableStreaming": "스트리밍 중에는 되감기할 수 없습니다",
-      "unavailableNoUuid": "되감기 불가: 메시지 식별자 누락"
+      "unavailableStreaming": "스트리밍 중에는 되감을 수 없습니다",
+      "unavailableNoUuid": "되감기 불가: 메시지 식별자가 없습니다"
     },
     "fork": {
       "ariaLabel": "대화 분기",
@@ -54,7 +54,7 @@
       "noticeCurrentTab": "현재 탭에서 분기됨",
       "failed": "분기 실패: {error}",
       "unavailableStreaming": "스트리밍 중에는 분기할 수 없습니다",
-      "unavailableNoUuid": "분기 불가: 메시지 식별자 누락",
+      "unavailableNoUuid": "분기 불가: 메시지 식별자가 없습니다",
       "errorMessageNotFound": "메시지를 찾을 수 없습니다",
       "errorNoSession": "사용 가능한 세션 ID가 없습니다",
       "errorNoActiveTab": "활성 탭이 없습니다"
@@ -85,11 +85,11 @@
       "needsPrompt": "/side 뒤에 프롬프트를 입력해 사이드 채팅을 시작하세요.",
       "unsupportedProvider": "이 제공자는 사이드 채팅을 지원하지 않습니다.",
       "unavailableBusy": "사이드 채팅에는 완료된 답변이 필요합니다. 현재 턴이 끝날 때까지 기다려 주세요.",
-      "unavailableNoCheckpoint": "먼저 이 대화에서 답변을 완료한 뒤 사이드 채팅을 시작하세요.",
+      "unavailableNoCheckpoint": "사이드 채팅을 시작하려면 먼저 이 대화에 완료된 답변이 있어야 합니다.",
       "unavailableNoSession": "이 대화의 제공자 세션을 확인할 수 없습니다.",
-      "alreadyExists": "이 대화에는 이미 사이드 채팅이 있습니다. 버린 뒤 새로 시작하세요.",
-      "nestedUnavailable": "사이드 채팅에서 또 다른 사이드 채팅을 시작할 수 없습니다. 먼저 메인으로 접으세요.",
-      "mainOnlyCommand": "/{command} 은(는) 메인 채팅에서만 사용할 수 있습니다.",
+      "alreadyExists": "이 대화에는 이미 사이드 채팅이 있습니다. 기존 사이드 채팅을 버린 뒤 새로 시작하세요.",
+      "nestedUnavailable": "사이드 채팅 안에서는 새 사이드 채팅을 시작할 수 없습니다. 먼저 메인 채팅으로 접으세요.",
+      "mainOnlyCommand": "/{command} 명령어는 메인 채팅에서만 사용할 수 있습니다.",
       "startFailed": "사이드 채팅을 시작하지 못했습니다: {error}",
       "queued": "사이드 채팅 대기열에 추가했습니다.",
       "busySide": "사이드 채팅이 아직 응답 중입니다. 완료될 때까지 기다려 주세요."
@@ -111,7 +111,7 @@
       "toolBlocked": "{tool} · 차단됨"
     },
     "composer": {
-      "placeholder": "변경 요청, @로 파일 언급, /명령 실행",
+      "placeholder": "변경 사항 요청, @로 파일 언급, /명령어 실행",
       "message": "메시지",
       "dropImage": "여기에 이미지 놓기",
       "moreContext": "컨텍스트 항목 {count}개 더 표시",
@@ -142,7 +142,7 @@
       "sundaySession": "일요일에도 함께할까요?",
       "morning": "좋은 아침이에요",
       "morningNamed": "{name}님, 좋은 아침이에요",
-      "coffee": "커피와 함께 {brand} 할 시간인가요?",
+      "coffee": "커피 한 잔과 함께 {brand}할 시간인가요?",
       "afternoon": "좋은 오후예요",
       "afternoonNamed": "{name}님, 좋은 오후예요",
       "hey": "안녕하세요",
@@ -151,12 +151,12 @@
       "howGoingNamed": "{name}님, 어떻게 지내세요?",
       "evening": "좋은 저녁이에요",
       "eveningNamed": "{name}님, 좋은 저녁이에요",
-      "eveningShort": "저녁 인사드려요",
-      "eveningShortNamed": "{name}님, 저녁 인사드려요",
+      "eveningShort": "좋은 저녁이에요",
+      "eveningShortNamed": "{name}님, 좋은 저녁이에요",
       "howDay": "오늘 하루는 어땠나요?",
       "howDayNamed": "{name}님, 오늘 하루는 어땠나요?",
-      "nightOwl": "안녕하세요, 올빼미족 여러분",
-      "hiHow": "안녕, 잘 지내세요?",
+      "nightOwl": "안녕하세요, 올빼미족님",
+      "hiHow": "안녕하세요, 잘 지내세요?",
       "hiHowNamed": "{name}님, 잘 지내세요?",
       "welcomeBack": "다시 오신 걸 환영해요!",
       "welcomeBackNamed": "{name}님, 다시 오신 걸 환영해요!",
@@ -171,7 +171,7 @@
     "copyMessage": "메시지 복사",
     "showEarlierMessages": "이전 메시지 표시",
     "renderFailed": "메시지 내용을 표시하지 못했습니다.",
-    "interruptedHint": "· Claudian이 대신 무엇을 해야 하나요?",
+    "interruptedHint": "· Claudian이 대신 무엇을 할까요?",
     "sessions": {
       "empty": "대화 없음",
       "noMatch": "일치하는 세션 없음",
@@ -193,7 +193,7 @@
       "path": "연결된 콘텐츠: {path}",
       "missingPath": "연결된 콘텐츠: {path}. 콘텐츠 없음",
       "noContent": "연결된 콘텐츠 없음",
-      "missingNotice": "연결된 콘텐츠 없음: {path}",
+      "missingNotice": "연결된 콘텐츠를 찾을 수 없습니다: {path}",
       "openFailed": "연결된 콘텐츠를 열지 못했습니다: {error}"
     },
     "selectedContext": {
@@ -215,14 +215,14 @@
       "editAnswer": "{question} 답변 수정",
       "waiting": "답변 기다리는 중…",
       "noOptions": "기록된 선택 항목 없음",
-      "sendFailed": "답변을 보내지 못했습니다. 다시 시도하세요.",
+      "sendFailed": "답변을 보내지 못했습니다. 다시 시도해 주세요.",
       "answerBelow": "아래 질문 패널에서 답변하세요.",
       "expired": "질문이 만료되었습니다.",
-      "notSent": "답변이 전송되지 않았습니다. 다시 시도하세요.",
-      "unsupportedReply": "이 질문은 해당 답변을 받을 수 없습니다.",
+      "notSent": "답변이 전송되지 않았습니다. 다시 시도해 주세요.",
+      "unsupportedReply": "이 질문에는 해당 답변을 제출할 수 없습니다.",
       "uncertainDelivery": "답변 전달을 확인할 수 없습니다. 중복 전송을 피하기 위해 다시 대기열에 넣지 않았습니다.",
-      "differentConversation": "이 질문은 다른 대화에 속합니다.",
-      "sideUnavailable": "이 보조 대화는 더 이상 사용할 수 없습니다."
+      "differentConversation": "이 질문은 다른 대화의 질문입니다.",
+      "sideUnavailable": "이 사이드 채팅은 더 이상 사용할 수 없습니다."
     },
     "tools": {
       "calls": "도구 호출",
@@ -231,8 +231,8 @@
       "noMatches": "일치하는 항목 없음",
       "tasksUpdated": "작업 업데이트됨",
       "noChanges": "변경 없음",
-      "moreLines": "…{count}줄 더",
-      "moreCharacters": "…{count}자 더",
+      "moreLines": "… {count}줄 더",
+      "moreCharacters": "… {count}자 더",
       "running": "실행 중…",
       "noOutput": "출력 없음",
       "status": {
@@ -262,11 +262,11 @@
       "messageSession": "세션에 메시지 보내기",
       "stopSession": "세션 중지",
       "readSession": "세션 읽기",
-      "continueAgent": "에이전트 계속",
+      "continueAgent": "에이전트 계속 실행",
       "listAgents": "에이전트 목록",
       "interruptAgent": "에이전트 중단",
       "allAgents": "모든 에이전트",
-      "commandPlaceholder": "명령",
+      "commandPlaceholder": "명령어",
       "filesPlaceholder": "파일",
       "patternPlaceholder": "패턴",
       "toolsPlaceholder": "도구",
@@ -308,7 +308,7 @@
       "query": "검색어: {query}",
       "altQuery": "다른 검색어: {query}",
       "search": "웹 검색",
-      "moreQueries": "…검색어 {count}개 더",
+      "moreQueries": "… 검색어 {count}개 더",
       "clickInPage": "{url}에서 링크 {id} 클릭",
       "open": "{url} 열기",
       "find": "\"{pattern}\" 찾기",
@@ -322,7 +322,7 @@
       "changeFailed": "권한 모드를 변경하지 못했습니다",
       "antigravity": {
         "auto": "자동",
-        "autoDesc": "작업 공간 편집과 샌드박스 명령을 승인하고 추가 접근을 검토"
+        "autoDesc": "작업 공간 편집과 샌드박스 명령어를 자동 승인하고, 추가 접근은 검토"
       },
       "claude": {
         "auto": "자동",
@@ -337,11 +337,11 @@
       "codex": {
         "autoReview": "대신 승인",
         "normal": "승인 요청",
-        "yolo": "전체 액세스",
-        "autoReviewDesc": "추가 액세스 자동 검토.",
+        "yolo": "전체 접근",
+        "autoReviewDesc": "추가 접근 자동 검토.",
         "readOnlyDesc": "편집 또는 인터넷 사용 전에 확인.",
-        "normalDesc": "추가 액세스 전에 확인.",
-        "yoloDesc": "파일 및 인터넷 무제한 액세스."
+        "normalDesc": "추가 접근 전에 확인.",
+        "yoloDesc": "파일 및 인터넷 무제한 접근."
       }
     },
     "thinking": {
@@ -370,7 +370,7 @@
         "deliberating": "숙고하는 중…",
         "weighingOptions": "선택지를 저울질하는 중…",
         "gatheringThoughts": "생각을 정리하는 중…",
-        "brewingIdeas": "아이디어를 끓이는 중…",
+        "brewingIdeas": "아이디어를 우려내는 중…",
         "connectingDots": "점들을 잇는 중…",
         "assemblingThoughts": "생각을 조립하는 중…",
         "spinningUpNeurons": "뉴런을 깨우는 중…",
@@ -380,7 +380,7 @@
         "crunchingThoughts": "생각을 열심히 굴리는 중…",
         "dustingOffNeurons": "뉴런의 먼지를 터는 중…",
         "wranglingIdeas": "아이디어를 길들이는 중…",
-        "herdingThoughts": "흩어진 생각을 몰아 모으는 중…",
+        "herdingThoughts": "흩어진 생각을 끌어모으는 중…",
         "jugglingConcepts": "여러 개념을 넘나드는 중…",
         "untanglingThis": "엉킨 실타래를 푸는 중…",
         "piecingItTogether": "조각을 맞추는 중…",
@@ -393,28 +393,28 @@
         "parsing": "구문을 분석하는 중…",
         "compilingThoughts": "생각을 컴파일하는 중…",
         "runningInference": "추론을 실행하는 중…",
-        "queryingTheVoid": "공허에 질의하는 중…",
+        "queryingTheVoid": "공허에 질문하는 중…",
         "defragmentingBrain": "뇌를 조각 모음하는 중…",
         "allocatingMemory": "메모리를 할당하는 중…",
         "optimizing": "최적화하는 중…",
         "indexing": "색인을 만드는 중…",
         "syncingNeurons": "뉴런을 동기화하는 중…",
         "breathing": "숨을 고르는 중…",
-        "findingClarity": "맑은 생각을 찾는 중…",
+        "findingClarity": "생각을 맑게 가다듬는 중…",
         "channelingFocus": "집중력을 모으는 중…",
         "centering": "마음을 가다듬는 중…",
         "aligningChakras": "차크라를 정렬하는 중…",
         "meditatingOnThis": "조용히 명상하는 중…",
         "askingTheStars": "별에 묻는 중…",
         "readingTeaLeaves": "찻잎으로 점치는 중…",
-        "shakingTheMagic8Ball": "마법의 8번 공을 흔드는 중…",
+        "shakingTheMagic8Ball": "마법의 8볼을 흔드는 중…",
         "consultingAncientScrolls": "고대 두루마리를 읽는 중…",
         "decodingTheMatrix": "매트릭스를 해독하는 중…",
         "communingWithTheEther": "에테르와 교감하는 중…",
         "peeringIntoTheAbyss": "심연을 들여다보는 중…",
         "channelingTheCosmos": "우주의 기운을 모으는 중…",
         "divingIn": "뛰어드는 중…",
-        "rollingUpSleeves": "소매를 걷는 중…",
+        "rollingUpSleeves": "팔을 걷어붙이는 중…",
         "gettingToWork": "일에 착수하는 중…",
         "tacklingThis": "문제에 맞서는 중…",
         "onTheCase": "단서를 쫓는 중…",
@@ -422,26 +422,26 @@
         "exploring": "탐색하는 중…",
         "diggingDeeper": "더 깊이 파고드는 중…",
         "bearWithMe": "조금만 기다려 주세요…",
-        "hangTight": "잠깐만 참아 주세요…",
-        "justASec": "딱 한 순간이면 돼요…",
+        "hangTight": "잠깐만요, 금방이에요…",
+        "justASec": "잠깐이면 돼요…",
         "workingMyMagic": "마법을 부리는 중…",
         "almostThere": "거의 다 됐어요…",
-        "giveMeAMoment": "잠시 시간을 주세요…"
+        "giveMeAMoment": "잠시만 기다려 주세요…"
       },
       "hint": " (Esc 키로 중단 · {duration})"
     },
     "contextUsage": {
       "label": "컨텍스트 사용량",
       "details": "컨텍스트 사용량: {details}",
-      "nearLimit": " (한도에 가까워지고 있습니다. 계속하려면 {command}를 실행하세요)"
+      "nearLimit": " (한도에 가까워졌습니다. 계속하려면 {command} 명령어를 실행하세요)"
     },
     "suggestions": {
       "loading": "불러오는 중…",
       "noMatches": "일치하는 항목 없음",
-      "loadFailed": "추천을 불러오지 못했습니다",
+      "loadFailed": "제안을 불러오지 못했습니다",
       "retryHint": "다시 입력하여 재시도",
-      "providerLoading": "제공업체 명령 불러오는 중…",
-      "providerRetry": "제공업체 명령 검색 다시 시도",
+      "providerLoading": "제공자 명령어 불러오는 중…",
+      "providerRetry": "제공자 명령어 검색 다시 시도",
       "builtInDescriptions": {
         "new": "새 대화 시작하기",
         "compact": "대화 기록 압축하기",
@@ -460,33 +460,33 @@
       "mcpServer": "MCP 서버: {server}",
       "decline": "거절",
       "allow": "허용",
-      "cancelRequest": "이 요청 취소.",
-      "declineRequest": "이 요청 거절.",
-      "acceptRequest": "이 요청 수락.",
+      "cancelRequest": "이 요청을 취소합니다.",
+      "declineRequest": "이 요청을 거절합니다.",
+      "acceptRequest": "이 요청을 수락합니다.",
       "fileChange": "파일 변경",
       "fileChangeReason": "파일 변경: {reason}",
       "permissionRequest": "권한 요청",
       "permissionReason": "권한 요청: {reason}",
-      "networkAccess": "{host}에 {protocol} 액세스 허용",
+      "networkAccess": "{host}에 대한 {protocol} 접근 허용",
       "execute": "실행: {command}",
-      "executeCommand": "명령 실행",
-      "allowSimilar": "유사한 명령 허용",
-      "execPolicy": "실행 정책 변경 승인 및 저장.",
+      "executeCommand": "명령어 실행",
+      "allowSimilar": "유사한 명령어 허용",
+      "execPolicy": "실행 정책 변경을 승인하고 저장합니다.",
       "host": "호스트",
       "allowHost": "이 세션에서 {host} 허용",
       "denyHost": "이 세션에서 {host} 거부",
-      "allowRule": "{host}에 허용 규칙 적용.",
-      "denyRule": "{host}에 거부 규칙 적용.",
+      "allowRule": "{host}에 허용 규칙을 적용합니다.",
+      "denyRule": "{host}에 거부 규칙을 적용합니다.",
       "details": "{tool} 승인 세부 정보",
       "unexpectedSelection": "예상치 못한 승인 선택: \"{value}\"",
-      "runCommand": "명령 실행: {pattern}",
+      "runCommand": "명령어 실행: {pattern}",
       "readFile": "파일 읽기: {pattern}",
       "writeFile": "파일 쓰기: {pattern}",
       "editFile": "파일 편집: {pattern}",
       "searchFiles": "일치하는 파일 검색: {pattern}",
       "searchContent": "일치하는 내용 검색: {pattern}",
       "unknownPattern": "(알 수 없음)",
-      "deepseekRequest": "DeepSeek이 권한을 요청합니다."
+      "deepseekRequest": "DeepSeek에서 권한을 요청합니다."
     },
     "disclosure": {
       "expand": "{label} - 클릭하여 펼치기",
@@ -497,11 +497,11 @@
     "executionNotices": {
       "initializeFailed": "에이전트 실행을 초기화하지 못했습니다. 다시 시도해 주세요.",
       "unavailable": "에이전트 실행을 사용할 수 없습니다. 플러그인을 다시 불러와 주세요.",
-      "sessionUnavailable": "이 대화의 네이티브 세션은 현재 CLI 구성에서 사용할 수 없습니다. 계속하려면 새 채팅을 시작하세요.",
+      "sessionUnavailable": "현재 CLI 구성에서는 이 대화의 네이티브 세션을 사용할 수 없습니다. 계속하려면 새 채팅을 시작하세요.",
       "unsentFallback": "메시지가 전송되지 않았습니다. 다시 시도해 주세요."
     },
     "images": {
-      "unsupportedProvider": "이 제공업체는 이미지 첨부를 지원하지 않습니다.",
+      "unsupportedProvider": "이 제공자는 이미지 첨부를 지원하지 않습니다.",
       "tooLarge": "이미지가 {size} 제한을 초과합니다.",
       "unsupportedType": "지원하지 않는 이미지 형식입니다.",
       "attachFailed": "이미지를 첨부하지 못했습니다.",
@@ -515,7 +515,7 @@
     },
     "pi": {
       "extension": "Pi 확장",
-      "notification": "Pi 확장 알림."
+      "notification": "Pi 확장 알림입니다."
     },
     "sessionMessage": {
       "undelivered": "{senders}의 메시지를 전달하지 못했습니다.",
@@ -547,7 +547,7 @@
       "sessionMissing": "해당 세션이 더 이상 존재하지 않습니다.",
       "openFailed": "세션을 열지 못했습니다: {message}",
       "openUnavailable": "여기에서는 세션을 열 수 없습니다.",
-      "providersIncluded": "사용 가능한 공급자와 모델 포함",
+      "providersIncluded": "사용 가능한 제공자와 모델 포함",
       "newSession": "새 세션",
       "session": "세션",
       "turns": "턴",
@@ -559,13 +559,13 @@
     },
     "modelPicker": {
       "options": "모델 옵션",
-      "provider": "공급자",
+      "provider": "제공자",
       "modelLabel": "모델: {label}",
       "unavailable": "모델을 사용할 수 없음",
       "setup": "모델 설정",
-      "guidance": "공급자 설정에서 활성화된 모델을 선택하세요. 검색에 실패했다면 모델 목록을 새로고침하세요.",
+      "guidance": "제공자 설정에서 활성화된 모델을 선택하세요. 검색에 실패했다면 모델 목록을 새로고침하세요.",
       "model": "모델",
-      "empty": "사용 가능한 모델이 없습니다. 공급자 설정을 확인하고 검색에 실패했다면 모델 목록을 새로고침하세요.",
+      "empty": "사용 가능한 모델이 없습니다. 제공자 설정을 확인하고 검색에 실패했다면 모델 목록을 새로고침하세요.",
       "changeModelFailed": "모델을 변경하지 못했습니다",
       "defaultEffort": "기본값",
       "effortLabel": "사고 수준 {label}",
@@ -660,7 +660,7 @@
         "titleNew": "새 프로젝트",
         "titleEdit": "프로젝트 편집",
         "name": "이름",
-        "nameDesc": "세션 관리자와 멤버 세션에 표시됩니다.",
+        "nameDesc": "세션 관리자와 소속 세션에 표시됩니다.",
         "namePlaceholder": "프로젝트 이름",
         "iconButton": "프로젝트 아이콘: {icon}",
         "iconDefault": "기본 폴더",
@@ -668,12 +668,12 @@
         "iconSearch": "아이콘 검색",
         "iconNoMatches": "일치하는 아이콘이 없습니다.",
         "instructions": "지침",
-        "instructionsDesc": "다음 턴부터 모든 멤버 세션의 시스템 프롬프트에 추가됩니다.",
+        "instructionsDesc": "다음 턴부터 모든 소속 세션의 시스템 프롬프트에 추가됩니다.",
         "memoryPath": "메모리 파일",
-        "memoryPathDesc": "프로젝트 메모리 파일의 볼트 경로입니다. .md 확장자가 없으면 추가됩니다. 변경하면 파일이 이동됩니다.",
+        "memoryPathDesc": "프로젝트 메모리 파일의 보관함 내 경로입니다. .md 확장자가 없으면 자동으로 추가되며, 경로를 변경하면 파일도 함께 이동합니다.",
         "memoryPathPlaceholder": "폴더/MEMORY.md",
-        "memoryPathInvalid": "볼트 안의 파일 경로를 입력하세요(예: Projects/MEMORY.md).",
-        "memoryPathTaken": "{path}은(는) 이미 파일 또는 다른 프로젝트에서 사용 중입니다.",
+        "memoryPathInvalid": "보관함 안의 파일 경로를 입력하세요(예: Projects/MEMORY.md).",
+        "memoryPathTaken": "{path} 경로는 이미 다른 파일이나 프로젝트에서 사용 중입니다.",
         "openMemory": "열기",
         "nameRequired": "프로젝트 이름을 입력하세요."
       },
@@ -691,11 +691,11 @@
         "saved": "프로젝트 메모리를 저장했습니다",
         "loading": "불러오는 중…",
         "updated": "{time} 업데이트됨",
-        "changedOutside": "메모리 파일이 이 창 밖에서 업데이트되었습니다. 에이전트가 수정했을 가능성이 높습니다.",
+        "changedOutside": "메모리 파일이 이 창 외부에서 업데이트되었습니다. 에이전트가 수정했을 수 있습니다.",
         "keepMine": "내 편집 유지",
         "discardConfirm": "프로젝트 메모리의 저장되지 않은 변경 사항을 버릴까요?",
         "discard": "버리기",
-        "emptyHint": "프로젝트가 진행되면서 에이전트가 채워 넣습니다."
+        "emptyHint": "프로젝트가 진행됨에 따라 에이전트가 이 내용을 채워 넣습니다."
       }
     }
   },
@@ -706,14 +706,14 @@
     "applied": "편집 적용됨",
     "editorUnavailable": "인라인 편집을 사용할 수 없습니다. 활성 편집기에 접근할 수 없습니다. 노트를 다시 열어 보세요.",
     "stale": "원본 문서 또는 선택 영역이 변경되어 인라인 편집을 적용하지 못했습니다.",
-    "initialProviderFailed": "인라인 편집을 사용할 수 없습니다. {provider} 제공업체를 시작하지 못했습니다.",
+    "initialProviderFailed": "인라인 편집을 사용할 수 없습니다. {provider} 제공자를 시작하지 못했습니다.",
     "vaultFailed": "보관함 파일을 불러오지 못했습니다. 보관함의 @ 멘션을 사용하지 못할 수 있습니다.",
     "editLabel": "편집 지시",
     "insertLabel": "삽입 지시",
     "editPlaceholder": "편집 지시…",
     "insertPlaceholder": "삽입 지시…",
     "modelUnavailable": "Claudian 설정에서 사용 가능한 모델을 선택하세요.",
-    "providerFailed": "{provider} 제공업체를 시작하지 못했습니다.",
+    "providerFailed": "{provider} 제공자를 시작하지 못했습니다.",
     "actionsLabel": "인라인 편집 작업",
     "lineOne": "줄",
     "lineOther": "줄",
@@ -722,9 +722,9 @@
     "rejectLabel": "인라인 편집 거부",
     "acceptLabel": "인라인 편집 수락",
     "retryFallback": "오류가 발생했습니다. 다시 시도하세요",
-    "replyPlaceholder": "계속하려면 답장하세요…",
+    "replyPlaceholder": "계속하려면 답변을 입력하세요…",
     "noResponseFallback": "에이전트가 응답하지 않았습니다",
-    "followUpPlaceholder": "변경을 요청하거나 Enter를 눌러 수락"
+    "followUpPlaceholder": "변경 사항을 요청하거나 Enter 키를 눌러 수락"
   },
   "settings": {
     "tabs": {
@@ -744,20 +744,20 @@
     "responses": "응답",
     "experimental": "실험적 기능",
     "userName": {
-      "name": "Claudian이 당신을 어떻게 불러야 합니까?",
-      "desc": "개인화된 인사에 사용할 이름 (비워두면 일반 인사)"
+      "name": "Claudian이 어떻게 불러드릴까요?",
+      "desc": "맞춤형 인사에 사용할 이름입니다(비워 두면 기본 인사를 표시합니다)."
     },
     "excludedTags": {
       "name": "제외 태그",
-      "desc": "이 태그가 포함된 노트는 자동으로 컨텍스트로 로드되지 않습니다 (한 줄에 하나, # 제외)"
+      "desc": "이 태그가 포함된 노트는 컨텍스트로 자동 불러오지 않습니다(한 줄에 하나씩, # 제외)."
     },
     "mediaFolder": {
       "name": "미디어 폴더",
-      "desc": "첨부 파일/이미지를 저장할 폴더. 노트가 ![[image.jpg]]를 사용할 때 Claude가 여기서 찾습니다. 비워두면 저장소 루트 사용."
+      "desc": "첨부 파일과 이미지가 저장된 폴더입니다. 노트에 ![[image.jpg]]가 있으면 Claude가 이 폴더에서 찾습니다. 비워 두면 보관함 루트를 사용합니다."
     },
     "systemPrompt": {
-      "name": "커스텀 시스템 프롬프트",
-      "desc": "기본 시스템 프롬프트에 추가되는 추가 지침"
+      "name": "사용자 지정 시스템 프롬프트",
+      "desc": "기본 시스템 프롬프트 뒤에 추가할 지침입니다."
     },
     "showTabTitlesByDefault": {
       "name": "탭 제목을 기본으로 표시",
@@ -778,34 +778,34 @@
     },
     "titleModel": {
       "name": "제목 생성 모델",
-      "desc": "대화 제목을 자동 생성하는 데 사용되는 모델.",
+      "desc": "대화 제목을 자동 생성할 때 사용할 모델입니다.",
       "select": "모델 선택",
       "unavailableWarning": "자동 제목 생성이 일시 중지되었습니다. 사용 가능한 제목 모델을 선택하세요."
     },
     "navMappings": {
-      "name": "Vim 스타일 네비게이션 매핑",
-      "desc": "한 줄에 하나의 매핑. 형식: \"map <키> <동작>\" (동작: scrollUp, scrollDown, focusInput)."
+      "name": "Vim 스타일 내비게이션 매핑",
+      "desc": "한 줄에 하나씩 입력하세요. 형식: \"map <키> <동작>\" (동작: scrollUp, scrollDown, focusInput)."
     },
     "requireCommandOrControlEnterToSend": {
-      "name": "Command/Ctrl+Enter로 보내기 필수",
-      "desc": "활성화하면 Enter는 줄바꿈을 삽입합니다. macOS에서는 Command+Enter, Windows와 Linux에서는 Ctrl+Enter로 보냅니다."
+      "name": "Command/Ctrl+Enter로만 전송",
+      "desc": "활성화하면 Enter 키로 줄을 바꿉니다. macOS에서는 Command+Enter, Windows와 Linux에서는 Ctrl+Enter로 전송합니다."
     },
     "safety": "보안",
     "loadUserSettings": {
-      "name": "사용자 Claude Code 설정 로드",
-      "desc": "~/.claude에서 사용자 수준 Claude Code 구성(settings.json, 스킬, 명령, 에이전트, 플러그인)을 로드합니다. 비활성화하면 Vault 수준 구성만 사용할 수 있습니다. 활성화하면 사용자의 허용 규칙이 보안 모드를 우회할 수 있습니다."
+      "name": "사용자 Claude Code 설정 불러오기",
+      "desc": "~/.claude에서 사용자 수준 Claude Code 구성(settings.json, 스킬, 명령어, 에이전트, 플러그인)을 불러옵니다. 비활성화하면 보관함 수준 구성만 사용할 수 있습니다. 활성화하면 사용자의 권한 규칙이 안전 모드를 우회할 수 있습니다."
     },
     "codexSandbox": {
       "name": "샌드박스",
-      "desc": "대신 승인 및 승인 요청 모드의 파일 접근 권한입니다. 읽기 전용은 편집할 때마다 확인을 요청하며, 전체 액세스에서는 무시됩니다."
+      "desc": "대신 승인 및 승인 요청 모드의 파일 접근 권한입니다. 읽기 전용은 편집할 때마다 확인을 요청하며, 전체 접근에서는 무시됩니다."
     },
     "environment": "환경",
     "sharedEnvironment": {
       "name": "공유 환경",
-      "desc": "모든 제공자가 함께 사용하는 제공자 중립 런타임 변수입니다. PATH, 프록시, 인증서, 임시 디렉터리 변수에 사용하세요."
+      "desc": "모든 제공자가 공유하는 런타임 환경 변수입니다. PATH, 프록시, 인증서, 임시 디렉터리 변수에 사용하세요."
     },
     "customVariables": {
-      "name": "커스텀 변수",
+      "name": "사용자 지정 변수",
       "desc": "Claude Code 전용 런타임 변수만 입력하세요. ANTHROPIC_* 및 Claude Code 전용 설정에 사용합니다."
     },
     "envSnippets": {
@@ -818,17 +818,17 @@
         "titleEdit": "스니펫 편집",
         "titleSave": "스니펫 저장",
         "name": "이름",
-        "namePlaceholder": "이 구성에 대한 설명적인 이름",
+        "namePlaceholder": "이 환경 구성을 쉽게 알아볼 수 있는 이름",
         "description": "설명",
-        "descPlaceholder": "선택적 설명",
+        "descPlaceholder": "설명 (선택)",
         "envVars": "환경 변수",
-        "envVarsPlaceholder": "KEY=VALUE 형식, 한 줄에 하나 (export 접두사 지원)",
+        "envVarsPlaceholder": "KEY=VALUE 형식, 한 줄에 하나씩 입력 (export 접두사 지원)",
         "save": "저장",
         "update": "업데이트",
         "cancel": "취소"
       },
       "insertFailed": "스니펫을 삽입하지 못했습니다",
-      "deleteConfirm": "환경 변수 스니펫 \"{name}\"을(를) 삭제할까요?",
+      "deleteConfirm": "\"{name}\" 환경 변수 스니펫을 삭제할까요?",
       "deleteFailed": "스니펫을 삭제하지 못했습니다"
     },
     "customModelAliases": {
@@ -837,7 +837,7 @@
     },
     "enableChrome": {
       "name": "Chrome 확장 프로그램 활성화",
-      "desc": "claude-in-chrome 확장 프로그램을 통해 Claude Code가 Chrome과 상호작용할 수 있도록 합니다. 확장 프로그램이 설치되어 있어야 합니다. 세션 재시작이 필요합니다."
+      "desc": "claude-in-chrome 확장 프로그램을 통해 Claude Code가 Chrome과 상호작용할 수 있게 합니다. 확장 프로그램이 설치되어 있어야 하며, 세션을 다시 시작해야 적용됩니다."
     },
     "enableDualPane": {
       "name": "이중 창 모드 활성화",
@@ -875,12 +875,12 @@
       "desc": "한 줄에 하나씩 지정한 코드 블록 언어를 노트에서 렌더링하는 플러그인에 전달합니다(예: vega-lite). 응답이 완료된 후 렌더링됩니다. 다른 코드 블록은 항상 코드로 표시됩니다."
     },
     "expandFileEditsByDefault": {
-      "name": "파일 편집을 기본적으로 펼치기",
-      "desc": "Write 및 Edit diff가 처음 표시될 때 펼친 상태로 보여줍니다."
+      "name": "파일 편집 기본으로 펼치기",
+      "desc": "Write 및 Edit 변경 내역(diff)이 처음 표시될 때 펼친 상태로 보여줍니다."
     },
     "chatViewPlacement": {
       "name": "Claudian 열 위치",
-      "desc": "채팅 패널이 생성될 때 열릴 위치를 선택합니다",
+      "desc": "채팅 패널이 생성될 때 열릴 위치를 선택합니다.",
       "rightSidebar": "오른쪽 사이드바",
       "leftSidebar": "왼쪽 사이드바",
       "mainTab": "메인 편집기 탭"
@@ -898,14 +898,14 @@
       "custom": "사용자 지정 경로",
       "auto": "자동 감지",
       "checkFailed": "CLI를 확인할 수 없음",
-      "saveFailed": "경로를 저장할 수 없습니다. 다시 시도하세요."
+      "saveFailed": "경로를 저장하지 못했습니다. 다시 시도해 주세요."
     },
     "cliPath": {
       "name": "Claude Code CLI 경로",
       "genericName": "CLI 경로",
       "validation": {
         "notExist": "경로가 존재하지 않습니다",
-        "isDirectory": "경로가 디렉토리입니다 파일이 아닙니다",
+        "isDirectory": "경로가 파일이 아닌 디렉터리입니다",
         "mustBeAbsolute": "경로는 절대 경로여야 합니다",
         "notFile": "경로는 파일을 가리켜야 합니다",
         "notAccessible": "경로에 접근할 수 없습니다",
@@ -914,7 +914,7 @@
     },
     "language": {
       "name": "언어",
-      "desc": "플러그인 인터페이스의 표시 언어 변경"
+      "desc": "플러그인 인터페이스의 표시 언어를 변경합니다."
     },
     "providerEnablement": {
       "name": "{provider} 활성화",
@@ -926,7 +926,7 @@
       "desc": "채팅 선택기에서 사용할 모델을 선택합니다. 드래그하여 순서를 바꿀 수 있으며, 제공자는 현재 사용 가능한 첫 번째 모델을 기본값으로 사용합니다. 이 제공자를 사용하려면 모델을 하나 이상 선택하세요.",
       "browse": "모델 찾아보기",
       "filterLabel": "{provider} 모델 필터",
-      "searchPlaceholder": "모델, 제공자 또는 ID로 필터...",
+      "searchPlaceholder": "모델, 제공자 또는 ID로 필터…",
       "providerFilterLabel": "모델 제공자 필터",
       "allProviders": "모든 제공자 ({count})",
       "discover": "검색",
@@ -934,8 +934,8 @@
       "ofDiscovered": " / 발견된 {count}개",
       "oneProvider": " | 제공자 1개",
       "manyProviders": " | 제공자 {count}개",
-      "loadingModels": "모델을 불러오는 중...",
-      "loading": "불러오는 중...",
+      "loadingModels": "모델을 불러오는 중…",
+      "loading": "불러오는 중…",
       "available": "{count}개 사용 가능",
       "noneDiscovered": "아직 발견된 모델이 없습니다",
       "selected": "선택됨 ({count})",
@@ -946,9 +946,9 @@
       "aliasLabel": "별칭 (선택)",
       "removeLabel": "{model} 제거",
       "noMatch": "필터와 일치하는 모델이 없습니다.",
-      "emptyCatalog": "보고된 {provider} 모델이 없습니다. 구성을 확인하고 검색을 클릭하세요.",
+      "emptyCatalog": "가져온 {provider} 모델이 없습니다. 구성을 확인한 뒤 검색을 클릭하세요.",
       "loadingCatalog": "{provider} 모델을 불러오는 중…",
-      "stale": "{provider} 모델 카탈로그가 오래되었습니다. 검색을 클릭하여 새로 고치세요."
+      "stale": "{provider} 모델 목록이 최신 상태가 아닙니다. 검색을 클릭하여 새로고침하세요."
     },
     "claude": {
       "promptSuggestions": {
@@ -958,7 +958,7 @@
       "configuration": "구성",
       "responseStyle": {
         "name": "응답 스타일",
-        "desc": "답변에 사용할 Claude Code 출력 스타일입니다(사용자 지정 스타일 포함). “Claude Code 설정”은 Claude Code 구성을 따릅니다. 모델을 새로 고치거나 채팅을 시작하면 목록이 업데이트됩니다.",
+        "desc": "답변에 사용할 Claude Code 출력 스타일입니다(사용자 지정 스타일 포함). “Claude Code 설정”은 Claude Code 구성을 따릅니다. 모델을 새로고침하거나 채팅을 시작하면 목록이 업데이트됩니다.",
         "default": "기본값",
         "inherit": "Claude Code 설정"
       }
@@ -968,7 +968,7 @@
         "name": "Codex CLI 경로"
       },
       "safeMode": {
-        "workspaceWrite": "작업공간 쓰기",
+        "workspaceWrite": "작업 공간 쓰기",
         "readOnly": "읽기 전용"
       },
       "responseStyle": {
@@ -996,43 +996,43 @@
       },
       "ultraEffort": {
         "name": "Ultra 추론 강도 활성화",
-        "desc": "Ultra를 지원하는 Codex 모델의 추론 강도 선택기에 표시합니다. Ultra는 최대 추론과 자동 작업 위임을 사용합니다."
+        "desc": "Ultra를 지원하는 Codex 모델의 추론 강도 선택기에 Ultra를 표시합니다. Ultra는 최대 수준의 추론과 자동 작업 위임을 사용합니다."
       },
       "environment": {
         "name": "Codex 환경",
-        "desc": "Codex 전용 런타임 변수만 입력하세요. OPENAI_* 및 CODEX_* 설정에 사용합니다. Codex 자동 감지에 도움이 필요하면 이 공급자 섹션 대신 공유 PATH에 설치 디렉터리를 추가하세요."
+        "desc": "Codex 전용 런타임 변수만 입력하세요. OPENAI_* 및 CODEX_* 설정에 사용합니다. Codex가 자동으로 감지되지 않으면 이 제공자 섹션 대신 공유 PATH에 설치 디렉터리를 추가하세요."
       }
     },
     "agentSkills": {
       "sharedExpectation": "호환되는 제공자를 위해 .agents/skills/의 공유 스킬을 관리합니다.",
-      "noSkills": "구성된 공유 스킬이 없습니다. +를 클릭하여 만드세요.",
+      "noSkills": "설정된 공유 스킬이 없습니다. + 버튼을 클릭하여 추가하세요.",
       "skillBadge": "스킬",
       "diagnosticsTitle": "확인이 필요한 스킬",
       "loadFailed": "공유 스킬을 불러올 수 없습니다.",
-      "savedRefreshFailed": "저장했지만 제공자 새로 고침에 실패했습니다.",
+      "savedRefreshFailed": "저장했지만 제공자 새로고침에 실패했습니다.",
       "validationFailed": "잘못된 스킬: {message}",
       "collisionFailed": "\"{name}\" 스킬이 이미 있습니다.",
       "saveFailed": "공유 스킬을 저장하지 못했습니다: {message}",
       "deleteFailed": "공유 스킬을 휴지통으로 옮기지 못했습니다: {message}",
-      "staleConflict": "이 스킬이 다른 곳에서 변경되었습니다. 저장하기 전에 새로 고치세요.",
-      "created": "공유 스킬 \"{name}\"을(를) 만들었습니다.",
-      "updated": "공유 스킬 \"{name}\"을(를) 업데이트했습니다.",
-      "deleted": "공유 스킬 \"{name}\"을(를) 휴지통으로 옮겼습니다.",
+      "staleConflict": "이 스킬이 다른 곳에서 변경되었습니다. 저장하기 전에 새로고침하세요.",
+      "created": "\"{name}\" 공유 스킬을 만들었습니다.",
+      "updated": "\"{name}\" 공유 스킬을 업데이트했습니다.",
+      "deleted": "\"{name}\" 공유 스킬을 휴지통으로 옮겼습니다.",
       "fix": "수정",
-      "fixed": "스킬 \"{name}\"을(를) 수정했습니다.",
+      "fixed": "\"{name}\" 스킬을 수정했습니다.",
       "modal": {
         "titleEdit": "공유 스킬 편집",
         "titleAdd": "공유 스킬 추가",
         "titleFix": "스킬 수정",
         "name": "스킬 이름",
-        "nameDesc": "소문자와 숫자를 하이픈 하나로 구분하여 입력",
+        "nameDesc": "소문자와 숫자를 단일 하이픈(-)으로 구분하여 입력하세요.",
         "namePlaceholder": "code-reviewer",
         "description": "설명",
-        "descriptionDesc": "제공자가 스킬을 선택할 때 사용하는 필수 공통 설명",
+        "descriptionDesc": "제공자가 스킬을 선택할 때 참고하는 필수 공통 설명입니다.",
         "descriptionPlaceholder": "코드의 정확성과 유지보수성을 검토합니다",
         "instructions": "지침",
-        "instructionsDesc": "필수 SKILL.md 지침",
-        "instructionsPlaceholder": "제공된 코드를 검토하고 조치 가능한 결과를 보고하세요..."
+        "instructionsDesc": "필수 SKILL.md 지침입니다.",
+        "instructionsPlaceholder": "제공된 코드를 검토하고 조치가 필요한 사항을 정리해 주세요…"
       },
       "delete": {
         "title": "공유 스킬 삭제",
@@ -1041,7 +1041,7 @@
       }
     },
     "opencode": {
-      "emptyModels": "OpenCode 서버가 이 보관함에서 활성화된 모델을 반환하지 않았습니다. 보관함의 .opencode/opencode.json과 OpenCode 로그를 확인하세요(opencode debug paths로 위치 확인). OpenCode v2에서는 설정된 V1 플러그인이 호환되지 않을 수 있습니다. 보관함에서 opencode models --standalone을 실행해 비교한 후 다시 검색하세요.",
+      "emptyModels": "OpenCode 서버가 이 보관함에서 활성화된 모델을 반환하지 않았습니다. 보관함의 .opencode/opencode.json과 OpenCode 로그를 확인하세요(opencode debug paths로 위치 확인). OpenCode v2에서는 설정된 V1 플러그인이 호환되지 않을 수 있습니다. 보관함에서 opencode models --standalone을 실행해 비교한 뒤 검색을 클릭하세요.",
       "environment": {
         "name": "OpenCode 환경 변수",
         "desc": "OpenCode에 전달되는 추가 환경 변수입니다."
@@ -1057,7 +1057,7 @@
         "desc": "Pi에만 전달되는 환경 변수입니다."
       },
       "models": {
-        "desc": "Claudian은 Pi의 enabledModels와 별도로 자체 모델 목록을 유지합니다. Discover는 Pi가 현재 환경에서 인증할 수 있는 모든 모델을 Pi가 호출할 제공자 경로별로 표시합니다. 경로에 따라 자격 증명과 청구가 결정됩니다."
+        "desc": "Claudian은 Pi의 enabledModels와 별도로 자체 모델 목록을 유지합니다. 검색을 실행하면 Pi가 현재 환경에서 인증할 수 있는 모든 모델을 Pi가 호출할 제공자 경로별로 묶어 표시합니다. 이 경로에 따라 자격 증명과 요금 청구가 결정됩니다."
       }
     },
     "grok": {
@@ -1076,8 +1076,8 @@
     },
     "deepseek": {
       "installation": {
-        "desc": "자동 감지는 dsh를 우선하고 다음으로 macOS 또는 Windows의 Desktop을 찾습니다. 둘 다 설치된 경우 Desktop의 .app 경로 또는 Windows 설치 폴더를 입력하면 선택할 수 있습니다. 먼저 Desktop을 열어 초기 설정을 완료하세요.",
-        "wslDesc": "WSL을 사용하려면 선택한 배포판에 Linux Node.js와 npm dsh를 설치하고 기본 Web 프로필을 설정해야 합니다. DeepSeek Harness Desktop은 WSL 설치로 사용할 수 없습니다. 배포판에 @deepseek-ai/dsh를 설치하거나 Desktop을 사용하려면 네이티브 Windows를 선택하세요."
+        "desc": "자동 감지에서는 dsh를 우선 찾고, 없으면 macOS 또는 Windows의 Desktop을 찾습니다. 둘 다 설치된 상태에서 Desktop을 사용하려면 .app 경로 또는 Windows 설치 폴더를 입력하세요. 먼저 Desktop을 한 번 열어 초기 설정을 완료하세요.",
+        "wslDesc": "WSL을 사용하려면 선택한 배포판에 Linux Node.js와 npm dsh를 설치하고 네이티브 Web 프로필을 설정해야 합니다. DeepSeek Harness Desktop은 WSL 설치로 사용할 수 없습니다. 배포판에 @deepseek-ai/dsh를 설치하거나, Desktop을 사용하려면 네이티브 Windows를 선택하세요."
       },
       "preset": "프리셋",
       "codeMode": {
@@ -1086,12 +1086,12 @@
       },
       "presetPlugins": {
         "name": "추가 프리셋 플러그인",
-        "desc": "고급. Claudian 채팅 프리셋 뒤에 추가되는 네이티브 dsh 플러그인 행의 YAML 목록(dsh 형식)이며, 각 행에는 고유한 \"id\"와 \"name\"이 있어야 합니다. Claudian 자체 행은 대체할 수 없습니다. 저장하면 DeepSeek Harness가 다시 시작되어 진행 중인 턴이 중지됩니다. 계획 모드처럼 Claudian에 UI가 없는 플러그인은 작동하지 않을 수 있습니다."
+        "desc": "고급 설정입니다. Claudian 채팅 프리셋 뒤에 추가할 네이티브 dsh 플러그인 항목의 YAML 목록(dsh 형식)이며, 각 항목에는 고유한 \"id\"와 \"name\"이 있어야 합니다. Claudian 기본 항목은 대체할 수 없습니다. 저장하면 DeepSeek Harness가 다시 시작되어 진행 중인 턴이 중지됩니다. 계획 모드처럼 Claudian에 인터페이스가 없는 플러그인은 작동하지 않을 수 있습니다."
       },
       "presetPreview": "프리셋 미리보기",
       "environment": {
         "name": "DeepSeek Harness 환경 변수",
-        "desc": "DeepSeek Harness에만 전달되는 환경 변수. 선택한 네이티브 Web 또는 Desktop 프로필, 자격 증명, 모델 및 MCP 서버를 사용합니다."
+        "desc": "DeepSeek Harness에만 전달되는 환경 변수입니다. 선택한 네이티브 Web 또는 Desktop 프로필, 자격 증명, 모델 및 MCP 서버를 사용합니다."
       }
     },
     "skills": {
@@ -1099,8 +1099,8 @@
         "claude": "Claude Code",
         "shared": "기타 제공자"
       },
-      "claudeHelp": ".claude/skills/의 Claude Code 스킬과 .claude/commands/의 명령.",
-      "sharedHelp": "Codex, OpenCode, Pi, Grok Build, DeepSeek Harness용 .agents/skills/의 공유 스킬.",
+      "claudeHelp": ".claude/skills/의 Claude Code 스킬과 .claude/commands/의 명령어입니다.",
+      "sharedHelp": "Codex, OpenCode, Pi, Grok Build, DeepSeek Harness용 .agents/skills/의 공유 스킬입니다.",
       "status": {
         "error": "스킬 폴더를 읽을 수 없습니다: {message}"
       },
@@ -1110,33 +1110,33 @@
         "resync": "다시 동기화"
       },
       "commands": {
-        "title": "Claude Code 명령",
-        "hint": "명령은 Claude Code에서만 작동합니다. 스킬로 변환하는 것을 권장합니다.",
-        "badge": "명령",
-        "empty": ".claude/commands에 명령이 없습니다.",
+        "title": "Claude Code 명령어",
+        "hint": "명령어는 Claude Code에서만 작동합니다. 스킬로 변환하는 것을 권장합니다.",
+        "badge": "명령어",
+        "empty": ".claude/commands에 명령어가 없습니다.",
         "convert": "스킬로 변환",
-        "editTitle": "명령 편집",
-        "convertTitle": "명령을 스킬로 변환",
-        "nameDesc": ".md를 뺀 .claude/commands 내 경로. 중첩된 명령은 /를 사용합니다",
-        "descriptionDesc": "명령 메뉴에 표시되는 선택 설명",
-        "updated": "명령 \"{name}\"을(를) 업데이트했습니다.",
-        "converted": "명령을 스킬 \"{name}\"(으)로 변환했습니다.",
-        "deleted": "명령 \"{name}\"을(를) 휴지통으로 옮겼습니다.",
-        "deleteTitle": "명령 삭제",
-        "deleteDescription": "명령 파일이 휴지통으로 이동합니다.",
-        "collisionFailed": "\"{name}\" 명령이 이미 있습니다."
+        "editTitle": "명령어 편집",
+        "convertTitle": "명령어를 스킬로 변환",
+        "nameDesc": ".md 확장자를 제외한 .claude/commands 내 경로입니다. 중첩된 명령어는 /로 구분합니다.",
+        "descriptionDesc": "명령어 메뉴에 표시되는 설명입니다(선택).",
+        "updated": "\"{name}\" 명령어를 업데이트했습니다.",
+        "converted": "명령어를 \"{name}\" 스킬로 변환했습니다.",
+        "deleted": "\"{name}\" 명령어를 휴지통으로 옮겼습니다.",
+        "deleteTitle": "명령어 삭제",
+        "deleteDescription": "명령어 파일이 휴지통으로 이동합니다.",
+        "collisionFailed": "\"{name}\" 명령어가 이미 있습니다."
       },
       "droppedFrontmatterWarning": "저장하면 이름과 설명만 남습니다. 다음 키가 제거되며 제공자 동작이 바뀔 수 있습니다: {keys}",
       "hidden": {
-        "name": "숨긴 명령과 스킬",
-        "desc": "모든 제공자의 명령 메뉴에서 명령과 스킬을 숨깁니다. 앞의 슬래시 없이 정확한 이름을 한 줄에 하나씩 입력하세요(Pi 스킬은 skill:이름).",
+        "name": "숨긴 명령어와 스킬",
+        "desc": "모든 제공자의 명령어 메뉴에서 명령어와 스킬을 숨깁니다. 앞의 슬래시(/) 없이 정확한 이름을 한 줄에 하나씩 입력하세요(Pi 스킬은 skill:name 형식).",
         "placeholder": "commit\ncompact\nskill:review"
       },
       "sync": {
         "title": "스킬 동기화",
         "repairTitle": "스킬 링크 복구",
-        "loading": "스킬 폴더를 확인하는 중...",
-        "intro": "동기화하면 Claude Code의 스킬과 명령을 .agents/skills로 모으고 .claude/skills를 그곳으로 연결합니다.",
+        "loading": "스킬 폴더를 확인하는 중…",
+        "intro": "동기화하면 Claude Code의 스킬과 명령어를 .agents/skills로 통합하고 .claude/skills를 그곳으로 연결합니다.",
         "pros": {
           "oneList": "모든 제공자가 하나의 목록을 사용합니다.",
           "newSkills": "새 스킬이 어디서나 나타납니다."
@@ -1156,39 +1156,39 @@
           "instructions": "지침이 없습니다. 파일에 추가한 뒤 다시 동기화하세요.",
           "unreadable": "프론트매터를 읽을 수 없습니다. 파일을 수정한 뒤 다시 동기화하세요.",
           "sharedConflict": "\"{name}\" 공유 스킬이 이미 있습니다.",
-          "itemConflict": "다른 항목도 이름이 \"{name}\"입니다."
+          "itemConflict": "다른 항목에서도 \"{name}\" 이름을 이미 사용 중입니다."
         },
         "options": {
           "fix": "수정",
           "replace": "공유 스킬 교체",
           "discard": "버리기(휴지통으로 이동)",
-          "keep": "명령으로 유지"
+          "keep": "명령어로 유지"
         },
         "continue": "계속",
         "confirmTitle": ".claude/skills를 링크로 바꿀까요?",
         "confirmBody": ".claude/skills가 .agents/skills로의 링크로 바뀝니다. 되돌릴 수 없습니다.",
         "repairBody": ".claude/skills는 .agents/skills로의 링크로 바뀝니다. 현재 가리키는 폴더는 변경되지 않습니다.",
         "linkBody": ".claude/skills를 .agents/skills로의 링크로 만들어 Claude Code가 공유 스킬을 사용하게 합니다. 파일은 이동하지 않습니다.",
-        "linkWithItemsBody": "명령이 스킬이 된 다음 .claude/skills가 .agents/skills로의 링크로 만들어집니다. 되돌릴 수 없습니다.",
+        "linkWithItemsBody": "명령어가 스킬로 변환된 뒤 .claude/skills가 .agents/skills를 가리키는 링크로 생성됩니다. 되돌릴 수 없습니다.",
         "devicesWarning": "이 보관함을 여러 기기에서 동기화하나요? 링크는 동기화되지 않을 수 있으니 각 기기에서 동기화하세요.",
         "confirm": "동기화 후 연결",
         "partial": "링크를 만들기 전에 동기화가 중단되었습니다. 아래 항목을 수정하고 다시 동기화하세요.",
         "failed": "동기화 실패: {message}",
-        "summary": "이동 {moved}, 변환 {converted}, 휴지통 {trashed}, 링크 제거 {unlinked}."
+        "summary": "이동 {moved}개, 변환 {converted}개, 휴지통 이동 {trashed}개, 링크 제거 {unlinked}개."
       }
     },
     "executionTarget": {
       "installationMethod": {
         "name": "설치 방식",
-        "desc": "Windows에서 Claudian이 {provider}를 실행하는 방식입니다. 네이티브 Windows는 Windows 실행 파일 경로를 사용하고, WSL은 선택한 배포판 안에서 Linux CLI를 실행합니다.",
+        "desc": "Windows에서 Claudian의 {provider} 실행 방식을 설정합니다. 네이티브 Windows는 Windows 실행 파일 경로를 사용하고, WSL은 선택한 배포판 안에서 Linux CLI를 실행합니다.",
         "nativeWindows": "네이티브 Windows",
         "wsl": "WSL"
       },
       "wslDistroOverride": {
         "name": "WSL 배포판 재정의",
-        "desc": "선택적 고급 재정의입니다. 비워 두면 가능한 경우 WSL 작업공간 경로에서 배포판을 추론하고, 그렇지 않으면 기본 WSL 배포판을 사용합니다."
+        "desc": "선택적 고급 설정입니다. 비워 두면 가능한 경우 WSL 작업 공간 경로에서 배포판을 추론하고, 그렇지 않으면 기본 WSL 배포판을 사용합니다."
       },
-      "wslWindowsPath": "WSL 모드에는 Windows 실행 파일 경로가 아니라 Linux 명령 또는 Linux 절대 경로가 필요합니다."
+      "wslWindowsPath": "WSL 모드에서는 Windows 실행 파일 경로가 아니라 Linux 명령어 또는 Linux 절대 경로를 입력해야 합니다."
     }
   }
 }

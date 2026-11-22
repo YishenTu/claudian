@@ -18,7 +18,7 @@ import { InlineAskUserQuestion } from '@/features/chat/interactions/InlineAskUse
 import { createInteractionPromptPort } from '@/features/chat/interactions/interactionPromptPort';
 import { SessionInteractions } from '@/features/chat/interactions/SessionInteractions';
 import { renderStoredToolCall } from '@/features/chat/rendering/tools/ToolCallRenderer';
-import { setLocale } from '@/i18n/i18n';
+import { setLocale, t } from '@/i18n/i18n';
 import { DeepSeekExecutionBackend } from '@/providers/deepseek/execution/DeepSeekExecutionBackend';
 import { DeepSeekConversationHistoryService } from '@/providers/deepseek/history/DeepSeekConversationHistoryService';
 import { getDeepSeekHome } from '@/providers/deepseek/runtime/DeepSeekHome';
@@ -275,10 +275,13 @@ it.each([
 ])('renders the action and localized native reason for $name and sends the native decision', async ({ locale, reason, callId, order, decide, sent }) => {
   settings.locale = locale;
   const chinese = locale === 'zh-CN' || locale === 'zh-TW';
+  setLocale('en');
+  const englishDetailsName = t('chat.approval.details', { tool: 'Bash' });
   if (chinese) setLocale(locale);
-  const detailsName = locale === 'zh-CN' ? 'Bash 授权详情' : locale === 'zh-TW' ? 'Bash 授權詳情' : 'Bash approval details';
-  const description = locale === 'zh-CN' ? '运行命令：' : locale === 'zh-TW' ? '執行命令：' : 'Run command: ';
-  const allowName = locale === 'zh-CN' ? '允许一次' : '允許一次';
+  const detailsName = t('chat.approval.details', { tool: 'Bash' });
+  expect(detailsName !== englishDetailsName).toBe(chinese);
+  const description = t('chat.approval.runCommand', { pattern: command });
+  const allowName = t('chat.approval.allowOnce');
   renderApprovals(); create();
   const run = session.execute(request());
   const events: ProviderExecutionEvent[] = [];
@@ -303,7 +306,7 @@ it.each([
     // Native interactions are handled on receipt, ahead of follow frames sent after them.
     if (order === 'approval first') toolFrame();
     const details = await within(document.body).findByRole('region', { name: detailsName });
-    expect(details.textContent).toBe(`${description}${command}`);
+    expect(details.textContent).toBe(description);
     expect(within(document.body).getByText(reason)).toBeTruthy();
     expect((await axe(document.body)).violations).toEqual([]);
     if (chinese) fireEvent.click(within(document.body).getByRole('button', { name: allowName }));

@@ -9,7 +9,7 @@ import { ComposerInfoRow } from '@/features/chat/composer/ComposerInfoRow';
 import { LinkedContentController } from '@/features/chat/linked-content/LinkedContentController';
 import { ProjectChip } from '@/features/chat/projects/ProjectChip';
 import { createWelcomeElement } from '@/features/chat/rendering/WelcomeRenderer';
-import { setLocale } from '@/i18n/i18n';
+import { setLocale, t } from '@/i18n/i18n';
 
 beforeAll(() => {
 
@@ -98,7 +98,10 @@ it('navigates linked-content choices with arrows, selects, and returns focus on 
 
 
 it('localizes the controller-generated missing-content selector label', () => {
+  const englishMissing = t('chat.linkedContent.missing');
   setLocale('zh-CN');
+  const localizedMissing = t('chat.linkedContent.missing');
+  expect(localizedMissing).not.toBe(englishMissing);
   const controller = new LinkedContentController({
     app: { vault: { getAbstractFileByPath: () => null }, workspace: { getActiveFile: () => null } } as never,
     getExcludedTags: () => [], getCachedVaultFiles: () => [], getCachedVaultFolders: () => [],
@@ -108,7 +111,7 @@ it('localizes the controller-generated missing-content selector label', () => {
     const welcome = createWelcomeElement(container, 'Hello');
     controller.mountWelcome(welcome);
     controller.selectExplicit('Missing/Plan.md');
-    expect(within(welcome).getByRole('button', { name: 'Plan.md · 内容缺失' })).toBeDefined();
+    expect(within(welcome).getByRole('button', { name: `Plan.md · ${localizedMissing}` })).toBeDefined();
   } finally {
     controller.destroy();
     container.remove();

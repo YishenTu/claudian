@@ -13,7 +13,7 @@ import {
 import { createWriteEditBlock, finalizeWriteEditBlock, renderStoredWriteEdit,updateWriteEditWithDiff } from '@/features/chat/rendering/tools/WriteEditRenderer';
 import { ChatState } from '@/features/chat/state/ChatState';
 import { ToolCallStream, type ToolCallStreamDeps } from '@/features/chat/turns/ToolCallStream';
-import { setLocale } from '@/i18n/i18n';
+import { setLocale, t } from '@/i18n/i18n';
 
 beforeEach(() => { document.body.replaceChildren(); });
 afterEach(() => setLocale('en'));
@@ -552,71 +552,85 @@ it('omits silent write_stdin polling cards from the live response while preservi
 
 
 it('localizes pending and settled tool-card status while preserving native output', () => {
+  const englishRunning = t('chat.tools.running');
   setLocale('zh-CN');
+  expect(t('chat.tools.running')).not.toBe(englishRunning);
   const tool: ToolCallInfo = { id: 'live', name: 'Bash', input: { command: 'git status' }, status: 'running' };
   const block = renderToolCall(document.body.createDiv(), tool, { initiallyExpanded: true });
-  expect(within(block).getByText('运行中…')).toBeDefined();
-  expect(within(block).getByLabelText('状态：运行中')).toBeDefined();
+  expect(within(block).getByText(t('chat.tools.running'))).toBeDefined();
+  expect(within(block).getByLabelText(t('chat.tools.status.running'))).toBeDefined();
   updateToolCallResult(block, { ...tool, status: 'completed', result: 'Working tree clean' });
-  expect(within(block).getByLabelText('状态：已完成')).toBeDefined();
+  expect(within(block).getByLabelText(t('chat.tools.status.completed'))).toBeDefined();
   expect(within(block).getByText('Working tree clean')).toBeDefined();
   updateToolCallResult(block, { ...tool, status: 'blocked', result: 'Native denial' });
-  expect(within(block).getByLabelText('状态：已阻止')).toBeDefined();
+  expect(within(block).getByLabelText(t('chat.tools.status.blocked'))).toBeDefined();
   expect(within(block).getByText('Native denial')).toBeDefined();
 });
 
 it.each([false, true])('localizes live and stored write fallbacks (error: %s)', isError => {
+  const englishWriting = t('chat.tools.writing');
   setLocale('zh-CN');
+  expect(t('chat.tools.writing')).not.toBe(englishWriting);
   const tool: ToolCallInfo = { id: 'write', name: 'Write', input: { file_path: 'fixture.md' }, status: 'running' };
   const parent = document.body.createDiv();
   const state = createWriteEditBlock(parent, tool, { initiallyExpanded: true });
-  expect(within(state.wrapperEl).getByText('正在写入…')).toBeDefined();
+  expect(within(state.wrapperEl).getByText(t('chat.tools.writing'))).toBeDefined();
   finalizeWriteEditBlock(state, isError);
-  expect(within(state.wrapperEl).getByText(isError ? '错误' : '已完成')).toBeDefined();
-  expect(within(state.wrapperEl).getByLabelText(isError ? '状态：错误' : '状态：已完成')).toBeDefined();
+  const settledText = t(isError ? 'chat.tools.errorResult' : 'chat.tools.done');
+  expect(within(state.wrapperEl).getByText(settledText)).toBeDefined();
+  expect(within(state.wrapperEl).getByLabelText(t(isError ? 'chat.tools.status.error' : 'chat.tools.status.completed'))).toBeDefined();
   const stored = renderStoredWriteEdit(parent, { ...tool, status: isError ? 'error' : 'completed' }, { initiallyExpanded: true });
-  expect(within(stored).getByText(isError ? '错误' : '已完成')).toBeDefined();
+  expect(within(stored).getByText(settledText)).toBeDefined();
 });
 
 it('localizes task progress and patch status through their real card consumers', () => {
+  const englishProgress = t('chat.tools.taskProgress', { completed: 0, total: 1 });
   setLocale('zh-CN');
+  expect(t('chat.tools.taskProgress', { completed: 0, total: 1 })).not.toBe(englishProgress);
   const todo: ToolCallInfo = { id: 'todo', name: 'TodoWrite', status: 'running', input: {
     todos: [{ content: 'Check errors', activeForm: 'Checking errors', status: 'in_progress' }],
   } };
   const block = renderToolCall(document.body.createDiv(), todo, { initiallyExpanded: true });
-  expect(within(block).getByText('任务 0/1')).toBeDefined();
+  expect(within(block).getByText(t('chat.tools.taskProgress', { completed: 0, total: 1 }))).toBeDefined();
   expect(within(block).getAllByText('Checking errors')).not.toHaveLength(0);
   updateToolCallResult(block, { ...todo, status: 'completed' });
-  expect(within(block).getByLabelText('状态：进行中')).toBeDefined();
+  expect(within(block).getByLabelText(t('chat.tools.inProgress'))).toBeDefined();
   updateToolCallResult(block, { ...todo, status: 'completed', input: {
     todos: [{ content: 'Check errors', activeForm: 'Checking errors', status: 'completed' }],
   } });
-  expect(within(block).getByText('任务 1/1')).toBeDefined();
-  expect(within(block).getByLabelText('状态：已完成')).toBeDefined();
+  expect(within(block).getByText(t('chat.tools.taskProgress', { completed: 1, total: 1 }))).toBeDefined();
+  expect(within(block).getByLabelText(t('chat.tools.status.completed'))).toBeDefined();
   const patch = renderStoredToolCall(document.body.createDiv(), {
     id: 'patch', name: 'apply_patch', status: 'completed', input: {
       patch: '*** Begin Patch\n*** Add File: fixture.md\n+Native contents\n*** End Patch',
     },
   }, { initiallyExpanded: true });
-  expect(within(patch).getByLabelText('变更：+1 -0')).toBeDefined();
+  expect(within(patch).getByLabelText(t('chat.tools.changes', { added: 1, removed: 0 }))).toBeDefined();
   expect(within(patch).getByText('Native contents')).toBeDefined();
 });
 
 
 it.each([
-  ['Bash', 'Bash: 命令'], ['Glob', 'Glob: 文件'], ['Grep', 'Grep: 匹配模式'],
-  ['Skill', 'Skill: 技能'], ['ToolSearch', 'ToolSearch: 工具'],
-])('localizes the %s placeholder through its disclosure', (name, label) => {
+  ['Bash', 'chat.tools.commandPlaceholder'], ['Glob', 'chat.tools.filesPlaceholder'], ['Grep', 'chat.tools.patternPlaceholder'],
+  ['Skill', 'settings.agentSkills.skillBadge'], ['ToolSearch', 'chat.tools.toolsPlaceholder'],
+] as const)('localizes the %s placeholder through its disclosure', (name, placeholderKey) => {
+  const englishPlaceholder = t(placeholderKey);
   setLocale('zh-CN');
+  expect(t(placeholderKey)).not.toBe(englishPlaceholder);
   const block = renderToolCall(document.body.createDiv(), { id: 'partial', name, status: 'running', input: {} });
-  expect(within(block).getByRole('button', { name: `${label} - 点击展开` })).toBeDefined();
+  expect(within(block).getByRole('button', {
+    name: t('chat.disclosure.expand', { label: `${name}: ${t(placeholderKey)}` }),
+  })).toBeDefined();
 });
 
 it.each([1, 2])('localizes wait summaries for %s agents without changing their IDs', count => {
+  const key = count === 1 ? 'chat.tools.agentCount' : 'chat.tools.agentCountPlural';
+  const englishCount = t(key, { count });
   setLocale('zh-CN');
+  expect(t(key, { count })).not.toBe(englishCount);
   const ids = Array.from({ length: count }, (_, index) => `native-agent-${index}`);
   const tool: ToolCallInfo = { id: 'wait', name: 'wait_agent', status: 'running', input: { ids } };
   const block = renderToolCall(document.body.createDiv(), tool);
-  expect(within(block).getByText(`${count} 个代理`)).toBeDefined();
+  expect(within(block).getByText(t(key, { count }))).toBeDefined();
   expect(tool.input.ids).toEqual(ids);
 });

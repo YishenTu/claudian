@@ -18,31 +18,31 @@
       "queued": "排队中",
       "steering": "引导中",
       "steerNow": "立即引导",
-      "edit": "编辑排队消息",
-      "discard": "丢弃排队消息",
+      "edit": "编辑排队中的消息",
+      "discard": "丢弃排队中的消息",
       "images": "[图片]"
     },
     "promptSuggestionHint": "按 Tab 接受",
     "selectAvailableModel": "请先选择可用的模型再发送。",
-    "reloadingHistory": "此对话在 Claudian 之外发生了变化，正在重新加载。加载完成后请重新发送。",
-    "changedOutsideWithBackgroundTask": "此对话在 Claudian 之外继续进行，而先前会话的后台任务仍在运行。请停止该任务或等待其完成，然后重新发送。",
+    "reloadingHistory": "此对话在 Claudian 外部发生了变更，正在重新加载。请等待加载完成后再发送。",
+    "changedOutsideWithBackgroundTask": "此对话已在 Claudian 外部继续进行，但此前会话的后台任务仍在运行。请停止该任务或等待其完成后再发送。",
     "selectAvailableTitleModel": "请在 Claudian 设置中选择可用的标题生成模型。",
     "rewind": {
-      "confirmMessage": "回退到此处？此消息之后的文件更改可能被覆盖或删除。此操作无法撤销。",
-      "confirmMessageConflicts": "回退到此处？检测到 {count} 个文件在代理之外被修改，继续操作将覆盖这些更改：\n{files}",
-      "confirmMessageConversationOnly": "将对话回退到此处？文件更改将保留。",
+      "confirmMessage": "确定回退到此处？此消息之后的文件更改可能会被覆盖或删除，且此操作无法撤销。",
+      "confirmMessageConflicts": "确定回退到此处？以下 {count} 个文件已在代理外部被修改，回退将覆盖这些更改：\n{files}",
+      "confirmMessageConversationOnly": "确定将对话回退到此处？文件更改将被保留。",
       "confirmButton": "回退",
       "inProgress": "请等待当前回退操作完成。",
       "ariaLabel": "回退到此处",
       "menuConversationOnly": "仅回退对话",
       "menuCodeAndConversation": "回退代码 + 对话",
       "notice": "已回退：还原了 {count} 个文件",
-      "noticeConversationOnly": "已回退对话；文件更改已保留",
-      "noticeSaveFailed": "已回退：还原了 {count} 个文件，但无法保存状态：{error}",
-      "noticeConversationOnlySaveFailed": "已回退对话，但无法保存状态：{error}",
+      "noticeConversationOnly": "已回退对话，文件更改已保留",
+      "noticeSaveFailed": "已回退：还原了 {count} 个文件，但保存状态失败：{error}",
+      "noticeConversationOnlySaveFailed": "已回退对话，但保存状态失败：{error}",
       "failed": "回退失败：{error}",
       "cannot": "无法回退：{error}",
-      "unavailableStreaming": "流式响应中无法回退",
+      "unavailableStreaming": "正在生成回复，无法回退",
       "unavailableNoUuid": "无法回退：缺少消息标识符"
     },
     "fork": {
@@ -53,11 +53,11 @@
       "notice": "已分叉到新标签页",
       "noticeCurrentTab": "已在当前标签页分叉",
       "failed": "分叉失败：{error}",
-      "unavailableStreaming": "流式响应中无法分叉",
+      "unavailableStreaming": "正在生成回复，无法分叉",
       "unavailableNoUuid": "无法分叉：缺少消息标识符",
       "errorMessageNotFound": "未找到消息",
       "errorNoSession": "没有可用的会话 ID",
-      "errorNoActiveTab": "没有活动标签页"
+      "errorNoActiveTab": "没有活动的标签页"
     },
     "quote": {
       "buttonLabel": "引用"
@@ -83,16 +83,16 @@
       "placeholder": "在侧边对话中继续提问",
       "composerLabel": "侧边对话消息",
       "needsPrompt": "请在 /side 后输入提示词以开始侧边对话。",
-      "unsupportedProvider": "此提供方不支持侧边对话。",
-      "unavailableBusy": "侧边对话需要一条已完成的回复。请等待当前回合结束。",
+      "unsupportedProvider": "当前提供商不支持侧边对话。",
+      "unavailableBusy": "开启侧边对话需要一条已完成的回复，请等待当前轮次结束。",
       "unavailableNoCheckpoint": "请先在此对话中完成一次回复，再开始侧边对话。",
-      "unavailableNoSession": "无法解析该对话的提供方会话。",
-      "alreadyExists": "该对话已有侧边对话。请先放弃后再新建。",
-      "nestedUnavailable": "侧边对话中无法再开启侧边对话。请先收起回到主对话。",
+      "unavailableNoSession": "侧边对话无法解析该对话的提供商会话。",
+      "alreadyExists": "此对话已存在侧边对话，请先放弃后再新建。",
+      "nestedUnavailable": "无法在侧边对话中再开启侧边对话，请先收起返回主对话。",
       "mainOnlyCommand": "/{command} 仅可在主对话中使用。",
       "startFailed": "侧边对话启动失败：{error}",
-      "queued": "已加入侧聊队列。",
-      "busySide": "侧边对话仍在回复，请等待其完成。"
+      "queued": "已加入侧边对话队列。",
+      "busySide": "侧边对话仍在回复中，请等待其完成。"
     },
     "zen": {
       "regionLabel": "Claudian 聊天",
@@ -101,8 +101,8 @@
       "working": "处理中…",
       "thinking": "思考中…",
       "interrupted": "已中断",
-      "workedFor": "工作了 {duration}",
-      "workedForResult": "工作了 {duration} · {result}",
+      "workedFor": "耗时 {duration}",
+      "workedForResult": "耗时 {duration} · {result}",
       "actionRequired": "需要你的输入",
       "error": "错误：{message}",
       "toolRunning": "{tool} · 运行中",
@@ -111,7 +111,7 @@
       "toolBlocked": "{tool} · 已阻止"
     },
     "composer": {
-      "placeholder": "请求修改、@提及文件、运行 /命令",
+      "placeholder": "提出修改要求、@ 提及文件、输入 / 运行命令",
       "message": "消息",
       "dropImage": "将图片拖到这里",
       "moreContext": "显示另外 {count} 项上下文",
@@ -135,14 +135,14 @@
       "saturdayNamed": "周六快乐，{name}",
       "backAtIt": "继续加油！",
       "backAtItNamed": "{name}，继续加油！",
-      "fridayFeeling": "周五的感觉真好",
-      "fridayFeelingNamed": "周五的感觉真好，{name}",
-      "weekend": "周末到了",
-      "weekendNamed": "{name}，周末到了",
-      "sundaySession": "周日来一场？",
+      "fridayFeeling": "终于到周五啦",
+      "fridayFeelingNamed": "{name}，终于到周五啦",
+      "weekend": "周末愉快",
+      "weekendNamed": "周末愉快，{name}",
+      "sundaySession": "周日来聊会儿？",
       "morning": "早上好",
       "morningNamed": "早上好，{name}",
-      "coffee": "喝杯咖啡，开始用 {brand}？",
+      "coffee": "来杯咖啡，开启 {brand} 时光？",
       "afternoon": "下午好",
       "afternoonNamed": "下午好，{name}",
       "hey": "嗨，你好",
@@ -156,22 +156,22 @@
       "howDay": "今天过得怎么样？",
       "howDayNamed": "{name}，今天过得怎么样？",
       "nightOwl": "你好，夜猫子",
-      "hiHow": "嗨，你好吗？",
-      "hiHowNamed": "{name}，你好吗？",
+      "hiHow": "嗨，一切都好吗？",
+      "hiHowNamed": "{name}，一切都好吗？",
       "welcomeBack": "欢迎回来！",
       "welcomeBackNamed": "欢迎回来，{name}！",
       "whatsNew": "有什么新鲜事？",
       "whatsNewNamed": "{name}，有什么新鲜事？",
-      "returnsNamed": "{name} 回来了！",
+      "returnsNamed": "{name} 回来啦！",
       "right": "你说得完全正确！"
     },
-    "worked": "已完成工作",
+    "worked": "已完成",
     "taskNotification": "任务通知",
     "stopHook": "Stop 钩子",
     "copyMessage": "复制消息",
     "showEarlierMessages": "显示更早的消息",
     "renderFailed": "消息内容渲染失败。",
-    "interruptedHint": "· 你希望 Claudian 改做什么？",
+    "interruptedHint": "· 接下来想让 Claudian 做什么？",
     "sessions": {
       "empty": "暂无对话",
       "noMatch": "没有匹配的会话",
@@ -191,7 +191,7 @@
       "noMatch": "没有匹配的文件或文件夹",
       "missing": "内容缺失",
       "path": "关联内容：{path}",
-      "missingPath": "关联内容：{path}。内容缺失",
+      "missingPath": "关联内容：{path}（内容缺失）",
       "noContent": "无关联内容",
       "missingNotice": "关联内容缺失：{path}",
       "openFailed": "打开关联内容失败：{error}"
@@ -219,7 +219,7 @@
       "answerBelow": "请在下方的问题面板中回答。",
       "expired": "问题已过期。",
       "notSent": "回答未发送，请重试。",
-      "unsupportedReply": "此问题无法接受该回答。",
+      "unsupportedReply": "此问题不支持该回复内容。",
       "uncertainDelivery": "无法确认回答是否送达。为避免重复发送，未将其重新加入队列。",
       "differentConversation": "此问题属于另一段对话。",
       "sideUnavailable": "此侧边对话已不可用。"
@@ -251,7 +251,7 @@
       "taskProgressLabel": "任务（{completed}/{total}）",
       "changes": "变更：+{added} -{removed}",
       "fileDeleted": "文件已删除",
-      "noTextDiff": "没有可用的文本差异",
+      "noTextDiff": "无可用文本差异",
       "patch": "补丁",
       "files": "{count} 个文件",
       "file": "文件",
@@ -291,7 +291,7 @@
       "toolUses": "{count} 次工具调用",
       "tokens": "{value} 个 token",
       "compactTokens": "{value}k 个 token",
-      "previousRuns": "之前的运行（{count}）",
+      "previousRuns": "历史运行（{count}）",
       "runLabel": "第 {number} 次运行 · {status}"
     },
     "citations": {
@@ -322,7 +322,7 @@
       "changeFailed": "切换权限模式失败",
       "antigravity": {
         "auto": "自动",
-        "autoDesc": "批准工作区编辑和沙盒命令；审查额外访问"
+        "autoDesc": "自动批准工作区编辑和沙盒命令；额外访问需确认"
       },
       "claude": {
         "auto": "自动",
@@ -340,12 +340,12 @@
         "yolo": "完全访问",
         "autoReviewDesc": "自动审核额外访问权限。",
         "readOnlyDesc": "编辑或联网前询问。",
-        "normalDesc": "额外访问前询问。",
+        "normalDesc": "请求额外访问前询问。",
         "yoloDesc": "不限制文件和网络访问。"
       }
     },
     "thinking": {
-      "active": "思考中，已用时 {seconds} 秒…",
+      "active": "思考中（{seconds} 秒）…",
       "completed": "思考了 {seconds} 秒",
       "label": "思考过程"
     },
@@ -370,16 +370,16 @@
         "deliberating": "审慎思考中…",
         "weighingOptions": "权衡选项中…",
         "gatheringThoughts": "整理思路中…",
-        "brewingIdeas": "酝酿点子中…",
+        "brewingIdeas": "酝酿灵感中…",
         "connectingDots": "串联线索中…",
         "assemblingThoughts": "组织思路中…",
-        "spinningUpNeurons": "启动脑细胞…",
+        "spinningUpNeurons": "激活脑细胞中…",
         "loadingBrilliance": "加载灵感中…",
         "consultingTheOracle": "请教先知中…",
         "summoningKnowledge": "召唤知识中…",
         "crunchingThoughts": "消化想法中…",
         "dustingOffNeurons": "唤醒脑细胞…",
-        "wranglingIdeas": "梳理点子中…",
+        "wranglingIdeas": "梳理想法中…",
         "herdingThoughts": "收拢思绪中…",
         "jugglingConcepts": "玩转概念中…",
         "untanglingThis": "理清头绪中…",
@@ -387,7 +387,7 @@
         "sippingCoffee": "喝口咖啡…",
         "warmingUp": "热身中…",
         "gettingCozyWithThis": "慢慢进入状态…",
-        "settlingIn": "安顿思绪中…",
+        "settlingIn": "静下心来…",
         "makingTea": "泡杯茶…",
         "grabbingASnack": "拿点零食…",
         "parsing": "解析中…",
@@ -395,22 +395,22 @@
         "runningInference": "推理运算中…",
         "queryingTheVoid": "向虚空查询…",
         "defragmentingBrain": "整理大脑碎片中…",
-        "allocatingMemory": "分配记忆空间中…",
+        "allocatingMemory": "分配内存中…",
         "optimizing": "优化中…",
         "indexing": "建立索引中…",
         "syncingNeurons": "同步神经元中…",
         "breathing": "深呼吸…",
-        "findingClarity": "寻找清晰思路…",
+        "findingClarity": "理清思绪中…",
         "channelingFocus": "集中注意力…",
         "centering": "凝神静心…",
-        "aligningChakras": "调整能量中…",
+        "aligningChakras": "校准脉轮中…",
         "meditatingOnThis": "静心思考中…",
         "askingTheStars": "向星辰提问…",
-        "readingTeaLeaves": "解读茶叶图案…",
+        "readingTeaLeaves": "茶叶占卜中…",
         "shakingTheMagic8Ball": "摇一摇魔法八号球…",
         "consultingAncientScrolls": "查阅古老卷轴…",
         "decodingTheMatrix": "解码矩阵中…",
-        "communingWithTheEther": "与以太交流…",
+        "communingWithTheEther": "与以太通灵中…",
         "peeringIntoTheAbyss": "凝望深渊中…",
         "channelingTheCosmos": "连接宇宙灵感…",
         "divingIn": "深入探索中…",
@@ -423,12 +423,12 @@
         "diggingDeeper": "深挖线索中…",
         "bearWithMe": "请稍等…",
         "hangTight": "耐心等一下…",
-        "justASec": "只需片刻…",
+        "justASec": "稍等一下…",
         "workingMyMagic": "施展魔法中…",
         "almostThere": "快好了…",
         "giveMeAMoment": "给我一点时间…"
       },
-      "hint": "（按 esc 中断 · {duration}）"
+      "hint": "（按 Esc 中断 · {duration}）"
     },
     "contextUsage": {
       "label": "上下文用量",
@@ -457,7 +457,7 @@
       "allowOnce": "允许一次",
       "alwaysAllow": "始终允许",
       "mcpRequest": "MCP 请求",
-      "mcpServer": "MCP 服务器： {server}",
+      "mcpServer": "MCP 服务器：{server}",
       "decline": "拒绝",
       "allow": "允许",
       "cancelRequest": "取消此请求。",
@@ -497,12 +497,12 @@
     "executionNotices": {
       "initializeFailed": "无法初始化代理执行。请重试。",
       "unavailable": "代理执行不可用。请重新加载插件。",
-      "sessionUnavailable": "此对话的原生会话在当前 CLI 配置下不可用。请开始新的聊天以继续。",
+      "sessionUnavailable": "此对话的原生会话在当前 CLI 配置下不可用。请新建对话以继续。",
       "unsentFallback": "消息未发送。请重试。"
     },
     "images": {
       "unsupportedProvider": "此提供商不支持图片附件。",
-      "tooLarge": "图片超过 {size} 的大小限制。",
+      "tooLarge": "图片大小超过 {size} 限制。",
       "unsupportedType": "不支持的图片格式。",
       "attachFailed": "添加图片附件失败。",
       "label": "图片",
@@ -555,7 +555,7 @@
       "noTurns": "暂无",
       "mode": "投递方式",
       "modeSteer": "插入正在进行的轮次",
-      "modeInterrupt": "中断当前工作"
+      "modeInterrupt": "中断当前任务"
     },
     "modelPicker": {
       "options": "模型选项",
@@ -563,9 +563,9 @@
       "modelLabel": "模型：{label}",
       "unavailable": "模型不可用",
       "setup": "设置模型",
-      "guidance": "请在提供商设置中选择已启用的模型。如果发现失败，请刷新模型列表。",
+      "guidance": "请在提供商设置中选择已启用的模型。如果模型发现失败，请刷新模型列表。",
       "model": "模型",
-      "empty": "没有可用模型。请检查提供商设置；如果发现失败，请刷新模型列表。",
+      "empty": "没有可用模型。请检查提供商设置，如果模型发现失败，请刷新模型列表。",
       "changeModelFailed": "无法切换模型",
       "defaultEffort": "默认",
       "effortLabel": "思考强度 {label}",
@@ -598,8 +598,8 @@
       "moveRight": "向右移动",
       "closeTab": "关闭标签页",
       "active": "当前",
-      "needsInput": "需要您输入",
-      "working": "工作中",
+      "needsInput": "需要你输入",
+      "working": "处理中",
       "errorReview": "因错误而停止，可供查看",
       "finishedReview": "已完成，可供查看",
       "idle": "空闲",
@@ -613,7 +613,7 @@
       "startConversationFailed": "无法开始新对话",
       "switchFailed": "无法切换标签页",
       "closeFailed": "无法关闭标签页",
-      "resize": "调整对话会话区域大小",
+      "resize": "调整会话面板大小",
       "previewCloseFailed": "无法关闭临时会话预览",
       "commandNew": "新建",
       "commandReplace": "替换当前对话",
@@ -633,8 +633,8 @@
         "openMemory": "打开项目记忆",
         "archive": "归档项目",
         "restore": "恢复项目",
-        "pin": "固定项目",
-        "unpin": "取消固定项目",
+        "pin": "置顶项目",
+        "unpin": "取消置顶项目",
         "delete": "删除项目",
         "moveTo": "移动到项目…",
         "moveSelectionTo": "将 {count} 个会话移动到项目…",
@@ -643,14 +643,14 @@
         "removeSelectionFromPlural": "从项目中移除 {count} 个会话",
         "newProject": "新建项目…"
       },
-      "deleteConfirm": "删除项目“{name}”并将其记忆文件移到废纸篓？会话会保留，但不再属于任何项目。",
+      "deleteConfirm": "确定删除项目“{name}”并将其记忆文件移至回收站？该项目下的会话将被保留，但不再属于任何项目。",
       "errors": {
         "create": "创建项目失败",
         "update": "更新项目失败",
         "delete": "删除项目失败",
-        "archive": "无法归档项目",
-        "restore": "无法恢复项目",
-        "pin": "更新项目固定状态失败",
+        "archive": "归档项目失败",
+        "restore": "恢复项目失败",
+        "pin": "更新项目置顶状态失败",
         "reorder": "重新排序项目失败",
         "move": "将会话移动到项目失败",
         "remove": "从项目中移除会话失败",
@@ -660,7 +660,7 @@
         "titleNew": "新建项目",
         "titleEdit": "编辑项目",
         "name": "名称",
-        "nameDesc": "显示在会话管理器和成员会话中。",
+        "nameDesc": "显示在会话管理器及所属会话中。",
         "namePlaceholder": "项目名称",
         "iconButton": "项目图标：{icon}",
         "iconDefault": "默认文件夹",
@@ -668,11 +668,11 @@
         "iconSearch": "搜索图标",
         "iconNoMatches": "没有匹配的图标。",
         "instructions": "指令",
-        "instructionsDesc": "从下一轮起添加到每个成员会话的系统提示词中。",
+        "instructionsDesc": "从下一轮对话起，添加到该项目下所有会话的系统提示词中。",
         "memoryPath": "记忆文件",
-        "memoryPathDesc": "项目记忆文件在库中的路径。缺少 .md 扩展名时会自动添加。更改后会移动该文件。",
+        "memoryPathDesc": "项目记忆文件在仓库中的路径。如未包含 .md 扩展名将自动补全；修改路径后会同步移动该文件。",
         "memoryPathPlaceholder": "文件夹/MEMORY.md",
-        "memoryPathInvalid": "请输入库内的文件路径，例如 Projects/MEMORY.md。",
+        "memoryPathInvalid": "请输入仓库内的文件路径，例如 Projects/MEMORY.md。",
         "memoryPathTaken": "{path} 已被某个文件或其他项目使用。",
         "openMemory": "打开",
         "nameRequired": "请输入项目名称。"
@@ -685,17 +685,17 @@
         "edit": "编辑",
         "preview": "预览",
         "missing": "项目记忆文件不存在。",
-        "conflict": "记忆文件在加载后已被修改。重新加载将丢弃你的编辑，覆盖则保留你的编辑。",
+        "conflict": "记忆文件自加载以来已被修改。选择“重新加载”将放弃你的更改，选择“覆盖”将保留你的更改。",
         "loadFailed": "加载项目记忆失败",
         "saveFailed": "保存项目记忆失败",
         "saved": "项目记忆已保存",
         "loading": "加载中…",
-        "updated": "{time}更新",
-        "changedOutside": "记忆文件已在此窗口之外被更新，可能是代理所为。",
+        "updated": "更新于 {time}",
+        "changedOutside": "记忆文件已在此窗口外部被更新（可能是由代理修改）。",
         "keepMine": "保留我的编辑",
         "discardConfirm": "放弃对项目记忆的未保存更改？",
         "discard": "放弃",
-        "emptyHint": "代理会随着项目推进填写这里。"
+        "emptyHint": "代理会随着项目推进自动补充此处内容。"
       }
     }
   },
@@ -745,7 +745,7 @@
     "experimental": "实验性功能",
     "userName": {
       "name": "Claudian 应该如何称呼你？",
-      "desc": "用于个性化问候的用户名（留空使用通用问候）"
+      "desc": "用于个性化问候的称呼（留空则使用通用问候）"
     },
     "excludedTags": {
       "name": "排除的标签",
@@ -753,7 +753,7 @@
     },
     "mediaFolder": {
       "name": "媒体文件夹",
-      "desc": "存放附件/图片的文件夹。当笔记使用 ![[image.jpg]] 时，Claude 会在此查找。留空使用仓库根目录。"
+      "desc": "存放附件或图片的文件夹。当笔记中使用 ![[image.jpg]] 时，Claude 会在此目录查找。留空则使用仓库根目录。"
     },
     "systemPrompt": {
       "name": "自定义系统提示词",
@@ -761,7 +761,7 @@
     },
     "showTabTitlesByDefault": {
       "name": "默认显示标签页标题",
-      "desc": "新建的聊天标签页显示对话标题而不是数字。已打开的标签页保持当前显示，任何标签页仍可切换。"
+      "desc": "新建的聊天标签页默认显示对话标题而非编号。已打开的标签页保持原样，且随时可手动切换。"
     },
     "chatFontScale": {
       "name": "聊天字体大小",
@@ -780,33 +780,33 @@
       "name": "标题生成模型",
       "desc": "用于自动生成对话标题的模型。",
       "select": "选择模型",
-      "unavailableWarning": "自动标题已暂停。请选择一个可用的标题模型。"
+      "unavailableWarning": "自动生成标题已暂停。请选择一个可用的标题生成模型。"
     },
     "navMappings": {
       "name": "Vim 风格导航映射",
-      "desc": "每行一个映射。格式：\"map <键> <动作>\"（动作：scrollUp, scrollDown, focusInput）。"
+      "desc": "每行一个映射。格式：\"map <键> <动作>\"（可用动作：scrollUp、scrollDown、focusInput）。"
     },
     "requireCommandOrControlEnterToSend": {
-      "name": "需要 Command/Ctrl+Enter 发送",
+      "name": "仅用 Command/Ctrl+Enter 发送",
       "desc": "启用后，Enter 会插入换行。macOS 使用 Command+Enter 发送；Windows 和 Linux 使用 Ctrl+Enter 发送。"
     },
     "safety": "安全",
     "loadUserSettings": {
       "name": "加载用户 Claude Code 设置",
-      "desc": "从 ~/.claude 加载用户级 Claude Code 配置：settings.json、技能、命令、智能体和插件。禁用时仅可使用仓库级配置。启用后，用户的权限规则可能绕过安全模式。"
+      "desc": "从 ~/.claude 加载用户级 Claude Code 配置（包括 settings.json、技能、命令、代理和插件）。禁用时仅使用仓库级配置。启用后，用户权限规则可能会绕过安全模式。"
     },
     "codexSandbox": {
       "name": "沙盒",
-      "desc": "代我审批 和 请求审批 模式下的文件访问权限。只读模式会在每次编辑前请求确认；完全访问 会忽略此设置。"
+      "desc": "“代我审批”和“请求审批”模式下的文件访问权限。“只读”模式会在每次编辑前请求确认；“完全访问”模式会忽略此设置。"
     },
     "environment": "环境",
     "sharedEnvironment": {
       "name": "共享环境",
-      "desc": "与提供商无关、所有提供商共享的运行时变量。用于 PATH、代理、证书和临时目录变量。"
+      "desc": "跨提供商共享的运行时环境变量，适用于 PATH、网络代理、证书和临时目录等配置。"
     },
     "customVariables": {
       "name": "自定义变量",
-      "desc": "仅限 Claude Code 拥有的运行时变量。用于 ANTHROPIC_* 和 Claude Code 专属开关。"
+      "desc": "仅用于 Claude Code 的运行时环境变量，适用于 ANTHROPIC_* 及 Claude Code 专属配置项。"
     },
     "envSnippets": {
       "name": "片段",
@@ -837,18 +837,18 @@
     },
     "enableChrome": {
       "name": "启用 Chrome 扩展",
-      "desc": "允许 Claude Code 通过 claude-in-chrome 扩展与 Chrome 交互。需要安装该扩展。需要重启会话。"
+      "desc": "允许 Claude Code 通过 claude-in-chrome 扩展与 Chrome 交互。需预先安装该扩展，且更改后需要重启会话。"
     },
     "enableDualPane": {
       "name": "启用双栏模式",
-      "desc": "当视图宽度至少为 600 像素时，自动在聊天旁显示会话管理器。"
+      "desc": "当视图宽度不小于 600 px 时，自动在聊天面板旁显示会话管理器。"
     },
     "restoreTabsOnStartup": {
       "name": "启动时恢复标签页",
       "desc": "单栏模式下重新打开所有标签页，双栏模式下仅重新打开上次活动的标签页。"
     },
     "sessionAutoArchiveAfter": {
-      "name": "自动归档不活跃的会话",
+      "name": "自动归档不活跃会话",
       "desc": "归档在所选时间段内没有活动的未置顶会话。已打开和正在运行的会话会被跳过。",
       "multiSelectHint": "按住 Option 键（Windows 和 Linux 上为 Alt 键）点击会话可多选，然后右键点击即可置顶或归档。",
       "off": "关闭",
@@ -872,11 +872,11 @@
     },
     "pluginRenderedFenceLanguages": {
       "name": "由插件渲染的代码块语言",
-      "desc": "每行一个代码块语言，交给在笔记中渲染它的插件（例如 vega-lite）。在回复完成后渲染。其他代码块始终以代码显示。"
+      "desc": "每行填写一种代码块语言（例如 vega-lite），交由对应插件在回复完成后进行渲染。其他代码块将始终以纯代码形式显示。"
     },
     "expandFileEditsByDefault": {
       "name": "默认展开文件编辑",
-      "desc": "Write 和 Edit diff 首次出现时以展开状态显示。"
+      "desc": "Write 和 Edit 的差异对比首次出现时默认展开。"
     },
     "chatViewPlacement": {
       "name": "Claudian 打开位置",
@@ -891,7 +891,7 @@
     },
     "cliInstallation": {
       "disclosure": "{name} 安装",
-      "description": "此电脑的可选 CLI 路径。留空以自动检测。",
+      "description": "本机的可选 CLI 路径，留空则自动检测。",
       "checking": "正在检测 CLI…",
       "versionUnavailable": "版本未知",
       "notFound": "未找到",
@@ -923,19 +923,19 @@
     },
     "modelPicker": {
       "name": "可见模型",
-      "desc": "选择在聊天选择器中可用的模型。拖动可调整顺序；提供商会将第一个当前可用的模型作为默认模型。至少选择一个模型才能使用此提供商。",
+      "desc": "选择在聊天模型选择器中显示的模型。拖动可调整顺序，提供商会将排序第一的可用模型作为默认模型。请至少选择一个模型以使用此提供商。",
       "browse": "浏览模型",
       "filterLabel": "筛选 {provider} 模型",
-      "searchPlaceholder": "按模型、提供商或 ID 筛选...",
+      "searchPlaceholder": "按模型、提供商或 ID 筛选…",
       "providerFilterLabel": "筛选模型提供商",
       "allProviders": "所有提供商（{count}）",
       "discover": "发现",
-      "visible": "可见: ",
+      "visible": "可见：",
       "ofDiscovered": " / 已发现 {count} 个",
       "oneProvider": " | 1 个提供商",
       "manyProviders": " | {count} 个提供商",
-      "loadingModels": "正在加载模型...",
-      "loading": "正在加载...",
+      "loadingModels": "正在加载模型…",
+      "loading": "正在加载…",
       "available": "{count} 个可用",
       "noneDiscovered": "尚未发现模型",
       "selected": "已选择（{count}）",
@@ -946,7 +946,7 @@
       "aliasLabel": "别名（可选）",
       "removeLabel": "移除 {model}",
       "noMatch": "没有与筛选条件匹配的模型。",
-      "emptyCatalog": "{provider} 未报告任何模型。请检查配置并点击“发现”。",
+      "emptyCatalog": "{provider} 未返回任何模型。请检查配置后点击“发现”。",
       "loadingCatalog": "正在加载 {provider} 模型…",
       "stale": "{provider} 模型目录已过期。点击“发现”以刷新。"
     },
@@ -958,7 +958,7 @@
       "configuration": "配置",
       "responseStyle": {
         "name": "回复风格",
-        "desc": "Claude Code 回复所用的输出风格，包括自定义风格。“Claude Code 设置”沿用你的 Claude Code 配置。刷新模型或开始聊天时会更新列表。",
+        "desc": "Claude Code 回复所用的输出风格（包括自定义风格）。选择“Claude Code 设置”将沿用你的 Claude Code 配置。刷新模型或开启新对话时会自动更新列表。",
         "default": "默认",
         "inherit": "Claude Code 设置"
       }
@@ -973,14 +973,14 @@
       },
       "responseStyle": {
         "name": "回复风格",
-        "desc": "选择支持此功能的模型中 Codex 的沟通风格。",
+        "desc": "选择 Codex 在受支持模型上的回复风格。",
         "pragmatic": "务实",
         "friendly": "友好",
         "neutral": "中性"
       },
       "responseVerbosity": {
         "name": "回复详细程度",
-        "desc": "选择支持此功能的模型的回复详细程度。默认使用 Codex 配置。",
+        "desc": "选择受支持模型的回复详细程度。“默认”将沿用你的 Codex 配置。",
         "default": "默认",
         "low": "低",
         "medium": "中",
@@ -1000,24 +1000,24 @@
       },
       "environment": {
         "name": "Codex 环境",
-        "desc": "仅限 Codex 拥有的运行时变量。用于 OPENAI_* 和 CODEX_* 设置。如果 Codex 自动检测需要帮助，请把安装目录添加到共享 PATH，而不是此提供商环境。"
+        "desc": "仅用于 Codex 的运行时环境变量，适用于 OPENAI_* 和 CODEX_* 配置。如果 Codex 无法自动检测，请将其安装目录添加到“共享环境”的 PATH 中，而不是此处。"
       }
     },
     "agentSkills": {
-      "sharedExpectation": "为兼容的服务商管理 .agents/skills/ 中的共享技能。",
+      "sharedExpectation": "管理 .agents/skills/ 中供兼容提供商使用的共享技能。",
       "noSkills": "尚未配置共享技能。点击 + 创建一个。",
       "skillBadge": "技能",
       "diagnosticsTitle": "需要处理的技能",
       "loadFailed": "无法加载共享技能。",
-      "savedRefreshFailed": "已保存，但刷新服务商失败。",
+      "savedRefreshFailed": "已保存，但刷新提供商失败。",
       "validationFailed": "技能无效：{message}",
       "collisionFailed": "名为“{name}”的技能已存在。",
       "saveFailed": "保存共享技能失败：{message}",
-      "deleteFailed": "将共享技能移到回收站失败：{message}",
-      "staleConflict": "此技能已在其他地方被修改；请先刷新再保存。",
+      "deleteFailed": "将共享技能移至回收站失败：{message}",
+      "staleConflict": "此技能已在外部被修改，请先刷新后再保存。",
       "created": "已创建共享技能“{name}”。",
       "updated": "已更新共享技能“{name}”。",
-      "deleted": "已将共享技能“{name}”移到回收站。",
+      "deleted": "已将共享技能“{name}”移至回收站。",
       "fix": "修复",
       "fixed": "已修复技能“{name}”。",
       "modal": {
@@ -1028,20 +1028,20 @@
         "nameDesc": "小写字母和数字，以单个连字符分隔",
         "namePlaceholder": "code-reviewer",
         "description": "描述",
-        "descriptionDesc": "必填的通用描述，供服务商选择技能时使用",
+        "descriptionDesc": "必填的通用描述，供提供商选择技能时参考",
         "descriptionPlaceholder": "审查代码的正确性和可维护性",
         "instructions": "指令",
         "instructionsDesc": "必填的 SKILL.md 指令",
-        "instructionsPlaceholder": "审查提供的代码并报告可执行的发现..."
+        "instructionsPlaceholder": "审查提供的代码并报告需要处理的问题…"
       },
       "delete": {
         "title": "删除共享技能",
-        "description": "整个技能文件夹（包括脚本、参考资料和资源）将被移到回收站。",
-        "confirm": "移到回收站"
+        "description": "整个技能文件夹（包括脚本、参考资料和资源文件）将被移至回收站。",
+        "confirm": "移至回收站"
       }
     },
     "opencode": {
-      "emptyModels": "OpenCode 服务端没有为此仓库返回已启用的模型。请检查仓库的 .opencode/opencode.json 和 OpenCode 日志（运行 opencode debug paths 查看位置）。使用 OpenCode v2 时，配置的 V1 插件可能不兼容。请在仓库中运行 opencode models --standalone 对比，然后点击“发现”。",
+      "emptyModels": "OpenCode 服务端未返回此仓库的已启用模型。请检查仓库中的 .opencode/opencode.json 和 OpenCode 日志（运行 opencode debug paths 查看日志路径）。在 OpenCode v2 中，已配置的 V1 插件可能不兼容。请在仓库中运行 opencode models --standalone 进行核对，然后点击“发现”。",
       "environment": {
         "name": "OpenCode 环境变量",
         "desc": "传递给 OpenCode 的额外环境变量。"
@@ -1057,7 +1057,7 @@
         "desc": "仅传递给 Pi 的环境变量。"
       },
       "models": {
-        "desc": "Claudian 维护独立于 Pi enabledModels 的模型列表。Discover 会列出 Pi 在当前环境中可认证的所有模型，并按 Pi 实际调用的提供商路由分组。路由决定凭据和计费。"
+        "desc": "Claudian 维护独立的模型列表，与 Pi 的 enabledModels 互不影响。点击“发现”可列出 Pi 在当前环境中可认证的所有模型，并按 Pi 实际调用的提供商路由分组。路由决定了所使用的凭据与计费方式。"
       }
     },
     "grok": {
@@ -1072,12 +1072,12 @@
         "desc": "仅传递给 Antigravity（agy）的环境变量，例如 GEMINI_API_KEY。"
       },
       "listModelsFailed": "无法获取 Antigravity 模型列表。在终端运行 agy models 查看详情。如需登录，请运行 agy acp --login。",
-      "updateReminder": "Claudian 仅支持 agy 的最新版本，且 agy 变化很快。请保持更新："
+      "updateReminder": "Claudian 仅支持最新版 agy，且 agy 迭代较快，请及时保持更新："
     },
     "deepseek": {
       "installation": {
-        "desc": "自动模式优先使用 dsh，其次检测 macOS 或 Windows 上的 Desktop。两者都已安装时，输入 Desktop 的 .app 路径或 Windows 安装文件夹即可选择它。请先打开 Desktop 完成初始设置。",
-        "wslDesc": "WSL 需要在所选发行版中安装 Linux Node.js 和 npm dsh，并配置其原生 Web 配置。DeepSeek Harness Desktop 不能作为 WSL 安装使用。请在该发行版中安装 @deepseek-ai/dsh，或选择“原生 Windows”以使用 Desktop。"
+        "desc": "自动检测优先使用 dsh，其次查找 macOS 或 Windows 上的 Desktop。若两者均已安装，输入 Desktop 的 .app 路径或 Windows 安装目录即可指定使用。请先打开一次 Desktop 以完成初始设置。",
+        "wslDesc": "WSL 模式需要在所选发行版中安装 Linux 版 Node.js 和 npm dsh，并配置好其原生 Web 配置文件。DeepSeek Harness Desktop 无法用于 WSL 环境。请在该发行版中安装 @deepseek-ai/dsh，或选择“原生 Windows”以使用 Desktop。"
       },
       "preset": "预设",
       "codeMode": {
@@ -1086,7 +1086,7 @@
       },
       "presetPlugins": {
         "name": "附加预设插件",
-        "desc": "高级。追加到 Claudian 聊天预设的原生 dsh 插件行 YAML 列表（dsh 格式），每行需有自己的 \"id\" 和 \"name\"。这些行不能替换 Claudian 自己的行。保存会重启 DeepSeek Harness，并停止正在进行的轮次。Claudian 没有界面支持的插件（如计划模式）可能无法正常工作。"
+        "desc": "高级选项。以 YAML 列表（dsh 格式）填写要追加到 Claudian 聊天预设中的原生 dsh 插件条目，每项需包含各自的 \"id\" 和 \"name\"，且不能替换 Claudian 内置条目。保存后会重启 DeepSeek Harness 并中止正在进行的轮次。Claudian 尚未提供界面支持的插件（如规划模式）可能无法正常工作。"
       },
       "presetPreview": "预设预览",
       "environment": {
@@ -1097,12 +1097,12 @@
     "skills": {
       "subTabs": {
         "claude": "Claude Code",
-        "shared": "其他服务商"
+        "shared": "其他提供商"
       },
       "claudeHelp": ".claude/skills/ 中的 Claude Code 技能和 .claude/commands/ 中的命令。",
       "sharedHelp": ".agents/skills/ 中供 Codex、OpenCode、Pi、Grok Build 和 DeepSeek Harness 使用的共享技能。",
       "status": {
-        "error": "无法读取技能文件夹:{message}"
+        "error": "无法读取技能文件夹：{message}"
       },
       "synced": "已同步",
       "actions": {
@@ -1117,33 +1117,33 @@
         "convert": "转换为技能",
         "editTitle": "编辑命令",
         "convertTitle": "将命令转换为技能",
-        "nameDesc": ".claude/commands 下不含 .md 的路径;嵌套命令使用 /",
+        "nameDesc": ".claude/commands 下不含 .md 扩展名的路径；嵌套命令使用 / 分隔",
         "descriptionDesc": "显示在命令菜单中的可选描述",
         "updated": "已更新命令“{name}”。",
         "converted": "已将命令转换为技能“{name}”。",
-        "deleted": "已将命令“{name}”移到回收站。",
+        "deleted": "已将命令“{name}”移至回收站。",
         "deleteTitle": "删除命令",
-        "deleteDescription": "命令文件将被移到回收站。",
+        "deleteDescription": "命令文件将被移至回收站。",
         "collisionFailed": "名为“{name}”的命令已存在。"
       },
-      "droppedFrontmatterWarning": "保存后仅保留名称和描述。以下键将被移除,服务商的行为可能改变:{keys}",
+      "droppedFrontmatterWarning": "保存后仅保留名称和描述。以下字段将被移除，提供商的行为可能会发生变化：{keys}",
       "hidden": {
         "name": "隐藏的命令和技能",
-        "desc": "在所有服务商的命令菜单中隐藏命令和技能。输入不带前导斜杠的准确名称,每行一个(Pi 技能使用 skill:名称)。",
+        "desc": "在所有提供商的命令菜单中隐藏指定命令和技能。请每行输入一个不含前导斜杠的准确名称（Pi 技能请使用 skill:name 格式）。",
         "placeholder": "commit\ncompact\nskill:review"
       },
       "sync": {
         "title": "同步技能",
         "repairTitle": "修复技能链接",
-        "loading": "正在检查技能文件夹...",
-        "intro": "同步会把 Claude Code 的技能和命令合并到 .agents/skills,并将 .claude/skills 链接到那里。",
+        "loading": "正在检查技能文件夹…",
+        "intro": "同步会将 Claude Code 的技能和命令合并到 .agents/skills，并将 .claude/skills 链接到该目录。",
         "pros": {
-          "oneList": "所有服务商共用一个列表。",
-          "newSkills": "新技能在所有地方可用。"
+          "oneList": "所有提供商共用同一份列表。",
+          "newSkills": "新建技能可在所有提供商中生效。"
         },
         "cons": {
-          "dropped": "仅保留名称和描述;服务商专属的设置会被移除,行为可能改变。",
-          "claudeSyntax": "仅 Claude Code 支持的语法在其他服务商中无效:{names}"
+          "dropped": "仅保留名称和描述；提供商专属设置会被移除，行为可能会发生变化。",
+          "claudeSyntax": "以下仅 Claude Code 支持的语法在其他提供商中不会生效：{names}"
         },
         "attentionTitle": "需要处理",
         "nothingNeedsAttention": "没有需要处理的项目。",
@@ -1156,25 +1156,25 @@
           "instructions": "没有指令。请在文件中补充后重新同步。",
           "unreadable": "无法读取其 frontmatter。请修正文件后重新同步。",
           "sharedConflict": "名为“{name}”的共享技能已存在。",
-          "itemConflict": "另一个项目也叫“{name}”。"
+          "itemConflict": "另一个条目也名为“{name}”。"
         },
         "options": {
           "fix": "修复",
           "replace": "替换共享技能",
-          "discard": "丢弃(移到回收站)",
+          "discard": "放弃（移至回收站）",
           "keep": "保留为命令"
         },
         "continue": "继续",
-        "confirmTitle": "用链接替换 .claude/skills?",
+        "confirmTitle": "是否用链接替换 .claude/skills？",
         "confirmBody": ".claude/skills 将被替换为指向 .agents/skills 的链接。此操作无法撤销。",
         "repairBody": ".claude/skills 将被替换为指向 .agents/skills 的链接。它当前指向的文件夹不会被修改。",
-        "linkBody": "将 .claude/skills 创建为指向 .agents/skills 的链接,让 Claude Code 使用共享技能。不会移动任何文件。",
-        "linkWithItemsBody": "命令将变成技能,随后 .claude/skills 被创建为指向 .agents/skills 的链接。此操作无法撤销。",
-        "devicesWarning": "此库在多台设备间同步?链接可能不会同步,请在每台设备上执行同步。",
+        "linkBody": "将 .claude/skills 创建为指向 .agents/skills 的链接，使 Claude Code 使用共享技能。不会移动任何文件。",
+        "linkWithItemsBody": "命令将转换为技能，随后 .claude/skills 会被创建为指向 .agents/skills 的链接。此操作无法撤销。",
+        "devicesWarning": "如果在多台设备间同步此仓库，符号链接可能无法同步，请在每台设备上分别执行同步。",
         "confirm": "同步并链接",
         "partial": "同步在创建链接前停止。请修复以下项目后重新同步。",
-        "failed": "同步失败:{message}",
-        "summary": "已移动 {moved},已转换 {converted},已移到回收站 {trashed},已移除 {unlinked} 个链接。"
+        "failed": "同步失败：{message}",
+        "summary": "已移动 {moved} 项，已转换 {converted} 项，已移至回收站 {trashed} 项，已移除 {unlinked} 个链接。"
       }
     },
     "executionTarget": {
@@ -1186,7 +1186,7 @@
       },
       "wslDistroOverride": {
         "name": "WSL 发行版覆盖",
-        "desc": "可选高级覆盖。留空时会尽可能从 WSL 工作区路径推断发行版，否则使用默认 WSL 发行版。"
+        "desc": "可选的高级覆盖项。留空时会优先从 WSL 工作区路径推断发行版，否则使用默认 WSL 发行版。"
       },
       "wslWindowsPath": "WSL 模式需要 Linux 命令或 Linux 绝对路径，而不是 Windows 可执行文件路径。"
     }

@@ -10,7 +10,7 @@ import { fireEvent, waitFor, within } from '@testing-library/dom';
 import type { ProviderCapabilities } from '@/core/providers/types';
 import { NavigationSidebar } from '@/features/chat/navigation/NavigationSidebar';
 import { MessageActions } from '@/features/chat/rendering/MessageActions';
-import { setLocale } from '@/i18n/i18n';
+import { setLocale, t } from '@/i18n/i18n';
 
 const css = readFileSync(path.resolve('src/style/components/nav-sidebar.css'), 'utf8');
 const sidebars: NavigationSidebar[] = [];
@@ -42,16 +42,18 @@ function mount(scrollable: boolean) {
 }
 
 it('localizes the named navigation controls and the directory in the selected locale', () => {
+  const englishDirectory = t('chat.navigation.directory');
   expect(setLocale('zh-CN')).toBe(true);
   const { messagesEl, sidebar, view } = mount(true);
 
   const names = {
-    top: '滚动到顶部',
-    previous: '上一条消息',
-    directory: '对话目录',
-    next: '下一条消息',
-    bottom: '滚动到底部',
+    top: t('chat.navigation.scrollToTop'),
+    previous: t('chat.navigation.previousMessage'),
+    directory: t('chat.navigation.directory'),
+    next: t('chat.navigation.nextMessage'),
+    bottom: t('chat.navigation.scrollToBottom'),
   };
+  expect(names.directory).not.toBe(englishDirectory);
   for (const name of [names.top, names.previous, names.directory, names.next, names.bottom]) {
     expect(view.getByRole('button', { name }).getAttribute('type')).toBe('button');
   }
@@ -105,10 +107,14 @@ it('localizes the named navigation controls and the directory in the selected lo
 });
 
 it('renders the localized empty directory state once the messages are cleared', async () => {
+  const englishEmpty = t('chat.navigation.emptyDirectory');
   expect(setLocale('zh-CN')).toBe(true);
+  const directoryName = t('chat.navigation.directory');
+  const emptyDirectoryText = t('chat.navigation.emptyDirectory');
+  expect(emptyDirectoryText).not.toBe(englishEmpty);
   const { messagesEl, view } = mount(true);
 
-  const directory = view.getByRole('button', { name: '对话目录' });
+  const directory = view.getByRole('button', { name: directoryName });
   fireEvent.click(directory);
   // The entry query addresses live entries while they exist.
   expect(view.getByRole('button', { name: '1. First question' })).toBeTruthy();
@@ -118,9 +124,9 @@ it('renders the localized empty directory state once the messages are cleared', 
   }
 
   // The owner's observer refreshes the open directory to the empty state.
-  await waitFor(() => expect(view.getByText('此对话中暂无用户提示词')).toBeTruthy());
+  await waitFor(() => expect(view.getByText(emptyDirectoryText)).toBeTruthy());
   expect(directory.getAttribute('aria-expanded')).toBe('true');
-  expect(view.getByText('对话目录')).toBeTruthy();
+  expect(view.getByText(directoryName)).toBeTruthy();
   expect(view.queryAllByRole('button', { name: /^\d+\.\s/ })).toEqual([]);
   // A hidden sidebar would make the absence check trivial; the controls stay in the accessibility tree.
   expect(view.getAllByRole('button')).toHaveLength(5);

@@ -24,22 +24,22 @@
     },
     "promptSuggestionHint": "Tab pour accepter",
     "selectAvailableModel": "Sélectionnez un modèle disponible avant d’envoyer.",
-    "reloadingHistory": "Cette conversation a changé en dehors de Claudian et se recharge. Renvoyez une fois le rechargement terminé.",
-    "changedOutsideWithBackgroundTask": "Cette conversation s'est poursuivie en dehors de Claudian alors qu'une tâche en arrière-plan de sa session précédente est toujours en cours. Arrêtez la tâche ou attendez qu'elle se termine, puis renvoyez.",
-    "selectAvailableTitleModel": "Sélectionnez un modèle de titre disponible dans les paramètres de Claudian.",
+    "reloadingHistory": "Cette conversation a été modifiée en dehors de Claudian et est en cours de rechargement. Renvoyez votre message une fois le rechargement terminé.",
+    "changedOutsideWithBackgroundTask": "Cette conversation s’est poursuivie en dehors de Claudian alors qu’une tâche en arrière-plan de sa session précédente est toujours en cours. Arrêtez la tâche ou attendez qu’elle se termine, puis renvoyez votre message.",
+    "selectAvailableTitleModel": "Sélectionnez un modèle disponible pour les titres dans les paramètres de Claudian.",
     "rewind": {
-      "confirmMessage": "Rembobiner jusqu'à ce point ? Les modifications de fichiers postérieures à ce message peuvent être écrasées ou supprimées. Cette action est irréversible.",
-      "confirmMessageConflicts": "Rembobiner jusqu'à ce point ? {count} fichier(s) modifié(s) hors de l’agent seront écrasés :\n{files}",
-      "confirmMessageConversationOnly": "Rembobiner la conversation jusqu'à ce point ? Les modifications de fichiers seront conservées.",
+      "confirmMessage": "Rembobiner jusqu’à ce point ? Les modifications de fichiers postérieures à ce message peuvent être écrasées ou supprimées. Cette action est irréversible.",
+      "confirmMessageConflicts": "Rembobiner jusqu’à ce point ? {count} fichier(s) modifié(s) en dehors de l’agent seront écrasés :\n{files}",
+      "confirmMessageConversationOnly": "Rembobiner la conversation jusqu’à ce point ? Les modifications de fichiers seront conservées.",
       "confirmButton": "Rembobiner",
       "inProgress": "Veuillez attendre la fin du rembobinage en cours.",
-      "ariaLabel": "Rembobiner jusqu'ici",
+      "ariaLabel": "Rembobiner jusqu’ici",
       "menuConversationOnly": "Rembobiner la conversation seule",
       "menuCodeAndConversation": "Rembobiner code + conversation",
       "notice": "Rembobiné : {count} fichier(s) restauré(s)",
       "noticeConversationOnly": "Conversation rembobinée ; modifications de fichiers conservées",
-      "noticeSaveFailed": "Rembobiné : {count} fichier(s) restauré(s), mais impossible d'enregistrer l'état : {error}",
-      "noticeConversationOnlySaveFailed": "Conversation rembobinée, mais impossible d'enregistrer l'état : {error}",
+      "noticeSaveFailed": "Rembobiné : {count} fichier(s) restauré(s), mais impossible d’enregistrer l’état : {error}",
+      "noticeConversationOnlySaveFailed": "Conversation rembobinée, mais impossible d’enregistrer l’état : {error}",
       "failed": "Échec du rembobinage : {error}",
       "cannot": "Impossible de rembobiner : {error}",
       "unavailableStreaming": "Impossible de rembobiner pendant le streaming",
@@ -50,8 +50,8 @@
       "chooseTarget": "Bifurquer la conversation",
       "targetNewTab": "Nouvel onglet",
       "targetCurrentTab": "Onglet actuel",
-      "notice": "Bifurqué dans un nouvel onglet",
-      "noticeCurrentTab": "Bifurqué dans l'onglet actuel",
+      "notice": "Conversation bifurquée dans un nouvel onglet",
+      "noticeCurrentTab": "Conversation bifurquée dans l’onglet actuel",
       "failed": "Échec de la bifurcation : {error}",
       "unavailableStreaming": "Impossible de bifurquer pendant le streaming",
       "unavailableNoUuid": "Impossible de bifurquer : identifiants de message manquants",
@@ -82,22 +82,22 @@
       "statusActionRequired": "Saisie requise",
       "placeholder": "Poser une question dans la conversation annexe",
       "composerLabel": "Message de la conversation annexe",
-      "needsPrompt": "Ajoute une consigne après /side pour démarrer une conversation annexe.",
+      "needsPrompt": "Ajoutez un message après /side pour démarrer une conversation annexe.",
       "unsupportedProvider": "Ce fournisseur ne prend pas en charge la conversation annexe.",
-      "unavailableBusy": "La conversation annexe exige une réponse terminée. Attends la fin du tour en cours.",
-      "unavailableNoCheckpoint": "Termine d'abord une réponse dans cette conversation.",
+      "unavailableBusy": "La conversation annexe nécessite une réponse terminée. Attendez la fin du tour en cours.",
+      "unavailableNoCheckpoint": "La conversation annexe nécessite d’abord une réponse terminée dans cette conversation.",
       "unavailableNoSession": "Impossible de résoudre la session du fournisseur pour cette conversation.",
-      "alreadyExists": "Une conversation annexe existe déjà ici. Abandonne-la pour en démarrer une autre.",
-      "nestedUnavailable": "Une conversation annexe ne peut pas en démarrer une autre. Réduis d'abord vers la principale.",
-      "mainOnlyCommand": "/{command} n'est disponible que dans la conversation principale.",
+      "alreadyExists": "Une conversation annexe existe déjà pour cette conversation. Abandonnez-la pour en démarrer une autre.",
+      "nestedUnavailable": "Une conversation annexe ne peut pas en démarrer une autre. Réduisez-la d’abord pour revenir à la principale.",
+      "mainOnlyCommand": "/{command} n’est disponible que dans la conversation principale.",
       "startFailed": "Impossible de démarrer la conversation annexe : {error}",
-      "queued": "Ajouté à la file de la discussion secondaire.",
-      "busySide": "La conversation annexe répond encore. Attends la fin."
+      "queued": "Ajouté à la file d’attente de la conversation annexe.",
+      "busySide": "La conversation annexe est encore en train de répondre. Attendez qu’elle termine."
     },
     "zen": {
       "regionLabel": "Chat Claudian",
       "showHistory": "Afficher la conversation",
-      "move": "Déplacer le panneau de discussion",
+      "move": "Déplacer le panneau de conversation",
       "working": "En cours…",
       "thinking": "Réflexion…",
       "interrupted": "Interrompu",
@@ -137,8 +137,8 @@
       "backAtItNamed": "On s’y remet, {name}",
       "fridayFeeling": "Ça sent le vendredi",
       "fridayFeelingNamed": "Ça sent le vendredi, {name}",
-      "weekend": "Bienvenue dans le week-end",
-      "weekendNamed": "Bienvenue dans le week-end, {name}",
+      "weekend": "C’est le week-end !",
+      "weekendNamed": "C’est le week-end, {name} !",
       "sundaySession": "Une session du dimanche ?",
       "morning": "Bonjour",
       "morningNamed": "Bonjour, {name}",
@@ -147,27 +147,27 @@
       "afternoonNamed": "Bon après-midi, {name}",
       "hey": "Salut",
       "heyNamed": "Salut, {name}",
-      "howGoing": "Comment ça se passe ?",
-      "howGoingNamed": "Comment ça se passe, {name} ?",
+      "howGoing": "Comment ça va ?",
+      "howGoingNamed": "Comment ça va, {name} ?",
       "evening": "Bonsoir",
       "eveningNamed": "Bonsoir, {name}",
-      "eveningShort": "Bonne soirée",
+      "eveningShort": "Bonsoir",
       "eveningShortNamed": "Bonne soirée, {name}",
-      "howDay": "Comment s’est passée ta journée ?",
-      "howDayNamed": "Comment s’est passée ta journée, {name} ?",
-      "nightOwl": "Salut, oiseau de nuit",
-      "hiHow": "Salut, comment vas-tu ?",
-      "hiHowNamed": "Salut {name}, comment vas-tu ?",
+      "howDay": "Comment s’est passée votre journée ?",
+      "howDayNamed": "Comment s’est passée votre journée, {name} ?",
+      "nightOwl": "Bonsoir, oiseau de nuit",
+      "hiHow": "Bonjour, comment allez-vous ?",
+      "hiHowNamed": "Bonjour {name}, comment allez-vous ?",
       "welcomeBack": "Bon retour !",
       "welcomeBackNamed": "Bon retour, {name} !",
       "whatsNew": "Quoi de neuf ?",
       "whatsNewNamed": "Quoi de neuf, {name} ?",
       "returnsNamed": "{name} est de retour !",
-      "right": "Tu as tout à fait raison !"
+      "right": "Vous avez tout à fait raison !"
     },
     "worked": "Travail effectué",
     "taskNotification": "Notification de tâche",
-    "stopHook": "Hook d'arrêt",
+    "stopHook": "Hook d’arrêt",
     "copyMessage": "Copier le message",
     "showEarlierMessages": "Afficher les messages précédents",
     "renderFailed": "Impossible d’afficher le contenu du message.",
@@ -222,7 +222,7 @@
       "unsupportedReply": "Cette question ne peut pas accepter cette réponse.",
       "uncertainDelivery": "La remise de la réponse n’a pas pu être confirmée. Elle n’a pas été remise en file pour éviter un double envoi.",
       "differentConversation": "Cette question appartient à une autre conversation.",
-      "sideUnavailable": "Cette conversation secondaire n’est plus disponible."
+      "sideUnavailable": "Cette conversation annexe n’est plus disponible."
     },
     "tools": {
       "calls": "Appels d’outils",
@@ -262,7 +262,7 @@
       "messageSession": "Envoyer un message à la session",
       "stopSession": "Arrêter la session",
       "readSession": "Lire la session",
-      "continueAgent": "Continuer l’agent",
+      "continueAgent": "Reprendre l’agent",
       "listAgents": "Lister les agents",
       "interruptAgent": "Interrompre l’agent",
       "allAgents": "Tous les agents",
@@ -339,9 +339,9 @@
         "normal": "Demander l’approbation",
         "yolo": "Accès complet",
         "autoReviewDesc": "Examiner automatiquement les accès supplémentaires.",
-        "readOnlyDesc": "Demander avant de modifier ou d’utiliser internet.",
+        "readOnlyDesc": "Demander avant toute modification ou accès à Internet.",
         "normalDesc": "Demander avant tout accès supplémentaire.",
-        "yoloDesc": "Accès illimité aux fichiers et à internet."
+        "yoloDesc": "Accès illimité aux fichiers et à Internet."
       }
     },
     "thinking": {
@@ -364,7 +364,7 @@
         "contemplating": "Je contemple…",
         "reflecting": "Je médite…",
         "mullingItOver": "J’y réfléchis à fond…",
-        "letMeThink": "Laisse-moi réfléchir…",
+        "letMeThink": "Laissez-moi réfléchir…",
         "hmm": "Hmm…",
         "cogitating": "Je fais travailler mes méninges…",
         "deliberating": "Je délibère…",
@@ -374,13 +374,13 @@
         "connectingDots": "Je relie les points…",
         "assemblingThoughts": "J’assemble les pensées…",
         "spinningUpNeurons": "Je mets les neurones en route…",
-        "loadingBrilliance": "Je charge le génie…",
+        "loadingBrilliance": "Chargement d’idées de génie…",
         "consultingTheOracle": "Je consulte l’oracle…",
         "summoningKnowledge": "J’invoque le savoir…",
         "crunchingThoughts": "Je mouline mes pensées…",
         "dustingOffNeurons": "Je dépoussière les neurones…",
         "wranglingIdeas": "J’apprivoise les idées…",
-        "herdingThoughts": "Je rassemble le troupeau de pensées…",
+        "herdingThoughts": "Je remets de l’ordre dans mes pensées…",
         "jugglingConcepts": "Je jongle avec les concepts…",
         "untanglingThis": "Je démêle tout ça…",
         "piecingItTogether": "Je recolle les morceaux…",
@@ -394,7 +394,7 @@
         "compilingThoughts": "Compilation des pensées…",
         "runningInference": "Inférence en cours…",
         "queryingTheVoid": "J’interroge le vide…",
-        "defragmentingBrain": "Je défragmente le cerveau…",
+        "defragmentingBrain": "Défragmentation du cerveau…",
         "allocatingMemory": "Allocation de mémoire…",
         "optimizing": "Optimisation en cours…",
         "indexing": "Indexation en cours…",
@@ -406,8 +406,8 @@
         "aligningChakras": "J’aligne les chakras…",
         "meditatingOnThis": "Je médite sur la question…",
         "askingTheStars": "J’interroge les étoiles…",
-        "readingTeaLeaves": "Je lis les feuilles de thé…",
-        "shakingTheMagic8Ball": "Je secoue la boule 8 magique…",
+        "readingTeaLeaves": "Je lis dans les feuilles de thé…",
+        "shakingTheMagic8Ball": "Je secoue la boule magique…",
         "consultingAncientScrolls": "Je consulte d’anciens parchemins…",
         "decodingTheMatrix": "Je décode la matrice…",
         "communingWithTheEther": "Je communie avec l’éther…",
@@ -422,11 +422,11 @@
         "exploring": "J’explore…",
         "diggingDeeper": "Je creuse plus loin…",
         "bearWithMe": "Un peu de patience…",
-        "hangTight": "Tiens bon…",
+        "hangTight": "Encore un instant…",
         "justASec": "Une seconde…",
         "workingMyMagic": "Je fais un peu de magie…",
         "almostThere": "Presque fini…",
-        "giveMeAMoment": "Donne-moi un instant…"
+        "giveMeAMoment": "Un petit instant…"
       },
       "hint": " (Échap pour interrompre · {duration})"
     },
@@ -447,7 +447,7 @@
         "compact": "Compacter l’historique de la conversation",
         "sessions": "Reprendre une conversation précédente",
         "fast": "Basculer le mode rapide",
-        "side": "Poser une question temporaire à partir de la dernière réponse"
+        "side": "Poser une question annexe temporaire à partir de la dernière réponse"
       }
     },
     "approval": {
@@ -497,7 +497,7 @@
     "executionNotices": {
       "initializeFailed": "Impossible d’initialiser l’exécution de l’agent. Réessayez.",
       "unavailable": "L’exécution de l’agent n’est pas disponible. Rechargez le plugin.",
-      "sessionUnavailable": "La session native de cette conversation n'est pas disponible avec la configuration actuelle de la CLI. Démarrez une nouvelle discussion pour continuer.",
+      "sessionUnavailable": "La session native de cette conversation n’est pas disponible avec la configuration actuelle de la CLI. Démarrez une nouvelle conversation pour continuer.",
       "unsentFallback": "Le message n’a pas été envoyé. Réessayez."
     },
     "images": {
@@ -553,7 +553,7 @@
       "turns": "Tours",
       "turnRange": "{from}–{to} sur {total}",
       "noTurns": "Aucun pour l’instant",
-      "mode": "Remise",
+      "mode": "Mode d’envoi",
       "modeSteer": "Orienter le tour en cours",
       "modeInterrupt": "Interrompre le travail en cours"
     },
@@ -643,7 +643,7 @@
         "removeSelectionFromPlural": "Retirer {count} sessions du projet",
         "newProject": "Nouveau projet…"
       },
-      "deleteConfirm": "Supprimer le projet « {name} » et placer son fichier de mémoire dans la corbeille ? Les sessions sont conservées, hors de tout projet.",
+      "deleteConfirm": "Supprimer le projet « {name} » et placer son fichier de mémoire dans la corbeille ? Ses sessions seront conservées, sans projet associé.",
       "errors": {
         "create": "Impossible de créer le projet",
         "update": "Impossible de mettre à jour le projet",
@@ -660,7 +660,7 @@
         "titleNew": "Nouveau projet",
         "titleEdit": "Modifier le projet",
         "name": "Nom",
-        "nameDesc": "Affiché dans le gestionnaire de sessions et dans les sessions membres.",
+        "nameDesc": "Affiché dans le gestionnaire de sessions et dans les sessions du projet.",
         "namePlaceholder": "Nom du projet",
         "iconButton": "Icône du projet : {icon}",
         "iconDefault": "Dossier par défaut",
@@ -668,9 +668,9 @@
         "iconSearch": "Rechercher des icônes",
         "iconNoMatches": "Aucune icône ne correspond.",
         "instructions": "Instructions",
-        "instructionsDesc": "Ajoutées au prompt système de chaque session membre à partir de son prochain tour.",
+        "instructionsDesc": "Ajoutées au prompt système de chaque session du projet à partir de son prochain tour.",
         "memoryPath": "Fichier de mémoire",
-        "memoryPathDesc": "Chemin dans le coffre du fichier de mémoire du projet. L’extension .md est ajoutée si elle manque. Le modifier déplace le fichier.",
+        "memoryPathDesc": "Chemin du fichier de mémoire du projet dans le coffre. L’extension .md est ajoutée si elle manque. Modifier ce chemin déplace le fichier.",
         "memoryPathPlaceholder": "Dossier/MEMORY.md",
         "memoryPathInvalid": "Saisissez un chemin de fichier situé dans le coffre, par exemple Projects/MEMORY.md.",
         "memoryPathTaken": "{path} est déjà utilisé par un fichier ou un autre projet.",
@@ -691,7 +691,7 @@
         "saved": "Mémoire du projet enregistrée",
         "loading": "Chargement…",
         "updated": "Mis à jour {time}",
-        "changedOutside": "Le fichier de mémoire a été modifié hors de cette fenêtre, probablement par un agent.",
+        "changedOutside": "Le fichier de mémoire a été modifié en dehors de cette fenêtre, probablement par un agent.",
         "keepMine": "Garder mes modifications",
         "discardConfirm": "Abandonner les modifications non enregistrées de la mémoire du projet ?",
         "discard": "Abandonner",
@@ -733,8 +733,8 @@
       "skills": "Skills"
     },
     "providerSettings": {
-      "unavailable": "Les réglages du fournisseur ne sont pas disponibles.",
-      "loadFailed": "Impossible de charger les réglages du fournisseur : {message}"
+      "unavailable": "Les paramètres du fournisseur ne sont pas disponibles.",
+      "loadFailed": "Impossible de charger les paramètres du fournisseur : {message}"
     },
     "display": "Affichage",
     "conversations": "Conversations",
@@ -745,7 +745,7 @@
     "experimental": "Expérimental",
     "userName": {
       "name": "Comment Claudian doit-il vous appeler ?",
-      "desc": "Votre nom pour les salutations personnalisées (laisser vide pour les salutations génériques)"
+      "desc": "Votre nom pour les salutations personnalisées (laissez vide pour les salutations génériques)"
     },
     "excludedTags": {
       "name": "Tags exclus",
@@ -753,7 +753,7 @@
     },
     "mediaFolder": {
       "name": "Dossier des médias",
-      "desc": "Dossier contenant les pièces jointes/images. Lorsque les notes utilisent ![[image.jpg]], Claude cherchera ici. Laisser vide pour la racine du coffre."
+      "desc": "Dossier contenant les pièces jointes/images. Lorsque les notes utilisent ![[image.jpg]], Claude cherchera ici. Laissez vide pour la racine du coffre."
     },
     "systemPrompt": {
       "name": "Prompt système personnalisé",
@@ -761,7 +761,7 @@
     },
     "showTabTitlesByDefault": {
       "name": "Afficher les titres des onglets par défaut",
-      "desc": "Les nouveaux onglets de chat affichent le titre de la conversation au lieu d'un numéro. Les onglets ouverts conservent leur affichage, et chaque onglet peut toujours basculer."
+      "desc": "Les nouveaux onglets de chat affichent le titre de la conversation au lieu d’un numéro. Les onglets ouverts conservent leur affichage, et chaque onglet peut toujours basculer."
     },
     "chatFontScale": {
       "name": "Taille de police du chat",
@@ -769,7 +769,7 @@
     },
     "autoTitle": {
       "name": "Générer automatiquement les titres de conversation",
-      "desc": "Génère automatiquement les titres de conversation après le premier message de l'utilisateur."
+      "desc": "Génère automatiquement les titres de conversation après le premier message de l’utilisateur."
     },
     "titleLanguage": {
       "name": "Langue de génération des titres",
@@ -777,14 +777,14 @@
       "followInterface": "Identique à la langue de l’interface"
     },
     "titleModel": {
-      "name": "Modèle de génération de titre",
+      "name": "Modèle de génération des titres",
       "desc": "Modèle utilisé pour générer automatiquement les titres de conversation.",
       "select": "Sélectionner un modèle",
       "unavailableWarning": "La génération automatique des titres est suspendue. Sélectionnez un modèle disponible pour les titres."
     },
     "navMappings": {
-      "name": "Mappages de navigation style Vim",
-      "desc": "Un mappage par ligne. Format : \"map <touche> <action>\" (actions : scrollUp, scrollDown, focusInput)."
+      "name": "Raccourcis de navigation style Vim",
+      "desc": "Un raccourci par ligne. Format : \"map <touche> <action>\" (actions : scrollUp, scrollDown, focusInput)."
     },
     "requireCommandOrControlEnterToSend": {
       "name": "Exiger Command/Ctrl+Entrée pour envoyer",
@@ -793,51 +793,51 @@
     "safety": "Sécurité",
     "loadUserSettings": {
       "name": "Charger les paramètres utilisateur de Claude Code",
-      "desc": "Charge la configuration Claude Code au niveau utilisateur depuis ~/.claude : settings.json, skills, commandes, agents et plugins. Lorsque désactivé, seule la configuration au niveau du coffre est disponible. Lorsqu'activé, les règles de permission de l'utilisateur peuvent contourner le mode sécurisé."
+      "desc": "Charge la configuration Claude Code au niveau utilisateur depuis ~/.claude : settings.json, skills, commandes, agents et plugins. Si cette option est désactivée, seule la configuration au niveau du coffre est disponible. Si elle est activée, les règles d’autorisation utilisateur peuvent contourner le mode sécurisé."
     },
     "codexSandbox": {
       "name": "Sandbox",
-      "desc": "Accès aux fichiers dans les modes Approuver pour moi et Demander l’approbation. Lecture seule demande avant chaque modification ; Accès complet l'ignore."
+      "desc": "Accès aux fichiers dans les modes Approuver pour moi et Demander l’approbation. Lecture seule demande une confirmation avant chaque modification ; Accès complet ignore ce paramètre."
     },
     "environment": "Environnement",
     "sharedEnvironment": {
       "name": "Environnement partagé",
-      "desc": "Variables d'exécution indépendantes du fournisseur, partagées entre tous les fournisseurs. Utilisez ceci pour les variables PATH, de proxy, de certificats et de fichiers temporaires."
+      "desc": "Variables d’exécution indépendantes du fournisseur, partagées entre tous les fournisseurs. Utilisez ce champ pour les variables PATH, de proxy, de certificats et de fichiers temporaires."
     },
     "customVariables": {
       "name": "Variables personnalisées",
-      "desc": "Variables d'exécution appartenant uniquement à Claude Code. Utilisez ceci pour ANTHROPIC_* et les options propres à Claude Code."
+      "desc": "Variables d’exécution appartenant uniquement à Claude Code. Utilisez ce champ pour ANTHROPIC_* et les options propres à Claude Code."
     },
     "envSnippets": {
       "name": "Extraits",
       "addBtn": "Ajouter un extrait",
-      "saveCurrent": "Enregistrer l'environnement actuel comme extrait",
-      "nameRequired": "Veuillez entrer un nom pour l'extrait",
+      "saveCurrent": "Enregistrer l’environnement actuel comme extrait",
+      "nameRequired": "Veuillez saisir un nom pour l’extrait",
       "insert": "Insérer",
       "modal": {
-        "titleEdit": "Modifier l'extrait",
-        "titleSave": "Sauvegarder l'extrait",
+        "titleEdit": "Modifier l’extrait",
+        "titleSave": "Enregistrer l’extrait",
         "name": "Nom",
         "namePlaceholder": "Un nom descriptif pour cette configuration",
         "description": "Description",
-        "descPlaceholder": "Description optionnelle",
-        "envVars": "Variables d'environnement",
-        "envVarsPlaceholder": "Format KEY=VALUE, une par ligne (préfixe export supporté)",
+        "descPlaceholder": "Description facultative",
+        "envVars": "Variables d’environnement",
+        "envVarsPlaceholder": "Format KEY=VALUE, une par ligne (préfixe export pris en charge)",
         "save": "Enregistrer",
         "update": "Mettre à jour",
         "cancel": "Annuler"
       },
-      "insertFailed": "Impossible d'insérer le snippet",
-      "deleteConfirm": "Supprimer le snippet d'environnement « {name} » ?",
-      "deleteFailed": "Impossible de supprimer le snippet"
+      "insertFailed": "Impossible d’insérer l’extrait",
+      "deleteConfirm": "Supprimer l’extrait d’environnement « {name} » ?",
+      "deleteFailed": "Impossible de supprimer l’extrait"
     },
     "customModelAliases": {
       "ariaLabel": "Alias pour {model}",
       "ariaDescription": "Libellé personnalisé affiché dans le sélecteur de modèle. Laissez vide pour utiliser la valeur par défaut."
     },
     "enableChrome": {
-      "name": "Activer l'extension Chrome",
-      "desc": "Permettre à Claude Code d'interagir avec Chrome via l'extension claude-in-chrome. L'extension doit être installée. Nécessite un redémarrage de session."
+      "name": "Activer l’extension Chrome",
+      "desc": "Permettre à Claude Code d’interagir avec Chrome via l’extension claude-in-chrome. L’extension doit être installée. Nécessite un redémarrage de session."
     },
     "enableDualPane": {
       "name": "Activer le mode double volet",
@@ -864,7 +864,7 @@
     },
     "enableAutoScroll": {
       "name": "Défilement automatique pendant le streaming",
-      "desc": "Défiler automatiquement vers le bas pendant que Claude diffuse les réponses. Désactiver pour rester en haut et lire depuis le début."
+      "desc": "Défile automatiquement vers le bas pendant que Claude diffuse les réponses. Désactivez cette option pour rester en haut et lire depuis le début."
     },
     "deferMathRenderingDuringStreaming": {
       "name": "Différer le rendu mathématique pendant le streaming",
@@ -880,10 +880,10 @@
     },
     "chatViewPlacement": {
       "name": "Ouvrir Claudian dans",
-      "desc": "Choisissez où le panneau de chat s'ouvre lors de sa création",
+      "desc": "Choisissez où le panneau de chat s’ouvre lors de sa création",
       "rightSidebar": "Barre latérale droite",
       "leftSidebar": "Barre latérale gauche",
-      "mainTab": "Onglet principal de l'éditeur"
+      "mainTab": "Onglet principal de l’éditeur"
     },
     "enableZenMode": {
       "name": "Activer le mode zen",
@@ -892,29 +892,29 @@
     "cliInstallation": {
       "disclosure": "Installation de {name}",
       "description": "Chemin CLI facultatif pour cet ordinateur. Laissez vide pour une détection automatique.",
-      "checking": "Vérification du CLI…",
+      "checking": "Vérification de la CLI…",
       "versionUnavailable": "Version indisponible",
       "notFound": "Introuvable",
       "custom": "Chemin personnalisé",
       "auto": "Détecté automatiquement",
-      "checkFailed": "Impossible de vérifier le CLI",
+      "checkFailed": "Impossible de vérifier la CLI",
       "saveFailed": "Impossible d’enregistrer le chemin. Réessayez."
     },
     "cliPath": {
       "name": "Chemin de la CLI Claude Code",
       "genericName": "Chemin de la CLI",
       "validation": {
-        "notExist": "Le chemin n'existe pas",
+        "notExist": "Le chemin n’existe pas",
         "isDirectory": "Le chemin est un répertoire, pas un fichier",
         "mustBeAbsolute": "Le chemin doit être absolu",
         "notFile": "Le chemin doit pointer vers un fichier",
-        "notAccessible": "Le chemin n'est pas accessible",
+        "notAccessible": "Le chemin n’est pas accessible",
         "notExecutable": "Le chemin doit être exécutable"
       }
     },
     "language": {
       "name": "Langue",
-      "desc": "Changer la langue d'affichage de l'interface du plugin"
+      "desc": "Changer la langue d’affichage de l’interface du plugin"
     },
     "providerEnablement": {
       "name": "Activer {provider}",
@@ -926,7 +926,7 @@
       "desc": "Choisissez les modèles disponibles dans le sélecteur du chat. Faites-les glisser pour les réordonner ; le fournisseur utilise le premier modèle actuellement utilisable comme modèle par défaut. Sélectionnez au moins un modèle pour utiliser ce fournisseur.",
       "browse": "Parcourir les modèles",
       "filterLabel": "Filtrer les modèles {provider}",
-      "searchPlaceholder": "Filtrer par modèle, fournisseur ou ID...",
+      "searchPlaceholder": "Filtrer par modèle, fournisseur ou ID…",
       "providerFilterLabel": "Filtrer les fournisseurs de modèles",
       "allProviders": "Tous les fournisseurs ({count})",
       "discover": "Découvrir",
@@ -934,10 +934,10 @@
       "ofDiscovered": " sur {count} découverts",
       "oneProvider": " | 1 fournisseur",
       "manyProviders": " | {count} fournisseurs",
-      "loadingModels": "Chargement des modèles...",
-      "loading": "Chargement...",
+      "loadingModels": "Chargement des modèles…",
+      "loading": "Chargement…",
       "available": "{count} disponible(s)",
-      "noneDiscovered": "Aucun modèle découvert pour l'instant",
+      "noneDiscovered": "Aucun modèle découvert pour l’instant",
       "selected": "Sélectionnés ({count})",
       "clearAllLabel": "Effacer tous les modèles {provider} sélectionnés",
       "reorderLabel": "Réordonner {model} ; faites glisser ou utilisez les flèches Haut et Bas",
@@ -948,24 +948,24 @@
       "noMatch": "Aucun modèle ne correspond à votre filtre.",
       "emptyCatalog": "Aucun modèle {provider} signalé. Vérifiez votre configuration et cliquez sur Découvrir.",
       "loadingCatalog": "Chargement des modèles {provider}…",
-      "stale": "Le catalogue de modèles {provider} est obsolète. Cliquez sur Découvrir pour l'actualiser."
+      "stale": "Le catalogue de modèles {provider} est obsolète. Cliquez sur Découvrir pour l’actualiser."
     },
     "claude": {
       "promptSuggestions": {
         "name": "Suggestions de prompt",
-        "desc": "Afficher le prochain prompt prédit par Claude dans le champ vide. Chaque suggestion est une requête Claude supplémentaire après chaque tour et peut épuiser vos limites d’utilisation plus vite."
+        "desc": "Affiche le prochain prompt suggéré par Claude dans le champ de saisie vide. Chaque suggestion envoie une requête Claude supplémentaire après chaque tour et peut épuiser vos limites d’utilisation plus rapidement."
       },
       "configuration": "Configuration",
       "responseStyle": {
         "name": "Style de réponse",
-        "desc": "Style de sortie de Claude Code pour les réponses, y compris les styles personnalisés. « Paramètre de Claude Code » suit votre configuration Claude Code. La liste se met à jour lors de l'actualisation des modèles ou au démarrage d'une discussion.",
+        "desc": "Style de sortie de Claude Code pour les réponses, y compris les styles personnalisés. « Paramètre de Claude Code » suit votre configuration Claude Code. La liste se met à jour lors de l’actualisation des modèles ou au démarrage d’une conversation.",
         "default": "Par défaut",
         "inherit": "Paramètre de Claude Code"
       }
     },
     "codex": {
       "cliPath": {
-        "name": "Chemin de Codex CLI"
+        "name": "Chemin de la CLI Codex"
       },
       "safeMode": {
         "workspaceWrite": "Écriture dans l’espace de travail",
@@ -990,8 +990,8 @@
         "name": "Résumé du raisonnement",
         "desc": "Affiche un résumé du processus de raisonnement du modèle dans le bloc de réflexion.",
         "auto": "Auto",
-        "concise": "Concise",
-        "detailed": "Détaillée",
+        "concise": "Concis",
+        "detailed": "Détaillé",
         "off": "Désactivé"
       },
       "ultraEffort": {
@@ -1000,7 +1000,7 @@
       },
       "environment": {
         "name": "Environnement Codex",
-        "desc": "Variables d’exécution appartenant uniquement à Codex. Utilisez ceci pour les réglages OPENAI_* et CODEX_*. Si l’auto-détection de Codex a besoin d’aide, ajoutez son répertoire d’installation au PATH partagé plutôt qu’à cette section fournisseur."
+        "desc": "Variables d’exécution appartenant uniquement à Codex. Utilisez ce champ pour les paramètres OPENAI_* et CODEX_*. Si la détection automatique de Codex échoue, ajoutez son répertoire d’installation au PATH partagé plutôt qu’à cette section du fournisseur."
       }
     },
     "agentSkills": {
@@ -1009,12 +1009,12 @@
       "skillBadge": "skill",
       "diagnosticsTitle": "Skills à vérifier",
       "loadFailed": "Impossible de charger les skills partagés.",
-      "savedRefreshFailed": "Enregistré, mais l'actualisation des fournisseurs a échoué.",
+      "savedRefreshFailed": "Enregistré, mais l’actualisation des fournisseurs a échoué.",
       "validationFailed": "Skill invalide : {message}",
       "collisionFailed": "Un skill nommé « {name} » existe déjà.",
-      "saveFailed": "Impossible d'enregistrer le skill partagé : {message}",
+      "saveFailed": "Impossible d’enregistrer le skill partagé : {message}",
       "deleteFailed": "Impossible de placer le skill partagé dans la corbeille : {message}",
-      "staleConflict": "Ce skill a été modifié ailleurs ; actualisez avant d'enregistrer.",
+      "staleConflict": "Ce skill a été modifié ailleurs ; actualisez avant d’enregistrer.",
       "created": "Skill partagé « {name} » créé.",
       "updated": "Skill partagé « {name} » mis à jour.",
       "deleted": "Skill partagé « {name} » placé dans la corbeille.",
@@ -1029,41 +1029,41 @@
         "namePlaceholder": "code-reviewer",
         "description": "Description",
         "descriptionDesc": "Description portable obligatoire utilisée par les fournisseurs pour sélectionner le skill",
-        "descriptionPlaceholder": "Vérifie l'exactitude et la maintenabilité du code",
+        "descriptionPlaceholder": "Vérifie l’exactitude et la maintenabilité du code",
         "instructions": "Instructions",
         "instructionsDesc": "Instructions SKILL.md obligatoires",
-        "instructionsPlaceholder": "Examine le code fourni et signale les problèmes exploitables..."
+        "instructionsPlaceholder": "Examine le code fourni et signale les points d’amélioration concrets…"
       },
       "delete": {
         "title": "Supprimer le skill partagé",
-        "description": "L'intégralité du dossier du skill, y compris les scripts, références et ressources, sera placée dans la corbeille.",
+        "description": "L’intégralité du dossier du skill, y compris les scripts, références et ressources, sera placée dans la corbeille.",
         "confirm": "Placer dans la corbeille"
       }
     },
     "opencode": {
-      "emptyModels": "Le serveur OpenCode n’a renvoyé aucun modèle activé pour ce coffre. Vérifiez .opencode/opencode.json dans le coffre et les journaux OpenCode (opencode debug paths indique leur emplacement). Avec OpenCode v2, les plugins V1 configurés peuvent être incompatibles. Comparez avec opencode models --standalone dans le coffre, puis relancez la découverte.",
+      "emptyModels": "Le serveur OpenCode n’a renvoyé aucun modèle activé pour ce coffre. Vérifiez .opencode/opencode.json dans le coffre et les journaux OpenCode (opencode debug paths indique leur emplacement). Avec OpenCode v2, les plugins V1 configurés peuvent être incompatibles. Comparez avec opencode models --standalone dans le coffre, puis cliquez sur Découvrir.",
       "environment": {
-        "name": "Variables d'environnement OpenCode",
-        "desc": "Variables d'environnement supplémentaires transmises à OpenCode."
+        "name": "Variables d’environnement OpenCode",
+        "desc": "Variables d’environnement supplémentaires transmises à OpenCode."
       },
       "migrationNotice": {
-        "text": "OpenCode v1 n'est plus pris en charge. Passez à OpenCode v2 pour l'utiliser dans Claudian.",
+        "text": "OpenCode v1 n’est plus pris en charge. Passez à OpenCode v2 pour l’utiliser dans Claudian.",
         "link": "Migrer vers OpenCode v2"
       }
     },
     "pi": {
       "environment": {
-        "name": "Variables d'environnement Pi",
-        "desc": "Variables d'environnement transmises uniquement à Pi."
+        "name": "Variables d’environnement Pi",
+        "desc": "Variables d’environnement transmises uniquement à Pi."
       },
       "models": {
-        "desc": "Claudian conserve sa propre liste de modèles, distincte des enabledModels de Pi. Discover liste tous les modèles que Pi peut authentifier dans son environnement actuel, regroupés par la route de fournisseur que Pi appellera. La route détermine les identifiants et la facturation."
+        "desc": "Claudian conserve sa propre liste de modèles, distincte des enabledModels de Pi. Découvrir liste tous les modèles que Pi peut authentifier dans son environnement actuel, regroupés selon la route de fournisseur que Pi utilisera. Cette route détermine les identifiants et la facturation."
       }
     },
     "grok": {
       "environment": {
-        "name": "Variables d'environnement Grok Build",
-        "desc": "Variables d'environnement transmises uniquement à Grok Build. Les secrets des modèles personnalisés restent dans la portée de ce fournisseur et sont référencés depuis la configuration native par env_key."
+        "name": "Variables d’environnement Grok Build",
+        "desc": "Variables d’environnement transmises uniquement à Grok Build. Les secrets des modèles personnalisés restent propres à ce fournisseur et sont référencés depuis la configuration native via env_key."
       }
     },
     "antigravity": {
@@ -1082,15 +1082,15 @@
       "preset": "Preset",
       "codeMode": {
         "name": "Activer le mode code",
-        "desc": "S'applique à partir du prochain tour de chaque conversation, y compris les conversations existantes. Le modèle appelle les outils depuis des programmes run_code natifs plutôt que directement."
+        "desc": "S’applique à partir du prochain tour de chaque conversation, y compris les conversations existantes. Le modèle appelle les outils depuis des programmes run_code natifs plutôt que directement."
       },
       "presetPlugins": {
         "name": "Plugins de preset supplémentaires",
-        "desc": "Avancé. Une liste YAML (format de dsh) de lignes de plugins dsh natifs ajoutées au preset de discussion de Claudian, chacune avec son propre « id » et son propre « name ». Ces lignes ne peuvent pas remplacer celles de Claudian. L'enregistrement redémarre DeepSeek Harness, ce qui arrête les tours en cours. Les plugins sans interface dans Claudian, comme le mode plan, peuvent ne pas fonctionner."
+        "desc": "Avancé. Une liste YAML (format de dsh) de lignes de plugins dsh natifs ajoutées au preset de conversation de Claudian, chacune avec son propre « id » et son propre « name ». Ces lignes ne peuvent pas remplacer celles de Claudian. L’enregistrement redémarre DeepSeek Harness, ce qui arrête les tours en cours. Les plugins sans interface dans Claudian, comme le mode planification, peuvent ne pas fonctionner."
       },
       "presetPreview": "Aperçu du preset",
       "environment": {
-        "name": "Variables d'environnement DeepSeek Harness",
+        "name": "Variables d’environnement DeepSeek Harness",
         "desc": "Variables d’environnement transmises uniquement à DeepSeek Harness. Utilise le profil Web ou Desktop natif sélectionné, vos identifiants, modèles et serveurs MCP."
       }
     },
@@ -1126,7 +1126,7 @@
         "deleteDescription": "Le fichier de la commande sera placé dans la corbeille.",
         "collisionFailed": "Une commande nommée « {name} » existe déjà."
       },
-      "droppedFrontmatterWarning": "L'enregistrement ne conserve que le nom et la description. Ces clés seront supprimées et le comportement des fournisseurs peut changer : {keys}",
+      "droppedFrontmatterWarning": "L’enregistrement ne conserve que le nom et la description. Ces clés seront supprimées et le comportement des fournisseurs peut changer : {keys}",
       "hidden": {
         "name": "Commandes et skills masqués",
         "desc": "Masque des commandes et des skills dans le menu de commandes de tous les fournisseurs. Saisissez les noms exacts sans barre oblique initiale, un par ligne (les skills Pi utilisent skill:nom).",
@@ -1135,14 +1135,14 @@
       "sync": {
         "title": "Synchroniser les skills",
         "repairTitle": "Réparer le lien des skills",
-        "loading": "Vérification des dossiers de skills...",
+        "loading": "Vérification des dossiers de skills…",
         "intro": "La synchronisation regroupe les skills et commandes Claude Code dans .agents/skills et y relie .claude/skills.",
         "pros": {
           "oneList": "Une seule liste pour tous les fournisseurs.",
           "newSkills": "Les nouveaux skills apparaissent partout."
         },
         "cons": {
-          "dropped": "Seuls le nom et la description sont conservés ; les réglages propres à chaque fournisseur sont supprimés et le comportement peut changer.",
+          "dropped": "Seuls le nom et la description sont conservés ; les paramètres propres à chaque fournisseur sont supprimés et le comportement peut changer.",
           "claudeSyntax": "La syntaxe propre à Claude Code ne fonctionne pas chez les autres fournisseurs : {names}"
         },
         "attentionTitle": "À vérifier",
@@ -1154,9 +1154,9 @@
           "name": "Nom invalide. Utilisez des minuscules, des chiffres et des tirets.",
           "description": "Description manquante.",
           "instructions": "Aucune instruction. Ajoutez-les au fichier et resynchronisez.",
-          "unreadable": "Son frontmatter est illisible. Corrigez le fichier et resynchronisez.",
+          "unreadable": "Le frontmatter est illisible. Corrigez le fichier et resynchronisez.",
           "sharedConflict": "Un skill partagé nommé « {name} » existe déjà.",
-          "itemConflict": "Un autre élément s'appelle aussi « {name} »."
+          "itemConflict": "Un autre élément s’appelle aussi « {name} »."
         },
         "options": {
           "fix": "Corriger",
@@ -1167,14 +1167,14 @@
         "continue": "Continuer",
         "confirmTitle": "Remplacer .claude/skills par un lien ?",
         "confirmBody": ".claude/skills sera remplacé par un lien vers .agents/skills. Cette action est irréversible.",
-        "repairBody": ".claude/skills sera remplacé par un lien vers .agents/skills. Le dossier vers lequel il pointe actuellement n'est pas modifié.",
-        "linkBody": "Crée .claude/skills comme lien vers .agents/skills pour que Claude Code utilise les skills partagés. Aucun fichier n'est déplacé.",
+        "repairBody": ".claude/skills sera remplacé par un lien vers .agents/skills. Le dossier vers lequel il pointe actuellement n’est pas modifié.",
+        "linkBody": "Crée .claude/skills comme lien vers .agents/skills pour que Claude Code utilise les skills partagés. Aucun fichier n’est déplacé.",
         "linkWithItemsBody": "Les commandes deviennent des skills, puis .claude/skills est créé comme lien vers .agents/skills. Cette action est irréversible.",
-        "devicesWarning": "Ce coffre est synchronisé entre appareils ? Le lien risque de ne pas l'être ; synchronisez sur chaque appareil.",
+        "devicesWarning": "Vous synchronisez ce coffre entre plusieurs appareils ? Le lien risque de ne pas se synchroniser ; lancez Synchroniser sur chaque appareil.",
         "confirm": "Synchroniser et lier",
-        "partial": "La synchronisation s'est arrêtée avant la création du lien. Corrigez les éléments ci-dessous et relancez-la.",
+        "partial": "La synchronisation s’est arrêtée avant la création du lien. Corrigez les éléments ci-dessous et relancez-la.",
         "failed": "Échec de la synchronisation : {message}",
-        "summary": "Déplacés {moved}, convertis {converted}, à la corbeille {trashed}, {unlinked} lien(s) supprimé(s)."
+        "summary": "{moved} déplacé(s), {converted} converti(s), {trashed} mis à la corbeille, {unlinked} lien(s) supprimé(s)."
       }
     },
     "executionTarget": {
@@ -1185,8 +1185,8 @@
         "wsl": "WSL"
       },
       "wslDistroOverride": {
-        "name": "Remplacement de distribution WSL",
-        "desc": "Remplacement avancé facultatif. Laissez vide pour déduire la distribution depuis un chemin d’espace de travail WSL si possible, sinon utiliser la distribution WSL par défaut."
+        "name": "Distribution WSL personnalisée",
+        "desc": "Option avancée facultative. Laissez vide pour déduire la distribution depuis un chemin d’espace de travail WSL si possible, sinon la distribution WSL par défaut est utilisée."
       },
       "wslWindowsPath": "Le mode WSL attend une commande Linux ou un chemin absolu Linux, pas un chemin d’exécutable Windows."
     }

@@ -9,7 +9,7 @@ import type { ToolCallInfo } from '@/core/types';
 import { deliverAsyncQuestion } from '@/features/chat/interactions/asyncQuestionDelivery';
 import { createInteractionPromptPort } from '@/features/chat/interactions/interactionPromptPort';
 import { SessionInteractions } from '@/features/chat/interactions/SessionInteractions';
-import { setLocale } from '@/i18n/i18n';
+import { setLocale, t } from '@/i18n/i18n';
 import { ClaudeExecutionInteractionRouter } from '@/providers/claude/execution/ClaudeExecutionInteractionRouter';
 import { CodexExecutionServerRequestRouter } from '@/providers/codex/execution/CodexExecutionServerRequestRouter';
 
@@ -118,7 +118,10 @@ it.each([false, true])('localizes explicit Claude approval choices through the r
     sessionInstanceId: 'localized', getTurnId: () => 'turn', isToolAllowed: () => true, onToolBlocked: vi.fn(),
   });
   // Construct the adapter before selecting the locale to catch eagerly translated option arrays.
+  const englishTitle = t('chat.approval.title');
   setLocale('zh-CN');
+  const localizedTitle = t('chat.approval.title');
+  expect(localizedTitle).not.toBe(englishTitle);
   const suggestions = [{ type: 'addDirectories' as const, directories: ['/outside'], destination: 'session' as const }];
   const input = { command: 'git status' };
   const result = router.canUseTool('Bash', input, {
@@ -126,12 +129,13 @@ it.each([false, true])('localizes explicit Claude approval choices through the r
     ...(persistent ? { suggestions } : {}),
   });
   try {
-    const region = within(parent).getByRole('region', { name: '需要授权' });
-    expect(within(region).getByRole('region', { name: 'Bash 授权详情' }).textContent).toBe('运行命令：git status');
-    expect(within(region).getByRole('button', { name: '拒绝' })).toBeDefined();
-    expect(within(region).queryByRole('button', { name: '始终允许' }) !== null).toBe(persistent);
+    const region = within(parent).getByRole('region', { name: localizedTitle });
+    expect(within(region).getByRole('region', { name: t('chat.approval.details', { tool: 'Bash' }) }).textContent)
+      .toBe(t('chat.approval.runCommand', { pattern: 'git status' }));
+    expect(within(region).getByRole('button', { name: t('chat.approval.deny') })).toBeDefined();
+    expect(within(region).queryByRole('button', { name: t('chat.approval.alwaysAllow') }) !== null).toBe(persistent);
     expect(await axe(region)).toHaveNoViolations();
-    fireEvent.click(within(region).getByRole('button', { name: persistent ? '始终允许' : '允许一次' }));
+    fireEvent.click(within(region).getByRole('button', { name: persistent ? t('chat.approval.alwaysAllow') : t('chat.approval.allowOnce') }));
     await expect(result).resolves.toEqual({
       behavior: 'allow', updatedInput: input,
       ...(persistent ? { updatedPermissions: suggestions, decisionClassification: 'user_permanent' } : { decisionClassification: 'user_temporary' }),
@@ -143,10 +147,13 @@ it.each([false, true])('localizes explicit Claude approval choices through the r
 });
 
 it.each([
-  ['rejected', '回答未发送，请重试。'],
-  ['unsupported', '此问题无法接受该回答。'],
-] as const)('shows a localized %s delivery failure in the real question panel', async (failure, expected) => {
+  ['rejected', 'chat.questions.notSent'],
+  ['unsupported', 'chat.questions.unsupportedReply'],
+] as const)('shows a localized %s delivery failure in the real question panel', async (failure, expectedKey) => {
+  const englishMessage = t(expectedKey);
   setLocale('zh-CN');
+  const expected = t(expectedKey);
+  expect(expected).not.toBe(englishMessage);
   const parent = document.body.createDiv();
   const prompts = new SessionInteractions({ getPromptParentEl: () => parent });
   const tool: ToolCallInfo = { id: 'question', name: 'AskUserQuestion', status: 'completed', questionStatus: 'pending', input: {
@@ -161,9 +168,9 @@ it.each([
     }),
   });
   try {
-    const region = within(parent).getByRole('region', { name: '问题' });
+    const region = within(parent).getByRole('region', { name: t('chat.questions.title') });
     fireEvent.click(within(region).getByRole('button', { name: 'History' }));
-    fireEvent.click(within(region).getByRole('button', { name: '提交回答' }));
+    fireEvent.click(within(region).getByRole('button', { name: t('chat.questions.submitAnswers') }));
     await waitFor(() => expect(within(region).getByRole('alert').textContent).toBe(expected));
     expect(within(region).getByText('History')).toBeDefined();
     expect(submit).not.toHaveBeenCalled();
@@ -175,14 +182,17 @@ it.each([
 });
 
 it('localizes uncertain answer-delivery feedback without requeueing the native reply', async () => {
+  const englishNotice = t('chat.questions.uncertainDelivery');
   setLocale('zh-CN');
+  const localizedNotice = t('chat.questions.uncertainDelivery');
+  expect(localizedNotice).not.toBe(englishNotice);
   const tool: ToolCallInfo = { id: 'question', name: 'AskUserQuestion', status: 'completed', questionStatus: 'pending', input: {
     replyMode: 'user-message', questions: [{ id: '0', question: 'Which check?', options: [{ label: 'History' }] }],
   } };
   const submit = vi.fn();
   const prepare = vi.fn((_reply: { content: string }) => ({ steer: async () => 'uncertain' as const, submit }));
   await deliverAsyncQuestion(tool, { '0': 'History' }, { providerId: 'codex', assertCurrent: () => undefined, prepare });
-  expect(Notice).toHaveBeenCalledWith('无法确认回答是否送达。为避免重复发送，未将其重新加入队列。');
+  expect(Notice).toHaveBeenCalledWith(localizedNotice);
   expect(submit).not.toHaveBeenCalled();
   expect(prepare.mock.calls[0][0].content).toContain('History');
 });

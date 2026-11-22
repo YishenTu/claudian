@@ -1,4 +1,4 @@
-import { setLocale } from '@/i18n/i18n';
+import { setLocale, t } from '@/i18n/i18n';
 import { claudeChatUIConfig } from '@/providers/claude/ui/ClaudeChatUIConfig';
 
 describe('claudeChatUIConfig', () => {
@@ -146,10 +146,20 @@ it('resolves permission labels at request time without changing provider mode va
   const english = claudeChatUIConfig.getPermissionModeOptions!() ?? [];
   setLocale('zh-CN');
   try {
+    const expectedLabels = [
+      t('chat.permissionMode.claude.auto'),
+      t('chat.permissionMode.claude.manual'),
+      t('chat.permissionMode.claude.acceptEdits'),
+      t('chat.permissionMode.claude.yolo'),
+    ];
+    const expectedAutoDesc = t('chat.permissionMode.claude.autoDesc');
+    expect(expectedLabels).not.toEqual(english.map(option => option.label));
+    expect(expectedAutoDesc).not.toBe(english[0].description);
+
     const translated = claudeChatUIConfig.getPermissionModeOptions!() ?? [];
-    expect(translated.map(option => option.label)).toEqual(['自动', '手动', '接受编辑', 'YOLO']);
+    expect(translated.map(option => option.label)).toEqual(expectedLabels);
     expect(translated.map(option => option.value)).toEqual(english.map(option => option.value));
-    expect(translated[0].description).toBe('由 Claude 决定是否授权');
+    expect(translated[0].description).toBe(expectedAutoDesc);
     expect(translated[3].bypassesApprovals).toBe(true);
   } finally {
     setLocale('en');
