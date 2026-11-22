@@ -311,7 +311,6 @@ export class ProviderSettingsCoordinator {
     const savedModel = projection('savedProviderModel');
     const savedEffort = projection('savedProviderEffort');
     const savedServiceTier = projection('savedProviderServiceTier');
-    const savedPermissionMode = normalizeSavedPermissionModes(settings.savedProviderPermissionMode);
 
     const shouldPreferCurrentProjection = providerId === getSettingsProviderId(settings);
     const currentModelRaw = typeof settings.model === 'string' ? settings.model : '';
@@ -385,14 +384,22 @@ export class ProviderSettingsCoordinator {
       settings.serviceTier = serviceTierPolicy?.options[0]?.value ?? 'default';
     }
 
-    const permissionPolicy = uiConfig.permissionModes ?? null;
-    if (!permissionPolicy) {
-      return;
-    }
+    this.projectPermissionMode(settings, providerId, uiConfig, shouldPreferCurrentProjection);
+  }
 
+  /** The saved mode, else the current mode when it is this provider's own, else the default; invalid values fail closed. */
+  private static projectPermissionMode(
+    settings: Record<string, unknown>,
+    providerId: ProviderId,
+    uiConfig: ProviderModelPolicy,
+    isSettingsProvider: boolean,
+  ): void {
+    const permissionPolicy = uiConfig.permissionModes;
+    if (!permissionPolicy) return;
+    const savedPermissionMode = normalizeSavedPermissionModes(settings.savedProviderPermissionMode);
     // The current mode is reused only when it is this provider's own; another provider's could be YOLO.
-    const ownsCurrentPermissionMode = shouldPreferCurrentProjection || settings.settingsProvider === providerId;
-    settings.permissionMode = normalizeStoredPermissionMode(permissionPolicy, savedPermissionMode?.[providerId])
+    const ownsCurrentPermissionMode = isSettingsProvider || settings.settingsProvider === providerId;
+    settings.permissionMode = normalizeStoredPermissionMode(permissionPolicy, savedPermissionMode[providerId])
       ?? (ownsCurrentPermissionMode
         ? normalizeStoredPermissionMode(permissionPolicy, settings.permissionMode)
         : undefined)
@@ -416,6 +423,9 @@ export class ProviderSettingsCoordinator {
 
       if (providerId !== settingsProvider) {
         this.projectProviderState(targetSettings, providerId);
+      } else {
+        // Persisting below saves the top-level mode, which can be stale until the saved mode is projected.
+        this.projectPermissionMode(settings, providerId, ProviderRegistry.getModelPolicy(providerId), true);
       }
 
       const { changed } = reconciler.reconcileModelWithEnvironment(targetSettings, context);

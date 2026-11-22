@@ -171,6 +171,30 @@ describe('startApplication', () => {
       expect(domains.settings.getCommittedSettings().model).toBe(DEFAULT_CLAUDIAN_SETTINGS.model);
       expect(saveSpy).toHaveBeenCalled();
     });
+
+    it('fails a malformed saved permission mode closed while applying environment configuration', async () => {
+      mockApp.vault.adapter.exists.mockImplementation(async (path: string) => path === '.claudian/claudian-settings.json');
+      mockApp.vault.adapter.read.mockImplementation(async (path: string) => (
+        path === '.claudian/claudian-settings.json'
+          ? JSON.stringify({
+            settingsProvider: 'claude',
+            permissionMode: 'yolo',
+            savedProviderPermissionMode: { claude: false },
+            providerConfigs: { claude: { environmentHash: 'old-hash', environmentVariables: 'ANTHROPIC_MODEL=custom-model' } },
+          })
+          : ''
+      ));
+
+      const domains = await loadApplication();
+
+      expect(domains.settings.getCommittedSettings().permissionMode).toBe('manual');
+      const written = mockApp.vault.adapter.write.mock.calls
+        .filter(([path]) => path === '.claudian/claudian-settings.json')
+        .map(([, content]) => JSON.parse(content) as Record<string, unknown>)
+        .at(-1);
+      // The changed environment made startup save the settings document.
+      expect(written).toMatchObject({ permissionMode: 'manual', savedProviderPermissionMode: { claude: 'manual' } });
+    });
   });
 
   describe('session metadata', () => {
