@@ -32,8 +32,9 @@ import { TranscriptFollow } from '@/features/chat/rendering/TranscriptFollow';
 import { createWelcomeElement } from '@/features/chat/rendering/WelcomeRenderer';
 import { type ConversationDirectoryEntry, formatConversationDirectoryTitle, getRenderedConversationDirectory } from '@/features/chat/utils/conversationDirectoryTitle';
 import { t } from '@/i18n/i18n';
-import { ImagePreviewModal } from '@/shared/modals/ImagePreviewModal';
+import { imageAttachmentPreview, ImagePreviewModal, type ImagePreviewSource } from '@/shared/modals/ImagePreviewModal';
 import { registerFileLinkHandler } from '@/utils/fileLink';
+import { EMBEDDED_IMAGE_BUTTON_CLASS } from '@/utils/imageEmbed';
 
 
 /** Rendering hooks reconnect live tool cards to their session owners. */
@@ -153,6 +154,7 @@ export class MessageRenderer {
       (el, markdown) => this.renderContent(el, markdown),
     );
 
+    this.messagesEl.addEventListener('click', this.#onEmbeddedImageClick);
     // Register delegated click handler for file links
     this.removeFileLinkHandler = registerFileLinkHandler(this.app, this.messagesEl);
     // Live tool cards render into the same container, so one delegated handler covers both paths.
@@ -194,6 +196,7 @@ export class MessageRenderer {
     this.contentRemovalObserver?.disconnect();
     this.#markdown.dispose();
     this.imagePreviewModal.close();
+    this.messagesEl.removeEventListener('click', this.#onEmbeddedImageClick);
     this.removeFileLinkHandler();
     this.removeFileLinkHandler = () => {};
     this.removeSessionLinkHandler();
@@ -763,7 +766,7 @@ export class MessageRenderer {
       const imageWrapper = imagesEl.createEl('button', {
         cls: 'claudian-message-image',
         attr: {
-          'aria-label': `Preview ${image.name}`,
+          'aria-label': t('chat.images.previewImage', { name: image.name }),
           type: 'button',
         },
       });
@@ -774,10 +777,7 @@ export class MessageRenderer {
         },
       });
 
-      imageWrapper.addEventListener('click', () => {
-        if (this.#markdown.isDisposed) return;
-        this.imagePreviewModal.open(this.messagesEl.ownerDocument ?? window.document, image, this.app.keymap);
-      });
+      imageWrapper.addEventListener('click', () => this.#openImagePreview(imageAttachmentPreview(image)));
     }
     return imagesEl;
   }
@@ -785,6 +785,19 @@ export class MessageRenderer {
   // ============================================
   // Content Rendering
   // ============================================
+
+  #openImagePreview(image: ImagePreviewSource): void {
+    if (this.#markdown.isDisposed) return;
+    this.imagePreviewModal.open(this.messagesEl.ownerDocument ?? window.document, image, this.app.keymap);
+  }
+
+  /** Opens images embedded in rendered replies; one delegated handler covers every render path. */
+  readonly #onEmbeddedImageClick = (event: MouseEvent): void => {
+    const trigger = (event.target as HTMLElement).closest(`button.${EMBEDDED_IMAGE_BUTTON_CLASS}`);
+    const image = trigger?.querySelector('img');
+    if (!trigger || !image || !this.messagesEl.contains(trigger)) return;
+    this.#openImagePreview({ src: image.currentSrc || image.src, name: image.alt });
+  };
 
   /** Renders markdown content with code block enhancements. */
   renderContent(

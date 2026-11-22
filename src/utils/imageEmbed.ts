@@ -25,6 +25,9 @@ const IMAGE_EXTENSIONS = new Set([
   'ico',
 ]);
 
+/** Native button wrapping an embedded image whose host lets it open a full preview. */
+export const EMBEDDED_IMAGE_BUTTON_CLASS = 'claudian-embedded-image-button';
+
 const IMAGE_EMBED_PATTERN = /!\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g;
 
 interface ReplaceImageEmbedsOptions {
@@ -70,11 +73,13 @@ function resolveImageFile(
 }
 
 
+const DIMENSIONS_PATTERN = /^(\d+)(?:x(\d+))?$/;
+
 /** Supports formats: "100" (width only) or "100x200" (width x height) */
 function buildStyleAttribute(altText: string | undefined): string {
   if (!altText) return '';
 
-  const dimMatch = altText.match(/^(\d+)(?:x(\d+))?$/);
+  const dimMatch = altText.match(DIMENSIONS_PATTERN);
   if (!dimMatch) return '';
 
   const width = dimMatch[1];
@@ -92,7 +97,8 @@ function createImageHTML(
   altText: string | undefined
 ): string {
   const src = app.vault.getResourcePath(file);
-  const alt = escapeHTML(altText || file.basename);
+  // A size spec is not a description, so the file name stays the image's accessible name.
+  const alt = escapeHTML(altText && !DIMENSIONS_PATTERN.test(altText) ? altText : file.basename);
   const style = buildStyleAttribute(altText);
 
   return `<span class="claudian-embedded-image"><img src="${escapeHTML(src)}" alt="${alt}" loading="lazy"${style}></span>`;
@@ -158,4 +164,19 @@ export function replaceImageEmbedsWithHTML(
       );
     },
   });
+}
+
+/**
+ * Wraps each rendered embedded image in a native button that opens it full size. Runs on the
+ * rendered DOM so it does not depend on the host Markdown sanitizer keeping `<button>` markup.
+ */
+export function makeEmbeddedImagesPreviewable(container: HTMLElement, label: (name: string) => string): void {
+  for (const image of container.querySelectorAll<HTMLImageElement>('.claudian-embedded-image > img')) {
+    // The generated wrapper holds only the image, so appending keeps its position.
+    const button = image.parentElement!.createEl('button', {
+      cls: EMBEDDED_IMAGE_BUTTON_CLASS,
+      attr: { type: 'button', 'aria-label': label(image.alt) },
+    });
+    button.appendChild(image);
+  }
 }

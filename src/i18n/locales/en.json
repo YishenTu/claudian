@@ -519,7 +519,9 @@
       "fileNotFound": "{message} (File not found)",
       "permissionDenied": "{message} (Permission denied)",
       "preview": "Image preview: {name}",
-      "closePreview": "Close image preview"
+      "closePreview": "Close image preview",
+      "previewImage": "Preview {name}",
+      "zoomLevel": "{percent}%"
     },
     "pi": {
       "extension": "Pi extension",

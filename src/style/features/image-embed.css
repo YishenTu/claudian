@@ -19,6 +19,36 @@
   opacity: 0.9;
 }
 
+/* Embedded images in chat replies open a full preview through a native button. */
+button.claudian-embedded-image-button,
+button.claudian-embedded-image-button:hover,
+button.claudian-embedded-image-button:focus,
+button.claudian-embedded-image-button:active {
+  appearance: none;
+  display: inline-block;
+  max-width: 100%;
+  height: auto;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-s);
+  background: none;
+  box-shadow: none;
+  font: inherit;
+  line-height: 0;
+  cursor: zoom-in;
+  vertical-align: middle;
+}
+
+button.claudian-embedded-image-button:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: 2px;
+}
+
+.claudian-embedded-image-button img {
+  cursor: zoom-in;
+}
+
 /* When image is inline with text */
 .claudian-text-block p .claudian-embedded-image {
   margin: 0.25em 0;

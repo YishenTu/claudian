@@ -519,7 +519,9 @@
       "fileNotFound": "{message} (파일 없음)",
       "permissionDenied": "{message} (권한 거부됨)",
       "preview": "이미지 미리보기: {name}",
-      "closePreview": "이미지 미리보기 닫기"
+      "closePreview": "이미지 미리보기 닫기",
+      "previewImage": "{name} 미리보기",
+      "zoomLevel": "{percent}%"
     },
     "pi": {
       "extension": "Pi 확장",

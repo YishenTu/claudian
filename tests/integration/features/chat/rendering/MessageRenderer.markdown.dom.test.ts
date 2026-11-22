@@ -3,11 +3,12 @@
 import '@/providers';
 
 import { parser } from '@lezer/markdown';
+import { axe } from '@test/helpers/accessibility';
 import { createChatFeatureHost } from '@test/helpers/features/chat/ChatFeatureHostFixture';
 import { renderObsidianHTML } from '@test/helpers/ObsidianMarkdownRenderer';
 import { testDate } from '@test/helpers/testClock';
 import { fireEvent, within } from '@testing-library/dom';
-import { type App, Component, MarkdownRenderer, type TFile } from 'obsidian';
+import { App, Component, MarkdownRenderer, type TFile } from 'obsidian';
 
 import { MessageRenderer } from '@/features/chat/rendering/MessageRenderer';
 import { SubagentManager } from '@/features/chat/rendering/subagents/SubagentManager';
@@ -32,6 +33,7 @@ beforeEach(async () => {
     metadataCache: {
       getFirstLinkpathDest: (path: string) => path === note.path ? note : null,
     },
+    keymap: new App().keymap,
   } as unknown as App;
   const plugin = await createChatFeatureHost({ app, settings: { mediaFolder: '' } });
   settings = plugin.settings;
@@ -212,6 +214,25 @@ it('escapes authored HTML before injecting trusted images and then activates rem
   expect(host.textContent).toContain('Use <meta-name>');
   expect(within(host).getByRole('img', { name: 'photo' }).getAttribute('src')).toBe('app://local/Media/photo.png');
   expect(within(host).getByRole('link', { name: 'Note' }).getAttribute('data-href')).toBe('note.md');
+});
+
+it('opens an image embedded in a reply in the zoomable preview from a native button', async () => {
+  vi.spyOn(MarkdownRenderer, 'render').mockImplementationOnce(renderObsidianHTML);
+  settings.mediaFolder = 'Media';
+  await renderer.renderContent(host, 'Diagram: ![[photo.png]]');
+
+  const trigger = within(host).getByRole('button', { name: 'Preview photo' });
+  expect(trigger.getAttribute('type')).toBe('button');
+  expect(within(trigger).getByRole('img', { name: 'photo' }).getAttribute('src')).toBe('app://local/Media/photo.png');
+  expect(await axe(host)).toHaveNoViolations();
+  trigger.focus();
+  fireEvent.click(within(trigger).getByRole('img', { name: 'photo' }));
+
+  const dialog = within(document.body).getByRole('dialog', { name: 'Image preview: photo' });
+  expect(within(dialog).getByRole('img', { name: 'photo' }).getAttribute('src')).toBe('app://local/Media/photo.png');
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Close image preview' }));
+  expect(within(document.body).queryByRole('dialog')).toBeNull();
+  expect(document.activeElement).toBe(trigger);
 });
 
 it('skips the file-link DOM pass for content without wikilinks', async () => {

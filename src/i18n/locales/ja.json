@@ -519,7 +519,9 @@
       "fileNotFound": "{message}（ファイルが見つかりません）",
       "permissionDenied": "{message}（アクセスが拒否されました）",
       "preview": "画像プレビュー：{name}",
-      "closePreview": "画像プレビューを閉じる"
+      "closePreview": "画像プレビューを閉じる",
+      "previewImage": "{name} をプレビュー",
+      "zoomLevel": "{percent}%"
     },
     "pi": {
       "extension": "Pi 拡張機能",

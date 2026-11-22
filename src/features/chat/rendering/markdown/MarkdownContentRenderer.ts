@@ -12,7 +12,7 @@ import { t } from '@/i18n/i18n';
 import { enhanceRenderedCodeFence } from '@/shared/components/CopyableCodeFence';
 import { MarkdownRenderScope } from '@/shared/components/MarkdownRenderScope';
 import { processFileLinks } from '@/utils/fileLink';
-import { replaceImageEmbedsWithHTML } from '@/utils/imageEmbed';
+import { makeEmbeddedImagesPreviewable, replaceImageEmbedsWithHTML } from '@/utils/imageEmbed';
 import {
   escapeMathDelimitersForStreaming,
   normalizeLatexMathDelimiters,
@@ -102,6 +102,9 @@ export class MarkdownContentRenderer {
 
       if (!isCurrent()) return;
       el.querySelectorAll('pre').forEach(enhanceRenderedCodeFence);
+      if (processedMarkdown !== displayOnlyCodeFences.markdown) {
+        makeEmbeddedImagesPreviewable(el, name => t('chat.images.previewImage', { name }));
+      }
       if (!options?.deferDiagrams
         && displayOnlyCodeFences.fences.some(fence => fence.originalLanguage.toLowerCase() === 'mermaid')) {
         await renderMermaidDiagrams(el, isCurrent);

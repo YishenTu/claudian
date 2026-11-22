@@ -519,7 +519,9 @@
       "fileNotFound": "{message}（檔案不存在）",
       "permissionDenied": "{message}（無存取權限）",
       "preview": "圖片預覽：{name}",
-      "closePreview": "關閉圖片預覽"
+      "closePreview": "關閉圖片預覽",
+      "previewImage": "預覽 {name}",
+      "zoomLevel": "{percent}%"
     },
     "pi": {
       "extension": "Pi 擴充功能",

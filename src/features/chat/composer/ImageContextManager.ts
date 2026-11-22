@@ -6,7 +6,7 @@ import type { ImageAttachment, ImageMediaType } from '@/core/types';
 import { ComposerContextTray } from '@/features/chat/composer/ComposerContextTray';
 import { t } from '@/i18n/i18n';
 import type { ComposerInputElement } from '@/shared/composer-dropdown/types';
-import { ImagePreviewModal } from '@/shared/modals/ImagePreviewModal';
+import { imageAttachmentPreview, ImagePreviewModal } from '@/shared/modals/ImagePreviewModal';
 
 const MAX_IMAGE_SIZE = 5 * 1024 * 1024;
 
@@ -338,7 +338,7 @@ export class ImageContextManager {
     if (this.destroyed) return;
 
     const ownerDocument = this.containerEl.ownerDocument ?? window.document;
-    this.imagePreviewModal.open(ownerDocument, image, this.keymap);
+    this.imagePreviewModal.open(ownerDocument, imageAttachmentPreview(image), this.keymap);
   }
 
   private generateId(): string {

@@ -519,7 +519,9 @@
       "fileNotFound": "{message} (Archivo no encontrado)",
       "permissionDenied": "{message} (Permiso denegado)",
       "preview": "Vista previa de imagen: {name}",
-      "closePreview": "Cerrar vista previa de imagen"
+      "closePreview": "Cerrar vista previa de imagen",
+      "previewImage": "Vista previa de {name}",
+      "zoomLevel": "{percent} %"
     },
     "pi": {
       "extension": "Extensión de Pi",

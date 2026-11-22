@@ -789,7 +789,7 @@ describe('Tab provider execution ownership', () => {
     }
   });
 
-  it('releases the renderer file-link and session-link listeners during tab teardown', async () => {
+  it('releases the renderer file-link, session-link and embedded-image listeners during tab teardown', async () => {
     const added = vi.spyOn(HTMLElement.prototype, 'addEventListener');
     const removed = vi.spyOn(HTMLElement.prototype, 'removeEventListener');
     const tab = await createTestTab({
@@ -799,7 +799,7 @@ describe('Tab provider execution ownership', () => {
     const messagesEl = tab.dom.messagesEl;
 
     const handlers = added.mock.calls.filter((call, index) => call[0] === 'click' && added.mock.contexts[index] === messagesEl).map(call => call[1]);
-    expect(handlers).toHaveLength(2);
+    expect(handlers).toHaveLength(3);
     await destroyTab(tab);
     const released = removed.mock.calls.filter((call, index) => call[0] === 'click' && removed.mock.contexts[index] === messagesEl).map(call => call[1]);
     expect(released).toEqual(expect.arrayContaining(handlers));
