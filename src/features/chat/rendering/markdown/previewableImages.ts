@@ -5,10 +5,11 @@ import type { ImagePreviewSource } from '@/shared/modals/ImagePreviewModal';
 export const PREVIEWABLE_IMAGE_BUTTON_CLASS = 'claudian-embedded-image-button';
 
 /**
- * Markdown images: Claudian's `![[...]]` embeds, Obsidian's vault embeds (whose image arrives
- * when the embed loads), and external `![](url)` images. Plugin-rendered diagrams are excluded.
+ * Images that belong to a control or a rendered diagram rather than to the Markdown itself:
+ * authored links keep their own action (and controls must not nest), and Mermaid or another
+ * plugin's code-block output is not a Markdown image.
  */
-const PREVIEWABLE_IMAGE_SELECTOR = '.claudian-embedded-image > img, .internal-embed img, p > img';
+const EXCLUDED_IMAGE_CONTAINERS = 'a, button, .claudian-mermaid, .mermaid, [class*="block-language-"]';
 
 function previewName(image: HTMLImageElement): string {
   return image.alt
@@ -23,16 +24,17 @@ export function getImagePreview(trigger: Element): ImagePreviewSource | null {
 }
 
 /**
- * Wraps the Markdown images at or inside `root` in native preview buttons. Runs on the rendered
+ * Wraps the Markdown images at or inside `root` in native preview buttons: Claudian's `![[...]]`
+ * embeds, Obsidian's vault embeds (whose image may arrive when the embed loads), and external
+ * `![](url)` images wherever they sit (paragraphs, lists, tables, emphasis). Runs on the rendered
  * DOM, so it neither depends on the host sanitizer keeping `<button>` markup nor misses embeds
  * that load later. Idempotent.
  */
 export function makeImagesPreviewable(root: Element): void {
-  const images = [...root.querySelectorAll<HTMLImageElement>(PREVIEWABLE_IMAGE_SELECTOR)];
-  if (root.localName === 'img' && root.matches(PREVIEWABLE_IMAGE_SELECTOR)) images.push(root as HTMLImageElement);
+  const images = [...root.querySelectorAll<HTMLImageElement>('img')];
+  if (root.localName === 'img') images.push(root as HTMLImageElement);
   for (const image of images) {
-    // An authored link keeps its own action, and controls must not nest.
-    if (image.closest('a, button')) continue;
+    if (image.closest(EXCLUDED_IMAGE_CONTAINERS)) continue;
     const button = image.parentElement!.createEl('button', {
       cls: PREVIEWABLE_IMAGE_BUTTON_CLASS,
       attr: { type: 'button', 'aria-label': t('chat.images.previewImage', { name: previewName(image) }) },

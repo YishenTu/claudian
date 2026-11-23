@@ -257,6 +257,29 @@ it('opens standard Markdown images, including embeds Obsidian loads after render
   expect(await axe(host)).toHaveNoViolations();
 });
 
+it('opens external Markdown images inside lists, tables, and emphasis, but not plugin-rendered diagrams', async () => {
+  // Obsidian's output for external images in a list item, a table cell and bold text, beside a code
+  // block another plugin rendered as an image and a Mermaid diagram.
+  vi.spyOn(MarkdownRenderer, 'render').mockImplementationOnce(async (_app, _markdown, el) => {
+    el.innerHTML = '<ul><li><img alt="in list" src="https://example.org/list.png"></li></ul>'
+      + '<table><tbody><tr><td><img alt="in table" src="https://example.org/table.png"></td></tr></tbody></table>'
+      + '<p><strong><img alt="in bold" src="https://example.org/bold.png"></strong></p>'
+      + '<div class="block-language-chart"><img alt="plugin chart" src="data:image/png;base64,AA=="></div>'
+      + '<div class="claudian-mermaid"><img alt="Mermaid diagram" src="data:image/svg+xml,%3Csvg%2F%3E"></div>';
+  });
+  await renderer.renderContent(host, 'images');
+
+  for (const name of ['in list', 'in table', 'in bold']) {
+    fireEvent.click(within(host).getByRole('button', { name: `Preview ${name}` }));
+    expect(within(document.body).getByRole('dialog', { name: `Image preview: ${name}` })).toBeDefined();
+    fireEvent.click(within(document.body).getByRole('button', { name: 'Close image preview' }));
+  }
+  for (const name of ['plugin chart', 'Mermaid diagram']) {
+    expect(within(host).getByRole('img', { name }).closest('button')).toBeNull();
+  }
+  expect(within(host).getAllByRole('button')).toHaveLength(3);
+});
+
 it('leaves an embedded image inside an authored link to the link', async () => {
   // Obsidian renders `[![[photo.png]]](https://example.org)` as a link around the injected image.
   vi.spyOn(MarkdownRenderer, 'render').mockImplementationOnce(async (_app, markdown, el) => {
