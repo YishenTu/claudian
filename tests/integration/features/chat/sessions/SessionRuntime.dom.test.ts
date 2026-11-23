@@ -255,8 +255,25 @@ async function selectDenialDuringBaselineRead() {
   holdRead = true;
   fireEvent.click(first);
   await reading.promise;
-  return { s, approval, denials, finishRead() { holdRead = false; releaseRead.resolve(); } };
+  return { s, approval, denials, finishRead(changedTo?: string) {
+    if (changedTo) revision = changedTo;
+    holdRead = false;
+    releaseRead.resolve();
+  } };
 }
+
+it('dismisses a selected denial when native history changed outside Claudian before the approval', async () => {
+  const { s, approval, denials, finishRead } = await selectDenialDuringBaselineRead();
+  finishRead('rewound elsewhere');
+  expect(await approval).toBe('dismissed');
+  expect(denials).toEqual(['First command', 'Second command']);
+  // The change stays recorded, so a later selection is dismissed too.
+  const retry = s.first.executionCoordinator.approveRecentDenial();
+  fireEvent.click(await within(s.first.dom.contentEl).findByRole('button', { name: 'First command' }));
+  expect(await retry).toBe('dismissed');
+  expect(denials).toEqual(['First command', 'Second command']);
+  await destroyTab(s.first);
+});
 
 it('checks write authority after reading the idle approval baseline', async () => {
   const { s, approval, denials, finishRead } = await selectDenialDuringBaselineRead();

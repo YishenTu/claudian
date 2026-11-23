@@ -138,7 +138,8 @@ export interface ChatExecutionCoordinatorDeps {
     event: ProviderSessionEvent,
     context: ChatExecutionEventContext,
   ) => void | Promise<void>;
-  readonly onNativeHistoryWriteChanged?: (writing: boolean) => void | Promise<void>;
+  /** When a write starts, false means native history changed outside Claudian since the session last matched it. */
+  readonly onNativeHistoryWriteChanged?: (writing: boolean) => void | boolean | Promise<void | boolean>;
   readonly onBackgroundWorkChanged?: (isWorking: boolean) => void;
   readonly onError?: (error: unknown) => void;
   /** Releases an idle provider session after this long; omitted keeps it until disposal. */
@@ -533,8 +534,9 @@ export class ChatExecutionCoordinator {
         // The session pool checks for prior external changes and records the settled revision.
         this.#nativeHistoryWrites++;
         try {
-          await this.deps.onNativeHistoryWriteChanged?.(true);
-          if (!isCurrent()) return 'dismissed';
+          const historyMatches = await this.deps.onNativeHistoryWriteChanged?.(true);
+          // An approval would land in history the selected denial may no longer belong to.
+          if (historyMatches === false || !isCurrent()) return 'dismissed';
           await this.deps.persistence.assertConversationExecutionAuthority(
             binding.conversation.conversationId, binding.bindingId, binding.generation,
           );

@@ -138,10 +138,14 @@ export class SessionRuntimePool {
       .map(runtime => runtime.peekModel?.conversationController.awaitCreation() ?? Promise.resolve()));
   }
 
-  /** A local write must follow the revision read that distinguishes earlier external work. */
-  async awaitNativeHistoryBaseline(runtime: ChatSessionRuntime): Promise<void> {
+  /**
+   * A local write must follow the revision read that distinguishes earlier external work. False when
+   * native history changed outside Claudian since the session last matched it.
+   */
+  async awaitNativeHistoryBaseline(runtime: ChatSessionRuntime): Promise<boolean> {
     const record = this.records.get(runtime);
     await record?.ownWorkCheck;
+    return record?.freshness.state !== 'stale';
   }
 
   /** Reserves synchronously, before model hydration or any view construction can yield. */

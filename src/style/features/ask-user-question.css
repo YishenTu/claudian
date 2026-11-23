@@ -585,13 +585,9 @@ button.claudian-ask-picker-close:focus-visible {
   font-size: calc(12 * var(--claudian-font-px));
 }
 
-/* Right-to-left ellipsis cuts the start of a long path and keeps its tail; the bdi keeps the text itself left-to-right. */
+/* A click authorizes the retry, so the full location stays visible: it wraps rather than clipping. */
 .claudian-ask-action-location {
-  overflow: hidden;
-  direction: rtl;
-  text-align: left;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
   font-family: var(--font-monospace);
   font-size: calc(11 * var(--claudian-font-px));
   color: var(--text-faint);

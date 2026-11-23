@@ -279,7 +279,7 @@ export class InlineAskUserQuestion {
       labelRow.createSpan({ text: actionRow?.subject ?? option.label, cls: 'claudian-ask-item-label' });
       if (actionRow?.location) {
         // Keeps the path's tail visible when it is cut: the outer span ellipsizes from the start.
-        labelRow.createSpan({ cls: 'claudian-ask-action-location' }).createEl('bdi', { text: actionRow.location });
+        labelRow.createSpan({ cls: 'claudian-ask-action-location', text: actionRow.location });
       }
 
       if (option.description) {
