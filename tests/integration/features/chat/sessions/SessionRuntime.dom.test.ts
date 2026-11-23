@@ -21,7 +21,6 @@ import { ProviderWorkspaceRegistry } from '@/core/providers/ProviderWorkspaceReg
 import type { ClaudianSettings, Conversation, ConversationMutablePatch } from '@/core/types';
 import { getChatSettingsSnapshot } from '@/features/chat/ChatSettings';
 import { SessionMessagingService } from '@/features/chat/session-messaging/SessionMessagingService';
-import { NATIVE_REVISION_READ_TIMEOUT_MS } from '@/features/chat/sessions/SessionRuntimePool';
 import { getSessionSettingsSnapshot, updateSessionProviderSettings, updateSessionReasoning } from '@/features/chat/sessions/sessionSettings';
 import { activateTab, destroyTab } from '@/features/chat/tabs/TabLifecycle';
 import { createTabRuntime } from '@/features/chat/tabs/TabRuntimeFactory';
@@ -430,60 +429,6 @@ it('counts a send during a provider-started background turn as its own work, so 
   expect(s.h.backend.sessions).toHaveLength(1);
   s.provider.complete();
   await next;
-  await destroyTab(second);
-});
-
-/** A turn of the first presentation, which the provider appends to native history before it settles. */
-async function completeOwnTurn(s: Awaited<ReturnType<typeof setupRevisionedSession>>): Promise<void> {
-  s.first.controllers.drafts.restore('main', { content: 'Meanwhile' });
-  const sending = s.first.controllers.inputController.sendMessage();
-  await waitFor(() => expect(s.provider.requests).toHaveLength(1));
-  s.native.revision = 'after own turn';
-  s.provider.complete();
-  await sending;
-  await waitFor(() => expect(s.runtime.isWorking).toBe(false));
-}
-
-it.each(['on return', 'when a send starts'] as const)('keeps the provider session and cached history for a native change its own live work wrote, checked %s', async check => {
-  const s = await setupRevisionedSession();
-  // A subagent's report: the provider writes it before anything of its reply reaches Claudian.
-  s.provider.ownedHistoryChanges.add('before -> report written');
-  s.native.revision = 'report written';
-  if (check === 'when a send starts') await completeOwnTurn(s);
-  await s.detach();
-
-  const second = await s.h.attach();
-  expect(s.runtime.peekModel === s.model).toBe(true);
-  expect(s.provider.disposeCalls).toBe(0);
-  second.controllers.drafts.restore('main', { content: 'Continue' });
-  const sending = second.controllers.inputController.sendMessage();
-  await waitFor(() => expect(s.provider.requests).toHaveLength(check === 'on return' ? 1 : 2));
-  expect(s.h.backend.sessions).toHaveLength(1);
-  s.provider.complete();
-  await sending;
-  await destroyTab(second);
-});
-
-it.each(['rejects', 'never answers'] as const)('counts a change as made outside Claudian when the provider %s whether it made it', async failure => {
-  const s = await setupRevisionedSession();
-  s.provider.ownedHistoryChanges.add('before -> after external turn');
-  s.provider.historyChangeFailure = failure;
-  s.continueElsewhere();
-  await s.detach();
-
-  // Only the time limit is skipped; other timers keep real time.
-  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'], shouldAdvanceTime: true });
-  let second: Awaited<ReturnType<typeof s.h.attach>>;
-  try {
-    const reopening = s.h.attach();
-    await waitFor(() => expect(s.provider.historyChangeQuestions).toEqual(['before -> after external turn']));
-    await vi.advanceTimersByTimeAsync(NATIVE_REVISION_READ_TIMEOUT_MS);
-    second = await reopening;
-  } finally {
-    vi.useRealTimers();
-  }
-  expect(second.dom.messagesEl.textContent).toContain('Reply from the CLI');
-  expect(s.provider.disposeCalls).toBe(1);
   await destroyTab(second);
 });
 

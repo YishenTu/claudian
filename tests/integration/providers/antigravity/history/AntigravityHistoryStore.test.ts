@@ -7,12 +7,7 @@ import { testClock } from '@test/helpers/testClock';
 
 import type { ChatMessage } from '@/core/types';
 import { isInterruptedResponse } from '@/features/chat/rendering/ResponseLayout';
-import {
-  loadAntigravityHistory,
-  readAntigravityAppendedSteps,
-  readAntigravityHistoryRevision,
-  readAntigravitySubagentProgress,
-} from '@/providers/antigravity/history/AntigravityHistoryStore';
+import { loadAntigravityHistory } from '@/providers/antigravity/history/AntigravityHistoryStore';
 
 const FIXTURES = path.resolve('tests/fixtures/providers/antigravity/history');
 const SESSION_ID = 'session-fixture';
@@ -62,62 +57,6 @@ function summarize(messages: ChatMessage[]) {
     })),
   }));
 }
-
-describe('readAntigravitySubagentProgress', () => {
-  it.each([
-    ['a live child', JSON.stringify({ conversationId: 'second', state: 'SUBAGENT_STATE_RUNNING' })],
-    ['a kill record for another child', JSON.stringify({ conversationId: 'first', state: 'SUBAGENT_STATE_KILLED' })],
-    ['an incomplete child record', '{'],
-  ])('keeps waiting after the first child is killed with %s still outstanding', async (_case, secondRecord) => {
-    const directory = path.join(storeRoot, 'brain', SESSION_ID, '.system_generated', 'subagents');
-    await fs.mkdir(directory, { recursive: true });
-    await fs.writeFile(path.join(directory, 'first.json'), JSON.stringify({ conversationId: 'first', state: 'SUBAGENT_STATE_KILLED' }));
-    await fs.writeFile(path.join(directory, 'second.json'), secondRecord);
-    const steps = ['first', 'second'].map(id => ({
-      content: 'Created the following subagent:\n' + JSON.stringify({ conversationId: id }),
-      type: 'GENERIC',
-    }));
-    await expect(readAntigravitySubagentProgress({ argumentsEncoded: false, steps }, 0, storeRoot, SESSION_ID)).resolves.toMatchObject({ outstanding: true });
-  });
-});
-
-describe('readAntigravityAppendedSteps', () => {
-  const transcriptPath = () => path.join(storeRoot, 'brain', SESSION_ID, '.system_generated', 'logs', 'transcript_full.jsonl');
-  const revision = async () => (await readAntigravityHistoryRevision(storeRoot, SESSION_ID))!;
-  const size = (token: string) => Number(token.split(':')[0]);
-
-  it('reads the steps agy appended between two revisions, even after the transcript grew past the later one', async () => {
-    await installSteps([userStep(0, 'Go.')]);
-    const from = await revision();
-    await fs.appendFile(transcriptPath(), JSON.stringify({ step_index: 1, type: 'SYSTEM_MESSAGE' }) + '\n');
-    const to = await revision();
-    await fs.appendFile(transcriptPath(), JSON.stringify({ step_index: 2, type: 'PLANNER_RESPONSE' }) + '\n');
-
-    await expect(readAntigravityAppendedSteps(storeRoot, SESSION_ID, from, to))
-      .resolves.toEqual([{ step_index: 1, type: 'SYSTEM_MESSAGE' }]);
-  });
-
-  it.each([
-    ['a start inside a step', (from: string, to: string) => [`${size(from) - 3}:0`, to]],
-    ['an end past the current transcript', (from: string, to: string) => [from, `${size(to) + 10}:0`]],
-    ['a shrunk transcript', (from: string, to: string) => [to, from]],
-  ])('reads nothing for %s', async (_case, tokens) => {
-    await installSteps([userStep(0, 'Go.')]);
-    const from = await revision();
-    await fs.appendFile(transcriptPath(), JSON.stringify({ step_index: 1, type: 'SYSTEM_MESSAGE' }) + '\n');
-    const [start, end] = tokens(from, await revision());
-
-    await expect(readAntigravityAppendedSteps(storeRoot, SESSION_ID, start, end)).resolves.toBeNull();
-  });
-
-  it('reads nothing while the last appended step is partly written', async () => {
-    await installSteps([userStep(0, 'Go.')]);
-    const from = await revision();
-    await fs.appendFile(transcriptPath(), '{"step_index":1,"type":"SYS');
-
-    await expect(readAntigravityAppendedSteps(storeRoot, SESSION_ID, from, await revision())).resolves.toBeNull();
-  });
-});
 
 describe('loadAntigravityHistory', () => {
   it('rebuilds turns, tool results and background responses from the full transcript', async () => {

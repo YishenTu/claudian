@@ -36,7 +36,7 @@ export interface AntigravityBackgroundTurnOptions {
 }
 
 /**
- * Work agy does on its own between prompts (its reply to a finished subagent or background command), streamed live
+ * Work agy does on its own between prompts (its reply when a daemon task exits), streamed live
  * with no turn boundary: agy sends no echo, start or stop for it.
  */
 export class AntigravityBackgroundTurn {

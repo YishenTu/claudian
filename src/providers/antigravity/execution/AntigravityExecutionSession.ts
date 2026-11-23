@@ -82,7 +82,6 @@ import {
   AntigravityNativeConnection,
 } from './AntigravityNativeConnection';
 import { AntigravityQuestionRouter } from './AntigravityQuestionRouter';
-import { AntigravitySubagentWatcher } from './AntigravitySubagentWatcher';
 
 export interface AntigravityLiveModelSink {
   mergeLiveModels(models: AntigravityModel[], defaultModelId: string | null): Promise<unknown>;
@@ -187,8 +186,6 @@ export class AntigravityExecutionSession implements ProviderExecutionSession, St
   private lateWork: LateWork = { phase: 'idle' };
   /** The latest run's approval policy: agy runs under that run's configuration, so it decides approvals between runs. */
   private latestPolicy: ApprovalPolicy | null = null;
-  /** Main-agent sessions only: holds idle release while a subagent has not reported. */
-  private subagents: AntigravitySubagentWatcher | null = null;
   private cancellationFlight: Promise<void> | null = null;
   private disposalFlight: Promise<void> | null = null;
   private disposed = false;
@@ -196,7 +193,6 @@ export class AntigravityExecutionSession implements ProviderExecutionSession, St
   private readonly nativeSlot = new ACPNativeOwnerSlot<NativeOwner>(async (owner, wasCurrent) => {
     if (wasCurrent) {
       owner.unsubscribe();
-      this.subagents?.processEnded();
       this.#closeBackground('interrupted');
     }
     await owner.native.shutdown();
@@ -270,7 +266,6 @@ export class AntigravityExecutionSession implements ProviderExecutionSession, St
     };
     this.active = active;
     this.latestPolicy = approvalPolicyOf(request);
-    this.subagents?.turnStarted();
     this.#updateSnapshot('executing');
     this.#emitCurrentSnapshot();
     run.attachAbortSignal(request.signal);
@@ -303,12 +298,7 @@ export class AntigravityExecutionSession implements ProviderExecutionSession, St
 
   /** Releasing the idle session would end agy's process, and the work it is still doing with it. */
   blocksIdleRelease(): boolean {
-    return this.lateWork.phase === 'replying' || (this.subagents?.isWatching ?? false);
-  }
-
-  /** A report from a subagent agy's current process launched is agy's own write. */
-  ownsNativeHistoryChange(from: string, to: string): Promise<boolean> {
-    return this.subagents?.ownsHistoryChange(from, to) ?? Promise.resolve(false);
+    return this.lateWork.phase === 'replying';
   }
 
   getStatus(): ProviderSessionStatus {
@@ -329,7 +319,6 @@ export class AntigravityExecutionSession implements ProviderExecutionSession, St
         if (this.cancellationFlight) await this.cancellationFlight;
         await this.nativeSlot.shutdown();
       } finally {
-        await this.subagents?.dispose();
         const route = await this.sessionToolRoute?.catch(() => null);
         route?.dispose();
         this.interactionController.dispose();
@@ -528,10 +517,9 @@ export class AntigravityExecutionSession implements ProviderExecutionSession, St
       const unsubscribeNotifications = native.onNotification(notification => {
         if (this.#isCurrentOwner(owner)) this.#handleNotification(owner, notification);
       });
-      // agy can exit between runs, ending its own reply and subagents with it.
+      // agy can exit between runs, ending its own reply with it.
       const unsubscribeClose = native.onClose(() => {
         if (!this.#isCurrentOwner(owner)) return;
-        this.subagents?.processEnded();
         this.#closeBackground('interrupted');
       });
       owner.unsubscribe = () => {
@@ -604,7 +592,6 @@ export class AntigravityExecutionSession implements ProviderExecutionSession, St
     this.#throwIfCancellationRequested(active);
     this.#captureSessionId(response.sessionId ?? this.providerSessionId!);
     owner.loaded = { sessionId: this.providerSessionId!, systemPromptAppend, models: response.models };
-    if (systemPromptAppend !== undefined) this.#watchSubagents(owner, this.providerSessionId!);
     this.#adoptConfigOptions(owner, response.configOptions, response.models);
     this.#updateSnapshot(this.active ? 'executing' : 'idle');
     this.#emitCurrentSnapshot();
@@ -801,7 +788,6 @@ export class AntigravityExecutionSession implements ProviderExecutionSession, St
       if (!active || this.#isCancellationRequested(active)) return;
       metadata = active.turn.handleUpdate(presentAntigravityUpdate(active.toolCallIds, update));
     }
-    if (update.sessionUpdate === 'tool_call' && update.name === 'invoke_subagent') this.subagents?.subagentLaunched();
     if (metadata?.type === 'config_options') this.#adoptConfigOptions(owner, metadata.configOptions);
   }
 
@@ -827,7 +813,6 @@ export class AntigravityExecutionSession implements ProviderExecutionSession, St
       takeAnswers: toolCallId => this.questionRouter.takeAnswers(toolCallId),
     });
     this.lateWork = { phase: 'replying', turn: background };
-    this.subagents?.turnStarted();
     this.#updateSnapshot('executing');
     this.#emitCurrentSnapshot();
     return background;
@@ -838,10 +823,8 @@ export class AntigravityExecutionSession implements ProviderExecutionSession, St
     if (!background) return;
     this.lateWork = { phase: next };
     background.close(reason);
-    // A run holding its prompt for this reply starts watching when it ends.
+    // A run holding its prompt for this reply keeps the session executing.
     if (this.active || this.disposed) return;
-    // agy's reply may have launched subagents; an interruption (Stop, exit) ended them with it.
-    if (reason === 'completed') this.subagents?.turnEnded(true);
     this.#updateSnapshot('idle');
     this.#emitCurrentSnapshot();
   }
@@ -949,21 +932,6 @@ export class AntigravityExecutionSession implements ProviderExecutionSession, St
     active.run.finish(terminal);
     active.turn.dispose();
     if (this.active === active) this.active = null;
-    if (!this.disposed && this.subagents?.sessionId === this.providerSessionId) {
-      this.subagents?.turnEnded(active.latestPrompt > 0);
-    }
-  }
-
-  #watchSubagents(owner: NativeOwner, sessionId: string): void {
-    if (this.subagents?.sessionId === sessionId) return;
-    void this.subagents?.dispose();
-    const store = owner.store;
-    // Change notifications over a WSL distro's share are not reliable for writes made inside Linux; poll instead.
-    this.subagents = store
-      ? new AntigravitySubagentWatcher({ poll: store.pathMapper !== undefined, sessionId, storeRoot: store.root })
-      : null;
-    // The run that loaded the session is under way; its end starts watching.
-    this.subagents?.turnStarted();
   }
 
   #isCancellationRequested(active: ActiveExecution): boolean {
