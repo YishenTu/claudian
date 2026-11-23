@@ -47,6 +47,23 @@ it('delivers child completion and automatic parent replies after the requested t
   } finally { await f.dispose(); }
 });
 
+it('keeps a child running through an idle that leaves its background shell running', async () => {
+  const f = await createFixture();
+  const events: ProviderSessionEvent[] = [];
+  let completed!: () => void;
+  const background = new Promise<void>(resolve => { completed = resolve; });
+  f.session.onEvent(event => { events.push(event); if (event.type === 'text_delta' && event.text === 'Automatic reply') completed(); });
+  try {
+    for await (const event of f.session.execute(request('background-rerun')).events) {
+      if (event.type === 'execution_error') throw new Error(event.message);
+    }
+    await background;
+    expect(events.filter(event => event.type === 'async_subagent_completed')).toEqual([
+      expect.objectContaining({ subagentId: 'ses_child', toolCallId: 'tool_child', result: 'Child result', status: 'completed' }),
+    ]);
+  } finally { await f.dispose(); }
+});
+
 it('completes each spawn that joined a running child when that child goes idle', async () => {
   const f = await createFixture();
   const events: ProviderSessionEvent[] = [];
@@ -125,7 +142,8 @@ it.each(['background-approval', 'background-nested', 'mcp-form-late'])('keeps %s
     await automaticReply;
     await settled;
     const completions = events.filter(event => event.type === 'async_subagent_completed');
-    const expectedChildren = text === 'mcp-form-late' ? [] : text === 'background-nested' ? ['ses_child', 'ses_grand'] : ['ses_child'];
+    // A child waits for its own background grandchild before it completes.
+    const expectedChildren = text === 'mcp-form-late' ? [] : text === 'background-nested' ? ['ses_grand', 'ses_child'] : ['ses_child'];
     expect(completions.map(event => event.subagentId)).toEqual(expectedChildren);
     expect(completions.filter(event => event.subagentId === 'ses_child').map(event => event.result)).toEqual(text === 'mcp-form-late' ? [] : ['Child result']);
     expect(new Set(completions.map(event => event.originatingTurnId)).size).toBe(text === 'mcp-form-late' ? 0 : 1);

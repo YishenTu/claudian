@@ -449,7 +449,27 @@ const handle = async (req, res, url, body, route) => {
             emit('form.created', { form: { id: 'frm_test', sessionID: interactionSession, title: 'Child color', fields: [{ key: 'q0', type: 'string', title: 'Pick a child color', options: [{ value: 'blue', label: 'Blue' }] }] } });
             await waitForInteraction(() => permission !== undefined && form !== undefined);
             if (permission !== 'once' || readForm()?.q0 !== 'blue') return;
-            if (body.text === 'background-nested') emit('session.execution.succeeded', { sessionID: 'ses_grand' });
+            if (body.text === 'background-nested') {
+              emit('session.execution.succeeded', { sessionID: 'ses_grand' });
+              // The grandchild's report wakes the child for another round.
+              emit('session.execution.started', { sessionID: 'ses_child' });
+            }
+          }
+          if (body.text === 'background-rerun') {
+            // The child idles while its background shell runs, then the shell's exit wakes it.
+            emit('session.tool.input.started', { sessionID: 'ses_child', assistantMessageID: 'msg_child', id: 'child_shell', name: 'shell' });
+            emit('session.tool.called', { sessionID: 'ses_child', assistantMessageID: 'msg_child', id: 'child_shell', input: { command: 'sleep 1', background: true } });
+            emit('session.tool.success', { sessionID: 'ses_child', assistantMessageID: 'msg_child', id: 'child_shell', content: [{ type: 'text', text: 'Command moved to the background (shell ID: sh_child).' }], metadata: { status: 'running', shellID: 'sh_child' } });
+            emit('session.text.ended', { sessionID: 'ses_child', assistantMessageID: 'msg_child', ordinal: 0, text: 'Child waiting' });
+            emit('session.execution.succeeded', { sessionID: 'ses_child' });
+            context.emit('shell.exited', { id: 'sh_child', exit: 0, status: 'exited' });
+            emit('session.execution.started', { sessionID: 'ses_child' });
+            emit('session.text.ended', { sessionID: 'ses_child', assistantMessageID: 'msg_child_final', ordinal: 0, text: 'Child result' });
+            emit('session.execution.succeeded', { sessionID: 'ses_child' });
+            emit('session.execution.started', {});
+            emit('session.text.ended', { assistantMessageID: 'msg_background', ordinal: 0, text: 'Automatic reply' });
+            emit('session.execution.succeeded', {});
+            return;
           }
           emit('session.text.ended', { sessionID: 'ses_child', assistantMessageID: 'msg_child', ordinal: 0, text: 'Child result' });
           emit('session.execution.succeeded', { sessionID: 'ses_child' });

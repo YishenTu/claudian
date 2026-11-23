@@ -41,8 +41,12 @@ type PendingInboxInput = { admission: Promise<InboxAdmission>; recall: Promise<v
 );
 type InboxAdmission = 'admitted' | 'refused' | 'unknown';
 interface NativeModelSelection { providerID: string; id: string; variant?: string }
-/** A child joins the background when a spawn returns while it still runs; each such spawn ends at the child's next idle. */
-interface NativeChild { sessionTools?: SessionToolInvocation; autoApprove: boolean; toolController: AbortController; outputSessionId: string; toolCallId: string; turnId: string; interactionTurnId: string; background: { spawnToolCallIds: string[] } | null; text: Map<string, string>; progress: { startedAt: number; toolUses: number; totalTokens: number; lastToolName?: string } }
+/**
+ * A child joins the background when a spawn returns while it still runs; each such spawn ends at the child's
+ * first idle with no background work of its own left. `jobs` (its background shells and subagents) is tracked
+ * independently of that phase, since a child may start them before a 2.2 spawn detaches it.
+ */
+interface NativeChild { sessionTools?: SessionToolInvocation; autoApprove: boolean; toolController: AbortController; ownerSessionId: string; outputSessionId: string; toolCallId: string; turnId: string; interactionTurnId: string; background: { spawnToolCallIds: string[] } | null; jobs: Set<string>; text: Map<string, string>; progress: { startedAt: number; toolUses: number; totalTokens: number; lastToolName?: string } }
 interface NativeTool { name: string; input: Record<string, unknown>; sessionId: string; output: string | null; shell?: OpencodeShellOutput }
 
 /** One execution's native HTTP session: its server lease, events, interactions and inbox. */
@@ -357,6 +361,11 @@ export class OpencodeHTTPSessionKernel implements OpencodeSessionKernel {
       void this.interactWithGlobalForm(form).catch(error => this.fail(error));
       return;
     }
+    // Shell events carry no session; an exited shell no longer holds its child in the background.
+    if (event.type === 'shell.exited') {
+      for (const owner of this.children.values()) owner.jobs.delete(String(data.id));
+      return;
+    }
     if (nativeSessionId !== this.sessionId && !child) return;
     if (event.type === 'session.execution.started' && this.previewStops.get(nativeSessionId) === 'ended') {
       this.previewStops.delete(nativeSessionId);
@@ -372,12 +381,17 @@ export class OpencodeHTTPSessionKernel implements OpencodeSessionKernel {
       && (assistantMessageId === undefined || ordinal === undefined)) return;
     if (event.type.startsWith('session.tool.') && (assistantMessageId === undefined || itemId === undefined)) return;
     if (child) {
+      // A later round reports its own answer, as the native idle report does.
+      if (event.type === 'session.execution.started') child.text.clear();
       if (event.type === 'session.text.ended') child.text.set(`${assistantMessageId}:${ordinal}`, String(data.text));
       if (event.type === 'session.step.ended') {
         child.progress.totalTokens += countTokens(data.tokens);
         this.emitChildProgress(child);
       }
-      if (event.type.startsWith('session.execution.') && event.type !== 'session.execution.started') {
+      // Natively a child idling with background work left reports `running`, and that work wakes it again.
+      const waiting = event.type === 'session.execution.succeeded' && child.background !== null && child.jobs.size > 0;
+      if (event.type.startsWith('session.execution.') && event.type !== 'session.execution.started' && !waiting) {
+        this.children.get(child.ownerSessionId)?.jobs.delete(nativeSessionId);
         for (const toolCallId of child.background?.spawnToolCallIds ?? []) this.options.onNativeTaskCompleted?.({
           type: 'async_subagent_completed', originatingTurnId: child.turnId, subagentId: nativeSessionId, toolCallId,
           status: event.type === 'session.execution.succeeded' ? 'completed' : 'error',
@@ -464,7 +478,7 @@ export class OpencodeHTTPSessionKernel implements OpencodeSessionKernel {
           const owner = child ?? this.pending;
           const toolController = new AbortController();
           const sessionTools = owner?.sessionTools ? { ...owner.sessionTools, signal: AbortSignal.any([owner.sessionTools.signal, toolController.signal]) } : undefined;
-          this.children.set(metadata.sessionID, { sessionTools, autoApprove: this.autoApproveFor(child), toolController, outputSessionId: child?.outputSessionId ?? metadata.sessionID, toolCallId: identity.toolCallId, turnId, interactionTurnId, background: null, text: new Map(), progress: { startedAt: Date.now(), toolUses: 0, totalTokens: 0 } });
+          this.children.set(metadata.sessionID, { sessionTools, autoApprove: this.autoApproveFor(child), toolController, ownerSessionId: nativeSessionId, outputSessionId: child?.outputSessionId ?? metadata.sessionID, toolCallId: identity.toolCallId, turnId, interactionTurnId, background: null, jobs: new Set(), text: new Map(), progress: { startedAt: Date.now(), toolUses: 0, totalTokens: 0 } });
         }
         if (tool && !this.previewStops.has(nativeSessionId) && tool.output !== null && typeof metadata.shellID === 'string') {
           tool.shell ??= new OpencodeShellOutput(this.requireClient(), metadata.shellID, content => {
@@ -488,6 +502,9 @@ export class OpencodeHTTPSessionKernel implements OpencodeSessionKernel {
         const tool = this.tools.get(key);
         tool?.shell?.stop();
         if (event.type === 'session.tool.success' && tool?.name === 'subagent') this.backgroundChild(data.metadata, identity.toolCallId);
+        if (event.type === 'session.tool.success' && child && isRecord(data.metadata) && data.metadata.status === 'running' && typeof data.metadata.shellID === 'string') {
+          child.jobs.add(data.metadata.shellID);
+        }
         const content = Array.isArray(data.content) ? data.content.filter(isRecord).flatMap(item => typeof item.text === 'string' ? [item.text] : []).join('\n') : '';
         const result = normalizeOpencodeToolResult(tool?.name, content || (data.error ? errorText(data.error) : ''), { metadata: data.metadata });
         this.emit({ type: 'tool_completed', ...identity, content: result.content, isError: event.type.endsWith('.failed') || result.isError, providerPayload: { rawName: tool?.name, rawInput: tool?.input, rawOutput: { ...data, metadata: data.metadata } }, resultDetails: tool ? normalizeOpencodeToolResultDetails(tool.name, tool.input, { output: content, metadata: data.metadata }, this.launch?.target) : undefined }, child?.outputSessionId);
@@ -618,6 +635,7 @@ export class OpencodeHTTPSessionKernel implements OpencodeSessionKernel {
       child.interactionTurnId = this.options.onNativeTaskStarted?.(metadata.sessionID, child.turnId) ?? child.interactionTurnId;
       child.outputSessionId = metadata.sessionID;
       child.background = { spawnToolCallIds: [] };
+      this.children.get(child.ownerSessionId)?.jobs.add(metadata.sessionID);
     }
     child.background.spawnToolCallIds.push(spawnToolCallId);
   }
