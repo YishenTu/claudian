@@ -788,7 +788,9 @@ export class AntigravityExecutionSession implements ProviderExecutionSession, St
     }
     if (this.lateWork.phase === 'stopped') {
       if (update.sessionUpdate === 'tool_call_update' && !this.active?.toolCallIds.has(update.toolCallId)) return;
-      if (update.sessionUpdate === 'tool_call') this.lateWork = { phase: 'idle' };
+      // Only a call a live run accepts is new; one announced while the Stop was under way is among those it ended.
+      const active = this.active;
+      if (update.sessionUpdate === 'tool_call' && active && !this.#isCancellationRequested(active)) this.lateWork = { phase: 'idle' };
     }
     const background = this.#backgroundFor(notification.sessionId, ANTIGRAVITY_REPLY_OUTPUT_KINDS.has(update.sessionUpdate));
     let metadata: ACPNormalizedUpdate | undefined;
