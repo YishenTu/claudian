@@ -227,11 +227,20 @@ const backgroundSpawn = (owner, id, child, input, assistantMessageID, joining = 
 const childIdle = (owner, child, state, body) => {
   emit(state === 'cancelled' ? 'session.execution.interrupted' : 'session.execution.succeeded', { sessionID: child });
   emit('session.inbox.enqueued', { sessionID: owner, inboxID: `report_${child}_${++reports}`, item: { type: 'synthetic', delivery: 'steer', payload: {
-    text: `<subagent sessionID="${child}" state="${state}" description="worker">\n${body}\n</subagent>`, description: 'worker',
+    text: reportText('subagent', `sessionID="${child}" state="${state}" description="worker"`, body), description: 'worker',
     metadata: { source: 'subagent', childID: child, agent: 'worker', state: state === 'running' ? 'completed' : state },
   } } });
 };
 let reports = 0;
+/** @type {'source' | 'background-result'} */
+let reportEnvelope = 'source';
+/**
+ * OpenCode 2.4 wraps every background report in `background-result` and names its source as `kind`.
+ * @param {string} kind @param {string} attributes @param {string} body
+ */
+const reportText = (kind, attributes, body) => (reportEnvelope === 'background-result'
+  ? `<background-result kind="${kind}" ${attributes}>\n${body}\n</background-result>`
+  : `<${kind} ${attributes}>\n${body}\n</${kind}>`);
 
 /** @type {Handler} */
 const handle = async (req, res, url, body, route) => {
@@ -348,13 +357,15 @@ const handle = async (req, res, url, body, route) => {
       // Undelivered steers left in the native inbox fold into the next execution.
       for (const inboxID of inbox.splice(0)) { emit('session.inbox.delivered', { inboxID }); emit('session.text.delta', { assistantMessageID, ordinal: 9, delta: 'Leaked steer ' }); }
       emit('session.step.started', { assistantMessageID });
+      // A `-2.4` scenario reports its background work in OpenCode 2.4's envelope.
+      reportEnvelope = body.text.endsWith('-2.4') ? 'background-result' : 'source';
       if (body.text === 'retry') {
         emit('session.retry.scheduled', { assistantMessageID, attempt: 2, at: Date.now() + 1000, error: { type: 'provider.rate-limit', message: 'Rate limited', status: 429, retryAfterMs: 1000 } });
         emit('session.text.ended', { assistantMessageID, ordinal: 0, text: 'Recovered' });
         emit('session.execution.succeeded', {}); becomeIdle();
         return;
       }
-      if (body.text === 'background-shell') {
+      if (body.text.startsWith('background-shell')) {
         const command = 'npm test';
         emit('session.tool.input.started', { assistantMessageID, id: 'tool_shell', name: 'shell' });
         emit('session.tool.called', { assistantMessageID, id: 'tool_shell', input: { command, background: true } });
@@ -364,7 +375,7 @@ const handle = async (req, res, url, body, route) => {
         setTimeout(() => {
           // The exited shell's report enters the inbox and wakes the session for an automatic reply.
           context.emit('shell.exited', { id: 'sh_1', exit: 4, status: 'exited' });
-          emit('session.inbox.enqueued', { inboxID: 'msg_shell_report', item: { type: 'synthetic', delivery: 'steer', payload: { text: `<shell id="sh_1" state="completed" command="${command}">\nok 3 tests\n\n\nExit code: 4\n</shell>`, description: command, metadata: { source: 'shell', shellID: 'sh_1', state: 'completed', exit: 4 } } } });
+          emit('session.inbox.enqueued', { inboxID: 'msg_shell_report', item: { type: 'synthetic', delivery: 'steer', payload: { text: reportText('shell', `id="sh_1" state="completed" command="${command}"`, 'ok 3 tests\n\n\nExit code: 4'), description: command, metadata: { source: 'shell', shellID: 'sh_1', state: 'completed', exit: 4 } } } });
           emit('session.execution.started', {});
           emit('session.inbox.delivered', { inboxID: 'msg_shell_report' });
           emit('session.step.started', { assistantMessageID: 'msg_background' });

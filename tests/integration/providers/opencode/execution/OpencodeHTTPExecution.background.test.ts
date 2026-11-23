@@ -47,7 +47,10 @@ it('delivers child completion and automatic parent replies after the requested t
   } finally { await f.dispose(); }
 });
 
-it('reports a finished background shell in the automatic reply it wakes', async () => {
+it.each([
+  { text: 'background-shell', version: '2.3' },
+  { text: 'background-shell-2.4', version: '2.4' },
+])('reports a finished background shell in the automatic reply it wakes on OpenCode $version', async ({ text }) => {
   const f = await createFixture();
   const events: ProviderSessionEvent[] = [];
   let completed!: () => void;
@@ -55,7 +58,7 @@ it('reports a finished background shell in the automatic reply it wakes', async 
   f.session.onEvent(event => { events.push(event); if (event.type === 'background_turn_completed') completed(); });
   try {
     const requested: ProviderExecutionEvent[] = [];
-    for await (const event of f.session.execute(request('background-shell')).events) requested.push(event);
+    for await (const event of f.session.execute(request(text)).events) requested.push(event);
     expect(requested.filter(event => event.type === 'task_notification')).toEqual([]);
     await background;
     const notification = events.findIndex(event => event.type === 'task_notification');
@@ -99,6 +102,11 @@ it.each([
   {
     name: 'a child whose spawn result names it only in its launch text',
     text: 'background-text-launch',
+    completions: [{ subagentId: 'ses_child', toolCallId: 'tool_child', result: 'Child result', status: 'completed' }],
+  },
+  {
+    name: 'a child that OpenCode 2.4 reports in its background-result envelope',
+    text: 'background-2.4',
     completions: [{ subagentId: 'ses_child', toolCallId: 'tool_child', result: 'Child result', status: 'completed' }],
   },
   {

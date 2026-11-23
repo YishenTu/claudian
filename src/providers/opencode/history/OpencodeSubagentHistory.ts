@@ -73,9 +73,10 @@ function locateSpawns(session: OpencodeHistorySession): LocatedSpawn[] {
   const claimed = new Set<string>();
   const located: LocatedSpawn[] = [];
   for (const message of session.messages) {
-    const start = rows.findIndex(row => row.id === message.id);
-    for (const spawn of message.toolCalls ?? []) {
-      if (spawn.name !== TOOL_SUBAGENT || start < 0) continue;
+    const spawns = message.toolCalls?.filter(tool => tool.name === TOOL_SUBAGENT) ?? [];
+    const start = spawns.length > 0 ? rows.findIndex(row => row.id === message.id) : -1;
+    for (const spawn of spawns) {
+      if (start < 0) continue;
       const index = rows.findIndex((row, candidate) => candidate >= start && !claimed.has(`${candidate}:${spawn.id}`) && isSpawnPart(toolPart(row, spawn.id)));
       if (index < 0) continue;
       claimed.add(`${index}:${spawn.id}`);

@@ -2,16 +2,22 @@ import { isRecord } from '../http/OpencodeHTTPClient';
 
 /**
  * OpenCode reports finished background work to the session that started it as a synthetic inbox
- * item: `<source attrs…>body</source>` text plus `metadata.source`. The opening tag holds the shell
- * command unescaped, so a shell header is matched through the command the payload also carries.
+ * item: `<source attrs…>body</source>` text plus `metadata.source`; 2.4 wraps every source in
+ * `<background-result kind="source" attrs…>`. Returns the attributes and body after the tag name.
  */
-function readReportBody(text: string, tag: string, header?: string): string | null {
-  const close = `</${tag}>`;
+function unwrapReport(text: string, source: string): string | null {
   const trimmed = text.trim();
-  if (!trimmed.startsWith(`<${tag} `) || !trimmed.endsWith(close)) return null;
-  const headerEnd = header !== undefined && trimmed.startsWith(header) ? header.length : trimmed.indexOf('">') + 2;
+  for (const [open, close] of [[`<${source} `, `</${source}>`], [`<background-result kind="${source}" `, '</background-result>']]) {
+    if (trimmed.startsWith(open) && trimmed.endsWith(close)) return trimmed.slice(open.length, -close.length);
+  }
+  return null;
+}
+
+/** The opening tag holds the shell command unescaped, so `header` gives the known attribute text. */
+function readReportBody(report: string, header?: string): string | null {
+  const headerEnd = header !== undefined && report.startsWith(header) ? header.length : report.indexOf('">') + 2;
   if (headerEnd < 2) return null;
-  return trimmed.slice(headerEnd, -close.length).trim();
+  return report.slice(headerEnd).trim();
 }
 
 /**
@@ -21,8 +27,9 @@ function readReportBody(text: string, tag: string, header?: string): string | nu
 export function formatOpencodeShellReport(report: unknown): string | null {
   if (!isRecord(report) || !isRecord(report.metadata) || report.metadata.source !== 'shell' || typeof report.text !== 'string') return null;
   const command = typeof report.description === 'string' ? report.description : '';
-  const header = /^<shell id="[^"]*" state="[^"]*" command="/u.exec(report.text.trim())?.[0];
-  const body = readReportBody(report.text, 'shell', header && command ? `${header}${command}">` : undefined);
+  const inner = unwrapReport(report.text, 'shell');
+  const header = inner === null ? undefined : /^id="[^"]*" state="[^"]*" command="/u.exec(inner)?.[0];
+  const body = inner === null ? null : readReportBody(inner, header && command ? `${header}${command}">` : undefined);
   if (body === null) return null;
   const blocks = [...(command.trim() ? [fence('sh', command.trim())] : []), ...(body ? [fence('text', body)] : [])];
   return blocks.join('\n\n') || null;
@@ -42,9 +49,10 @@ const REPORT_STATES: readonly string[] = ['running', 'completed', 'error', 'canc
 export function readOpencodeSubagentReport(report: unknown): OpencodeSubagentReport | null {
   if (!isRecord(report) || !isRecord(report.metadata) || report.metadata.source !== 'subagent' || typeof report.text !== 'string') return null;
   const childId = report.metadata.childID;
-  const opening = /^<subagent sessionID="[^"]*" state="([^"]*)" description="/u.exec(report.text.trim());
+  const inner = unwrapReport(report.text, 'subagent');
+  const opening = inner === null ? null : /^sessionID="[^"]*" state="([^"]*)" description="/u.exec(inner);
   const description = typeof report.description === 'string' ? report.description : undefined;
-  const body = readReportBody(report.text, 'subagent', opening && description !== undefined ? `${opening[0]}${description}">` : undefined);
+  const body = inner === null ? null : readReportBody(inner, opening && description !== undefined ? `${opening[0]}${description}">` : undefined);
   const native = opening?.[1];
   if (typeof childId !== 'string' || !native || body === null) return null;
   // An unknown state is terminal: the child is idle and nothing reports it running.
