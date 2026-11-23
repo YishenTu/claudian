@@ -115,14 +115,6 @@ function backgroundTurn(session: ProviderExecutionSession) {
   };
 }
 
-/**
- * Lets a transcript read whose stream has closed finish its scan. Nothing signals a scan that changes no state, so
- * this only bounds it.
- */
-async function settleScan(): Promise<void> {
-  await new Promise<void>(resolve => { setImmediate(resolve); });
-}
-
 function textOf(events: readonly (ProviderSessionEvent | ProviderExecutionEvent)[]): string[] {
   return events.flatMap(event => (event.type === 'text_delta' ? [event.text] : []));
 }
