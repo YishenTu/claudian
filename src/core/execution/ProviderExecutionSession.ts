@@ -46,12 +46,6 @@ export interface ProviderExecutionSession {
   hasBackgroundWork?(): boolean;
   /** Native work that dies with the session, such as a background shell, prevents idle release without making the conversation busy. */
   blocksIdleRelease?(): boolean;
-  /**
-   * Whether native history moving from revision `from` to `to` (tokens of the provider's
-   * `readNativeHistoryRevision`) holds only writes the session's own live native work made, such as a background
-   * task's report written before its reply streams. Mixed, unknown or unverifiable changes answer false.
-   */
-  ownsNativeHistoryChange?(from: string, to: string): Promise<boolean>;
   /** Recent denied actions eligible for an explicit user-approved retry in this session. */
   getReviewDenials?(): readonly (ProviderApprovalDecisionOption & { readonly action: ProviderActionSummary; approve(): Promise<boolean> })[];
   /**

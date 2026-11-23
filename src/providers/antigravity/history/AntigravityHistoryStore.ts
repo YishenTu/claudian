@@ -66,8 +66,6 @@ export interface AntigravityTranscript {
   readonly steps: readonly TranscriptStep[];
 }
 
-const CREATED_SUBAGENT_PATTERN = /Created the following subagent:[\s\S]*?"conversationId":\s*"([^"]+)"/;
-
 /** Reads the first existing transcript; a missing store yields null. */
 export async function readAntigravityTranscript(storeRoot: string, sessionId: string): Promise<AntigravityTranscript | null> {
   for (const [index, transcriptPath] of resolveAntigravityTranscriptPaths(storeRoot, sessionId).entries()) {
@@ -106,145 +104,12 @@ export async function loadAntigravityHistory(
   return messages;
 }
 
-/** Step index of the latest user request. */
-export function readAntigravityLatestRequest(transcript: AntigravityTranscript): number | undefined {
-  const { steps } = transcript;
-  for (let index = steps.length - 1; index >= 0; index -= 1) {
-    if (steps[index].type === 'USER_INPUT') return stepIndexOf(steps[index], index);
-  }
-  return undefined;
-}
-
-/** Where the subagents the conversation created at or after a step stand. */
-export interface AntigravitySubagentProgress {
-  /** A subagent has neither reported back nor been killed. */
-  readonly outstanding: boolean;
-  /** agy has not answered a report from one of them yet: no model reply follows it. */
-  readonly unanswered: boolean;
-}
-
-/** The subagents the conversation created at or after `sinceStep`. */
-function createdSubagents(transcript: AntigravityTranscript, sinceStep: number): Set<string> {
-  const created = new Set<string>();
-  for (const [index, step] of transcript.steps.entries()) {
-    const match = step.type === 'GENERIC' && stepIndexOf(step, index) >= sinceStep
-      ? CREATED_SUBAGENT_PATTERN.exec(step.content ?? '') : null;
-    if (match) created.add(match[1]);
-  }
-  return created;
-}
-
-/** The sender of a task report; agy's own `sender=system` notices are not reports. */
-function reportSender(step: TranscriptStep): string | undefined {
-  const report = step.type === 'SYSTEM_MESSAGE' ? SYSTEM_REPORT_PATTERN.exec(step.content ?? '') : null;
-  return report && report[1] !== 'system' ? report[1] : undefined;
-}
-
-/**
- * Reads the progress of the subagents the conversation created at or after `sinceStep` (a subagent's id is its
- * report's sender; a killed subagent's native child record says so).
- */
-export async function readAntigravitySubagentProgress(
-  transcript: AntigravityTranscript, sinceStep: number, storeRoot: string, sessionId: string,
-): Promise<AntigravitySubagentProgress> {
-  const created = createdSubagents(transcript, sinceStep);
-  const outstanding = new Set(created);
-  let unanswered = false;
-  for (const step of transcript.steps) {
-    const sender = reportSender(step);
-    if (sender !== undefined) outstanding.delete(sender);
-    if (sender !== undefined && created.has(sender)) unanswered = true;
-    else if (step.type === 'PLANNER_RESPONSE') unanswered = false;
-  }
-  return { outstanding: await anyAlive(outstanding, storeRoot, sessionId), unanswered };
-}
-
-async function anyAlive(subagents: ReadonlySet<string>, storeRoot: string, sessionId: string): Promise<boolean> {
-  const paths = antigravityStorePaths(storeRoot);
-  for (const childId of subagents) {
-    if (!/^[\w-]+$/.test(childId) || !/^[\w-]+$/.test(sessionId)) return true;
-    const recordPath = paths.join(storeRoot, 'brain', sessionId, '.system_generated', 'subagents', childId + '.json');
-    try {
-      const record: unknown = JSON.parse(await fs.readFile(recordPath, 'utf8'));
-      if (!record || typeof record !== 'object'
-        || !('conversationId' in record) || record.conversationId !== childId
-        || !('state' in record) || record.state !== 'SUBAGENT_STATE_KILLED') return true;
-    } catch {
-      return true;
-    }
-  }
-  return false;
-}
-
-/** Whether every step is a report from a subagent the conversation created at or after `sinceStep`. */
-export function areAntigravitySubagentReports(
-  transcript: AntigravityTranscript, steps: readonly TranscriptStep[], sinceStep: number,
-): boolean {
-  const created = createdSubagents(transcript, sinceStep);
-  return steps.length > 0 && steps.every(step => {
-    const sender = reportSender(step);
-    return sender !== undefined && created.has(sender);
-  });
-}
-
-/** The revision is the `size:mtime` of the first transcript that exists (`readFileRevision`). */
 export async function readAntigravityHistoryRevision(storeRoot: string, sessionId: string): Promise<string | null> {
-  return (await readCurrentTranscriptRevision(storeRoot, sessionId))?.revision ?? null;
-}
-
-async function readCurrentTranscriptRevision(
-  storeRoot: string, sessionId: string,
-): Promise<{ readonly path: string; readonly revision: string } | null> {
   for (const transcriptPath of resolveAntigravityTranscriptPaths(storeRoot, sessionId)) {
     const revision = await readFileRevision(transcriptPath);
-    if (revision) return { path: transcriptPath, revision };
+    if (revision) return revision;
   }
   return null;
-}
-
-/**
- * The whole steps between the sizes of revisions `from` and `to` of the current transcript, which may have grown
- * since `to`. agy only appends, never rewriting earlier steps, so those bytes are what changed between the two.
- * Null when the range does not hold whole steps of the current transcript.
- */
-export async function readAntigravityAppendedSteps(
-  storeRoot: string, sessionId: string, from: string, to: string,
-): Promise<TranscriptStep[] | null> {
-  const start = revisionSize(from);
-  const end = revisionSize(to);
-  if (start === undefined || end === undefined || start >= end) return null;
-  const current = await readCurrentTranscriptRevision(storeRoot, sessionId);
-  const currentSize = current ? revisionSize(current.revision) : undefined;
-  if (!current || currentSize === undefined || currentSize < end) return null;
-  // One byte before the start shows that `from` ended at a line boundary.
-  const offset = start > 0 ? start - 1 : 0;
-  const bytes = Buffer.alloc(end - offset);
-  const file = await fs.open(current.path, 'r');
-  try {
-    const { bytesRead } = await file.read(bytes, 0, bytes.length, offset);
-    if (bytesRead !== bytes.length) return null;
-  } finally {
-    await file.close();
-  }
-  const text = bytes.toString('utf8');
-  if ((start > 0 && !text.startsWith('\n')) || !text.endsWith('\n')) return null;
-  const steps: TranscriptStep[] = [];
-  for (const line of text.split('\n')) {
-    if (!line.trim()) continue;
-    try {
-      const step: unknown = JSON.parse(line);
-      if (!step || typeof step !== 'object' || Array.isArray(step)) return null;
-      steps.push(step);
-    } catch {
-      return null;
-    }
-  }
-  return steps;
-}
-
-function revisionSize(revision: string): number | undefined {
-  const match = /^(\d+):/.exec(revision);
-  return match ? Number(match[1]) : undefined;
 }
 
 /**
@@ -517,11 +382,6 @@ function appendBlock(blocks: ContentBlock[], type: 'text' | 'thinking', content:
   const previous = blocks[blocks.length - 1];
   if (previous?.type === type) previous.content += `\n\n${content}`;
   else blocks.push({ content, type });
-}
-
-/** agy numbers every step; a step without a number takes its position. */
-function stepIndexOf(step: TranscriptStep, position: number): number {
-  return typeof step.step_index === 'number' ? step.step_index : position;
 }
 
 function parseTimestamp(value: string | undefined): number {
