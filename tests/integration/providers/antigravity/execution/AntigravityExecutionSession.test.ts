@@ -1266,12 +1266,10 @@ describe('AntigravityExecutionSession', () => {
     await background.reached('usage_updated');
     await vi.advanceTimersByTimeAsync(1_000);
     await background.completed;
-    vi.useRealTimers();
-    // Lets a transcript read that would have seen the outstanding subagent finish.
-    await settleScan();
     // agy 1.5.15 keeps prompts open for subagents; one launched by agy's own reply between prompts is deliberately
-    // not tracked, so nothing holds agy's process for it.
+    // not tracked, so nothing holds agy's process for it once that reply closes.
     expect(session.blocksIdleRelease?.()).toBe(false);
+    vi.useRealTimers();
   });
 
   it('runs YOLO main chat with agy\'s skip-permissions flag and restarts the process when leaving or entering YOLO', async () => {
