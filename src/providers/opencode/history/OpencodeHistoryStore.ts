@@ -12,6 +12,7 @@ import { extractResolvedAnswersFromResultText } from '../../../core/tools/toolIn
 import { isWriteEditTool, TOOL_ASK_USER_QUESTION } from '../../../core/tools/toolNames';
 import type { ChatMessage, ContentBlock, ImageAttachment, ToolCallInfo } from '../../../core/types';
 import { settleInterruptedTurn } from '../../../core/types';
+import { formatOpencodeShellReport } from '../normalization/opencodeShellReport';
 import {
   normalizeOpencodeToolInput,
   normalizeOpencodeToolName,
@@ -439,6 +440,14 @@ export function mapOpencodeNativeMessages(messages: StoredRow[], target?: Execut
           });
         }
         turnStart = result.length;
+      }
+      const shellReport = row.type === 'synthetic' && typeof row.id === 'string' ? formatOpencodeShellReport(row) : null;
+      if (shellReport) {
+        result.push({
+          id: String(row.id), role: 'assistant', content: '',
+          timestamp: getMessageCreatedAt(row) ?? Date.now(),
+          contentBlocks: [{ type: 'task_notification', content: shellReport }],
+        });
       }
       if (row.type === 'compaction' && row.status === 'completed' && typeof row.id === 'string') {
         result.push({

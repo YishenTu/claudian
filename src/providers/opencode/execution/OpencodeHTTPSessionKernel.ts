@@ -16,6 +16,7 @@ import { projectOpencodeFormQuestions } from '../http/OpencodeHTTPForms';
 import { loadOpencodeNativeModels, type OpencodeNativeModel } from '../http/OpencodeNativeModelCatalog';
 import type { OpencodeServerLease, OpencodeServerService } from '../http/OpencodeServerService';
 import { OpencodeShellOutput } from '../http/OpencodeShellOutput';
+import { formatOpencodeShellReport } from '../normalization/opencodeShellReport';
 import { normalizeOpencodeToolInput, normalizeOpencodeToolName, normalizeOpencodeToolResult, normalizeOpencodeToolResultDetails } from '../normalization/opencodeToolNormalization';
 import type { OpencodePrompt } from '../runtime/buildOpencodePrompt';
 import { resolveOpencodeBindingDatabase } from '../runtime/OpencodeBindingDatabase';
@@ -69,6 +70,8 @@ export class OpencodeHTTPSessionKernel implements OpencodeSessionKernel {
   private readonly interactions: PendingInteractionLedger;
   private pending: PendingPrompt | null = null;
   private readonly inboxInputs = new Map<string, PendingInboxInput>();
+  /** Background-shell reports waiting in the native inbox, keyed by inbox id, until they open a reply. */
+  private readonly shellReports = new Map<string, string>();
   private cancellation: Promise<unknown> | null = null;
   private steerOrder: Promise<void> = Promise.resolve();
   private readonly idleWaiters = new Set<() => void>();
@@ -419,8 +422,21 @@ export class OpencodeHTTPSessionKernel implements OpencodeSessionKernel {
         if (this.pending && this.inboxInputs.size > 0) this.pending.idle = true;
         else if (!this.pending || this.pending.started) this.finish();
         break;
+      case 'session.inbox.enqueued': {
+        const item = isRecord(data.item) ? data.item : undefined;
+        const report = item?.type === 'synthetic' ? formatOpencodeShellReport(item.payload) : null;
+        if (report) this.shellReports.set(String(data.inboxID), report);
+        break;
+      }
       case 'session.inbox.delivered': {
         const id = String(data.inboxID);
+        // A delivered shell report opens the automatic reply it wakes.
+        const report = this.shellReports.get(id);
+        if (report !== undefined) {
+          this.shellReports.delete(id);
+          this.emit({ type: 'task_notification', content: report });
+          break;
+        }
         const steer = this.inboxInputs.get(id);
         if (!steer) break;
         if (steer.kind === 'steer') {
@@ -509,6 +525,10 @@ export class OpencodeHTTPSessionKernel implements OpencodeSessionKernel {
         const result = normalizeOpencodeToolResult(tool?.name, content || (data.error ? errorText(data.error) : ''), { metadata: data.metadata });
         this.emit({ type: 'tool_completed', ...identity, content: result.content, isError: event.type.endsWith('.failed') || result.isError, providerPayload: { rawName: tool?.name, rawInput: tool?.input, rawOutput: { ...data, metadata: data.metadata } }, resultDetails: tool ? normalizeOpencodeToolResultDetails(tool.name, tool.input, { output: content, metadata: data.metadata }, this.launch?.target) : undefined }, child?.outputSessionId);
         this.tools.delete(key);
+        break;
+      }
+      case 'session.retry.scheduled': {
+        this.emit({ type: 'notice', level: 'warning', message: t('chat.executionNotices.providerRetry', { attempt: String(data.attempt), message: errorText(data.error) }) });
         break;
       }
       case 'session.step.ended': this.emitUsage(data.tokens); break;

@@ -533,7 +533,8 @@
       "initializeFailed": "无法初始化代理执行。请重试。",
       "unavailable": "代理执行不可用。请重新加载插件。",
       "sessionUnavailable": "此对话的原生会话在当前 CLI 配置下不可用。请新建对话以继续。",
-      "unsentFallback": "消息未发送。请重试。"
+      "unsentFallback": "消息未发送。请重试。",
+      "providerRetry": "提供方出错，正在重试（第 {attempt} 次）：{message}"
     },
     "images": {
       "unsupportedProvider": "此提供商不支持图片附件。",

@@ -533,7 +533,8 @@
       "initializeFailed": "Failed to initialize agent execution. Please try again.",
       "unavailable": "Agent execution is not available. Please reload the plugin.",
       "sessionUnavailable": "This conversation's native session isn't available under the current CLI configuration. Start a new chat to continue.",
-      "unsentFallback": "Message was not sent. Please try again."
+      "unsentFallback": "Message was not sent. Please try again.",
+      "providerRetry": "Retrying after a provider error (attempt {attempt}): {message}"
     },
     "images": {
       "unsupportedProvider": "Image attachments are not supported by this provider.",

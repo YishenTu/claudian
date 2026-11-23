@@ -329,6 +329,31 @@ const handle = async (req, res, url, body, route) => {
       // Undelivered steers left in the native inbox fold into the next execution.
       for (const inboxID of inbox.splice(0)) { emit('session.inbox.delivered', { inboxID }); emit('session.text.delta', { assistantMessageID, ordinal: 9, delta: 'Leaked steer ' }); }
       emit('session.step.started', { assistantMessageID });
+      if (body.text === 'retry') {
+        emit('session.retry.scheduled', { assistantMessageID, attempt: 2, at: Date.now() + 1000, error: { type: 'provider.rate-limit', message: 'Rate limited', status: 429, retryAfterMs: 1000 } });
+        emit('session.text.ended', { assistantMessageID, ordinal: 0, text: 'Recovered' });
+        emit('session.execution.succeeded', {}); becomeIdle();
+        return;
+      }
+      if (body.text === 'background-shell') {
+        const command = 'npm test';
+        emit('session.tool.input.started', { assistantMessageID, id: 'tool_shell', name: 'shell' });
+        emit('session.tool.called', { assistantMessageID, id: 'tool_shell', input: { command, background: true } });
+        emit('session.tool.success', { assistantMessageID, id: 'tool_shell', content: [{ type: 'text', text: 'Command moved to the background (shell ID: sh_1).' }], metadata: { status: 'running', shellID: 'sh_1' } });
+        emit('session.text.ended', { assistantMessageID, ordinal: 0, text: 'Launched' });
+        emit('session.execution.succeeded', {});
+        setTimeout(() => {
+          // The exited shell's report enters the inbox and wakes the session for an automatic reply.
+          context.emit('shell.exited', { id: 'sh_1', exit: 4, status: 'exited' });
+          emit('session.inbox.enqueued', { inboxID: 'msg_shell_report', item: { type: 'synthetic', delivery: 'steer', payload: { text: `<shell id="sh_1" state="completed" command="${command}">\nok 3 tests\n\n\nExit code: 4\n</shell>`, description: command, metadata: { source: 'shell', shellID: 'sh_1', state: 'completed', exit: 4 } } } });
+          emit('session.execution.started', {});
+          emit('session.inbox.delivered', { inboxID: 'msg_shell_report' });
+          emit('session.step.started', { assistantMessageID: 'msg_background' });
+          emit('session.text.ended', { assistantMessageID: 'msg_background', ordinal: 0, text: 'Automatic reply' });
+          emit('session.execution.succeeded', {}); becomeIdle();
+        }, 50);
+        return;
+      }
       if (body.text.startsWith('steer')) {
         /** @param {WireObject} steer */
         const deliver = steer => {

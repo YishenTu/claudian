@@ -450,6 +450,25 @@ describe('OpenCode compaction boundaries', () => {
   });
 });
 
+it('restores a background shell report as a task notification and leaves subagent reports to their cards', () => {
+  const created = testDate().getTime();
+  const shell = '<shell id="sh_1" state="completed" command="npm test">\nok 3 tests\n\n\nExit code: 4\n</shell>';
+  const messages = mapOpencodeNativeMessages([
+    { id: 'a1', type: 'assistant', time: { created }, content: [{ type: 'text', text: 'Launched.' }] },
+    { id: 'idle-1', type: 'idle', time: { created: created + 1 }, outcome: 'succeeded' },
+    { id: 'report', type: 'synthetic', time: { created: created + 2 }, text: shell, description: 'npm test', metadata: { source: 'shell', shellID: 'sh_1', state: 'completed', exit: 4 } },
+    { id: 'child', type: 'synthetic', time: { created: created + 3 }, text: '<subagent sessionID="ses_c" state="completed" description="d">\nDone\n</subagent>', metadata: { source: 'subagent', childID: 'ses_c', state: 'completed' } },
+    { id: 'a2', type: 'assistant', time: { created: created + 4 }, content: [{ type: 'text', text: 'Saw the report.' }] },
+    { id: 'idle-2', type: 'idle', time: { created: created + 5 }, outcome: 'succeeded' },
+  ]);
+  expect(messages.map(message => message.id)).toEqual(['a1', 'report', 'a2']);
+  expect(messages[1]).toMatchObject({
+    role: 'assistant', content: '', timestamp: created + 2, turnId: messages[2].turnId,
+    contentBlocks: [{ type: 'task_notification', content: '```sh\nnpm test\n```\n\n```text\nok 3 tests\n\n\nExit code: 4\n```' }],
+  });
+  expect(JSON.stringify(messages)).not.toContain('Done');
+});
+
 
 it('decodes v2 session-message attribution before stripping prompt tags and preserves neutral tool names', () => {
   const text = encodeSessionMessage({ from: 'Research', sessionId: 'source', text: 'The result' });

@@ -141,3 +141,16 @@ it('keeps repeated native tool IDs distinct across assistant messages and turns'
     }
   } finally { await f.dispose(); }
 });
+
+it('announces a scheduled provider retry in the turn it delays', async () => {
+  const f = await createFixture();
+  try {
+    const events: ProviderExecutionEvent[] = [];
+    for await (const event of f.session.execute(request('retry')).events) events.push(event);
+    expect(events.at(-1)?.type).toBe('turn_completed');
+    expect(events.filter(event => event.type === 'notice')).toEqual([
+      expect.objectContaining({ level: 'warning', message: 'Retrying after a provider error (attempt 2): Rate limited' }),
+    ]);
+    expect(events.findIndex(event => event.type === 'notice')).toBeLessThan(events.findIndex(event => event.type === 'text_delta' && event.text === 'Recovered'));
+  } finally { await f.dispose(); }
+});

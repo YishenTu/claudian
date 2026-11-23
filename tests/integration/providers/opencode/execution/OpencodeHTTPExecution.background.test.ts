@@ -47,6 +47,26 @@ it('delivers child completion and automatic parent replies after the requested t
   } finally { await f.dispose(); }
 });
 
+it('reports a finished background shell in the automatic reply it wakes', async () => {
+  const f = await createFixture();
+  const events: ProviderSessionEvent[] = [];
+  let completed!: () => void;
+  const background = new Promise<void>(resolve => { completed = resolve; });
+  f.session.onEvent(event => { events.push(event); if (event.type === 'background_turn_completed') completed(); });
+  try {
+    const requested: ProviderExecutionEvent[] = [];
+    for await (const event of f.session.execute(request('background-shell')).events) requested.push(event);
+    expect(requested.filter(event => event.type === 'task_notification')).toEqual([]);
+    await background;
+    const notification = events.findIndex(event => event.type === 'task_notification');
+    expect(events[notification]).toMatchObject({
+      content: '```sh\nnpm test\n```\n\n```text\nok 3 tests\n\n\nExit code: 4\n```',
+      scope: expect.objectContaining({ kind: 'background' }),
+    });
+    expect(notification).toBeLessThan(events.findIndex(event => event.type === 'text_delta' && event.text === 'Automatic reply'));
+  } finally { await f.dispose(); }
+});
+
 it('keeps a child running through an idle that leaves its background shell running', async () => {
   const f = await createFixture();
   const events: ProviderSessionEvent[] = [];
