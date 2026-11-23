@@ -221,6 +221,40 @@ describe('ImagePreviewModal', () => {
     expect(zoomLevel(dialog)).toBe('50%');
   });
 
+  it('caps the zoom at the new maximum when a larger window raises the fit size', () => {
+    const { dialog, image } = openLoaded();
+    fireEvent.wheel(image, { deltaY: -100_000, clientX: 200, clientY: 150 });
+    expect(zoomLevel(dialog)).toBe('400%');
+
+    // The window doubles: the 1600×1200 image now fits at 800×600, so 4× natural is 8× fit.
+    vi.mocked(dialog.getBoundingClientRect).mockReturnValue(DOMRect.fromRect({ x: 0, y: 0, width: 800, height: 600 }));
+    Object.defineProperty(image, 'clientWidth', { configurable: true, value: 800 });
+    Object.defineProperty(image, 'clientHeight', { configurable: true, value: 600 });
+    window.dispatchEvent(new Event('resize'));
+
+    expect(placement(image).scale).toBeCloseTo(8);
+    expect(zoomLevel(dialog)).toBe('400%');
+  });
+
+  it('pans a zoomed image with the arrow keys up to its edges', () => {
+    const { image, closeButton } = openLoaded();
+    press(closeButton, 'ArrowLeft');
+    expect(placement(image)).toEqual({ x: 0, y: 0, scale: 1 });
+
+    fireEvent.dblClick(image, { clientX: 200, clientY: 150 });
+    // An arrow reveals more of the image in its direction, so the image moves the other way.
+    expect(press(closeButton, 'ArrowLeft').defaultPrevented).toBe(true);
+    press(closeButton, 'ArrowUp');
+    expect(placement(image)).toEqual({ x: 64, y: 64, scale: 4 });
+    press(closeButton, 'ArrowRight');
+    press(closeButton, 'ArrowRight');
+    press(closeButton, 'ArrowDown');
+    expect(placement(image)).toEqual({ x: -64, y: 0, scale: 4 });
+
+    for (let step = 0; step < 20; step++) press(closeButton, 'ArrowRight');
+    expect(placement(image)).toEqual({ x: -600, y: 0, scale: 4 });
+  });
+
   it.each([['at', 0], ['below', 100_000]] as const)('does not pan an image %s fit size', (_, zoomOut) => {
     const { dialog, image } = openLoaded();
     if (zoomOut) fireEvent.wheel(image, { deltaY: zoomOut, clientX: 200, clientY: 150 });

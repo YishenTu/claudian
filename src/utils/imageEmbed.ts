@@ -25,9 +25,6 @@ const IMAGE_EXTENSIONS = new Set([
   'ico',
 ]);
 
-/** Native button wrapping an embedded image whose host lets it open a full preview. */
-export const EMBEDDED_IMAGE_BUTTON_CLASS = 'claudian-embedded-image-button';
-
 const IMAGE_EMBED_PATTERN = /!\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g;
 
 interface ReplaceImageEmbedsOptions {
@@ -164,21 +161,4 @@ export function replaceImageEmbedsWithHTML(
       );
     },
   });
-}
-
-/**
- * Wraps each rendered embedded image in a native button that opens it full size. Runs on the
- * rendered DOM so it does not depend on the host Markdown sanitizer keeping `<button>` markup.
- */
-export function makeEmbeddedImagesPreviewable(container: HTMLElement, label: (name: string) => string): void {
-  for (const image of container.querySelectorAll<HTMLImageElement>('.claudian-embedded-image > img')) {
-    // An authored link around the image keeps its own action; controls must not nest.
-    if (image.closest('a')) continue;
-    // The generated wrapper holds only the image, so appending keeps its position.
-    const button = image.parentElement!.createEl('button', {
-      cls: EMBEDDED_IMAGE_BUTTON_CLASS,
-      attr: { type: 'button', 'aria-label': label(image.alt) },
-    });
-    button.appendChild(image);
-  }
 }

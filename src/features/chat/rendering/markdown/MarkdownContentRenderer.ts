@@ -8,11 +8,12 @@ import {
 } from '@/features/chat/rendering/markdown/DisplayOnlyCodeFences';
 import { escapeRawHTMLTags } from '@/features/chat/rendering/markdown/markdownHTML';
 import { renderMermaidDiagrams } from '@/features/chat/rendering/markdown/MermaidRenderer';
+import { makeImagesPreviewable } from '@/features/chat/rendering/markdown/previewableImages';
 import { t } from '@/i18n/i18n';
 import { enhanceRenderedCodeFence } from '@/shared/components/CopyableCodeFence';
 import { MarkdownRenderScope } from '@/shared/components/MarkdownRenderScope';
 import { processFileLinks } from '@/utils/fileLink';
-import { makeEmbeddedImagesPreviewable, replaceImageEmbedsWithHTML } from '@/utils/imageEmbed';
+import { replaceImageEmbedsWithHTML } from '@/utils/imageEmbed';
 import {
   escapeMathDelimitersForStreaming,
   normalizeLatexMathDelimiters,
@@ -102,9 +103,7 @@ export class MarkdownContentRenderer {
 
       if (!isCurrent()) return;
       el.querySelectorAll('pre').forEach(enhanceRenderedCodeFence);
-      if (processedMarkdown !== displayOnlyCodeFences.markdown) {
-        makeEmbeddedImagesPreviewable(el, name => t('chat.images.previewImage', { name }));
-      }
+      makeImagesPreviewable(el);
       if (!options?.deferDiagrams
         && displayOnlyCodeFences.fences.some(fence => fence.originalLanguage.toLowerCase() === 'mermaid')) {
         await renderMermaidDiagrams(el, isCurrent);
@@ -133,6 +132,11 @@ export class MarkdownContentRenderer {
     const descendants = container.querySelectorAll<HTMLElement>(`[${RENDER_SCOPE_ATTRIBUTE}]`);
     this.#releaseOne(container);
     descendants.forEach(el => this.#releaseOne(el));
+  }
+
+  /** Makes images added inside an owned render after it finished (loaded embeds) previewable. */
+  prepareAdded(el: Element): void {
+    if (el.closest(`[${RENDER_SCOPE_ATTRIBUTE}]`) && this.rootEl.contains(el)) makeImagesPreviewable(el);
   }
 
   /** Releases owned render targets in a subtree that has left the root. */

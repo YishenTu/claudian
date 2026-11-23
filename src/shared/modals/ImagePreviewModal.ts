@@ -15,6 +15,7 @@ export function imageAttachmentPreview(image: ImageAttachment): ImagePreviewSour
 }
 
 const KEY_ZOOM_STEP = 1.25;
+const KEY_PAN_STEP_PX = 64;
 /** Wheel deltas map to `exp(-delta * rate)`; a pinch reports far smaller deltas than a wheel. */
 const WHEEL_ZOOM_RATE = 0.002;
 const PINCH_ZOOM_RATE = 0.01;
@@ -105,6 +106,14 @@ class ImageZoom {
     this.zoomTo(1);
   }
 
+  /** Moves the image by the given offset, within the pan limits. */
+  panBy(dx: number, dy: number): void {
+    if (this.naturalScale() === null) return;
+    this.x += dx;
+    this.y += dy;
+    this.render();
+  }
+
   /** Whether the click that just happened ended a pan; consumes the flag. */
   consumePanClick(): boolean {
     const suppressed = this.suppressNextClick;
@@ -117,7 +126,8 @@ class ImageZoom {
     this.ownerDocument.defaultView?.removeEventListener('resize', this.onResize);
   }
 
-  private readonly onResize = (): void => this.render();
+  // A new fit size changes the maximum zoom, so re-apply it along with the pan limits.
+  private readonly onResize = (): void => this.zoomTo(this.scale);
 
   private render(): void {
     const naturalScale = this.naturalScale();
@@ -260,6 +270,11 @@ export class ImagePreviewModal {
       [['Shift'], '+', () => zoom.zoomBy(KEY_ZOOM_STEP)],
       [[], '-', () => zoom.zoomBy(1 / KEY_ZOOM_STEP)],
       [[], '0', () => zoom.reset()],
+      // An arrow reveals more of the image in its direction.
+      [[], 'ArrowLeft', () => zoom.panBy(KEY_PAN_STEP_PX, 0)],
+      [[], 'ArrowRight', () => zoom.panBy(-KEY_PAN_STEP_PX, 0)],
+      [[], 'ArrowUp', () => zoom.panBy(0, KEY_PAN_STEP_PX)],
+      [[], 'ArrowDown', () => zoom.panBy(0, -KEY_PAN_STEP_PX)],
     ];
     for (const [modifiers, key, action] of zoomKeys) {
       scope.register(modifiers, key, () => {

@@ -7,7 +7,7 @@ import { axe } from '@test/helpers/accessibility';
 import { createChatFeatureHost } from '@test/helpers/features/chat/ChatFeatureHostFixture';
 import { renderObsidianHTML } from '@test/helpers/ObsidianMarkdownRenderer';
 import { testDate } from '@test/helpers/testClock';
-import { fireEvent, within } from '@testing-library/dom';
+import { fireEvent, waitFor, within } from '@testing-library/dom';
 import { App, Component, MarkdownRenderer, type TFile } from 'obsidian';
 
 import { MessageRenderer } from '@/features/chat/rendering/MessageRenderer';
@@ -235,14 +235,32 @@ it('opens an image embedded in a reply in the zoomable preview from a native but
   expect(document.activeElement).toBe(trigger);
 });
 
+it('opens standard Markdown images, including embeds Obsidian loads after rendering', async () => {
+  // Obsidian's output for `![diagram](fixture.png) and ![chart](https://example.org/chart.png)`:
+  // the external image renders at once, and the vault embed receives its image when it loads.
+  vi.spyOn(MarkdownRenderer, 'render').mockImplementationOnce(async (_app, _markdown, el) => {
+    el.innerHTML = '<p><span class="internal-embed" src="fixture.png" alt="diagram"></span>'
+      + ' and <img alt="chart" src="https://example.org/chart.png"></p>';
+  });
+  await renderer.renderContent(host, '![diagram](fixture.png) and ![chart](https://example.org/chart.png)');
+
+  fireEvent.click(within(host).getByRole('button', { name: 'Preview chart' }));
+  expect(within(within(document.body).getByRole('dialog', { name: 'Image preview: chart' }))
+    .getByRole('img', { name: 'chart' }).getAttribute('src')).toBe('https://example.org/chart.png');
+  fireEvent.click(within(document.body).getByRole('button', { name: 'Close image preview' }));
+
+  host.querySelector('.internal-embed')!.createEl('img', { attr: { alt: 'diagram', src: 'app://local/fixture.png' } });
+  const trigger = await waitFor(() => within(host).getByRole('button', { name: 'Preview diagram' }));
+  fireEvent.click(trigger);
+  expect(within(within(document.body).getByRole('dialog', { name: 'Image preview: diagram' }))
+    .getByRole('img', { name: 'diagram' }).getAttribute('src')).toBe('app://local/fixture.png');
+  expect(await axe(host)).toHaveNoViolations();
+});
+
 it('leaves an embedded image inside an authored link to the link', async () => {
   // Obsidian renders `[![[photo.png]]](https://example.org)` as a link around the injected image.
-  vi.spyOn(MarkdownRenderer, 'render').mockImplementationOnce(async (...args) => {
-    await renderObsidianHTML(...args);
-    const link = args[2].ownerDocument.createElement('a');
-    link.href = 'https://example.org/';
-    link.append(...args[2].childNodes);
-    args[2].append(link);
+  vi.spyOn(MarkdownRenderer, 'render').mockImplementationOnce(async (_app, markdown, el) => {
+    el.innerHTML = `<a href="https://example.org/">${markdown}</a>`;
   });
   settings.mediaFolder = 'Media';
   await renderer.renderContent(host, '![[photo.png]]');

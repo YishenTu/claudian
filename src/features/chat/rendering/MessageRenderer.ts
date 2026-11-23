@@ -7,6 +7,7 @@ import type { ChatMessage, ImageAttachment, SubagentInfo, ToolCallInfo } from '@
 import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
 import { renderCitationGroup } from '@/features/chat/rendering/CitationRenderer';
 import { MarkdownContentRenderer, type RenderContentOptions } from '@/features/chat/rendering/markdown/MarkdownContentRenderer';
+import { getImagePreview } from '@/features/chat/rendering/markdown/previewableImages';
 import { type MessageActionCallbacks, MessageActions } from '@/features/chat/rendering/MessageActions';
 import { getResponseSegments } from '@/features/chat/rendering/NotificationBoundaries';
 import { ResponseFinalizer } from '@/features/chat/rendering/ResponseFinalizer';
@@ -34,7 +35,6 @@ import { type ConversationDirectoryEntry, formatConversationDirectoryTitle, getR
 import { t } from '@/i18n/i18n';
 import { imageAttachmentPreview, ImagePreviewModal, type ImagePreviewSource } from '@/shared/modals/ImagePreviewModal';
 import { registerFileLinkHandler } from '@/utils/fileLink';
-import { EMBEDDED_IMAGE_BUTTON_CLASS } from '@/utils/imageEmbed';
 
 
 /** Rendering hooks reconnect live tool cards to their session owners. */
@@ -183,6 +183,10 @@ export class MessageRenderer {
             releaseRemoved(el);
             el.querySelectorAll<HTMLElement>('[data-message-id]').forEach(releaseRemoved);
             this.#markdown.releaseRemoved(el);
+          }
+          // Obsidian loads vault image embeds after the Markdown render settles.
+          for (const node of record.addedNodes) {
+            if (node.nodeType === 1) this.#markdown.prepareAdded(node as Element);
           }
         }
       });
@@ -793,10 +797,8 @@ export class MessageRenderer {
 
   /** Opens images embedded in rendered replies; one delegated handler covers every render path. */
   readonly #onEmbeddedImageClick = (event: MouseEvent): void => {
-    const trigger = (event.target as HTMLElement).closest(`button.${EMBEDDED_IMAGE_BUTTON_CLASS}`);
-    const image = trigger?.querySelector('img');
-    if (!trigger || !image || !this.messagesEl.contains(trigger)) return;
-    this.#openImagePreview({ src: image.currentSrc || image.src, name: image.alt });
+    const preview = getImagePreview(event.target as HTMLElement);
+    if (preview) this.#openImagePreview(preview);
   };
 
   /** Renders markdown content with code block enhancements. */
