@@ -100,7 +100,11 @@ type LateWork =
    * starts: agy finishes that reply before it answers the new prompt.
    */
   | { readonly phase: 'replying'; readonly turn: AntigravityBackgroundTurn }
-  /** After a Stop: agy then reports the calls its cancel ended, which open no turn, until the next run. */
+  /**
+   * After a Stop, until agy starts a new call: the cancel ended every call agy had started (background tasks and
+   * subagents included), and agy reports those after the cancelled prompt settles, possibly once the next run has
+   * begun. An update for a call the current run has not seen therefore belongs to the stopped turn and is dropped.
+   */
   | { readonly phase: 'stopped' };
 
 /** What decides agy's approvals: the run's tool policy and permission mode. */
@@ -266,7 +270,6 @@ export class AntigravityExecutionSession implements ProviderExecutionSession, St
     };
     this.active = active;
     this.latestPolicy = approvalPolicyOf(request);
-    if (this.lateWork.phase === 'stopped') this.lateWork = { phase: 'idle' };
     this.subagents?.turnStarted();
     this.#updateSnapshot('executing');
     this.#emitCurrentSnapshot();
@@ -783,10 +786,11 @@ export class AntigravityExecutionSession implements ProviderExecutionSession, St
       default:
         break;
     }
-    // After a Stop, agy reports the calls the cancel ended; they belong to the interrupted turn.
-    const opens = ANTIGRAVITY_REPLY_OUTPUT_KINDS.has(update.sessionUpdate)
-      && !(this.lateWork.phase === 'stopped' && update.sessionUpdate === 'tool_call_update');
-    const background = this.#backgroundFor(notification.sessionId, opens);
+    if (this.lateWork.phase === 'stopped') {
+      if (update.sessionUpdate === 'tool_call_update' && !this.active?.toolCallIds.has(update.toolCallId)) return;
+      if (update.sessionUpdate === 'tool_call') this.lateWork = { phase: 'idle' };
+    }
+    const background = this.#backgroundFor(notification.sessionId, ANTIGRAVITY_REPLY_OUTPUT_KINDS.has(update.sessionUpdate));
     let metadata: ACPNormalizedUpdate | undefined;
     if (background) {
       metadata = background.handleUpdate(update);
