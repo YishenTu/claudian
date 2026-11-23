@@ -853,7 +853,6 @@ ClaudeExecutionStrategySink {
 
   /** A discarded process reports no result or end, so its automatic turn and any Stop of it end here. */
   handleNativeQueryDiscarded(): void {
-    if (this.backgroundTurn) this.#publishTurnNotifications();
     this.#finishBackgroundTurn('provider-ended');
     this.#releaseBackgroundCancellation();
   }
@@ -862,6 +861,8 @@ ClaudeExecutionStrategySink {
     if (this.nativeQuery !== query) return;
     this.suggestionTurnId = null;
     this.nativeQuery = null;
+    // The open turn consumed what its init selected, whichever handler ends it after the process closes.
+    if (this.backgroundTurn) this.#publishTurnNotifications();
     this.taskNotifications.reset();
     this.commandSnapshot = undefined;
     this.skillNames = [];

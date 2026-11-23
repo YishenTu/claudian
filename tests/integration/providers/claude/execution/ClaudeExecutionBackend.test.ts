@@ -4071,6 +4071,39 @@ it('settles a notification turn stopped before its first token at its own bounda
   } finally { await session.dispose(); }
 });
 
+it.each(['ends', 'throws'] as const)('keeps the notification of a turn stopped before its first token when the stream %s without a result', async ending => {
+  const streamEnd = createDeferred<null>();
+  const messages = [
+    { type: 'system', subtype: 'init', session_id: 'session-1' },
+    { type: 'result', subtype: 'success' },
+    { type: 'system', subtype: 'task_notification', session_id: 'session-1', task_id: 'task-1', status: 'completed', summary: 'Task finished' },
+    { type: 'system', subtype: 'init', session_id: 'session-1' },
+    streamEnd.promise,
+  ];
+  const query = ending === 'ends'
+    ? createScriptedPersistentQuery([messages])
+    : createFailingPersistentQuery(messages, new Error('Claude Code exited'));
+  vi.spyOn(await import('@/providers/claude/loadClaudeAgentSDK'), 'loadClaudeAgentQuery')
+    .mockResolvedValueOnce(receiveInput(query) as never);
+  const session = new ClaudeExecutionBackend((await createHost()).host.getRuntimeHost('claude')).createSession(createConfig());
+  const events: ProviderSessionEvent[] = [];
+  session.onEvent(event => events.push(event));
+  try {
+    await collectEvents(session.execute(createRequest()).events);
+    await waitFor(() => events.some(event => event.type === 'background_turn_started'));
+    session.cancel();
+    streamEnd.resolve(null);
+    await query.finished;
+    await waitFor(() => events.some(event => event.type === 'background_turn_completed'));
+    expect(events.flatMap(event => event.type === 'task_notification' ? [event.content]
+      : event.type === 'background_turn_completed' ? [`turn ${event.reason}`]
+        : event.type === 'session_error' ? [event.message] : [])).toEqual(['Task finished', 'turn interrupted']);
+  } finally {
+    streamEnd.resolve(null);
+    await session.dispose();
+  }
+});
+
 it('ends a notification turn opened at init when a cancelled send replaces its process', async () => {
   const updateBarrier = createDeferred<void>();
   const keepOpen = createDeferred<unknown>();
