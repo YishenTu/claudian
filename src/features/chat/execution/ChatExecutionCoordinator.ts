@@ -524,19 +524,20 @@ export class ChatExecutionCoordinator {
       try {
         const response = await this.#interactions.requestApproval({
           interactionId, sessionInstanceId: binding.session.sessionInstanceId, turnId: interactionId,
-          kind: 'approval', toolName: '/approve', description: t('chat.approval.review.chooseRetry'), input: {},
-          decisionOptions: denials.map(({ value, label, description }) => ({ value, label, description })),
+          kind: 'approval', toolName: '/approve', description: t('chat.approval.review.pickerSubtitle'), input: {},
+          presentation: 'action-picker',
+          decisionOptions: denials.map(({ value, label, description, action }) => ({ value, label, description, action })),
         }, new AbortController().signal, isCurrent);
         const selected = denials.find(option => option.value === response.value);
         if (!selected) return 'dismissed';
-        await this.deps.persistence.assertConversationExecutionAuthority(
-          binding.conversation.conversationId, binding.bindingId, binding.generation,
-        );
-        if (!isCurrent()) return 'dismissed';
         // The session pool checks for prior external changes and records the settled revision.
         this.#nativeHistoryWrites++;
         try {
           await this.deps.onNativeHistoryWriteChanged?.(true);
+          if (!isCurrent()) return 'dismissed';
+          await this.deps.persistence.assertConversationExecutionAuthority(
+            binding.conversation.conversationId, binding.bindingId, binding.generation,
+          );
           return isCurrent() && await selected.approve() ? 'approved' : 'dismissed';
         } finally {
           this.#nativeHistoryWrites--;

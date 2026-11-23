@@ -19,6 +19,7 @@ import { ProviderModelUnavailableError } from '@/core/providers/models/ProviderM
 import type { ProviderRuntimeHost } from '@/core/providers/ProviderRuntimeHost';
 import type { StreamChunk } from '@/core/types';
 import { createTurnStats, isTokenCount } from '@/core/types';
+import { t } from '@/i18n/i18n';
 import { resolveCodexReasoningSummary } from '@/providers/codex/config';
 import {
   deriveCodexSessionsRootFromSessionPath,
@@ -41,7 +42,7 @@ import type {
 import { assertCodexModelAvailable } from '@/providers/codex/runtime/CodexModelAvailability';
 import { CodexNotificationRouter } from '@/providers/codex/runtime/CodexNotificationRouter';
 import { CodexRPCResponseError } from '@/providers/codex/runtime/CodexRPCTransport';
-import { describeAutoReview, describeReviewAction } from '@/providers/codex/runtime/notifications/codexAutoReview';
+import { describeAutoReview, describeReviewAction, isReportedReview, reviewActionSummary } from '@/providers/codex/runtime/notifications/codexAutoReview';
 import {
   clearCodexResumeState,
   type CodexPendingForkTarget,
@@ -451,7 +452,7 @@ export class CodexExecutionSession
         this.connection.targetWorkingDirectory(),
         false,
         (phase, event) => {
-          if (phase === 'completed') active.run.emit({ type: 'notice', message: this.#reviewMessage(event) });
+          if (phase === 'completed' && isReportedReview(event)) active.run.emit({ type: 'notice', message: this.#reviewMessage(event) });
         },
       ));
 
@@ -556,6 +557,7 @@ export class CodexExecutionSession
     if (!this.#canApproveReview) return [];
     return this.recentDenials.filter(event => event.threadId === this.threadId).map(event => ({
       value: event.reviewId, label: describeReviewAction(event.action), description: event.review.rationale ?? undefined,
+      action: reviewActionSummary(event.action),
       approve: async (): Promise<boolean> => {
         const transport = this.connection.transport;
         if (!transport || !this.#canApproveReview || event.threadId !== this.threadId || !this.recentDenials.includes(event)) return false;
@@ -564,6 +566,8 @@ export class CodexExecutionSession
           const idleRollout = !this.activeRun && this.connection.persistsIdleReviewGrants ? this.sessionFilePath : null;
           await submitCodexReviewOverride(transport, event, idleRollout);
         } catch (error) {
+          // A missing acknowledgement can follow a successful native write.
+          if (!(error instanceof CodexRPCResponseError)) throw new Error(t('chat.approval.review.retryUnconfirmed'), { cause: error });
           if (transport === this.connection.transport && event.threadId === this.threadId) this.#rememberDenial(event);
           throw error;
         }

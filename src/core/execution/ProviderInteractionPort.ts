@@ -11,6 +11,15 @@ export interface ProviderInteractionIdentity {
   readonly nativeContext?: unknown;
 }
 
+export type ProviderActionKind = 'command' | 'file-change' | 'network' | 'tool' | 'terminal-input' | 'permissions';
+
+/** Display parts of the action an option stands for; the option's label stays its complete text. */
+export interface ProviderActionSummary {
+  readonly kind: ProviderActionKind;
+  readonly subject: string;
+  readonly location?: string;
+}
+
 export interface ProviderApprovalDecisionOption {
   readonly label: string;
   readonly description?: string;
@@ -18,6 +27,7 @@ export interface ProviderApprovalDecisionOption {
   readonly value: string;
   /** Scripting metadata (docs/plugin-api.md); routers decode the answer by `value`, never by this tag. */
   readonly decision?: ApprovalDecision;
+  readonly action?: ProviderActionSummary;
 }
 
 /** An offered option paired with the native reply it sends. */
@@ -36,6 +46,8 @@ export interface ProviderApprovalInteractionRequest
   readonly blockedPath?: string;
   /** The native choices, in native order; Claudian invents none for a provider. */
   readonly decisionOptions: readonly ProviderApprovalDecisionOption[];
+  /** Set only by feature-originated pickers whose every option carries an `action`. */
+  readonly presentation?: 'action-picker';
 }
 
 export interface ProviderApprovalInteractionResponse {

@@ -488,9 +488,22 @@
         "aborted": "審査が中断されました：{action}",
         "retryHint": "このセッションの接続中は、/approve で再試行を1回許可できます。",
         "terminalInput": "{process} への端末入力: {input}",
+        "risk": "リスク: {level}",
+        "riskLevels": {
+          "low": "低",
+          "medium": "中",
+          "high": "高",
+          "critical": "重大"
+        },
         "strictRequired": "このターンには厳格な自動審査が必要です。",
         "noDenials": "このセッションには最近の自動審査による拒否はありません。",
         "chooseRetry": "再試行を1回許可する操作を選択してください。",
+        "pickerSubtitle": "承認すると1回だけ再試行できます。再試行も自動審査で確認されます。",
+        "pickerTitle": "拒否された操作を承認",
+        "selectHint": "選択",
+        "approveHint": "承認",
+        "cancelHint": "キャンセル",
+        "retryUnconfirmed": "Codex が承認を記録したか確認できませんでした。",
         "retryRecorded": "再試行を1回許可しました。再試行も Codex が審査します。"
       },
       "allowForTurn": "このターンで許可",

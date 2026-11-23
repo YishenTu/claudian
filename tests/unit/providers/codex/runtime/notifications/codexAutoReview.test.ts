@@ -1,7 +1,7 @@
 import { testDate } from '@test/helpers/testClock';
 
 import type { GuardianReviewAction } from '@/providers/codex/runtime/codexAppServerTypes';
-import { guardianOverrideParams } from '@/providers/codex/runtime/notifications/codexAutoReview';
+import { guardianOverrideParams, reviewActionSummary } from '@/providers/codex/runtime/notifications/codexAutoReview';
 
 const entries = [{ path: { type: 'glob_pattern' as const, pattern: '**/private' }, access: 'deny' as const }];
 
@@ -29,4 +29,16 @@ it.each<[GuardianReviewAction, unknown]>([
     action, review: { status: 'denied', rationale: null, riskLevel: null, userAuthorization: null },
   });
   expect(params.event.action).toEqual(expected);
+});
+
+it.each<[GuardianReviewAction, unknown]>([
+  [{ type: 'command', source: 'shell', command: 'npm install', cwd: '/vault/site' }, { kind: 'command', subject: 'npm install', location: '/vault/site' }],
+  [{ type: 'execve', source: 'shell', program: '/bin/ls', argv: ['ls', 'two words'], cwd: '/vault' }, { kind: 'command', subject: '/bin/ls ["ls","two words"]', location: '/vault' }],
+  [{ type: 'writeStdin', approvalId: 'a', processId: 'p', cwd: '/vault', stdin: 'yes\n' }, { kind: 'terminal-input', subject: 'Terminal input for p: "yes\\n"', location: '/vault' }],
+  [{ type: 'applyPatch', cwd: '/vault', files: ['one.md', '../two.md'] }, { kind: 'file-change', subject: 'one.md, ../two.md', location: '/vault' }],
+  [{ type: 'networkAccess', target: 'https://registry.example/pkg', host: 'registry.example', protocol: 'https', port: 443 }, { kind: 'network', subject: 'https://registry.example/pkg', location: 'registry.example:443' }],
+  [{ type: 'mcpToolCall', server: 'docs', toolName: 'read', toolTitle: null, connectorId: null, connectorName: null }, { kind: 'tool', subject: 'docs/read' }],
+  [{ type: 'requestPermissions', reason: 'Index files', permissions: { network: { enabled: true } } }, { kind: 'permissions', subject: 'Index files · {"network":{"enabled":true}}' }],
+])('summarizes $type for the retry picker', (action, expected) => {
+  expect(reviewActionSummary(action)).toEqual(expected);
 });

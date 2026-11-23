@@ -488,9 +488,22 @@
         "aborted": "Vérification interrompue pour {action}",
         "retryHint": "Tant que cette session est connectée, utilisez /approve pour autoriser un nouvel essai.",
         "terminalInput": "Saisie du terminal pour {process} : {input}",
+        "risk": "Risque : {level}",
+        "riskLevels": {
+          "low": "faible",
+          "medium": "moyen",
+          "high": "élevé",
+          "critical": "critique"
+        },
         "strictRequired": "Ce tour exige une vérification automatique stricte.",
         "noDenials": "Aucun refus automatique récent dans cette session.",
         "chooseRetry": "Sélectionnez une action refusée pour autoriser un nouvel essai.",
+        "pickerSubtitle": "L’approbation autorise un nouvel essai. La revue automatique le vérifie quand même.",
+        "pickerTitle": "Approuver une action refusée",
+        "selectHint": "Sélectionner",
+        "approveHint": "Approuver",
+        "cancelHint": "Annuler",
+        "retryUnconfirmed": "Impossible de confirmer si Codex a enregistré l’approbation.",
         "retryRecorded": "Un nouvel essai a été autorisé. Codex le vérifiera."
       },
       "allowForTurn": "Autoriser pour ce tour",

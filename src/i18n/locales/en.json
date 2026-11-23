@@ -488,9 +488,22 @@
         "aborted": "Auto-review was interrupted for {action}",
         "retryHint": "While this session is connected, use /approve to authorize one retry.",
         "terminalInput": "Terminal input for {process}: {input}",
+        "risk": "Risk: {level}",
+        "riskLevels": {
+          "low": "low",
+          "medium": "medium",
+          "high": "high",
+          "critical": "critical"
+        },
         "strictRequired": "Strict auto-review is required for this turn.",
         "noDenials": "No recent auto-review denials in this session.",
         "chooseRetry": "Select a denied action to approve for one retry.",
+        "pickerSubtitle": "Approving allows one retry. Auto-review still checks it.",
+        "pickerTitle": "Approve a denied action",
+        "selectHint": "Select",
+        "approveHint": "Approve",
+        "cancelHint": "Cancel",
+        "retryUnconfirmed": "Could not confirm whether Codex recorded the approval.",
         "retryRecorded": "Approval recorded for one retry. Codex will review the retry."
       },
       "allowForTurn": "Allow for this turn",

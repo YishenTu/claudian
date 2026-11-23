@@ -488,9 +488,22 @@
         "aborted": "Prüfung unterbrochen: {action}",
         "retryHint": "Solange diese Sitzung verbunden ist, lässt sich mit /approve ein erneuter Versuch genehmigen.",
         "terminalInput": "Terminaleingabe für {process}: {input}",
+        "risk": "Risiko: {level}",
+        "riskLevels": {
+          "low": "niedrig",
+          "medium": "mittel",
+          "high": "hoch",
+          "critical": "kritisch"
+        },
         "strictRequired": "Diese Runde erfordert eine strenge automatische Prüfung.",
         "noDenials": "Keine aktuellen automatischen Ablehnungen in dieser Sitzung.",
         "chooseRetry": "Eine abgelehnte Aktion für einen erneuten Versuch auswählen.",
+        "pickerSubtitle": "Die Genehmigung erlaubt einen erneuten Versuch. Die automatische Prüfung bewertet ihn trotzdem.",
+        "pickerTitle": "Abgelehnte Aktion genehmigen",
+        "selectHint": "Auswählen",
+        "approveHint": "Genehmigen",
+        "cancelHint": "Abbrechen",
+        "retryUnconfirmed": "Es ließ sich nicht bestätigen, ob Codex die Genehmigung erfasst hat.",
         "retryRecorded": "Ein erneuter Versuch wurde genehmigt. Codex wird ihn prüfen."
       },
       "allowForTurn": "Für diese Runde erlauben",

@@ -70,6 +70,8 @@ export class StreamController {
   private viewportVisible = true;
   private readonly backgroundStreams = new Set<StreamController>();
   private onDispose?: () => void;
+  /** The open text block ends with a notice; cleared by the next text or when the block closes. */
+  #textFollowsNotice = false;
 
   constructor(deps: StreamControllerDeps) {
     this.deps = deps;
@@ -220,7 +222,9 @@ export class StreamController {
           await this.finalizeCurrentThinkingBlock(msg);
         }
         msg.content += chunk.content;
-        await this.appendText(chunk.content);
+        // Text after a notice starts its own paragraph instead of joining the notice's last line.
+        await this.appendText(this.#textFollowsNotice ? `\n\n${chunk.content}` : chunk.content);
+        this.#textFollowsNotice = false;
         state.recordActivity({ kind: 'text', text: state.currentTextContent });
         this.#reportBlock('text', msg, state.currentTextContent);
         break;
@@ -268,6 +272,7 @@ export class StreamController {
         this.#tools.flush();
         if (state.currentThinkingBlock) await this.finalizeCurrentThinkingBlock(msg);
         await this.appendText(`\n\n⚠️ **${chunk.level === 'warning' ? 'Warning' : 'Notice'}:** ${chunk.content}`);
+        this.#textFollowsNotice = true;
         this.#reportBlock('text', msg, state.currentTextContent);
         break;
 
@@ -401,6 +406,7 @@ export class StreamController {
     }
     state.currentTextEl = null;
     state.currentTextContent = '';
+    this.#textFollowsNotice = false;
     if (textEl && this.#getStreamingRenderOptions(content)) {
       this.textRenderCoordinator.request({ el: textEl, content, final: true });
     }

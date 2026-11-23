@@ -228,7 +228,7 @@ async function setupRevisionedSession(options: RuntimePoolFixtureOptions = {}) {
   return { h, native, reads, first, runtime, model, provider: h.backend.latest, continueElsewhere, detach };
 }
 
-it('retains remaining review denials after an idle approval writes native history', async () => {
+async function selectDenialDuringBaselineRead() {
   let revision = 'before';
   let holdRead = false;
   const reading = deferred<void>();
@@ -242,19 +242,34 @@ it('retains remaining review denials after an idle approval writes native histor
   } });
   const denials = ['First command', 'Second command'];
   Object.assign(s.provider, { getReviewDenials: () => denials.map(label => ({
-    value: label, label, approve: async () => {
+    value: label, label, action: { kind: 'command', subject: label, location: '/vault' }, approve: async () => {
       revision = 'after approval';
       denials.splice(denials.indexOf(label), 1);
       return true;
     },
   })) });
   const approval = s.first.executionCoordinator.approveRecentDenial();
-  const first = await within(s.first.dom.contentEl).findByRole('button', { name: 'First command' });
+  const picker = await within(s.first.dom.contentEl).findByRole('region', { name: t('chat.approval.review.pickerTitle') });
+  const first = within(picker).getByRole('button', { name: 'First command' });
+  expect(within(first).getByText('/vault')).toBeTruthy();
   holdRead = true;
   fireEvent.click(first);
   await reading.promise;
-  releaseRead.resolve();
-  holdRead = false;
+  return { s, approval, denials, finishRead() { holdRead = false; releaseRead.resolve(); } };
+}
+
+it('checks write authority after reading the idle approval baseline', async () => {
+  const { s, approval, denials, finishRead } = await selectDenialDuringBaselineRead();
+  vi.spyOn(s.h.plugin.executionPersistence, 'assertConversationExecutionAuthority').mockRejectedValue(new Error('Write authority revoked'));
+  finishRead();
+  await expect(approval).rejects.toThrow('Write authority revoked');
+  expect(denials).toEqual(['First command', 'Second command']);
+  await destroyTab(s.first);
+});
+
+it('retains remaining review denials after an idle approval writes native history', async () => {
+  const { s, approval, finishRead } = await selectDenialDuringBaselineRead();
+  finishRead();
   expect(await approval).toBe('approved');
   await s.detach();
   const second = await s.h.attach();

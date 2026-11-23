@@ -34,7 +34,7 @@ import type {
   WebSearchItem,
 } from './codexAppServerTypes';
 import { CodexAssistantTextTracker } from './notifications/CodexAssistantTextTracker';
-import { describeAutoReview } from './notifications/codexAutoReview';
+import { describeAutoReview, isReportedReview } from './notifications/codexAutoReview';
 import { CodexCommandCorrelator } from './notifications/CodexCommandCorrelator';
 import { CodexDeferredExecCorrelator } from './notifications/CodexDeferredExecCorrelator';
 import {
@@ -62,6 +62,8 @@ import {
   CodexToolLedger,
   type CodexToolUseChunk,
 } from './notifications/CodexToolLedger';
+
+const REVIEW_RESULT_WARNING = /^Automatic approval review (?:approved \(|denied \(|timed out |failed: )/;
 
 type ChunkEmitter = (chunk: StreamChunk) => void;
 
@@ -167,13 +169,13 @@ export class CodexNotificationRouter {
       case 'item/autoApprovalReview/completed': {
         const event = params as GuardianReviewCompleted;
         if (this.onReview) this.onReview('completed', event);
-        else this.#emit({ type: 'notice', content: describeAutoReview(event, false) });
+        else if (isReportedReview(event)) this.#emit({ type: 'notice', content: describeAutoReview(event, false) });
         break;
       }
       case 'guardianWarning': {
         const { message } = params as { message: string };
-        // The TUI suppresses this legacy duplicate of the structured approval decision.
-        if (!message.startsWith('Automatic approval review approved (')) this.#emit({ type: 'notice', level: 'warning', content: message });
+        // Legacy text repeating a structured review result, which the review notice already shows.
+        if (!REVIEW_RESULT_WARNING.test(message)) this.#emit({ type: 'notice', level: 'warning', content: message });
         break;
       }
       case 'autoApprovalReview/strictReviewRequired':

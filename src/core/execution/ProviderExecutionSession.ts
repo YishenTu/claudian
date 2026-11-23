@@ -5,7 +5,7 @@ import type {
   ProviderSessionEvent,
 } from './ProviderExecutionEvent';
 import type { ProviderExecutionRequest } from './ProviderExecutionRequest';
-import type { ProviderApprovalDecisionOption } from './ProviderInteractionPort';
+import type { ProviderActionSummary, ProviderApprovalDecisionOption } from './ProviderInteractionPort';
 import type {
   ProviderSessionSnapshot,
   ProviderSessionStatus,
@@ -53,7 +53,7 @@ export interface ProviderExecutionSession {
    */
   ownsNativeHistoryChange?(from: string, to: string): Promise<boolean>;
   /** Recent denied actions eligible for an explicit user-approved retry in this session. */
-  getReviewDenials?(): readonly (ProviderApprovalDecisionOption & { approve(): Promise<boolean> })[];
+  getReviewDenials?(): readonly (ProviderApprovalDecisionOption & { readonly action: ProviderActionSummary; approve(): Promise<boolean> })[];
   /**
    * Current native query commands; undefined means no authoritative snapshot is available.
    * Reading never starts provider work. Implementations emit commands_changed when it changes or clears.

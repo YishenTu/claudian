@@ -96,12 +96,13 @@ describe('ChatExecutionCoordinator', () => {
     await harness.coordinator.prepare();
     const session = harness.backends.get('codex')!.sessions[0];
     const approve = vi.fn(async () => true);
-    Object.assign(session, { getReviewDenials: () => [{ value: 'review-id', label: 'Run command', description: 'Reason', approve }] });
+    const action = { kind: 'command' as const, subject: 'Run command', location: '/vault' };
+    Object.assign(session, { getReviewDenials: () => [{ value: 'review-id', label: 'Run command (/vault)', description: 'Reason', action, approve }] });
     harness.interactionPort.requestApproval.mockResolvedValueOnce({ interactionId: 'stale', value: 'review-id' });
     expect(await harness.coordinator.approveRecentDenial()).toBe('dismissed');
     expect(approve).not.toHaveBeenCalled();
     harness.interactionPort.requestApproval.mockImplementationOnce(async request => {
-      expect(request.decisionOptions).toEqual([{ value: 'review-id', label: 'Run command', description: 'Reason' }]);
+      expect(request.decisionOptions).toEqual([{ value: 'review-id', label: 'Run command (/vault)', description: 'Reason', action }]);
       return { interactionId: request.interactionId, value: 'review-id' };
     });
     expect(await harness.coordinator.approveRecentDenial()).toBe('approved');

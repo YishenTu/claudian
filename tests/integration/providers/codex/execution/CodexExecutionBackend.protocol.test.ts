@@ -459,6 +459,14 @@ describe('CodexExecutionBackend', () => {
     const startedAtMs = testDate().getTime();
     const completedAtMs = startedAtMs + 20;
     const timestamps = version === '0.124.0' ? {} : { startedAtMs, completedAtMs };
+    // Codex repeats each review result as a legacy warning; only the circuit breaker is unique.
+    const breakerWarning = 'Automatic approval review rejected too many approval requests for this turn (3 consecutive, 3 in the last 10 reviews); interrupting the turn.';
+    const duplicateWarnings = [
+      'Automatic approval review approved (risk: high, authorization: unknown): Reason for approved',
+      'Automatic approval review denied (risk: high, authorization: unknown): Reason for denied',
+      'Automatic approval review timed out while evaluating the requested approval.',
+      'Automatic approval review failed: guardian review failed',
+    ];
     const port = createInteractionPort();
     nativeRequest.mockImplementation(async method => {
       if (method === 'initialize') return { userAgent: `claudian/${version}`, platformFamily: 'unix', platformOs: 'macos' };
@@ -467,8 +475,7 @@ describe('CodexExecutionBackend', () => {
       if (method === 'config/read') return { config: { sandbox_mode: 'workspace-write' } };
       if (method === 'thread/approveGuardianDeniedAction') return {};
       if (method !== 'turn/start') throw new Error(`Unexpected method: ${method}`);
-      emitNotification('guardianWarning', { threadId, message: 'Automatic review warning from Codex' });
-      emitNotification('guardianWarning', { threadId, message: 'Automatic approval review approved (low)' });
+      for (const message of [breakerWarning, ...duplicateWarnings]) emitNotification('guardianWarning', { threadId, message });
       emitNotification('autoApprovalReview/strictReviewRequired', { threadId, turnId, startedAtMs });
       for (const status of ['approved', 'denied']) {
         emitNotification('item/autoApprovalReview/completed', {
@@ -482,11 +489,14 @@ describe('CodexExecutionBackend', () => {
     });
     const session = createBackend(await createPlugin()).createSession(createSessionConfig({ interactionPort: port }));
     const events = await collectEvents(session.execute(createRequest()).events);
-    expect(events).toContainEqual(expect.objectContaining({ type: 'notice', message: 'Automatic review warning from Codex' }));
-    for (const status of ['approved', 'denied']) {
-      expect(events).toContainEqual(expect.objectContaining({ type: 'notice', message: expect.stringContaining(`Reason for ${status}`) }));
-    }
-    expect(events).not.toContainEqual(expect.objectContaining({ message: 'Automatic approval review approved (low)' }));
+    expect(events).toContainEqual(expect.objectContaining({ type: 'notice', message: breakerWarning }));
+    // Like the Codex TUI, an approved review leaves no history; denials stay visible.
+    expect(events).toContainEqual(expect.objectContaining({ type: 'notice', message: expect.stringContaining('Reason for denied') }));
+    expect(events).not.toContainEqual(expect.objectContaining({ message: expect.stringContaining('Reason for approved') }));
+    for (const message of duplicateWarnings) expect(events).not.toContainEqual(expect.objectContaining({ message }));
+    expect(events).toContainEqual(expect.objectContaining({
+      type: 'notice', message: expect.stringContaining(t('chat.approval.review.risk', { level: t('chat.approval.review.riskLevels.high') })),
+    }));
     expect(events).toContainEqual(expect.objectContaining({ type: 'notice', message: t('chat.approval.review.strictRequired') }));
     const entries = session.getReviewDenials!();
     expect(entries.map(entry => entry.description)).toEqual(['Reason for denied']);
@@ -928,6 +938,39 @@ describe('CodexExecutionBackend', () => {
     },
   );
 
+  it('keeps a denial consumed when the server receives the approval but its reply times out', async () => {
+    vi.useFakeTimers();
+    const reply = createDeferred<unknown>();
+    configureNativeTurn('parent', 'turn', () => ({}));
+    const base = nativeRequest.getMockImplementation()!;
+    nativeRequest.mockImplementation((method, params) => {
+      if (method === 'initialize') return { userAgent: 'claudian/0.171.0', platformFamily: 'unix', platformOs: 'macos' };
+      if (method === 'thread/approveGuardianDeniedAction') return reply.promise;
+      return base(method, params);
+    });
+    const session = createBackend(await createPlugin()).createSession(createSessionConfig());
+    const output = collectEvents(session.execute(createRequest()).events);
+    await native.waitForRequest('turn/start');
+    emitNotification('item/autoApprovalReview/completed', {
+      threadId: 'parent', turnId: 'turn', reviewId: 'denied', targetItemId: null, decisionSource: 'agent',
+      review: { status: 'denied', rationale: 'Needs permission', riskLevel: 'high', userAuthorization: null },
+      action: { type: 'command', command: 'npm install', source: 'shell', cwd: '/vault' },
+    });
+    await nativeRoundTrip();
+    const [denial] = session.getReviewDenials!();
+    const result = denial.approve().catch((error: Error) => error.message);
+    await native.waitForRequest('thread/approveGuardianDeniedAction');
+    await vi.advanceTimersByTimeAsync(30_000);
+    reply.resolve({});
+    await nativeRoundTrip();
+    expect(session.getReviewDenials!()).toEqual([]);
+    expect(await denial.approve()).toBe(false);
+    expect(await result).toBe(t('chat.approval.review.retryUnconfirmed'));
+    completeTurn('parent', 'turn');
+    await output;
+    await session.dispose();
+  });
+
   it('keeps child reviews on the child card and out of the main-thread retry picker', async () => {
     configureNativeTurn('parent', 'parent-turn', () => ({}));
     const base = nativeRequest.getMockImplementation()!;
@@ -958,6 +1001,16 @@ describe('CodexExecutionBackend', () => {
     await nativeRoundTrip();
     expect(latestSubagentUpdate(updates).subagent.toolCalls).toEqual([expect.objectContaining({ status: 'running' })]);
     emitNotification('item/autoApprovalReview/completed', review);
+    await nativeRoundTrip();
+    expect(latestSubagentUpdate(updates).subagent.toolCalls).toEqual([expect.objectContaining({
+      result: expect.stringContaining('Outside the workspace'),
+    })]);
+    const approved = { ...review, reviewId: 'child-approved', review: { ...review.review, status: 'approved', rationale: 'Low risk' } };
+    emitNotification('item/autoApprovalReview/started', { ...approved, review: { status: 'inProgress', rationale: null, riskLevel: null, userAuthorization: null } });
+    await nativeRoundTrip();
+    expect(latestSubagentUpdate(updates).subagent.toolCalls).toHaveLength(2);
+    // Like the Codex TUI, an approved review clears its progress and leaves no history.
+    emitNotification('item/autoApprovalReview/completed', approved);
     await nativeRoundTrip();
     expect(latestSubagentUpdate(updates).subagent.toolCalls).toEqual([expect.objectContaining({
       result: expect.stringContaining('Outside the workspace'),

@@ -1,5 +1,6 @@
 import { pathToFileURL } from 'url';
 
+import type { ProviderActionSummary } from '@/core/execution';
 import { t } from '@/i18n/i18n';
 
 import type { GuardianReviewAction, GuardianReviewCompleted, GuardianReviewStarted } from '../codexAppServerTypes';
@@ -16,12 +17,33 @@ export function describeReviewAction(action: GuardianReviewAction): string {
   }
 }
 
+/** Display parts for the retry picker; `describeReviewAction` stays the option's full label. */
+export function reviewActionSummary(action: GuardianReviewAction): ProviderActionSummary {
+  switch (action.type) {
+    case 'command': return { kind: 'command', subject: action.command, location: action.cwd };
+    case 'execve': return { kind: 'command', subject: `${action.program} ${JSON.stringify(action.argv)}`, location: action.cwd };
+    case 'writeStdin': return { kind: 'terminal-input', subject: describeReviewAction(action), location: action.cwd };
+    case 'applyPatch': return { kind: 'file-change', subject: action.files.join(', '), location: action.cwd };
+    case 'networkAccess': return { kind: 'network', subject: action.target, location: `${action.host}:${action.port}` };
+    case 'mcpToolCall': return { kind: 'tool', subject: describeReviewAction(action) };
+    case 'requestPermissions': return { kind: 'permissions', subject: describeReviewAction(action) };
+  }
+}
+
+/** Like the Codex TUI, an approved review leaves no chat history; other outcomes are reported. */
+export function isReportedReview(event: GuardianReviewCompleted): boolean {
+  return event.review.status !== 'approved';
+}
+
 export function describeAutoReview(event: GuardianReviewStarted, canOverride: boolean): string {
   const subject = describeReviewAction(event.action);
   const longestRun = (subject.match(/`+/g) ?? []).reduce((max, run) => Math.max(max, run.length), 0);
   const fence = '`'.repeat(longestRun + 1);
   const status = t(`chat.approval.review.${event.review.status}`, { action: `${fence} ${subject} ${fence}` });
-  return [status, event.review.rationale, canOverride && t('chat.approval.review.retryHint')].filter(Boolean).join('\n\n');
+  const { riskLevel, rationale } = event.review;
+  const risk = riskLevel && t('chat.approval.review.risk', { level: t(`chat.approval.review.riskLevels.${riskLevel}`) });
+  const detail = [risk, rationale].filter(Boolean).join(' · ');
+  return [status, detail, canOverride && t('chat.approval.review.retryHint')].filter(Boolean).join('\n\n');
 }
 
 // thread/approveGuardianDeniedAction takes a serialized core GuardianAssessmentEvent.
