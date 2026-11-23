@@ -17,6 +17,14 @@ afterEach(async () => {
 
 it('previews and applies a one-line change to a 10,000-line selected note', async () => {
   const h = await createInlineEditHarness();
+  // jsdom has no layout. Give CodeMirror a visible editor so it virtualizes the note after acceptance.
+  const measure = HTMLElement.prototype.getBoundingClientRect;
+  using geometry = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect');
+  geometry.mockImplementation(function (this: HTMLElement) {
+    if (this === h.editorView.contentDOM) return DOMRect.fromRect({ width: 800, height: 600 });
+    if (this.classList.contains('cm-line')) return DOMRect.fromRect({ width: 800, height: 20 });
+    return measure.call(this);
+  });
   const lines = Array.from({ length: 10_000 }, (_, index) => `Paragraph ${index}: retain this note text.\n`);
   const before = lines.join('');
   lines[5_000] = 'Paragraph 5000: clarified note text.\n';
@@ -34,8 +42,6 @@ it('previews and applies a one-line change to a 10,000-line selected note', asyn
       insert: text,
     } });
   };
-  // Only Obsidian rendering is adapted; actual selection, provider response,
-  // line diff, Markdown document reconstruction and acceptance run unchanged.
   vi.mocked(MarkdownRenderer.render).mockImplementation(async (_app, markdown, target) => {
     target.textContent = markdown;
   });
@@ -48,6 +54,7 @@ it('previews and applies a one-line change to a 10,000-line selected note', asyn
   expect(screen.getByRole('toolbar', { name: 'Inline edit actions' }).textContent).toContain('−1');
   expect(h.editorView.state.doc.toString()).toBe(before);
   fireEvent.click(accept);
+  expect(h.editorView.viewport.to).toBeLessThan(h.editorView.state.doc.length);
   expect(h.editorView.state.doc.toString()).toBe(after);
   expect(h.settled).toHaveBeenCalledWith({ decision: 'accept', editedText: after });
 }, 20_000);
