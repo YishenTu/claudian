@@ -2763,7 +2763,7 @@ describe('ClaudeExecutionBackend', () => {
     await session.dispose();
   });
 
-  it.each(['ends', 'stopped', 'stopped-then-sent'] as const)(
+  it.each(['ends', 'stopped-then-sent'] as const)(
     'settles an open background turn whose native stream ends without a result (%s)', async (scenario) => {
       const streamEnd = createDeferred<null>();
       const keepFreshOpen = createDeferred<null>();
@@ -4047,60 +4047,53 @@ it('keeps a completion during automatic request startup for the following turn',
   } finally { await session.dispose(); }
 });
 
-it('settles a notification turn stopped before its first token at its own boundary', async () => {
-  const session = new ClaudeExecutionSession((await createHost()).host.getRuntimeHost('claude'), createConfig());
-  const order: string[] = [];
-  session.onEvent(event => {
-    if (event.type === 'task_notification') order.push(event.content);
-    if (event.type === 'background_turn_completed') order.push(`turn ${event.reason}`);
-    if (event.type === 'text_delta') order.push(event.text);
-  });
-  const handle = async (message: Parameters<typeof buildSDKMessage>[0]) => session.handleNativeMessage(buildSDKMessage(message), 1);
-  try {
-    await handle({ type: 'system', subtype: 'task_notification', session_id: 'session-1', task_id: 'a', status: 'completed', summary: 'FIRST_DONE' });
-    await handle({ type: 'system', subtype: 'init', session_id: 'session-1' });
-    // B completes after A's turn was selected, so it belongs to the next turn.
-    await handle({ type: 'system', subtype: 'task_notification', session_id: 'session-1', task_id: 'b', status: 'completed', summary: 'SECOND_DONE' });
-    // Stop is available from init; the interrupted turn consumed A, as native history records it.
-    session.cancel();
-    await handle({ type: 'result', subtype: 'success' });
-    await handle({ type: 'system', subtype: 'init', session_id: 'session-1' });
-    await handle({ type: 'assistant', message: { id: 'second', content: [{ type: 'text', text: 'Second automatic answer' }] } });
-    await handle({ type: 'result', subtype: 'success' });
-    expect(order).toEqual(['FIRST_DONE', 'turn interrupted', 'SECOND_DONE', 'Second automatic answer', 'turn completed']);
-  } finally { await session.dispose(); }
-});
-
-it.each(['ends', 'throws'] as const)('keeps the notification of a turn stopped before its first token when the stream %s without a result', async ending => {
-  const streamEnd = createDeferred<null>();
+it.each(['result', 'ends', 'throws'] as const)('settles a notification turn stopped before its first token at its own boundary (native %s)', async ending => {
+  const stopped = createDeferred<null>();
+  const keepOpen = createDeferred<null>();
   const messages = [
     { type: 'system', subtype: 'init', session_id: 'session-1' },
     { type: 'result', subtype: 'success' },
-    { type: 'system', subtype: 'task_notification', session_id: 'session-1', task_id: 'task-1', status: 'completed', summary: 'Task finished' },
+    { type: 'system', subtype: 'task_notification', session_id: 'session-1', task_id: 'a', status: 'completed', summary: 'FIRST_DONE' },
     { type: 'system', subtype: 'init', session_id: 'session-1' },
-    streamEnd.promise,
+    // B completes after A's turn was selected, so it belongs to the next turn.
+    { type: 'system', subtype: 'task_notification', session_id: 'session-1', task_id: 'b', status: 'completed', summary: 'SECOND_DONE' },
+    stopped.promise,
+    ...(ending === 'result' ? [
+      { type: 'result', subtype: 'success' },
+      { type: 'system', subtype: 'init', session_id: 'session-1' },
+      { type: 'assistant', message: { id: 'second', content: [{ type: 'text', text: 'Second automatic answer' }] } },
+      { type: 'result', subtype: 'success' },
+      keepOpen.promise,
+    ] : []),
   ];
-  const query = ending === 'ends'
-    ? createScriptedPersistentQuery([messages])
-    : createFailingPersistentQuery(messages, new Error('Claude Code exited'));
+  const query = ending === 'throws'
+    ? createFailingPersistentQuery(messages, new Error('Claude Code exited'))
+    : createScriptedPersistentQuery([messages]);
   vi.spyOn(await import('@/providers/claude/loadClaudeAgentSDK'), 'loadClaudeAgentQuery')
     .mockResolvedValueOnce(receiveInput(query) as never);
   const session = new ClaudeExecutionBackend((await createHost()).host.getRuntimeHost('claude')).createSession(createConfig());
   const events: ProviderSessionEvent[] = [];
   session.onEvent(event => events.push(event));
+  const order = () => events.flatMap(event => event.type === 'task_notification' ? [event.content]
+    : event.type === 'background_turn_completed' ? [`turn ${event.reason}`]
+      : event.type === 'text_delta' ? [event.text]
+        : event.type === 'session_error' ? [event.message] : []);
   try {
     await collectEvents(session.execute(createRequest()).events);
-    await waitFor(() => events.some(event => event.type === 'background_turn_started'));
+    await waitFor(() => events.some(event => event.type === 'async_subagent_completed' && event.subagentId === 'b'));
+    // Stop is available from init; the interrupted turn consumed A, as native history records it.
     session.cancel();
-    streamEnd.resolve(null);
-    await query.finished;
-    await waitFor(() => events.some(event => event.type === 'background_turn_completed'));
-    expect(events.flatMap(event => event.type === 'task_notification' ? [event.content]
-      : event.type === 'background_turn_completed' ? [`turn ${event.reason}`]
-        : event.type === 'session_error' ? [event.message] : [])).toEqual(['Task finished', 'turn interrupted']);
+    stopped.resolve(null);
+    const settled = ending === 'result' ? 'turn completed' : 'turn interrupted';
+    await waitFor(() => order().includes(settled));
+    // A process that ends instead takes B's pending turn with it.
+    expect(order()).toEqual(['FIRST_DONE', 'turn interrupted',
+      ...(ending === 'result' ? ['SECOND_DONE', 'Second automatic answer', 'turn completed'] : [])]);
   } finally {
-    streamEnd.resolve(null);
+    stopped.resolve(null);
+    keepOpen.resolve(null);
     await session.dispose();
+    vi.restoreAllMocks();
   }
 });
 

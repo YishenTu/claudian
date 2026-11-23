@@ -851,23 +851,21 @@ ClaudeExecutionStrategySink {
     this.knownContextWindow = null;
   }
 
-  /** A discarded process reports no result or end, so its automatic turn and any Stop of it end here. */
-  handleNativeQueryDiscarded(): void {
-    this.#finishBackgroundTurn('provider-ended');
-    this.#releaseBackgroundCancellation();
-  }
-
-  handleNativeQueryClosed(query: Query): void {
+  handleNativeQueryClosed(query: Query, { endFollows }: { endFollows: boolean }): void {
     if (this.nativeQuery !== query) return;
     this.suggestionTurnId = null;
     this.nativeQuery = null;
-    // The open turn consumed what its init selected, whichever handler ends it after the process closes.
+    // The open turn consumed what its init selected, whichever handler ends it.
     if (this.backgroundTurn) this.#publishTurnNotifications();
     this.taskNotifications.reset();
     this.commandSnapshot = undefined;
     this.skillNames = [];
     this.#emitSession({ type: 'commands_changed' });
     this.knownContextWindow = null;
+    if (endFollows) return;
+    // No result or end will arrive, so the automatic turn and any Stop of it end here.
+    this.#finishBackgroundTurn('provider-ended');
+    this.#releaseBackgroundCancellation();
   }
 
   async #startExecution(
