@@ -342,6 +342,24 @@ describe('OpencodeConversationHistoryService', () => {
         cards: [card('first', 'completed', 'Vault surveyed.'), card('second', 'completed', 'Checked again.')],
       },
       {
+        // After an interim report, OpenCode mints the next report as it queues it, just after the
+        // child's idle, and delivers it once a follow-up launched in the same step.
+        name: 'a terminal report OpenCode queued after an interim one but delivered after a follow-up',
+        parent: [
+          timedSpawn('a-first', 'first', 0, 'Survey the vault', 1),
+          { ...report('running', 6, 'Child waiting'), id: nativeID(created + 1) },
+          timedSpawn('a-second', 'second', 15, 'Check again', 16),
+          { ...report('completed', 30, 'Child final.'), id: nativeID(created + 11) },
+          { ...report('completed', 31, 'Follow-up answer.'), id: nativeID(created + 16) },
+        ],
+        child: [
+          user('c-1', 2, 'Survey the vault'), answer('c-wait', 3, 'Child waiting'), idle('c-idle-1', 5),
+          answer('c-final', 9, 'Child final.'), idle('c-idle-2', 10),
+          user('c-2', 17, 'Check again'), answer('c-follow', 18, 'Follow-up answer.'), idle('c-idle-3', 19),
+        ],
+        cards: [card('first', 'completed', 'Child final.'), card('second', 'completed', 'Follow-up answer.')],
+      },
+      {
         name: 'a follow-up in the next native message that reuses the tool call ID',
         parent: [
           timedSpawn('a-first', 'call', 0, 'Survey the vault', 1),

@@ -131,7 +131,7 @@ function replayChild(
   ]);
   rows.forEach((row, index) => {
     const report = row.type === 'synthetic' ? readOpencodeSubagentReport(row) : null;
-    if (report?.childId === childId) events.push({ kind: 'report', at: queuedAt(row, idles), row: index, report });
+    if (report?.childId === childId) events.push({ kind: 'report', at: queuedAt(row, idles, spawns), row: index, report });
   });
   let fed = 0;
   const feedUntil = (at: number | undefined) => {
@@ -167,15 +167,17 @@ function orderReplay(events: readonly ReplayEvent[]): ReplayEvent[] {
 
 /**
  * When OpenCode queued a stored report, which its delivery trails while the spawner is mid-step.
- * OpenCode queues it as the child goes idle, and mints its ID earlier: at the spawn it answers, or as
- * it queues after an interim report. So it is the child's first idle between minting and delivery,
- * or the minting itself. A report without a native ID counts as queued at delivery.
+ * OpenCode queues it as the child goes idle, and mints its ID either at the spawn it answers, then
+ * queues it at the child's first idle up to delivery, or as it queues after an interim report, just
+ * after the child's idle with no spawn since. A report without a native ID counts as queued at delivery.
  */
-function queuedAt(row: Record<string, unknown>, idles: readonly number[]): number | undefined {
+function queuedAt(row: Record<string, unknown>, idles: readonly number[], spawns: readonly LocatedSpawn[]): number | undefined {
   const delivered = readTime(row.time, 'created');
   const minted = delivered === undefined ? undefined : mintedAt(row.id, delivered);
   if (delivered === undefined || minted === undefined) return delivered;
-  return idles.find(idle => idle >= minted && idle <= delivered) ?? minted;
+  const idle = idles.filter(at => at <= minted).at(-1);
+  if (idle !== undefined && !spawns.some(({ started }) => started !== undefined && started > idle && started <= minted)) return minted;
+  return idles.find(at => at >= minted && at <= delivered) ?? minted;
 }
 
 /** OpenCode's ascending message ID holds the low bits of the millisecond it minted the ID. */
