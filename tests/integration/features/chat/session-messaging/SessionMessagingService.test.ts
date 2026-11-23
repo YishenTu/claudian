@@ -761,9 +761,9 @@ describe('outside-client API', () => {
     expect(await step(() => native.emitOutput({ type: 'thinking_delta', text: 'Plan' }))).toEqual({ kind: 'thinking', blockIndex: 0, text: 'Plan' });
     expect(await step(() => native.emitOutput({ type: 'notice', message: 'Slow', level: 'info' })))
       .toEqual({ kind: 'text', blockIndex: 1, text: '\n\n⚠️ **Notice:** Slow' });
-    expect(await step(() => native.emitText('Answer'))).toEqual({ kind: 'text', blockIndex: 1, text: '\n\n⚠️ **Notice:** SlowAnswer' });
+    expect(await step(() => native.emitText('Answer'))).toEqual({ kind: 'text', blockIndex: 1, text: '\n\n⚠️ **Notice:** Slow\n\nAnswer' });
     expect(await step(() => native.emitOutput({ type: 'execution_error', category: 'provider', message: 'Overloaded', recoverable: false })))
-      .toEqual({ kind: 'text', blockIndex: 1, text: '\n\n⚠️ **Notice:** SlowAnswer\n\n**Error:** Overloaded' });
+      .toEqual({ kind: 'text', blockIndex: 1, text: '\n\n⚠️ **Notice:** Slow\n\nAnswer\n\n**Error:** Overloaded' });
     await h.pool.get('recipient')!.turns.drain();
   });
 

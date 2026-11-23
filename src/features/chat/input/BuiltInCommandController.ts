@@ -20,6 +20,7 @@ export interface BuiltInCommandControllerDeps {
   startNewConversation: () => Promise<void>;
   /** Toggles the active provider's fast service tier when available. */
   toggleFastMode?: () => Promise<boolean>;
+  approveRecentDenial?: () => Promise<'approved' | 'empty' | 'dismissed'>;
   /** Runs after the resume picker opens or closes. */
   onResumeDropdownVisibilityChange?: () => void;
 }
@@ -41,6 +42,16 @@ export class BuiltInCommandController {
       case 'clear':
         await this.deps.startNewConversation();
         break;
+      case 'approve': {
+        try {
+          const result = await this.deps.approveRecentDenial?.() ?? 'empty';
+          if (result === 'approved') new Notice(t('chat.approval.review.retryRecorded'));
+          if (result === 'empty') new Notice(t('chat.approval.review.noDenials'));
+        } catch (error) {
+          new Notice(error instanceof Error ? error.message : String(error));
+        }
+        break;
+      }
       case 'resume':
         this.#showResumeDropdown();
         break;

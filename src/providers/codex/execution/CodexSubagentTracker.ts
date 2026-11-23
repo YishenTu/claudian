@@ -1,7 +1,10 @@
+import { t } from '@/i18n/i18n';
+
 import type { StreamChunk, SubagentInfo } from '../../../core/types';
 import { applyCodexSubagentActivity } from '../normalization/codexSubagentActivity';
 import type { SubAgentActivityItem, Thread, Turn } from '../runtime/codexAppServerTypes';
 import { CodexNotificationRouter } from '../runtime/CodexNotificationRouter';
+import { describeAutoReview, describeReviewAction, isReportedReview } from '../runtime/notifications/codexAutoReview';
 
 interface TrackedAgent {
   info: SubagentInfo;
@@ -138,7 +141,29 @@ export class CodexSubagentTracker {
   }
 
   private routerFor(agent: TrackedAgent): CodexNotificationRouter {
-    return agent.router ??= new CodexNotificationRouter(chunk => this.applyToolChunk(agent, chunk), this.workingDirectory?.(), true);
+    return agent.router ??= new CodexNotificationRouter(
+      chunk => this.applyToolChunk(agent, chunk), this.workingDirectory?.(), true, (phase, event) => {
+        const id = `auto-review:${event.reviewId}`;
+        if (phase === 'completed' && !isReportedReview(event)) {
+          this.removeTool(agent, id);
+          return;
+        }
+        const action = describeReviewAction(event.action);
+        const description = phase === 'completed' ? action : t('chat.approval.review.inProgress', { action });
+        this.applyToolChunk(agent, { type: 'tool_use', id, name: 'auto_review', input: { description } });
+        if (phase === 'completed') {
+          this.applyToolChunk(agent, { type: 'tool_result', id, content: describeAutoReview(event, false), isError: true });
+        }
+      },
+    );
+  }
+
+  private removeTool(agent: TrackedAgent, id: string): void {
+    const tools = agent.info.toolCalls.filter(tool => tool.id !== id);
+    if (tools.length === agent.info.toolCalls.length) return;
+    agent.revision += 1;
+    agent.info = { ...agent.info, toolCalls: tools };
+    this.publish({ ...agent.info });
   }
 
   private applyToolChunk(agent: TrackedAgent, chunk: StreamChunk): void {

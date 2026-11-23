@@ -436,7 +436,7 @@ export class InputController {
     if (destination === 'side' && (sideChat || hasSessionMentions)) {
       // An immediate side submission settles deferred main review; reference preparation does not.
       if (!hasSessionMentions) this.execution.reportDeferredReview();
-      const mainOnly = detectMainOnlyBuiltInCommand(content);
+      const mainOnly = detectMainOnlyBuiltInCommand(content, this.#getActiveProviderId());
       if (mainOnly) {
         new Notice(t('chat.sideChat.mainOnlyCommand', { command: mainOnly.name }));
         return 'rejected';

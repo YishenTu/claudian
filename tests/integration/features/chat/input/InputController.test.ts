@@ -140,6 +140,18 @@ describe('InputController admission', () => {
 
   });
 
+  it('handles /approve before admission without writing a chat exchange', async () => {
+    vi.mocked(ProviderRegistry.getCapabilities).mockReturnValue({
+      ...nativeCapabilities, providerId: 'codex', supportsAutoReviewOverride: true,
+    });
+    const fixture = await createFixture({ getTabProviderId: () => 'codex' });
+    fixture.input.value = '/approve';
+    await fixture.controller.sendMessage();
+    expect(fixture.native.requests).toHaveLength(0);
+    expect(fixture.state.messages).toEqual([]);
+    expect(Notice).toHaveBeenCalledWith(t('chat.approval.review.noDenials'));
+  });
+
   it('preserves input and blocks execution for an unresolved tab provider', async () => {
     const fixture = (await createFixture({ getTabProviderId: () => null }));
     fixture.state.currentConversationId = null;

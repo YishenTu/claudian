@@ -1,10 +1,10 @@
 import { Notice } from 'obsidian';
 
-import type { ProviderApprovalInteractionRequest } from '@/core/execution';
+import type { ProviderActionKind, ProviderApprovalInteractionRequest } from '@/core/execution';
 import { TOOL_ASK_USER_QUESTION } from '@/core/tools/toolNames';
 import type { ApprovalDecision, AskUserAnswers, ToolCallInfo } from '@/core/types';
 import { askOptionValue, parseAskUserQuestions, validateAskUserAnswers } from '@/features/chat/interactions/askUserQuestions';
-import { type InlineAskQuestionConfig, InlineAskUserQuestion } from '@/features/chat/interactions/InlineAskUserQuestion';
+import { type InlineActionPicker, type InlineAskQuestionConfig, InlineAskUserQuestion } from '@/features/chat/interactions/InlineAskUserQuestion';
 import { QuestionInteractionState } from '@/features/chat/interactions/QuestionInteractionState';
 import { setToolIcon } from '@/features/chat/rendering/tools/toolContentPrimitives';
 import { t } from '@/i18n/i18n';
@@ -12,8 +12,17 @@ import { t } from '@/i18n/i18n';
 /** What the approval prompt shows; the answer is the selected option's value. */
 export type ApprovalPromptRequest = Pick<
   ProviderApprovalInteractionRequest,
-  'interactionId' | 'toolName' | 'description' | 'decisionReason' | 'blockedPath' | 'decisionOptions'
+  'interactionId' | 'toolName' | 'description' | 'decisionReason' | 'blockedPath' | 'decisionOptions' | 'presentation'
 >;
+
+const ACTION_ICONS: Record<ProviderActionKind, string> = {
+  command: 'terminal',
+  'file-change': 'file-diff',
+  network: 'globe',
+  tool: 'plug',
+  'terminal-input': 'keyboard',
+  permissions: 'key-round',
+};
 
 export interface SessionInteractionsDeps {
   /** Element that receives the inline prompt. */
@@ -148,6 +157,15 @@ export class SessionInteractions {
 
   /** Resolves with the selected option's value, or null when the prompt is dismissed. */
   async requestApproval(request: ApprovalPromptRequest, signal?: AbortSignal): Promise<string | null> {
+    const picker = request.presentation === 'action-picker';
+    const actionPicker: InlineActionPicker | undefined = picker ? {
+      icon: 'shield-x',
+      chooseHint: t('chat.approval.review.approveHint'),
+      rowFor: value => {
+        const action = request.decisionOptions.find(option => option.value === value)?.action;
+        return action && { icon: ACTION_ICONS[action.kind], subject: action.subject, location: action.location };
+      },
+    } : undefined;
     const result = await this.#showInline(request.interactionId, {
       kind: 'approval',
       approval: request,
@@ -159,10 +177,13 @@ export class SessionInteractions {
           label: option.label,
           value: option.value,
         })),
-        question: t('chat.approval.question'),
+        question: picker ? request.description : t('chat.approval.question'),
       }] },
       signal,
-      config: { immediateSelect: true, showCustomInput: false, title: t('chat.approval.title') },
+      config: {
+        immediateSelect: true, showCustomInput: false, actionPicker,
+        title: picker ? t('chat.approval.review.pickerTitle') : t('chat.approval.title'),
+      },
     });
 
     if (!result) return null;
@@ -275,7 +296,7 @@ export class SessionInteractions {
     this.#restorePresentation = this.deps.onBeforeShow?.();
     const inline = new InlineAskUserQuestion(parent, entry.input,
       result => this.#finish(id, entry, result), undefined,
-      { ...entry.config, state: entry.state, ...(entry.kind === 'approval' ? { headerEl: createApprovalHeader(parent, entry.approval) } : {}) });
+      { ...entry.config, state: entry.state, ...(entry.kind === 'approval' && !entry.config?.actionPicker ? { headerEl: createApprovalHeader(parent, entry.approval) } : {}) });
     entry.inline = inline;
     try {
       inline.render();

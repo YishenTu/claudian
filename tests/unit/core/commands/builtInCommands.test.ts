@@ -72,6 +72,11 @@ describe('builtInCommands', () => {
       expect(detectBuiltInCommand('/')).toBeNull();
     });
 
+    it('reserves /approve in side chat only for providers that own the command', () => {
+      expect(detectMainOnlyBuiltInCommand('/approve', { supportsAutoReviewOverride: false })).toBeNull();
+      expect(detectMainOnlyBuiltInCommand('/approve', { supportsAutoReviewOverride: true })?.action).toBe('approve');
+    });
+
     it('detects /sessions command', () => {
       const result = detectBuiltInCommand('/sessions');
       expect(result).not.toBeNull();

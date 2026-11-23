@@ -86,6 +86,8 @@ export {
   type ProviderExecutionSession,
 } from './ProviderExecutionSession';
 export {
+  type ProviderActionKind,
+  type ProviderActionSummary,
   type ProviderApprovalChoice,
   type ProviderApprovalDecisionOption,
   type ProviderApprovalInteractionRequest,

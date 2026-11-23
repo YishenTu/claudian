@@ -228,6 +228,75 @@ async function setupRevisionedSession(options: RuntimePoolFixtureOptions = {}) {
   return { h, native, reads, first, runtime, model, provider: h.backend.latest, continueElsewhere, detach };
 }
 
+async function selectDenialDuringBaselineRead() {
+  let revision = 'before';
+  let holdRead = false;
+  const reading = deferred<void>();
+  const releaseRead = deferred<void>();
+  const s = await setupRevisionedSession({ readNativeHistoryRevision: async () => {
+    if (holdRead) {
+      reading.resolve();
+      await releaseRead.promise;
+    }
+    return revision;
+  } });
+  const denials = ['First command', 'Second command'];
+  Object.assign(s.provider, { getReviewDenials: () => denials.map(label => ({
+    value: label, label, action: { kind: 'command', subject: label, location: '/vault' }, approve: async () => {
+      revision = 'after approval';
+      denials.splice(denials.indexOf(label), 1);
+      return true;
+    },
+  })) });
+  const approval = s.first.executionCoordinator.approveRecentDenial();
+  const picker = await within(s.first.dom.contentEl).findByRole('region', { name: t('chat.approval.review.pickerTitle') });
+  const first = within(picker).getByRole('button', { name: 'First command' });
+  expect(within(first).getByText('/vault')).toBeTruthy();
+  holdRead = true;
+  fireEvent.click(first);
+  await reading.promise;
+  return { s, approval, denials, finishRead(changedTo?: string) {
+    if (changedTo) revision = changedTo;
+    holdRead = false;
+    releaseRead.resolve();
+  } };
+}
+
+it('dismisses a selected denial when native history changed outside Claudian before the approval', async () => {
+  const { s, approval, denials, finishRead } = await selectDenialDuringBaselineRead();
+  finishRead('rewound elsewhere');
+  expect(await approval).toBe('dismissed');
+  expect(denials).toEqual(['First command', 'Second command']);
+  // The change stays recorded, so a later selection is dismissed too.
+  const retry = s.first.executionCoordinator.approveRecentDenial();
+  fireEvent.click(await within(s.first.dom.contentEl).findByRole('button', { name: 'First command' }));
+  expect(await retry).toBe('dismissed');
+  expect(denials).toEqual(['First command', 'Second command']);
+  await destroyTab(s.first);
+});
+
+it('checks write authority after reading the idle approval baseline', async () => {
+  const { s, approval, denials, finishRead } = await selectDenialDuringBaselineRead();
+  vi.spyOn(s.h.plugin.executionPersistence, 'assertConversationExecutionAuthority').mockRejectedValue(new Error('Write authority revoked'));
+  finishRead();
+  await expect(approval).rejects.toThrow('Write authority revoked');
+  expect(denials).toEqual(['First command', 'Second command']);
+  await destroyTab(s.first);
+});
+
+it('retains remaining review denials after an idle approval writes native history', async () => {
+  const { s, approval, finishRead } = await selectDenialDuringBaselineRead();
+  finishRead();
+  expect(await approval).toBe('approved');
+  await s.detach();
+  const second = await s.h.attach();
+  expect(s.provider.disposeCalls).toBe(0);
+  const retry = second.executionCoordinator.approveRecentDenial();
+  fireEvent.click(await within(second.dom.contentEl).findByRole('button', { name: 'Second command' }));
+  expect(await retry).toBe('approved');
+  await destroyTab(second);
+});
+
 it.each([
   { change: 'none', reloads: false },
   { change: 'while detached', reloads: true },

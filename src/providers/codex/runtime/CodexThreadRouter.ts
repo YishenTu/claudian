@@ -19,6 +19,7 @@ const NOTIFICATIONS = [
   'thread/tokenUsage/updated', 'turn/plan/updated', 'turn/completed', 'error',
   'thread/started', 'thread/status/changed', 'thread/closed', 'turn/started', 'serverRequest/resolved',
   'item/commandExecution/outputDelta', 'item/fileChange/outputDelta', 'item/fileChange/patchUpdated',
+  'item/autoApprovalReview/started', 'item/autoApprovalReview/completed', 'autoApprovalReview/strictReviewRequired', 'guardianWarning',
   'rawResponseItem/completed', 'rawResponse/completed', 'event_msg',
 ];
 const SERVER_REQUESTS = [
@@ -135,6 +136,6 @@ function getThreadId(params: unknown): string | undefined {
 
 function getParentId(thread: Thread): string | undefined {
   const source = thread.source;
-  const subagent = typeof source === 'object' && source ? source.subAgent : undefined;
-  return thread.parentThreadId ?? (typeof subagent === 'object' ? subagent.thread_spawn.parent_thread_id : undefined);
+  const subagent = typeof source === 'object' && source && 'subAgent' in source ? source.subAgent : undefined;
+  return thread.parentThreadId ?? (typeof subagent === 'object' && 'thread_spawn' in subagent ? subagent.thread_spawn.parent_thread_id : undefined);
 }

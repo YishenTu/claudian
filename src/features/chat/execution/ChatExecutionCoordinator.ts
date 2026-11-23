@@ -138,6 +138,8 @@ export interface ChatExecutionCoordinatorDeps {
     event: ProviderSessionEvent,
     context: ChatExecutionEventContext,
   ) => void | Promise<void>;
+  /** When a write starts, false means native history changed outside Claudian since the session last matched it. */
+  readonly onNativeHistoryWriteChanged?: (writing: boolean) => void | boolean | Promise<void | boolean>;
   readonly onBackgroundWorkChanged?: (isWorking: boolean) => void;
   readonly onError?: (error: unknown) => void;
   /** Releases an idle provider session after this long; omitted keeps it until disposal. */
@@ -240,6 +242,7 @@ export class ChatExecutionCoordinator {
   #stale = false;
   #publishedBackgroundWork = false;
   #protectedOperationCount = 0;
+  #nativeHistoryWrites = 0;
   #preparationTail: Promise<void> = Promise.resolve();
   #idleTimer: number | null = null;
   #idleTimerGeneration = 0;
@@ -382,6 +385,7 @@ export class ChatExecutionCoordinator {
           workingDirectory: this.deps.workingDirectory,
           interactionPort: this.#interactions,
           sessionTools: sessionTools?.port,
+          supportsReviewDenialPicker: true,
         },
         (reason, released) => this.#handleLeaseInvalidation(reason, released),
         (event) => this.#handleSessionEvent(event),
@@ -506,6 +510,46 @@ export class ChatExecutionCoordinator {
   cancelBackgroundWork(): void {
     if (this.#activeExecution || !this.hasBackgroundWork) return;
     this.#sessionBinding?.session.cancel();
+  }
+
+  get isWritingNativeHistory(): boolean { return this.#nativeHistoryWrites > 0; }
+
+  /** Picker operations belong to the session and never create a turn or a steer boundary. */
+  async approveRecentDenial(): Promise<'approved' | 'empty' | 'dismissed'> {
+    return this.#runProtectedOperation(async () => {
+      const binding = this.#sessionBinding;
+      const denials = binding?.session.getReviewDenials?.();
+      if (!binding || !denials?.length) return 'empty';
+      const isCurrent = () => this.#isBindingCurrent(binding);
+      const interactionId = this.deps.createId();
+      try {
+        const response = await this.#interactions.requestApproval({
+          interactionId, sessionInstanceId: binding.session.sessionInstanceId, turnId: interactionId,
+          kind: 'approval', toolName: '/approve', description: t('chat.approval.review.pickerSubtitle'), input: {},
+          presentation: 'action-picker',
+          decisionOptions: denials.map(({ value, label, description, action }) => ({ value, label, description, action })),
+        }, new AbortController().signal, isCurrent);
+        const selected = denials.find(option => option.value === response.value);
+        if (!selected) return 'dismissed';
+        // The session pool checks for prior external changes and records the settled revision.
+        this.#nativeHistoryWrites++;
+        try {
+          const historyMatches = await this.deps.onNativeHistoryWriteChanged?.(true);
+          // An approval would land in history the selected denial may no longer belong to.
+          if (historyMatches === false || !isCurrent()) return 'dismissed';
+          await this.deps.persistence.assertConversationExecutionAuthority(
+            binding.conversation.conversationId, binding.bindingId, binding.generation,
+          );
+          return isCurrent() && await selected.approve() ? 'approved' : 'dismissed';
+        } finally {
+          this.#nativeHistoryWrites--;
+          await this.deps.onNativeHistoryWriteChanged?.(this.isWritingNativeHistory);
+        }
+      } catch (error) {
+        if (error instanceof ChatExecutionInteractionStaleError) return 'dismissed';
+        throw error;
+      }
+    });
   }
 
   async steer(submission: ChatTurnSubmission, signal?: AbortSignal): Promise<ChatSteerOutcome> {

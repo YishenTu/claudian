@@ -1,3 +1,5 @@
+import { setIcon } from 'obsidian';
+
 import type { AskUserAnswers, AskUserQuestionItem, AskUserQuestionOption } from '@/core/types/tools';
 import { askOptionValue, parseAskUserQuestions } from '@/features/chat/interactions/askUserQuestions';
 import { QuestionInteractionState } from '@/features/chat/interactions/QuestionInteractionState';
@@ -10,6 +12,20 @@ let optionDescriptionSequence = 0;
 
 export type QuestionAnswerHandler = (answers: AskUserAnswers) => Promise<void>;
 
+/** Display parts of one picker row; the option's label remains its accessible name. */
+export interface InlineActionRow {
+  readonly icon: string;
+  readonly subject: string;
+  readonly location?: string;
+}
+
+/** Single-choice action list: icon title with a close button, icon rows, and key hints. */
+export interface InlineActionPicker {
+  readonly icon: string;
+  rowFor(value: string): InlineActionRow | undefined;
+  readonly chooseHint: string;
+}
+
 export interface InlineAskQuestionConfig {
   state?: QuestionInteractionState;
   onSubmit?: QuestionAnswerHandler;
@@ -17,6 +33,7 @@ export interface InlineAskQuestionConfig {
   headerEl?: HTMLElement;
   showCustomInput?: boolean;
   immediateSelect?: boolean;
+  actionPicker?: InlineActionPicker;
 }
 
 export class InlineAskUserQuestion {
@@ -25,7 +42,8 @@ export class InlineAskUserQuestion {
   private input: Record<string, unknown>;
   private resolveCallback: (result: Record<string, string | string[]> | null) => void;
   private signal?: AbortSignal;
-  private config: Required<Omit<InlineAskQuestionConfig, 'headerEl' | 'onSubmit' | 'state'>> & Pick<InlineAskQuestionConfig, 'headerEl' | 'onSubmit'>;
+  private config: Required<Omit<InlineAskQuestionConfig, 'actionPicker' | 'headerEl' | 'onSubmit' | 'state'>>
+    & Pick<InlineAskQuestionConfig, 'actionPicker' | 'headerEl' | 'onSubmit'>;
 
   private questions: AskUserQuestionItem[] = [];
 
@@ -56,6 +74,7 @@ export class InlineAskUserQuestion {
       onSubmit: config?.onSubmit,
       title: config?.title ?? t('chat.questions.title'),
       headerEl: config?.headerEl,
+      actionPicker: config?.actionPicker,
       showCustomInput: config?.showCustomInput ?? true,
       immediateSelect: config?.immediateSelect ?? false,
     };
@@ -67,7 +86,21 @@ export class InlineAskUserQuestion {
     this.rootEl = this.containerEl.createDiv({ cls: 'claudian-ask-question-inline', attr: { role: 'region', 'aria-label': this.config.title } });
 
     const titleEl = this.rootEl.createDiv({ cls: 'claudian-ask-inline-title' });
-    titleEl.setText(this.config.title);
+    const picker = this.config.actionPicker;
+    if (picker) {
+      this.rootEl.addClass('claudian-ask-question-inline--picker');
+      setIcon(titleEl.createSpan({ cls: 'claudian-ask-picker-icon', attr: { 'aria-hidden': 'true' } }), picker.icon);
+      const headingEl = titleEl.createDiv({ cls: 'claudian-ask-picker-heading' });
+      headingEl.createDiv({ cls: 'claudian-ask-picker-title', text: this.config.title });
+      // The single question is the picker's subtitle, shown beside the icon rather than above the list.
+      const question = parseAskUserQuestions(this.input)[0]?.question;
+      if (question) headingEl.createDiv({ cls: 'claudian-ask-picker-subtitle', text: question });
+      const closeEl = titleEl.createEl('button', { cls: 'claudian-ask-picker-close', attr: { type: 'button', 'aria-label': t('common.cancel') } });
+      setIcon(closeEl, 'x');
+      closeEl.addEventListener('click', () => this.#handleResolve(null));
+    } else {
+      titleEl.setText(this.config.title);
+    }
 
     if (this.config.headerEl) {
       this.rootEl.appendChild(this.config.headerEl);
@@ -98,6 +131,7 @@ export class InlineAskUserQuestion {
     }
     this.contentArea = this.rootEl.createDiv({ cls: 'claudian-ask-content' });
     this.#renderTabContent();
+    if (picker) this.#renderKeyHints(picker);
 
     this.rootEl.setAttribute('tabindex', '0');
     this.rootEl.addEventListener('keydown', this.boundKeyDown);
@@ -214,10 +248,12 @@ export class InlineAskUserQuestion {
     const isMulti = q.multiSelect;
     const selected = this.state.answers.get(idx)!;
 
-    this.contentArea.createDiv({
-      text: q.question,
-      cls: 'claudian-ask-question-text',
-    });
+    if (!this.config.actionPicker) {
+      this.contentArea.createDiv({
+        text: q.question,
+        cls: 'claudian-ask-question-text',
+      });
+    }
 
     const listEl = this.contentArea.createDiv({ cls: 'claudian-ask-list' });
 
@@ -231,11 +267,20 @@ export class InlineAskUserQuestion {
       if (isFocused) row.addClass('is-focused');
       if (isSelected) row.addClass('is-selected');
 
-      this.#renderIndicator(row, isMulti, isSelected);
+      const actionRow = this.config.actionPicker?.rowFor(optionValue);
+      if (this.config.actionPicker) {
+        setIcon(row.createSpan({ cls: 'claudian-ask-action-icon', attr: { 'aria-hidden': 'true' } }), actionRow?.icon ?? 'circle');
+      } else {
+        this.#renderIndicator(row, isMulti, isSelected);
+      }
 
       const labelBlock = row.createSpan({ cls: 'claudian-ask-item-content' });
       const labelRow = labelBlock.createSpan({ cls: 'claudian-ask-label-row' });
-      labelRow.createSpan({ text: option.label, cls: 'claudian-ask-item-label' });
+      labelRow.createSpan({ text: actionRow?.subject ?? option.label, cls: 'claudian-ask-item-label' });
+      if (actionRow?.location) {
+        // Keeps the path's tail visible when it is cut: the outer span ellipsizes from the start.
+        labelRow.createSpan({ cls: 'claudian-ask-action-location', text: actionRow.location });
+      }
 
       if (option.description) {
         // The label replaces the button's content as its name, so the description must be linked to be announced.
@@ -405,6 +450,16 @@ export class InlineAskUserQuestion {
 
     if (!isMulti) {
       this.#switchTab(this.state.activeTabIndex + 1);
+    }
+  }
+
+  /** Static hints; the rows and close button are the accessible controls. */
+  #renderKeyHints(picker: InlineActionPicker): void {
+    const footerEl = this.rootEl!.createDiv({ cls: 'claudian-ask-picker-hints', attr: { 'aria-hidden': 'true' } });
+    for (const [keys, label] of [[['↑', '↓'], t('chat.approval.review.selectHint')], [['↵'], picker.chooseHint], [['esc'], t('chat.approval.review.cancelHint')]] as const) {
+      const hint = footerEl.createSpan({ cls: 'claudian-ask-picker-hint' });
+      for (const key of keys) hint.createEl('kbd', { text: key });
+      hint.createSpan({ text: label });
     }
   }
 

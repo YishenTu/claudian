@@ -90,6 +90,27 @@ describe('ChatExecutionCoordinator', () => {
     expect(harness.bindings[0].dispose).toHaveBeenCalledTimes(1);
   });
 
+  it('requires a current picker response and records the selected retry without executing a turn', async () => {
+    const harness = createHarness();
+    await harness.coordinator.bindConversation({ conversationId: 'review', providerId: 'codex' });
+    await harness.coordinator.prepare();
+    const session = harness.backends.get('codex')!.sessions[0];
+    const approve = vi.fn(async () => true);
+    const action = { kind: 'command' as const, subject: 'Run command', location: '/vault' };
+    Object.assign(session, { getReviewDenials: () => [{ value: 'review-id', label: 'Run command (/vault)', description: 'Reason', action, approve }] });
+    harness.interactionPort.requestApproval.mockResolvedValueOnce({ interactionId: 'stale', value: 'review-id' });
+    expect(await harness.coordinator.approveRecentDenial()).toBe('dismissed');
+    expect(approve).not.toHaveBeenCalled();
+    harness.interactionPort.requestApproval.mockImplementationOnce(async request => {
+      expect(request.decisionOptions).toEqual([{ value: 'review-id', label: 'Run command (/vault)', description: 'Reason', action }]);
+      return { interactionId: request.interactionId, value: 'review-id' };
+    });
+    expect(await harness.coordinator.approveRecentDenial()).toBe('approved');
+    expect(approve).toHaveBeenCalledTimes(1);
+    expect(harness.requestedEvents).toEqual([]);
+    await harness.coordinator.dispose();
+  });
+
   it.each(['claude', 'codex'] as const)(
     'validates %s events without serializing resume history after an equivalent rebind',
     async (providerId) => {

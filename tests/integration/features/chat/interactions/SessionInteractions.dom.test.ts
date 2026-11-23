@@ -63,6 +63,40 @@ it('ignores Enter on a fresh allow-first approval until the user moves to an opt
   await expect(decision).resolves.toBe('reject_once');
 });
 
+it('presents denied actions as a picker that waits for a choice and can be closed', async () => {
+  const parent = document.body.createDiv();
+  const prompts = new SessionInteractions({ getPromptParentEl: () => parent });
+  const request = {
+    interactionId: 'retry', toolName: '/approve', description: t('chat.approval.review.pickerSubtitle'), presentation: 'action-picker' as const,
+    decisionOptions: [
+      { value: 'r1', label: 'npm install (/vault/site)', description: 'Can run package scripts.', action: { kind: 'command' as const, subject: 'npm install', location: '/vault/site' } },
+      // Questions keep the first option for each value.
+      { value: 'r1', label: 'Duplicate', action: { kind: 'tool' as const, subject: 'Ignored duplicate' } },
+      { value: 'r2', label: 'docs/read', action: { kind: 'tool' as const, subject: 'docs/read' } },
+    ],
+  };
+  const closed = prompts.requestApproval(request);
+  const region = within(parent).getByRole('region', { name: t('chat.approval.review.pickerTitle') });
+  await waitFor(() => expect(document.activeElement).toBe(region));
+  expect(within(region).queryByText(t('chat.approval.question'))).toBeNull();
+  expect(within(region).getByText(t('chat.approval.review.pickerSubtitle'))).toBeTruthy();
+  const command = within(region).getByRole('button', { name: 'npm install (/vault/site)' });
+  expect(document.getElementById(command.getAttribute('aria-describedby')!)?.textContent).toBe('Can run package scripts.');
+  expect(within(command).getByText('npm install')).toBeTruthy();
+  expect(within(command).getByText('/vault/site')).toBeTruthy();
+  expect(within(within(region).getByRole('button', { name: 'docs/read' })).getByText('docs/read')).toBeTruthy();
+  fireEvent.keyDown(region, { key: 'Enter' });
+  expect(region.isConnected).toBe(true);
+  expect(await axe(parent)).toHaveNoViolations();
+  fireEvent.click(within(region).getByRole('button', { name: t('common.cancel') }));
+  await expect(closed).resolves.toBeNull();
+  expect(region.isConnected).toBe(false);
+
+  const chosen = prompts.requestApproval({ ...request, interactionId: 'retry-2' });
+  fireEvent.click(within(parent).getByRole('button', { name: 'docs/read' }));
+  await expect(chosen).resolves.toBe('r2');
+});
+
 it('replies with the exact ACP option the user picks when several share a kind', async () => {
   const parent = document.body.createDiv();
   const prompts = new SessionInteractions({ getPromptParentEl: () => parent });

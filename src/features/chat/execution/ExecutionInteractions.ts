@@ -23,8 +23,8 @@ export class ExecutionInteractions implements ProviderInteractionPort {
     return this.#pending.size > 0;
   }
 
-  requestApproval(request: ProviderApprovalInteractionRequest, signal: AbortSignal) {
-    return this.#forward(request, signal, () => this.deps.port.requestApproval(request, signal));
+  requestApproval(request: ProviderApprovalInteractionRequest, signal: AbortSignal, isCurrent?: () => boolean) {
+    return this.#forward(request, signal, () => this.deps.port.requestApproval(request, signal), isCurrent);
   }
 
   askUserQuestion(request: ProviderQuestionInteractionRequest, signal: AbortSignal) {
@@ -51,8 +51,9 @@ export class ExecutionInteractions implements ProviderInteractionPort {
     request: ProviderInteractionIdentity,
     signal: AbortSignal,
     forward: () => Promise<T>,
+    isCurrent = () => this.deps.isCurrent(request),
   ): Promise<T> {
-    if (!this.deps.isCurrent(request) || signal.aborted) throw this.deps.staleError(request.interactionId);
+    if (!isCurrent() || signal.aborted) throw this.deps.staleError(request.interactionId);
     if (this.#pending.has(request.interactionId)) throw new Error(`Duplicate provider interaction: ${request.interactionId}`);
     const pending = { ...request };
     this.#pending.set(request.interactionId, pending);
@@ -60,7 +61,7 @@ export class ExecutionInteractions implements ProviderInteractionPort {
     try {
       const response = await forward();
       if (response.interactionId !== request.interactionId || signal.aborted
-        || this.#pending.get(request.interactionId) !== pending || !this.deps.isCurrent(request)) {
+        || this.#pending.get(request.interactionId) !== pending || !isCurrent()) {
         throw this.deps.staleError(request.interactionId);
       }
       return response;

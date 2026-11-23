@@ -174,7 +174,7 @@ describe('CodexExecutionServerRequestRouter', () => {
     await expect(result).resolves.toEqual({ action: 'accept', content: {} });
   });
 
-  it.each(['form', 'openai/form'])('accepts an explicitly answered %s confirmation without echoing server metadata', async mode => {
+  it.each(['form', 'openai/form', 'openaiForm'])('accepts an explicitly answered %s confirmation without echoing server metadata', async mode => {
     const router = createRouter(async request => ({
       interactionId: request.interactionId,
       answers: { 'mcp-elicitation-confirmation': 'accept' },
@@ -434,7 +434,7 @@ function createApprovalRouter(answer: (request: ProviderApprovalInteractionReque
       throw new Error('Approvals must use the approval port');
     },
     dismissInteraction: () => undefined,
-  }, () => true, () => activeTurn);
+  }, () => true, () => activeTurn, () => true);
   return { offered, router };
 }
 
@@ -602,6 +602,7 @@ describe('Codex native approval choices', () => {
       ].join(' · '),
       choices: () => [
         [{ label: t('chat.approval.allowForTurn'), value: 'allow-turn', decision: 'allow' }, { permissions: requestedPermissions, scope: 'turn' }],
+        [{ label: t('chat.approval.allowStrictTurn'), value: 'allow-strict-turn', decision: 'allow' }, { permissions: requestedPermissions, scope: 'turn', strictAutoReview: true }],
         [{ label: t('chat.approval.allowForSession'), value: 'allow-session', decision: 'allow-always' }, { permissions: requestedPermissions, scope: 'session' }],
         [{ label: t('chat.approval.deny'), value: 'deny', decision: 'deny' }, { permissions: {}, scope: 'turn' }],
       ],
@@ -625,6 +626,7 @@ describe('Codex native approval choices', () => {
       ].join(' · '),
       choices: () => [
         [{ label: t('chat.approval.allowForTurn'), value: 'allow-turn', decision: 'allow' }, { permissions: entryPermissions, scope: 'turn' }],
+        [{ label: t('chat.approval.allowStrictTurn'), value: 'allow-strict-turn', decision: 'allow' }, { permissions: entryPermissions, scope: 'turn', strictAutoReview: true }],
         [{ label: t('chat.approval.allowForSession'), value: 'allow-session', decision: 'allow-always' }, { permissions: entryPermissions, scope: 'session' }],
         [{ label: t('chat.approval.deny'), value: 'deny', decision: 'deny' }, { permissions: {}, scope: 'turn' }],
       ],

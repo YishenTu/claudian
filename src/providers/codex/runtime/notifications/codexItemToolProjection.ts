@@ -449,7 +449,7 @@ export function projectDynamicToolResult(item: DynamicToolCallItem): CodexToolRe
   const content = (item.contentItems ?? [])
     .map(contentItem => contentItem.type === 'inputText'
       ? contentItem.text
-      : contentItem.imageUrl)
+      : contentItem.type === 'inputImage' ? contentItem.imageUrl : undefined)
     .filter(Boolean)
     .join('\n');
   return {

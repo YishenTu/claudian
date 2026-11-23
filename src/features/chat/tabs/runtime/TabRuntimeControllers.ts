@@ -101,6 +101,7 @@ export function buildTabRuntimeControllers(
     startNewConversation: async () => {
       if (isRuntimeLive(runtimeRef.requirePublished())) await startNewConversation();
     },
+    approveRecentDenial: () => core.executionCoordinator.approveRecentDenial(),
     toggleFastMode: () => toggleTabServiceTier(runtimeRef.requirePublished(), plugin),
     onResumeDropdownVisibilityChange: () => ui.promptSuggestion.refresh(),
   });

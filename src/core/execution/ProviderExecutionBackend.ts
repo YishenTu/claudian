@@ -24,6 +24,8 @@ export interface ProviderSessionConfig {
   readonly interactionPort: ProviderInteractionPort;
   /** Present only for main chat sessions; adapters expose session tools only when it is set. */
   readonly sessionTools?: ProviderSessionToolPort;
+  /** The owning surface can present and submit this session's review denials. */
+  readonly supportsReviewDenialPicker?: boolean;
 }
 
 /**

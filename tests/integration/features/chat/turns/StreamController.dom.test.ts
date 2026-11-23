@@ -151,6 +151,15 @@ it('renders buffered task progress through the real TodoWrite card', async () =>
   expect(await axe(host)).toHaveNoViolations();
 });
 
+it('starts the text after a notice as a new paragraph', async () => {
+  await stream.handleStreamChunk({ type: 'notice', content: 'Use /approve to authorize one retry.' }, message);
+  await stream.handleStreamChunk({ type: 'text', content: 'The command did not run.' }, message);
+  await stream.finalizeCurrentTextBlock(message);
+  expect(message.contentBlocks).toEqual([
+    { type: 'text', content: expect.stringMatching(/Use \/approve to authorize one retry\.\n\nThe command did not run\.$/) },
+  ]);
+});
+
 it('finalizes alternating text, thinking and tool blocks into copyable transcript order', async () => {
   await stream.handleStreamChunk({ type: 'text', content: 'First text' }, message);
   await stream.handleStreamChunk({ type: 'thinking', content: 'First reasoning' }, message);
