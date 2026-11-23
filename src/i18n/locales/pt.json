@@ -530,6 +530,7 @@
     "removeItem": "Remover {item}",
     "agent": "Agente: {agent}",
     "executionNotices": {
+      "antigravitySignIn": "Para iniciar sessão, execute `{command}` em um terminal.",
       "initializeFailed": "Não foi possível inicializar a execução do agente. Tente novamente.",
       "unavailable": "A execução do agente não está disponível. Recarregue o plugin.",
       "sessionUnavailable": "A sessão nativa desta conversa não está disponível na configuração atual da CLI. Inicie um novo chat para continuar.",

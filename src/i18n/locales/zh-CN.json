@@ -530,6 +530,7 @@
     "removeItem": "移除{item}",
     "agent": "代理：{agent}",
     "executionNotices": {
+      "antigravitySignIn": "请在终端运行 `{command}` 登录。",
       "initializeFailed": "无法初始化代理执行。请重试。",
       "unavailable": "代理执行不可用。请重新加载插件。",
       "sessionUnavailable": "此对话的原生会话在当前 CLI 配置下不可用。请新建对话以继续。",
