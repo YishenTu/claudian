@@ -28,4 +28,10 @@ it('binds a native v2 background launch to the child session used by completion 
   const interpreter = ProviderRegistry.getTaskResultInterpreter('opencode');
   const result = 'The subagent is working in the background (sessionID: ses_child). You will be notified automatically when it finishes.';
   expect(interpreter.interpretLaunch(result, false)).toEqual({ mode: 'async', agentId: 'ses_child', result });
+  // The native result metadata decides before the launch wording, which OpenCode may reword.
+  const reworded = 'Subagent started in the background.';
+  expect(interpreter.interpretLaunch(reworded, false, { rawOutput: { metadata: { sessionID: 'ses_child', status: 'running' } } }))
+    .toEqual({ mode: 'async', agentId: 'ses_child', result: reworded });
+  expect(interpreter.interpretLaunch('Child answer', false, { rawOutput: { metadata: { sessionID: 'ses_child', status: 'completed' } } }))
+    .toEqual({ mode: 'sync', agentId: 'ses_child', result: 'Child answer' });
 });

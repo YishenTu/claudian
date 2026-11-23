@@ -22,6 +22,8 @@ import type { OpencodePrompt } from '../runtime/buildOpencodePrompt';
 import { resolveOpencodeBindingDatabase } from '../runtime/OpencodeBindingDatabase';
 import { AUX_AGENT_IDS, OPENCODE_BUILD_AGENT_ID } from '../runtime/OpencodeExecutionAgents';
 import { resolveOpencodeTarget } from '../runtime/OpencodeExecutionTarget';
+import { opencodeTaskResultInterpreter } from '../runtime/OpencodeTaskResultInterpreter';
+import { classifyOpencodeLaunch, OpencodeChildLedger } from '../subagents/OpencodeChildLedger';
 import {
   type OpencodeKernelConnectOptions,
   type OpencodeNativeOutput,
@@ -47,16 +49,12 @@ type PendingInboxInput = { admission: Promise<InboxAdmission>; recall: Promise<v
 );
 type InboxAdmission = 'admitted' | 'refused' | 'unknown';
 interface NativeModelSelection { providerID: string; id: string; variant?: string }
-/** Child text since the delivery of `prompts` consecutive spawn prompts that it answers together. */
-interface ChildRound { prompts: number; readonly texts: Map<string, string> }
 /**
- * A foreground child ends with its run. It moves to the background when a spawn returns while it still
- * runs; its spawns then end when the session that spawned it receives a terminal idle report. A
- * retired child leaves `children`. Prompts and rounds are recorded in both phases, since a spawn's
- * prompt can arrive before the spawn returns.
+ * A child session's runtime while it works: its tool and approval policy, interactions and progress.
+ * Its spawns' lifecycle belongs to the child's ledger; the runtime retires when the child's run ends
+ * with no background spawn waiting, or when a terminal report settles the last one.
  */
-type NativeChildPhase = { readonly kind: 'foreground' } | { readonly kind: 'background'; readonly spawnToolCallIds: string[] };
-interface NativeChild { sessionTools?: SessionToolInvocation; autoApprove: boolean; toolController: AbortController; outputSessionId: string; toolCallId: string; turnId: string; interactionTurnId: string; phase: NativeChildPhase; prompts: Set<string>; rounds: ChildRound[]; progress: { startedAt: number; toolUses: number; totalTokens: number; lastToolName?: string } }
+interface NativeChild { sessionTools?: SessionToolInvocation; autoApprove: boolean; toolController: AbortController; outputSessionId: string; toolCallId: string; turnId: string; interactionTurnId: string; progress: { startedAt: number; toolUses: number; totalTokens: number; lastToolName?: string } }
 interface NativeTool { name: string; input: Record<string, unknown>; sessionId: string; output: string | null; shell?: OpencodeShellOutput }
 
 interface NativeLaunch { target: ExecutionTarget; cliPath: string; environment: NodeJS.ProcessEnv }
@@ -83,6 +81,12 @@ export class OpencodeHTTPSessionKernel implements OpencodeSessionKernel {
   private profile: OpencodeKernelConnectOptions['profile'] = 'managed';
   private readonly text = new Map<string, string>();
   private readonly children = new Map<string, NativeChild>();
+  /** Spawn settlement per child session, kept after its runtime retires so later spawns and reports reach it. */
+  private readonly ledgers = new Map<string, OpencodeChildLedger>();
+  /** Child session of each spawn by its ledger key, for a failed spawn whose result names none. */
+  private readonly spawnChildren = new Map<string, string>();
+  /** Prompt texts enqueued in a tracked child until delivered or cancelled, keyed by inbox id. */
+  private readonly enqueuedPrompts = new Map<string, string>();
   private readonly tools = new Map<string, NativeTool>();
   private readonly previewStops = new Map<string, 'cancelled' | 'ended'>();
   private readonly globalForms = new Map<string, { settled: boolean }>();
@@ -395,6 +399,7 @@ export class OpencodeHTTPSessionKernel implements OpencodeSessionKernel {
     // A report settles the child it names, wherever it lands: OpenCode 2.2 delivers a grandchild's
     // report to a child it may already have reported done.
     if (event.type === 'session.inbox.enqueued') this.settleReportedChild(data.item);
+    this.recordChildEntry(event.type, nativeSessionId, data);
     if (nativeSessionId !== this.sessionId && !child) return;
     if (event.type === 'session.execution.started' && this.previewStops.get(nativeSessionId) === 'ended') {
       this.previewStops.delete(nativeSessionId);
@@ -410,24 +415,13 @@ export class OpencodeHTTPSessionKernel implements OpencodeSessionKernel {
       && (assistantMessageId === undefined || ordinal === undefined)) return;
     if (event.type.startsWith('session.tool.') && (assistantMessageId === undefined || itemId === undefined)) return;
     if (child) {
-      if (event.type === 'session.inbox.enqueued' && isRecord(data.item) && data.item.type === 'user') child.prompts.add(String(data.inboxID));
-      // A later spawn's prompt opens its own round once the current one has an answer; until then the
-      // round's answer covers it too.
-      if (event.type === 'session.inbox.delivered' && child.prompts.delete(String(data.inboxID))) {
-        const round = child.rounds.at(-1);
-        if (round && round.texts.size === 0) round.prompts++;
-        else child.rounds.push({ prompts: 1, texts: new Map() });
-      }
-      if (event.type === 'session.text.ended') {
-        if (child.rounds.length === 0) child.rounds.push({ prompts: 1, texts: new Map() });
-        child.rounds.at(-1)!.texts.set(`${assistantMessageId}:${ordinal}`, String(data.text));
-      }
       if (event.type === 'session.step.ended') {
         child.progress.totalTokens += countTokens(data.tokens);
         this.emitChildProgress(child);
       }
       // A foreground child ends with its run; a background child ends with its idle report.
-      if (child.phase.kind === 'foreground' && event.type.startsWith('session.execution.') && event.type !== 'session.execution.started') this.retireChild(nativeSessionId, child);
+      const ended = event.type.startsWith('session.execution.') && event.type !== 'session.execution.started';
+      if (ended && !this.ledgers.get(nativeSessionId)?.hasBackground) this.retireChild(nativeSessionId, child);
       if (!event.type.startsWith('session.tool.') && event.type !== 'permission.asked' && event.type !== 'form.created') return;
     }
     const key = `${nativeSessionId}:${assistantMessageId}:${itemId}`;
@@ -518,7 +512,11 @@ export class OpencodeHTTPSessionKernel implements OpencodeSessionKernel {
           const owner = child ?? this.pending;
           const toolController = new AbortController();
           const sessionTools = owner?.sessionTools ? { ...owner.sessionTools, signal: AbortSignal.any([owner.sessionTools.signal, toolController.signal]) } : undefined;
-          this.children.set(metadata.sessionID, { sessionTools, autoApprove: this.autoApproveFor(child), toolController, outputSessionId: child?.outputSessionId ?? metadata.sessionID, toolCallId: identity.toolCallId, turnId, interactionTurnId, phase: { kind: 'foreground' }, prompts: new Set(), rounds: [], progress: { startedAt: Date.now(), toolUses: 0, totalTokens: 0 } });
+          this.children.set(metadata.sessionID, { sessionTools, autoApprove: this.autoApproveFor(child), toolController, outputSessionId: child?.outputSessionId ?? metadata.sessionID, toolCallId: identity.toolCallId, turnId, interactionTurnId, progress: { startedAt: Date.now(), toolUses: 0, totalTokens: 0 } });
+        }
+        if (tool?.name === 'subagent' && typeof metadata.sessionID === 'string') {
+          this.spawnChildren.set(key, metadata.sessionID);
+          this.childLedger(metadata.sessionID).spawn(key, identity.toolCallId, opencodeTaskResultInterpreter.describeTask(tool.input).prompt);
         }
         if (tool && !this.previewStops.has(nativeSessionId) && tool.output !== null && typeof metadata.shellID === 'string') {
           tool.shell ??= new OpencodeShellOutput(this.requireClient(), metadata.shellID, content => {
@@ -541,8 +539,8 @@ export class OpencodeHTTPSessionKernel implements OpencodeSessionKernel {
       case 'session.tool.success': case 'session.tool.failed': {
         const tool = this.tools.get(key);
         tool?.shell?.stop();
-        if (event.type === 'session.tool.success' && tool?.name === 'subagent') this.backgroundChild(data.metadata, identity.toolCallId);
         const content = Array.isArray(data.content) ? data.content.filter(isRecord).flatMap(item => typeof item.text === 'string' ? [item.text] : []).join('\n') : '';
+        if (tool?.name === 'subagent') this.launchSpawn(tool, event.type === 'session.tool.failed', content, data.metadata, key);
         const result = normalizeOpencodeToolResult(tool?.name, content || (data.error ? errorText(data.error) : ''), { metadata: data.metadata });
         this.emit({ type: 'tool_completed', ...identity, content: result.content, isError: event.type.endsWith('.failed') || result.isError, providerPayload: { rawName: tool?.name, rawInput: tool?.input, rawOutput: { ...data, metadata: data.metadata } }, resultDetails: tool ? normalizeOpencodeToolResultDetails(tool.name, tool.input, { output: content, metadata: data.metadata }, this.launch?.target) : undefined }, child?.outputSessionId);
         this.tools.delete(key);
@@ -663,40 +661,62 @@ export class OpencodeHTTPSessionKernel implements OpencodeSessionKernel {
     }
   }
 
-  /**
-   * A spawn result still `running` leaves its child working in the background: always on 2.3, and on
-   * 2.2 when requested or detached. Spawn progress reports `running` for foreground children too, so
-   * only the result decides. A follow-up spawn joining that run ends at the same idle.
-   */
-  private backgroundChild(metadata: unknown, spawnToolCallId: string): void {
-    if (!isRecord(metadata) || metadata.status !== 'running' || typeof metadata.sessionID !== 'string') return;
-    const child = this.children.get(metadata.sessionID);
-    if (!child) return;
-    if (child.phase.kind === 'foreground') {
-      child.interactionTurnId = this.options.onNativeTaskStarted?.(metadata.sessionID, child.turnId) ?? child.interactionTurnId;
-      child.outputSessionId = metadata.sessionID;
-      child.phase = { kind: 'background', spawnToolCallIds: [] };
+  private childLedger(sessionId: string): OpencodeChildLedger {
+    let ledger = this.ledgers.get(sessionId);
+    if (!ledger) this.ledgers.set(sessionId, ledger = new OpencodeChildLedger());
+    return ledger;
+  }
+
+  /** The child prompts and assistant text that settle a child's spawns, whether or not its runtime is still active. */
+  private recordChildEntry(type: string, sessionId: string, data: Record<string, unknown>): void {
+    const ledger = this.ledgers.get(sessionId);
+    if (!ledger) return;
+    const inboxId = String(data.inboxID);
+    if (type === 'session.inbox.enqueued' && isRecord(data.item) && data.item.type === 'user') {
+      this.enqueuedPrompts.set(inboxId, isRecord(data.item.payload) && typeof data.item.payload.text === 'string' ? data.item.payload.text : '');
     }
-    child.phase.spawnToolCallIds.push(spawnToolCallId);
+    const prompt = type === 'session.inbox.delivered' || type === 'session.inbox.cancelled' ? this.enqueuedPrompts.get(inboxId) : undefined;
+    if (prompt !== undefined) {
+      this.enqueuedPrompts.delete(inboxId);
+      if (type === 'session.inbox.delivered') ledger.record({ kind: 'prompt', id: inboxId, text: prompt });
+    }
+    if (type === 'session.text.ended' && typeof data.assistantMessageID === 'string' && typeof data.ordinal === 'number') {
+      ledger.record({ kind: 'text', messageId: data.assistantMessageID, text: String(data.text) });
+    }
   }
 
   /**
-   * Ends a background child's spawns when OpenCode reports its idle as final. 2.3 reports `running`
-   * while the child's own shells, subagents or image jobs continue; earlier releases report done.
+   * A spawn's result decides its launch. One whose child still runs moves that child to the background:
+   * always on 2.3, and on 2.2 when requested or detached. Spawn progress reports `running` for
+   * foreground children too, so only the result decides.
    */
+  private launchSpawn(spawn: NativeTool, failed: boolean, result: string, metadata: unknown, key: string): void {
+    const childId = this.spawnChildren.get(key);
+    this.spawnChildren.delete(key);
+    const ledger = childId ? this.ledgers.get(childId) : undefined;
+    if (!childId || !ledger?.launch(key, classifyOpencodeLaunch(failed, result, { rawOutput: { metadata } }, spawn.input))) return;
+    const child = this.children.get(childId);
+    if (!child) return;
+    child.interactionTurnId = this.options.onNativeTaskStarted?.(childId, child.turnId) ?? child.interactionTurnId;
+    child.outputSessionId = childId;
+  }
+
+  /** Ends the spawns a terminal idle report settles; an interim report leaves them running. */
   private settleReportedChild(item: unknown): void {
     const report = isRecord(item) && item.type === 'synthetic' ? readOpencodeSubagentReport(item.payload) : null;
-    const child = report ? this.children.get(report.childId) : undefined;
-    if (!report || child?.phase.kind !== 'background' || report.state === 'running') return;
-    child.phase.spawnToolCallIds.forEach((toolCallId, index) => {
+    const ledger = report ? this.ledgers.get(report.childId) : undefined;
+    if (!report || !ledger) return;
+    const settled = ledger.report(report);
+    // Only a child this kernel ran has a turn its completions belong to.
+    const child = this.children.get(report.childId);
+    if (!child) return;
+    for (const { toolCallId, settlement } of settled) {
       this.options.onNativeTaskCompleted?.({
-        type: 'async_subagent_completed', originatingTurnId: child.turnId, subagentId: report.childId, toolCallId,
-        status: report.state === 'completed' ? 'completed' : 'error',
-        result: reportedAnswer(child.rounds, index, report.body),
-        providerSessionId: this.sessionId ?? undefined,
+        type: 'async_subagent_completed', originatingTurnId: child.turnId, subagentId: report.childId,
+        toolCallId, status: settlement.status, result: settlement.result, providerSessionId: this.sessionId ?? undefined,
       });
-    });
-    this.retireChild(report.childId, child);
+    }
+    if (!ledger.hasBackground) this.retireChild(report.childId, child);
   }
 
   private retireChild(sessionId: string, child: NativeChild): void {
@@ -860,26 +880,6 @@ function countTokens(value: unknown): number {
   if (!isRecord(value)) return 0;
   const cache = isRecord(value.cache) ? value.cache : {};
   return count(value.input) + count(cache.read) + count(cache.write) + count(value.output) + count(value.reasoning);
-}
-
-/**
- * A terminal report's body is OpenCode's answer, or failure, for the latest round it settles. Spawns
- * that an earlier round answered keep that round's answer; spawns are delivered in order, so the nth
- * spawn belongs to the round holding the nth prompt.
- */
-function reportedAnswer(rounds: readonly ChildRound[], index: number, body: string): string | undefined {
-  let delivered = 0;
-  const round = rounds.findIndex(candidate => (delivered += candidate.prompts) > index);
-  const own = round >= 0 ? finalAnswer(rounds[round].texts) : undefined;
-  return round >= 0 && round < rounds.length - 1 ? own ?? (body || undefined) : body || own;
-}
-
-/** A round's answer is its last assistant message, as OpenCode's idle report and history read it. */
-function finalAnswer(round: Map<string, string>): string | undefined {
-  const entries = [...round].filter(([, text]) => text);
-  const lastMessage = entries.at(-1)?.[0].split(':')[0];
-  const answer = entries.filter(([key]) => key.split(':')[0] === lastMessage).map(([, text]) => text).join('\n');
-  return answer || undefined;
 }
 
 function errorText(error: unknown): string {

@@ -29,11 +29,16 @@ export function formatOpencodeShellReport(report: unknown): string | null {
 }
 
 /** A child's idle report. Its envelope state is authoritative: 2.3 reports `running` while the child's own background work continues. */
+/** OpenCode reports a child idle as `running` while the child's own background work continues. */
+export type OpencodeSubagentReportState = 'running' | 'completed' | 'error' | 'cancelled';
+
 export interface OpencodeSubagentReport {
   readonly childId: string;
-  readonly state: string;
+  readonly state: OpencodeSubagentReportState;
   readonly body: string;
 }
+
+const REPORT_STATES: readonly string[] = ['running', 'completed', 'error', 'cancelled'] satisfies OpencodeSubagentReportState[];
 
 export function readOpencodeSubagentReport(report: unknown): OpencodeSubagentReport | null {
   if (!isRecord(report) || !isRecord(report.metadata) || report.metadata.source !== 'subagent' || typeof report.text !== 'string') return null;
@@ -41,8 +46,10 @@ export function readOpencodeSubagentReport(report: unknown): OpencodeSubagentRep
   const opening = /^<subagent sessionID="[^"]*" state="([^"]*)" description="/u.exec(report.text.trim());
   const description = typeof report.description === 'string' ? report.description : undefined;
   const body = readReportBody(report.text, 'subagent', opening && description !== undefined ? `${opening[0]}${description}">` : undefined);
-  const state = opening?.[1];
-  if (typeof childId !== 'string' || !state || body === null) return null;
+  const native = opening?.[1];
+  if (typeof childId !== 'string' || !native || body === null) return null;
+  // An unknown state is terminal: the child is idle and nothing reports it running.
+  const state = REPORT_STATES.includes(native) ? native as OpencodeSubagentReportState : 'error';
   return { childId, state, body };
 }
 

@@ -2,7 +2,10 @@ import { TOOL_SUBAGENT } from '../../../core/tools/toolNames';
 import type { ChatMessage, SubagentInfo, ToolCallInfo } from '../../../core/types';
 import { isRecord } from '../http/OpencodeHTTPClient';
 import { type OpencodeSubagentReport, readOpencodeSubagentReport } from '../normalization/opencodeSyntheticReports';
+import { normalizeOpencodeToolName } from '../normalization/opencodeToolNormalization';
 import { opencodeTaskResultInterpreter } from '../runtime/OpencodeTaskResultInterpreter';
+import { classifyOpencodeLaunch, OpencodeChildLedger } from '../subagents/OpencodeChildLedger';
+import type { OpencodeChildEntry } from '../subagents/OpencodeSpawnSettlement';
 
 /** A native session's mapped messages with the rows they came from, whose idle reports mapping drops. */
 export interface OpencodeHistorySession {
@@ -23,14 +26,11 @@ export async function hydrateOpencodeSubagents(
 ): Promise<void> {
   if (depth >= MAX_CHILD_DEPTH) return;
   // Follow-ups can reuse a child session, so spawns are grouped by it in parent order.
-  const spawnsBySession = new Map<string, Array<{ spawn: ToolCallInfo; messageId: string }>>();
-  for (const message of session.messages) {
-    for (const spawn of message.toolCalls ?? []) {
-      if (spawn.name !== TOOL_SUBAGENT) continue;
-      const sessionId = getChildSessionId(spawn);
-      if (!sessionId) continue;
-      spawnsBySession.set(sessionId, [...spawnsBySession.get(sessionId) ?? [], { spawn, messageId: message.id }]);
-    }
+  const spawnsBySession = new Map<string, LocatedSpawn[]>();
+  for (const located of locateSpawns(session)) {
+    const sessionId = getChildSessionId(located.spawn);
+    if (!sessionId) continue;
+    spawnsBySession.set(sessionId, [...spawnsBySession.get(sessionId) ?? [], located]);
   }
   await Promise.all([...spawnsBySession].map(async ([sessionId, spawns]) => {
     let child: OpencodeHistorySession;
@@ -40,78 +40,165 @@ export async function hydrateOpencodeSubagents(
       return;
     }
     await hydrateOpencodeSubagents(child, readChildSession, depth + 1);
-    const turns = assignChildTurns(spawns.map(({ spawn }) => spawn), splitChildTurns(child.messages));
-    const settled = spawns.map(({ messageId }) => findSpawnReport(session.rows, messageId, sessionId));
-    const rounds = turns.map((turn, index) => turn && findTurnAnswer(child.rows, turn[0]?.role === 'user' ? turn[0].id : undefined, settled[index]?.at));
-    spawns.forEach(({ spawn }, index) => {
-      const turn = turns[index];
-      if (!turn) return;
-      const report = settled[index];
-      const round = rounds[index];
-      // A terminal report's body is OpenCode's answer, or failure, for the latest round it settles,
-      // which every spawn joined into that round shares; spawns an earlier round answered keep theirs.
-      const described = report && report.report.state !== 'running' && !settled.some((later, other) => (
-        report.rowId !== undefined && later?.rowId === report.rowId && (rounds[other]?.turn ?? -1) > (round?.turn ?? -1)
-      ));
-      spawn.subagent = buildSubagentInfo(spawn, sessionId, turn, report?.report, described ? report.report.body || round?.answer : round?.answer);
-    });
+    const ledger = replayChild(session.rows, sessionId, spawns, child.rows);
+    const turns = splitChildTurns(child.messages);
+    for (const { spawn, key } of spawns) {
+      const promptId = ledger.promptId(key);
+      const turn = turns.find(candidate => candidate[0]?.role === 'user' && candidate[0].id === promptId);
+      if (turn) spawn.subagent = buildSubagentInfo(spawn, sessionId, turn, ledger, key);
+    }
   }));
 }
 
 /**
- * The idle report that settles this spawn: the first terminal one after it, else the latest interim
- * one while the child's own work runs. A later follow-up's reports cannot reopen an earlier spawn, and
- * a spawn without any report keeps its launch outcome, since its server may have stopped.
+ * A spawn with the native row that holds it. Its key matches the kernel's, by that row and tool call,
+ * since models can reuse a tool call ID across messages; its tool part's times say when it started
+ * and when its launch ended.
  */
-function findSpawnReport(rows: readonly Record<string, unknown>[], messageId: string, childId: string): SettledReport | undefined {
-  let interim: SettledReport | undefined;
-  for (const row of rows.slice(rows.findIndex(row => row.id === messageId) + 1)) {
-    const report = row.type === 'synthetic' ? readOpencodeSubagentReport(row) : null;
-    if (report?.childId !== childId) continue;
-    const settled = { report, rowId: typeof row.id === 'string' ? row.id : undefined, at: rowCreatedAt(row) };
-    if (report.state !== 'running') return settled;
-    interim = settled;
-  }
-  return interim;
+interface LocatedSpawn {
+  readonly spawn: ToolCallInfo;
+  readonly key: string;
+  readonly row: number;
+  readonly started: number | undefined;
+  readonly launched: number | undefined;
 }
-
-interface SettledReport { readonly report: OpencodeSubagentReport; readonly rowId: string | undefined; readonly at: number | undefined }
 
 /**
- * A spawn's own answer is the last native assistant text of its turn before the report that settled
- * it; OpenCode 2.2 can wake a reported child again without another report. Native rows keep the
- * assistant steps that mapping merges. A turn without any answer was joined by the next prompt
- * before answering, so the next turn's answer covers it, as it did live.
+ * Mapping can merge consecutive assistant rows into one message, so each spawn takes the next row
+ * holding its subagent call from its message's first row on; a model can reuse an ID across tools.
  */
-function findTurnAnswer(
-  rows: readonly Record<string, unknown>[], promptId: string | undefined, before: number | undefined,
-): { readonly answer: string | undefined; readonly turn: number } | undefined {
-  const start = rows.findIndex(row => row.type === 'user' && row.id === promptId);
-  if (start < 0) return undefined;
-  // `turn` is the row index of the prompt whose turn answered, so spawns sharing a round compare equal.
-  let turn = start;
-  let answered = false;
-  let answer: string | undefined;
-  for (const [offset, row] of rows.slice(start + 1).entries()) {
-    if (row.type === 'user') {
-      const at = rowCreatedAt(row);
-      if (answered || (before !== undefined && at !== undefined && at > before)) break;
-      turn = start + 1 + offset;
-      continue;
+function locateSpawns(session: OpencodeHistorySession): LocatedSpawn[] {
+  const { rows } = session;
+  const claimed = new Set<string>();
+  const located: LocatedSpawn[] = [];
+  for (const message of session.messages) {
+    const start = rows.findIndex(row => row.id === message.id);
+    for (const spawn of message.toolCalls ?? []) {
+      if (spawn.name !== TOOL_SUBAGENT || start < 0) continue;
+      const index = rows.findIndex((row, candidate) => candidate >= start && !claimed.has(`${candidate}:${spawn.id}`) && isSpawnPart(toolPart(row, spawn.id)));
+      if (index < 0) continue;
+      claimed.add(`${index}:${spawn.id}`);
+      const time = toolPart(rows[index], spawn.id)?.time;
+      const started = readTime(time, 'created') ?? readTime(rows[index].time, 'created');
+      located.push({ spawn, key: `${String(rows[index].id)}:${spawn.id}`, row: index, started, launched: readTime(time, 'completed') ?? started });
     }
-    const text = row.type === 'assistant' && Array.isArray(row.content)
-      ? row.content.filter(isRecord).flatMap(part => part.type === 'text' && typeof part.text === 'string' && part.text.trim() ? [part.text] : []).join('\n')
-      : '';
-    if (!text) continue;
-    answered = true;
-    const at = rowCreatedAt(row);
-    if (before === undefined || at === undefined || at <= before) answer = text;
   }
-  return { answer, turn };
+  return located;
 }
 
-function rowCreatedAt(row: Record<string, unknown>): number | undefined {
-  return isRecord(row.time) && typeof row.time.created === 'number' ? row.time.created : undefined;
+interface TimedEntry { readonly entry: OpencodeChildEntry; readonly at: number | undefined }
+
+/** Child prompts and assistant text parts, as the kernel records them live. */
+function readChildEntries(rows: readonly Record<string, unknown>[]): TimedEntry[] {
+  return rows.flatMap((row): TimedEntry[] => {
+    const at = readTime(row.time, 'created');
+    if (row.type === 'user' && typeof row.id === 'string') return [{ entry: { kind: 'prompt', id: row.id, text: typeof row.text === 'string' ? row.text : '' }, at }];
+    if (row.type !== 'assistant' || typeof row.id !== 'string' || !Array.isArray(row.content)) return [];
+    const messageId = row.id;
+    return row.content.filter(isRecord).flatMap(part => (
+      part.type === 'text' && typeof part.text === 'string' ? [{ entry: { kind: 'text' as const, messageId, text: part.text }, at }] : []
+    ));
+  });
+}
+
+/** A native fact the kernel sees live about one child, at the time it saw it, from the spawner's row. */
+type ReplayEvent = { readonly at: number | undefined; readonly row: number } & (
+  | { readonly kind: 'spawn' | 'launch'; readonly located: LocatedSpawn }
+  | { readonly kind: 'report'; readonly report: OpencodeSubagentReport }
+);
+
+/**
+ * Feeds the child's ledger the native facts the kernel sees live, in the order it sees them: each
+ * spawn when its tool call starts and how its launch ended when it finishes, and each idle report
+ * when OpenCode queues it, after the child's entries up to then. A report queued while the spawner
+ * is mid-step is stored after a follow-up that launched meanwhile, so row order alone would let it
+ * settle that follow-up.
+ */
+function replayChild(
+  rows: readonly Record<string, unknown>[],
+  childId: string,
+  spawns: readonly LocatedSpawn[],
+  childRows: readonly Record<string, unknown>[],
+): OpencodeChildLedger {
+  const ledger = new OpencodeChildLedger();
+  const entries = readChildEntries(childRows);
+  const idles = childRows.flatMap(row => row.type === 'idle' ? readTime(row.time, 'created') ?? [] : []).sort((a, b) => a - b);
+  const events: ReplayEvent[] = spawns.flatMap((located): ReplayEvent[] => [
+    { kind: 'spawn', at: located.started, row: located.row, located },
+    ...(located.spawn.status === 'running' ? [] : [{ kind: 'launch' as const, at: located.launched, row: located.row, located }]),
+  ]);
+  rows.forEach((row, index) => {
+    const report = row.type === 'synthetic' ? readOpencodeSubagentReport(row) : null;
+    if (report?.childId === childId) events.push({ kind: 'report', at: queuedAt(row, idles), row: index, report });
+  });
+  let fed = 0;
+  const feedUntil = (at: number | undefined) => {
+    while (fed < entries.length && (at === undefined || entries[fed].at === undefined || entries[fed].at! <= at)) ledger.record(entries[fed++].entry);
+  };
+  for (const event of orderReplay(events)) {
+    if (event.kind === 'report') {
+      feedUntil(event.at);
+      ledger.report(event.report);
+      continue;
+    }
+    const { spawn, key } = event.located;
+    if (event.kind === 'spawn') ledger.spawn(key, spawn.id, opencodeTaskResultInterpreter.describeTask(spawn.input).prompt);
+    else ledger.launch(key, classifyOpencodeLaunch(spawn.status === 'error' || spawn.status === 'blocked', spawn.result, spawn.providerPayload, spawn.input));
+  }
+  feedUntil(undefined);
+  return ledger;
+}
+
+/**
+ * Orders events by time, keeping row order for ties and for events without a time, which take the
+ * time of the event before them.
+ */
+function orderReplay(events: readonly ReplayEvent[]): ReplayEvent[] {
+  let last = -Infinity;
+  return events
+    .map((event, index) => ({ event, index }))
+    .sort((a, b) => a.event.row - b.event.row || a.index - b.index)
+    .map(({ event }, index) => ({ event, index, at: last = event.at ?? last }))
+    .sort((a, b) => a.at - b.at || a.index - b.index)
+    .map(({ event }) => event);
+}
+
+/**
+ * When OpenCode queued a stored report, which its delivery trails while the spawner is mid-step.
+ * OpenCode queues it as the child goes idle, and mints its ID earlier: at the spawn it answers, or as
+ * it queues after an interim report. So it is the child's first idle between minting and delivery,
+ * or the minting itself. A report without a native ID counts as queued at delivery.
+ */
+function queuedAt(row: Record<string, unknown>, idles: readonly number[]): number | undefined {
+  const delivered = readTime(row.time, 'created');
+  const minted = delivered === undefined ? undefined : mintedAt(row.id, delivered);
+  if (delivered === undefined || minted === undefined) return delivered;
+  return idles.find(idle => idle >= minted && idle <= delivered) ?? minted;
+}
+
+/** OpenCode's ascending message ID holds the low bits of the millisecond it minted the ID. */
+const NATIVE_ID = /^msg_([0-9a-f]{12})/;
+const ID_TIME_SPAN = 2 ** 36;
+
+/** The latest millisecond at or before `before` that the ID encodes. */
+function mintedAt(id: unknown, before: number): number | undefined {
+  const match = typeof id === 'string' ? NATIVE_ID.exec(id) : null;
+  if (!match) return undefined;
+  const encoded = Math.floor(Number.parseInt(match[1], 16) / 0x1000);
+  return before - (((before - encoded) % ID_TIME_SPAN) + ID_TIME_SPAN) % ID_TIME_SPAN;
+}
+
+function toolPart(row: Record<string, unknown>, toolId: string): Record<string, unknown> | undefined {
+  const content: unknown[] = Array.isArray(row.content) ? row.content : [];
+  return content.filter(isRecord).find(part => part.id === toolId);
+}
+
+function isSpawnPart(part: Record<string, unknown> | undefined): boolean {
+  return typeof part?.name === 'string' && normalizeOpencodeToolName(part.name) === TOOL_SUBAGENT;
+}
+
+function readTime(time: unknown, field: 'created' | 'completed'): number | undefined {
+  return isRecord(time) && typeof time[field] === 'number' ? time[field] : undefined;
 }
 
 /** Each task sent to a child session starts a turn at its user prompt. */
@@ -124,63 +211,36 @@ function splitChildTurns(child: ChatMessage[]): ChatMessage[][] {
   return turns;
 }
 
-/**
- * Pairs spawns with child turns in order, preferring a turn whose prompt matches the
- * spawn's. A spawn with no remaining turn keeps the plain card rather than borrowing another task's.
- */
-function assignChildTurns(spawns: ToolCallInfo[], turns: ChatMessage[][]): Array<ChatMessage[] | undefined> {
-  let next = 0;
-  return spawns.map((spawn) => {
-    const prompt = opencodeTaskResultInterpreter.describeTask(spawn.input).prompt?.trim();
-    const matched = prompt ? turns.findIndex((turn, index) => index >= next && turn[0]?.role === 'user' && childPrompt(turn[0].content) === prompt) : -1;
-    const index = matched >= 0 ? matched : next;
-    if (index >= turns.length) return undefined;
-    next = index + 1;
-    return turns[index];
-  });
-}
-
-/** OpenCode prefixes a child's first prompt with its subagent preamble. */
-const CHILD_PREAMBLE = 'You are a subagent spawned by another session.\n';
-
-function childPrompt(content: string): string {
-  const prompt = content.trim();
-  return prompt.startsWith(CHILD_PREAMBLE) ? prompt.slice(CHILD_PREAMBLE.length).trim() : prompt;
-}
-
+/** Progress already names the child, so a spawn still running hydrates too. */
 function getChildSessionId(spawn: ToolCallInfo): string | null {
-  const rawOutput = spawn.providerPayload?.rawOutput;
-  const metadata = isRecord(rawOutput) && isRecord(rawOutput.metadata) ? rawOutput.metadata : undefined;
-  if (typeof metadata?.sessionID === 'string' && metadata.sessionID) return metadata.sessionID;
-  return opencodeTaskResultInterpreter.interpretLaunch(spawn.result, spawn.status === 'error').agentId;
+  return opencodeTaskResultInterpreter.interpretLaunch(spawn.result, false, spawn.providerPayload).agentId;
 }
 
-function buildSubagentInfo(
-  spawn: ToolCallInfo, sessionId: string, child: ChatMessage[], report: OpencodeSubagentReport | undefined, answer: string | undefined,
-): SubagentInfo {
+/** The card projects the spawn's ledger state; until a launch decides, the requested mode stands. */
+function buildSubagentInfo(spawn: ToolCallInfo, sessionId: string, turn: ChatMessage[], ledger: OpencodeChildLedger, key: string): SubagentInfo {
   const interpreter = opencodeTaskResultInterpreter;
   const task = interpreter.describeTask(spawn.input);
-  const isError = spawn.status === 'error' || spawn.status === 'blocked';
-  // OpenCode can move a foreground spawn to the background, so a background launch outranks the input.
-  const launchMode = interpreter.interpretLaunch(spawn.result, isError).mode;
-  const mode = launchMode === 'async' ? 'async' : task.mode ?? launchMode;
-  const toolCalls = child.flatMap(message => message.toolCalls ?? []);
+  const state = ledger.state(key);
+  const background = state?.phase === 'background' || state?.phase === 'settled';
+  const mode = background ? 'async' : state?.phase === 'foreground' ? 'sync' : task.mode ?? 'sync';
   const base = {
     id: spawn.id,
     agentId: sessionId,
     description: task.description ?? 'Subagent task',
     prompt: task.prompt ?? '',
-    toolCalls,
+    toolCalls: turn.flatMap(message => message.toolCalls ?? []),
     isExpanded: false,
   };
-  const outcome = interpreter.interpretResult(spawn.result, isError, { mode, agentId: sessionId });
-  if (mode !== 'async') {
-    return { ...base, mode: 'sync', status: spawn.status === 'running' ? 'running' : outcome.status, result: outcome.result };
+  const launched = interpreter.interpretResult(spawn.result, spawn.status === 'error' || spawn.status === 'blocked', { mode, agentId: sessionId });
+  if (spawn.status === 'running') return { ...base, mode, status: 'running', ...(mode === 'async' ? { asyncStatus: 'running' as const } : {}), result: launched.result };
+  if (mode === 'sync') return { ...base, mode, status: launched.status, result: launched.result };
+  // A background launch result only acknowledges the child; its answer lives in the child session.
+  if (state?.phase === 'settled') {
+    const { status, result } = state.settlement;
+    return { ...base, mode, status, asyncStatus: status, result: result || launched.result };
   }
-  const reported = report?.state === 'running' ? 'running' as const : report && report.state !== 'completed' ? 'error' as const : undefined;
-  const status = spawn.status === 'running' ? 'running' as const : reported ?? outcome.status;
-  // A failure report carries its cause; otherwise the answer lives in the child session, since a
-  // background launch result only acknowledges the child.
-  const result = reported === 'error' ? answer || outcome.result : status === 'completed' && answer ? answer : outcome.result;
-  return { ...base, mode: 'async', status, asyncStatus: status, result };
+  if (state?.phase === 'background' && state.interim) return { ...base, mode, status: 'running', asyncStatus: 'running', result: launched.result };
+  // Unreported, as when the server stopped first, or never launched: the launch outcome stands.
+  const answer = state?.phase === 'background' ? ledger.answer(key) : undefined;
+  return { ...base, mode, status: launched.status, asyncStatus: launched.status, result: answer || launched.result };
 }

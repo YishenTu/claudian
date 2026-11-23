@@ -208,15 +208,15 @@ const emit = (type, data) => {
  * running it at once, while a follow-up joining a running child is delivered when its step ends.
  * @param {string} owner @param {string} id @param {string} child @param {WireObject} input @param {string} assistantMessageID @param {boolean} [joining]
  */
-const backgroundSpawn = (owner, id, child, input, assistantMessageID, joining = false) => {
+const backgroundSpawn = (owner, id, child, input, assistantMessageID, joining = false, launchMetadata = true, inboxID = `prompt_${id}`) => {
   emit('session.tool.input.started', { sessionID: owner, assistantMessageID, id, name: 'subagent' });
   emit('session.tool.called', { sessionID: owner, assistantMessageID, id, input });
   emit('session.tool.progress', { sessionID: owner, assistantMessageID, id, metadata: { sessionID: child, status: 'running' } });
-  emit('session.tool.success', { sessionID: owner, assistantMessageID, id, content: [{ type: 'text', text: `The subagent is working in the background (sessionID: ${child}). You will receive a <subagent> message when it goes idle, and again after each later round of work.` }], metadata: { sessionID: child, status: 'running', truncated: false } });
-  emit('session.inbox.enqueued', { sessionID: child, inboxID: `prompt_${id}`, item: { type: 'user', delivery: 'steer', payload: { text: String(input.prompt ?? id) } } });
+  emit('session.tool.success', { sessionID: owner, assistantMessageID, id, content: [{ type: 'text', text: `The subagent is working in the background (sessionID: ${child}). You will receive a <subagent> message when it goes idle, and again after each later round of work.` }], ...(launchMetadata ? { metadata: { sessionID: child, status: 'running', truncated: false } } : {}) });
+  emit('session.inbox.enqueued', { sessionID: child, inboxID, item: { type: 'user', delivery: 'steer', payload: { text: String(input.prompt ?? id) } } });
   if (joining) return;
   emit('session.execution.started', { sessionID: child });
-  emit('session.inbox.delivered', { sessionID: child, inboxID: `prompt_${id}` });
+  emit('session.inbox.delivered', { sessionID: child, inboxID });
 };
 
 /**
@@ -457,10 +457,15 @@ const handle = async (req, res, url, body, route) => {
       await waitForInteraction(() => permission !== undefined && (form !== undefined || body.text === 'slow'));
       if (permission !== 'once' || (body.text !== 'slow' && readForm()?.q0 !== 'blue')) { emit('session.execution.failed', { error: { message: 'Interactions not answered' } }); return; }
       if (body.text.startsWith('background')) {
-        backgroundSpawn('ses_test', 'tool_child', 'ses_child', { agent: 'worker', prompt: 'Read notes' }, assistantMessageID);
-        if (body.text === 'background-followup' || body.text === 'background-followup-joined') {
+        // Results stored without launch metadata still name the child in the launch text.
+        backgroundSpawn('ses_test', 'tool_child', 'ses_child', { agent: 'worker', prompt: 'Read notes' }, assistantMessageID, false, body.text !== 'background-text-launch');
+        if (body.text === 'background-followup' || body.text === 'background-followup-joined' || body.text === 'background-followup-intervening') {
           // A follow-up to the running child joins its current run; one idle reports both rounds.
           backgroundSpawn('ses_test', 'tool_followup', 'ses_child', { agent: 'worker', prompt: 'Also check tags', sessionID: 'ses_child' }, assistantMessageID, true);
+        }
+        if (body.text === 'background-reused-id') {
+          // Some models number tool calls per message, so a follow-up can reuse the first spawn's ID.
+          backgroundSpawn('ses_test', 'tool_child', 'ses_child', { agent: 'worker', prompt: 'Also check tags', sessionID: 'ses_child' }, 'msg_followup', true, true, 'prompt_reused');
         }
         if (body.text === 'background-followup-joined') {
           backgroundSpawn('ses_test', 'tool_third', 'ses_child', { agent: 'worker', prompt: 'Then list links', sessionID: 'ses_child' }, assistantMessageID, true);
@@ -516,6 +521,30 @@ const handle = async (req, res, url, body, route) => {
             emit('session.execution.succeeded', {});
             return;
           }
+          if (body.text === 'background-followup-intervening') {
+            // A prompt no spawn sent reaches the child between its spawns' prompts.
+            emit('session.text.ended', { sessionID: 'ses_child', assistantMessageID: 'msg_child', ordinal: 0, text: 'Child result' });
+            emit('session.inbox.enqueued', { sessionID: 'ses_child', inboxID: 'prompt_unrelated', item: { type: 'user', delivery: 'steer', payload: { text: 'Unrelated note' } } });
+            emit('session.inbox.delivered', { sessionID: 'ses_child', inboxID: 'prompt_unrelated' });
+            emit('session.text.ended', { sessionID: 'ses_child', assistantMessageID: 'msg_child_unrelated', ordinal: 0, text: 'Unrelated answer' });
+            emit('session.inbox.delivered', { sessionID: 'ses_child', inboxID: 'prompt_tool_followup' });
+            emit('session.text.ended', { sessionID: 'ses_child', assistantMessageID: 'msg_child_followup', ordinal: 0, text: 'Follow-up result' });
+            childIdle('ses_test', 'ses_child', 'completed', 'Follow-up result');
+            emit('session.execution.started', {});
+            emit('session.text.ended', { assistantMessageID: 'msg_background', ordinal: 0, text: 'Automatic reply' });
+            emit('session.execution.succeeded', {});
+            return;
+          }
+          if (body.text === 'background-reused-id') {
+            emit('session.text.ended', { sessionID: 'ses_child', assistantMessageID: 'msg_child', ordinal: 0, text: 'Child result' });
+            emit('session.inbox.delivered', { sessionID: 'ses_child', inboxID: 'prompt_reused' });
+            emit('session.text.ended', { sessionID: 'ses_child', assistantMessageID: 'msg_child_followup', ordinal: 0, text: 'Follow-up result' });
+            childIdle('ses_test', 'ses_child', 'completed', 'Follow-up result');
+            emit('session.execution.started', {});
+            emit('session.text.ended', { assistantMessageID: 'msg_background', ordinal: 0, text: 'Automatic reply' });
+            emit('session.execution.succeeded', {});
+            return;
+          }
           if (body.text === 'background-followup') {
             emit('session.text.ended', { sessionID: 'ses_child', assistantMessageID: 'msg_child', ordinal: 0, text: 'Child result' });
             emit('session.inbox.delivered', { sessionID: 'ses_child', inboxID: 'prompt_tool_followup' });
@@ -536,15 +565,6 @@ const handle = async (req, res, url, body, route) => {
             childIdle('ses_child', 'ses_grand', 'completed', 'Grand result');
             emit('session.execution.started', { sessionID: 'ses_child' });
             emit('session.execution.succeeded', { sessionID: 'ses_child' });
-            emit('session.execution.started', {});
-            emit('session.text.ended', { assistantMessageID: 'msg_background', ordinal: 0, text: 'Automatic reply' });
-            emit('session.execution.succeeded', {});
-            return;
-          }
-          if (body.text === 'background-empty-answer') {
-            // OpenCode reports a child whose last step wrote no text with a fixed body, not its progress.
-            emit('session.text.ended', { sessionID: 'ses_child', assistantMessageID: 'msg_child', ordinal: 0, text: 'Still reading' });
-            childIdle('ses_test', 'ses_child', 'completed', 'Subagent completed without a text response.');
             emit('session.execution.started', {});
             emit('session.text.ended', { assistantMessageID: 'msg_background', ordinal: 0, text: 'Automatic reply' });
             emit('session.execution.succeeded', {});

@@ -97,9 +97,9 @@ it.each([
     ],
   },
   {
-    name: 'a child whose last step wrote no text with its report, not its progress',
-    text: 'background-empty-answer',
-    completions: [{ subagentId: 'ses_child', toolCallId: 'tool_child', result: 'Subagent completed without a text response.', status: 'completed' }],
+    name: 'a child whose spawn result names it only in its launch text',
+    text: 'background-text-launch',
+    completions: [{ subagentId: 'ses_child', toolCallId: 'tool_child', result: 'Child result', status: 'completed' }],
   },
   {
     name: 'a failed child with the failure from its report',
@@ -126,6 +126,16 @@ it.each([
     text: 'background-followup',
     name: 'with its own round answer',
     completions: [['tool_child', 'Child result'], ['tool_followup', 'Follow-up result']],
+  },
+  {
+    text: 'background-followup-intervening',
+    name: 'by its prompt when a prompt no spawn sent arrived between',
+    completions: [['tool_child', 'Child result'], ['tool_followup', 'Follow-up result']],
+  },
+  {
+    text: 'background-reused-id',
+    name: 'when a follow-up in another message reuses its tool call ID',
+    completions: [['tool_child', 'Child result'], ['tool_child', 'Follow-up result']],
   },
   {
     text: 'background-followup-joined',

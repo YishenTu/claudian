@@ -253,6 +253,16 @@ describe('OpencodeConversationHistoryService', () => {
     ];
     const user = (id: string, at: number, text: string) => ({ id, type: 'user', time: { created: created + at }, text });
     const answer = (id: string, at: number, text: string) => ({ id, type: 'assistant', time: { created: created + at }, content: [{ type: 'text', text }] });
+    /** A spawn whose tool part records when it started and when its launch ended. */
+    const timedSpawn = (rowId: string, id: string, at: number, prompt: string, launchedAt: number) => {
+      const row = spawn(id, at, prompt);
+      return { ...row, id: rowId, content: [{ ...row.content[0], time: { created: created + launchedAt - 1, ran: created + launchedAt - 1, completed: created + launchedAt } }] };
+    };
+    const idle = (id: string, at: number) => ({ id, type: 'idle', time: { created: created + at }, outcome: 'succeeded' });
+    const queuedChild = [
+      user('c-1', 2, 'Survey the vault'), answer('c-survey', 3, 'Vault surveyed.'), idle('c-idle-1', 4),
+      user('c-2', 22, 'Check again'), answer('c-check', 23, 'Checked again.'), idle('c-idle-2', 24),
+    ];
     const card = (id: string, status: string, result: string) => expect.objectContaining({ id, mode: 'async', agentId: 'ses_child', status, asyncStatus: status, result });
 
     it.each([
@@ -308,31 +318,6 @@ describe('OpencodeConversationHistoryService', () => {
         ],
         cards: [card('first', 'completed', 'The folder contains only the database.'), card('second', 'completed', 'Check answer')],
       },
-      ...[
-        { name: 'a child that ended without final text after progress', progress: [answer('c-progress', 2, 'Still reading.')] },
-        { name: 'a child that ended without any text', progress: [] },
-      ].map(({ name, progress }) => ({
-        name,
-        parent: [spawn('first', 0, 'Survey the vault'), report('completed', 4, 'Subagent completed without a text response.')],
-        child: [user('c-1', 1, 'Survey the vault'), ...progress, { id: 'c-empty', type: 'assistant', time: { created: created + 3 }, content: [] }],
-        cards: [card('first', 'completed', 'Subagent completed without a text response.')],
-      })),
-      {
-        name: 'a joined round that ended without any text',
-        parent: [spawn('first', 0, 'Survey the vault'), spawn('second', 0.1, 'Check again'), report('completed', 9, 'Subagent completed without a text response.')],
-        child: [
-          user('c-1', 1, 'Survey the vault'),
-          { id: 'c-read', type: 'assistant', time: { created: created + 2 }, content: [{ type: 'tool', id: 'read', name: 'read', state: { status: 'completed', input: { path: '.' }, output: 'db' } }] },
-          user('c-2', 5, 'Check again'), { id: 'c-empty', type: 'assistant', time: { created: created + 6 }, content: [] },
-        ],
-        cards: [card('first', 'completed', 'Subagent completed without a text response.'), card('second', 'completed', 'Subagent completed without a text response.')],
-      },
-      {
-        name: 'a joined follow-up that failed after the first prompt was answered',
-        parent: [spawn('first', 0, 'Survey the vault'), spawn('second', 0.1, 'Check again'), report('error', 9, 'Follow-up failed')],
-        child: [user('c-1', 1, 'Survey the vault'), answer('c-first', 2, 'First answer.'), user('c-2', 5, 'Check again')],
-        cards: [card('first', 'error', 'First answer.'), card('second', 'error', 'Follow-up failed')],
-      },
       {
         name: 'a follow-up that repeats the first prompt',
         parent: [spawn('first', 0, 'Check status'), report('completed', 3, 'First answer.'), spawn('second', 10, 'Check status'), report('completed', 13, 'Updated status.')],
@@ -342,6 +327,63 @@ describe('OpencodeConversationHistoryService', () => {
           user('c-2', 11, 'Check status'), answer('c-updated', 12, 'Updated status.'),
         ],
         cards: [card('first', 'completed', 'First answer.'), card('second', 'completed', 'Updated status.')],
+      },
+      {
+        // OpenCode mints a report's ID at the spawn it answers, queues it as the child goes idle, and
+        // delivers it once the spawner's step ends, here after a follow-up launched.
+        name: 'a report OpenCode queued before a follow-up launched but delivered after it',
+        parent: [
+          timedSpawn('a-first', 'first', 0, 'Survey the vault', 1),
+          timedSpawn('a-second', 'second', 3, 'Check again', 21),
+          { ...report('completed', 30, 'Vault surveyed.'), id: nativeID(created + 1) },
+          { ...report('completed', 31, 'Checked again.'), id: nativeID(created + 21) },
+        ],
+        child: queuedChild,
+        cards: [card('first', 'completed', 'Vault surveyed.'), card('second', 'completed', 'Checked again.')],
+      },
+      {
+        name: 'a follow-up in the next native message that reuses the tool call ID',
+        parent: [
+          timedSpawn('a-first', 'call', 0, 'Survey the vault', 1),
+          timedSpawn('a-second', 'call', 3, 'Check again', 21),
+          { ...report('completed', 30, 'Vault surveyed.'), id: nativeID(created + 1) },
+          { ...report('completed', 31, 'Checked again.'), id: nativeID(created + 21) },
+        ],
+        child: queuedChild,
+        cards: [card('call', 'completed', 'Vault surveyed.'), card('call', 'completed', 'Checked again.')],
+      },
+      {
+        name: 'a follow-up that reuses another tool\'s call ID',
+        parent: [
+          timedSpawn('a-first', 'first', 0, 'Survey the vault', 1),
+          { id: 'a-read', type: 'assistant', time: { created: created + 2 }, content: [{ id: 'call', type: 'tool', name: 'read', time: { created: created + 2, completed: created + 2 }, state: { status: 'completed', input: { path: 'notes.md' }, output: 'notes' } }] },
+          timedSpawn('a-second', 'call', 3, 'Check again', 21),
+          { ...report('completed', 30, 'Vault surveyed.'), id: nativeID(created + 1) },
+          { ...report('completed', 31, 'Checked again.'), id: nativeID(created + 21) },
+        ],
+        child: queuedChild,
+        cards: [card('first', 'completed', 'Vault surveyed.'), undefined, card('call', 'completed', 'Checked again.')],
+      },
+      {
+        // The follow-up's prompt waits in the child's inbox while its run is cancelled.
+        name: 'a follow-up launched just before its child was cancelled',
+        parent: [
+          timedSpawn('a-first', 'first', 0, 'Survey the vault', 1),
+          timedSpawn('a-second', 'second', 3, 'Check again', 5),
+          { ...report('cancelled', 30, 'Subagent cancelled'), id: nativeID(created + 1) },
+          { ...report('completed', 31, 'Checked again.'), id: nativeID(created + 7) },
+        ],
+        child: [
+          user('c-1', 2, 'Survey the vault'), { ...idle('c-idle-1', 6), outcome: 'failed' },
+          user('c-2', 8, 'Check again'), answer('c-check', 9, 'Checked again.'), idle('c-idle-2', 10),
+        ],
+        cards: [card('first', 'error', 'Subagent cancelled'), card('second', 'completed', 'Checked again.')],
+      },
+      {
+        name: 'a child that ended without final text after progress',
+        parent: [spawn('first', 0, 'Survey the vault'), report('completed', 4, 'Subagent completed without a text response.')],
+        child: [user('c-1', 1, 'Survey the vault'), answer('c-progress', 2, 'Still reading.'), { id: 'c-empty', type: 'assistant', time: { created: created + 3 }, content: [] }],
+        cards: [card('first', 'completed', 'Subagent completed without a text response.')],
       },
     ])('after $name', async ({ parent, child: childRows = child, cards }) => {
       const dbPath = path.join(tmpRoot, 'subagent-history.db');
@@ -354,6 +396,87 @@ describe('OpencodeConversationHistoryService', () => {
       ));
 
       expect(conversation.messages.flatMap(message => message.toolCalls ?? []).map(tool => tool.subagent)).toEqual(cards);
+    });
+
+    it('keeps a failed follow-up launch failed when the child later reports success', async () => {
+      const dbPath = path.join(tmpRoot, 'subagent-history.db');
+      seedFakeOpencodeSession(dbPath, 'ses_parent', { messages: [
+        spawn('first', 0, 'Survey the vault'),
+        { id: 'a-second', type: 'assistant', time: { created: created + 1 }, content: [{ id: 'second', type: 'tool', name: 'subagent', state: {
+          status: 'error', input: { agent: 'general', description: 'Survey', prompt: 'Check again', sessionID: 'ses_child', background: true }, error: 'Launch interrupted', metadata: { sessionID: 'ses_child' },
+        } }] },
+        report('completed', 4, 'Child finished'),
+      ] });
+      seedFakeOpencodeSession(dbPath, 'ses_child', { messages: [user('c-1', 1, 'Survey the vault'), user('c-2', 2, 'Check again'), answer('c-done', 3, 'Child finished')] });
+      const conversation = createConversation('ses_parent', dbPath);
+
+      Object.assign(conversation, await new OpencodeConversationHistoryService().hydrateConversationHistory(
+        conversation, tmpRoot, context({ HOME: tmpRoot, OPENCODE_DB: dbPath }),
+      ));
+
+      expect(conversation.messages.flatMap(message => message.toolCalls ?? []).map(tool => tool.subagent)).toEqual([
+        card('first', 'completed', 'Child finished'),
+        expect.objectContaining({ id: 'second', mode: 'async', status: 'error', asyncStatus: 'error', result: expect.stringContaining('Launch interrupted') }),
+      ]);
+    });
+
+    it('keeps a failed background launch failed when no report follows', async () => {
+      const dbPath = path.join(tmpRoot, 'subagent-history.db');
+      seedFakeOpencodeSession(dbPath, 'ses_parent', { messages: [
+        { id: 'a-first', type: 'assistant', time: { created }, content: [{ id: 'first', type: 'tool', name: 'subagent', state: {
+          status: 'error', input: { agent: 'general', description: 'Survey', prompt: 'Survey the vault', background: true }, error: 'Launch interrupted', metadata: { sessionID: 'ses_child' },
+        } }] },
+      ] });
+      seedFakeOpencodeSession(dbPath, 'ses_child', { messages: [user('c-1', 1, 'Survey the vault'), answer('c-wait', 2, 'Working.')] });
+      const conversation = createConversation('ses_parent', dbPath);
+
+      Object.assign(conversation, await new OpencodeConversationHistoryService().hydrateConversationHistory(
+        conversation, tmpRoot, context({ HOME: tmpRoot, OPENCODE_DB: dbPath }),
+      ));
+
+      expect(conversation.messages.flatMap(message => message.toolCalls ?? []).map(tool => tool.subagent)).toEqual([
+        expect.objectContaining({ id: 'first', mode: 'async', status: 'error', asyncStatus: 'error', result: expect.stringContaining('Launch interrupted') }),
+      ]);
+    });
+
+    it('settles a requested background spawn whose stored result has no launch status', async () => {
+      const dbPath = path.join(tmpRoot, 'subagent-history.db');
+      seedFakeOpencodeSession(dbPath, 'ses_parent', { messages: [
+        { id: 'a-first', type: 'assistant', time: { created }, content: [{ id: 'first', type: 'tool', name: 'subagent', state: {
+          status: 'completed', input: { agent: 'general', description: 'Survey', prompt: 'Survey the vault', background: true }, output: 'Task started.', metadata: { sessionID: 'ses_child' },
+        } }] },
+        report('error', 3, 'Worker failed.'),
+      ] });
+      seedFakeOpencodeSession(dbPath, 'ses_child', { messages: [user('c-1', 1, 'Survey the vault'), answer('c-wait', 2, 'Working.')] });
+      const conversation = createConversation('ses_parent', dbPath);
+
+      Object.assign(conversation, await new OpencodeConversationHistoryService().hydrateConversationHistory(
+        conversation, tmpRoot, context({ HOME: tmpRoot, OPENCODE_DB: dbPath }),
+      ));
+
+      expect(conversation.messages.flatMap(message => message.toolCalls ?? []).map(tool => tool.subagent)).toEqual([card('first', 'error', 'Worker failed.')]);
+    });
+
+    it('restores a foreground spawn still running, whose progress also reports running, as a sync card', async () => {
+      const dbPath = path.join(tmpRoot, 'subagent-history.db');
+      seedFakeOpencodeSession(dbPath, 'ses_parent', { messages: [{
+        id: 'a-first', type: 'assistant', time: { created }, content: [{ id: 'first', type: 'tool', name: 'subagent', state: {
+          status: 'running', input: { agent: 'general', description: 'Survey', prompt: 'Survey the vault' }, metadata: { sessionID: 'ses_child', status: 'running' },
+        } }],
+      }] });
+      seedFakeOpencodeSession(dbPath, 'ses_child', { messages: [
+        user('c-1', 1, 'Survey the vault'),
+        { id: 'c-read', type: 'assistant', time: { created: created + 2 }, content: [{ type: 'tool', id: 'read', name: 'read', state: { status: 'completed', input: { path: 'notes.md' }, output: 'notes' } }] },
+      ] });
+      const conversation = createConversation('ses_parent', dbPath);
+
+      Object.assign(conversation, await new OpencodeConversationHistoryService().hydrateConversationHistory(
+        conversation, tmpRoot, context({ HOME: tmpRoot, OPENCODE_DB: dbPath }),
+      ));
+
+      expect(conversation.messages.flatMap(message => message.toolCalls ?? []).map(tool => tool.subagent)).toEqual([
+        expect.objectContaining({ id: 'first', mode: 'sync', status: 'running', agentId: 'ses_child', toolCalls: [expect.objectContaining({ id: 'read' })] }),
+      ]);
     });
   });
 
@@ -408,4 +531,10 @@ function createConversation(sessionId: string, databasePath: string): Conversati
     title: 'OpenCode conversation',
     lastActivityAt: 1,
   };
+}
+
+/** OpenCode's ascending message ID, which encodes when it was minted. */
+function nativeID(mintedAt: number): string {
+  const time = (mintedAt * 0x1000 + 1) % 2 ** 48;
+  return `msg_${time.toString(16).padStart(12, '0')}Ab3dEf6hIj9kLm`;
 }
