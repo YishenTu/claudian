@@ -172,8 +172,9 @@ it.each(['same instructions', 'changed instructions'])('keeps retired background
     const pid = f.processes()[0].pid;
     const identity = { sessionID: 'ses_1', assistantMessageID: 'parent', id: 'spawn' };
     await emit('session.tool.input.started', { ...identity, name: 'subagent' });
-    await emit('session.tool.called', { ...identity, input: { run_in_background: true } });
-    await emit('session.tool.progress', { ...identity, metadata: { sessionID: 'child' } });
+    await emit('session.tool.called', { ...identity, input: { agent: 'worker' } });
+    await emit('session.tool.progress', { ...identity, metadata: { sessionID: 'child', status: 'running' } });
+    await emit('session.tool.success', { ...identity, content: [{ type: 'text', text: 'The subagent is working in the background (sessionID: child).' }], metadata: { sessionID: 'child', status: 'running' } });
     await emit('session.execution.succeeded', { sessionID: 'ses_1' });
     await parent;
     await f.plugin.executionLifecycleRegistry.runTransition(['opencode'], async () => {
@@ -217,8 +218,9 @@ it('cancelling a turn waiting on retired background work leaves that work draini
     const pid = f.processes()[0].pid;
     const identity = { sessionID: 'ses_1', assistantMessageID: 'parent', id: 'spawn' };
     await emit('session.tool.input.started', { ...identity, name: 'subagent' });
-    await emit('session.tool.called', { ...identity, input: { run_in_background: true } });
-    await emit('session.tool.progress', { ...identity, metadata: { sessionID: 'child' } });
+    await emit('session.tool.called', { ...identity, input: { agent: 'worker' } });
+    await emit('session.tool.progress', { ...identity, metadata: { sessionID: 'child', status: 'running' } });
+    await emit('session.tool.success', { ...identity, content: [{ type: 'text', text: 'The subagent is working in the background (sessionID: child).' }], metadata: { sessionID: 'child', status: 'running' } });
     await emit('session.execution.succeeded', { sessionID: 'ses_1' });
     await parent;
     await f.plugin.executionLifecycleRegistry.runTransition(['opencode'], async () => {

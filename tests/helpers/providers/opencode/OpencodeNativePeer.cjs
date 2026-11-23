@@ -202,6 +202,18 @@ const emit = (type, data) => {
   else send();
 };
 
+/**
+ * A subagent spawn as OpenCode 2.3 reports it: the call returns at once and its result
+ * carries the child's session with `status: 'running'`.
+ * @param {string} owner @param {string} id @param {string} child @param {WireObject} input @param {string} assistantMessageID
+ */
+const backgroundSpawn = (owner, id, child, input, assistantMessageID) => {
+  emit('session.tool.input.started', { sessionID: owner, assistantMessageID, id, name: 'subagent' });
+  emit('session.tool.called', { sessionID: owner, assistantMessageID, id, input });
+  emit('session.tool.progress', { sessionID: owner, assistantMessageID, id, metadata: { sessionID: child, status: 'running' } });
+  emit('session.tool.success', { sessionID: owner, assistantMessageID, id, content: [{ type: 'text', text: `The subagent is working in the background (sessionID: ${child}). You will receive a <subagent> message when it goes idle, and again after each later round of work.` }], metadata: { sessionID: child, status: 'running', truncated: false } });
+};
+
 /** @type {Handler} */
 const handle = async (req, res, url, body, route) => {
   if (env.REQUEST_LOG) fs.appendFileSync(env.REQUEST_LOG, req.method + ' ' + req.url + '\n');
@@ -401,10 +413,11 @@ const handle = async (req, res, url, body, route) => {
       await waitForInteraction(() => permission !== undefined && (form !== undefined || body.text === 'slow'));
       if (permission !== 'once' || (body.text !== 'slow' && readForm()?.q0 !== 'blue')) { emit('session.execution.failed', { error: { message: 'Interactions not answered' } }); return; }
       if (body.text.startsWith('background')) {
-        emit('session.tool.input.started', { assistantMessageID, id: 'tool_child', name: 'subagent' });
-        emit('session.tool.called', { assistantMessageID, id: 'tool_child', input: { background: true, agent: 'worker' } });
-        emit('session.tool.progress', { assistantMessageID, id: 'tool_child', metadata: { sessionID: 'ses_child', status: 'running' } });
-        emit('session.tool.success', { assistantMessageID, id: 'tool_child', content: [{ type: 'text', text: 'Background child launched' }], metadata: { sessionID: 'ses_child', status: 'background' } });
+        backgroundSpawn('ses_test', 'tool_child', 'ses_child', { agent: 'worker' }, assistantMessageID);
+        if (body.text === 'background-followup') {
+          // A follow-up to the running child joins its current run; one idle ends both spawns.
+          backgroundSpawn('ses_test', 'tool_followup', 'ses_child', { agent: 'worker', sessionID: 'ses_child' }, assistantMessageID);
+        }
         emit('session.tool.input.started', { sessionID: 'ses_child', assistantMessageID: 'msg_child', id: 'tool_read', name: 'read' });
         emit('session.tool.called', { sessionID: 'ses_child', assistantMessageID: 'msg_child', id: 'tool_read', input: { path: '/workspace/notes.md' } });
         emit('session.tool.success', { sessionID: 'ses_child', assistantMessageID: 'msg_child', id: 'tool_read', content: [{ type: 'text', text: 'Child read result' }] });
@@ -427,9 +440,7 @@ const handle = async (req, res, url, body, route) => {
           if (body.text === 'background-approval' || body.text === 'background-nested') {
             const interactionSession = body.text === 'background-nested' ? 'ses_grand' : 'ses_child';
             if (body.text === 'background-nested') {
-              emit('session.tool.input.started', { sessionID: 'ses_child', assistantMessageID: 'msg_child', id: 'nested', name: 'subagent' });
-              emit('session.tool.called', { sessionID: 'ses_child', assistantMessageID: 'msg_child', id: 'nested', input: { agent: 'worker', background: true } });
-              emit('session.tool.progress', { sessionID: 'ses_child', assistantMessageID: 'msg_child', id: 'nested', metadata: { sessionID: 'ses_grand', status: 'running' } });
+              backgroundSpawn('ses_child', 'nested', 'ses_grand', { agent: 'worker' }, 'msg_child');
               emit('session.text.ended', { sessionID: 'ses_child', assistantMessageID: 'msg_child', ordinal: 0, text: 'Child result' });
               emit('session.execution.succeeded', { sessionID: 'ses_child' });
             }

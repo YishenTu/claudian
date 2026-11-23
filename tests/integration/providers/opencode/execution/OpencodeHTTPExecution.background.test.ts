@@ -39,9 +39,32 @@ it('delivers child completion and automatic parent replies after the requested t
       expect.objectContaining({ toolCallId: 'tool_child', toolUses: 1, lastToolName: 'Read', totalTokens: 1500, durationMs: expect.any(Number) }),
     ]);
     expect(events).toEqual(expect.arrayContaining([
-      expect.objectContaining({ type: 'async_subagent_completed', subagentId: 'ses_child', result: 'Child result', status: 'completed' }),
       expect.objectContaining({ type: 'text_delta', text: 'Automatic reply', scope: expect.objectContaining({ kind: 'background' }) }),
     ]));
+    expect(events.filter(event => event.type === 'async_subagent_completed')).toEqual([
+      expect.objectContaining({ subagentId: 'ses_child', toolCallId: 'tool_child', result: 'Child result', status: 'completed' }),
+    ]);
+  } finally { await f.dispose(); }
+});
+
+it('completes each spawn that joined a running child when that child goes idle', async () => {
+  const f = await createFixture();
+  const events: ProviderSessionEvent[] = [];
+  let completed!: () => void;
+  const background = new Promise<void>(resolve => { completed = resolve; });
+  f.session.onEvent(event => {
+    events.push(event);
+    if (event.type === 'async_subagent_completed' && event.toolCallId === 'tool_followup') completed();
+  });
+  try {
+    for await (const event of f.session.execute(request('background-followup')).events) {
+      if (event.type === 'execution_error') throw new Error(event.message);
+    }
+    await background;
+    expect(events.filter(event => event.type === 'async_subagent_completed')).toEqual([
+      expect.objectContaining({ subagentId: 'ses_child', toolCallId: 'tool_child', result: 'Child result', status: 'completed' }),
+      expect.objectContaining({ subagentId: 'ses_child', toolCallId: 'tool_followup', result: 'Child result', status: 'completed' }),
+    ]);
   } finally { await f.dispose(); }
 });
 

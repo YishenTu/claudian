@@ -41,7 +41,8 @@ type PendingInboxInput = { admission: Promise<InboxAdmission>; recall: Promise<v
 );
 type InboxAdmission = 'admitted' | 'refused' | 'unknown';
 interface NativeModelSelection { providerID: string; id: string; variant?: string }
-interface NativeChild { sessionTools?: SessionToolInvocation; autoApprove: boolean; toolController: AbortController; outputSessionId: string; toolCallId: string; turnId: string; interactionTurnId: string; background: boolean; text: Map<string, string>; progress: { startedAt: number; toolUses: number; totalTokens: number; lastToolName?: string } }
+/** A child joins the background when a spawn returns while it still runs; each such spawn ends at the child's next idle. */
+interface NativeChild { sessionTools?: SessionToolInvocation; autoApprove: boolean; toolController: AbortController; outputSessionId: string; toolCallId: string; turnId: string; interactionTurnId: string; background: { spawnToolCallIds: string[] } | null; text: Map<string, string>; progress: { startedAt: number; toolUses: number; totalTokens: number; lastToolName?: string } }
 interface NativeTool { name: string; input: Record<string, unknown>; sessionId: string; output: string | null; shell?: OpencodeShellOutput }
 
 /** One execution's native HTTP session: its server lease, events, interactions and inbox. */
@@ -377,8 +378,8 @@ export class OpencodeHTTPSessionKernel implements OpencodeSessionKernel {
         this.emitChildProgress(child);
       }
       if (event.type.startsWith('session.execution.') && event.type !== 'session.execution.started') {
-        if (child.background) this.options.onNativeTaskCompleted?.({
-          type: 'async_subagent_completed', originatingTurnId: child.turnId, subagentId: nativeSessionId,
+        for (const toolCallId of child.background?.spawnToolCallIds ?? []) this.options.onNativeTaskCompleted?.({
+          type: 'async_subagent_completed', originatingTurnId: child.turnId, subagentId: nativeSessionId, toolCallId,
           status: event.type === 'session.execution.succeeded' ? 'completed' : 'error',
           result: [...child.text.values()].join('\n') || (data.error ? errorText(data.error) : undefined),
           providerSessionId: this.sessionId ?? undefined,
@@ -458,13 +459,12 @@ export class OpencodeHTTPSessionKernel implements OpencodeSessionKernel {
         const metadata = isRecord(data.metadata) ? data.metadata : {};
         const turnId = child?.turnId ?? this.options.getActiveTurnId();
         if (tool?.name === 'subagent' && typeof metadata.sessionID === 'string' && turnId && !this.children.has(metadata.sessionID)) {
-          const background = tool.input.run_in_background === true;
-          const interactionTurnId = (background ? this.options.onNativeTaskStarted?.(metadata.sessionID, turnId) : undefined) ?? child?.interactionTurnId ?? turnId;
+          const interactionTurnId = child?.interactionTurnId ?? turnId;
           // Children keep their launching run's tool and approval policy, never a later run's.
           const owner = child ?? this.pending;
           const toolController = new AbortController();
           const sessionTools = owner?.sessionTools ? { ...owner.sessionTools, signal: AbortSignal.any([owner.sessionTools.signal, toolController.signal]) } : undefined;
-          this.children.set(metadata.sessionID, { sessionTools, autoApprove: this.autoApproveFor(child), toolController, outputSessionId: background ? metadata.sessionID : child?.outputSessionId ?? metadata.sessionID, toolCallId: identity.toolCallId, turnId, interactionTurnId, background, text: new Map(), progress: { startedAt: Date.now(), toolUses: 0, totalTokens: 0 } });
+          this.children.set(metadata.sessionID, { sessionTools, autoApprove: this.autoApproveFor(child), toolController, outputSessionId: child?.outputSessionId ?? metadata.sessionID, toolCallId: identity.toolCallId, turnId, interactionTurnId, background: null, text: new Map(), progress: { startedAt: Date.now(), toolUses: 0, totalTokens: 0 } });
         }
         if (tool && !this.previewStops.has(nativeSessionId) && tool.output !== null && typeof metadata.shellID === 'string') {
           tool.shell ??= new OpencodeShellOutput(this.requireClient(), metadata.shellID, content => {
@@ -487,6 +487,7 @@ export class OpencodeHTTPSessionKernel implements OpencodeSessionKernel {
       case 'session.tool.success': case 'session.tool.failed': {
         const tool = this.tools.get(key);
         tool?.shell?.stop();
+        if (event.type === 'session.tool.success' && tool?.name === 'subagent') this.backgroundChild(data.metadata, identity.toolCallId);
         const content = Array.isArray(data.content) ? data.content.filter(isRecord).flatMap(item => typeof item.text === 'string' ? [item.text] : []).join('\n') : '';
         const result = normalizeOpencodeToolResult(tool?.name, content || (data.error ? errorText(data.error) : ''), { metadata: data.metadata });
         this.emit({ type: 'tool_completed', ...identity, content: result.content, isError: event.type.endsWith('.failed') || result.isError, providerPayload: { rawName: tool?.name, rawInput: tool?.input, rawOutput: { ...data, metadata: data.metadata } }, resultDetails: tool ? normalizeOpencodeToolResultDetails(tool.name, tool.input, { output: content, metadata: data.metadata }, this.launch?.target) : undefined }, child?.outputSessionId);
@@ -602,6 +603,23 @@ export class OpencodeHTTPSessionKernel implements OpencodeSessionKernel {
       this.interactions.settle(pending, 'resolved');
       this.workChanged();
     }
+  }
+
+  /**
+   * A spawn result still `running` leaves its child working in the background: always on 2.3, and on
+   * 2.2 when requested or detached. Spawn progress reports `running` for foreground children too, so
+   * only the result decides. A follow-up spawn joining that run ends at the same idle.
+   */
+  private backgroundChild(metadata: unknown, spawnToolCallId: string): void {
+    if (!isRecord(metadata) || metadata.status !== 'running' || typeof metadata.sessionID !== 'string') return;
+    const child = this.children.get(metadata.sessionID);
+    if (!child) return;
+    if (!child.background) {
+      child.interactionTurnId = this.options.onNativeTaskStarted?.(metadata.sessionID, child.turnId) ?? child.interactionTurnId;
+      child.outputSessionId = metadata.sessionID;
+      child.background = { spawnToolCallIds: [] };
+    }
+    child.background.spawnToolCallIds.push(spawnToolCallId);
   }
 
   private emitUsage(value: unknown): void {
