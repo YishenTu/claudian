@@ -16,16 +16,6 @@ export function describeReviewAction(action: GuardianReviewAction): string {
   }
 }
 
-/** Keep the picker scannable; the notice contains the full reviewed action. */
-export function reviewPickerLabel(action: GuardianReviewAction): string {
-  const subject = describeReviewAction(action).replace(/\s+/g, ' ').trim();
-  if (subject.length <= 96) return subject;
-  const chars = Array.from(subject);
-  return chars.length <= 96 ? subject : `${chars.slice(0, 64).join('')}…${chars.slice(-31).join('')}`;
-}
-
-export type GuardianReviewEvent = GuardianReviewStarted | GuardianReviewCompleted;
-
 export function describeAutoReview(event: GuardianReviewStarted, canOverride: boolean): string {
   const subject = describeReviewAction(event.action);
   const longestRun = (subject.match(/`+/g) ?? []).reduce((max, run) => Math.max(max, run.length), 0);

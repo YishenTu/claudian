@@ -48,9 +48,18 @@ export class CodexSessionConnection {
 
   // Codex 0.124 added both strict turn grants and thread/approveGuardianDeniedAction.
   get supportsReviewGrants(): boolean {
+    return this.#atLeastMinorVersion(124);
+  }
+
+  // Earlier versions queue an idle grant in memory until the next turn.
+  get persistsIdleReviewGrants(): boolean {
+    return this.#atLeastMinorVersion(136);
+  }
+
+  #atLeastMinorVersion(minor: number): boolean {
     const agent = this.#attachment?.runtimeContext.initializeResult.userAgent ?? '';
     const version = /^\S+?\/(\d+)\.(\d+)\.\d+/.exec(agent);
-    return !!version && (Number(version[1]) > 0 || Number(version[2]) >= 124);
+    return !!version && (Number(version[1]) > 0 || Number(version[2]) >= minor);
   }
 
   get scope(): CodexThreadScope | null {

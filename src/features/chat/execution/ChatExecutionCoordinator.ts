@@ -138,6 +138,7 @@ export interface ChatExecutionCoordinatorDeps {
     event: ProviderSessionEvent,
     context: ChatExecutionEventContext,
   ) => void | Promise<void>;
+  readonly onNativeHistoryWriteChanged?: (writing: boolean) => void | Promise<void>;
   readonly onBackgroundWorkChanged?: (isWorking: boolean) => void;
   readonly onError?: (error: unknown) => void;
   /** Releases an idle provider session after this long; omitted keeps it until disposal. */
@@ -240,6 +241,7 @@ export class ChatExecutionCoordinator {
   #stale = false;
   #publishedBackgroundWork = false;
   #protectedOperationCount = 0;
+  #nativeHistoryWrites = 0;
   #preparationTail: Promise<void> = Promise.resolve();
   #idleTimer: number | null = null;
   #idleTimerGeneration = 0;
@@ -382,6 +384,7 @@ export class ChatExecutionCoordinator {
           workingDirectory: this.deps.workingDirectory,
           interactionPort: this.#interactions,
           sessionTools: sessionTools?.port,
+          supportsReviewDenialPicker: true,
         },
         (reason, released) => this.#handleLeaseInvalidation(reason, released),
         (event) => this.#handleSessionEvent(event),
@@ -508,6 +511,8 @@ export class ChatExecutionCoordinator {
     this.#sessionBinding?.session.cancel();
   }
 
+  get isWritingNativeHistory(): boolean { return this.#nativeHistoryWrites > 0; }
+
   /** Picker operations belong to the session and never create a turn or a steer boundary. */
   async approveRecentDenial(): Promise<'approved' | 'empty' | 'dismissed'> {
     return this.#runProtectedOperation(async () => {
@@ -527,7 +532,16 @@ export class ChatExecutionCoordinator {
         await this.deps.persistence.assertConversationExecutionAuthority(
           binding.conversation.conversationId, binding.bindingId, binding.generation,
         );
-        return isCurrent() && await selected.approve() ? 'approved' : 'dismissed';
+        if (!isCurrent()) return 'dismissed';
+        // The session pool checks for prior external changes and records the settled revision.
+        this.#nativeHistoryWrites++;
+        try {
+          await this.deps.onNativeHistoryWriteChanged?.(true);
+          return isCurrent() && await selected.approve() ? 'approved' : 'dismissed';
+        } finally {
+          this.#nativeHistoryWrites--;
+          await this.deps.onNativeHistoryWriteChanged?.(this.isWritingNativeHistory);
+        }
       } catch (error) {
         if (error instanceof ChatExecutionInteractionStaleError) return 'dismissed';
         throw error;

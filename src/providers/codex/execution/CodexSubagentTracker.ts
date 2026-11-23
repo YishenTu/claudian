@@ -142,12 +142,12 @@ export class CodexSubagentTracker {
 
   private routerFor(agent: TrackedAgent): CodexNotificationRouter {
     return agent.router ??= new CodexNotificationRouter(
-      chunk => this.applyToolChunk(agent, chunk), this.workingDirectory?.(), true, event => {
+      chunk => this.applyToolChunk(agent, chunk), this.workingDirectory?.(), true, (phase, event) => {
         const id = `auto-review:${event.reviewId}`;
         const action = describeReviewAction(event.action);
-        const description = 'completedAtMs' in event ? action : t('chat.approval.review.inProgress', { action });
+        const description = phase === 'completed' ? action : t('chat.approval.review.inProgress', { action });
         this.applyToolChunk(agent, { type: 'tool_use', id, name: 'auto_review', input: { description } });
-        if ('completedAtMs' in event) {
+        if (phase === 'completed') {
           this.applyToolChunk(agent, { type: 'tool_result', id, content: describeAutoReview(event, false), isError: event.review.status !== 'approved' });
         }
       },

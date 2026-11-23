@@ -41,7 +41,7 @@ import type {
 import { assertCodexModelAvailable } from '@/providers/codex/runtime/CodexModelAvailability';
 import { CodexNotificationRouter } from '@/providers/codex/runtime/CodexNotificationRouter';
 import { CodexRPCResponseError } from '@/providers/codex/runtime/CodexRPCTransport';
-import { describeAutoReview, guardianOverrideParams, reviewPickerLabel } from '@/providers/codex/runtime/notifications/codexAutoReview';
+import { describeAutoReview, describeReviewAction } from '@/providers/codex/runtime/notifications/codexAutoReview';
 import {
   clearCodexResumeState,
   type CodexPendingForkTarget,
@@ -68,6 +68,7 @@ import {
   resolveCodexTurnSandboxPolicy,
   resolveCodexTurnSettings,
 } from './codexTurnConfig';
+import { submitCodexReviewOverride } from './submitCodexReviewOverride';
 
 const CODEX_CONSUMED_FORK_STATE_KEYS = [
   'forkSource',
@@ -449,8 +450,8 @@ export class CodexExecutionSession
         chunk => this.handleStreamChunk(active, chunk),
         this.connection.targetWorkingDirectory(),
         false,
-        event => {
-          if ('completedAtMs' in event) active.run.emit({ type: 'notice', message: this.#reviewMessage(event) });
+        (phase, event) => {
+          if (phase === 'completed') active.run.emit({ type: 'notice', message: this.#reviewMessage(event) });
         },
       ));
 
@@ -536,7 +537,8 @@ export class CodexExecutionSession
   }
 
   get #canApproveReview(): boolean {
-    return this.connection.supportsReviewGrants && (!this.activeRun || this.activeRun.toolPolicy.kind === 'provider-default');
+    return this.config.supportsReviewDenialPicker === true && this.connection.supportsReviewGrants
+      && (!this.activeRun || this.activeRun.toolPolicy.kind === 'provider-default');
   }
 
   #reviewMessage(event: GuardianReviewCompleted): string {
@@ -553,13 +555,14 @@ export class CodexExecutionSession
   getReviewDenials() {
     if (!this.#canApproveReview) return [];
     return this.recentDenials.filter(event => event.threadId === this.threadId).map(event => ({
-      value: event.reviewId, label: reviewPickerLabel(event.action), description: event.review.rationale ?? undefined,
+      value: event.reviewId, label: describeReviewAction(event.action), description: event.review.rationale ?? undefined,
       approve: async (): Promise<boolean> => {
         const transport = this.connection.transport;
         if (!transport || !this.#canApproveReview || event.threadId !== this.threadId || !this.recentDenials.includes(event)) return false;
         this.recentDenials = this.recentDenials.filter(entry => entry !== event);
         try {
-          await transport.request('thread/approveGuardianDeniedAction', guardianOverrideParams(event));
+          const idleRollout = !this.activeRun && this.connection.persistsIdleReviewGrants ? this.sessionFilePath : null;
+          await submitCodexReviewOverride(transport, event, idleRollout);
         } catch (error) {
           if (transport === this.connection.transport && event.threadId === this.threadId) this.#rememberDenial(event);
           throw error;

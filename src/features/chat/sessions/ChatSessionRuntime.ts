@@ -185,7 +185,7 @@ export class ChatSessionRuntime {
    * No admitted turn, background work, interaction, or history operation requires the provider.
    */
   get isIdle(): boolean {
-    return !this.turns.isActive && this.pendingBackgroundWork === 0 && this.modelWork.size === 0 && !this.hasBackgroundWork && !this.isConversationBusy
+    return !this.coordinator.isWritingNativeHistory && !this.turns.isActive && this.pendingBackgroundWork === 0 && this.modelWork.size === 0 && !this.hasBackgroundWork && !this.isConversationBusy
       && !this.hasPendingInteraction && !this.mailboxOwner?.hasPending;
   }
 
@@ -217,7 +217,7 @@ export class ChatSessionRuntime {
 
   /** Main transcript work, excluding the independently owned side chat. */
   get isMainWorking(): boolean {
-    return this.hasActiveTurn || this.hasMainBackgroundWork || !!this.currentModel?.hasPendingWork;
+    return this.coordinator.isWritingNativeHistory || this.hasActiveTurn || this.hasMainBackgroundWork || !!this.currentModel?.hasPendingWork;
   }
 
   /** Any foreground or background work a user can see. */

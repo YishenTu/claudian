@@ -138,6 +138,12 @@ export class SessionRuntimePool {
       .map(runtime => runtime.peekModel?.conversationController.awaitCreation() ?? Promise.resolve()));
   }
 
+  /** A local write must follow the revision read that distinguishes earlier external work. */
+  async awaitNativeHistoryBaseline(runtime: ChatSessionRuntime): Promise<void> {
+    const record = this.records.get(runtime);
+    await record?.ownWorkCheck;
+  }
+
   /** Reserves synchronously, before model hydration or any view construction can yield. */
   acquire(identity: SessionIdentity, owner: SessionAttachmentOwner): { acquired: boolean; attachment: SessionAttachment } {
     if (this.closing) throw new Error('Session runtime pool is shutting down');

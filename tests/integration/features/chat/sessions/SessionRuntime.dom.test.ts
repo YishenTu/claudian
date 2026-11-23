@@ -228,6 +228,43 @@ async function setupRevisionedSession(options: RuntimePoolFixtureOptions = {}) {
   return { h, native, reads, first, runtime, model, provider: h.backend.latest, continueElsewhere, detach };
 }
 
+it('retains remaining review denials after an idle approval writes native history', async () => {
+  let revision = 'before';
+  let holdRead = false;
+  const reading = deferred<void>();
+  const releaseRead = deferred<void>();
+  const s = await setupRevisionedSession({ readNativeHistoryRevision: async () => {
+    if (holdRead) {
+      reading.resolve();
+      await releaseRead.promise;
+    }
+    return revision;
+  } });
+  const denials = ['First command', 'Second command'];
+  Object.assign(s.provider, { getReviewDenials: () => denials.map(label => ({
+    value: label, label, approve: async () => {
+      revision = 'after approval';
+      denials.splice(denials.indexOf(label), 1);
+      return true;
+    },
+  })) });
+  const approval = s.first.executionCoordinator.approveRecentDenial();
+  const first = await within(s.first.dom.contentEl).findByRole('button', { name: 'First command' });
+  holdRead = true;
+  fireEvent.click(first);
+  await reading.promise;
+  releaseRead.resolve();
+  holdRead = false;
+  expect(await approval).toBe('approved');
+  await s.detach();
+  const second = await s.h.attach();
+  expect(s.provider.disposeCalls).toBe(0);
+  const retry = second.executionCoordinator.approveRecentDenial();
+  fireEvent.click(await within(second.dom.contentEl).findByRole('button', { name: 'Second command' }));
+  expect(await retry).toBe('approved');
+  await destroyTab(second);
+});
+
 it.each([
   { change: 'none', reloads: false },
   { change: 'while detached', reloads: true },

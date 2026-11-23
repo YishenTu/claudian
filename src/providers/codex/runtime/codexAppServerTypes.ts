@@ -514,7 +514,8 @@ export type GuardianReviewAction =
 export interface GuardianReviewStarted {
   threadId: string;
   turnId: string;
-  startedAtMs: number;
+  /** Review timestamps first appeared in Codex 0.130. */
+  startedAtMs?: number;
   reviewId: string;
   targetItemId: string | null;
   action: GuardianReviewAction;
@@ -527,7 +528,7 @@ export interface GuardianReviewStarted {
 }
 
 export interface GuardianReviewCompleted extends GuardianReviewStarted {
-  completedAtMs: number;
+  completedAtMs?: number;
   decisionSource: 'agent';
 }
 

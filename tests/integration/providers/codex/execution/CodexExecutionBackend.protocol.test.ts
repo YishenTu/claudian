@@ -21,6 +21,7 @@ import { createProviderHostFixture } from '@test/helpers/providerRuntimeHost';
 import { type CodexNativeRequest, CodexNativeResponseError, CodexRuntimeHarness } from '@test/helpers/providers/codex/CodexRuntimeHarness';
 import { parseCodexSessionContent } from '@test/helpers/providers/codex/parseCodexSessionContent';
 import spawn from 'cross-spawn';
+import { onTestFinished } from 'vitest';
 
 import type {
   ProviderExecutionEvent,
@@ -235,6 +236,7 @@ function createSessionConfig(
   return {
     lifecycle: 'persistent',
     nativePersistence: 'enabled',
+    supportsReviewDenialPicker: true,
     workingDirectory: wslTarget ? 'C:\\vault' : '/vault',
     interactionPort: createInteractionPort(),
     ...overrides,
@@ -447,15 +449,22 @@ describe('CodexExecutionBackend', () => {
     await session.dispose();
   });
 
-  it('shows Guardian decisions and submits only the denial selected after the turn', async () => {
+  it.each(['0.124.0', '0.171.0'])('shows Guardian decisions from %s and submits the selected denial after the turn', async version => {
     const threadId = 'thread-review';
     const turnId = 'turn-review';
+    const root = mkdtempSync(join(tmpdir(), 'claudian-review-'));
+    onTestFinished(() => rmSync(root, { recursive: true, force: true }));
+    const rollout = join(root, 'rollout.jsonl');
+    writeFileSync(rollout, '');
     const startedAtMs = testDate().getTime();
     const completedAtMs = startedAtMs + 20;
+    const timestamps = version === '0.124.0' ? {} : { startedAtMs, completedAtMs };
     const port = createInteractionPort();
     nativeRequest.mockImplementation(async method => {
-      if (method === 'initialize') return { userAgent: 'claudian/0.171.0', platformFamily: 'unix', platformOs: 'macos' };
-      if (method === 'thread/start') return createThreadResult(threadId);
+      if (method === 'initialize') return { userAgent: `claudian/${version}`, platformFamily: 'unix', platformOs: 'macos' };
+      if (method === 'thread/start') return { thread: { ...createThreadResult(threadId).thread, path: rollout } };
+      if (method === 'model/list') return { data: [] };
+      if (method === 'config/read') return { config: { sandbox_mode: 'workspace-write' } };
       if (method === 'thread/approveGuardianDeniedAction') return {};
       if (method !== 'turn/start') throw new Error(`Unexpected method: ${method}`);
       emitNotification('guardianWarning', { threadId, message: 'Automatic review warning from Codex' });
@@ -463,7 +472,7 @@ describe('CodexExecutionBackend', () => {
       emitNotification('autoApprovalReview/strictReviewRequired', { threadId, turnId, startedAtMs });
       for (const status of ['approved', 'denied']) {
         emitNotification('item/autoApprovalReview/completed', {
-          threadId, turnId, reviewId: `review-${status}`, targetItemId: null, startedAtMs, completedAtMs,
+          threadId, turnId, reviewId: `review-${status}`, targetItemId: null, ...timestamps,
           decisionSource: 'agent', review: { status, rationale: `Reason for ${status}`, riskLevel: 'high', userAuthorization: null },
           action: { type: 'networkAccess', target: 'registry.example', host: 'registry.example', protocol: 'socks5Tcp', port: 443 },
         });
@@ -483,13 +492,20 @@ describe('CodexExecutionBackend', () => {
     expect(entries.map(entry => entry.description)).toEqual(['Reason for denied']);
     nativeRequest.mockImplementationOnce(() => { throw new Error('Native retry rejected'); });
     await expect(entries[0].approve()).rejects.toThrow('Native retry rejected');
-    expect(await session.getReviewDenials!()[0].approve()).toBe(true);
+    let approved = false;
+    const approving = session.getReviewDenials!()[0].approve().then(value => { approved = value; });
+    // Both responses have reached the transport; 0.136+ can still be writing the idle approval.
+    await nativeRoundTrip();
+    expect(approved).toBe(version === '0.124.0');
+    if (version !== '0.124.0') await fsPromises.appendFile(rollout, 'approval\n');
+    await approving;
+    expect(approved).toBe(true);
     expect(await entries[0].approve()).toBe(false);
     expect(session.getReviewDenials!()).toEqual([]);
     expect(nativeRequest.mock.calls.filter(([method]) => method === 'turn/start')).toHaveLength(1);
     expect(nativeRequest.mock.calls.filter(([method]) => method === 'thread/approveGuardianDeniedAction').slice(1)).toEqual([
       ['thread/approveGuardianDeniedAction', { threadId, event: expect.objectContaining({
-        id: 'review-denied', turn_id: turnId, started_at_ms: startedAtMs, completed_at_ms: completedAtMs,
+        id: 'review-denied', turn_id: turnId, ...(version === '0.171.0' ? { started_at_ms: startedAtMs, completed_at_ms: completedAtMs } : {}),
         status: 'denied', risk_level: 'high', rationale: 'Reason for denied', decision_source: 'agent',
         action: { type: 'network_access', target: 'registry.example', host: 'registry.example', protocol: 'socks5_tcp', port: 443 },
       }) }],
@@ -877,40 +893,46 @@ describe('CodexExecutionBackend', () => {
     }
   });
 
-  it.each(['provider-default', 'read-only'] as const)('handles a denial during a %s turn without adding a user message or steering', async (kind) => {
-    configureNativeTurn('parent', 'turn', () => ({}));
-    const base = nativeRequest.getMockImplementation()!;
-    nativeRequest.mockImplementation((method, params) => {
-      if (method === 'initialize') return { userAgent: 'claudian/0.171.0', platformFamily: 'unix', platformOs: 'macos' };
-      return method === 'thread/approveGuardianDeniedAction' ? {} : base(method, params);
-    });
-    const session = createBackend(await createPlugin()).createSession(createSessionConfig());
-    const output = collectEvents(session.execute(createRequest(undefined, { toolPolicy: { kind } })).events);
-    await native.waitForRequest('turn/start');
-    emitNotification('item/autoApprovalReview/completed', {
-      threadId: 'parent', turnId: 'turn', reviewId: 'review', targetItemId: null,
-      startedAtMs: testDate().getTime(), completedAtMs: testDate({ seconds: 1 }).getTime(), decisionSource: 'agent',
-      review: { status: 'denied', rationale: 'Needs explicit permission', riskLevel: 'high', userAuthorization: null },
-      action: { type: 'command', command: 'ls ' + '/sample-directory'.repeat(30), source: 'shell', cwd: '/vault' },
-    });
-    await nativeRoundTrip();
-    const denials = session.getReviewDenials!();
-    const eligible = kind === 'provider-default';
-    expect(denials).toHaveLength(eligible ? 1 : 0);
-    expect(denials.every(option => option.label.length <= 100)).toBe(true);
-    expect(await denials[0]?.approve()).toBe(eligible ? true : undefined);
-    expect(nativeRequest.mock.calls.filter(([method]) => method === 'thread/approveGuardianDeniedAction')).toHaveLength(eligible ? 1 : 0);
-    expect(nativeRequest.mock.calls.some(([method]) => method === 'turn/steer')).toBe(false);
-    completeTurn('parent', 'turn');
-    expect(await output).not.toContainEqual(expect.objectContaining({ type: 'user_message_started', content: '/approve' }));
-    await session.dispose();
-  });
+  it.each([['provider-default', true], ['provider-default', false], ['read-only', true]] as const)(
+    'shows two denials during a %s turn with picker %s and offers only reachable retries', async (kind, supportsReviewDenialPicker) => {
+      configureNativeTurn('parent', 'turn', () => ({}));
+      const base = nativeRequest.getMockImplementation()!;
+      nativeRequest.mockImplementation((method, params) => {
+        if (method === 'initialize') return { userAgent: 'claudian/0.171.0', platformFamily: 'unix', platformOs: 'macos' };
+        return method === 'thread/approveGuardianDeniedAction' ? {} : base(method, params);
+      });
+      const session = createBackend(await createPlugin()).createSession(createSessionConfig({ supportsReviewDenialPicker }));
+      const output = collectEvents(session.execute(createRequest(undefined, { toolPolicy: { kind } })).events);
+      await native.waitForRequest('turn/start');
+      const commands = ['draft', 'final'].map(dir => `cp ${'/source'.repeat(20)}/${dir}/file.txt ${'/archive'.repeat(20)}/file.txt`);
+      for (const command of commands) {
+        emitNotification('item/autoApprovalReview/completed', {
+          threadId: 'parent', turnId: 'turn', reviewId: command, targetItemId: null,
+          startedAtMs: testDate().getTime(), completedAtMs: testDate({ seconds: 1 }).getTime(), decisionSource: 'agent',
+          review: { status: 'denied', rationale: 'Needs explicit permission', riskLevel: 'high', userAuthorization: null },
+          action: { type: 'command', command, source: 'shell', cwd: '/vault' },
+        });
+      }
+      await nativeRoundTrip();
+      const denials = session.getReviewDenials!();
+      const eligible = kind === 'provider-default' && supportsReviewDenialPicker;
+      expect(denials.map(entry => entry.label)).toEqual(eligible ? [...commands].reverse().map(command => `${command} (/vault)`) : []);
+      expect(await denials[0]?.approve()).toBe(eligible ? true : undefined);
+      expect(nativeRequest.mock.calls.filter(([method]) => method === 'thread/approveGuardianDeniedAction')).toHaveLength(eligible ? 1 : 0);
+      expect(nativeRequest.mock.calls.some(([method]) => method === 'turn/steer')).toBe(false);
+      completeTurn('parent', 'turn');
+      const notices = (await output).filter(event => event.type === 'notice').map(event => event.message);
+      expect(notices.filter(message => message.includes('Needs explicit permission'))).toHaveLength(2);
+      expect(notices.filter(message => message.includes('/approve'))).toHaveLength(eligible ? 2 : 0);
+      await session.dispose();
+    },
+  );
 
   it('keeps child reviews on the child card and out of the main-thread retry picker', async () => {
     configureNativeTurn('parent', 'parent-turn', () => ({}));
     const base = nativeRequest.getMockImplementation()!;
     nativeRequest.mockImplementation((method, params) => {
-      if (method === 'initialize') return { userAgent: 'claudian/0.171.0', platformFamily: 'unix', platformOs: 'macos' };
+      if (method === 'initialize') return { userAgent: 'claudian/0.124.0', platformFamily: 'unix', platformOs: 'macos' };
       if (method === 'thread/read') return { thread: createThreadResult('child').thread };
       return base(method, params);
     });
@@ -926,12 +948,12 @@ describe('CodexExecutionBackend', () => {
     emitNotification('turn/started', { threadId: 'child', turn: createTurnResult('child-turn').turn });
     const review = {
       threadId: 'child', turnId: 'child-turn', reviewId: 'child-review', targetItemId: null,
-      startedAtMs: testDate().getTime(), completedAtMs: testDate({ seconds: 1 }).getTime(), decisionSource: 'agent',
+      decisionSource: 'agent',
       review: { status: 'denied', rationale: 'Outside the workspace', riskLevel: 'high', userAuthorization: null },
       action: { type: 'applyPatch', files: ['/outside/plan.md'], cwd: '/vault' },
     };
     emitNotification('item/autoApprovalReview/started', { threadId: 'child', turnId: 'child-turn', reviewId: review.reviewId,
-      targetItemId: null, startedAtMs: review.startedAtMs, action: review.action,
+      targetItemId: null, action: review.action,
       review: { status: 'inProgress', rationale: null, riskLevel: null, userAuthorization: null } });
     await nativeRoundTrip();
     expect(latestSubagentUpdate(updates).subagent.toolCalls).toEqual([expect.objectContaining({ status: 'running' })]);

@@ -45,6 +45,10 @@ export function createChatSessionRuntime(plugin: ChatFeatureHost, identity: Sess
         else await model.events.enqueue(event, context);
       });
     },
+    onNativeHistoryWriteChanged: writing => {
+      runtime.publish('work');
+      if (writing) return plugin.sessionRuntimes.awaitNativeHistoryBaseline(runtime);
+    },
     onBackgroundWorkChanged: () => runtime.publish('work'),
     onError: error => { new Notice(error instanceof Error ? error.message : 'Provider execution failed.'); },
     idleReleaseMs: 30 * 60_000,

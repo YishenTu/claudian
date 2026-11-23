@@ -21,6 +21,8 @@ import type {
   ErrorNotification,
   FileChangeItem,
   FileChangePatchUpdatedNotification,
+  GuardianReviewCompleted,
+  GuardianReviewStarted,
   ImageViewItem,
   ItemCompletedNotification,
   ItemStartedNotification,
@@ -32,7 +34,7 @@ import type {
   WebSearchItem,
 } from './codexAppServerTypes';
 import { CodexAssistantTextTracker } from './notifications/CodexAssistantTextTracker';
-import { describeAutoReview, type GuardianReviewEvent } from './notifications/codexAutoReview';
+import { describeAutoReview } from './notifications/codexAutoReview';
 import { CodexCommandCorrelator } from './notifications/CodexCommandCorrelator';
 import { CodexDeferredExecCorrelator } from './notifications/CodexDeferredExecCorrelator';
 import {
@@ -86,7 +88,7 @@ export class CodexNotificationRouter {
     private readonly emitChunk: ChunkEmitter,
     private readonly workingDirectory?: string,
     streamRawExecCalls = false,
-    private readonly onReview?: (event: GuardianReviewEvent) => void,
+    private readonly onReview?: (...review: [phase: 'started', event: GuardianReviewStarted] | [phase: 'completed', event: GuardianReviewCompleted]) => void,
   ) {
     const sink: CodexToolChunkSink = {
       emit: chunk => this.#emit(chunk),
@@ -160,10 +162,12 @@ export class CodexNotificationRouter {
         break;
       }
       case 'item/autoApprovalReview/started':
+        this.onReview?.('started', params as GuardianReviewStarted);
+        break;
       case 'item/autoApprovalReview/completed': {
-        const event = params as GuardianReviewEvent;
-        if (this.onReview) this.onReview(event);
-        else if ('completedAtMs' in event) this.#emit({ type: 'notice', content: describeAutoReview(event, false) });
+        const event = params as GuardianReviewCompleted;
+        if (this.onReview) this.onReview('completed', event);
+        else this.#emit({ type: 'notice', content: describeAutoReview(event, false) });
         break;
       }
       case 'guardianWarning': {
