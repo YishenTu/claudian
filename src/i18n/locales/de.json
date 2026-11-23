@@ -519,7 +519,9 @@
       "fileNotFound": "{message} (Datei nicht gefunden)",
       "permissionDenied": "{message} (Zugriff verweigert)",
       "preview": "Bildvorschau: {name}",
-      "closePreview": "Bildvorschau schließen"
+      "closePreview": "Bildvorschau schließen",
+      "previewImage": "Vorschau von {name}",
+      "zoomLevel": "{percent} %"
     },
     "pi": {
       "extension": "Pi-Erweiterung",

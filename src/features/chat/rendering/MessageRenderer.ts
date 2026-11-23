@@ -7,6 +7,7 @@ import type { ChatMessage, ImageAttachment, SubagentInfo, ToolCallInfo } from '@
 import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
 import { renderCitationGroup } from '@/features/chat/rendering/CitationRenderer';
 import { MarkdownContentRenderer, type RenderContentOptions } from '@/features/chat/rendering/markdown/MarkdownContentRenderer';
+import { getImagePreview } from '@/features/chat/rendering/markdown/previewableImages';
 import { type MessageActionCallbacks, MessageActions } from '@/features/chat/rendering/MessageActions';
 import { getResponseSegments } from '@/features/chat/rendering/NotificationBoundaries';
 import { ResponseFinalizer } from '@/features/chat/rendering/ResponseFinalizer';
@@ -32,7 +33,7 @@ import { TranscriptFollow } from '@/features/chat/rendering/TranscriptFollow';
 import { createWelcomeElement } from '@/features/chat/rendering/WelcomeRenderer';
 import { type ConversationDirectoryEntry, formatConversationDirectoryTitle, getRenderedConversationDirectory } from '@/features/chat/utils/conversationDirectoryTitle';
 import { t } from '@/i18n/i18n';
-import { ImagePreviewModal } from '@/shared/modals/ImagePreviewModal';
+import { imageAttachmentPreview, ImagePreviewModal, type ImagePreviewSource } from '@/shared/modals/ImagePreviewModal';
 import { registerFileLinkHandler } from '@/utils/fileLink';
 
 
@@ -96,7 +97,7 @@ export class MessageRenderer {
   private removeSessionLinkHandler: () => void;
   readonly #openConversation: ((conversationId: string) => Promise<void>) | undefined;
   private readonly imagePreviewModal = new ImagePreviewModal();
-  private readonly contentRemovalObserver?: MutationObserver;
+  private readonly contentObserver?: MutationObserver;
   /** Whether this presentation follows its latest content; main and side chat share it. */
   readonly follow: TranscriptFollow;
   readonly #markdown: MarkdownContentRenderer;
@@ -153,6 +154,7 @@ export class MessageRenderer {
       (el, markdown) => this.renderContent(el, markdown),
     );
 
+    this.messagesEl.addEventListener('click', this.#onEmbeddedImageClick);
     // Register delegated click handler for file links
     this.removeFileLinkHandler = registerFileLinkHandler(this.app, this.messagesEl);
     // Live tool cards render into the same container, so one delegated handler covers both paths.
@@ -161,11 +163,12 @@ export class MessageRenderer {
       return summary ? { title: summary.title || undefined, providerId: summary.providerId } : null;
     });
 
-    // Controllers also clear message DOM directly. Inspect only removed subtrees,
-    // rather than scanning every retained message on each streaming mutation.
+    // Controllers also clear message DOM directly, and Obsidian loads vault image embeds after a
+    // Markdown render settles. Inspect only removed and added subtrees, rather than scanning every
+    // retained message on each streaming mutation.
     const Observer = messagesEl.ownerDocument?.defaultView?.MutationObserver;
     if (Observer) {
-      this.contentRemovalObserver = new Observer(records => {
+      this.contentObserver = new Observer(records => {
         const releaseRemoved = (el: HTMLElement) => {
           const id = el.dataset.messageId;
           if (id && this.messageEls.get(id) === el && !this.messagesEl.contains(el)) {
@@ -182,18 +185,22 @@ export class MessageRenderer {
             el.querySelectorAll<HTMLElement>('[data-message-id]').forEach(releaseRemoved);
             this.#markdown.releaseRemoved(el);
           }
+          for (const node of record.addedNodes) {
+            if (node.nodeType === 1) this.#markdown.prepareAdded(node as Element);
+          }
         }
       });
-      this.contentRemovalObserver.observe(messagesEl, { childList: true, subtree: true });
+      this.contentObserver.observe(messagesEl, { childList: true, subtree: true });
     }
   }
 
   dispose(): void {
     if (this.#markdown.isDisposed) return;
     this.follow.dispose();
-    this.contentRemovalObserver?.disconnect();
+    this.contentObserver?.disconnect();
     this.#markdown.dispose();
     this.imagePreviewModal.close();
+    this.messagesEl.removeEventListener('click', this.#onEmbeddedImageClick);
     this.removeFileLinkHandler();
     this.removeFileLinkHandler = () => {};
     this.removeSessionLinkHandler();
@@ -763,7 +770,7 @@ export class MessageRenderer {
       const imageWrapper = imagesEl.createEl('button', {
         cls: 'claudian-message-image',
         attr: {
-          'aria-label': `Preview ${image.name}`,
+          'aria-label': t('chat.images.previewImage', { name: image.name }),
           type: 'button',
         },
       });
@@ -774,10 +781,7 @@ export class MessageRenderer {
         },
       });
 
-      imageWrapper.addEventListener('click', () => {
-        if (this.#markdown.isDisposed) return;
-        this.imagePreviewModal.open(this.messagesEl.ownerDocument ?? window.document, image, this.app.keymap);
-      });
+      imageWrapper.addEventListener('click', () => this.#openImagePreview(imageAttachmentPreview(image)));
     }
     return imagesEl;
   }
@@ -785,6 +789,17 @@ export class MessageRenderer {
   // ============================================
   // Content Rendering
   // ============================================
+
+  #openImagePreview(image: ImagePreviewSource): void {
+    if (this.#markdown.isDisposed) return;
+    this.imagePreviewModal.open(this.messagesEl.ownerDocument ?? window.document, image, this.app.keymap);
+  }
+
+  /** Opens images embedded in rendered replies; one delegated handler covers every render path. */
+  readonly #onEmbeddedImageClick = (event: MouseEvent): void => {
+    const preview = getImagePreview(event.target as HTMLElement);
+    if (preview) this.#openImagePreview(preview);
+  };
 
   /** Renders markdown content with code block enhancements. */
   renderContent(

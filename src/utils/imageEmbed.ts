@@ -70,11 +70,13 @@ function resolveImageFile(
 }
 
 
+const DIMENSIONS_PATTERN = /^(\d+)(?:x(\d+))?$/;
+
 /** Supports formats: "100" (width only) or "100x200" (width x height) */
 function buildStyleAttribute(altText: string | undefined): string {
   if (!altText) return '';
 
-  const dimMatch = altText.match(/^(\d+)(?:x(\d+))?$/);
+  const dimMatch = altText.match(DIMENSIONS_PATTERN);
   if (!dimMatch) return '';
 
   const width = dimMatch[1];
@@ -92,7 +94,8 @@ function createImageHTML(
   altText: string | undefined
 ): string {
   const src = app.vault.getResourcePath(file);
-  const alt = escapeHTML(altText || file.basename);
+  // A size spec is not a description, so the file name stays the image's accessible name.
+  const alt = escapeHTML(altText && !DIMENSIONS_PATTERN.test(altText) ? altText : file.basename);
   const style = buildStyleAttribute(altText);
 
   return `<span class="claudian-embedded-image"><img src="${escapeHTML(src)}" alt="${alt}" loading="lazy"${style}></span>`;

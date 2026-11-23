@@ -11,12 +11,37 @@
   max-width: 100%;
   height: auto;
   border-radius: var(--radius-s);
-  cursor: pointer;
   transition: opacity 0.2s ease;
 }
 
 .claudian-embedded-image img:hover {
   opacity: 0.9;
+}
+
+/* Images in chat replies open a full preview through a native button; the image inherits its cursor. */
+button.claudian-previewable-image,
+button.claudian-previewable-image:hover,
+button.claudian-previewable-image:focus,
+button.claudian-previewable-image:active {
+  appearance: none;
+  display: inline-block;
+  max-width: 100%;
+  height: auto;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-s);
+  background: none;
+  box-shadow: none;
+  font: inherit;
+  line-height: 0;
+  cursor: zoom-in;
+  vertical-align: middle;
+}
+
+button.claudian-previewable-image:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: 2px;
 }
 
 /* When image is inline with text */

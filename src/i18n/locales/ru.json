@@ -519,7 +519,9 @@
       "fileNotFound": "{message} (Файл не найден)",
       "permissionDenied": "{message} (Доступ запрещён)",
       "preview": "Предпросмотр изображения: {name}",
-      "closePreview": "Закрыть предпросмотр изображения"
+      "closePreview": "Закрыть предпросмотр изображения",
+      "previewImage": "Предпросмотр {name}",
+      "zoomLevel": "{percent} %"
     },
     "pi": {
       "extension": "Расширение Pi",

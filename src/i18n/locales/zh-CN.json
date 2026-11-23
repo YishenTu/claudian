@@ -519,7 +519,9 @@
       "fileNotFound": "{message}（文件不存在）",
       "permissionDenied": "{message}（无访问权限）",
       "preview": "图片预览：{name}",
-      "closePreview": "关闭图片预览"
+      "closePreview": "关闭图片预览",
+      "previewImage": "预览 {name}",
+      "zoomLevel": "{percent}%"
     },
     "pi": {
       "extension": "Pi 扩展",

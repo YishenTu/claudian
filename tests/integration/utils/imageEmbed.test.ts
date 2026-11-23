@@ -155,6 +155,8 @@ describe('replaceImageEmbedsWithHTML', () => {
       const result = replaceImageEmbedsWithHTML('![[image.png|300]]', app);
 
       expect(result).toContain('style="width: 300px;"');
+      // A size spec is not a description; the file name stays the accessible name.
+      expect(result).toContain('alt="image"');
     });
 
     it('applies width and height dimensions', () => {
@@ -162,6 +164,7 @@ describe('replaceImageEmbedsWithHTML', () => {
       const result = replaceImageEmbedsWithHTML('![[image.png|200x150]]', app);
 
       expect(result).toContain('style="width: 200px; height: 150px;"');
+      expect(result).toContain('alt="image"');
     });
 
     it('uses basename as alt when no alt text provided', () => {

@@ -3,11 +3,12 @@
 import '@/providers';
 
 import { parser } from '@lezer/markdown';
+import { axe } from '@test/helpers/accessibility';
 import { createChatFeatureHost } from '@test/helpers/features/chat/ChatFeatureHostFixture';
 import { renderObsidianHTML } from '@test/helpers/ObsidianMarkdownRenderer';
 import { testDate } from '@test/helpers/testClock';
-import { fireEvent, within } from '@testing-library/dom';
-import { type App, Component, MarkdownRenderer, type TFile } from 'obsidian';
+import { fireEvent, waitFor, within } from '@testing-library/dom';
+import { App, Component, MarkdownRenderer, type TFile } from 'obsidian';
 
 import { MessageRenderer } from '@/features/chat/rendering/MessageRenderer';
 import { SubagentManager } from '@/features/chat/rendering/subagents/SubagentManager';
@@ -32,6 +33,7 @@ beforeEach(async () => {
     metadataCache: {
       getFirstLinkpathDest: (path: string) => path === note.path ? note : null,
     },
+    keymap: new App().keymap,
   } as unknown as App;
   const plugin = await createChatFeatureHost({ app, settings: { mediaFolder: '' } });
   settings = plugin.settings;
@@ -212,6 +214,85 @@ it('escapes authored HTML before injecting trusted images and then activates rem
   expect(host.textContent).toContain('Use <meta-name>');
   expect(within(host).getByRole('img', { name: 'photo' }).getAttribute('src')).toBe('app://local/Media/photo.png');
   expect(within(host).getByRole('link', { name: 'Note' }).getAttribute('data-href')).toBe('note.md');
+});
+
+it('opens an image embedded in a reply in the zoomable preview from a native button', async () => {
+  vi.spyOn(MarkdownRenderer, 'render').mockImplementationOnce(renderObsidianHTML);
+  settings.mediaFolder = 'Media';
+  await renderer.renderContent(host, 'Diagram: ![[photo.png]]');
+
+  const trigger = within(host).getByRole('button', { name: 'Preview photo' });
+  expect(trigger.getAttribute('type')).toBe('button');
+  expect(within(trigger).getByRole('img', { name: 'photo' }).getAttribute('src')).toBe('app://local/Media/photo.png');
+  expect(await axe(host)).toHaveNoViolations();
+  trigger.focus();
+  fireEvent.click(within(trigger).getByRole('img', { name: 'photo' }));
+
+  const dialog = within(document.body).getByRole('dialog', { name: 'Image preview: photo' });
+  expect(within(dialog).getByRole('img', { name: 'photo' }).getAttribute('src')).toBe('app://local/Media/photo.png');
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Close image preview' }));
+  expect(within(document.body).queryByRole('dialog')).toBeNull();
+  expect(document.activeElement).toBe(trigger);
+});
+
+it('opens standard Markdown images, including embeds Obsidian loads after rendering', async () => {
+  // Obsidian's output for `![diagram](fixture.png) and ![chart](https://example.org/chart.png)`:
+  // the external image renders at once, and the vault embed receives its image when it loads.
+  vi.spyOn(MarkdownRenderer, 'render').mockImplementationOnce(async (_app, _markdown, el) => {
+    el.innerHTML = '<p><span class="internal-embed" src="fixture.png" alt="diagram"></span>'
+      + ' and <img alt="chart" src="https://example.org/chart.png"></p>';
+  });
+  await renderer.renderContent(host, '![diagram](fixture.png) and ![chart](https://example.org/chart.png)');
+
+  fireEvent.click(within(host).getByRole('button', { name: 'Preview chart' }));
+  expect(within(within(document.body).getByRole('dialog', { name: 'Image preview: chart' }))
+    .getByRole('img', { name: 'chart' }).getAttribute('src')).toBe('https://example.org/chart.png');
+  fireEvent.click(within(document.body).getByRole('button', { name: 'Close image preview' }));
+
+  host.querySelector('.internal-embed')!.createEl('img', { attr: { alt: 'diagram', src: 'app://local/fixture.png' } });
+  const trigger = await waitFor(() => within(host).getByRole('button', { name: 'Preview diagram' }));
+  fireEvent.click(trigger);
+  expect(within(within(document.body).getByRole('dialog', { name: 'Image preview: diagram' }))
+    .getByRole('img', { name: 'diagram' }).getAttribute('src')).toBe('app://local/fixture.png');
+  expect(await axe(host)).toHaveNoViolations();
+});
+
+it('opens external Markdown images inside lists, tables, and emphasis, but not plugin-rendered diagrams', async () => {
+  // Obsidian's output for external images in a list item, a table cell and bold text, beside a code
+  // block another plugin rendered as an image and a Mermaid diagram.
+  vi.spyOn(MarkdownRenderer, 'render').mockImplementationOnce(async (_app, _markdown, el) => {
+    el.innerHTML = '<ul><li><img alt="in list" src="https://example.org/list.png"></li></ul>'
+      + '<table><tbody><tr><td><img alt="in table" src="https://example.org/table.png"></td></tr></tbody></table>'
+      + '<p><strong><img alt="in bold" src="https://example.org/bold.png"></strong></p>'
+      + '<div class="block-language-chart"><img alt="plugin chart" src="data:image/png;base64,AA=="></div>'
+      + '<div class="claudian-mermaid"><img alt="Mermaid diagram" src="data:image/svg+xml,%3Csvg%2F%3E"></div>';
+  });
+  await renderer.renderContent(host, 'images');
+
+  for (const name of ['in list', 'in table', 'in bold']) {
+    fireEvent.click(within(host).getByRole('button', { name: `Preview ${name}` }));
+    expect(within(document.body).getByRole('dialog', { name: `Image preview: ${name}` })).toBeDefined();
+    fireEvent.click(within(document.body).getByRole('button', { name: 'Close image preview' }));
+  }
+  for (const name of ['plugin chart', 'Mermaid diagram']) {
+    expect(within(host).getByRole('img', { name }).closest('button')).toBeNull();
+  }
+  expect(within(host).getAllByRole('button')).toHaveLength(3);
+});
+
+it('leaves an embedded image inside an authored link to the link', async () => {
+  // Obsidian renders `[![[photo.png]]](https://example.org)` as a link around the injected image.
+  vi.spyOn(MarkdownRenderer, 'render').mockImplementationOnce(async (_app, markdown, el) => {
+    el.innerHTML = `<a href="https://example.org/">${markdown}</a>`;
+  });
+  settings.mediaFolder = 'Media';
+  await renderer.renderContent(host, '![[photo.png]]');
+
+  const link = within(host).getByRole('link');
+  expect(within(link).getByRole('img', { name: 'photo' })).toBeDefined();
+  expect(within(host).queryByRole('button')).toBeNull();
+  fireEvent.click(within(link).getByRole('img', { name: 'photo' }));
+  expect(within(document.body).queryByRole('dialog')).toBeNull();
 });
 
 it('skips the file-link DOM pass for content without wikilinks', async () => {
