@@ -3969,11 +3969,14 @@ it('keeps a completion during automatic request startup for the following turn',
   const order: string[] = [];
   session.onEvent(event => {
     if (event.type === 'task_notification') order.push(event.content);
+    if (event.type === 'background_turn_started') order.push('turn started');
     if (event.type === 'text_delta') order.push(event.text);
   });
   try {
-    // Captured SDK order: A completes, automatic init, B completes, first A chunk.
     for (const message of ([
+      // Not captured: an init with no selected notification, like a process's startup init, opens no turn.
+      { type: 'system', subtype: 'init', session_id: 'session-1' },
+      // Captured SDK order: A completes, automatic init, B completes, first A chunk.
       { type: 'system', subtype: 'task_notification', session_id: 'session-1', task_id: 'a', status: 'completed', summary: 'FIRST_DONE' },
       { type: 'system', subtype: 'init', session_id: 'session-1' },
       { type: 'system', subtype: 'task_notification', session_id: 'session-1', task_id: 'b', status: 'completed', summary: 'SECOND_DONE' },
@@ -3983,9 +3986,127 @@ it('keeps a completion during automatic request startup for the following turn',
       { type: 'system', subtype: 'init', session_id: 'session-1' },
       { type: 'assistant', message: { id: 'second', content: [{ type: 'text', text: 'Second automatic answer' }] } },
       { type: 'result', subtype: 'success' },
-    ] satisfies Parameters<typeof buildSDKMessage>[0][]).map(buildSDKMessage)) await session.handleNativeMessage(message, 1);
-    expect(order).toEqual(['FIRST_DONE', 'First automatic answer', 'SECOND_DONE', 'Second automatic answer']);
+    ] satisfies Parameters<typeof buildSDKMessage>[0][]).map(buildSDKMessage)) {
+      await session.handleNativeMessage(message, 1);
+      if (message.type === 'system' && message.subtype === 'init') order.push('init handled');
+    }
+    // Each automatic turn opens at its init, not its first token, which still publishes the notification it consumes.
+    expect(order).toEqual([
+      'init handled', 'turn started', 'init handled', 'FIRST_DONE', 'First automatic answer',
+      'turn started', 'init handled', 'SECOND_DONE', 'Second automatic answer',
+    ]);
   } finally { await session.dispose(); }
+});
+
+it('settles a notification turn stopped before its first token at its own boundary', async () => {
+  const session = new ClaudeExecutionSession((await createHost()).host.getRuntimeHost('claude'), createConfig());
+  const order: string[] = [];
+  session.onEvent(event => {
+    if (event.type === 'task_notification') order.push(event.content);
+    if (event.type === 'background_turn_completed') order.push(`turn ${event.reason}`);
+    if (event.type === 'text_delta') order.push(event.text);
+  });
+  const handle = async (message: Parameters<typeof buildSDKMessage>[0]) => session.handleNativeMessage(buildSDKMessage(message), 1);
+  try {
+    await handle({ type: 'system', subtype: 'task_notification', session_id: 'session-1', task_id: 'a', status: 'completed', summary: 'FIRST_DONE' });
+    await handle({ type: 'system', subtype: 'init', session_id: 'session-1' });
+    // B completes after A's turn was selected, so it belongs to the next turn.
+    await handle({ type: 'system', subtype: 'task_notification', session_id: 'session-1', task_id: 'b', status: 'completed', summary: 'SECOND_DONE' });
+    // Stop is available from init; the interrupted turn consumed A, as native history records it.
+    session.cancel();
+    await handle({ type: 'result', subtype: 'success' });
+    await handle({ type: 'system', subtype: 'init', session_id: 'session-1' });
+    await handle({ type: 'assistant', message: { id: 'second', content: [{ type: 'text', text: 'Second automatic answer' }] } });
+    await handle({ type: 'result', subtype: 'success' });
+    expect(order).toEqual(['FIRST_DONE', 'turn interrupted', 'SECOND_DONE', 'Second automatic answer', 'turn completed']);
+  } finally { await session.dispose(); }
+});
+
+it('ends a notification turn opened at init when a cancelled send replaces its process', async () => {
+  const updateBarrier = createDeferred<void>();
+  const keepOpen = createDeferred<unknown>();
+  const query = createScriptedPersistentQuery([[
+    { type: 'system', subtype: 'init', session_id: 'session-1' },
+    { type: 'result', subtype: 'success' },
+    { type: 'system', subtype: 'task_notification', session_id: 'session-1', task_id: 'task-1', status: 'completed', summary: 'Task finished' },
+    { type: 'system', subtype: 'init', session_id: 'session-1' },
+    keepOpen.promise,
+  ]]);
+  query.setModel.mockImplementationOnce(() => updateBarrier.promise);
+  vi.spyOn(await import('@/providers/claude/loadClaudeAgentSDK'), 'loadClaudeAgentQuery')
+    .mockResolvedValueOnce(receiveInput(query) as never);
+  const session = new ClaudeExecutionBackend((await createHost()).host.getRuntimeHost('claude')).createSession(createConfig());
+  const background: ProviderSessionEvent[] = [];
+  session.onEvent(event => background.push(event));
+  try {
+    await collectEvents(session.execute(createRequest()).events);
+    await waitFor(() => background.some(event => event.type === 'background_turn_started'));
+    // A send in the gap that changes the model is cancelled while the setting applies, before handoff.
+    const cancelled = session.execute(createRequest({
+      configuration: { ...createRequest().configuration, model: 'claude-opus-4-6' },
+    }));
+    const cancelledEvents = collectEvents(cancelled.events);
+    await waitFor(() => query.setModel.mock.calls.length === 1);
+    cancelled.cancel();
+    expect((await cancelledEvents).at(-1)?.type).toBe('cancelled');
+    // The detached process can no longer report the turn's result; the turn still owns its notification.
+    expect(background.flatMap(event => event.type === 'task_notification' ? [event.content]
+      : event.type === 'background_turn_completed' ? [`turn ${event.reason}`] : [])).toEqual(['Task finished', 'turn provider-ended']);
+    expect(session.getStatus()).toBe('idle');
+  } finally {
+    updateBarrier.resolve(undefined);
+    keepOpen.resolve(null);
+    await session.dispose();
+  }
+});
+
+it('publishes a notification turn at its init, so a send before its first token joins work already in progress', async () => {
+  const atInit = createDeferred<null>();
+  const continuation = createDeferred<unknown>();
+  const keepOpen = createDeferred<unknown>();
+  const query = createScriptedPersistentQuery([[
+    { type: 'system', subtype: 'init', session_id: 'session-1' },
+    { type: 'assistant', message: { id: 'first', content: [{ type: 'text', text: 'Started the task' }] } },
+    { type: 'result', subtype: 'success' },
+    { type: 'system', subtype: 'task_notification', session_id: 'session-1', task_id: 'task-1', status: 'completed', summary: 'Task finished' },
+    { type: 'system', subtype: 'init', session_id: 'session-1' },
+    { then: (resolve: (value: null) => void) => { atInit.resolve(null); resolve(null); } },
+    // Claude is still waiting for the notification turn's first token when the user sends.
+    continuation.promise,
+    { type: 'stream_event', parent_tool_use_id: null, event: { type: 'message_start', message: { id: 'automatic', usage: {} } } },
+    { type: 'assistant', message: { id: 'automatic', content: [{ type: 'text', text: 'Task done; follow-up received.' }] } },
+    { type: 'result', subtype: 'success' },
+    keepOpen.promise,
+  ]]);
+  vi.spyOn(await import('@/providers/claude/loadClaudeAgentSDK'), 'loadClaudeAgentQuery')
+    .mockResolvedValueOnce(receiveInput(query) as never);
+  const session = new ClaudeExecutionBackend((await createHost()).host.getRuntimeHost('claude')).createSession(createConfig());
+  const background: ProviderSessionEvent[] = [];
+  session.onEvent(event => background.push(event));
+  let followUp: Promise<ProviderExecutionEvent[]> | undefined;
+  try {
+    await collectEvents(session.execute(createRequest()).events);
+    // The consumer handles the automatic init before reaching the next scripted step.
+    await atInit.promise;
+    expect(background.map(event => event.type)).toContain('background_turn_started');
+    followUp = collectEvents(session.execute(createRequest({ input: [{ type: 'text', text: 'Follow up' }] })).events);
+    await waitFor(() => getEncodedPrompts().includes('Follow up'));
+    continuation.resolve(null);
+    const events = await followUp;
+    // The requested run owns the output once, and the turn opened at init closes without output of its own.
+    const texts = (from: Array<ProviderExecutionEvent | ProviderSessionEvent>) => from.flatMap(event => event.type === 'text_delta' ? [event.text] : []);
+    expect(texts(events)).toEqual(['Task done; follow-up received.']);
+    expect(texts(background)).toEqual([]);
+    expect(events.at(-1)?.type).toBe('turn_completed');
+    expect(background.filter(event => event.type === 'background_turn_started')).toHaveLength(1);
+    expect(background.filter(event => event.type === 'background_turn_completed')).toHaveLength(1);
+    expect(session.getStatus()).toBe('idle');
+  } finally {
+    continuation.resolve(null);
+    keepOpen.resolve(null);
+    await followUp;
+    await session.dispose();
+  }
 });
 
 describe('Claude prompt suggestions', () => {
