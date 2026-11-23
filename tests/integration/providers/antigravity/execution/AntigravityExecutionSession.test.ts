@@ -1879,6 +1879,93 @@ describe('AntigravityExecutionSession', () => {
     expect(events.at(-1)).toMatchObject({ type: 'cancelled' });
   });
 
+  /** Starts a run, waits until Claudian shows agy's running `sleep 30` call, then stops the run. */
+  async function stopRunningCall(session: Awaited<ReturnType<typeof createSession>>) {
+    const run = session.execute(request('Run the slow command'));
+    const peer = await firstPeer();
+    await peer.waitForPrompts(1);
+    const events = run.events[Symbol.asyncIterator]();
+    peer.emit({ kind: 'execute', rawInput: { CommandLine: 'sleep 30' }, sessionUpdate: 'tool_call', status: 'in_progress', title: 'sleep 30', toolCallId: 'call-slow' }, 'session-new');
+    for (let next = await events.next(); !next.done; next = await events.next()) {
+      if (next.value.type === 'tool_started') break;
+    }
+    session.cancel();
+    while (!(await events.next()).done) { /* drains the cancelled run */ }
+    return peer;
+  }
+
+  /** What agy 1.5.15 sends for the call its cancel ended, after the cancelled prompt has settled. */
+  const endedCallFailure = { content: [], rawOutput: { output: '' }, sessionUpdate: 'tool_call_update', status: 'failed', toolCallId: 'call-slow' };
+
+  it('keeps agy\'s failure of a call the cancel ended in the cancelled turn instead of opening a background turn', async () => {
+    const session = await createSession();
+    const peer = await stopRunningCall(session);
+
+    peer.emit(endedCallFailure, 'session-new');
+    // Updates are handled in order, so this one marks that the failure has been handled.
+    peer.emit({ availableCommands: [{ description: 'Barrier', name: 'barrier' }], sessionUpdate: 'available_commands_update' }, 'session-new');
+    await vi.waitFor(() => expect(session.getCommandSnapshot?.()?.map(command => command.name)).toContain('barrier'));
+
+    expect(session.blocksIdleRelease?.()).toBe(false);
+    expect(session.getStatus()).not.toBe('executing');
+  });
+
+  it('keeps agy\'s failure of a call the cancel ended out of the run sent right after the stop', async () => {
+    const session = await createSession();
+    const peer = await stopRunningCall(session);
+    const next = session.execute(request('Do something else'));
+    await peer.waitForPrompts(2);
+
+    peer.emit(endedCallFailure, 'session-new');
+    peer.emit({ content: { text: 'Done.', type: 'text' }, sessionUpdate: 'agent_message_chunk' }, 'session-new');
+    peer.emit({ kind: 'read', rawInput: { AbsolutePath: '/vault/a.md' }, sessionUpdate: 'tool_call', status: 'in_progress', title: 'a.md', toolCallId: 'call-new' }, 'session-new');
+    peer.emit({ sessionUpdate: 'tool_call_update', status: 'completed', toolCallId: 'call-new' }, 'session-new');
+    peer.emit({ kind: 'execute', rawInput: { CommandLine: 'python3 -m http.server' }, sessionUpdate: 'tool_call', status: 'in_progress', title: 'python3 -m http.server', toolCallId: 'call-daemon' }, 'session-new');
+    const events = await (async () => {
+      const collecting = collect(next.events);
+      await vi.waitFor(() => expect(peer.prompts).toHaveLength(2));
+      peer.finishPrompt();
+      return collecting;
+    })();
+
+    expect(textOf(events)).toEqual(['Done.']);
+    // The ended call stays out of this run; the run's own calls still show.
+    expect([...new Set(events.flatMap(event => (event.type === 'tool_started' ? [event.toolCallId] : [])))]).toEqual(['call-new', 'call-daemon']);
+
+    // A daemon this run launched outlives it; its exit is agy's own work again, not a report of the stopped call.
+    const background = backgroundTurn(session);
+    peer.emit({ content: [{ content: { text: 'Command exited with code 0.', type: 'text' }, type: 'content' }], rawOutput: { output: 'Command exited with code 0.' }, sessionUpdate: 'tool_call_update', status: 'completed', toolCallId: 'call-daemon' }, 'session-new');
+    peer.emit({ availableCommands: [{ description: 'Barrier', name: 'barrier' }], sessionUpdate: 'available_commands_update' }, 'session-new');
+    await vi.waitFor(() => expect(session.getCommandSnapshot?.()?.map(command => command.name)).toContain('barrier'));
+    expect(background.events.filter(event => event.type === 'tool_completed')).toEqual([expect.objectContaining({ toolCallId: 'call-daemon' })]);
+    await session.dispose();
+  });
+
+  it('keeps agy\'s failure of a call announced while the stop was under way in the stopped turn', async () => {
+    const session = await createSession();
+    const run = session.execute(request('Run the slow command'));
+    const peer = await firstPeer();
+    await peer.waitForPrompts(1);
+    peer.settlePromptsOnCancel = false;
+    const barrier = async (name: string) => {
+      peer.emit({ availableCommands: [{ description: 'Barrier', name }], sessionUpdate: 'available_commands_update' }, 'session-new');
+      await vi.waitFor(() => expect(session.getCommandSnapshot?.()?.map(command => command.name)).toContain(name));
+    };
+    session.cancel();
+    await vi.waitFor(() => expect(peer.cancelRequests).toEqual(['session-new']));
+    // agy announced the call before it received the cancel.
+    peer.emit({ kind: 'execute', rawInput: { CommandLine: 'sleep 30' }, sessionUpdate: 'tool_call', status: 'in_progress', title: 'sleep 30', toolCallId: 'call-slow' }, 'session-new');
+    await barrier('announced');
+    peer.finishPrompt({ stopReason: 'cancelled' });
+    await collect(run.events);
+
+    peer.emit(endedCallFailure, 'session-new');
+    await barrier('reported');
+
+    expect(session.blocksIdleRelease?.()).toBe(false);
+    expect(session.getStatus()).not.toBe('executing');
+  });
+
   it('cancels the native turn and keeps the process when agy settles it', async () => {
     const session = await createSession();
     const run = session.execute(request());
