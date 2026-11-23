@@ -37,6 +37,8 @@ export interface ClaudeExecutionStrategySink {
   releaseNativeTurnFence(queryToken: number): void;
   handleNativeQueryOpened(query: Query): void;
   handleNativeQueryClosed(query: Query): void;
+  /** Claudian ends the current query itself, so it will report neither a result nor an end. */
+  handleNativeQueryDiscarded(): void;
   /** Init supplies skill names; `commands_changed` supplies commands. */
   publishCommands(query: Query, update: ClaudeCommandUpdate): void;
   publishCatalog(query: Query): void;
@@ -354,6 +356,7 @@ implements ClaudeExecutionStrategy {
   async #closeCurrentQuery(): Promise<void> {
     const query = this.query;
     if (query) {
+      this.sink.handleNativeQueryDiscarded();
       this.#detachCurrentQuery(query);
       this.#finishNativeTurn(query, {
         type: 'failed',

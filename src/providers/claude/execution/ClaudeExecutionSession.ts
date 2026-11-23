@@ -851,14 +851,17 @@ ClaudeExecutionStrategySink {
     this.knownContextWindow = null;
   }
 
+  /** A discarded process reports no result or end, so its automatic turn and any Stop of it end here. */
+  handleNativeQueryDiscarded(): void {
+    if (this.backgroundTurn) this.#publishTurnNotifications();
+    this.#finishBackgroundTurn('provider-ended');
+    this.#releaseBackgroundCancellation();
+  }
+
   handleNativeQueryClosed(query: Query): void {
     if (this.nativeQuery !== query) return;
     this.suggestionTurnId = null;
     this.nativeQuery = null;
-    // A detached process reports no result, so its automatic turn and any Stop of it end here.
-    if (this.backgroundTurn) this.#publishTurnNotifications();
-    this.#finishBackgroundTurn('provider-ended');
-    this.#releaseBackgroundCancellation();
     this.taskNotifications.reset();
     this.commandSnapshot = undefined;
     this.skillNames = [];

@@ -2763,6 +2763,55 @@ describe('ClaudeExecutionBackend', () => {
     await session.dispose();
   });
 
+  it.each(['ends', 'stopped', 'stopped-then-sent'] as const)(
+    'settles an open background turn whose native stream ends without a result (%s)', async (scenario) => {
+      const streamEnd = createDeferred<null>();
+      const keepFreshOpen = createDeferred<null>();
+      const query = createScriptedPersistentQuery([[
+        { type: 'system', subtype: 'init', session_id: 'session-1' },
+        { type: 'result', subtype: 'success' },
+        { type: 'assistant', message: { content: [{ type: 'text', text: 'Background started' }] } },
+        streamEnd.promise,
+      ]]);
+      const freshQuery = createScriptedPersistentQuery([[
+        { type: 'system', subtype: 'init', session_id: 'session-1' },
+        { type: 'assistant', message: { content: [{ type: 'text', text: 'Fresh answer' }] } },
+        { type: 'result', subtype: 'success' },
+        keepFreshOpen.promise,
+      ]]);
+      vi.spyOn(await import('@/providers/claude/loadClaudeAgentSDK'), 'loadClaudeAgentQuery')
+        .mockResolvedValueOnce(receiveInput(query) as never)
+        .mockResolvedValueOnce(receiveInput(freshQuery) as never);
+      const session = new ClaudeExecutionBackend((await createHost()).host.getRuntimeHost('claude')).createSession(createConfig());
+      const events: ProviderSessionEvent[] = [];
+      session.onEvent(event => events.push(event));
+      try {
+        await collectEvents(session.execute(createRequest()).events);
+        await waitFor(() => events.some(event => event.type === 'text_delta'));
+        if (scenario !== 'ends') session.cancel();
+        const followUp = scenario === 'stopped-then-sent'
+          ? collectEvents(session.execute(createRequest({ input: [{ type: 'text', text: 'Next' }] })).events)
+          : undefined;
+        streamEnd.resolve(null);
+        await query.finished;
+        const followUpEvents = await followUp;
+        // A process that ends with its background turn open, or under Stop, is not an unexpected failure.
+        expect(events.filter(event => event.type === 'session_error')).toEqual([]);
+        expect(events.filter(event => event.type === 'background_turn_completed')).toEqual([
+          expect.objectContaining({ reason: scenario === 'ends' ? 'provider-ended' : 'interrupted' }),
+        ]);
+        // A send right after Stop reaches a fresh process instead of failing with the ended one.
+        expect(followUpEvents?.flatMap(event => event.type === 'text_delta' ? [event.text] : [])
+          .concat(followUpEvents.at(-1)?.type ?? [])).toEqual(scenario === 'stopped-then-sent'
+          ? ['Fresh answer', 'turn_completed'] : undefined);
+      } finally {
+        streamEnd.resolve(null);
+        keepFreshOpen.resolve(null);
+        await session.dispose();
+        vi.restoreAllMocks();
+      }
+    });
+
   it('cancels the requested run when the consumer stops iterating while it is still open', async () => {
     const query = createScriptedPersistentQuery([[
       { type: 'system', subtype: 'init', session_id: 'session-1' },
