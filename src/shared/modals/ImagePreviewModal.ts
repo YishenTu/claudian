@@ -1,4 +1,4 @@
-import { type Keymap, type Modifier, Scope } from 'obsidian';
+import { type Keymap, type Modifier, Scope, setIcon } from 'obsidian';
 
 import type { ImageAttachment } from '@/core/types';
 import { t } from '@/i18n/i18n';
@@ -219,7 +219,8 @@ export class ImagePreviewModal {
         type: 'button',
       },
     });
-    closeButton.setText('×');
+    // An icon is centered geometrically; a text glyph sits on the font's baseline.
+    setIcon(closeButton, 'x');
     const level = modal.createDiv({
       cls: 'claudian-image-modal-zoom',
       attr: { role: 'status', 'aria-live': 'polite' },

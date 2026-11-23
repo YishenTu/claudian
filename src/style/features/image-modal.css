@@ -86,10 +86,15 @@ button.claudian-image-modal-close:active {
   background-image: none;
   border-radius: 50%;
   cursor: pointer;
-  font-size: 20px;
   color: var(--text-muted);
+  --icon-size: 18px;
   box-shadow: 0 2px 8px rgb(0 0 0 / 30%);
   transition: background 0.15s ease, color 0.15s ease;
+}
+
+button.claudian-image-modal-close svg {
+  width: 18px;
+  height: 18px;
 }
 
 button.claudian-image-modal-close:hover {
