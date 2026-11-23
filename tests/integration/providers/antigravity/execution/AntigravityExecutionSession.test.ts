@@ -1879,6 +1879,26 @@ describe('AntigravityExecutionSession', () => {
     expect(events.at(-1)).toMatchObject({ type: 'cancelled' });
   });
 
+  it('keeps agy\'s failure of a call the cancel ended in the cancelled turn instead of opening a background turn', async () => {
+    const session = await createSession();
+    const run = session.execute(request('Run the slow command'));
+    const peer = await firstPeer();
+    await peer.waitForPrompts(1);
+    const call = { kind: 'execute', rawInput: { CommandLine: 'sleep 30' }, title: 'sleep 30', toolCallId: 'call-slow' };
+    peer.emit({ ...call, sessionUpdate: 'tool_call', status: 'in_progress' }, 'session-new');
+    session.cancel();
+    await collect(run.events);
+
+    // agy 1.5.15 settles the cancelled prompt first, then reports the call it ended.
+    peer.emit({ content: [], rawOutput: { output: '' }, sessionUpdate: 'tool_call_update', status: 'failed', toolCallId: 'call-slow' }, 'session-new');
+    // Updates are handled in order, so this one marks that the failure has been handled.
+    peer.emit({ availableCommands: [{ description: 'Barrier', name: 'barrier' }], sessionUpdate: 'available_commands_update' }, 'session-new');
+    await vi.waitFor(() => expect(session.getCommandSnapshot?.()?.map(command => command.name)).toContain('barrier'));
+
+    expect(session.blocksIdleRelease?.()).toBe(false);
+    expect(session.getStatus()).not.toBe('executing');
+  });
+
   it('cancels the native turn and keeps the process when agy settles it', async () => {
     const session = await createSession();
     const run = session.execute(request());
