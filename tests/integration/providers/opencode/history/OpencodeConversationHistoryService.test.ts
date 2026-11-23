@@ -231,6 +231,132 @@ describe('OpencodeConversationHistoryService', () => {
     });
   });
 
+  describe('restores background subagent cards', () => {
+    const created = testDate().getTime();
+    const launch = 'The subagent is working in the background (sessionID: ses_child). You will receive a <subagent> message when it goes idle.';
+    const spawn = (id: string, at: number, prompt: string, extra: Record<string, unknown> = {}) => ({
+      id: `a-${id}`, type: 'assistant', time: { created: created + at }, content: [{ id, type: 'tool', name: 'subagent', state: {
+        status: 'completed', input: { agent: 'general', description: 'Survey', prompt, ...extra }, output: launch, metadata: { sessionID: 'ses_child', status: 'running' },
+      } }],
+    });
+    // 2.3 reports `running` in the envelope while the child's own work continues; metadata says completed.
+    const report = (state: string, at: number, body = 'Waiting on the indexer.') => ({
+      id: `report-${at}`, type: 'synthetic', time: { created: created + at }, description: 'Survey',
+      text: `<subagent sessionID="ses_child" state="${state}" description="Survey">\n${body}\n</subagent>`,
+      metadata: { source: 'subagent', childID: 'ses_child', state: state === 'running' ? 'completed' : state },
+    });
+    const child = [
+      { id: 'c-user', type: 'user', time: { created: created + 1 }, text: 'Survey the vault' },
+      { id: 'c-answer', type: 'assistant', time: { created: created + 2 }, content: [{ type: 'text', text: 'Vault surveyed.' }] },
+      { id: 'c-user-2', type: 'user', time: { created: created + 11 }, text: 'Check again' },
+      { id: 'c-wait', type: 'assistant', time: { created: created + 12 }, content: [{ type: 'text', text: 'Still checking.' }] },
+    ];
+    const user = (id: string, at: number, text: string) => ({ id, type: 'user', time: { created: created + at }, text });
+    const answer = (id: string, at: number, text: string) => ({ id, type: 'assistant', time: { created: created + at }, content: [{ type: 'text', text }] });
+    const card = (id: string, status: string, result: string) => expect.objectContaining({ id, mode: 'async', agentId: 'ses_child', status, asyncStatus: status, result });
+
+    it.each([
+      { name: 'an interim report while its own work runs', parent: [spawn('first', 0, 'Survey the vault'), report('running', 3)], cards: [card('first', 'running', launch)] },
+      { name: 'a final report', parent: [spawn('first', 0, 'Survey the vault'), report('running', 3), report('completed', 4, 'Vault surveyed.')], cards: [card('first', 'completed', 'Vault surveyed.')] },
+      { name: 'no report', parent: [spawn('first', 0, 'Survey the vault')], cards: [card('first', 'completed', 'Vault surveyed.')] },
+      {
+        name: 'a follow-up still running after an earlier spawn finished',
+        parent: [spawn('first', 0, 'Survey the vault'), report('completed', 3, 'Vault surveyed.'), spawn('second', 10, 'Check again'), report('running', 13)],
+        cards: [card('first', 'completed', 'Vault surveyed.'), card('second', 'running', launch)],
+      },
+      {
+        name: 'a failure report',
+        parent: [spawn('first', 0, 'Survey the vault'), report('error', 3, 'Rate limit exhausted')],
+        cards: [card('first', 'error', 'Rate limit exhausted')],
+      },
+      {
+        name: 'a foreground spawn that OpenCode moved to the background',
+        parent: [spawn('first', 0, 'Survey the vault', { background: false }), report('completed', 3, 'Vault surveyed.')],
+        cards: [card('first', 'completed', 'Vault surveyed.')],
+      },
+      {
+        name: 'follow-ups that joined before the first prompt had an answer',
+        parent: [spawn('first', 0, 'Survey the vault'), spawn('second', 0.1, 'Check again'), spawn('third', 0.2, 'List links'), report('completed', 9, 'Links answer')],
+        child: [
+          user('c-1', 1, 'Survey the vault'),
+          { id: 'c-read', type: 'assistant', time: { created: created + 2 }, content: [{ type: 'tool', id: 'read', name: 'read', state: { status: 'completed', input: { path: 'notes.md' }, output: 'notes' } }] },
+          user('c-2', 5, 'Check again'), answer('c-both', 6, 'Vault and check answer'),
+          user('c-3', 7, 'List links'), answer('c-links', 8, 'Links answer'),
+        ],
+        cards: [card('first', 'completed', 'Vault and check answer'), card('second', 'completed', 'Vault and check answer'), card('third', 'completed', 'Links answer')],
+      },
+      {
+        name: 'a completed report that OpenCode 2.2 sent before its shell woke the child again',
+        parent: [spawn('first', 0, 'Survey the vault'), report('completed', 3, 'Child waiting on shell.')],
+        child: [
+          user('c-1', 1, 'Survey the vault'), answer('c-wait', 2, 'Child waiting on shell.'),
+          { id: 'c-idle', type: 'idle', time: { created: created + 2.5 }, outcome: 'succeeded' },
+          // The shell's exit report wakes the child for another run.
+          { id: 'c-shell', type: 'synthetic', time: { created: created + 3.5 }, description: 'sleep 30', text: '<shell id="sh_1" state="completed" command="sleep 30">\nbg-done\n</shell>', metadata: { source: 'shell', shellID: 'sh_1', state: 'completed' } },
+          answer('c-final', 4, 'Child final.'),
+        ],
+        cards: [card('first', 'completed', 'Child waiting on shell.')],
+      },
+      {
+        name: 'an earlier joined round that answered over several steps',
+        parent: [spawn('first', 0, 'Survey the vault'), spawn('second', 0.1, 'Check again'), report('completed', 9, 'Check answer')],
+        child: [
+          user('c-1', 1, 'Survey the vault'),
+          { id: 'c-plan', type: 'assistant', time: { created: created + 2 }, content: [{ type: 'text', text: 'I will inspect the folder.' }, { type: 'tool', id: 'read', name: 'read', state: { status: 'completed', input: { path: '.' }, output: 'db' } }] },
+          answer('c-folder', 3, 'The folder contains only the database.'),
+          user('c-2', 5, 'Check again'), answer('c-check', 6, 'Check answer'),
+        ],
+        cards: [card('first', 'completed', 'The folder contains only the database.'), card('second', 'completed', 'Check answer')],
+      },
+      ...[
+        { name: 'a child that ended without final text after progress', progress: [answer('c-progress', 2, 'Still reading.')] },
+        { name: 'a child that ended without any text', progress: [] },
+      ].map(({ name, progress }) => ({
+        name,
+        parent: [spawn('first', 0, 'Survey the vault'), report('completed', 4, 'Subagent completed without a text response.')],
+        child: [user('c-1', 1, 'Survey the vault'), ...progress, { id: 'c-empty', type: 'assistant', time: { created: created + 3 }, content: [] }],
+        cards: [card('first', 'completed', 'Subagent completed without a text response.')],
+      })),
+      {
+        name: 'a joined round that ended without any text',
+        parent: [spawn('first', 0, 'Survey the vault'), spawn('second', 0.1, 'Check again'), report('completed', 9, 'Subagent completed without a text response.')],
+        child: [
+          user('c-1', 1, 'Survey the vault'),
+          { id: 'c-read', type: 'assistant', time: { created: created + 2 }, content: [{ type: 'tool', id: 'read', name: 'read', state: { status: 'completed', input: { path: '.' }, output: 'db' } }] },
+          user('c-2', 5, 'Check again'), { id: 'c-empty', type: 'assistant', time: { created: created + 6 }, content: [] },
+        ],
+        cards: [card('first', 'completed', 'Subagent completed without a text response.'), card('second', 'completed', 'Subagent completed without a text response.')],
+      },
+      {
+        name: 'a joined follow-up that failed after the first prompt was answered',
+        parent: [spawn('first', 0, 'Survey the vault'), spawn('second', 0.1, 'Check again'), report('error', 9, 'Follow-up failed')],
+        child: [user('c-1', 1, 'Survey the vault'), answer('c-first', 2, 'First answer.'), user('c-2', 5, 'Check again')],
+        cards: [card('first', 'error', 'First answer.'), card('second', 'error', 'Follow-up failed')],
+      },
+      {
+        name: 'a follow-up that repeats the first prompt',
+        parent: [spawn('first', 0, 'Check status'), report('completed', 3, 'First answer.'), spawn('second', 10, 'Check status'), report('completed', 13, 'Updated status.')],
+        // OpenCode prefixes only the child's first prompt.
+        child: [
+          user('c-1', 1, 'You are a subagent spawned by another session.\nCheck status'), answer('c-first', 2, 'First answer.'),
+          user('c-2', 11, 'Check status'), answer('c-updated', 12, 'Updated status.'),
+        ],
+        cards: [card('first', 'completed', 'First answer.'), card('second', 'completed', 'Updated status.')],
+      },
+    ])('after $name', async ({ parent, child: childRows = child, cards }) => {
+      const dbPath = path.join(tmpRoot, 'subagent-history.db');
+      seedFakeOpencodeSession(dbPath, 'ses_parent', { messages: parent });
+      seedFakeOpencodeSession(dbPath, 'ses_child', { messages: childRows });
+      const conversation = createConversation('ses_parent', dbPath);
+
+      Object.assign(conversation, await new OpencodeConversationHistoryService().hydrateConversationHistory(
+        conversation, tmpRoot, context({ HOME: tmpRoot, OPENCODE_DB: dbPath }),
+      ));
+
+      expect(conversation.messages.flatMap(message => message.toolCalls ?? []).map(tool => tool.subagent)).toEqual(cards);
+    });
+  });
+
   it('accepts an explicitly configured local database path', async () => {
     const sessionId = 'session-configured-path';
     const configuredPath = path.join(tmpRoot, 'custom', 'opencode-custom.db');

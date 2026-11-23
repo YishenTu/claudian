@@ -45,6 +45,8 @@ type CommandResult = { commands: SlashCommand[]; loaded: boolean };
 interface CommandFlight { promise: Promise<CommandResult>; controller: AbortController; consumers: number }
 
 export class OpencodeMetadataService {
+  // Per-request and per-probe-generation flights, independent of the lifecycle: every
+  // invalidate() ends them, not only disposal.
   private commandFlight: CommandFlight | null = null;
   private catalogWatch: Promise<unknown> | null = null;
   private readonly catalogObservers = new Set<() => void>();
@@ -55,8 +57,7 @@ export class OpencodeMetadataService {
   });
   private readonly unregisterTransitionHook: () => void;
   private readonly serverService: OpencodeServerService;
-  private disposed = false;
-  private disposeFlight: Promise<void> | null = null;
+  private state: { phase: 'active' } | { phase: 'disposed'; disposeFlight: Promise<void> } = { phase: 'active' };
 
   constructor(
     private readonly host: ProviderRuntimeHost,
@@ -120,13 +121,13 @@ export class OpencodeMetadataService {
 
   /** Model rows remain in provider settings; observers only reread that projection. */
   observeCatalog(observer: () => void): () => void {
-    if (this.disposed) return () => undefined;
+    if (this.#isDisposed()) return () => undefined;
     this.catalogObservers.add(observer);
     return () => { this.catalogObservers.delete(observer); };
   }
 
   #ensureCatalogWatch(): void {
-    if (this.catalogWatch || this.disposed) return;
+    if (this.catalogWatch || this.#isDisposed()) return;
     const watch = Promise.resolve().then(() => this.#runProbe(async (probe, signal) => {
       await probe.watchCatalog?.(async () => { await this.#publishCatalog(probe, signal); }, signal);
     })).finally(() => { if (this.catalogWatch === watch) this.catalogWatch = null; });
@@ -233,17 +234,24 @@ export class OpencodeMetadataService {
   }
 
   dispose(): Promise<void> {
-    if (this.disposeFlight) return this.disposeFlight;
-    this.disposed = true;
+    if (this.state.phase === 'disposed') return this.state.disposeFlight;
+    // Disposal is visible before teardown starts, so work its listeners trigger sees it.
+    let settle!: { resolve: () => void; reject: (error: unknown) => void };
+    const disposeFlight = new Promise<void>((resolve, reject) => { settle = { resolve, reject }; });
+    this.state = { phase: 'disposed', disposeFlight };
     this.transitionFence.dispose();
     this.unregisterTransitionHook();
     this.catalogObservers.clear();
-    this.disposeFlight = (async () => {
+    (async () => {
       await this.invalidate();
       await this.probes.dispose();
       if (!this.options.serverService) await this.serverService.dispose();
-    })();
-    return this.disposeFlight;
+    })().then(settle.resolve, settle.reject);
+    return disposeFlight;
+  }
+
+  #isDisposed(): boolean {
+    return this.state.phase === 'disposed';
   }
 
   async #runProbe<T>(
@@ -253,7 +261,7 @@ export class OpencodeMetadataService {
   ): Promise<T | null> {
     let probeSignal: AbortSignal | undefined;
     try {
-      if (this.disposed) return null;
+      if (this.#isDisposed()) return null;
       if (this.transitionFence.isUnavailable()) {
         const available = await this.transitionFence.waitUntilAvailable(signal);
         if (!available) return null;

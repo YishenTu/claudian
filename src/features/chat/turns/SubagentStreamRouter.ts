@@ -107,6 +107,11 @@ export class SubagentStreamRouter {
       );
     }
 
+    const promoted = subagentManager.promoteSyncTaskOnLaunch(
+      chunk.id, chunk.content, chunk.isError || false, chunk.providerPayload,
+    );
+    if (promoted) this.#recordSubagentInMessage(msg, promoted, chunk.id, 'async');
+
     if (subagentManager.getSyncSubagent(chunk.id)) {
       this.#finalizeSyncSubagent(chunk, msg);
       return true;

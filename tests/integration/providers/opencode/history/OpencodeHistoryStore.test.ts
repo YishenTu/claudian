@@ -469,6 +469,13 @@ it('restores a background shell report as a task notification and leaves subagen
   expect(JSON.stringify(messages)).not.toContain('Done');
 });
 
+it('keeps a shell report body intact when its command contains a redirection or quotes', () => {
+  const command = 'echo "a">out.txt && cat out.txt';
+  const [message] = mapOpencodeNativeMessages([
+    { id: 'report', type: 'synthetic', time: { created: testDate().getTime() }, text: `<shell id="sh_1" state="completed" command="${command}">\na\n</shell>`, description: command, metadata: { source: 'shell', shellID: 'sh_1', state: 'completed', exit: 0 } },
+  ]);
+  expect(message.contentBlocks).toEqual([{ type: 'task_notification', content: `\`\`\`sh\n${command}\n\`\`\`\n\n\`\`\`text\na\n\`\`\`` }]);
+});
 
 it('decodes v2 session-message attribution before stripping prompt tags and preserves neutral tool names', () => {
   const text = encodeSessionMessage({ from: 'Research', sessionId: 'source', text: 'The result' });

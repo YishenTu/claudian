@@ -67,41 +67,88 @@ it('reports a finished background shell in the automatic reply it wakes', async 
   } finally { await f.dispose(); }
 });
 
-it('keeps a child running through an idle that leaves its background shell running', async () => {
+it.each([
+  { text: 'background-rerun', version: '2.3', result: 'Child result' },
+  { text: 'background-rerun-legacy', version: '2.2', result: 'Child waiting' },
+])('completes a child that idles with a background shell when OpenCode $version reports it done', async ({ text, result }) => {
   const f = await createFixture();
   const events: ProviderSessionEvent[] = [];
   let completed!: () => void;
   const background = new Promise<void>(resolve => { completed = resolve; });
   f.session.onEvent(event => { events.push(event); if (event.type === 'text_delta' && event.text === 'Automatic reply') completed(); });
   try {
-    for await (const event of f.session.execute(request('background-rerun')).events) {
+    for await (const event of f.session.execute(request(text)).events) {
       if (event.type === 'execution_error') throw new Error(event.message);
     }
     await background;
     expect(events.filter(event => event.type === 'async_subagent_completed')).toEqual([
-      expect.objectContaining({ subagentId: 'ses_child', toolCallId: 'tool_child', result: 'Child result', status: 'completed' }),
+      expect.objectContaining({ subagentId: 'ses_child', toolCallId: 'tool_child', result, status: 'completed' }),
     ]);
   } finally { await f.dispose(); }
 });
 
-it('completes each spawn that joined a running child when that child goes idle', async () => {
+it.each([
+  {
+    name: 'a grandchild that OpenCode 2.2 reports after its parent child is done',
+    text: 'background-nested-legacy',
+    completions: [
+      { subagentId: 'ses_child', toolCallId: 'tool_child', result: 'Child result', status: 'completed' },
+      { subagentId: 'ses_grand', toolCallId: 'ses_child:nested', result: 'Grand result', status: 'completed' },
+    ],
+  },
+  {
+    name: 'a child whose last step wrote no text with its report, not its progress',
+    text: 'background-empty-answer',
+    completions: [{ subagentId: 'ses_child', toolCallId: 'tool_child', result: 'Subagent completed without a text response.', status: 'completed' }],
+  },
+  {
+    name: 'a failed child with the failure from its report',
+    text: 'background-error',
+    completions: [{ subagentId: 'ses_child', toolCallId: 'tool_child', result: 'Rate limit exhausted', status: 'error' }],
+  },
+])('settles $name', async ({ text, completions }) => {
+  const f = await createFixture();
+  const events: ProviderSessionEvent[] = [];
+  let completed!: () => void;
+  const background = new Promise<void>(resolve => { completed = resolve; });
+  f.session.onEvent(event => { events.push(event); if (event.type === 'text_delta' && event.text === 'Automatic reply') completed(); });
+  try {
+    for await (const event of f.session.execute(request(text)).events) {
+      if (event.type === 'execution_error') throw new Error(event.message);
+    }
+    await background;
+    expect(events.filter(event => event.type === 'async_subagent_completed')).toEqual(completions.map(completion => expect.objectContaining(completion)));
+  } finally { await f.dispose(); }
+});
+
+it.each([
+  {
+    text: 'background-followup',
+    name: 'with its own round answer',
+    completions: [['tool_child', 'Child result'], ['tool_followup', 'Follow-up result']],
+  },
+  {
+    text: 'background-followup-joined',
+    name: 'with the answer that covered it when an earlier prompt had none yet',
+    completions: [['tool_child', 'Notes and tags answer'], ['tool_followup', 'Notes and tags answer'], ['tool_third', 'Links answer']],
+  },
+])('completes each spawn that joined a running child $name', async ({ text, completions }) => {
   const f = await createFixture();
   const events: ProviderSessionEvent[] = [];
   let completed!: () => void;
   const background = new Promise<void>(resolve => { completed = resolve; });
   f.session.onEvent(event => {
     events.push(event);
-    if (event.type === 'async_subagent_completed' && event.toolCallId === 'tool_followup') completed();
+    if (event.type === 'async_subagent_completed' && event.toolCallId === completions.at(-1)![0]) completed();
   });
   try {
-    for await (const event of f.session.execute(request('background-followup')).events) {
+    for await (const event of f.session.execute(request(text)).events) {
       if (event.type === 'execution_error') throw new Error(event.message);
     }
     await background;
-    expect(events.filter(event => event.type === 'async_subagent_completed')).toEqual([
-      expect.objectContaining({ subagentId: 'ses_child', toolCallId: 'tool_child', result: 'Child result', status: 'completed' }),
-      expect.objectContaining({ subagentId: 'ses_child', toolCallId: 'tool_followup', result: 'Child result', status: 'completed' }),
-    ]);
+    expect(events.filter(event => event.type === 'async_subagent_completed')).toEqual(completions.map(([toolCallId, result]) => (
+      expect.objectContaining({ subagentId: 'ses_child', toolCallId, result, status: 'completed' })
+    )));
   } finally { await f.dispose(); }
 });
 

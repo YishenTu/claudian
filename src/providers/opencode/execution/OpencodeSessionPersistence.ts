@@ -5,12 +5,13 @@ import type { OpencodeServerLease } from '../http/OpencodeServerService';
 /** Native retention belongs to the execution session, across kernel replacements. */
 export class OpencodeSessionPersistence {
   private readonly discard: boolean;
+  // Independent of the lifecycle: the cleanup lease is released and reacquired while active,
+  // and disposal reacquires it to delete owned sessions.
   private client: Promise<OpencodeServerLease> | null = null;
   private acquireClient: (() => Promise<OpencodeServerLease>) | null = null;
   private readonly sessionIds = new Set<string>();
   private readonly pending = new Set<Promise<string>>();
-  private disposed = false;
-  private disposal: Promise<void> | null = null;
+  private state: { phase: 'active' } | { phase: 'disposed'; disposal: Promise<void> } = { phase: 'active' };
 
   constructor(config: ProviderSessionConfig) {
     this.discard = config.nativePersistence === 'disabled-if-supported'
@@ -18,12 +19,12 @@ export class OpencodeSessionPersistence {
   }
 
   async openSession(open: () => Promise<string>, acquire: () => Promise<OpencodeServerLease>): Promise<string> {
-    if (this.disposed) throw new Error('OpenCode session persistence is disposed.');
+    if (this.#isDisposed()) throw new Error('OpenCode session persistence is disposed.');
     if (!this.discard) return open();
     // Keep one cleanup lease alive even when the execution kernel is replaced.
     this.acquireClient = acquire;
     await this.getClient();
-    if (this.disposed) throw new Error('OpenCode session persistence is disposed.');
+    if (this.#isDisposed()) throw new Error('OpenCode session persistence is disposed.');
     const pending = open().then(id => { this.sessionIds.add(id); return id; });
     this.pending.add(pending);
     try { return await pending; }
@@ -57,9 +58,8 @@ export class OpencodeSessionPersistence {
   }
 
   dispose(): Promise<void> {
-    if (this.disposal) return this.disposal;
-    this.disposed = true;
-    this.disposal = (async () => {
+    if (this.state.phase === 'disposed') return this.state.disposal;
+    const disposal = (async () => {
       await this.settle();
       const client = await (this.sessionIds.size > 0 ? this.getClient() : this.client)?.catch(() => null);
       if (!client) return;
@@ -70,6 +70,11 @@ export class OpencodeSessionPersistence {
         await client.dispose();
       }
     })();
-    return this.disposal;
+    this.state = { phase: 'disposed', disposal };
+    return disposal;
+  }
+
+  #isDisposed(): boolean {
+    return this.state.phase === 'disposed';
   }
 }

@@ -12,7 +12,7 @@ import { extractResolvedAnswersFromResultText } from '../../../core/tools/toolIn
 import { isWriteEditTool, TOOL_ASK_USER_QUESTION } from '../../../core/tools/toolNames';
 import type { ChatMessage, ContentBlock, ImageAttachment, ToolCallInfo } from '../../../core/types';
 import { settleInterruptedTurn } from '../../../core/types';
-import { formatOpencodeShellReport } from '../normalization/opencodeShellReport';
+import { formatOpencodeShellReport } from '../normalization/opencodeSyntheticReports';
 import {
   normalizeOpencodeToolInput,
   normalizeOpencodeToolName,
