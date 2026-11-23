@@ -101,7 +101,7 @@ describe('ImagePreviewModal', () => {
     expect(zoomLevel(dialog)).toBe('');
   });
 
-  it('zooms around the cursor with the wheel or a pinch, between fit and its maximum', () => {
+  it('zooms around the cursor with the wheel or a pinch, between a quarter of fit and its maximum', () => {
     const { dialog, image } = openLoaded();
 
     // A pinch arrives as a ctrl wheel; this delta doubles the scale at 300,200 (100,50 off center).
@@ -115,9 +115,10 @@ describe('ImagePreviewModal', () => {
     expect(zoomed.y).toBeCloseTo(-50);
     expect(zoomLevel(dialog)).toBe('50%');
 
+    // Zooming out may shrink the image to a quarter of its fit size, centered.
     fireEvent.wheel(image, { deltaY: 100_000, clientX: 300, clientY: 200 });
-    expect(placement(image)).toEqual({ x: 0, y: 0, scale: 1 });
-    expect(zoomLevel(dialog)).toBe('25%');
+    expect(placement(image)).toEqual({ x: 0, y: 0, scale: 0.25 });
+    expect(zoomLevel(dialog)).toBe('6%');
 
     // At most 4× the natural size (16× fit here), and the zoomed image keeps covering the stage.
     fireEvent.wheel(image, { deltaY: -100_000, clientX: 0, clientY: 0 });
@@ -147,6 +148,9 @@ describe('ImagePreviewModal', () => {
     press(closeButton, '0');
     expect(placement(image)).toEqual({ x: 0, y: 0, scale: 1 });
     expect(zoomLevel(dialog)).toBe('25%');
+    press(closeButton, '-');
+    expect(placement(image).scale).toBeCloseTo(0.8);
+    expect(zoomLevel(dialog)).toBe('20%');
   });
 
   it('toggles between fit and the natural size on double-click', () => {
@@ -157,6 +161,11 @@ describe('ImagePreviewModal', () => {
     expect(zoomLevel(dialog)).toBe('100%');
 
     fireEvent.dblClick(image, { clientX: 300, clientY: 200 });
+    expect(placement(image)).toEqual({ x: 0, y: 0, scale: 1 });
+
+    // From below fit, double-click returns to fit.
+    fireEvent.wheel(image, { deltaY: 100_000, clientX: 200, clientY: 150 });
+    fireEvent.dblClick(image, { clientX: 200, clientY: 150 });
     expect(placement(image)).toEqual({ x: 0, y: 0, scale: 1 });
   });
 
@@ -212,14 +221,16 @@ describe('ImagePreviewModal', () => {
     expect(zoomLevel(dialog)).toBe('50%');
   });
 
-  it('does not pan an image at fit size', () => {
+  it.each([['at', 0], ['below', 100_000]] as const)('does not pan an image %s fit size', (_, zoomOut) => {
     const { dialog, image } = openLoaded();
+    if (zoomOut) fireEvent.wheel(image, { deltaY: zoomOut, clientX: 200, clientY: 150 });
+    const before = placement(image);
 
     fireEvent.mouseDown(image, { button: 0, clientX: 200, clientY: 150 });
     fireEvent.mouseMove(document, { clientX: 150, clientY: 130 });
     fireEvent.mouseUp(document, { clientX: 150, clientY: 130 });
 
-    expect(placement(image)).toEqual({ x: 0, y: 0, scale: 1 });
+    expect(placement(image)).toEqual({ ...before, x: 0, y: 0 });
     expect(screen.getByRole('dialog')).toBe(dialog);
   });
 

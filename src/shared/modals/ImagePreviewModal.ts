@@ -18,6 +18,8 @@ const KEY_ZOOM_STEP = 1.25;
 /** Wheel deltas map to `exp(-delta * rate)`; a pinch reports far smaller deltas than a wheel. */
 const WHEEL_ZOOM_RATE = 0.002;
 const PINCH_ZOOM_RATE = 0.01;
+/** Zooming out may shrink the image to this fraction of its fit size. */
+const MIN_ZOOM = 0.25;
 const MIN_MAX_ZOOM = 8;
 const MAX_NATURAL_MULTIPLE = 4;
 /** Pointer travel below this is a click, not a pan. */
@@ -84,7 +86,7 @@ class ImageZoom {
   zoomTo(scale: number, clientX?: number, clientY?: number): void {
     const naturalScale = this.naturalScale();
     if (naturalScale === null) return;
-    const next = Math.min(Math.max(scale, 1), this.maxScale(naturalScale));
+    const next = Math.min(Math.max(scale, MIN_ZOOM), this.maxScale(naturalScale));
     const center = this.stageCenter();
     const dx = (clientX ?? center.x) - center.x;
     const dy = (clientY ?? center.y) - center.y;
@@ -145,7 +147,7 @@ class ImageZoom {
   private readonly onDoubleClick = (event: MouseEvent): void => {
     const naturalScale = this.naturalScale();
     if (naturalScale === null) return;
-    if (this.scale > 1) {
+    if (this.scale !== 1) {
       this.reset();
       return;
     }
@@ -156,7 +158,7 @@ class ImageZoom {
   private readonly onMouseDown = (event: MouseEvent): void => {
     // A pan released outside the window produces no click, so a stale flag must not outlive it.
     this.suppressNextClick = false;
-    if (event.button !== 0 || this.scale === 1 || event.target !== this.image && event.target !== this.stage) return;
+    if (event.button !== 0 || this.scale <= 1 || event.target !== this.image && event.target !== this.stage) return;
     // Prevent the browser's native image drag and text selection.
     event.preventDefault();
     this.endDrag();
