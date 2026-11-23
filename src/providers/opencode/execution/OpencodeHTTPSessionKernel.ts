@@ -506,15 +506,14 @@ export class OpencodeHTTPSessionKernel implements OpencodeSessionKernel {
         const tool = this.tools.get(key);
         const metadata = isRecord(data.metadata) ? data.metadata : {};
         const turnId = child?.turnId ?? this.options.getActiveTurnId();
-        if (tool?.name === 'subagent' && typeof metadata.sessionID === 'string' && turnId && !this.children.has(metadata.sessionID)) {
-          const interactionTurnId = child?.interactionTurnId ?? turnId;
-          // Children keep their launching run's tool and approval policy, never a later run's.
-          const owner = child ?? this.pending;
-          const toolController = new AbortController();
-          const sessionTools = owner?.sessionTools ? { ...owner.sessionTools, signal: AbortSignal.any([owner.sessionTools.signal, toolController.signal]) } : undefined;
-          this.children.set(metadata.sessionID, { sessionTools, autoApprove: this.autoApproveFor(child), toolController, outputSessionId: child?.outputSessionId ?? metadata.sessionID, toolCallId: identity.toolCallId, turnId, interactionTurnId, progress: { startedAt: Date.now(), toolUses: 0, totalTokens: 0 } });
-        }
         if (tool?.name === 'subagent' && typeof metadata.sessionID === 'string') {
+          if (turnId && !this.children.has(metadata.sessionID)) {
+            // Children keep their launching run's tool and approval policy, never a later run's.
+            const owner = child ?? this.pending;
+            const toolController = new AbortController();
+            const sessionTools = owner?.sessionTools ? { ...owner.sessionTools, signal: AbortSignal.any([owner.sessionTools.signal, toolController.signal]) } : undefined;
+            this.children.set(metadata.sessionID, { sessionTools, autoApprove: this.autoApproveFor(child), toolController, outputSessionId: child?.outputSessionId ?? metadata.sessionID, toolCallId: identity.toolCallId, turnId, interactionTurnId: child?.interactionTurnId ?? turnId, progress: { startedAt: Date.now(), toolUses: 0, totalTokens: 0 } });
+          }
           this.spawnChildren.set(key, metadata.sessionID);
           this.childLedger(metadata.sessionID).spawn(key, identity.toolCallId, opencodeTaskResultInterpreter.describeTask(tool.input).prompt);
         }
@@ -710,13 +709,14 @@ export class OpencodeHTTPSessionKernel implements OpencodeSessionKernel {
     // Only a child this kernel ran has a turn its completions belong to.
     const child = this.children.get(report.childId);
     if (!child) return;
+    const ended = !ledger.hasBackground;
     settled.forEach(({ toolCallId, settlement }, index) => {
       this.options.onNativeTaskCompleted?.({
         type: 'async_subagent_completed', originatingTurnId: child.turnId, subagentId: report.childId,
         toolCallId, status: settlement.status, result: settlement.result, providerSessionId: this.sessionId ?? undefined,
-      }, index === settled.length - 1 && !ledger.hasBackground);
+      }, ended && index === settled.length - 1);
     });
-    if (!ledger.hasBackground) this.retireChild(report.childId, child);
+    if (ended) this.retireChild(report.childId, child);
   }
 
   private retireChild(sessionId: string, child: NativeChild): void {

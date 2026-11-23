@@ -8,13 +8,6 @@ export type OpencodeChildEntry =
   | { readonly kind: 'prompt'; readonly id: string; readonly text: string }
   | { readonly kind: 'text'; readonly messageId: string; readonly text: string };
 
-export type OpencodeSpawnStatus = 'running' | 'completed' | 'error';
-
-/** A report's state as the card shows it; a cancelled child ends as an error. */
-export function opencodeReportStatus(state: OpencodeSubagentReport['state']): OpencodeSpawnStatus {
-  return state === 'running' || state === 'completed' ? state : 'error';
-}
-
 /** OpenCode prefixes a child's first prompt with its subagent preamble. */
 const CHILD_PREAMBLE = 'You are a subagent spawned by another session.\n';
 
@@ -96,7 +89,8 @@ function roundAnswer(round: Round | undefined): string | undefined {
 }
 
 export interface OpencodeSpawnSettlement {
-  readonly status: Exclude<OpencodeSpawnStatus, 'running'>;
+  /** A cancelled child ends as an error. */
+  readonly status: 'completed' | 'error';
   readonly result: string | undefined;
 }
 
@@ -126,7 +120,7 @@ export function settleOpencodeSpawns(
 ): OpencodeSpawnSettlement[] | null {
   if (report.state === 'running') return null;
   const rounds = groupRounds(entries);
-  const status = opencodeReportStatus(report.state) === 'completed' ? 'completed' : 'error';
+  const status = report.state === 'completed' ? 'completed' : 'error';
   return promptIds.map(promptId => {
     const index = roundOf(rounds, promptId);
     const own = roundAnswer(rounds[index]);
