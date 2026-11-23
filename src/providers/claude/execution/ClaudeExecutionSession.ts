@@ -516,7 +516,7 @@ ClaudeExecutionStrategySink {
     if (channel === 'background'
       && ((message.type === 'stream_event' && message.event.type === 'message_start')
         || message.type === 'assistant') && message.parent_tool_use_id == null) {
-      for (const content of this.taskNotifications.takeTurnNotifications()) this.#emitTaskNotification(content);
+      this.#publishTurnNotifications();
     }
     const normalizedEvents = this.eventNormalizer.normalize(
       message,
@@ -558,6 +558,13 @@ ClaudeExecutionStrategySink {
         const permissionMode = fromClaudeSDKPermissionMode(event.permissionMode);
         if (permissionMode && event.permissionMode !== this.lastEncodedRequest?.sdkPermissionMode) {
           this.#emitPermissionModeForCurrentTurn(permissionMode);
+        }
+        // Native records a notification turn when it selects the notification, and its first token can follow
+        // seconds later. Opening the turn at its init keeps a send in that gap from counting those writes as
+        // a change made outside Claudian. Only a selected notification proves the init starts an automatic turn;
+        // the notification itself is still published where the turn consumes it.
+        if (channel === 'background' && !active && this.taskNotifications.hasTurnNotifications()) {
+          this.#getOutputTarget(channel);
         }
         continue;
       }
@@ -844,15 +851,21 @@ ClaudeExecutionStrategySink {
     this.knownContextWindow = null;
   }
 
-  handleNativeQueryClosed(query: Query): void {
+  handleNativeQueryClosed(query: Query, { endFollows }: { endFollows: boolean }): void {
     if (this.nativeQuery !== query) return;
     this.suggestionTurnId = null;
     this.nativeQuery = null;
+    // The open turn consumed what its init selected, whichever handler ends it.
+    if (this.backgroundTurn) this.#publishTurnNotifications();
     this.taskNotifications.reset();
     this.commandSnapshot = undefined;
     this.skillNames = [];
     this.#emitSession({ type: 'commands_changed' });
     this.knownContextWindow = null;
+    if (endFollows) return;
+    // No result or end will arrive, so the automatic turn and any Stop of it end here.
+    this.#finishBackgroundTurn('provider-ended');
+    this.#releaseBackgroundCancellation();
   }
 
   async #startExecution(
@@ -898,6 +911,11 @@ ClaudeExecutionStrategySink {
 
   #currentOutputChannel(): 'requested' | 'background' {
     return this.responseOwnership.current(this.activeRun?.nativeHandedOff === true);
+  }
+
+  /** Publishes the notifications native selected for the automatic turn at its consumption boundary. */
+  #publishTurnNotifications(): void {
+    for (const content of this.taskNotifications.takeTurnNotifications()) this.#emitTaskNotification(content);
   }
 
   #emitTaskNotification(content: string): void {
@@ -1120,6 +1138,8 @@ ClaudeExecutionStrategySink {
       return false;
     }
     this.#releaseBackgroundCancellation();
+    // A turn stopped before its first token still consumed the notifications selected at its init.
+    this.#publishTurnNotifications();
     // Native interrupt records `[Request interrupted by user]` after the reply, which history replays.
     this.#finishBackgroundTurn('interrupted');
     return true;

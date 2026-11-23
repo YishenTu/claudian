@@ -45,6 +45,11 @@ export class ClaudeTaskNotificationQueue {
     return notification.content;
   }
 
+  /** The latest native init selected a completion: the automatic turn it starts consumes a notification. */
+  hasTurnNotifications(): boolean {
+    return this.turnNotifications.size > 0;
+  }
+
   takeTurnNotifications(): string[] {
     const contents: string[] = [];
     for (const [taskId, notification] of this.turnNotifications) {

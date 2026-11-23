@@ -169,6 +169,39 @@ it.each([
 });
 
 it.each([
+  ['before the turn opens', 1, false], ['after the turn opens', 1, true], ['twice after the turn opens', 2, true],
+] as const)('renders a notification turn the same when its notification arrives %s', async (_order, cards, opensFirst) => {
+  const { messagesEl, state, coordinator, session, backend, dispose } = (await createBackgroundChat());
+  try {
+    await coordinator.bindConversation({ conversationId: 'conversation', providerId: 'claude' });
+    await coordinator.prepare();
+    const native = backend.latest;
+    const contents = ['First task finished.', 'Second task finished.'].slice(0, cards);
+    // Claude opens a notification turn at its native init and publishes the notification at its first token.
+    if (opensFirst) native.emitBackgroundEvent({ type: 'background_turn_started' });
+    for (const content of contents) native.emitSessionEvent({ type: 'task_notification', content });
+    if (!opensFirst) native.emitBackgroundEvent({ type: 'background_turn_started' });
+    native.emitBackgroundEvent({ type: 'text_delta', text: 'Automatic reply.' });
+    native.emitBackgroundEvent({ type: 'background_turn_completed', reason: 'completed', nativeAssistantId: 'automatic-checkpoint' });
+    await session.awaitBackgroundWork();
+    expect(state.messages).toMatchObject([
+      ...contents.map(content => ({ isAutomaticResponse: true, contentBlocks: [{ type: 'task_notification', content }] })),
+      { content: 'Automatic reply.', isAutomaticResponse: true, assistantMessageId: 'automatic-checkpoint',
+        contentBlocks: [{ type: 'text', content: 'Automatic reply.' }] },
+    ]);
+    expect(state.messages).toHaveLength(cards + 1);
+    const headers = within(messagesEl).getAllByRole('button', { name: 'Task notification' });
+    const reply = within(messagesEl).getByText('Automatic reply.');
+    expect(headers).toHaveLength(cards);
+    for (const header of headers) expect(header.compareDocumentPosition(reply) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    for (const content of contents) expect(within(messagesEl).getByText(content).closest('[hidden]')).not.toBeNull();
+    expect(reply.closest('[hidden]')).toBeNull();
+    expect(within(messagesEl).queryByRole('button', { name: /^Worked/ })).toBeNull();
+    expect((await axe(messagesEl)).violations).toEqual([]);
+  } finally { await dispose(); }
+});
+
+it.each([
   ['', 'steered reply'], ['', ''], ['automatic prefix', 'steered reply'], ['automatic prefix', ''],
 ])('preserves background output around accepted input (prefix: %s, reply: %s)', async (prefix, reply) => {
   const { messagesEl, renderer, state, coordinator, session, backend, dispose } = (await createBackgroundChat());
@@ -464,7 +497,9 @@ function visibleTranscript(root: HTMLElement): string {
   return Array.from(root.querySelectorAll<HTMLElement>('.claudian-message'), visibleText).filter(Boolean).join(' ');
 }
 
-it.each([true, false])('folds a stopped automatic reply under Interrupted after its notification, live and on reload (output: %s)', async output => {
+it.each([
+  [true, false], [false, false], [true, true], [false, true],
+])('folds a stopped automatic reply under Interrupted after its notification, live and on reload (output: %s, opened before the notification: %s)', async (output, opensFirst) => {
   const messagesEl = document.body.createDiv();
   const plugin = await createChatFeatureHost({ settings: { mediaFolder: '' } });
   const renderer = new MessageRenderer(plugin, new Component(), messagesEl, undefined, vi.fn());
@@ -493,8 +528,10 @@ it.each([true, false])('folds a stopped automatic reply under Interrupted after 
     return result;
   };
   try {
+    // Claude opens a notification turn at its init, then publishes the notification at its first token or Stop.
+    if (opensFirst) background.reserve('binding', 'automatic');
     renderSessionTaskNotification(host, 'Job finished.', undefined, next());
-    background.reserve('binding', 'automatic');
+    if (!opensFirst) background.reserve('binding', 'automatic');
     if (output) {
       await background.handle('binding', { type: 'tool_started', toolCallId: 'read', toolScope: { kind: 'main' }, name: 'Read', input: { file_path: 'job.log' }, scope: next() }, () => true);
       await background.handle('binding', { type: 'text_delta', text: 'Checking the job.', scope: next() }, () => true);

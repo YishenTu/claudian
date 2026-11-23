@@ -406,6 +406,33 @@ it('counts a provider-started background turn as its own work, so a send during 
   await destroyTab(second);
 });
 
+it('counts a send during a provider-started background turn as its own work, so later sends during its live task still reach the session', async () => {
+  const s = await setupRevisionedSession();
+  s.provider.liveNativeTask = true;
+  s.native.revision = 'task notification written';
+  s.provider.emitBackgroundEvent({ type: 'background_turn_started' });
+  // The user sends before the background turn's first token; native folds it into that turn.
+  s.first.controllers.drafts.restore('main', { content: 'Meanwhile' });
+  const sending = s.first.controllers.inputController.sendMessage();
+  await waitFor(() => expect(s.provider.requests).toHaveLength(1));
+  s.native.revision = 'background turn and send written';
+  s.provider.emitBackgroundEvent({ type: 'background_turn_completed', reason: 'provider-ended' });
+  s.provider.complete();
+  await sending;
+  expect(await s.h.pool.whenSettled('conversation')).toBe(true);
+  await s.detach();
+
+  const second = await s.h.attach();
+  expect(s.provider.disposeCalls).toBe(0);
+  second.controllers.drafts.restore('main', { content: 'Continue while the task runs' });
+  const next = second.controllers.inputController.sendMessage();
+  await waitFor(() => expect(s.provider.requests).toHaveLength(2));
+  expect(s.h.backend.sessions).toHaveLength(1);
+  s.provider.complete();
+  await next;
+  await destroyTab(second);
+});
+
 /** A turn of the first presentation, which the provider appends to native history before it settles. */
 async function completeOwnTurn(s: Awaited<ReturnType<typeof setupRevisionedSession>>): Promise<void> {
   s.first.controllers.drafts.restore('main', { content: 'Meanwhile' });
