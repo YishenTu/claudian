@@ -2,7 +2,7 @@ import { t } from '@/i18n/i18n';
 import type { ImagePreviewSource } from '@/shared/modals/ImagePreviewModal';
 
 /** Native button wrapping a rendered Markdown image so it opens a full preview. */
-export const PREVIEWABLE_IMAGE_BUTTON_CLASS = 'claudian-embedded-image-button';
+export const PREVIEWABLE_IMAGE_BUTTON_CLASS = 'claudian-previewable-image';
 
 /**
  * Images that belong to a control or a rendered diagram rather than to the Markdown itself:

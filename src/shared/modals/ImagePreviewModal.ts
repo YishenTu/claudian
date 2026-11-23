@@ -34,13 +34,14 @@ function getFocusableActiveElement(ownerDocument: Document): HTMLElement | null 
   return activeElement as HTMLElement;
 }
 
-interface Drag {
-  startX: number;
-  startY: number;
-  originX: number;
-  originY: number;
-  moved: boolean;
-}
+/**
+ * The pointer gesture. A pan's release produces a click on the stage, and `panned` keeps that
+ * click from dismissing the preview; the next press clears it.
+ */
+type Gesture =
+  | { phase: 'idle' }
+  | { phase: 'dragging'; startX: number; startY: number; originX: number; originY: number; moved: boolean }
+  | { phase: 'panned' };
 
 /**
  * Zoom and pan of one preview image. The image is laid out at its fit size, centered in the
@@ -50,9 +51,7 @@ class ImageZoom {
   private scale = 1;
   private x = 0;
   private y = 0;
-  private drag: Drag | null = null;
-  /** A pan's release produces a click on the stage that must not dismiss the preview. */
-  private suppressNextClick = false;
+  private gesture: Gesture = { phase: 'idle' };
 
   constructor(
     private readonly ownerDocument: Document,
@@ -116,9 +115,9 @@ class ImageZoom {
 
   /** Whether the click that just happened ended a pan; consumes the flag. */
   consumePanClick(): boolean {
-    const suppressed = this.suppressNextClick;
-    this.suppressNextClick = false;
-    return suppressed;
+    if (this.gesture.phase !== 'panned') return false;
+    this.gesture = { phase: 'idle' };
+    return true;
   }
 
   dispose(): void {
@@ -166,21 +165,22 @@ class ImageZoom {
   };
 
   private readonly onMouseDown = (event: MouseEvent): void => {
-    // A pan released outside the window produces no click, so a stale flag must not outlive it.
-    this.suppressNextClick = false;
+    // A pan released outside the window produces no click, so its `panned` phase ends here.
+    this.endDrag();
     if (event.button !== 0 || this.scale <= 1 || event.target !== this.image && event.target !== this.stage) return;
     // Prevent the browser's native image drag and text selection.
     event.preventDefault();
-    this.endDrag();
-    this.drag = { startX: event.clientX, startY: event.clientY, originX: this.x, originY: this.y, moved: false };
+    this.gesture = {
+      phase: 'dragging', startX: event.clientX, startY: event.clientY, originX: this.x, originY: this.y, moved: false,
+    };
     this.stage.addClass('is-panning');
     this.ownerDocument.addEventListener('mousemove', this.onMouseMove);
     this.ownerDocument.addEventListener('mouseup', this.onMouseUp);
   };
 
   private readonly onMouseMove = (event: MouseEvent): void => {
-    const drag = this.drag;
-    if (!drag) return;
+    const drag = this.gesture;
+    if (drag.phase !== 'dragging') return;
     const dx = event.clientX - drag.startX;
     const dy = event.clientY - drag.startY;
     if (!drag.moved && Math.hypot(dx, dy) < DRAG_THRESHOLD_PX) return;
@@ -191,12 +191,13 @@ class ImageZoom {
   };
 
   private readonly onMouseUp = (): void => {
-    this.suppressNextClick = this.drag?.moved ?? false;
+    const panned = this.gesture.phase === 'dragging' && this.gesture.moved;
     this.endDrag();
+    if (panned) this.gesture = { phase: 'panned' };
   };
 
   private endDrag(): void {
-    this.drag = null;
+    this.gesture = { phase: 'idle' };
     this.stage.removeClass('is-panning');
     this.ownerDocument.removeEventListener('mousemove', this.onMouseMove);
     this.ownerDocument.removeEventListener('mouseup', this.onMouseUp);

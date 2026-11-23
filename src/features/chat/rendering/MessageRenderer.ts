@@ -97,7 +97,7 @@ export class MessageRenderer {
   private removeSessionLinkHandler: () => void;
   readonly #openConversation: ((conversationId: string) => Promise<void>) | undefined;
   private readonly imagePreviewModal = new ImagePreviewModal();
-  private readonly contentRemovalObserver?: MutationObserver;
+  private readonly contentObserver?: MutationObserver;
   /** Whether this presentation follows its latest content; main and side chat share it. */
   readonly follow: TranscriptFollow;
   readonly #markdown: MarkdownContentRenderer;
@@ -163,11 +163,12 @@ export class MessageRenderer {
       return summary ? { title: summary.title || undefined, providerId: summary.providerId } : null;
     });
 
-    // Controllers also clear message DOM directly. Inspect only removed subtrees,
-    // rather than scanning every retained message on each streaming mutation.
+    // Controllers also clear message DOM directly, and Obsidian loads vault image embeds after a
+    // Markdown render settles. Inspect only removed and added subtrees, rather than scanning every
+    // retained message on each streaming mutation.
     const Observer = messagesEl.ownerDocument?.defaultView?.MutationObserver;
     if (Observer) {
-      this.contentRemovalObserver = new Observer(records => {
+      this.contentObserver = new Observer(records => {
         const releaseRemoved = (el: HTMLElement) => {
           const id = el.dataset.messageId;
           if (id && this.messageEls.get(id) === el && !this.messagesEl.contains(el)) {
@@ -184,20 +185,19 @@ export class MessageRenderer {
             el.querySelectorAll<HTMLElement>('[data-message-id]').forEach(releaseRemoved);
             this.#markdown.releaseRemoved(el);
           }
-          // Obsidian loads vault image embeds after the Markdown render settles.
           for (const node of record.addedNodes) {
             if (node.nodeType === 1) this.#markdown.prepareAdded(node as Element);
           }
         }
       });
-      this.contentRemovalObserver.observe(messagesEl, { childList: true, subtree: true });
+      this.contentObserver.observe(messagesEl, { childList: true, subtree: true });
     }
   }
 
   dispose(): void {
     if (this.#markdown.isDisposed) return;
     this.follow.dispose();
-    this.contentRemovalObserver?.disconnect();
+    this.contentObserver?.disconnect();
     this.#markdown.dispose();
     this.imagePreviewModal.close();
     this.messagesEl.removeEventListener('click', this.#onEmbeddedImageClick);
