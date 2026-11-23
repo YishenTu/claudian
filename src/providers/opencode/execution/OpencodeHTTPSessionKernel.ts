@@ -710,12 +710,12 @@ export class OpencodeHTTPSessionKernel implements OpencodeSessionKernel {
     // Only a child this kernel ran has a turn its completions belong to.
     const child = this.children.get(report.childId);
     if (!child) return;
-    for (const { toolCallId, settlement } of settled) {
+    settled.forEach(({ toolCallId, settlement }, index) => {
       this.options.onNativeTaskCompleted?.({
         type: 'async_subagent_completed', originatingTurnId: child.turnId, subagentId: report.childId,
         toolCallId, status: settlement.status, result: settlement.result, providerSessionId: this.sessionId ?? undefined,
-      });
-    }
+      }, index === settled.length - 1 && !ledger.hasBackground);
+    });
     if (!ledger.hasBackground) this.retireChild(report.childId, child);
   }
 

@@ -44,8 +44,9 @@ export async function hydrateOpencodeSubagents(
     const turns = splitChildTurns(child.messages);
     for (const { spawn, key } of spawns) {
       const promptId = ledger.promptId(key);
-      const turn = turns.find(candidate => candidate[0]?.role === 'user' && candidate[0].id === promptId);
-      if (turn) spawn.subagent = buildSubagentInfo(spawn, sessionId, turn, ledger, key);
+      // A child cancelled before it took the prompt has no turn, but its spawn still settles.
+      const turn = turns.find(candidate => candidate[0]?.role === 'user' && candidate[0].id === promptId) ?? [];
+      spawn.subagent = buildSubagentInfo(spawn, sessionId, turn, ledger, key);
     }
   }));
 }

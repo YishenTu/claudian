@@ -222,10 +222,10 @@ const backgroundSpawn = (owner, id, child, input, assistantMessageID, joining = 
 /**
  * A background child goes idle and OpenCode reports it to the session that spawned it. The report's
  * envelope state says whether the child still has background work (`running`) or is done.
- * @param {string} owner @param {string} child @param {'running' | 'completed' | 'error'} state @param {string} body
+ * @param {string} owner @param {string} child @param {'running' | 'completed' | 'error' | 'cancelled'} state @param {string} body
  */
 const childIdle = (owner, child, state, body) => {
-  emit('session.execution.succeeded', { sessionID: child });
+  emit(state === 'cancelled' ? 'session.execution.interrupted' : 'session.execution.succeeded', { sessionID: child });
   emit('session.inbox.enqueued', { sessionID: owner, inboxID: `report_${child}_${++reports}`, item: { type: 'synthetic', delivery: 'steer', payload: {
     text: `<subagent sessionID="${child}" state="${state}" description="worker">\n${body}\n</subagent>`, description: 'worker',
     metadata: { source: 'subagent', childID: child, agent: 'worker', state: state === 'running' ? 'completed' : state },
@@ -459,7 +459,7 @@ const handle = async (req, res, url, body, route) => {
       if (body.text.startsWith('background')) {
         // Results stored without launch metadata still name the child in the launch text.
         backgroundSpawn('ses_test', 'tool_child', 'ses_child', { agent: 'worker', prompt: 'Read notes' }, assistantMessageID, false, body.text !== 'background-text-launch');
-        if (body.text === 'background-followup' || body.text === 'background-followup-joined' || body.text === 'background-followup-intervening') {
+        if (['background-followup', 'background-followup-joined', 'background-followup-intervening', 'background-followup-cancelled'].includes(body.text)) {
           // A follow-up to the running child joins its current run; one idle reports both rounds.
           backgroundSpawn('ses_test', 'tool_followup', 'ses_child', { agent: 'worker', prompt: 'Also check tags', sessionID: 'ses_child' }, assistantMessageID, true);
         }
@@ -538,6 +538,21 @@ const handle = async (req, res, url, body, route) => {
           if (body.text === 'background-reused-id') {
             emit('session.text.ended', { sessionID: 'ses_child', assistantMessageID: 'msg_child', ordinal: 0, text: 'Child result' });
             emit('session.inbox.delivered', { sessionID: 'ses_child', inboxID: 'prompt_reused' });
+            emit('session.text.ended', { sessionID: 'ses_child', assistantMessageID: 'msg_child_followup', ordinal: 0, text: 'Follow-up result' });
+            childIdle('ses_test', 'ses_child', 'completed', 'Follow-up result');
+            emit('session.execution.started', {});
+            emit('session.text.ended', { assistantMessageID: 'msg_background', ordinal: 0, text: 'Automatic reply' });
+            emit('session.execution.succeeded', {});
+            return;
+          }
+          if (body.text === 'background-followup-cancelled') {
+            // Cancelling the child's run reports only the prompt it took; the queued follow-up then runs.
+            childIdle('ses_test', 'ses_child', 'cancelled', 'Subagent cancelled');
+            emit('session.execution.started', { sessionID: 'ses_child' });
+            emit('session.inbox.delivered', { sessionID: 'ses_child', inboxID: 'prompt_tool_followup' });
+            emit('session.tool.input.started', { sessionID: 'ses_child', assistantMessageID: 'msg_child_followup', id: 'followup_read', name: 'read' });
+            emit('session.tool.called', { sessionID: 'ses_child', assistantMessageID: 'msg_child_followup', id: 'followup_read', input: { path: '/workspace/tags.md' } });
+            emit('session.tool.success', { sessionID: 'ses_child', assistantMessageID: 'msg_child_followup', id: 'followup_read', content: [{ type: 'text', text: 'Follow-up read result' }] });
             emit('session.text.ended', { sessionID: 'ses_child', assistantMessageID: 'msg_child_followup', ordinal: 0, text: 'Follow-up result' });
             childIdle('ses_test', 'ses_child', 'completed', 'Follow-up result');
             emit('session.execution.started', {});

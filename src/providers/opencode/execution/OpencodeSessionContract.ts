@@ -38,7 +38,8 @@ export interface OpencodeSessionKernelOptions {
   readonly onNativeWorkChanged?: () => void;
   readonly openNativeInteraction?: () => { turnId: string; close(): void } | undefined;
   readonly onNativeTaskStarted?: (sessionId: string, originatingTurnId: string) => string | undefined;
-  readonly onNativeTaskCompleted?: (event: Omit<ProviderAsyncSubagentCompletedEvent, 'scope'>) => void;
+  /** `childEnded` marks the last completion of a child with no background spawn left. */
+  readonly onNativeTaskCompleted?: (event: Omit<ProviderAsyncSubagentCompletedEvent, 'scope'>, childEnded: boolean) => void;
   readonly onNativeOutput?: (event: OpencodeNativeOutput, childSessionId?: string) => void;
   readonly onNativeSubagentProgress?: (progress: SubagentProgress) => void;
   readonly onNativeTurn?: (status: 'started' | 'completed', error?: string, requested?: boolean) => void;

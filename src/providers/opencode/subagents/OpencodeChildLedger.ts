@@ -1,4 +1,5 @@
-import type { ToolProviderPayload } from '../../../core/types';
+import type { ToolProviderPayload } from '@/core/types';
+
 import type { OpencodeSubagentReport } from '../normalization/opencodeSyntheticReports';
 import { opencodeTaskResultInterpreter } from '../runtime/OpencodeTaskResultInterpreter';
 import {

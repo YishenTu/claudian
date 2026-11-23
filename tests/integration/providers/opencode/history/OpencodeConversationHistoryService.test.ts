@@ -380,6 +380,12 @@ describe('OpencodeConversationHistoryService', () => {
         cards: [card('first', 'error', 'Subagent cancelled'), card('second', 'completed', 'Checked again.')],
       },
       {
+        name: 'a child cancelled before it took its prompt',
+        parent: [spawn('first', 0, 'Survey the vault'), report('cancelled', 3, 'Subagent cancelled')],
+        child: [{ ...idle('c-idle', 2), outcome: 'failed' }],
+        cards: [card('first', 'error', 'Subagent cancelled')],
+      },
+      {
         name: 'a child that ended without final text after progress',
         parent: [spawn('first', 0, 'Survey the vault'), report('completed', 4, 'Subagent completed without a text response.')],
         child: [user('c-1', 1, 'Survey the vault'), answer('c-progress', 2, 'Still reading.'), { id: 'c-empty', type: 'assistant', time: { created: created + 3 }, content: [] }],

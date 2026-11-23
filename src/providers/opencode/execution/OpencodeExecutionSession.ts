@@ -320,10 +320,10 @@ export class OpencodeExecutionSession implements ProviderExecutionSession, Steer
             if (!isCurrentKernel()) return;
             return this.#openBackgroundScope(sessionId, originatingTurnId).id;
           },
-          onNativeTaskCompleted: (event) => {
+          onNativeTaskCompleted: (event, childEnded) => {
             if (!isCurrentKernel()) return;
             this.state.emit(event);
-            this.#closeBackgroundScope(event.subagentId, event.status === 'completed' ? 'completed' : 'provider-ended');
+            if (childEnded) this.#closeBackgroundScope(event.subagentId, event.status === 'completed' ? 'completed' : 'provider-ended');
           },
           onNativeSubagentProgress: (progress) => {
             if (!isCurrentKernel()) return;

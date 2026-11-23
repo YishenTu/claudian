@@ -29,7 +29,6 @@ export function formatOpencodeShellReport(report: unknown): string | null {
 }
 
 /** A child's idle report. Its envelope state is authoritative: 2.3 reports `running` while the child's own background work continues. */
-/** OpenCode reports a child idle as `running` while the child's own background work continues. */
 export type OpencodeSubagentReportState = 'running' | 'completed' | 'error' | 'cancelled';
 
 export interface OpencodeSubagentReport {

@@ -162,6 +162,30 @@ it.each([
   } finally { await f.dispose(); }
 });
 
+it('keeps a child working on a queued follow-up after a cancelled run settles the first spawn', async () => {
+  const f = await createFixture();
+  const events: ProviderSessionEvent[] = [];
+  let completed!: () => void;
+  const background = new Promise<void>(resolve => { completed = resolve; });
+  f.session.onEvent(event => { events.push(event); if (event.type === 'text_delta' && event.text === 'Automatic reply') completed(); });
+  try {
+    for await (const event of f.session.execute(request('background-followup-cancelled')).events) {
+      if (event.type === 'execution_error') throw new Error(event.message);
+    }
+    await background;
+    expect(events.filter(event => event.type === 'async_subagent_completed')).toEqual([
+      expect.objectContaining({ subagentId: 'ses_child', toolCallId: 'tool_child', result: 'Subagent cancelled', status: 'error' }),
+      expect.objectContaining({ subagentId: 'ses_child', toolCallId: 'tool_followup', result: 'Follow-up result', status: 'completed' }),
+    ]);
+    // The follow-up's work stays in the child's background turn, which ends only with the child.
+    const turnOf = (event: ProviderSessionEvent | undefined) => event?.scope?.kind === 'background' ? event.scope.turnId : undefined;
+    const childTurn = turnOf(events.find(event => event.type === 'tool_completed' && event.content === 'Follow-up read result'));
+    expect(childTurn).toBeDefined();
+    const childTurnEnd = events.findIndex(event => event.type === 'background_turn_completed' && turnOf(event) === childTurn);
+    expect(childTurnEnd).toBeGreaterThan(events.findLastIndex(event => event.type === 'async_subagent_completed'));
+  } finally { await f.dispose(); }
+});
+
 it.each(['background-approval', 'background-nested', 'mcp-form-late'])('keeps %s interactions current and protects execution from cooling after the parent finishes', async text => {
   const env = await createForkTestEnvironment();
   const cliPath = path.join(env.root, 'opencode.cjs');
