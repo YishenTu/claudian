@@ -31,7 +31,6 @@
   box-shadow: 0 8px 32px rgb(0 0 0 / 50%);
   cursor: zoom-in;
   transform-origin: center;
-  will-change: transform;
 }
 
 .claudian-image-modal.is-zoomed,
