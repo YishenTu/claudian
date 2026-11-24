@@ -29,7 +29,7 @@
     "selectAvailableTitleModel": "Sélectionnez un modèle disponible pour les titres dans les paramètres de Claudian.",
     "rewind": {
       "confirmMessage": "Rembobiner jusqu’à ce point ? Les modifications de fichiers postérieures à ce message peuvent être écrasées ou supprimées. Cette action est irréversible.",
-      "confirmMessageConflicts": "Rembobiner jusqu’à ce point ? {count} fichier(s) modifié(s) en dehors de l’agent seront écrasés :\n{files}",
+      "confirmMessageConflicts": "Rembobiner jusqu’à ce point ? {count} fichier(s) modifié(s) en dehors de l’Agent seront écrasés :\n{files}",
       "confirmMessageConversationOnly": "Rembobiner la conversation jusqu’à ce point ? Les modifications de fichiers seront conservées.",
       "confirmButton": "Rembobiner",
       "inProgress": "Veuillez attendre la fin du rembobinage en cours.",
@@ -257,26 +257,28 @@
       "file": "fichier",
       "enteringPlan": "Passage en mode planification",
       "planComplete": "Plan terminé",
-      "messageAgent": "Envoyer un message à l’agent",
+      "messageAgent": "Envoyer un message à l’Agent",
       "listDestinations": "Lister les destinations",
       "messageSession": "Envoyer un message à la session",
       "stopSession": "Arrêter la session",
       "readSession": "Lire la session",
-      "continueAgent": "Reprendre l’agent",
-      "listAgents": "Lister les agents",
-      "interruptAgent": "Interrompre l’agent",
-      "allAgents": "Tous les agents",
+      "continueAgent": "Reprendre l’Agent",
+      "listAgents": "Lister les Agents",
+      "interruptAgent": "Interrompre l’Agent",
+      "startAgent": "Démarrer l’Agent",
+      "closeAgent": "Fermer l’Agent",
+      "allAgents": "Tous les Agents",
       "commandPlaceholder": "commande",
       "filesPlaceholder": "fichiers",
       "patternPlaceholder": "motif",
       "toolsPlaceholder": "outils",
-      "agentCount": "{count} agent",
-      "agentCountPlural": "{count} agents"
+      "agentCount": "{count} Agent",
+      "agentCountPlural": "{count} Agents"
     },
     "subagentUI": {
       "prompt": "Instruction",
       "result": "Résultat",
-      "taskLabel": "Tâche du sous-agent : {description} - {status}",
+      "taskLabel": "Tâche du Subagent : {description} - {status}",
       "backgroundTaskLabel": "Tâche en arrière-plan : {description} - {status}",
       "statusLabel": "Statut : {status}",
       "initializing": "Initialisation",
@@ -529,9 +531,10 @@
     },
     "removeItem": "Retirer {item}",
     "agent": "Agent : {agent}",
+    "promptLine": "Instruction : {prompt}",
     "executionNotices": {
-      "initializeFailed": "Impossible d’initialiser l’exécution de l’agent. Réessayez.",
-      "unavailable": "L’exécution de l’agent n’est pas disponible. Rechargez le plugin.",
+      "initializeFailed": "Impossible d’initialiser l’exécution de l’Agent. Réessayez.",
+      "unavailable": "L’exécution de l’Agent n’est pas disponible. Rechargez le plugin.",
       "sessionUnavailable": "La session native de cette conversation n’est pas disponible avec la configuration actuelle de la CLI. Démarrez une nouvelle conversation pour continuer.",
       "unsentFallback": "Le message n’a pas été envoyé. Réessayez.",
       "providerRetry": "Nouvelle tentative après une erreur du fournisseur (tentative {attempt}) : {message}"
@@ -729,11 +732,11 @@
         "saved": "Mémoire du projet enregistrée",
         "loading": "Chargement…",
         "updated": "Mis à jour {time}",
-        "changedOutside": "Le fichier de mémoire a été modifié en dehors de cette fenêtre, probablement par un agent.",
+        "changedOutside": "Le fichier de mémoire a été modifié en dehors de cette fenêtre, probablement par un Agent.",
         "keepMine": "Garder mes modifications",
         "discardConfirm": "Abandonner les modifications non enregistrées de la mémoire du projet ?",
         "discard": "Abandonner",
-        "emptyHint": "Les agents le complètent au fil du projet."
+        "emptyHint": "Les Agents le complètent au fil du projet."
       }
     }
   },
@@ -761,7 +764,7 @@
     "acceptLabel": "Accepter la modification en ligne",
     "retryFallback": "Une erreur est survenue. Réessayez",
     "replyPlaceholder": "Répondez pour continuer…",
-    "noResponseFallback": "Aucune réponse de l’agent",
+    "noResponseFallback": "Aucune réponse de l’Agent",
     "followUpPlaceholder": "Demandez des modifications ou appuyez sur Entrée pour accepter"
   },
   "settings": {
@@ -831,7 +834,7 @@
     "safety": "Sécurité",
     "loadUserSettings": {
       "name": "Charger les paramètres utilisateur de Claude Code",
-      "desc": "Charge la configuration Claude Code au niveau utilisateur depuis ~/.claude : settings.json, skills, commandes, agents et plugins. Si cette option est désactivée, seule la configuration au niveau du coffre est disponible. Si elle est activée, les règles d’autorisation utilisateur s’appliquent aussi et peuvent autoriser des actions sans demander."
+      "desc": "Charge la configuration Claude Code au niveau utilisateur depuis ~/.claude : settings.json, skills, commandes, Agents et plugins. Si cette option est désactivée, seule la configuration au niveau du coffre est disponible. Si elle est activée, les règles d’autorisation utilisateur s’appliquent aussi et peuvent autoriser des actions sans demander."
     },
     "codexSandbox": {
       "name": "Sandbox",

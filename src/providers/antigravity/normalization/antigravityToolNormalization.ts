@@ -4,14 +4,19 @@ import {
   TOOL_ASK_USER_QUESTION,
   TOOL_BASH,
   TOOL_BASH_OUTPUT,
+  TOOL_CLOSE_AGENT,
   TOOL_EDIT,
   TOOL_GENERATE_IMAGE,
   TOOL_KILL_SHELL,
+  TOOL_LIST_AGENTS,
   TOOL_LIST_MCP_RESOURCES,
   TOOL_MANAGE_TASKS,
   TOOL_READ,
   TOOL_READ_MCP_RESOURCE,
+  TOOL_SEND_MESSAGE,
+  TOOL_SPAWN_AGENT,
   TOOL_WEB_SEARCH,
+  TOOL_WORKFLOW,
   TOOL_WRITE,
   TOOL_WRITE_STDIN,
 } from '@/core/tools/toolNames';
@@ -28,11 +33,14 @@ const ANTIGRAVITY_TOOL_NAME_MAP: Readonly<Record<string, string>> = {
   ask_question: TOOL_ASK_USER_QUESTION,
   edit_file: TOOL_EDIT,
   generate_image: TOOL_GENERATE_IMAGE,
+  invoke_subagent: TOOL_SPAWN_AGENT,
   list_resources: TOOL_LIST_MCP_RESOURCES,
   read_file: TOOL_READ,
   read_resource: TOOL_READ_MCP_RESOURCE,
   run_command: TOOL_BASH,
+  run_workflow: TOOL_WORKFLOW,
   search_web: TOOL_WEB_SEARCH,
+  send_message: TOOL_SEND_MESSAGE,
   write_file: TOOL_WRITE,
 };
 
@@ -44,8 +52,23 @@ const MANAGE_TASK_ACTION_MAP: Readonly<Record<string, string>> = {
   status: TOOL_BASH_OUTPUT,
 };
 
+/** `manage_subagents` lists or stops subagents; agy reports no other subagent lifecycle. */
+const MANAGE_SUBAGENTS_ACTION_MAP: Readonly<Record<string, string>> = {
+  kill: TOOL_CLOSE_AGENT,
+  kill_all: TOOL_CLOSE_AGENT,
+  list: TOOL_LIST_AGENTS,
+  list_peers: TOOL_LIST_AGENTS,
+};
+
 /** agy prefixes MCP tools with `mcp_<server>_`; only Claudian's own server name is known. */
 const SESSION_TOOL_PREFIX = `mcp_${SESSION_TOOL_MCP_SERVER_NAME}_`;
+
+/** Results that carry only conversation ids, local paths and instructions to the model: a subagent launch and a message receipt. */
+const HIDDEN_RESULT_PATTERNS: Readonly<Record<string, RegExp>> = {
+  invoke_subagent: /^Created the following subagent:/,
+  send_message: /^Message sent to "[^"]*"\.\s*$/,
+};
+const SUBAGENT_LIST_PATTERN = /^You have \d+ active subagent\(s\):\s*(\[[\s\S]*\])\s*$/;
 
 const COMMAND_OUTPUT_PATTERN = /^Command exited with code (-?\d+)\.\s*(?:Command output:\n?|No output from the command\.\s*$)?([\s\S]*)$/;
 
@@ -54,6 +77,10 @@ export function normalizeAntigravityToolName(rawName: string, rawInput?: unknown
   if (name === 'manage_task' && isRecord(rawInput) && typeof rawInput.Action === 'string'
     && Object.hasOwn(MANAGE_TASK_ACTION_MAP, rawInput.Action)) {
     return MANAGE_TASK_ACTION_MAP[rawInput.Action];
+  }
+  if (name === 'manage_subagents' && isRecord(rawInput) && typeof rawInput.Action === 'string'
+    && Object.hasOwn(MANAGE_SUBAGENTS_ACTION_MAP, rawInput.Action)) {
+    return MANAGE_SUBAGENTS_ACTION_MAP[rawInput.Action];
   }
   // MCP servers from the user's agy config dispatch through `call_mcp_tool`; present the tool it calls.
   if (name === 'call_mcp_tool' && isRecord(rawInput)) {
@@ -89,6 +116,14 @@ export function normalizeAntigravityToolInput(rawName: string, input: Record<str
     case 'list_resources':
     case 'read_resource':
       return withAliases(input, { server: input.ServerName, uri: input.Uri ?? input.URI });
+    case 'invoke_subagent':
+      return withAliases(input, { message: input.Prompt, target: input.Role });
+    // Recipients and kill targets are conversation ids, which mean nothing to the user; only roles are shown.
+    case 'send_message':
+      return withAliases(input, { message: input.Message });
+    case 'run_workflow':
+      // agy workflow scripts are Python.
+      return withAliases(input, { code: input.Script, language: 'Python', title: input.Description });
     case 'manage_task':
       return input.Action === 'send_input' ? withAliases(input, { chars: input.Input, session_id: input.TaskId }) : input;
     default: {
@@ -120,9 +155,33 @@ export function normalizeAntigravityToolResult(
       return { content: failed ? [`exit: ${exitCode}`, output].filter(Boolean).join('\n') : output, isError: failed };
     }
   }
+  if (HIDDEN_RESULT_PATTERNS[rawName.trim()]?.test(content)) return { content: '', isError: false };
+  if (rawName.trim() === 'manage_subagents') {
+    const listed = formatSubagentList(content);
+    if (listed) return { content: listed, isError: false };
+  }
   const empty = rawOutput === undefined || (isRecord(rawOutput) && Object.keys(rawOutput).length === 0);
   if (empty && (content === 'Tool completed' || content === 'Tool failed')) return { content: '', isError: false };
   return { content, isError: false };
+}
+
+/** agy lists subagents as a count line followed by a one-line JSON array; each becomes `role (state)`. */
+function formatSubagentList(content: string): string | undefined {
+  const match = content.match(SUBAGENT_LIST_PATTERN);
+  if (!match) return undefined;
+  let entries: unknown;
+  try {
+    entries = JSON.parse(match[1]);
+  } catch {
+    return undefined;
+  }
+  if (!Array.isArray(entries)) return undefined;
+  const lines = entries.filter(isRecord).map((entry) => {
+    const role = typeof entry.role === 'string' ? entry.role : '';
+    const state = typeof entry.state === 'string' ? ` (${entry.state})` : '';
+    return `${role}${state}`.trim();
+  }).filter(Boolean);
+  return lines.length > 0 ? lines.join('\n') : undefined;
 }
 
 export function buildAntigravityToolProviderPayload(

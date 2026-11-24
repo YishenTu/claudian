@@ -55,6 +55,7 @@ const USER_REQUEST_PATTERN = /<USER_REQUEST>\n?([\s\S]*?)\n?<\/USER_REQUEST>/;
 const RESULT_HEADER_PATTERN = /^(?:(?:Created|Completed) At: [^\n]*\n)+/;
 /** A message agy injects into the conversation; `sender=system` marks its own notices, others are task reports. */
 const SYSTEM_REPORT_PATTERN = /<SYSTEM_MESSAGE>\n\[Message\][^\n]*?\bsender=(\S+)[^\n]*?\bcontent=([\s\S]*?)\n?<\/SYSTEM_MESSAGE>/;
+const BACKGROUND_LAUNCH_PATTERN = /^Tool is running as a background task\b/;
 /** agy appends instructions for the model to a command it moved to the background. */
 const BACKGROUND_INSTRUCTIONS_PATTERN = /\s*YOU MUST TAKE ONE OF THE FOLLOWING TWO ACTIONS:[\s\S]*$/;
 const QUESTION_ANSWER_PATTERN = /^A(\d+): (.*)$/;
@@ -257,17 +258,15 @@ function completeTool(pending: PendingTool, step: TranscriptStep): void {
   const { call, rawName } = pending;
   const text = (step.status === 'ERROR' ? step.error ?? step.content : step.content) ?? '';
   const body = text.replace(RESULT_HEADER_PATTERN, '').replace(BACKGROUND_INSTRUCTIONS_PATTERN, '');
-  const result = rawName === 'run_command'
-    ? normalizeAntigravityToolResult(rawName, body, { output: body })
-    : { content: body, isError: false };
+  const result = normalizeAntigravityToolResult(rawName, body, { output: body });
   if (result.content) call.result = result.content;
   if (rawName === 'ask_question') {
     const answers = decodeQuestionAnswers(pending.rawInput, body);
     if (answers) call.resolvedAnswers = answers;
   }
-  // A RUNNING command step is one agy moved to the background; the step keeps that status after the task ends,
-  // and its outcome arrives as a later task report.
-  const running = step.status === 'RUNNING' && rawName !== 'run_command';
+  // A RUNNING command, workflow or timer step is one agy moved to the background; the step keeps that status after
+  // the task ends, and its outcome arrives as a later task report.
+  const running = step.status === 'RUNNING' && rawName !== 'run_command' && !BACKGROUND_LAUNCH_PATTERN.test(body);
   call.status = step.status === 'ERROR' || result.isError ? 'error' : running ? 'running' : 'completed';
   if (call.name === 'Read') call.resultFormat = 'plain';
   if (call.status === 'completed' && isWriteEditTool(call.name)) {

@@ -265,6 +265,8 @@
       "continueAgent": "Continue agent",
       "listAgents": "List agents",
       "interruptAgent": "Interrupt agent",
+      "startAgent": "Start agent",
+      "closeAgent": "Close agent",
       "allAgents": "All agents",
       "commandPlaceholder": "command",
       "filesPlaceholder": "files",
@@ -529,6 +531,7 @@
     },
     "removeItem": "Remove {item}",
     "agent": "Agent: {agent}",
+    "promptLine": "Prompt: {prompt}",
     "executionNotices": {
       "initializeFailed": "Failed to initialize agent execution. Please try again.",
       "unavailable": "Agent execution is not available. Please reload the plugin.",

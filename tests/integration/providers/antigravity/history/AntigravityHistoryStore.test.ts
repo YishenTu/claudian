@@ -456,6 +456,49 @@ describe('loadAntigravityHistory', () => {
     expect(messages[1].toolCalls?.[0].result).toBe(launch);
   });
 
+  it('replays subagent and workflow calls as agent lifecycle and workflow tools', async () => {
+    const header = 'Created At: 2026-01-01T00:00:02+00:00\nCompleted At: 2026-01-01T00:00:03+00:00\n';
+    const result = (index: number, content: string, status = 'DONE') => ({
+      content: `${header}${header}${content}`, created_at: '2026-01-01T00:00:03Z', source: 'MODEL', status, step_index: index, type: 'GENERIC',
+    });
+    await installSteps([
+      userStep(0, 'Delegate the review.'),
+      replyStep(1, { tool_calls: [
+        { args: { Prompt: 'Review notes.md', Role: 'Notes Reviewer', TypeName: 'self', Workspace: 'inherit' }, name: 'invoke_subagent' },
+        { args: { Message: 'Also check todo.md', Recipient: 'child-1' }, name: 'send_message' },
+        { args: { Action: 'list' }, name: 'manage_subagents' },
+        { args: { Action: 'kill_all' }, name: 'manage_subagents' },
+        { args: { Description: 'Review in parallel', Script: 'await agent("Review")' }, name: 'run_workflow' },
+      ] }),
+      result(2, 'Created the following subagent:\n{\n  "conversationId":  "child-1",\n  "logAbsoluteUri":  "file:///home/user/.gemini/antigravity-cli/brain/child-1/.system_generated/logs/transcript.jsonl",\n'
+        + '  "workspaceUris":  [\n    "file:///vault"\n  ]\n}\nThe subagent will send you a message when it has completed its task or requires guidance. '
+        + 'There is no need to poll for its response.'),
+      result(3, 'Message sent to "child-1".'),
+      result(4, 'You have 2 active subagent(s):\n[{"role":"Notes Reviewer","type":"self","conversationId":"child-1","state":"idle"},'
+        + '{"role":"Test Runner","type":"self","conversationId":"child-2","state":"running"}]'),
+      result(5, 'Successfully killed 1 subagent(s) and their descendants.\nKilled roles: Notes Reviewer'),
+      result(6, 'Tool is running as a background task with task id: s/task-4\nTask Description: Review in parallel', 'RUNNING'),
+      replyStep(7, { content: 'Delegated.' }),
+    ]);
+
+    const messages = await loadAntigravityHistory(storeRoot, SESSION_ID);
+
+    expect(summarize(messages)[1].tools).toEqual([
+      { hasDiff: false, input: expect.objectContaining({ message: 'Review notes.md', target: 'Notes Reviewer' }), name: 'spawn_agent',
+        // agy's launch report carries only ids, local paths and instructions to the model.
+        result: undefined, status: 'completed' },
+      // The recipient is a conversation id, and the confirmation only repeats it.
+      { hasDiff: false, input: { Message: 'Also check todo.md', Recipient: 'child-1', message: 'Also check todo.md' }, name: 'send_message',
+        result: undefined, status: 'completed' },
+      { hasDiff: false, input: { Action: 'list' }, name: 'list_agents',
+        result: 'Notes Reviewer (idle)\nTest Runner (running)', status: 'completed' },
+      { hasDiff: false, input: { Action: 'kill_all' }, name: 'close_agent', result: expect.stringContaining('Killed roles'), status: 'completed' },
+      // A workflow runs in the background like a daemon command; its outcome is the later task report.
+      { hasDiff: false, input: expect.objectContaining({ code: 'await agent("Review")', language: 'Python', title: 'Review in parallel' }),
+        name: 'Workflow', result: expect.stringContaining('background task'), status: 'completed' },
+    ]);
+  });
+
   it('pairs ask_question answers with their questions', async () => {
     const args = { questions: [
       { is_multi_select: false, options: ['Red', 'Green'], question: 'Color?' },

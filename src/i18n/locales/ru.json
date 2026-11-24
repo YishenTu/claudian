@@ -29,7 +29,7 @@
     "selectAvailableTitleModel": "Выберите доступную модель для заголовков в настройках Claudian.",
     "rewind": {
       "confirmMessage": "Откатить до этой точки? Изменения файлов после этого сообщения могут быть перезаписаны или удалены. Это действие нельзя отменить.",
-      "confirmMessageConflicts": "Откатить до этой точки? Будут перезаписаны файлы, изменённые вне агента ({count}):\n{files}",
+      "confirmMessageConflicts": "Откатить до этой точки? Будут перезаписаны файлы, изменённые вне Agent ({count}):\n{files}",
       "confirmMessageConversationOnly": "Откатить разговор до этой точки? Изменения файлов будут сохранены.",
       "confirmButton": "Откатить",
       "inProgress": "Дождитесь завершения текущего отката.",
@@ -257,26 +257,28 @@
       "file": "файл",
       "enteringPlan": "Переход в режим планирования",
       "planComplete": "План готов",
-      "messageAgent": "Отправить сообщение агенту",
+      "messageAgent": "Отправить сообщение Agent",
       "listDestinations": "Список адресатов",
       "messageSession": "Отправить сообщение сессии",
       "stopSession": "Остановить сессию",
       "readSession": "Прочитать сессию",
-      "continueAgent": "Продолжить работу агента",
-      "listAgents": "Список агентов",
-      "interruptAgent": "Прервать работу агента",
-      "allAgents": "Все агенты",
+      "continueAgent": "Продолжить работу Agent",
+      "listAgents": "Список Agents",
+      "interruptAgent": "Прервать работу Agent",
+      "startAgent": "Запустить Agent",
+      "closeAgent": "Завершить работу Agent",
+      "allAgents": "Все Agents",
       "commandPlaceholder": "команда",
       "filesPlaceholder": "файлы",
       "patternPlaceholder": "шаблон",
       "toolsPlaceholder": "инструменты",
-      "agentCount": "{count} агент",
-      "agentCountPlural": "Агентов: {count}"
+      "agentCount": "{count} Agent",
+      "agentCountPlural": "Agents: {count}"
     },
     "subagentUI": {
       "prompt": "Промпт",
       "result": "Результат",
-      "taskLabel": "Задача субагента: {description} - {status}",
+      "taskLabel": "Задача Subagent: {description} - {status}",
       "backgroundTaskLabel": "Фоновая задача: {description} - {status}",
       "statusLabel": "Статус: {status}",
       "initializing": "Инициализация",
@@ -528,10 +530,11 @@
       "collapse": "{label} — нажмите, чтобы свернуть"
     },
     "removeItem": "Удалить {item}",
-    "agent": "Агент: {agent}",
+    "agent": "Agent: {agent}",
+    "promptLine": "Промпт: {prompt}",
     "executionNotices": {
-      "initializeFailed": "Не удалось подготовить запуск агента. Попробуйте ещё раз.",
-      "unavailable": "Запуск агента недоступен. Перезагрузите плагин.",
+      "initializeFailed": "Не удалось подготовить запуск Agent. Попробуйте ещё раз.",
+      "unavailable": "Запуск Agent недоступен. Перезагрузите плагин.",
       "sessionUnavailable": "Нативная сессия этого разговора недоступна при текущей конфигурации CLI. Начните новый чат, чтобы продолжить.",
       "unsentFallback": "Сообщение не отправлено. Попробуйте ещё раз.",
       "providerRetry": "Повторная попытка после ошибки провайдера (попытка {attempt}): {message}"
@@ -729,11 +732,11 @@
         "saved": "Память проекта сохранена",
         "loading": "Загрузка…",
         "updated": "Обновлено {time}",
-        "changedOutside": "Файл памяти был изменён вне этого окна — вероятно, агентом.",
+        "changedOutside": "Файл памяти был изменён вне этого окна — вероятно, Agent.",
         "keepMine": "Сохранить мои правки",
         "discardConfirm": "Отменить несохранённые изменения памяти проекта?",
         "discard": "Отменить",
-        "emptyHint": "Агенты заполняют этот файл по ходу работы над проектом."
+        "emptyHint": "Agents заполняют этот файл по ходу работы над проектом."
       }
     }
   },
@@ -761,7 +764,7 @@
     "acceptLabel": "Принять встроенное редактирование",
     "retryFallback": "Произошла ошибка. Повторите попытку",
     "replyPlaceholder": "Ответьте, чтобы продолжить…",
-    "noResponseFallback": "Агент не ответил",
+    "noResponseFallback": "Agent не ответил",
     "followUpPlaceholder": "Попросите внести изменения или нажмите Enter, чтобы принять"
   },
   "settings": {
@@ -831,7 +834,7 @@
     "safety": "Безопасность",
     "loadUserSettings": {
       "name": "Загружать пользовательские настройки Claude Code",
-      "desc": "Загружает пользовательскую конфигурацию Claude Code из ~/.claude: settings.json, навыки, команды, агенты и плагины. При отключении доступна только конфигурация уровня хранилища. При включении также действуют пользовательские правила разрешений, которые могут разрешать действия без запроса."
+      "desc": "Загружает пользовательскую конфигурацию Claude Code из ~/.claude: settings.json, навыки, команды, Agents и плагины. При отключении доступна только конфигурация уровня хранилища. При включении также действуют пользовательские правила разрешений, которые могут разрешать действия без запроса."
     },
     "codexSandbox": {
       "name": "Песочница",

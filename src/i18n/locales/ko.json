@@ -29,7 +29,7 @@
     "selectAvailableTitleModel": "Claudian 설정에서 사용 가능한 제목 생성 모델을 선택하세요.",
     "rewind": {
       "confirmMessage": "이 시점으로 되감을까요? 이 메시지 이후의 파일 변경 사항이 덮어쓰이거나 삭제될 수 있으며, 되돌릴 수 없습니다.",
-      "confirmMessageConflicts": "이 시점으로 되감을까요? 에이전트 외부에서 수정된 파일 {count}개를 덮어쓰게 됩니다:\n{files}",
+      "confirmMessageConflicts": "이 시점으로 되감을까요? Agent 외부에서 수정된 파일 {count}개를 덮어쓰게 됩니다:\n{files}",
       "confirmMessageConversationOnly": "대화를 이 시점으로 되감을까요? 파일 변경 사항은 유지됩니다.",
       "confirmButton": "되감기",
       "inProgress": "현재 되감기가 완료될 때까지 기다려 주세요.",
@@ -257,26 +257,28 @@
       "file": "파일",
       "enteringPlan": "계획 모드로 전환 중",
       "planComplete": "계획 완료",
-      "messageAgent": "에이전트에 메시지 보내기",
+      "messageAgent": "Agent에 메시지 보내기",
       "listDestinations": "대상 목록 보기",
       "messageSession": "세션에 메시지 보내기",
       "stopSession": "세션 중지",
       "readSession": "세션 읽기",
-      "continueAgent": "에이전트 계속 실행",
-      "listAgents": "에이전트 목록",
-      "interruptAgent": "에이전트 중단",
-      "allAgents": "모든 에이전트",
+      "continueAgent": "Agent 계속 실행",
+      "listAgents": "Agent 목록",
+      "interruptAgent": "Agent 중단",
+      "startAgent": "Agent 시작",
+      "closeAgent": "Agent 종료",
+      "allAgents": "모든 Agent",
       "commandPlaceholder": "명령어",
       "filesPlaceholder": "파일",
       "patternPlaceholder": "패턴",
       "toolsPlaceholder": "도구",
-      "agentCount": "에이전트 {count}개",
-      "agentCountPlural": "에이전트 {count}개"
+      "agentCount": "Agent {count}개",
+      "agentCountPlural": "Agent {count}개"
     },
     "subagentUI": {
       "prompt": "프롬프트",
       "result": "결과",
-      "taskLabel": "하위 에이전트 작업: {description} - {status}",
+      "taskLabel": "Subagent 작업: {description} - {status}",
       "backgroundTaskLabel": "백그라운드 작업: {description} - {status}",
       "statusLabel": "상태: {status}",
       "initializing": "초기화 중",
@@ -528,10 +530,11 @@
       "collapse": "{label} - 클릭하여 접기"
     },
     "removeItem": "{item} 제거",
-    "agent": "에이전트: {agent}",
+    "agent": "Agent: {agent}",
+    "promptLine": "프롬프트: {prompt}",
     "executionNotices": {
-      "initializeFailed": "에이전트 실행을 초기화하지 못했습니다. 다시 시도해 주세요.",
-      "unavailable": "에이전트 실행을 사용할 수 없습니다. 플러그인을 다시 불러와 주세요.",
+      "initializeFailed": "Agent 실행을 초기화하지 못했습니다. 다시 시도해 주세요.",
+      "unavailable": "Agent 실행을 사용할 수 없습니다. 플러그인을 다시 불러와 주세요.",
       "sessionUnavailable": "현재 CLI 구성에서는 이 대화의 네이티브 세션을 사용할 수 없습니다. 계속하려면 새 채팅을 시작하세요.",
       "unsentFallback": "메시지가 전송되지 않았습니다. 다시 시도해 주세요.",
       "providerRetry": "공급자 오류로 다시 시도하는 중(시도 {attempt}): {message}"
@@ -729,11 +732,11 @@
         "saved": "프로젝트 메모리를 저장했습니다",
         "loading": "불러오는 중…",
         "updated": "{time} 업데이트됨",
-        "changedOutside": "메모리 파일이 이 창 외부에서 업데이트되었습니다. 에이전트가 수정했을 수 있습니다.",
+        "changedOutside": "메모리 파일이 이 창 외부에서 업데이트되었습니다. Agent가 수정했을 수 있습니다.",
         "keepMine": "내 편집 유지",
         "discardConfirm": "프로젝트 메모리의 저장되지 않은 변경 사항을 버릴까요?",
         "discard": "버리기",
-        "emptyHint": "프로젝트가 진행됨에 따라 에이전트가 이 내용을 채워 넣습니다."
+        "emptyHint": "프로젝트가 진행됨에 따라 Agent가 이 내용을 채워 넣습니다."
       }
     }
   },
@@ -761,7 +764,7 @@
     "acceptLabel": "인라인 편집 수락",
     "retryFallback": "오류가 발생했습니다. 다시 시도하세요",
     "replyPlaceholder": "계속하려면 답변을 입력하세요…",
-    "noResponseFallback": "에이전트가 응답하지 않았습니다",
+    "noResponseFallback": "Agent가 응답하지 않았습니다",
     "followUpPlaceholder": "변경 사항을 요청하거나 Enter 키를 눌러 수락"
   },
   "settings": {
@@ -831,7 +834,7 @@
     "safety": "보안",
     "loadUserSettings": {
       "name": "사용자 Claude Code 설정 불러오기",
-      "desc": "~/.claude에서 사용자 수준 Claude Code 구성(settings.json, 스킬, 명령어, 에이전트, 플러그인)을 불러옵니다. 비활성화하면 보관함 수준 구성만 사용할 수 있습니다. 활성화하면 사용자의 권한 규칙도 적용되어 확인 없이 작업이 허용될 수 있습니다."
+      "desc": "~/.claude에서 사용자 수준 Claude Code 구성(settings.json, 스킬, 명령어, Agents, 플러그인)을 불러옵니다. 비활성화하면 보관함 수준 구성만 사용할 수 있습니다. 활성화하면 사용자의 권한 규칙도 적용되어 확인 없이 작업이 허용될 수 있습니다."
     },
     "codexSandbox": {
       "name": "샌드박스",

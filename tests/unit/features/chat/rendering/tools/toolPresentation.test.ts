@@ -123,6 +123,14 @@ describe('toolPresentation', () => {
     expect(getToolLabel(tool, {})).toBe(label);
   });
 
+  it.each([
+    ['spawn_agent', { message: 'Review notes.md', target: 'Notes Reviewer' }, 'Start agent: Review notes.md'],
+    ['close_agent', { target: 'child-1, child-2' }, 'Close agent: child-1, child-2'],
+    ['close_agent', {}, 'Close agent'],
+  ])('presents agent lifecycle tool %s with a readable name', (tool, input, label) => {
+    expect(getToolLabel(tool, input)).toBe(label);
+  });
+
   describe('getToolName', () => {
     it('should return tool name for standard tools', () => {
       expect(getToolName('Read', {})).toBe('Read');
@@ -305,16 +313,12 @@ describe('toolPresentation', () => {
       expect(getToolLabel('write_stdin', {})).toBe('write_stdin');
     });
 
-    it('labels spawn_agent with message', () => {
-      expect(getToolLabel('spawn_agent', { message: 'Fix bug' })).toBe('spawn_agent: Fix bug');
-    });
-
     it('labels wait with count', () => {
       expect(getToolLabel('wait', { ids: ['a1', 'a2'], timeout_ms: 5000 })).toBe('wait: 2 agents, 5s');
     });
 
     it('returns raw name for lifecycle tools with no summary', () => {
-      expect(getToolLabel('close_agent', {})).toBe('close_agent');
+      expect(getToolLabel('resume_agent', {})).toBe('resume_agent');
     });
   });
 
