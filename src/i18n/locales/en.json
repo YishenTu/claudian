@@ -321,7 +321,7 @@
       "current": "Permission mode: {mode}",
       "changeFailed": "Failed to change permission mode",
       "antigravity": {
-        "autoDesc": "Approve workspace edits and sandboxed commands; review extra access"
+        "autoDesc": "Approve sandboxed commands and edits, including some outside the vault; review riskier access"
       },
       "claude": {
         "autoDesc": "Claude handles permission decisions",

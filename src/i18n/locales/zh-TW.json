@@ -321,7 +321,7 @@
       "current": "權限模式：{mode}",
       "changeFailed": "切換權限模式失敗",
       "antigravity": {
-        "autoDesc": "核准工作區編輯與沙盒指令；審查額外存取權限"
+        "autoDesc": "核准沙盒指令與編輯（包含部分儲存庫外的編輯）；審查風險較高的存取"
       },
       "claude": {
         "autoDesc": "由 Claude 決定是否授權",

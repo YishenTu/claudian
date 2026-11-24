@@ -321,7 +321,7 @@
       "current": "Modo de permisos: {mode}",
       "changeFailed": "No se pudo cambiar el modo de permisos",
       "antigravity": {
-        "autoDesc": "Aprobar ediciones del espacio de trabajo y comandos aislados; revisar accesos adicionales"
+        "autoDesc": "Aprobar comandos aislados y ediciones, incluidas algunas fuera de la bóveda; revisar accesos más riesgosos"
       },
       "claude": {
         "autoDesc": "Claude decide los permisos",

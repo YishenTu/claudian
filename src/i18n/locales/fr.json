@@ -321,7 +321,7 @@
       "current": "Mode d’autorisation : {mode}",
       "changeFailed": "Impossible de modifier le mode d’autorisation",
       "antigravity": {
-        "autoDesc": "Autoriser les modifications de l’espace de travail et les commandes isolées ; examiner les accès supplémentaires"
+        "autoDesc": "Autoriser les commandes isolées et les modifications, y compris certaines hors du coffre ; examiner les accès plus risqués"
       },
       "claude": {
         "autoDesc": "Claude décide des autorisations",

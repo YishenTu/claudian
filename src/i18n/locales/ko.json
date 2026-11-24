@@ -321,7 +321,7 @@
       "current": "권한 모드: {mode}",
       "changeFailed": "권한 모드를 변경하지 못했습니다",
       "antigravity": {
-        "autoDesc": "작업 공간 편집과 샌드박스 명령어를 자동 승인하고, 추가 접근은 검토"
+        "autoDesc": "샌드박스 명령어와 편집을 자동 승인하고(보관함 밖 일부 편집 포함), 위험도가 높은 접근은 검토"
       },
       "claude": {
         "autoDesc": "Claude가 권한 결정",

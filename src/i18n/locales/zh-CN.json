@@ -321,7 +321,7 @@
       "current": "权限模式：{mode}",
       "changeFailed": "切换权限模式失败",
       "antigravity": {
-        "autoDesc": "自动批准工作区编辑和沙盒命令；额外访问需确认"
+        "autoDesc": "自动批准沙盒命令和编辑（包括部分仓库外的编辑）；风险更高的访问需确认"
       },
       "claude": {
         "autoDesc": "由 Claude 决定是否授权",
