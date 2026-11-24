@@ -321,7 +321,7 @@
       "current": "Berechtigungsmodus: {mode}",
       "changeFailed": "Berechtigungsmodus konnte nicht geändert werden",
       "antigravity": {
-        "autoDesc": "Änderungen im Arbeitsbereich und Befehle in der Sandbox genehmigen; zusätzliche Zugriffe prüfen"
+        "autoDesc": "Befehle in der Sandbox und Änderungen genehmigen, teils auch außerhalb des Vaults; riskantere Zugriffe prüfen"
       },
       "claude": {
         "autoDesc": "Claude entscheidet über Berechtigungen",

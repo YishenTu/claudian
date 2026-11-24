@@ -321,7 +321,7 @@
       "current": "Modo de permissões: {mode}",
       "changeFailed": "Não foi possível alterar o modo de permissões",
       "antigravity": {
-        "autoDesc": "Aprovar edições no workspace e comandos em sandbox; revisar acessos adicionais"
+        "autoDesc": "Aprovar comandos em sandbox e edições, incluindo algumas fora do cofre; revisar acessos mais arriscados"
       },
       "claude": {
         "autoDesc": "O Claude decide as permissões",
