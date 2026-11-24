@@ -5,6 +5,7 @@ import { setIcon } from 'obsidian';
 
 import type { ToolCallInfo } from '@/core/types';
 import { renderApplyPatchExpanded } from '@/features/chat/rendering/tools/applyPatchContent';
+import { createInlineDiffBudget } from '@/features/chat/rendering/tools/inlineLineDiff';
 import {
   renderStoredToolCall,
   renderToolCall,
@@ -258,7 +259,7 @@ describe('applyPatchContent', () => {
           ].join('\n'),
         },
         undefined,
-        300,
+        createInlineDiffBudget(300),
       );
 
       const first = within(container).getByRole('group', { name: 'notes/first.md' });

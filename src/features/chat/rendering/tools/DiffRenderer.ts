@@ -2,7 +2,6 @@ import type { DiffLine, DiffStats } from '@/core/types/diff';
 import {
   computeBlockInlineDiffs,
   createInlineDiffBudget,
-  DEFAULT_INLINE_DIFF_WORK_BUDGET,
   type InlineDiffBudget,
   type InlineDiffSegment,
 } from '@/features/chat/rendering/tools/inlineLineDiff';
@@ -116,7 +115,8 @@ export function renderDiffContent(
   containerEl: HTMLElement,
   diffLines: DiffLine[],
   contextLines = 3,
-  inlineDiffWorkBudget: number | InlineDiffBudget = DEFAULT_INLINE_DIFF_WORK_BUDGET,
+  /** Shared across every diff in one tool card; defaults to a fresh budget. */
+  inlineDiffBudget: InlineDiffBudget = createInlineDiffBudget(),
 ): void {
   containerEl.empty();
 
@@ -142,10 +142,6 @@ export function renderDiffContent(
     return;
   }
 
-  const budget = typeof inlineDiffWorkBudget === 'number'
-    ? createInlineDiffBudget(inlineDiffWorkBudget)
-    : inlineDiffWorkBudget;
-
   hunks.forEach((hunk, hunkIndex) => {
     // Add separator between hunks
     if (hunkIndex > 0) {
@@ -158,41 +154,26 @@ export function renderDiffContent(
     let index = 0;
 
     while (index < hunk.lines.length) {
-      const line = hunk.lines[index];
-      if (line.type !== 'delete' || budget.remainingWork <= 0) {
-        renderDiffLine(hunkEl, line);
-        index++;
+      if (hunk.lines[index].type !== 'delete') {
+        renderDiffLine(hunkEl, hunk.lines[index++]);
         continue;
       }
 
       const deleteStart = index;
-      while (index < hunk.lines.length && hunk.lines[index].type === 'delete') {
-        if (index > deleteStart && hunk.lines[index].hunkBreak) break;
+      do {
         index++;
-      }
+      } while (index < hunk.lines.length && hunk.lines[index].type === 'delete' && !hunk.lines[index].hunkBreak);
       const insertStart = index;
-      while (
-        index < hunk.lines.length
-        && hunk.lines[index].type === 'insert'
-        && !hunk.lines[index].hunkBreak
-      ) {
+      while (index < hunk.lines.length && hunk.lines[index].type === 'insert' && !hunk.lines[index].hunkBreak) {
         index++;
       }
 
       const deletedLines = hunk.lines.slice(deleteStart, insertStart);
       const insertedLines = hunk.lines.slice(insertStart, index);
-
-      if (insertedLines.length === 0) {
-        for (const deletedLine of deletedLines) {
-          renderDiffLine(hunkEl, deletedLine);
-        }
-        continue;
-      }
-
       const { deleteSegments, insertSegments } = computeBlockInlineDiffs(
         deletedLines.map(entry => entry.text),
         insertedLines.map(entry => entry.text),
-        budget,
+        inlineDiffBudget,
       );
 
       for (let i = 0; i < deletedLines.length; i++) {

@@ -5,6 +5,7 @@ import { within } from '@testing-library/dom';
 import { diffFromStructuredPatch, diffFromUnifiedText, parseApplyPatchDiffs } from '@/core/tools/toolDiff';
 import type { DiffLine } from '@/core/types/diff';
 import { renderDiffContent } from '@/features/chat/rendering/tools/DiffRenderer';
+import { createInlineDiffBudget } from '@/features/chat/rendering/tools/inlineLineDiff';
 
 /** Generate N insert DiffLines. */
 function makeInsertLines(n: number): DiffLine[] {
@@ -205,7 +206,7 @@ function makeInsertLines(n: number): DiffLine[] {
 
       const manyContainer = document.createElement('div');
       // Budget allows only the first ~2 pairs (each pair charges ~15 chars of tokenization + 0 LCS cells)
-      renderDiffContent(manyContainer, manyRuns, 3, 35);
+      renderDiffContent(manyContainer, manyRuns, 3, createInlineDiffBudget(35));
       const manyInserts = Array.from(manyContainer.querySelectorAll('.claudian-diff-insert'));
       expect(manyInserts).toHaveLength(6);
       expect(manyInserts[0].querySelectorAll('.claudian-diff-inline-insert')).toHaveLength(1);
@@ -227,7 +228,7 @@ function makeInsertLines(n: number): DiffLine[] {
       ];
 
       const largeContainer = document.createElement('div');
-      renderDiffContent(largeContainer, largeBlock, 3, 60);
+      renderDiffContent(largeContainer, largeBlock, 3, createInlineDiffBudget(60));
       const largeInserts = Array.from(largeContainer.querySelectorAll('.claudian-diff-insert'));
       expect(largeInserts).toHaveLength(20);
       expect(largeInserts[0].querySelectorAll('.claudian-diff-inline-insert')).toHaveLength(1);
@@ -245,7 +246,7 @@ function makeInsertLines(n: number): DiffLine[] {
         { type: 'insert', text: '丙今天天气很好，我们去公园散步丁', newLineNum: 3 },
       ];
       const lcsContainer = document.createElement('div');
-      renderDiffContent(lcsContainer, lcsExhaustionLines, 3, 330);
+      renderDiffContent(lcsContainer, lcsExhaustionLines, 3, createInlineDiffBudget(330));
       const lcsDeletes = Array.from(lcsContainer.querySelectorAll('.claudian-diff-delete'));
       const lcsInserts = Array.from(lcsContainer.querySelectorAll('.claudian-diff-insert'));
       expect(Array.from(lcsDeletes[0].querySelectorAll('.claudian-diff-inline-delete'), el => el.textContent)).toEqual(['甲', '乙']);

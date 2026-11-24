@@ -18,7 +18,7 @@ export interface InlineDiffBudget {
 }
 
 /** Cumulative tokenization, pairing, and LCS work budget per rendered diff card. */
-export const DEFAULT_INLINE_DIFF_WORK_BUDGET = 2_000_000;
+const DEFAULT_INLINE_DIFF_WORK_BUDGET = 2_000_000;
 
 const graphemeSegmenter = new Intl.Segmenter(undefined, { granularity: 'grapheme' });
 
