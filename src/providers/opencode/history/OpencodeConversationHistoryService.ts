@@ -154,10 +154,13 @@ export class OpencodeConversationHistoryService implements ProviderConversationH
       return [createOpencodeHydrationDiagnosticMessage({ sessionId, databasePath, reason: 'The recorded OpenCode database is not accessible with the current settings.' })];
     }
     return this.withHttp(database.accessible, vaultPath, pathContext, async client => {
-      const read = async (id: string) => mapOpencodeNativeMessages(await readOpencodeHTTPMessages(client, id), client.target);
-      const messages = await read(sessionId);
-      await hydrateOpencodeSubagents(messages, read);
-      return messages;
+      const read = async (id: string) => {
+        const rows = await readOpencodeHTTPMessages(client, id);
+        return { rows, messages: mapOpencodeNativeMessages(rows, client.target) };
+      };
+      const session = await read(sessionId);
+      await hydrateOpencodeSubagents(session, read);
+      return session.messages;
     }).catch(error => [createOpencodeHydrationDiagnosticMessage({ sessionId, databasePath, reason: error instanceof Error ? error.message : String(error) })]);
   }
 

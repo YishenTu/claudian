@@ -66,6 +66,7 @@ export class SessionEvents {
         type: 'async_subagent_completion',
         providerSessionId,
         taskId: event.subagentId,
+        ...(event.toolCallId !== undefined ? { toolUseId: event.toolCallId } : {}),
         status: event.status,
         ...(event.result !== undefined ? { result: event.result } : {}),
       });

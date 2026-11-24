@@ -533,7 +533,8 @@
       "initializeFailed": "無法初始化代理程式執行。請重試。",
       "unavailable": "代理程式執行無法使用。請重新載入外掛。",
       "sessionUnavailable": "此對話的原生工作階段在目前的 CLI 設定下無法使用。請開始新的聊天以繼續。",
-      "unsentFallback": "訊息未傳送。請重試。"
+      "unsentFallback": "訊息未傳送。請重試。",
+      "providerRetry": "供應商發生錯誤，正在重試（第 {attempt} 次）：{message}"
     },
     "images": {
       "unsupportedProvider": "此提供者不支援圖片附件。",

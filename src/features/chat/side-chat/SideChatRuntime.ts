@@ -611,6 +611,7 @@ export class SideChatRuntime {
       if (providerSessionId) await this.#stream.subagents.handleAsyncSubagentCompletion({
         type: 'async_subagent_completion', providerSessionId,
         taskId: event.subagentId, status: event.status,
+        ...(event.toolCallId !== undefined ? { toolUseId: event.toolCallId } : {}),
         ...(event.result !== undefined ? { result: event.result } : {}),
       });
       return;

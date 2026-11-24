@@ -317,6 +317,8 @@ export type ProviderAsyncSubagentCompletedEvent = ProviderEventBase<
   ProviderOpaqueEventPayload & {
     readonly originatingTurnId: string;
     readonly subagentId: string;
+    /** The spawning tool call this completion ends, when several spawns can share one subagent. */
+    readonly toolCallId?: string;
     readonly status: 'completed' | 'error';
     readonly result?: string;
     readonly providerSessionId?: string;

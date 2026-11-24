@@ -235,6 +235,25 @@ export class SubagentManager {
     this.cards.render(subagentState);
   }
 
+  /** A sync task whose own result is a native background launch continues as the same card in async mode. */
+  public promoteSyncTaskOnLaunch(
+    toolId: string,
+    result: unknown,
+    isError: boolean,
+    providerPayload?: ToolProviderPayload,
+  ): SubagentInfo | undefined {
+    const sync = this.#sync(toolId);
+    if (!sync || this.taskResultInterpreter.interpretLaunch(result, isError, providerPayload).mode !== 'async') return undefined;
+    // A new record lets the card view see the mode change and swap the sync card for an async one.
+    const info: SubagentInfo = { ...sync, mode: 'async', asyncStatus: 'pending' };
+    const record: AsyncSubagentRecord = { info };
+    this.tasks.set(toolId, { phase: 'async', record });
+    this.cards.render(info);
+    const deferred = this.#takeDeferredAsyncCompletion(toolId);
+    if (deferred) this.#applyAsyncSubagentCompletion(record, deferred);
+    return info;
+  }
+
   public finalizeSyncSubagent(
     toolId: string,
     result: unknown,

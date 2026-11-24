@@ -1,15 +1,26 @@
 import { NOOP_TASK_RESULT_INTERPRETER } from '../../../core/providers/NoopTaskResultInterpreter';
 import type { ProviderTaskResultInterpreter } from '../../../core/providers/types';
 import { extractToolResultContent } from '../../../core/tools/toolResultContent';
+import { isRecord } from '../http/OpencodeHTTPClient';
 
 /** Native session IDs correlate OpenCode background launches with completion events. */
 export const opencodeTaskResultInterpreter: ProviderTaskResultInterpreter = {
   ...NOOP_TASK_RESULT_INTERPRETER,
-  interpretLaunch(result, isError) {
+  /**
+   * A spawn whose child still runs when it returns continues in the background. The native result
+   * metadata says so directly; the launch wording is the fallback for results stored without it.
+   */
+  interpretLaunch(result, isError, providerPayload) {
     const text = extractToolResultContent(result, { fallbackIndent: 2 });
+    const rawOutput = providerPayload?.rawOutput;
+    const metadata = isRecord(rawOutput) && isRecord(rawOutput.metadata) ? rawOutput.metadata : undefined;
+    const sessionId = typeof metadata?.sessionID === 'string' && metadata.sessionID ? metadata.sessionID : null;
+    if (sessionId && typeof metadata?.status === 'string') {
+      return { mode: metadata.status === 'running' && !isError ? 'async' : 'sync', agentId: sessionId, result: text };
+    }
     const background = /^The subagent is working in the background \(sessionID: (ses_[^)\s]+)\)/u.exec(text);
     const completed = /^<subagent sessionID="(ses_[^"]+)" state="completed">/u.exec(text);
-    return { mode: background && !isError ? 'async' : 'sync', agentId: background?.[1] ?? completed?.[1] ?? null, result: text };
+    return { mode: background && !isError ? 'async' : 'sync', agentId: sessionId ?? background?.[1] ?? completed?.[1] ?? null, result: text };
   },
   /** V2 wraps a finished child's answer in a native envelope that the card must not show. */
   interpretResult(result, isError) {

@@ -57,6 +57,24 @@ function createKernelEpoch(): KernelEpoch {
   return { retired: false, metadata: new AbortController() };
 }
 
+/**
+ * The kernel slot. A kernel connects, then opens the native session; disposal empties the slot
+ * synchronously and keeps the in-flight teardown so the next turn waits for it.
+ */
+type OpencodeKernelSlot =
+  | { readonly phase: 'none' }
+  | { readonly phase: 'connecting'; readonly kernel: OpencodeSessionKernel }
+  | {
+      readonly phase: 'open';
+      readonly kernel: OpencodeSessionKernel;
+      /** The profile and system prompt the kernel was connected with. */
+      readonly configurationKey: string;
+      readonly native: OpencodeNativeSessionInfo;
+    }
+  | { readonly phase: 'disposing'; readonly disposal: Promise<void> };
+
+const NO_KERNEL: OpencodeKernelSlot = { phase: 'none' };
+
 /** One requested run and its live-output gate. */
 interface OpencodeActiveRun {
   readonly run: RequestedRunChannel;
@@ -80,21 +98,21 @@ export class OpencodeExecutionSession implements ProviderExecutionSession, Steer
   private readonly persistence: OpencodeSessionPersistence;
   private readonly createKernel: OpencodeSessionKernelFactory;
   private activeRun: OpencodeActiveRun | null = null;
-  private kernel: OpencodeSessionKernel | null = null;
+  private kernelSlot: OpencodeKernelSlot = NO_KERNEL;
   /**
    * The kernel generation callbacks belong to. A retired epoch admits no new turn; its metadata
    * work is aborted when it is retired, superseded, or replaced.
+   * Kept outside `kernelSlot` for its different lifetime: it is replaced before the kernel exists,
+   * and disposal installs a fresh one that fences the old kernel's callbacks while no kernel is set.
    */
   private kernelEpoch: KernelEpoch = createKernelEpoch();
 
-  private kernelConfigurationKey: string | null = null;
-  private kernelDisposalPromise: Promise<void> | null = null;
-  private nativeInfo: OpencodeNativeSessionInfo | null = null;
   private nativeSessionId: string | null;
   private nativeConversationContextEstablished: boolean;
   private databasePath: string | null;
   private readonly seedProviderState: Readonly<Record<string, unknown>>;
   private readonly state: SessionSnapshotState;
+  // Separate on purpose: `disposed` flips before teardown runs listeners; the promise exists only after.
   private disposePromise: Promise<void> | null = null;
   private disposed = false;
   private lifecycleGeneration = 0;
@@ -190,18 +208,16 @@ export class OpencodeExecutionSession implements ProviderExecutionSession, Steer
       throw error;
     }
     const active = this.activeRun;
-    const kernel = this.kernel;
-    const native = this.nativeInfo;
+    const slot = this.kernelSlot;
     if (
       !active
       || active.run.isTerminal
       || active.cancellationRequested
       || !isAcceptingLiveOutput(active)
-      || !kernel
-      || !native
+      || slot.phase !== 'open'
       || request.signal.aborted
     ) return false;
-    return kernel.steer(native.sessionId, buildPrompt(request, false));
+    return slot.kernel.steer(slot.native.sessionId, buildPrompt(request, false));
   }
 
   getSnapshot(): ProviderSessionSnapshot {
@@ -248,25 +264,24 @@ export class OpencodeExecutionSession implements ProviderExecutionSession, Steer
       await this.options.serverService.waitUntilAvailable(request.signal);
       if (!this.#isRunCurrent(active, generation)) return;
       assertOpencodeModelAvailable(this.host, request.configuration.model);
-      const pendingDisposal = this.kernelDisposalPromise;
-      if (pendingDisposal) {
-        await pendingDisposal;
+      if (this.kernelSlot.phase === 'disposing') {
+        await this.kernelSlot.disposal;
         if (!this.#isRunCurrent(active, generation)) return;
       }
       const profile = resolveProfile(request);
       // Instructions are fixed per kernel: a changed prompt reopens the native session on a new one at this turn.
       const systemPrompt = request.configuration.systemInstructions.instructions;
       const kernelConfigurationKey = JSON.stringify([profile, systemPrompt]);
-      let kernel = this.kernel;
-      let native = this.nativeInfo;
+      const current = this.kernelSlot.phase === 'open' ? this.kernelSlot : null;
+      let kernel = current?.kernel ?? null;
+      let native = current?.native ?? null;
       if (
-        kernel
-        && native
-        && (this.kernelEpoch.retired || this.kernelConfigurationKey !== kernelConfigurationKey)
+        current
+        && (this.kernelEpoch.retired || current.configurationKey !== kernelConfigurationKey)
       ) {
         // A new turn cannot reuse a retired generation or interrupt its descendants.
         if (this.kernelEpoch.retired) {
-          await kernel.whenIdle();
+          await current.kernel.whenIdle();
           if (!this.#isRunCurrent(active, generation)) return;
         }
         await this.#disposeKernel();
@@ -305,10 +320,10 @@ export class OpencodeExecutionSession implements ProviderExecutionSession, Steer
             if (!isCurrentKernel()) return;
             return this.#openBackgroundScope(sessionId, originatingTurnId).id;
           },
-          onNativeTaskCompleted: (event) => {
+          onNativeTaskCompleted: (event, childEnded) => {
             if (!isCurrentKernel()) return;
             this.state.emit(event);
-            this.#closeBackgroundScope(event.subagentId, event.status === 'completed' ? 'completed' : 'provider-ended');
+            if (childEnded) this.#closeBackgroundScope(event.subagentId, event.status === 'completed' ? 'completed' : 'provider-ended');
           },
           onNativeSubagentProgress: (progress) => {
             if (!isCurrentKernel()) return;
@@ -349,23 +364,22 @@ export class OpencodeExecutionSession implements ProviderExecutionSession, Steer
           host: this.host,
           sessionInstanceId: this.sessionInstanceId,
         });
-        this.kernel = kernel;
+        this.kernelSlot = { phase: 'connecting', kernel };
         resumeAttempt = this.nativeSessionId;
         await kernel.connect({
           profile,
           systemPrompt,
           ...(resumeAttempt ? { resumeSessionId: resumeAttempt } : {}),
         });
-        if (this.kernel === kernel) {
-          this.kernelConfigurationKey = kernelConfigurationKey;
-        }
         if (!this.#isRunCurrent(active, generation)) return;
         phase = 'open';
         native = await kernel.openSession(resumeAttempt ?? undefined);
         this.#captureNativeSessionOwnership(native, active);
         if (!this.#isRunCurrent(active, generation)) return;
         phase = 'run';
-        this.nativeInfo = native;
+        if (this.kernelSlot.phase === 'connecting' && this.kernelSlot.kernel === kernel) {
+          this.kernelSlot = { phase: 'open', kernel, configurationKey: kernelConfigurationKey, native };
+        }
         await projectOpencodeMetadata(this.host, { models: native.models }, this.kernelEpoch.metadata.signal);
       } else {
         // Configuring a reused kernel is native work: cancellation must stop it.
@@ -454,7 +468,7 @@ export class OpencodeExecutionSession implements ProviderExecutionSession, Steer
   }
 
   #releaseRetiredKernel(): void {
-    if (this.kernelEpoch.retired && !this.activeRun && !this.backgroundTurn && this.backgroundScopes.size === 0 && !this.kernel?.hasNativeWork) {
+    if (this.kernelEpoch.retired && !this.activeRun && !this.backgroundTurn && this.backgroundScopes.size === 0 && !this.#currentKernel()?.hasNativeWork) {
       void this.#disposeKernel();
     }
   }
@@ -509,7 +523,7 @@ export class OpencodeExecutionSession implements ProviderExecutionSession, Steer
   #interruptKernel(): void {
     if (this.nativeSessionId) {
       try {
-        this.kernel?.cancel(this.nativeSessionId);
+        this.#currentKernel()?.cancel(this.nativeSessionId);
       } catch {
         // Disposal below remains authoritative when native cancellation fails.
       }
@@ -555,7 +569,6 @@ export class OpencodeExecutionSession implements ProviderExecutionSession, Steer
         this.#emitSessionSnapshot();
         this.#emitSessionError(error);
       }
-      this.nativeInfo = null;
       void this.#disposeKernel();
       return;
     }
@@ -572,7 +585,6 @@ export class OpencodeExecutionSession implements ProviderExecutionSession, Steer
           type: 'execution_error',
         });
     this.activeRun = null;
-    this.nativeInfo = null;
     void this.#disposeKernel();
   }
 
@@ -638,7 +650,7 @@ export class OpencodeExecutionSession implements ProviderExecutionSession, Steer
   }
 
   async #disposeKernel(): Promise<void> {
-    if (this.kernelDisposalPromise) return this.kernelDisposalPromise;
+    if (this.kernelSlot.phase === 'disposing') return this.kernelSlot.disposal;
     for (const turn of this.backgroundScopes.values()) {
       this.#emitBackground({ type: 'background_turn_completed', reason: 'provider-ended' }, turn);
     }
@@ -647,13 +659,11 @@ export class OpencodeExecutionSession implements ProviderExecutionSession, Steer
       this.#emitBackground({ type: 'background_turn_completed', reason: 'provider-ended' });
       this.backgroundTurn = null;
     }
-    const kernel = this.kernel;
+    const kernel = this.#currentKernel();
     const releaseCleanup = this.kernelEpoch.retired && !this.disposed;
     this.kernelEpoch.metadata.abort();
     this.kernelEpoch = createKernelEpoch();
-    this.kernel = null;
-    this.nativeInfo = null;
-    this.kernelConfigurationKey = null;
+    this.kernelSlot = NO_KERNEL;
     if (!kernel) return;
 
     const pending = (async () => {
@@ -665,13 +675,18 @@ export class OpencodeExecutionSession implements ProviderExecutionSession, Steer
         if (releaseCleanup) await this.persistence.releaseClient();
       }
     })();
-    this.kernelDisposalPromise = pending;
+    this.kernelSlot = { phase: 'disposing', disposal: pending };
     void pending.then(() => {
-      if (this.kernelDisposalPromise === pending) {
-        this.kernelDisposalPromise = null;
+      if (this.kernelSlot.phase === 'disposing' && this.kernelSlot.disposal === pending) {
+        this.kernelSlot = NO_KERNEL;
       }
     });
     await pending;
+  }
+
+  #currentKernel(): OpencodeSessionKernel | null {
+    const slot = this.kernelSlot;
+    return slot.phase === 'connecting' || slot.phase === 'open' ? slot.kernel : null;
   }
 
   #emitRunSnapshot(active: OpencodeActiveRun): void {

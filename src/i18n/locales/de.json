@@ -533,7 +533,8 @@
       "initializeFailed": "Agentenausführung konnte nicht initialisiert werden. Bitte versuche es erneut.",
       "unavailable": "Agentenausführung ist nicht verfügbar. Bitte lade das Plugin neu.",
       "sessionUnavailable": "Die native Sitzung dieser Unterhaltung ist mit der aktuellen CLI-Konfiguration nicht verfügbar. Starte einen neuen Chat, um fortzufahren.",
-      "unsentFallback": "Die Nachricht wurde nicht gesendet. Bitte versuche es erneut."
+      "unsentFallback": "Die Nachricht wurde nicht gesendet. Bitte versuche es erneut.",
+      "providerRetry": "Neuer Versuch nach einem Anbieterfehler (Versuch {attempt}): {message}"
     },
     "images": {
       "unsupportedProvider": "Dieser Anbieter unterstützt keine Bildanhänge.",

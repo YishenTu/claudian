@@ -114,6 +114,31 @@ it('settles an async subagent from a session notification after the requested tu
   expect(screen.getByText('Background finding')).toBeDefined();
 });
 
+it('settles only the spawn a notification names when several spawns share one subagent', async () => {
+  const harness = await createHarness({ subagentAdapter, taskResultInterpreter });
+  const { started } = await startSideChat(harness);
+  const native = harness.backend.latest;
+  native.establishChild('side-session');
+  for (const [id, description] of [['task-1', 'Background research'], ['task-2', 'Follow-up research']]) {
+    native.emitOutput({
+      type: 'tool_started', toolCallId: id, toolScope: { kind: 'main' }, name: 'Agent',
+      input: { description, prompt: 'Find details', run_in_background: true },
+    });
+    native.emitOutput({
+      type: 'tool_completed', toolCallId: id, toolScope: { kind: 'main' }, content: 'Launched',
+      providerPayload: { rawOutput: { isAsync: true, status: 'async_launched', agentId: 'agent-1' } },
+    });
+  }
+  native.complete();
+  await started;
+  native.emitSessionEvent({
+    type: 'async_subagent_completed', originatingTurnId: 'task-1', subagentId: 'agent-1', toolCallId: 'task-2',
+    providerSessionId: 'side-session', status: 'completed', result: 'Follow-up finding',
+  });
+  await waitFor(() => expect(screen.getByRole('button', { name: /Follow-up research.*Completed/i })).toBeDefined());
+  expect(screen.getByRole('button', { name: /Background research.*Running/i })).toBeDefined();
+});
+
 it('shows live progress on a foreground subagent card until its result arrives', async () => {
   const harness = await createHarness({ subagentAdapter, taskResultInterpreter });
   const { started } = await startSideChat(harness);

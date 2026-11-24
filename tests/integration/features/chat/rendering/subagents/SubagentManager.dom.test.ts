@@ -735,6 +735,49 @@ async function createOpencodeView() {
   return { parent, renderer, state, stream, addMessage };
 }
 
+it('runs OpenCode 2.3 spawns as background cards that each settle on their own completion', async () => {
+  const view = await createOpencodeView();
+  const message = view.addMessage('spawns');
+  // OpenCode 2.3 spawn input carries no background flag; only the launch result reveals the mode.
+  for (const [id, input] of [
+    ['spawn', { description: 'Survey', prompt: 'Survey the vault', subagent_type: 'general' }],
+    ['follow-up', { description: 'Follow up', prompt: 'Also check tags', subagent_type: 'general', task_id: 'ses_child' }],
+  ] as const) {
+    await view.stream.handleStreamChunk({ type: 'tool_use', id, name: TOOL_SUBAGENT, input }, message);
+    await view.stream.handleStreamChunk({ type: 'tool_result', id, content: 'The subagent is working in the background (sessionID: ses_child). You will receive a <subagent> message when it goes idle.' }, message);
+  }
+  await view.stream.handleStreamChunk({ type: 'done' }, message);
+  expect(screen.getByRole('button', { name: /Survey.*Running/i })).toBeDefined();
+  expect(screen.getByRole('button', { name: /Follow up.*Running/i })).toBeDefined();
+  await view.stream.subagents.handleAsyncSubagentCompletion({
+    type: 'async_subagent_completion', providerSessionId: 'ses_parent', taskId: 'ses_child', toolUseId: 'follow-up', status: 'completed', result: 'Tags checked',
+  });
+  expect(screen.getByRole('button', { name: /Follow up.*Completed/i })).toBeDefined();
+  expect(screen.getByRole('button', { name: /Survey.*Running/i })).toBeDefined();
+  await view.stream.subagents.handleAsyncSubagentCompletion({
+    type: 'async_subagent_completion', providerSessionId: 'ses_parent', taskId: 'ses_child', toolUseId: 'spawn', status: 'completed', result: 'Vault surveyed',
+  });
+  expect(screen.getByRole('button', { name: /Survey.*Completed/i })).toBeDefined();
+  expect(screen.getByText('Vault surveyed')).toBeDefined();
+});
+
+it('continues a foreground OpenCode spawn that native detaches as a background card', async () => {
+  const view = await createOpencodeView();
+  const message = view.addMessage('detached');
+  // An OpenCode 2.2 foreground call becomes sync from its child's tool, then native detaches it to the background.
+  await view.stream.handleStreamChunk({ type: 'tool_use', id: 'spawn', name: TOOL_SUBAGENT, input: { description: 'Survey', prompt: 'Survey the vault' } }, message);
+  await view.stream.handleStreamChunk({ type: 'subagent_tool_use', subagentId: 'spawn', id: 'child-read', name: 'Read', input: { file_path: 'notes.md' } }, message);
+  await view.stream.handleStreamChunk({ type: 'tool_result', id: 'spawn', content: 'The subagent is working in the background (sessionID: ses_child). You will be notified automatically when it finishes.' }, message);
+  await view.stream.handleStreamChunk({ type: 'done' }, message);
+  expect(screen.getByRole('button', { name: /Survey.*Running/i })).toBeDefined();
+  expect(message.contentBlocks).toContainEqual({ type: 'subagent', subagentId: 'spawn', mode: 'async' });
+  await view.stream.subagents.handleAsyncSubagentCompletion({
+    type: 'async_subagent_completion', providerSessionId: 'ses_parent', taskId: 'ses_child', toolUseId: 'spawn', status: 'completed', result: 'Vault surveyed',
+  });
+  expect(screen.getByRole('button', { name: /Survey.*Completed/i })).toBeDefined();
+  expect(screen.getByText('Vault surveyed')).toBeDefined();
+});
+
 it('shows previous runs of reused OpenCode subagents live and after reload', async () => {
   const view = await createOpencodeView();
   const runs = [

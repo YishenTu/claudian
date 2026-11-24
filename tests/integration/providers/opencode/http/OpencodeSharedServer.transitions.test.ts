@@ -172,8 +172,9 @@ it.each(['same instructions', 'changed instructions'])('keeps retired background
     const pid = f.processes()[0].pid;
     const identity = { sessionID: 'ses_1', assistantMessageID: 'parent', id: 'spawn' };
     await emit('session.tool.input.started', { ...identity, name: 'subagent' });
-    await emit('session.tool.called', { ...identity, input: { run_in_background: true } });
-    await emit('session.tool.progress', { ...identity, metadata: { sessionID: 'child' } });
+    await emit('session.tool.called', { ...identity, input: { agent: 'worker' } });
+    await emit('session.tool.progress', { ...identity, metadata: { sessionID: 'child', status: 'running' } });
+    await emit('session.tool.success', { ...identity, content: [{ type: 'text', text: 'The subagent is working in the background (sessionID: child).' }], metadata: { sessionID: 'child', status: 'running' } });
     await emit('session.execution.succeeded', { sessionID: 'ses_1' });
     await parent;
     await f.plugin.executionLifecycleRegistry.runTransition(['opencode'], async () => {
@@ -188,6 +189,7 @@ it.each(['same instructions', 'changed instructions'])('keeps retired background
     })();
     await emit('session.text.ended', { sessionID: 'child', assistantMessageID: 'child-reply', ordinal: 0, text: 'Still working' });
     await emit('session.execution.succeeded', { sessionID: 'child' });
+    await emit('session.inbox.enqueued', { sessionID: 'ses_1', inboxID: 'report', item: { type: 'synthetic', delivery: 'steer', payload: { text: '<subagent sessionID="child" state="completed" description="worker">\nStill working\n</subagent>', description: 'worker', metadata: { source: 'subagent', childID: 'child', state: 'completed' } } } });
     expect((await continued).at(-1)?.type).toBe('turn_completed');
     expect(f.processes()).toHaveLength(2);
     await control.dispose();
@@ -217,8 +219,9 @@ it('cancelling a turn waiting on retired background work leaves that work draini
     const pid = f.processes()[0].pid;
     const identity = { sessionID: 'ses_1', assistantMessageID: 'parent', id: 'spawn' };
     await emit('session.tool.input.started', { ...identity, name: 'subagent' });
-    await emit('session.tool.called', { ...identity, input: { run_in_background: true } });
-    await emit('session.tool.progress', { ...identity, metadata: { sessionID: 'child' } });
+    await emit('session.tool.called', { ...identity, input: { agent: 'worker' } });
+    await emit('session.tool.progress', { ...identity, metadata: { sessionID: 'child', status: 'running' } });
+    await emit('session.tool.success', { ...identity, content: [{ type: 'text', text: 'The subagent is working in the background (sessionID: child).' }], metadata: { sessionID: 'child', status: 'running' } });
     await emit('session.execution.succeeded', { sessionID: 'ses_1' });
     await parent;
     await f.plugin.executionLifecycleRegistry.runTransition(['opencode'], async () => {
@@ -234,6 +237,7 @@ it('cancelling a turn waiting on retired background work leaves that work draini
     expect(session.getStatus()).toBe('executing');
     await emit('session.text.ended', { sessionID: 'child', assistantMessageID: 'child-reply', ordinal: 0, text: 'Still working' });
     await emit('session.execution.succeeded', { sessionID: 'child' });
+    await emit('session.inbox.enqueued', { sessionID: 'ses_1', inboxID: 'report', item: { type: 'synthetic', delivery: 'steer', payload: { text: '<subagent sessionID="child" state="completed" description="worker">\nStill working\n</subagent>', description: 'worker', metadata: { source: 'subagent', childID: 'child', state: 'completed' } } } });
     await control.dispose();
     const deadline = Date.now() + 3000;
     while (isAlive(pid) && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 10));

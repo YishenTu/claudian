@@ -533,7 +533,8 @@
       "initializeFailed": "Impossible d’initialiser l’exécution de l’agent. Réessayez.",
       "unavailable": "L’exécution de l’agent n’est pas disponible. Rechargez le plugin.",
       "sessionUnavailable": "La session native de cette conversation n’est pas disponible avec la configuration actuelle de la CLI. Démarrez une nouvelle conversation pour continuer.",
-      "unsentFallback": "Le message n’a pas été envoyé. Réessayez."
+      "unsentFallback": "Le message n’a pas été envoyé. Réessayez.",
+      "providerRetry": "Nouvelle tentative après une erreur du fournisseur (tentative {attempt}) : {message}"
     },
     "images": {
       "unsupportedProvider": "Ce fournisseur ne prend pas en charge les images jointes.",
