@@ -470,9 +470,12 @@ describe('loadAntigravityHistory', () => {
         { args: { Action: 'kill_all' }, name: 'manage_subagents' },
         { args: { Description: 'Review in parallel', Script: 'await agent("Review")' }, name: 'run_workflow' },
       ] }),
-      result(2, 'Created the following subagent:\n{\n  "conversationId": "child-1"\n}'),
+      result(2, 'Created the following subagent:\n{\n  "conversationId":  "child-1",\n  "logAbsoluteUri":  "file:///home/user/.gemini/antigravity-cli/brain/child-1/.system_generated/logs/transcript.jsonl",\n'
+        + '  "workspaceUris":  [\n    "file:///vault"\n  ]\n}\nThe subagent will send you a message when it has completed its task or requires guidance. '
+        + 'There is no need to poll for its response.'),
       result(3, 'Message sent to "child-1".'),
-      result(4, 'You have 1 active subagent(s):\n[{"role":"Notes Reviewer","conversationId":"child-1","state":"idle"}]'),
+      result(4, 'You have 2 active subagent(s):\n[{"role":"Notes Reviewer","type":"self","conversationId":"child-1","state":"idle"},'
+        + '{"role":"Test Runner","type":"self","conversationId":"child-2","state":"running"}]'),
       result(5, 'Successfully killed 1 subagent(s) and their descendants.\nKilled roles: Notes Reviewer'),
       result(6, 'Tool is running as a background task with task id: s/task-4\nTask Description: Review in parallel', 'RUNNING'),
       replyStep(7, { content: 'Delegated.' }),
@@ -482,10 +485,12 @@ describe('loadAntigravityHistory', () => {
 
     expect(summarize(messages)[1].tools).toEqual([
       { hasDiff: false, input: expect.objectContaining({ message: 'Review notes.md', target: 'Notes Reviewer' }), name: 'spawn_agent',
-        result: 'Created the following subagent:\n{\n  "conversationId": "child-1"\n}', status: 'completed' },
+        // agy's launch report reduces to the subagent id; the paths and instructions to the model are not for the user.
+        result: '{"conversationId":"child-1"}', status: 'completed' },
       { hasDiff: false, input: expect.objectContaining({ message: 'Also check todo.md', target: 'child-1' }), name: 'send_message',
         result: 'Message sent to "child-1".', status: 'completed' },
-      { hasDiff: false, input: { Action: 'list' }, name: 'list_agents', result: expect.stringContaining('1 active subagent'), status: 'completed' },
+      { hasDiff: false, input: { Action: 'list' }, name: 'list_agents',
+        result: 'Notes Reviewer (idle) — child-1\nTest Runner (running) — child-2', status: 'completed' },
       { hasDiff: false, input: { Action: 'kill_all' }, name: 'close_agent', result: expect.stringContaining('Killed roles'), status: 'completed' },
       // A workflow runs in the background like a daemon command; its outcome is the later task report.
       { hasDiff: false, input: expect.objectContaining({ code: 'await agent("Review")', language: 'Python', title: 'Review in parallel' }),

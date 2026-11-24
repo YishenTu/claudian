@@ -63,6 +63,10 @@ const MANAGE_SUBAGENTS_ACTION_MAP: Readonly<Record<string, string>> = {
 /** agy prefixes MCP tools with `mcp_<server>_`; only Claudian's own server name is known. */
 const SESSION_TOOL_PREFIX = `mcp_${SESSION_TOOL_MCP_SERVER_NAME}_`;
 
+/** A subagent launch reports its id with local log/workspace URIs and instructions to the model. */
+const SUBAGENT_LAUNCH_PATTERN = /^Created the following subagent:\s*\{[\s\S]*?"conversationId":\s*"([^"]+)"/;
+const SUBAGENT_LIST_PATTERN = /^You have \d+ active subagent\(s\):\s*(\[[\s\S]*\])\s*$/;
+
 const COMMAND_OUTPUT_PATTERN = /^Command exited with code (-?\d+)\.\s*(?:Command output:\n?|No output from the command\.\s*$)?([\s\S]*)$/;
 
 export function normalizeAntigravityToolName(rawName: string, rawInput?: unknown): string {
@@ -151,9 +155,37 @@ export function normalizeAntigravityToolResult(
       return { content: failed ? [`exit: ${exitCode}`, output].filter(Boolean).join('\n') : output, isError: failed };
     }
   }
+  if (rawName.trim() === 'invoke_subagent') {
+    const conversationId = content.match(SUBAGENT_LAUNCH_PATTERN)?.[1];
+    if (conversationId) return { content: JSON.stringify({ conversationId }), isError: false };
+  }
+  if (rawName.trim() === 'manage_subagents') {
+    const listed = formatSubagentList(content);
+    if (listed) return { content: listed, isError: false };
+  }
   const empty = rawOutput === undefined || (isRecord(rawOutput) && Object.keys(rawOutput).length === 0);
   if (empty && (content === 'Tool completed' || content === 'Tool failed')) return { content: '', isError: false };
   return { content, isError: false };
+}
+
+/** agy lists subagents as a count line followed by a one-line JSON array; each becomes `role (state) — id`. */
+function formatSubagentList(content: string): string | undefined {
+  const match = content.match(SUBAGENT_LIST_PATTERN);
+  if (!match) return undefined;
+  let entries: unknown;
+  try {
+    entries = JSON.parse(match[1]);
+  } catch {
+    return undefined;
+  }
+  if (!Array.isArray(entries)) return undefined;
+  const lines = entries.filter(isRecord).map((entry) => {
+    const role = typeof entry.role === 'string' ? entry.role : '';
+    const state = typeof entry.state === 'string' ? ` (${entry.state})` : '';
+    const id = typeof entry.conversationId === 'string' ? entry.conversationId : '';
+    return [`${role}${state}`.trim(), id].filter(Boolean).join(' — ');
+  }).filter(Boolean);
+  return lines.length > 0 ? lines.join('\n') : undefined;
 }
 
 export function buildAntigravityToolProviderPayload(

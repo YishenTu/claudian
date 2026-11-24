@@ -258,9 +258,7 @@ function completeTool(pending: PendingTool, step: TranscriptStep): void {
   const { call, rawName } = pending;
   const text = (step.status === 'ERROR' ? step.error ?? step.content : step.content) ?? '';
   const body = text.replace(RESULT_HEADER_PATTERN, '').replace(BACKGROUND_INSTRUCTIONS_PATTERN, '');
-  const result = rawName === 'run_command'
-    ? normalizeAntigravityToolResult(rawName, body, { output: body })
-    : { content: body, isError: false };
+  const result = normalizeAntigravityToolResult(rawName, body, { output: body });
   if (result.content) call.result = result.content;
   if (rawName === 'ask_question') {
     const answers = decodeQuestionAnswers(pending.rawInput, body);
