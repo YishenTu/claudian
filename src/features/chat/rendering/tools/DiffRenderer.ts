@@ -1,4 +1,10 @@
 import type { DiffLine, DiffStats } from '@/core/types/diff';
+import {
+  computeBlockInlineDiffs,
+  createInlineDiffBudget,
+  type InlineDiffBudget,
+  type InlineDiffSegment,
+} from '@/features/chat/rendering/tools/inlineLineDiff';
 import { t } from '@/i18n/i18n';
 
 export interface DiffHunk {
@@ -73,10 +79,44 @@ export function splitIntoHunks(diffLines: DiffLine[], contextLines = 3): DiffHun
 /** Max lines to render for all-inserts diffs (new file creation). */
 const NEW_FILE_DISPLAY_CAP = 20;
 
+function renderDiffLine(
+  hunkEl: HTMLElement,
+  line: DiffLine,
+  inlineSegments: readonly InlineDiffSegment[] | null = null,
+): void {
+  const lineEl = hunkEl.createDiv({ cls: `claudian-diff-line claudian-diff-${line.type}` });
+
+  // Line prefix
+  const prefix = line.type === 'insert' ? '+' : line.type === 'delete' ? '-' : ' ';
+  const prefixEl = lineEl.createSpan({ cls: 'claudian-diff-prefix' });
+  prefixEl.setText(prefix);
+
+  // Line content
+  const contentEl = lineEl.createSpan({ cls: 'claudian-diff-text' });
+  if (!inlineSegments) {
+    contentEl.setText(line.text || ' '); // Show space for empty lines
+    return;
+  }
+
+  const highlightCls = line.type === 'delete'
+    ? 'claudian-diff-inline-delete'
+    : 'claudian-diff-inline-insert';
+  for (const segment of inlineSegments) {
+    if (segment.changed) {
+      const highlightEl = contentEl.createSpan({ cls: highlightCls });
+      highlightEl.setText(segment.text);
+    } else {
+      contentEl.appendText(segment.text);
+    }
+  }
+}
+
 export function renderDiffContent(
   containerEl: HTMLElement,
   diffLines: DiffLine[],
-  contextLines = 3
+  contextLines = 3,
+  /** Shared across every diff in one tool card; defaults to a fresh budget. */
+  inlineDiffBudget: InlineDiffBudget = createInlineDiffBudget(),
 ): void {
   containerEl.empty();
 
@@ -85,11 +125,7 @@ export function renderDiffContent(
   if (allInserts && diffLines.length > NEW_FILE_DISPLAY_CAP) {
     const hunkEl = containerEl.createDiv({ cls: 'claudian-diff-hunk' });
     for (const line of diffLines.slice(0, NEW_FILE_DISPLAY_CAP)) {
-      const lineEl = hunkEl.createDiv({ cls: 'claudian-diff-line claudian-diff-insert' });
-      const prefixEl = lineEl.createSpan({ cls: 'claudian-diff-prefix' });
-      prefixEl.setText('+');
-      const contentEl = lineEl.createSpan({ cls: 'claudian-diff-text' });
-      contentEl.setText(line.text || ' ');
+      renderDiffLine(hunkEl, line);
     }
     const remaining = diffLines.length - NEW_FILE_DISPLAY_CAP;
     const separator = containerEl.createDiv({ cls: 'claudian-diff-separator' });
@@ -113,20 +149,39 @@ export function renderDiffContent(
       separator.setText('...');
     }
 
-    // Render hunk lines
+    // Render hunk lines, pairing contiguous same-hunk delete/insert runs for intra-line highlights
     const hunkEl = containerEl.createDiv({ cls: 'claudian-diff-hunk' });
+    let index = 0;
 
-    for (const line of hunk.lines) {
-      const lineEl = hunkEl.createDiv({ cls: `claudian-diff-line claudian-diff-${line.type}` });
+    while (index < hunk.lines.length) {
+      if (hunk.lines[index].type !== 'delete') {
+        renderDiffLine(hunkEl, hunk.lines[index++]);
+        continue;
+      }
 
-      // Line prefix
-      const prefix = line.type === 'insert' ? '+' : line.type === 'delete' ? '-' : ' ';
-      const prefixEl = lineEl.createSpan({ cls: 'claudian-diff-prefix' });
-      prefixEl.setText(prefix);
+      const deleteStart = index;
+      do {
+        index++;
+      } while (index < hunk.lines.length && hunk.lines[index].type === 'delete' && !hunk.lines[index].hunkBreak);
+      const insertStart = index;
+      while (index < hunk.lines.length && hunk.lines[index].type === 'insert' && !hunk.lines[index].hunkBreak) {
+        index++;
+      }
 
-      // Line content
-      const contentEl = lineEl.createSpan({ cls: 'claudian-diff-text' });
-      contentEl.setText(line.text || ' '); // Show space for empty lines
+      const deletedLines = hunk.lines.slice(deleteStart, insertStart);
+      const insertedLines = hunk.lines.slice(insertStart, index);
+      const { deleteSegments, insertSegments } = computeBlockInlineDiffs(
+        deletedLines.map(entry => entry.text),
+        insertedLines.map(entry => entry.text),
+        inlineDiffBudget,
+      );
+
+      for (let i = 0; i < deletedLines.length; i++) {
+        renderDiffLine(hunkEl, deletedLines[i], deleteSegments[i]);
+      }
+      for (let i = 0; i < insertedLines.length; i++) {
+        renderDiffLine(hunkEl, insertedLines[i], insertSegments[i]);
+      }
     }
   });
 }

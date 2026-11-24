@@ -2,6 +2,7 @@ import { parseApplyPatchDiffs, parseFileUpdateChangeDiffs } from '@/core/tools/t
 import type { ToolCallInfo } from '@/core/types';
 import type { DiffStats } from '@/core/types/diff';
 import { renderDiffContent, renderDiffStats } from '@/features/chat/rendering/tools/DiffRenderer';
+import { createInlineDiffBudget, type InlineDiffBudget } from '@/features/chat/rendering/tools/inlineLineDiff';
 import { fileNameOnly, renderEmptyResult, renderLinesExpanded } from '@/features/chat/rendering/tools/toolContentPrimitives';
 import { setToolStatus } from '@/features/chat/rendering/tools/toolStatus';
 import { t } from '@/i18n/i18n';
@@ -72,7 +73,11 @@ function readMoveTarget(kind: unknown): string | undefined {
   return typeof record.move_path === 'string' ? record.move_path : undefined;
 }
 
-function renderApplyPatchDiffSections(container: HTMLElement, fileDiffs: ApplyPatchFileDiffs): void {
+function renderApplyPatchDiffSections(
+  container: HTMLElement,
+  fileDiffs: ApplyPatchFileDiffs,
+  inlineDiffBudget: InlineDiffBudget,
+): void {
   for (const fileDiff of fileDiffs) {
     const path = fileDiff.movedTo ? `${fileDiff.filePath} -> ${fileDiff.movedTo}` : fileDiff.filePath;
     const sectionEl = container.createDiv({
@@ -93,7 +98,7 @@ function renderApplyPatchDiffSections(container: HTMLElement, fileDiffs: ApplyPa
 
     const diffRow = sectionEl.createDiv({ cls: 'claudian-write-edit-diff-row' });
     const diffEl = diffRow.createDiv({ cls: 'claudian-write-edit-diff' });
-    renderDiffContent(diffEl, fileDiff.diffLines);
+    renderDiffContent(diffEl, fileDiff.diffLines, 3, inlineDiffBudget);
   }
 }
 
@@ -101,6 +106,7 @@ export function renderApplyPatchExpanded(
   container: HTMLElement,
   input: Record<string, unknown>,
   result: string | undefined,
+  inlineDiffBudget: InlineDiffBudget = createInlineDiffBudget(),
 ): void {
   const patchText = typeof input.patch === 'string' ? input.patch : '';
   const parsedDiffs = getApplyPatchFileDiffs(input);
@@ -110,7 +116,7 @@ export function renderApplyPatchExpanded(
   }
 
   if (parsedDiffs.length > 0) {
-    renderApplyPatchDiffSections(container, parsedDiffs);
+    renderApplyPatchDiffSections(container, parsedDiffs, inlineDiffBudget);
     return;
   }
 

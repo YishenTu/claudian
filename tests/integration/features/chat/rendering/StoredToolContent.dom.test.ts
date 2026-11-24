@@ -26,10 +26,10 @@ it('attributes expanded native patch changes to their paths and rename destinati
   fireEvent.click(within(card).getByRole('button', { name: /apply_patch:/ }));
   const first = within(card).getByRole('group', { name: 'source/first.md' });
   const moved = within(card).getByRole('group', { name: 'source/second.md -> moved/second.md' });
-  expect(within(first).getByText('new first')).toBeDefined();
-  expect(within(first).queryByText('new second')).toBeNull();
-  expect(within(moved).getByText('new second')).toBeDefined();
-  expect(within(moved).queryByText('new first')).toBeNull();
+  expect(Array.from(first.querySelectorAll('.claudian-diff-text'), el => el.textContent))
+    .toEqual(['old first', 'new first']);
+  expect(Array.from(moved.querySelectorAll('.claudian-diff-text'), el => el.textContent))
+    .toEqual(['old second', 'new second']);
   expect(await axe(card)).toHaveNoViolations();
 });
 

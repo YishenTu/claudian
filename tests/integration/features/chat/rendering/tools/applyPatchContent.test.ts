@@ -4,6 +4,8 @@ import { fireEvent, within } from '@testing-library/dom';
 import { setIcon } from 'obsidian';
 
 import type { ToolCallInfo } from '@/core/types';
+import { renderApplyPatchExpanded } from '@/features/chat/rendering/tools/applyPatchContent';
+import { createInlineDiffBudget } from '@/features/chat/rendering/tools/inlineLineDiff';
 import {
   renderStoredToolCall,
   renderToolCall,
@@ -236,6 +238,43 @@ describe('applyPatchContent', () => {
 
       expect(lines).toContain('src/main.ts');
       expect(lines).not.toContain('update: src/main.ts');
+    });
+
+    it('shares one inline-diff work budget across all file sections in an apply_patch card', () => {
+      const container = document.createElement('div');
+      renderApplyPatchExpanded(
+        container,
+        {
+          patch: [
+            '*** Begin Patch',
+            '*** Update File: notes/first.md',
+            '@@',
+            '-甲今天天气很好，我们去公园散步乙',
+            '+丙今天天气很好，我们去公园散步丁',
+            '*** Update File: notes/second.md',
+            '@@',
+            '-甲今天天气很好，我们去公园散步乙',
+            '+丙今天天气很好，我们去公园散步丁',
+            '*** End Patch',
+          ].join('\n'),
+        },
+        undefined,
+        createInlineDiffBudget(300),
+      );
+
+      const first = within(container).getByRole('group', { name: 'notes/first.md' });
+      const second = within(container).getByRole('group', { name: 'notes/second.md' });
+
+      expect(Array.from(first.querySelectorAll('.claudian-diff-inline-delete'), el => el.textContent)).toEqual(['甲', '乙']);
+      expect(Array.from(first.querySelectorAll('.claudian-diff-inline-insert'), el => el.textContent)).toEqual(['丙', '丁']);
+
+      // Exhausting the shared budget in file 1 leaves file 2's text intact with whole-line rendering
+      expect(second.querySelectorAll('.claudian-diff-inline-delete')).toHaveLength(0);
+      expect(second.querySelectorAll('.claudian-diff-inline-insert')).toHaveLength(0);
+      expect(Array.from(second.querySelectorAll('.claudian-diff-text'), el => el.textContent)).toEqual([
+        '甲今天天气很好，我们去公园散步乙',
+        '丙今天天气很好，我们去公园散步丁',
+      ]);
     });
   });
 

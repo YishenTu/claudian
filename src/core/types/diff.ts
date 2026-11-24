@@ -7,6 +7,8 @@ export interface DiffLine {
   text: string;
   oldLineNum?: number;
   newLineNum?: number;
+  /** Marks the first line of a new source hunk when directly adjacent to a prior hunk's changes. */
+  hunkBreak?: true;
 }
 
 export interface DiffStats {

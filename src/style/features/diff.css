@@ -140,7 +140,7 @@
 }
 
 .claudian-diff-delete {
-  background: rgb(255 80 80 / 25%);
+  background: rgb(255 80 80 / 18%);
   color: var(--text-normal);
 }
 
@@ -148,13 +148,23 @@
   color: var(--color-red);
 }
 
+.claudian-diff-inline-delete {
+  background: rgb(255 80 80 / 38%);
+  border-radius: 2px;
+}
+
 .claudian-diff-insert {
-  background: rgb(80 200 80 / 25%);
+  background: rgb(80 200 80 / 18%);
   color: var(--text-normal);
 }
 
 .claudian-diff-insert .claudian-diff-prefix {
   color: var(--color-green);
+}
+
+.claudian-diff-inline-insert {
+  background: rgb(80 200 80 / 38%);
+  border-radius: 2px;
 }
 
 /* Hunk separator */
