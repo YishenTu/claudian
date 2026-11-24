@@ -28,6 +28,7 @@ For other Obsidian plugins that want to send prompts to sessions, see the [Plugi
 - It returns 50 sessions by default and at most 200; `truncated` is set when more exist.
 - With `includeProviders: true`, it also lists the enabled providers with their models and reasoning levels, and marks the provider, model and reasoning level a new tab would use.
 - With `project: true`, it lists only the sessions in the calling session's project. See [Projects](projects.md).
+- With `includeProjects: true`, it also lists the non-archived projects a new session can start in, and marks the calling session's project `current`.
 
 ### Sending a message
 
@@ -46,7 +47,7 @@ For other Obsidian plugins that want to send prompts to sessions, see the [Plugi
 
 #### Starting a new session
 
-Without a `sessionId`, the message starts a new session. Omitted choices follow your new-tab defaults. An agent can pick a `provider` (which then needs a `model`), a `model`, and a `reasoning` level. Invalid choices are rejected with the valid options listed. A session started from a project member joins that project.
+Without a `sessionId`, the message starts a new session. Omitted choices follow your new-tab defaults. An agent can pick a `provider` (which then needs a `model`), a `model`, and a `reasoning` level. Invalid choices are rejected with the valid options listed. A session started from a project member joins that project. An agent can pass a `projectId` to start the session in another project instead: its first turn uses that project's instructions and memory, and it appears with the project's sessions. An unknown or archived project is rejected before the session is created.
 
 The new session records the session that started it, and the session list shows the two together. In the sidebar, sessions an agent started, and forks, fold under the session they came from, behind a collapsed row such as **2 Agent Sessions · 1 Fork**:
 
@@ -114,7 +115,7 @@ The tools are available in main chat and side chat sessions on these providers:
 | Provider | Notes |
 |---|---|
 | Claude Code | |
-| Codex | A thread keeps the tools it started with. Threads created before the session tools have none; older threads may lack the read tool, the send modes, or project listing. Start a new session to get the current tools. |
+| Codex | A thread keeps the tools it started with. Threads created before the session tools have none; older threads may lack the read tool, the send modes, project listing, or choosing a project for a new session. Start a new session to get the current tools. |
 | DeepSeek Harness | |
 | Grok Build | |
 | OpenCode | |

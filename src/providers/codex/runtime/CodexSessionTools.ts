@@ -9,9 +9,9 @@ import type { CodexDynamicToolRegistration } from './CodexDynamicToolRegistry';
 export const CODEX_SESSION_TOOL_NAMESPACE = 'claudian_sessions';
 /**
  * Bumped when the specs change: a thread keeps the specs it started with (2 adds read, 3 adds send modes,
- * 4 adds the list_destinations `project` argument).
+ * 4 adds the list_destinations `project` argument, 5 adds `includeProjects` and the send_message `projectId`).
  */
-export const CODEX_SESSION_TOOL_VERSION = 4;
+export const CODEX_SESSION_TOOL_VERSION = 5;
 
 export function isCodexSessionTool(namespace: string | null | undefined, name: string): boolean {
   return namespace === CODEX_SESSION_TOOL_NAMESPACE && isSessionTool(name);

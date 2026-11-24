@@ -24,6 +24,15 @@ export interface SessionToolListDestinationsArgs {
   readonly limit: number;
   /** List only the calling session's live project members; the decoder sets it only when true. */
   readonly project?: boolean;
+  /** Also list live projects for a new session; the decoder sets it only when true. */
+  readonly includeProjects?: boolean;
+}
+
+export interface SessionToolProjectDestination {
+  readonly projectId: string;
+  readonly name: string;
+  /** Present only on the calling session's project, which a new session joins when projectId is omitted. */
+  readonly current?: true;
 }
 
 export interface SessionToolReasoningDestination {
@@ -54,6 +63,8 @@ export interface SessionToolDestinations {
   readonly truncated?: true;
   /** Enabled providers; present only when requested. */
   readonly providers?: readonly SessionToolProviderDestination[];
+  /** Live, non-archived projects; present only when requested. */
+  readonly projects?: readonly SessionToolProjectDestination[];
 }
 
 /** How a message reaches a recipient; omitted means queue. */
@@ -72,6 +83,8 @@ export interface SessionToolSendMessageArgs {
   readonly model?: string;
   /** Initial choice for a new session; a persistent switch for an existing one. */
   readonly reasoning?: string;
+  /** New sessions only; omitted joins the caller's project, if any. */
+  readonly projectId?: string;
 }
 
 /** `started` and `queued` report mailbox admission, never provider acceptance or completion. */
@@ -163,6 +176,7 @@ export interface SessionToolSpec {
 const LIST_LIMIT_DEFAULT = 50;
 const LIST_LIMIT_MAX = 200;
 const LIST_OPTIONS_HINT = `Call ${TOOL_CLAUDIAN_LIST_DESTINATIONS} with includeProviders: true to see the options.`;
+const LIST_PROJECTS_HINT = `Call ${TOOL_CLAUDIAN_LIST_DESTINATIONS} with includeProjects: true to see the options.`;
 
 const LIST_DESTINATIONS_PROPERTIES = {
   includeProviders: {
@@ -176,6 +190,10 @@ const LIST_DESTINATIONS_PROPERTIES = {
   project: {
     type: 'boolean',
     description: 'Return only sessions in the calling session\'s Claudian project, excluding archived ones. Fails when the calling session is not in a project. Defaults to false.',
+  },
+  includeProjects: {
+    type: 'boolean',
+    description: 'Also return the non-archived Claudian projects a new session can start in. Defaults to false.',
   },
 } as const satisfies Record<string, SessionToolProperty>;
 
@@ -217,6 +235,14 @@ const SEND_MESSAGE_PROPERTIES = {
       LIST_OPTIONS_HINT,
     ].join(' '),
   },
+  projectId: {
+    type: 'string',
+    description: [
+      'Claudian project for a new session; its first turn uses that project\'s instructions and memory.',
+      'Only valid when sessionId is omitted; omit to join the calling session\'s project, if any.',
+      LIST_PROJECTS_HINT,
+    ].join(' '),
+  },
 } as const satisfies Record<string, SessionToolProperty>;
 
 const READ_SESSION_PROPERTIES = {
@@ -240,6 +266,7 @@ export const SESSION_TOOL_SPECS: readonly SessionToolSpec[] = [
       'status is "idle", "running", or "awaiting-user"; active marks the session the user is viewing; self: true marks the calling session, which cannot be messaged.',
       'With includeProviders: true, providers lists the enabled providers as {provider, default?, models: [{id, default?, reasoning?: {options, default}}]};',
       'default marks what a new session uses when provider, model, or reasoning is omitted, and reasoning appears only for models with reasoning levels.',
+      'With includeProjects: true, projects lists the non-archived projects as {projectId, name, current?}; current marks the calling session\'s project.',
     ].join(' '),
     inputSchema: { type: 'object', properties: LIST_DESTINATIONS_PROPERTIES, additionalProperties: false },
   },
@@ -308,7 +335,13 @@ export function decodeSessionToolCall(name: string, args: unknown): SessionToolC
     if (typeof project !== 'boolean') {
       return { ok: false, error: '"project" must be a boolean.' };
     }
-    return { ok: true, call: { tool: name, args: { includeProviders, limit, ...(project ? { project } : {}) } } };
+    const includeProjects = record.includeProjects ?? false;
+    if (typeof includeProjects !== 'boolean') {
+      return { ok: false, error: '"includeProjects" must be a boolean.' };
+    }
+    return { ok: true, call: { tool: name, args: {
+      includeProviders, limit, ...(project ? { project } : {}), ...(includeProjects ? { includeProjects } : {}),
+    } } };
   }
   if (name === TOOL_CLAUDIAN_READ_SESSION) {
     const { sessionId } = record;
@@ -327,7 +360,7 @@ export function decodeSessionToolCall(name: string, args: unknown): SessionToolC
     return { ok: false, error: '"mode" must be "queue", "steer" or "interrupt".' };
   }
   const sendArgs: { -readonly [K in keyof SessionToolSendMessageArgs]: SessionToolSendMessageArgs[K] } = {};
-  for (const key of ['sessionId', 'text', 'provider', 'model', 'reasoning'] as const) {
+  for (const key of ['sessionId', 'text', 'provider', 'model', 'reasoning', 'projectId'] as const) {
     const value = record[key];
     if ((value === undefined || value === null) && (key !== 'text' || mode === 'interrupt')) continue;
     if (typeof value !== 'string' || value.trim() === '') {
@@ -348,6 +381,9 @@ export function decodeSessionToolCall(name: string, args: unknown): SessionToolC
   }
   if (sendArgs.sessionId !== undefined && sendArgs.provider !== undefined) {
     return { ok: false, error: '"provider" applies only when "sessionId" is omitted.' };
+  }
+  if (sendArgs.sessionId !== undefined && sendArgs.projectId !== undefined) {
+    return { ok: false, error: '"projectId" applies only when "sessionId" is omitted.' };
   }
   if (sendArgs.provider !== undefined && sendArgs.model === undefined) {
     return { ok: false, error: '"provider" requires "model".' };

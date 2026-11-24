@@ -279,7 +279,7 @@ describe('Codex shared runtime', () => {
     complete(process, 'thread-1');
     await output;
     // The version is published with the thread once Codex accepts its first turn.
-    expect(session.getSnapshot().providerState?.sessionToolVersion).toBe(ported ? 4 : undefined);
+    expect(session.getSnapshot().providerState?.sessionToolVersion).toBe(ported ? 5 : undefined);
     await session.dispose();
   });
 
