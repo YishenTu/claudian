@@ -22,7 +22,6 @@ export class ServiceTierToggle {
       'claudian-toolbar-chip-secondary claudian-service-tier-indicator',
       () => this.updateDisplay(),
     );
-    setIcon(this.part.chipEl, 'zap');
     this.part.sectionEl.addClass('claudian-service-tier-toggle');
     this.updateDisplay();
   }
@@ -32,14 +31,21 @@ export class ServiceTierToggle {
     return uiConfig.getServiceTierToggle?.(this.callbacks.getSettings()) ?? null;
   }
 
+  #renderZaps(parentEl: HTMLElement, count: number): void {
+    for (let zap = 0; zap < count; zap++) setIcon(parentEl.createSpan(), 'zap');
+  }
+
   updateDisplay() {
     const policy = this.#getPolicy();
     const sectionEl = this.part.sectionEl;
     sectionEl.empty();
     const standard = policy?.options[0];
-    const selected = policy?.options.find(option => option.value === policy.selectedValue);
-    const accelerated = !!standard && !!selected && selected !== standard;
+    const selectedIndex = policy?.options.findIndex(option => option.value === policy.selectedValue) ?? -1;
+    const selected = selectedIndex >= 0 ? policy?.options[selectedIndex] : undefined;
+    const accelerated = !!standard && !!selected && selectedIndex > 0;
+    this.part.chipEl.empty();
     this.part.chipEl.toggleClass('claudian-hidden', !accelerated);
+    if (accelerated) this.#renderZaps(this.part.chipEl, selectedIndex);
     this.part.describe(!accelerated
       ? null
       : selected.value === policy?.fastValue
@@ -111,7 +117,7 @@ export class ServiceTierToggle {
       if (index === 0) {
         setIcon(glyphEl.createSpan(), 'zap-off');
       } else {
-        for (let zap = 0; zap < index; zap++) setIcon(glyphEl.createSpan(), 'zap');
+        this.#renderZaps(glyphEl, index);
       }
       itemEl.prepend(glyphEl);
     });
