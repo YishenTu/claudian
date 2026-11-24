@@ -67,7 +67,6 @@ export function parseApplyPatchDiffs(patchText: string): ApplyPatchFileDiff[] {
         operation: ApplyPatchFileDiff['operation'];
         movedTo?: string;
         rawLines: string[];
-        hunkStarts: number[];
       }
     | null = null;
 
@@ -88,7 +87,6 @@ export function parseApplyPatchDiffs(patchText: string): ApplyPatchFileDiff[] {
         filePath: line.slice('*** Add File: '.length).trim(),
         operation: 'add',
         rawLines: [],
-        hunkStarts: [],
       };
       continue;
     }
@@ -99,7 +97,6 @@ export function parseApplyPatchDiffs(patchText: string): ApplyPatchFileDiff[] {
         filePath: line.slice('*** Update File: '.length).trim(),
         operation: 'update',
         rawLines: [],
-        hunkStarts: [],
       };
       continue;
     }
@@ -124,13 +121,9 @@ export function parseApplyPatchDiffs(patchText: string): ApplyPatchFileDiff[] {
 
     // The patch envelope marks files with `***` lines, so `--- `/`+++ ` lines are content.
     if (line === '*** End of File') continue;
-    if (line.startsWith('@@')) {
-      current.hunkStarts.push(current.rawLines.length);
-      continue;
-    }
-
     const prefix = line[0];
-    if (prefix === '+' || prefix === '-' || prefix === ' ') {
+    // Hunk headers stay in rawLines so the builder can mark hunk breaks.
+    if (line.startsWith('@@') || prefix === '+' || prefix === '-' || prefix === ' ') {
       current.rawLines.push(line);
     }
   }
@@ -287,13 +280,20 @@ function buildApplyPatchFileDiff(current: {
   operation: ApplyPatchFileDiff['operation'];
   movedTo?: string;
   rawLines: readonly string[];
-  hunkStarts: readonly number[];
 }): ApplyPatchFileDiff {
   const diffLines: DiffLine[] = [];
   let oldLineNum = 1;
   let newLineNum = 1;
 
+  let hunkStart = 0;
+
   for (const line of current.rawLines) {
+    if (line.startsWith('@@')) {
+      markHunkBreak(diffLines, hunkStart);
+      hunkStart = diffLines.length;
+      continue;
+    }
+
     const prefix = line[0];
     const text = line.slice(1);
 
@@ -309,8 +309,7 @@ function buildApplyPatchFileDiff(current: {
 
     diffLines.push({ type: 'equal', text, oldLineNum: oldLineNum++, newLineNum: newLineNum++ });
   }
-  // Each raw line yields exactly one diff line, so raw hunk offsets index diffLines directly.
-  for (const hunkStart of current.hunkStarts) markHunkBreak(diffLines, hunkStart);
+  markHunkBreak(diffLines, hunkStart);
 
   const result: ApplyPatchFileDiff = {
     filePath: current.filePath,

@@ -503,6 +503,34 @@ describe('parseApplyPatchDiffs', () => {
     ]);
   });
 
+  it('marks every hunk that directly continues the previous hunk changes', () => {
+    const patch = [
+      '*** Begin Patch',
+      '*** Update File: notes.md',
+      '@@',
+      '-a',
+      '@@',
+      '+b',
+      '@@',
+      '-c',
+      '@@',
+      ' context',
+      '@@',
+      '+d',
+      '*** End Patch',
+    ].join('\n');
+
+    const [fileDiff] = parseApplyPatchDiffs(patch);
+
+    expect(fileDiff.diffLines.map(line => [line.text, line.hunkBreak ?? false])).toEqual([
+      ['a', false],
+      ['b', true],
+      ['c', true],
+      ['context', false],
+      ['d', false],
+    ]);
+  });
+
   it('keeps content lines that start like unified diff headers', () => {
     const patch = [
       '*** Begin Patch',
