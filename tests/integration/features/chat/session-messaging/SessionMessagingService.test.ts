@@ -172,6 +172,39 @@ describe('project scope', () => {
     expect(h.host.createConversation).toHaveBeenCalledTimes(1);
     expect(vi.mocked(h.host.createConversation).mock.calls[0][0]?.projectId).toBe('project-1');
   });
+
+  it('lists live projects on request, marking the caller\'s and omitting archived ones', async () => {
+    const h = (await setup({ members, projects: createProjectsFake([
+      projectRecord({ id: 'project-1', name: 'Research' }),
+      projectRecord({ id: 'project-2', name: 'Writing' }),
+      projectRecord({ id: 'project-3', name: 'Old', isArchived: true }),
+    ]) }));
+    expect((await h.binding.port.list(listArgs(), signal())).projects).toBeUndefined();
+    expect((await h.binding.port.list({ ...listArgs(), includeProjects: true }, signal())).projects).toEqual([
+      { projectId: 'project-1', name: 'Research', current: true },
+      { projectId: 'project-2', name: 'Writing' },
+    ]);
+  });
+
+  // A turn resolves instructions from its record's project (cold headless recipient test).
+  it('starts a new session in a chosen project instead of the caller\'s', async () => {
+    const h = (await setup({ members, projects: createProjectsFake([projectRecord({ id: 'project-1' }), projectRecord({ id: 'project-2' })]) }));
+    await h.binding.port.send({ text: 'Draft the post', projectId: 'project-2' }, signal());
+    expect(h.host.createConversation).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(h.host.createConversation).mock.calls[0][0]?.projectId).toBe('project-2');
+  });
+
+  it.each([
+    ['an unknown', 'project-9'],
+    ['an archived', 'project-3'],
+  ])('rejects %s destination project without creating a session', async (_case, projectId) => {
+    const h = (await setup({ members, projects: createProjectsFake([
+      projectRecord({ id: 'project-1' }), projectRecord({ id: 'project-3', isArchived: true }),
+    ]) }));
+    await expect(h.binding.port.send({ text: 'Draft the post', projectId }, signal()))
+      .rejects.toThrow(`Unknown project "${projectId}". Available: project-1`);
+    expect(h.host.createConversation).not.toHaveBeenCalled();
+  });
 });
 
 it('lists enabled providers with available models, new-session defaults and reasoning, read fresh', async () => {

@@ -43,9 +43,9 @@ Members are told to use the [cross-session tools](cross-session-messaging.md) wi
 
 - `claudian_list_destinations` with `project: true` lists the non-archived sessions in the calling session's project. It fails when the session is not in a project.
 - `claudian_read_session` reads a member, and `claudian_send_message` hands off, delegates or coordinates work. Messages must be self-contained, since the recipient cannot see the sender's conversation.
-- A session started with `claudian_send_message` joins the sender's project.
+- A session started with `claudian_send_message` joins the sender's project, unless the agent passes another project's `projectId`. `claudian_list_destinations` with `includeProjects: true` lists the projects. A session outside any project can start one in a project the same way.
 
-On Codex, project listing needs a thread started with the current session tools; older threads lack it.
+On Codex, project listing and choosing a project for a new session need a thread started with the current session tools; older threads lack them.
 
 ## Creating a project
 

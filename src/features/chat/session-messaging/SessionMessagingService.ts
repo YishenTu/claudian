@@ -187,6 +187,9 @@ export class SessionMessagingService {
       sessions,
       ...(truncated ? { truncated } : {}),
       ...(args.includeProviders ? { providers: listProviderDestinations(host.getCommittedSettings()) } : {}),
+      ...(args.includeProjects ? { projects: liveProjects(host).map(project => ({
+        projectId: project.id, name: project.name, ...(project.id === caller.projectId ? { current: true as const } : {}),
+      })) } : {}),
     };
   }
 
@@ -269,13 +272,19 @@ export class SessionMessagingService {
     } else {
       const choice = resolveNewSessionChoice(args, host.getCommittedSettings());
       reasoning = choice.reasoning;
+      // An explicit project must be live; creation would silently drop it otherwise.
+      if (args.projectId !== undefined && host.projects.get(args.projectId)?.isArchived !== false) {
+        const live = liveProjects(host).map(project => project.id);
+        throw new Error(live.length ? `Unknown project "${args.projectId}". Available: ${formatOptions(live)}` : 'No project is available');
+      }
+      const projectId = args.projectId ?? caller.projectId;
       throwIfAborted(signal, 'Session tool call was cancelled');
-      // A spawned session joins the caller's project while it is live; creation drops a deleted one. Creation
-      // publishes the shell; cancellation after this point never rolls it back.
+      // A spawned session joins the chosen or caller's project while it is live; creation drops a deleted one.
+      // Creation publishes the shell; cancellation after this point never rolls it back.
       const created = await host.createConversation({
         providerId: choice.providerId,
         selectedModel: choice.model,
-        ...(caller.projectId ? { projectId: caller.projectId } : {}),
+        ...(projectId ? { projectId } : {}),
         origin: { kind: 'session-tool', conversationId: caller.id },
       });
       throwIfAborted(signal, 'Session tool call was cancelled');
@@ -408,6 +417,11 @@ function validateReasoning(providerId: ProviderId, model: string, value: string,
   if (!reasoning.options.includes(value)) {
     throw new Error(`Unknown reasoning "${value}" for ${providerId} model ${model}. Available: ${formatOptions(reasoning.options)}`);
   }
+}
+
+/** Projects a new session can start in. */
+function liveProjects(host: ChatFeatureHost) {
+  return host.projects.list().filter(project => !project.isArchived);
 }
 
 function formatOptions(options: readonly string[]): string {

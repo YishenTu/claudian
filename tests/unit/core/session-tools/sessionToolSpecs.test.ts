@@ -10,7 +10,8 @@ describe('session tool specs', () => {
     const send = SESSION_TOOL_SPECS.find(spec => spec.name === 'claudian_send_message')!;
     // Text is optional only for an interrupt that just stops; decoding enforces that.
     expect(send.inputSchema.required).toBeUndefined();
-    expect(Object.keys(send.inputSchema.properties)).toEqual(['sessionId', 'text', 'mode', 'provider', 'model', 'reasoning']);
+    expect(Object.keys(send.inputSchema.properties)).toEqual(['sessionId', 'text', 'mode', 'provider', 'model', 'reasoning', 'projectId']);
+    expect(send.inputSchema.properties.projectId?.description).toContain('claudian_list_destinations with includeProjects: true');
     for (const mode of ['"queue"', '"steer"', '"interrupt"']) expect(send.inputSchema.properties.mode?.description).toContain(mode);
     expect(send.description).toContain('<session_message');
     expect(send.description).toMatch(/only if a response is needed/);
@@ -26,6 +27,7 @@ describe('session tool specs', () => {
       includeProviders: expect.objectContaining({ type: 'boolean' }),
       limit: expect.objectContaining({ type: 'integer' }),
       project: expect.objectContaining({ type: 'boolean' }),
+      includeProjects: expect.objectContaining({ type: 'boolean' }),
     });
     expect(list.inputSchema.required).toBeUndefined();
     // The caller can recognize its own row, and a send result names its recipient.
@@ -48,7 +50,10 @@ describe('decodeSessionToolCall', () => {
       { tool: 'claudian_list_destinations', args: { includeProviders: false, limit: 50 } }],
     ['list with providers and a limit', 'claudian_list_destinations', { includeProviders: true, limit: 200 },
       { tool: 'claudian_list_destinations', args: { includeProviders: true, limit: 200 } }],
-    ['list treating null optionals as omitted', 'claudian_list_destinations', { includeProviders: null, limit: null, project: null },
+    ['list with projects', 'claudian_list_destinations', { includeProjects: true },
+      { tool: 'claudian_list_destinations', args: { includeProviders: false, limit: 50, includeProjects: true } }],
+    ['list treating null optionals as omitted', 'claudian_list_destinations',
+      { includeProviders: null, limit: null, project: null, includeProjects: null },
       { tool: 'claudian_list_destinations', args: { includeProviders: false, limit: 50 } }],
     ['list scoped to the caller\'s project', 'claudian_list_destinations', { project: true },
       { tool: 'claudian_list_destinations', args: { includeProviders: false, limit: 50, project: true } }],
@@ -65,8 +70,10 @@ describe('decodeSessionToolCall', () => {
     ['send to a new session with model and reasoning', 'claudian_send_message',
       { text: 'Hi', model: 'gpt-5', reasoning: 'low' },
       { tool: 'claudian_send_message', args: { text: 'Hi', model: 'gpt-5', reasoning: 'low' } }],
+    ['send to a new session in another project', 'claudian_send_message', { text: 'Hi', projectId: 'project-2' },
+      { tool: 'claudian_send_message', args: { text: 'Hi', projectId: 'project-2' } }],
     ['send treating null optionals as omitted', 'claudian_send_message',
-      { sessionId: null, text: 'Hi', provider: null, model: null, reasoning: null },
+      { sessionId: null, text: 'Hi', provider: null, model: null, reasoning: null, projectId: null },
       { tool: 'claudian_send_message', args: { text: 'Hi' } }],
     ['read the latest turns', 'claudian_read_session', { sessionId: 'conv-1', beforeTurn: null },
       { tool: 'claudian_read_session', args: { sessionId: 'conv-1' } }],
@@ -97,6 +104,10 @@ describe('decodeSessionToolCall', () => {
     ['a string limit', 'claudian_list_destinations', { limit: '10' }, /"limit" must be an integer from 1 to 200/],
     ['a non-boolean project', 'claudian_list_destinations', { project: 'true' }, /"project" must be a boolean/],
     ['a numeric project', 'claudian_list_destinations', { project: 1 }, /"project" must be a boolean/],
+    ['a non-boolean includeProjects', 'claudian_list_destinations', { includeProjects: 'yes' }, /"includeProjects" must be a boolean/],
+    ['an empty projectId', 'claudian_send_message', { text: 'Hi', projectId: ' ' }, /"projectId" must be a non-empty string/],
+    ['projectId for an existing session', 'claudian_send_message', { sessionId: 'conv-1', text: 'Hi', projectId: 'project-2' },
+      /"projectId" applies only when "sessionId" is omitted/],
     ['unexpected send arguments', 'claudian_send_message', { text: 'Hi', to: 'x' }, /unexpected argument "to"/i],
     ['missing text', 'claudian_send_message', { sessionId: 'conv-1' }, /"text" must be a non-empty string/],
     ['blank text', 'claudian_send_message', { text: '  \n' }, /"text" must be a non-empty string/],

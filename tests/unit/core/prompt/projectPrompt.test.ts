@@ -30,7 +30,7 @@ const MEMBER_TEXT = [
   '',
   '- When asked to find or check on other sessions in this project, use `claudian_list_destinations` with `project: true`, and `claudian_read_session` to read one.',
   '- When asked to hand off, delegate, or coordinate work, use `claudian_send_message`. Messages must be self-contained; the recipient cannot see this conversation.',
-  '- Sessions you start with `claudian_send_message` join this project.',
+  '- Sessions you start with `claudian_send_message` join this project unless you pass another project\'s `projectId`.',
   ].join('\n');
 
 describe('project prompt renderers', () => {
