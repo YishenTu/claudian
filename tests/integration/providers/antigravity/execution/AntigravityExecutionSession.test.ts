@@ -723,6 +723,8 @@ describe('AntigravityExecutionSession', () => {
     const replacement = await spawnedProcess(2);
     await replacement.waitForPrompts(1);
     expect(replacement.configOptions.find(option => option.id === 'mode')).toMatchObject({ currentValue: 'default' });
+    // The replacement resumes the saved session and re-sends the current prompt, which agy does not store.
+    expect(replacement.resumeRequests.map(entry => [entry.sessionId, entry._meta])).toEqual([['session-new', appendMeta('Be exact.')]]);
     replacement.finishPrompt();
     await collect(third.events);
   });
@@ -858,6 +860,62 @@ describe('AntigravityExecutionSession', () => {
     expect(events.find(event => event.type === 'tool_completed')).toEqual(expect.objectContaining({
       resultDetails: expect.objectContaining({ resolvedAnswers: { 'Color?': 'Blue', 'Pets?': ['Cats', 'Something else'] } }),
       toolCallId: 'tool-ask',
+    }));
+  });
+
+  it('routes a subagent\'s relayed approval and question to the user in Ask mode, keeping the turn open after a denial', async () => {
+    const port = createInteractionPort();
+    port.requestApproval.mockImplementation(async (approval: ProviderApprovalInteractionRequest) => ({
+      interactionId: approval.interactionId, value: 'reject',
+    }));
+    port.askUserQuestion.mockImplementation(async (question: ProviderQuestionInteractionRequest) => ({
+      answers: { q1: '1' }, interactionId: question.interactionId,
+    }));
+    const session = await createSession({ interactionPort: port });
+    const run = session.execute(request('Delegate'));
+    const peer = await firstPeer();
+    await peer.waitForPrompts(1);
+    // Frames captured from agy 1.5.16 (default mode): the subagent's calls arrive on the parent session under
+    // `<subagent>:call_…` ids, each streamed as pending only when it asks.
+    const delegate = { kind: 'other', name: 'invoke_subagent', rawInput: { Prompt: 'Run `date > probe.txt`', TypeName: 'self' }, title: 'Run invoke_subagent', toolCallId: 'call-sub' };
+    peer.emit({ ...delegate, sessionUpdate: 'tool_call', status: 'in_progress' }, 'session-new');
+    peer.emit({ ...delegate, sessionUpdate: 'tool_call_update', status: 'completed' }, 'session-new');
+    const command = { kind: 'execute', name: 'run_command', rawInput: { CommandLine: 'date > probe.txt' }, title: 'date > probe.txt', toolCallId: 'sub-1:call-1' };
+    peer.emit({ ...command, sessionUpdate: 'tool_call', status: 'pending' }, 'session-new');
+    await expect(peer.requestPermission({ ...permissionRequest('run_command'), toolCall: { ...command, sessionUpdate: 'tool_call', status: 'pending' } as ACPRequestPermissionRequest['toolCall'] }))
+      .resolves.toEqual({ outcome: { optionId: 'reject', outcome: 'selected' } });
+    peer.emit({ ...command, sessionUpdate: 'tool_call_update', status: 'in_progress' }, 'session-new');
+    peer.emit({ ...command, rawOutput: 'permission check failed for unsandboxed "date > probe.txt": user denied permission to run command',
+      sessionUpdate: 'tool_call_update', status: 'failed' }, 'session-new');
+    const args = { questions: [{ is_multi_select: false, options: ['red', 'blue'], question: 'Pick a color' }] };
+    const ask = { args, kind: 'other', name: 'ask_question', rawInput: args, title: 'Run ask_question', toolCallId: 'sub-1:call-2' };
+    peer.emit({ ...ask, sessionUpdate: 'tool_call', status: 'pending' }, 'session-new');
+    await expect(peer.createElicitation({
+      message: 'The agent has a question.',
+      mode: 'form',
+      requestedSchema: {
+        properties: {
+          q1: { oneOf: [{ const: '1', title: 'red' }, { const: '2', title: 'blue' }], title: 'Pick a color', type: 'string' },
+          q1_other: { description: 'Optional free-form answer to: Pick a color', title: 'Other', type: 'string' },
+        },
+        type: 'object',
+      },
+      sessionId: 'session-new',
+      toolCallId: 'sub-1:call-2',
+    })).resolves.toEqual({ action: 'accept', content: { q1: '1' } });
+    peer.emit({ ...ask, sessionUpdate: 'tool_call_update', status: 'in_progress' }, 'session-new');
+    peer.emit({ ...ask, sessionUpdate: 'tool_call_update', status: 'completed' }, 'session-new');
+    peer.finishPrompt();
+    const events = await collect(run.events);
+
+    expect(port.requestApproval.mock.calls.map(([approval]) => [approval.toolName, approval.nativeContext]))
+      .toEqual([['Bash', { sessionId: 'session-new', toolCallId: 'sub-1:call-1' }]]);
+    // The question came after the denial, inside the same run, and both calls completed there before the turn did.
+    expect(events.filter(event => event.type === 'tool_completed' || event.type === 'turn_completed')
+      .map(event => (event.type === 'tool_completed' ? [event.toolCallId, event.isError ?? false] : event.type)))
+      .toEqual([['call-sub', false], ['sub-1:call-1', true], ['sub-1:call-2', false], 'turn_completed']);
+    expect(events.find(event => event.type === 'tool_completed' && event.toolCallId === 'sub-1:call-2')).toEqual(expect.objectContaining({
+      resultDetails: expect.objectContaining({ resolvedAnswers: { 'Pick a color': 'red' } }),
     }));
   });
 
@@ -1264,32 +1322,37 @@ describe('AntigravityExecutionSession', () => {
     vi.useRealTimers();
   });
 
-  it('runs YOLO main chat with agy\'s skip-permissions flag and restarts the process when leaving or entering YOLO', async () => {
-    const session = await createSession({}, peer => { peer.knownSessions.add('session-new'); });
-    const launchArgs = () => vi.mocked(spawn).mock.calls.map(([, args]) => args);
-    for (const [index, [permissionMode, processes]] of ([['yolo', 1], ['yolo', 1], ['normal', 2], ['yolo', 3]] as const).entries()) {
-      const prompts = spawned.length === processes ? spawned[processes - 1].prompts.length : 0;
+  it('keeps one agy process across YOLO switches and decides relayed subagent approvals under the turn\'s mode', async () => {
+    const port = createInteractionPort();
+    port.requestApproval.mockImplementation(async (approval: ProviderApprovalInteractionRequest) => ({
+      interactionId: approval.interactionId, value: 'reject',
+    }));
+    const session = await createSession({ interactionPort: port });
+    // agy 1.5.16 relays a subagent's request on the parent session, its tool call id prefixed with the subagent's id.
+    const subagentRequest = { ...permissionRequest('run_command'), toolCall: {
+      kind: 'execute', name: 'run_command', title: 'date > probe.txt', toolCallId: 'sub-1:call-1',
+    } as ACPRequestPermissionRequest['toolCall'] };
+    const outcomes: unknown[] = [];
+    for (const [index, permissionMode] of (['yolo', 'normal', 'yolo'] as const).entries()) {
       const run = session.execute(request(`turn ${index}`, { permissionMode }));
-      const peer = await spawnedProcess(processes);
-      await peer.waitForPrompts(prompts + 1);
+      const peer = await firstPeer();
+      await peer.waitForPrompts(index + 1);
+      // No launch flag ties YOLO to a process, so switching modes neither adds a process nor restarts agy.
+      expect(vi.mocked(spawn).mock.calls.map(([, args]) => args)).toEqual([['acp']]);
+      outcomes.push((await peer.requestPermission(subagentRequest)).outcome);
       peer.finishPrompt();
       await collect(run.events);
     }
-    // agy applies the flag to its whole process (subagents included), so changing YOLO replaces the process.
-    expect(launchArgs()).toEqual([
-      ['acp', '--dangerously-skip-permissions'],
-      ['acp'],
-      ['acp', '--dangerously-skip-permissions'],
+
+    expect(outcomes).toEqual([
+      { optionId: 'allow', outcome: 'selected' },
+      { optionId: 'reject', outcome: 'selected' },
+      { optionId: 'allow', outcome: 'selected' },
     ]);
-    expect(spawned.flatMap(peer => peer.newRequests)).toHaveLength(1);
-    expect(spawned.map(peer => peer.resumeRequests.map(entry => [entry.sessionId, entry._meta]))).toEqual([
-      [['session-new', appendMeta('Be exact.')]],
-      [['session-new', appendMeta('Be exact.')]],
-      [['session-new', appendMeta('Be exact.')]],
-    ]);
+    expect(port.requestApproval.mock.calls.map(([approval]) => approval.toolName)).toEqual(['Bash']);
   });
 
-  it('never gives auxiliary sessions the skip-permissions flag, even in YOLO', async () => {
+  it('denies auxiliary sessions\' requests even in YOLO', async () => {
     const session = await createSession();
     const run = session.execute({ ...titleRequest(), configuration: { ...titleRequest().configuration, permissionMode: 'yolo' } });
     const peer = await firstPeer();
