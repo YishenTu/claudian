@@ -33,7 +33,7 @@
 ## UI and CSS
 
 - DOM interaction and accessibility regressions need real-DOM tests with Testing Library role/name queries and targeted `axe-core` checks. Isolated controller logic may use unit tests without a DOM; class or tag assertions on synthetic elements do not establish accessibility or keyboard behavior. Dispatch events on the element production receives them from: event-init objects cannot set `target` or replace methods such as `preventDefault`. A host listener stand-in uses the host's phase (Obsidian's keymap listens on `window` in capture).
-- CSS assertions need a functional, compatibility or explicit design requirement; copying current spacing, color or selector literals is not sufficient. jsdom computed styles can check declarations and state changes, but do not prove rendered geometry or contrast. Use rendered measurements or a repeatable host reproduction for those claims, while retaining narrow host-compatibility and functional-state checks.
+- CSS assertions need a functional, compatibility or explicit design requirement; copying current spacing, color or selector literals is not sufficient. jsdom computed styles can check declarations and state changes, but do not prove rendered output such as geometry, contrast or sharpness. Use rendered measurements or a repeatable host reproduction for those claims; when no repository test can observe the rendered failure, that reproduction is the verification, not a declaration presence or absence check standing in for it. Retain narrow host-compatibility and functional-state checks that jsdom observes directly.
 
 ## Isolation and asynchronous execution
 
