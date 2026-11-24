@@ -7,6 +7,7 @@ import { fireEvent, waitFor, within } from '@testing-library/dom';
 import { Notice, setIcon } from 'obsidian';
 import type { Mock } from 'vitest';
 
+import { createServiceTierPolicy } from '@/core/providers/serviceTier';
 import type { ProviderPermissionModeOption } from '@/core/providers/types';
 import { createInputToolbar } from '@/features/chat/composer/toolbar/InputToolbar';
 import type { ToolbarCallbacks } from '@/features/chat/composer/toolbar/types';
@@ -63,12 +64,14 @@ function renderToolbar(fixture: FixtureOptions = {}) {
     ]),
     getServiceTierToggle: (current: Record<string, unknown>) => {
       if (!fixture.serviceTiers) return null;
-      const options = [{ value: 'default', label: 'Standard' }, ...fixture.serviceTiers];
-      return {
-        options,
-        selectedValue: options.some(option => option.value === current.serviceTier) ? current.serviceTier as string : 'default',
-        fastValue: fixture.serviceTiers[0]?.value ?? null,
-      };
+      return createServiceTierPolicy({
+        standard: { value: 'default', label: 'Standard' },
+        accelerated: fixture.serviceTiers.map((tier, index) => ({
+          ...tier,
+          ...(index === 0 ? { isFast: true } : {}),
+        })),
+        selectedValue: typeof current.serviceTier === 'string' ? current.serviceTier : null,
+      });
     },
   };
   const callbacks = {
@@ -93,6 +96,15 @@ function renderToolbar(fixture: FixtureOptions = {}) {
 const mountedToolbars: ReturnType<typeof createInputToolbar>[] = [];
 
 const flush = () => new Promise<void>(resolve => setTimeout(resolve, 0));
+
+/** Latest Obsidian icon set on each distinct connected element inside a container. */
+function renderedIcons(container: Element): string[] {
+  const icons = new Map<Node, string>();
+  for (const [el, icon] of vi.mocked(setIcon).mock.calls) {
+    if (container.contains(el as Node)) icons.set(el as Node, icon);
+  }
+  return Array.from(icons.values());
+}
 
 afterEach(() => {
   for (const toolbar of mountedToolbars.splice(0)) toolbar.menus.destroy();
@@ -328,7 +340,9 @@ describe('model button', () => {
   it('shows fast mode on the button and switches it from the model menu', async () => {
     const { callbacks, toolbar, ui, settings } = renderToolbar({ serviceTiers: FAST_TIER });
     const button = ui.getByRole('button', { name: 'Model: Sonnet, effort High' });
-    expect(button.querySelector('.claudian-service-tier-indicator')?.classList.contains('claudian-hidden')).toBe(true);
+    const indicator = button.querySelector('.claudian-service-tier-indicator')!;
+    expect(indicator.classList.contains('claudian-hidden')).toBe(true);
+    expect(renderedIcons(indicator)).toEqual([]);
     fireEvent.click(button);
     const fastMode = ui.getByRole('switch', { name: 'Fast' });
     expect(fastMode.getAttribute('aria-checked')).toBe('false');
@@ -338,11 +352,14 @@ describe('model button', () => {
     expect(callbacks.onServiceTierChange).toHaveBeenCalledWith('fast');
     expect(ui.getByRole('switch', { name: 'Fast' }).getAttribute('aria-checked')).toBe('true');
     expect(ui.getByRole('button', { name: 'Model: Sonnet, effort High, fast mode on' })).toBe(button);
-    expect(button.querySelector('.claudian-service-tier-indicator')?.classList.contains('claudian-hidden')).toBe(false);
+    expect(indicator.classList.contains('claudian-hidden')).toBe(false);
+    expect(renderedIcons(indicator)).toEqual(['zap']);
     fireEvent.click(ui.getByRole('switch', { name: 'Fast' }));
     await flush();
     expect(callbacks.onServiceTierChange).toHaveBeenLastCalledWith('default');
     expect(ui.getByRole('switch', { name: 'Fast' }).getAttribute('aria-checked')).toBe('false');
+    expect(indicator.classList.contains('claudian-hidden')).toBe(true);
+    expect(renderedIcons(indicator)).toEqual([]);
 
     // Slash-command toggles refresh through the same public update.
     settings.serviceTier = 'default';
@@ -366,6 +383,9 @@ describe('model button', () => {
       ],
     });
     const button = ui.getByRole('button', { name: 'Model: Sonnet, effort High' });
+    const indicator = button.querySelector('.claudian-service-tier-indicator')!;
+    expect(indicator.classList.contains('claudian-hidden')).toBe(true);
+    expect(renderedIcons(indicator)).toEqual([]);
     fireEvent.click(button);
     expect(ui.queryByRole('switch')).toBeNull();
     const speed = ui.getByRole('listbox', { name: 'Speed' });
@@ -393,13 +413,26 @@ describe('model button', () => {
     expect(ui.getByRole('option', { name: 'Ultrafast' }).getAttribute('aria-selected')).toBe('true');
     expect(ui.getByRole('option', { name: 'Standard' }).getAttribute('aria-selected')).toBe('false');
     expect(ui.getByRole('button', { name: 'Model: Sonnet, effort High, speed Ultrafast' })).toBe(button);
-    expect(button.querySelector('.claudian-service-tier-indicator')?.classList.contains('claudian-hidden')).toBe(false);
+    expect(indicator.classList.contains('claudian-hidden')).toBe(false);
+    expect(renderedIcons(indicator)).toEqual(['zap', 'zap']);
+    expect(renderedIcons(indicator)).toEqual(renderedIcons(ui.getByRole('option', { name: 'Ultrafast' })));
     expect((await axe(host)).violations).toEqual([]);
+
+    fireEvent.click(ui.getByRole('option', { name: 'Fast' }));
+    await waitFor(() => expect(button.getAttribute('aria-label')).toBe('Model: Sonnet, effort High, fast mode on'));
+    expect(callbacks.onServiceTierChange).toHaveBeenLastCalledWith('fast');
+    expect(indicator.classList.contains('claudian-hidden')).toBe(false);
+    expect(renderedIcons(indicator)).toEqual(['zap']);
+
+    fireEvent.click(ui.getByRole('option', { name: 'Ultrafast' }));
+    await waitFor(() => expect(button.getAttribute('aria-label')).toBe('Model: Sonnet, effort High, speed Ultrafast'));
+    expect(renderedIcons(indicator)).toEqual(['zap', 'zap']);
 
     await expect(toolbar.serviceTierToggle.toggle()).resolves.toBe(true);
     expect(callbacks.onServiceTierChange).toHaveBeenLastCalledWith('default');
     expect(ui.getByRole('button', { name: 'Model: Sonnet, effort High' })).toBe(button);
-    expect(button.querySelector('.claudian-service-tier-indicator')?.classList.contains('claudian-hidden')).toBe(true);
+    expect(indicator.classList.contains('claudian-hidden')).toBe(true);
+    expect(renderedIcons(indicator)).toEqual([]);
   });
 
   it('offers fast mode only while the list shows the model in use, as for a model without it', () => {

@@ -238,30 +238,71 @@ export function resolveCodexReasoningEffort(
   return getCodexDefaultReasoningEffort(model, enableUltraEffort);
 }
 
+/** Decoded intent of a persisted or requested Codex service-tier value. */
+export type CodexServiceTierInput =
+  | { readonly kind: 'unset' }
+  | { readonly kind: 'standard' }
+  | { readonly kind: 'tier'; readonly tierId: string };
+
+/** Effective Codex service tier after validating against a discovered model's catalog. */
+export type CodexResolvedServiceTier =
+  | { readonly kind: 'unset'; readonly wireValue: string | null }
+  | { readonly kind: 'standard'; readonly wireValue: typeof CODEX_DEFAULT_SERVICE_TIER }
+  | { readonly kind: 'tier'; readonly tier: CodexModelServiceTier; readonly wireValue: string };
+
 export function getCodexFastServiceTier(
   model: CodexDiscoveredModel,
 ): CodexModelServiceTier | null {
   return model.serviceTiers.find(tier => tier.name.trim().toLowerCase() === 'fast') ?? null;
 }
 
+export function decodeCodexServiceTierInput(value: unknown): CodexServiceTierInput {
+  if (value === CODEX_DEFAULT_SERVICE_TIER) {
+    return { kind: 'standard' };
+  }
+  if (typeof value !== 'string' || value.length === 0) {
+    return { kind: 'unset' };
+  }
+  return { kind: 'tier', tierId: value };
+}
+
+export function resolveCodexModelServiceTierState(
+  model: CodexDiscoveredModel | null,
+  selectedServiceTier: unknown,
+): CodexResolvedServiceTier {
+  if (!model) {
+    return { kind: 'unset', wireValue: null };
+  }
+
+  const input = decodeCodexServiceTierInput(selectedServiceTier);
+  switch (input.kind) {
+    case 'standard':
+      // "default" is an explicit Standard selection, distinct from the catalog default.
+      return { kind: 'standard', wireValue: CODEX_DEFAULT_SERVICE_TIER };
+    case 'tier': {
+      const matched = model.serviceTiers.find(tier => tier.id === input.tierId);
+      if (matched) {
+        return { kind: 'tier', tier: matched, wireValue: matched.id };
+      }
+      break;
+    }
+    case 'unset':
+      break;
+  }
+
+  if (model.defaultServiceTier === CODEX_DEFAULT_SERVICE_TIER) {
+    return { kind: 'standard', wireValue: CODEX_DEFAULT_SERVICE_TIER };
+  }
+  const defaultTier = model.serviceTiers.find(tier => tier.id === model.defaultServiceTier);
+  if (defaultTier) {
+    return { kind: 'tier', tier: defaultTier, wireValue: defaultTier.id };
+  }
+  return { kind: 'unset', wireValue: model.defaultServiceTier };
+}
+
 export function resolveCodexModelServiceTier(
   model: CodexDiscoveredModel | null,
   selectedServiceTier: unknown,
 ): string | null {
-  if (!model) {
-    return null;
-  }
-  // "default" is an explicit Standard selection, distinct from the catalog default.
-  if (selectedServiceTier === CODEX_DEFAULT_SERVICE_TIER) {
-    return CODEX_DEFAULT_SERVICE_TIER;
-  }
-  if (typeof selectedServiceTier === 'string') {
-    if (model.serviceTiers.some(tier => tier.id === selectedServiceTier)) {
-      return selectedServiceTier;
-    }
-    if (selectedServiceTier === 'fast') {
-      return getCodexFastServiceTier(model)?.id ?? null;
-    }
-  }
-  return model.defaultServiceTier;
+  return resolveCodexModelServiceTierState(model, selectedServiceTier).wireValue;
 }

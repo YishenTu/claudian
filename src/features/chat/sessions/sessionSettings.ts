@@ -6,7 +6,7 @@ import {
 import { resolvePermissionMode } from '@/core/providers/permissionModes';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { ProviderSettingsCoordinator } from '@/core/providers/ProviderSettingsCoordinator';
-import type { ProviderCapabilities, ProviderChatUIConfig } from '@/core/providers/types';
+import type { ProviderCapabilities, ProviderChatUIConfig, ProviderId } from '@/core/providers/types';
 import type { ClaudianSettings, Conversation, ConversationSummary } from '@/core/types';
 import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
 import { type ChatSettings, getChatSettingsSnapshot } from '@/features/chat/ChatSettings';
@@ -64,6 +64,20 @@ export function getSessionChatUIConfig(
   return providerId ? ProviderRegistry.getChatUIConfig(providerId) : UNRESOLVED_TAB_UI;
 }
 
+function readProviderServiceTierIntent(
+  settings: Readonly<ClaudianSettings>,
+  providerId: ProviderId,
+  fallback: string,
+): string {
+  if (!ProviderRegistry.getModelPolicy(providerId).getServiceTierPolicy) {
+    return 'default';
+  }
+  const providerSnapshot = ProviderSettingsCoordinator.getProviderSettingsSnapshot(settings, providerId);
+  return typeof providerSnapshot.serviceTier === 'string'
+    ? providerSnapshot.serviceTier
+    : fallback;
+}
+
 export function getSessionSettingsSnapshot(
   tab: Readonly<SessionIdentity> & Pick<ChatSessionRuntime, 'reasoningSelections' | 'providerSelections' | 'identityRevision' | 'admitsConversationOperations'>,
   plugin: ChatFeatureHost,
@@ -77,7 +91,13 @@ export function getSessionSettingsSnapshot(
   };
   let selections = tab.providerSelections.get(providerId);
   if (!selections) {
-    selections = { permissionMode: snapshot.permissionMode, serviceTier: snapshot.serviceTier };
+    // Providers with a service-tier policy seed raw provider intent before model-specific clamping
+    // so opening on a model with different tiers neither overwrites saved intent nor turns an
+    // unset/legacy tier into an explicit Standard ('default') override.
+    selections = {
+      permissionMode: snapshot.permissionMode,
+      serviceTier: readProviderServiceTierIntent(settings, providerId, snapshot.serviceTier),
+    };
     tab.providerSelections.set(providerId, selections);
   }
   Object.assign(snapshot, selections);
@@ -168,6 +188,7 @@ export async function updateSessionProviderSettings(
       || getSessionProviderId(tab, plugin) !== providerId
       || getSessionSelectedModel(tab, plugin) !== model) return;
     const before = getProviderSettingsSnapshotWithModel(settings, providerId, model);
+    before.serviceTier = readProviderServiceTierIntent(settings, providerId, before.serviceTier);
     // The saved preference receives only what this update writes; untouched session selections stay local.
     const saved = structuredClone(before);
     update(saved);

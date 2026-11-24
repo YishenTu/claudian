@@ -1,11 +1,15 @@
 import { setIcon } from 'obsidian';
 
-import type { ProviderServiceTierToggleConfig } from '@/core/providers/types';
+import type { ProviderServiceTierToggleConfig, ProviderUIOption } from '@/core/providers/types';
 import { toggleServiceTier } from '@/features/chat/composer/toggleServiceTier';
 import type { ToolbarCallbacks } from '@/features/chat/composer/toolbar/types';
 import { t } from '@/i18n/i18n';
 import type { ModelMenuPart, ModelSelector } from '@/shared/toolbar/ModelSelector';
 import { runToolbarAction } from '@/shared/toolbar/ToolbarMenu';
+
+type FastSwitchPolicy = Extract<ProviderServiceTierToggleConfig, { kind: 'fast-switch' }>;
+type TierListPolicy = Extract<ProviderServiceTierToggleConfig, { kind: 'tiers' }>;
+type TierSegmentGlyph = { readonly kind: 'off' } | { readonly kind: 'zaps'; readonly count: number };
 
 /**
  * Speed in the model menu, with an indicator on the model button while accelerated: a Fast switch when
@@ -22,7 +26,6 @@ export class ServiceTierToggle {
       'claudian-toolbar-chip-secondary claudian-service-tier-indicator',
       () => this.updateDisplay(),
     );
-    setIcon(this.part.chipEl, 'zap');
     this.part.sectionEl.addClass('claudian-service-tier-toggle');
     this.updateDisplay();
   }
@@ -32,44 +35,56 @@ export class ServiceTierToggle {
     return uiConfig.getServiceTierToggle?.(this.callbacks.getSettings()) ?? null;
   }
 
+  #renderZaps(parentEl: HTMLElement, count: number): void {
+    for (let zap = 0; zap < count; zap++) setIcon(parentEl.createSpan(), 'zap');
+  }
+
   updateDisplay() {
     const policy = this.#getPolicy();
     const sectionEl = this.part.sectionEl;
     sectionEl.empty();
-    const standard = policy?.options[0];
-    const selected = policy?.options.find(option => option.value === policy.selectedValue);
-    const accelerated = !!standard && !!selected && selected !== standard;
-    this.part.chipEl.toggleClass('claudian-hidden', !accelerated);
-    this.part.describe(!accelerated
-      ? null
-      : selected.value === policy?.fastValue
+    const selection = policy?.selection ?? null;
+    this.part.chipEl.empty();
+    if (selection?.kind === 'accelerated') {
+      this.part.chipEl.removeClass('claudian-hidden');
+      this.#renderZaps(this.part.chipEl, selection.option.level);
+      this.part.describe(selection.option.isFast
         ? t('chat.modelPicker.fastActive')
-        : t('chat.modelPicker.speedActive', { label: selected.label }));
+        : t('chat.modelPicker.speedActive', { label: selection.option.label }));
+    } else {
+      this.part.chipEl.addClass('claudian-hidden');
+      this.part.describe(null);
+    }
+
     // While the menu browses another provider no model is chosen there, so, as for a model
     // without service tiers, no speed is offered. The button still shows the current model's state.
-    if (!policy || !standard || !this.part.showsCurrentModel()) {
+    if (!policy || !this.part.showsCurrentModel()) {
       this.part.showSection(false);
       return;
     }
 
     this.part.showSection(true);
-    const fast = policy.options.length === 2 ? policy.options[1] : undefined;
-    if (fast && fast.value === policy.fastValue) {
-      this.#renderFastSwitch(accelerated, selected?.label ?? standard.label, fast.description);
-    } else {
-      this.#renderTierSegments(policy);
+    switch (policy.kind) {
+      case 'fast-switch':
+        this.#renderFastSwitch(policy);
+        break;
+      case 'tiers':
+        this.#renderTierSegments(policy);
+        break;
     }
     this.part.menu.restoreFocus();
   }
 
-  #renderFastSwitch(isActive: boolean, currentLabel: string, description: string | undefined): void {
+  #renderFastSwitch(policy: FastSwitchPolicy): void {
+    const isActive = policy.selection.kind === 'accelerated';
+    const currentLabel = policy.selection.option.label;
     const itemEl = this.part.menu.createItem(this.part.sectionEl, {
       role: 'switch',
       checked: isActive,
       tabbable: true,
       label: t('chat.modelPicker.fast'),
       cls: 'claudian-toolbar-popover-switch-row',
-      title: [t('chat.modelPicker.fastLabel', { label: currentLabel }), description].filter(Boolean).join('\n'),
+      title: [t('chat.modelPicker.fastLabel', { label: currentLabel }), policy.fast.description].filter(Boolean).join('\n'),
       leadingIcon: 'zap',
       onSelect: () => {
         runToolbarAction(async () => {
@@ -82,15 +97,14 @@ export class ServiceTierToggle {
 
   /**
    * One row of segments in the switch's slot, so the popover keeps its fixed height: Standard shows a
-   * crossed-out zap, and each later tier one more zap than the last. Names are the tooltips and accessible names.
+   * crossed-out zap, and each accelerated tier shows its level's zap count. Names are tooltips and accessible names.
    */
-  #renderTierSegments(policy: ProviderServiceTierToggleConfig): void {
+  #renderTierSegments(policy: TierListPolicy): void {
     const listEl = this.part.sectionEl.createDiv({
       cls: 'claudian-service-tiers',
       attr: { role: 'listbox', 'aria-label': t('chat.modelPicker.speed'), 'aria-orientation': 'horizontal' },
     });
-    policy.options.forEach((option, index) => {
-      const selected = option.value === policy.selectedValue;
+    const renderSegment = (option: ProviderUIOption, selected: boolean, glyph: TierSegmentGlyph) => {
       const itemEl = this.part.menu.createItem(listEl, {
         role: 'option',
         key: `tier:${option.value}`,
@@ -108,13 +122,22 @@ export class ServiceTierToggle {
       });
       if (option.description) itemEl.setAttribute('aria-description', option.description);
       const glyphEl = itemEl.createSpan({ cls: 'claudian-service-tier-glyph', attr: { 'aria-hidden': 'true' } });
-      if (index === 0) {
+      if (glyph.kind === 'off') {
         setIcon(glyphEl.createSpan(), 'zap-off');
       } else {
-        for (let zap = 0; zap < index; zap++) setIcon(glyphEl.createSpan(), 'zap');
+        this.#renderZaps(glyphEl, glyph.count);
       }
       itemEl.prepend(glyphEl);
-    });
+    };
+
+    renderSegment(policy.standard, policy.selection.kind === 'standard', { kind: 'off' });
+    for (const tier of policy.accelerated) {
+      renderSegment(
+        tier,
+        policy.selection.kind === 'accelerated' && policy.selection.option.value === tier.value,
+        { kind: 'zaps', count: tier.level },
+      );
+    }
   }
 
   async toggle(): Promise<boolean> {
