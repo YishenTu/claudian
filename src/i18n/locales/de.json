@@ -29,7 +29,7 @@
     "selectAvailableTitleModel": "Wähle in den Claudian-Einstellungen ein verfügbares Titelmodell aus.",
     "rewind": {
       "confirmMessage": "Zu diesem Punkt zurückspulen? Dateiänderungen nach dieser Nachricht können überschrieben oder entfernt werden. Dies kann nicht rückgängig gemacht werden.",
-      "confirmMessageConflicts": "Zu diesem Punkt zurückspulen? {count} außerhalb des Agenten geänderte Datei(en) werden überschrieben:\n{files}",
+      "confirmMessageConflicts": "Zu diesem Punkt zurückspulen? {count} außerhalb des Agents geänderte Datei(en) werden überschrieben:\n{files}",
       "confirmMessageConversationOnly": "Unterhaltung zu diesem Punkt zurückspulen? Dateiänderungen bleiben erhalten.",
       "confirmButton": "Zurückspulen",
       "inProgress": "Bitte warte, bis das aktuelle Zurückspulen abgeschlossen ist.",
@@ -257,26 +257,28 @@
       "file": "Datei",
       "enteringPlan": "Planungsmodus wird gestartet",
       "planComplete": "Plan abgeschlossen",
-      "messageAgent": "Agenten benachrichtigen",
+      "messageAgent": "Agent benachrichtigen",
       "listDestinations": "Ziele auflisten",
       "messageSession": "Sitzung benachrichtigen",
       "stopSession": "Sitzung stoppen",
       "readSession": "Sitzung lesen",
-      "continueAgent": "Agenten fortsetzen",
-      "listAgents": "Agenten auflisten",
-      "interruptAgent": "Agenten unterbrechen",
-      "allAgents": "Alle Agenten",
+      "continueAgent": "Agent fortsetzen",
+      "listAgents": "Agents auflisten",
+      "interruptAgent": "Agent unterbrechen",
+      "startAgent": "Agent starten",
+      "closeAgent": "Agent beenden",
+      "allAgents": "Alle Agents",
       "commandPlaceholder": "Befehl",
       "filesPlaceholder": "Dateien",
       "patternPlaceholder": "Muster",
       "toolsPlaceholder": "Werkzeuge",
       "agentCount": "{count} Agent",
-      "agentCountPlural": "{count} Agenten"
+      "agentCountPlural": "{count} Agents"
     },
     "subagentUI": {
       "prompt": "Prompt",
       "result": "Ergebnis",
-      "taskLabel": "Unteragentenaufgabe: {description} - {status}",
+      "taskLabel": "Subagent-Aufgabe: {description} - {status}",
       "backgroundTaskLabel": "Hintergrundaufgabe: {description} - {status}",
       "statusLabel": "Status: {status}",
       "initializing": "Wird initialisiert",
@@ -530,8 +532,8 @@
     "removeItem": "{item} entfernen",
     "agent": "Agent: {agent}",
     "executionNotices": {
-      "initializeFailed": "Agentenausführung konnte nicht initialisiert werden. Bitte versuche es erneut.",
-      "unavailable": "Agentenausführung ist nicht verfügbar. Bitte lade das Plugin neu.",
+      "initializeFailed": "Agent-Ausführung konnte nicht initialisiert werden. Bitte versuche es erneut.",
+      "unavailable": "Agent-Ausführung ist nicht verfügbar. Bitte lade das Plugin neu.",
       "sessionUnavailable": "Die native Sitzung dieser Unterhaltung ist mit der aktuellen CLI-Konfiguration nicht verfügbar. Starte einen neuen Chat, um fortzufahren.",
       "unsentFallback": "Die Nachricht wurde nicht gesendet. Bitte versuche es erneut.",
       "providerRetry": "Neuer Versuch nach einem Anbieterfehler (Versuch {attempt}): {message}"
@@ -729,11 +731,11 @@
         "saved": "Projektgedächtnis gespeichert",
         "loading": "Wird geladen…",
         "updated": "Aktualisiert {time}",
-        "changedOutside": "Die Gedächtnisdatei wurde außerhalb dieses Fensters aktualisiert, vermutlich von einem Agenten.",
+        "changedOutside": "Die Gedächtnisdatei wurde außerhalb dieses Fensters aktualisiert, vermutlich von einem Agent.",
         "keepMine": "Meine Änderungen behalten",
         "discardConfirm": "Ungespeicherte Änderungen am Projektgedächtnis verwerfen?",
         "discard": "Verwerfen",
-        "emptyHint": "Agenten füllen dies im Laufe des Projekts aus."
+        "emptyHint": "Agents füllen dies im Laufe des Projekts aus."
       }
     }
   },
@@ -761,7 +763,7 @@
     "acceptLabel": "Inline-Bearbeitung übernehmen",
     "retryFallback": "Fehler – versuche es erneut",
     "replyPlaceholder": "Antworten, um fortzufahren…",
-    "noResponseFallback": "Keine Antwort vom Agenten",
+    "noResponseFallback": "Keine Antwort vom Agent",
     "followUpPlaceholder": "Änderungen anfordern oder mit Enter übernehmen"
   },
   "settings": {
@@ -831,7 +833,7 @@
     "safety": "Sicherheit",
     "loadUserSettings": {
       "name": "Claude-Code-Benutzereinstellungen laden",
-      "desc": "Lädt die Claude-Code-Konfiguration auf Benutzerebene aus ~/.claude: settings.json, Skills, Befehle, Agenten und Plugins. Wenn deaktiviert, ist nur die Konfiguration auf Vault-Ebene verfügbar. Wenn aktiviert, gelten auch die Berechtigungsregeln des Benutzers und können Aktionen ohne Nachfrage erlauben."
+      "desc": "Lädt die Claude-Code-Konfiguration auf Benutzerebene aus ~/.claude: settings.json, Skills, Befehle, Agents und Plugins. Wenn deaktiviert, ist nur die Konfiguration auf Vault-Ebene verfügbar. Wenn aktiviert, gelten auch die Berechtigungsregeln des Benutzers und können Aktionen ohne Nachfrage erlauben."
     },
     "codexSandbox": {
       "name": "Sandbox",

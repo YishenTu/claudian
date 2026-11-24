@@ -524,6 +524,11 @@ describe('AntigravityExecutionSession', () => {
       tool('task-3', 'manage_task', { Action: 'kill', TaskId: 'session-new/task-2' }, 'other', 'Run manage_task'),
       tool('task-4', 'manage_task', { Action: 'list' }, 'other', 'Run manage_task'),
       tool('res-1', 'list_resources', { ServerName: 'claudian_sessions' }, 'other', 'Run list_resources'),
+      tool('sub-1', 'invoke_subagent', { Prompt: 'Review notes.md', Role: 'Notes Reviewer', TypeName: 'self' }, 'other', 'Run invoke_subagent'),
+      tool('sub-2', 'send_message', { Message: 'Also check todo.md', Recipient: 'child-1' }, 'other', 'Run send_message'),
+      tool('sub-3', 'manage_subagents', { Action: 'list' }, 'other', 'Run manage_subagents'),
+      tool('sub-4', 'manage_subagents', { Action: 'kill', ConversationIds: ['child-1', 'child-2'] }, 'other', 'Run manage_subagents'),
+      tool('wf-1', 'run_workflow', { Description: 'Review in parallel', Script: 'await agent("Review")' }, 'other', 'Run run_workflow'),
     ];
     for (const update of outputlessTools) {
       peer.emit(update, 'session-new');
@@ -550,6 +555,11 @@ describe('AntigravityExecutionSession', () => {
       expect.objectContaining({ input: expect.objectContaining({ TaskId: 'session-new/task-2' }), name: 'KillShell', toolCallId: 'task-3' }),
       expect.objectContaining({ input: expect.objectContaining({ Action: 'list' }), name: 'ManageTasks', toolCallId: 'task-4' }),
       expect.objectContaining({ input: expect.objectContaining({ server: 'claudian_sessions' }), name: 'ListMcpResources', toolCallId: 'res-1' }),
+      expect.objectContaining({ input: expect.objectContaining({ message: 'Review notes.md', target: 'Notes Reviewer' }), name: 'spawn_agent', toolCallId: 'sub-1' }),
+      expect.objectContaining({ input: expect.objectContaining({ message: 'Also check todo.md', target: 'child-1' }), name: 'send_message', toolCallId: 'sub-2' }),
+      expect.objectContaining({ input: expect.objectContaining({ Action: 'list' }), name: 'list_agents', toolCallId: 'sub-3' }),
+      expect.objectContaining({ input: expect.objectContaining({ target: 'child-1, child-2' }), name: 'close_agent', toolCallId: 'sub-4' }),
+      expect.objectContaining({ input: expect.objectContaining({ code: 'await agent("Review")', language: 'Python', title: 'Review in parallel' }), name: 'Workflow', toolCallId: 'wf-1' }),
       expect.objectContaining({ input: { nonce: 'n-1' }, name: 'mcp__notes_server__search_notes', toolCallId: 'mcp-1' }),
     ]);
     const completed = events.filter(event => event.type === 'tool_completed');
@@ -564,6 +574,11 @@ describe('AntigravityExecutionSession', () => {
       ['task-3', '', false],
       ['task-4', '', false],
       ['res-1', '', false],
+      ['sub-1', '', false],
+      ['sub-2', '', false],
+      ['sub-3', '', false],
+      ['sub-4', '', false],
+      ['wf-1', '', false],
       ['mcp-1', '{"hits":1}', false],
     ]);
   });

@@ -265,6 +265,8 @@
       "continueAgent": "Continue agent",
       "listAgents": "List agents",
       "interruptAgent": "Interrupt agent",
+      "startAgent": "Start agent",
+      "closeAgent": "Close agent",
       "allAgents": "All agents",
       "commandPlaceholder": "command",
       "filesPlaceholder": "files",

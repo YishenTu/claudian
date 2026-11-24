@@ -29,7 +29,7 @@
     "selectAvailableTitleModel": "Claudian の設定で利用可能なタイトル生成モデルを選択してください。",
     "rewind": {
       "confirmMessage": "この時点に巻き戻しますか？このメッセージ以降のファイル変更は上書きまたは削除される可能性があります。この操作は元に戻せません。",
-      "confirmMessageConflicts": "この時点に巻き戻しますか？エージェント外で変更された {count} 個のファイルが上書きされます：\n{files}",
+      "confirmMessageConflicts": "この時点に巻き戻しますか？Agent 外で変更された {count} 個のファイルが上書きされます：\n{files}",
       "confirmMessageConversationOnly": "会話をこの時点に巻き戻しますか？ファイル変更は保持されます。",
       "confirmButton": "巻き戻す",
       "inProgress": "現在の巻き戻しが完了するまでお待ちください。",
@@ -257,26 +257,28 @@
       "file": "ファイル",
       "enteringPlan": "プランモードに移行中",
       "planComplete": "プラン完了",
-      "messageAgent": "エージェントにメッセージを送信",
+      "messageAgent": "Agent にメッセージを送信",
       "listDestinations": "送信先を一覧表示",
       "messageSession": "セッションにメッセージを送信",
       "stopSession": "セッションを停止",
       "readSession": "セッションを読み取る",
-      "continueAgent": "エージェントを継続",
-      "listAgents": "エージェント一覧",
-      "interruptAgent": "エージェントを中断",
-      "allAgents": "すべてのエージェント",
+      "continueAgent": "Agent を継続",
+      "listAgents": "Agent 一覧",
+      "interruptAgent": "Agent を中断",
+      "startAgent": "Agent を開始",
+      "closeAgent": "Agent を終了",
+      "allAgents": "すべての Agent",
       "commandPlaceholder": "コマンド",
       "filesPlaceholder": "ファイル",
       "patternPlaceholder": "パターン",
       "toolsPlaceholder": "ツール",
-      "agentCount": "エージェント {count} 件",
-      "agentCountPlural": "エージェント {count} 件"
+      "agentCount": "Agent {count} 件",
+      "agentCountPlural": "Agent {count} 件"
     },
     "subagentUI": {
       "prompt": "プロンプト",
       "result": "結果",
-      "taskLabel": "サブエージェントタスク：{description} - {status}",
+      "taskLabel": "Subagent タスク：{description} - {status}",
       "backgroundTaskLabel": "バックグラウンドタスク：{description} - {status}",
       "statusLabel": "状態：{status}",
       "initializing": "初期化中",
@@ -528,10 +530,10 @@
       "collapse": "{label} - クリックして折りたたむ"
     },
     "removeItem": "{item} を削除",
-    "agent": "エージェント：{agent}",
+    "agent": "Agent：{agent}",
     "executionNotices": {
-      "initializeFailed": "エージェントの実行を初期化できませんでした。もう一度お試しください。",
-      "unavailable": "エージェントの実行は利用できません。プラグインを再読み込みしてください。",
+      "initializeFailed": "Agent の実行を初期化できませんでした。もう一度お試しください。",
+      "unavailable": "Agent の実行は利用できません。プラグインを再読み込みしてください。",
       "sessionUnavailable": "この会話のネイティブセッションは、現在の CLI 設定では利用できません。続けるには新しいチャットを開始してください。",
       "unsentFallback": "メッセージは送信されませんでした。もう一度お試しください。",
       "providerRetry": "プロバイダーのエラー後に再試行しています（{attempt} 回目）: {message}"
@@ -729,11 +731,11 @@
         "saved": "プロジェクトメモリを保存しました",
         "loading": "読み込み中…",
         "updated": "{time} に更新",
-        "changedOutside": "メモリファイルがこのウィンドウの外で更新されました（おそらくエージェントによるものです）。",
+        "changedOutside": "メモリファイルがこのウィンドウの外で更新されました（おそらく Agent によるものです）。",
         "keepMine": "自分の編集を保持",
         "discardConfirm": "プロジェクトメモリへの未保存の変更を破棄しますか？",
         "discard": "破棄",
-        "emptyHint": "プロジェクトの進行に合わせてエージェントが記入します。"
+        "emptyHint": "プロジェクトの進行に合わせて Agent が記入します。"
       }
     }
   },
@@ -761,7 +763,7 @@
     "acceptLabel": "インライン編集を承認",
     "retryFallback": "エラーが発生しました。もう一度お試しください",
     "replyPlaceholder": "返信して続行…",
-    "noResponseFallback": "エージェントから応答がありません",
+    "noResponseFallback": "Agent から応答がありません",
     "followUpPlaceholder": "変更を依頼するか、Enter で承認"
   },
   "settings": {
@@ -831,7 +833,7 @@
     "safety": "セキュリティ",
     "loadUserSettings": {
       "name": "ユーザーの Claude Code 設定を読み込む",
-      "desc": "~/.claude からユーザーレベルの Claude Code 設定（settings.json、スキル、コマンド、エージェント、プラグイン）を読み込みます。無効にすると、保管庫レベルの設定のみ利用できます。有効にすると、ユーザーの許可ルールも適用され、確認なしで操作が許可される場合があります。"
+      "desc": "~/.claude からユーザーレベルの Claude Code 設定（settings.json、スキル、コマンド、Agents、プラグイン）を読み込みます。無効にすると、保管庫レベルの設定のみ利用できます。有効にすると、ユーザーの許可ルールも適用され、確認なしで操作が許可される場合があります。"
     },
     "codexSandbox": {
       "name": "サンドボックス",

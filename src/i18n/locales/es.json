@@ -29,7 +29,7 @@
     "selectAvailableTitleModel": "Selecciona un modelo de títulos disponible en los ajustes de Claudian.",
     "rewind": {
       "confirmMessage": "¿Rebobinar hasta este punto? Los cambios de archivos posteriores a este mensaje podrían sobrescribirse o eliminarse. Esta acción no se puede deshacer.",
-      "confirmMessageConflicts": "¿Rebobinar hasta este punto? Se sobrescribirán {count} archivo(s) modificado(s) fuera del agente:\n{files}",
+      "confirmMessageConflicts": "¿Rebobinar hasta este punto? Se sobrescribirán {count} archivo(s) modificado(s) fuera del Agent:\n{files}",
       "confirmMessageConversationOnly": "¿Rebobinar la conversación hasta este punto? Se conservarán los cambios de archivos.",
       "confirmButton": "Rebobinar",
       "inProgress": "Espera a que termine el rebobinado actual.",
@@ -257,26 +257,28 @@
       "file": "archivo",
       "enteringPlan": "Entrando en modo de planificación",
       "planComplete": "Plan completado",
-      "messageAgent": "Enviar mensaje al agente",
+      "messageAgent": "Enviar mensaje al Agent",
       "listDestinations": "Listar destinos",
       "messageSession": "Enviar mensaje a la sesión",
       "stopSession": "Detener sesión",
       "readSession": "Leer sesión",
-      "continueAgent": "Continuar agente",
-      "listAgents": "Listar agentes",
-      "interruptAgent": "Interrumpir agente",
-      "allAgents": "Todos los agentes",
+      "continueAgent": "Continuar Agent",
+      "listAgents": "Listar Agents",
+      "interruptAgent": "Interrumpir Agent",
+      "startAgent": "Iniciar Agent",
+      "closeAgent": "Cerrar Agent",
+      "allAgents": "Todos los Agents",
       "commandPlaceholder": "comando",
       "filesPlaceholder": "archivos",
       "patternPlaceholder": "patrón",
       "toolsPlaceholder": "herramientas",
-      "agentCount": "{count} agente",
-      "agentCountPlural": "{count} agentes"
+      "agentCount": "{count} Agent",
+      "agentCountPlural": "{count} Agents"
     },
     "subagentUI": {
       "prompt": "Instrucción",
       "result": "Resultado",
-      "taskLabel": "Tarea del subagente: {description} - {status}",
+      "taskLabel": "Tarea del Subagent: {description} - {status}",
       "backgroundTaskLabel": "Tarea en segundo plano: {description} - {status}",
       "statusLabel": "Estado: {status}",
       "initializing": "Inicializando",
@@ -528,10 +530,10 @@
       "collapse": "{label} - haz clic para contraer"
     },
     "removeItem": "Quitar {item}",
-    "agent": "Agente: {agent}",
+    "agent": "Agent: {agent}",
     "executionNotices": {
-      "initializeFailed": "No se pudo inicializar la ejecución del agente. Inténtalo de nuevo.",
-      "unavailable": "La ejecución del agente no está disponible. Vuelve a cargar el plugin.",
+      "initializeFailed": "No se pudo inicializar la ejecución del Agent. Inténtalo de nuevo.",
+      "unavailable": "La ejecución del Agent no está disponible. Vuelve a cargar el plugin.",
       "sessionUnavailable": "La sesión nativa de esta conversación no está disponible con la configuración actual de la CLI. Inicia un chat nuevo para continuar.",
       "unsentFallback": "No se envió el mensaje. Inténtalo de nuevo.",
       "providerRetry": "Reintentando tras un error del proveedor (intento {attempt}): {message}"
@@ -729,11 +731,11 @@
         "saved": "Memoria del proyecto guardada",
         "loading": "Cargando…",
         "updated": "Actualizado {time}",
-        "changedOutside": "El archivo de memoria se actualizó fuera de esta ventana, probablemente por un agente.",
+        "changedOutside": "El archivo de memoria se actualizó fuera de esta ventana, probablemente por un Agent.",
         "keepMine": "Conservar mis cambios",
         "discardConfirm": "¿Descartar los cambios sin guardar en la memoria del proyecto?",
         "discard": "Descartar",
-        "emptyHint": "Los agentes lo completan a medida que avanza el proyecto."
+        "emptyHint": "Los Agents lo completan a medida que avanza el proyecto."
       }
     }
   },
@@ -761,7 +763,7 @@
     "acceptLabel": "Aceptar edición en línea",
     "retryFallback": "Ha ocurrido un error. Inténtalo de nuevo",
     "replyPlaceholder": "Responde para continuar…",
-    "noResponseFallback": "El agente no respondió",
+    "noResponseFallback": "El Agent no respondió",
     "followUpPlaceholder": "Pide cambios o pulsa Intro para aceptar"
   },
   "settings": {
@@ -831,7 +833,7 @@
     "safety": "Seguridad",
     "loadUserSettings": {
       "name": "Cargar configuración de usuario de Claude Code",
-      "desc": "Carga la configuración de Claude Code a nivel de usuario desde ~/.claude: settings.json, skills, comandos, agentes y plugins. Si está deshabilitado, solo está disponible la configuración a nivel de bóveda. Si está habilitado, también se aplican las reglas de permisos del usuario, que pueden permitir acciones sin preguntar."
+      "desc": "Carga la configuración de Claude Code a nivel de usuario desde ~/.claude: settings.json, skills, comandos, Agents y plugins. Si está deshabilitado, solo está disponible la configuración a nivel de bóveda. Si está habilitado, también se aplican las reglas de permisos del usuario, que pueden permitir acciones sin preguntar."
     },
     "codexSandbox": {
       "name": "Sandbox",

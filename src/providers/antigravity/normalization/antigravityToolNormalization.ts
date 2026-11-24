@@ -4,14 +4,19 @@ import {
   TOOL_ASK_USER_QUESTION,
   TOOL_BASH,
   TOOL_BASH_OUTPUT,
+  TOOL_CLOSE_AGENT,
   TOOL_EDIT,
   TOOL_GENERATE_IMAGE,
   TOOL_KILL_SHELL,
+  TOOL_LIST_AGENTS,
   TOOL_LIST_MCP_RESOURCES,
   TOOL_MANAGE_TASKS,
   TOOL_READ,
   TOOL_READ_MCP_RESOURCE,
+  TOOL_SEND_MESSAGE,
+  TOOL_SPAWN_AGENT,
   TOOL_WEB_SEARCH,
+  TOOL_WORKFLOW,
   TOOL_WRITE,
   TOOL_WRITE_STDIN,
 } from '@/core/tools/toolNames';
@@ -28,11 +33,14 @@ const ANTIGRAVITY_TOOL_NAME_MAP: Readonly<Record<string, string>> = {
   ask_question: TOOL_ASK_USER_QUESTION,
   edit_file: TOOL_EDIT,
   generate_image: TOOL_GENERATE_IMAGE,
+  invoke_subagent: TOOL_SPAWN_AGENT,
   list_resources: TOOL_LIST_MCP_RESOURCES,
   read_file: TOOL_READ,
   read_resource: TOOL_READ_MCP_RESOURCE,
   run_command: TOOL_BASH,
+  run_workflow: TOOL_WORKFLOW,
   search_web: TOOL_WEB_SEARCH,
+  send_message: TOOL_SEND_MESSAGE,
   write_file: TOOL_WRITE,
 };
 
@@ -42,6 +50,14 @@ const MANAGE_TASK_ACTION_MAP: Readonly<Record<string, string>> = {
   list: TOOL_MANAGE_TASKS,
   send_input: TOOL_WRITE_STDIN,
   status: TOOL_BASH_OUTPUT,
+};
+
+/** `manage_subagents` lists or stops subagents; agy reports no other subagent lifecycle. */
+const MANAGE_SUBAGENTS_ACTION_MAP: Readonly<Record<string, string>> = {
+  kill: TOOL_CLOSE_AGENT,
+  kill_all: TOOL_CLOSE_AGENT,
+  list: TOOL_LIST_AGENTS,
+  list_peers: TOOL_LIST_AGENTS,
 };
 
 /** agy prefixes MCP tools with `mcp_<server>_`; only Claudian's own server name is known. */
@@ -54,6 +70,10 @@ export function normalizeAntigravityToolName(rawName: string, rawInput?: unknown
   if (name === 'manage_task' && isRecord(rawInput) && typeof rawInput.Action === 'string'
     && Object.hasOwn(MANAGE_TASK_ACTION_MAP, rawInput.Action)) {
     return MANAGE_TASK_ACTION_MAP[rawInput.Action];
+  }
+  if (name === 'manage_subagents' && isRecord(rawInput) && typeof rawInput.Action === 'string'
+    && Object.hasOwn(MANAGE_SUBAGENTS_ACTION_MAP, rawInput.Action)) {
+    return MANAGE_SUBAGENTS_ACTION_MAP[rawInput.Action];
   }
   // MCP servers from the user's agy config dispatch through `call_mcp_tool`; present the tool it calls.
   if (name === 'call_mcp_tool' && isRecord(rawInput)) {
@@ -89,6 +109,17 @@ export function normalizeAntigravityToolInput(rawName: string, input: Record<str
     case 'list_resources':
     case 'read_resource':
       return withAliases(input, { server: input.ServerName, uri: input.Uri ?? input.URI });
+    case 'invoke_subagent':
+      return withAliases(input, { message: input.Prompt, target: input.Role });
+    case 'send_message':
+      return withAliases(input, { message: input.Message, target: input.Recipient });
+    case 'manage_subagents':
+      return Array.isArray(input.ConversationIds)
+        ? withAliases(input, { target: input.ConversationIds.filter(id => typeof id === 'string').join(', ') || undefined })
+        : input;
+    case 'run_workflow':
+      // agy workflow scripts are Python.
+      return withAliases(input, { code: input.Script, language: 'Python', title: input.Description });
     case 'manage_task':
       return input.Action === 'send_input' ? withAliases(input, { chars: input.Input, session_id: input.TaskId }) : input;
     default: {

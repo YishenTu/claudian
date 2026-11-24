@@ -29,7 +29,7 @@
     "selectAvailableTitleModel": "請在 Claudian 設定中選擇可用的標題產生模型。",
     "rewind": {
       "confirmMessage": "確定要回退到此處嗎？此訊息之後的檔案變更可能會被覆寫或移除，且無法復原。",
-      "confirmMessageConflicts": "回退到此處？偵測到 {count} 個檔案在代理之外被修改，繼續操作將覆寫這些變更：\n{files}",
+      "confirmMessageConflicts": "回退到此處？偵測到 {count} 個檔案在 Agent 之外被修改，繼續操作將覆寫這些變更：\n{files}",
       "confirmMessageConversationOnly": "確定要將對話回退到此處嗎？檔案變更將會保留。",
       "confirmButton": "回退",
       "inProgress": "請等待目前的回退操作完成。",
@@ -257,26 +257,28 @@
       "file": "檔案",
       "enteringPlan": "正在進入規劃模式",
       "planComplete": "規劃完成",
-      "messageAgent": "向代理傳送訊息",
+      "messageAgent": "向 Agent 傳送訊息",
       "listDestinations": "列出目標",
       "messageSession": "向工作階段傳送訊息",
       "stopSession": "停止工作階段",
       "readSession": "讀取工作階段",
-      "continueAgent": "繼續代理任務",
-      "listAgents": "列出代理",
-      "interruptAgent": "中斷代理",
-      "allAgents": "所有代理",
+      "continueAgent": "繼續 Agent 任務",
+      "listAgents": "列出 Agents",
+      "interruptAgent": "中斷 Agent",
+      "startAgent": "啟動 Agent",
+      "closeAgent": "關閉 Agent",
+      "allAgents": "所有 Agents",
       "commandPlaceholder": "指令",
       "filesPlaceholder": "檔案",
       "patternPlaceholder": "比對模式",
       "toolsPlaceholder": "工具",
-      "agentCount": "{count} 個代理",
-      "agentCountPlural": "{count} 個代理"
+      "agentCount": "{count} 個 Agent",
+      "agentCountPlural": "{count} 個 Agent"
     },
     "subagentUI": {
       "prompt": "提示詞",
       "result": "結果",
-      "taskLabel": "子代理任務：{description} - {status}",
+      "taskLabel": "Subagent 任務：{description} - {status}",
       "backgroundTaskLabel": "背景任務：{description} - {status}",
       "statusLabel": "狀態：{status}",
       "initializing": "初始化中",
@@ -528,10 +530,10 @@
       "collapse": "{label} - 點選收合"
     },
     "removeItem": "移除{item}",
-    "agent": "代理：{agent}",
+    "agent": "Agent：{agent}",
     "executionNotices": {
-      "initializeFailed": "無法初始化代理程式執行。請重試。",
-      "unavailable": "代理程式執行無法使用。請重新載入外掛。",
+      "initializeFailed": "無法初始化 Agent 執行。請重試。",
+      "unavailable": "Agent 執行無法使用。請重新載入外掛。",
       "sessionUnavailable": "此對話的原生工作階段在目前的 CLI 設定下無法使用。請開始新的聊天以繼續。",
       "unsentFallback": "訊息未傳送。請重試。",
       "providerRetry": "供應商發生錯誤，正在重試（第 {attempt} 次）：{message}"
@@ -729,11 +731,11 @@
         "saved": "專案記憶已儲存",
         "loading": "載入中…",
         "updated": "更新於 {time}",
-        "changedOutside": "記憶檔案已在此視窗之外被更新，可能是由代理修改的。",
+        "changedOutside": "記憶檔案已在此視窗之外被更新，可能是由 Agent 修改的。",
         "keepMine": "保留我的編輯",
         "discardConfirm": "要捨棄專案記憶中未儲存的變更嗎？",
         "discard": "捨棄",
-        "emptyHint": "代理會隨著專案進展自動填寫此處。"
+        "emptyHint": "Agent 會隨著專案進展自動填寫此處。"
       }
     }
   },
@@ -761,7 +763,7 @@
     "acceptLabel": "接受行內編輯",
     "retryFallback": "發生錯誤，請重試",
     "replyPlaceholder": "回覆以繼續…",
-    "noResponseFallback": "代理未回覆",
+    "noResponseFallback": "Agent 未回覆",
     "followUpPlaceholder": "提出修改要求，或按 Enter 接受"
   },
   "settings": {
@@ -831,7 +833,7 @@
     "safety": "安全",
     "loadUserSettings": {
       "name": "載入使用者 Claude Code 設定",
-      "desc": "從 ~/.claude 載入使用者層級的 Claude Code 設定：settings.json、技能、指令、代理程式與外掛。停用時僅使用儲存庫層級設定。啟用後，使用者的權限規則也會生效，可能無須詢問即允許操作。"
+      "desc": "從 ~/.claude 載入使用者層級的 Claude Code 設定：settings.json、技能、指令、Agents 與外掛。停用時僅使用儲存庫層級設定。啟用後，使用者的權限規則也會生效，可能無須詢問即允許操作。"
     },
     "codexSandbox": {
       "name": "沙盒",

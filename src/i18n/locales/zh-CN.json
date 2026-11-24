@@ -29,7 +29,7 @@
     "selectAvailableTitleModel": "请在 Claudian 设置中选择可用的标题生成模型。",
     "rewind": {
       "confirmMessage": "确定回退到此处？此消息之后的文件更改可能会被覆盖或删除，且此操作无法撤销。",
-      "confirmMessageConflicts": "确定回退到此处？以下 {count} 个文件已在代理外部被修改，回退将覆盖这些更改：\n{files}",
+      "confirmMessageConflicts": "确定回退到此处？以下 {count} 个文件已在 Agent 外部被修改，回退将覆盖这些更改：\n{files}",
       "confirmMessageConversationOnly": "确定将对话回退到此处？文件更改将被保留。",
       "confirmButton": "回退",
       "inProgress": "请等待当前回退操作完成。",
@@ -257,26 +257,28 @@
       "file": "文件",
       "enteringPlan": "正在进入规划模式",
       "planComplete": "规划完成",
-      "messageAgent": "向代理发送消息",
+      "messageAgent": "向 Agent 发送消息",
       "listDestinations": "列出目标",
       "messageSession": "向会话发送消息",
       "stopSession": "停止会话",
       "readSession": "读取会话",
-      "continueAgent": "继续代理任务",
-      "listAgents": "列出代理",
-      "interruptAgent": "中断代理",
-      "allAgents": "所有代理",
+      "continueAgent": "继续 Agent 任务",
+      "listAgents": "列出 Agents",
+      "interruptAgent": "中断 Agent",
+      "startAgent": "启动 Agent",
+      "closeAgent": "关闭 Agent",
+      "allAgents": "所有 Agents",
       "commandPlaceholder": "命令",
       "filesPlaceholder": "文件",
       "patternPlaceholder": "匹配模式",
       "toolsPlaceholder": "工具",
-      "agentCount": "{count} 个代理",
-      "agentCountPlural": "{count} 个代理"
+      "agentCount": "{count} 个 Agent",
+      "agentCountPlural": "{count} 个 Agent"
     },
     "subagentUI": {
       "prompt": "提示词",
       "result": "结果",
-      "taskLabel": "子代理任务：{description} - {status}",
+      "taskLabel": "Subagent 任务：{description} - {status}",
       "backgroundTaskLabel": "后台任务：{description} - {status}",
       "statusLabel": "状态：{status}",
       "initializing": "初始化中",
@@ -528,10 +530,10 @@
       "collapse": "{label} - 点击折叠"
     },
     "removeItem": "移除{item}",
-    "agent": "代理：{agent}",
+    "agent": "Agent：{agent}",
     "executionNotices": {
-      "initializeFailed": "无法初始化代理执行。请重试。",
-      "unavailable": "代理执行不可用。请重新加载插件。",
+      "initializeFailed": "无法初始化 Agent 执行。请重试。",
+      "unavailable": "Agent 执行不可用。请重新加载插件。",
       "sessionUnavailable": "此对话的原生会话在当前 CLI 配置下不可用。请新建对话以继续。",
       "unsentFallback": "消息未发送。请重试。",
       "providerRetry": "提供方出错，正在重试（第 {attempt} 次）：{message}"
@@ -729,11 +731,11 @@
         "saved": "项目记忆已保存",
         "loading": "加载中…",
         "updated": "更新于 {time}",
-        "changedOutside": "记忆文件已在此窗口外部被更新（可能是由代理修改）。",
+        "changedOutside": "记忆文件已在此窗口外部被更新（可能是由 Agent 修改）。",
         "keepMine": "保留我的编辑",
         "discardConfirm": "放弃对项目记忆的未保存更改？",
         "discard": "放弃",
-        "emptyHint": "代理会随着项目推进自动补充此处内容。"
+        "emptyHint": "Agent 会随着项目推进自动补充此处内容。"
       }
     }
   },
@@ -761,7 +763,7 @@
     "acceptLabel": "接受行内编辑",
     "retryFallback": "出错了，请重试",
     "replyPlaceholder": "回复以继续…",
-    "noResponseFallback": "代理未返回响应",
+    "noResponseFallback": "Agent 未返回响应",
     "followUpPlaceholder": "提出修改要求，或按 Enter 接受"
   },
   "settings": {
@@ -831,7 +833,7 @@
     "safety": "安全",
     "loadUserSettings": {
       "name": "加载用户 Claude Code 设置",
-      "desc": "从 ~/.claude 加载用户级 Claude Code 配置（包括 settings.json、技能、命令、代理和插件）。禁用时仅使用仓库级配置。启用后，用户权限规则也会生效，可能无需询问即允许操作。"
+      "desc": "从 ~/.claude 加载用户级 Claude Code 配置（包括 settings.json、技能、命令、Agents 和插件）。禁用时仅使用仓库级配置。启用后，用户权限规则也会生效，可能无需询问即允许操作。"
     },
     "codexSandbox": {
       "name": "沙盒",
