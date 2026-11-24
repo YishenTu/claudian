@@ -176,7 +176,7 @@ export class AntigravityExecutionSession implements ProviderExecutionSession, St
   private active: ActiveExecution | null = null;
   /** Main-agent sessions only: what agy does on its own between runs. */
   private lateWork: LateWork = { phase: 'idle' };
-  /** The latest run's approval policy: agy runs under that run's configuration, so it decides approvals between runs. */
+  /** The policy of the latest run whose prompt reached agy: agy runs under that run's configuration, so it decides approvals between runs. */
   private latestPolicy: ApprovalPolicy | null = null;
   private cancellationFlight: Promise<void> | null = null;
   private disposalFlight: Promise<void> | null = null;
@@ -257,7 +257,6 @@ export class AntigravityExecutionSession implements ProviderExecutionSession, St
       }),
     };
     this.active = active;
-    this.latestPolicy = approvalPolicyOf(request);
     this.#updateSnapshot('executing');
     this.#emitCurrentSnapshot();
     run.attachAbortSignal(request.signal);
@@ -396,6 +395,8 @@ export class AntigravityExecutionSession implements ProviderExecutionSession, St
       const blocks = compact
         ? [{ text: `/compact${compact.instructions ? ` ${compact.instructions}` : ''}`, type: 'text' as const }]
         : buildPromptBlocks(active.request, !this.nativeConversationContextEstablished);
+      // agy's own reply to an earlier run keeps that run's policy until this prompt reaches agy.
+      this.latestPolicy = approvalPolicyOf(active.request);
       const promptIndex = this.#sendPrompt(active, owner.native, sessionId, blocks);
       // Consumers treat the first user boundary as the turn's own input; only later ones mark steers.
       active.run.emit({ content: getInputText(active.request), type: 'user_message_started' });

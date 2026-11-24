@@ -1089,6 +1089,38 @@ describe('AntigravityExecutionSession', () => {
     expect(textOf(events)).toEqual(['Sure.']);
   });
 
+  it('decides agy\'s own reply under the run it follows while a YOLO run waits for it, then auto-approves in YOLO', async () => {
+    const port = createInteractionPort();
+    port.requestApproval.mockImplementation(async (approval: ProviderApprovalInteractionRequest) => ({
+      interactionId: approval.interactionId, value: 'reject',
+    }));
+    const session = await createSession({ interactionPort: port });
+    const first = session.execute(request('Start the build'));
+    const peer = await firstPeer();
+    await peer.waitForPrompts(1);
+    peer.finishPrompt();
+    await collect(first.events);
+
+    const background = backgroundTurn(session);
+    const write = { kind: 'edit', name: 'write_file', rawInput: {}, title: 'write_file', toolCallId: 'tool-1' };
+    peer.emit({ ...write, sessionUpdate: 'tool_call', status: 'pending' }, 'session-new');
+    await background.reached('tool_started');
+    // The YOLO run's prompt waits for agy's reply; the reply still runs under the Ask run agy last ran.
+    const second = session.execute(request('Meanwhile', { permissionMode: 'yolo' }));
+    await expect(peer.requestPermission(permissionRequest('write_file'))).resolves.toEqual({ outcome: { optionId: 'reject', outcome: 'selected' } });
+    expect(peer.prompts).toHaveLength(1);
+    expect(port.requestApproval).toHaveBeenCalledTimes(1);
+    peer.emit({ ...write, sessionUpdate: 'tool_call_update', status: 'failed' }, 'session-new');
+    await background.completed;
+
+    await peer.waitForPrompts(2);
+    await expect(peer.requestPermission({ ...permissionRequest('write_file'), toolCall: { ...write, toolCallId: 'tool-2' } as ACPRequestPermissionRequest['toolCall'] }))
+      .resolves.toEqual({ outcome: { optionId: 'allow', outcome: 'selected' } });
+    expect(port.requestApproval).toHaveBeenCalledTimes(1);
+    peer.finishPrompt();
+    await collect(second.events);
+  });
+
   it('still closes agy\'s settled reply when the next run changes a setting before prompting', async () => {
     const session = await createSession();
     const first = session.execute(request('Delegate', { reasoning: 'high' }));
