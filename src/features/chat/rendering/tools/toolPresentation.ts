@@ -277,7 +277,14 @@ const TOOL_PRESENTATIONS: ReadonlyMap<string, ToolPresentation> = new Map<string
   [TOOL_FOLLOWUP_TASK, { ...AGENT_LIFECYCLE, name: () => t('chat.tools.continueAgent'), summary: agentTargetMessageSummary }],
   [TOOL_LIST_AGENTS, { ...AGENT_LIFECYCLE, name: () => t('chat.tools.listAgents'), summary: input => getInputText(input, 'path_prefix', t('chat.tools.allAgents')) }],
   [TOOL_INTERRUPT_AGENT, { ...AGENT_LIFECYCLE, name: () => t('chat.tools.interruptAgent'), summary: inputText('target') }],
-  [TOOL_SPAWN_AGENT, { ...AGENT_LIFECYCLE, name: () => t('chat.tools.startAgent'), summary: agentMessageSummary(50) }],
+  [TOOL_SPAWN_AGENT, {
+    ...AGENT_LIFECYCLE,
+    name: () => t('chat.tools.startAgent'),
+    summary: agentMessageSummary(50),
+    body: (container, tool) => renderAgentLifecycleExpanded(container, tool.result ?? '', tool.input, undefined, true),
+    pendingBody: (container, tool, pendingText) =>
+      renderAgentLifecycleExpanded(container, tool.result ?? '', tool.input, pendingText, true),
+  }],
   [TOOL_CLOSE_AGENT, { ...AGENT_LIFECYCLE, name: () => t('chat.tools.closeAgent'), summary: inputText('target') }],
   [TOOL_SEND_INPUT, { ...AGENT_LIFECYCLE, summary: agentMessageSummary(40) }],
   [TOOL_WAIT, { ...AGENT_LIFECYCLE, summary: agentWaitSummary }],

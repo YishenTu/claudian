@@ -531,6 +531,7 @@
     },
     "removeItem": "移除{item}",
     "agent": "Agent：{agent}",
+    "promptLine": "提示詞：{prompt}",
     "executionNotices": {
       "initializeFailed": "無法初始化 Agent 執行。請重試。",
       "unavailable": "Agent 執行無法使用。請重新載入外掛。",

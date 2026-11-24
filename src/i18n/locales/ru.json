@@ -531,6 +531,7 @@
     },
     "removeItem": "Удалить {item}",
     "agent": "Agent: {agent}",
+    "promptLine": "Промпт: {prompt}",
     "executionNotices": {
       "initializeFailed": "Не удалось подготовить запуск Agent. Попробуйте ещё раз.",
       "unavailable": "Запуск Agent недоступен. Перезагрузите плагин.",

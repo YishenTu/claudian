@@ -531,6 +531,7 @@
     },
     "removeItem": "移除{item}",
     "agent": "Agent：{agent}",
+    "promptLine": "提示词：{prompt}",
     "executionNotices": {
       "initializeFailed": "无法初始化 Agent 执行。请重试。",
       "unavailable": "Agent 执行不可用。请重新加载插件。",

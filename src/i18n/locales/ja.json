@@ -531,6 +531,7 @@
     },
     "removeItem": "{item} を削除",
     "agent": "Agent：{agent}",
+    "promptLine": "プロンプト：{prompt}",
     "executionNotices": {
       "initializeFailed": "Agent の実行を初期化できませんでした。もう一度お試しください。",
       "unavailable": "Agent の実行は利用できません。プラグインを再読み込みしてください。",

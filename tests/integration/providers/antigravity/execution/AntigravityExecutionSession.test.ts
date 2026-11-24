@@ -556,9 +556,9 @@ describe('AntigravityExecutionSession', () => {
       expect.objectContaining({ input: expect.objectContaining({ Action: 'list' }), name: 'ManageTasks', toolCallId: 'task-4' }),
       expect.objectContaining({ input: expect.objectContaining({ server: 'claudian_sessions' }), name: 'ListMcpResources', toolCallId: 'res-1' }),
       expect.objectContaining({ input: expect.objectContaining({ message: 'Review notes.md', target: 'Notes Reviewer' }), name: 'spawn_agent', toolCallId: 'sub-1' }),
-      expect.objectContaining({ input: expect.objectContaining({ message: 'Also check todo.md', target: 'child-1' }), name: 'send_message', toolCallId: 'sub-2' }),
+      expect.objectContaining({ input: { Message: 'Also check todo.md', Recipient: 'child-1', message: 'Also check todo.md' }, name: 'send_message', toolCallId: 'sub-2' }),
       expect.objectContaining({ input: expect.objectContaining({ Action: 'list' }), name: 'list_agents', toolCallId: 'sub-3' }),
-      expect.objectContaining({ input: expect.objectContaining({ target: 'child-1, child-2' }), name: 'close_agent', toolCallId: 'sub-4' }),
+      expect.objectContaining({ input: { Action: 'kill', ConversationIds: ['child-1', 'child-2'] }, name: 'close_agent', toolCallId: 'sub-4' }),
       expect.objectContaining({ input: expect.objectContaining({ code: 'await agent("Review")', language: 'Python', title: 'Review in parallel' }), name: 'Workflow', toolCallId: 'wf-1' }),
       expect.objectContaining({ input: { nonce: 'n-1' }, name: 'mcp__notes_server__search_notes', toolCallId: 'mcp-1' }),
     ]);

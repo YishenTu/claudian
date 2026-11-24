@@ -104,21 +104,29 @@ export function renderWebFetchExpanded(container: HTMLElement, result: string): 
   }
 }
 
+/** `labelMessage` marks the message as the prompt a new agent starts from. */
 export function renderAgentLifecycleExpanded(
   container: HTMLElement,
   result: string,
   input: Record<string, unknown>,
   pendingText?: string,
+  labelMessage = false,
 ): void {
   const target = getInputText(input, 'target');
   const message = getInputText(input, 'message');
   if (target || message) {
     const inputEl = container.createDiv({ cls: 'claudian-tool-lines' });
     if (target) inputEl.createDiv({ cls: 'claudian-tool-line', text: t('chat.agent', { agent: target }) });
-    if (message) inputEl.createDiv({ cls: 'claudian-tool-line claudian-tool-line-wrap', text: message });
+    if (message) {
+      inputEl.createDiv({
+        cls: 'claudian-tool-line claudian-tool-line-wrap',
+        text: labelMessage ? t('chat.promptLine', { prompt: message }) : message,
+      });
+    }
   }
   if (!result) {
-    contentFallback(container, pendingText ?? t('chat.tools.noOutput'));
+    // The input already describes a settled call; only a pending card or a bare call needs a placeholder.
+    if (pendingText !== undefined || !(target || message)) contentFallback(container, pendingText ?? t('chat.tools.noOutput'));
     return;
   }
   // Try to parse as JSON for structured display

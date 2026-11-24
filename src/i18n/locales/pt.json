@@ -531,6 +531,7 @@
     },
     "removeItem": "Remover {item}",
     "agent": "Agent: {agent}",
+    "promptLine": "Instrução: {prompt}",
     "executionNotices": {
       "initializeFailed": "Não foi possível inicializar a execução do Agent. Tente novamente.",
       "unavailable": "A execução do Agent não está disponível. Recarregue o plugin.",

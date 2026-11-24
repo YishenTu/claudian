@@ -485,12 +485,13 @@ describe('loadAntigravityHistory', () => {
 
     expect(summarize(messages)[1].tools).toEqual([
       { hasDiff: false, input: expect.objectContaining({ message: 'Review notes.md', target: 'Notes Reviewer' }), name: 'spawn_agent',
-        // agy's launch report reduces to the subagent id; the paths and instructions to the model are not for the user.
-        result: '{"conversationId":"child-1"}', status: 'completed' },
-      { hasDiff: false, input: expect.objectContaining({ message: 'Also check todo.md', target: 'child-1' }), name: 'send_message',
-        result: 'Message sent to "child-1".', status: 'completed' },
+        // agy's launch report carries only ids, local paths and instructions to the model.
+        result: undefined, status: 'completed' },
+      // The recipient is a conversation id, and the confirmation only repeats it.
+      { hasDiff: false, input: { Message: 'Also check todo.md', Recipient: 'child-1', message: 'Also check todo.md' }, name: 'send_message',
+        result: undefined, status: 'completed' },
       { hasDiff: false, input: { Action: 'list' }, name: 'list_agents',
-        result: 'Notes Reviewer (idle) — child-1\nTest Runner (running) — child-2', status: 'completed' },
+        result: 'Notes Reviewer (idle)\nTest Runner (running)', status: 'completed' },
       { hasDiff: false, input: { Action: 'kill_all' }, name: 'close_agent', result: expect.stringContaining('Killed roles'), status: 'completed' },
       // A workflow runs in the background like a daemon command; its outcome is the later task report.
       { hasDiff: false, input: expect.objectContaining({ code: 'await agent("Review")', language: 'Python', title: 'Review in parallel' }),

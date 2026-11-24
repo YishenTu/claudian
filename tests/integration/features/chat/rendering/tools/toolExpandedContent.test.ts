@@ -66,6 +66,22 @@ describe('toolExpandedContent', () => {
       expect(img?.getAttribute('src')).toBe(src);
       expect(img?.getAttribute('alt')).toBe(alt);
     });
+
+    const expandedText = (toolCall: ToolCallInfo) => {
+      const toolEl = renderStoredToolCall(document.createElement('div'), toolCall);
+      fireEvent.click(within(toolEl).getByRole('button', { name: /click to expand/ }));
+      return toolEl.querySelector('.claudian-tool-content')?.textContent;
+    };
+
+    it.each([
+      // A launch labels its message as the prompt the agent starts from.
+      ['spawn_agent', { message: 'Review notes.md', target: 'Notes Reviewer' }, 'Agent: Notes ReviewerPrompt: Review notes.md'],
+      // A completed card that already shows its input adds no empty-result placeholder.
+      ['send_message', { message: 'Also check todo.md' }, 'Also check todo.md'],
+      ['close_agent', {}, 'No output'],
+    ])('presents the %s input without an empty-result placeholder', (name, input, text) => {
+      expect(expandedText(createToolCall({ name, input, status: 'completed' }))).toBe(text);
+    });
   });
 
 });

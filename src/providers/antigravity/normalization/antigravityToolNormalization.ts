@@ -63,8 +63,11 @@ const MANAGE_SUBAGENTS_ACTION_MAP: Readonly<Record<string, string>> = {
 /** agy prefixes MCP tools with `mcp_<server>_`; only Claudian's own server name is known. */
 const SESSION_TOOL_PREFIX = `mcp_${SESSION_TOOL_MCP_SERVER_NAME}_`;
 
-/** A subagent launch reports its id with local log/workspace URIs and instructions to the model. */
-const SUBAGENT_LAUNCH_PATTERN = /^Created the following subagent:\s*\{[\s\S]*?"conversationId":\s*"([^"]+)"/;
+/** Results that carry only conversation ids, local paths and instructions to the model: a subagent launch and a message receipt. */
+const HIDDEN_RESULT_PATTERNS: Readonly<Record<string, RegExp>> = {
+  invoke_subagent: /^Created the following subagent:/,
+  send_message: /^Message sent to "[^"]*"\.\s*$/,
+};
 const SUBAGENT_LIST_PATTERN = /^You have \d+ active subagent\(s\):\s*(\[[\s\S]*\])\s*$/;
 
 const COMMAND_OUTPUT_PATTERN = /^Command exited with code (-?\d+)\.\s*(?:Command output:\n?|No output from the command\.\s*$)?([\s\S]*)$/;
@@ -115,12 +118,9 @@ export function normalizeAntigravityToolInput(rawName: string, input: Record<str
       return withAliases(input, { server: input.ServerName, uri: input.Uri ?? input.URI });
     case 'invoke_subagent':
       return withAliases(input, { message: input.Prompt, target: input.Role });
+    // Recipients and kill targets are conversation ids, which mean nothing to the user; only roles are shown.
     case 'send_message':
-      return withAliases(input, { message: input.Message, target: input.Recipient });
-    case 'manage_subagents':
-      return Array.isArray(input.ConversationIds)
-        ? withAliases(input, { target: input.ConversationIds.filter(id => typeof id === 'string').join(', ') || undefined })
-        : input;
+      return withAliases(input, { message: input.Message });
     case 'run_workflow':
       // agy workflow scripts are Python.
       return withAliases(input, { code: input.Script, language: 'Python', title: input.Description });
@@ -155,10 +155,7 @@ export function normalizeAntigravityToolResult(
       return { content: failed ? [`exit: ${exitCode}`, output].filter(Boolean).join('\n') : output, isError: failed };
     }
   }
-  if (rawName.trim() === 'invoke_subagent') {
-    const conversationId = content.match(SUBAGENT_LAUNCH_PATTERN)?.[1];
-    if (conversationId) return { content: JSON.stringify({ conversationId }), isError: false };
-  }
+  if (HIDDEN_RESULT_PATTERNS[rawName.trim()]?.test(content)) return { content: '', isError: false };
   if (rawName.trim() === 'manage_subagents') {
     const listed = formatSubagentList(content);
     if (listed) return { content: listed, isError: false };
@@ -168,7 +165,7 @@ export function normalizeAntigravityToolResult(
   return { content, isError: false };
 }
 
-/** agy lists subagents as a count line followed by a one-line JSON array; each becomes `role (state) — id`. */
+/** agy lists subagents as a count line followed by a one-line JSON array; each becomes `role (state)`. */
 function formatSubagentList(content: string): string | undefined {
   const match = content.match(SUBAGENT_LIST_PATTERN);
   if (!match) return undefined;
@@ -182,8 +179,7 @@ function formatSubagentList(content: string): string | undefined {
   const lines = entries.filter(isRecord).map((entry) => {
     const role = typeof entry.role === 'string' ? entry.role : '';
     const state = typeof entry.state === 'string' ? ` (${entry.state})` : '';
-    const id = typeof entry.conversationId === 'string' ? entry.conversationId : '';
-    return [`${role}${state}`.trim(), id].filter(Boolean).join(' — ');
+    return `${role}${state}`.trim();
   }).filter(Boolean);
   return lines.length > 0 ? lines.join('\n') : undefined;
 }

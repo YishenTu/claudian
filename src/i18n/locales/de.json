@@ -531,6 +531,7 @@
     },
     "removeItem": "{item} entfernen",
     "agent": "Agent: {agent}",
+    "promptLine": "Prompt: {prompt}",
     "executionNotices": {
       "initializeFailed": "Agent-Ausführung konnte nicht initialisiert werden. Bitte versuche es erneut.",
       "unavailable": "Agent-Ausführung ist nicht verfügbar. Bitte lade das Plugin neu.",
