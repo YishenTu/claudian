@@ -6,12 +6,26 @@ export interface ApplyPatchFileDiff extends ToolDiffData {
   movedTo?: string;
 }
 
+function pushDiffLine(diffLines: DiffLine[], line: DiffLine, startsNewHunk: boolean): boolean {
+  if (
+    startsNewHunk
+    && diffLines.length > 0
+    && diffLines[diffLines.length - 1].type !== 'equal'
+    && line.type !== 'equal'
+  ) {
+    line.hunkBreak = true;
+  }
+  diffLines.push(line);
+  return false;
+}
+
 function structuredPatchToDiffLines(hunks: readonly StructuredPatchHunk[]): DiffLine[] {
   const result: DiffLine[] = [];
 
   for (const hunk of hunks) {
     let oldLineNum = hunk.oldStart;
     let newLineNum = hunk.newStart;
+    let startsNewHunk = result.length > 0;
 
     for (const line of hunk.lines) {
       const prefix = line[0];
@@ -21,11 +35,11 @@ function structuredPatchToDiffLines(hunks: readonly StructuredPatchHunk[]): Diff
       if (prefix === '\\') continue;
 
       if (prefix === '+') {
-        result.push({ type: 'insert', text, newLineNum: newLineNum++ });
+        startsNewHunk = pushDiffLine(result, { type: 'insert', text, newLineNum: newLineNum++ }, startsNewHunk);
       } else if (prefix === '-') {
-        result.push({ type: 'delete', text, oldLineNum: oldLineNum++ });
+        startsNewHunk = pushDiffLine(result, { type: 'delete', text, oldLineNum: oldLineNum++ }, startsNewHunk);
       } else {
-        result.push({ type: 'equal', text, oldLineNum: oldLineNum++, newLineNum: newLineNum++ });
+        startsNewHunk = pushDiffLine(result, { type: 'equal', text, oldLineNum: oldLineNum++, newLineNum: newLineNum++ }, startsNewHunk);
       }
     }
   }
@@ -55,7 +69,8 @@ export function parseApplyPatchDiffs(patchText: string): ApplyPatchFileDiff[] {
         filePath: string;
         operation: ApplyPatchFileDiff['operation'];
         movedTo?: string;
-        rawLines: string[];
+        rawLines: Array<{ line: string; startsNewHunk: boolean }>;
+        pendingHunkBreak: boolean;
       }
     | null = null;
 
@@ -76,6 +91,7 @@ export function parseApplyPatchDiffs(patchText: string): ApplyPatchFileDiff[] {
         filePath: line.slice('*** Add File: '.length).trim(),
         operation: 'add',
         rawLines: [],
+        pendingHunkBreak: false,
       };
       continue;
     }
@@ -86,6 +102,7 @@ export function parseApplyPatchDiffs(patchText: string): ApplyPatchFileDiff[] {
         filePath: line.slice('*** Update File: '.length).trim(),
         operation: 'update',
         rawLines: [],
+        pendingHunkBreak: false,
       };
       continue;
     }
@@ -109,13 +126,20 @@ export function parseApplyPatchDiffs(patchText: string): ApplyPatchFileDiff[] {
     }
 
     // The patch envelope marks files with `***` lines, so `--- `/`+++ ` lines are content.
-    if (line === '*** End of File' || line.startsWith('@@')) {
+    if (line === '*** End of File') {
+      continue;
+    }
+    if (line.startsWith('@@')) {
+      if (current.rawLines.length > 0) {
+        current.pendingHunkBreak = true;
+      }
       continue;
     }
 
     const prefix = line[0];
     if (prefix === '+' || prefix === '-' || prefix === ' ') {
-      current.rawLines.push(line);
+      current.rawLines.push({ line, startsNewHunk: current.pendingHunkBreak });
+      current.pendingHunkBreak = false;
     }
   }
 
@@ -244,11 +268,12 @@ function buildReplacementDiffLines(pairs: readonly ReplacementPair[]): DiffLine[
   let newLineNum = 1;
 
   for (const pair of pairs) {
+    let startsNewHunk = diffLines.length > 0;
     for (const line of splitReplacementLines(pair.oldText)) {
-      diffLines.push({ type: 'delete', text: line, oldLineNum: oldLineNum++ });
+      startsNewHunk = pushDiffLine(diffLines, { type: 'delete', text: line, oldLineNum: oldLineNum++ }, startsNewHunk);
     }
     for (const line of splitReplacementLines(pair.newText)) {
-      diffLines.push({ type: 'insert', text: line, newLineNum: newLineNum++ });
+      startsNewHunk = pushDiffLine(diffLines, { type: 'insert', text: line, newLineNum: newLineNum++ }, startsNewHunk);
     }
   }
 
@@ -268,27 +293,27 @@ function buildApplyPatchFileDiff(current: {
   filePath: string;
   operation: ApplyPatchFileDiff['operation'];
   movedTo?: string;
-  rawLines: string[];
+  rawLines: Array<{ line: string; startsNewHunk: boolean }>;
 }): ApplyPatchFileDiff {
   const diffLines: DiffLine[] = [];
   let oldLineNum = 1;
   let newLineNum = 1;
 
-  for (const line of current.rawLines) {
+  for (const { line, startsNewHunk } of current.rawLines) {
     const prefix = line[0];
     const text = line.slice(1);
 
     if (prefix === '+') {
-      diffLines.push({ type: 'insert', text, newLineNum: newLineNum++ });
+      pushDiffLine(diffLines, { type: 'insert', text, newLineNum: newLineNum++ }, startsNewHunk);
       continue;
     }
 
     if (prefix === '-') {
-      diffLines.push({ type: 'delete', text, oldLineNum: oldLineNum++ });
+      pushDiffLine(diffLines, { type: 'delete', text, oldLineNum: oldLineNum++ }, startsNewHunk);
       continue;
     }
 
-    diffLines.push({ type: 'equal', text, oldLineNum: oldLineNum++, newLineNum: newLineNum++ });
+    pushDiffLine(diffLines, { type: 'equal', text, oldLineNum: oldLineNum++, newLineNum: newLineNum++ }, startsNewHunk);
   }
 
   const result: ApplyPatchFileDiff = {
@@ -360,24 +385,25 @@ function parseUnifiedDiffLines(diffText: string): DiffLine[] {
   // Hunk headers declare line counts; content lines may themselves start with `--- ` or `+++ `.
   let oldRemaining = 0;
   let newRemaining = 0;
+  let startsNewHunk = false;
   const hasHunkHeaders = /^@@ /m.test(diffText);
 
   for (const line of diffText.split(/\r?\n/)) {
     if (oldRemaining > 0 || newRemaining > 0) {
       const prefix = line[0];
       if (prefix === '+') {
-        diffLines.push({ type: 'insert', text: line.slice(1), newLineNum: newLineNum++ });
+        startsNewHunk = pushDiffLine(diffLines, { type: 'insert', text: line.slice(1), newLineNum: newLineNum++ }, startsNewHunk);
         newRemaining--;
         continue;
       }
       if (prefix === '-') {
-        diffLines.push({ type: 'delete', text: line.slice(1), oldLineNum: oldLineNum++ });
+        startsNewHunk = pushDiffLine(diffLines, { type: 'delete', text: line.slice(1), oldLineNum: oldLineNum++ }, startsNewHunk);
         oldRemaining--;
         continue;
       }
       // Some generators trim the space from blank context lines.
       if (prefix === ' ' || (line === '' && oldRemaining > 0 && newRemaining > 0)) {
-        diffLines.push({ type: 'equal', text: line.slice(1), oldLineNum: oldLineNum++, newLineNum: newLineNum++ });
+        startsNewHunk = pushDiffLine(diffLines, { type: 'equal', text: line.slice(1), oldLineNum: oldLineNum++, newLineNum: newLineNum++ }, startsNewHunk);
         oldRemaining--;
         newRemaining--;
         continue;
@@ -395,6 +421,7 @@ function parseUnifiedDiffLines(diffText: string): DiffLine[] {
         oldRemaining = match[2] === undefined ? 1 : Number(match[2]);
         newLineNum = Number(match[3]);
         newRemaining = match[4] === undefined ? 1 : Number(match[4]);
+        startsNewHunk = diffLines.length > 0;
       }
       continue;
     }
