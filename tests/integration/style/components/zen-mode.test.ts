@@ -6,6 +6,7 @@ import path from 'node:path';
 
 import { fireEvent, within } from '@testing-library/dom';
 
+import { createServiceTierPolicy } from '@/core/providers/serviceTier';
 import { createInputToolbar } from '@/features/chat/composer/toolbar/InputToolbar';
 import type { ToolbarCallbacks } from '@/features/chat/composer/toolbar/types';
 
@@ -32,10 +33,10 @@ function mountToolbar(toolbarEl: HTMLElement): void {
       getReasoningOptions: () => [{ value: 'low', label: 'Low' }, { value: 'high', label: 'High' }],
       getDefaultReasoningValue: () => 'low',
       getPermissionModeOptions: () => [{ value: 'normal', label: 'Safe' }, { value: 'yolo', label: 'YOLO', bypassesApprovals: true }],
-      getServiceTierToggle: () => ({
-        options: [{ value: 'default', label: 'Standard' }, { value: 'fast', label: 'Fast' }],
+      getServiceTierToggle: () => createServiceTierPolicy({
+        standard: { value: 'default', label: 'Standard' },
+        accelerated: [{ value: 'fast', label: 'Fast', isFast: true }],
         selectedValue: 'fast',
-        fastValue: 'fast',
       }),
     }),
     getCapabilities: () => ({ reasoningControl: 'effort' }),

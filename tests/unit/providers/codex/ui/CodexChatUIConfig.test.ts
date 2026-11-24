@@ -595,11 +595,9 @@ describe('CodexChatUIConfig', () => {
       };
 
       expect(codexChatUIConfig.getServiceTierToggle!(settings)).toMatchObject({
-        options: [
-          { value: 'default', label: 'Standard' },
-          { value: 'priority', label: 'Fast' },
-        ],
-        fastValue: 'priority',
+        kind: 'fast-switch',
+        standard: { value: 'default', label: 'Standard' },
+        fast: { value: 'priority', label: 'Fast', level: 1, isFast: true },
       });
     });
 
@@ -616,19 +614,20 @@ describe('CodexChatUIConfig', () => {
       };
 
       expect(codexChatUIConfig.getServiceTierToggle!(settings)).toEqual({
-        options: [
-          { value: 'default', label: 'Standard' },
-          { value: 'priority', label: 'Fast', description: '1.5x speed' },
-        ],
-        selectedValue: 'default',
-        fastValue: 'priority',
+        kind: 'fast-switch',
+        standard: { value: 'default', label: 'Standard' },
+        fast: { value: 'priority', label: 'Fast', description: '1.5x speed', level: 1, isFast: true },
+        selection: {
+          kind: 'standard',
+          option: { value: 'default', label: 'Standard' },
+        },
       });
     });
 
     it('reports Fast active when the next query resolves to the Fast tier', () => {
       const settings = withDiscoveredModels({
         model: TEST_CODEX_MODEL,
-        serviceTier: 'fast',
+        serviceTier: 'priority',
       });
       const config = settings.providerConfigs;
       config.codex.discoveredModels[1] = {
@@ -638,7 +637,11 @@ describe('CodexChatUIConfig', () => {
       };
 
       expect(codexChatUIConfig.getServiceTierToggle!(settings)).toMatchObject({
-        selectedValue: 'priority',
+        kind: 'fast-switch',
+        selection: {
+          kind: 'accelerated',
+          option: { value: 'priority', label: 'Fast', level: 1, isFast: true },
+        },
       });
     });
 
@@ -659,12 +662,16 @@ describe('CodexChatUIConfig', () => {
       };
 
       expect(codexChatUIConfig.getServiceTierToggle!(settings)).toEqual({
-        options: [
-          { value: 'default', label: 'Standard' },
-          { value: 'priority', label: 'Fast', description: '2x speed' },
-          { value: 'ultrafast', label: 'Ultrafast', description: 'Lowest latency' },
+        kind: 'tiers',
+        standard: { value: 'default', label: 'Standard' },
+        accelerated: [
+          { value: 'priority', label: 'Fast', description: '2x speed', level: 1, isFast: true },
+          { value: 'ultrafast', label: 'Ultrafast', description: 'Lowest latency', level: 2 },
         ],
-        selectedValue: 'ultrafast',
+        selection: {
+          kind: 'accelerated',
+          option: { value: 'ultrafast', label: 'Ultrafast', description: 'Lowest latency', level: 2 },
+        },
         fastValue: 'priority',
       });
     });
@@ -681,8 +688,12 @@ describe('CodexChatUIConfig', () => {
           serviceTiers: [{ id: 'priority', name: 'Fast', description: '' }],
         };
 
-        expect(codexChatUIConfig.getServiceTierToggle!(settings)?.options.map(option => option.label))
-          .toEqual([localizedStandard, 'Fast']);
+        const policy = codexChatUIConfig.getServiceTierToggle!(settings);
+        expect(policy).toMatchObject({
+          kind: 'fast-switch',
+          standard: { label: localizedStandard },
+          fast: { label: 'Fast' },
+        });
       } finally {
         setLocale('en');
       }
@@ -703,11 +714,15 @@ describe('CodexChatUIConfig', () => {
       };
 
       expect(codexChatUIConfig.getServiceTierToggle!(settings)).toEqual({
-        options: [
-          { value: 'default', label: 'Standard' },
-          { value: 'ultrafast', label: 'Ultrafast' },
+        kind: 'tiers',
+        standard: { value: 'default', label: 'Standard' },
+        accelerated: [
+          { value: 'ultrafast', label: 'Ultrafast', level: 1 },
         ],
-        selectedValue: 'default',
+        selection: {
+          kind: 'standard',
+          option: { value: 'default', label: 'Standard' },
+        },
         fastValue: null,
       });
     });

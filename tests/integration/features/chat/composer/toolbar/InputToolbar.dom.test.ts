@@ -7,6 +7,7 @@ import { fireEvent, waitFor, within } from '@testing-library/dom';
 import { Notice, setIcon } from 'obsidian';
 import type { Mock } from 'vitest';
 
+import { createServiceTierPolicy } from '@/core/providers/serviceTier';
 import type { ProviderPermissionModeOption } from '@/core/providers/types';
 import { createInputToolbar } from '@/features/chat/composer/toolbar/InputToolbar';
 import type { ToolbarCallbacks } from '@/features/chat/composer/toolbar/types';
@@ -63,12 +64,14 @@ function renderToolbar(fixture: FixtureOptions = {}) {
     ]),
     getServiceTierToggle: (current: Record<string, unknown>) => {
       if (!fixture.serviceTiers) return null;
-      const options = [{ value: 'default', label: 'Standard' }, ...fixture.serviceTiers];
-      return {
-        options,
-        selectedValue: options.some(option => option.value === current.serviceTier) ? current.serviceTier as string : 'default',
-        fastValue: fixture.serviceTiers[0]?.value ?? null,
-      };
+      return createServiceTierPolicy({
+        standard: { value: 'default', label: 'Standard' },
+        accelerated: fixture.serviceTiers.map((tier, index) => ({
+          ...tier,
+          ...(index === 0 ? { isFast: true } : {}),
+        })),
+        selectedValue: typeof current.serviceTier === 'string' ? current.serviceTier : null,
+      });
     },
   };
   const callbacks = {

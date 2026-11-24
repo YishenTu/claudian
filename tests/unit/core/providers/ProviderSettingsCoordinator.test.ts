@@ -95,9 +95,15 @@ describe('ProviderSettingsCoordinator', () => {
 
     it.each([
       {
-        caseName: 'legacy Fast with no catalog default',
-        storedServiceTier: 'fast',
+        caseName: 'an advertised Fast tier with no catalog default',
+        storedServiceTier: 'priority',
         defaultServiceTier: null,
+        expectedServiceTier: 'priority',
+      },
+      {
+        caseName: 'an unsupported tier falling back to a Fast catalog default',
+        storedServiceTier: 'unsupported',
+        defaultServiceTier: 'priority',
         expectedServiceTier: 'priority',
       },
       {
@@ -215,6 +221,27 @@ describe('ProviderSettingsCoordinator', () => {
       expect(settings.model).toBe(TEST_CODEX_MODEL);
       expect(settings.effortLevel).toBe('unsupported');
       expect(settings.serviceTier).toBe('priority');
+    });
+
+    it('projects default service tier for providers without a service-tier policy', () => {
+      const settings: Record<string, unknown> = {
+        settingsProvider: 'claude',
+        model: 'claude-code/claude-sonnet-4-5',
+        effortLevel: 'high',
+        serviceTier: 'priority',
+        savedProviderServiceTier: { claude: 'priority' },
+        providerConfigs: {
+          claude: claudeCatalogFixture(['claude-sonnet-4-5'], ['low', 'high']),
+        },
+      };
+
+      const snapshot = getProviderSettingsSnapshotWithModel(
+        settings,
+        'claude',
+        'claude-code/claude-sonnet-4-5',
+      );
+
+      expect(snapshot.serviceTier).toBe('default');
     });
   });
 

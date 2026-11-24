@@ -1,14 +1,18 @@
+import { createServiceTierPolicy } from '@/core/providers/serviceTier';
 import type { ProviderServiceTierPolicy } from '@/core/providers/types';
 import { toggleServiceTier } from '@/features/chat/composer/toggleServiceTier';
 
-const TIERS = [
-  { value: 'default', label: 'Standard' },
-  { value: 'priority', label: 'Fast' },
-  { value: 'ultrafast', label: 'Ultrafast' },
-];
-
-function policy(selectedValue: string, fastValue: string | null = 'priority'): ProviderServiceTierPolicy {
-  return { options: TIERS, selectedValue, fastValue };
+function policy(selectedValue: string, hasFast = true): ProviderServiceTierPolicy {
+  return createServiceTierPolicy({
+    standard: { value: 'default', label: 'Standard' },
+    accelerated: hasFast
+      ? [
+        { value: 'priority', label: 'Fast', isFast: true },
+        { value: 'ultrafast', label: 'Ultrafast' },
+      ]
+      : [{ value: 'ultrafast', label: 'Ultrafast' }],
+    selectedValue,
+  })!;
 }
 
 describe('toggleServiceTier', () => {
@@ -20,15 +24,15 @@ describe('toggleServiceTier', () => {
       caseName: 'switches an accelerated tier back to Standard without a Fast tier',
       selected: 'ultrafast',
       expected: 'default',
-      fastValue: null,
+      hasFast: false,
     },
-  ])('$caseName from the provider-resolved selection', async ({ selected, expected, fastValue }) => {
+  ])('$caseName from the provider-resolved selection', async ({ selected, expected, hasFast = true }) => {
     const onServiceTierChange = vi.fn().mockResolvedValue(undefined);
 
     await expect(toggleServiceTier({
-      // The raw setting is a legacy alias; the provider's resolved selection decides the direction.
-      getSettings: () => ({ serviceTier: 'fast' }),
-      getUIConfig: () => ({ getServiceTierToggle: () => policy(selected, fastValue === undefined ? 'priority' : fastValue) }),
+      // The provider's resolved policy selection decides the toggle direction, independent of raw settings.
+      getSettings: () => ({ serviceTier: 'unsupported' }),
+      getUIConfig: () => ({ getServiceTierToggle: () => policy(selected, hasFast) }),
       onServiceTierChange,
     })).resolves.toBe(true);
 
@@ -37,7 +41,7 @@ describe('toggleServiceTier', () => {
 
   it.each([
     { caseName: 'no service tiers', getServiceTierToggle: undefined },
-    { caseName: 'tiers without a Fast tier', getServiceTierToggle: () => policy('default', null) },
+    { caseName: 'tiers without a Fast tier', getServiceTierToggle: () => policy('default', false) },
   ])('returns false without persisting for $caseName', async ({ getServiceTierToggle }) => {
     const onServiceTierChange = vi.fn().mockResolvedValue(undefined);
 

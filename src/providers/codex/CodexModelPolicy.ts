@@ -2,6 +2,7 @@ import {
   DEFAULT_REASONING_VALUE,
   formatReasoningValueLabel,
 } from '../../core/providers/reasoning';
+import { createServiceTierPolicy } from '../../core/providers/serviceTier';
 import type {
   ProviderModelPolicy,
   ProviderServiceTierPolicy,
@@ -18,7 +19,7 @@ import {
   getCodexFastServiceTier,
   getCodexReasoningEffortOptions,
   isCodexModelAvailable,
-  resolveCodexModelServiceTier
+  resolveCodexModelServiceTierState,
 } from './models';
 import {
   encodeCodexModelSelectionId, isCodexModelSelectionId,
@@ -145,22 +146,19 @@ export const codexModelPolicy: ProviderModelPolicy = {
     }
 
     const fastTier = getCodexFastServiceTier(model);
-    // Fast leads the accelerated tiers, whatever the catalog order, so the toolbar gives it one zap.
+    // Fast leads the accelerated tiers, whatever the catalog order, so it takes acceleration level 1.
     const tiers = model.serviceTiers.filter(tier => tier.id !== CODEX_DEFAULT_SERVICE_TIER && tier !== fastTier);
-    const options: ProviderUIOption[] = [
-      { value: CODEX_DEFAULT_SERVICE_TIER, label: t('chat.modelPicker.standard') },
-      ...(fastTier ? [fastTier, ...tiers] : tiers)
-        .map(tier => ({ value: tier.id, label: tier.name, description: tier.description || undefined })),
-    ];
-    if (options.length < 2) {
-      return null;
-    }
-
-    const resolved = resolveCodexModelServiceTier(model, settings.serviceTier);
-    return {
-      options,
-      selectedValue: options.find(option => option.value === resolved)?.value ?? CODEX_DEFAULT_SERVICE_TIER,
-      fastValue: fastTier?.id ?? null,
-    };
+    const orderedTiers = fastTier ? [fastTier, ...tiers] : tiers;
+    const resolved = resolveCodexModelServiceTierState(model, settings.serviceTier);
+    return createServiceTierPolicy({
+      standard: { value: CODEX_DEFAULT_SERVICE_TIER, label: t('chat.modelPicker.standard') },
+      accelerated: orderedTiers.map(tier => ({
+        value: tier.id,
+        label: tier.name,
+        ...(tier.description ? { description: tier.description } : {}),
+        ...(tier === fastTier ? { isFast: true } : {}),
+      })),
+      selectedValue: resolved.kind === 'tier' ? resolved.tier.id : null,
+    });
   }
 };

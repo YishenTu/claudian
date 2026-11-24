@@ -1,3 +1,4 @@
+import { resolveServiceTierToggleTarget } from '@/core/providers/serviceTier';
 import type { ProviderChatUIConfig } from '@/core/providers/types';
 
 export interface ServiceTierActionSettings extends Record<string, unknown> {
@@ -15,13 +16,7 @@ export async function toggleServiceTier(
   context: ServiceTierActionContext,
 ): Promise<boolean> {
   const policy = context.getUIConfig().getServiceTierToggle?.(context.getSettings()) ?? null;
-  const standardValue = policy?.options[0]?.value;
-  if (!policy || standardValue === undefined) {
-    return false;
-  }
-
-  // Turning acceleration off needs no Fast tier; only turning it on does.
-  const next = policy.selectedValue === standardValue ? policy.fastValue : standardValue;
+  const next = resolveServiceTierToggleTarget(policy);
   if (next === null) {
     return false;
   }

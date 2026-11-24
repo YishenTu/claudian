@@ -4,6 +4,7 @@ import {
   getDefaultCodexModel,
   normalizeCodexDiscoveredModels,
   resolveCodexModelServiceTier,
+  resolveCodexModelServiceTierState,
 } from '@/providers/codex/models';
 
 function createFastModel(defaultServiceTier: string | null = null): CodexDiscoveredModel {
@@ -154,37 +155,46 @@ describe('Codex models', () => {
 
   it.each([
     {
-      caseName: 'returns no tier without a model',
+      caseName: 'returns unset without a model',
       model: null,
       selectedServiceTier: 'priority',
-      expectedServiceTier: null,
+      expectedState: { kind: 'unset', wireValue: null },
     },
     {
       caseName: 'preserves explicit Standard when the catalog defaults to Fast',
       model: createFastModel('priority'),
       selectedServiceTier: 'default',
-      expectedServiceTier: 'default',
+      expectedState: { kind: 'standard', wireValue: 'default' },
     },
     {
       caseName: 'preserves an advertised tier id',
       model: createFastModel(),
       selectedServiceTier: 'priority',
-      expectedServiceTier: 'priority',
+      expectedState: {
+        kind: 'tier',
+        tier: { id: 'priority', name: 'Fast', description: '1.5x speed' },
+        wireValue: 'priority',
+      },
     },
     {
-      caseName: 'maps the legacy Fast value to the advertised tier id',
+      caseName: 'does not match whitespace-padded advertised tier ids',
       model: createFastModel(),
-      selectedServiceTier: 'fast',
-      expectedServiceTier: 'priority',
+      selectedServiceTier: ' priority ',
+      expectedState: { kind: 'unset', wireValue: null },
     },
     {
-      caseName: 'uses the catalog default for an invalid selection',
+      caseName: 'treats an unadvertised tier id as invalid and falls back to the catalog default',
       model: createFastModel('priority'),
       selectedServiceTier: 'unsupported',
-      expectedServiceTier: 'priority',
+      expectedState: {
+        kind: 'tier',
+        tier: { id: 'priority', name: 'Fast', description: '1.5x speed' },
+        wireValue: 'priority',
+      },
     },
-  ])('$caseName', ({ model, selectedServiceTier, expectedServiceTier }) => {
-    expect(resolveCodexModelServiceTier(model, selectedServiceTier)).toBe(expectedServiceTier);
+  ])('$caseName', ({ model, selectedServiceTier, expectedState }) => {
+    expect(resolveCodexModelServiceTierState(model, selectedServiceTier)).toEqual(expectedState);
+    expect(resolveCodexModelServiceTier(model, selectedServiceTier)).toBe(expectedState.wireValue);
   });
 
   it('rejects malformed entries, hidden entries, duplicate models, and invalid defaults', () => {

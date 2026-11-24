@@ -1,6 +1,7 @@
 import { toProviderRuntimeModelId } from './modelSelection';
 import { resolvePermissionMode } from './permissionModes';
 import { ProviderRegistry } from './ProviderRegistry';
+import { resolveServiceTier } from './serviceTier';
 import {
   ensureProviderProjectionMap,
   normalizeProviderProjectionMap,
@@ -107,7 +108,7 @@ function normalizeServiceTier(
   uiConfig: ProviderModelPolicy,
   settings: Record<string, unknown>,
 ): void {
-  settings.serviceTier = uiConfig.getServiceTierPolicy?.(settings)?.selectedValue ?? 'default';
+  settings.serviceTier = resolveServiceTier(uiConfig, settings);
 }
 
 function normalizeModelDependentSettings(
@@ -383,7 +384,7 @@ export class ProviderSettingsCoordinator {
     } else if (canReuseCurrentProjection && currentServiceTier !== undefined) {
       settings.serviceTier = currentServiceTier;
     } else {
-      settings.serviceTier = serviceTierPolicy?.options[0]?.value ?? 'default';
+      settings.serviceTier = serviceTierPolicy?.standard.value ?? 'default';
     }
 
     this.projectPermissionMode(settings, providerId, uiConfig, shouldPreferCurrentProjection);

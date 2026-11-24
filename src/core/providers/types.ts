@@ -209,15 +209,37 @@ export interface ProviderPermissionModeOption extends ProviderUIOption {
   bypassesApprovals?: boolean;
 }
 
-/** Provider-reported service-tier choices and the resolved selection. */
-export interface ProviderServiceTierPolicy {
-  /** Choices in menu order; the first is the standard tier, which turns acceleration off. */
-  options: ProviderUIOption[];
-  /** The option the provider will use for the next request. */
-  selectedValue: string;
-  /** The option `/fast` switches to from the standard tier; null when the provider has no Fast tier. */
-  fastValue: string | null;
+/** One accelerated service-tier choice offered beyond Standard. */
+export interface ProviderServiceTierOption extends ProviderUIOption {
+  /** 1-based acceleration rank in menu order (1 for Fast / first tier, 2 for the next, etc.). */
+  readonly level: number;
+  /** Whether this tier is the provider's Fast tier (targeted by `/fast` and binary Fast switch). */
+  readonly isFast?: boolean;
 }
+
+/** Resolved active service-tier state: either Standard (unaccelerated) or an accelerated tier. */
+export type ProviderServiceTierSelection =
+  | { readonly kind: 'standard'; readonly option: ProviderUIOption }
+  | { readonly kind: 'accelerated'; readonly option: ProviderServiceTierOption };
+
+/** Provider-reported service-tier choices and the resolved selection. */
+export type ProviderServiceTierPolicy =
+  | {
+    /** Fast is the only accelerated tier: binary Fast switch and bidirectional `/fast` toggle. */
+    readonly kind: 'fast-switch';
+    readonly standard: ProviderUIOption;
+    readonly fast: ProviderServiceTierOption;
+    readonly selection: ProviderServiceTierSelection;
+  }
+  | {
+    /** Multiple accelerated tiers, or a non-Fast tier without `/fast` activation. */
+    readonly kind: 'tiers';
+    readonly standard: ProviderUIOption;
+    readonly accelerated: readonly [ProviderServiceTierOption, ...ProviderServiceTierOption[]];
+    readonly selection: ProviderServiceTierSelection;
+    /** The option `/fast` switches to from Standard; null when the provider has no Fast tier. */
+    readonly fastValue: string | null;
+  };
 
 export type ProviderServiceTierToggleConfig = ProviderServiceTierPolicy;
 
