@@ -226,6 +226,55 @@ it.each([true, false])('advances the Pi assistant checkpoint (stored leaf: %s)',
   }
 });
 
+// The resume proof is the first request a new process answers, so its deadline must cover startup
+// (a cold WSL launch can outlast the 10s deadline of control requests after a turn).
+it.each(['answers late', 'never answers'] as const)('gives the resume proof of a starting process the startup deadline (Pi %s)', async outcome => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'pi-resume-startup-'));
+  const sessionFile = path.join(tempDir, 'session.jsonl');
+  await fs.writeFile(sessionFile, JSON.stringify({ type: 'session', version: 3, id: 'pi-session-1', cwd: tempDir }) + '\n');
+  let releaseProof!: () => void;
+  const proof = new Promise<void>(resolve => { releaseProof = resolve; });
+  let proofRequested = false;
+  const harness = await createHarness(createConfig({
+    workingDirectory: tempDir,
+    resumeSeed: { providerSessionId: 'pi-session-1', providerState: { sessionId: 'pi-session-1', sessionFile } },
+  }), undefined, async <T>(type: string) => {
+    if (type === 'get_state' && !proofRequested) {
+      proofRequested = true;
+      await proof;
+    }
+    return harness.responses.get(type) as T;
+  });
+  harness.responses.set('get_state', { sessionId: 'pi-session-1', sessionFile });
+  vi.useFakeTimers({ toNotFake: ['setImmediate', 'nextTick'] });
+  const events: ProviderExecutionEvent[] = [];
+  const collecting = collect(harness.session.execute(createRequest()).events, event => events.push(event));
+  try {
+    await harness.whenRequest('get_state');
+    await vi.advanceTimersByTimeAsync(29_999);
+    expect(events.filter(event => event.type === 'execution_error')).toEqual([]);
+    const answers = outcome === 'answers late';
+    if (answers) {
+      releaseProof();
+      await harness.whenRequest('prompt');
+      completeTurn(harness.processes[0]);
+    } else {
+      await vi.advanceTimersByTimeAsync(1);
+    }
+    expect((await collecting).at(-1)).toMatchObject(answers
+      ? { type: 'turn_completed', reason: 'completed' }
+      : { type: 'execution_error', message: 'Request timeout: get_state (30000ms)' });
+    expect(getPromptMessages(harness.processes[0])).toEqual(answers ? ['Hello Pi'] : []);
+    expect(harness.processes).toHaveLength(1);
+  } finally {
+    releaseProof();
+    vi.useRealTimers();
+    await harness.session.dispose();
+    await collecting;
+    await fs.rm(tempDir, { recursive: true, force: true });
+  }
+});
+
 it('persists a stopped turn so reload replays its prompt and interrupted reply', async () => {
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'pi-stop-'));
   const sessionFile = path.join(tempDir, 'session.jsonl');

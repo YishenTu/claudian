@@ -943,12 +943,9 @@ implements ProviderExecutionSession, SteerableExecutionSession {
     const kernel = this.kernel;
     if (!expectedTarget || !kernel) return;
 
-    const response = await kernel.request<unknown>(
-      'get_state',
-      {},
-      10_000,
-      signal,
-    );
+    // The first request a new process answers, so its deadline covers startup (a cold WSL launch can take
+    // over 10s), as the first request of a fresh session does.
+    const response = await kernel.request<unknown>('get_state', {}, undefined, signal);
     if (
       this.kernel !== kernel
       || this.kernelResumeValidationTarget !== expectedTarget
