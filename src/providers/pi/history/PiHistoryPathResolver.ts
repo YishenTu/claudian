@@ -163,7 +163,7 @@ function getTrustedRoots(
   const defaultAgentDir = path.join(home, configDir, 'agent');
   // Pi's own store comes first, so an ID lookup prefers it over copies left in other stores: the
   // session-directory variable, then `sessionDir` from project over user settings (Pi reads project
-  // settings before project trust), then the agent store.
+  // settings before project trust), then the agent store, which defaults to the home one.
   const configuredSessionDir = resolveLocalDirectory(context.environment.PI_CODING_AGENT_SESSION_DIR, home, cwd);
   if (configuredSessionDir) roots.push(configuredSessionDir);
   const projectCwd = vaultPath ?? context.vaultPath;
@@ -175,14 +175,15 @@ function getTrustedRoots(
     const sessionDir = resolveLocalDirectory(readSettingsSessionDir(settingsFile), home, cwd);
     if (sessionDir) roots.push(sessionDir);
   }
-  if (configuredAgentDir) roots.push(path.join(configuredAgentDir, 'sessions'));
+  roots.push(path.join(configuredAgentDir ?? defaultAgentDir, 'sessions'));
+  // Stores Pi used before, for sessions that remain there.
+  roots.push(path.join(defaultAgentDir, 'sessions'));
   if (vaultPath) {
     const vaultSessionRoot = path.join(vaultPath, '.pi', 'agent', 'sessions');
     if (isPathWithinRoot(vaultSessionRoot, vaultPath)) {
       roots.push(vaultSessionRoot);
     }
   }
-  roots.push(path.join(defaultAgentDir, 'sessions'));
   return [...new Set(roots)];
 }
 

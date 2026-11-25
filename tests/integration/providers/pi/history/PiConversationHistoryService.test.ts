@@ -808,6 +808,30 @@ describe('PiConversationHistoryService', () => {
     ]);
   });
 
+  // Without an override Pi's store is the home default; a vault-local store only keeps older sessions.
+  it('finds a session by ID in the default store before an old vault-local copy', async () => {
+    const root = await createTempDirectory('pi-default-store-order-');
+    const home = path.join(root, 'home');
+    const vault = path.join(root, 'vault');
+    await writeConfiguredHistory(path.join(home, '.pi', 'agent', 'sessions', '--vault--', 's1.jsonl'), vault);
+    const staleFile = path.join(vault, '.pi', 'agent', 'sessions', 's1.jsonl');
+    await fs.mkdir(path.dirname(staleFile), { recursive: true });
+    await fs.writeFile(staleFile, [
+      { type: 'session', version: 3, id: 's1', cwd: vault, timestamp: testTime() },
+      { type: 'message', id: 'stale-user', parentId: null, timestamp: testTime(), message: { role: 'user', content: 'Stale copy' } },
+    ].map(entry => JSON.stringify(entry)).join('\n'));
+    const conversation = createConversation(staleFile);
+    conversation.providerState = { sessionId: 's1' };
+
+    const result = await new PiConversationHistoryService().hydrateConversationHistory(conversation, vault, {
+      environment: { HOME: home, USERPROFILE: home },
+    });
+
+    expect(result.messages?.map(message => message.content)).toEqual([
+      'Read the configured history', 'Configured history is intact',
+    ]);
+  });
+
   it('anchors relative configured roots to the context launch vault when no explicit vault is supplied', async () => {
     const root = await createTempDirectory('pi-context-syntax-');
     const vault = path.join(root, 'context-launch-vault');
