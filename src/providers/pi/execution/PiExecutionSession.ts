@@ -149,7 +149,10 @@ interface ActiveRun {
   readonly abortController: AbortController;
   readonly inputText: string;
   readonly run: RequestedRunChannel;
-  /** Output Pi reports before admitting the prompt, such as preflight compaction, waits for admission. */
+  /**
+   * Output Pi reports before admitting the prompt, such as preflight compaction, waits for admission.
+   * Independent of `phase`: a dispatched or ended run can still await Pi's admission.
+   */
   admission: { kind: 'pending'; held: StreamChunk[] } | { kind: 'accepted' };
   assistantStarted: boolean;
   phase: ActiveRunPhase;
@@ -1219,7 +1222,6 @@ implements ProviderExecutionSession, SteerableExecutionSession {
       active.admission.held.push(chunk);
       return;
     }
-    this.#ensureAccepted(active);
     this.#emitChunk(active, chunk);
   }
 

@@ -192,8 +192,8 @@ function descendsFrom(entries: PiSessionEntry[], descendantId: string, ancestorI
  */
 export function parsePiSessionModel(
   content: string | ParsedPiSessionEntries,
-  leafEntryId?: string | null,
-  isVirtualModel: (encodedId: string) => boolean = () => false,
+  leafEntryId: string | null | undefined,
+  isVirtualModel: (encodedId: string) => boolean,
 ): string | null {
   if (leafEntryId === null) return null;
   const parsed = typeof content === 'string' ? parsePiSessionEntries(content) : content;

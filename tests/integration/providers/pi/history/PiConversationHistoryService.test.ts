@@ -782,39 +782,21 @@ describe('PiConversationHistoryService', () => {
     expect(await fs.readFile(sessionFile, 'utf8')).toBe(nativeContent);
   });
 
-  // A session copied into a newly configured store can keep its old copy in the default store.
-  it('finds a session by ID in the configured sessionDir before the default store', async () => {
-    const root = await createTempDirectory('pi-settings-store-order-');
+  // The store Pi writes to wins an ID lookup over an old copy elsewhere: a configured sessionDir over the
+  // home default, and without an override the home default over a vault-local store.
+  it.each([
+    ['configured sessionDir', 'default store', true, 'vault/vault-sessions/--vault--', 'home/.pi/agent/sessions/--vault--'],
+    ['default store', 'vault-local copy', false, 'home/.pi/agent/sessions/--vault--', 'vault/.pi/agent/sessions'],
+  ] as const)('finds a session by ID in the %s before an old %s', async (_store, _stale, configured, liveDir, staleDir) => {
+    const root = await createTempDirectory('pi-store-order-');
     const home = path.join(root, 'home');
     const vault = path.join(root, 'vault');
-    await fs.mkdir(path.join(vault, '.pi'), { recursive: true });
-    await fs.writeFile(path.join(vault, '.pi', 'settings.json'), JSON.stringify({ sessionDir: './vault-sessions' }));
-    await writeConfiguredHistory(path.join(vault, 'vault-sessions', '--vault--', 's1.jsonl'), vault);
-    const staleFile = path.join(home, '.pi', 'agent', 'sessions', '--vault--', 's1.jsonl');
-    await fs.mkdir(path.dirname(staleFile), { recursive: true });
-    await fs.writeFile(staleFile, [
-      { type: 'session', version: 3, id: 's1', cwd: vault, timestamp: testTime() },
-      { type: 'message', id: 'stale-user', parentId: null, timestamp: testTime(), message: { role: 'user', content: 'Stale copy' } },
-    ].map(entry => JSON.stringify(entry)).join('\n'));
-    const conversation = createConversation(staleFile);
-    conversation.providerState = { sessionId: 's1' };
-
-    const result = await new PiConversationHistoryService().hydrateConversationHistory(conversation, vault, {
-      environment: { HOME: home, USERPROFILE: home },
-    });
-
-    expect(result.messages?.map(message => message.content)).toEqual([
-      'Read the configured history', 'Configured history is intact',
-    ]);
-  });
-
-  // Without an override Pi's store is the home default; a vault-local store only keeps older sessions.
-  it('finds a session by ID in the default store before an old vault-local copy', async () => {
-    const root = await createTempDirectory('pi-default-store-order-');
-    const home = path.join(root, 'home');
-    const vault = path.join(root, 'vault');
-    await writeConfiguredHistory(path.join(home, '.pi', 'agent', 'sessions', '--vault--', 's1.jsonl'), vault);
-    const staleFile = path.join(vault, '.pi', 'agent', 'sessions', 's1.jsonl');
+    if (configured) {
+      await fs.mkdir(path.join(vault, '.pi'), { recursive: true });
+      await fs.writeFile(path.join(vault, '.pi', 'settings.json'), JSON.stringify({ sessionDir: './vault-sessions' }));
+    }
+    await writeConfiguredHistory(path.join(root, liveDir, 's1.jsonl'), vault);
+    const staleFile = path.join(root, staleDir, 's1.jsonl');
     await fs.mkdir(path.dirname(staleFile), { recursive: true });
     await fs.writeFile(staleFile, [
       { type: 'session', version: 3, id: 's1', cwd: vault, timestamp: testTime() },
