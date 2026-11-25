@@ -13,11 +13,11 @@ it('drains canceled model discovery before the provider transition mutation', as
   });
   const native = new PiNativeProcess({}, new Map(), () => new Promise(() => undefined));
   vi.mocked(spawn).mockReturnValue(native.child);
-  let canceled!: () => void;
-  const cancellation = new Promise<void>(resolve => { canceled = resolve; });
-  vi.spyOn(native.child, 'kill').mockImplementation(() => { canceled(); return true; });
+  // Pi is asked to exit by closing stdin; it stays alive until the native exit below.
+  native.holdExit();
+  const cancellation = new Promise<void>(resolve => { native.child.stdin.once('finish', () => resolve()); });
   const services = await createPiWorkspaceServices(host);
-  // Hold the shutdown grace timer: only the native exit below can release discovery.
+  // Hold the shutdown grace timers: only the native exit below can release discovery.
   vi.useFakeTimers();
   const discovery = services.modelCatalog!.refresh();
   await native.whenRequest('get_available_models');

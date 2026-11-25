@@ -21,6 +21,8 @@ import { piTargetPath } from './piTargetPaths';
 import { getPiWSLForwardedEnvironment } from './piWSLEnvironment';
 
 const STDERR_BUFFER_LIMIT = 8_000;
+// Pi exits on stdin EOF once pending work (aborted tool results, credential refreshes) is saved; signals follow.
+const SHUTDOWN_GRACE_MS = 5_000;
 const PI_PACKAGE_NAME = '@earendil-works/pi-coding-agent';
 const PI_MANAGED_LAUNCHER = 'pi-launcher.js';
 const PI_MANAGED_RELEASE_VERSION = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/u;
@@ -57,7 +59,9 @@ export class PiSubprocess {
           hostCwd: launchSpec.cwd, env,
           forwardEnvironment: getPiWSLForwardedEnvironment(env, launchSpec.envText ?? ''),
         });
-        this.process = new ManagedStdioProcess({ ...spec, cwd: spec.spawnCwd, directSpawn: true, stderrBufferLimit: STDERR_BUFFER_LIMIT });
+        this.process = new ManagedStdioProcess({
+          ...spec, cwd: spec.spawnCwd, directSpawn: true, stderrBufferLimit: STDERR_BUFFER_LIMIT, stdinCloseGraceMs: SHUTDOWN_GRACE_MS,
+        });
       } else {
         const enhancedPath = getEnhancedPath(
           launchSpec.env.PATH,
@@ -72,6 +76,7 @@ export class PiSubprocess {
             PATH: enhancedPath,
           },
           stderrBufferLimit: STDERR_BUFFER_LIMIT,
+          stdinCloseGraceMs: SHUTDOWN_GRACE_MS,
         });
       }
     } catch (error) {

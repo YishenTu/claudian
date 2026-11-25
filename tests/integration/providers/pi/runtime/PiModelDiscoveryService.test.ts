@@ -33,7 +33,9 @@ function respond(id: string, response: Record<string, unknown>): void {
 }
 
 function expectReleased(): void {
-  expect(native.child.killed).toBe(true);
+  // Pi exits once stdin ends; a signal is only the fallback for a process that ignores it.
+  expect(native.child.stdin.writableEnded).toBe(true);
+  expect(native.child.exitCode).toBe(0);
   expect(native.child.stdout.listenerCount('data')).toBe(0);
   expect(native.child.listenerCount('exit')).toBe(0);
 }

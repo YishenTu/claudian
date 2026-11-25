@@ -5,6 +5,7 @@ import { PassThrough } from 'node:stream';
 /** Native Pi records only; kernel, subprocess wrapper, transport and normalization stay real. */
 export class PiNativeProcess {
   private readonly requestEvents = new EventEmitter();
+  private exitOnStdinEnd = true;
   readonly requests: Array<{ payload: Record<string, unknown>; type: string }> = [];
   readonly child: ChildProcessWithoutNullStreams;
   readonly launchSpec: { cwd?: string };
@@ -40,6 +41,13 @@ export class PiNativeProcess {
         );
       }
     });
+    // Pi's RPC mode shuts down in order and exits once its stdin ends.
+    child.stdin.on('end', () => { if (this.exitOnStdinEnd) this.#exit(0); });
+  }
+
+  /** Keeps running after stdin ends, as a Pi still finishing shutdown work does, until `close()`. */
+  holdExit(): void {
+    this.exitOnStdinEnd = false;
   }
 
   whenRequest(type: string, count = 1): Promise<void> {
@@ -59,8 +67,13 @@ export class PiNativeProcess {
   }
 
   close(): void {
-    Object.defineProperty(this.child, 'exitCode', { value: 1, configurable: true });
-    this.child.emit('exit', 1, null);
-    this.child.emit('close', 1, null);
+    this.#exit(1);
+  }
+
+  #exit(code: number): void {
+    if (this.child.exitCode !== null) return;
+    Object.defineProperty(this.child, 'exitCode', { value: code, configurable: true });
+    this.child.emit('exit', code, null);
+    this.child.emit('close', code, null);
   }
 }
