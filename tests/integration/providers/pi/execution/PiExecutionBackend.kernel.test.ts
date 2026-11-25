@@ -327,6 +327,22 @@ describe('PiExecutionBackend', () => {
     } finally { await harness.session.dispose(); }
   });
 
+  // Pi reports no context tokens after compaction until a fresh response; the compaction result estimates them.
+  it.each([
+    ['estimates the context after', { tokens: null, contextWindow: 200_000, percent: null }, 32_000, 16],
+    ['keeps fresh native context usage after', { tokens: 40_000, contextWindow: 200_000, percent: 20 }, 40_000, 20],
+  ] as const)('%s a manual compaction', async (_name, contextUsage, contextTokens, percentage) => {
+    const { session, responses } = (await createHarness());
+    responses.set('compact', { summary: 'Summary', firstKeptEntryId: 'entry', tokensBefore: 150_000, estimatedTokensAfter: 32_000 });
+    responses.set('get_session_stats', { contextUsage });
+    try {
+      const events = await collect(session.execute(createRequest({ input: [{ type: 'text', text: '/compact' }] })).events);
+      expect(events.filter(event => event.type === 'usage_updated')).toEqual([
+        expect.objectContaining({ usage: expect.objectContaining({ contextTokens, contextWindow: 200_000, percentage }) }),
+      ]);
+    } finally { await session.dispose(); }
+  });
+
   // Pi answers `prompt` only after extension commands, input handlers and pre-run compaction finish.
   it.each([
     ['compact', 'complete'], ['compact', 'cancel'], ['prompt', 'complete'], ['prompt', 'cancel'],

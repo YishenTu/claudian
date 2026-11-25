@@ -670,9 +670,10 @@ implements ProviderExecutionSession, SteerableExecutionSession {
       const previousLeafId = getPiState(this.state.providerState).leafEntryId ?? null;
       const input = encoded.input;
       let promptHandled = false;
+      let estimatedContextTokens: number | undefined;
       if (input.kind === 'compact') {
         active.phase = 'dispatched';
-        await this.kernel.request(
+        const compaction = await this.kernel.request<unknown>(
           'compact',
           { customInstructions: input.instructions },
           // Unlike prompt admission, compact responds only after model inference finishes.
@@ -681,6 +682,9 @@ implements ProviderExecutionSession, SteerableExecutionSession {
         );
         this.#ensureAccepted(active);
         this.#emitRequested(active, { type: 'context_compacted' });
+        // Pi reports no context tokens until a fresh response; its compaction result estimates them.
+        const estimate = getRecord(compaction).estimatedTokensAfter;
+        if (typeof estimate === 'number' && Number.isFinite(estimate) && estimate >= 0) estimatedContextTokens = estimate;
       } else {
         active.phase = 'dispatched';
         const response = await this.kernel.request<{ disposition?: string } | undefined>(
@@ -723,6 +727,7 @@ implements ProviderExecutionSession, SteerableExecutionSession {
       const usage = await this.#fetchUsage(
         encoded.model,
         active.abortController.signal,
+        estimatedContextTokens,
       ).catch(() => null);
       if (usage) {
         this.#emitRequested(active, {
@@ -1632,7 +1637,7 @@ implements ProviderExecutionSession, SteerableExecutionSession {
     return path;
   }
 
-  async #fetchUsage(model: string, signal?: AbortSignal) {
+  async #fetchUsage(model: string, signal?: AbortSignal, estimatedContextTokens?: number) {
     if (!this.kernel) return null;
     const settings = decodePiConfig(this.host.config, this.host.selection);
     const contextWindow = findPiModel(settings, model)?.contextWindow;
@@ -1642,7 +1647,7 @@ implements ProviderExecutionSession, SteerableExecutionSession {
       10_000,
       signal,
     );
-    return buildPiUsageInfo(response, model, contextWindow);
+    return buildPiUsageInfo(response, model, contextWindow, estimatedContextTokens);
   }
 
   async #materializePendingFork(active: ActiveRun, executionTarget: ExecutionTarget): Promise<void> {
