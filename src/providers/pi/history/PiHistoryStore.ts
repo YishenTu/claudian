@@ -428,30 +428,50 @@ function includePiLinearPathEntries(
 
 /**
  * Pending forks saved before replies were checkpointed at their last tool result name the assistant entry
- * that made the calls. Moves such a checkpoint along its unbranched chain of results for those calls,
- * over the state entries extensions and settings changes record between them.
+ * that made the calls. Follows such a checkpoint along its unbranched descendants.
  */
 export function resolvePiForkCheckpoint(entries: readonly PiSessionEntry[], resumeAt: string): string {
   const assistant = entries.find(entry => entry.id === resumeAt);
-  if (!assistant || !isAssistantMessageEntry(assistant)) return resumeAt;
-  const message = assistant.message ?? assistant.raw;
-  const callIds = new Set(extractAssistantToolCalls(message.content ?? message.parts ?? message.blocks).map(call => call.id));
-  let checkpoint = resumeAt;
-  let current = resumeAt;
+  return assistant && isAssistantMessageEntry(assistant)
+    ? followPiReplyCheckpoint(assistant, resumeAt, unbranchedPiDescendants(entries, resumeAt))
+    : resumeAt;
+}
+
+/** A branch makes which results belong to an entry ambiguous, so the walk ends there. */
+function* unbranchedPiDescendants(entries: readonly PiSessionEntry[], id: string): Generator<PiSessionEntry> {
+  let current = id;
   for (;;) {
     const children = entries.filter(entry => entry.parentId === current);
     const [child] = children;
-    // A branch makes the batch's own results ambiguous, so the checkpoint stays at the last result before it.
-    if (children.length !== 1 || !child.id) return checkpoint;
-    if (isToolResultEntry(child)) {
-      const callId = getToolResultCallId(child);
-      if (!callId || !callIds.has(callId)) return checkpoint;
-      checkpoint = child.id;
-    } else if (!PI_UNDISPLAYED_STATE_ENTRY_TYPES.has(child.type)) {
-      return checkpoint;
-    }
+    if (children.length !== 1 || !child.id) return;
+    yield child;
     current = child.id;
   }
+}
+
+/**
+ * A reply's fork checkpoint is its assistant entry, moved over the results of that entry's tool batch that
+ * follow it, as when a terminating batch ends the run. A later assistant entry starts its own reply.
+ */
+function followPiReplyCheckpoint(assistant: PiSessionEntry, assistantId: string, following: Iterable<PiSessionEntry>): string {
+  const message = assistant.message ?? assistant.raw;
+  const callIds = new Set(extractAssistantToolCalls(message.content ?? message.parts ?? message.blocks).map(call => call.id));
+  let checkpoint = assistantId;
+  for (const entry of following) {
+    const step = stepPiReplyCheckpoint(entry, callIds);
+    if (step === 'end' || !entry.id) break;
+    if (step === 'result') checkpoint = entry.id;
+  }
+  return checkpoint;
+}
+
+/** A result of the batch moves a checkpoint; state that extensions and settings changes record between results passes. */
+function stepPiReplyCheckpoint(entry: PiSessionEntry, callIds: ReadonlySet<string>): 'result' | 'pass' | 'end' {
+  if (isToolResultEntry(entry)) {
+    const callId = getToolResultCallId(entry);
+    return callId && callIds.has(callId) ? 'result' : 'end';
+  }
+  return PI_UNDISPLAYED_STATE_ENTRY_TYPES.has(entry.type) ? 'pass' : 'end';
 }
 
 /** Entries that record extension or settings state between a batch's results without adding a message. */
@@ -596,13 +616,10 @@ function mapPiSessionEntries(
       turnRunning = true;
     }
     const mapped = mapPiSessionEntry(entry, messages, syntheticIdNamespace);
-    if (!mapped && entry.id && isToolResultEntry(entry)) {
-      // A terminating tool batch ends the run on its results; a later assistant entry moves the checkpoint on.
-      const reply = messages.at(-1);
-      const toolCallId = getToolResultCallId(entry);
-      if (reply?.role === 'assistant' && reply.toolCalls?.some(call => call.id === toolCallId)) {
-        reply.assistantMessageId = entry.id;
-      }
+    const reply = messages.at(-1);
+    if (!mapped && entry.id && reply?.role === 'assistant' && reply.toolCalls?.length
+      && stepPiReplyCheckpoint(entry, new Set(reply.toolCalls.map(call => call.id))) === 'result') {
+      reply.assistantMessageId = entry.id;
     }
     if (mapped) {
       if (mapped.role === 'user') flushPendingError();
@@ -745,11 +762,12 @@ export function getPiTurnStats(entries: PiSessionEntry[], assistantId: string | 
   return undefined;
 }
 
-/** A reply's fork checkpoint is its last entry: the final assistant message, or the results of a terminating tool batch. */
+/** The fork checkpoint of the reply that ends a native path, by the rule replay applies to each reply. */
 export function findPiReplyCheckpointId(entries: readonly PiSessionEntry[]): string | null {
   for (let index = entries.length - 1; index >= 0; index -= 1) {
-    const entry = entries[index];
-    if (isAssistantMessageEntry(entry) || isToolResultEntry(entry)) return entry.id ?? null;
+    const assistant = entries[index];
+    if (!isAssistantMessageEntry(assistant)) continue;
+    return assistant.id ? followPiReplyCheckpoint(assistant, assistant.id, entries.slice(index + 1)) : null;
   }
   return null;
 }

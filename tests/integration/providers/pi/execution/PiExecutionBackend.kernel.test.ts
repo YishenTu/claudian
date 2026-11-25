@@ -3096,7 +3096,9 @@ describe('PiExecutionBackend', () => {
           { type: 'message', id: 'a2', parentId: 'c1', message: { role: 'assistant', stopReason: 'toolUse', content: [
             { type: 'toolCall', id: 'tool-bg', name: 'read', arguments: { path: 'note.md' } },
           ] } },
-          { type: 'message', id: 'r1', parentId: 'a2', message: { role: 'toolResult', toolCallId: 'tool-bg', content: 'note' } },
+          // Extensions record state between a call and its result; the reply still ends at its last result.
+          { type: 'custom', id: 'k1', parentId: 'a2', customType: 'peeps/run', data: {} },
+          { type: 'message', id: 'r1', parentId: 'k1', message: { role: 'toolResult', toolCallId: 'tool-bg', content: 'note' } },
         ].map(line => JSON.stringify(line)).join('\n')}`);
         kernel.emit({ messages: [], type: 'agent_end' });
         kernel.emit({ type: 'entry_appended' });
