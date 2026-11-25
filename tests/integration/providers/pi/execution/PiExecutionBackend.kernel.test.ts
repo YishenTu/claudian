@@ -327,28 +327,33 @@ describe('PiExecutionBackend', () => {
     } finally { await harness.session.dispose(); }
   });
 
-  it.each(['complete', 'cancel'] as const)('keeps manual compaction pending beyond the control deadline until %s', async outcome => {
+  // Pi answers `prompt` only after extension commands, input handlers and pre-run compaction finish.
+  it.each([
+    ['compact', 'complete'], ['compact', 'cancel'], ['prompt', 'complete'], ['prompt', 'cancel'],
+  ] as const)('keeps %s pending beyond the control deadline until %s', async (command, outcome) => {
     vi.useFakeTimers({ toNotFake: ['setImmediate', 'nextTick'] });
     const nativeOutput = new PassThrough();
     const nativeInput = new PassThrough();
     const transport = new PiRPCTransport({ input: nativeOutput, output: nativeInput });
     const harness = (await createHarness(createConfig(), undefined, async <T>(type: string, payload: Record<string, unknown>, timeoutMs?: number, signal?: AbortSignal) => {
-      if (type === 'compact') return transport.request<T>(type, payload, timeoutMs, signal);
+      if (type === command) return transport.request<T>(type, payload, timeoutMs, signal);
       return harness.responses.get(type) as T;
     }));
     const events: ProviderExecutionEvent[] = [];
     const collecting = (async () => {
-      for await (const event of harness.session.execute(createRequest({ input: [{ type: 'text', text: '/compact' }] })).events) events.push(event);
+      const text = command === 'compact' ? '/compact' : '/slow-extension-command';
+      for await (const event of harness.session.execute(createRequest({ input: [{ type: 'text', text }] })).events) events.push(event);
     })();
     try {
       await flush();
-      const compact = JSON.parse(nativeInput.read().toString());
-      expect(compact.type).toBe('compact');
+      const request = JSON.parse(nativeInput.read().toString());
+      expect(request.type).toBe(command);
       await vi.advanceTimersByTimeAsync(30_001);
       expect(events.filter(event => event.type === 'execution_error')).toEqual([]);
       expect(harness.kernels[0].shutdown).not.toHaveBeenCalled();
       if (outcome === 'complete') {
-        nativeOutput.write(JSON.stringify({ type: 'response', id: compact.id, command: 'compact', success: true, data: {} }) + '\n');
+        const data = command === 'prompt' ? { disposition: 'handled' } : {};
+        nativeOutput.write(JSON.stringify({ type: 'response', id: request.id, command, success: true, data }) + '\n');
       } else {
         harness.session.cancel();
       }
@@ -356,7 +361,11 @@ describe('PiExecutionBackend', () => {
       expect(events.at(-1)).toMatchObject(outcome === 'complete'
         ? { type: 'turn_completed', reason: 'completed' }
         : { type: 'cancelled' });
-      expect(events.filter(event => event.type === 'context_compacted')).toHaveLength(outcome === 'complete' ? 1 : 0);
+      expect(events.filter(event => event.type === 'context_compacted'))
+        .toHaveLength(command === 'compact' && outcome === 'complete' ? 1 : 0);
+      // Stop is what bounds the wait: it aborts the native run and fences the process.
+      expect(harness.kernels[0].sent.some(record => record.type === 'abort')).toBe(outcome === 'cancel');
+      expect(harness.kernels[0].shutdown.mock.calls.length > 0).toBe(outcome === 'cancel');
     } finally {
       harness.session.cancel();
       transport.dispose();

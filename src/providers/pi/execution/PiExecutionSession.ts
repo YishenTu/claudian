@@ -687,7 +687,8 @@ implements ProviderExecutionSession, SteerableExecutionSession {
             // An extension can start a run at any time; Pi rejects unqueued prompts while it streams.
             streamingBehavior: 'followUp',
           },
-          undefined,
+          // Pi answers only after extension commands, input handlers and pre-run compaction; Stop bounds the wait.
+          0,
           active.abortController.signal,
         );
         this.#ensureAccepted(active);
