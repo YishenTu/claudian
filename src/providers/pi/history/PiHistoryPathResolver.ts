@@ -153,21 +153,7 @@ function getTrustedRoots(
     ? context.environment.USERPROFILE?.trim() || context.environment.HOME?.trim()
     : context.environment.HOME?.trim() || context.environment.USERPROFILE?.trim()) || os.homedir();
   const cwd = vaultPath ?? context.vaultPath ?? process.cwd();
-  const configuredSessionDir = resolveLocalDirectory(context.environment.PI_CODING_AGENT_SESSION_DIR, home, cwd);
-  if (configuredSessionDir) {
-    roots.push(configuredSessionDir);
-  }
-
   const configuredAgentDir = resolveLocalDirectory(context.environment.PI_CODING_AGENT_DIR, home, cwd);
-  if (configuredAgentDir) {
-    roots.push(path.join(configuredAgentDir, 'sessions'));
-  }
-  if (vaultPath) {
-    const vaultSessionRoot = path.join(vaultPath, '.pi', 'agent', 'sessions');
-    if (isPathWithinRoot(vaultSessionRoot, vaultPath)) {
-      roots.push(vaultSessionRoot);
-    }
-  }
   let configDir = '.pi';
   const packageDir = resolveLocalDirectory(context.environment.PI_PACKAGE_DIR, home, cwd);
   if (packageDir) {
@@ -175,8 +161,11 @@ function getTrustedRoots(
     catch { /* Unreadable package metadata cannot establish a custom history root. */ }
   }
   const defaultAgentDir = path.join(home, configDir, 'agent');
-  roots.push(path.join(defaultAgentDir, 'sessions'));
-  // Pi also reads `sessionDir` from the project settings before project trust, so both scopes locate its store.
+  // Pi's own store comes first, so an ID lookup prefers it over copies left in other stores: the
+  // session-directory variable, then `sessionDir` from project over user settings (Pi reads project
+  // settings before project trust), then the agent store.
+  const configuredSessionDir = resolveLocalDirectory(context.environment.PI_CODING_AGENT_SESSION_DIR, home, cwd);
+  if (configuredSessionDir) roots.push(configuredSessionDir);
   const projectCwd = vaultPath ?? context.vaultPath;
   const settingsFiles = [
     ...(projectCwd ? [path.join(projectCwd, configDir, 'settings.json')] : []),
@@ -186,6 +175,14 @@ function getTrustedRoots(
     const sessionDir = resolveLocalDirectory(readSettingsSessionDir(settingsFile), home, cwd);
     if (sessionDir) roots.push(sessionDir);
   }
+  if (configuredAgentDir) roots.push(path.join(configuredAgentDir, 'sessions'));
+  if (vaultPath) {
+    const vaultSessionRoot = path.join(vaultPath, '.pi', 'agent', 'sessions');
+    if (isPathWithinRoot(vaultSessionRoot, vaultPath)) {
+      roots.push(vaultSessionRoot);
+    }
+  }
+  roots.push(path.join(defaultAgentDir, 'sessions'));
   return [...new Set(roots)];
 }
 
