@@ -5,12 +5,12 @@ import { setIcon } from 'obsidian';
 
 import type { ToolCallInfo } from '@/core/types';
 import { renderApplyPatchExpanded } from '@/features/chat/rendering/tools/applyPatchContent';
-import { createInlineDiffBudget } from '@/features/chat/rendering/tools/inlineLineDiff';
 import {
   renderStoredToolCall,
   renderToolCall,
   updateToolCallResult,
 } from '@/features/chat/rendering/tools/ToolCallRenderer';
+import { createInlineDiffBudget } from '@/utils/inlineLineDiff';
 
 // Helper to create a basic tool call
 function createToolCall(overrides: Partial<ToolCallInfo> = {}): ToolCallInfo {

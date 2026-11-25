@@ -27,6 +27,7 @@ import {
   diffOpsEqual,
 } from '@/features/inline-edit/ui/markdownLineDiff';
 import { normalizeInsertionText } from '@/features/inline-edit/ui/normalizeInsertionText';
+import { highlightRenderedTextChanges } from '@/features/inline-edit/ui/renderedTextDiff';
 import { t } from '@/i18n/i18n';
 import { MarkdownRenderScope } from '@/shared/components/MarkdownRenderScope';
 import { hideSelectionHighlight, showSelectionHighlight } from '@/shared/components/SelectionHighlight';
@@ -867,12 +868,18 @@ export class InlineEditSession {
 
   async #renderMarkdownDiffPreview(container: HTMLElement, diffOps: DiffOp[]): Promise<void> {
     container.empty();
+    const rendered = new Map<DiffOp['type'], HTMLElement>();
     for (const document of buildMarkdownDiffDocuments(diffOps)) {
       if (this.#isSettled || !this.previewEl?.contains(container)) return;
       if (!document.markdown) continue;
 
       const opEl = container.createDiv({ cls: `claudian-diff-block ${getDiffBlockClass(document.type)}` });
       await this.#renderMarkdownPreview(opEl, document.markdown);
+      rendered.set(document.type, opEl);
+    }
+    const deleted = rendered.get('delete'), inserted = rendered.get('insert');
+    if (deleted && inserted && !this.#isSettled && this.previewEl?.contains(container)) {
+      highlightRenderedTextChanges(deleted, inserted);
     }
   }
 

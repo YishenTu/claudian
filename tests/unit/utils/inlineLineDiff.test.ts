@@ -2,7 +2,7 @@ import {
   computeBlockInlineDiffs,
   computeInlineLineDiff,
   tokenizeDiffLine,
-} from '@/features/chat/rendering/tools/inlineLineDiff';
+} from '@/utils/inlineLineDiff';
 
 describe('inlineLineDiff', () => {
   describe('tokenizeDiffLine', () => {
@@ -31,7 +31,7 @@ describe('inlineLineDiff', () => {
   describe('computeInlineLineDiff', () => {
     it('highlights a single inserted CJK character without marking the deleted line', () => {
       expect(computeInlineLineDiff('这是一段文字', '这不是一段文字')).toEqual({
-        deleteSegments: null,
+        deleteSegments: [{ text: '这是一段文字', changed: false }],
         insertSegments: [
           { text: '这', changed: false },
           { text: '不', changed: true },
@@ -75,7 +75,7 @@ describe('inlineLineDiff', () => {
           { text: '不', changed: true },
           { text: '是一段文字', changed: false },
         ],
-        insertSegments: null,
+        insertSegments: [{ text: '这是一段文字', changed: false }],
       });
     });
 
@@ -119,7 +119,7 @@ describe('inlineLineDiff', () => {
 
     it('highlights indentation changes and whitespace-only edits', () => {
       expect(computeInlineLineDiff('  这是一段文字', '    这是一段文字')).toEqual({
-        deleteSegments: null,
+        deleteSegments: [{ text: '  这是一段文字', changed: false }],
         insertSegments: [
           { text: '  ', changed: false },
           { text: '  ', changed: true },
@@ -127,7 +127,7 @@ describe('inlineLineDiff', () => {
         ],
       });
       expect(computeInlineLineDiff('  ', '    ')).toEqual({
-        deleteSegments: null,
+        deleteSegments: [{ text: '  ', changed: false }],
         insertSegments: [
           { text: '  ', changed: false },
           { text: '  ', changed: true },
@@ -155,7 +155,8 @@ describe('inlineLineDiff', () => {
         ['这不是一段文字', '新结尾'],
       );
 
-      expect(result.deleteSegments).toEqual([null, null]);
+      // The paired old line is unchanged; the unrelated lines stay unpaired.
+      expect(result.deleteSegments).toEqual([null, [{ text: '这是一段文字', changed: false }]]);
       expect(result.insertSegments).toEqual([
         [
           { text: '这', changed: false },
@@ -198,7 +199,7 @@ describe('inlineLineDiff', () => {
         ['上海自来水厂', '水来自海上'],
       );
 
-      expect(result.deleteSegments).toEqual([null]);
+      expect(result.deleteSegments).toEqual([[{ text: '上海自来水', changed: false }]]);
       expect(result.insertSegments).toEqual([
         [
           { text: '上海自来水', changed: false },

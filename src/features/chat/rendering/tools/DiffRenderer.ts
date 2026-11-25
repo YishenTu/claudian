@@ -1,11 +1,11 @@
 import type { DiffLine, DiffStats } from '@/core/types/diff';
+import { t } from '@/i18n/i18n';
 import {
   computeBlockInlineDiffs,
   createInlineDiffBudget,
   type InlineDiffBudget,
   type InlineDiffSegment,
-} from '@/features/chat/rendering/tools/inlineLineDiff';
-import { t } from '@/i18n/i18n';
+} from '@/utils/inlineLineDiff';
 
 export interface DiffHunk {
   lines: DiffLine[];
