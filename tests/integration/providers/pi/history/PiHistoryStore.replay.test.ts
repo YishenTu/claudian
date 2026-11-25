@@ -118,12 +118,22 @@ describe('PiHistoryStore', () => {
     expect(correlatePiUserMessages([...live, { ...live[2], id: 'unsaved' }], native)).toEqual({ 'local-0': 'u1', 'local-1': 'u2' });
   });
 
-  it('projects sibling prompts across configuration entries without mixing their continuations', () => {
+  it.each([
+    ['a model change', { type: 'model_change', id: 'config', parentId: null }],
+    // Pi 1.x persists prompt and tool changes as system messages before the next prompt.
+    ['a system prompt patch', { type: 'message', id: 'config', parentId: null, message: {
+      role: 'system', content: '', sections: { date: 'Today' }, toolsAdded: [{ name: 'read' }],
+    } }],
+    // Extension state stays out of the conversation, whatever its data holds.
+    ['an extension custom entry', { type: 'custom', id: 'config', parentId: null, customType: 'extension-state', data: {
+      role: 'user', content: 'Extension state',
+    } }],
+  ])('projects sibling prompts across %s without mixing their continuations', (_name, configuration) => {
     const content = [
       { type: 'message', id: 'u1', parentId: null, message: { role: 'user', content: 'A' } },
       { type: 'message', id: 'a1', parentId: 'u1', message: { role: 'assistant', content: 'Answer A' } },
-      { type: 'model_change', id: 'model', parentId: null },
-      { type: 'message', id: 'u2', parentId: 'model', message: { role: 'user', content: 'B' } },
+      configuration,
+      { type: 'message', id: 'u2', parentId: 'config', message: { role: 'user', content: 'B' } },
       { type: 'message', id: 'a2', parentId: 'u2', message: { role: 'assistant', content: 'Answer B' } },
     ].map(entry => JSON.stringify(entry)).join('\n');
     expect(parsePiSessionContent(content, { leafEntryId: 'a1' })).toMatchObject([

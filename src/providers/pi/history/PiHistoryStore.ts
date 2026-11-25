@@ -152,7 +152,9 @@ export function getPiConversationBranches(entries: readonly PiSessionEntry[]): R
     while (parent && !visited.has(parent)) {
       visited.add(parent);
       const ancestor = byId.get(parent);
-      if (!ancestor || ancestor.message || ancestor.type === 'branch_summary') break;
+      // System messages patch the prompt or tools between prompts; like model changes, they are configuration.
+      const conversation = ancestor?.message && getString(ancestor.message.role) !== 'system';
+      if (!ancestor || conversation || ancestor.type === 'branch_summary') break;
       parent = ancestor.parentId;
     }
     const group = groups.get(parent) ?? [];
@@ -250,7 +252,10 @@ function addPiSessionLine(parsed: ParsedPiSessionEntries, line: string): void {
     return;
   }
 
-  const message = getRecord(record.message) ?? getRecord(record.data) ?? inferMessageRecord(record);
+  // A custom entry's `data` is extension state, never part of the conversation.
+  const message = getRecord(record.message)
+    ?? (type === 'custom' ? undefined : getRecord(record.data))
+    ?? inferMessageRecord(record);
   parsed.entries.push({
     ...(getString(record.id) ? { id: getString(record.id)! } : {}),
     ...(message ? { message } : {}),
