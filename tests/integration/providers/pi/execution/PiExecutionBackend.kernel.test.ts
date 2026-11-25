@@ -2022,6 +2022,24 @@ describe('PiExecutionBackend', () => {
     await harness.session.dispose();
   });
 
+  // Pi runs extension input hooks, which can ask the user, before its final checks can still reject the prompt.
+  it('opens a preflight extension dialog without acknowledging a prompt Pi rejects', async () => {
+    let dialogAdmitted: boolean | undefined;
+    const harness = (await createHarness(createConfig(), undefined, async <T>(type: string) => {
+      if (type === 'prompt') {
+        dialogAdmitted = harness.kernels[0].emitExtensionRequest({ id: 'confirm-1', method: 'confirm', type: 'extension_ui_request' });
+        throw new PiRPCResponseError('prompt', 'No API key found for anthropic.');
+      }
+      return harness.responses.get(type) as T;
+    }));
+    const events = await collect(harness.session.execute(createRequest()).events);
+    expect(dialogAdmitted).toBe(true);
+    expect(events.some(event => event.type === 'turn_started' && event.accepted)).toBe(false);
+    expect(events.some(event => event.type === 'user_message_started')).toBe(false);
+    expect(events.at(-1)).toMatchObject({ type: 'execution_error' });
+    await harness.session.dispose();
+  });
+
   it('rejects a model removed during asynchronous preparation before native input', async () => {
     const harness = (await createHarness(createConfig(), () => {
       harness.host.settings.providerConfigs.pi!.visibleModels = [];

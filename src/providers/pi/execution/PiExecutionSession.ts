@@ -929,7 +929,7 @@ implements ProviderExecutionSession, SteerableExecutionSession {
             || !currentActive
             || this.kernelResumeValidationTarget !== null
           ) return false;
-          this.#ensureAccepted(currentActive);
+          // A dialog opens on its own; a preflight one must not acknowledge a prompt Pi can still reject.
           return true;
         },
       },
