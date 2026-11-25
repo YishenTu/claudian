@@ -57,17 +57,31 @@ function resolveWSLSessionFile(
     };
     const sessionDir = context.environment.PI_CODING_AGENT_SESSION_DIR?.trim();
     const agentDir = context.environment.PI_CODING_AGENT_DIR?.trim();
+    let configDir = '.pi';
+    let configDirKnown = true;
+    const packageDir = context.environment.PI_PACKAGE_DIR?.trim();
+    if (!sessionDir && packageDir) {
+      try {
+        configDir = readPackageConfigDirectory(piHostPath(path.posix.join(directory(packageDir), 'package.json'), target));
+      } catch (error) {
+        // Unreadable package metadata hides only the project settings of an explicit agent store.
+        if (!agentDir) throw error;
+        configDirKnown = false;
+      }
+    }
+    const agentRoot = agentDir ? directory(agentDir) : linuxHome ? path.posix.join(linuxHome, configDir, 'agent') : null;
+    const cwd = vaultPath ?? context.vaultPath;
+    // Like Pi: the session-directory variable, then project over user settings, then the agent store.
+    const settingsSessionDir = sessionDir ? undefined
+      : (cwd && configDirKnown ? readSettingsSessionDir(piHostPath(path.posix.join(map(cwd), configDir, 'settings.json'), target)) : undefined)
+        ?? (agentRoot ? readSettingsSessionDir(piHostPath(path.posix.join(agentRoot, 'settings.json'), target)) : undefined);
     if (sessionDir) {
       roots.push(directory(sessionDir));
-    } else if (agentDir) {
-      roots.push(path.posix.join(directory(agentDir), 'sessions'));
+    } else if (settingsSessionDir) {
+      roots.push(directory(settingsSessionDir));
+    } else if (agentDir && agentRoot) {
+      roots.push(path.posix.join(agentRoot, 'sessions'));
     } else {
-      let configDir = '.pi';
-      const packageDir = context.environment.PI_PACKAGE_DIR?.trim();
-      if (packageDir) {
-        const packageFile = piHostPath(path.posix.join(directory(packageDir), 'package.json'), target);
-        configDir = readPackageConfigDirectory(packageFile);
-      }
       if (linuxHome) roots.push(path.posix.join(linuxHome, configDir, 'agent', 'sessions'));
       // Native state supplies the distro user's absolute locator. Never use Windows HOME.
       const hintedHome = candidate?.match(/^\/(home\/[^/]+|root)(?:\/|$)/u)?.[0];
@@ -114,6 +128,16 @@ function resolveLocalDirectory(value: string | undefined, home: string, cwd: str
   }
 }
 
+/** The `sessionDir` of a Pi settings file; a missing or unreadable file sets none. */
+function readSettingsSessionDir(settingsFile: string): string | undefined {
+  try {
+    const settings = JSON.parse(fs.readFileSync(settingsFile, 'utf8').replace(/^\uFEFF/u, '')) as { sessionDir?: unknown };
+    return typeof settings.sessionDir === 'string' && settings.sessionDir.trim() ? settings.sessionDir : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 function readPackageConfigDirectory(packageFile: string): string {
   const pkg = JSON.parse(fs.readFileSync(packageFile, 'utf8')) as { piConfig?: { configDir?: unknown } };
   return typeof pkg.piConfig?.configDir === 'string' && pkg.piConfig.configDir ? pkg.piConfig.configDir : '.pi';
@@ -150,7 +174,18 @@ function getTrustedRoots(
     try { configDir = readPackageConfigDirectory(path.join(packageDir, 'package.json')); }
     catch { /* Unreadable package metadata cannot establish a custom history root. */ }
   }
-  roots.push(path.join(home, configDir, 'agent', 'sessions'));
+  const defaultAgentDir = path.join(home, configDir, 'agent');
+  roots.push(path.join(defaultAgentDir, 'sessions'));
+  // Pi also reads `sessionDir` from the project settings before project trust, so both scopes locate its store.
+  const projectCwd = vaultPath ?? context.vaultPath;
+  const settingsFiles = [
+    ...(projectCwd ? [path.join(projectCwd, configDir, 'settings.json')] : []),
+    path.join(configuredAgentDir ?? defaultAgentDir, 'settings.json'),
+  ];
+  for (const settingsFile of settingsFiles) {
+    const sessionDir = resolveLocalDirectory(readSettingsSessionDir(settingsFile), home, cwd);
+    if (sessionDir) roots.push(sessionDir);
+  }
   return [...new Set(roots)];
 }
 

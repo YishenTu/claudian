@@ -704,6 +704,57 @@ describe('PiConversationHistoryService', () => {
     },
   );
 
+  it('keeps hydrating the default home store after PI_CODING_AGENT_DIR selects another agent directory', async () => {
+    const root = await createTempDirectory('pi-default-store-');
+    const home = path.join(root, 'home');
+    const vault = path.join(root, 'vault');
+    const sessionFile = path.join(home, '.pi', 'agent', 'sessions', '--vault--', 's1.jsonl');
+    await writeConfiguredHistory(sessionFile, vault);
+
+    const result = await new PiConversationHistoryService().hydrateConversationHistory(createConversation(sessionFile), vault, {
+      environment: { HOME: home, USERPROFILE: home, PI_CODING_AGENT_DIR: path.join(root, 'agent') },
+    });
+
+    expect(result.messages?.map(message => message.content)).toEqual([
+      'Read the configured history', 'Configured history is intact',
+    ]);
+  });
+
+  // Pi reads `sessionDir` from user settings and from the vault's own `.pi/settings.json`.
+  it.each([
+    ['user', 'home-relative', 'metadata locator'],
+    ['user', 'relative', 'logical session ID'],
+    ['agent-directory', 'home-relative', 'metadata locator'],
+    ['vault', 'relative', 'metadata locator'],
+    ['vault', 'home-relative', 'logical session ID'],
+  ] as const)('hydrates a session under the sessionDir from %s settings (%s syntax, %s)', async (scope, syntax, locator) => {
+    const root = await createTempDirectory('pi-settings-store-');
+    const home = path.join(root, 'home');
+    const vault = path.join(root, 'vault');
+    const agentDir = path.join(root, 'agent');
+    const settingsFile = scope === 'vault' ? path.join(vault, '.pi', 'settings.json')
+      : scope === 'agent-directory' ? path.join(agentDir, 'settings.json')
+        : path.join(home, '.pi', 'agent', 'settings.json');
+    const sessionDir = syntax === 'relative' ? './vault-sessions' : '~/configured-sessions';
+    await fs.mkdir(path.dirname(settingsFile), { recursive: true });
+    // Pi strips a UTF-8 BOM from settings files.
+    await fs.writeFile(settingsFile, `\uFEFF${JSON.stringify({ sessionDir, theme: 'dark' })}`);
+    const directory = syntax === 'relative' ? path.join(vault, 'vault-sessions') : path.join(home, 'configured-sessions');
+    const sessionFile = path.join(directory, '--vault--', 's1.jsonl');
+    const nativeContent = await writeConfiguredHistory(sessionFile, vault);
+    const conversation = createConversation(sessionFile);
+    if (locator === 'logical session ID') conversation.providerState = { sessionId: 's1' };
+
+    const result = await new PiConversationHistoryService().hydrateConversationHistory(conversation, vault, {
+      environment: { HOME: home, USERPROFILE: home, ...(scope === 'agent-directory' ? { PI_CODING_AGENT_DIR: agentDir } : {}) },
+    });
+
+    expect(result.messages?.map(message => message.content)).toEqual([
+      'Read the configured history', 'Configured history is intact',
+    ]);
+    expect(await fs.readFile(sessionFile, 'utf8')).toBe(nativeContent);
+  });
+
   it('anchors relative configured roots to the context launch vault when no explicit vault is supplied', async () => {
     const root = await createTempDirectory('pi-context-syntax-');
     const vault = path.join(root, 'context-launch-vault');

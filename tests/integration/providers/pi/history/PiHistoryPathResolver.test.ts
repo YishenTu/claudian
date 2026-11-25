@@ -95,6 +95,25 @@ describe.skipIf(onWindows)('Pi WSL history trust', () => {
     })).toBeNull();
   });
 
+  it.each([
+    ['user', '/home/alice/.pi/agent/settings.json', '~/store', {}, '/home/alice/store/id.jsonl', unc('/home/alice/store/id.jsonl')],
+    ['agent-directory', '/home/alice/.pi-work/settings.json', '/srv/store', { PI_CODING_AGENT_DIR: '~/.pi-work' }, '/srv/store/id.jsonl', unc('/srv/store/id.jsonl')],
+    ['vault', '/mnt/c/Vault/.pi/settings.json', './sessions', {}, '/mnt/c/Vault/sessions/id.jsonl', 'C:\\Vault\\sessions\\id.jsonl'],
+  ])('follows the sessionDir from %s settings instead of the default store', async (_scope, settingsFile, sessionDir, environment, candidate, expected) => {
+    const files = createWindowsHostFS({ fs: nodeFS, fsPromises: nodeFSPromises });
+    await files.write(files.fromLinux(settingsFile), `\uFEFF${JSON.stringify({ sessionDir })}`);
+    await files.write(files.fromLinux(candidate), '');
+    const defaultLocator = '/home/alice/.pi/agent/sessions/vault/id.jsonl';
+    await files.write(files.fromLinux(defaultLocator), '');
+    const configured = { ...context, environment: { HOME: '/home/alice', ...environment }, environmentText: 'HOME=/home/alice' };
+    expect(resolvePiSessionFileHint(candidate, null, 'C:\\Vault', configured)).toBe(expected);
+    expect(resolvePiSessionFileHint(defaultLocator, null, 'C:\\Vault', configured)).toBeNull();
+    // The session-directory variable still overrides settings.
+    expect(resolvePiSessionFileHint(candidate, null, 'C:\\Vault', {
+      ...configured, environment: { ...configured.environment, PI_CODING_AGENT_SESSION_DIR: '/other' },
+    })).toBeNull();
+  });
+
   it('trusts vault-local sessions and resolves IDs from every trusted root', async () => {
     const files = createWindowsHostFS({ fs: nodeFS, fsPromises: nodeFSPromises });
     await files.write(files.fromLinux('/mnt/c/Vault/.pi/agent/sessions/vault-id.jsonl'), '');
