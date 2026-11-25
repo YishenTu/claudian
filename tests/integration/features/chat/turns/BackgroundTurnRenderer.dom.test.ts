@@ -168,6 +168,46 @@ it.each([
   }
 });
 
+// The reader answers a question with the text written before it in view, as in a requested turn.
+it.each(['question', 'approval'] as const)('shows automatic output written before a %s while it waits', async kind => {
+  const { messagesEl, coordinator, session, backend, interactionPort, dispose } = (await createBackgroundChat());
+  try {
+    await coordinator.bindConversation({ conversationId: 'conversation', providerId: 'claude' });
+    await coordinator.prepare();
+    const native = backend.latest;
+    const answer = deferred<void>();
+    const shown: string[] = [];
+    const waiting = async ({ interactionId }: { interactionId: string }) => {
+      await session.awaitBackgroundWork();
+      shown.push(visibleTranscript(messagesEl));
+      await answer.promise;
+      return kind === 'question' ? { interactionId, answers: { Pick: 'Calm' } } : { interactionId, value: 'allow' };
+    };
+    interactionPort.askUserQuestion.mockImplementation(waiting);
+    interactionPort.requestApproval.mockImplementation(waiting);
+    native.emitSessionEvent({ type: 'task_notification', content: 'Job finished.' });
+    native.emitBackgroundEvent({ type: 'background_turn_started' });
+    native.emitBackgroundEvent({ type: 'text_delta', text: 'The sea is calm today.' });
+    native.emitBackgroundEvent({ type: 'tool_started', toolCallId: 'ask', toolScope: { kind: 'main' },
+      name: kind === 'question' ? 'AskUserQuestion' : 'Bash', input: kind === 'question' ? { questions: [] } : { command: 'ls' } });
+    const identity = { interactionId: 'ask', sessionInstanceId: native.sessionInstanceId, turnId: 'background-1' };
+    const settled = kind === 'question'
+      ? native.config.interactionPort.askUserQuestion({ ...identity, kind, input: { questions: [] } }, new AbortController().signal)
+      : native.config.interactionPort.requestApproval({ ...identity, kind, toolName: 'Bash', input: { command: 'ls' },
+        description: 'Run ls', decisionOptions: [{ label: 'Allow', value: 'allow' }] }, new AbortController().signal);
+    await waitFor(() => expect(shown).toHaveLength(1));
+    expect(shown[0]).toContain('The sea is calm today.');
+
+    answer.resolve();
+    await settled;
+    native.emitBackgroundEvent({ type: 'tool_completed', toolCallId: 'ask', toolScope: { kind: 'main' }, content: 'Answered.' });
+    native.emitBackgroundEvent({ type: 'text_delta', text: 'Thanks.' });
+    native.emitBackgroundEvent({ type: 'background_turn_completed', reason: 'completed', nativeAssistantId: 'checkpoint' });
+    await session.awaitBackgroundWork();
+    expect(visibleTranscript(messagesEl)).toMatch(/The sea is calm today\..*Thanks\./);
+  } finally { await dispose(); }
+});
+
 it.each([
   ['before the turn opens', 1, false], ['after the turn opens', 1, true], ['twice after the turn opens', 2, true],
 ] as const)('renders a notification turn the same when its notification arrives %s', async (_order, cards, opensFirst) => {
@@ -394,12 +434,13 @@ async function createBackgroundChat(withInput = false) {
   const lifecycleRegistry = new ProviderExecutionLifecycleRegistry();
   const backend = new FakeSideBackend();
   let input: Awaited<ReturnType<typeof createFixture>> | undefined;
+  const interactionPort = { requestApproval: vi.fn(), askUserQuestion: vi.fn(), dismissInteraction: vi.fn() };
   const coordinator: ChatExecutionCoordinator = new ChatExecutionCoordinator({
     lifecycleRegistry, resolveBackend: () => backend,
     persistence: { persistExecutionSnapshot: async () => true, registerExecutionBinding: () => undefined,
       releaseExecutionBinding: () => undefined, assertConversationExecutionAuthority: async () => undefined,
       recordConversationActivity: async () => undefined },
-    interactionPort: { requestApproval: vi.fn(), askUserQuestion: vi.fn(), dismissInteraction: vi.fn() }, workingDirectory: '/vault', createId: () => 'binding',
+    interactionPort, workingDirectory: '/vault', createId: () => 'binding',
     onRequestedEvent: event => input?.controller.handleExecutionEvent(event),
     onSessionEvent: (event, context) => events.enqueue(event, context),
   });
@@ -424,7 +465,7 @@ async function createBackgroundChat(withInput = false) {
     receiveSuggestion: () => undefined, discardSuggestion: () => undefined, canAcceptBackgroundWork: () => true,
     claimBackgroundUserMessage: (nativeUserMessageId, inputId) => input?.controller.claimBackgroundUserMessage(nativeUserMessageId, inputId),
   });
-  return { messagesEl, renderer, state, stream, coordinator, session, backend, input, setImages, dispose: async () => {
+  return { messagesEl, renderer, state, stream, coordinator, session, backend, input, interactionPort, setImages, dispose: async () => {
     await coordinator.dispose(); await lifecycleRegistry.dispose();
     stream.dispose(); subagents.clear(); renderer.dispose();
   } };
@@ -598,6 +639,107 @@ async function createBackgroundSession() {
   return { messagesEl, plugin, renderer, state, host, background, next, text, stop,
     dispose: () => { stream.dispose(); manager.clear(); renderer.dispose(); } };
 }
+
+// A requested turn's open prompt takes the place of its waiting indicator; a live automatic turn's does too.
+it.each([false, true])('withholds the waiting indicator of a live automatic turn while a prompt waits (prompt: %s)', async prompt => {
+  const session = (await createBackgroundSession());
+  const { messagesEl, state, background } = session;
+  vi.useFakeTimers();
+  try {
+    state.setActionRequired(prompt);
+    background.reserve('binding', 'automatic');
+    await session.text('Checking the job.');
+    await background.handle('binding', { type: 'tool_started', toolCallId: 'ask', toolScope: { kind: 'main' }, name: 'AskUserQuestion',
+      input: { questions: [] }, scope: session.next() }, () => true);
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect(within(messagesEl).getByText('Checking the job.')).toBeTruthy();
+    expect(messagesEl.querySelector('.claudian-thinking') !== null).toBe(!prompt);
+  } finally { vi.useRealTimers(); session.dispose(); }
+});
+
+// Live output can continue after a notification before the reader steers; the steer follows what they read.
+it.each([true, false])('places a steer after the live continuation it follows (text before the notification: %s)', async textFirst => {
+  const session = (await createBackgroundSession());
+  const { messagesEl, state, background } = session;
+  try {
+    background.reserve('binding', 'automatic');
+    if (textFirst) await session.text('Before the job.');
+    renderSessionTaskNotification(session.host, 'Job finished.', undefined, session.next());
+    await session.text('After the job.');
+    await waitFor(() => expect(within(messagesEl).getByText('After the job.')).toBeTruthy());
+    expect(background.userMessage('binding', { type: 'user_message_started', content: 'Make it shorter', scope: session.next() })).toBeDefined();
+    await session.text('Shorter.');
+    await background.handle('binding', { type: 'background_turn_completed', reason: 'completed', scope: session.next() }, () => true);
+    const expected = [...(textFirst ? ['Before the job.'] : []), 'Task notification', 'After the job.', 'Make it shorter', 'Shorter.'];
+    expect(Array.from(messagesEl.querySelectorAll<HTMLElement>('.claudian-message'), visibleText).filter(Boolean)).toEqual(expected);
+    expect(state.messages.map(message => message.displayContent ?? message.content).filter(Boolean))
+      .toEqual(expected.filter(text => text !== 'Task notification'));
+  } finally { session.dispose(); }
+});
+
+it('renders expanded live thinking of an automatic turn begun in a hidden tab once the tab is shown', async () => {
+  const session = (await createBackgroundSession());
+  const { messagesEl, host, background } = session;
+  const think = (text: string) => background.handle('binding', { type: 'thinking_delta', text, scope: session.next() }, () => true);
+  try {
+    host.stream.setTabActive(false);
+    background.reserve('binding', 'automatic');
+    await think('Weighing the options.');
+    host.stream.setTabActive(true);
+    fireEvent.click(within(messagesEl).getByRole('button', { name: /Thinking/ }));
+    await think(' Picking one.');
+    await waitFor(() => expect(within(messagesEl).getByText('Weighing the options. Picking one.')).toBeTruthy());
+  } finally { session.dispose(); }
+});
+
+it('leaves a reader at the end in place while live automatic output grows with auto-scroll off', async () => {
+  const session = (await createBackgroundSession());
+  const { messagesEl, plugin, renderer, state, background } = session;
+  plugin.settings.enableAutoScroll = false;
+  const geometry = useTranscriptGeometry(messagesEl, { rowHeight: row => 100 + (row.textContent?.length ?? 0) });
+  try {
+    for (let index = 0; index < 6; index++) {
+      state.addMessage({ id: `u${index}`, role: 'user', content: `Prompt ${index}`, timestamp: testDate().getTime() });
+      state.addMessage({ id: `a${index}`, role: 'assistant', content: `Answer ${index}`, timestamp: testDate().getTime(),
+        completedAt: testDate().getTime(), contentBlocks: [{ type: 'text', content: `Answer ${index}` }] });
+    }
+    renderer.renderMessages(state.messages, () => 'Welcome');
+    background.reserve('binding', 'automatic');
+    await session.text('Background reply.');
+    await waitFor(() => expect(within(messagesEl).getByText('Background reply.')).toBeTruthy());
+    messagesEl.scrollTop = geometry.bottom();
+    fireEvent.scroll(messagesEl);
+    const reading = messagesEl.scrollTop;
+    // Compaction renders its boundary synchronously, growing the reply below the reader.
+    await background.handle('binding', { type: 'context_compacted', scope: session.next() }, () => true);
+    expect(within(messagesEl).getByText('Conversation compacted')).toBeTruthy();
+    expect(geometry.bottom()).toBeGreaterThan(reading);
+    expect(messagesEl.scrollTop).toBe(reading);
+  } finally { session.dispose(); }
+});
+
+// Leading spaces are Markdown (an indented code block): they belong to the reply they start.
+it('keeps whitespace that starts the reply after a notification in that reply', async () => {
+  const session = (await createBackgroundSession());
+  const { messagesEl, state, background } = session;
+  try {
+    background.reserve('binding', 'automatic');
+    await session.text('Before the job.');
+    renderSessionTaskNotification(session.host, 'Job finished.', undefined, session.next());
+    const shownRows = () => Array.from(messagesEl.querySelectorAll('.claudian-message')).filter(row => !row.closest('[hidden]')).length;
+    expect(shownRows()).toBe(2);
+    await session.text('    ');
+    // Whitespace alone shows no reply row yet.
+    expect(shownRows()).toBe(2);
+    await session.text('code sample');
+    expect(shownRows()).toBe(3);
+    await background.handle('binding', { type: 'background_turn_completed', reason: 'completed', scope: session.next() }, () => true);
+    expect(state.messages.filter(message => message.role === 'assistant' && !message.contentBlocks?.some(block => block.type === 'task_notification'))
+      .map(message => message.content)).toEqual(['Before the job.', '    code sample']);
+    expect(Array.from(messagesEl.querySelectorAll<HTMLElement>('.claudian-message'), visibleText).filter(Boolean))
+      .toEqual(['Before the job.', 'Task notification', 'code sample']);
+  } finally { session.dispose(); }
+});
 
 it('keeps a reply before a steer intact and ends the steered input in an indicator when stopped before new output', async () => {
   const session = (await createBackgroundSession());

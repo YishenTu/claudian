@@ -1,38 +1,30 @@
 import type { ProviderBackgroundOutputEvent, ProviderSessionEvent, ProviderUserMessageStartedEvent } from '@/core/execution';
 import type { ChatMessage } from '@/core/types';
 import {
+  AutoTriggeredTurn,
   type BackgroundTurnRenderHost,
-  type BackgroundTurnRenderSpan,
-  discardBackgroundTurn,
-  renderAutoTriggeredTurn,
   reserveBackgroundTurn,
 } from '@/features/chat/turns/BackgroundTurnRenderer';
 import { findFollowingNotification } from '@/features/chat/turns/ResponseContinuation';
 import type { PendingProviderUserMessage } from '@/features/chat/turns/TurnSteering';
 
-interface BackgroundResponse {
-  readonly spans: Array<BackgroundTurnRenderSpan & { afterSequence: number; user?: ChatMessage }>;
-}
-
-/** Reserves transcript order at admission, then renders only the owning session's buffered output. */
+/** Reserves transcript order at admission, then renders the owning session's output as it arrives. */
 export class BackgroundResponses {
-  readonly #owners = new Map<string, Map<string, BackgroundResponse>>();
+  readonly #owners = new Map<string, Map<string, AutoTriggeredTurn>>();
 
   constructor(private readonly host: BackgroundTurnRenderHost) {}
 
   reserve(owner: string, turnId: string): void {
     let turns = this.#owners.get(owner);
-    if (!turns) this.#owners.set(owner, turns = new Map<string, BackgroundResponse>());
+    if (!turns) this.#owners.set(owner, turns = new Map<string, AutoTriggeredTurn>());
     if (turns.has(turnId)) return;
-    turns.set(turnId, {
-      spans: [{ afterSequence: 0, events: [], target: reserveBackgroundTurn(this.host) }],
-    });
+    turns.set(turnId, new AutoTriggeredTurn(this.host, reserveBackgroundTurn(this.host)));
   }
 
   /** Capture each user boundary synchronously; queued output is assigned by provider sequence, not processing time. */
   userMessage(owner: string, event: ProviderUserMessageStartedEvent, expected?: PendingProviderUserMessage | null): ChatMessage | undefined {
     const response = this.#owners.get(owner)?.get(event.scope.turnId);
-    const previous = response?.spans.at(-1)?.target;
+    const previous = response?.insertionAnchor;
     if (!response || !previous) return;
     const displayContent = expected?.displayContent ?? event.content ?? '';
     const message: ChatMessage = {
@@ -42,7 +34,7 @@ export class BackgroundResponses {
       userMessageId: event.nativeUserMessageId,
     };
     const messages = this.host.state.messages;
-    const anchor = findFollowingNotification(previous.message, messages, event.scope) ?? previous.message;
+    const anchor = findFollowingNotification(previous, messages, event.scope) ?? previous;
     const index = messages.indexOf(anchor);
     if (index < 0) return;
     messages.splice(index + 1, 0, message);
@@ -50,7 +42,7 @@ export class BackgroundResponses {
     this.host.renderer?.addMessage(message, anchor.id);
     // Reserve the new reply beside its user, ahead of input admitted after this background turn.
     const target = reserveBackgroundTurn(this.host, { index: index + 2, after: message.id, automatic: false });
-    response.spans.push({ afterSequence: event.scope.sequence, user: message, target, events: [] });
+    response.addSpan(event.scope.sequence, message, target);
     this.host.state.markConversationDirty();
     return message;
   }
@@ -67,31 +59,35 @@ export class BackgroundResponses {
     if (!response) return undefined;
     if (event.type === 'user_message_started') return undefined;
     if (event.type !== 'background_turn_completed') {
-      [...response.spans].reverse().find(span => span.afterSequence < event.scope.sequence)?.events.push(event as ProviderBackgroundOutputEvent);
+      await response.push(event as ProviderBackgroundOutputEvent, isCurrent);
       return undefined;
     }
     turns!.delete(event.scope.turnId);
     if (!turns!.size) this.#owners.delete(owner);
-    const visible = await renderAutoTriggeredTurn(this.host, {
-      spans: response.spans,
-      metadata: { assistantMessageId: event.nativeAssistantId },
-      ...(event.reason === 'interrupted' ? { interruptedAt: event.scope } : {}),
-    }, isCurrent);
-    return visible || response.spans.some(span => span.user !== undefined);
+    const visible = await response.complete(
+      { assistantMessageId: event.nativeAssistantId },
+      event.reason === 'interrupted' ? event.scope : undefined,
+      isCurrent,
+    );
+    return visible || response.hasUserMessages;
+  }
+
+  /** Where settled history ends in `messages`: before the first message of an automatic turn still running. */
+  settledTranscriptEnd(messages: readonly ChatMessage[]): number {
+    let end = messages.length;
+    for (const turns of this.#owners.values()) {
+      for (const turn of turns.values()) {
+        const start = turn.transcriptStart(messages);
+        if (start >= 0) end = Math.min(end, start);
+      }
+    }
+    return end;
   }
 
   discard(owner?: string): void {
     const owners = owner === undefined ? [...this.#owners.keys()] : [owner];
     for (const id of owners) {
-      for (const response of this.#owners.get(id)?.values() ?? []) {
-        for (const span of response.spans) {
-          if (span.target) discardBackgroundTurn(this.host, span.target);
-          if (span.user) {
-            this.host.renderer?.removeMessage(span.user.id);
-            this.host.state.messages = this.host.state.messages.filter(message => message !== span.user);
-          }
-        }
-      }
+      for (const response of this.#owners.get(id)?.values() ?? []) response.discard();
       this.#owners.delete(id);
     }
   }

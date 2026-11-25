@@ -70,6 +70,7 @@ export class StreamController {
   private viewportVisible = true;
   private readonly backgroundStreams = new Set<StreamController>();
   private onDispose?: () => void;
+  private disposed = false;
   /** The open text block ends with a notice; cleared by the next text or when the block closes. */
   #textFollowsNotice = false;
 
@@ -117,8 +118,8 @@ export class StreamController {
     const stream = new StreamController({ ...deps, state, get renderer() { return deps.renderer; } });
     this.backgroundStreams.add(stream);
     stream.onDispose = () => this.backgroundStreams.delete(stream);
-    stream.tabActive = this.tabActive;
-    stream.viewportVisible = this.viewportVisible;
+    stream.setTabActive(this.tabActive);
+    stream.setViewportVisible(this.viewportVisible);
     return stream;
   }
 
@@ -504,11 +505,31 @@ export class StreamController {
   setTabActive(active: boolean): void {
     this.tabActive = active;
     this.#syncRenderAvailability();
+    for (const stream of this.backgroundStreams) stream.setTabActive(active);
   }
 
   setViewportVisible(visible: boolean): void {
     this.viewportVisible = visible;
     this.#syncRenderAvailability();
+    for (const stream of this.backgroundStreams) stream.setViewportVisible(visible);
+  }
+
+  /**
+   * An open prompt takes the place of every waiting indicator in this transcript, automatic turns'
+   * included. The returned call restores them once it settles: this response's as its turn allows,
+   * and each automatic response whose indicator the prompt hid.
+   */
+  hideWaitingIndicators(): () => void {
+    const generation = this.deps.state.streamGeneration;
+    this.thinkingIndicator.hide();
+    const hidden = [...this.backgroundStreams].filter(stream => stream.thinkingIndicator.isActive);
+    for (const stream of hidden) stream.thinkingIndicator.hide();
+    return () => {
+      this.thinkingIndicator.resume(generation);
+      for (const stream of hidden) {
+        if (!stream.disposed) stream.thinkingIndicator.show();
+      }
+    };
   }
 
   #syncRenderAvailability(): void {
@@ -553,6 +574,7 @@ export class StreamController {
   }
 
   dispose(): void {
+    this.disposed = true;
     this.onDispose?.();
     this.onDispose = undefined;
     for (const stream of this.backgroundStreams) stream.dispose();

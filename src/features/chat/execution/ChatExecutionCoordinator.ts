@@ -141,6 +141,8 @@ export interface ChatExecutionCoordinatorDeps {
   /** When a write starts, false means native history changed outside Claudian since the session last matched it. */
   readonly onNativeHistoryWriteChanged?: (writing: boolean) => void | boolean | Promise<void | boolean>;
   readonly onBackgroundWorkChanged?: (isWorking: boolean) => void;
+  /** A released binding delivers no more session events, so its unfinished background turns never complete. */
+  readonly onBindingReleased?: (bindingId: string) => void;
   readonly onError?: (error: unknown) => void;
   /** Releases an idle provider session after this long; omitted keeps it until disposal. */
   readonly idleReleaseMs?: number;
@@ -1075,12 +1077,21 @@ export class ChatExecutionCoordinator {
     this.#sessionBinding = null;
     binding.sessionTools?.dispose();
     this.#publishBackgroundWork();
+    this.#reportBindingReleased(binding);
     this.#stale = true;
     this.#pendingSteerAttempts.clear();
     this.#invalidateActiveExecution('invalidated', 'provider-transition');
     const settle = this.#holdReleasedBinding(binding);
     void this.#trackBindingRelease(settle(released)).catch(error => this.deps.onError?.(error));
     this.#clearIdleTimer();
+  }
+
+  #reportBindingReleased(binding: SessionBinding): void {
+    try {
+      this.deps.onBindingReleased?.(binding.bindingId);
+    } catch (error) {
+      this.deps.onError?.(error);
+    }
   }
 
   async #releaseSessionBinding(): Promise<void> {
@@ -1090,6 +1101,7 @@ export class ChatExecutionCoordinator {
     this.#pendingSteerAttempts.clear();
     this.#clearIdleTimer();
     this.#publishBackgroundWork();
+    if (binding) this.#reportBindingReleased(binding);
     const settle = binding ? this.#holdReleasedBinding(binding) : null;
     const release = this.#supervisor.release();
     await (settle ? this.#trackBindingRelease(settle(release)) : release);

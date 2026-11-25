@@ -680,6 +680,68 @@ describe('outside-client API', () => {
     expect(prompt.sessionMessage).toBeUndefined();
   });
 
+  it('keeps a streaming automatic reply out of completed-history reads until its turn completes', async () => {
+    const h = (await setup());
+    const api = createClaudianAPI(h.service, h.views);
+    await api.send('recipient', { text: 'Start the job' });
+    await waitFor(() => expect(h.backend.sessions[0]?.requests).toHaveLength(1));
+    const native = h.backend.latest;
+    native.emitText('Waiting for the job.');
+    native.complete();
+    await h.pool.get('recipient')!.turns.drain();
+    const streamed = h.nextSignal(entry => {
+      const progress = isProgress(entry) ? (entry.signal as Extract<SessionSignal, { type: 'progress' }>).progress : null;
+      return progress?.kind === 'text' && progress.text === 'Checking the result.';
+    });
+    native.emitBackgroundEvent({ type: 'background_turn_started' });
+    native.emitBackgroundEvent({ type: 'text_delta', text: 'Checking the result.' });
+    await streamed;
+    expect(await api.read('recipient')).toBe('Waiting for the job.');
+    const partial = await h.binding.port.read({ sessionId: 'recipient' }, signal());
+    expect(partial.content).toContain('## T1 assistant\nWaiting for the job.');
+    expect(partial.content).not.toContain('Checking the result.');
+
+    native.emitBackgroundEvent({ type: 'background_turn_completed', reason: 'completed', nativeAssistantId: 'automatic' });
+    await h.pool.get('recipient')!.awaitBackgroundWork();
+    expect(await api.read('recipient')).toBe('Checking the result.');
+    expect((await h.binding.port.read({ sessionId: 'recipient' }, signal())).content).toContain('Checking the result.');
+  });
+
+  it('reads turns after a provider transition replaced the session an automatic turn was streaming in', async () => {
+    const h = (await setup());
+    const api = createClaudianAPI(h.service, h.views);
+    // An open chat keeps its transcript model across the transition.
+    const { attachment } = h.pool.acquire({ conversationId: 'recipient', providerId: 'claude', draftModel: null }, { reveal() {} });
+    onTestFinished(() => h.pool.release(attachment));
+    await api.send('recipient', { text: 'Start the job' });
+    await waitFor(() => expect(h.backend.sessions[0]?.requests).toHaveLength(1));
+    const replaced = h.backend.latest;
+    replaced.emitText('Waiting for the job.');
+    replaced.complete();
+    await h.pool.get('recipient')!.turns.drain();
+    const streamed = h.nextSignal(entry => {
+      const progress = isProgress(entry) ? (entry.signal as Extract<SessionSignal, { type: 'progress' }>).progress : null;
+      return progress?.kind === 'text' && progress.text === 'Checking the result.';
+    });
+    replaced.emitBackgroundEvent({ type: 'background_turn_started' });
+    replaced.emitBackgroundEvent({ type: 'text_delta', text: 'Checking the result.' });
+    await streamed;
+    const model = h.pool.get('recipient')!.peekModel;
+    await h.host.providerHost.executionLifecycleRegistry.runTransition(['claude'], async () => undefined);
+    expect(h.pool.get('recipient')!.peekModel).toBe(model);
+
+    expect(await api.send('recipient', { text: 'What changed?' })).toBe('started');
+    await waitFor(() => expect(h.backend.sessions).toHaveLength(2));
+    await waitFor(() => expect(h.backend.latest.requests).toHaveLength(1));
+    h.backend.latest.emitText('The settings changed.');
+    h.backend.latest.complete();
+    await h.pool.get('recipient')!.turns.drain();
+    expect(await api.read('recipient')).toBe('The settings changed.');
+    const read = await h.binding.port.read({ sessionId: 'recipient' }, signal());
+    expect(read).toMatchObject({ totalTurns: 2 });
+    expect(read.content).toContain('## T2 user\nWhat changed?\n\n## T2 assistant\nThe settings changed.');
+  });
+
   it('reads no reply from a first turn that is still running after a steer', async () => {
     const h = (await setup());
     const api = createClaudianAPI(h.service, h.views);

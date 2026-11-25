@@ -5,7 +5,7 @@ import type { MessageRenderer } from '@/features/chat/rendering/MessageRenderer'
 import { recordNotificationPredecessors, recordResponseContinuation } from '@/features/chat/rendering/NotificationBoundaries';
 import { providerOutputEventToStreamChunk } from '@/features/chat/rendering/providerOutputChunks';
 import { getAutomaticNotificationPredecessor, hasResponseOutput, isStandaloneTaskNotification } from '@/features/chat/rendering/ResponseLayout';
-import { ChatState } from '@/features/chat/state/ChatState';
+import type { ChatState } from '@/features/chat/state/ChatState';
 import {
   continueResponseAfterNotification,
   getTrailingNotificationsEnd,
@@ -20,18 +20,6 @@ export interface BackgroundTurnRenderHost {
   readonly renderer: MessageRenderer | null;
   readonly stream: StreamController;
   createMessageId(): string;
-}
-
-interface BackgroundTurnRenderResult {
-  spans: readonly BackgroundTurnRenderSpan[];
-  metadata: { assistantMessageId?: string };
-  /** The terminal event of a stopped native turn; its last reply shows the interrupt as a live Stop does. */
-  interruptedAt?: ProviderBackgroundEventScope;
-}
-
-export interface BackgroundTurnRenderSpan {
-  events: ProviderBackgroundOutputEvent[];
-  target?: BackgroundTurnRenderTarget;
 }
 
 export interface BackgroundTurnRenderTarget {
@@ -159,113 +147,231 @@ function markInterruptedTurn(
   return markStoppedTurn(host.renderer, reply, host.renderer?.getMessageContentEl(reply.id) ?? null, messages, turn);
 }
 
-/** Render a settled native background turn; the caller owns storage and execution lifetime. */
-export async function renderAutoTriggeredTurn(
-  host: BackgroundTurnRenderHost,
-  result: BackgroundTurnRenderResult,
-  isCurrent: () => boolean,
-): Promise<boolean> {
-  if (!isCurrent()) {
-    return false;
+interface BackgroundTurnSpan {
+  /** The provider sequence of the input that opened this span; 0 for the turn's own start. */
+  readonly afterSequence: number;
+  readonly target: BackgroundTurnRenderTarget;
+  readonly user?: ChatMessage;
+}
+
+/** The latest span to receive output; its segments start at `start` in the turn's segment list. */
+interface SpanProgress {
+  /** Closed spans have finalized blocks; only the last one can still carry a stop. */
+  phase: 'open' | 'closed';
+  readonly index: number;
+  readonly start: number;
+  /** The message before its reservation, where a stop without output leaves its marker. */
+  readonly anchor: ChatMessage | undefined;
+  message: ChatMessage;
+  /** What the span has shown: nothing, an earlier segment only, or its current segment. */
+  shown: 'none' | 'earlier' | 'current';
+}
+
+/**
+ * Renders one native background turn as its output arrives, into replies reserved in transcript
+ * order: each input boundary opens a span with its own reply. A reply stays hidden until its span
+ * shows visible output; completion finalizes the replies and folds a stopped turn. The caller owns
+ * event ordering, storage and execution lifetime.
+ */
+export class AutoTriggeredTurn {
+  readonly #spans: BackgroundTurnSpan[];
+  readonly #state: ChatState;
+  readonly #stream: StreamController;
+  readonly #segments: ChatMessage[] = [];
+  readonly #hiddenToolIds = new Set<string>();
+  #latest: SpanProgress | null = null;
+  #isCurrent: () => boolean = () => true;
+
+  constructor(private readonly host: BackgroundTurnRenderHost, target: BackgroundTurnRenderTarget) {
+    this.#spans = [{ afterSequence: 0, target }];
+    // An open prompt withholds this turn's waiting indicator, as it does a requested turn's.
+    this.#state = host.state.createResponseState({
+      onUsageChanged: usage => {
+        if (this.#isCurrent() && !host.state.isStreaming) {
+          if (usage) host.state.reportUsage(usage);
+          else host.state.usage = null;
+        }
+      },
+    });
+    this.#state.currentConversationId = host.state.currentConversationId;
+    this.#stream = host.stream.createBackgroundStream(this.#state);
   }
 
-  const { metadata } = result;
-  const spans = result.spans.map(span => ({ ...span, chunks: span.events.flatMap(event => {
+  /**
+   * What the next input boundary follows: the latest span's last rendered segment, which may be a
+   * continuation after a notification, else its reservation while its output is still queued.
+   */
+  get insertionAnchor(): ChatMessage {
+    const last = this.#spans.length - 1;
+    const latest = this.#latest?.index === last ? this.#latest : null;
+    const messages = this.host.state.messages;
+    return (latest && this.#segments.slice(latest.start).reverse().find(segment => messages.includes(segment)))
+      || this.#spans[last].target.message;
+  }
+
+  get hasUserMessages(): boolean {
+    return this.#spans.some(span => span.user !== undefined);
+  }
+
+  /** Opens a span for input the provider accepted after `afterSequence`, with its reserved reply. */
+  addSpan(afterSequence: number, user: ChatMessage, target: BackgroundTurnRenderTarget): void {
+    this.#spans.push({ afterSequence, user, target });
+  }
+
+  /** Renders one output event; the caller delivers events in provider sequence. */
+  async push(event: ProviderBackgroundOutputEvent, isCurrent: () => boolean): Promise<void> {
+    this.#isCurrent = isCurrent;
     const chunk = providerOutputEventToStreamChunk(event);
-    return chunk ? [{ chunk, scope: event.scope }] : [];
-  }) }));
-  const hiddenToolIds = new Set(spans.flatMap(span => span.chunks).flatMap(({ chunk }) =>
-    chunk.type === 'tool_use' && chunk.name === TOOL_AGENT_OUTPUT ? [chunk.id] : []
-  ));
-  const state = new ChatState({
-    onUsageChanged: usage => {
-      if (isCurrent() && !host.state.isStreaming) {
-        if (usage) host.state.reportUsage(usage);
-        else host.state.usage = null;
-      }
-    },
-  });
-  state.currentConversationId = host.state.currentConversationId;
-  // The settled turn renders as one arrival, measured on the presentation it started in.
-  const followArrival = host.renderer?.follow.holdArrival();
-  const stream = host.stream.createBackgroundStream(state);
-  const segments: ChatMessage[] = [];
-  let checkpointMessage: ChatMessage | undefined;
-  // Each span follows one input boundary; a stop belongs to the last one.
-  let finalSpanStart = 0;
-  let finalSpanAnchor: ChatMessage | undefined;
-
-  try {
-    for (const span of spans) {
-      const start = segments.length;
-      finalSpanStart = start;
-      const hasVisibleContent = span.chunks.some(({ chunk }) => isVisibleAutoTurnChunk(chunk, hiddenToolIds));
-      const target = span.target ?? (hasVisibleContent ? reserveBackgroundTurn(host) : undefined);
-      const reserved = target ? host.state.messages.indexOf(target.message) : -1;
-      finalSpanAnchor = reserved > 0 ? host.state.messages[reserved - 1] : reserved < 0 ? host.state.messages.at(-1) : undefined;
-      let assistantMessage: ChatMessage = target?.message ?? {
-        id: host.createMessageId(), role: 'assistant', content: '', timestamp: Date.now(),
-      };
-      segments.push(assistantMessage);
-      state.response.messageId = assistantMessage.id;
-      if (target && !hasVisibleContent) discardBackgroundTurn(host, target);
-      state.currentContentEl = hasVisibleContent && target ? host.renderer?.getMessageContentEl(target.message.id) ?? null : null;
-      if (state.currentContentEl?.parentElement) state.currentContentEl.parentElement.hidden = false;
-      for (const { scope, chunk } of span.chunks) {
-        if (!isCurrent()) return false;
-        if (hasVisibleContent) {
-          const continuation = await continueResponseAfterNotification({
-            state: host.state, streamState: state, renderer: host.renderer, stream,
-            createMessageId: () => host.createMessageId(), isCurrent,
-          }, assistantMessage, chunk, scope);
-          if (!isCurrent()) return false;
-          if (continuation !== assistantMessage) {
-            assistantMessage = continuation;
-            segments.push(continuation);
-          }
-        }
-        state.messages = host.state.messages;
-        await stream.handleStreamChunk(chunk, assistantMessage);
-        if (!isCurrent()) return false;
-      }
-
-      if (!isCurrent()) return false;
-      await stream.handleStreamChunk({ type: 'done' }, assistantMessage);
-      await stream.finalizeCurrentThinkingBlock(assistantMessage);
-      if (!isCurrent()) return false;
-      await stream.finalizeCurrentTextBlock(assistantMessage);
-      if (!isCurrent()) return false;
-      stream.thinkingIndicator.hide();
-      assistantMessage.completedAt = Date.now();
-      if (!hasResponseOutput(assistantMessage) && host.state.messages.includes(assistantMessage)) {
-        host.state.messages = host.state.messages.filter(message => message !== assistantMessage);
-        host.renderer?.removeMessage(assistantMessage.id);
-      }
-      checkpointMessage = segments.slice(start).reverse().find(segment => host.state.messages.includes(segment));
+    if (!chunk || !isCurrent()) return;
+    const index = this.#spans.findLastIndex(span => span.afterSequence < event.scope.sequence);
+    if (!await this.#openThrough(Math.max(index, 0))) return;
+    const span = this.#latest!;
+    if (chunk.type === 'tool_use' && chunk.name === TOOL_AGENT_OUTPUT) this.#hiddenToolIds.add(chunk.id);
+    // Every chunk picks its segment first: whitespace that starts a reply after a notification is that reply's.
+    const continuation = await continueResponseAfterNotification({
+      state: this.host.state, streamState: this.#state, renderer: this.host.renderer, stream: this.#stream,
+      createMessageId: () => this.host.createMessageId(), isCurrent,
+    }, span.message, chunk, event.scope);
+    if (!isCurrent()) return;
+    if (continuation !== span.message) {
+      span.message = continuation;
+      this.#segments.push(continuation);
+      // A continuation shows once it has visible content of its own, never as an empty row.
+      if (span.shown === 'current') span.shown = 'earlier';
+      this.#setHidden(continuation, true);
     }
+    if (span.shown !== 'current' && isVisibleAutoTurnChunk(chunk, this.#hiddenToolIds)) {
+      // Showing the reply is its arrival; later growth follows as the reader's follow setting allows.
+      const followArrival = this.host.renderer?.follow.holdArrival();
+      // The span's first visible output also shows its earlier segments that hold output.
+      if (span.shown === 'none') {
+        for (const segment of this.#segments.slice(span.start)) if (hasResponseOutput(segment)) this.#setHidden(segment, false);
+      }
+      span.shown = 'current';
+      this.#setHidden(span.message, false);
+      followArrival?.();
+    }
+    this.#state.messages = this.host.state.messages;
+    await this.#stream.handleStreamChunk(chunk, span.message);
+  }
 
-    if (result.interruptedAt) {
-      // A stopped span ends at its output: output-free segments on either side of its notifications show nothing.
-      const empty = segments.slice(finalSpanStart).filter(segment => !hasResponseOutput(segment));
-      host.state.messages = host.state.messages.filter(message => !empty.includes(message));
-      for (const segment of empty) host.renderer?.removeMessage(segment.id);
-      checkpointMessage = segments.slice(finalSpanStart).reverse().find(segment => host.state.messages.includes(segment));
+  /** Finalizes every span, then folds a stopped turn; returns whether the turn left anything visible. */
+  async complete(
+    metadata: { assistantMessageId?: string },
+    interruptedAt: ProviderBackgroundEventScope | undefined,
+    isCurrent: () => boolean,
+  ): Promise<boolean> {
+    this.#isCurrent = isCurrent;
+    const host = this.host;
+    if (!isCurrent()) {
+      this.#release();
+      return false;
     }
-    const visible = segments.filter(segment => host.state.messages.includes(segment));
-    if (checkpointMessage && metadata.assistantMessageId) checkpointMessage.assistantMessageId = metadata.assistantMessageId;
-    const stopped = result.interruptedAt ? segments.slice(finalSpanStart).filter(segment => visible.includes(segment)) : [];
-    const owner = result.interruptedAt ? markInterruptedTurn(host, stopped, finalSpanAnchor, result.interruptedAt) : undefined;
-    for (const segment of visible) {
-      if (stopped.includes(segment)) continue;
-      const previous = getAutomaticNotificationPredecessor(segment, host.state.messages);
-      // Include only notification context, never another response's live work.
-      host.renderer?.finalizeResponse(segment, previous ? [previous, segment] : [segment]);
+    // Completion settles every reply as one arrival, measured on the presentation it started in.
+    const followArrival = host.renderer?.follow.holdArrival();
+    try {
+      if (!await this.#openThrough(this.#spans.length - 1) || !await this.#closeOpen()) return false;
+      const final = this.#latest!;
+      let checkpointMessage = this.#segments.slice(final.start).reverse().find(segment => host.state.messages.includes(segment));
+      if (interruptedAt) {
+        // A stopped span ends at its output: output-free segments on either side of its notifications show nothing.
+        const empty = this.#segments.slice(final.start).filter(segment => !hasResponseOutput(segment));
+        host.state.messages = host.state.messages.filter(message => !empty.includes(message));
+        for (const segment of empty) host.renderer?.removeMessage(segment.id);
+        checkpointMessage = this.#segments.slice(final.start).reverse().find(segment => host.state.messages.includes(segment));
+      }
+      const visible = this.#segments.filter(segment => host.state.messages.includes(segment));
+      if (checkpointMessage && metadata.assistantMessageId) checkpointMessage.assistantMessageId = metadata.assistantMessageId;
+      const stopped = interruptedAt ? this.#segments.slice(final.start).filter(segment => visible.includes(segment)) : [];
+      const owner = interruptedAt ? markInterruptedTurn(host, stopped, final.anchor, interruptedAt) : undefined;
+      for (const segment of visible) {
+        if (stopped.includes(segment)) continue;
+        const previous = getAutomaticNotificationPredecessor(segment, host.state.messages);
+        // Include only notification context, never another response's live work.
+        host.renderer?.finalizeResponse(segment, previous ? [previous, segment] : [segment]);
+      }
+      // The stopped span folds once, from its owner; the shared layout bounds it.
+      if (owner) host.renderer?.finalizeResponse(owner, host.state.messages);
+      return visible.length > 0 || interruptedAt !== undefined;
+    } finally {
+      this.#release();
+      followArrival?.();
     }
-    // The stopped span folds once, from its owner; the shared layout bounds it.
-    if (owner) host.renderer?.finalizeResponse(owner, host.state.messages);
-    return visible.length > 0 || result.interruptedAt !== undefined;
-  } finally {
-    stream.dispose();
-    followArrival?.();
+  }
+
+  /** Removes everything this turn reserved or rendered, for a transcript that no longer accepts it. */
+  discard(): void {
+    this.#release();
+    const owned = this.#ownedMessages();
+    for (const message of owned) this.host.renderer?.removeMessage(message.id);
+    this.host.state.messages = this.host.state.messages.filter(message => !owned.has(message));
+  }
+
+  #release(): void {
+    this.#stream.dispose();
+    this.#state.dispose();
+  }
+
+  #setHidden(message: ChatMessage, hidden: boolean): void {
+    const element = this.host.renderer?.getMessageContentEl(message.id)?.parentElement;
+    if (element) element.hidden = hidden;
+  }
+
+  /** Where this turn's first message sits in `messages`, or -1 when none of it is there. */
+  transcriptStart(messages: readonly ChatMessage[]): number {
+    const owned = this.#ownedMessages();
+    return messages.findIndex(message => owned.has(message));
+  }
+
+  /** Everything this turn reserved or rendered: replies, continuations and steered input. */
+  #ownedMessages(): Set<ChatMessage> {
+    return new Set([...this.#segments, ...this.#spans.flatMap(span => span.user ? [span.target.message, span.user] : [span.target.message])]);
+  }
+
+  /** Closes open spans before `index` in order, so output-free input boundaries settle as they did. */
+  async #openThrough(index: number): Promise<boolean> {
+    if (this.#latest?.phase === 'open' && this.#latest.index >= index) return true;
+    if (!await this.#closeOpen()) return false;
+    for (let next = (this.#latest?.index ?? -1) + 1; next <= index; next++) {
+      this.#begin(next);
+      if (next < index && !await this.#closeOpen()) return false;
+    }
+    return true;
+  }
+
+  #begin(index: number): void {
+    const { target } = this.#spans[index];
+    const messages = this.host.state.messages;
+    const reserved = messages.indexOf(target.message);
+    this.#latest = {
+      phase: 'open', index, start: this.#segments.length, message: target.message, shown: 'none',
+      anchor: reserved > 0 ? messages[reserved - 1] : reserved < 0 ? messages.at(-1) : undefined,
+    };
+    this.#segments.push(target.message);
+    this.#state.response.messageId = target.message.id;
+    this.#state.currentContentEl = this.host.renderer?.getMessageContentEl(target.message.id) ?? null;
+  }
+
+  /** Finalizes the open span's blocks; a span that never showed output gives up its reply. */
+  async #closeOpen(): Promise<boolean> {
+    const span = this.#latest;
+    if (span?.phase !== 'open') return true;
+    const { host } = this;
+    const stream = this.#stream;
+    const message = span.message;
+    span.phase = 'closed';
+    await stream.handleStreamChunk({ type: 'done' }, message);
+    await stream.finalizeCurrentThinkingBlock(message);
+    if (!this.#isCurrent()) return false;
+    await stream.finalizeCurrentTextBlock(message);
+    if (!this.#isCurrent()) return false;
+    stream.thinkingIndicator.hide();
+    message.completedAt = Date.now();
+    // A span that showed nothing gives up every segment; one that did keeps only segments with output.
+    for (const segment of this.#segments.slice(span.start)) {
+      if (span.shown === 'none' || !hasResponseOutput(segment)) discardBackgroundTurn(host, { message: segment });
+    }
+    this.#state.currentContentEl = null;
+    return true;
   }
 }

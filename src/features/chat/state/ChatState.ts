@@ -75,6 +75,11 @@ export class ChatState {
     }));
   }
 
+  /** A private response cursor for concurrently rendered output; it reads this session's attention, never a copy. */
+  createResponseState(callbacks: ChatStateCallbacks): ChatState {
+    return new ChatState(callbacks, undefined, NO_TURN_ACTIVITY, this.sessionAttention);
+  }
+
   // ============================================
   // Messages
   // ============================================

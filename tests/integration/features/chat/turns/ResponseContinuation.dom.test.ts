@@ -409,7 +409,8 @@ it.each(['background', 'user'] as const)('groups only the requested response acr
 });
 
 it('keeps a notification consumed by an automatic response outside an admitted requested turn', async () => {
-  const { renderAutoTriggeredTurn, renderSessionTaskNotification } = await import('@/features/chat/turns/BackgroundTurnRenderer');
+  const { renderSessionTaskNotification } = await import('@/features/chat/turns/BackgroundTurnRenderer');
+  const { BackgroundResponses } = await import('@/features/chat/turns/BackgroundResponses');
   const messagesEl = document.body.createDiv();
   const plugin = await createChatFeatureHost({ settings: { mediaFolder: '' } });
   const renderer = new MessageRenderer(plugin,
@@ -438,11 +439,14 @@ it('keeps a notification consumed by an automatic response outside an admitted r
     state.addMessage(response);
     state.currentContentEl = renderer.addMessage(response).querySelector('.claudian-message-content');
     renderSessionTaskNotification(host, 'Background task finished.');
-    await renderAutoTriggeredTurn(host, { spans: [{ events: [
-        { type: 'tool_started', scope, toolCallId: 'background-read', toolScope: { kind: 'main' }, name: 'Read', input: { file_path: 'background.md' } },
-        { type: 'tool_completed', scope: { ...scope, sequence: 2 }, toolCallId: 'background-read', toolScope: { kind: 'main' }, content: 'Background content.' },
-        { type: 'text_delta', scope: { ...scope, sequence: 3 }, text: 'Automatic answer.' },
-      ] }], metadata: {} }, () => true);
+    const background = new BackgroundResponses(host);
+    background.reserve('binding', 'automatic');
+    for (const event of [
+      { type: 'tool_started', scope, toolCallId: 'background-read', toolScope: { kind: 'main' }, name: 'Read', input: { file_path: 'background.md' } },
+      { type: 'tool_completed', scope: { ...scope, sequence: 2 }, toolCallId: 'background-read', toolScope: { kind: 'main' }, content: 'Background content.' },
+      { type: 'text_delta', scope: { ...scope, sequence: 3 }, text: 'Automatic answer.' },
+      { type: 'background_turn_completed', scope: { ...scope, sequence: 4 }, reason: 'completed' },
+    ] as const) await background.handle('binding', event, () => true);
     const text = { type: 'text' as const, content: 'Requested answer.' };
     response = await continueResponseAfterNotification(host, response, text);
     await stream.handleStreamChunk(text, response);
