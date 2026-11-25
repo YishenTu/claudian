@@ -150,7 +150,8 @@ interface ActiveRun {
   readonly abortController: AbortController;
   readonly inputText: string;
   readonly run: RequestedRunChannel;
-  accepted: boolean;
+  /** Output Pi reports before admitting the prompt, such as preflight compaction, waits for admission. */
+  admission: { kind: 'pending'; held: StreamChunk[] } | { kind: 'accepted' };
   assistantStarted: boolean;
   phase: ActiveRunPhase;
   nativeAssistantId?: string;
@@ -635,7 +636,7 @@ implements ProviderExecutionSession, SteerableExecutionSession {
         },
         sessionInstanceId: this.sessionInstanceId,
       }),
-      accepted: false,
+      admission: { held: [], kind: 'pending' },
       assistantStarted: false,
       phase: 'preflight',
       pendingTerminalError: null,
@@ -1214,6 +1215,11 @@ implements ProviderExecutionSession, SteerableExecutionSession {
       active.terminalSignal.reject(new Error(chunk.content));
       return;
     }
+    // Pi can still reject a prompt it has not admitted; its preflight output must not acknowledge delivery.
+    if (active.admission.kind === 'pending') {
+      active.admission.held.push(chunk);
+      return;
+    }
     this.#ensureAccepted(active);
     this.#emitChunk(active, chunk);
   }
@@ -1517,8 +1523,9 @@ implements ProviderExecutionSession, SteerableExecutionSession {
   #ensureAccepted(active: ActiveRun): void {
     if (!this.isActive(active) || active.phase === 'preflight') return;
     this.nativeConversationContextEstablished = true;
-    if (active.accepted) return;
-    active.accepted = true;
+    if (active.admission.kind === 'accepted') return;
+    const { held } = active.admission;
+    active.admission = { kind: 'accepted' };
     this.#emitRequested(active, {
       accepted: true,
       nativeUserMessageId: active.nativeUserMessageId,
@@ -1529,6 +1536,7 @@ implements ProviderExecutionSession, SteerableExecutionSession {
       nativeUserMessageId: active.nativeUserMessageId,
       type: 'user_message_started',
     });
+    for (const chunk of held) this.#emitChunk(active, chunk);
   }
 
   async #refreshState(signal: AbortSignal): Promise<void> {

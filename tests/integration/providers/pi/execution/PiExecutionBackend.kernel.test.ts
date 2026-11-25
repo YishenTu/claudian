@@ -1971,6 +1971,30 @@ describe('PiExecutionBackend', () => {
     await harness.session.dispose();
   });
 
+  // Pi compacts before admitting a prompt; its notice must not acknowledge a prompt Pi may still reject.
+  it.each([['rejects', false], ['admits', true]] as const)('reports preflight compaction for a prompt Pi %s', async (_name, admitted) => {
+    const harness = (await createHarness(createConfig(), undefined, async <T>(type: string) => {
+      if (type === 'prompt') {
+        harness.kernels[0].emit({ type: 'compaction_start', reason: 'threshold' });
+        if (!admitted) throw new PiRPCResponseError('prompt', 'Auto-compaction failed');
+        queueMicrotask(() => {
+          harness.kernels[0].emit({ type: 'agent_end' });
+          harness.kernels[0].emit({ type: 'agent_settled' });
+        });
+        return { disposition: 'started' } as T;
+      }
+      return harness.responses.get(type) as T;
+    }));
+    const events = await collect(harness.session.execute(createRequest()).events);
+    const acknowledged = events.findIndex(event => event.type === 'turn_started' && event.accepted);
+    expect(acknowledged >= 0).toBe(admitted);
+    expect(events.some(event => event.type === 'user_message_started')).toBe(admitted);
+    // An admitted prompt still shows the compaction, after its acknowledgement.
+    const notice = events.findIndex(event => event.type === 'notice' && event.message === 'Pi is compacting the conversation context.');
+    expect(admitted ? notice > acknowledged : notice).toBe(admitted ? true : -1);
+    await harness.session.dispose();
+  });
+
   it('rejects a model removed during asynchronous preparation before native input', async () => {
     const harness = (await createHarness(createConfig(), () => {
       harness.host.settings.providerConfigs.pi!.visibleModels = [];
