@@ -10,6 +10,7 @@ import {
   type PiSessionEntry,
   resolvePiActivePath,
 } from '@/providers/pi/history/PiHistoryStore';
+import { piPeepsSubagentAdapter } from '@/providers/pi/normalization/PiPeepsSubagents';
 
 describe('PiHistoryStore', () => {
   it.each([
@@ -104,6 +105,22 @@ describe('PiHistoryStore', () => {
     } }));
     expect(messages[0].toolCalls).toEqual([{ id: 'tool', name: 'claudian_send_message', input: { text: 'Hello' },
       status: 'running', providerPayload: { rawName: 'claudian_send_message' } }]);
+  });
+
+  // Pi never runs the calls of a reply that ended in an error or abort; live turns fail them with the reply.
+  // A stopped reply is an interruption, so its abort text stays hidden.
+  it.each([
+    ['error', '529 overloaded', '529 overloaded'], ['aborted', 'Operation aborted', undefined],
+  ])('replays a call from a reply that ended with %s as failed', (stopReason, errorMessage, result) => {
+    const spawn = { type: 'toolCall', id: 'spawn', name: 'peeps_spawn', arguments: { label: 'probe', task: 'List the vault.' } };
+    const messages = parsePiSessionContent(JSON.stringify({ type: 'message', id: 'assistant', message: {
+      role: 'assistant', stopReason, errorMessage, content: [{ type: 'toolCall', id: 'tool', name: 'read', arguments: {} }, spawn],
+    } }));
+    const [read, spawned] = messages[0].toolCalls ?? [];
+    expect(read).toEqual({ id: 'tool', input: {}, name: 'Read', status: 'error', ...(result ? { result } : {}) });
+    // No child ever started, so the spawn's subagent card fails with it.
+    expect(spawned).toMatchObject({ id: 'spawn', status: 'error' });
+    expect(piPeepsSubagentAdapter.buildSubagentInfo(spawned, messages[0].toolCalls ?? [])).toMatchObject({ description: 'probe', status: 'error' });
   });
 
   it('correlates repeated live prompts by their anchored order and leaves unsaved input unbound', () => {

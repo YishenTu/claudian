@@ -693,7 +693,8 @@ function applyPiPeepsSubagents(entries: PiSessionEntry[], messages: ChatMessage[
           text: extractPiToolTextContent(message.content),
         });
       }
-    } else if (isAssistantMessageEntry(entry)) {
+    } else if (isAssistantMessageEntry(entry) && message.stopReason !== 'error' && message.stopReason !== 'aborted') {
+      // Pi runs no call of a reply that failed or was stopped, so such a spawn started no child.
       for (const toolCall of extractAssistantToolCalls(message.content ?? message.parts ?? message.blocks)) {
         peeps.toolStarted(toolCall.id, toolCall.name, toolCall.input, timestamp);
       }
@@ -836,6 +837,15 @@ function mapPiSessionEntry(
   if (role === 'assistant') {
     const contentBlocks = extractAssistantContentBlocks(message.content ?? message.parts ?? message.blocks);
     const toolCalls = extractAssistantToolCalls(message.content ?? message.parts ?? message.blocks);
+    // Pi never runs the calls of a reply that ended in an error or abort; live turns fail them with the reply.
+    // A stopped reply is an interruption, so only an error explains the failure.
+    if (message.stopReason === 'error' || message.stopReason === 'aborted') {
+      const errorMessage = message.stopReason === 'error' ? getString(message.errorMessage) : null;
+      for (const toolCall of toolCalls) {
+        toolCall.status = 'error';
+        if (errorMessage) toolCall.result = errorMessage;
+      }
+    }
     const text = contentBlocks
       .filter((block): block is Extract<ContentBlock, { type: 'text' }> => block.type === 'text')
       .map(block => block.content)
