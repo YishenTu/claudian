@@ -207,8 +207,9 @@ function resolveManagedPiReleaseBin(launcher: string): string | null {
   const installRoot = path.resolve(path.dirname(launcher), '..', 'install');
   try {
     if (!fs.statSync(launcher).isFile()) return null;
+    // Windows PowerShell 5.1 adds a UTF-8 BOM when it rewrites the marker.
     const marker = JSON.parse(
-      fs.readFileSync(path.join(installRoot, 'managed-install.json'), 'utf8'),
+      fs.readFileSync(path.join(installRoot, 'managed-install.json'), 'utf8').replace(/^\uFEFF/u, ''),
     ) as { kind?: unknown; layout?: unknown; schemaVersion?: unknown };
     if (
       marker.kind !== 'pi-managed-install'

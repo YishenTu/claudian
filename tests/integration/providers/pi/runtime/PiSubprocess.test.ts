@@ -365,10 +365,17 @@ describe('PiSubprocess', () => {
     );
   });
 
-  it.each(['cmd', 'ps1'] as const)(
-    'launches the active release entry for a pi.dev managed %s launcher',
-    (launcher) => {
+  it.each([
+    ['cmd', false], ['ps1', false], ['cmd', true],
+  ] as const)(
+    'launches the active release entry for a pi.dev managed %s launcher (marker BOM: %s)',
+    async (launcher, bom) => {
       Object.defineProperty(process, 'platform', { value: 'win32' });
+      const markerFile = path.join(path.dirname(windowsManagedCommands.cmd), '..', 'install', 'managed-install.json');
+      const marker = await fs.readFile(markerFile, 'utf8');
+      // Windows PowerShell 5.1 writes a UTF-8 BOM when it rewrites the marker.
+      if (bom) await fs.writeFile(markerFile, `\uFEFF${marker}`);
+      onTestFinished(() => fs.writeFile(markerFile, marker));
       const args = [
         '--mode',
         'rpc',
