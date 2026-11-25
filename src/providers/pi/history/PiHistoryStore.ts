@@ -17,7 +17,7 @@ import type { ChatMessage, ContentBlock, ImageAttachment, ToolCallInfo, TurnStat
 import { createTurnStats, isTokenCount, settleInterruptedTurn } from '../../../core/types';
 import { encodePiModelId } from '../models';
 import { getPiCustomMessageDisplayText } from '../normalization/piCustomMessageNormalization';
-import { getPiTerminalErrorMessage } from '../normalization/piEventNormalization';
+import { getPiTerminalErrorMessage, getPiUnrunToolResult } from '../normalization/piEventNormalization';
 import { PI_PEEPS_RUN_ENTRY_TYPE, PiPeepsSubagents } from '../normalization/PiPeepsSubagents';
 import {
   extractPiToolResultText,
@@ -693,8 +693,8 @@ function applyPiPeepsSubagents(entries: PiSessionEntry[], messages: ChatMessage[
           text: extractPiToolTextContent(message.content),
         });
       }
-    } else if (isAssistantMessageEntry(entry) && message.stopReason !== 'error' && message.stopReason !== 'aborted') {
-      // Pi runs no call of a reply that failed or was stopped, so such a spawn started no child.
+    } else if (isAssistantMessageEntry(entry) && getPiUnrunToolResult(message) === null) {
+      // A spawn in a reply Pi never ran started no child.
       for (const toolCall of extractAssistantToolCalls(message.content ?? message.parts ?? message.blocks)) {
         peeps.toolStarted(toolCall.id, toolCall.name, toolCall.input, timestamp);
       }
@@ -837,13 +837,12 @@ function mapPiSessionEntry(
   if (role === 'assistant') {
     const contentBlocks = extractAssistantContentBlocks(message.content ?? message.parts ?? message.blocks);
     const toolCalls = extractAssistantToolCalls(message.content ?? message.parts ?? message.blocks);
-    // Pi never runs the calls of a reply that ended in an error or abort; live turns fail them with the reply.
-    // A stopped reply is an interruption, so only an error explains the failure.
-    if (message.stopReason === 'error' || message.stopReason === 'aborted') {
-      const errorMessage = message.stopReason === 'error' ? getString(message.errorMessage) : null;
+    // Live turns fail the calls of a reply Pi never ran with the same result.
+    const unrunResult = getPiUnrunToolResult(message);
+    if (unrunResult !== null) {
       for (const toolCall of toolCalls) {
         toolCall.status = 'error';
-        if (errorMessage) toolCall.result = errorMessage;
+        if (unrunResult) toolCall.result = unrunResult;
       }
     }
     const text = contentBlocks

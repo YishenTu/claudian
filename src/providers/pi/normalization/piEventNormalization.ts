@@ -14,10 +14,10 @@ import {
 
 export interface PiEventNormalizationState {
   /**
-   * Tool calls shown so far, with the input last emitted. A call streamed in a reply runs only if the reply
-   * completes; `settled` marks one its failed reply ended unrun.
+   * Tool calls shown so far, with the input last emitted. A call stays `streamed` until it runs or its reply
+   * ends without running it.
    */
-  emittedTools: Map<string, { input: string; phase: 'streamed' | 'executing' | 'settled' }>;
+  emittedTools: Map<string, { input: string; phase: 'streamed' | 'resolved' }>;
   /** Latest native partial-result snapshot per running tool. */
   toolOutputs: Map<string, string>;
   /** Running tools whose snapshot stopped extending the text already streamed. */
@@ -45,7 +45,7 @@ export function normalizePiRPCEvent(
     case 'message_update':
       return normalizeMessageUpdate(event, state);
     case 'toolcall_end':
-      return normalizeToolUse(getNestedRecord(event, 'toolCall') ?? event, state, 'executing');
+      return normalizeToolUse(getNestedRecord(event, 'toolCall') ?? event, state, 'resolved');
     // Calls a tool makes while it runs (codemode scripts) never reach the model;
     // the calling tool's result summarizes them, as session history does.
     case 'tool_execution_start':
@@ -113,7 +113,7 @@ function normalizeToolExecution(
 ): StreamChunk[] {
   switch (event.type) {
     case 'tool_execution_start':
-      return normalizeToolUse(getNestedRecord(event, 'toolCall') ?? event, state, 'executing');
+      return normalizeToolUse(getNestedRecord(event, 'toolCall') ?? event, state, 'resolved');
     case 'tool_execution_update':
       return normalizeToolOutput(event, state);
     default:
@@ -195,18 +195,26 @@ function normalizeTerminalError(event: Record<string, unknown>): StreamChunk[] {
 }
 
 /**
- * Pi runs no call of a reply that ends in an error or abort, so its streamed cards end failed. Callers apply
- * this to every message_end, including the terminal errors they report themselves.
+ * Pi runs no tool call of an assistant reply that ended in an error or abort. Returns the failed result those
+ * calls show, or null when they may run. A stopped reply is an interruption, so only an error explains it.
+ */
+export function getPiUnrunToolResult(message: Record<string, unknown>): string | null {
+  if (message.stopReason === 'error') return getString(message.errorMessage) ?? '';
+  return message.stopReason === 'aborted' ? '' : null;
+}
+
+/**
+ * Fails the streamed calls of a reply Pi will not run. Callers apply this to every message_end, including
+ * the terminal errors they report themselves.
  */
 export function settlePiUnrunStreamedTools(event: Record<string, unknown>, state: PiEventNormalizationState): StreamChunk[] {
   const message = getNestedRecord(event, 'message');
-  if (message?.role !== 'assistant' || (message.stopReason !== 'error' && message.stopReason !== 'aborted')) return [];
-  // A stopped reply is an interruption, not a failure to explain; history shows no abort text either.
-  const content = message.stopReason === 'error' ? getString(message.errorMessage) ?? '' : '';
+  const content = message?.role === 'assistant' ? getPiUnrunToolResult(message) : null;
+  if (content === null) return [];
   const chunks: StreamChunk[] = [];
   for (const [id, tool] of state.emittedTools) {
     if (tool.phase !== 'streamed') continue;
-    tool.phase = 'settled';
+    tool.phase = 'resolved';
     chunks.push({ type: 'tool_result', id, content, isError: true });
   }
   return chunks;
@@ -215,7 +223,7 @@ export function settlePiUnrunStreamedTools(event: Record<string, unknown>, state
 function normalizeToolUse(
   event: Record<string, unknown>,
   state: PiEventNormalizationState,
-  phase: 'streamed' | 'executing',
+  phase: 'streamed' | 'resolved',
 ): StreamChunk[] {
   const id = getPiToolId(event);
   if (!id) {
