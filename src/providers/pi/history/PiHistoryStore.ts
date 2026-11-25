@@ -474,8 +474,8 @@ function stepPiReplyCheckpoint(entry: PiSessionEntry, callIds: ReadonlySet<strin
   return PI_UNDISPLAYED_STATE_ENTRY_TYPES.has(entry.type) ? 'pass' : 'end';
 }
 
-/** Entries that record extension or settings state between a batch's results without adding a message. */
-const PI_UNDISPLAYED_STATE_ENTRY_TYPES = new Set(['custom', 'model_change', 'thinking_level_change']);
+/** Entries that record extension, settings or session metadata between a batch's results without adding a message. */
+const PI_UNDISPLAYED_STATE_ENTRY_TYPES = new Set(['custom', 'label', 'model_change', 'session_info', 'thinking_level_change']);
 
 export async function createPiForkSessionFile(
   sourceSessionFile: string,
