@@ -57,7 +57,6 @@ import {
   correlatePiUserMessages,
   type createPiForkSessionFile,
   findPiReplyCheckpointId,
-  findPiSessionFile,
   followPiLeafAppends,
   getPiConversationBranches,
   getPiTurnStats,
@@ -1682,14 +1681,11 @@ implements ProviderExecutionSession, SteerableExecutionSession {
     const pathContext = await this.historyContextResolver.resolve(this.config.workingDirectory, {
       environment: env, config: this.host.config, executionTarget, environmentText: envText,
     });
+    // An ID-only source is found where history shows it, including the stores Pi's settings select.
     const sourceFile = executionTarget.method === 'wsl'
       ? resolvePiSessionFileHint(state.forkSourceSessionFile, forkSource.sessionId, this.config.workingDirectory, pathContext)
       : state.forkSourceSessionFile
-      ?? findPiSessionFile(
-        forkSource.sessionId,
-        this.config.workingDirectory,
-        getString(env.PI_CODING_AGENT_SESSION_DIR),
-      );
+      ?? resolvePiSessionFileHint(undefined, forkSource.sessionId, this.config.workingDirectory, pathContext);
     if (!sourceFile) {
       throw new Error(`Pi fork source session not found: ${forkSource.sessionId}`);
     }

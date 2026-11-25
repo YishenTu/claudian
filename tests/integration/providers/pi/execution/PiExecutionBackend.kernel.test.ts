@@ -2457,6 +2457,34 @@ describe('PiExecutionBackend', () => {
     },
   );
 
+  // History shows a pending fork from the store Pi's settings select; its first send must find the same source.
+  it.skipIf(onWindows)('materializes a pending fork whose source lives under the sessionDir from vault settings', async () => {
+    const vault = await fs.mkdtemp(path.join(os.tmpdir(), 'pi-fork-settings-store-'));
+    await fs.mkdir(path.join(vault, '.pi'), { recursive: true });
+    await fs.writeFile(path.join(vault, '.pi', 'settings.json'), JSON.stringify({ sessionDir: './vault-sessions' }));
+    const sourceFile = path.join(vault, 'vault-sessions', '--vault--', '2026-01-01T00-00-00-000Z_fork-source-only-id.jsonl');
+    await fs.mkdir(path.dirname(sourceFile), { recursive: true });
+    await fs.writeFile(sourceFile, JSON.stringify({ type: 'session', version: 3, id: 'fork-source-only-id', cwd: vault }));
+    const createForkSessionFile = vi.fn(async () => ({
+      leafEntryId: 'assistant-1', parentSession: sourceFile, sessionFile: path.join(vault, 'fork.jsonl'), sessionId: 'fork',
+    }));
+    const harness = (await createHarness(createConfig({
+      workingDirectory: vault,
+      resumeSeed: { providerState: { forkSource: { resumeAt: 'assistant-1', sessionId: 'fork-source-only-id' } } },
+    }), undefined, undefined, { createForkSessionFile }));
+    harness.responses.set('get_state', { sessionFile: path.join(vault, 'fork.jsonl'), sessionId: 'fork' });
+    try {
+      const result = collect(harness.session.execute(createRequest()).events);
+      await waitFor(() => harness.kernels.length === 1 && getPromptMessages(harness.kernels[0]).length === 1);
+      completeTurn(harness.kernels[0]);
+      expect((await result).at(-1)).toMatchObject({ type: 'turn_completed' });
+      expect(createForkSessionFile).toHaveBeenCalledWith(sourceFile, 'assistant-1', expect.anything());
+    } finally {
+      await harness.session.dispose();
+      await fs.rm(vault, { force: true, recursive: true });
+    }
+  });
+
   it.each(['cancel', 'dispose'] as const)(
     'rolls back exactly once when %s occurs after fork creation but before state commit',
     async (teardown) => {
