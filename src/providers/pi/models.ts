@@ -130,7 +130,7 @@ export function normalizePiDiscoveredModels(value: unknown): PiDiscoveredModel[]
       continue;
     }
 
-    const provider = firstString(entry.provider, entry.providerId, entry.api)?.trim() ?? '';
+    const provider = firstString(entry.provider, entry.providerId)?.trim() ?? '';
     const id = firstString(entry.id, entry.modelId, entry.model, entry.name)?.trim() ?? '';
     if (!provider || !id) {
       continue;

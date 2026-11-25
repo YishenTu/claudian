@@ -82,6 +82,11 @@ describe('Pi model helpers', () => {
     expect(clampPiThinkingLevel('medium', ['low', 'high', 'max'])).toBe('high');
   });
 
+  // A model's `api` names its wire protocol (openai-responses), never the provider set_model needs.
+  it('drops a discovered model without a provider instead of using its API as the provider', () => {
+    expect(normalizePiDiscoveredModels([{ api: 'openai-responses', id: 'gpt-x', reasoning: false }])).toEqual([]);
+  });
+
   it('normalizes discovered model records', () => {
     expect(normalizePiDiscoveredModels([
       {
