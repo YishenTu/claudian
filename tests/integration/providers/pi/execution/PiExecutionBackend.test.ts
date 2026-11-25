@@ -188,7 +188,9 @@ it('publishes persisted native turn statistics at live completion', async () => 
   }
 });
 
-it.each([true, false])('advances the Pi assistant checkpoint (stored leaf: %s)', async storedLeaf => {
+it.each([
+  [true, false], [false, false], [true, true],
+])('advances the Pi assistant checkpoint (stored leaf: %s, ends on tool results: %s)', async (storedLeaf, endsOnTools) => {
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'pi-review-'));
   const sessionFile = path.join(tempDir, 'session.jsonl');
   const records = [
@@ -210,16 +212,27 @@ it.each([true, false])('advances the Pi assistant checkpoint (stored leaf: %s)',
     await harness.whenRequest('prompt');
     await fs.appendFile(sessionFile, [
       { type: 'message', id: 'user-2', parentId: 'assistant-1', message: { role: 'user', content: 'Second' } },
-      { type: 'message', id: 'assistant-2', parentId: 'user-2', message: { role: 'assistant', content: 'Second answer' } },
+      ...(endsOnTools ? [
+        // A terminating tool batch ends the run without another assistant message.
+        { type: 'message', id: 'assistant-2', parentId: 'user-2', message: { role: 'assistant', stopReason: 'toolUse', content: [
+          { type: 'toolCall', id: 'c1', name: 'read', arguments: { path: 'one.md' } },
+          { type: 'toolCall', id: 'c2', name: 'read', arguments: { path: 'two.md' } },
+        ] } },
+        { type: 'message', id: 'result-1', parentId: 'assistant-2', message: { role: 'toolResult', toolCallId: 'c1', content: 'one' } },
+        { type: 'message', id: 'result-2', parentId: 'result-1', message: { role: 'toolResult', toolCallId: 'c2', content: 'two' } },
+      ] : [
+        { type: 'message', id: 'assistant-2', parentId: 'user-2', message: { role: 'assistant', content: 'Second answer' } },
+      ]),
     ].map(r => JSON.stringify(r)).join('\n') + '\n');
     harness.processes[0].emit({ type: 'agent_start' });
     harness.processes[0].emit({ type: 'agent_end' });
     harness.processes[0].emit({ type: 'agent_settled' });
     const events = await eventsPromise;
+    const checkpoint = endsOnTools ? 'result-2' : 'assistant-2';
     expect(events.at(-1)).toMatchObject({
-      type: 'turn_completed', nativeAssistantId: 'assistant-2', nativeCheckpointId: 'assistant-2',
+      type: 'turn_completed', nativeAssistantId: checkpoint, nativeCheckpointId: checkpoint,
     });
-    expect(harness.session.getSnapshot().providerState).toMatchObject({ leafEntryId: 'assistant-2' });
+    expect(harness.session.getSnapshot().providerState).toMatchObject({ leafEntryId: checkpoint });
   } finally {
     await harness.session.dispose();
     await fs.rm(tempDir, { recursive: true, force: true });

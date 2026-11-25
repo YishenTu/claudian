@@ -550,6 +550,14 @@ function mapPiSessionEntries(
       turnRunning = true;
     }
     const mapped = mapPiSessionEntry(entry, messages, syntheticIdNamespace);
+    if (!mapped && entry.id && isToolResultEntry(entry)) {
+      // A terminating tool batch ends the run on its results; a later assistant entry moves the checkpoint on.
+      const reply = messages.at(-1);
+      const toolCallId = getToolResultCallId(entry);
+      if (reply?.role === 'assistant' && reply.toolCalls?.some(call => call.id === toolCallId)) {
+        reply.assistantMessageId = entry.id;
+      }
+    }
     if (mapped) {
       if (mapped.role === 'user') flushPendingError();
       if (!promptedTurnOpen && (entry.type === 'custom_message'
@@ -688,6 +696,15 @@ export function getPiTurnStats(entries: PiSessionEntry[], assistantId: string | 
     if (assistantId && entry.id === assistantId) return result;
   }
   return undefined;
+}
+
+/** A reply's fork checkpoint is its last entry: the final assistant message, or the results of a terminating tool batch. */
+export function findPiReplyCheckpointId(entries: readonly PiSessionEntry[]): string | null {
+  for (let index = entries.length - 1; index >= 0; index -= 1) {
+    const entry = entries[index];
+    if (isAssistantMessageEntry(entry) || isToolResultEntry(entry)) return entry.id ?? null;
+  }
+  return null;
 }
 
 function isAssistantMessageEntry(entry: PiSessionEntry): boolean {

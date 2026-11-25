@@ -2986,6 +2986,42 @@ describe('PiExecutionBackend', () => {
       }
     });
 
+    it('checkpoints a background turn that ended on tool results at its last result', async () => {
+      const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'pi-background-tools-'));
+      const sessionFile = path.join(dir, 'session.jsonl');
+      await fs.writeFile(sessionFile, [
+        { type: 'session', id: 'pi-session-1' },
+        { type: 'message', id: 'u1', parentId: null, message: { role: 'user', content: 'Hello Pi' } },
+        { type: 'message', id: 'a1', parentId: 'u1', message: { role: 'assistant', content: 'Hi', stopReason: 'stop' } },
+      ].map(line => JSON.stringify(line)).join('\n'));
+      const harness = (await createHarness());
+      harness.responses.set('get_state', { sessionFile, sessionId: 'pi-session-1' });
+      try {
+        const { events, kernel } = await startIdleSession(harness);
+        emitWake(kernel);
+        kernel.emit({ toolCall: { arguments: { path: 'note.md' }, id: 'tool-bg', name: 'read' }, type: 'tool_execution_start' });
+        kernel.emit({ id: 'tool-bg', result: { content: 'note' }, type: 'tool_execution_end' });
+        // A terminating tool batch ends the run without another assistant message.
+        await fs.appendFile(sessionFile, `\n${[
+          { type: 'custom_message', id: 'c1', parentId: 'a1', customType: 'peeps-result', display: true, content: 'Child answer' },
+          { type: 'message', id: 'a2', parentId: 'c1', message: { role: 'assistant', stopReason: 'toolUse', content: [
+            { type: 'toolCall', id: 'tool-bg', name: 'read', arguments: { path: 'note.md' } },
+          ] } },
+          { type: 'message', id: 'r1', parentId: 'a2', message: { role: 'toolResult', toolCallId: 'tool-bg', content: 'note' } },
+        ].map(line => JSON.stringify(line)).join('\n')}`);
+        kernel.emit({ messages: [], type: 'agent_end' });
+        kernel.emit({ type: 'entry_appended' });
+        kernel.emit({ type: 'agent_settled' });
+        await waitFor(() => events.some(event => event.type === 'background_turn_completed'));
+
+        expect(backgroundEvents(events).at(-1)).toMatchObject({ nativeAssistantId: 'r1', reason: 'completed' });
+        expect(harness.session.getSnapshot()).toMatchObject({ providerState: { leafEntryId: 'r1' }, status: 'idle' });
+      } finally {
+        await harness.session.dispose();
+        await fs.rm(dir, { force: true, recursive: true });
+      }
+    });
+
     it('starts a new background turn for each result that follows an answered background response', async () => {
       const harness = (await createHarness());
       const { events, kernel } = await startIdleSession(harness);

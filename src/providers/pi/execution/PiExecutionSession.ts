@@ -55,6 +55,7 @@ import {
 import {
   correlatePiUserMessages,
   type createPiForkSessionFile,
+  findPiReplyCheckpointId,
   findPiSessionFile,
   followPiLeafAppends,
   getPiConversationBranches,
@@ -1347,7 +1348,7 @@ implements ProviderExecutionSession, SteerableExecutionSession {
     try {
       if (isCurrent() && !this.#shouldDisableNativePersistence()) {
         const path = await this.#syncNativeLeaf(undefined, isCurrent);
-        background.nativeAssistantId = (path && findLastRoleId(path, 'assistant')) ?? background.nativeAssistantId;
+        background.nativeAssistantId = (path && findPiReplyCheckpointId(path)) ?? background.nativeAssistantId;
       }
     } catch {
       // History reload still reads the native file; completion must not wait on a failed sync.
@@ -1577,7 +1578,7 @@ implements ProviderExecutionSession, SteerableExecutionSession {
       }
       active.nativeUserMessageId = findLastRoleId(entries, 'user') ?? undefined;
       active.nativeAssistantId =
-        findLastRoleId(entries, 'assistant')
+        findPiReplyCheckpointId(entries)
         ?? getPiState(this.state.providerState).leafEntryId;
       active.turnStats = getPiTurnStats(entries, active.nativeAssistantId);
     } catch {

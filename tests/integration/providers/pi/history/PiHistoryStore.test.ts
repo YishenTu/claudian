@@ -61,6 +61,32 @@ it('creates a self-contained Pi fork session file at the assistant checkpoint', 
   ]);
 });
 
+it('forks a reply that ended on tool results from its last result', async () => {
+  const dir = await createTempDirectory('pi-fork-tool-end-');
+  const sourceFile = path.join(dir, 'source.jsonl');
+  const records = [
+    { type: 'session', version: 3, id: 'source-session', timestamp: testTime({ days: -238 }), cwd: '/source-cwd' },
+    { id: 'u1', parentId: null, type: 'message', message: { role: 'user', content: 'Read both notes' } },
+    { id: 'a1', parentId: 'u1', type: 'message', message: { role: 'assistant', stopReason: 'toolUse', content: [
+      { type: 'toolCall', id: 'c1', name: 'read', arguments: { path: 'one.md' } },
+      { type: 'toolCall', id: 'c2', name: 'read', arguments: { path: 'two.md' } },
+    ] } },
+    // A terminating tool batch ends the run without another assistant message.
+    { id: 'r1', parentId: 'a1', type: 'message', message: { role: 'toolResult', toolCallId: 'c1', toolName: 'read', content: [{ type: 'text', text: 'one' }] } },
+    { id: 'r2', parentId: 'r1', type: 'message', message: { role: 'toolResult', toolCallId: 'c2', toolName: 'read', content: [{ type: 'text', text: 'two' }] } },
+  ];
+  await fs.writeFile(sourceFile, records.map(record => JSON.stringify(record)).join('\n'));
+
+  const reply = parsePiSessionContent(await fs.readFile(sourceFile, 'utf-8'))[1];
+  expect(reply.assistantMessageId).toBe('r2');
+
+  const forked = await createPiForkSessionFile(sourceFile, reply.assistantMessageId!, { sessionId: 'fork-session' });
+  const forkedContent = await fs.readFile(forked.sessionFile, 'utf-8');
+  expect(forked.leafEntryId).toBe('r2');
+  expect(forkedContent.trim().split('\n').map(line => JSON.parse(line).id)).toEqual(['fork-session', 'u1', 'a1', 'r1', 'r2']);
+  expect(parsePiSessionContent(forkedContent)[1].toolCalls?.map(call => [call.id, call.result])).toEqual([['c1', 'one'], ['c2', 'two']]);
+});
+
 it('rolls back the created fork file and keeps the source session', async () => {
   const dir = await createTempDirectory('pi-fork-rollback-');
   const sourceFile = path.join(dir, 'source.jsonl');
