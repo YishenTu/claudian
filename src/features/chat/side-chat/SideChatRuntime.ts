@@ -120,11 +120,7 @@ export class SideChatRuntime {
     this.#subagents = new SubagentManager(() => undefined);
     this.#prompts = new SessionInteractions({
       getPromptParentEl: () => this.#presentation?.getPromptParentEl() ?? null,
-      onBeforeShow: () => {
-        const generation = this.state.streamGeneration;
-        this.#stream.thinkingIndicator.hide();
-        return () => this.#stream.thinkingIndicator.resume(generation);
-      },
+      onBeforeShow: () => this.#stream.hideWaitingIndicators(),
     });
     this.#prompts.subscribe(() => this.state.setActionRequired(this.#prompts.pendingCount > 0));
     this.#prompts.bindAsyncQuestions({

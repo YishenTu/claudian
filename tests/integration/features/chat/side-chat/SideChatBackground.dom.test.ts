@@ -64,6 +64,43 @@ it.each([false, true])('keeps side background boundaries before queued follow-up
   expect(harness.tab.state.messages.map(message => message.content)).toEqual(['Remember A', 'Noted A']);
 });
 
+it('shows side background output while its turn is still running', async () => {
+  const harness = await finishedSide();
+  const native = harness.backend.latest;
+  native.emitBackgroundEvent({ type: 'background_turn_started' });
+  native.emitBackgroundEvent({ type: 'text_delta', text: 'Background analysis so far' });
+  const partial = await screen.findByText('Background analysis so far');
+  expect(partial.closest('[hidden]')).toBeNull();
+  expect(harness.controller.runtime?.isWorking).toBe(true);
+  native.emitBackgroundEvent({ type: 'background_turn_completed', reason: 'completed' });
+  await waitFor(() => expect(harness.controller.runtime?.isWorking).toBe(false));
+  expect(screen.getByText('Background analysis so far').closest('[hidden]')).toBeNull();
+});
+
+it('hides a shown background waiting indicator while an approval waits, then restores it', async () => {
+  const harness = await finishedSide();
+  const native = harness.backend.latest;
+  const indicator = () => document.querySelector('.claudian-side-chat-messages .claudian-thinking');
+  native.emitBackgroundEvent({ type: 'background_turn_started' });
+  native.emitBackgroundEvent({ type: 'text_delta', text: 'Checking the job.' });
+  native.emitBackgroundEvent({ type: 'tool_started', toolCallId: 'bash', toolScope: { kind: 'main' }, name: 'Bash', input: { command: 'ls' } });
+  await screen.findByText('Checking the job.');
+  await waitFor(() => expect(indicator()).not.toBeNull());
+  const approval = native.config.interactionPort.requestApproval({
+    interactionId: 'approval', sessionInstanceId: native.sessionInstanceId, turnId: 'background-1', kind: 'approval',
+    toolName: 'Bash', input: { command: 'ls' }, description: 'Run ls', decisionOptions: [{ label: 'Allow', value: 'allow' }],
+  }, new AbortController().signal);
+  // A failed assertion leaves the approval to teardown; only the assertion should report.
+  void approval.catch(() => undefined);
+  await screen.findByRole('button', { name: 'Allow' });
+  expect(indicator()).toBeNull();
+  screen.getByRole('button', { name: 'Allow' }).click();
+  await expect(approval).resolves.toMatchObject({ value: 'allow' });
+  // The approved command still runs without output, so the turn is waiting again.
+  await waitFor(() => expect(indicator()).not.toBeNull());
+  native.emitBackgroundEvent({ type: 'background_turn_completed', reason: 'completed' });
+});
+
 it('cancels only side background work and drops its queued follow-ups', async () => {
   const harness = await finishedSide();
   const native = harness.backend.latest;

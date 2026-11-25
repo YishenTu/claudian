@@ -164,7 +164,7 @@ type TurnProgress =
 
 - `text` holds everything so far in the block, so a missed event loses nothing. A new block has a new `blockIndex` within the same `messageId`.
 - Notices and errors arrive as text, appended to the open text block as the transcript shows them.
-- A reply the provider produced in the background, outside a turn Claudian started, arrives in one burst once it is rendered.
+- A reply the provider produced in the background, outside a turn Claudian started, streams the same way.
 - Text written before a tool call streams too. Claudian does not mark which block is the final answer; `read()` returns it once the turn ends.
 - Subagent output is not included. Listeners run for every chunk and must stay cheap.
 

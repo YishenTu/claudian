@@ -41,6 +41,11 @@ export class ThinkingIndicator {
 
   constructor(private readonly deps: ThinkingIndicatorDeps) {}
 
+  /** Shown, or due to show. */
+  get isActive(): boolean {
+    return this.#el !== null || this.#showTimer !== null;
+  }
+
   /**
    * Schedules the indicator after a short delay, so output arriving first keeps it hidden.
    * Explicit text replaces flavor text for the current response until {@link endExplicit}.

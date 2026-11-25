@@ -18,12 +18,28 @@ import { providerOutputEventToStreamChunk } from '@/features/chat/rendering/prov
 import { SubagentManager } from '@/features/chat/rendering/subagents/SubagentManager';
 import { SessionEvents } from '@/features/chat/sessions/SessionEvents';
 import { ChatState } from '@/features/chat/state/ChatState';
+import { BackgroundResponses } from '@/features/chat/turns/BackgroundResponses';
+import type { BackgroundTurnRenderHost } from '@/features/chat/turns/BackgroundTurnRenderer';
 import { StreamController } from '@/features/chat/turns/StreamController';
 import { ClaudeExecutionSession } from '@/providers/claude/execution/ClaudeExecutionSession';
 
 function backgroundScope(sequence: number): ProviderBackgroundEventScope {
   return { kind: 'background', sessionInstanceId: 'session', turnId: 'automatic', sequence };
 }
+
+/** Renders one automatic turn through its production owner, which reserves the reply when the turn opens. */
+function startBackgroundTurn(host: BackgroundTurnRenderHost, events: ProviderBackgroundOutputEvent[]): () => Promise<void> {
+  const background = new BackgroundResponses(host);
+  const { scope } = events[0];
+  background.reserve('binding', scope.turnId);
+  return async () => {
+    for (const event of events) await background.handle('binding', event, () => true);
+    const last = events.at(-1)!.scope;
+    await background.handle('binding', { type: 'background_turn_completed', reason: 'completed', scope: { ...last, sequence: last.sequence + 1 } }, () => true);
+  };
+}
+
+const renderBackgroundTurn = (host: BackgroundTurnRenderHost, events: ProviderBackgroundOutputEvent[]) => startBackgroundTurn(host, events)();
 
 beforeEach(() => {
   document.body.replaceChildren();
@@ -33,7 +49,7 @@ beforeEach(() => {
 });
 
 it.each([false, true])('renders a native notification and its follow-up through session and chat (consumption echo: %s)', async echoed => {
-  const { renderSessionTaskNotification, renderAutoTriggeredTurn } = await import('@/features/chat/turns/BackgroundTurnRenderer');
+  const { renderSessionTaskNotification } = await import('@/features/chat/turns/BackgroundTurnRenderer');
   const messagesEl = document.body.createDiv();
   const plugin = await createChatFeatureHost({ settings: { mediaFolder: '' } });
   const renderer = new MessageRenderer(plugin,
@@ -68,7 +84,7 @@ it.each([false, true])('renders a native notification and its follow-up through 
     expect(within(messagesEl).queryByRole('button', { name: 'Task notification' }) !== null).toBe(echoed);
     await session.handleNativeMessage(buildSDKMessage({ type: 'assistant', message: { id: 'followup', content: [{ type: 'text', text: 'Agent complete: 22 files.' }] } }), 1);
     await session.handleNativeMessage(buildSDKMessage({ type: 'result', subtype: 'success' }), 1);
-    await renderAutoTriggeredTurn(host, { spans: [{ events: output }], metadata: {} }, () => true);
+    await renderBackgroundTurn(host, output);
 
     const header = within(messagesEl).getByRole('button', { name: 'Task notification' });
     const result = within(messagesEl).getByText('There are 22 Markdown files.');
@@ -163,7 +179,6 @@ it.each([false, true])('shows a session notification immediately with streaming=
 });
 
 it.each(['text', 'image', 'image-only'])('keeps preceding output before a %s prompt and isolates concurrent rendering', async kind => {
-  const { renderAutoTriggeredTurn, reserveBackgroundTurn } = await import('@/features/chat/turns/BackgroundTurnRenderer');
   const messagesEl = document.body.createDiv();
   const plugin = await createChatFeatureHost({ settings: { mediaFolder: '' } });
   const renderer = new MessageRenderer(plugin,
@@ -172,7 +187,8 @@ it.each(['text', 'image', 'image-only'])('keeps preceding output before a %s pro
   const subagents = new SubagentManager(() => undefined);
   const stream = new StreamController({ plugin, state, renderer, subagentManager: subagents,
     getMessagesEl: () => messagesEl, updateQueueIndicator: () => undefined });
-  const target = reserveBackgroundTurn({ state, renderer, createMessageId: () => 'automatic' });
+  const render = startBackgroundTurn({ state, renderer, stream, createMessageId: () => 'automatic' },
+    [{ type: 'text_delta', text: 'Earlier automatic output', scope: backgroundScope(1) }]);
   const user: ChatMessage = { id: 'followup', role: 'user', timestamp: 2,
     content: kind === 'image-only' ? '' : 'Follow up',
     images: kind === 'text' ? undefined : [{ id: 'image', name: 'example.png', mediaType: 'image/png', data: 'aW1hZ2U=', size: 5, source: 'file' }],
@@ -190,8 +206,7 @@ it.each(['text', 'image', 'image-only'])('keeps preceding output before a %s pro
     if (markdown === 'Earlier automatic output') { rendering(); await gate; }
     (el as HTMLElement).textContent = markdown;
   });
-  const pending = renderAutoTriggeredTurn({ state, renderer, stream,
-    createMessageId: () => 'automatic' }, { spans: [{ events: [{ type: 'text_delta', text: 'Earlier automatic output', scope: backgroundScope(1) }], target }], metadata: {} }, () => true);
+  const pending = render();
   try {
     await entered;
     await stream.handleStreamChunk({ type: 'text', content: 'answer' }, response);
@@ -212,7 +227,6 @@ it.each(['text', 'image', 'image-only'])('keeps preceding output before a %s pro
 
 
 it.each([false, true])('flushes an automatic tool card before stream disposal with result=%s', async completed => {
-  const { renderAutoTriggeredTurn } = await import('@/features/chat/turns/BackgroundTurnRenderer');
   const messagesEl = document.body.createDiv();
   const plugin = await createChatFeatureHost({ settings: { mediaFolder: '' } });
   const renderer = new MessageRenderer(plugin,
@@ -222,10 +236,10 @@ it.each([false, true])('flushes an automatic tool card before stream disposal wi
   const stream = new StreamController({ plugin, state, renderer, subagentManager: subagents,
     getMessagesEl: () => messagesEl, updateQueueIndicator: () => undefined });
   try {
-    await renderAutoTriggeredTurn({ state, renderer, stream, createMessageId: () => 'automatic' }, { spans: [{ events: [
+    await renderBackgroundTurn({ state, renderer, stream, createMessageId: () => 'automatic' }, [
         { type: 'tool_started', toolCallId: 'read', toolScope: { kind: 'main' }, name: 'Read', input: { file_path: '/tmp/output.txt' }, scope: backgroundScope(1) },
         ...(completed ? [{ type: 'tool_completed' as const, toolCallId: 'read', toolScope: { kind: 'main' as const }, content: 'Task output', scope: backgroundScope(2) }] : []),
-      ] }], metadata: {} }, () => true);
+      ]);
     const worked = within(messagesEl).queryByRole('button', { name: /^Worked/ });
     if (worked) fireEvent.click(worked);
     const card = within(messagesEl).getByRole('button', { name: /Read.*output.txt/ });
@@ -238,7 +252,6 @@ it.each([false, true])('flushes an automatic tool card before stream disposal wi
 });
 
 it.each([false, true])('keeps automatic Agent results across requested settlement with pending=%s', async pendingAgent => {
-  const { renderAutoTriggeredTurn } = await import('@/features/chat/turns/BackgroundTurnRenderer');
   const messagesEl = document.body.createDiv();
   const plugin = await createChatFeatureHost({ settings: { mediaFolder: '' } });
   const renderer = new MessageRenderer(plugin,
@@ -255,14 +268,14 @@ it.each([false, true])('keeps automatic Agent results across requested settlemen
     if (markdown === 'Automatic continuation') { entered(); await gate; }
     (el as HTMLElement).textContent = markdown;
   });
-  const pending = renderAutoTriggeredTurn({ state, renderer, stream, createMessageId: () => 'automatic' }, { spans: [{ events: [
+  const pending = renderBackgroundTurn({ state, renderer, stream, createMessageId: () => 'automatic' }, [
       { type: 'tool_started', toolCallId: 'agent', toolScope: { kind: 'main' }, name: 'Agent', input: { ...(pendingAgent ? {} : { run_in_background: false }), description: 'Automatic helper', prompt: 'Inspect output' }, scope: backgroundScope(1) },
       { type: 'text_delta', text: 'Automatic continuation', scope: backgroundScope(2) },
       { type: 'tool_started', toolCallId: 'main-read', toolScope: { kind: 'main' }, name: 'Read', input: { file_path: '/tmp/main.txt' }, scope: backgroundScope(3) },
       { type: 'tool_started', toolCallId: 'child', toolScope: { kind: 'subagent', subagentId: 'agent' }, name: 'Read', input: { file_path: '/tmp/output.txt' }, scope: backgroundScope(4) },
       { type: 'tool_completed', toolCallId: 'child', toolScope: { kind: 'subagent', subagentId: 'agent' }, content: 'Child output', scope: backgroundScope(5) },
       { type: 'tool_completed', toolCallId: 'agent', toolScope: { kind: 'main' }, content: 'Helper done', scope: backgroundScope(6) },
-    ] }], metadata: {} }, () => true);
+    ]);
   try {
     await rendering;
     stream.subagents.releaseManaged();
@@ -286,7 +299,7 @@ it.each([false, true])('keeps automatic Agent results across requested settlemen
 });
 
 it.each([false, true])('matches task-notification grouping before and after replay with intervening input=%s', async interveningInput => {
-  const { renderAutoTriggeredTurn, renderSessionTaskNotification } = await import('@/features/chat/turns/BackgroundTurnRenderer');
+  const { renderSessionTaskNotification } = await import('@/features/chat/turns/BackgroundTurnRenderer');
   const messagesEl = document.body.createDiv();
   const plugin = await createChatFeatureHost({ settings: { mediaFolder: '' } });
   const renderer = new MessageRenderer(plugin,
@@ -304,11 +317,11 @@ it.each([false, true])('matches task-notification grouping before and after repl
       state.addMessage(input);
       renderer.addMessage(input);
     }
-    await renderAutoTriggeredTurn(host, { spans: [{ events: [
+    await renderBackgroundTurn(host, [
       { type: 'tool_started', toolCallId: 'read-output', toolScope: { kind: 'main' }, name: 'Read', input: { file_path: '/tmp/output.txt' }, scope: backgroundScope(1) },
       { type: 'tool_completed', toolCallId: 'read-output', toolScope: { kind: 'main' }, content: '541 lines', scope: backgroundScope(2) },
       { type: 'text_delta', text: 'Bash complete: 541 lines.', scope: backgroundScope(3) },
-    ] }], metadata: {} }, () => true);
+    ]);
 
     for (const replay of [false, true]) {
       if (replay) {

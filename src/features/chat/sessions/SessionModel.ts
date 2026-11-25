@@ -144,11 +144,7 @@ export class SessionModel {
     this.inlinePrompts = new SessionInteractions({
       getPromptParentEl: () => this.presentation?.getPromptParentEl() ?? null,
       getSuppressedEl: () => this.presentation?.getSuppressedEl() ?? null,
-      onBeforeShow: () => {
-        const generation = this.state.streamGeneration;
-        this.streamController.thinkingIndicator.hide();
-        return () => this.streamController.thinkingIndicator.resume(generation);
-      },
+      onBeforeShow: () => this.streamController.hideWaitingIndicators(),
       onPendingChanged: (interactionId, pending) => session.signal({ type: 'interaction', interactionId, pending }),
     });
     this.conversationController = new ConversationController({
