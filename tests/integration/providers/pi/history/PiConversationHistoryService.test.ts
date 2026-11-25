@@ -159,6 +159,33 @@ describe('PiConversationHistoryService', () => {
       .resolves.toBe('pi:openai-codex/gpt-5.5');
   });
 
+  // Pi restores a virtual model's model_change over the physical models that answered for it.
+  it.each([
+    ['the registered virtual selection', 'pi-virtual', 'pi:router/auto'],
+    ['the physical model when the selection is not virtual', 'openai-responses', 'pi:openai/gpt-x'],
+  ])('recovers %s', async (_name, routerApi, expected) => {
+    const dir = await createTempDirectory('pi-virtual-model-');
+    const sessionFile = path.join(dir, 'session.jsonl');
+    await fs.writeFile(sessionFile, [
+      { type: 'session', version: 3, id: 's1', cwd: dir },
+      { type: 'model_change', id: 'change', parentId: null, provider: 'router', modelId: 'auto' },
+      { type: 'message', id: 'u1', parentId: 'change', message: { role: 'user', content: 'Hello' } },
+      { type: 'message', id: 'a1', parentId: 'u1', message: {
+        role: 'assistant', api: 'openai-responses', provider: 'openai', model: 'gpt-x', content: [], stopReason: 'stop',
+      } },
+    ].map(entry => JSON.stringify(entry)).join('\n'));
+    const conversation = createConversation(sessionFile);
+    conversation.providerState = { leafEntryId: 'a1', sessionFile, sessionId: 's1' };
+    const model = (provider: string, id: string, api: string) => ({
+      api, encodedId: `pi:${provider}/${id}`, id, input: ['text'], label: id, provider, reasoning: false, thinkingLevels: ['off'],
+    });
+
+    await expect(new PiConversationHistoryService().recoverConversationModelSelection?.(conversation, null, {
+      config: { discoveredModels: [model('router', 'auto', routerApi), model('openai', 'gpt-x', 'openai-responses')] },
+      environment: { PI_CODING_AGENT_SESSION_DIR: dir },
+    })).resolves.toBe(expected);
+  });
+
   it('leaves model recovery unresolved when the persisted leaf is missing', async () => {
     const dir = await createTempDirectory('pi-missing-model-leaf-');
     const sessionFile = path.join(dir, 'session.jsonl');

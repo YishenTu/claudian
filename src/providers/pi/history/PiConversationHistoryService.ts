@@ -13,6 +13,8 @@ import type {
   ProviderHistoryUpdate,
 } from '../../../core/providers/types';
 import type { ChatMessage } from '../../../core/types';
+import { decodePiConfig } from '../config';
+import { findPiModel } from '../models';
 import { piHostPath } from '../runtime/piTargetPaths';
 import {
   buildPersistedPiState,
@@ -31,6 +33,7 @@ import {
   type ParsedPiSessionEntries,
   parsePiSessionContent,
   parsePiSessionModel,
+  PI_VIRTUAL_MODEL_API,
   readPiSessionEntries,
   readPiSessionHeader,
   resolvePiForkCheckpoint,
@@ -89,7 +92,9 @@ export class PiConversationHistoryService implements ProviderConversationHistory
       // The same leaf hydration shows: a turn leaf follows turns other Pi clients appended to it.
       const leafEntryId = cursor ? cursor.leafId
         : state.leafEntryId ? followPiLeafAppends(content.entries, state.leafEntryId) : state.leafEntryId;
-      return parsePiSessionModel(content, isPendingFork ? state.forkSource!.resumeAt : leafEntryId);
+      const { discoveredModels } = decodePiConfig(pathContext?.config ?? {}, { referencedModelIds: [] });
+      const isVirtualModel = (encodedId: string) => findPiModel({ discoveredModels }, encodedId)?.api === PI_VIRTUAL_MODEL_API;
+      return parsePiSessionModel(content, isPendingFork ? state.forkSource!.resumeAt : leafEntryId, isVirtualModel);
     } catch {
       return null;
     }

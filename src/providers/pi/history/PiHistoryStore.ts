@@ -186,9 +186,14 @@ function descendsFrom(entries: PiSessionEntry[], descendantId: string, ancestorI
   return resolvePiActivePath(entries, descendantId).some(entry => entry.id === ancestorId);
 }
 
+/**
+ * The model selection a branch records, as Pi's getBranchSelection resolves it: the latest model change or
+ * physical response, except that a model change naming a virtual model holds over the responses it routed.
+ */
 export function parsePiSessionModel(
   content: string | ParsedPiSessionEntries,
   leafEntryId?: string | null,
+  isVirtualModel: (encodedId: string) => boolean = () => false,
 ): string | null {
   if (leafEntryId === null) return null;
   const parsed = typeof content === 'string' ? parsePiSessionEntries(content) : content;
@@ -201,17 +206,25 @@ export function parsePiSessionModel(
   }
   const entries = resolvePiActivePath(parsed.entries, persistedLeafEntryId);
   let selection: string | null = null;
+  let modelChange: string | null = null;
   for (const entry of entries) {
+    // A failed routing leaves the virtual model on its response, which names no physical model.
+    if (getString(entry.message?.api) === PI_VIRTUAL_MODEL_API) continue;
     const provider = getString(entry.raw.provider)
       ?? getString(entry.message?.provider);
     const modelId = getString(entry.raw.modelId)
       ?? getString(entry.message?.model);
     if (provider && modelId) {
-      selection = encodePiModelId(provider, modelId);
+      const model = encodePiModelId(provider, modelId);
+      if (entry.type === 'model_change') modelChange = model;
+      selection = entry.type !== 'model_change' && modelChange && isVirtualModel(modelChange) ? modelChange : model;
     }
   }
   return selection;
 }
+
+/** API id of Pi's virtual catalog entries (Pi 0.99+). */
+export const PI_VIRTUAL_MODEL_API = 'pi-virtual';
 
 export function parsePiSessionEntries(content: string): ParsedPiSessionEntries {
   const parsed: ParsedPiSessionEntries = { entries: [], header: null };
