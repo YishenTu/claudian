@@ -378,19 +378,15 @@ function includePiGraphPathEntries(
   const activeIds = new Set(activePath.map(entry => entry.id).filter((id): id is string => !!id));
   const activeToolCallIds = collectToolCallIds(activePath);
   return entries.filter((entry) => {
-    if (isToolResultEntry(entry)) {
-      const toolCallId = getToolResultCallId(entry);
-      return (!!toolCallId && activeToolCallIds.has(toolCallId))
-        || (!!entry.id && activeIds.has(entry.id))
-        || (!!entry.parentId && activeIds.has(entry.parentId));
-    }
+    // Tool results are ordinary tree entries; one off the leaf-to-root walk belongs to another branch.
     if (entry.id) {
       return activeIds.has(entry.id);
     }
     if (entry.parentId && activeIds.has(entry.parentId)) {
       return true;
     }
-    return false;
+    const toolCallId = isToolResultEntry(entry) ? getToolResultCallId(entry) : null;
+    return !!toolCallId && activeToolCallIds.has(toolCallId);
   });
 }
 
@@ -412,12 +408,44 @@ function includePiLinearPathEntries(
   });
 }
 
+/**
+ * Pending forks saved before replies were checkpointed at their last tool result name the assistant entry
+ * that made the calls. Moves such a checkpoint along its unbranched chain of results for those calls,
+ * over the state entries extensions and settings changes record between them.
+ */
+export function resolvePiForkCheckpoint(entries: readonly PiSessionEntry[], resumeAt: string): string {
+  const assistant = entries.find(entry => entry.id === resumeAt);
+  if (!assistant || !isAssistantMessageEntry(assistant)) return resumeAt;
+  const message = assistant.message ?? assistant.raw;
+  const callIds = new Set(extractAssistantToolCalls(message.content ?? message.parts ?? message.blocks).map(call => call.id));
+  let checkpoint = resumeAt;
+  let current = resumeAt;
+  for (;;) {
+    const children = entries.filter(entry => entry.parentId === current);
+    const [child] = children;
+    // A branch makes the batch's own results ambiguous, so the checkpoint stays at the last result before it.
+    if (children.length !== 1 || !child.id) return checkpoint;
+    if (isToolResultEntry(child)) {
+      const callId = getToolResultCallId(child);
+      if (!callId || !callIds.has(callId)) return checkpoint;
+      checkpoint = child.id;
+    } else if (!PI_UNDISPLAYED_STATE_ENTRY_TYPES.has(child.type)) {
+      return checkpoint;
+    }
+    current = child.id;
+  }
+}
+
+/** Entries that record extension or settings state between a batch's results without adding a message. */
+const PI_UNDISPLAYED_STATE_ENTRY_TYPES = new Set(['custom', 'model_change', 'thinking_level_change']);
+
 export async function createPiForkSessionFile(
   sourceSessionFile: string,
-  resumeAt: string,
+  savedResumeAt: string,
   options: CreatePiForkSessionFileOptions = {},
 ): Promise<CreatedPiForkSessionFile> {
   const parsed = await readPiSessionEntries(sourceSessionFile);
+  const resumeAt = resolvePiForkCheckpoint(parsed.entries, savedResumeAt);
   const branchEntries = resolvePiEntryPath(parsed.entries, resumeAt);
   if (branchEntries.length === 0) {
     throw new Error(`Pi fork checkpoint not found: ${resumeAt}`);

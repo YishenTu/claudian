@@ -33,6 +33,7 @@ import {
   parsePiSessionModel,
   readPiSessionEntries,
   readPiSessionHeader,
+  resolvePiForkCheckpoint,
   resolvePiTreeCursor,
 } from './PiHistoryStore';
 
@@ -132,7 +133,7 @@ export class PiConversationHistoryService implements ProviderConversationHistory
       try {
         const content = await readPiSessionEntries(sourceSessionFile);
         const messages = parsePiSessionContent(content, {
-          leafEntryId: state.forkSource!.resumeAt,
+          leafEntryId: resolvePiForkCheckpoint(content.entries, state.forkSource!.resumeAt),
           requireLeafEntryId: true,
           syntheticIdNamespace: sourceSessionFile,
         });

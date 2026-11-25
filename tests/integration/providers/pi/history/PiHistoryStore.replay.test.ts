@@ -892,6 +892,29 @@ describe('PiHistoryStore', () => {
     expect(resolvePiActivePath(entries).map(entry => entry.id)).toEqual(['root', 'right']);
   });
 
+  it('leaves a tool result on an abandoned branch off the active call', () => {
+    const content = [
+      { type: 'session', version: 3, id: 'session' },
+      { type: 'message', id: 'u1', parentId: null, message: { role: 'user', content: 'Read the note' } },
+      { type: 'message', id: 'a1', parentId: 'u1', message: {
+        role: 'assistant', stopReason: 'toolUse',
+        content: [{ type: 'toolCall', id: 'c1', name: 'read', arguments: { path: 'note.md' } }],
+      } },
+      { type: 'message', id: 'r1', parentId: 'a1', message: {
+        role: 'toolResult', toolCallId: 'c1', toolName: 'read', content: [{ type: 'text', text: 'old result' }],
+      } },
+      { type: 'message', id: 'u2', parentId: 'a1', message: { role: 'user', content: 'Try something else' } },
+    ].map(entry => JSON.stringify(entry)).join('\n');
+
+    const messages = parsePiSessionContent(content);
+
+    expect(messages.map(message => message.role)).toEqual(['user', 'assistant', 'user']);
+    expect(messages[1].toolCalls).toHaveLength(1);
+    expect(messages[1].toolCalls?.[0]).toMatchObject({ id: 'c1' });
+    expect(messages[1].toolCalls?.[0].result).toBeUndefined();
+    expect(JSON.stringify(messages)).not.toContain('old result');
+  });
+
   it('keeps id-less tool results attached to the active branch', () => {
     const content = [
       JSON.stringify({

@@ -925,6 +925,28 @@ describe('PiConversationHistoryService', () => {
     expect(conversation.messages.map(message => message.content)).toEqual(['First', 'Done']);
   });
 
+  // Pending forks saved before replies were checkpointed at their last result name the calling assistant entry.
+  it('hydrates a pending fork saved at a reply that ended on tool results with those results', async () => {
+    const dir = await createTempDirectory('pi-history-legacy-fork-');
+    const sessionFile = path.join(dir, 'source.jsonl');
+    await fs.writeFile(sessionFile, [
+      { type: 'session', version: 3, id: 'source-session' },
+      { id: 'u1', parentId: null, type: 'message', message: { role: 'user', content: 'Read the note' } },
+      { id: 'a1', parentId: 'u1', type: 'message', message: { role: 'assistant', stopReason: 'toolUse', content: [
+        { type: 'toolCall', id: 'c1', name: 'read', arguments: { path: 'one.md' } },
+      ] } },
+      { id: 'r1', parentId: 'a1', type: 'message', message: { role: 'toolResult', toolCallId: 'c1', toolName: 'read', content: [{ type: 'text', text: 'one' }] } },
+    ].map(entry => JSON.stringify(entry)).join('\n'));
+    const conversation = createConversation(sessionFile);
+    conversation.messages = [];
+    conversation.providerState = { forkSource: { sessionId: 'source-session', resumeAt: 'a1' }, forkSourceSessionFile: sessionFile };
+    conversation.sessionId = null;
+
+    Object.assign(conversation, await new PiConversationHistoryService().hydrateConversationHistory(conversation, null));
+
+    expect(conversation.messages[1].toolCalls?.map(call => [call.id, call.status, call.result])).toEqual([['c1', 'completed', 'one']]);
+  });
+
   it('replaces an untrusted pending-fork path with the resolved local source', async () => {
     const home = await createTempDirectory('pi-history-fork-home-');
     const outside = await createTempDirectory('pi-history-fork-outside-');
