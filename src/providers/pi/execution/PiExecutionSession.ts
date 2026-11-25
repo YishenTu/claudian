@@ -1033,18 +1033,6 @@ implements ProviderExecutionSession, SteerableExecutionSession {
     event: PiRPCRecord,
   ): void {
     if (!this.#isCurrentKernel(kernel, generation)) return;
-    if (event.type === 'extension_ui_request') {
-      // A dialog nobody can answer would block Pi, whether or not a run is requested.
-      const id = getString(event.id);
-      if (id) {
-        kernel.send({
-          cancelled: true,
-          id,
-          type: 'extension_ui_response',
-        });
-      }
-      return;
-    }
     if (event.type === 'agent_settled') this.#kernelSettlement = 'agent_settled';
     const target = this.#requestedOutputTarget() ?? this.#backgroundTurn;
     if (target) this.#trackAnswer(target, event);

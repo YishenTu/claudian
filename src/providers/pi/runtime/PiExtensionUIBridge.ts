@@ -31,7 +31,7 @@ export class PiExtensionUIBridge {
   private readonly pending = new Map<string, AbortController>();
 
   constructor(
-    private readonly transport: PiRPCTransport,
+    private readonly transport: Pick<PiRPCTransport, 'send'>,
     private readonly renderer: PiExtensionUIRenderer | null,
     private readonly emit?: (chunk: StreamChunk) => void,
     private readonly admitDialog: (request: PiRPCRecord) => boolean = () => true,

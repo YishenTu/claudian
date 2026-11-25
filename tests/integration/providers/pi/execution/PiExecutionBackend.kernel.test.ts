@@ -34,6 +34,7 @@ import {
   type PiExecutionKernelCallbacks,
 } from '@/providers/pi/execution';
 import { PiConversationHistoryService } from '@/providers/pi/history/PiConversationHistoryService';
+import { PiExtensionUIBridge,type PiExtensionUIRenderer } from '@/providers/pi/runtime/PiExtensionUIBridge';
 import type { PiLaunchSpec } from '@/providers/pi/runtime/PiLaunchSpecBuilder';
 import { PiRPCResponseError, PiRPCTransport } from '@/providers/pi/runtime/PiRPCTransport';
 import { getPiProviderSettings, updatePiProviderSettings } from '@/providers/pi/settings';
@@ -55,7 +56,8 @@ beforeEach(() => {
 class FakeKernel implements PiExecutionKernel {
   readonly requests: Array<{ payload: Record<string, unknown>; type: string }> = [];
   readonly sent: Array<Record<string, unknown>> = [];
-  readonly shutdown = vi.fn(async () => undefined);
+  // Like the real kernel, shutdown cancels the dialogs its bridge still has open.
+  readonly shutdown = vi.fn(async () => { this.#extensionBridge.cleanup(); });
   readonly start = vi.fn();
   stderr = '';
 
@@ -69,9 +71,24 @@ class FakeKernel implements PiExecutionKernel {
       timeoutMs?: number,
       signal?: AbortSignal,
     ) => Promise<T>,
-  ) {}
+    extensionUIRenderer: PiExtensionUIRenderer | null = null,
+  ) {
+    // The real kernel hands extension UI requests to its bridge, which answers Pi itself.
+    this.#extensionBridge = new PiExtensionUIBridge(
+      { send: record => this.send(record) },
+      extensionUIRenderer,
+      chunk => this.callbacks.onExtensionChunk(chunk),
+      request => this.callbacks.onExtensionRequest(request),
+    );
+  }
+
+  readonly #extensionBridge: PiExtensionUIBridge;
 
   emit(event: Record<string, unknown>): void {
+    if (event.type === 'extension_ui_request') {
+      this.#extensionBridge.handleRequest(event);
+      return;
+    }
     this.callbacks.onEvent(event);
   }
 
@@ -268,8 +285,8 @@ async function createHarness(
   ]);
   const backend = new PiExecutionBackend(host.getRuntimeHost('pi'),
     {
-      createKernel: (spec, callbacks) => {
-        const kernel = new FakeKernel(spec, callbacks, responses, requestHandler);
+      createKernel: (spec, callbacks, renderer) => {
+        const kernel = new FakeKernel(spec, callbacks, responses, requestHandler, renderer);
         kernels.push(kernel);
         onKernelCreated?.(kernel, kernels.length - 1);
         return kernel;

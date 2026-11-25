@@ -18,7 +18,6 @@ import { PiExecutionBackend, type PiExecutionKernel, type PiExecutionKernelCallb
 import { piProviderRegistration } from '@/providers/pi/registration';
 import { PiExtensionUIBridge } from '@/providers/pi/runtime/PiExtensionUIBridge';
 import type { PiLaunchSpec } from '@/providers/pi/runtime/PiLaunchSpecBuilder';
-import type { PiRPCTransport } from '@/providers/pi/runtime/PiRPCTransport';
 import { VaultMentionDataProvider } from '@/shared/mention/VaultMentionDataProvider';
 
 registerProviderModules([claudeProviderRegistration, piProviderRegistration]);
@@ -55,7 +54,7 @@ class ScriptedPiKernel implements PiExecutionKernel {
   /** Extension notifications pass through the real native-UI bridge into this session. */
   notify(notifyType: string | undefined): void {
     const transport = { send: () => { throw new Error('A notification must not request a native response'); } };
-    new PiExtensionUIBridge(transport as unknown as PiRPCTransport, null, this.callbacks.onExtensionChunk)
+    new PiExtensionUIBridge(transport, null, this.callbacks.onExtensionChunk)
       .handleRequest({ type: 'extension_ui_request', method: 'notify', message: 'Extension policy message', notifyType });
   }
 
