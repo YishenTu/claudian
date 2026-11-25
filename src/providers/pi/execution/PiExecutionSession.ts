@@ -10,6 +10,7 @@ import {
 } from '@/core/prompt/historyContext';
 import { appendExecutionContext } from '@/core/prompt/promptContext';
 import { buildRecoveryPrompt } from '@/core/prompt/recoveryPrompt';
+import { t } from '@/i18n/i18n';
 
 import {
   type ConversationBranchRecoveryRequest,
@@ -70,6 +71,7 @@ import {
   clampPiThinkingLevel,
   decodePiModelId,
   findPiModel,
+  getPiSupportedThinkingLevels,
 } from '../models';
 import {
   createPiEventNormalizationState,
@@ -114,6 +116,8 @@ interface EncodedPiRequest {
   readonly launchSpec: PiLaunchSpec;
   readonly model: string;
   readonly thinkingLevel: string | null;
+  /** The user's explicit level, which Pi's native model must also support. */
+  readonly explicitThinkingLevel: string | null;
 }
 
 interface PiPromptImage {
@@ -812,6 +816,7 @@ implements ProviderExecutionSession, SteerableExecutionSession {
       launchSpec,
       model,
       thinkingLevel,
+      explicitThinkingLevel: request.configuration.reasoning ?? null,
     };
   }
 
@@ -986,8 +991,9 @@ implements ProviderExecutionSession, SteerableExecutionSession {
     if (!modelPayload || !this.kernel) {
       throw new PiConfigurationError('The selected Pi model is invalid.');
     }
+    let nativeModel: unknown;
     try {
-      await this.kernel.request('set_model', modelPayload, undefined, signal);
+      nativeModel = await this.kernel.request('set_model', modelPayload, undefined, signal);
     } catch (error) {
       // Pi only offers models whose provider is authenticated in its current environment.
       if (!(error instanceof PiRPCResponseError)) throw error;
@@ -997,6 +1003,14 @@ implements ProviderExecutionSession, SteerableExecutionSession {
       );
     }
     this.#kernelModel = encoded.model;
+    // Pi 1.x answers with the model it selected; set_thinking_level would clamp an unsupported level silently.
+    if (encoded.explicitThinkingLevel && isRecord(nativeModel) && typeof nativeModel.reasoning === 'boolean') {
+      // Each send repeats a level the cached catalog still offers, so name the recovery.
+      assertPiThinkingLevelSupported(
+        encoded.model, encoded.explicitThinkingLevel, getPiSupportedThinkingLevels(nativeModel),
+        t('settings.modelPicker.stale', { provider: 'Pi' }),
+      );
+    }
     if (encoded.thinkingLevel) {
       await this.kernel.request(
         'set_thinking_level',
@@ -1948,14 +1962,19 @@ function resolveThinkingLevel(
     ?? getString(selection.effortLevel)
     ?? settings.preferredThinkingByModel[model];
   const discovered = findPiModel(settings, model);
-  const resolved = discovered
+  if (request.configuration.reasoning !== undefined && discovered) {
+    assertPiThinkingLevelSupported(model, request.configuration.reasoning, discovered.thinkingLevels);
+  }
+  return discovered
     ? clampPiThinkingLevel(requested, discovered.thinkingLevels)
     : requested ?? null;
-  if (request.configuration.reasoning !== undefined && (resolved !== request.configuration.reasoning
-    || (discovered && !discovered.thinkingLevels.some(level => level === request.configuration.reasoning)))) {
-    throw new PiConfigurationError(`Pi model "${model}" does not support thinking level "${request.configuration.reasoning}".`);
+}
+
+/** An explicit level is authoritative: one the model does not support fails instead of being substituted. */
+function assertPiThinkingLevelSupported(model: string, level: string, supported: readonly string[], hint?: string): void {
+  if (!supported.includes(level)) {
+    throw new PiConfigurationError(`Pi model "${model}" does not support thinking level "${level}".${hint ? ` ${hint}` : ''}`);
   }
-  return resolved;
 }
 
 function resolveToolProfile(policy: ProviderToolPolicy): {

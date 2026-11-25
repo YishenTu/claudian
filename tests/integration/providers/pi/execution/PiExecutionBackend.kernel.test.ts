@@ -402,6 +402,30 @@ describe('PiExecutionBackend', () => {
     await session.dispose();
   });
 
+  // Pi clamps set_thinking_level silently, so an explicit level is checked against the model set_model returns.
+  it.each([
+    ['rejects', { id: 'claude-sonnet-4', provider: 'anthropic', reasoning: true, thinkingLevelMap: { high: null } }, true],
+    ['accepts', { id: 'claude-sonnet-4', provider: 'anthropic', reasoning: true, thinkingLevelMap: {} }, false],
+    // Pi before 1.0 may answer set_model without the model.
+    ['accepts without native model metadata', {}, false],
+  ])('%s explicit High against the native model', async (_name, nativeModel, rejected) => {
+    const { session, kernels, responses } = (await createHarness());
+    responses.set('set_model', nativeModel);
+    const run = collect(session.execute(createRequest()).events);
+    if (!rejected) {
+      await waitFor(() => kernels[0]?.requests.some(r => r.type === 'prompt') ?? false);
+      kernels[0].emit({ type: 'agent_end' });
+      kernels[0].emit({ type: 'agent_settled' });
+    }
+    const events = await run;
+    // A cached level Pi's model no longer supports points the user at refreshing the stale catalog.
+    expect(events.filter(event => event.type === 'execution_error' && event.category === 'configuration'
+      && event.message.endsWith('Pi model catalog is stale. Click Discover to refresh it.'))).toHaveLength(rejected ? 1 : 0);
+    expect(kernels[0].requests.some(r => r.type === 'set_thinking_level')).toBe(!rejected);
+    expect(kernels[0].requests.some(r => r.type === 'prompt')).toBe(!rejected);
+    await session.dispose();
+  });
+
   it.each([null, 'high'])('preserves the explicit toolbar reasoning %s over saved defaults', async reasoning => {
     const { host, session, kernels } = (await createHarness());
     await host.mutateSettings(settings => { settings.effortLevel = 'off'; });
