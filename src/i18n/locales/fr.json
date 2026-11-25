@@ -556,7 +556,11 @@
     },
     "pi": {
       "extension": "Extension Pi",
-      "notification": "Notification de l’extension Pi."
+      "notification": "Notification de l’extension Pi.",
+      "retrying": "Pi relance le tour (tentative {attempt} sur {maxAttempts}).",
+      "retryingUnknownAttempt": "Pi relance le tour.",
+      "retryFinished": "Pi a terminé la relance.",
+      "compacting": "Pi compacte le contexte de la conversation."
     },
     "sessionMessage": {
       "undelivered": "Les messages de {senders} n’ont pas pu être remis.",

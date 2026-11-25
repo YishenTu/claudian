@@ -556,7 +556,11 @@
     },
     "pi": {
       "extension": "Pi 확장",
-      "notification": "Pi 확장 알림입니다."
+      "notification": "Pi 확장 알림입니다.",
+      "retrying": "Pi가 턴을 다시 시도하고 있습니다({maxAttempts}회 중 {attempt}회째).",
+      "retryingUnknownAttempt": "Pi가 턴을 다시 시도하고 있습니다.",
+      "retryFinished": "Pi 재시도가 완료되었습니다.",
+      "compacting": "Pi가 대화 컨텍스트를 압축하고 있습니다."
     },
     "sessionMessage": {
       "undelivered": "{senders}의 메시지를 전달하지 못했습니다.",

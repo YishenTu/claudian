@@ -556,7 +556,11 @@
     },
     "pi": {
       "extension": "Pi 擴充功能",
-      "notification": "Pi 擴充功能通知。"
+      "notification": "Pi 擴充功能通知。",
+      "retrying": "Pi 正在重試本輪（第 {attempt} 次，共 {maxAttempts} 次）。",
+      "retryingUnknownAttempt": "Pi 正在重試本輪。",
+      "retryFinished": "Pi 重試已完成。",
+      "compacting": "Pi 正在壓縮對話上下文。"
     },
     "sessionMessage": {
       "undelivered": "無法傳遞來自 {senders} 的訊息。",

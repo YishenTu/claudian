@@ -556,7 +556,11 @@
     },
     "pi": {
       "extension": "Pi-Erweiterung",
-      "notification": "Benachrichtigung der Pi-Erweiterung."
+      "notification": "Benachrichtigung der Pi-Erweiterung.",
+      "retrying": "Pi wiederholt die Runde (Versuch {attempt} von {maxAttempts}).",
+      "retryingUnknownAttempt": "Pi wiederholt die Runde.",
+      "retryFinished": "Pi-Wiederholung abgeschlossen.",
+      "compacting": "Pi komprimiert den Gesprächskontext."
     },
     "sessionMessage": {
       "undelivered": "Nachrichten von {senders} konnten nicht zugestellt werden.",

@@ -556,7 +556,11 @@
     },
     "pi": {
       "extension": "Extensión de Pi",
-      "notification": "Notificación de la extensión de Pi."
+      "notification": "Notificación de la extensión de Pi.",
+      "retrying": "Pi está reintentando el turno (intento {attempt} de {maxAttempts}).",
+      "retryingUnknownAttempt": "Pi está reintentando el turno.",
+      "retryFinished": "Pi terminó el reintento.",
+      "compacting": "Pi está compactando el contexto de la conversación."
     },
     "sessionMessage": {
       "undelivered": "No se pudieron entregar los mensajes de {senders}.",

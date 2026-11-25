@@ -1,4 +1,5 @@
 import { isSessionTool } from '@/core/tools/toolNames';
+import { t } from '@/i18n/i18n';
 
 import type { StreamChunk } from '../../../core/types';
 import { getPiCustomMessageDisplayText } from './piCustomMessageNormalization';
@@ -61,15 +62,30 @@ export function normalizePiRPCEvent(
         ? [{ type: 'notice', content: errorMessage, level: 'warning' }]
         : [{ type: 'context_compacted' }];
     }
+    case 'compaction_start':
+      // A manual compaction is the user's own request; automatic ones can take minutes.
+      return event.reason === 'threshold' || event.reason === 'overflow'
+        ? [{ type: 'notice', content: t('chat.pi.compacting'), level: 'info' }]
+        : [];
     case 'auto_retry_start':
-      return [{ type: 'notice', content: 'Pi is retrying the turn.', level: 'warning' }];
+      return [{ type: 'notice', content: formatPiRetryNotice(event), level: 'warning' }];
     case 'auto_retry_end':
-      return [{ type: 'notice', content: 'Pi retry finished.', level: 'info' }];
+      // A failed final attempt reaches the transcript through its terminal error.
+      return event.success === false ? [] : [{ type: 'notice', content: t('chat.pi.retryFinished'), level: 'info' }];
     case 'extension_error':
       return [{ type: 'notice', content: getString(event.error) ?? 'Pi extension error.', level: 'warning' }];
     default:
       return [];
   }
+}
+
+function formatPiRetryNotice(event: Record<string, unknown>): string {
+  const attempt = event.attempt;
+  const maxAttempts = event.maxAttempts;
+  if (typeof attempt !== 'number' || typeof maxAttempts !== 'number') return t('chat.pi.retryingUnknownAttempt');
+  const reason = getString(event.errorMessage);
+  const notice = t('chat.pi.retrying', { attempt, maxAttempts });
+  return reason ? `${notice} ${reason}` : notice;
 }
 
 /** Keeps nested call arguments for the calling tool's summary; nested calls emit no chunks. */
