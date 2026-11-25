@@ -28,15 +28,14 @@ describe('PiLaunchSpecBuilder', () => {
       .not.toBe(buildPiLaunchSpec({ ...params, providerState: null }).processKey);
   });
 
-  it('builds main launch args with replacement system prompt and model flags', () => {
+  // Models and thinking levels are set over RPC (set_model, set_thinking_level), never as launch flags.
+  it('builds main launch args with the replacement system prompt and resume session', () => {
     expect(buildPiLaunchSpec({
       command: '/bin/pi',
       cwd: '/vault',
-      model: 'pi:anthropic/claude/sonnet',
       providerState: { sessionFile: '/tmp/session.jsonl' },
       settings: baseSettings,
       systemPrompt: 'System prompt',
-      thinkingLevel: 'high',
     }).args).toEqual([
       '--mode',
       'rpc',
@@ -44,12 +43,6 @@ describe('PiLaunchSpecBuilder', () => {
       'System prompt',
       '--session',
       '/tmp/session.jsonl',
-      '--provider',
-      'anthropic',
-      '--model',
-      'claude/sonnet',
-      '--thinking',
-      'high',
     ]);
   });
 
@@ -82,22 +75,6 @@ describe('PiLaunchSpecBuilder', () => {
       },
       settings: baseSettings,
     }).args).toEqual(['--mode', 'rpc']);
-  });
-
-  it('passes max thinking through to Pi', () => {
-    expect(buildPiLaunchSpec({
-      command: 'pi',
-      cwd: '/vault',
-      noSession: true,
-      settings: baseSettings,
-      thinkingLevel: 'max',
-    }).args).toEqual([
-      '--mode',
-      'rpc',
-      '--no-session',
-      '--thinking',
-      'max',
-    ]);
   });
 
   it('uses no-tools for passive auxiliary launches', () => {
