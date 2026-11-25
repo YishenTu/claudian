@@ -1,3 +1,4 @@
+import { once } from 'node:events';
 import { PassThrough } from 'node:stream';
 
 import { subscribeJSONLLines } from '@/utils/jsonlLines';
@@ -18,6 +19,29 @@ describe('subscribeJSONLLines', () => {
       unsubscribe();
       stream.destroy();
     }
+  });
+
+  it('finishes once when the stream emits end and then close, keeping errors handled until unsubscribe', async () => {
+    const stream = new PassThrough();
+    const lines: string[] = [];
+    const onEnd = vi.fn();
+    const errors: Error[] = [];
+    const unsubscribe = subscribeJSONLLines(stream, line => lines.push(line), onEnd, error => errors.push(error));
+    const closed = once(stream, 'close');
+
+    stream.end('{"a":1}\n{"b":2}');
+    await closed;
+
+    expect(lines).toEqual(['{"a":1}', '{"b":2}']);
+    expect(onEnd).toHaveBeenCalledTimes(1);
+
+    const late = new Error('late');
+    stream.emit('error', late);
+    expect(errors).toEqual([late]);
+
+    unsubscribe();
+    expect(() => stream.emit('error', new Error('after unsubscribe'))).toThrow('after unsubscribe');
+    expect(errors).toEqual([late]);
   });
 
   it('splits only on LF and strips CR', () => {
