@@ -79,7 +79,9 @@ it.each(['current', 'legacy assistant'])('forks a reply that ended on tool resul
     // A tool can name the session or label an entry while it runs.
     { id: 'n1', parentId: 'r1', type: 'session_info', name: 'Reading notes' },
     { id: 'l1', parentId: 'n1', type: 'label', targetId: 'u1', label: 'notes' },
-    { id: 'r2', parentId: 'l1', type: 'message', message: { role: 'toolResult', toolCallId: 'c2', toolName: 'read', content: [{ type: 'text', text: 'two' }] } },
+    // Cache warming records usage outside the model context.
+    { id: 'w1', parentId: 'l1', type: 'usage', kind: 'cache-warm', provider: 'anthropic', model: 'claude-sonnet-4', usage: {} },
+    { id: 'r2', parentId: 'w1', type: 'message', message: { role: 'toolResult', toolCallId: 'c2', toolName: 'read', content: [{ type: 'text', text: 'two' }] } },
   ];
   await fs.writeFile(sourceFile, records.map(record => JSON.stringify(record)).join('\n'));
 
@@ -89,7 +91,7 @@ it.each(['current', 'legacy assistant'])('forks a reply that ended on tool resul
   const forked = await createPiForkSessionFile(sourceFile, checkpoint === 'current' ? reply.assistantMessageId! : 'a1', { sessionId: 'fork-session' });
   const forkedContent = await fs.readFile(forked.sessionFile, 'utf-8');
   expect(forked.leafEntryId).toBe('r2');
-  expect(forkedContent.trim().split('\n').map(line => JSON.parse(line).id)).toEqual(['fork-session', 'u1', 'a1', 'k1', 'r1', 'n1', 'l1', 'r2']);
+  expect(forkedContent.trim().split('\n').map(line => JSON.parse(line).id)).toEqual(['fork-session', 'u1', 'a1', 'k1', 'r1', 'n1', 'l1', 'w1', 'r2']);
   expect(parsePiSessionContent(forkedContent)[1].toolCalls?.map(call => [call.id, call.result])).toEqual([['c1', 'one'], ['c2', 'two']]);
 });
 

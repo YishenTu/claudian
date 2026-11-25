@@ -3177,7 +3177,8 @@ describe('PiExecutionBackend', () => {
           ] } },
           // Extensions record state between a call and its result; the reply still ends at its last result.
           { type: 'custom', id: 'k1', parentId: 'a2', customType: 'peeps/run', data: {} },
-          { type: 'message', id: 'r1', parentId: 'k1', message: { role: 'toolResult', toolCallId: 'tool-bg', content: 'note' } },
+          { type: 'usage', id: 'w1', parentId: 'k1', kind: 'cache-warm', provider: 'anthropic', model: 'claude-sonnet-4', usage: {} },
+          { type: 'message', id: 'r1', parentId: 'w1', message: { role: 'toolResult', toolCallId: 'tool-bg', content: 'note' } },
         ].map(line => JSON.stringify(line)).join('\n')}`);
         kernel.emit({ messages: [], type: 'agent_end' });
         kernel.emit({ type: 'entry_appended' });
