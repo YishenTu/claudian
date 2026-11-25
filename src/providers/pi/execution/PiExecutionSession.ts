@@ -1143,7 +1143,8 @@ implements ProviderExecutionSession, SteerableExecutionSession {
       return;
     }
     if (event.type === 'agent_settled') {
-      this.#settleBackgroundTurn(background);
+      // Pi 1.1+ marks a run that was aborted, including by an extension rather than Stop.
+      this.#settleBackgroundTurn(background, event.aborted === true);
       return;
     }
     if (event.type === 'error') {
@@ -1346,19 +1347,20 @@ implements ProviderExecutionSession, SteerableExecutionSession {
   }
 
   /** The native run ended; publish completion once the persisted leaf it appended is known. */
-  #settleBackgroundTurn(background: BackgroundTurn): void {
+  #settleBackgroundTurn(background: BackgroundTurn, aborted = false): void {
     if (this.#backgroundTurn !== background) return;
     this.#backgroundTurn = null;
     this.#settlingBackgroundTurns.add(background);
     const kernel = this.kernel;
     const generation = this.kernelGeneration;
-    void this.#syncSettledBackgroundTurn(background, kernel, generation);
+    void this.#syncSettledBackgroundTurn(background, kernel, generation, aborted);
   }
 
   async #syncSettledBackgroundTurn(
     background: BackgroundTurn,
     kernel: PiExecutionKernel | null,
     generation: number,
+    aborted: boolean,
   ): Promise<void> {
     const isCurrent = () => kernel !== null && this.#isCurrentKernel(kernel, generation);
     try {
@@ -1377,7 +1379,7 @@ implements ProviderExecutionSession, SteerableExecutionSession {
       this.#emitBackground(background, { type: 'usage_updated', usage });
     }
     // Pi settles a Stop as an `aborted` reply, which history replays as interrupted.
-    this.#completeBackgroundTurn(background, background.cancelling ? 'interrupted' : 'completed');
+    this.#completeBackgroundTurn(background, background.cancelling || aborted ? 'interrupted' : 'completed');
   }
 
   #completeBackgroundTurn(

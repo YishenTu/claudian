@@ -3165,6 +3165,24 @@ describe('PiExecutionBackend', () => {
       await harness.session.dispose();
     });
 
+    // Pi 1.1+ marks a run an extension aborted; before that, agent_settled carries no flag.
+    it.each([[true, 'interrupted'], [false, 'completed'], [undefined, 'completed']] as const)(
+      'completes a background run pi settles with aborted: %s as %s',
+      async (aborted, reason) => {
+        const harness = (await createHarness());
+        const { events, kernel } = await startIdleSession(harness);
+        emitWake(kernel);
+
+        kernel.emit({ type: 'agent_end' });
+        kernel.emit({ type: 'agent_settled', ...(aborted === undefined ? {} : { aborted }) });
+        await waitFor(() => events.some(event => event.type === 'background_turn_completed'));
+
+        expect(backgroundEvents(events).at(-1)).toMatchObject({ reason, type: 'background_turn_completed' });
+        expect(kernel.sent).not.toContainEqual({ type: 'abort' });
+        await harness.session.dispose();
+      },
+    );
+
     it.each([
       ['process exit', 'invalidated', 'session_error'],
       ['dispose', 'disposed', 'session_state_changed'],
