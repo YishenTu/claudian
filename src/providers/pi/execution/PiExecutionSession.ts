@@ -981,7 +981,8 @@ implements ProviderExecutionSession, SteerableExecutionSession {
     encoded: EncodedPiRequest,
     signal: AbortSignal,
   ): Promise<void> {
-    const modelPayload = buildPiSetModelPayload(encoded.model);
+    const settings = decodePiConfig(this.host.config, this.host.selection);
+    const modelPayload = buildPiSetModelPayload(encoded.model, findPiModel(settings, encoded.model));
     if (!modelPayload || !this.kernel) {
       throw new PiConfigurationError('The selected Pi model is invalid.');
     }

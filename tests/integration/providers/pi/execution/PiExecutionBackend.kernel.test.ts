@@ -1891,6 +1891,29 @@ describe('PiExecutionBackend', () => {
     });
   });
 
+  // Pi 1.5 accepts provider ids that contain `/`, such as URL-derived llama.cpp providers.
+  it('selects a discovered model whose provider id contains a slash', async () => {
+    const harness = (await createHarness());
+    const encodedId = 'pi:llama.cpp/localhost:8080/qwen3-8b';
+    const models = getPiProviderSettings(harness.host.settings).discoveredModels;
+    updatePiProviderSettings(harness.host.settings, {
+      discoveredModels: [...models, { ...models[0], encodedId, id: 'qwen3-8b', label: 'Qwen3 8B', provider: 'llama.cpp/localhost:8080' }],
+      visibleModels: [encodedId],
+    });
+    const request = createRequest();
+    const eventsPromise = collect(harness.session.execute({ ...request, configuration: { ...request.configuration, model: encodedId } }).events);
+    await waitFor(() => harness.kernels[0]?.requests.some(r => r.type === 'prompt') ?? false);
+    harness.kernels[0].emit({ type: 'agent_end' });
+    harness.kernels[0].emit({ type: 'agent_settled' });
+    await eventsPromise;
+
+    expect(harness.kernels[0].requests).toContainEqual({
+      payload: { modelId: 'qwen3-8b', provider: 'llama.cpp/localhost:8080' },
+      type: 'set_model',
+    });
+    await harness.session.dispose();
+  });
+
   it('rejects a model removed during asynchronous preparation before native input', async () => {
     const harness = (await createHarness(createConfig(), () => {
       harness.host.settings.providerConfigs.pi!.visibleModels = [];
