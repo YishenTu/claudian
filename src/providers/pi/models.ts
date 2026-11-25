@@ -84,6 +84,8 @@ export function normalizePiThinkingLevel(value: unknown): PiThinkingLevel | null
 
 export function getPiSupportedThinkingLevels(value: unknown): PiThinkingLevel[] {
   const record = isPlainObject(value) ? value : {};
+  // Pi offers only `off` to a model it marks non-reasoning, even when the model has a level map.
+  if (record.reasoning === false) return ['off'];
   const explicitLevels = collectExplicitThinkingLevels(record);
   const mappedLevels = collectThinkingLevelMapLevels(record);
   const reasoning = record.reasoning === true

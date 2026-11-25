@@ -27,6 +27,9 @@ describe('Pi model helpers', () => {
   it('normalizes thinking levels with Pi reasoning rules', () => {
     expect(normalizePiThinkingLevel(' MAX ')).toBe('max');
     expect(getPiSupportedThinkingLevels({ reasoning: false })).toEqual(['off']);
+    // Pi offers only `off` to a non-reasoning model, whatever its level map says.
+    expect(getPiSupportedThinkingLevels({ reasoning: false, thinkingLevelMap: { off: null } })).toEqual(['off']);
+    expect(getPiSupportedThinkingLevels({ reasoning: false, thinkingLevelMap: { xhigh: 'xhigh' } })).toEqual(['off']);
     expect(getPiSupportedThinkingLevels({ reasoning: true })).toEqual([
       'off',
       'minimal',
