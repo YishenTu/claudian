@@ -35,6 +35,11 @@ export class SessionEvents {
     this.responses = new BackgroundResponses(host);
   }
 
+  /** Drops a released binding's unfinished automatic turns; none of its events can arrive anymore. */
+  discardBinding(bindingId: string): void {
+    this.responses.discard(bindingId);
+  }
+
   /** Where settled history ends in `messages`, before any automatic turn still running. */
   settledTranscriptEnd(messages: readonly ChatMessage[]): number {
     return this.responses.settledTranscriptEnd(messages);

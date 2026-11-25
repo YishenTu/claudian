@@ -726,8 +726,13 @@ it('keeps whitespace that starts the reply after a notification in that reply', 
     background.reserve('binding', 'automatic');
     await session.text('Before the job.');
     renderSessionTaskNotification(session.host, 'Job finished.', undefined, session.next());
+    const shownRows = () => Array.from(messagesEl.querySelectorAll('.claudian-message')).filter(row => !row.closest('[hidden]')).length;
+    expect(shownRows()).toBe(2);
     await session.text('    ');
+    // Whitespace alone shows no reply row yet.
+    expect(shownRows()).toBe(2);
     await session.text('code sample');
+    expect(shownRows()).toBe(3);
     await background.handle('binding', { type: 'background_turn_completed', reason: 'completed', scope: session.next() }, () => true);
     expect(state.messages.filter(message => message.role === 'assistant' && !message.contentBlocks?.some(block => block.type === 'task_notification'))
       .map(message => message.content)).toEqual(['Before the job.', '    code sample']);

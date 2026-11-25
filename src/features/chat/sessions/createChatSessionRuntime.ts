@@ -50,6 +50,8 @@ export function createChatSessionRuntime(plugin: ChatFeatureHost, identity: Sess
       if (writing) return plugin.sessionRuntimes.awaitNativeHistoryBaseline(runtime);
     },
     onBackgroundWorkChanged: () => runtime.publish('work'),
+    // An evicted model took its automatic turns with it; a held one must not keep waiting on them.
+    onBindingReleased: bindingId => runtime.peekModel?.events.discardBinding(bindingId),
     onError: error => { new Notice(error instanceof Error ? error.message : 'Provider execution failed.'); },
     idleReleaseMs: 30 * 60_000,
     isOwnerIdle: () => runtime.isIdle,

@@ -163,7 +163,8 @@ interface SpanProgress {
   /** The message before its reservation, where a stop without output leaves its marker. */
   readonly anchor: ChatMessage | undefined;
   message: ChatMessage;
-  visible: boolean;
+  /** What the span has shown: nothing, an earlier segment only, or its current segment. */
+  shown: 'none' | 'earlier' | 'current';
 }
 
 /**
@@ -235,13 +236,19 @@ export class AutoTriggeredTurn {
     if (continuation !== span.message) {
       span.message = continuation;
       this.#segments.push(continuation);
-      if (!span.visible) this.#setSpanHidden(span, true);
+      // A continuation shows once it has visible content of its own, never as an empty row.
+      if (span.shown === 'current') span.shown = 'earlier';
+      this.#setHidden(continuation, true);
     }
-    if (!span.visible && isVisibleAutoTurnChunk(chunk, this.#hiddenToolIds)) {
-      span.visible = true;
+    if (span.shown !== 'current' && isVisibleAutoTurnChunk(chunk, this.#hiddenToolIds)) {
       // Showing the reply is its arrival; later growth follows as the reader's follow setting allows.
       const followArrival = this.host.renderer?.follow.holdArrival();
-      this.#setSpanHidden(span, false);
+      // The span's first visible output also shows its earlier segments that hold output.
+      if (span.shown === 'none') {
+        for (const segment of this.#segments.slice(span.start)) if (hasResponseOutput(segment)) this.#setHidden(segment, false);
+      }
+      span.shown = 'current';
+      this.#setHidden(span.message, false);
       followArrival?.();
     }
     this.#state.messages = this.host.state.messages;
@@ -305,12 +312,9 @@ export class AutoTriggeredTurn {
     this.#state.dispose();
   }
 
-  /** A span's segments stay hidden together until it shows visible output. */
-  #setSpanHidden(span: SpanProgress, hidden: boolean): void {
-    for (const segment of this.#segments.slice(span.start)) {
-      const element = this.host.renderer?.getMessageContentEl(segment.id)?.parentElement;
-      if (element) element.hidden = hidden;
-    }
+  #setHidden(message: ChatMessage, hidden: boolean): void {
+    const element = this.host.renderer?.getMessageContentEl(message.id)?.parentElement;
+    if (element) element.hidden = hidden;
   }
 
   /** Where this turn's first message sits in `messages`, or -1 when none of it is there. */
@@ -340,7 +344,7 @@ export class AutoTriggeredTurn {
     const messages = this.host.state.messages;
     const reserved = messages.indexOf(target.message);
     this.#latest = {
-      phase: 'open', index, start: this.#segments.length, message: target.message, visible: false,
+      phase: 'open', index, start: this.#segments.length, message: target.message, shown: 'none',
       anchor: reserved > 0 ? messages[reserved - 1] : reserved < 0 ? messages.at(-1) : undefined,
     };
     this.#segments.push(target.message);
@@ -363,11 +367,9 @@ export class AutoTriggeredTurn {
     if (!this.#isCurrent()) return false;
     stream.thinkingIndicator.hide();
     message.completedAt = Date.now();
-    if (!span.visible) {
-      for (const segment of this.#segments.slice(span.start)) discardBackgroundTurn(host, { message: segment });
-    } else if (!hasResponseOutput(message) && host.state.messages.includes(message)) {
-      host.state.messages = host.state.messages.filter(item => item !== message);
-      host.renderer?.removeMessage(message.id);
+    // A span that showed nothing gives up every segment; one that did keeps only segments with output.
+    for (const segment of this.#segments.slice(span.start)) {
+      if (span.shown === 'none' || !hasResponseOutput(segment)) discardBackgroundTurn(host, { message: segment });
     }
     this.#state.currentContentEl = null;
     return true;
