@@ -17,7 +17,7 @@ import type { ChatMessage, ContentBlock, ImageAttachment, ToolCallInfo, TurnStat
 import { createTurnStats, isTokenCount, settleInterruptedTurn } from '../../../core/types';
 import { encodePiModelId } from '../models';
 import { getPiCustomMessageDisplayText } from '../normalization/piCustomMessageNormalization';
-import { getPiTerminalErrorMessage } from '../normalization/piEventNormalization';
+import { getPiTerminalErrorMessage, getPiUnrunToolResult } from '../normalization/piEventNormalization';
 import { PI_PEEPS_RUN_ENTRY_TYPE, PiPeepsSubagents } from '../normalization/PiPeepsSubagents';
 import {
   extractPiToolResultText,
@@ -152,7 +152,9 @@ export function getPiConversationBranches(entries: readonly PiSessionEntry[]): R
     while (parent && !visited.has(parent)) {
       visited.add(parent);
       const ancestor = byId.get(parent);
-      if (!ancestor || ancestor.message || ancestor.type === 'branch_summary') break;
+      // System messages patch the prompt or tools between prompts; like model changes, they are configuration.
+      const conversation = ancestor?.message && getString(ancestor.message.role) !== 'system';
+      if (!ancestor || conversation || ancestor.type === 'branch_summary') break;
       parent = ancestor.parentId;
     }
     const group = groups.get(parent) ?? [];
@@ -184,9 +186,14 @@ function descendsFrom(entries: PiSessionEntry[], descendantId: string, ancestorI
   return resolvePiActivePath(entries, descendantId).some(entry => entry.id === ancestorId);
 }
 
+/**
+ * The model selection a branch records, as Pi's getBranchSelection resolves it: the latest model change or
+ * physical response, except that a model change naming a virtual model holds over the responses it routed.
+ */
 export function parsePiSessionModel(
   content: string | ParsedPiSessionEntries,
-  leafEntryId?: string | null,
+  leafEntryId: string | null | undefined,
+  isVirtualModel: (encodedId: string) => boolean,
 ): string | null {
   if (leafEntryId === null) return null;
   const parsed = typeof content === 'string' ? parsePiSessionEntries(content) : content;
@@ -199,17 +206,25 @@ export function parsePiSessionModel(
   }
   const entries = resolvePiActivePath(parsed.entries, persistedLeafEntryId);
   let selection: string | null = null;
+  let modelChange: string | null = null;
   for (const entry of entries) {
+    // A failed routing leaves the virtual model on its response, which names no physical model.
+    if (getString(entry.message?.api) === PI_VIRTUAL_MODEL_API) continue;
     const provider = getString(entry.raw.provider)
       ?? getString(entry.message?.provider);
     const modelId = getString(entry.raw.modelId)
       ?? getString(entry.message?.model);
     if (provider && modelId) {
-      selection = encodePiModelId(provider, modelId);
+      const model = encodePiModelId(provider, modelId);
+      if (entry.type === 'model_change') modelChange = model;
+      selection = entry.type !== 'model_change' && modelChange && isVirtualModel(modelChange) ? modelChange : model;
     }
   }
   return selection;
 }
+
+/** API id of Pi's virtual catalog entries (Pi 0.99+). */
+export const PI_VIRTUAL_MODEL_API = 'pi-virtual';
 
 export function parsePiSessionEntries(content: string): ParsedPiSessionEntries {
   const parsed: ParsedPiSessionEntries = { entries: [], header: null };
@@ -250,7 +265,10 @@ function addPiSessionLine(parsed: ParsedPiSessionEntries, line: string): void {
     return;
   }
 
-  const message = getRecord(record.message) ?? getRecord(record.data) ?? inferMessageRecord(record);
+  // A custom entry's `data` is extension state, never part of the conversation.
+  const message = getRecord(record.message)
+    ?? (type === 'custom' ? undefined : getRecord(record.data))
+    ?? inferMessageRecord(record);
   parsed.entries.push({
     ...(getString(record.id) ? { id: getString(record.id)! } : {}),
     ...(message ? { message } : {}),
@@ -378,19 +396,15 @@ function includePiGraphPathEntries(
   const activeIds = new Set(activePath.map(entry => entry.id).filter((id): id is string => !!id));
   const activeToolCallIds = collectToolCallIds(activePath);
   return entries.filter((entry) => {
-    if (isToolResultEntry(entry)) {
-      const toolCallId = getToolResultCallId(entry);
-      return (!!toolCallId && activeToolCallIds.has(toolCallId))
-        || (!!entry.id && activeIds.has(entry.id))
-        || (!!entry.parentId && activeIds.has(entry.parentId));
-    }
+    // Tool results are ordinary tree entries; one off the leaf-to-root walk belongs to another branch.
     if (entry.id) {
       return activeIds.has(entry.id);
     }
     if (entry.parentId && activeIds.has(entry.parentId)) {
       return true;
     }
-    return false;
+    const toolCallId = isToolResultEntry(entry) ? getToolResultCallId(entry) : null;
+    return !!toolCallId && activeToolCallIds.has(toolCallId);
   });
 }
 
@@ -412,12 +426,64 @@ function includePiLinearPathEntries(
   });
 }
 
+/**
+ * Pending forks saved before replies were checkpointed at their last tool result name the assistant entry
+ * that made the calls. Follows such a checkpoint along its unbranched descendants.
+ */
+export function resolvePiForkCheckpoint(entries: readonly PiSessionEntry[], resumeAt: string): string {
+  const assistant = entries.find(entry => entry.id === resumeAt);
+  return assistant && isAssistantMessageEntry(assistant)
+    ? followPiReplyCheckpoint(assistant, resumeAt, unbranchedPiDescendants(entries, resumeAt))
+    : resumeAt;
+}
+
+/** A branch makes which results belong to an entry ambiguous, so the walk ends there. */
+function* unbranchedPiDescendants(entries: readonly PiSessionEntry[], id: string): Generator<PiSessionEntry> {
+  let current = id;
+  for (;;) {
+    const children = entries.filter(entry => entry.parentId === current);
+    const [child] = children;
+    if (children.length !== 1 || !child.id) return;
+    yield child;
+    current = child.id;
+  }
+}
+
+/**
+ * A reply's fork checkpoint is its assistant entry, moved over the results of that entry's tool batch that
+ * follow it, as when a terminating batch ends the run. A later assistant entry starts its own reply.
+ */
+function followPiReplyCheckpoint(assistant: PiSessionEntry, assistantId: string, following: Iterable<PiSessionEntry>): string {
+  const message = assistant.message ?? assistant.raw;
+  const callIds = new Set(extractAssistantToolCalls(message.content ?? message.parts ?? message.blocks).map(call => call.id));
+  let checkpoint = assistantId;
+  for (const entry of following) {
+    const step = stepPiReplyCheckpoint(entry, callIds);
+    if (step === 'end' || !entry.id) break;
+    if (step === 'result') checkpoint = entry.id;
+  }
+  return checkpoint;
+}
+
+/** A result of the batch moves a checkpoint; state that extensions and settings changes record between results passes. */
+function stepPiReplyCheckpoint(entry: PiSessionEntry, callIds: ReadonlySet<string>): 'result' | 'pass' | 'end' {
+  if (isToolResultEntry(entry)) {
+    const callId = getToolResultCallId(entry);
+    return callId && callIds.has(callId) ? 'result' : 'end';
+  }
+  return PI_UNDISPLAYED_STATE_ENTRY_TYPES.has(entry.type) ? 'pass' : 'end';
+}
+
+/** Entries that record extension, settings, session metadata or usage between a batch's results without adding a message. */
+const PI_UNDISPLAYED_STATE_ENTRY_TYPES = new Set(['custom', 'label', 'model_change', 'session_info', 'thinking_level_change', 'usage']);
+
 export async function createPiForkSessionFile(
   sourceSessionFile: string,
-  resumeAt: string,
+  savedResumeAt: string,
   options: CreatePiForkSessionFileOptions = {},
 ): Promise<CreatedPiForkSessionFile> {
   const parsed = await readPiSessionEntries(sourceSessionFile);
+  const resumeAt = resolvePiForkCheckpoint(parsed.entries, savedResumeAt);
   const branchEntries = resolvePiEntryPath(parsed.entries, resumeAt);
   if (branchEntries.length === 0) {
     throw new Error(`Pi fork checkpoint not found: ${resumeAt}`);
@@ -550,6 +616,11 @@ function mapPiSessionEntries(
       turnRunning = true;
     }
     const mapped = mapPiSessionEntry(entry, messages, syntheticIdNamespace);
+    const reply = messages.at(-1);
+    if (!mapped && entry.id && reply?.role === 'assistant' && reply.toolCalls?.length
+      && stepPiReplyCheckpoint(entry, new Set(reply.toolCalls.map(call => call.id))) === 'result') {
+      reply.assistantMessageId = entry.id;
+    }
     if (mapped) {
       if (mapped.role === 'user') flushPendingError();
       if (!promptedTurnOpen && (entry.type === 'custom_message'
@@ -639,7 +710,8 @@ function applyPiPeepsSubagents(entries: PiSessionEntry[], messages: ChatMessage[
           text: extractPiToolTextContent(message.content),
         });
       }
-    } else if (isAssistantMessageEntry(entry)) {
+    } else if (isAssistantMessageEntry(entry) && getPiUnrunToolResult(message) === null) {
+      // A spawn in a reply Pi never ran started no child.
       for (const toolCall of extractAssistantToolCalls(message.content ?? message.parts ?? message.blocks)) {
         peeps.toolStarted(toolCall.id, toolCall.name, toolCall.input, timestamp);
       }
@@ -688,6 +760,16 @@ export function getPiTurnStats(entries: PiSessionEntry[], assistantId: string | 
     if (assistantId && entry.id === assistantId) return result;
   }
   return undefined;
+}
+
+/** The fork checkpoint of the reply that ends a native path, by the rule replay applies to each reply. */
+export function findPiReplyCheckpointId(entries: readonly PiSessionEntry[]): string | null {
+  for (let index = entries.length - 1; index >= 0; index -= 1) {
+    const assistant = entries[index];
+    if (!isAssistantMessageEntry(assistant)) continue;
+    return assistant.id ? followPiReplyCheckpoint(assistant, assistant.id, entries.slice(index + 1)) : null;
+  }
+  return null;
 }
 
 function isAssistantMessageEntry(entry: PiSessionEntry): boolean {
@@ -773,6 +855,14 @@ function mapPiSessionEntry(
   if (role === 'assistant') {
     const contentBlocks = extractAssistantContentBlocks(message.content ?? message.parts ?? message.blocks);
     const toolCalls = extractAssistantToolCalls(message.content ?? message.parts ?? message.blocks);
+    // Live turns fail the calls of a reply Pi never ran with the same result.
+    const unrunResult = getPiUnrunToolResult(message);
+    if (unrunResult !== null) {
+      for (const toolCall of toolCalls) {
+        toolCall.status = 'error';
+        if (unrunResult) toolCall.result = unrunResult;
+      }
+    }
     const text = contentBlocks
       .filter((block): block is Extract<ContentBlock, { type: 'text' }> => block.type === 'text')
       .map(block => block.content)

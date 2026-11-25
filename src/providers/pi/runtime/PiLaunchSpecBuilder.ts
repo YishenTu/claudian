@@ -4,7 +4,6 @@ import { SESSION_TOOLS } from '@/core/tools/toolNames';
 
 import type { PiProviderSettings } from '../config';
 import { isPiSessionPathReference } from '../history/PiHistoryPathResolver';
-import { decodePiModelId, normalizePiThinkingLevel } from '../models';
 import type { PiProviderState } from '../types';
 import { piTargetPath } from './piTargetPaths';
 
@@ -14,14 +13,12 @@ export interface BuildPiLaunchSpecParams {
   cwd: string;
   env?: NodeJS.ProcessEnv;
   envText?: string;
-  model?: string | null;
   noSession?: boolean;
   noTools?: boolean;
   readOnlyTools?: boolean;
   providerState?: PiProviderState | null;
   settings: PiProviderSettings;
   systemPrompt?: string;
-  thinkingLevel?: string | null;
   enableSessionTools?: boolean;
   enableTreeBridge?: boolean;
 }
@@ -65,16 +62,6 @@ export function buildPiLaunchSpec(params: BuildPiLaunchSpecParams): PiLaunchSpec
     args.push('--no-tools');
   } else if (params.readOnlyTools) {
     args.push('--tools', [READONLY_TOOLS, ...(params.enableSessionTools ? SESSION_TOOLS : [])].join(','));
-  }
-
-  const decodedModel = typeof params.model === 'string' ? decodePiModelId(params.model) : null;
-  if (decodedModel) {
-    args.push('--provider', decodedModel.provider, '--model', decodedModel.modelId);
-  }
-
-  const thinkingLevel = normalizePiThinkingLevel(params.thinkingLevel);
-  if (thinkingLevel && thinkingLevel !== 'off') {
-    args.push('--thinking', thinkingLevel);
   }
 
   return {

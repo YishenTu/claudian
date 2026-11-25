@@ -10,6 +10,7 @@ import {
   type PiSessionEntry,
   resolvePiActivePath,
 } from '@/providers/pi/history/PiHistoryStore';
+import { piPeepsSubagentAdapter } from '@/providers/pi/normalization/PiPeepsSubagents';
 
 describe('PiHistoryStore', () => {
   it.each([
@@ -106,6 +107,22 @@ describe('PiHistoryStore', () => {
       status: 'running', providerPayload: { rawName: 'claudian_send_message' } }]);
   });
 
+  // Pi never runs the calls of a reply that ended in an error or abort; live turns fail them with the reply.
+  // A stopped reply is an interruption, so its abort text stays hidden.
+  it.each([
+    ['error', '529 overloaded', '529 overloaded'], ['aborted', 'Operation aborted', undefined],
+  ])('replays a call from a reply that ended with %s as failed', (stopReason, errorMessage, result) => {
+    const spawn = { type: 'toolCall', id: 'spawn', name: 'peeps_spawn', arguments: { label: 'probe', task: 'List the vault.' } };
+    const messages = parsePiSessionContent(JSON.stringify({ type: 'message', id: 'assistant', message: {
+      role: 'assistant', stopReason, errorMessage, content: [{ type: 'toolCall', id: 'tool', name: 'read', arguments: {} }, spawn],
+    } }));
+    const [read, spawned] = messages[0].toolCalls ?? [];
+    expect(read).toEqual({ id: 'tool', input: {}, name: 'Read', status: 'error', ...(result ? { result } : {}) });
+    // No child ever started, so the spawn's subagent card fails with it.
+    expect(spawned).toMatchObject({ id: 'spawn', status: 'error' });
+    expect(piPeepsSubagentAdapter.buildSubagentInfo(spawned, messages[0].toolCalls ?? [])).toMatchObject({ description: 'probe', status: 'error' });
+  });
+
   it('correlates repeated live prompts by their anchored order and leaves unsaved input unbound', () => {
     const native = parsePiSessionContent([
       { type: 'message', id: 'u1', parentId: null, message: { role: 'user', content: 'Repeat' } },
@@ -118,12 +135,22 @@ describe('PiHistoryStore', () => {
     expect(correlatePiUserMessages([...live, { ...live[2], id: 'unsaved' }], native)).toEqual({ 'local-0': 'u1', 'local-1': 'u2' });
   });
 
-  it('projects sibling prompts across configuration entries without mixing their continuations', () => {
+  it.each([
+    ['a model change', { type: 'model_change', id: 'config', parentId: null }],
+    // Pi 1.x persists prompt and tool changes as system messages before the next prompt.
+    ['a system prompt patch', { type: 'message', id: 'config', parentId: null, message: {
+      role: 'system', content: '', sections: { date: 'Today' }, toolsAdded: [{ name: 'read' }],
+    } }],
+    // Extension state stays out of the conversation, whatever its data holds.
+    ['an extension custom entry', { type: 'custom', id: 'config', parentId: null, customType: 'extension-state', data: {
+      role: 'user', content: 'Extension state',
+    } }],
+  ])('projects sibling prompts across %s without mixing their continuations', (_name, configuration) => {
     const content = [
       { type: 'message', id: 'u1', parentId: null, message: { role: 'user', content: 'A' } },
       { type: 'message', id: 'a1', parentId: 'u1', message: { role: 'assistant', content: 'Answer A' } },
-      { type: 'model_change', id: 'model', parentId: null },
-      { type: 'message', id: 'u2', parentId: 'model', message: { role: 'user', content: 'B' } },
+      configuration,
+      { type: 'message', id: 'u2', parentId: 'config', message: { role: 'user', content: 'B' } },
       { type: 'message', id: 'a2', parentId: 'u2', message: { role: 'assistant', content: 'Answer B' } },
     ].map(entry => JSON.stringify(entry)).join('\n');
     expect(parsePiSessionContent(content, { leafEntryId: 'a1' })).toMatchObject([
@@ -890,6 +917,29 @@ describe('PiHistoryStore', () => {
 
     expect(resolvePiActivePath(entries, 'left').map(entry => entry.id)).toEqual(['root', 'left']);
     expect(resolvePiActivePath(entries).map(entry => entry.id)).toEqual(['root', 'right']);
+  });
+
+  it('leaves a tool result on an abandoned branch off the active call', () => {
+    const content = [
+      { type: 'session', version: 3, id: 'session' },
+      { type: 'message', id: 'u1', parentId: null, message: { role: 'user', content: 'Read the note' } },
+      { type: 'message', id: 'a1', parentId: 'u1', message: {
+        role: 'assistant', stopReason: 'toolUse',
+        content: [{ type: 'toolCall', id: 'c1', name: 'read', arguments: { path: 'note.md' } }],
+      } },
+      { type: 'message', id: 'r1', parentId: 'a1', message: {
+        role: 'toolResult', toolCallId: 'c1', toolName: 'read', content: [{ type: 'text', text: 'old result' }],
+      } },
+      { type: 'message', id: 'u2', parentId: 'a1', message: { role: 'user', content: 'Try something else' } },
+    ].map(entry => JSON.stringify(entry)).join('\n');
+
+    const messages = parsePiSessionContent(content);
+
+    expect(messages.map(message => message.role)).toEqual(['user', 'assistant', 'user']);
+    expect(messages[1].toolCalls).toHaveLength(1);
+    expect(messages[1].toolCalls?.[0]).toMatchObject({ id: 'c1' });
+    expect(messages[1].toolCalls?.[0].result).toBeUndefined();
+    expect(JSON.stringify(messages)).not.toContain('old result');
   });
 
   it('keeps id-less tool results attached to the active branch', () => {

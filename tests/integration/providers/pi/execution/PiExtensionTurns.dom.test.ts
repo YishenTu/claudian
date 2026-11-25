@@ -12,12 +12,12 @@ import type { ClaudianSettings, Conversation } from '@/core/types';
 import { SessionMessagingService } from '@/features/chat/session-messaging/SessionMessagingService';
 import { activateTab, destroyTab } from '@/features/chat/tabs/TabLifecycle';
 import { createTabRuntime } from '@/features/chat/tabs/TabRuntimeFactory';
+import { formatActivityPreview } from '@/features/chat/zen/activityPreview';
 import { claudeProviderRegistration } from '@/providers/claude/registration';
 import { PiExecutionBackend, type PiExecutionKernel, type PiExecutionKernelCallbacks } from '@/providers/pi/execution';
 import { piProviderRegistration } from '@/providers/pi/registration';
 import { PiExtensionUIBridge } from '@/providers/pi/runtime/PiExtensionUIBridge';
 import type { PiLaunchSpec } from '@/providers/pi/runtime/PiLaunchSpecBuilder';
-import type { PiRPCTransport } from '@/providers/pi/runtime/PiRPCTransport';
 import { VaultMentionDataProvider } from '@/shared/mention/VaultMentionDataProvider';
 
 registerProviderModules([claudeProviderRegistration, piProviderRegistration]);
@@ -54,7 +54,7 @@ class ScriptedPiKernel implements PiExecutionKernel {
   /** Extension notifications pass through the real native-UI bridge into this session. */
   notify(notifyType: string | undefined): void {
     const transport = { send: () => { throw new Error('A notification must not request a native response'); } };
-    new PiExtensionUIBridge(transport as unknown as PiRPCTransport, null, this.callbacks.onExtensionChunk)
+    new PiExtensionUIBridge(transport, null, this.callbacks.onExtensionChunk)
       .handleRequest({ type: 'extension_ui_request', method: 'notify', message: 'Extension policy message', notifyType });
   }
 
@@ -290,12 +290,24 @@ describe('Pi extension-initiated turns in the chat view', () => {
     }
   });
 
-  it('renders a Peeps child as a subagent card that its later result completes', async () => {
+  // Pi streams each call inside the assistant message (start, then complete arguments) before running it.
+  it.each([false, true])('renders a Peeps child as a subagent card that its later result completes (calls streamed: %s)', async streamed => {
     const view = await createPiView();
     try {
       await sendPrompt(view, 'Delegate the probe', async (kernel) => {
         kernel.emit({ type: 'agent_start' });
         kernel.emit({ message: { role: 'assistant' }, type: 'message_start' });
+        const calls = [
+          ['spawn-1', 'peeps_spawn', { label: 'vault probe', task: 'List the vault root.' }],
+          ['inspect-1', 'peeps_inspect', { id: 'run-1' }],
+        ] as const;
+        calls.forEach(([id, toolName, args], contentIndex) => {
+          if (!streamed) return;
+          kernel.emit({ type: 'message_update', assistantMessageEvent: { type: 'toolcall_start', contentIndex, id, toolName } });
+          kernel.emit({ type: 'message_update', assistantMessageEvent: {
+            type: 'toolcall_end', contentIndex, toolCall: { type: 'toolCall', id, name: toolName, arguments: args },
+          } });
+        });
         kernel.emit({ message: { role: 'assistant', stopReason: 'toolUse', timestamp: Date.now() }, type: 'message_end' });
         kernel.tool('spawn-1', 'peeps_spawn', { label: 'vault probe', task: 'List the vault root.' }, {
           id: 'run-1', label: 'vault probe', status: 'starting',
@@ -332,6 +344,91 @@ describe('Pi extension-initiated turns in the chat view', () => {
       expect(within(content).getByText('List the vault root.')).toBeTruthy();
       expect(within(content).getByText('Inbox, Work, Template.')).toBeTruthy();
       expect(view.tab.dom.messagesEl.querySelectorAll('[data-subagent-id="spawn-1"]')).toHaveLength(1);
+    } finally {
+      await view.dispose();
+    }
+  });
+
+  // The chat holds tool cards until its buffer flushes; the activity preview names a call as soon as Pi streams it.
+  it('previews a streamed call while its arguments are still streaming', async () => {
+    const view = await createPiView();
+    try {
+      await sendPrompt(view, 'Write the note', async (kernel) => {
+        kernel.emit({ type: 'agent_start' });
+        kernel.emit({ message: { role: 'assistant' }, type: 'message_start' });
+        kernel.emit({ type: 'message_update', assistantMessageEvent: { type: 'toolcall_start', contentIndex: 0, id: 'write-1', toolName: 'write' } });
+        kernel.emit({ type: 'message_update', assistantMessageEvent: { type: 'toolcall_delta', contentIndex: 0, delta: '{"path":"note.md","content":"' } });
+        await waitFor(() => expect(formatActivityPreview(view.tab.state)).toMatchObject({ tone: 'working', toolName: 'Write' }));
+        kernel.emit({ message: { role: 'assistant', stopReason: 'aborted', timestamp: Date.now() }, type: 'message_end' });
+        kernel.emit({ messages: [], type: 'agent_end' });
+        kernel.emit({ type: 'agent_settled' });
+      });
+    } finally {
+      await view.dispose();
+    }
+  });
+
+  // Pi never runs a spawn streamed in a reply that failed, so no child starts and the retry answers without it.
+  it('fails the subagent card of a streamed spawn whose reply failed', async () => {
+    const view = await createPiView();
+    try {
+      await sendPrompt(view, 'Delegate the probe', async (kernel) => {
+        kernel.emit({ type: 'agent_start' });
+        kernel.emit({ message: { role: 'assistant' }, type: 'message_start' });
+        kernel.emit({ type: 'message_update', assistantMessageEvent: { type: 'toolcall_start', contentIndex: 0, id: 'spawn-1', toolName: 'peeps_spawn' } });
+        kernel.emit({ type: 'message_update', assistantMessageEvent: {
+          type: 'toolcall_end', contentIndex: 0, toolCall: { type: 'toolCall', id: 'spawn-1', name: 'peeps_spawn', arguments: { label: 'vault probe', task: 'List the vault root.' } },
+        } });
+        kernel.emit({ message: { role: 'assistant', stopReason: 'error', errorMessage: '529 overloaded', timestamp: Date.now() }, type: 'message_end' });
+        kernel.emit({ messages: [], type: 'agent_end', willRetry: true });
+        kernel.emit({ attempt: 1, maxAttempts: 3, delayMs: 0, errorMessage: '529 overloaded', type: 'auto_retry_start' });
+        kernel.emit({ type: 'agent_start' });
+        kernel.answer('Recovered.');
+        kernel.emit({ attempt: 1, success: true, type: 'auto_retry_end' });
+        kernel.emit({ messages: [], type: 'agent_end' });
+        kernel.emit({ type: 'agent_settled' });
+      });
+      expect(within(view.tab.dom.messagesEl).getAllByRole('button', { hidden: true, name: /^Subagent task: vault probe - Status:/ })
+        .map(button => button.getAttribute('aria-label'))).toEqual([expect.stringMatching(/^Subagent task: vault probe - Status: error/)]);
+    } finally {
+      await view.dispose();
+    }
+  });
+
+  // A call streamed in a reply that failed never runs; the retry streams and runs the call again under a new id.
+  it('leaves no running tool card for a streamed call whose attempt failed and was retried', async () => {
+    const view = await createPiView();
+    try {
+      await sendPrompt(view, 'Read the note', async (kernel) => {
+        const streamCall = (id: string) => {
+          kernel.emit({ message: { role: 'assistant' }, type: 'message_start' });
+          kernel.emit({ type: 'message_update', assistantMessageEvent: { type: 'toolcall_start', contentIndex: 0, id, toolName: 'read' } });
+          kernel.emit({ type: 'message_update', assistantMessageEvent: { type: 'toolcall_delta', contentIndex: 0, delta: '{"path":' } });
+        };
+        kernel.emit({ type: 'agent_start' });
+        streamCall('call-1');
+        kernel.emit({ message: { role: 'assistant', stopReason: 'error', errorMessage: '529 overloaded', timestamp: Date.now() }, type: 'message_end' });
+        kernel.emit({ messages: [], type: 'agent_end', willRetry: true });
+        kernel.emit({ attempt: 1, maxAttempts: 3, delayMs: 0, errorMessage: '529 overloaded', type: 'auto_retry_start' });
+        kernel.emit({ type: 'agent_start' });
+        streamCall('call-2');
+        kernel.emit({ type: 'message_update', assistantMessageEvent: {
+          type: 'toolcall_end', contentIndex: 0, toolCall: { type: 'toolCall', id: 'call-2', name: 'read', arguments: { path: 'note.md' } },
+        } });
+        kernel.emit({ message: { role: 'assistant', stopReason: 'toolUse', timestamp: Date.now() }, type: 'message_end' });
+        kernel.emit({ args: { path: 'note.md' }, toolCallId: 'call-2', toolName: 'read', type: 'tool_execution_start' });
+        kernel.emit({ isError: false, result: { content: [{ text: 'Note body', type: 'text' }] }, toolCallId: 'call-2', toolName: 'read', type: 'tool_execution_end' });
+        kernel.answer('Recovered.');
+        kernel.emit({ attempt: 1, success: true, type: 'auto_retry_end' });
+        kernel.emit({ messages: [], type: 'agent_end' });
+        kernel.emit({ type: 'agent_settled' });
+      });
+      // The failed attempt's card ends failed with its reply; the retried call completes; neither spins after the turn.
+      const status = (id: string) => view.tab.state.messages.flatMap(message => message.toolCalls ?? []).find(call => call.id === id)?.status;
+      expect([status('call-1'), status('call-2')]).toEqual(['error', 'completed']);
+      expect(view.tab.dom.messagesEl.querySelectorAll('.claudian-tool-call')).toHaveLength(2);
+      expect(view.tab.dom.messagesEl.querySelectorAll('.claudian-tool-status.status-running')).toHaveLength(0);
+      expect(view.tab.dom.messagesEl.querySelectorAll('.claudian-tool-status.status-error')).toHaveLength(1);
     } finally {
       await view.dispose();
     }

@@ -365,10 +365,17 @@ describe('PiSubprocess', () => {
     );
   });
 
-  it.each(['cmd', 'ps1'] as const)(
-    'launches the active release entry for a pi.dev managed %s launcher',
-    (launcher) => {
+  it.each([
+    ['cmd', false], ['ps1', false], ['cmd', true],
+  ] as const)(
+    'launches the active release entry for a pi.dev managed %s launcher (marker BOM: %s)',
+    async (launcher, bom) => {
       Object.defineProperty(process, 'platform', { value: 'win32' });
+      const markerFile = path.join(path.dirname(windowsManagedCommands.cmd), '..', 'install', 'managed-install.json');
+      const marker = await fs.readFile(markerFile, 'utf8');
+      // Windows PowerShell 5.1 writes a UTF-8 BOM when it rewrites the marker.
+      if (bom) await fs.writeFile(markerFile, `\uFEFF${marker}`);
+      onTestFinished(() => fs.writeFile(markerFile, marker));
       const args = [
         '--mode',
         'rpc',
@@ -436,7 +443,34 @@ describe('PiSubprocess', () => {
     expect(mockSpawn).not.toHaveBeenCalled();
   });
 
-  it('kills the process tree when shutting down a direct Windows Pi launch', async () => {
+  // Pi shuts down in order on stdin EOF; a signal is a hard kill on Windows and cuts its cleanup short.
+  it.each(['posix', 'windows'] as const)('asks Pi to exit by closing stdin before signalling it (%s)', async platform => {
+    vi.useFakeTimers();
+    if (platform === 'windows') Object.defineProperty(process, 'platform', { value: 'win32' });
+    const subprocess = new PiSubprocess({
+      args: ['--mode', 'rpc'],
+      command: platform === 'windows' ? windowsPiCommand : 'pi',
+      cwd: platform === 'windows' ? 'C:\\Vault' : '/vault',
+      env: { PATH: process.env.PATH },
+    });
+    subprocess.start();
+    mockSpawn.mockClear();
+
+    const shutdown = subprocess.shutdown();
+    expect(proc.stdin.writableEnded).toBe(true);
+    await vi.advanceTimersByTimeAsync(4_999);
+    expect(proc.kill).not.toHaveBeenCalled();
+    expect(mockSpawn).not.toHaveBeenCalled();
+
+    proc.exitCode = 0;
+    proc.emit('exit', 0, null);
+    await shutdown;
+    expect(proc.kill).not.toHaveBeenCalledWith('SIGTERM');
+    expect(mockSpawn).not.toHaveBeenCalledWith('taskkill.exe', expect.anything(), expect.anything());
+  });
+
+  it('kills the process tree of a direct Windows Pi launch that ignores stdin EOF', async () => {
+    vi.useFakeTimers();
     Object.defineProperty(process, 'platform', { value: 'win32' });
     const subprocess = new PiSubprocess({
       args: ['--mode', 'rpc'],
@@ -447,6 +481,7 @@ describe('PiSubprocess', () => {
     subprocess.start();
 
     const shutdown = subprocess.shutdown();
+    await vi.advanceTimersByTimeAsync(5_000);
 
     expect(mockSpawn).toHaveBeenCalledWith(
       'taskkill.exe',
@@ -477,7 +512,7 @@ describe('PiSubprocess', () => {
     expect(subprocess.getStderrSnapshot()).toHaveLength(8_000);
   });
 
-  it('notifies close listeners and escalates shutdown after timeout', async () => {
+  it('notifies close listeners and escalates the shutdown of a Pi that ignores stdin EOF', async () => {
     vi.useFakeTimers();
     const subprocess = new PiSubprocess({
       args: ['--mode', 'rpc'],
@@ -490,9 +525,11 @@ describe('PiSubprocess', () => {
     subprocess.start();
 
     const shutdown = subprocess.shutdown();
+    await vi.advanceTimersByTimeAsync(5_000);
     expect(proc.kill).toHaveBeenCalledWith('SIGTERM');
+    expect(proc.kill).not.toHaveBeenCalledWith('SIGKILL');
 
-    vi.advanceTimersByTime(3_000);
+    await vi.advanceTimersByTimeAsync(3_000);
     expect(proc.kill).toHaveBeenCalledWith('SIGKILL');
 
     proc.exitCode = 1;

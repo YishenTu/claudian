@@ -556,7 +556,11 @@
     },
     "pi": {
       "extension": "Pi extension",
-      "notification": "Pi extension notification."
+      "notification": "Pi extension notification.",
+      "retrying": "Pi is retrying the turn (attempt {attempt} of {maxAttempts}).",
+      "retryingUnknownAttempt": "Pi is retrying the turn.",
+      "retryFinished": "Pi retry finished.",
+      "compacting": "Pi is compacting the conversation context."
     },
     "sessionMessage": {
       "undelivered": "Messages from {senders} could not be delivered.",

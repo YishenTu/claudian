@@ -10,6 +10,7 @@ import {
 } from '@/core/prompt/historyContext';
 import { appendExecutionContext } from '@/core/prompt/promptContext';
 import { buildRecoveryPrompt } from '@/core/prompt/recoveryPrompt';
+import { t } from '@/i18n/i18n';
 
 import {
   type ConversationBranchRecoveryRequest,
@@ -55,7 +56,7 @@ import {
 import {
   correlatePiUserMessages,
   type createPiForkSessionFile,
-  findPiSessionFile,
+  findPiReplyCheckpointId,
   followPiLeafAppends,
   getPiConversationBranches,
   getPiTurnStats,
@@ -69,6 +70,7 @@ import {
   clampPiThinkingLevel,
   decodePiModelId,
   findPiModel,
+  getPiSupportedThinkingLevels,
 } from '../models';
 import {
   createPiEventNormalizationState,
@@ -76,6 +78,7 @@ import {
   isPiDisplayedCustomMessageStart,
   normalizePiRPCEvent,
   type PiEventNormalizationState,
+  settlePiUnrunStreamedTools,
 } from '../normalization/piEventNormalization';
 import { PiPeepsSubagents } from '../normalization/PiPeepsSubagents';
 import { buildPiUsageInfo } from '../runtime/buildPiUsageInfo';
@@ -87,7 +90,7 @@ import {
 import { assertPiModelAvailable } from '../runtime/PiModelAvailability';
 import { buildPiSetModelPayload } from '../runtime/PiRPCPayloads';
 import { type PiRPCRecord, PiRPCResponseError } from '../runtime/PiRPCTransport';
-import { piHostPath, piTargetPath, samePiTargetPath } from '../runtime/piTargetPaths';
+import { piHostPath, piTargetPath, resolvePiReportedPath, samePiTargetPath } from '../runtime/piTargetPaths';
 import {
   getPiState,
   type PiProviderState,
@@ -113,6 +116,8 @@ interface EncodedPiRequest {
   readonly launchSpec: PiLaunchSpec;
   readonly model: string;
   readonly thinkingLevel: string | null;
+  /** The user's explicit level, which Pi's native model must also support. */
+  readonly explicitThinkingLevel: string | null;
 }
 
 interface PiPromptImage {
@@ -144,7 +149,11 @@ interface ActiveRun {
   readonly abortController: AbortController;
   readonly inputText: string;
   readonly run: RequestedRunChannel;
-  accepted: boolean;
+  /**
+   * Output Pi reports before admitting the prompt, such as preflight compaction, waits for admission.
+   * Independent of `phase`: a dispatched or ended run can still await Pi's admission.
+   */
+  admission: { kind: 'pending'; held: StreamChunk[] } | { kind: 'accepted' };
   assistantStarted: boolean;
   phase: ActiveRunPhase;
   nativeAssistantId?: string;
@@ -629,7 +638,7 @@ implements ProviderExecutionSession, SteerableExecutionSession {
         },
         sessionInstanceId: this.sessionInstanceId,
       }),
-      accepted: false,
+      admission: { held: [], kind: 'pending' },
       assistantStarted: false,
       phase: 'preflight',
       pendingTerminalError: null,
@@ -665,9 +674,10 @@ implements ProviderExecutionSession, SteerableExecutionSession {
       const previousLeafId = getPiState(this.state.providerState).leafEntryId ?? null;
       const input = encoded.input;
       let promptHandled = false;
+      let estimatedContextTokens: number | undefined;
       if (input.kind === 'compact') {
         active.phase = 'dispatched';
-        await this.kernel.request(
+        const compaction = await this.kernel.request<unknown>(
           'compact',
           { customInstructions: input.instructions },
           // Unlike prompt admission, compact responds only after model inference finishes.
@@ -676,6 +686,9 @@ implements ProviderExecutionSession, SteerableExecutionSession {
         );
         this.#ensureAccepted(active);
         this.#emitRequested(active, { type: 'context_compacted' });
+        // Pi reports no context tokens until a fresh response; its compaction result estimates them.
+        const estimate = getRecord(compaction).estimatedTokensAfter;
+        if (typeof estimate === 'number' && Number.isFinite(estimate) && estimate >= 0) estimatedContextTokens = estimate;
       } else {
         active.phase = 'dispatched';
         const response = await this.kernel.request<{ disposition?: string } | undefined>(
@@ -686,7 +699,8 @@ implements ProviderExecutionSession, SteerableExecutionSession {
             // An extension can start a run at any time; Pi rejects unqueued prompts while it streams.
             streamingBehavior: 'followUp',
           },
-          undefined,
+          // Pi answers only after extension commands, input handlers and pre-run compaction; Stop bounds the wait.
+          0,
           active.abortController.signal,
         );
         this.#ensureAccepted(active);
@@ -717,6 +731,7 @@ implements ProviderExecutionSession, SteerableExecutionSession {
       const usage = await this.#fetchUsage(
         encoded.model,
         active.abortController.signal,
+        estimatedContextTokens,
       ).catch(() => null);
       if (usage) {
         this.#emitRequested(active, {
@@ -810,6 +825,7 @@ implements ProviderExecutionSession, SteerableExecutionSession {
       launchSpec,
       model,
       thinkingLevel,
+      explicitThinkingLevel: request.configuration.reasoning ?? null,
     };
   }
 
@@ -916,7 +932,7 @@ implements ProviderExecutionSession, SteerableExecutionSession {
             || !currentActive
             || this.kernelResumeValidationTarget !== null
           ) return false;
-          this.#ensureAccepted(currentActive);
+          // A dialog opens on its own; a preflight one must not acknowledge a prompt Pi can still reject.
           return true;
         },
       },
@@ -950,7 +966,7 @@ implements ProviderExecutionSession, SteerableExecutionSession {
       this.kernel !== kernel
       || this.kernelResumeValidationTarget !== expectedTarget
     ) return;
-    const reportedIdentity = extractReportedPiSessionIdentity(response);
+    const reportedIdentity = extractReportedPiSessionIdentity(response, kernel.launchSpec);
     if (matchesExpectedPiSession(
       expectedTarget,
       getPiState(this.state.providerState),
@@ -979,12 +995,14 @@ implements ProviderExecutionSession, SteerableExecutionSession {
     encoded: EncodedPiRequest,
     signal: AbortSignal,
   ): Promise<void> {
-    const modelPayload = buildPiSetModelPayload(encoded.model);
+    const settings = decodePiConfig(this.host.config, this.host.selection);
+    const modelPayload = buildPiSetModelPayload(encoded.model, findPiModel(settings, encoded.model));
     if (!modelPayload || !this.kernel) {
       throw new PiConfigurationError('The selected Pi model is invalid.');
     }
+    let nativeModel: unknown;
     try {
-      await this.kernel.request('set_model', modelPayload, undefined, signal);
+      nativeModel = await this.kernel.request('set_model', modelPayload, undefined, signal);
     } catch (error) {
       // Pi only offers models whose provider is authenticated in its current environment.
       if (!(error instanceof PiRPCResponseError)) throw error;
@@ -994,6 +1012,14 @@ implements ProviderExecutionSession, SteerableExecutionSession {
       );
     }
     this.#kernelModel = encoded.model;
+    // Pi 1.x answers with the model it selected; set_thinking_level would clamp an unsupported level silently.
+    if (encoded.explicitThinkingLevel && isRecord(nativeModel) && typeof nativeModel.reasoning === 'boolean') {
+      // Each send repeats a level the cached catalog still offers, so name the recovery.
+      assertPiThinkingLevelSupported(
+        encoded.model, encoded.explicitThinkingLevel, getPiSupportedThinkingLevels(nativeModel),
+        t('settings.modelPicker.stale', { provider: 'Pi' }),
+      );
+    }
     if (encoded.thinkingLevel) {
       await this.kernel.request(
         'set_thinking_level',
@@ -1010,18 +1036,6 @@ implements ProviderExecutionSession, SteerableExecutionSession {
     event: PiRPCRecord,
   ): void {
     if (!this.#isCurrentKernel(kernel, generation)) return;
-    if (event.type === 'extension_ui_request') {
-      // A dialog nobody can answer would block Pi, whether or not a run is requested.
-      const id = getString(event.id);
-      if (id) {
-        kernel.send({
-          cancelled: true,
-          id,
-          type: 'extension_ui_response',
-        });
-      }
-      return;
-    }
     if (event.type === 'agent_settled') this.#kernelSettlement = 'agent_settled';
     const target = this.#requestedOutputTarget() ?? this.#backgroundTurn;
     if (target) this.#trackAnswer(target, event);
@@ -1091,6 +1105,9 @@ implements ProviderExecutionSession, SteerableExecutionSession {
       return;
     }
 
+    for (const chunk of settlePiUnrunStreamedTools(event, this.normalizationState)) {
+      this.#handleRequestedChunk(active, chunk);
+    }
     const terminalError = getPiTerminalErrorMessage(event);
     if (terminalError) {
       this.#ensureAccepted(active);
@@ -1126,13 +1143,17 @@ implements ProviderExecutionSession, SteerableExecutionSession {
       return;
     }
     if (event.type === 'agent_settled') {
-      this.#settleBackgroundTurn(background);
+      // Pi 1.1+ marks a run that was aborted, including by an extension rather than Stop.
+      this.#settleBackgroundTurn(background, event.aborted === true);
       return;
     }
     if (event.type === 'error') {
       background.pendingTerminalError = getString(event.error) ?? 'Pi runtime error.';
       this.#settleBackgroundTurn(background);
       return;
+    }
+    for (const chunk of settlePiUnrunStreamedTools(event, background.normalization)) {
+      this.#handleBackgroundChunk(background, chunk);
     }
     const terminalError = getPiTerminalErrorMessage(event);
     if (terminalError) {
@@ -1196,7 +1217,11 @@ implements ProviderExecutionSession, SteerableExecutionSession {
       active.terminalSignal.reject(new Error(chunk.content));
       return;
     }
-    this.#ensureAccepted(active);
+    // Pi can still reject a prompt it has not admitted; its preflight output must not acknowledge delivery.
+    if (active.admission.kind === 'pending') {
+      active.admission.held.push(chunk);
+      return;
+    }
     this.#emitChunk(active, chunk);
   }
 
@@ -1329,25 +1354,26 @@ implements ProviderExecutionSession, SteerableExecutionSession {
   }
 
   /** The native run ended; publish completion once the persisted leaf it appended is known. */
-  #settleBackgroundTurn(background: BackgroundTurn): void {
+  #settleBackgroundTurn(background: BackgroundTurn, aborted = false): void {
     if (this.#backgroundTurn !== background) return;
     this.#backgroundTurn = null;
     this.#settlingBackgroundTurns.add(background);
     const kernel = this.kernel;
     const generation = this.kernelGeneration;
-    void this.#syncSettledBackgroundTurn(background, kernel, generation);
+    void this.#syncSettledBackgroundTurn(background, kernel, generation, aborted);
   }
 
   async #syncSettledBackgroundTurn(
     background: BackgroundTurn,
     kernel: PiExecutionKernel | null,
     generation: number,
+    aborted: boolean,
   ): Promise<void> {
     const isCurrent = () => kernel !== null && this.#isCurrentKernel(kernel, generation);
     try {
       if (isCurrent() && !this.#shouldDisableNativePersistence()) {
         const path = await this.#syncNativeLeaf(undefined, isCurrent);
-        background.nativeAssistantId = (path && findLastRoleId(path, 'assistant')) ?? background.nativeAssistantId;
+        background.nativeAssistantId = (path && findPiReplyCheckpointId(path)) ?? background.nativeAssistantId;
       }
     } catch {
       // History reload still reads the native file; completion must not wait on a failed sync.
@@ -1360,7 +1386,7 @@ implements ProviderExecutionSession, SteerableExecutionSession {
       this.#emitBackground(background, { type: 'usage_updated', usage });
     }
     // Pi settles a Stop as an `aborted` reply, which history replays as interrupted.
-    this.#completeBackgroundTurn(background, background.cancelling ? 'interrupted' : 'completed');
+    this.#completeBackgroundTurn(background, background.cancelling || aborted ? 'interrupted' : 'completed');
   }
 
   #completeBackgroundTurn(
@@ -1498,8 +1524,9 @@ implements ProviderExecutionSession, SteerableExecutionSession {
   #ensureAccepted(active: ActiveRun): void {
     if (!this.isActive(active) || active.phase === 'preflight') return;
     this.nativeConversationContextEstablished = true;
-    if (active.accepted) return;
-    active.accepted = true;
+    if (active.admission.kind === 'accepted') return;
+    const { held } = active.admission;
+    active.admission = { kind: 'accepted' };
     this.#emitRequested(active, {
       accepted: true,
       nativeUserMessageId: active.nativeUserMessageId,
@@ -1510,6 +1537,7 @@ implements ProviderExecutionSession, SteerableExecutionSession {
       nativeUserMessageId: active.nativeUserMessageId,
       type: 'user_message_started',
     });
+    for (const chunk of held) this.#emitChunk(active, chunk);
   }
 
   async #refreshState(signal: AbortSignal): Promise<void> {
@@ -1528,22 +1556,16 @@ implements ProviderExecutionSession, SteerableExecutionSession {
       return;
     }
     const state = extractStateRecord(response);
-    const sessionId = getString(state.sessionId)
-      ?? getString(state.session_id)
-      ?? getString(getRecord(state.session).id)
-      ?? getPiState(this.state.providerState).sessionId;
-    const sessionFile = getString(state.sessionFile)
-      ?? getString(state.session_file)
-      ?? getString(state.sessionPath)
-      ?? getString(state.session_path)
-      ?? getString(state.path)
-      ?? getPiState(this.state.providerState).sessionFile;
+    const reported = extractReportedPiSessionIdentity(response, this.kernel.launchSpec);
+    const sessionId = reported.sessionId ?? getPiState(this.state.providerState).sessionId;
+    const sessionFile = reported.sessionFile ?? getPiState(this.state.providerState).sessionFile;
     const leafEntryId = getString(state.leafEntryId)
       ?? getString(state.leaf_entry_id)
       ?? getPiState(this.state.providerState).leafEntryId;
-    const parentSession = getString(state.parentSession)
-      ?? getString(state.parent_session)
-      ?? getPiState(this.state.providerState).parentSession;
+    const reportedParent = getString(state.parentSession) ?? getString(state.parent_session);
+    const parentSession = (reportedParent && isPiSessionPathReference(reportedParent)
+      ? resolvePiReportedPath(reportedParent, this.kernel.launchSpec)
+      : reportedParent) ?? getPiState(this.state.providerState).parentSession;
     this.providerSessionId = sessionId ?? null;
     this.#setOptionalProviderStateValue('sessionId', sessionId);
     this.#setOptionalProviderStateValue('sessionFile', sessionFile ? piHostPath(sessionFile, this.kernel?.launchSpec.executionTarget) : undefined);
@@ -1577,7 +1599,7 @@ implements ProviderExecutionSession, SteerableExecutionSession {
       }
       active.nativeUserMessageId = findLastRoleId(entries, 'user') ?? undefined;
       active.nativeAssistantId =
-        findLastRoleId(entries, 'assistant')
+        findPiReplyCheckpointId(entries)
         ?? getPiState(this.state.providerState).leafEntryId;
       active.turnStats = getPiTurnStats(entries, active.nativeAssistantId);
     } catch {
@@ -1613,7 +1635,7 @@ implements ProviderExecutionSession, SteerableExecutionSession {
     return path;
   }
 
-  async #fetchUsage(model: string, signal?: AbortSignal) {
+  async #fetchUsage(model: string, signal?: AbortSignal, estimatedContextTokens?: number) {
     if (!this.kernel) return null;
     const settings = decodePiConfig(this.host.config, this.host.selection);
     const contextWindow = findPiModel(settings, model)?.contextWindow;
@@ -1623,7 +1645,7 @@ implements ProviderExecutionSession, SteerableExecutionSession {
       10_000,
       signal,
     );
-    return buildPiUsageInfo(response, model, contextWindow);
+    return buildPiUsageInfo(response, model, contextWindow, estimatedContextTokens);
   }
 
   async #materializePendingFork(active: ActiveRun, executionTarget: ExecutionTarget): Promise<void> {
@@ -1661,14 +1683,11 @@ implements ProviderExecutionSession, SteerableExecutionSession {
     const pathContext = await this.historyContextResolver.resolve(this.config.workingDirectory, {
       environment: env, config: this.host.config, executionTarget, environmentText: envText,
     });
+    // An ID-only source is found where history shows it, including the stores Pi's settings select.
     const sourceFile = executionTarget.method === 'wsl'
       ? resolvePiSessionFileHint(state.forkSourceSessionFile, forkSource.sessionId, this.config.workingDirectory, pathContext)
       : state.forkSourceSessionFile
-      ?? findPiSessionFile(
-        forkSource.sessionId,
-        this.config.workingDirectory,
-        getString(env.PI_CODING_AGENT_SESSION_DIR),
-      );
+      ?? resolvePiSessionFileHint(undefined, forkSource.sessionId, this.config.workingDirectory, pathContext);
     if (!sourceFile) {
       throw new Error(`Pi fork source session not found: ${forkSource.sessionId}`);
     }
@@ -1945,14 +1964,19 @@ function resolveThinkingLevel(
     ?? getString(selection.effortLevel)
     ?? settings.preferredThinkingByModel[model];
   const discovered = findPiModel(settings, model);
-  const resolved = discovered
+  if (request.configuration.reasoning !== undefined && discovered) {
+    assertPiThinkingLevelSupported(model, request.configuration.reasoning, discovered.thinkingLevels);
+  }
+  return discovered
     ? clampPiThinkingLevel(requested, discovered.thinkingLevels)
     : requested ?? null;
-  if (request.configuration.reasoning !== undefined && (resolved !== request.configuration.reasoning
-    || (discovered && !discovered.thinkingLevels.some(level => level === request.configuration.reasoning)))) {
-    throw new PiConfigurationError(`Pi model "${model}" does not support thinking level "${request.configuration.reasoning}".`);
+}
+
+/** An explicit level is authoritative: one the model does not support fails instead of being substituted. */
+function assertPiThinkingLevelSupported(model: string, level: string, supported: readonly string[], hint?: string): void {
+  if (!supported.includes(level)) {
+    throw new PiConfigurationError(`Pi model "${model}" does not support thinking level "${level}".${hint ? ` ${hint}` : ''}`);
   }
-  return resolved;
 }
 
 function resolveToolProfile(policy: ProviderToolPolicy): {
@@ -2087,14 +2111,15 @@ interface ReportedPiSessionIdentity {
   readonly sessionId: string | null;
 }
 
-function extractReportedPiSessionIdentity(response: unknown): ReportedPiSessionIdentity {
+function extractReportedPiSessionIdentity(response: unknown, launch: PiLaunchSpec): ReportedPiSessionIdentity {
   const state = extractStateRecord(response);
+  const sessionFile = getString(state.sessionFile)
+    ?? getString(state.session_file)
+    ?? getString(state.sessionPath)
+    ?? getString(state.session_path)
+    ?? getString(state.path);
   return {
-    sessionFile: getString(state.sessionFile)
-      ?? getString(state.session_file)
-      ?? getString(state.sessionPath)
-      ?? getString(state.session_path)
-      ?? getString(state.path),
+    sessionFile: sessionFile ? resolvePiReportedPath(sessionFile, launch) : null,
     sessionId: getString(state.sessionId)
       ?? getString(state.session_id)
       ?? getString(getRecord(state.session).id),

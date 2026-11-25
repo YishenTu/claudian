@@ -47,7 +47,7 @@ it('loads pushed commands through the loader after the provider-owned RPC deadli
 
     await vi.advanceTimersByTimeAsync(8_000);
     expect(store.getSnapshot()).toEqual({ status: 'loading' });
-    expect(native.child.killed).toBe(false);
+    expect(native.child.exitCode).toBeNull();
     await vi.advanceTimersByTimeAsync(2_000);
 
     const expected = {
@@ -61,7 +61,8 @@ it('loads pushed commands through the loader after the provider-owned RPC deadli
     };
     await expect(load).resolves.toEqual(expected);
     expect(store.getSnapshot()).toEqual(expected);
-    expect(native.child.killed).toBe(true);
+    expect(native.child.stdin.writableEnded).toBe(true);
+    expect(native.child.exitCode).toBe(0);
     expect(stdout.listenerCount('data')).toBe(0);
   } finally {
     store.dispose();

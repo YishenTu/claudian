@@ -4,6 +4,8 @@ export function buildPiUsageInfo(
   response: unknown,
   model: string | null,
   catalogContextWindow?: number,
+  /** Used only while Pi reports no context tokens, as it does right after compaction. */
+  estimatedContextTokens?: number,
 ): UsageInfo | null {
   const stats = getRecord(response);
   const contextUsage = getRecord(stats.contextUsage ?? stats.context_usage ?? stats);
@@ -15,6 +17,7 @@ export function buildPiUsageInfo(
     ?? getNumber(contextUsage.context_tokens)
     ?? getNumber(contextUsage.tokens)
     ?? getNumber(contextUsage.used)
+    ?? estimatedContextTokens
     ?? 0;
   const inputTokens = getNumber(contextUsage.inputTokens)
     ?? getNumber(contextUsage.input_tokens)

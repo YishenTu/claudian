@@ -135,6 +135,32 @@ describe('Pi event normalization', () => {
     });
   });
 
+  // Pi streams a call inside message_update before it executes; large write/edit arguments take a while.
+  it('announces a streamed tool call at its start and completes its input when the call ends', () => {
+    const state = createPiEventNormalizationState();
+    const update = (assistantMessageEvent: Record<string, unknown>) => normalizePiRPCEvent({ type: 'message_update', assistantMessageEvent }, state);
+
+    expect(update({ type: 'toolcall_start', contentIndex: 1, id: 'tool-1', toolName: 'read' }))
+      .toEqual([{ id: 'tool-1', input: {}, name: 'Read', type: 'tool_use' }]);
+    expect(update({ type: 'toolcall_delta', contentIndex: 1, delta: '{"path":"a' })).toEqual([]);
+    expect(update({ type: 'toolcall_end', contentIndex: 1, toolCall: { type: 'toolCall', id: 'tool-1', name: 'read', arguments: { path: 'a.md' } } }))
+      .toEqual([{ id: 'tool-1', input: { file_path: 'a.md', path: 'a.md' }, name: 'Read', type: 'tool_use' }]);
+    // Execution with the same arguments adds nothing; arguments Pi changed before running replace them.
+    expect(normalizePiRPCEvent({ type: 'tool_execution_start', toolCallId: 'tool-1', toolName: 'read', args: { path: 'a.md' } }, state)).toEqual([]);
+    expect(normalizePiRPCEvent({ type: 'tool_execution_start', toolCallId: 'tool-1', toolName: 'read', args: { path: 'b.md' } }, state))
+      .toEqual([{ id: 'tool-1', input: { file_path: 'b.md', path: 'b.md' }, name: 'Read', type: 'tool_use' }]);
+  });
+
+  // OpenAI-compatible streams can name a call only after its id, and a call such as `ls` may take no arguments.
+  it('names a streamed call whose name arrives after its start', () => {
+    const state = createPiEventNormalizationState();
+    const update = (assistantMessageEvent: Record<string, unknown>) => normalizePiRPCEvent({ type: 'message_update', assistantMessageEvent }, state);
+
+    update({ type: 'toolcall_start', contentIndex: 0, id: 'tool-1', toolName: '' });
+    expect(update({ type: 'toolcall_end', contentIndex: 0, toolCall: { type: 'toolCall', id: 'tool-1', name: 'ls', arguments: {} } }))
+      .toEqual([expect.objectContaining({ id: 'tool-1', name: 'LS', type: 'tool_use' })]);
+  });
+
   it('normalizes Pi RPC toolName and args to shared renderer tool shapes', () => {
     const state = createPiEventNormalizationState();
 

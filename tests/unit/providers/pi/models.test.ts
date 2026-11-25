@@ -27,6 +27,9 @@ describe('Pi model helpers', () => {
   it('normalizes thinking levels with Pi reasoning rules', () => {
     expect(normalizePiThinkingLevel(' MAX ')).toBe('max');
     expect(getPiSupportedThinkingLevels({ reasoning: false })).toEqual(['off']);
+    // Pi offers only `off` to a non-reasoning model, whatever its level map says.
+    expect(getPiSupportedThinkingLevels({ reasoning: false, thinkingLevelMap: { off: null } })).toEqual(['off']);
+    expect(getPiSupportedThinkingLevels({ reasoning: false, thinkingLevelMap: { xhigh: 'xhigh' } })).toEqual(['off']);
     expect(getPiSupportedThinkingLevels({ reasoning: true })).toEqual([
       'off',
       'minimal',
@@ -77,6 +80,11 @@ describe('Pi model helpers', () => {
     )).toBe('high');
     expect(clampPiThinkingLevel('max', ['off', 'high'])).toBe('high');
     expect(clampPiThinkingLevel('medium', ['low', 'high', 'max'])).toBe('high');
+  });
+
+  // A model's `api` names its wire protocol (openai-responses), never the provider set_model needs.
+  it('drops a discovered model without a provider instead of using its API as the provider', () => {
+    expect(normalizePiDiscoveredModels([{ api: 'openai-responses', id: 'gpt-x', reasoning: false }])).toEqual([]);
   });
 
   it('normalizes discovered model records', () => {

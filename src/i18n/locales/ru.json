@@ -556,7 +556,11 @@
     },
     "pi": {
       "extension": "Расширение Pi",
-      "notification": "Уведомление расширения Pi."
+      "notification": "Уведомление расширения Pi.",
+      "retrying": "Pi повторяет ход (попытка {attempt} из {maxAttempts}).",
+      "retryingUnknownAttempt": "Pi повторяет ход.",
+      "retryFinished": "Pi завершил повтор.",
+      "compacting": "Pi сжимает контекст разговора."
     },
     "sessionMessage": {
       "undelivered": "Не удалось доставить сообщения от {senders}.",

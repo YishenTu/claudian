@@ -30,7 +30,9 @@ export function subscribeJSONLLines(
     lines.push(decoder.write(typeof chunk === 'string' ? Buffer.from(chunk) : chunk), onLine);
   };
 
+  // Streams emit `end` and then `close` (or only `close`): finish on the first.
   const handleEnd = (): void => {
+    stopReading();
     lines.push(decoder.end(), onLine);
     if (lines.bufferedLength > 0) onLine(lines.take());
     onEnd?.();
@@ -45,10 +47,15 @@ export function subscribeJSONLLines(
   input.on('close', handleEnd);
   input.on('error', handleError);
 
-  return () => {
+  function stopReading(): void {
     input.off('data', handleData);
     input.off('end', handleEnd);
     input.off('close', handleEnd);
+  }
+
+  // A late stream error stays handled until the caller unsubscribes.
+  return () => {
+    stopReading();
     input.off('error', handleError);
   };
 }

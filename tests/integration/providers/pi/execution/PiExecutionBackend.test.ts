@@ -188,7 +188,9 @@ it('publishes persisted native turn statistics at live completion', async () => 
   }
 });
 
-it.each([true, false])('advances the Pi assistant checkpoint (stored leaf: %s)', async storedLeaf => {
+it.each([
+  [true, false], [false, false], [true, true],
+])('advances the Pi assistant checkpoint (stored leaf: %s, ends on tool results: %s)', async (storedLeaf, endsOnTools) => {
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'pi-review-'));
   const sessionFile = path.join(tempDir, 'session.jsonl');
   const records = [
@@ -210,16 +212,27 @@ it.each([true, false])('advances the Pi assistant checkpoint (stored leaf: %s)',
     await harness.whenRequest('prompt');
     await fs.appendFile(sessionFile, [
       { type: 'message', id: 'user-2', parentId: 'assistant-1', message: { role: 'user', content: 'Second' } },
-      { type: 'message', id: 'assistant-2', parentId: 'user-2', message: { role: 'assistant', content: 'Second answer' } },
+      ...(endsOnTools ? [
+        // A terminating tool batch ends the run without another assistant message.
+        { type: 'message', id: 'assistant-2', parentId: 'user-2', message: { role: 'assistant', stopReason: 'toolUse', content: [
+          { type: 'toolCall', id: 'c1', name: 'read', arguments: { path: 'one.md' } },
+          { type: 'toolCall', id: 'c2', name: 'read', arguments: { path: 'two.md' } },
+        ] } },
+        { type: 'message', id: 'result-1', parentId: 'assistant-2', message: { role: 'toolResult', toolCallId: 'c1', content: 'one' } },
+        { type: 'message', id: 'result-2', parentId: 'result-1', message: { role: 'toolResult', toolCallId: 'c2', content: 'two' } },
+      ] : [
+        { type: 'message', id: 'assistant-2', parentId: 'user-2', message: { role: 'assistant', content: 'Second answer' } },
+      ]),
     ].map(r => JSON.stringify(r)).join('\n') + '\n');
     harness.processes[0].emit({ type: 'agent_start' });
     harness.processes[0].emit({ type: 'agent_end' });
     harness.processes[0].emit({ type: 'agent_settled' });
     const events = await eventsPromise;
+    const checkpoint = endsOnTools ? 'result-2' : 'assistant-2';
     expect(events.at(-1)).toMatchObject({
-      type: 'turn_completed', nativeAssistantId: 'assistant-2', nativeCheckpointId: 'assistant-2',
+      type: 'turn_completed', nativeAssistantId: checkpoint, nativeCheckpointId: checkpoint,
     });
-    expect(harness.session.getSnapshot().providerState).toMatchObject({ leafEntryId: 'assistant-2' });
+    expect(harness.session.getSnapshot().providerState).toMatchObject({ leafEntryId: checkpoint });
   } finally {
     await harness.session.dispose();
     await fs.rm(tempDir, { recursive: true, force: true });
@@ -531,9 +544,10 @@ it('keeps one execution open across native Pi retries and commits the recovered 
   const harness = await createHarness();
   const run = harness.session.execute(createRequest());
   let retryCount = 0;
-  const retries = [1, 2].map(count => eventSignal(event => event.type === 'notice' && event.message === 'Pi is retrying the turn.' && retryCount === count));
+  const isRetry = (event: ProviderExecutionEvent) => event.type === 'notice' && event.message.startsWith('Pi is retrying the turn');
+  const retries = [1, 2].map(count => eventSignal(event => isRetry(event) && retryCount === count));
   const eventsPromise = collect(run.events, event => {
-    if (event.type === 'notice' && event.message === 'Pi is retrying the turn.') retryCount += 1;
+    if (isRetry(event)) retryCount += 1;
     retries.forEach(signal => signal.observe(event));
   });
   let settled = false;
@@ -554,7 +568,7 @@ it('keeps one execution open across native Pi retries and commits the recovered 
     type: 'message_end',
   });
   kernel.emit({ messages: [], type: 'agent_end', willRetry: true });
-  kernel.emit({ attempt: 1, type: 'auto_retry_start' });
+  kernel.emit({ attempt: 1, maxAttempts: 3, delayMs: 2000, errorMessage: 'OpenRouter rate limit (attempt 1)', type: 'auto_retry_start' });
   await retries[0].seen;
   expect(settled).toBe(false);
 
@@ -569,6 +583,7 @@ it('keeps one execution open across native Pi retries and commits the recovered 
     type: 'message_end',
   });
   kernel.emit({ messages: [], type: 'agent_end', willRetry: true });
+  // Pi before the retry fields reported only the attempt.
   kernel.emit({ attempt: 2, type: 'auto_retry_start' });
   await retries[1].seen;
   expect(settled).toBe(false);
@@ -601,7 +616,7 @@ it('keeps one execution open across native Pi retries and commits the recovered 
     expect.objectContaining({ text: 'Recovered answer' }),
   ]);
   expect(events.filter(event => event.type === 'notice')).toEqual([
-    expect.objectContaining({ message: 'Pi is retrying the turn.' }),
+    expect.objectContaining({ message: 'Pi is retrying the turn (attempt 1 of 3). OpenRouter rate limit (attempt 1)' }),
     expect.objectContaining({ message: 'Pi is retrying the turn.' }),
     expect.objectContaining({ message: 'Pi retry finished.' }),
   ]);
@@ -615,20 +630,51 @@ it('keeps one execution open across native Pi retries and commits the recovered 
   });
 });
 
+it('reports a failed final retry once, without a finished notice', async () => {
+  const harness = await createHarness();
+  const eventsPromise = collect(harness.session.execute(createRequest()).events);
+  await harness.whenRequest('prompt');
+  const kernel = harness.processes[0];
+  const failed = (attempt: number) => ({ type: 'message_end', message: {
+    content: [], errorMessage: `529 overloaded (attempt ${attempt})`, role: 'assistant', stopReason: 'error',
+  } });
+  kernel.emit({ type: 'agent_start' });
+  kernel.emit(failed(1));
+  kernel.emit({ messages: [], type: 'agent_end', willRetry: true });
+  kernel.emit({ attempt: 1, maxAttempts: 1, delayMs: 0, errorMessage: '529 overloaded (attempt 1)', type: 'auto_retry_start' });
+  kernel.emit({ type: 'agent_start' });
+  kernel.emit(failed(2));
+  kernel.emit({ attempt: 1, success: false, finalError: '529 overloaded (attempt 2)', type: 'auto_retry_end' });
+  kernel.emit({ messages: [], type: 'agent_end', willRetry: false });
+  kernel.emit({ type: 'agent_settled' });
+  const events = await eventsPromise;
+
+  expect(events.filter(event => event.type === 'notice').map(event => event.message)).toEqual([
+    'Pi is retrying the turn (attempt 1 of 1). 529 overloaded (attempt 1)',
+  ]);
+  expect(events.filter(event => event.type === 'execution_error')).toEqual([
+    expect.objectContaining({ message: '529 overloaded (attempt 2)' }),
+  ]);
+  await harness.session.dispose();
+});
+
+const compacting = { type: 'notice', message: 'Pi is compacting the conversation context.', level: 'info' };
 it.each([
-  { label: 'successful', outcome: { aborted: false, result: { summary: 'Summary', firstKeptEntryId: 'entry', tokensBefore: 1000 } }, boundaries: 1, notices: [] },
-  { label: 'legacy successful', outcome: {}, boundaries: 1, notices: [] },
-  { label: 'cancelled', outcome: { aborted: true, result: undefined }, boundaries: 0, notices: [] },
-  { label: 'failed', outcome: { aborted: false, result: undefined, errorMessage: 'Auto-compaction failed: provider unavailable.' }, boundaries: 0,
-    notices: [{ type: 'notice', message: 'Auto-compaction failed: provider unavailable.', level: 'warning' }] },
-])('reports $label native compaction without inventing a successful boundary', async ({ outcome, boundaries, notices }) => {
+  { label: 'successful', reason: 'threshold', outcome: { aborted: false, result: { summary: 'Summary', firstKeptEntryId: 'entry', tokensBefore: 1000 } }, boundaries: 1, notices: [compacting] },
+  { label: 'legacy successful', reason: 'threshold', outcome: {}, boundaries: 1, notices: [compacting] },
+  { label: 'cancelled', reason: 'overflow', outcome: { aborted: true, result: undefined }, boundaries: 0, notices: [compacting] },
+  { label: 'failed', reason: 'threshold', outcome: { aborted: false, result: undefined, errorMessage: 'Auto-compaction failed: provider unavailable.' }, boundaries: 0,
+    notices: [compacting, { type: 'notice', message: 'Auto-compaction failed: provider unavailable.', level: 'warning' }] },
+  // The user asked for a manual compaction, so it needs no progress notice.
+  { label: 'manual', reason: 'manual', outcome: { aborted: false, result: { summary: 'Summary', firstKeptEntryId: 'entry', tokensBefore: 1000 } }, boundaries: 1, notices: [] },
+])('reports $label native compaction without inventing a successful boundary', async ({ reason, outcome, boundaries, notices }) => {
   const harness = await createHarness();
   const eventsPromise = collect(harness.session.execute(createRequest()).events);
   await harness.whenRequest('prompt');
   const kernel = harness.processes[0];
   kernel.emit({ type: 'agent_start' });
-  kernel.emit({ type: 'compaction_start', reason: 'threshold' });
-  kernel.emit({ type: 'compaction_end', reason: 'threshold', willRetry: false, ...outcome });
+  kernel.emit({ type: 'compaction_start', reason });
+  kernel.emit({ type: 'compaction_end', reason, willRetry: false, ...outcome });
   kernel.emit({ type: 'message_update', assistantMessageEvent: { type: 'text_delta', delta: 'The ordinary reply continues.' } });
   kernel.emit({ type: 'message_end', message: { role: 'assistant', stopReason: 'stop' } });
   kernel.emit({ type: 'agent_end', messages: [], willRetry: false });

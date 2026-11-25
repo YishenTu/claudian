@@ -31,7 +31,7 @@ export class PiExtensionUIBridge {
   private readonly pending = new Map<string, AbortController>();
 
   constructor(
-    private readonly transport: PiRPCTransport,
+    private readonly transport: Pick<PiRPCTransport, 'send'>,
     private readonly renderer: PiExtensionUIRenderer | null,
     private readonly emit?: (chunk: StreamChunk) => void,
     private readonly admitDialog: (request: PiRPCRecord) => boolean = () => true,
@@ -107,6 +107,9 @@ export class PiExtensionUIBridge {
 
     const controller = new AbortController();
     this.pending.set(id, controller);
+    // Pi resolves a timed dialog with its default on expiry and drops later responses; close it unanswered.
+    const timeoutMs = typeof request.timeout === 'number' && request.timeout > 0 ? request.timeout : null;
+    const timer = timeoutMs === null ? null : window.setTimeout(() => controller.abort(), timeoutMs);
     render(this.renderer, controller.signal)
       .then((response) => {
         if (!controller.signal.aborted) {
@@ -119,6 +122,7 @@ export class PiExtensionUIBridge {
         }
       })
       .finally(() => {
+        if (timer !== null) window.clearTimeout(timer);
         this.pending.delete(id);
       });
   }

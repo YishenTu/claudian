@@ -34,6 +34,7 @@ import {
   type PiExecutionKernelCallbacks,
 } from '@/providers/pi/execution';
 import { PiConversationHistoryService } from '@/providers/pi/history/PiConversationHistoryService';
+import { PiExtensionUIBridge,type PiExtensionUIRenderer } from '@/providers/pi/runtime/PiExtensionUIBridge';
 import type { PiLaunchSpec } from '@/providers/pi/runtime/PiLaunchSpecBuilder';
 import { PiRPCResponseError, PiRPCTransport } from '@/providers/pi/runtime/PiRPCTransport';
 import { getPiProviderSettings, updatePiProviderSettings } from '@/providers/pi/settings';
@@ -55,7 +56,8 @@ beforeEach(() => {
 class FakeKernel implements PiExecutionKernel {
   readonly requests: Array<{ payload: Record<string, unknown>; type: string }> = [];
   readonly sent: Array<Record<string, unknown>> = [];
-  readonly shutdown = vi.fn(async () => undefined);
+  // Like the real kernel, shutdown cancels the dialogs its bridge still has open.
+  readonly shutdown = vi.fn(async () => { this.#extensionBridge.cleanup(); });
   readonly start = vi.fn();
   stderr = '';
 
@@ -69,9 +71,24 @@ class FakeKernel implements PiExecutionKernel {
       timeoutMs?: number,
       signal?: AbortSignal,
     ) => Promise<T>,
-  ) {}
+    extensionUIRenderer: PiExtensionUIRenderer | null = null,
+  ) {
+    // The real kernel hands extension UI requests to its bridge, which answers Pi itself.
+    this.#extensionBridge = new PiExtensionUIBridge(
+      { send: record => this.send(record) },
+      extensionUIRenderer,
+      chunk => this.callbacks.onExtensionChunk(chunk),
+      request => this.callbacks.onExtensionRequest(request),
+    );
+  }
+
+  readonly #extensionBridge: PiExtensionUIBridge;
 
   emit(event: Record<string, unknown>): void {
+    if (event.type === 'extension_ui_request') {
+      this.#extensionBridge.handleRequest(event);
+      return;
+    }
     this.callbacks.onEvent(event);
   }
 
@@ -268,8 +285,8 @@ async function createHarness(
   ]);
   const backend = new PiExecutionBackend(host.getRuntimeHost('pi'),
     {
-      createKernel: (spec, callbacks) => {
-        const kernel = new FakeKernel(spec, callbacks, responses, requestHandler);
+      createKernel: (spec, callbacks, renderer) => {
+        const kernel = new FakeKernel(spec, callbacks, responses, requestHandler, renderer);
         kernels.push(kernel);
         onKernelCreated?.(kernel, kernels.length - 1);
         return kernel;
@@ -327,28 +344,49 @@ describe('PiExecutionBackend', () => {
     } finally { await harness.session.dispose(); }
   });
 
-  it.each(['complete', 'cancel'] as const)('keeps manual compaction pending beyond the control deadline until %s', async outcome => {
+  // Pi reports no context tokens after compaction until a fresh response; the compaction result estimates them.
+  it.each([
+    ['estimates the context after', { tokens: null, contextWindow: 200_000, percent: null }, 32_000, 16],
+    ['keeps fresh native context usage after', { tokens: 40_000, contextWindow: 200_000, percent: 20 }, 40_000, 20],
+  ] as const)('%s a manual compaction', async (_name, contextUsage, contextTokens, percentage) => {
+    const { session, responses } = (await createHarness());
+    responses.set('compact', { summary: 'Summary', firstKeptEntryId: 'entry', tokensBefore: 150_000, estimatedTokensAfter: 32_000 });
+    responses.set('get_session_stats', { contextUsage });
+    try {
+      const events = await collect(session.execute(createRequest({ input: [{ type: 'text', text: '/compact' }] })).events);
+      expect(events.filter(event => event.type === 'usage_updated')).toEqual([
+        expect.objectContaining({ usage: expect.objectContaining({ contextTokens, contextWindow: 200_000, percentage }) }),
+      ]);
+    } finally { await session.dispose(); }
+  });
+
+  // Pi answers `prompt` only after extension commands, input handlers and pre-run compaction finish.
+  it.each([
+    ['compact', 'complete'], ['compact', 'cancel'], ['prompt', 'complete'], ['prompt', 'cancel'],
+  ] as const)('keeps %s pending beyond the control deadline until %s', async (command, outcome) => {
     vi.useFakeTimers({ toNotFake: ['setImmediate', 'nextTick'] });
     const nativeOutput = new PassThrough();
     const nativeInput = new PassThrough();
     const transport = new PiRPCTransport({ input: nativeOutput, output: nativeInput });
     const harness = (await createHarness(createConfig(), undefined, async <T>(type: string, payload: Record<string, unknown>, timeoutMs?: number, signal?: AbortSignal) => {
-      if (type === 'compact') return transport.request<T>(type, payload, timeoutMs, signal);
+      if (type === command) return transport.request<T>(type, payload, timeoutMs, signal);
       return harness.responses.get(type) as T;
     }));
     const events: ProviderExecutionEvent[] = [];
     const collecting = (async () => {
-      for await (const event of harness.session.execute(createRequest({ input: [{ type: 'text', text: '/compact' }] })).events) events.push(event);
+      const text = command === 'compact' ? '/compact' : '/slow-extension-command';
+      for await (const event of harness.session.execute(createRequest({ input: [{ type: 'text', text }] })).events) events.push(event);
     })();
     try {
       await flush();
-      const compact = JSON.parse(nativeInput.read().toString());
-      expect(compact.type).toBe('compact');
+      const request = JSON.parse(nativeInput.read().toString());
+      expect(request.type).toBe(command);
       await vi.advanceTimersByTimeAsync(30_001);
       expect(events.filter(event => event.type === 'execution_error')).toEqual([]);
       expect(harness.kernels[0].shutdown).not.toHaveBeenCalled();
       if (outcome === 'complete') {
-        nativeOutput.write(JSON.stringify({ type: 'response', id: compact.id, command: 'compact', success: true, data: {} }) + '\n');
+        const data = command === 'prompt' ? { disposition: 'handled' } : {};
+        nativeOutput.write(JSON.stringify({ type: 'response', id: request.id, command, success: true, data }) + '\n');
       } else {
         harness.session.cancel();
       }
@@ -356,7 +394,11 @@ describe('PiExecutionBackend', () => {
       expect(events.at(-1)).toMatchObject(outcome === 'complete'
         ? { type: 'turn_completed', reason: 'completed' }
         : { type: 'cancelled' });
-      expect(events.filter(event => event.type === 'context_compacted')).toHaveLength(outcome === 'complete' ? 1 : 0);
+      expect(events.filter(event => event.type === 'context_compacted'))
+        .toHaveLength(command === 'compact' && outcome === 'complete' ? 1 : 0);
+      // Stop is what bounds the wait: it aborts the native run and fences the process.
+      expect(harness.kernels[0].sent.some(record => record.type === 'abort')).toBe(outcome === 'cancel');
+      expect(harness.kernels[0].shutdown.mock.calls.length > 0).toBe(outcome === 'cancel');
     } finally {
       harness.session.cancel();
       transport.dispose();
@@ -390,6 +432,30 @@ describe('PiExecutionBackend', () => {
     const events = await collect(session.execute(createRequest()).events);
     expect(events).toContainEqual(expect.objectContaining({ type: 'execution_error' }));
     expect(kernels.flatMap(kernel => kernel.requests).some(request => request.type === 'prompt')).toBe(false);
+    await session.dispose();
+  });
+
+  // Pi clamps set_thinking_level silently, so an explicit level is checked against the model set_model returns.
+  it.each([
+    ['rejects', { id: 'claude-sonnet-4', provider: 'anthropic', reasoning: true, thinkingLevelMap: { high: null } }, true],
+    ['accepts', { id: 'claude-sonnet-4', provider: 'anthropic', reasoning: true, thinkingLevelMap: {} }, false],
+    // Pi before 1.0 may answer set_model without the model.
+    ['accepts without native model metadata', {}, false],
+  ])('%s explicit High against the native model', async (_name, nativeModel, rejected) => {
+    const { session, kernels, responses } = (await createHarness());
+    responses.set('set_model', nativeModel);
+    const run = collect(session.execute(createRequest()).events);
+    if (!rejected) {
+      await waitFor(() => kernels[0]?.requests.some(r => r.type === 'prompt') ?? false);
+      kernels[0].emit({ type: 'agent_end' });
+      kernels[0].emit({ type: 'agent_settled' });
+    }
+    const events = await run;
+    // A cached level Pi's model no longer supports points the user at refreshing the stale catalog.
+    expect(events.filter(event => event.type === 'execution_error' && event.category === 'configuration'
+      && event.message.endsWith('Pi model catalog is stale. Click Discover to refresh it.'))).toHaveLength(rejected ? 1 : 0);
+    expect(kernels[0].requests.some(r => r.type === 'set_thinking_level')).toBe(!rejected);
+    expect(kernels[0].requests.some(r => r.type === 'prompt')).toBe(!rejected);
     await session.dispose();
   });
 
@@ -772,6 +838,33 @@ describe('PiExecutionBackend', () => {
       sessionId: 'pi-session-1',
     });
     await fs.rm(sessionDir, { force: true, recursive: true });
+  });
+
+  // A relative `sessionDir` in Pi's settings makes Pi report its session file relative to its working directory.
+  it.skipIf(onWindows).each([
+    ['native', '/vault', '/vault/sessions/s1.jsonl'],
+    ['WSL', String.raw`C:\Vault`, String.raw`C:\Vault\sessions\s1.jsonl`],
+  ] as const)('resolves a relative session file Pi reports on a %s launch', async (method, workingDirectory, expected) => {
+    const platform = process.platform;
+    if (method === 'WSL') Object.defineProperty(process, 'platform', { value: 'win32', configurable: true });
+    const harness = await createHarness(createConfig({ workingDirectory }));
+    if (method === 'WSL') {
+      updatePiProviderSettings(harness.host.settings, {
+        installationMethodsByHost: { [getInstallationKey()]: 'wsl' },
+        wslDistroOverridesByHost: { [getInstallationKey()]: 'Ubuntu' },
+      });
+    }
+    harness.responses.set('get_state', { sessionId: 's1', sessionFile: 'sessions/s1.jsonl' });
+    try {
+      const result = collect(harness.session.execute(createRequest()).events);
+      await waitFor(() => harness.kernels.length === 1 && getPromptMessages(harness.kernels[0]).length === 1);
+      completeTurn(harness.kernels[0]);
+      expect((await result).at(-1)).toMatchObject({ type: 'turn_completed' });
+      expect(harness.session.getSnapshot().providerState).toMatchObject({ sessionFile: expected, sessionId: 's1' });
+    } finally {
+      await harness.session.dispose();
+      Object.defineProperty(process, 'platform', { value: platform, configurable: true });
+    }
   });
 
   it.skipIf(onWindows)('resolves an ID-only WSL resume using the discovered Linux home before sending input', async () => {
@@ -1882,6 +1975,71 @@ describe('PiExecutionBackend', () => {
     });
   });
 
+  // Pi 1.5 accepts provider ids that contain `/`, such as URL-derived llama.cpp providers.
+  it('selects a discovered model whose provider id contains a slash', async () => {
+    const harness = (await createHarness());
+    const encodedId = 'pi:llama.cpp/localhost:8080/qwen3-8b';
+    const models = getPiProviderSettings(harness.host.settings).discoveredModels;
+    updatePiProviderSettings(harness.host.settings, {
+      discoveredModels: [...models, { ...models[0], encodedId, id: 'qwen3-8b', label: 'Qwen3 8B', provider: 'llama.cpp/localhost:8080' }],
+      visibleModels: [encodedId],
+    });
+    const request = createRequest();
+    const eventsPromise = collect(harness.session.execute({ ...request, configuration: { ...request.configuration, model: encodedId } }).events);
+    await waitFor(() => harness.kernels[0]?.requests.some(r => r.type === 'prompt') ?? false);
+    harness.kernels[0].emit({ type: 'agent_end' });
+    harness.kernels[0].emit({ type: 'agent_settled' });
+    await eventsPromise;
+
+    expect(harness.kernels[0].requests).toContainEqual({
+      payload: { modelId: 'qwen3-8b', provider: 'llama.cpp/localhost:8080' },
+      type: 'set_model',
+    });
+    await harness.session.dispose();
+  });
+
+  // Pi compacts before admitting a prompt; its notice must not acknowledge a prompt Pi may still reject.
+  it.each([['rejects', false], ['admits', true]] as const)('reports preflight compaction for a prompt Pi %s', async (_name, admitted) => {
+    const harness = (await createHarness(createConfig(), undefined, async <T>(type: string) => {
+      if (type === 'prompt') {
+        harness.kernels[0].emit({ type: 'compaction_start', reason: 'threshold' });
+        if (!admitted) throw new PiRPCResponseError('prompt', 'Auto-compaction failed');
+        queueMicrotask(() => {
+          harness.kernels[0].emit({ type: 'agent_end' });
+          harness.kernels[0].emit({ type: 'agent_settled' });
+        });
+        return { disposition: 'started' } as T;
+      }
+      return harness.responses.get(type) as T;
+    }));
+    const events = await collect(harness.session.execute(createRequest()).events);
+    const acknowledged = events.findIndex(event => event.type === 'turn_started' && event.accepted);
+    expect(acknowledged >= 0).toBe(admitted);
+    expect(events.some(event => event.type === 'user_message_started')).toBe(admitted);
+    // An admitted prompt still shows the compaction, after its acknowledgement.
+    const notice = events.findIndex(event => event.type === 'notice' && event.message === 'Pi is compacting the conversation context.');
+    expect(admitted ? notice > acknowledged : notice).toBe(admitted ? true : -1);
+    await harness.session.dispose();
+  });
+
+  // Pi runs extension input hooks, which can ask the user, before its final checks can still reject the prompt.
+  it('opens a preflight extension dialog without acknowledging a prompt Pi rejects', async () => {
+    let dialogAdmitted: boolean | undefined;
+    const harness = (await createHarness(createConfig(), undefined, async <T>(type: string) => {
+      if (type === 'prompt') {
+        dialogAdmitted = harness.kernels[0].emitExtensionRequest({ id: 'confirm-1', method: 'confirm', type: 'extension_ui_request' });
+        throw new PiRPCResponseError('prompt', 'No API key found for anthropic.');
+      }
+      return harness.responses.get(type) as T;
+    }));
+    const events = await collect(harness.session.execute(createRequest()).events);
+    expect(dialogAdmitted).toBe(true);
+    expect(events.some(event => event.type === 'turn_started' && event.accepted)).toBe(false);
+    expect(events.some(event => event.type === 'user_message_started')).toBe(false);
+    expect(events.at(-1)).toMatchObject({ type: 'execution_error' });
+    await harness.session.dispose();
+  });
+
   it('rejects a model removed during asynchronous preparation before native input', async () => {
     const harness = (await createHarness(createConfig(), () => {
       harness.host.settings.providerConfigs.pi!.visibleModels = [];
@@ -2316,6 +2474,34 @@ describe('PiExecutionBackend', () => {
       });
     },
   );
+
+  // History shows a pending fork from the store Pi's settings select; its first send must find the same source.
+  it.skipIf(onWindows)('materializes a pending fork whose source lives under the sessionDir from vault settings', async () => {
+    const vault = await fs.mkdtemp(path.join(os.tmpdir(), 'pi-fork-settings-store-'));
+    await fs.mkdir(path.join(vault, '.pi'), { recursive: true });
+    await fs.writeFile(path.join(vault, '.pi', 'settings.json'), JSON.stringify({ sessionDir: './vault-sessions' }));
+    const sourceFile = path.join(vault, 'vault-sessions', '--vault--', '2026-01-01T00-00-00-000Z_fork-source-only-id.jsonl');
+    await fs.mkdir(path.dirname(sourceFile), { recursive: true });
+    await fs.writeFile(sourceFile, JSON.stringify({ type: 'session', version: 3, id: 'fork-source-only-id', cwd: vault }));
+    const createForkSessionFile = vi.fn(async () => ({
+      leafEntryId: 'assistant-1', parentSession: sourceFile, sessionFile: path.join(vault, 'fork.jsonl'), sessionId: 'fork',
+    }));
+    const harness = (await createHarness(createConfig({
+      workingDirectory: vault,
+      resumeSeed: { providerState: { forkSource: { resumeAt: 'assistant-1', sessionId: 'fork-source-only-id' } } },
+    }), undefined, undefined, { createForkSessionFile }));
+    harness.responses.set('get_state', { sessionFile: path.join(vault, 'fork.jsonl'), sessionId: 'fork' });
+    try {
+      const result = collect(harness.session.execute(createRequest()).events);
+      await waitFor(() => harness.kernels.length === 1 && getPromptMessages(harness.kernels[0]).length === 1);
+      completeTurn(harness.kernels[0]);
+      expect((await result).at(-1)).toMatchObject({ type: 'turn_completed' });
+      expect(createForkSessionFile).toHaveBeenCalledWith(sourceFile, 'assistant-1', expect.anything());
+    } finally {
+      await harness.session.dispose();
+      await fs.rm(vault, { force: true, recursive: true });
+    }
+  });
 
   it.each(['cancel', 'dispose'] as const)(
     'rolls back exactly once when %s occurs after fork creation but before state commit',
@@ -2986,6 +3172,45 @@ describe('PiExecutionBackend', () => {
       }
     });
 
+    it('checkpoints a background turn that ended on tool results at its last result', async () => {
+      const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'pi-background-tools-'));
+      const sessionFile = path.join(dir, 'session.jsonl');
+      await fs.writeFile(sessionFile, [
+        { type: 'session', id: 'pi-session-1' },
+        { type: 'message', id: 'u1', parentId: null, message: { role: 'user', content: 'Hello Pi' } },
+        { type: 'message', id: 'a1', parentId: 'u1', message: { role: 'assistant', content: 'Hi', stopReason: 'stop' } },
+      ].map(line => JSON.stringify(line)).join('\n'));
+      const harness = (await createHarness());
+      harness.responses.set('get_state', { sessionFile, sessionId: 'pi-session-1' });
+      try {
+        const { events, kernel } = await startIdleSession(harness);
+        emitWake(kernel);
+        kernel.emit({ toolCall: { arguments: { path: 'note.md' }, id: 'tool-bg', name: 'read' }, type: 'tool_execution_start' });
+        kernel.emit({ id: 'tool-bg', result: { content: 'note' }, type: 'tool_execution_end' });
+        // A terminating tool batch ends the run without another assistant message.
+        await fs.appendFile(sessionFile, `\n${[
+          { type: 'custom_message', id: 'c1', parentId: 'a1', customType: 'peeps-result', display: true, content: 'Child answer' },
+          { type: 'message', id: 'a2', parentId: 'c1', message: { role: 'assistant', stopReason: 'toolUse', content: [
+            { type: 'toolCall', id: 'tool-bg', name: 'read', arguments: { path: 'note.md' } },
+          ] } },
+          // Extensions record state between a call and its result; the reply still ends at its last result.
+          { type: 'custom', id: 'k1', parentId: 'a2', customType: 'peeps/run', data: {} },
+          { type: 'usage', id: 'w1', parentId: 'k1', kind: 'cache-warm', provider: 'anthropic', model: 'claude-sonnet-4', usage: {} },
+          { type: 'message', id: 'r1', parentId: 'w1', message: { role: 'toolResult', toolCallId: 'tool-bg', content: 'note' } },
+        ].map(line => JSON.stringify(line)).join('\n')}`);
+        kernel.emit({ messages: [], type: 'agent_end' });
+        kernel.emit({ type: 'entry_appended' });
+        kernel.emit({ type: 'agent_settled' });
+        await waitFor(() => events.some(event => event.type === 'background_turn_completed'));
+
+        expect(backgroundEvents(events).at(-1)).toMatchObject({ nativeAssistantId: 'r1', reason: 'completed' });
+        expect(harness.session.getSnapshot()).toMatchObject({ providerState: { leafEntryId: 'r1' }, status: 'idle' });
+      } finally {
+        await harness.session.dispose();
+        await fs.rm(dir, { force: true, recursive: true });
+      }
+    });
+
     it('starts a new background turn for each result that follows an answered background response', async () => {
       const harness = (await createHarness());
       const { events, kernel } = await startIdleSession(harness);
@@ -3072,6 +3297,45 @@ describe('PiExecutionBackend', () => {
       expect(kernel.shutdown).not.toHaveBeenCalled();
       await harness.session.dispose();
     });
+
+    // A call streamed in a background reply that failed or was aborted never runs, so its tool still completes.
+    // An abort is an interruption, so its text stays hidden.
+    it.each([
+      ['error', '529 overloaded', '529 overloaded'], ['aborted', 'Operation aborted', ''],
+    ])('fails a streamed call of a background reply that ended with %s', async (stopReason, errorMessage, content) => {
+      const harness = (await createHarness());
+      const { events, kernel } = await startIdleSession(harness);
+      emitWake(kernel);
+      kernel.emit({ type: 'message_update', assistantMessageEvent: { type: 'toolcall_start', contentIndex: 1, id: 'call-1', toolName: 'read' } });
+      kernel.emit({ message: { role: 'assistant', stopReason, errorMessage }, type: 'message_end' });
+      kernel.emit({ type: 'agent_end' });
+      kernel.emit({ type: 'agent_settled' });
+      await waitFor(() => events.some(event => event.type === 'background_turn_completed'));
+
+      expect(backgroundEvents(events).filter(event => event.type === 'tool_started' || event.type === 'tool_completed')).toEqual([
+        expect.objectContaining({ toolCallId: 'call-1', type: 'tool_started' }),
+        expect.objectContaining({ content, isError: true, toolCallId: 'call-1', type: 'tool_completed' }),
+      ]);
+      await harness.session.dispose();
+    });
+
+    // Pi 1.1+ marks a run an extension aborted; before that, agent_settled carries no flag.
+    it.each([[true, 'interrupted'], [false, 'completed'], [undefined, 'completed']] as const)(
+      'completes a background run pi settles with aborted: %s as %s',
+      async (aborted, reason) => {
+        const harness = (await createHarness());
+        const { events, kernel } = await startIdleSession(harness);
+        emitWake(kernel);
+
+        kernel.emit({ type: 'agent_end' });
+        kernel.emit({ type: 'agent_settled', ...(aborted === undefined ? {} : { aborted }) });
+        await waitFor(() => events.some(event => event.type === 'background_turn_completed'));
+
+        expect(backgroundEvents(events).at(-1)).toMatchObject({ reason, type: 'background_turn_completed' });
+        expect(kernel.sent).not.toContainEqual({ type: 'abort' });
+        await harness.session.dispose();
+      },
+    );
 
     it.each([
       ['process exit', 'invalidated', 'session_error'],

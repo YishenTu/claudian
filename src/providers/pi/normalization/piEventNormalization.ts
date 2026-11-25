@@ -1,4 +1,5 @@
 import { isSessionTool } from '@/core/tools/toolNames';
+import { t } from '@/i18n/i18n';
 
 import type { StreamChunk } from '../../../core/types';
 import { getPiCustomMessageDisplayText } from './piCustomMessageNormalization';
@@ -12,7 +13,11 @@ import {
 } from './piToolNormalization';
 
 export interface PiEventNormalizationState {
-  emittedToolIds: Set<string>;
+  /**
+   * Tool calls shown so far, with the name and input last emitted. A call stays `streamed` until it runs or its reply
+   * ends without running it.
+   */
+  emittedTools: Map<string, { name: string; input: string; phase: 'streamed' | 'resolved' }>;
   /** Latest native partial-result snapshot per running tool. */
   toolOutputs: Map<string, string>;
   /** Running tools whose snapshot stopped extending the text already streamed. */
@@ -24,7 +29,7 @@ export interface PiEventNormalizationState {
 export function createPiEventNormalizationState(): PiEventNormalizationState {
   return {
     divergedToolOutputIds: new Set<string>(),
-    emittedToolIds: new Set<string>(),
+    emittedTools: new Map(),
     nestedToolArguments: new Map<string, Map<string, unknown>>(),
     toolOutputs: new Map<string, string>(),
   };
@@ -38,9 +43,9 @@ export function normalizePiRPCEvent(
     case 'agent_start':
       return [];
     case 'message_update':
-      return normalizeMessageUpdate(event);
+      return normalizeMessageUpdate(event, state);
     case 'toolcall_end':
-      return normalizeToolUse(getNestedRecord(event, 'toolCall') ?? event, state);
+      return normalizeToolUse(getNestedRecord(event, 'toolCall') ?? event, state, 'resolved');
     // Calls a tool makes while it runs (codemode scripts) never reach the model;
     // the calling tool's result summarizes them, as session history does.
     case 'tool_execution_start':
@@ -61,15 +66,30 @@ export function normalizePiRPCEvent(
         ? [{ type: 'notice', content: errorMessage, level: 'warning' }]
         : [{ type: 'context_compacted' }];
     }
+    case 'compaction_start':
+      // A manual compaction is the user's own request; automatic ones can take minutes.
+      return event.reason === 'threshold' || event.reason === 'overflow'
+        ? [{ type: 'notice', content: t('chat.pi.compacting'), level: 'info' }]
+        : [];
     case 'auto_retry_start':
-      return [{ type: 'notice', content: 'Pi is retrying the turn.', level: 'warning' }];
+      return [{ type: 'notice', content: formatPiRetryNotice(event), level: 'warning' }];
     case 'auto_retry_end':
-      return [{ type: 'notice', content: 'Pi retry finished.', level: 'info' }];
+      // A failed final attempt reaches the transcript through its terminal error.
+      return event.success === false ? [] : [{ type: 'notice', content: t('chat.pi.retryFinished'), level: 'info' }];
     case 'extension_error':
       return [{ type: 'notice', content: getString(event.error) ?? 'Pi extension error.', level: 'warning' }];
     default:
       return [];
   }
+}
+
+function formatPiRetryNotice(event: Record<string, unknown>): string {
+  const attempt = event.attempt;
+  const maxAttempts = event.maxAttempts;
+  if (typeof attempt !== 'number' || typeof maxAttempts !== 'number') return t('chat.pi.retryingUnknownAttempt');
+  const reason = getString(event.errorMessage);
+  const notice = t('chat.pi.retrying', { attempt, maxAttempts });
+  return reason ? `${notice} ${reason}` : notice;
 }
 
 /** Keeps nested call arguments for the calling tool's summary; nested calls emit no chunks. */
@@ -93,7 +113,7 @@ function normalizeToolExecution(
 ): StreamChunk[] {
   switch (event.type) {
     case 'tool_execution_start':
-      return normalizeToolUse(getNestedRecord(event, 'toolCall') ?? event, state);
+      return normalizeToolUse(getNestedRecord(event, 'toolCall') ?? event, state, 'resolved');
     case 'tool_execution_update':
       return normalizeToolOutput(event, state);
     default:
@@ -134,10 +154,16 @@ export function getPiTerminalErrorMessage(event: Record<string, unknown>): strin
     ?? 'Pi turn failed.';
 }
 
-function normalizeMessageUpdate(event: Record<string, unknown>): StreamChunk[] {
+function normalizeMessageUpdate(event: Record<string, unknown>, state: PiEventNormalizationState): StreamChunk[] {
   const assistantEvent = getNestedRecord(event, 'assistantMessageEvent')
     ?? getNestedRecord(event, 'assistant_message_event')
     ?? event;
+  // A streamed call shows from its start; its arguments arrive complete at its end.
+  if (assistantEvent.type === 'toolcall_start') return normalizeToolUse(assistantEvent, state, 'streamed');
+  if (assistantEvent.type === 'toolcall_end') {
+    const toolCall = getNestedRecord(assistantEvent, 'toolCall');
+    return toolCall ? normalizeToolUse(toolCall, state, 'streamed') : [];
+  }
   const textDelta = getString(assistantEvent.text_delta)
     ?? getString(assistantEvent.textDelta)
     ?? (
@@ -168,21 +194,60 @@ function normalizeTerminalError(event: Record<string, unknown>): StreamChunk[] {
   return message ? [{ type: 'error', content: message }] : [];
 }
 
+/**
+ * Pi runs no tool call of an assistant reply that ended in an error or abort. Returns the failed result those
+ * calls show, or null when they may run. A stopped reply is an interruption, so only an error explains it.
+ */
+export function getPiUnrunToolResult(message: Record<string, unknown>): string | null {
+  if (message.stopReason === 'error') return getString(message.errorMessage) ?? '';
+  return message.stopReason === 'aborted' ? '' : null;
+}
+
+/**
+ * Fails the streamed calls of a reply Pi will not run. Callers apply this to every message_end, including
+ * the terminal errors they report themselves.
+ */
+export function settlePiUnrunStreamedTools(event: Record<string, unknown>, state: PiEventNormalizationState): StreamChunk[] {
+  const message = getNestedRecord(event, 'message');
+  const content = message?.role === 'assistant' ? getPiUnrunToolResult(message) : null;
+  if (content === null) return [];
+  const chunks: StreamChunk[] = [];
+  for (const [id, tool] of state.emittedTools) {
+    if (tool.phase !== 'streamed') continue;
+    tool.phase = 'resolved';
+    chunks.push({ type: 'tool_result', id, content, isError: true });
+  }
+  return chunks;
+}
+
 function normalizeToolUse(
   event: Record<string, unknown>,
   state: PiEventNormalizationState,
+  phase: 'streamed' | 'resolved',
 ): StreamChunk[] {
   const id = getPiToolId(event);
-  if (!id || state.emittedToolIds.has(id)) {
+  if (!id) {
     return [];
   }
 
-  state.emittedToolIds.add(id);
   const name = getPiToolName(event);
+  const input = normalizePiToolInput(event.input ?? event.arguments ?? event.args, name);
+  const emitted = state.emittedTools.get(id);
+  const serialized = JSON.stringify(input);
+  if (emitted) {
+    if (emitted.phase === 'streamed') emitted.phase = phase;
+    // Repeated starts add nothing unless they carry another name or arguments; a stream can name a call late.
+    const renamed = emitted.name !== name;
+    if (!renamed && (emitted.input === serialized || Object.keys(input).length === 0)) return [];
+    emitted.name = name;
+    if (Object.keys(input).length > 0) emitted.input = serialized;
+  } else {
+    state.emittedTools.set(id, { input: serialized, name, phase });
+  }
   return [{
     type: 'tool_use',
     id,
-    input: normalizePiToolInput(event.input ?? event.arguments ?? event.args, name),
+    input,
     name,
     ...(isSessionTool(name) ? { providerPayload: { rawName: name } } : {}),
   }];

@@ -9,6 +9,18 @@ const STATUS_PREFIX = 'claudian-tree:';
 
 /** Embedded extension; exceptional leaf restoration uses the hosting Pi SDK. */
 export const PI_TREE_EXTENSION_SOURCE = String.raw`
+import { realpathSync } from 'node:fs';
+import { basename, dirname, join, resolve } from 'node:path';
+
+// Pi keeps a relative sessionDir relative to its real working directory; Claudian holds absolute paths.
+const canonical = file => {
+  if (!file) return file;
+  const full = resolve(file);
+  try { return join(realpathSync(dirname(full)), basename(full)); } catch { return full; }
+};
+// Reports the session file as Claudian names it when both name the same file.
+const reportedFile = (file, request) => canonical(file) === canonical(request.sessionFile) ? request.sessionFile : file;
+
 export default function (pi) {
   let busy = false;
   pi.registerCommand('claudian-tree', {
@@ -24,7 +36,7 @@ export default function (pi) {
         if (busy || (request.operation !== 'inspect' && !ctx.isIdle())) throw new Error('Pi is busy');
         busy = acquired = true;
         const manager = ctx.sessionManager;
-        if (manager.getSessionId() !== request.sessionId || manager.getSessionFile() !== request.sessionFile) {
+        if (manager.getSessionId() !== request.sessionId || canonical(manager.getSessionFile()) !== canonical(request.sessionFile)) {
           throw new Error('Pi session changed before tree navigation');
         }
         if (request.operation !== 'inspect') {
@@ -59,7 +71,7 @@ export default function (pi) {
                   }
                   fresh.ui.setStatus('claudian-tree:' + request.id, JSON.stringify({
                     cancelled: false, leafId: anchorId,
-                    sessionId: fresh.sessionManager.getSessionId(), sessionFile: fresh.sessionManager.getSessionFile()
+                    sessionId: fresh.sessionManager.getSessionId(), sessionFile: reportedFile(fresh.sessionManager.getSessionFile(), request)
                   }));
                 }
               });
@@ -78,7 +90,7 @@ export default function (pi) {
         }
         ctx.ui.setStatus('claudian-tree:' + request.id, JSON.stringify({
           cancelled: false, leafId: manager.getLeafId(),
-          sessionId: manager.getSessionId(), sessionFile: manager.getSessionFile()
+          sessionId: manager.getSessionId(), sessionFile: reportedFile(manager.getSessionFile(), request)
         }));
       } catch (error) {
         if (request && typeof request.id === 'string') {

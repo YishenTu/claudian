@@ -159,6 +159,33 @@ describe('PiConversationHistoryService', () => {
       .resolves.toBe('pi:openai-codex/gpt-5.5');
   });
 
+  // Pi restores a virtual model's model_change over the physical models that answered for it.
+  it.each([
+    ['the registered virtual selection', 'pi-virtual', 'pi:router/auto'],
+    ['the physical model when the selection is not virtual', 'openai-responses', 'pi:openai/gpt-x'],
+  ])('recovers %s', async (_name, routerApi, expected) => {
+    const dir = await createTempDirectory('pi-virtual-model-');
+    const sessionFile = path.join(dir, 'session.jsonl');
+    await fs.writeFile(sessionFile, [
+      { type: 'session', version: 3, id: 's1', cwd: dir },
+      { type: 'model_change', id: 'change', parentId: null, provider: 'router', modelId: 'auto' },
+      { type: 'message', id: 'u1', parentId: 'change', message: { role: 'user', content: 'Hello' } },
+      { type: 'message', id: 'a1', parentId: 'u1', message: {
+        role: 'assistant', api: 'openai-responses', provider: 'openai', model: 'gpt-x', content: [], stopReason: 'stop',
+      } },
+    ].map(entry => JSON.stringify(entry)).join('\n'));
+    const conversation = createConversation(sessionFile);
+    conversation.providerState = { leafEntryId: 'a1', sessionFile, sessionId: 's1' };
+    const model = (provider: string, id: string, api: string) => ({
+      api, encodedId: `pi:${provider}/${id}`, id, input: ['text'], label: id, provider, reasoning: false, thinkingLevels: ['off'],
+    });
+
+    await expect(new PiConversationHistoryService().recoverConversationModelSelection?.(conversation, null, {
+      config: { discoveredModels: [model('router', 'auto', routerApi), model('openai', 'gpt-x', 'openai-responses')] },
+      environment: { PI_CODING_AGENT_SESSION_DIR: dir },
+    })).resolves.toBe(expected);
+  });
+
   it('leaves model recovery unresolved when the persisted leaf is missing', async () => {
     const dir = await createTempDirectory('pi-missing-model-leaf-');
     const sessionFile = path.join(dir, 'session.jsonl');
@@ -704,6 +731,89 @@ describe('PiConversationHistoryService', () => {
     },
   );
 
+  it('keeps hydrating the default home store after PI_CODING_AGENT_DIR selects another agent directory', async () => {
+    const root = await createTempDirectory('pi-default-store-');
+    const home = path.join(root, 'home');
+    const vault = path.join(root, 'vault');
+    const sessionFile = path.join(home, '.pi', 'agent', 'sessions', '--vault--', 's1.jsonl');
+    await writeConfiguredHistory(sessionFile, vault);
+
+    const result = await new PiConversationHistoryService().hydrateConversationHistory(createConversation(sessionFile), vault, {
+      environment: { HOME: home, USERPROFILE: home, PI_CODING_AGENT_DIR: path.join(root, 'agent') },
+    });
+
+    expect(result.messages?.map(message => message.content)).toEqual([
+      'Read the configured history', 'Configured history is intact',
+    ]);
+  });
+
+  // Pi reads `sessionDir` from user settings and from the vault's own `.pi/settings.json`.
+  it.each([
+    ['user', 'home-relative', 'metadata locator'],
+    ['user', 'relative', 'logical session ID'],
+    ['agent-directory', 'home-relative', 'metadata locator'],
+    ['vault', 'relative', 'metadata locator'],
+    ['vault', 'home-relative', 'logical session ID'],
+  ] as const)('hydrates a session under the sessionDir from %s settings (%s syntax, %s)', async (scope, syntax, locator) => {
+    const root = await createTempDirectory('pi-settings-store-');
+    const home = path.join(root, 'home');
+    const vault = path.join(root, 'vault');
+    const agentDir = path.join(root, 'agent');
+    const settingsFile = scope === 'vault' ? path.join(vault, '.pi', 'settings.json')
+      : scope === 'agent-directory' ? path.join(agentDir, 'settings.json')
+        : path.join(home, '.pi', 'agent', 'settings.json');
+    const sessionDir = syntax === 'relative' ? './vault-sessions' : '~/configured-sessions';
+    await fs.mkdir(path.dirname(settingsFile), { recursive: true });
+    // Pi strips a UTF-8 BOM from settings files.
+    await fs.writeFile(settingsFile, `\uFEFF${JSON.stringify({ sessionDir, theme: 'dark' })}`);
+    const directory = syntax === 'relative' ? path.join(vault, 'vault-sessions') : path.join(home, 'configured-sessions');
+    const sessionFile = path.join(directory, '--vault--', 's1.jsonl');
+    const nativeContent = await writeConfiguredHistory(sessionFile, vault);
+    const conversation = createConversation(sessionFile);
+    if (locator === 'logical session ID') conversation.providerState = { sessionId: 's1' };
+
+    const result = await new PiConversationHistoryService().hydrateConversationHistory(conversation, vault, {
+      environment: { HOME: home, USERPROFILE: home, ...(scope === 'agent-directory' ? { PI_CODING_AGENT_DIR: agentDir } : {}) },
+    });
+
+    expect(result.messages?.map(message => message.content)).toEqual([
+      'Read the configured history', 'Configured history is intact',
+    ]);
+    expect(await fs.readFile(sessionFile, 'utf8')).toBe(nativeContent);
+  });
+
+  // The store Pi writes to wins an ID lookup over an old copy elsewhere: a configured sessionDir over the
+  // home default, and without an override the home default over a vault-local store.
+  it.each([
+    ['configured sessionDir', 'default store', true, 'vault/vault-sessions/--vault--', 'home/.pi/agent/sessions/--vault--'],
+    ['default store', 'vault-local copy', false, 'home/.pi/agent/sessions/--vault--', 'vault/.pi/agent/sessions'],
+  ] as const)('finds a session by ID in the %s before an old %s', async (_store, _stale, configured, liveDir, staleDir) => {
+    const root = await createTempDirectory('pi-store-order-');
+    const home = path.join(root, 'home');
+    const vault = path.join(root, 'vault');
+    if (configured) {
+      await fs.mkdir(path.join(vault, '.pi'), { recursive: true });
+      await fs.writeFile(path.join(vault, '.pi', 'settings.json'), JSON.stringify({ sessionDir: './vault-sessions' }));
+    }
+    await writeConfiguredHistory(path.join(root, liveDir, 's1.jsonl'), vault);
+    const staleFile = path.join(root, staleDir, 's1.jsonl');
+    await fs.mkdir(path.dirname(staleFile), { recursive: true });
+    await fs.writeFile(staleFile, [
+      { type: 'session', version: 3, id: 's1', cwd: vault, timestamp: testTime() },
+      { type: 'message', id: 'stale-user', parentId: null, timestamp: testTime(), message: { role: 'user', content: 'Stale copy' } },
+    ].map(entry => JSON.stringify(entry)).join('\n'));
+    const conversation = createConversation(staleFile);
+    conversation.providerState = { sessionId: 's1' };
+
+    const result = await new PiConversationHistoryService().hydrateConversationHistory(conversation, vault, {
+      environment: { HOME: home, USERPROFILE: home },
+    });
+
+    expect(result.messages?.map(message => message.content)).toEqual([
+      'Read the configured history', 'Configured history is intact',
+    ]);
+  });
+
   it('anchors relative configured roots to the context launch vault when no explicit vault is supplied', async () => {
     const root = await createTempDirectory('pi-context-syntax-');
     const vault = path.join(root, 'context-launch-vault');
@@ -923,6 +1033,28 @@ describe('PiConversationHistoryService', () => {
     Object.assign(conversation, await service.hydrateConversationHistory(conversation, null));
 
     expect(conversation.messages.map(message => message.content)).toEqual(['First', 'Done']);
+  });
+
+  // Pending forks saved before replies were checkpointed at their last result name the calling assistant entry.
+  it('hydrates a pending fork saved at a reply that ended on tool results with those results', async () => {
+    const dir = await createTempDirectory('pi-history-legacy-fork-');
+    const sessionFile = path.join(dir, 'source.jsonl');
+    await fs.writeFile(sessionFile, [
+      { type: 'session', version: 3, id: 'source-session' },
+      { id: 'u1', parentId: null, type: 'message', message: { role: 'user', content: 'Read the note' } },
+      { id: 'a1', parentId: 'u1', type: 'message', message: { role: 'assistant', stopReason: 'toolUse', content: [
+        { type: 'toolCall', id: 'c1', name: 'read', arguments: { path: 'one.md' } },
+      ] } },
+      { id: 'r1', parentId: 'a1', type: 'message', message: { role: 'toolResult', toolCallId: 'c1', toolName: 'read', content: [{ type: 'text', text: 'one' }] } },
+    ].map(entry => JSON.stringify(entry)).join('\n'));
+    const conversation = createConversation(sessionFile);
+    conversation.messages = [];
+    conversation.providerState = { forkSource: { sessionId: 'source-session', resumeAt: 'a1' }, forkSourceSessionFile: sessionFile };
+    conversation.sessionId = null;
+
+    Object.assign(conversation, await new PiConversationHistoryService().hydrateConversationHistory(conversation, null));
+
+    expect(conversation.messages[1].toolCalls?.map(call => [call.id, call.status, call.result])).toEqual([['c1', 'completed', 'one']]);
   });
 
   it('replaces an untrusted pending-fork path with the resolved local source', async () => {

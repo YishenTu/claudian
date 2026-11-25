@@ -61,6 +61,61 @@ it('creates a self-contained Pi fork session file at the assistant checkpoint', 
   ]);
 });
 
+// Pending forks saved before this checkpoint rule still name the assistant entry that made the calls.
+it.each(['current', 'legacy assistant'])('forks a reply that ended on tool results from its last result (%s checkpoint)', async checkpoint => {
+  const dir = await createTempDirectory('pi-fork-tool-end-');
+  const sourceFile = path.join(dir, 'source.jsonl');
+  const records = [
+    { type: 'session', version: 3, id: 'source-session', timestamp: testTime({ days: -238 }), cwd: '/source-cwd' },
+    { id: 'u1', parentId: null, type: 'message', message: { role: 'user', content: 'Read both notes' } },
+    { id: 'a1', parentId: 'u1', type: 'message', message: { role: 'assistant', stopReason: 'toolUse', content: [
+      { type: 'toolCall', id: 'c1', name: 'read', arguments: { path: 'one.md' } },
+      { type: 'toolCall', id: 'c2', name: 'read', arguments: { path: 'two.md' } },
+    ] } },
+    // Extensions record state between a batch's results, as Peeps does for its runs.
+    { id: 'k1', parentId: 'a1', type: 'custom', customType: 'peeps/run', data: {} },
+    // A terminating tool batch ends the run without another assistant message.
+    { id: 'r1', parentId: 'k1', type: 'message', message: { role: 'toolResult', toolCallId: 'c1', toolName: 'read', content: [{ type: 'text', text: 'one' }] } },
+    // A tool can name the session or label an entry while it runs.
+    { id: 'n1', parentId: 'r1', type: 'session_info', name: 'Reading notes' },
+    { id: 'l1', parentId: 'n1', type: 'label', targetId: 'u1', label: 'notes' },
+    // Cache warming records usage outside the model context.
+    { id: 'w1', parentId: 'l1', type: 'usage', kind: 'cache-warm', provider: 'anthropic', model: 'claude-sonnet-4', usage: {} },
+    { id: 'r2', parentId: 'w1', type: 'message', message: { role: 'toolResult', toolCallId: 'c2', toolName: 'read', content: [{ type: 'text', text: 'two' }] } },
+  ];
+  await fs.writeFile(sourceFile, records.map(record => JSON.stringify(record)).join('\n'));
+
+  const reply = parsePiSessionContent(await fs.readFile(sourceFile, 'utf-8'))[1];
+  expect(reply.assistantMessageId).toBe('r2');
+
+  const forked = await createPiForkSessionFile(sourceFile, checkpoint === 'current' ? reply.assistantMessageId! : 'a1', { sessionId: 'fork-session' });
+  const forkedContent = await fs.readFile(forked.sessionFile, 'utf-8');
+  expect(forked.leafEntryId).toBe('r2');
+  expect(forkedContent.trim().split('\n').map(line => JSON.parse(line).id)).toEqual(['fork-session', 'u1', 'a1', 'k1', 'r1', 'n1', 'l1', 'w1', 'r2']);
+  expect(parsePiSessionContent(forkedContent)[1].toolCalls?.map(call => [call.id, call.result])).toEqual([['c1', 'one'], ['c2', 'two']]);
+});
+
+// After pi branched at the calling entry, which results belong to the saved checkpoint is ambiguous.
+it('keeps a saved assistant checkpoint whose tool results branch', async () => {
+  const dir = await createTempDirectory('pi-fork-branched-results-');
+  const sourceFile = path.join(dir, 'source.jsonl');
+  const records = [
+    { type: 'session', version: 3, id: 'source-session', timestamp: testTime({ days: -238 }), cwd: '/source-cwd' },
+    { id: 'u1', parentId: null, type: 'message', message: { role: 'user', content: 'Read the note' } },
+    { id: 'a1', parentId: 'u1', type: 'message', message: { role: 'assistant', stopReason: 'toolUse', content: [
+      { type: 'toolCall', id: 'c1', name: 'read', arguments: { path: 'one.md' } },
+    ] } },
+    { id: 'r1', parentId: 'a1', type: 'message', message: { role: 'toolResult', toolCallId: 'c1', toolName: 'read', content: [{ type: 'text', text: 'one' }] } },
+    { id: 'r1b', parentId: 'a1', type: 'message', message: { role: 'toolResult', toolCallId: 'c1', toolName: 'read', content: [{ type: 'text', text: 'other' }] } },
+  ];
+  await fs.writeFile(sourceFile, records.map(record => JSON.stringify(record)).join('\n'));
+
+  const forked = await createPiForkSessionFile(sourceFile, 'a1', { sessionId: 'fork-session' });
+  expect(forked.leafEntryId).toBe('a1');
+  expect((await fs.readFile(forked.sessionFile, 'utf-8')).trim().split('\n').map(line => JSON.parse(line).id))
+    .toEqual(['fork-session', 'u1', 'a1']);
+});
+
 it('rolls back the created fork file and keeps the source session', async () => {
   const dir = await createTempDirectory('pi-fork-rollback-');
   const sourceFile = path.join(dir, 'source.jsonl');

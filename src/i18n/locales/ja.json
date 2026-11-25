@@ -556,7 +556,11 @@
     },
     "pi": {
       "extension": "Pi 拡張機能",
-      "notification": "Pi 拡張機能の通知。"
+      "notification": "Pi 拡張機能の通知。",
+      "retrying": "Pi がターンを再試行しています（{maxAttempts} 回中 {attempt} 回目）。",
+      "retryingUnknownAttempt": "Pi がターンを再試行しています。",
+      "retryFinished": "Pi の再試行が完了しました。",
+      "compacting": "Pi が会話コンテキストを圧縮しています。"
     },
     "sessionMessage": {
       "undelivered": "{senders} からのメッセージを配信できませんでした。",

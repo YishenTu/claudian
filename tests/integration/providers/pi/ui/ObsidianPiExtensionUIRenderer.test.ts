@@ -141,3 +141,23 @@ it.each(['  Keep indentation', 'Keep trailing space  ', '\tKeep both  '])('retur
     document.body.replaceChildren();
   }
 });
+
+// Pi resolves a timed dialog with its default when `timeout` expires and drops any later response.
+it.each(['select', 'confirm', 'input'] as const)('closes a %s dialog when its native timeout expires', async method => {
+  vi.useFakeTimers({ toNotFake: ['setImmediate', 'nextTick', 'queueMicrotask'] });
+  const send = vi.fn();
+  const bridge = new PiExtensionUIBridge({ send } as unknown as PiRPCTransport, new ObsidianPiExtensionUIRenderer(new App()));
+  try {
+    bridge.handleRequest({ type: 'extension_ui_request', id: 'timed', method, title: 'Allow write?', options: ['Allow', 'Block'], timeout: 5_000 });
+    await vi.advanceTimersByTimeAsync(4_999);
+    expect(within(document.body).getByRole('dialog', { name: 'Allow write?' })).toBeTruthy();
+
+    await vi.advanceTimersByTimeAsync(1);
+    expect(within(document.body).queryByRole('dialog')).toBeNull();
+    expect(send).not.toHaveBeenCalled();
+  } finally {
+    bridge.cleanup();
+    vi.useRealTimers();
+    document.body.replaceChildren();
+  }
+});
