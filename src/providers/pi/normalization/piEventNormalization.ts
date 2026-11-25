@@ -14,10 +14,10 @@ import {
 
 export interface PiEventNormalizationState {
   /**
-   * Tool calls shown so far, with the input last emitted. A call stays `streamed` until it runs or its reply
+   * Tool calls shown so far, with the name and input last emitted. A call stays `streamed` until it runs or its reply
    * ends without running it.
    */
-  emittedTools: Map<string, { input: string; phase: 'streamed' | 'resolved' }>;
+  emittedTools: Map<string, { name: string; input: string; phase: 'streamed' | 'resolved' }>;
   /** Latest native partial-result snapshot per running tool. */
   toolOutputs: Map<string, string>;
   /** Running tools whose snapshot stopped extending the text already streamed. */
@@ -236,11 +236,13 @@ function normalizeToolUse(
   const serialized = JSON.stringify(input);
   if (emitted) {
     if (emitted.phase === 'streamed') emitted.phase = phase;
-    // Repeated starts of a call add nothing unless they carry other arguments than already shown.
-    if (emitted.input === serialized || Object.keys(input).length === 0) return [];
-    emitted.input = serialized;
+    // Repeated starts add nothing unless they carry another name or arguments; a stream can name a call late.
+    const renamed = emitted.name !== name;
+    if (!renamed && (emitted.input === serialized || Object.keys(input).length === 0)) return [];
+    emitted.name = name;
+    if (Object.keys(input).length > 0) emitted.input = serialized;
   } else {
-    state.emittedTools.set(id, { input: serialized, phase });
+    state.emittedTools.set(id, { input: serialized, name, phase });
   }
   return [{
     type: 'tool_use',
