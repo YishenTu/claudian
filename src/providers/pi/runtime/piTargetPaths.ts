@@ -23,6 +23,14 @@ export function piHostPath(value: string, target?: ExecutionTarget): string {
   return mapped;
 }
 
+/** Pi keeps a relative `sessionDir` relative, so the session paths it reports resolve against its working directory. */
+export function resolvePiReportedPath(value: string, launch: { readonly cwd: string; readonly executionTarget?: ExecutionTarget }): string {
+  const target = launch.executionTarget;
+  return target?.method === 'wsl'
+    ? path.posix.resolve(piTargetPath(launch.cwd, target), value)
+    : path.resolve(launch.cwd, value);
+}
+
 export function samePiTargetPath(left: string, right: string, target?: ExecutionTarget): boolean {
   if (target?.method === 'wsl') return piTargetPath(left, target) === piTargetPath(right, target);
   const resolvedLeft = path.resolve(left);

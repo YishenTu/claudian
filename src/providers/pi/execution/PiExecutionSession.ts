@@ -91,7 +91,7 @@ import {
 import { assertPiModelAvailable } from '../runtime/PiModelAvailability';
 import { buildPiSetModelPayload } from '../runtime/PiRPCPayloads';
 import { type PiRPCRecord, PiRPCResponseError } from '../runtime/PiRPCTransport';
-import { piHostPath, piTargetPath, samePiTargetPath } from '../runtime/piTargetPaths';
+import { piHostPath, piTargetPath, resolvePiReportedPath, samePiTargetPath } from '../runtime/piTargetPaths';
 import {
   getPiState,
   type PiProviderState,
@@ -964,7 +964,7 @@ implements ProviderExecutionSession, SteerableExecutionSession {
       this.kernel !== kernel
       || this.kernelResumeValidationTarget !== expectedTarget
     ) return;
-    const reportedIdentity = extractReportedPiSessionIdentity(response);
+    const reportedIdentity = extractReportedPiSessionIdentity(response, kernel.launchSpec);
     if (matchesExpectedPiSession(
       expectedTarget,
       getPiState(this.state.providerState),
@@ -1555,22 +1555,16 @@ implements ProviderExecutionSession, SteerableExecutionSession {
       return;
     }
     const state = extractStateRecord(response);
-    const sessionId = getString(state.sessionId)
-      ?? getString(state.session_id)
-      ?? getString(getRecord(state.session).id)
-      ?? getPiState(this.state.providerState).sessionId;
-    const sessionFile = getString(state.sessionFile)
-      ?? getString(state.session_file)
-      ?? getString(state.sessionPath)
-      ?? getString(state.session_path)
-      ?? getString(state.path)
-      ?? getPiState(this.state.providerState).sessionFile;
+    const reported = extractReportedPiSessionIdentity(response, this.kernel.launchSpec);
+    const sessionId = reported.sessionId ?? getPiState(this.state.providerState).sessionId;
+    const sessionFile = reported.sessionFile ?? getPiState(this.state.providerState).sessionFile;
     const leafEntryId = getString(state.leafEntryId)
       ?? getString(state.leaf_entry_id)
       ?? getPiState(this.state.providerState).leafEntryId;
-    const parentSession = getString(state.parentSession)
-      ?? getString(state.parent_session)
-      ?? getPiState(this.state.providerState).parentSession;
+    const reportedParent = getString(state.parentSession) ?? getString(state.parent_session);
+    const parentSession = (reportedParent && isPiSessionPathReference(reportedParent)
+      ? resolvePiReportedPath(reportedParent, this.kernel.launchSpec)
+      : reportedParent) ?? getPiState(this.state.providerState).parentSession;
     this.providerSessionId = sessionId ?? null;
     this.#setOptionalProviderStateValue('sessionId', sessionId);
     this.#setOptionalProviderStateValue('sessionFile', sessionFile ? piHostPath(sessionFile, this.kernel?.launchSpec.executionTarget) : undefined);
@@ -2119,14 +2113,15 @@ interface ReportedPiSessionIdentity {
   readonly sessionId: string | null;
 }
 
-function extractReportedPiSessionIdentity(response: unknown): ReportedPiSessionIdentity {
+function extractReportedPiSessionIdentity(response: unknown, launch: PiLaunchSpec): ReportedPiSessionIdentity {
   const state = extractStateRecord(response);
+  const sessionFile = getString(state.sessionFile)
+    ?? getString(state.session_file)
+    ?? getString(state.sessionPath)
+    ?? getString(state.session_path)
+    ?? getString(state.path);
   return {
-    sessionFile: getString(state.sessionFile)
-      ?? getString(state.session_file)
-      ?? getString(state.sessionPath)
-      ?? getString(state.session_path)
-      ?? getString(state.path),
+    sessionFile: sessionFile ? resolvePiReportedPath(sessionFile, launch) : null,
     sessionId: getString(state.sessionId)
       ?? getString(state.session_id)
       ?? getString(getRecord(state.session).id),

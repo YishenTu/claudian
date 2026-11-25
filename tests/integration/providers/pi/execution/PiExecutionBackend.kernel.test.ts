@@ -840,6 +840,33 @@ describe('PiExecutionBackend', () => {
     await fs.rm(sessionDir, { force: true, recursive: true });
   });
 
+  // A relative `sessionDir` in Pi's settings makes Pi report its session file relative to its working directory.
+  it.skipIf(onWindows).each([
+    ['native', '/vault', '/vault/sessions/s1.jsonl'],
+    ['WSL', String.raw`C:\Vault`, String.raw`C:\Vault\sessions\s1.jsonl`],
+  ] as const)('resolves a relative session file Pi reports on a %s launch', async (method, workingDirectory, expected) => {
+    const platform = process.platform;
+    if (method === 'WSL') Object.defineProperty(process, 'platform', { value: 'win32', configurable: true });
+    const harness = await createHarness(createConfig({ workingDirectory }));
+    if (method === 'WSL') {
+      updatePiProviderSettings(harness.host.settings, {
+        installationMethodsByHost: { [getInstallationKey()]: 'wsl' },
+        wslDistroOverridesByHost: { [getInstallationKey()]: 'Ubuntu' },
+      });
+    }
+    harness.responses.set('get_state', { sessionId: 's1', sessionFile: 'sessions/s1.jsonl' });
+    try {
+      const result = collect(harness.session.execute(createRequest()).events);
+      await waitFor(() => harness.kernels.length === 1 && getPromptMessages(harness.kernels[0]).length === 1);
+      completeTurn(harness.kernels[0]);
+      expect((await result).at(-1)).toMatchObject({ type: 'turn_completed' });
+      expect(harness.session.getSnapshot().providerState).toMatchObject({ sessionFile: expected, sessionId: 's1' });
+    } finally {
+      await harness.session.dispose();
+      Object.defineProperty(process, 'platform', { value: platform, configurable: true });
+    }
+  });
+
   it.skipIf(onWindows)('resolves an ID-only WSL resume using the discovered Linux home before sending input', async () => {
     const platform = process.platform;
     Object.defineProperty(process, 'platform', { value: 'win32', configurable: true });
