@@ -198,7 +198,8 @@ export const piPeepsSubagentAdapter: ProviderSubagentLifecycleAdapter = {
   isToolCallFullyOwned: () => false,
   resolveSpawnToolIds: () => [],
   buildSubagentInfo(toolCall) {
-    if (toolCall.subagent) return toolCall.subagent;
+    // Session cards are authoritative; a card the chat built from the call follows its later arguments and result.
+    if (toolCall.subagent?.lifecycleSource === 'session') return toolCall.subagent;
     const runId = launchedRunId(toolCall);
     const failed = toolCall.status === 'error' || toolCall.status === 'blocked';
     return {

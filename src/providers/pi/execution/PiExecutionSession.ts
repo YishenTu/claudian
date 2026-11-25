@@ -79,6 +79,7 @@ import {
   isPiDisplayedCustomMessageStart,
   normalizePiRPCEvent,
   type PiEventNormalizationState,
+  settlePiUnrunStreamedTools,
 } from '../normalization/piEventNormalization';
 import { PiPeepsSubagents } from '../normalization/PiPeepsSubagents';
 import { buildPiUsageInfo } from '../runtime/buildPiUsageInfo';
@@ -1113,6 +1114,9 @@ implements ProviderExecutionSession, SteerableExecutionSession {
       return;
     }
 
+    for (const chunk of settlePiUnrunStreamedTools(event, this.normalizationState)) {
+      this.#handleRequestedChunk(active, chunk);
+    }
     const terminalError = getPiTerminalErrorMessage(event);
     if (terminalError) {
       this.#ensureAccepted(active);
@@ -1156,6 +1160,9 @@ implements ProviderExecutionSession, SteerableExecutionSession {
       background.pendingTerminalError = getString(event.error) ?? 'Pi runtime error.';
       this.#settleBackgroundTurn(background);
       return;
+    }
+    for (const chunk of settlePiUnrunStreamedTools(event, background.normalization)) {
+      this.#handleBackgroundChunk(background, chunk);
     }
     const terminalError = getPiTerminalErrorMessage(event);
     if (terminalError) {

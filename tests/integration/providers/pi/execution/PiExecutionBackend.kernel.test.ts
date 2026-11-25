@@ -3181,6 +3181,27 @@ describe('PiExecutionBackend', () => {
       await harness.session.dispose();
     });
 
+    // A call streamed in a background reply that failed or was aborted never runs, so its tool still completes.
+    // An abort is an interruption, so its text stays hidden.
+    it.each([
+      ['error', '529 overloaded', '529 overloaded'], ['aborted', 'Operation aborted', ''],
+    ])('fails a streamed call of a background reply that ended with %s', async (stopReason, errorMessage, content) => {
+      const harness = (await createHarness());
+      const { events, kernel } = await startIdleSession(harness);
+      emitWake(kernel);
+      kernel.emit({ type: 'message_update', assistantMessageEvent: { type: 'toolcall_start', contentIndex: 1, id: 'call-1', toolName: 'read' } });
+      kernel.emit({ message: { role: 'assistant', stopReason, errorMessage }, type: 'message_end' });
+      kernel.emit({ type: 'agent_end' });
+      kernel.emit({ type: 'agent_settled' });
+      await waitFor(() => events.some(event => event.type === 'background_turn_completed'));
+
+      expect(backgroundEvents(events).filter(event => event.type === 'tool_started' || event.type === 'tool_completed')).toEqual([
+        expect.objectContaining({ toolCallId: 'call-1', type: 'tool_started' }),
+        expect.objectContaining({ content, isError: true, toolCallId: 'call-1', type: 'tool_completed' }),
+      ]);
+      await harness.session.dispose();
+    });
+
     // Pi 1.1+ marks a run an extension aborted; before that, agent_settled carries no flag.
     it.each([[true, 'interrupted'], [false, 'completed'], [undefined, 'completed']] as const)(
       'completes a background run pi settles with aborted: %s as %s',
