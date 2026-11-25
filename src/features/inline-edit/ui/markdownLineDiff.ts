@@ -5,12 +5,29 @@ function splitLinesPreservingEndings(text: string): string[] {
   return text.match(/[^\n]*(?:\n|$)/g)?.filter(line => line.length > 0) ?? [];
 }
 
+/** A run of consecutive lines with one diff type; `equal` runs consume lines from both sides. */
+export interface LineRun { type: DiffOp['type']; count: number; }
+
 /** Line diff that keeps line endings, so each side stays renderable Markdown. */
 export function computeMarkdownDiff(oldText: string, newText: string): DiffOp[] {
-  const allOldLines = splitLinesPreservingEndings(oldText);
-  const allNewLines = splitLinesPreservingEndings(newText);
+  const oldLines = splitLinesPreservingEndings(oldText);
+  const newLines = splitLinesPreservingEndings(newText);
+  const operations: DiffOp[] = [];
+  let oldIndex = 0, newIndex = 0;
+  for (const { type, count } of alignLines(oldLines, newLines)) {
+    const source = type === 'insert' ? newLines : oldLines;
+    const from = type === 'insert' ? newIndex : oldIndex;
+    operations.push({ type, text: source.slice(from, from + count).join('') });
+    if (type !== 'insert') oldIndex += count;
+    if (type !== 'delete') newIndex += count;
+  }
+  return operations;
+}
+
+/** Longest-common-subsequence alignment of two line lists, as runs in document order. */
+export function alignLines(allOldLines: readonly string[], allNewLines: readonly string[]): LineRun[] {
   // The unchanged note can dwarf a small edit. Only the changed middle needs
-  // the quadratic matrix; keep the original line endings around it verbatim.
+  // the quadratic matrix; keep the lines around it as equal runs.
   let oldEnd = allOldLines.length, newEnd = allNewLines.length;
   while (oldEnd > 0 && newEnd > 0 && allOldLines[oldEnd - 1] === allNewLines[newEnd - 1]) {
     oldEnd--; newEnd--;
@@ -42,39 +59,30 @@ export function computeMarkdownDiff(oldText: string, newText: string): DiffOp[] 
     [previous, current] = [current, previous];
   }
 
-  const temp: DiffOp[] = [];
+  const reversed: LineRun[] = [];
+  const push = (type: DiffOp['type'], count = 1) => {
+    if (count === 0) return;
+    const last = reversed[reversed.length - 1];
+    if (last?.type === type) last.count += count;
+    else reversed.push({ type, count });
+  };
+  push('equal', allOldLines.length - oldEnd);
   let i = m, j = n;
-
   while (i > 0 || j > 0) {
     const cell = (i - 1) * n + j - 1;
     if (i > 0 && j > 0 && oldLines[i-1] === newLines[j-1]) {
-      temp.push({ type: 'equal', text: oldLines[i-1] });
+      push('equal');
       i--; j--;
     } else if (j > 0 && (i === 0 || (insertSteps[Math.floor(cell / 8)] & (1 << (cell % 8))) !== 0)) {
-      temp.push({ type: 'insert', text: newLines[j-1] });
+      push('insert');
       j--;
     } else {
-      temp.push({ type: 'delete', text: oldLines[i-1] });
+      push('delete');
       i--;
     }
   }
-
-  const operations = temp.reverse();
-  if (prefixLength > 0) operations.unshift({ type: 'equal', text: allOldLines.slice(0, prefixLength).join('') });
-  if (oldEnd < allOldLines.length) operations.push({ type: 'equal', text: allOldLines.slice(oldEnd).join('') });
-  return mergeAdjacentDiffOps(operations);
-}
-
-function mergeAdjacentDiffOps(ops: DiffOp[]): DiffOp[] {
-  const merged: DiffOp[] = [];
-  for (const op of ops) {
-    if (merged.length > 0 && merged[merged.length-1].type === op.type) {
-      merged[merged.length-1].text += op.text;
-    } else {
-      merged.push({ ...op });
-    }
-  }
-  return merged;
+  push('equal', prefixLength);
+  return reversed.reverse();
 }
 
 export function buildMarkdownDiffDocuments(diffOps: DiffOp[]): Array<{ type: DiffOp['type']; markdown: string }> {

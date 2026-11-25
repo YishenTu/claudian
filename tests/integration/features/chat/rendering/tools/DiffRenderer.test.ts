@@ -5,7 +5,7 @@ import { within } from '@testing-library/dom';
 import { diffFromStructuredPatch, diffFromUnifiedText, parseApplyPatchDiffs } from '@/core/tools/toolDiff';
 import type { DiffLine } from '@/core/types/diff';
 import { renderDiffContent } from '@/features/chat/rendering/tools/DiffRenderer';
-import { createInlineDiffBudget } from '@/features/chat/rendering/tools/inlineLineDiff';
+import { createInlineDiffBudget } from '@/utils/inlineLineDiff';
 
 /** Generate N insert DiffLines. */
 function makeInsertLines(n: number): DiffLine[] {

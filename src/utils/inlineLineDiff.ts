@@ -3,11 +3,13 @@ export interface InlineDiffSegment {
   changed: boolean;
 }
 
+/** Both sides of a paired line; a side with no changed tokens is one unchanged segment. */
 export interface PairedLineDiff {
-  deleteSegments: InlineDiffSegment[] | null;
-  insertSegments: InlineDiffSegment[] | null;
+  deleteSegments: InlineDiffSegment[];
+  insertSegments: InlineDiffSegment[];
 }
 
+/** Per-line segments; `null` marks a line left unpaired. */
 export interface BlockInlineDiffs {
   deleteSegments: Array<InlineDiffSegment[] | null>;
   insertSegments: Array<InlineDiffSegment[] | null>;
@@ -100,14 +102,12 @@ function isWhitespaceToken(token: string): boolean {
   return WHITESPACE_ONLY_PATTERN.test(token);
 }
 
-function mergeSegments(tokens: readonly string[], changedFlags: readonly boolean[]): InlineDiffSegment[] | null {
+function mergeSegments(tokens: readonly string[], changedFlags: readonly boolean[]): InlineDiffSegment[] {
   const segments: InlineDiffSegment[] = [];
-  let hasChanged = false;
 
   for (let i = 0; i < tokens.length; i++) {
     const text = tokens[i];
     const changed = changedFlags[i];
-    if (changed) hasChanged = true;
 
     const prev = segments[segments.length - 1];
     if (prev && prev.changed === changed) {
@@ -117,7 +117,7 @@ function mergeSegments(tokens: readonly string[], changedFlags: readonly boolean
     }
   }
 
-  return hasChanged ? segments : null;
+  return segments;
 }
 
 function computeInlineLineDiffFromTokens(
@@ -223,11 +223,7 @@ function computeInlineLineDiffFromTokens(
     return null;
   }
 
-  const deleteSegments = mergeSegments(oldTokens, oldChanged);
-  const insertSegments = mergeSegments(newTokens, newChanged);
-  if (!deleteSegments && !insertSegments) return null;
-
-  return { deleteSegments, insertSegments };
+  return { deleteSegments: mergeSegments(oldTokens, oldChanged), insertSegments: mergeSegments(newTokens, newChanged) };
 }
 
 export function computeInlineLineDiff(

@@ -9,6 +9,7 @@ import {
   submitInstruction,
   typeInstruction,
 } from '@test/helpers/features/inline-edit/InlineEditDOMHarness';
+import { renderObsidianHTML } from '@test/helpers/ObsidianMarkdownRenderer';
 import { testDate } from '@test/helpers/testClock';
 import { fireEvent, screen, waitFor, within } from '@testing-library/dom';
 import { Component, type Editor, MarkdownRenderer, Notice, TFile, TFolder, WorkspaceLeaf } from 'obsidian';
@@ -414,6 +415,68 @@ it.each(['replacement', 'insertion'] as const)(
   // The previewed source is hidden from the editor until the edit settles; the composer stays above it.
   const composer = input().closest('.claudian-inline-input-container')!;
   expect(h.editorView.contentDOM.textContent).toBe(`${composer.textContent}${preview.textContent} world`);
+});
+
+it('highlights only the changed characters and words inside rendered changed blocks', async () => {
+  const h = await createHarness();
+  // Raw HTML renders as itself, so the fixture states the rendered blocks the highlighting walks.
+  const before = [
+    '<p>配套：协作、权限、自动化</p>',
+    '<p>今天天气很好<strong>我们</strong>去公园散步</p>',
+    '<p>Keep <strong>this</strong> paragraph as is</p>',
+    '<p>Draft</p>',
+    '<p>Plan<br>Ship <span class="math math-inline">a</span> fast builds</p>',
+    '<p>Add a clause</p>',
+    '',
+  ].join('\n');
+  const after = [
+    '<p>配套：协作、授权、自动化</p>',
+    '<p>今天天气很坏他们去公园散步</p>',
+    '<p>Keep <strong>this</strong> paragraph as is</p>',
+    '<p>Final</p>',
+    '<p>Plan<br>Ship <span class="math math-inline">b</span> faster builds</p>',
+    '<p>Add a clause here</p>',
+    '<p>Brand new paragraph</p>',
+    '',
+  ].join('\n');
+  h.editorView.dispatch({ changes: { from: 0, to: h.editorView.state.doc.length, insert: before } });
+  const end = h.editorView.state.doc.lineAt(h.editorView.state.doc.length);
+  h.editor.getSelection = () => before;
+  h.editor.getCursor = (which = 'head') => which === 'from' ? { line: 0, ch: 0 } : { line: end.number - 1, ch: end.length };
+  vi.mocked(MarkdownRenderer.render).mockImplementation(renderObsidianHTML);
+  new InlineEditSession(h.app, h.plugin, h.component, h.editorView, h.editor,
+    { mode: 'selection', selectedText: before }, h.notePath, h.settled, { providerId: 'claude' }).show();
+  await showReplacementPreview(h, after);
+  const preview = screen.getByRole('toolbar', { name: 'Inline edit actions' }).parentElement!;
+  const marks = (block: string, mark: string) => Array.from(
+    preview.querySelectorAll(`.claudian-diff-block.${block} p`),
+    p => Array.from(p.querySelectorAll(`.${mark}`), span => span.textContent),
+  );
+
+  await waitFor(() => expect(marks('claudian-diff-del', 'claudian-diff-inline-delete')).toEqual([
+    ['限'],
+    // A change across the bold boundary is marked on each side of it.
+    ['好', '我'],
+    [],
+    // A rewrite with nothing in common is marked whole, or it would read like the unchanged blocks around it.
+    ['Draft'],
+    // Math is not compared, and offsets after it and a soft line break still land on the changed word.
+    ['fast'],
+    // Words added to a block leave its old side unmarked.
+    [],
+  ]));
+  expect(marks('claudian-diff-ins', 'claudian-diff-inline-insert')).toEqual([
+    ['授'], ['坏他'], [], ['Final'], ['faster'], [' here'], ['Brand new paragraph'],
+  ]);
+  // Marking keeps the rendered text and formatting intact.
+  expect(Array.from(preview.querySelectorAll('.claudian-diff-block p'), p => p.textContent)).toEqual([
+    '配套：协作、权限、自动化', '今天天气很好我们去公园散步', 'Keep this paragraph as is', 'Draft', 'PlanShip a fast builds',
+    'Add a clause',
+    '配套：协作、授权、自动化', '今天天气很坏他们去公园散步', 'Keep this paragraph as is', 'Final', 'PlanShip b faster builds',
+    'Add a clause here', 'Brand new paragraph',
+  ]);
+  expect(preview.querySelector('.claudian-diff-del strong')?.textContent).toBe('我们');
+  expect(preview.querySelector('.claudian-diff-del strong .claudian-diff-inline-delete')?.textContent).toBe('我');
 });
 
 it('releases Markdown resources when clarification previews are replaced and the edit closes', async () => {
