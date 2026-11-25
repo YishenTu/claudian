@@ -3,6 +3,7 @@ import { Notice } from 'obsidian';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { ProviderWorkspaceRegistry } from '@/core/providers/ProviderWorkspaceRegistry';
 import type { TitleGenerationService } from '@/core/providers/types';
+import type { ChatMessage } from '@/core/types';
 import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
 import type { ComposerDraftController } from '@/features/chat/composer/ComposerDraftController';
 import type { ComposerPromptSuggestion } from '@/features/chat/composer/ComposerPromptSuggestion';
@@ -221,6 +222,15 @@ export class SessionModel {
   private activated(): void {
     this.inputController.onConversationActivated();
     this.publish('commands');
+  }
+
+  /**
+   * Where settled history ends in `messages`: before the running requested turn's submission and before any
+   * automatic turn still running. Null while a running requested turn has not placed its submission yet.
+   */
+  settledTranscriptEnd(messages: readonly ChatMessage[]): number | null {
+    const requested = this.inputController.settledTranscriptEnd(messages);
+    return requested === null ? null : Math.min(requested, this.events.settledTranscriptEnd(messages));
   }
 
   /** Admitted input and async subagents keep the session working without a foreground turn. */

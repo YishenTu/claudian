@@ -72,6 +72,18 @@ export class BackgroundResponses {
     return visible || response.hasUserMessages;
   }
 
+  /** Where settled history ends in `messages`: before the first message of an automatic turn still running. */
+  settledTranscriptEnd(messages: readonly ChatMessage[]): number {
+    let end = messages.length;
+    for (const turns of this.#owners.values()) {
+      for (const turn of turns.values()) {
+        const start = turn.transcriptStart(messages);
+        if (start >= 0) end = Math.min(end, start);
+      }
+    }
+    return end;
+  }
+
   discard(owner?: string): void {
     const owners = owner === undefined ? [...this.#owners.keys()] : [owner];
     for (const id of owners) {

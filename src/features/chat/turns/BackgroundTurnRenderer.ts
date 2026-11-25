@@ -226,24 +226,23 @@ export class AutoTriggeredTurn {
     if (!await this.#openThrough(Math.max(index, 0))) return;
     const span = this.#latest!;
     if (chunk.type === 'tool_use' && chunk.name === TOOL_AGENT_OUTPUT) this.#hiddenToolIds.add(chunk.id);
-    if (isVisibleAutoTurnChunk(chunk, this.#hiddenToolIds)) {
-      if (!span.visible) {
-        span.visible = true;
-        const element = this.host.renderer?.getMessageContentEl(span.message.id)?.parentElement;
-        // Showing the reply is its arrival; later growth follows as the reader's follow setting allows.
-        const followArrival = this.host.renderer?.follow.holdArrival();
-        if (element) element.hidden = false;
-        followArrival?.();
-      }
-      const continuation = await continueResponseAfterNotification({
-        state: this.host.state, streamState: this.#state, renderer: this.host.renderer, stream: this.#stream,
-        createMessageId: () => this.host.createMessageId(), isCurrent,
-      }, span.message, chunk, event.scope);
-      if (!isCurrent()) return;
-      if (continuation !== span.message) {
-        span.message = continuation;
-        this.#segments.push(continuation);
-      }
+    // Every chunk picks its segment first: whitespace that starts a reply after a notification is that reply's.
+    const continuation = await continueResponseAfterNotification({
+      state: this.host.state, streamState: this.#state, renderer: this.host.renderer, stream: this.#stream,
+      createMessageId: () => this.host.createMessageId(), isCurrent,
+    }, span.message, chunk, event.scope);
+    if (!isCurrent()) return;
+    if (continuation !== span.message) {
+      span.message = continuation;
+      this.#segments.push(continuation);
+      if (!span.visible) this.#setSpanHidden(span, true);
+    }
+    if (!span.visible && isVisibleAutoTurnChunk(chunk, this.#hiddenToolIds)) {
+      span.visible = true;
+      // Showing the reply is its arrival; later growth follows as the reader's follow setting allows.
+      const followArrival = this.host.renderer?.follow.holdArrival();
+      this.#setSpanHidden(span, false);
+      followArrival?.();
     }
     this.#state.messages = this.host.state.messages;
     await this.#stream.handleStreamChunk(chunk, span.message);
@@ -296,10 +295,7 @@ export class AutoTriggeredTurn {
   /** Removes everything this turn reserved or rendered, for a transcript that no longer accepts it. */
   discard(): void {
     this.#release();
-    const owned = new Set<ChatMessage>([
-      ...this.#segments,
-      ...this.#spans.flatMap(span => span.user ? [span.target.message, span.user] : [span.target.message]),
-    ]);
+    const owned = this.#ownedMessages();
     for (const message of owned) this.host.renderer?.removeMessage(message.id);
     this.host.state.messages = this.host.state.messages.filter(message => !owned.has(message));
   }
@@ -307,6 +303,25 @@ export class AutoTriggeredTurn {
   #release(): void {
     this.#stream.dispose();
     this.#state.dispose();
+  }
+
+  /** A span's segments stay hidden together until it shows visible output. */
+  #setSpanHidden(span: SpanProgress, hidden: boolean): void {
+    for (const segment of this.#segments.slice(span.start)) {
+      const element = this.host.renderer?.getMessageContentEl(segment.id)?.parentElement;
+      if (element) element.hidden = hidden;
+    }
+  }
+
+  /** Where this turn's first message sits in `messages`, or -1 when none of it is there. */
+  transcriptStart(messages: readonly ChatMessage[]): number {
+    const owned = this.#ownedMessages();
+    return messages.findIndex(message => owned.has(message));
+  }
+
+  /** Everything this turn reserved or rendered: replies, continuations and steered input. */
+  #ownedMessages(): Set<ChatMessage> {
+    return new Set([...this.#segments, ...this.#spans.flatMap(span => span.user ? [span.target.message, span.user] : [span.target.message])]);
   }
 
   /** Closes open spans before `index` in order, so output-free input boundaries settle as they did. */
@@ -349,7 +364,7 @@ export class AutoTriggeredTurn {
     stream.thinkingIndicator.hide();
     message.completedAt = Date.now();
     if (!span.visible) {
-      discardBackgroundTurn(host, this.#spans[span.index].target);
+      for (const segment of this.#segments.slice(span.start)) discardBackgroundTurn(host, { message: segment });
     } else if (!hasResponseOutput(message) && host.state.messages.includes(message)) {
       host.state.messages = host.state.messages.filter(item => item !== message);
       host.renderer?.removeMessage(message.id);

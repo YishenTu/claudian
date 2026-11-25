@@ -718,6 +718,24 @@ it('leaves a reader at the end in place while live automatic output grows with a
   } finally { session.dispose(); }
 });
 
+// Leading spaces are Markdown (an indented code block): they belong to the reply they start.
+it('keeps whitespace that starts the reply after a notification in that reply', async () => {
+  const session = (await createBackgroundSession());
+  const { messagesEl, state, background } = session;
+  try {
+    background.reserve('binding', 'automatic');
+    await session.text('Before the job.');
+    renderSessionTaskNotification(session.host, 'Job finished.', undefined, session.next());
+    await session.text('    ');
+    await session.text('code sample');
+    await background.handle('binding', { type: 'background_turn_completed', reason: 'completed', scope: session.next() }, () => true);
+    expect(state.messages.filter(message => message.role === 'assistant' && !message.contentBlocks?.some(block => block.type === 'task_notification'))
+      .map(message => message.content)).toEqual(['Before the job.', '    code sample']);
+    expect(Array.from(messagesEl.querySelectorAll<HTMLElement>('.claudian-message'), visibleText).filter(Boolean))
+      .toEqual(['Before the job.', 'Task notification', 'code sample']);
+  } finally { session.dispose(); }
+});
+
 it('keeps a reply before a steer intact and ends the steered input in an indicator when stopped before new output', async () => {
   const session = (await createBackgroundSession());
   const { messagesEl, renderer, state, background } = session;

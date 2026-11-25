@@ -35,6 +35,11 @@ export class SessionEvents {
     this.responses = new BackgroundResponses(host);
   }
 
+  /** Where settled history ends in `messages`, before any automatic turn still running. */
+  settledTranscriptEnd(messages: readonly ChatMessage[]): number {
+    return this.responses.settledTranscriptEnd(messages);
+  }
+
   private async handle(
     event: ProviderSessionEvent,
     context: ChatExecutionEventContext,

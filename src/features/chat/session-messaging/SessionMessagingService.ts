@@ -222,8 +222,8 @@ export class SessionMessagingService {
     const model = runtime?.conversationId === conversation.id ? runtime.peekModel : null;
     const live = model?.hydrationState === 'ready' ? model.state : null;
     if (!model || !live) return { conversation, messages: conversation.messages, running: false };
-    // The running turn's boundary also covers prompts steered into it; null until its submission is placed.
-    const end = model.inputController.settledTranscriptEnd(live.messages);
+    // Running turns' boundaries also cover prompts steered into them; null until a requested submission is placed.
+    const end = model.settledTranscriptEnd(live.messages);
     return end === null
       ? { conversation, messages: live.messages, running: live.isStreaming }
       : { conversation, messages: live.messages.slice(0, end), running: false };
