@@ -16,7 +16,7 @@ import { encodeSessionMessage, type MailboxMessage } from '@/core/session-tools/
 import type { AskUserAnswers, ChatMessage, ToolCallInfo } from '@/core/types';
 import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
 import type { ChatSettings } from '@/features/chat/ChatSettings';
-import { composerSteerShortcut } from '@/features/chat/composer/ComposerKeyIntent';
+import { type ComposerKeyIntent, composerSteerShortcut } from '@/features/chat/composer/ComposerKeyIntent';
 import { findComposerSessionMentions } from '@/features/chat/composer/composerSessionMentions';
 import { resolveSessionMentions } from '@/features/chat/composer/resolveSessionMentions';
 import type { SessionComposerPort } from '@/features/chat/composer/SessionComposer';
@@ -111,7 +111,7 @@ export interface SendMessageOptions {
    * `steer` joins main input to the running turn through the queue's steer, with any queued
    * follow-up; it queues when the turn cannot be steered and sends when no turn runs.
    */
-  intent?: 'send' | 'steer';
+  intent?: ComposerKeyIntent;
 }
 
 /** Admits composer and answer submissions and routes each to its destination. */

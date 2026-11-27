@@ -834,8 +834,8 @@
     },
     "requireCommandOrControlEnterToSend": {
       "name": "需要 Command/Ctrl+Enter 才能傳送",
-      "descByDefault": "Enter 傳送，Shift+Enter 換行，Command+Enter 引導正在執行的回合。Windows 和 Linux 上用 Ctrl 代替 Command。",
-      "descWhenRequired": "Enter 換行，Command+Enter 傳送，Command+Shift+Enter 引導正在執行的回合。Windows 和 Linux 上用 Ctrl 代替 Command。"
+      "descByDefault": "Enter 傳送，Shift+Enter 換行，Cmd/Ctrl+Enter 引導正在執行的回合。",
+      "descWhenRequired": "Enter 換行，Cmd/Ctrl+Enter 傳送，Cmd/Ctrl+Shift+Enter 引導正在執行的回合。"
     },
     "safety": "安全",
     "loadUserSettings": {

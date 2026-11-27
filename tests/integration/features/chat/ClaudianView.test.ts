@@ -781,17 +781,27 @@ describe('ClaudianView composer and scoped keys', () => {
     await release();
   });
 
-  // The view scope is a separate entry point that must read the live send-key setting.
-  it.each([[false, 'steer'], [true, 'send']] as const)('scoped Mod+Enter with required modifier=%s submits intent %s', async (required, intent) => {
+  // The view scope is a separate entry point that must read the live send-key setting, and it binds only
+  // Mod+Enter: the composer handles Mod+Shift+Enter, so a user's own hotkey on that chord keeps working elsewhere.
+  it.each([[false, 'steer'], [true, 'send']] as const)('scoped keys with required modifier=%s: Mod+Enter submits intent %s', async (required, intent) => {
     const priorPlatform = Platform.isMacOS;
     Platform.isMacOS = true;
     try {
       const { view, manager } = await openView({ host: { settings: { requireCommandOrControlEnterToSend: required } } });
+      assert(view.scope instanceof HostScope && view.scope.parent);
       const tab = manager.getActiveTab()!;
       const send = vi.spyOn(tab.controllers.inputController, 'sendMessage').mockResolvedValue(undefined);
+      const userHotkey = vi.fn(() => false);
+      const parent = view.scope.parent;
+      const hotkey = parent.register(['Mod', 'Shift'], 'Enter', userHotkey);
+      onTestFinished(() => parent.unregister(hotkey));
       tab.composer.focus();
-      expect(scoped(view, 'Enter', { metaKey: true })).toBe(false);
+
+      expect(view.scope.press(['Mod'], 'Enter')).toBe(true);
       expect(send.mock.calls).toEqual([[{ intent }]]);
+      expect(view.scope.press(['Mod', 'Shift'], 'Enter')).toBe(true);
+      expect(userHotkey).toHaveBeenCalledTimes(1);
+      expect(send).toHaveBeenCalledTimes(1);
     } finally { Platform.isMacOS = priorPlatform; }
   });
 

@@ -834,8 +834,8 @@
     },
     "requireCommandOrControlEnterToSend": {
       "name": "Exigir Command/Ctrl+Enter para enviar",
-      "descByDefault": "Enter envia, Shift+Enter insere uma quebra de linha e Command+Enter redireciona um turno em andamento. No Windows e Linux, use Ctrl em vez de Command.",
-      "descWhenRequired": "Enter insere uma quebra de linha, Command+Enter envia e Command+Shift+Enter redireciona um turno em andamento. No Windows e Linux, use Ctrl em vez de Command."
+      "descByDefault": "Enter envia, Shift+Enter insere uma quebra de linha e Cmd/Ctrl+Enter redireciona um turno em andamento.",
+      "descWhenRequired": "Enter insere uma quebra de linha, Cmd/Ctrl+Enter envia e Cmd/Ctrl+Shift+Enter redireciona um turno em andamento."
     },
     "safety": "Segurança",
     "loadUserSettings": {

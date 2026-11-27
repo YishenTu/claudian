@@ -834,8 +834,8 @@
     },
     "requireCommandOrControlEnterToSend": {
       "name": "Command/Ctrl+Enter でのみ送信",
-      "descByDefault": "Enter で送信、Shift+Enter で改行、Command+Enter で実行中のターンに指示を送信します。Windows と Linux では Command の代わりに Ctrl を使います。",
-      "descWhenRequired": "Enter で改行、Command+Enter で送信、Command+Shift+Enter で実行中のターンに指示を送信します。Windows と Linux では Command の代わりに Ctrl を使います。"
+      "descByDefault": "Enter で送信、Shift+Enter で改行、Cmd/Ctrl+Enter で実行中のターンに指示を送信します。",
+      "descWhenRequired": "Enter で改行、Cmd/Ctrl+Enter で送信、Cmd/Ctrl+Shift+Enter で実行中のターンに指示を送信します。"
     },
     "safety": "セキュリティ",
     "loadUserSettings": {

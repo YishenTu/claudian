@@ -37,6 +37,8 @@ export interface ChatViewRefreshHost {
   refreshTabControls(): void;
   refreshDualPaneLayout(): void;
   updateHiddenCommands(): void;
+  /** Re-renders shortcut hints that depend on the send-key setting. */
+  refreshSendKeyHints(): void;
   invalidateProviderCommandCaches(providerIds?: ProviderId[]): void;
   invalidateProviderResources(providerIds: ProviderId[], generation: number): void;
 }

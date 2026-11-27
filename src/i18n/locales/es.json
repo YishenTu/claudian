@@ -834,8 +834,8 @@
     },
     "requireCommandOrControlEnterToSend": {
       "name": "Requerir Command/Ctrl+Enter para enviar",
-      "descByDefault": "Enter envía, Shift+Enter inserta un salto de línea y Command+Enter reorienta un turno en curso. En Windows y Linux, usa Ctrl en lugar de Command.",
-      "descWhenRequired": "Enter inserta un salto de línea, Command+Enter envía y Command+Shift+Enter reorienta un turno en curso. En Windows y Linux, usa Ctrl en lugar de Command."
+      "descByDefault": "Enter envía, Shift+Enter inserta un salto de línea y Cmd/Ctrl+Enter reorienta un turno en curso.",
+      "descWhenRequired": "Enter inserta un salto de línea, Cmd/Ctrl+Enter envía y Cmd/Ctrl+Shift+Enter reorienta un turno en curso."
     },
     "safety": "Seguridad",
     "loadUserSettings": {

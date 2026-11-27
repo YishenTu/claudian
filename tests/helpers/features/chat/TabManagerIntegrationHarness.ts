@@ -88,6 +88,7 @@ export async function createManager(
     notifyConversationListChanged: () => undefined, refreshModelSelector: () => undefined,
     refreshTabControls: () => undefined, refreshDualPaneLayout: () => undefined,
     updateHiddenCommands: () => undefined,
+    refreshSendKeyHints: () => undefined,
     invalidateProviderCommandCaches: () => undefined, invalidateProviderResources: () => undefined,
   }, viewOverrides);
   const manager = new TabManager(plugin, root, view, callbacks, new VaultMentionDataProvider(plugin.app), layoutPolicy && {

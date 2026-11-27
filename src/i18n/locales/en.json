@@ -834,8 +834,8 @@
     },
     "requireCommandOrControlEnterToSend": {
       "name": "Require Command/Ctrl+Enter to send",
-      "descByDefault": "Enter sends, Shift+Enter inserts a newline, and Command+Enter steers a running turn. Use Ctrl instead of Command on Windows and Linux.",
-      "descWhenRequired": "Enter inserts a newline, Command+Enter sends, and Command+Shift+Enter steers a running turn. Use Ctrl instead of Command on Windows and Linux."
+      "descByDefault": "Enter sends, Shift+Enter inserts a newline, and Cmd/Ctrl+Enter steers a running turn.",
+      "descWhenRequired": "Enter inserts a newline, Cmd/Ctrl+Enter sends, and Cmd/Ctrl+Shift+Enter steers a running turn."
     },
     "safety": "Safety",
     "loadUserSettings": {

@@ -217,6 +217,12 @@ export class ClaudianView extends ItemView implements ZenModeSource {
     }
   }
 
+  refreshSendKeyHints(): void {
+    for (const tab of this.tabManager?.getAllTabs() ?? []) {
+      tab.controllers.inputController.queue.updateIndicator();
+    }
+  }
+
   async onOpen() {
     const span = StartupProfiler.start('view-open');
     try {

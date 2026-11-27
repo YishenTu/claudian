@@ -834,8 +834,8 @@
     },
     "requireCommandOrControlEnterToSend": {
       "name": "Command/Strg+Enter zum Senden erfordern",
-      "descByDefault": "Enter sendet, Umschalt+Enter fügt einen Zeilenumbruch ein und Command+Enter steuert eine laufende Antwort ein. Unter Windows und Linux Strg statt Command verwenden.",
-      "descWhenRequired": "Enter fügt einen Zeilenumbruch ein, Command+Enter sendet und Command+Umschalt+Enter steuert eine laufende Antwort ein. Unter Windows und Linux Strg statt Command verwenden."
+      "descByDefault": "Enter sendet, Umschalt+Enter fügt einen Zeilenumbruch ein und Cmd/Strg+Enter steuert eine laufende Antwort ein.",
+      "descWhenRequired": "Enter fügt einen Zeilenumbruch ein, Cmd/Strg+Enter sendet und Cmd/Strg+Umschalt+Enter steuert eine laufende Antwort ein."
     },
     "safety": "Sicherheit",
     "loadUserSettings": {
