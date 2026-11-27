@@ -1,38 +1,10 @@
-import { Platform } from 'obsidian';
-
 import type { ClaudianSettings } from '@/core/types';
+import {
+  type ComposerKeyIntent,
+  isPlatformModifierChord,
+  resolveComposerKeyIntent,
+} from '@/features/chat/composer/ComposerKeyIntent';
 import type { AssembledTabRuntime } from '@/features/chat/tabs/types';
-
-function isEnterWithoutShiftOrComposition(event: KeyboardEvent): boolean {
-  return event.key === 'Enter' && !event.shiftKey && !event.isComposing;
-}
-
-function hasPlatformSendModifier(event: KeyboardEvent): boolean {
-  if (Platform.isMacOS) {
-    return event.metaKey === true && !event.ctrlKey && !event.altKey;
-  }
-
-  return event.ctrlKey === true && !event.metaKey && !event.altKey;
-}
-
-function shouldSendMessageFromExplicitEnterShortcut(event: KeyboardEvent): boolean {
-  return isEnterWithoutShiftOrComposition(event) && hasPlatformSendModifier(event);
-}
-
-function shouldSendMessageFromEnterKey(
-  event: KeyboardEvent,
-  settings: Pick<ClaudianSettings, 'requireCommandOrControlEnterToSend'>,
-): boolean {
-  if (!isEnterWithoutShiftOrComposition(event)) {
-    return false;
-  }
-
-  if (settings.requireCommandOrControlEnterToSend === true) {
-    return hasPlatformSendModifier(event);
-  }
-
-  return true;
-}
 
 /** Open composer menus consume their keys, including Escape, before tab-level handling. */
 export function handleComposerMenuKeydown(tab: AssembledTabRuntime, event: KeyboardEvent): boolean {
@@ -66,9 +38,12 @@ function isTabInputFocused(tab: AssembledTabRuntime): boolean {
   return tab.dom.inputEl.contains(tab.dom.inputEl.ownerDocument.activeElement);
 }
 
+type SendKeySettings = Pick<ClaudianSettings, 'requireCommandOrControlEnterToSend'>;
+
 function sendTabInputMessage(
   tab: AssembledTabRuntime,
   event: KeyboardEvent,
+  intent: ComposerKeyIntent,
   options?: { requireInputFocus?: boolean },
 ): boolean {
   if (options?.requireInputFocus && !isTabInputFocused(tab)) {
@@ -81,30 +56,27 @@ function sendTabInputMessage(
   }
 
   event.preventDefault();
-  void inputController.sendMessage();
+  void inputController.sendMessage({ intent });
   return true;
 }
 
+/** Platform-modifier chords send or steer ahead of composer menus. */
 export function sendTabInputMessageFromExplicitEnterShortcut(
   tab: AssembledTabRuntime,
+  settings: SendKeySettings,
   event: KeyboardEvent,
   options?: { requireInputFocus?: boolean },
 ): boolean {
-  if (!shouldSendMessageFromExplicitEnterShortcut(event)) {
-    return false;
-  }
-
-  return sendTabInputMessage(tab, event, options);
+  if (!isPlatformModifierChord(event)) return false;
+  const intent = resolveComposerKeyIntent(event, settings);
+  return intent !== null && sendTabInputMessage(tab, event, intent, options);
 }
 
 export function sendTabInputMessageFromEnterKey(
   tab: AssembledTabRuntime,
-  settings: Pick<ClaudianSettings, 'requireCommandOrControlEnterToSend'>,
+  settings: SendKeySettings,
   event: KeyboardEvent,
 ): boolean {
-  if (!shouldSendMessageFromEnterKey(event, settings)) {
-    return false;
-  }
-
-  return sendTabInputMessage(tab, event);
+  const intent = resolveComposerKeyIntent(event, settings);
+  return intent !== null && sendTabInputMessage(tab, event, intent);
 }

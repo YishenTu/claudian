@@ -2,6 +2,7 @@ import { Notice } from 'obsidian';
 
 import type { ProviderId } from '@/core/providers/types';
 import type { ComposerDraftController } from '@/features/chat/composer/ComposerDraftController';
+import type { ComposerShortcut } from '@/features/chat/composer/ComposerKeyIntent';
 import { type QueueStripView, renderQueueStrip } from '@/features/chat/composer/QueueStrip';
 import type { ChatState } from '@/features/chat/state/ChatState';
 import { mergeQueuedMessages } from '@/features/chat/state/chatTurnRequest';
@@ -18,6 +19,7 @@ export interface TurnQueueDeps {
   steering: TurnSteering;
   canStartTurn: () => boolean;
   getTabProviderId: () => ProviderId | null;
+  getSteerShortcut: () => ComposerShortcut;
   /** Runs an admitted continuation inside the turn the queue opened for it. */
   runQueued: (message: QueuedMessage, signal: AbortSignal) => Promise<void>;
   /** A continuation that could not start or failed settles the review its predecessor deferred. */
@@ -154,7 +156,11 @@ export class TurnQueue {
 
   /** The queued message, or else the current conversation's visible pending steer. */
   get visible(): QueueStripView | null {
-    if (this.message) return { kind: 'queued', message: this.message, canSteer: this.deps.steering.canSteer };
+    if (this.message) {
+      return {
+        kind: 'queued', message: this.message, canSteer: this.deps.steering.canSteer, steerShortcut: this.deps.getSteerShortcut(),
+      };
+    }
     const pendingSteer = this.deps.steering.current;
     return pendingSteer?.uiState === 'visible' ? { kind: 'steering', message: pendingSteer.message } : null;
   }

@@ -18,6 +18,7 @@
       "queued": "排队中",
       "steering": "引导中",
       "steerNow": "立即引导",
+      "steerShortcut": "快捷键：{shortcut}",
       "edit": "编辑排队中的消息",
       "discard": "丢弃排队中的消息",
       "images": "[图片]"

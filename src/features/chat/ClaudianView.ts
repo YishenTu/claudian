@@ -662,11 +662,12 @@ export class ClaudianView extends ItemView implements ZenModeSource {
       }
       return false;
     });
+    // Obsidian binds Mod+Enter by default; Mod+Shift+Enter has no default hotkey and reaches the composer.
     this.scope.register(['Mod'], 'Enter', (e: KeyboardEvent) => {
       if (e.isComposing || e.defaultPrevented) return;
       const activeTab = this.tabManager?.getActiveTab();
       if (!activeTab) return;
-      if (sendTabInputMessageFromExplicitEnterShortcut(activeTab, e, { requireInputFocus: true })) {
+      if (sendTabInputMessageFromExplicitEnterShortcut(activeTab, this.plugin.settings, e, { requireInputFocus: true })) {
         return false;
       }
     });

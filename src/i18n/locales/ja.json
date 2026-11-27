@@ -18,6 +18,7 @@
       "queued": "待機中",
       "steering": "指示を送信中",
       "steerNow": "今すぐ指示を送信",
+      "steerShortcut": "ショートカット: {shortcut}",
       "edit": "待機中のメッセージを編集",
       "discard": "待機中のメッセージを破棄",
       "images": "[画像]"

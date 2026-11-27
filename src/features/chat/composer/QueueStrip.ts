@@ -1,10 +1,11 @@
 import { setIcon } from 'obsidian';
 
+import type { ComposerShortcut } from '@/features/chat/composer/ComposerKeyIntent';
 import type { QueuedMessage } from '@/features/chat/state/types';
 import { t } from '@/i18n/i18n';
 
 export type QueueStripView =
-  | { kind: 'queued'; message: QueuedMessage; canSteer: boolean }
+  | { kind: 'queued'; message: QueuedMessage; canSteer: boolean; steerShortcut: ComposerShortcut }
   | { kind: 'steering'; message: QueuedMessage };
 
 export interface QueueStripActions {
@@ -42,6 +43,8 @@ export function renderQueueStrip(el: HTMLElement, view: QueueStripView | null, a
         text: t('chat.queue.steerNow'),
       });
       steerButton.setAttribute('type', 'button');
+      steerButton.setAttribute('aria-keyshortcuts', view.steerShortcut.ariaKeyShortcuts);
+      steerButton.setAttribute('title', t('chat.queue.steerShortcut', { shortcut: view.steerShortcut.label }));
       steerButton.dataset.queueAction = 'steer';
       steerButton.addEventListener('click', (event) => {
         event.stopPropagation();

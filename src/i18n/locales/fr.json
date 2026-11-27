@@ -18,6 +18,7 @@
       "queued": "En file d’attente",
       "steering": "Réorientation en cours",
       "steerNow": "Réorienter maintenant",
+      "steerShortcut": "Raccourci : {shortcut}",
       "edit": "Modifier le message en file d’attente",
       "discard": "Supprimer le message en file d’attente",
       "images": "[images]"

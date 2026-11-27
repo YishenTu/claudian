@@ -781,6 +781,20 @@ describe('ClaudianView composer and scoped keys', () => {
     await release();
   });
 
+  // The view scope is a separate entry point that must read the live send-key setting.
+  it.each([[false, 'steer'], [true, 'send']] as const)('scoped Mod+Enter with required modifier=%s submits intent %s', async (required, intent) => {
+    const priorPlatform = Platform.isMacOS;
+    Platform.isMacOS = true;
+    try {
+      const { view, manager } = await openView({ host: { settings: { requireCommandOrControlEnterToSend: required } } });
+      const tab = manager.getActiveTab()!;
+      const send = vi.spyOn(tab.controllers.inputController, 'sendMessage').mockResolvedValue(undefined);
+      tab.composer.focus();
+      expect(scoped(view, 'Enter', { metaKey: true })).toBe(false);
+      expect(send.mock.calls).toEqual([[{ intent }]]);
+    } finally { Platform.isMacOS = priorPlatform; }
+  });
+
   it.each([true, false])('scoped Mod+Enter sends only with composer focus (focused=%s)', async focused => {
     const priorPlatform = Platform.isMacOS;
     Platform.isMacOS = true;

@@ -18,6 +18,7 @@
       "queued": "Queued",
       "steering": "Steering",
       "steerNow": "Steer Now",
+      "steerShortcut": "Shortcut: {shortcut}",
       "edit": "Edit queued message",
       "discard": "Discard queued message",
       "images": "[images]"

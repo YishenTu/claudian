@@ -18,6 +18,7 @@
       "queued": "En cola",
       "steering": "Reorientando",
       "steerNow": "Reorientar ahora",
+      "steerShortcut": "Atajo: {shortcut}",
       "edit": "Editar mensaje en cola",
       "discard": "Descartar mensaje en cola",
       "images": "[imágenes]"

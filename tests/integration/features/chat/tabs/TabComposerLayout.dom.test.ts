@@ -10,6 +10,7 @@ import { fireEvent, within } from '@testing-library/dom';
 import { App, Component, TFile } from 'obsidian';
 
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
+import { ProviderWorkspaceRegistry } from '@/core/providers/ProviderWorkspaceRegistry';
 import type { Conversation, ImageAttachment, UsageInfo } from '@/core/types';
 import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
 import { renderQueueStrip } from '@/features/chat/composer/QueueStrip';
@@ -22,6 +23,8 @@ import { VaultMentionDataProvider } from '@/shared/mention/VaultMentionDataProvi
 afterEach(async () => {
   vi.restoreAllMocks();
   await releaseSideChatHarnesses();
+  // Each tab gets a fresh host; a real provider handoff initializes the workspace for that host.
+  await ProviderWorkspaceRegistry.disposeInitialized();
 });
 
 const note = Object.assign(new TFile(), {
@@ -29,9 +32,10 @@ const note = Object.assign(new TFile(), {
 });
 
 let backend: SideChatDOMHarness['backend'];
+let host: ChatFeatureHost;
 
-async function createTab(linkedContentPath?: string): Promise<AssembledTabRuntime> {
-  const harness = await createHarness();
+async function createTab(linkedContentPath?: string, options: { steerable?: boolean } = {}): Promise<AssembledTabRuntime> {
+  const harness = await createHarness(options);
   backend = harness.backend;
   const app = new App();
   Object.assign(app.vault.adapter, { basePath: '/vault' });
@@ -66,6 +70,7 @@ async function createTab(linkedContentPath?: string): Promise<AssembledTabRuntim
     getConversationById: async () => conversation,
     getConversationList: () => [{ ...conversation, messageCount: conversation.messages.length, preview: '' }],
   });
+  host = plugin;
   const tab = await createTabRuntime({
     plugin,
     component: Object.assign(new Component(), { registerDomEvent: () => undefined, registerEvent: () => undefined }) as never,
@@ -117,9 +122,15 @@ it('attaches localized queued follow-ups above the input and preserves composer 
     expect(strip.classList.contains('claudian-hidden')).toBe(false);
     expect(within(strip).getByText('Queued')).toBeDefined();
     expect(within(strip).getByText('also add a created date')).toBeDefined();
-    expect(box.getByRole('button', { name: 'Steer Now' })).toBeDefined();
+    expect(box.getByRole('button', { name: 'Steer Now' }).getAttribute('aria-keyshortcuts')).toBe('Meta+Enter');
+    expect(box.getByRole('button', { name: 'Steer Now' }).title).toBe('Shortcut: ⌘↵');
     expect(box.getByRole('button', { name: 'Discard queued message' })).toBeDefined();
     expect(await axe(strip)).toHaveNoViolations();
+    await host.mutateSettings(settings => { settings.requireCommandOrControlEnterToSend = true; });
+    tab.controllers.inputController.queue.updateIndicator();
+    expect(box.getByRole('button', { name: 'Steer Now' }).getAttribute('aria-keyshortcuts')).toBe('Meta+Shift+Enter');
+    expect(box.getByRole('button', { name: 'Steer Now' }).title).toBe('Shortcut: ⇧⌘↵');
+    await host.mutateSettings(settings => { settings.requireCommandOrControlEnterToSend = false; });
 
     fireEvent.click(box.getByRole('button', { name: 'Edit queued message' }));
     expect(tab.state.queuedMessage).toBeNull();
@@ -164,6 +175,49 @@ it('attaches localized queued follow-ups above the input and preserves composer 
     expect(backend.latest.cancelCalls).toBe(0);
   } finally {
     setLocale('en');
+    try {
+      tab.controllers.inputController.queue.clear();
+      backend.latest.complete();
+      await sending;
+    } finally {
+      await destroyTab(tab);
+    }
+  }
+});
+
+it.each([
+  [false, { key: 'Enter', metaKey: true }, 'steers'],
+  [false, { key: 'Enter' }, 'queues'],
+  [true, { key: 'Enter', metaKey: true, shiftKey: true }, 'steers'],
+  [true, { key: 'Enter', metaKey: true }, 'queues'],
+] as const)('with required modifier=%s, composer keydown %o %s while a turn runs', async (required, init, outcome) => {
+  const tab = await createTab(undefined, { steerable: true });
+  let sending: Promise<void> | undefined;
+  try {
+    vi.spyOn(ProviderRegistry, 'getCapabilities').mockReturnValue({
+      ...ProviderRegistry.getCapabilities('claude'), supportsTurnSteer: true,
+    });
+    const handoff = backend.nextRequest(() => true);
+    sending = tab.controllers.inputController.sendMessage({ content: 'draft the plan' });
+    await handoff;
+    await host.mutateSettings(settings => { settings.requireCommandOrControlEnterToSend = required; });
+    const steered = backend.latestSteerable.nextSteer();
+    tab.dom.inputEl.focus();
+    tab.controllers.drafts.restore('main', { content: 'use a table instead', images: [] });
+    const event = new KeyboardEvent('keydown', { ...init, bubbles: true, cancelable: true });
+
+    tab.dom.inputEl.dispatchEvent(event);
+
+    expect(event.defaultPrevented).toBe(true);
+    expect(tab.dom.inputEl.value).toBe('');
+    const steeredInput = outcome === 'steers' ? (await steered).input : null;
+    expect({
+      steeredInput, queued: tab.state.queuedMessage?.content ?? null, steers: backend.latestSteerable.steerRequests.length,
+    }).toEqual(outcome === 'steers'
+      ? { steeredInput: [{ type: 'text', text: 'use a table instead' }], queued: null, steers: 1 }
+      : { steeredInput: null, queued: 'use a table instead', steers: 0 });
+  } finally {
+    await host.mutateSettings(settings => { settings.requireCommandOrControlEnterToSend = false; });
     try {
       tab.controllers.inputController.queue.clear();
       backend.latest.complete();

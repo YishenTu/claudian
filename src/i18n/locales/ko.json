@@ -18,6 +18,7 @@
       "queued": "대기 중",
       "steering": "방향 조정 중",
       "steerNow": "지금 방향 조정",
+      "steerShortcut": "단축키: {shortcut}",
       "edit": "대기 중인 메시지 편집",
       "discard": "대기 중인 메시지 삭제",
       "images": "[이미지]"

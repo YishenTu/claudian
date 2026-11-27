@@ -352,3 +352,66 @@ describe('async question answer submission', () => {
     expect(fixture.state.queuedMessage).toBeNull();
   });
 });
+
+describe('steer intent', () => {
+  it('joins the running turn with the composer draft and clears the composer', async () => {
+    const fixture = await createFixture();
+    await fixture.holdResponse();
+    fixture.input.value = 'steer now';
+
+    await fixture.controller.sendMessage({ intent: 'steer' });
+
+    expect(fixture.native.steerRequests.map(request => request.input)).toEqual([[{ type: 'text', text: 'steer now' }]]);
+    expect(fixture.controller.queue.message).toBeNull();
+    expect(fixture.input.value).toBe('');
+  });
+
+  it('steers the queued follow-up together with new composer text', async () => {
+    const fixture = await createFixture();
+    await fixture.holdResponse();
+    await fixture.controller.sendMessage({ content: 'earlier follow-up' });
+    fixture.input.value = 'and this';
+
+    await fixture.controller.sendMessage({ intent: 'steer' });
+
+    expect(fixture.native.steerRequests.map(request => request.input))
+      .toEqual([[{ type: 'text', text: 'earlier follow-up\n\nand this' }]]);
+    expect(fixture.controller.queue.message).toBeNull();
+  });
+
+  it('steers the queued follow-up from an empty composer', async () => {
+    const fixture = await createFixture();
+    await fixture.holdResponse();
+    await fixture.controller.sendMessage({ content: 'queued follow-up' });
+
+    await fixture.controller.sendMessage({ intent: 'steer' });
+
+    expect(fixture.native.steerRequests.map(request => request.input)).toEqual([[{ type: 'text', text: 'queued follow-up' }]]);
+    expect(fixture.controller.queue.message).toBeNull();
+  });
+
+  it.each([
+    ['plain send', { content: 'follow-up' }, true],
+    ['provider without steering', { content: 'follow-up', intent: 'steer' as const }, false],
+  ])('queues instead of steering on %s', async (_label, options, supportsTurnSteer) => {
+    vi.mocked(ProviderRegistry.getCapabilities).mockReturnValue({ ...nativeCapabilities, supportsTurnSteer });
+    const fixture = await createFixture();
+    await fixture.holdResponse();
+
+    await fixture.controller.sendMessage(options);
+
+    expect(fixture.native.steerRequests).toHaveLength(0);
+    expect(fixture.controller.queue.message?.content).toBe('follow-up');
+  });
+
+  it('sends normally when no turn is running', async () => {
+    const fixture = await createFixture();
+    fixture.input.value = 'fresh turn';
+
+    await fixture.controller.sendMessage({ intent: 'steer' });
+
+    expect(fixture.native.steerRequests).toHaveLength(0);
+    expect(fixture.native.requests).toHaveLength(1);
+    expect(fixture.controller.queue.message).toBeNull();
+  });
+});

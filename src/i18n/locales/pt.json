@@ -18,6 +18,7 @@
       "queued": "Na fila",
       "steering": "Redirecionando",
       "steerNow": "Redirecionar agora",
+      "steerShortcut": "Atalho: {shortcut}",
       "edit": "Editar mensagem na fila",
       "discard": "Descartar mensagem na fila",
       "images": "[imagens]"

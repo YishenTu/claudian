@@ -18,6 +18,7 @@
       "queued": "In der Warteschlange",
       "steering": "Wird eingesteuert",
       "steerNow": "Jetzt einsteuern",
+      "steerShortcut": "Tastenkürzel: {shortcut}",
       "edit": "Nachricht in der Warteschlange bearbeiten",
       "discard": "Nachricht in der Warteschlange verwerfen",
       "images": "[Bilder]"

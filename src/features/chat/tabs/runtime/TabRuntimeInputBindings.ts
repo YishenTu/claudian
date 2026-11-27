@@ -26,7 +26,7 @@ export function buildTabRuntimeInputBindings(
     if ((event.target as HTMLElement | null)?.closest?.('button, a')) return;
     const tab = runtimeRef.requirePublished();
     if (!options.isRuntimeLive(tab)) return;
-    if (sendTabInputMessageFromExplicitEnterShortcut(tab, event)) {
+    if (sendTabInputMessageFromExplicitEnterShortcut(tab, plugin.settings, event)) {
       return;
     }
 
