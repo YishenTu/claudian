@@ -911,6 +911,10 @@
       "name": "Défilement automatique pendant le streaming",
       "desc": "Défile automatiquement vers le bas pendant que Claude diffuse les réponses. Désactivez cette option pour rester en haut et lire depuis le début."
     },
+    "enableFlavorTexts": {
+      "name": "Messages d’état rotatifs",
+      "desc": "Affiche des messages d’attente ludiques (p. ex. « Je communie avec l’éther… ») pendant la réponse. Désactivez pour toujours afficher le statut simple « Réflexion en cours… »."
+    },
     "deferMathRenderingDuringStreaming": {
       "name": "Différer le rendu mathématique pendant le streaming",
       "desc": "Afficher le LaTeX brut pendant la diffusion, puis rendre les formules une fois chaque bloc de texte terminé."

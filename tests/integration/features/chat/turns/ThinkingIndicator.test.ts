@@ -4,6 +4,7 @@ import { holdResponse } from '@test/helpers/ConversationPorts';
 import type { Mock } from 'vitest';
 
 import { ChatState } from '@/features/chat/state/ChatState';
+import { FLAVOR_TEXT_KEYS } from '@/features/chat/turns/flavorTexts';
 import { ThinkingIndicator } from '@/features/chat/turns/ThinkingIndicator';
 import { TurnCoordinator } from '@/features/chat/turns/TurnCoordinator';
 import { t } from '@/i18n/i18n';
@@ -316,5 +317,51 @@ describe('ThinkingIndicator', () => {
     expect(timerSpan.textContent).toBe('Existing timer text');
     // The interval is not cleared by the null check.
     expect(vi.getTimerCount()).toBe(1);
+  });
+
+  describe('flavor status texts', () => {
+    function makeTurnFixture() {
+      const turnState = new ChatState({}, undefined, turns);
+      const messagesEl = document.body.createDiv();
+      const turnContentEl = messagesEl.createDiv();
+      turnState.currentContentEl = turnContentEl;
+      return { turnState, messagesEl, turnContentEl };
+    }
+
+    const flavorText = (root: HTMLElement | null) => root?.children[0]?.textContent ?? null;
+
+    it('rotates flavor texts by default', () => {
+            // A non-zero pick proves rotation: the plain 'thinking' text lives at index 0.
+      vi.spyOn(Math, 'random').mockReturnValue(0.999);
+
+      indicator.show();
+      vi.advanceTimersByTime(400);
+
+      expect(flavorText(shown())).toBe(t(FLAVOR_TEXT_KEYS[FLAVOR_TEXT_KEYS.length - 1]));
+    });
+
+    it('shows the plain thinking status when flavor texts are disabled', () => {
+      const { turnState, messagesEl, turnContentEl } = makeTurnFixture();
+      const plain = new ThinkingIndicator({
+        state: turnState,
+        getMessagesEl: () => messagesEl,
+        updateQueueIndicator,
+        getFlavorTextsEnabled: () => false,
+      });
+
+      try {
+        vi.spyOn(Math, 'random').mockReturnValue(0.999);
+        plain.show();
+        vi.advanceTimersByTime(400);
+
+        const el = turnContentEl.querySelector<HTMLElement>('.claudian-thinking');
+        expect(el).not.toBeNull();
+        expect(flavorText(el)).toBe(t('chat.busyIndicator.flavors.thinking'));
+        expect(turnState.waitingStatus).toBe(t('chat.busyIndicator.flavors.thinking'));
+      } finally {
+        plain.dispose();
+        turnState.dispose();
+      }
+    });
   });
 });

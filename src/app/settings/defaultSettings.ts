@@ -51,6 +51,7 @@ export const DEFAULT_CLAUDIAN_SETTINGS: ClaudianSettings = {
   savedProviderPermissionMode: {},
 
   enableAutoScroll: true,
+  enableFlavorTexts: true,
   deferMathRenderingDuringStreaming: true,
   pluginRenderedFenceLanguages: [],
   expandFileEditsByDefault: false,

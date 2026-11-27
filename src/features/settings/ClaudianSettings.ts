@@ -374,6 +374,15 @@ export class ClaudianSettingTab extends PluginSettingTab {
       });
 
     new AccessibleSetting(container)
+      .setName(t('settings.enableFlavorTexts.name'))
+      .setDesc(t('settings.enableFlavorTexts.desc'))
+      .addToggle((toggle) => {
+        bindCommittedControl(toggle, () => this.host.settings.enableFlavorTexts ?? true, async value => {
+          await this.host.mutateSettings(settings => { settings.enableFlavorTexts = value; });
+        });
+      });
+
+    new AccessibleSetting(container)
       .setName(t('settings.deferMathRenderingDuringStreaming.name'))
       .setDesc(t('settings.deferMathRenderingDuringStreaming.desc'))
       .addToggle((toggle) => {

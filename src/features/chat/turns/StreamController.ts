@@ -80,6 +80,7 @@ export class StreamController {
       state: deps.state,
       getMessagesEl: deps.getMessagesEl,
       updateQueueIndicator: deps.updateQueueIndicator,
+      getFlavorTextsEnabled: () => this.deps.plugin.settings.enableFlavorTexts ?? true,
     });
     this.#tools = new ToolCallStream({
       plugin: deps.plugin,

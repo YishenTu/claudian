@@ -334,6 +334,35 @@ describe('ClaudianSettingsStorage', () => {
       expect(JSON.parse(mockAdapter.write.mock.calls.at(-1)![1]).enableZenMode).toBe(true);
     });
 
+    describe('flavor status texts', () => {
+      it.each([
+        ['missing', {}, true],
+        ['disabled', { enableFlavorTexts: false }, false],
+        ['enabled', { enableFlavorTexts: true }, true],
+      ])('loads a %s flavor text preference', async (_label, stored, expected) => {
+        mockAdapter.exists.mockResolvedValue(true);
+        mockAdapter.read.mockResolvedValue(JSON.stringify(stored));
+
+        const result = await storage.load();
+
+        expect(result.enableFlavorTexts).toBe(expected);
+        const writtenValues = mockAdapter.write.mock.calls
+          .map(([, content]) => (JSON.parse(content) as Record<string, unknown>).enableFlavorTexts)
+          .filter(value => value !== undefined);
+        expect(writtenValues.every(value => value === expected)).toBe(true);
+      });
+
+      it('persists a normalized invalid flavor text preference', async () => {
+        mockAdapter.exists.mockResolvedValue(true);
+        mockAdapter.read.mockResolvedValue(JSON.stringify({ enableFlavorTexts: 'yes' }));
+
+        const result = await storage.load();
+
+        expect(result.enableFlavorTexts).toBe(true);
+        expect(JSON.parse(mockAdapter.write.mock.calls.at(-1)![1]).enableFlavorTexts).toBe(true);
+      });
+    });
+
     it.each([
       ['missing', {}, null],
       ['docked', { zenModePosition: null }, null],

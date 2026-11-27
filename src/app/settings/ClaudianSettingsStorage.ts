@@ -74,6 +74,12 @@ function normalizeEnableDualPane(value: unknown): boolean {
     : DEFAULT_CLAUDIAN_SETTINGS.enableDualPane;
 }
 
+function normalizeEnableFlavorTexts(value: unknown): boolean {
+  return typeof value === 'boolean'
+    ? value
+    : DEFAULT_CLAUDIAN_SETTINGS.enableFlavorTexts;
+}
+
 function normalizeEnableZenMode(value: unknown): boolean {
   return typeof value === 'boolean'
     ? value
@@ -416,6 +422,7 @@ export class ClaudianSettingsStorage {
     const chatViewPlacement = isChatViewPlacement(stored.chatViewPlacement)
       ? stored.chatViewPlacement
       : DEFAULT_CLAUDIAN_SETTINGS.chatViewPlacement;
+    const enableFlavorTexts = normalizeEnableFlavorTexts(stored.enableFlavorTexts);
     const enableZenMode = normalizeEnableZenMode(stored.enableZenMode);
     const zenModePosition = normalizeZenModePosition(stored.zenModePosition);
     const enableDualPane = normalizeEnableDualPane(stored.enableDualPane);
@@ -452,6 +459,7 @@ export class ClaudianSettingsStorage {
       hiddenCommands,
       providerConfigs,
       chatViewPlacement,
+      enableFlavorTexts,
       enableZenMode,
       zenModePosition,
       enableDualPane,

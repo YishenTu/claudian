@@ -911,6 +911,10 @@
       "name": "Desplazamiento automático durante la transmisión",
       "desc": "Desplazarse automáticamente hacia abajo mientras Claude transmite respuestas. Desactívalo para quedarte arriba y leer desde el principio."
     },
+    "enableFlavorTexts": {
+      "name": "Mensajes de estado rotativos",
+      "desc": "Muestra mensajes de espera divertidos (p. ej., «Comunicándome con el éter…») mientras se espera la respuesta. Desactívalo para mostrar siempre el estado sencillo «Pensando…»."
+    },
     "deferMathRenderingDuringStreaming": {
       "name": "Diferir el renderizado matemático durante la transmisión",
       "desc": "Mostrar LaTeX sin procesar mientras se transmite la respuesta y renderizar las fórmulas una vez al completar cada bloque de texto."
