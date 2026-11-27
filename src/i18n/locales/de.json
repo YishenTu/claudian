@@ -913,6 +913,10 @@
       "name": "Automatisches Scrollen beim Streaming",
       "desc": "Automatisch nach unten scrollen, während Claude Antworten streamt. Deaktivieren, um oben zu bleiben und von Anfang an zu lesen."
     },
+    "enableFlavorTexts": {
+      "name": "Rotierende Statusmeldungen",
+      "desc": "Zeigt spielerische Wartemeldungen (z. B. „Mit dem Äther sprechen…“) an, während auf eine Antwort gewartet wird. Deaktivieren, um immer den schlichten Status „Nachdenken…“ anzuzeigen."
+    },
     "deferMathRenderingDuringStreaming": {
       "name": "Mathe-Rendering beim Streaming aufschieben",
       "desc": "Rohes LaTeX während des Streamings anzeigen und Formeln einmalig rendern, sobald der jeweilige Textblock abgeschlossen ist."

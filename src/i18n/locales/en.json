@@ -913,6 +913,10 @@
       "name": "Auto-scroll during streaming",
       "desc": "Automatically scroll to the bottom as Claude streams responses. Disable to stay at the top and read from the beginning."
     },
+    "enableFlavorTexts": {
+      "name": "Rotating status messages",
+      "desc": "Show playful waiting messages (such as \"Communing with the ether...\") while a response is pending. Turn off to always show a plain \"Thinking...\" status."
+    },
     "deferMathRenderingDuringStreaming": {
       "name": "Defer math rendering during streaming",
       "desc": "Show raw LaTeX while responses stream, then render math once when each text block completes."

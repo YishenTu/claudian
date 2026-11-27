@@ -7,6 +7,8 @@ export interface ThinkingIndicatorDeps {
   state: ChatState;
   getMessagesEl: () => HTMLElement | null;
   updateQueueIndicator: () => void;
+  /** Absent keeps the rotating flavor texts; false pins the plain thinking status. */
+  getFlavorTextsEnabled?: () => boolean;
 }
 
 /** Debounce delay before showing the indicator (ms). */
@@ -101,6 +103,12 @@ export class ThinkingIndicator {
     this.endExplicit();
   }
 
+  /** Flavor texts rotate while waiting; the user can pin the plain thinking status instead. */
+  #flavorText(): string {
+    if (this.deps.getFlavorTextsEnabled?.() === false) return t('chat.busyIndicator.flavors.thinking');
+    return t(FLAVOR_TEXT_KEYS[Math.floor(Math.random() * FLAVOR_TEXT_KEYS.length)]);
+  }
+
   #cancelShow(): void {
     const timer = this.#showTimer;
     this.#showTimer = null;
@@ -169,7 +177,7 @@ export class ThinkingIndicator {
       : 'claudian-thinking';
     const el = target.createDiv({ cls });
     this.#el = el;
-    const text = overrideText || t(FLAVOR_TEXT_KEYS[Math.floor(Math.random() * FLAVOR_TEXT_KEYS.length)]);
+    const text = overrideText || this.#flavorText();
     el.createSpan({ text });
     state.waitingStatus = text;
 

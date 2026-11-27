@@ -913,6 +913,10 @@
       "name": "Rolagem automática durante o streaming",
       "desc": "Rolar automaticamente para baixo enquanto o Claude transmite respostas. Desativar para ficar no topo e ler desde o início."
     },
+    "enableFlavorTexts": {
+      "name": "Mensagens de status rotativas",
+      "desc": "Mostra mensagens de espera divertidas (como «Comungando com o éter…») enquanto aguarda a resposta. Desative para mostrar sempre o status simples «Pensando…»."
+    },
     "deferMathRenderingDuringStreaming": {
       "name": "Adiar renderização matemática durante o streaming",
       "desc": "Mostrar LaTeX bruto enquanto a resposta é transmitida e renderizar a matemática uma vez quando cada bloco de texto terminar."

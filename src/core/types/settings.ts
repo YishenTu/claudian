@@ -149,6 +149,8 @@ export interface ClaudianSettings {
 
   // UI preferences
   enableAutoScroll: boolean;
+  /** False shows a plain thinking status instead of rotating flavor texts while waiting. */
+  enableFlavorTexts: boolean;
   deferMathRenderingDuringStreaming: boolean;
   /** Fence languages dispatched to registered plugin code block processors in chat. */
   pluginRenderedFenceLanguages: string[];
