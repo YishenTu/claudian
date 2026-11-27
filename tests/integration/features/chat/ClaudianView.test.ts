@@ -691,9 +691,16 @@ describe('ClaudianView composer and scoped keys', () => {
     view.app.keymap.pushScope(view.scope!);
     try {
       fireEvent.compositionStart(search);
-      fireEvent.keyDown(search, { key: 'Escape' });
+      // Default prevention shows the scope consumed it; the search field only stops propagation.
+      expect(fireEvent.keyDown(search, { key: 'Escape' })).toBe(false);
       fireEvent.compositionEnd(search);
-      fireEvent.keyDown(tab.dom.inputEl, { key: 'Escape', isComposing: true });
+      expect(fireEvent.keyDown(tab.dom.inputEl, { key: 'Escape', isComposing: true })).toBe(false);
+      tab.dom.inputEl.focus();
+      const composer = within(tab.dom.inputEl).getByRole('textbox');
+      fireEvent.compositionStart(composer);
+      // Some IMEs deliver the cancelling Escape without `isComposing`; the composer still owns it.
+      expect(fireEvent.keyDown(composer, { key: 'Escape' })).toBe(false);
+      fireEvent.compositionEnd(composer);
     } finally {
       view.app.keymap.popScope(view.scope!);
       window.removeEventListener('keydown', observeEscape);
