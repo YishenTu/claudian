@@ -11,6 +11,7 @@ import type {
   ProviderSessionEvent,
   ProviderSessionSnapshot,
   ProviderSessionStatus,
+  SteerableExecutionSession,
 } from '@/core/execution';
 
 type WithoutScope<T> = T extends unknown ? Omit<T, 'scope'> : never;
@@ -150,10 +151,35 @@ export class FakeSideSession implements ProviderExecutionSession {
   }
 }
 
+/** A session whose provider accepts every steer; side sessions are not steerable unless a test opts in. */
+export class SteerableFakeSideSession extends FakeSideSession implements SteerableExecutionSession {
+  readonly steerRequests: ProviderExecutionRequest[] = [];
+  private readonly steerListeners = new Set<(request: ProviderExecutionRequest) => void>();
+
+  async steer(request: ProviderExecutionRequest): Promise<boolean> {
+    this.steerRequests.push(request);
+    for (const listener of [...this.steerListeners]) listener(request);
+    return true;
+  }
+
+  /** Arm before submitting to observe the next steer. */
+  nextSteer(): Promise<ProviderExecutionRequest> {
+    return new Promise(resolve => {
+      const listener = (request: ProviderExecutionRequest): void => {
+        this.steerListeners.delete(listener);
+        resolve(request);
+      };
+      this.steerListeners.add(listener);
+    });
+  }
+}
+
 export class FakeSideBackend implements ProviderExecutionBackend {
   readonly providerId = 'claude' as const;
   readonly sessions: FakeSideSession[] = [];
   private readonly requestListeners = new Set<(request: ProviderExecutionRequest) => void>();
+
+  constructor(private readonly options: { steerable?: boolean } = {}) {}
 
   /** Arm before submitting so tests observe provider handoff without polling the DOM. */
   nextRequest(matches: (request: ProviderExecutionRequest) => boolean): Promise<ProviderExecutionRequest> {
@@ -168,9 +194,10 @@ export class FakeSideBackend implements ProviderExecutionBackend {
   }
 
   createSession(config: ProviderSessionConfig): ProviderExecutionSession {
-    const session = new FakeSideSession(config, request => {
+    const onExecute = (request: ProviderExecutionRequest): void => {
       for (const listener of [...this.requestListeners]) listener(request);
-    });
+    };
+    const session = this.options.steerable ? new SteerableFakeSideSession(config, onExecute) : new FakeSideSession(config, onExecute);
     this.sessions.push(session);
     return session;
   }
@@ -178,6 +205,12 @@ export class FakeSideBackend implements ProviderExecutionBackend {
   get latest(): FakeSideSession {
     const session = this.sessions.at(-1);
     if (!session) throw new Error('No side session was created');
+    return session;
+  }
+
+  get latestSteerable(): SteerableFakeSideSession {
+    const session = this.latest;
+    if (!(session instanceof SteerableFakeSideSession)) throw new Error('The latest session is not steerable');
     return session;
   }
 }

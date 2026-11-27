@@ -297,6 +297,7 @@ describe('ClaudianPlugin', () => {
         settings.enableDualPane = !settings.enableDualPane;
         settings.hiddenCommands = ['test-command'];
         settings.enableZenMode = !settings.enableZenMode;
+        settings.requireCommandOrControlEnterToSend = !settings.requireCommandOrControlEnterToSend;
       });
       await writing;
       for (const view of views) {
@@ -333,6 +334,7 @@ describe('ClaudianPlugin', () => {
     return [0, 1].map(() => ({
       refreshDualPaneLayout: vi.fn(),
       updateHiddenCommands: vi.fn(),
+      refreshSendKeyHints: vi.fn(),
       notifyConversationListChanged: vi.fn(),
     }));
   }

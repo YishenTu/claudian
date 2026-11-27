@@ -18,6 +18,7 @@
       "queued": "待機中",
       "steering": "指示を送信中",
       "steerNow": "今すぐ指示を送信",
+      "steerShortcut": "ショートカット: {shortcut}",
       "edit": "待機中のメッセージを編集",
       "discard": "待機中のメッセージを破棄",
       "images": "[画像]"
@@ -833,7 +834,8 @@
     },
     "requireCommandOrControlEnterToSend": {
       "name": "Command/Ctrl+Enter でのみ送信",
-      "desc": "有効にすると、Enter は改行を挿入します。macOS では Command+Enter、Windows と Linux では Ctrl+Enter で送信します。"
+      "descByDefault": "Enter で送信、Shift+Enter で改行、Cmd/Ctrl+Enter で実行中のターンに指示を送信します。",
+      "descWhenRequired": "Enter で改行、Cmd/Ctrl+Enter で送信、Cmd/Ctrl+Shift+Enter で実行中のターンに指示を送信します。"
     },
     "safety": "セキュリティ",
     "loadUserSettings": {

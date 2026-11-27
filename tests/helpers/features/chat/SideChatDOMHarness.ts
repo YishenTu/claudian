@@ -44,8 +44,9 @@ export async function createHarness(options: {
   supportsEphemeralFork?: boolean;
   supportsForkDuringTurn?: boolean;
   buildForkProviderState?: ProviderConversationHistoryService['buildForkProviderState'];
+  steerable?: boolean;
 } = {}) {
-  const backend = new FakeSideBackend();
+  const backend = new FakeSideBackend({ steerable: options.steerable });
   const forkState = { forkSource: { resumeAt: 'checkpoint-1', sessionId: 'main-session' } };
   ProviderRegistry.register('claude', {
     ...claudeProviderRegistration,

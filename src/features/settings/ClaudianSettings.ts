@@ -582,14 +582,20 @@ export class ClaudianSettingTab extends PluginSettingTab {
 
     new AccessibleSetting(container).setName(t('settings.input')).setHeading();
 
-    new AccessibleSetting(container)
-      .setName(t('settings.requireCommandOrControlEnterToSend.name'))
-      .setDesc(t('settings.requireCommandOrControlEnterToSend.desc'))
-      .addToggle((toggle) => {
-        bindCommittedControl(toggle, () => this.host.settings.requireCommandOrControlEnterToSend ?? false, async value => {
-          await this.host.mutateSettings(settings => { settings.requireCommandOrControlEnterToSend = value; });
-        });
-      });
+    const sendKeySetting = new AccessibleSetting(container)
+      .setName(t('settings.requireCommandOrControlEnterToSend.name'));
+    // The description lists the committed mode's keys; steer is always the send key plus one modifier.
+    const renderSendKeyDesc = (): void => {
+      sendKeySetting.setDesc(t(this.host.settings.requireCommandOrControlEnterToSend
+        ? 'settings.requireCommandOrControlEnterToSend.descWhenRequired'
+        : 'settings.requireCommandOrControlEnterToSend.descByDefault'));
+    };
+    renderSendKeyDesc();
+    sendKeySetting.addToggle((toggle) => {
+      bindCommittedControl(toggle, () => this.host.settings.requireCommandOrControlEnterToSend ?? false, async value => {
+        await this.host.mutateSettings(settings => { settings.requireCommandOrControlEnterToSend = value; });
+      }, renderSendKeyDesc);
+    });
 
     new AccessibleSetting(container)
       .setName(t('settings.navMappings.name'))

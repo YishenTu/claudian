@@ -18,6 +18,7 @@
       "queued": "В очереди",
       "steering": "Корректировка хода",
       "steerNow": "Скорректировать сейчас",
+      "steerShortcut": "Сочетание клавиш: {shortcut}",
       "edit": "Изменить сообщение в очереди",
       "discard": "Удалить сообщение из очереди",
       "images": "[изображения]"
@@ -833,7 +834,8 @@
     },
     "requireCommandOrControlEnterToSend": {
       "name": "Требовать Command/Ctrl+Enter для отправки",
-      "desc": "Если включено, Enter вставляет новую строку. Command+Enter отправляет на macOS; Ctrl+Enter отправляет на Windows и Linux."
+      "descByDefault": "Enter отправляет, Shift+Enter вставляет новую строку, а Cmd/Ctrl+Enter корректирует выполняющийся ход.",
+      "descWhenRequired": "Enter вставляет новую строку, Cmd/Ctrl+Enter отправляет, а Cmd/Ctrl+Shift+Enter корректирует выполняющийся ход."
     },
     "safety": "Безопасность",
     "loadUserSettings": {

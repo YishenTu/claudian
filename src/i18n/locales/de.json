@@ -18,6 +18,7 @@
       "queued": "In der Warteschlange",
       "steering": "Wird eingesteuert",
       "steerNow": "Jetzt einsteuern",
+      "steerShortcut": "Tastenkürzel: {shortcut}",
       "edit": "Nachricht in der Warteschlange bearbeiten",
       "discard": "Nachricht in der Warteschlange verwerfen",
       "images": "[Bilder]"
@@ -833,7 +834,8 @@
     },
     "requireCommandOrControlEnterToSend": {
       "name": "Command/Strg+Enter zum Senden erfordern",
-      "desc": "Wenn aktiviert, fügt Enter einen Zeilenumbruch ein. Command+Enter sendet unter macOS; Strg+Enter sendet unter Windows und Linux."
+      "descByDefault": "Enter sendet, Umschalt+Enter fügt einen Zeilenumbruch ein und Cmd/Strg+Enter steuert eine laufende Antwort ein.",
+      "descWhenRequired": "Enter fügt einen Zeilenumbruch ein, Cmd/Strg+Enter sendet und Cmd/Strg+Umschalt+Enter steuert eine laufende Antwort ein."
     },
     "safety": "Sicherheit",
     "loadUserSettings": {

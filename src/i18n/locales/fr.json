@@ -18,6 +18,7 @@
       "queued": "En file d’attente",
       "steering": "Réorientation en cours",
       "steerNow": "Réorienter maintenant",
+      "steerShortcut": "Raccourci : {shortcut}",
       "edit": "Modifier le message en file d’attente",
       "discard": "Supprimer le message en file d’attente",
       "images": "[images]"
@@ -833,7 +834,8 @@
     },
     "requireCommandOrControlEnterToSend": {
       "name": "Exiger Command/Ctrl+Entrée pour envoyer",
-      "desc": "Lorsque cette option est activée, Entrée insère une nouvelle ligne. Command+Entrée envoie sur macOS ; Ctrl+Entrée envoie sur Windows et Linux."
+      "descByDefault": "Entrée envoie, Maj+Entrée insère une nouvelle ligne et Cmd/Ctrl+Entrée réoriente un tour en cours.",
+      "descWhenRequired": "Entrée insère une nouvelle ligne, Cmd/Ctrl+Entrée envoie et Cmd/Ctrl+Maj+Entrée réoriente un tour en cours."
     },
     "safety": "Sécurité",
     "loadUserSettings": {

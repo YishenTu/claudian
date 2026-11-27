@@ -64,3 +64,29 @@ describe.each(['persist-failure', 'publish-failure', 'success'] as const)('%s', 
     expect(await axe(current.closest<HTMLElement>('.setting-item')!)).toHaveNoViolations();
   });
 });
+
+describe('send-key description', () => {
+  it.each(['persist-failure', 'success'] as const)('describes the committed send-key mode after a %s toggle', async phase => {
+    const fixture = await createFeatureHostFixture({
+      settings: { requireCommandOrControlEnterToSend: false, providerConfigs: { claude: { ...claudeCatalogFixture(['sonnet']) } } },
+      beforePersist: async () => { if (phase === 'persist-failure') throw new Error('Storage unavailable'); },
+    });
+    await fixture.settingsStorage.save(fixture.settings);
+    const container = document.body.createEl('main');
+    const tab = new ClaudianSettingTab(fixture.host.app, createObsidianPlugin(fixture.host.app), fixture.host);
+    onTestFinished(mountSettingTab(tab, container));
+    const toggle = within(container).getByRole<HTMLInputElement>('switch', { name: t('settings.requireCommandOrControlEnterToSend.name') });
+    const description = () => toggle.closest<HTMLElement>('.setting-item')!.querySelector('.setting-item-description')!.textContent;
+    const byDefault = t('settings.requireCommandOrControlEnterToSend.descByDefault');
+    const whenRequired = t('settings.requireCommandOrControlEnterToSend.descWhenRequired');
+    expect(byDefault).not.toBe(whenRequired);
+    expect(description()).toBe(byDefault);
+
+    fireEvent.click(toggle);
+    await controlChangeSettled(toggle).catch(() => undefined);
+
+    const current = within(container).getByRole<HTMLInputElement>('switch', { name: t('settings.requireCommandOrControlEnterToSend.name') });
+    expect(current.checked).toBe(phase === 'success');
+    expect(description()).toBe(phase === 'success' ? whenRequired : byDefault);
+  });
+});

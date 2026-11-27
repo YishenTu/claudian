@@ -18,6 +18,7 @@
       "queued": "En cola",
       "steering": "Reorientando",
       "steerNow": "Reorientar ahora",
+      "steerShortcut": "Atajo: {shortcut}",
       "edit": "Editar mensaje en cola",
       "discard": "Descartar mensaje en cola",
       "images": "[imágenes]"
@@ -833,7 +834,8 @@
     },
     "requireCommandOrControlEnterToSend": {
       "name": "Requerir Command/Ctrl+Enter para enviar",
-      "desc": "Cuando está activado, Enter inserta un salto de línea. Command+Enter envía en macOS; Ctrl+Enter envía en Windows y Linux."
+      "descByDefault": "Enter envía, Shift+Enter inserta un salto de línea y Cmd/Ctrl+Enter reorienta un turno en curso.",
+      "descWhenRequired": "Enter inserta un salto de línea, Cmd/Ctrl+Enter envía y Cmd/Ctrl+Shift+Enter reorienta un turno en curso."
     },
     "safety": "Seguridad",
     "loadUserSettings": {

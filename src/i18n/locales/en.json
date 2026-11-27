@@ -18,6 +18,7 @@
       "queued": "Queued",
       "steering": "Steering",
       "steerNow": "Steer Now",
+      "steerShortcut": "Shortcut: {shortcut}",
       "edit": "Edit queued message",
       "discard": "Discard queued message",
       "images": "[images]"
@@ -833,7 +834,8 @@
     },
     "requireCommandOrControlEnterToSend": {
       "name": "Require Command/Ctrl+Enter to send",
-      "desc": "When enabled, Enter inserts a newline. Command+Enter sends on macOS; Ctrl+Enter sends on Windows and Linux."
+      "descByDefault": "Enter sends, Shift+Enter inserts a newline, and Cmd/Ctrl+Enter steers a running turn.",
+      "descWhenRequired": "Enter inserts a newline, Cmd/Ctrl+Enter sends, and Cmd/Ctrl+Shift+Enter steers a running turn."
     },
     "safety": "Safety",
     "loadUserSettings": {

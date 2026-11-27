@@ -16,6 +16,7 @@ import { encodeSessionMessage, type MailboxMessage } from '@/core/session-tools/
 import type { AskUserAnswers, ChatMessage, ToolCallInfo } from '@/core/types';
 import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
 import type { ChatSettings } from '@/features/chat/ChatSettings';
+import { type ComposerKeyIntent, composerSteerShortcut } from '@/features/chat/composer/ComposerKeyIntent';
 import { findComposerSessionMentions } from '@/features/chat/composer/composerSessionMentions';
 import { resolveSessionMentions } from '@/features/chat/composer/resolveSessionMentions';
 import type { SessionComposerPort } from '@/features/chat/composer/SessionComposer';
@@ -106,6 +107,11 @@ export interface SendMessageOptions {
   turnRequestOverride?: ChatTurnRequest;
   /** The original composer draft was consumed before asynchronous preparation. */
   draftConsumed?: boolean;
+  /**
+   * `steer` joins main input to the running turn through the queue's steer, with any queued
+   * follow-up; it queues when the turn cannot be steered and sends when no turn runs.
+   */
+  intent?: ComposerKeyIntent;
 }
 
 /** Admits composer and answer submissions and routes each to its destination. */
@@ -144,6 +150,7 @@ export class InputController {
       steering: this.steering,
       canStartTurn: () => this.deps.canStartTurn(),
       getTabProviderId: () => this.deps.getTabProviderId(),
+      getSteerShortcut: () => composerSteerShortcut(this.deps.plugin.settings),
       runQueued: (message, signal) => {
         this.deps.conversationController.cancelBranchDraft();
         const images = message.turnRequest.images ?? [];
@@ -354,6 +361,11 @@ export class InputController {
       ? imageOverride.length > 0
       : (composerDraft.images.length > 0);
     if (!content && !hasImages && !options?.turnRequestOverride?.text.trim()) {
+      // An empty steer steers the queued follow-up, as the queue strip's Steer button does.
+      if (options?.intent === 'steer' && destination === 'main' && this.queue.message) {
+        await this.queue.steerNow();
+        return 'handled';
+      }
       this.execution.reportDeferredReview();
       return 'rejected';
     }
@@ -536,6 +548,8 @@ export class InputController {
       onAdmitted?.();
       options?.onQueued?.();
       if (!this.turns.isActive) this.queue.scheduleContinuation();
+      // Steering owns delivery from here: definitely unsent input returns to the queue.
+      else if (options?.intent === 'steer') await this.queue.steerNow();
       return 'queued';
     }
 

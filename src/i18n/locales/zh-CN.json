@@ -18,6 +18,7 @@
       "queued": "排队中",
       "steering": "引导中",
       "steerNow": "立即引导",
+      "steerShortcut": "快捷键：{shortcut}",
       "edit": "编辑排队中的消息",
       "discard": "丢弃排队中的消息",
       "images": "[图片]"
@@ -833,7 +834,8 @@
     },
     "requireCommandOrControlEnterToSend": {
       "name": "仅用 Command/Ctrl+Enter 发送",
-      "desc": "启用后，Enter 会插入换行。macOS 使用 Command+Enter 发送；Windows 和 Linux 使用 Ctrl+Enter 发送。"
+      "descByDefault": "Enter 发送，Shift+Enter 换行，Cmd/Ctrl+Enter 引导正在运行的回合。",
+      "descWhenRequired": "Enter 换行，Cmd/Ctrl+Enter 发送，Cmd/Ctrl+Shift+Enter 引导正在运行的回合。"
     },
     "safety": "安全",
     "loadUserSettings": {

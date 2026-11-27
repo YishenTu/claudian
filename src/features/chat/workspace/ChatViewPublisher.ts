@@ -30,10 +30,12 @@ export class ChatViewPublisher {
       || settings.sessionManagerSort !== previous.sessionManagerSort
       || JSON.stringify(settings.projectOrder) !== JSON.stringify(previous.projectOrder)
       || JSON.stringify(settings.expandedProjectIds) !== JSON.stringify(previous.expandedProjectIds);
-    if (layoutChanged || commandsChanged || sessionsChanged) {
+    const sendKeyChanged = settings.requireCommandOrControlEnterToSend !== previous.requireCommandOrControlEnterToSend;
+    if (layoutChanged || commandsChanged || sessionsChanged || sendKeyChanged) {
       for (const view of this.deps.views.getAllViews()) {
         if (layoutChanged) publish(() => view.refreshDualPaneLayout());
         if (commandsChanged) publish(() => view.updateHiddenCommands());
+        if (sendKeyChanged) publish(() => view.refreshSendKeyHints());
         if (sessionsChanged) publish(() => view.notifyConversationListChanged());
       }
     }

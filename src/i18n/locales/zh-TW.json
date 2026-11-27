@@ -18,6 +18,7 @@
       "queued": "排隊中",
       "steering": "引導中",
       "steerNow": "立即引導",
+      "steerShortcut": "快捷鍵：{shortcut}",
       "edit": "編輯排隊訊息",
       "discard": "捨棄排隊訊息",
       "images": "[圖片]"
@@ -833,7 +834,8 @@
     },
     "requireCommandOrControlEnterToSend": {
       "name": "需要 Command/Ctrl+Enter 才能傳送",
-      "desc": "啟用後，Enter 會插入換行。macOS 使用 Command+Enter 傳送；Windows 和 Linux 使用 Ctrl+Enter 傳送。"
+      "descByDefault": "Enter 傳送，Shift+Enter 換行，Cmd/Ctrl+Enter 引導正在執行的回合。",
+      "descWhenRequired": "Enter 換行，Cmd/Ctrl+Enter 傳送，Cmd/Ctrl+Shift+Enter 引導正在執行的回合。"
     },
     "safety": "安全",
     "loadUserSettings": {

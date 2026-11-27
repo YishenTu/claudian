@@ -18,6 +18,7 @@
       "queued": "대기 중",
       "steering": "방향 조정 중",
       "steerNow": "지금 방향 조정",
+      "steerShortcut": "단축키: {shortcut}",
       "edit": "대기 중인 메시지 편집",
       "discard": "대기 중인 메시지 삭제",
       "images": "[이미지]"
@@ -833,7 +834,8 @@
     },
     "requireCommandOrControlEnterToSend": {
       "name": "Command/Ctrl+Enter로만 전송",
-      "desc": "활성화하면 Enter 키로 줄을 바꿉니다. macOS에서는 Command+Enter, Windows와 Linux에서는 Ctrl+Enter로 전송합니다."
+      "descByDefault": "Enter로 전송하고, Shift+Enter로 줄을 바꾸며, Cmd/Ctrl+Enter로 진행 중인 턴의 방향을 조정합니다.",
+      "descWhenRequired": "Enter로 줄을 바꾸고, Cmd/Ctrl+Enter로 전송하며, Cmd/Ctrl+Shift+Enter로 진행 중인 턴의 방향을 조정합니다."
     },
     "safety": "보안",
     "loadUserSettings": {
