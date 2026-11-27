@@ -15,15 +15,13 @@ interface PromptHistoryNavigationOptions {
  */
 export class PromptHistoryNavigation {
   private selected: { id: string; text: string } | null = null;
-  private composing = false;
 
   constructor(private readonly options: PromptHistoryNavigationOptions) {
     options.input.addEventListener('compositionstart', this.onCompositionStart);
-    options.input.addEventListener('compositionend', this.onCompositionEnd);
   }
 
   get isRecalling(): boolean {
-    return !this.composing && this.selected !== null && this.options.input.value === this.selected.text
+    return !this.isComposing && this.selected !== null && this.options.input.value === this.selected.text
       && this.options.isEnabled();
   }
 
@@ -33,7 +31,7 @@ export class PromptHistoryNavigation {
   }
 
   handleKeydown(event: KeyboardEvent): boolean {
-    if (event.defaultPrevented || this.composing || event.isComposing || event.ctrlKey || event.metaKey
+    if (event.defaultPrevented || this.isComposing || event.isComposing || event.ctrlKey || event.metaKey
       || event.altKey || event.shiftKey
       || !['ArrowUp', 'ArrowDown', 'Escape'].includes(event.key) || !this.options.isEnabled()) return false;
 
@@ -68,16 +66,15 @@ export class PromptHistoryNavigation {
 
   destroy(): void {
     this.options.input.removeEventListener('compositionstart', this.onCompositionStart);
-    this.options.input.removeEventListener('compositionend', this.onCompositionEnd);
   }
 
-  private readonly onCompositionStart = (): void => {
-    this.composing = true;
-    this.reset();
-  };
+  private get isComposing(): boolean {
+    return this.options.input.isComposing?.() ?? false;
+  }
 
-  private readonly onCompositionEnd = (): void => {
-    this.composing = false;
+  /** A composition replaces recalled text, so the recall ends. */
+  private readonly onCompositionStart = (): void => {
+    this.reset();
   };
 
   /** Arrow keys inside recalled text move the caret; only its first/last rendered row navigates. */

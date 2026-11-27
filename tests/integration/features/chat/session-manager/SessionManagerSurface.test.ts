@@ -974,5 +974,11 @@ describe('SessionManagerSurface Escape handling', () => {
 
     fireEvent.compositionEnd(input);
     expect(h.surface.isComposing).toBe(false);
+
+    // IMEs can start the next composition before the committed one settles.
+    fireEvent.compositionStart(searchInput(h.sessionSurfaceEl));
+    // Queued after the commit's deferred settle, so it runs once that settle has.
+    await new Promise<void>(resolve => queueMicrotask(resolve));
+    expect(h.surface.isComposing).toBe(true);
   });
 });

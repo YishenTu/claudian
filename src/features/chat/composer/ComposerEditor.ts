@@ -231,6 +231,8 @@ export class ComposerEditor {
         },
       },
     });
+    // CodeMirror owns composition state; `composing` stays false until the composition's first change.
+    this.element.isComposing = () => this.view?.compositionStarted ?? false;
     this.element.setGhostText = text => {
       if (this.ghostText === text) return;
       this.ghostText = text;

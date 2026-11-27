@@ -186,35 +186,43 @@ export function beginInlineRenameNextFrame(
 }
 
 /**
+ * Search-field IME lifecycle. `committed` holds the text a composition just committed until the
+ * trailing `input` event that repeats it (or a microtask) returns the field to `idle`.
+ */
+export type SessionSearchComposition =
+  | { readonly phase: 'idle' }
+  | { readonly phase: 'composing' }
+  | { readonly phase: 'committed'; readonly value: string };
+
+export const IDLE_SEARCH_COMPOSITION: SessionSearchComposition = { phase: 'idle' };
+
+/**
  * Reports `input`'s query to `onQuery` once per committed change. IME composition holds the query until it commits,
- * and `state.composing` tells Escape and re-rendering that the composition owns the field.
+ * and a `composing` phase tells Escape and re-rendering that the composition owns the field.
  */
 export function bindSessionSearchInput(
   input: HTMLInputElement,
-  state: { composing: boolean },
+  state: { composition: SessionSearchComposition },
   onQuery: (query: string) => void,
 ): void {
-  let committedCompositionValue: string | null = null;
   input.addEventListener('compositionstart', () => {
-    state.composing = true;
-    committedCompositionValue = null;
+    state.composition = { phase: 'composing' };
   });
   input.addEventListener('compositionend', () => {
-    state.composing = false;
-    committedCompositionValue = input.value;
+    const committed: SessionSearchComposition = { phase: 'committed', value: input.value };
+    state.composition = committed;
     onQuery(input.value);
     queueMicrotask(() => {
-      committedCompositionValue = null;
+      // A composition that started since then owns the field.
+      if (state.composition === committed) state.composition = IDLE_SEARCH_COMPOSITION;
     });
   });
   input.addEventListener('input', (event) => {
-    if (state.composing || (event as InputEvent | undefined)?.isComposing) return;
+    const { composition } = state;
+    if (composition.phase === 'composing' || (event as InputEvent | undefined)?.isComposing) return;
+    state.composition = IDLE_SEARCH_COMPOSITION;
     // The input event that follows compositionend repeats the committed text.
-    if (committedCompositionValue === input.value) {
-      committedCompositionValue = null;
-      return;
-    }
-    committedCompositionValue = null;
+    if (composition.phase === 'committed' && composition.value === input.value) return;
     onQuery(input.value);
   });
 }
