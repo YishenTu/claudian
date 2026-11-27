@@ -834,7 +834,8 @@
     },
     "requireCommandOrControlEnterToSend": {
       "name": "Command/Ctrl+Enter로만 전송",
-      "desc": "활성화하면 Enter 키로 줄을 바꿉니다. macOS에서는 Command+Enter, Windows와 Linux에서는 Ctrl+Enter로 전송합니다."
+      "descByDefault": "Enter로 전송하고, Shift+Enter로 줄을 바꾸며, Command+Enter로 진행 중인 턴의 방향을 조정합니다. Windows와 Linux에서는 Command 대신 Ctrl을 사용하세요.",
+      "descWhenRequired": "Enter로 줄을 바꾸고, Command+Enter로 전송하며, Command+Shift+Enter로 진행 중인 턴의 방향을 조정합니다. Windows와 Linux에서는 Command 대신 Ctrl을 사용하세요."
     },
     "safety": "보안",
     "loadUserSettings": {

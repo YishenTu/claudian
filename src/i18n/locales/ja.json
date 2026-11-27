@@ -834,7 +834,8 @@
     },
     "requireCommandOrControlEnterToSend": {
       "name": "Command/Ctrl+Enter でのみ送信",
-      "desc": "有効にすると、Enter は改行を挿入します。macOS では Command+Enter、Windows と Linux では Ctrl+Enter で送信します。"
+      "descByDefault": "Enter で送信、Shift+Enter で改行、Command+Enter で実行中のターンに指示を送信します。Windows と Linux では Command の代わりに Ctrl を使います。",
+      "descWhenRequired": "Enter で改行、Command+Enter で送信、Command+Shift+Enter で実行中のターンに指示を送信します。Windows と Linux では Command の代わりに Ctrl を使います。"
     },
     "safety": "セキュリティ",
     "loadUserSettings": {

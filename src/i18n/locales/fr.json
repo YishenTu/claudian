@@ -834,7 +834,8 @@
     },
     "requireCommandOrControlEnterToSend": {
       "name": "Exiger Command/Ctrl+Entrée pour envoyer",
-      "desc": "Lorsque cette option est activée, Entrée insère une nouvelle ligne. Command+Entrée envoie sur macOS ; Ctrl+Entrée envoie sur Windows et Linux."
+      "descByDefault": "Entrée envoie, Maj+Entrée insère une nouvelle ligne et Command+Entrée réoriente un tour en cours. Sur Windows et Linux, utilisez Ctrl au lieu de Command.",
+      "descWhenRequired": "Entrée insère une nouvelle ligne, Command+Entrée envoie et Command+Maj+Entrée réoriente un tour en cours. Sur Windows et Linux, utilisez Ctrl au lieu de Command."
     },
     "safety": "Sécurité",
     "loadUserSettings": {

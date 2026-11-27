@@ -834,7 +834,8 @@
     },
     "requireCommandOrControlEnterToSend": {
       "name": "Требовать Command/Ctrl+Enter для отправки",
-      "desc": "Если включено, Enter вставляет новую строку. Command+Enter отправляет на macOS; Ctrl+Enter отправляет на Windows и Linux."
+      "descByDefault": "Enter отправляет, Shift+Enter вставляет новую строку, а Command+Enter корректирует выполняющийся ход. На Windows и Linux используйте Ctrl вместо Command.",
+      "descWhenRequired": "Enter вставляет новую строку, Command+Enter отправляет, а Command+Shift+Enter корректирует выполняющийся ход. На Windows и Linux используйте Ctrl вместо Command."
     },
     "safety": "Безопасность",
     "loadUserSettings": {
