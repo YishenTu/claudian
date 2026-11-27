@@ -396,8 +396,10 @@ it('keeps the explicit send shortcut focused inside the editor', () => {
   const sendMessage = vi.fn().mockResolvedValue(undefined);
   const tab = { dom: { inputEl: editor.element }, controllers: { inputController: { sendMessage } } };
   const event = new KeyboardEvent('keydown', { key: 'Enter', ctrlKey: !Platform.isMacOS, metaKey: Platform.isMacOS, cancelable: true });
+  expect(sendTabInputMessageFromExplicitEnterShortcut(tab as never, event, { requireInputFocus: true, steerWhenRunning: true })).toBe(true);
+  expect(sendMessage).toHaveBeenCalledWith({ steerWhenRunning: true });
   expect(sendTabInputMessageFromExplicitEnterShortcut(tab as never, event, { requireInputFocus: true })).toBe(true);
-  expect(sendMessage).toHaveBeenCalled();
+  expect(sendMessage).toHaveBeenLastCalledWith();
   editor.destroy();
   parent.remove();
 });

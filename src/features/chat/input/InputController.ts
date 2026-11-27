@@ -106,6 +106,8 @@ export interface SendMessageOptions {
   turnRequestOverride?: ChatTurnRequest;
   /** The original composer draft was consumed before asynchronous preparation. */
   draftConsumed?: boolean;
+  /** An explicit send shortcut joins the running turn instead of queueing when steering is possible. */
+  steerWhenRunning?: boolean;
 }
 
 /** Admits composer and answer submissions and routes each to its destination. */
@@ -530,6 +532,18 @@ export class InputController {
         ? [...(imageOverride ?? composerDraft.images)]
         : undefined;
       const { displayContent, turnRequest } = this.#buildTurnSubmission(content, images, options);
+      // An explicit shortcut send joins the running turn directly when it can be steered.
+      if (destination === 'main' && options?.steerWhenRunning === true && this.turns.isActive && !this.queue.message
+        && this.steering.canSteer && this.deps.inlinePrompts.pendingCount === 0) {
+        if (shouldUseInput) this.deps.drafts.consume(destination);
+        onAdmitted?.();
+        await this.steering.steerMessage(
+          { ...createQueuedMessage(displayContent, turnRequest), onDelivery: options?.onDelivery }, 'restore',
+        );
+        // Steering owns the delivery report (accepted/unsent); 'queued' only suppresses sendMessage's
+        // unqueued fallback, and onQueued has no meaning for a steer that never waits in the queue.
+        return 'queued';
+      }
       this.queue.enqueue({ ...createQueuedMessage(displayContent, turnRequest), onDelivery: options?.onDelivery });
 
       if (shouldUseInput) this.deps.drafts.consume(destination);

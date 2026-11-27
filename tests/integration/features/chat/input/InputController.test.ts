@@ -17,6 +17,10 @@ beforeEach(() => {
 afterEach(() => { vi.restoreAllMocks(); vi.useRealTimers(); });
 
 
+function createQueuedMessageFixture(content: string) {
+  return { content, turnRequest: { text: content, images: undefined, editorSelection: null, browserSelection: null, canvasSelection: null } };
+}
+
 describe('mailbox input', () => {
   const message = { from: 'Sender', sessionId: 'sender', text: 'Please inspect this' };
 
@@ -185,6 +189,73 @@ describe('InputController admission', () => {
 
     expect(fixture.native.runs[0].cancelCalls).toBe(1);
     expect(fixture.state.cancelRequested).toBe(true);
+  });
+
+  it('steers the running turn directly when the explicit shortcut opts in', async () => {
+    const fixture = (await createFixture());
+    const response = fixture.holdNextResponse();
+    const sending = fixture.controller.sendMessage({ content: 'first turn' });
+    const run = await response.started;
+
+    await fixture.controller.sendMessage({ content: 'steer now', steerWhenRunning: true });
+
+    expect(fixture.controller.queue.message).toBeNull();
+    expect(fixture.native.steerRequests).toHaveLength(1);
+
+    run.complete();
+    await sending;
+  });
+
+  it('steers the composer draft with its captured context and clears the composer', async () => {
+    const fixture = (await createFixture());
+    const response = fixture.holdNextResponse();
+    const sending = fixture.controller.sendMessage({ content: 'first turn' });
+    const run = await response.started;
+
+    fixture.input.value = 'steer now';
+    await fixture.controller.sendMessage({ steerWhenRunning: true });
+
+    expect(fixture.input.value).toBe('');
+    expect(fixture.controller.queue.message).toBeNull();
+    expect(fixture.native.steerRequests[0].input).toContainEqual({ type: 'text', text: 'steer now' });
+
+    run.complete();
+    await sending;
+  });
+
+  it.each([
+    ['plain send', { content: 'queued follow-up' }, []],
+    ['existing queue occupant', { content: 'queued follow-up', steerWhenRunning: true }, [{ content: 'earlier follow-up' }]],
+  ])('queues instead of steering on %s', async (_label, options, preQueued) => {
+    const fixture = (await createFixture());
+    const response = fixture.holdNextResponse();
+    const sending = fixture.controller.sendMessage({ content: 'first turn' });
+    const run = await response.started;
+    for (const message of preQueued) fixture.controller.queue.enqueue({ ...createQueuedMessageFixture(message.content) });
+
+    await fixture.controller.sendMessage(options);
+
+    expect(fixture.controller.queue.message?.content).toContain('queued follow-up');
+    expect(fixture.native.steerRequests).toHaveLength(0);
+
+    run.complete();
+    await sending;
+  });
+
+  it('queues instead of steering when the provider cannot steer', async () => {
+    vi.mocked(ProviderRegistry.getCapabilities).mockReturnValue({ ...nativeCapabilities, supportsTurnSteer: false });
+    const fixture = (await createFixture());
+    const response = fixture.holdNextResponse();
+    const sending = fixture.controller.sendMessage({ content: 'first turn' });
+    const run = await response.started;
+
+    await fixture.controller.sendMessage({ content: 'queued follow-up', steerWhenRunning: true });
+
+    expect(fixture.controller.queue.message?.content).toBe('queued follow-up');
+    expect(fixture.native.steerRequests).toHaveLength(0);
+
+    run.complete();
+    await sending;
   });
 
   it.each([

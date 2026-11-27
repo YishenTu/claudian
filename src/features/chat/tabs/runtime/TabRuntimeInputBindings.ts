@@ -5,6 +5,7 @@ import type {
 } from '@/features/chat/tabs/runtime/TabRuntimeConstruction';
 import {
   cancelSelectedDestinationTurn,
+  explicitSendSteersRunningTurn,
   handleComposerMenuKeydown,
   sendTabInputMessageFromEnterKey,
   sendTabInputMessageFromExplicitEnterShortcut,
@@ -26,7 +27,9 @@ export function buildTabRuntimeInputBindings(
     if ((event.target as HTMLElement | null)?.closest?.('button, a')) return;
     const tab = runtimeRef.requirePublished();
     if (!options.isRuntimeLive(tab)) return;
-    if (sendTabInputMessageFromExplicitEnterShortcut(tab, event)) {
+    if (sendTabInputMessageFromExplicitEnterShortcut(tab, event, {
+      steerWhenRunning: explicitSendSteersRunningTurn(plugin.settings),
+    })) {
       return;
     }
 

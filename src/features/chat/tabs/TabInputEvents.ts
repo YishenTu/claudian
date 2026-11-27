@@ -34,6 +34,16 @@ function shouldSendMessageFromEnterKey(
   return true;
 }
 
+/**
+ * When Enter alone already sends, the modifier shortcut gains the steer-a-running-turn meaning;
+ * when the modifier is the only send key, it keeps its plain send/queue semantics.
+ */
+export function explicitSendSteersRunningTurn(
+  settings: Pick<ClaudianSettings, 'requireCommandOrControlEnterToSend'>,
+): boolean {
+  return settings.requireCommandOrControlEnterToSend !== true;
+}
+
 /** Open composer menus consume their keys, including Escape, before tab-level handling. */
 export function handleComposerMenuKeydown(tab: AssembledTabRuntime, event: KeyboardEvent): boolean {
   return tab.controllers.builtInCommandController.handleResumeKeydown(event)
@@ -69,7 +79,7 @@ function isTabInputFocused(tab: AssembledTabRuntime): boolean {
 function sendTabInputMessage(
   tab: AssembledTabRuntime,
   event: KeyboardEvent,
-  options?: { requireInputFocus?: boolean },
+  options?: { requireInputFocus?: boolean; steerWhenRunning?: boolean },
 ): boolean {
   if (options?.requireInputFocus && !isTabInputFocused(tab)) {
     return false;
@@ -81,14 +91,18 @@ function sendTabInputMessage(
   }
 
   event.preventDefault();
-  void inputController.sendMessage();
+  if (options?.steerWhenRunning !== undefined) {
+    void inputController.sendMessage({ steerWhenRunning: options.steerWhenRunning });
+  } else {
+    void inputController.sendMessage();
+  }
   return true;
 }
 
 export function sendTabInputMessageFromExplicitEnterShortcut(
   tab: AssembledTabRuntime,
   event: KeyboardEvent,
-  options?: { requireInputFocus?: boolean },
+  options?: { requireInputFocus?: boolean; steerWhenRunning?: boolean },
 ): boolean {
   if (!shouldSendMessageFromExplicitEnterShortcut(event)) {
     return false;

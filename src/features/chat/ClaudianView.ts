@@ -15,6 +15,7 @@ import { TabWorkspaceLifecycle } from '@/features/chat/tabs/persistence/TabWorks
 import { TabBar } from '@/features/chat/tabs/TabBar';
 import {
   cancelSelectedDestinationTurn,
+  explicitSendSteersRunningTurn,
   handleComposerMenuKeydown,
   sendTabInputMessageFromExplicitEnterShortcut,
 } from '@/features/chat/tabs/TabInputEvents';
@@ -666,7 +667,10 @@ export class ClaudianView extends ItemView implements ZenModeSource {
       if (e.isComposing || e.defaultPrevented) return;
       const activeTab = this.tabManager?.getActiveTab();
       if (!activeTab) return;
-      if (sendTabInputMessageFromExplicitEnterShortcut(activeTab, e, { requireInputFocus: true })) {
+      if (sendTabInputMessageFromExplicitEnterShortcut(activeTab, e, {
+        requireInputFocus: true,
+        steerWhenRunning: explicitSendSteersRunningTurn(this.plugin.settings),
+      })) {
         return false;
       }
     });
