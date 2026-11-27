@@ -12,6 +12,8 @@ import {
   bindSessionSearchInput,
   createSessionHeaderAction,
   createSessionHeaderMenuAction,
+  IDLE_SEARCH_COMPOSITION,
+  type SessionSearchComposition,
   type SessionSurfaceNavigation,
   type SessionSurfaceShared,
   setControlAvailability,
@@ -43,8 +45,8 @@ export interface SessionSidebarDeps {
  */
 interface SearchSession {
   query: string;
-  /** IME composition in progress; Escape and rendering wait for it. */
-  composing: boolean;
+  /** IME lifecycle of the search field; Escape and rendering wait while it composes. */
+  composition: SessionSearchComposition;
   /** List scroll positions to restore when filtering ends. */
   readonly restoreState: SessionSearchScrollState;
   /** Search starts every group and section expanded, matching projects included. */
@@ -75,7 +77,7 @@ export class SessionSidebar {
 
   /** True while search is composing IME input; Escape belongs to the composition. */
   get isComposing(): boolean {
-    return this.#search?.composing ?? false;
+    return this.#search?.composition.phase === 'composing';
   }
 
   /** Builds the sidebar surface inside `sidebarEl`. */
@@ -94,7 +96,7 @@ export class SessionSidebar {
   render(): void {
     const surfaceEl = this.surfaceEl ?? this.sidebarEl;
     if (!surfaceEl || !this.dirty || !this.deps.isWide()) return;
-    if (this.#search?.composing) return;
+    if (this.#search?.composition.phase === 'composing') return;
     // The whole surface waits, since its list render clears the controls built around it.
     if (this.deps.shared.browser.deferWhileSortingProjects(() => this.render())) return;
 
@@ -345,7 +347,7 @@ export class SessionSidebar {
     bindSessionSearchInput(searchInput, search, query => this.updateSearchQuery(query));
     searchInput.addEventListener('keydown', (event) => {
       if (event.key !== 'Escape') return;
-      if (search.composing || event.isComposing) {
+      if (search.composition.phase === 'composing' || event.isComposing) {
         event.stopPropagation();
         return;
       }
@@ -365,7 +367,7 @@ export class SessionSidebar {
 
     this.#search = {
       collapse: new SessionGroupCollapse({ projectsStartExpanded: true }),
-      composing: false,
+      composition: IDLE_SEARCH_COMPOSITION,
       fieldEl: null,
       inputEl: null,
       query: '',

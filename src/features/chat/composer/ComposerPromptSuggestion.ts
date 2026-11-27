@@ -8,7 +8,6 @@ interface SuggestionTurn {
 /** A tab's transient prediction. Composer content hides it; a new owner or turn discards it. */
 export class ComposerPromptSuggestion {
   private turn: SuggestionTurn | null = null;
-  private composing = false;
   private readonly observer: MutationObserver;
 
   constructor(
@@ -18,8 +17,8 @@ export class ComposerPromptSuggestion {
     private readonly container: HTMLElement,
   ) {
     input.addEventListener('input', this.refresh);
-    input.addEventListener('compositionstart', this.onCompositionStart);
-    input.addEventListener('compositionend', this.onCompositionEnd);
+    input.addEventListener('compositionstart', this.refresh);
+    input.addEventListener('compositionend', this.refresh);
     this.observer = new input.ownerDocument.defaultView!.MutationObserver(this.refresh);
     this.observer.observe(container, { subtree: true, attributes: true, attributeFilter: ['aria-expanded'] });
   }
@@ -73,18 +72,15 @@ export class ComposerPromptSuggestion {
     this.discard();
     this.observer.disconnect();
     this.input.removeEventListener('input', this.refresh);
-    this.input.removeEventListener('compositionstart', this.onCompositionStart);
-    this.input.removeEventListener('compositionend', this.onCompositionEnd);
+    this.input.removeEventListener('compositionstart', this.refresh);
+    this.input.removeEventListener('compositionend', this.refresh);
   }
 
   private get visibleText(): string | null {
     const turn = this.turn;
     return turn?.binding && turn.suggestion?.turnId === turn.binding.turnId
-      && !this.composing && this.input.value === ''
+      && !this.input.isComposing?.() && this.input.value === ''
       && !this.container.querySelector('[aria-expanded="true"]') && this.canDisplay()
       ? turn.suggestion.text : null;
   }
-
-  private readonly onCompositionStart = (): void => { this.composing = true; this.refresh(); };
-  private readonly onCompositionEnd = (): void => { this.composing = false; this.refresh(); };
 }

@@ -656,8 +656,9 @@ export class ClaudianView extends ItemView implements ZenModeSource {
     // Returning false consumes Escape before Obsidian uses it for pane navigation.
     this.scope = new Scope(this.app.scope);
     this.scope.register([], 'Escape', (e: KeyboardEvent) => {
-      if (e.isComposing || this.sessions.isComposing) return;
       const activeTab = this.tabManager?.getActiveTab();
+      // Composition owns Escape; consuming it keeps Obsidian from refocusing the note.
+      if (e.isComposing || this.sessions.isComposing || activeTab?.dom.inputEl.isComposing?.()) return false;
       if (this.sessions.handleEscape()) return false;
       if (this.tabBar?.handleEscape()) return false;
       if (activeTab?.ui.navigationSidebar.handleEscape()) return false;

@@ -685,11 +685,31 @@ describe('ClaudianView composer and scoped keys', () => {
     const release = holdResponse(tab.session.runtime.turns);
     fireEvent.click(contentEl.querySelector<HTMLElement>('.claudian-session-search-control')!);
     const search = contentEl.querySelector<HTMLInputElement>('.claudian-session-sidebar .claudian-session-search-input')!;
-    fireEvent.compositionStart(search);
-    expect(scoped(view, 'Escape')).toBeUndefined();
+    const escapes: KeyboardEvent[] = [];
+    const observeEscape = (event: KeyboardEvent): void => { escapes.push(event); };
+    window.addEventListener('keydown', observeEscape);
+    view.app.keymap.pushScope(view.scope!);
+    try {
+      fireEvent.compositionStart(search);
+      // Default prevention shows the scope consumed it; the search field only stops propagation.
+      expect(fireEvent.keyDown(search, { key: 'Escape' })).toBe(false);
+      fireEvent.compositionEnd(search);
+      expect(fireEvent.keyDown(tab.dom.inputEl, { key: 'Escape', isComposing: true })).toBe(false);
+      tab.dom.inputEl.focus();
+      const composer = within(tab.dom.inputEl).getByRole('textbox');
+      fireEvent.compositionStart(composer);
+      // Some IMEs deliver the cancelling Escape without `isComposing`; the composer still owns it.
+      expect(fireEvent.keyDown(composer, { key: 'Escape' })).toBe(false);
+      fireEvent.compositionEnd(composer);
+    } finally {
+      view.app.keymap.popScope(view.scope!);
+      window.removeEventListener('keydown', observeEscape);
+    }
+    // A composing Escape must stay with the IME instead of reaching Obsidian's editor handling.
+    expect(escapes).toEqual([]);
+    expect(contentEl.querySelector('.claudian-session-sidebar .claudian-session-search-input')).not.toBeNull();
     expect(tab.state.isStreaming).toBe(true);
     expect(tab.session.turns.cancelRequested).toBe(false);
-    fireEvent.compositionEnd(search);
     expect(scoped(view, 'Escape')).toBe(false);
     expect(contentEl.querySelector('.claudian-session-sidebar .claudian-session-search-input')).toBeNull();
     expect(tab.state.isStreaming).toBe(true);

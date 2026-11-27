@@ -7,6 +7,8 @@ import {
   beginInlineRenameNextFrame,
   bindSessionSearchInput,
   createSessionHeaderAction,
+  IDLE_SEARCH_COMPOSITION,
+  type SessionSearchComposition,
   type SessionSurfaceNavigation,
   type SessionSurfaceShared,
 } from '@/features/chat/session-manager/SessionSurfaceShared';
@@ -61,7 +63,7 @@ export class HistoryDropdown {
   private searchBar: SearchBar | null = null;
   private search = newSearch();
   /** Composition belongs to the persistent field, so it outlives the search an opening discards. */
-  private readonly input = { composing: false };
+  private readonly input: { composition: SessionSearchComposition } = { composition: IDLE_SEARCH_COMPOSITION };
   private renderAbortController: AbortController | null = null;
   private dirty = true;
   private readonly collapse: SessionGroupCollapse;
@@ -72,7 +74,7 @@ export class HistoryDropdown {
 
   /** True while the search composes IME input; Escape belongs to the composition. */
   get isComposing(): boolean {
-    return this.input.composing;
+    return this.input.composition.phase === 'composing';
   }
 
   /** Builds the history button and its drop-up menu inside `parentEl`. */
@@ -255,7 +257,7 @@ export class HistoryDropdown {
   }
 
   private handleSearchKeydown(event: KeyboardEvent): void {
-    if (event.isComposing || this.input.composing) return;
+    if (event.isComposing || this.input.composition.phase === 'composing') return;
     if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
       event.preventDefault();
       this.moveActiveRow(event.key === 'ArrowDown' ? 1 : -1);
